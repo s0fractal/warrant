@@ -1,0 +1,3 @@
+SIGMA CONFORMANCE: ALL PASS (30/30 eval)
+CONFORMANCE: ALL PASS (20/20)
+differential: 3 tricky ski cases identical verdicts; false claim -> 1 mismatch warning in both

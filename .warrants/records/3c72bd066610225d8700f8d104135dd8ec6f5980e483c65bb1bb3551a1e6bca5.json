@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Accepted after independent adversarial verification: 30/30 sigma eval vectors re-run; float-ts and filename-tamper regressions agree (exit 1/1); ski differential on expect-exhausted / wrong-expect / expect-unres gives identical verdicts in both implementations; a deliberately false verdict claim is caught by both with the same mismatch warning. Third independent implementation of Book I v0.5 evaluation. Driven end-to-end via codex exec by the maintainer - zero human relay."
+      },
+      {
+        "check": "d7aa3a47d2219201166d84069db2af185ce97f50425c8c80b5870a327c6d7e65",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "5d2b03b77b9e029d7b20f42b9fc737803f0d1cff515daf0a5625484ac70e8a99",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "5d2b03b77b9e029d7b20f42b9fc737803f0d1cff515daf0a5625484ac70e8a99"
+    ],
+    "prior": [
+      "46d6f52e1091be407c5c769861c9319bb3b9d15988df3903c30f995fc3c97bd8"
+    ],
+    "subject": {
+      "hash": "743dfa2eb4c414a6bbad3a6e740ac29043fea7ab8119337e56c766e18f5018c5",
+      "note": "PR #4: impl-go v0.2, native Go Sigma-GLYPH evaluator"
+    },
+    "ts": 1783277407,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "62e2b2b5ffb897604650078c97e3496121dd1f4476b2d77a3417dba235503c390219c4c28a545397bb2c2be14e975ff29dc2dc387bdb90f57bf2d455de71bc04"
+    }
+  ]
+}

@@ -1,0 +1,764 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 2000c23..746a71e 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -21,6 +21,8 @@ jobs:
+           SIGMA_GLYPH=/tmp/sigma-glyph/impl python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
+       - name: Go conformance (second implementation)
+         run: ./impl-go/warrant-go conformance examples
++      - name: Go sigma-glyph eval conformance (pinned vectors)
++        run: ./impl-go/warrant-go sigma-conformance /tmp/sigma-glyph/tests/spec_conformance/vectors.json
+       - name: Go selftest (schema and verification edges)
+         run: ./impl-go/warrant-go selftest examples
+       - name: Go verifies warrant store layout
+diff --git a/impl-go/README.md b/impl-go/README.md
+index 042a599..8804214 100644
+--- a/impl-go/README.md
++++ b/impl-go/README.md
+@@ -1,16 +1,17 @@
+ # Warrant Go implementation
+ 
+-Second implementation for Warrant v0.1, using only the Go standard library.
++Second implementation for Warrant v0.2, using only the Go standard library.
+ 
+ ```bash
+ ./impl-go/warrant-go conformance examples
++./impl-go/warrant-go sigma-conformance ../sigma-glyph/tests/spec_conformance/vectors.json
+ ./impl-go/warrant-go selftest examples
+ ./impl-go/warrant-go verify examples
+ ```
+ 
+-Canonicalization note: `WarrantID = SHA-256(JCS(body))`. For v0.1 this
++Canonicalization note: `WarrantID = SHA-256(JCS(body))`. For v0.1/v0.2 this
+ implementation writes the exact JCS subset required by the spec: UTF-8,
+ compact separators, object keys sorted bytewise, and integer-only numbers.
+-Bytewise key sorting is equivalent to JCS UTF-16 ordering here only because all
+-schema keys are fixed ASCII. Future versions with free-form object keys must
+-replace that shortcut.
++Bytewise key sorting is equivalent to JCS UTF-16 ordering here only because
++schema keys and ski@v1 check keys are fixed ASCII. Future versions with
++free-form object keys must replace that shortcut.
+diff --git a/impl-go/main.go b/impl-go/main.go
+index 341ea62..e73e24f 100644
+--- a/impl-go/main.go
++++ b/impl-go/main.go
+@@ -8,6 +8,7 @@ import (
+ 	"encoding/json"
+ 	"errors"
+ 	"fmt"
++	"io"
+ 	"os"
+ 	"path/filepath"
+ 	"regexp"
+@@ -15,8 +16,6 @@ import (
+ 	"strings"
+ )
+ 
+-const version = "0.1"
+-
+ var (
+ 	hex64Re   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+ 	intJSONRe = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
+@@ -52,6 +51,14 @@ func main() {
+ 		if !conformance(dir) {
+ 			os.Exit(1)
+ 		}
++	case "sigma-conformance":
++		path := "../sigma-glyph/tests/spec_conformance/vectors.json"
++		if len(os.Args) > 2 {
++			path = os.Args[2]
++		}
++		if !sigmaConformance(path) {
++			os.Exit(1)
++		}
+ 	case "verify":
+ 		dir := "examples"
+ 		if len(os.Args) > 2 {
+@@ -76,7 +83,7 @@ func main() {
+ }
+ 
+ func usage() {
+-	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | verify [dir] | selftest [examples_dir]")
++	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [dir] | selftest [examples_dir]")
+ }
+ 
+ func readJSON(path string) (map[string]any, error) {
+@@ -204,8 +211,9 @@ func validateBody(b map[string]any) []string {
+ 		return errs
+ 	}
+ 
+-	if s, ok := b["warrant"].(string); !ok || s != version {
+-		errs = append(errs, `warrant version must be "0.1"`)
++	warrantVersion, ok := b["warrant"].(string)
++	if !ok || (warrantVersion != "0.1" && warrantVersion != "0.2") {
++		errs = append(errs, `warrant version must be one of ("0.1", "0.2")`)
+ 	}
+ 	decision, ok := b["decision"].(string)
+ 	if !ok || !decisions[decision] {
+@@ -226,7 +234,7 @@ func validateBody(b map[string]any) []string {
+ 		because = nil
+ 	}
+ 	for i, r := range because {
+-		for _, msg := range validateReason(r) {
++		for _, msg := range validateReason(r, warrantVersion) {
+ 			errs = append(errs, fmt.Sprintf("because[%d]: %s", i, msg))
+ 		}
+ 	}
+@@ -289,7 +297,7 @@ func validateHexArray(name string, v any, nonEmpty bool) []string {
+ 	return nil
+ }
+ 
+-func validateReason(v any) []string {
++func validateReason(v any, warrantVersion string) []string {
+ 	r, ok := v.(map[string]any)
+ 	if !ok {
+ 		return []string{"reason is not an object"}
+@@ -319,11 +327,9 @@ func validateReason(v any) []string {
+ 			errs = append(errs, "check must be hex64")
+ 		}
+ 		runtime, ok := r["runtime"].(string)
+-		if !ok {
+-			errs = append(errs, "runtime must be cmd@v1")
+-		} else if runtime == "ski@v1" {
++		if runtime == "ski@v1" && warrantVersion == "0.1" {
+ 			errs = append(errs, "runtime ski@v1 is reserved and MUST be rejected in v0.1")
+-		} else if runtime != "cmd@v1" {
++		} else if !ok || runtime != "cmd@v1" && !(warrantVersion == "0.2" && runtime == "ski@v1") {
+ 			errs = append(errs, "runtime must be cmd@v1")
+ 		}
+ 		verdict, ok := r["verdict"].(string)
+@@ -346,6 +352,397 @@ func isHex64(s string) bool {
+ 	return hex64Re.MatchString(s)
+ }
+ 
++type skiCheck struct {
++	term   [32]byte
++	atp    uint32
++	expect [32]byte
++}
++
++type sigmaStore map[[32]byte][]byte
++
++type sigmaTerm struct {
++	kind        string
++	h           [32]byte
++	left, right *sigmaTerm
++}
++
++type sigmaNode struct {
++	op          byte
++	atom        [32]byte
++	left, right [32]byte
++}
++
++var (
++	sigmaIHash      = mustHash32("2f33694d09810641fa5b8c47a7c0dc42e1b99eb8c9784a00aaee9a66330f4162")
++	sigmaKHash      = mustHash32("bc0c2fe26e44e2aed8ce500a74963bc270fd4a49ec0c2e4837ce7a64bb0a486c")
++	sigmaSHash      = mustHash32("887045bc22935aec5cba2dc11400d4e4357bc34d06681a6e92f06e7795b1f8a6")
++	sigmaInvalid    = mustHash32("7cc62bcc7c921683532cec1c1c331ca81d76b001e0c7f407a4078df7f696efe8")
++	sigmaATP        = mustHash32("dc435a08513893bacd07abd802b9c526e92ae57ca6db40c1c8f369fd7032e090")
++	sigmaUnresolved = mustHash32("75daae55453d9a98bfadb847d70b73fdd0be91d3b6ef8511d22fc42aa2c7c8e2")
++	sigmaGenesis    = map[[32]byte][]byte{
++		sigmaIHash: mustHexBytes("0001a83dd0ccbffe39d071cc317ddf6e97f5c6b1c87af91919271f9fa140b0508c6c"),
++		sigmaKHash: mustHexBytes("000186be9a55762d316a3026c2836d044f5fc76e34da10e1b45feee5f18be7edb177"),
++		sigmaSHash: mustHexBytes("00018de0b3c47f112c59745f717a626932264c422a7563954872e237b223af4ad643"),
++	}
++)
++
++func mustHash32(s string) [32]byte {
++	h, err := parseHash32(s)
++	if err != nil {
++		panic(err)
++	}
++	return h
++}
++
++func mustHexBytes(s string) []byte {
++	b, err := hex.DecodeString(s)
++	if err != nil {
++		panic(err)
++	}
++	return b
++}
++
++func parseHash32(s string) ([32]byte, error) {
++	var out [32]byte
++	if !isHex64(s) {
++		return out, fmt.Errorf("not hex64: %q", s)
++	}
++	b, err := hex.DecodeString(s)
++	if err != nil {
++		return out, err
++	}
++	copy(out[:], b)
++	return out, nil
++}
++
++func hash32(data []byte) [32]byte {
++	return sha256.Sum256(data)
++}
++
++func hash32Hex(h [32]byte) string {
++	return hex.EncodeToString(h[:])
++}
++
++func parseSkiCheckBlob(data []byte) (skiCheck, error) {
++	var out skiCheck
++	dec := json.NewDecoder(bytes.NewReader(data))
++	dec.UseNumber()
++	var v any
++	if err := dec.Decode(&v); err != nil {
++		return out, err
++	}
++	var extra any
++	if err := dec.Decode(&extra); err != io.EOF {
++		return out, errors.New("ski check blob must contain exactly one JSON value")
++	}
++	m, ok := v.(map[string]any)
++	if !ok || len(m) != 4 {
++		return out, errors.New("ski check blob must be exactly {ski, term, atp, expect}")
++	}
++	for _, k := range []string{"ski", "term", "atp", "expect"} {
++		if _, ok := m[k]; !ok {
++			return out, errors.New("ski check blob must be exactly {ski, term, atp, expect}")
++		}
++	}
++	canon, err := canonicalJSON(m)
++	if err != nil || !bytes.Equal(canon, data) {
++		return out, errors.New("ski check blob must be JCS-canonical I-JSON")
++	}
++	ski, ok := m["ski"].(json.Number)
++	if !ok || ski.String() != "1" {
++		return out, errors.New("ski field must be 1")
++	}
++	term, ok := m["term"].(string)
++	if !ok || !isHex64(term) {
++		return out, errors.New("term must be hex64")
++	}
++	expect, ok := m["expect"].(string)
++	if !ok || !isHex64(expect) {
++		return out, errors.New("expect must be hex64")
++	}
++	atp, ok := m["atp"].(json.Number)
++	if !ok || !intJSONRe.MatchString(atp.String()) {
++		return out, errors.New("atp must be uint32")
++	}
++	n, err := atp.Int64()
++	if err != nil || n < 0 || n > 0xffffffff {
++		return out, errors.New("atp must be uint32")
++	}
++	out.term, _ = parseHash32(term)
++	out.expect, _ = parseHash32(expect)
++	out.atp = uint32(n)
++	return out, nil
++}
++
++func runSkiCheckFromStore(blobs map[string][]byte, checkHex string) (string, string, uint32, error) {
++	data, ok := blobs[checkHex]
++	if !ok {
++		short := checkHex
++		if len(short) > 12 {
++			short = short[:12]
++		}
++		return "", "", 0, fmt.Errorf("check blob %s not in store", short)
++	}
++	store := sigmaStore{}
++	for h, b := range blobs {
++		parsed, err := parseHash32(h)
++		if err == nil {
++			store[parsed] = b
++		}
++	}
++	return runSkiCheck(data, store)
++}
++
++func runSkiCheck(checkBytes []byte, store sigmaStore) (string, string, uint32, error) {
++	check, err := parseSkiCheckBlob(checkBytes)
++	if err != nil {
++		return "", "", 0, fmt.Errorf("invalid ski check blob: %w", err)
++	}
++	result, spent := sigmaEval(check.term, check.atp, store)
++	resultHash := sigmaTermHash(result)
++	verdict := "fail"
++	if resultHash == check.expect {
++		verdict = "pass"
++	}
++	return verdict, hash32Hex(resultHash), spent, nil
++}
++
++func sigmaEval(term [32]byte, atp uint32, store sigmaStore) (*sigmaTerm, uint32) {
++	t := &sigmaTerm{kind: "thunk", h: term}
++	spent := uint32(0)
++	for {
++		next, cost, outcome := sigmaStep(t, atp-spent, store)
++		switch outcome {
++		case "normal":
++			return t, spent
++		case "atp":
++			return &sigmaTerm{kind: "dis", h: sigmaATP}, spent
++		case "unresolved":
++			return &sigmaTerm{kind: "dis", h: sigmaUnresolved}, spent
++		}
++		t = next
++		spent += cost
++		if sigmaSize(t)-1 > uint64(spent) {
++			return &sigmaTerm{kind: "dis", h: sigmaATP}, spent
++		}
++	}
++}
++
++func sigmaStep(t *sigmaTerm, remaining uint32, store sigmaStore) (*sigmaTerm, uint32, string) {
++	switch t.kind {
++	case "thunk":
++		if isSigmaGenesis(t.h) {
++			return nil, 0, "normal"
++		}
++		if remaining < 1 {
++			return nil, 0, "atp"
++		}
++		v, ok := sigmaForce(t.h, store)
++		if !ok {
++			return nil, 0, "unresolved"
++		}
++		cost := uint32(sigmaSize(v))
++		if cost > remaining {
++			return nil, 0, "atp"
++		}
++		return v, cost, "step"
++	case "ref":
++		if remaining < 1 {
++			return nil, 0, "atp"
++		}
++		return &sigmaTerm{kind: "thunk", h: t.h}, 1, "step"
++	case "app":
++		f, a := t.left, t.right
++		if sigmaGlyphEq(f, sigmaIHash) {
++			if remaining < 1 {
++				return nil, 0, "atp"
++			}
++			return a, 1, "step"
++		}
++		if f.kind == "app" {
++			if sigmaGlyphEq(f.left, sigmaKHash) {
++				if remaining < 1 {
++					return nil, 0, "atp"
++				}
++				return f.right, 1, "step"
++			}
++			if f.left.kind == "app" && sigmaGlyphEq(f.left.left, sigmaSHash) {
++				x, y, z := f.left.right, f.right, a
++				cost := uint32(1 + sigmaSize(z))
++				if cost > remaining {
++					return nil, 0, "atp"
++				}
++				return &sigmaTerm{
++					kind: "app",
++					left: &sigmaTerm{
++						kind:  "app",
++						left:  x,
++						right: z,
++					},
++					right: &sigmaTerm{
++						kind:  "app",
++						left:  y,
++						right: z,
++					},
++				}, cost, "step"
++			}
++		}
++		nf, cost, outcome := sigmaStep(f, remaining, store)
++		if outcome == "step" {
++			return &sigmaTerm{kind: "app", left: nf, right: a}, cost, "step"
++		}
++		if outcome != "normal" {
++			return nil, 0, outcome
++		}
++		na, cost, outcome := sigmaStep(a, remaining, store)
++		if outcome == "step" {
++			return &sigmaTerm{kind: "app", left: f, right: na}, cost, "step"
++		}
++		return nil, 0, outcome
++	default:
++		return nil, 0, "normal"
++	}
++}
++
++func sigmaForce(h [32]byte, store sigmaStore) (*sigmaTerm, bool) {
++	data, ok := sigmaGenesis[h]
++	if !ok {
++		data, ok = store[h]
++	}
++	if !ok {
++		return nil, false
++	}
++	node, valid := sigmaDeserialize(data)
++	if !valid {
++		return &sigmaTerm{kind: "dis", h: sigmaInvalid}, true
++	}
++	switch node.op {
++	case 0x00:
++		return &sigmaTerm{kind: "lit", h: node.atom}, true
++	case 0x01:
++		return &sigmaTerm{kind: "ref", h: node.atom}, true
++	case 0x02:
++		return &sigmaTerm{
++			kind:  "app",
++			left:  &sigmaTerm{kind: "thunk", h: node.left},
++			right: &sigmaTerm{kind: "thunk", h: node.right},
++		}, true
++	case 0xff:
++		return &sigmaTerm{kind: "dis", h: node.atom}, true
++	default:
++		return &sigmaTerm{kind: "dis", h: sigmaInvalid}, true
++	}
++}
++
++func sigmaDeserialize(data []byte) (sigmaNode, bool) {
++	var node sigmaNode
++	if len(data) < 2 {
++		return node, false
++	}
++	op, flags := data[0], data[1]
++	if flags&^0x07 != 0 {
++		return node, false
++	}
++	required := byte(0)
++	switch op {
++	case 0x00, 0x01, 0xff:
++		required = 0x01
++	case 0x02:
++		required = 0x06
++	default:
++		return node, false
++	}
++	if flags != required {
++		return node, false
++	}
++	count := 0
++	for _, bit := range []byte{0x01, 0x02, 0x04} {
++		if flags&bit != 0 {
++			count++
++		}
++	}
++	if len(data) != 2+32*count {
++		return node, false
++	}
++	node.op = op
++	off := 2
++	if flags&0x01 != 0 {
++		copy(node.atom[:], data[off:off+32])
++		off += 32
++	}
++	if flags&0x02 != 0 {
++		copy(node.left[:], data[off:off+32])
++		off += 32
++	}
++	if flags&0x04 != 0 {
++		copy(node.right[:], data[off:off+32])
++	}
++	return node, true
++}
++
++func sigmaTermBytes(t *sigmaTerm) []byte {
++	switch t.kind {
++	case "lit":
++		return sigmaSer(0x00, 0x01, t.h, [32]byte{}, [32]byte{})
++	case "ref":
++		return sigmaSer(0x01, 0x01, t.h, [32]byte{}, [32]byte{})
++	case "dis":
++		return sigmaSer(0xff, 0x01, t.h, [32]byte{}, [32]byte{})
++	case "app":
++		return sigmaSer(0x02, 0x06, [32]byte{}, sigmaTermHash(t.left), sigmaTermHash(t.right))
++	default:
++		return t.h[:]
++	}
++}
++
++func sigmaSer(op, flags byte, atom, left, right [32]byte) []byte {
++	out := []byte{op, flags}
++	if flags&0x01 != 0 {
++		out = append(out, atom[:]...)
++	}
++	if flags&0x02 != 0 {
++		out = append(out, left[:]...)
++	}
++	if flags&0x04 != 0 {
++		out = append(out, right[:]...)
++	}
++	return out
++}
++
++func sigmaTermHash(t *sigmaTerm) [32]byte {
++	if t.kind == "thunk" {
++		return t.h
++	}
++	return hash32(sigmaTermBytes(t))
++}
++
++func sigmaSize(t *sigmaTerm) uint64 {
++	switch t.kind {
++	case "app":
++		return 1 + sigmaSize(t.left) + sigmaSize(t.right)
++	case "ref":
++		return 2
++	default:
++		return 1
++	}
++}
++
++func sigmaGlyphEq(t *sigmaTerm, h [32]byte) bool {
++	switch t.kind {
++	case "thunk":
++		return t.h == h
++	case "lit":
++		return hash32(sigmaSer(0x00, 0x01, t.h, [32]byte{}, [32]byte{})) == h
++	default:
++		return false
++	}
++}
++
++func isSigmaGenesis(h [32]byte) bool {
++	_, ok := sigmaGenesis[h]
++	return ok
++}
++
+ func isUnverifiable(body map[string]any) bool {
+ 	if body["decision"] != "reject" {
+ 		return false
+@@ -448,6 +845,63 @@ func conformance(dir string) bool {
+ 	ts := []int64{getInt(chain["propose.warrant.json"].body, "ts"), getInt(r.body, "ts"), getInt(a.body, "ts")}
+ 	chk("ts non-decreasing", ts[0] <= ts[1] && ts[1] <= ts[2], fmt.Sprint(ts))
+ 
++	skiDir := filepath.Join(dir, "ski")
++	if isDir(skiDir) {
++		env, err := readJSON(filepath.Join(skiDir, "accept-ski.warrant.json"))
++		if err != nil {
++			chk("ski: read warrant", false, err.Error())
++		} else {
++			body, _ := env["body"].(map[string]any)
++			wid, err := warrantID(body)
++			if err != nil {
++				chk("ski: warrant id", false, err.Error())
++			} else {
++				chk("ski: warrant id", wid == "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0", wid)
++			}
++			errs := validateBody(body)
++			chk("ski: schema (0.2 body)", len(errs) == 0, strings.Join(errs, "; "))
++			sigs, _ := env["sigs"].([]any)
++			for _, s := range sigs {
++				actor := "?"
++				if sm, ok := s.(map[string]any); ok {
++					if a, ok := sm["actor"].(string); ok {
++						actor = a
++					}
++				}
++				chk("ski: sig by "+actor, verifySig(wid, s), "")
++			}
++			v01 := cloneMap(body)
++			v01["warrant"] = "0.1"
++			chk("ski: 0.1 body MUST reject ski@v1", hasValidationMessage(v01, "runtime ski@v1 is reserved and MUST be rejected in v0.1"), "")
++		}
++
++		blobs := map[string][]byte{}
++		entries, err := listFiles(skiDir)
++		if err != nil {
++			chk("ski: list blobs", false, err.Error())
++		} else {
++			for _, path := range entries {
++				if strings.HasSuffix(filepath.Base(path), ".warrant.json") {
++					continue
++				}
++				data, err := os.ReadFile(path)
++				if err == nil {
++					blobs[blobHash(data)] = data
++				}
++			}
++		}
++		checkBytes, err := os.ReadFile(filepath.Join(skiDir, "check.json"))
++		checkHash := ""
++		if err == nil {
++			checkHash = blobHash(checkBytes)
++		}
++		chk("ski: check blob hash", err == nil && checkHash == "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad", checkHash)
++		verdict, result, spent, err := runSkiCheckFromStore(blobs, checkHash)
++		chk("ski: re-run -> pass, H(S), 20 ATP",
++			err == nil && verdict == "pass" && result == "887045bc22935aec5cba2dc11400d4e4357bc34d06681a6e92f06e7795b1f8a6" && spent == 20,
++			fmt.Sprintf("%s %s %d %v", verdict, result, spent, err))
++	}
++
+ 	passed := 0
+ 	for _, v := range ok {
+ 		if v {
+@@ -462,6 +916,95 @@ func conformance(dir string) bool {
+ 	return false
+ }
+ 
++func sigmaConformance(path string) bool {
++	root, err := readJSON(path)
++	if err != nil {
++		fmt.Println("FAIL read vectors", err)
++		return false
++	}
++	rawObjects, ok := root["objects"].(map[string]any)
++	if !ok {
++		fmt.Println("FAIL objects map missing")
++		return false
++	}
++	allStore := sigmaStore{}
++	for h, v := range rawObjects {
++		bs, ok := v.(string)
++		if !ok {
++			fmt.Println("FAIL object", h, "bytes not string")
++			return false
++		}
++		hash, err := parseHash32(h)
++		if err != nil {
++			fmt.Println("FAIL object", h, err)
++			return false
++		}
++		data, err := hex.DecodeString(bs)
++		if err != nil {
++			fmt.Println("FAIL object", h, err)
++			return false
++		}
++		allStore[hash] = data
++	}
++	vectors, ok := root["vectors"].([]any)
++	if !ok {
++		fmt.Println("FAIL vectors list missing")
++		return false
++	}
++	total, passed := 0, 0
++	for _, item := range vectors {
++		v, ok := item.(map[string]any)
++		if !ok || v["kind"] != "eval" {
++			continue
++		}
++		total++
++		id, _ := v["id"].(string)
++		termHex, _ := v["term"].(string)
++		term, termErr := parseHash32(termHex)
++		atpN, atpOK := v["atp"].(json.Number)
++		atp64, atpErr := atpN.Int64()
++		expected, _ := v["expected"].(map[string]any)
++		wantHash, _ := expected["result_hash"].(string)
++		spentN, spentOK := expected["atp_spent"].(json.Number)
++		wantSpent64, spentErr := spentN.Int64()
++		store := allStore
++		if subsetRaw, ok := v["store_subset"].([]any); ok {
++			store = sigmaStore{}
++			for _, item := range subsetRaw {
++				h, ok := item.(string)
++				if !ok {
++					continue
++				}
++				parsed, err := parseHash32(h)
++				if err == nil {
++					if data, ok := allStore[parsed]; ok {
++						store[parsed] = data
++					}
++				}
++			}
++		}
++		if termErr != nil || !atpOK || atpErr != nil || atp64 < 0 || atp64 > 0xffffffff || wantHash == "" || !spentOK || spentErr != nil {
++			fmt.Println("FAIL", id, "malformed vector")
++			continue
++		}
++		result, spent := sigmaEval(term, uint32(atp64), store)
++		gotHash := hash32Hex(sigmaTermHash(result))
++		matched := gotHash == wantHash && uint32(wantSpent64) == spent
++		if matched {
++			passed++
++			fmt.Println("OK  ", id)
++		} else {
++			fmt.Printf("FAIL %s result=%s spent=%d want=%s spent=%d\n", id, gotHash, spent, wantHash, wantSpent64)
++		}
++	}
++	if passed == total {
++		fmt.Printf("\nSIGMA CONFORMANCE: ALL PASS (%d/%d eval)\n", passed, total)
++		return true
++	}
++	fmt.Printf("\nSIGMA CONFORMANCE: FAILURES PRESENT (%d/%d eval)\n", passed, total)
++	return false
++}
++
+ type verifyRecord struct {
+ 	label string
+ 	claim string
+@@ -482,20 +1025,21 @@ func verifyDir(dir string, quiet bool) (int, int) {
+ 
+ 	var recList []verifyRecord
+ 	records := map[string]map[string]any{}
+-	blobs := map[string]bool{}
++	blobs := map[string][]byte{}
+ 
+ 	for _, path := range blobFiles {
++		data, err := os.ReadFile(path)
++		if err != nil {
++			continue
++		}
+ 		if storeMode {
+ 			name := filepath.Base(path)
+ 			if isHex64(name) {
+-				blobs[name] = true
++				blobs[name] = data
+ 			}
+ 			continue
+ 		}
+-		data, err := os.ReadFile(path)
+-		if err == nil {
+-			blobs[blobHash(data)] = true
+-		}
++		blobs[blobHash(data)] = data
+ 	}
+ 
+ 	for _, path := range recordFiles {
+@@ -602,7 +1146,7 @@ func verifyDir(dir string, quiet bool) (int, int) {
+ 			}
+ 		}
+ 		for _, h := range referencedBlobs(body) {
+-			if !blobs[h] && records[h] == nil {
++			if blobs[h] == nil && records[h] == nil {
+ 				out("WARN", wid, "unresolved blob "+h[:12])
+ 			}
+ 		}
+@@ -616,6 +1160,23 @@ func verifyDir(dir string, quiet bool) (int, int) {
+ 		if isUnverifiable(body) {
+ 			out("WARN", wid, "UNVERIFIABLE: reject with prose-only reasons")
+ 		}
++		for _, item := range getArray(body, "because") {
++			r, ok := item.(map[string]any)
++			if !ok || r["kind"] != "check" || r["runtime"] != "ski@v1" {
++				continue
++			}
++			checkHex, ok := r["check"].(string)
++			if !ok {
++				continue
++			}
++			got, _, _, err := runSkiCheckFromStore(blobs, checkHex)
++			if err != nil {
++				continue
++			}
++			if claimed, ok := r["verdict"].(string); ok && claimed != got {
++				out("WARN", wid, "ski@v1 verdict mismatch: claimed "+claimed+", got "+got)
++			}
++		}
+ 	}
+ 	if !quiet {
+ 		fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
+@@ -754,6 +1315,15 @@ func hasValidationError(body map[string]any) bool {
+ 	return len(validateBody(body)) > 0
+ }
+ 
++func hasValidationMessage(body map[string]any, needle string) bool {
++	for _, msg := range validateBody(body) {
++		if strings.Contains(msg, needle) {
++			return true
++		}
++	}
++	return false
++}
++
+ func cloneMap(in map[string]any) map[string]any {
+ 	out := make(map[string]any, len(in))
+ 	for k, v := range in {
