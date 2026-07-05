@@ -57,4 +57,13 @@ Not an agent framework. Not a blockchain. Not observability. It is one file form
 
 `SPEC.md` — the format (v0.1), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes in v0.1: `prose` and `cmd@v1` (a check command run in a container). A portable, deterministic, budget-bounded check format (`ski@v1`) is reserved for a later version.
 
+`impl/warrant.py` — reference implementation (M1): the five verbs on a plain-file store, one file, stdlib + Ed25519 (`pip install cryptography`). It must pass its own law:
+
+```bash
+python3 impl/warrant.py conformance examples   # all SPEC §8 vectors, byte-exact
+python3 impl/warrant.py selftest               # live round-trip + tamper detection
+```
+
+First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.
+
 License: MIT.
