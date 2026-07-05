@@ -462,38 +462,64 @@ func conformance(dir string) bool {
 	return false
 }
 
+type verifyRecord struct {
+	label string
+	claim string
+	env   map[string]any
+	err   error
+}
+
 func verifyDir(dir string, quiet bool) (int, int) {
-	entries, err := os.ReadDir(dir)
+	recordsDir := filepath.Join(dir, "records")
+	blobsDir := filepath.Join(dir, "blobs")
+	storeMode := isDir(recordsDir) && isDir(blobsDir)
+
+	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1, 0
 	}
+
+	var recList []verifyRecord
 	records := map[string]map[string]any{}
 	blobs := map[string]bool{}
-	for _, e := range entries {
-		if e.IsDir() {
+
+	for _, path := range blobFiles {
+		if storeMode {
+			name := filepath.Base(path)
+			if isHex64(name) {
+				blobs[name] = true
+			}
 			continue
 		}
-		path := filepath.Join(dir, e.Name())
 		data, err := os.ReadFile(path)
-		if err != nil {
+		if err == nil {
+			blobs[blobHash(data)] = true
+		}
+	}
+
+	for _, path := range recordFiles {
+		label := filepath.Base(path)
+		claim := ""
+		if storeMode {
+			claim = strings.TrimSuffix(label, ".json")
+		}
+		env, err := readJSON(path)
+		rec := verifyRecord{label: label, claim: claim, env: env, err: err}
+		recList = append(recList, rec)
+		if err != nil || env == nil {
 			continue
 		}
-		if strings.HasSuffix(e.Name(), ".warrant.json") {
-			env, err := readJSON(path)
-			if err != nil {
-				if !quiet {
-					fmt.Printf("ERR  %-12s  %s\n", e.Name(), err)
-				}
-				continue
-			}
-			body, _ := env["body"].(map[string]any)
-			wid, err := warrantID(body)
-			if err == nil {
-				records[wid] = env
-			}
-		} else {
-			blobs[blobHash(data)] = true
+		body, ok := env["body"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if storeMode {
+			records[claim] = env
+			continue
+		}
+		if wid, err := warrantID(body); err == nil {
+			records[wid] = env
 		}
 	}
 
@@ -509,7 +535,16 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		}
 	}
 
-	for wid, env := range records {
+	for _, rec := range recList {
+		wid := rec.claim
+		if wid == "" {
+			wid = strings.TrimSuffix(rec.label, ".warrant.json")
+		}
+		env := rec.env
+		if rec.err != nil {
+			out("ERR", wid, rec.err.Error())
+			continue
+		}
 		if len(env) != 2 {
 			out("ERR", wid, "envelope must be {body, sigs}")
 			continue
@@ -527,9 +562,17 @@ func verifyDir(dir string, quiet bool) (int, int) {
 			out("ERR", wid, "schema: "+msg)
 		}
 		got, err := warrantID(body)
-		if err != nil || got != wid {
-			out("ERR", wid, "WarrantID mismatch")
+		if err != nil {
+			out("ERR", wid, "WarrantID canonicalization: "+err.Error())
 			continue
+		}
+		if rec.claim != "" {
+			if got != rec.claim {
+				out("ERR", wid, "WarrantID mismatch: recomputed "+got[:12])
+				continue
+			}
+		} else {
+			wid = got
 		}
 		sigs := env["sigs"].([]any)
 		if len(sigs) == 0 {
@@ -575,9 +618,65 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		}
 	}
 	if !quiet {
-		fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(records), errs, warns)
+		fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
 	}
 	return errs, warns
+}
+
+func verifyInputs(dir, recordsDir, blobsDir string, storeMode bool) ([]string, []string, error) {
+	if storeMode {
+		recordFiles, err := globFiles(filepath.Join(recordsDir, "*.json"))
+		if err != nil {
+			return nil, nil, err
+		}
+		blobFiles, err := listFiles(blobsDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		return recordFiles, blobFiles, nil
+	}
+	entries, err := listFiles(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	var records, blobs []string
+	for _, path := range entries {
+		if strings.HasSuffix(filepath.Base(path), ".warrant.json") {
+			records = append(records, path)
+		} else {
+			blobs = append(blobs, path)
+		}
+	}
+	return records, blobs, nil
+}
+
+func globFiles(pattern string) ([]string, error) {
+	files, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func listFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func selftest(dir string) bool {

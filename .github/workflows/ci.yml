@@ -18,3 +18,7 @@ jobs:
         run: ./impl-go/warrant-go conformance examples
       - name: Go selftest (schema and verification edges)
         run: ./impl-go/warrant-go selftest examples
+      - name: Go verifies warrant store layout
+        run: ./impl-go/warrant-go verify .warrants
+      - name: Cross-implementation verification agreement
+        run: ./tests/agree_check.sh
