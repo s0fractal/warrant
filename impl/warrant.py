@@ -440,7 +440,9 @@ def main():
 
     def filing(p, with_prior_pos=False):
         if with_prior_pos:
-            p.add_argument("prior_id")
+            p.add_argument("prior_id", nargs="?",
+                           help="warrant being responded to; omit to file "
+                                "without a prior (requires --subject, --under)")
         p.add_argument("--subject")
         p.add_argument("--note")
         p.add_argument("--under", action="append", default=[])
@@ -488,6 +490,14 @@ def main():
                      args, note=args.note)
     elif args.cmd in ("accept", "reject", "supersede"):
         store.require()
+        if args.prior_id is None:
+            if args.cmd == "supersede":
+                sys.exit("supersede requires the warrant id being superseded")
+            if not (args.subject and args.under):
+                sys.exit(f"{args.cmd} without a prior requires --subject and --under")
+            file_warrant(store, args.cmd, resolve_blob_arg(store, args.subject),
+                         args, note=args.note)
+            return
         prior_env = store.get_record(args.prior_id)
         if prior_env is None:
             sys.exit(f"prior warrant {args.prior_id} not in store")
