@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent-a@vendor1"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "utility functions needed in three modules"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [
+      "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01"
+    ],
+    "prior": [],
+    "subject": {
+      "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+      "note": "PR-42: add lodash"
+    },
+    "ts": 1751673600,
+    "under": [
+      "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+    ],
+    "warrant": "0.1"
+  },
+  "sigs": [
+    {
+      "actor": "agent-a@vendor1",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "sig": "9d37f0e7cd3dcbd9de5d34dcf23e06c1916498f007c7e6937138fb9ea6781b7e3922842b03e49322140fb5f282a0901f0dd09bf96ad2e9551e6f4ff1cfe59b03"
+    }
+  ]
+}

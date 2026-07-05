@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent-b@vendor2"
+    },
+    "because": [
+      {
+        "check": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "ca3e94e735d9232f3a2621d9a79813de520bc792b5e011d4662967de867fdb56",
+        "verdict": "fail"
+      },
+      {
+        "kind": "prose",
+        "text": "policy clause 1: coverage drops 87.0 -> 84.2"
+      }
+    ],
+    "decision": "reject",
+    "evidence": [
+      "ca3e94e735d9232f3a2621d9a79813de520bc792b5e011d4662967de867fdb56"
+    ],
+    "prior": [
+      "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1"
+    ],
+    "subject": {
+      "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+      "note": "PR-42"
+    },
+    "ts": 1751677200,
+    "under": [
+      "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+    ],
+    "warrant": "0.1"
+  },
+  "sigs": [
+    {
+      "actor": "agent-b@vendor2",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "sig": "779a4df46b84727d52b1e52c49875eb7a4bc326fffec575ee9c0b5ef3a594d920fcbc4e955f98b1a05a872d97dd1ac13fce99dbccd482c808f193c3eeb4d210d"
+    }
+  ]
+}

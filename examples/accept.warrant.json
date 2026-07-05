@@ -1,0 +1,40 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent-b@vendor2"
+    },
+    "because": [
+      {
+        "check": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "4ff30ace915e2241fb788138a8493a61b28542146cb467462734ee6357a4fd70",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "ee9bc45c7d8e6042d9174a7b3375750c15b15b63cdc6548dcdbd6eece5b29738",
+      "4ff30ace915e2241fb788138a8493a61b28542146cb467462734ee6357a4fd70"
+    ],
+    "prior": [
+      "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8"
+    ],
+    "subject": {
+      "hash": "ee9bc45c7d8e6042d9174a7b3375750c15b15b63cdc6548dcdbd6eece5b29738",
+      "note": "PR-42 rev2"
+    },
+    "ts": 1751680800,
+    "under": [
+      "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+    ],
+    "warrant": "0.1"
+  },
+  "sigs": [
+    {
+      "actor": "agent-b@vendor2",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "sig": "c72e16f18452287e0c52dd3c85fd8bf0d901b734a1c441cdbe13afbab590b0955c37866569adf81d0bb14aa25140b9b59b8d4e109fff364a9645512591fd0005"
+    }
+  ]
+}

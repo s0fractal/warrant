@@ -1,0 +1,60 @@
+# Warrant
+
+**A decision record for AI agents. Signed, hash-addressed, with reasons you can re-run.**
+
+When an agent accepts, rejects, or proposes something, it writes a warrant: a small JSON record that says **what** was decided, **under** which policy, **because** of which reasons, based on **which** evidence — signed by the actor, addressed by its own hash, linked to the decisions that came before it.
+
+```json
+{
+  "decision": "reject",
+  "subject":  { "hash": "d5cf37…", "note": "PR-42" },
+  "under":    [ "cb3a0a…  (policy in force, by hash)" ],
+  "because":  [
+    { "kind": "check", "check": "05d234…", "runtime": "cmd@v1",
+      "verdict": "fail", "transcript": "9dc0c3…" },
+    { "kind": "prose", "text": "policy clause 1: coverage drops 87.0 -> 84.2" }
+  ],
+  "evidence": [ "9dc0c3…" ],
+  "actor":    { "id": "agent-b@vendor2" },
+  "prior":    [ "00f79f…" ],
+  "ts":       1751677200
+}
+```
+
+The record's hash is its identity. Change one byte of the decision, the policy reference, or the reasons — the hash changes, and every later record that cited it stops resolving. Nothing can be quietly edited after the fact.
+
+## Why not just logs?
+
+A trace tells you what an agent did. A warrant proves **why it was allowed to** — and the proof survives the agent. Logs are mutable, vendor-shaped prose. Warrants are:
+
+- **Immutable** — identity is the hash of the content.
+- **Signed** — you know which actor decided.
+- **Anchored** — `under` pins the exact bytes of the policy that was in force, not "the policy" in someone's memory.
+- **Re-checkable** — a reason can be an executable check. Anyone can re-run it and get the same verdict.
+- **Linked** — `prior` makes decisions a chain: propose → reject (with reasons) → revise → accept. `warrant why <hash>` walks the whole chain.
+
+A rejection is a first-class record, not an absence. This is the part that matters as agents get autonomy: the "no, because" survives, gets cited by hash, and stops the same argument from being re-had from scratch.
+
+## Ten minutes
+
+```bash
+warrant init                          # .warrants/ store in your repo
+warrant policy add policy.txt         # pin the rules in force -> hash
+warrant propose --subject diff.patch --reason "utility fns needed"
+warrant reject <id> --check check.sh --reason "clause 1: coverage drop"
+warrant accept <id2> --check check.sh
+warrant why <id2>                     # decision -> reasons -> checks -> policy, verified
+warrant verify                        # every hash, signature, and link in the store
+```
+
+The store is plain files, content-addressed, git-friendly. No server, no vendor, no account.
+
+## What it is not
+
+Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: any language can implement it from the spec in an afternoon, and two implementations agree on every hash.
+
+## Spec and status
+
+`SPEC.md` — the format (v0.1), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes in v0.1: `prose` and `cmd@v1` (a check command run in a container). A portable, deterministic, budget-bounded check format (`ski@v1`) is reserved for a later version.
+
+License: MIT.
