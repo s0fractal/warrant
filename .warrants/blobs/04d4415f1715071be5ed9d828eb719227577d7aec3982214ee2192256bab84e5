@@ -1,0 +1,3 @@
+python verify exit: 1 (nonzero expected: body is schema-invalid)
+go     verify exit: 1 (nonzero expected: same bytes)
+AGREE: both implementations reject the invalid record

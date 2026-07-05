@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Both P1s closed and independently verified: float-ts store now ERRs in Go with nonzero exit (P1-A); Go verify reads .warrants/{records,blobs}, checks filename WID claim against recomputation (tamper test: renamed record caught with identical verdict in both impls), and verified both real stores in the wild - including the store containing the warrant that rejected rev 1 (P1-B). Falsifier agree_check.sh flipped exit 1 -> 0 and landed byte-identical to the check blob, wired into CI. Merged as c1b091e."
+      },
+      {
+        "check": "d7aa3a47d2219201166d84069db2af185ce97f50425c8c80b5870a327c6d7e65",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "04d4415f1715071be5ed9d828eb719227577d7aec3982214ee2192256bab84e5",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "04d4415f1715071be5ed9d828eb719227577d7aec3982214ee2192256bab84e5"
+    ],
+    "prior": [
+      "72f9fa047152c7a12e14ce0d4fb807484b08f40286715c0a9b56c6ae8a2db9f3"
+    ],
+    "subject": {
+      "hash": "c280de1095580637c65957d49da5c07ee3a7087e454234336628251fad296b81",
+      "note": "PR #2 rev 2: Go second implementation (d4a89e2)"
+    },
+    "ts": 1783263269,
+    "under": [
+      "e7d3c21aee50f421827fd141a3df6feda5ba1fe12683591645c6d470b15f42df"
+    ],
+    "warrant": "0.1"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "1e973d22e9e2e7c8932e8ea9e6e5b7f312dccead4844dbdb1e5e6e716dbd93f83df771c12eaee0161d742ead460a810f2309639fa43dbb6884dc4f7b3b3bd203"
+    }
+  ]
+}
