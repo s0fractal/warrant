@@ -76,6 +76,13 @@ python3 impl/warrant.py conformance examples   # all SPEC §8 vectors, byte-exac
 python3 impl/warrant.py selftest               # live round-trip + tamper detection
 ```
 
+`impl-go/` — independent Go implementation for cross-checking the spec:
+
+```bash
+./impl-go/warrant-go conformance examples      # same SPEC §8 vectors
+./impl-go/warrant-go selftest examples         # schema and verification edges
+```
+
 First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.
 
 License: MIT.

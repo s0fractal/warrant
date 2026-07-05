@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+set -eu
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec go run "$DIR/main.go" "$@"
