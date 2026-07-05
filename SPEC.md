@@ -1,6 +1,7 @@
-# Warrant Format — Specification v0.1
+# Warrant Format — Specification v0.2
 
 **Status:** DRAFT. Key words MUST / MUST NOT / SHOULD / MAY per RFC 2119.
+**Versioning:** a body declares its format in the `warrant` field (`"0.1"` or `"0.2"`). Validators MUST validate a body against the rules of its declared version; unknown versions make the record invalid. v0.2 adds exactly one thing: the `ski@v1` check runtime (§3.1). Everything else — fields, canonicalization, envelopes, verification, settlement — is unchanged, and every v0.1 record remains valid under v0.1 rules.
 **Design rule:** two independent implementations MUST agree on every WarrantID and every verification outcome. Anything that cannot meet that bar stays out of this document.
 
 ## 1. Model
@@ -13,7 +14,7 @@ The body is a JSON object with exactly these fields (unknown fields MUST make th
 
 | Field | Type | Req | Meaning |
 | --- | --- | --- | --- |
-| `warrant` | string | MUST | Format version, `"0.1"` |
+| `warrant` | string | MUST | Format version, `"0.1"` or `"0.2"` |
 | `decision` | string | MUST | `"propose"` \| `"accept"` \| `"reject"` \| `"supersede"` |
 | `subject` | object | MUST | `{"hash": <hex64>, "note": <string, optional, ≤200 chars>}` — the thing decided |
 | `under` | array | MUST | ≥1 hex64 hashes of the policy blobs in force |
@@ -37,9 +38,25 @@ Each element of `because` is one of:
 ```
 
 - `check` — hash of the check blob (script, test command, etc.).
-- `runtime` — execution profile. v0.1 defines `cmd@v1`: the check blob is executed as a command in an isolated container; exit 0 = `pass`, nonzero = `fail`. `ski@v1` (portable deterministic budget-bounded checks) is **reserved** and MUST be rejected by v0.1 implementations.
+- `runtime` — execution profile. `cmd@v1`: the check blob is executed as a command in an isolated container; exit 0 = `pass`, nonzero = `fail`. `ski@v1` (§3.1): available in `"0.2"` bodies; in `"0.1"` bodies it remains reserved and MUST be rejected.
 - `verdict` is the actor's claim; anyone MAY re-run the check against the evidence and file their own warrant if they get a different verdict.
 - `transcript` — hash of the check's output blob, so the claimed verdict is inspectable.
+
+### 3.1. `ski@v1` — portable deterministic budget-bounded checks (v0.2)
+
+The check blob is I-JSON (JCS-canonical, integers only — hashed like any blob):
+
+```json
+{ "ski": 1, "term": "<hex64 NodeHash>", "atp": <uint32>, "expect": "<hex64 NodeHash>" }
+```
+
+Verification re-runs the reduction and compares hashes:
+
+1. Evaluate `eval(term, atp)` per **Σ-GLYPH Book I v0.5** (hash-thunk machine, size-priced ATP): https://github.com/s0fractal/sigma-glyph — anchored spec, two independent implementations, machine conformance vectors.
+2. The warrant blob store IS the Σ-GLYPH CAS: every object the evaluation demands MUST resolve among the store's blobs (Σ-GLYPH genesis axioms are intrinsic and need no blobs).
+3. Verdict: `pass` iff the result's NodeHash equals `expect`, else `fail`. Canonical DISSONANCE outcomes are nodes with fixed hashes, so expecting a failure mode needs no special casing — `expect` covers it uniformly.
+
+Why this runtime exists: `cmd@v1` proves a claim to whoever trusts the container; `ski@v1` proves it to **anyone with the blobs** — bit-exact across implementations, terminating by construction, with work AND peak memory bounded by `atp` (Σ-GLYPH's `size − 1 ≤ spent` invariant). It is safe to re-verify a stranger's ski@v1 reason on your own machine; that cannot be said of re-running a stranger's shell script. Tools SHOULD treat `ski@v1` as the strongest reason kind: re-runnable without trust.
 
 **Protocol rule (MUST):** a `reject` whose every reason is `prose` is valid but MUST be marked by tools as *unverifiable*; tools SHOULD prefer at least one `check` reason. Rhetoric is legal; it just doesn't count as proof.
 
@@ -87,6 +104,18 @@ Deterministic vectors; full envelopes in `examples/`. Seed for the demo Ed25519 
 | accept WarrantID | `bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78` |
 
 The three example warrants form the chain propose → reject (failing check + clause citation) → accept (passing check), each `prior`-linked, each signature verifying against the WarrantID. An implementation MUST reproduce all five hashes byte-exactly and MUST verify all three signatures.
+
+### 8.2. ski@v1 vectors (v0.2, `examples/ski/`)
+
+A real portable check: *"`C1[λxy.x] S K` reduces to `S` within 20 ATP"* — Σ-GLYPH's TV-10, filed as a warrant whose reason anyone can re-run.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| SKI term (root NodeHash; 5 APPLY object blobs `*.bin`, genesis I/K/S intrinsic — no leaf blobs needed) | `97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad` |
+| `check.json` (JCS bytes: `{"ski":1, "term":…, "atp":20, "expect":H(S)}`) | `0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad` |
+| accept warrant (`"warrant":"0.2"`), demo-seed signed | `8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0` |
+
+A v0.2 implementation with a Σ-GLYPH Book I v0.5 oracle MUST re-run the check against the object blobs and obtain `pass` with `result = H(S)` and `atp_spent = 20`. A v0.1 implementation MUST reject the warrant body (ski@v1 reserved) — that rejection is itself conformant.
 
 ## 9. Non-goals (v0.1)
 

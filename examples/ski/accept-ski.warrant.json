@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent-a@vendor1"
+    },
+    "because": [
+      {
+        "check": "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [],
+    "prior": [],
+    "subject": {
+      "hash": "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad",
+      "note": "C1[\u03bbxy.x] S K behaves as K (TV-10)"
+    },
+    "ts": 1751684400,
+    "under": [
+      "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent-a@vendor1",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "sig": "cfa95ca56e73cf5f9dac9a87c8901912ee7298069f6699011a86ad0903edafbcca144ac249b4ece59f60ee07f6787098c012b39b45a35ffc24f29567abdbc20c"
+    }
+  ]
+}

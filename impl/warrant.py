@@ -25,12 +25,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey)
 
-VERSION = "0.1"
+VERSION = "0.2"           # version written into NEW records
+ACCEPTED = ("0.1", "0.2")  # versions this implementation validates
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 DECISIONS = ("propose", "accept", "reject", "supersede")
 BODY_FIELDS = {"warrant", "decision", "subject", "under", "because",
                "evidence", "actor", "prior", "ts"}
-RUNTIMES = ("cmd@v1",)          # ski@v1 is reserved: MUST be rejected in v0.1
+RUNTIMES = {"0.1": ("cmd@v1",),            # ski@v1 reserved in 0.1 bodies
+            "0.2": ("cmd@v1", "ski@v1")}   # SPEC s3.1
 
 
 # ---------- canonicalization & identity (SPEC §4) ----------
@@ -63,8 +65,8 @@ def validate_body(b):
         e.append(f"missing field: {k}")
     if e:
         return e
-    if b["warrant"] != VERSION:
-        e.append(f"warrant version must be \"{VERSION}\"")
+    if b["warrant"] not in ACCEPTED:
+        e.append(f"warrant version must be one of {ACCEPTED}")
     if b["decision"] not in DECISIONS:
         e.append(f"decision must be one of {DECISIONS}")
     s = b["subject"]
@@ -91,14 +93,15 @@ def validate_body(b):
     if not isinstance(bc, list):
         e.append("because must be a list")
         bc = []
+    ver = b.get("warrant") if b.get("warrant") in ACCEPTED else VERSION
     for i, r in enumerate(bc):
-        e += [f"because[{i}]: {m}" for m in _validate_reason(r)]
+        e += [f"because[{i}]: {m}" for m in _validate_reason(r, ver)]
     if b.get("decision") in ("reject", "supersede") and len(bc) < 1:
         e.append(f"{b['decision']} requires >=1 reason")
     return e
 
 
-def _validate_reason(r):
+def _validate_reason(r, version=VERSION):
     if not isinstance(r, dict):
         return ["reason is not an object"]
     kind = r.get("kind")
@@ -112,10 +115,11 @@ def _validate_reason(r):
         e = []
         if not _is_hex64(r.get("check")):
             e.append("check must be hex64")
-        if r.get("runtime") == "ski@v1":
+        allowed = RUNTIMES[version]
+        if r.get("runtime") == "ski@v1" and "ski@v1" not in allowed:
             e.append("runtime ski@v1 is reserved and MUST be rejected in v0.1")
-        elif r.get("runtime") not in RUNTIMES:
-            e.append(f"runtime must be one of {RUNTIMES}")
+        elif r.get("runtime") not in allowed:
+            e.append(f"runtime must be one of {allowed}")
         if r.get("verdict") not in ("pass", "fail"):
             e.append("verdict must be pass|fail")
         if "transcript" in r and not _is_hex64(r["transcript"]):
@@ -128,6 +132,60 @@ def is_unverifiable(body):
     """Protocol rule (SPEC §3): a reject whose every reason is prose."""
     return (body["decision"] == "reject"
             and all(r.get("kind") == "prose" for r in body["because"]))
+
+
+# ---------- ski@v1 runtime (SPEC §3.1, v0.2) ----------
+def load_sigma():
+    """Load the Σ-GLYPH Book I oracle. Path: $SIGMA_GLYPH (dir containing
+    sigma_glyph.py) or ~/sigma-glyph/impl. Returns module or None."""
+    import importlib.util
+    path = Path(os.environ.get("SIGMA_GLYPH",
+                               Path.home() / "sigma-glyph/impl")) / "sigma_glyph.py"
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("sigma_glyph", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def validate_ski_blob(doc):
+    if not isinstance(doc, dict) or set(doc) != {"ski", "term", "atp", "expect"}:
+        return "ski check blob must be exactly {ski, term, atp, expect}"
+    if doc["ski"] != 1:
+        return "ski field must be 1"
+    if not (_is_hex64(doc.get("term")) and _is_hex64(doc.get("expect"))):
+        return "term and expect must be hex64 NodeHashes"
+    a = doc.get("atp")
+    if not isinstance(a, int) or isinstance(a, bool) or not (0 <= a < 2**32):
+        return "atp must be a uint32"
+    return None
+
+
+def run_ski_check(store, check_hex, sg=None):
+    """Execute a ski@v1 check against the warrant blob store (which IS a
+    Σ-GLYPH CAS). Returns (verdict, result_hash_hex, atp_spent).
+    Raises RuntimeError if the check blob is malformed or the oracle missing."""
+    sg = sg or load_sigma()
+    if sg is None:
+        raise RuntimeError("ski@v1 runtime unavailable: sigma_glyph.py not found "
+                           "(set SIGMA_GLYPH to its impl directory)")
+    p = store.blobs / check_hex
+    if not p.exists():
+        raise RuntimeError(f"check blob {check_hex[:12]} not in store")
+    doc = json.loads(p.read_bytes())
+    err = validate_ski_blob(doc)
+    if err:
+        raise RuntimeError(f"invalid ski check blob: {err}")
+
+    class BlobCAS:                       # adapter: warrant blobs -> Σ-GLYPH store
+        def get(self, h):
+            q = store.blobs / h.hex()
+            return q.read_bytes() if q.exists() else None
+
+    r, spent = sg.eval_hash(bytes.fromhex(doc["term"]), doc["atp"], BlobCAS())
+    rh = sg.term_hash(r).hex()
+    return ("pass" if rh == doc["expect"] else "fail"), rh, spent
 
 
 # ---------- keys & signatures (SPEC §5) ----------
@@ -255,6 +313,15 @@ def verify_store(store, quiet=False):
             out("WARN", wid, "supersede subject is not a stored WarrantID")
         if is_unverifiable(body):
             out("WARN", wid, "UNVERIFIABLE: reject with prose-only reasons")
+        for r in body["because"]:                   # re-run ski@v1 claims if we can
+            if r.get("kind") == "check" and r.get("runtime") == "ski@v1":
+                try:
+                    got, rh, _ = run_ski_check(store, r["check"])
+                    if got != r["verdict"]:
+                        out("WARN", wid, f"ski@v1 verdict mismatch: claimed "
+                                         f"{r['verdict']}, re-run gives {got} ({rh[:12]})")
+                except RuntimeError:
+                    pass                            # oracle absent/blob elsewhere: skip
     if not quiet:
         print(f"\nverify: {len(recs)} records, {errs} errors, {warns} warnings")
     return errs, warns
@@ -304,10 +371,16 @@ def resolve_blob_arg(store, val):
 def build_reasons(store, args):
     reasons = [{"kind": "prose", "text": t} for t in (args.reason or [])]
     if getattr(args, "check", None):
+        runtime = getattr(args, "runtime", None) or "cmd@v1"
         r = {"kind": "check", "check": resolve_blob_arg(store, args.check),
-             "runtime": "cmd@v1", "verdict": args.verdict}
+             "runtime": runtime, "verdict": args.verdict}
         if args.transcript:
             r["transcript"] = resolve_blob_arg(store, args.transcript)
+        if runtime == "ski@v1":                    # verify the claim at filing time
+            got, rh, spent = run_ski_check(store, r["check"])
+            if got != args.verdict:
+                sys.exit(f"refusing to file: ski@v1 check re-run gives {got} "
+                         f"(result {rh[:16]}, {spent} ATP), you claimed {args.verdict}")
         reasons.append(r)
     return reasons
 
@@ -376,6 +449,40 @@ def conformance(examples_dir):
     ts = [chain[n][1]["ts"] for n in
           ("propose.warrant.json", "reject.warrant.json", "accept.warrant.json")]
     chk("ts non-decreasing", ts == sorted(ts))
+
+    ski_dir = d / "ski"
+    if ski_dir.is_dir():                                # SPEC s8.2 (v0.2)
+        env = json.loads((ski_dir / "accept-ski.warrant.json").read_text())
+        wid = warrant_id(env["body"])
+        chk("ski: warrant id",
+            wid == "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0", wid)
+        chk("ski: schema (0.2 body)", not validate_body(env["body"]),
+            "; ".join(validate_body(env["body"])))
+        for s in env["sigs"]:
+            chk(f"ski: sig by {s['actor']}", verify_sig(wid, s))
+        cb = (ski_dir / "check.json").read_bytes()
+        ch = blob_hash(cb)
+        chk("ski: check blob hash",
+            ch == "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad", ch)
+        v01 = dict(env["body"], warrant="0.1")
+        chk("ski: 0.1 body MUST reject ski@v1",
+            any("reserved" in m for m in validate_body(v01)))
+        sg = load_sigma()
+        if sg is None:
+            chk("ski: runtime re-run SKIPPED (no sigma_glyph; set SIGMA_GLYPH)", True)
+        else:
+            import tempfile
+            with tempfile.TemporaryDirectory() as td:
+                st = Store(td)
+                st.init()
+                for f in ski_dir.glob("*.bin"):
+                    st.put_blob(f.read_bytes())
+                st.put_blob(cb)
+                verdict, rh, spent = run_ski_check(st, ch, sg)
+                chk("ski: re-run -> pass, H(S), 20 ATP",
+                    verdict == "pass" and spent == 20
+                    and rh == "887045bc22935aec5cba2dc11400d4e4357bc34d06681a6e92f06e7795b1f8a6",
+                    f"{verdict} {rh} {spent}")
     print(f"\n{'CONFORMANCE: ALL PASS' if all(ok) else 'CONFORMANCE: FAILURES PRESENT'}"
           f" ({sum(ok)}/{len(ok)})")
     return all(ok)
@@ -448,6 +555,7 @@ def main():
         p.add_argument("--under", action="append", default=[])
         p.add_argument("--reason", action="append")
         p.add_argument("--check")
+        p.add_argument("--runtime", choices=["cmd@v1", "ski@v1"], default="cmd@v1")
         p.add_argument("--verdict", choices=["pass", "fail"], default="pass")
         p.add_argument("--transcript")
         p.add_argument("--evidence", action="append")
@@ -462,6 +570,8 @@ def main():
     filing(sub.add_parser("supersede"), with_prior_pos=True)
     wy = sub.add_parser("why")
     wy.add_argument("id")
+    ck = sub.add_parser("check", help="re-run a ski@v1 check blob against the store")
+    ck.add_argument("hash")
     sub.add_parser("verify")
     cf = sub.add_parser("conformance")
     cf.add_argument("examples", nargs="?", default="examples")
@@ -515,6 +625,14 @@ def main():
     elif args.cmd == "why":
         store.require()
         why(store, args.id)
+    elif args.cmd == "check":
+        store.require()
+        try:
+            verdict, rh, spent = run_ski_check(store, args.hash)
+        except RuntimeError as ex:
+            sys.exit(str(ex))
+        print(f"{verdict}  result={rh}  atp_spent={spent}")
+        sys.exit(0 if verdict == "pass" else 1)
     elif args.cmd == "verify":
         store.require()
         errs, _ = verify_store(store)

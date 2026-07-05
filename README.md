@@ -67,7 +67,7 @@ Not an agent framework. Not a blockchain. Not observability. It is one file form
 
 ## Spec and status
 
-`SPEC.md` — the format (v0.1), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes in v0.1: `prose` and `cmd@v1` (a check command run in a container). A portable, deterministic, budget-bounded check format (`ski@v1`) is reserved for a later version.
+`SPEC.md` — the format (v0.2), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes: `prose`, `cmd@v1` (a check command run in a container), and — new in v0.2 — **`ski@v1`**: a portable, deterministic, budget-bounded check. The check is a content-addressed SKI term evaluated per [Σ-GLYPH Book I](https://github.com/s0fractal/sigma-glyph); the verdict is a hash comparison; work AND peak memory are bounded by the ATP budget, so re-verifying a stranger's reason is safe by construction. `warrant check <hash>` re-runs one.
 
 `impl/warrant.py` — reference implementation (M1): the five verbs on a plain-file store, one file, stdlib + Ed25519 (`pip install cryptography`). It must pass its own law:
 
