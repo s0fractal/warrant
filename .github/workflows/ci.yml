@@ -7,8 +7,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
       - run: python3 -m pip install cryptography
       - name: Conformance (SPEC s8 vectors, byte-exact)
         run: python3 impl/warrant.py conformance examples
       - name: Selftest (live round-trip + tamper detection)
         run: python3 impl/warrant.py selftest
+      - name: Go conformance (second implementation)
+        run: ./impl-go/warrant-go conformance examples
+      - name: Go selftest (schema and verification edges)
+        run: ./impl-go/warrant-go selftest examples
+      - name: Go verifies warrant store layout
+        run: ./impl-go/warrant-go verify .warrants
+      - name: Cross-implementation verification agreement
+        run: ./tests/agree_check.sh
