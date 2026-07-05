@@ -21,6 +21,8 @@ jobs:
           SIGMA_GLYPH=/tmp/sigma-glyph/impl python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
       - name: Go conformance (second implementation)
         run: ./impl-go/warrant-go conformance examples
+      - name: Go sigma-glyph eval conformance (pinned vectors)
+        run: ./impl-go/warrant-go sigma-conformance /tmp/sigma-glyph/tests/spec_conformance/vectors.json
       - name: Go selftest (schema and verification edges)
         run: ./impl-go/warrant-go selftest examples
       - name: Go verifies warrant store layout
