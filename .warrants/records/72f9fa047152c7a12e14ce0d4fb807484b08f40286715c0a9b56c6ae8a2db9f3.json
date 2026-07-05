@@ -1,0 +1,41 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "P1-A: verifyDir silently drops any record whose body fails canonicalization (if err == nil), so a store Python rejects verifies clean in Go (0 records, 0 errors, exit 0). Violates the design rule: two implementations MUST agree on every verification outcome. P1-B: Go verify walks a flat *.warrant.json dir and cannot verify the .warrants/{records,blobs} store layout the reference impl and README define; the records/<wid>.json filename claim is never checked against recomputation. Also missing: the cross-impl CI diff step from issue #1. Canonicalization itself is byte-exact on adversarial content (HTML chars, backspace/formfeed, controls, unicode) - differential-tested, solid work."
+      },
+      {
+        "check": "d7aa3a47d2219201166d84069db2af185ce97f50425c8c80b5870a327c6d7e65",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "092dd8b3886b2c5cb095a4f736494e8fbeb36ba4fb0521f807b704a67d888529",
+        "verdict": "fail"
+      }
+    ],
+    "decision": "reject",
+    "evidence": [
+      "092dd8b3886b2c5cb095a4f736494e8fbeb36ba4fb0521f807b704a67d888529"
+    ],
+    "prior": [],
+    "subject": {
+      "hash": "9f10d1b30ed9a68254342e5f67ac3e33546cbb0b5a8d3c0b908b1c80325725de",
+      "note": "PR #2 rev 1: Go second implementation"
+    },
+    "ts": 1783261863,
+    "under": [
+      "e7d3c21aee50f421827fd141a3df6feda5ba1fe12683591645c6d470b15f42df"
+    ],
+    "warrant": "0.1"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "004928b9414ff17bd846747518ec9e5bb09472eb2a8dc270351da8c4673a883ece5d3e29c9be2628d0880db76afc366e2ce72171414551fc0524752cebbda20a"
+    }
+  ]
+}

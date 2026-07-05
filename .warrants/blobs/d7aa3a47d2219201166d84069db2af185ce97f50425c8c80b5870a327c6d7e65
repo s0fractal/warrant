@@ -1,0 +1,27 @@
+#!/bin/sh
+# Falsifier: two implementations MUST agree on every verification outcome
+# (SPEC design rule, header). Feeds both verifiers the SAME envelope bytes —
+# a schema-invalid body (float ts) — and requires BOTH to report an error.
+# Exit 0 = agreement holds. Exit 1 = divergence (grounds for reject).
+set -eu
+cd "$(dirname "$0")/.."
+T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+mkdir -p "$T/store/records" "$T/store/blobs" "$T/flat"
+
+cat > "$T/bad.json" <<'EOF'
+{"body":{"warrant":"0.1","decision":"propose","subject":{"hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"under":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"because":[],"evidence":[],"actor":{"id":"x@y"},"prior":[],"ts":1751700000.5},"sigs":[{"actor":"x@y","key":"0000000000000000000000000000000000000000000000000000000000000000","sig":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}]}
+EOF
+cp "$T/bad.json" "$T/store/records/claimed-id.json"
+cp "$T/bad.json" "$T/flat/bad.warrant.json"
+
+py=0; python3 impl/warrant.py --store "$T/store" verify >/dev/null 2>&1 || py=$?
+go_=0; ./impl-go/warrant-go verify "$T/flat" >/dev/null 2>&1 || go_=$?
+
+echo "python verify exit: $py (nonzero expected: body is schema-invalid)"
+echo "go     verify exit: $go_ (nonzero expected: same bytes)"
+if [ "$py" -ne 0 ] && [ "$go_" -ne 0 ]; then
+    echo "AGREE: both implementations reject the invalid record"
+    exit 0
+fi
+echo "DIVERGENCE: implementations disagree on a verification outcome"
+exit 1
