@@ -38,12 +38,24 @@ A rejection is a first-class record, not an absence. This is the part that matte
 ## Ten minutes
 
 ```bash
+git clone https://github.com/s0fractal/warrant && cd warrant
+pip install cryptography                       # the one dependency (Ed25519)
+alias warrant="python3 $PWD/impl/warrant.py"   # no packaging yet — this is it
+```
+
+```bash
 warrant init                          # .warrants/ store in your repo
-warrant policy add policy.txt         # pin the rules in force -> hash
-warrant propose --subject diff.patch --reason "utility fns needed"
-warrant reject <id> --check check.sh --reason "clause 1: coverage drop"
-warrant accept <id2> --check check.sh
-warrant why <id2>                     # decision -> reasons -> checks -> policy, verified
+warrant keygen --out me.key           # Ed25519; prints your pubkey
+POL=$(warrant policy add policy.txt)  # pin the rules in force -> hash
+
+P=$(warrant propose --subject diff.patch --under $POL \
+      --reason "utility fns needed" --actor me@host --key me.key)
+R=$(warrant reject $P --check check.sh --verdict fail \
+      --reason "clause 1: coverage drop" --actor me@host --key me.key)
+A=$(warrant accept $R --check check.sh --verdict pass \
+      --actor me@host --key me.key)
+
+warrant why $A                        # decision -> reasons -> checks -> policy, verified
 warrant verify                        # every hash, signature, and link in the store
 ```
 
