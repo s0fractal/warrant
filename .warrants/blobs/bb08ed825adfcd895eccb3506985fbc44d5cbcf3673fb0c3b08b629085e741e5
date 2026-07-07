@@ -1,0 +1,6 @@
+byte-novelty probe reproduced: both valid, ids differ
+SELFTEST: ALL PASS
+CONFORMANCE: ALL PASS (20/20)
+DIFFERENTIAL: ALL AGREE (43/43)
+NEGATIVE: ALL AGREE
+gov001 gate dispositions verified
