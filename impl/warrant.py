@@ -34,6 +34,12 @@ BODY_FIELDS = {"warrant", "decision", "subject", "under", "because",
 RUNTIMES = {"0.1": ("cmd@v1",),            # ski@v1 reserved in 0.1 bodies
             "0.2": ("cmd@v1", "ski@v1")}   # SPEC s3.1
 
+WARN_RELITIGATION = "re-litigation cites nothing new"
+WARN_UNADOPTED_ROOT = "unadopted root"
+WARN_GENESIS_UNVERIFIED = "genesis.json unverified"
+ERR_INVALID_THRESHOLD = "invalid threshold policy"
+WARN_KEY_CONFLICT = "key-state conflict"
+
 
 # ---------- canonicalization & identity (SPEC §4) ----------
 def canon(body):
@@ -263,8 +269,333 @@ class Store:
         return out
 
 
+# ---------- settlement (SPEC §7, §9, §5.1) ----------
+def cited_blobs(body):
+    refs = set(body["under"]) | set(body["evidence"]) | {body["subject"]["hash"]}
+    for r in body["because"]:
+        if r.get("kind") == "check":
+            refs.add(r["check"])
+            if "transcript" in r:
+                refs.add(r["transcript"])
+    return refs
+
+
+def prior_closure(recs, wid):
+    seen = set()
+    stack = list(recs.get(wid, {}).get("body", {}).get("prior", []))
+    while stack:
+        cur = stack.pop()
+        if cur in seen or cur not in recs:
+            continue
+        seen.add(cur)
+        stack.extend(recs[cur]["body"]["prior"])
+    return seen
+
+
+def tunnel(store, wid):
+    recs = store.all_records()
+    records = prior_closure(recs, wid)
+    blobs = set()
+    for rwid in records:
+        blobs.update(cited_blobs(recs[rwid]["body"]))
+    return {"records": records, "blobs": blobs}
+
+
+def _read_json_blob_if_canonical(store, h):
+    p = store.blobs / h
+    if not p.exists():
+        return None
+    try:
+        raw = p.read_bytes()
+        doc = json.loads(raw)
+    except Exception:
+        return None
+    return doc if canon(doc) == raw else None
+
+
+def fingerprint(reason, body, store):
+    if reason.get("kind") != "check":
+        return None
+    runtime = reason.get("runtime")
+    verdict = reason.get("verdict")
+    if runtime == "cmd@v1":
+        transcript = reason.get("transcript")
+        if not transcript:
+            return None
+        needed = set(body.get("evidence", [])) | {reason.get("check"), transcript}
+        if any(not h or not store.has_blob(h) for h in needed):
+            return None
+        return ("cmd@v1", tuple(sorted(body.get("evidence", []))), verdict, transcript)
+    if runtime == "ski@v1":
+        doc = _read_json_blob_if_canonical(store, reason.get("check"))
+        if doc is None or validate_ski_blob(doc):
+            return None
+        try:
+            _got, result_hash, _spent = run_ski_check(store, reason["check"])
+        except RuntimeError:
+            return None
+        return ("ski@v1", doc["term"], doc["expect"], verdict, result_hash)
+    return None
+
+
+def tunnel_fingerprints(store, wid):
+    recs = store.all_records()
+    fps = set()
+    for rwid in tunnel(store, wid)["records"]:
+        body = recs[rwid]["body"]
+        for r in body["because"]:
+            fp = fingerprint(r, body, store)
+            if fp is not None:
+                fps.add(fp)
+    return fps
+
+
+def settlement_admissibility(store, settling_wid, candidate_body):
+    tun = tunnel(store, settling_wid)
+    recs = store.all_records()
+    settling_body = recs.get(settling_wid, {}).get("body")
+    known_blobs = set(tun["blobs"])
+    if settling_body:
+        known_blobs.update(cited_blobs(settling_body))
+    for h in sorted(candidate_body.get("evidence", [])):
+        if h not in known_blobs:
+            return "admissible: (a) new evidence"
+    old_fps = tunnel_fingerprints(store, settling_wid)
+    if settling_body:
+        for r in settling_body["because"]:
+            fp = fingerprint(r, settling_body, store)
+            if fp is not None:
+                old_fps.add(fp)
+    for r in candidate_body.get("because", []):
+        fp = fingerprint(r, candidate_body, store)
+        if fp is not None and fp not in old_fps:
+            return "admissible: (b) new outcome fingerprint"
+    return "inadmissible: cites nothing new"
+
+
+def _load_trust_config(path):
+    if not path:
+        return {}
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _trust_roots(store, trust, explicit_roots):
+    roots = set(explicit_roots or []) | set(trust.get("genesis_roots", []))
+    warnings = []
+    g = store.root / "genesis.json"
+    if g.exists():
+        got = blob_hash(g.read_bytes())
+        if trust.get("genesis_json_sha256") == got:
+            doc = json.loads(g.read_text(encoding="utf-8"))
+            roots.update(doc.get("roots", []))
+        else:
+            warnings.append(("store", WARN_GENESIS_UNVERIFIED))
+    return roots, warnings
+
+
+def _parse_policy_blob(store, h):
+    p = store.blobs / h
+    if not p.exists():
+        return None, False
+    raw = p.read_bytes()
+    try:
+        doc = json.loads(raw)
+    except Exception:
+        return None, False
+    if not isinstance(doc, dict) or doc.get("warrant_policy") != "0.3":
+        return None, False
+    if canon(doc) != raw:
+        return None, True
+    if set(doc) != {"warrant_policy", "threshold"}:
+        return None, True
+    th = doc.get("threshold")
+    if not isinstance(th, dict) or set(th) != {"min_sigs", "actors"}:
+        return None, True
+    actors = th.get("actors")
+    min_sigs = th.get("min_sigs")
+    if (not isinstance(min_sigs, int) or isinstance(min_sigs, bool)
+            or not isinstance(actors, list) or not actors
+            or not all(isinstance(a, str) and a for a in actors)
+            or len(set(actors)) != len(actors)
+            or min_sigs < 1 or min_sigs > len(actors)):
+        return None, True
+    return {"min_sigs": min_sigs, "actors": actors}, False
+
+
+def _record_policy(store, body):
+    valid = []
+    invalid = False
+    for h in body.get("under", []):
+        policy, bad = _parse_policy_blob(store, h)
+        invalid = invalid or bad
+        if policy:
+            valid.append(policy)
+    return valid, invalid
+
+
+def _valid_sig_actors(wid, env, allowed_keys=None):
+    actors = set()
+    for s in env.get("sigs", []):
+        if not verify_sig(wid, s):
+            continue
+        actor = s.get("actor")
+        if allowed_keys is not None:
+            if s.get("key") not in allowed_keys.get(actor, set()):
+                continue
+        actors.add(actor)
+    return actors
+
+
+def _threshold_satisfied(wid, env, policy, keys=None, conflicted=frozenset()):
+    actors = [a for a in policy["actors"] if a not in conflicted]
+    if not actors:
+        return False
+    min_sigs = min(policy["min_sigs"], len(actors))
+    signers = _valid_sig_actors(wid, env, keys)
+    return len(set(actors) & signers) >= min_sigs
+
+
+def _policies_satisfied(store, wid, env, keys=None, conflicted=frozenset()):
+    policies, invalid = _record_policy(store, env["body"])
+    if invalid:
+        return False
+    if not policies:
+        return any(verify_sig(wid, s) for s in env.get("sigs", []))
+    return all(_threshold_satisfied(wid, env, p, keys, conflicted) for p in policies)
+
+
+def _parse_key_blob(store, h):
+    doc = _read_json_blob_if_canonical(store, h)
+    if (isinstance(doc, dict) and set(doc) == {"actor", "key"}
+            and isinstance(doc["actor"], str) and _is_hex64(doc["key"])):
+        return doc["actor"], doc["key"]
+    return None
+
+
+def _settlement_context(store, trust_config=None, genesis_roots=None):
+    recs = store.all_records()
+    trust = _load_trust_config(trust_config)
+    genesis, global_warnings = _trust_roots(store, trust, genesis_roots)
+    roots = {wid for wid, env in recs.items() if not env["body"].get("prior")}
+    active_roots = set(genesis) & set(recs)
+
+    invalid_policy = set()
+    for wid, env in recs.items():
+        _policies, bad = _record_policy(store, env["body"])
+        if bad:
+            invalid_policy.add(wid)
+
+    def record_roots(wid):
+        env = recs.get(wid)
+        if not env:
+            return set()
+        if not env["body"]["prior"]:
+            return {wid}
+        out = set()
+        for p in env["body"]["prior"]:
+            out.update(record_roots(p))
+        return out
+
+    changed = True
+    while changed:
+        changed = False
+        for root in sorted(roots - active_roots):
+            for wid, env in sorted(recs.items()):
+                body = env["body"]
+                if (body["decision"] == "accept" and body["subject"]["hash"] == root
+                        and record_roots(wid) & active_roots
+                        and wid not in invalid_policy
+                        and _policies_satisfied(store, wid, env)):
+                    active_roots.add(root)
+                    changed = True
+                    break
+
+    active_records = {wid for wid in recs
+                      if record_roots(wid) & active_roots and wid not in invalid_policy}
+    genesis_keys = {a: set(keys) for a, keys in trust.get("actors", {}).items()}
+    ancestors_cache = {}
+
+    def ancestors(wid):
+        if wid not in ancestors_cache:
+            ancestors_cache[wid] = prior_closure(recs, wid)
+        return ancestors_cache[wid]
+
+    def depth(wid):
+        return len(ancestors(wid))
+
+    rotation_cache = {}
+    keys_cache = {}
+
+    def rotation(wid):
+        if wid not in rotation_cache:
+            env = recs.get(wid)
+            rotation_cache[wid] = None
+            if env and env["body"]["decision"] == "accept":
+                rotation_cache[wid] = _parse_key_blob(store, env["body"]["subject"]["hash"])
+        return rotation_cache[wid]
+
+    def keys_before(wid):
+        if wid in keys_cache:
+            return {a: set(v) for a, v in keys_cache[wid].items()}
+        keys = {a: set(v) for a, v in genesis_keys.items()}
+        for awid in sorted(ancestors(wid), key=lambda x: (depth(x), x)):
+            rot = rotation(awid)
+            if rot and rotation_authorized(awid):
+                keys[rot[0]] = {rot[1]}
+        keys_cache[wid] = {a: set(v) for a, v in keys.items()}
+        return keys
+
+    def rotation_authorized(wid):
+        env = recs[wid]
+        rot = rotation(wid)
+        if not rot or wid in invalid_policy or wid not in active_records:
+            return False
+        actor, incoming = rot
+        proof = any(verify_sig(wid, s) and s.get("actor") == actor
+                    and s.get("key") == incoming for s in env.get("sigs", []))
+        if not proof:
+            return False
+        prior_keys = keys_before(wid)
+        policies, bad = _record_policy(store, env["body"])
+        if bad:
+            return False
+        if policies:
+            return all(_threshold_satisfied(wid, env, p, prior_keys) for p in policies)
+        return any(verify_sig(wid, s) and s.get("actor") == actor
+                   and s.get("key") in prior_keys.get(actor, set())
+                   for s in env.get("sigs", []))
+
+    authorized_rotations = {}
+    for wid in sorted(active_records, key=lambda x: (depth(x), x)):
+        rot = rotation(wid)
+        if rot and rotation_authorized(wid):
+            authorized_rotations.setdefault(rot[0], set()).add(wid)
+
+    conflict_actors = set()
+    for actor, wids in authorized_rotations.items():
+        maximal = set(wids)
+        for a in wids:
+            for b in wids:
+                if a != b and a in ancestors(b):
+                    maximal.discard(a)
+        if len(maximal) > 1:
+            conflict_actors.add(actor)
+
+    return {
+        "recs": recs,
+        "roots": roots,
+        "active_roots": active_roots,
+        "active_records": active_records,
+        "invalid_policy": invalid_policy,
+        "global_warnings": global_warnings,
+        "keys_before": keys_before,
+        "conflict_actors": conflict_actors,
+        "record_roots": record_roots,
+    }
+
+
 # ---------- verification (SPEC §6) ----------
-def verify_store(store, quiet=False):
+def verify_store(store, quiet=False, settlement=None):
     """Return (n_errors, n_warnings). Prints a report unless quiet."""
     errs = warns = 0
 
@@ -278,11 +609,21 @@ def verify_store(store, quiet=False):
             print(f"{level:4} {wid[:12]}  {msg}")
 
     recs = store.all_records()
+    ctx = None
+    if settlement is not None:
+        ctx = _settlement_context(store, settlement.get("trust_config"),
+                                  settlement.get("genesis_roots"))
+        for wid, msg in ctx["global_warnings"]:
+            out("WARN", wid, msg)
+        for root in sorted(ctx["roots"] - ctx["active_roots"]):
+            out("WARN", root, WARN_UNADOPTED_ROOT)
     for wid, env in recs.items():
         if set(env) != {"body", "sigs"}:
             out("ERR", wid, "envelope must be {body, sigs}")
             continue
         body = env["body"]
+        if ctx is not None and wid in ctx["invalid_policy"]:
+            out("ERR", wid, ERR_INVALID_THRESHOLD)
         for m in validate_body(body):
             out("ERR", wid, f"schema: {m}")
         got = warrant_id(body)
@@ -297,11 +638,26 @@ def verify_store(store, quiet=False):
             if not verify_sig(wid, s):
                 out("ERR", wid, f"bad signature by {s.get('actor')}")
                 continue
-            # SPEC §5 MUST: with no keyring configured, the key↔actor binding is
-            # unverified even though the signature is cryptographically valid —
-            # the filer chose the key, so this actor claim is unproven.
-            out("WARN", wid, f"binding unverified (no keyring): key "
-                             f"{str(s.get('key',''))[:12]} claims actor {s.get('actor')}")
+            if ctx is None:
+                # SPEC §5 MUST: with no keyring configured, the key↔actor binding is
+                # unverified even though the signature is cryptographically valid —
+                # the filer chose the key, so this actor claim is unproven.
+                out("WARN", wid, f"binding unverified (no keyring): key "
+                                 f"{str(s.get('key',''))[:12]} claims actor {s.get('actor')}")
+            else:
+                actor = s.get("actor")
+                key = s.get("key")
+                keys = ctx["keys_before"](wid)
+                bound = (actor not in ctx["conflict_actors"]
+                         and key in keys.get(actor, set()))
+                if quiet:
+                    pass
+                elif bound:
+                    print(f"INFO {wid[:12]}  signature bound: key "
+                          f"{str(key)[:12]} claims actor {actor}")
+                else:
+                    out("WARN", wid, f"signature unbound: key "
+                                     f"{str(key)[:12]} claims actor {actor}")
             if s.get("actor") == body["actor"]["id"]:
                 actor_signed = True
         if sigs and not actor_signed:
@@ -332,6 +688,18 @@ def verify_store(store, quiet=False):
                                          f"{r['verdict']}, re-run gives {got} ({rh[:12]})")
                 except RuntimeError:
                     pass                            # oracle absent/blob elsewhere: skip
+        if ctx is not None and wid in ctx["active_records"]:
+            if body["actor"]["id"] in ctx["conflict_actors"]:
+                out("WARN", wid, WARN_KEY_CONFLICT)
+            if body["decision"] in ("accept", "reject"):
+                for prior in sorted(prior_closure(recs, wid)):
+                    prior_body = recs[prior]["body"]
+                    if (prior in ctx["active_records"]
+                            and prior_body["decision"] in ("accept", "reject")
+                            and prior_body["subject"]["hash"] == body["subject"]["hash"]):
+                        if settlement_admissibility(store, prior, body).startswith("inadmissible"):
+                            out("WARN", wid, WARN_RELITIGATION)
+                        break
     if not quiet:
         print(f"\nverify: {len(recs)} records, {errs} errors, {warns} warnings")
     return errs, warns
@@ -411,6 +779,11 @@ def file_warrant(store, decision, subject_hash, args, note=None):
     errors = validate_body(body)
     if errors:
         sys.exit("invalid warrant:\n  " + "\n  ".join(errors))
+    relitigates = getattr(args, "relitigates", None)
+    if relitigates:
+        verdict = settlement_admissibility(store, relitigates, body)
+        if verdict.startswith("inadmissible"):
+            sys.exit("refusing to file: cites nothing new")
     env = {"body": body, "sigs": [sign_envelope(body, args.actor, args.key)]}
     wid = store.put_record(env)
     if is_unverifiable(body):
@@ -570,6 +943,7 @@ def main():
         p.add_argument("--transcript")
         p.add_argument("--evidence", action="append")
         p.add_argument("--prior", action="append")
+        p.add_argument("--relitigates")
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
         p.add_argument("--ts", type=int)
@@ -582,7 +956,13 @@ def main():
     wy.add_argument("id")
     ck = sub.add_parser("check", help="re-run a ski@v1 check blob against the store")
     ck.add_argument("hash")
-    sub.add_parser("verify")
+    vf = sub.add_parser("verify")
+    vf.add_argument("--settlement", action="store_true")
+    vf.add_argument("--genesis", action="append", default=[])
+    vf.add_argument("--trust-config")
+    stl = sub.add_parser("settle")
+    stl.add_argument("settling_wid")
+    stl.add_argument("candidate_body")
     cf = sub.add_parser("conformance")
     cf.add_argument("examples", nargs="?", default="examples")
     sub.add_parser("selftest")
@@ -647,8 +1027,18 @@ def main():
         sys.exit(0 if verdict == "pass" else 1)
     elif args.cmd == "verify":
         store.require()
-        errs, _ = verify_store(store)
+        settlement = None
+        if args.settlement:
+            settlement = {"genesis_roots": args.genesis,
+                          "trust_config": args.trust_config}
+        errs, _ = verify_store(store, settlement=settlement)
         sys.exit(1 if errs else 0)
+    elif args.cmd == "settle":
+        store.require()
+        body = json.loads(Path(args.candidate_body).read_text(encoding="utf-8"))
+        verdict = settlement_admissibility(store, args.settling_wid, body)
+        print(verdict)
+        sys.exit(1 if verdict.startswith("inadmissible") else 0)
     elif args.cmd == "conformance":
         sys.exit(0 if conformance(args.examples) else 1)
     elif args.cmd == "selftest":
