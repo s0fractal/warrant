@@ -79,6 +79,7 @@ python3 impl/warrant.py selftest               # live round-trip + tamper detect
 `impl-go/` — independent Go implementation for cross-checking the spec:
 
 ```bash
+(cd impl-go && go build -o warrant-go .)       # stdlib-only; binary is not committed
 ./impl-go/warrant-go conformance examples      # same SPEC §8 vectors
 ./impl-go/warrant-go selftest examples         # schema and verification edges
 ```

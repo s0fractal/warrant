@@ -10,6 +10,7 @@ no filing/signing path and no `why`. Author records with the Python reference;
 verify them with either. (Opus 4.8 review F7, 2026-07.)
 
 ```bash
+(cd impl-go && go build -o warrant-go .)   # build first: the binary is not committed
 ./impl-go/warrant-go conformance examples
 ./impl-go/warrant-go sigma-conformance ../sigma-glyph/tests/spec_conformance/vectors.json
 ./impl-go/warrant-go selftest examples
