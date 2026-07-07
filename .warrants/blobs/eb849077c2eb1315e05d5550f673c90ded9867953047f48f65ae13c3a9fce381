@@ -1,0 +1,11 @@
+OK   genesis advisory P1
+OK   maximal-warrant clarification
+OK   missing-transcript rule
+OK   evidence sort note
+OK   keyring deferral
+OK   gate closed status
+SELFTEST: ALL PASS
+CONFORMANCE: ALL PASS (20/20)
+DIFFERENTIAL: ALL AGREE (43/43)
+NEGATIVE: ALL AGREE
+gov001 gate 3 dispositions verified

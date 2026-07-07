@@ -1,0 +1,45 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Accepted in full; first non-revise verdict of the chain. Ask 1 REFUTED with an explicit state-machine walk: a replayed stale rotation is a DAG ancestor of the current one by construction, so the pair is ordered and never a conflict, and a genuinely incomparable authorized rotation needs signatures the attacker lacks - the conflicted-key exclusion survives its first dedicated attack (maximal-warrant clarification added so implementations cannot mistake branch separation for unorderedness). Ask 2 P1 CONFIRMED: rev 3 made a mutable unsigned file a trust anchor; rev 4 makes genesis.json advisory-only, authenticity verified out-of-band, unverified => WARN + no settlement use. Ask 3: unbounded-but-explicit upheld, operational note added. Ask 4: fingerprints computable from v0.2 with no schema change; missing-transcript tunnel rule prevents null-vs-ignore verifier divergence; evidence sort made explicit; keyring.json interchange format dropped (caches implementation-internal, deterministic from the warrant DAG); adoption subject wording sharpened. Gate summary: Codex broke rev 1, Gemini broke rev 2 including part of Codex's fix, DeepSeek refuted rev 3's hardest attack and converged - three families, each round strictly improving the text. Next: SPEC v0.3 normative drafting from rev 4 + implementation gate in both impls before any v0.3 tag."
+      },
+      {
+        "check": "8e8037a5384a1385c6831356036421255879fc49368b1e5db0903f3d23d99f26",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "eb849077c2eb1315e05d5550f673c90ded9867953047f48f65ae13c3a9fce381",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "00eee1eda831f1f10b5646aa53327ba75209c2719d674fff6395d7c0d441b924",
+      "12b99e9704d16a9b3f118ff1f83f710e2ec027037fc2c4f33ca2c37f047fa943",
+      "d5df931037fc735bb9044f4fb7fa3494f7479913e6eadab25662a274bd540fdc"
+    ],
+    "prior": [
+      "670f0360082e93a1aca14c181f23bd5c3d3a8bc922c1e514c60a8ddd9645c50f"
+    ],
+    "subject": {
+      "hash": "08ca1bcc9d4e74e3f385f9ead998c1e462b0415f6c7f8f5c186602bfbe8d16ae",
+      "note": "DeepSeek gate review 3 of GOV-001 rev 3: AMEND-THEN-ADOPT \u2014 hardest attack refuted, 1 P1 (genesis.json trust) + 6 P2 integrated as rev 4; REVIEW GATE CLOSED at three families"
+    },
+    "ts": 1783449582,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "eb0b4b39253e31c86118817895505a2b0cebdd093536dd788b90cac745587d812df4b22427d4b85ce30c16a0c0953f6d046875f37daabf063b8206fbf57f2500"
+    }
+  ]
+}
