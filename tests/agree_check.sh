@@ -32,3 +32,9 @@ fi
 # the check that actually enforces "agree on every WarrantID" (SPEC line 5).
 echo "--- differential canonicalization ---"
 python3 tests/differential.py
+
+# Negative-path differential: both impls must agree on the DAMAGE too —
+# tampered/stripped/forged signatures, tampered bodies, dangling priors,
+# a hand-crafted ski@v1 verdict lie (Opus 4.8 review follow-up).
+echo "--- negative-path differential ---"
+python3 tests/negative.py
