@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Adjudication check for the Qwen web review, warrant scope (repo root)."""
+import pathlib, subprocess, sys
+ok = True
+spec = pathlib.Path("SPEC.md").read_text()
+# W3 refutation: rotation + revocation are normative since v0.3
+ok &= "Rotation is a warrant" in spec and "Revocation is a warrant" in spec
+ok &= "MUST NOT be sufficient authorization" in spec   # both-keys refuted at gate
+print("W3 stale: rotation/revocation normative in SPEC v0.3 s5.1")
+# W4 refutation: correction-not-mutation machinery exists
+ok &= "supersede" in spec and "outcome fingerprint" in spec
+print("W4 dissolves: supersede + s7 re-litigation = retrospective correction")
+# W1: consensus is an explicit non-goal
+ok &= "Consensus" in spec.split("## 10. Non-goals")[1][:400]
+print("W1 settled: consensus in s10 non-goals")
+for cmd, want in (([sys.executable, "impl/warrant.py", "selftest"], "ALL PASS"),
+                  ([sys.executable, "impl/warrant.py", "conformance"], "ALL PASS (20/20)"),
+                  ([sys.executable, "tests/settlement.py"], "SETTLEMENT: ALL AGREE")):
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    last = p.stdout.strip().splitlines()[-1]; print(last)
+    ok &= p.returncode == 0 and want in last
+print("qwen warrant dispositions verified" if ok else "CHECK FAILED")
+sys.exit(0 if ok else 1)

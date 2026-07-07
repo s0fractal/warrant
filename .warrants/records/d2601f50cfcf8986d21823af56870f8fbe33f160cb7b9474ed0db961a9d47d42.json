@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Dispositions: W3 (lifelong keys, no revocation) STALE - SPEC v0.3 s5.1 ships rotation (PoP + quorum of already-bound keys, both-keys refuted at the GOV-001 gate), revocation (supersede of the introducing rotation), DAG-ordered key state with conflicted-key exclusion; the exact surface went through a three-family gate that broke two candidate designs. W4 (policy paradox) DISSOLVES: correction exists (new policy blob, supersede, s7 re-litigation with a new outcome fingerprint) - what cannot happen is silent retroactive mutation, which is the format's purpose, and the corrected record shows both the mistake and the fix, signed. W1 (no consensus) is a settled non-goal (s10) and the useful part is answered by s7 settlement within jurisdictions + s9 explicit divergence across them - the review's own comparison table states this correctly before the weaknesses section forgets it. G3 (trust delegated) - scoped, not delegated: local trust config, genesis roots, advisory genesis.json. ACCEPTED: W2 scale (indexed backend behind the same store interface = M3-era work; O(delta) verification already normative), G4 formal spec (TLA+/Alloy on the key-state DAG derivation under partition = first target, shared front with sigma's Lean/Coq entry), why-graph DOT export as good-first-issue. DECLINED: merged CLI/repos - two one-file CLIs beat one that fits in neither."
+      },
+      {
+        "check": "04b3da987a524ee72d5b04b4b1d6a33dbcd88d16209361b0425a10ad91aeff3e",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "8b2bd8a8ffb0bac8548a02444a23ed76efc6ce068b5d6c1e5a6568c797de68a2",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "1508c5a7862e4677e7ec5badbc3e444918781da0b673593747855f820474e60e"
+    ],
+    "prior": [
+      "9f9d35a5bf32b9ac68f38aec6bf8ee413d4e7df97314cacced675f8fefd14de5"
+    ],
+    "subject": {
+      "hash": "d368b67192bb49196bed1d28256cc7086e22cd9f7c0c4d4d01b0302c30a63428",
+      "note": "Qwen web holistic review (8/10): key-revocation claim stale by one release, policy-paradox dissolves into the design goal; scale + TLA+ accepted as roadmap"
+    },
+    "ts": 1783458941,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "609d6b8d813ee1d10b60e843a596e0f1d220144819b198dea290b4f201416d0eea5ece29f5ab128b9614b37676b4548be418bef1d07277cb89aabb1afe7d120c"
+    }
+  ]
+}
