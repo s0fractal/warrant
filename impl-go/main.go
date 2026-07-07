@@ -1211,7 +1211,7 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		if body["decision"] == "supersede" {
 			if subj, ok := body["subject"].(map[string]any); ok {
 				if h, ok := subj["hash"].(string); ok && records[h] == nil {
-					out("WARN", wid, "supersede subject is not a stored WarrantID")
+					out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
 				}
 			}
 		}

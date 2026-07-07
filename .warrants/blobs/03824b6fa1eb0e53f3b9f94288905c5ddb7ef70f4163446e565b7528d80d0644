@@ -1,0 +1,9 @@
+SELFTEST: ALL PASS
+CONFORMANCE: ALL PASS (20/20)
+SELFTEST: ALL PASS (7/7)
+CONFORMANCE: ALL PASS (20/20)
+SIGMA CONFORMANCE: ALL PASS (30/30 eval)
+DIFFERENTIAL: ALL AGREE (43/43)
+py: verify: 3 records, 0 errors, 3 warnings
+go: verify: 3 records, 0 errors, 3 warnings
+warrant opus review dispositions verified

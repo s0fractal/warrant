@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Accepted in full. F1 (Python/Go computed different WarrantIDs for U+0008/U+000C strings - Go stdlib escaping vs RFC 8785 short forms) was a silent split of the content-addressing primitive, fixed with an explicit JCS escaper in Go; F2 note-length bytes-vs-codepoints fixed with RuneCountInString; F3 binding-unverified MUST-report now emitted identically by both impls; F4 closed by tests/differential.py - 43 adversarial bodies asserted byte-identical across impls (incl. every control byte and the 200/201-char multibyte note boundary). Minors this commit: F5 Python enforces JCS-canonical ski blobs; F6 supersede subject MUST is now ERR in both impls; F7 Go verify-only scope documented as deliberate; F8 is_unverifiable aligned. Remaining accepted follow-ups: negative-path test suite (sigs, ski failures, supersede), keep sigma-conformance pinned as the cross-project invariant. First review of Warrant adjudicated inside Warrant's own store."
+      },
+      {
+        "check": "90ff5a0d5859d18cc95702e82e2850356944eb9ebcdf8a623f9e565ffc31eca7",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "03824b6fa1eb0e53f3b9f94288905c5ddb7ef70f4163446e565b7528d80d0644",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "a4bb633386884585e868b2c3cabc9158a3805bb032c0e5319e35f9b5a1794f99"
+    ],
+    "prior": [
+      "3c72bd066610225d8700f8d104135dd8ec6f5980e483c65bb1bb3551a1e6bca5"
+    ],
+    "subject": {
+      "hash": "a7c3d4c26cd39c0b88afa841ab5c947fa05c643ca575e6c00573a79e32247517",
+      "note": "Opus 4.8 adversarial review of Warrant v0.2 (4 MAJOR incl. silent WarrantID split; all fixed + verified)"
+    },
+    "ts": 1783447052,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "b39bf34c93daed4319cb55d130190e597b3cbcaff77e838ebe3ef6a31352d89e7a2063dbd3a073633be718ca3f05d53e1051cdc03032ed0e4bfa433b6d1e9003"
+    }
+  ]
+}

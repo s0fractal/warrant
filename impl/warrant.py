@@ -131,6 +131,7 @@ def _validate_reason(r, version=VERSION):
 def is_unverifiable(body):
     """Protocol rule (SPEC §3): a reject whose every reason is prose."""
     return (body["decision"] == "reject"
+            and bool(body["because"])
             and all(r.get("kind") == "prose" for r in body["because"]))
 
 
@@ -173,7 +174,10 @@ def run_ski_check(store, check_hex, sg=None):
     p = store.blobs / check_hex
     if not p.exists():
         raise RuntimeError(f"check blob {check_hex[:12]} not in store")
-    doc = json.loads(p.read_bytes())
+    raw = p.read_bytes()
+    doc = json.loads(raw)
+    if canon(doc) != raw:
+        raise RuntimeError("ski check blob is not JCS-canonical (SPEC s3.1)")
     err = validate_ski_blob(doc)
     if err:
         raise RuntimeError(f"invalid ski check blob: {err}")
@@ -316,7 +320,7 @@ def verify_store(store, quiet=False):
             if not store.has_blob(h) and h not in recs:
                 out("WARN", wid, f"unresolved blob {h[:12]}")
         if body["decision"] == "supersede" and body["subject"]["hash"] not in recs:
-            out("WARN", wid, "supersede subject is not a stored WarrantID")
+            out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
         if is_unverifiable(body):
             out("WARN", wid, "UNVERIFIABLE: reject with prose-only reasons")
         for r in body["because"]:                   # re-run ski@v1 claims if we can

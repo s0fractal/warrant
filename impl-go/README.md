@@ -2,6 +2,13 @@
 
 Second implementation for Warrant v0.2, using only the Go standard library.
 
+**Scope (deliberate):** verify-only. This implementation exists to hold the
+SPEC's differential bar — "two independent implementations MUST agree on every
+WarrantID and every verification outcome" — so it implements canonicalization,
+WarrantID, store verification, ski@v1 re-runs and the conformance suites, but
+no filing/signing path and no `why`. Author records with the Python reference;
+verify them with either. (Opus 4.8 review F7, 2026-07.)
+
 ```bash
 ./impl-go/warrant-go conformance examples
 ./impl-go/warrant-go sigma-conformance ../sigma-glyph/tests/spec_conformance/vectors.json

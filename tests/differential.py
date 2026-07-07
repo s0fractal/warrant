@@ -52,6 +52,10 @@ def cases():
     yield ("ctrl-in-prose", body(extra_reason={"kind": "prose", "text": "line1" + chr(8) + "line2"}))
     # Large integer ts (no float — integers only per SPEC §2).
     yield ("large-ts", body(ts=9007199254740991))
+    # subject.note at the 200-char boundary in 2-byte code points (400 bytes):
+    # the surface of the byte-vs-codepoint length split (F2).
+    yield ("note-200-multibyte", body(note="\u0431" * 200))
+    yield ("note-201-multibyte", body(note="\u0431" * 201))
     # Key-order insensitivity (canon sorts): same body, keys shuffled.
     b = body(note="order")
     yield ("shuffled-keys", dict(reversed(list(b.items()))))
