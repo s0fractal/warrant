@@ -1,7 +1,7 @@
-# Warrant Format — Specification v0.2
+# Warrant Format — Specification v0.3
 
 **Status:** DRAFT. Key words MUST / MUST NOT / SHOULD / MAY per RFC 2119.
-**Versioning:** a body declares its format in the `warrant` field (`"0.1"` or `"0.2"`). Validators MUST validate a body against the rules of its declared version; unknown versions make the record invalid. v0.2 adds exactly one thing: the `ski@v1` check runtime (§3.1). Everything else — fields, canonicalization, envelopes, verification, settlement — is unchanged, and every v0.1 record remains valid under v0.1 rules.
+**Versioning:** a body declares its format in the `warrant` field (`"0.1"` or `"0.2"`). Validators MUST validate a body against the rules of its declared version; unknown versions make the record invalid. v0.2 added exactly one thing: the `ski@v1` check runtime (§3.1). **v0.3 adds no body schema at all** — it specifies settlement semantics (§7), multi-root stores (§9), and key state (§5.1): document-level rules that activate only through v0.3 policy blobs and verifier configuration. Every v0.1/v0.2 record remains schema-valid under its declared version, and v0.3 rules MUST NOT turn any of them into a schema error. (Adopted from GOV-001 rev 4 after a three-family adversarial gate: Codex, Gemini 3.1 Pro, DeepSeek v4 Pro — see `proposals/` and `reviews/`.)
 **Design rule:** two independent implementations MUST agree on every WarrantID and every verification outcome. Anything that cannot meet that bar stays out of this document.
 
 ## 1. Model
@@ -81,15 +81,43 @@ A stored warrant is an envelope:
 - Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is).
 - Key↔actor binding is out of scope for v0.1 (use your existing PKI/keyring); implementations MUST verify signatures against the stated key and report the binding as unverified if no keyring is configured.
 
+### 5.1. Key state: binding, rotation, thresholds (v0.3)
+
+Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification.
+
+**Rotation is a warrant:** an `accept` whose subject is the new key blob. A rotation MUST include a valid signature by the incoming key as proof of possession and MUST be authorized under the actor/store's current key policy. If that policy has a threshold, the rotation MUST satisfy it using keys already bound before the rotation; the incoming key's proof-of-possession signature does not count toward the threshold. The outgoing key's signature MAY be required by policy for ordinary rotation, but MUST NOT be sufficient authorization when the store has a multi-actor threshold policy. Emergency replacement of a suspected-compromised outgoing key SHOULD be authorized by quorum without requiring the outgoing key. **Revocation is a warrant:** a `supersede` of the rotation warrant that introduced the key, authorized under the same current-policy rule.
+
+**Ordering:** key validity derives from accepted rotation/revocation warrants in **DAG order**, never from wall-clock trust in `ts` alone; a `ts` outside non-decreasing prior order remains a §6 warning and MUST NOT extend or resurrect a key. Only *authorized* key-state warrants can conflict — a record failing current-policy authorization is an invalid record, not a conflict. A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendant: warrants ordered by the DAG are never a conflict; only maximal, mutually unordered warrants trigger this rule. On conflict, verifiers MUST report `WARN: key-state conflict`, and the conflicted actor's key MUST NOT count toward any quorum until a later warrant — authorized by the unconflicted remainder of the quorum — resolves it; if the threshold would become unsatisfiable, it is reduced to exclude the conflicted actor strictly for conflict resolution.
+
+**Threshold policy grammar.** A v0.3 threshold policy blob MUST be JCS-canonical JSON:
+
+```json
+{ "warrant_policy": "0.3", "threshold": { "min_sigs": 2, "actors": ["a@x", "b@y", "c@z"] } }
+```
+
+`min_sigs` MUST be a positive integer ≤ `len(actors)`; `actors` MUST be nonempty and unique; unknown fields inside `threshold` make the policy invalid. Records filed under an invalid threshold policy are settlement-inactive and MUST produce `ERR: invalid threshold policy` for settlement-grade verification. Opaque v0.1/v0.2 policy blobs MUST NOT be interpreted as threshold policies.
+
 ## 6. Verification (MUST)
 
 `verify(store)` checks, for every envelope: (1) body is schema-valid with no unknown fields; (2) WarrantID recomputes; (3) all signatures verify; (4) every `prior` resolves to a stored warrant; (5) every `under`, `check`, `evidence`, `subject.hash` either resolves in the blob store or is reported as `unresolved` (unresolved is a warning, not corruption — blobs may live elsewhere); (6) `ts` is non-decreasing along each `prior` edge (violation = warning).
 
 `why(id)` walks `prior` edges backward, printing decision → reasons → policy anchors, verifying as it goes.
 
-## 7. Settlement (protocol, not format)
+## 7. Settlement (v0.3)
 
-An `accept` or `reject` whose subject is a *question* blob settles it. Re-opening a settled subject MUST be done via a new warrant whose `evidence` contains at least one hash absent from the entire prior tunnel of the settling warrant. Tools SHOULD refuse to file re-litigation warrants that cite nothing new. `supersede` marks an earlier warrant as replaced: its `subject.hash` MUST be the superseded WarrantID.
+An `accept` or `reject` whose subject is a *question* blob settles it. `supersede` marks an earlier warrant as replaced: its `subject.hash` MUST be the superseded WarrantID (a missing subject is an ERR, §6).
+
+**Tunnel.** A settling warrant's tunnel has a record set and a blob set. The record set is the transitive closure of `prior` edges through stored warrants. The blob set is the union of `under`, `evidence`, `subject.hash`, `check`, and `transcript` hashes cited by those records. Verifiers MUST NOT recursively parse arbitrary blobs for additional tunnel links unless a runtime-specific rule explicitly says so. A blob hash that is also the WarrantID of a stored record is still a blob reference unless it appears in `prior` or a field whose rule explicitly names WarrantIDs.
+
+**Foreclosure.** A blob forecloses only the claims some reason in the tunnel actually makes about it: mere presence in an `evidence` array forecloses nothing. An unresolvable blob forecloses nothing (what cannot be read cannot have been reasoned over); a record with unresolvable settlement-critical references is settlement-inactive until they resolve — without changing its WarrantID, base verification result, or the §6 warning status of v0.1/v0.2 records.
+
+**Re-litigation.** A re-litigation warrant MUST carry at least one of: (a) an evidence hash absent from the tunnel's blob set, or (b) a **new demonstrable consequence** of evidence already present — a check, all of whose blobs are resolvable, that re-runs to a previously absent **outcome fingerprint** within the settling tunnel.
+
+Outcome fingerprints: `ski@v1` — `{runtime, term, expect, verdict, result_node_hash}`; `cmd@v1` — `{runtime, sorted evidence hashes, verdict, transcript hash}`, with `transcript` REQUIRED for §7(b) use. A check whose outcome fingerprint already appears in the tunnel is not new even if the check blob hash differs. Only tunnel reasons supplying all required fields count toward the tunnel's fingerprint set — a reason lacking a required field (e.g. `transcript`) cannot block novelty. (The `evidence` array is not ordered by JCS; the fingerprint sorts hex hashes ascending lexicographically.) Prose MAY explain why a consequence matters, but prose is not part of the novelty test and alone never re-opens settlement.
+
+**Novelty ≠ relevance.** The format layer decides only whether an outcome is new; whether a novel check is *relevant* to the settled subject — or a strawman testing something adjacent — MUST be decided by the active settlement policy, not the core format. Tools SHOULD refuse to file re-litigation warrants carrying neither (a) nor (b); verifiers SHOULD flag them `WARN: re-litigation cites nothing new`. NOTE: because novelty is purely syntactic, a permissive-policy store may accumulate unbounded fingerprint-distinct but irrelevant re-litigations; implementations SHOULD provide configurable limits — a policy choice, not a format requirement.
+
+§7 is itself challengeable under (b): a check demonstrating that the rule forces a wrong settlement is admissible evidence against the rule.
 
 ## 8. Test vectors (MUST PASS)
 
@@ -117,6 +145,14 @@ A real portable check: *"`C1[λxy.x] S K` reduces to `S` within 20 ATP"* — Σ-
 
 A v0.2 implementation with a Σ-GLYPH Book I v0.5 oracle MUST re-run the check against the object blobs and obtain `pass` with `result = H(S)` and `atp_spent = 20`. A v0.1 implementation MUST reject the warrant body (ski@v1 reserved) — that rejection is itself conformant.
 
-## 9. Non-goals (v0.1)
+## 9. Multi-root stores (v0.3)
 
-Consensus, ordering across actors, key distribution, blob transport, privacy/encryption, and any opinion about how agents *make* decisions. Warrant records decisions; it does not take them.
+A store is a DAG. A **root** is a record with empty `prior`. A root is **well-signed** if its filing signature is valid (and bound, where key state is configured). A root is **settlement-active** only if either (1) it is listed in the verifier's local trust configuration as a genesis root for this store, or (2) it is adopted by a settlement-active root through an `accept` warrant whose `subject.hash` is the WarrantID of the root to be adopted and whose signatures satisfy the adopting root's current settlement policy, including any threshold rule. Verifiers MAY verify inactive roots for local integrity but MUST exclude them from settlement and foreclosure calculations and MUST report `WARN: unadopted root`.
+
+**Adoption is scoped:** adopting root A makes root B settlement-active for A's jurisdiction only. Two roots that never reference each other are separate jurisdictions sharing a blob store — by design.
+
+**Portable jurisdiction:** stores SHOULD contain `genesis.json` in the store root — JCS-canonical `{"roots": ["<WarrantID>", ...]}`. The file is **advisory**; verifiers MUST NOT treat it as a trust anchor — it is mutable, unsigned, and editable by anyone with store write access. Before using its listed roots as settlement-active, a verifier MUST independently verify its authenticity (typically a pinned hash in local trust configuration, or explicit user acceptance). If present but unverified: `WARN: genesis.json unverified`, and its contents MUST NOT be used for settlement.
+
+## 10. Non-goals
+
+Consensus, ordering across actors, blob transport, privacy/encryption, PKI beyond §5.1's key-state warrants, and any opinion about how agents *make* decisions. Warrant records decisions; it does not take them.
