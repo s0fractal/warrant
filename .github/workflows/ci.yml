@@ -19,6 +19,8 @@ jobs:
           git clone -q https://github.com/s0fractal/sigma-glyph /tmp/sigma-glyph
           git -C /tmp/sigma-glyph checkout -q 01a1def27bb9d482de2502026c06d5365834b36c
           SIGMA_GLYPH=/tmp/sigma-glyph/impl python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
+      - name: Build Go implementation
+        run: cd impl-go && go build -o warrant-go .
       - name: Go conformance (second implementation)
         run: ./impl-go/warrant-go conformance examples
       - name: Go sigma-glyph eval conformance (pinned vectors)
@@ -28,4 +30,8 @@ jobs:
       - name: Go verifies warrant store layout
         run: ./impl-go/warrant-go verify .warrants
       - name: Cross-implementation verification agreement
-        run: ./tests/agree_check.sh
+        run: SIGMA_GLYPH=/tmp/sigma-glyph/impl ./tests/agree_check.sh
+      - name: Settlement-grade verification of the repo's own store
+        run: |
+          python3 impl/warrant.py verify --settlement --trust-config trust-config.json
+          ./impl-go/warrant-go verify --settlement --trust-config trust-config.json .warrants
