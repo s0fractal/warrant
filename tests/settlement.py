@@ -288,6 +288,39 @@ def case_key_state(tmp):
     return ok
 
 
+def case_stale_replay(tmp):
+    """DeepSeek gate 3, ask 1: a stale once-authorized rotation on a fork is a
+    DAG ancestor of the current rotation — ordered, NEVER a conflict. Pins the
+    refuted attack so no implementation mistakes branch separation for
+    unorderedness (SPEC s5.1 'maximal, mutually unordered')."""
+    store, keys, opaque = setup(tmp)
+    subject = put_blob(store, b"stale replay subject")
+    root = add_record(store, body("accept", subject, [opaque], "a@x", ts=1),
+                      [("a@x", keys["a_old"])])
+    key2 = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_new"])})
+    rot_old = add_record(store, body("accept", key2, [opaque], "a@x",
+                                     prior=[root], ts=2),
+                         [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
+    key3 = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_fork"])})
+    add_record(store, body("accept", key3, [opaque], "a@x",
+                           prior=[rot_old], ts=3),
+               [("a@x", keys["a_new"]), ("a@x", keys["a_fork"])])
+    # the "replay": a fork branch diverging before the newest rotation, keeping
+    # rot_old as its latest key-state ancestor — plus activity on that branch
+    add_record(store, body("propose", subject, [opaque], "a@x", prior=[root],
+                           because=[{"kind": "prose", "text": "fork branch"}],
+                           ts=4),
+               [("a@x", keys["a_new"])])
+    trust = trust_file(tmp, [root], {"a@x": [pubkey(keys["a_old"])]})
+    py, go = verify_both(store, trust)
+    ok = assert_verify("stale-rotation replay on a fork", py, go)
+    no_conflict = all(W.WARN_KEY_CONFLICT not in msg
+                      for msg in report_lines(py.stdout))
+    print(("OK   " if no_conflict else "FAIL "),
+          "stale replay is DAG-ordered -> NO key-state conflict")
+    return ok and no_conflict
+
+
 def main():
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
@@ -296,6 +329,7 @@ def main():
         ok &= case_invalid_policy(os.path.join(tmp, "policy"))
         ok &= case_relitigation(os.path.join(tmp, "relit"))
         ok &= case_key_state(os.path.join(tmp, "keys"))
+        ok &= case_stale_replay(os.path.join(tmp, "stale"))
     print(f"\nSETTLEMENT: {'ALL AGREE' if ok else 'DIVERGENCE'}")
     return 0 if ok else 1
 
