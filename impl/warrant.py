@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Warrant v0.1 — reference implementation (M1: file store, five verbs, conformance).
+"""Warrant v0.3 — reference implementation (plain-file store, five filing verbs, conformance, settlement-grade verification and key state).
 
 One file, standard library + `cryptography` (Ed25519). The spec (SPEC.md) is
 the contract; the vectors in examples/ are law: `conformance` MUST reproduce
@@ -93,8 +93,9 @@ def validate_body(b):
         e.append("actor must be {id: <nonempty string>}")
     if not (isinstance(b["prior"], list) and all(_is_hex64(h) for h in b["prior"])):
         e.append("prior must be a list of WarrantIDs (hex64)")
-    if not isinstance(b["ts"], int) or isinstance(b["ts"], bool):
-        e.append("ts must be an integer (unix seconds)")
+    if (not isinstance(b["ts"], int) or isinstance(b["ts"], bool)
+            or not (0 <= b["ts"] <= 9223372036854775807)):
+        e.append("ts must be an integer (unix seconds) in 0..2^63-1")
     bc = b["because"]
     if not isinstance(bc, list):
         e.append("because must be a list")
@@ -351,6 +352,9 @@ def tunnel_fingerprints(store, wid):
 
 
 def settlement_admissibility(store, settling_wid, candidate_body):
+    errs = validate_body(candidate_body)
+    if errs:                       # a schema-invalid candidate is never admissible
+        return f"invalid candidate: {errs[0]}"
     tun = tunnel(store, settling_wid)
     recs = store.all_records()
     settling_body = recs.get(settling_wid, {}).get("body")
@@ -472,12 +476,24 @@ def _parse_key_blob(store, h):
     return None
 
 
+def _well_signed(wid, env):
+    """SPEC s9: schema-valid and carrying a valid signature by body.actor.id —
+    the eligibility gate for settlement-active roots (and active records)."""
+    if validate_body(env.get("body", {})):
+        return False
+    return any(verify_sig(wid, s) and s.get("actor") == env["body"]["actor"]["id"]
+               for s in env.get("sigs", []))
+
+
 def _settlement_context(store, trust_config=None, genesis_roots=None):
     recs = store.all_records()
     trust = _load_trust_config(trust_config)
     genesis, global_warnings = _trust_roots(store, trust, genesis_roots)
     roots = {wid for wid, env in recs.items() if not env["body"].get("prior")}
-    active_roots = set(genesis) & set(recs)
+    well = {wid for wid, env in recs.items() if _well_signed(wid, env)}
+    # SPEC s9: a root is eligible for settlement-active only if well-signed;
+    # a trusted-but-broken root is reported under s6 and excluded here
+    active_roots = set(genesis) & well
 
     invalid_policy = set()
     for wid, env in recs.items():
@@ -496,22 +512,6 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
             out.update(record_roots(p))
         return out
 
-    changed = True
-    while changed:
-        changed = False
-        for root in sorted(roots - active_roots):
-            for wid, env in sorted(recs.items()):
-                body = env["body"]
-                if (body["decision"] == "accept" and body["subject"]["hash"] == root
-                        and record_roots(wid) & active_roots
-                        and wid not in invalid_policy
-                        and _policies_satisfied(store, wid, env)):
-                    active_roots.add(root)
-                    changed = True
-                    break
-
-    active_records = {wid for wid in recs
-                      if record_roots(wid) & active_roots and wid not in invalid_policy}
     genesis_keys = {a: set(keys) for a, keys in trust.get("actors", {}).items()}
     ancestors_cache = {}
 
@@ -525,6 +525,7 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
 
     rotation_cache = {}
     keys_cache = {}
+    rotation_auth_cache = {}
 
     def rotation(wid):
         if wid not in rotation_cache:
@@ -545,7 +546,17 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
         keys_cache[wid] = {a: set(v) for a, v in keys.items()}
         return keys
 
+    def threshold_keys(wid):
+        """SPEC s5.1/s9: for settlement-grade thresholds a signature counts
+        for an actor only if made by a key currently bound to that actor at
+        this warrant's DAG position; actors with NO configured key state
+        contribute nothing (unbound claims MUST NOT satisfy a v0.3 threshold)."""
+        return keys_before(wid)
+
     def rotation_authorized(wid):
+        if wid in rotation_auth_cache:
+            return rotation_auth_cache[wid]
+        rotation_auth_cache[wid] = False
         env = recs[wid]
         rot = rotation(wid)
         if not rot or wid in invalid_policy or wid not in active_records:
@@ -560,10 +571,41 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
         if bad:
             return False
         if policies:
-            return all(_threshold_satisfied(wid, env, p, prior_keys) for p in policies)
-        return any(verify_sig(wid, s) and s.get("actor") == actor
-                   and s.get("key") in prior_keys.get(actor, set())
-                   for s in env.get("sigs", []))
+            ok = all(_threshold_satisfied(wid, env, p, prior_keys) for p in policies)
+        else:
+            ok = any(verify_sig(wid, s) and s.get("actor") == actor
+                     and s.get("key") in prior_keys.get(actor, set())
+                     for s in env.get("sigs", []))
+        rotation_auth_cache[wid] = ok
+        return ok
+
+    # Fixpoint: adoption thresholds count only keys bound at the adopting
+    # warrant's DAG position (SPEC s5.1/s9); key state depends on the active
+    # set, so iterate to stability. Roots and adopting records must be
+    # well-signed (s9).
+    active_records = set()
+    while True:
+        active_records = {wid for wid in recs
+                          if record_roots(wid) & active_roots
+                          and wid not in invalid_policy and wid in well}
+        keys_cache.clear()
+        rotation_auth_cache.clear()
+        grew = False
+        for root in sorted(roots - active_roots):
+            if root not in well:
+                continue
+            for wid, env in sorted(recs.items()):
+                body = env["body"]
+                if (wid in active_records
+                        and body["decision"] == "accept"
+                        and body["subject"]["hash"] == root
+                        and _policies_satisfied(store, wid, env,
+                                                keys=threshold_keys(wid))):
+                    active_roots.add(root)
+                    grew = True
+                    break
+        if not grew:
+            break
 
     authorized_rotations = {}
     for wid in sorted(active_records, key=lambda x: (depth(x), x)):
@@ -668,13 +710,22 @@ def verify_store(store, quiet=False, settlement=None):
                 out("ERR", wid, f"prior {p[:12]} not in store")
             elif prev["body"]["ts"] > body["ts"]:
                 out("WARN", wid, f"ts decreases along prior edge {p[:12]}")
-        refs = list(body["under"]) + list(body["evidence"]) + [body["subject"]["hash"]]
-        refs += [r["check"] for r in body["because"] if r.get("kind") == "check"]
-        refs += [r["transcript"] for r in body["because"]
-                 if r.get("kind") == "check" and "transcript" in r]
-        for h in refs:
-            if not store.has_blob(h) and h not in recs:
+        # SPEC s6/s7: reference resolution is split by field kind. under,
+        # evidence, check, transcript MUST resolve to BLOBS - a hash present
+        # only as a stored record does not resolve them. subject.hash MAY
+        # resolve to a WarrantID only where a rule explicitly names one
+        # (supersede subjects; root-adoption/rotation accept subjects).
+        blob_refs = list(body["under"]) + list(body["evidence"])
+        blob_refs += [r["check"] for r in body["because"] if r.get("kind") == "check"]
+        blob_refs += [r["transcript"] for r in body["because"]
+                      if r.get("kind") == "check" and "transcript" in r]
+        for h in blob_refs:
+            if not store.has_blob(h):
                 out("WARN", wid, f"unresolved blob {h[:12]}")
+        subj = body["subject"]["hash"]
+        subj_may_be_record = body["decision"] in ("supersede", "accept")
+        if not store.has_blob(subj) and not (subj_may_be_record and subj in recs):
+            out("WARN", wid, f"unresolved blob {subj[:12]}")
         if body["decision"] == "supersede" and body["subject"]["hash"] not in recs:
             out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
         if is_unverifiable(body):
@@ -957,9 +1008,12 @@ def main():
     ck = sub.add_parser("check", help="re-run a ski@v1 check blob against the store")
     ck.add_argument("hash")
     vf = sub.add_parser("verify")
-    vf.add_argument("--settlement", action="store_true")
-    vf.add_argument("--genesis", action="append", default=[])
-    vf.add_argument("--trust-config")
+    vf.add_argument("--settlement", action="store_true",
+                    help="enable v0.3 settlement-grade checks (SPEC s5.1/s7/s9)")
+    vf.add_argument("--genesis", action="append", default=[],
+                    help="trusted genesis root WarrantID; repeatable")
+    vf.add_argument("--trust-config",
+                    help="local trust JSON: genesis_roots, genesis_json_sha256, actors")
     stl = sub.add_parser("settle")
     stl.add_argument("settling_wid")
     stl.add_argument("candidate_body")
@@ -1038,7 +1092,7 @@ def main():
         body = json.loads(Path(args.candidate_body).read_text(encoding="utf-8"))
         verdict = settlement_admissibility(store, args.settling_wid, body)
         print(verdict)
-        sys.exit(1 if verdict.startswith("inadmissible") else 0)
+        sys.exit(1 if verdict.startswith(("inadmissible", "invalid candidate")) else 0)
     elif args.cmd == "conformance":
         sys.exit(0 if conformance(args.examples) else 1)
     elif args.cmd == "selftest":

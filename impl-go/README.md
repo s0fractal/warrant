@@ -1,6 +1,6 @@
 # Warrant Go implementation
 
-Second implementation for Warrant v0.2, using only the Go standard library.
+Second implementation for Warrant v0.3 (verification incl. settlement-grade; filing remains Python-only), using only the Go standard library.
 
 **Scope (deliberate):** verify-only. This implementation exists to hold the
 SPEC's differential bar — "two independent implementations MUST agree on every

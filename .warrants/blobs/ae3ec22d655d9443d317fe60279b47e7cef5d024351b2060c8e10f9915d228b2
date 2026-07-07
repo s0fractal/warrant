@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Adjudication check for the Codex pedantic audit (warrant, repo root)."""
+import pathlib, subprocess, sys, os
+os.environ.setdefault("SIGMA_GLYPH", os.path.expanduser("~/sigma-glyph/impl"))
+ok = True
+spec = pathlib.Path("SPEC.md").read_text()
+ok &= "0..9223372036854775807" in spec and "MUST NOT silently clamp" in spec
+ok &= "inclusive" in spec and "unbound claims MUST NOT satisfy a v0.3 threshold" in spec
+ok &= "well-signed and schema-valid under §6" in spec
+ok &= "a hash present only as a stored record does not resolve them" in spec
+print("SPEC P0+P1 texts present")
+for cmd, want in (([sys.executable, "impl/warrant.py", "selftest"], "ALL PASS"),
+                  ([sys.executable, "impl/warrant.py", "conformance"], "ALL PASS (20/20)"),
+                  (["./impl-go/warrant-go", "selftest"], "ALL PASS (7/7)"),
+                  (["./impl-go/warrant-go", "conformance"], "ALL PASS (20/20)"),
+                  ([sys.executable, "tests/differential.py"], "ALL AGREE (43/43)"),
+                  ([sys.executable, "tests/negative.py"], "NEGATIVE: ALL AGREE"),
+                  ([sys.executable, "tests/settlement.py"], "SETTLEMENT: ALL AGREE"),
+                  ([sys.executable, "tests/pedantic_edges.py"], "PEDANTIC-EDGES: ALL AGREE (15/15)")):
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    last = p.stdout.strip().splitlines()[-1]; print(last)
+    ok &= p.returncode == 0 and want in last
+print("pedantic warrant dispositions verified" if ok else "CHECK FAILED")
+sys.exit(0 if ok else 1)

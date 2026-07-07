@@ -44,3 +44,8 @@ python3 tests/negative.py
 # admissibility and key-state derivation (SPEC s5.1/s7/s9).
 echo "--- settlement differential ---"
 python3 tests/settlement.py
+
+# Pedantic edges: ts bounds (the audit P0), note schema bounds, blob-vs-record
+# resolution, unbound-threshold adoption, settle candidate validity.
+echo "--- pedantic edges ---"
+python3 tests/pedantic_edges.py

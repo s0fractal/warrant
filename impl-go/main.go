@@ -112,6 +112,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
+		if errs := validateBody(body); len(errs) > 0 {
+			// a schema-invalid candidate is never admissible
+			fmt.Println("invalid candidate: " + errs[0])
+			os.Exit(1)
+		}
 		verdict := settlementAdmissibility(records, blobs, os.Args[3], body)
 		fmt.Println(verdict)
 		if strings.HasPrefix(verdict, "inadmissible") {
@@ -322,6 +327,10 @@ func validateBody(b map[string]any) []string {
 	errs = append(errs, validateHexArray("prior", b["prior"], false)...)
 	if n, ok := b["ts"].(json.Number); !ok || !intJSONRe.MatchString(n.String()) {
 		errs = append(errs, "ts must be an integer")
+	} else if v, err := n.Int64(); err != nil || v < 0 {
+		// SPEC s2: ts in 0..2^63-1; out-of-range is schema-invalid — never
+		// silently narrowed (a clamped Int64 here once split PY/GO warnings)
+		errs = append(errs, "ts must be an integer (unix seconds) in 0..2^63-1")
 	}
 
 	because, ok := b["because"].([]any)
@@ -1532,8 +1541,27 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 			ctx.invalidPolicy[wid] = true
 		}
 	}
+	wellSigned := map[string]bool{}
+	for wid, env := range records {
+		body, _ := env["body"].(map[string]any)
+		if len(validateBody(body)) != 0 {
+			continue
+		}
+		actorID := ""
+		if a, ok := body["actor"].(map[string]any); ok {
+			actorID, _ = a["id"].(string)
+		}
+		for _, sg := range getArray(env, "sigs") {
+			sm, _ := sg.(map[string]any)
+			if verifySig(wid, sg) && sm["actor"] == actorID {
+				wellSigned[wid] = true
+				break
+			}
+		}
+	}
+	// SPEC s9: settlement-active eligibility requires well-signedness
 	for g := range genesis {
-		if records[g] != nil {
+		if records[g] != nil && wellSigned[g] {
 			ctx.activeRoots[g] = true
 		}
 	}
@@ -1561,43 +1589,6 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		}
 		recordRootsCache[wid] = out
 		return out
-	}
-	changed := true
-	for changed {
-		changed = false
-		for root := range ctx.roots {
-			if ctx.activeRoots[root] {
-				continue
-			}
-			for _, wid := range sortedRecordIDs(records) {
-				env := records[wid]
-				body, _ := env["body"].(map[string]any)
-				if body["decision"] != "accept" || getSubjectHash(body) != root || ctx.invalidPolicy[wid] {
-					continue
-				}
-				activePrior := false
-				for r := range recordRoots(wid) {
-					if ctx.activeRoots[r] {
-						activePrior = true
-					}
-				}
-				if activePrior && policiesSatisfied(blobs, wid, env, nil) {
-					ctx.activeRoots[root] = true
-					changed = true
-					break
-				}
-			}
-		}
-	}
-	for wid := range records {
-		if ctx.invalidPolicy[wid] {
-			continue
-		}
-		for r := range recordRoots(wid) {
-			if ctx.activeRoots[r] {
-				ctx.activeRecords[wid] = true
-			}
-		}
 	}
 	genesisKeys := map[string]map[string]bool{}
 	if actors, ok := trust["actors"].(map[string]any); ok {
@@ -1707,6 +1698,49 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		}
 		return false
 	}
+	// Fixpoint (SPEC s5.1/s9): adoption thresholds count only keys bound at
+	// the adopting warrant's DAG position; key state depends on the active
+	// set, so iterate to stability. Roots and adopting records must be
+	// well-signed.
+	recomputeActive := func() {
+		ctx.activeRecords = map[string]bool{}
+		for wid := range records {
+			if ctx.invalidPolicy[wid] || !wellSigned[wid] {
+				continue
+			}
+			for r := range recordRoots(wid) {
+				if ctx.activeRoots[r] {
+					ctx.activeRecords[wid] = true
+				}
+			}
+		}
+	}
+	for {
+		recomputeActive()
+		keysCache = map[string]map[string]map[string]bool{}
+		grew := false
+		for root := range ctx.roots {
+			if ctx.activeRoots[root] || !wellSigned[root] {
+				continue
+			}
+			for _, wid := range sortedRecordIDs(records) {
+				env := records[wid]
+				body, _ := env["body"].(map[string]any)
+				if !ctx.activeRecords[wid] || body["decision"] != "accept" || getSubjectHash(body) != root {
+					continue
+				}
+				if policiesSatisfied(blobs, wid, env, keysBefore(wid)) {
+					ctx.activeRoots[root] = true
+					grew = true
+					break
+				}
+			}
+		}
+		if !grew {
+			break
+		}
+	}
+
 	authorizedRotations := map[string]map[string]bool{}
 	for _, wid := range sortedRecordIDs(records) {
 		if actor, _, ok := rotation(wid); ok && rotationAuthorized(wid) {
@@ -1850,8 +1884,16 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 			}
 		}
 		for _, h := range referencedBlobs(body) {
-			if blobs[h] == nil && records[h] == nil {
+			if blobs[h] == nil {
 				out("WARN", wid, "unresolved blob "+h[:12])
+			}
+		}
+		if subj, ok := body["subject"].(map[string]any); ok {
+			if h, ok := subj["hash"].(string); ok {
+				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
+				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
+					out("WARN", wid, "unresolved blob "+h[:12])
+				}
 			}
 		}
 		if body["decision"] == "supersede" && records[getSubjectHash(body)] == nil {
@@ -2046,8 +2088,16 @@ func verifyDir(dir string, quiet bool) (int, int) {
 			}
 		}
 		for _, h := range referencedBlobs(body) {
-			if blobs[h] == nil && records[h] == nil {
+			if blobs[h] == nil {
 				out("WARN", wid, "unresolved blob "+h[:12])
+			}
+		}
+		if subj, ok := body["subject"].(map[string]any); ok {
+			if h, ok := subj["hash"].(string); ok {
+				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
+				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
+					out("WARN", wid, "unresolved blob "+h[:12])
+				}
 			}
 		}
 		if body["decision"] == "supersede" {
@@ -2309,15 +2359,14 @@ func cloneKeyMap(in map[string]map[string]bool) map[string]map[string]bool {
 	return out
 }
 
+// referencedBlobs returns the STRICT blob references (SPEC s6/s7: under,
+// evidence, check, transcript resolve to blobs only; a stored record with
+// the same hash does not satisfy them). subject.hash is checked separately
+// because supersede and adoption/rotation accept subjects MAY be WarrantIDs.
 func referencedBlobs(body map[string]any) []string {
 	var refs []string
 	refs = append(refs, getStringArray(body, "under")...)
 	refs = append(refs, getStringArray(body, "evidence")...)
-	if subj, ok := body["subject"].(map[string]any); ok {
-		if h, ok := subj["hash"].(string); ok {
-			refs = append(refs, h)
-		}
-	}
 	for _, item := range getArray(body, "because") {
 		r, ok := item.(map[string]any)
 		if !ok || r["kind"] != "check" {

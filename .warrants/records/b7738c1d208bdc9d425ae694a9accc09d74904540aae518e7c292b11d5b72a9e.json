@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "The most substantive audit either repo has had. P0 confirmed: Go getInt swallowed Int64 overflow, silently clamping ts=10^100 and losing the ordering warning Python emits - same WarrantIDs, different verification output, the exact failure class this project exists to prevent; fixed with Option A (ts bounded 0..2^63-1, out-of-range schema-invalid, silent narrowing banned; boundary fixtures at max/max+1/-1/10^100 assert ERR parity on the observable path). P1s all fixed in BOTH implementations: inclusive tunnel (code was right, prose was wrong); unbound-threshold adoption - the security find: attacker keys merely CLAIMING threshold actors satisfied root adoption; both settlement contexts restructured into a fixpoint (adoption/key-state interdependence) so thresholds count only keys bound at the warrant's DAG position - the audit probe now yields WARN unadopted root in both, pinned; well-signed gates settlement-active eligibility; s6 reference resolution split by field kind (a stored record no longer satisfies blob references - pinned). P2s shipped: fresh-clone-true README flow, v0.3 wording, CLI help, report-string convention, s8.2 heading, CI naming + sigma pin freshness policy, settle surface note, settle candidates schema-validated before admissibility (the new test itself caught that first-error ORDERING differs between validators - left diagnostic, not normative). tests/pedantic_edges.py (15 checks, both impls) wired into agree_check + CI. Deferred: full error-message parity (diagnostic), TLA+ s5.1, why DOT export."
+      },
+      {
+        "check": "ae3ec22d655d9443d317fe60279b47e7cef5d024351b2060c8e10f9915d228b2",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "64c86b76241e4501bf9d53fe05d1c548c277953273cacb6a72d7172495e11728",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "27df1dc9ebc31d6932dac8d828dda992329fc73350f1b50f8434914a826048d9"
+    ],
+    "prior": [
+      "d2601f50cfcf8986d21823af56870f8fbe33f160cb7b9474ed0db961a9d47d42"
+    ],
+    "subject": {
+      "hash": "1d363fc2b5630a5e5b517a19ab71b01fa43f9e4c661402a9af807ebedd150200",
+      "note": "Codex pedantic audit of v0.3: REAL P0 (Go ts clamp split) + 4 P1s incl. unbound-threshold adoption - all fixed both impls, pinned by tests/pedantic_edges.py 15/15"
+    },
+    "ts": 1783465146,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "dfd635719c3f8ecd122ddff5f5da10b7f048b67e3523ceae0c537005b6bf676563356e4c708fccc68314984287f31f9821a76e0b0a944c788808c4e11a473100"
+    }
+  ]
+}

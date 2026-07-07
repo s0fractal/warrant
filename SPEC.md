@@ -22,9 +22,9 @@ The body is a JSON object with exactly these fields (unknown fields MUST make th
 | `evidence` | array | MUST | ≥0 hex64 hashes of input blobs the decision relied on |
 | `actor` | object | MUST | `{"id": <string>}` — stable actor identifier |
 | `prior` | array | MUST | ≥0 WarrantIDs this record responds to or follows |
-| `ts` | integer | MUST | Unix seconds, UTC |
+| `ts` | integer | MUST | Unix seconds, UTC, in the inclusive range `0..9223372036854775807` (int64) |
 
-All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact).
+All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact). A body with a negative or out-of-int64-range integer field is schema-invalid; implementations MUST NOT silently clamp, wrap, or truncate numeric fields (an unchecked 64-bit narrowing is exactly the kind of silent verifier split this rule exists to prevent).
 
 ## 3. Reasons
 
@@ -95,11 +95,11 @@ Key state derives from key-state warrants — **any cache is an implementation d
 { "warrant_policy": "0.3", "threshold": { "min_sigs": 2, "actors": ["a@x", "b@y", "c@z"] } }
 ```
 
-`min_sigs` MUST be a positive integer ≤ `len(actors)`; `actors` MUST be nonempty and unique; unknown fields inside `threshold` make the policy invalid. Records filed under an invalid threshold policy are settlement-inactive and MUST produce `ERR: invalid threshold policy` for settlement-grade verification. Opaque v0.1/v0.2 policy blobs MUST NOT be interpreted as threshold policies.
+`min_sigs` MUST be a positive integer ≤ `len(actors)`; `actors` MUST be nonempty and unique; unknown fields inside `threshold` make the policy invalid. **For settlement-grade threshold evaluation (including root adoption, §9), a signature counts for an actor only if it is cryptographically valid AND made by a key currently bound to that actor at that warrant's DAG position (§5.1). An actor with no configured key state contributes nothing: unbound claims MUST NOT satisfy a v0.3 threshold.** Records filed under an invalid threshold policy are settlement-inactive and MUST produce `ERR: invalid threshold policy` for settlement-grade verification. Opaque v0.1/v0.2 policy blobs MUST NOT be interpreted as threshold policies.
 
 ## 6. Verification (MUST)
 
-`verify(store)` checks, for every envelope: (1) body is schema-valid with no unknown fields; (2) WarrantID recomputes; (3) all signatures verify; (4) every `prior` resolves to a stored warrant; (5) every `under`, `check`, `evidence`, `subject.hash` either resolves in the blob store or is reported as `unresolved` (unresolved is a warning, not corruption — blobs may live elsewhere); (6) `ts` is non-decreasing along each `prior` edge (violation = warning).
+`verify(store)` checks, for every envelope: (1) body is schema-valid with no unknown fields; (2) WarrantID recomputes; (3) all signatures verify; (4) every `prior` resolves to a stored warrant; (5) reference resolution is split by field kind: `prior` MUST resolve to stored warrants; `under`, `evidence`, `check`, `transcript` MUST resolve to **blobs** — a hash present only as a stored record does not resolve them; `subject.hash` resolves to a blob, or MAY resolve to a WarrantID only where a rule explicitly names one (supersede subjects, §9 adoption subjects, §5.1 rotation subjects). Unresolved is a warning, not corruption — blobs may live elsewhere; (6) `ts` is non-decreasing along each `prior` edge (violation = warning).
 
 `why(id)` walks `prior` edges backward, printing decision → reasons → policy anchors, verifying as it goes.
 
@@ -107,7 +107,7 @@ Key state derives from key-state warrants — **any cache is an implementation d
 
 An `accept` or `reject` whose subject is a *question* blob settles it. `supersede` marks an earlier warrant as replaced: its `subject.hash` MUST be the superseded WarrantID (a missing subject is an ERR, §6).
 
-**Tunnel.** A settling warrant's tunnel has a record set and a blob set. The record set is the transitive closure of `prior` edges through stored warrants. The blob set is the union of `under`, `evidence`, `subject.hash`, `check`, and `transcript` hashes cited by those records. Verifiers MUST NOT recursively parse arbitrary blobs for additional tunnel links unless a runtime-specific rule explicitly says so. A blob hash that is also the WarrantID of a stored record is still a blob reference unless it appears in `prior` or a field whose rule explicitly names WarrantIDs.
+**Tunnel.** A settling warrant's tunnel is **inclusive**: its record set is the settling warrant itself plus the transitive closure of its `prior` edges through stored warrants (a candidate citing the settling warrant's own check is a restatement, not novelty). The blob set is the union of `under`, `evidence`, `subject.hash`, `check`, and `transcript` hashes cited by those records. Verifiers MUST NOT recursively parse arbitrary blobs for additional tunnel links unless a runtime-specific rule explicitly says so. A blob hash that is also the WarrantID of a stored record is still a blob reference unless it appears in `prior` or a field whose rule explicitly names WarrantIDs.
 
 **Foreclosure.** A blob forecloses only the claims some reason in the tunnel actually makes about it: mere presence in an `evidence` array forecloses nothing. An unresolvable blob forecloses nothing (what cannot be read cannot have been reasoned over); a record with unresolvable settlement-critical references is settlement-inactive until they resolve — without changing its WarrantID, base verification result, or the §6 warning status of v0.1/v0.2 records.
 
@@ -118,6 +118,8 @@ Outcome fingerprints: `ski@v1` — `{runtime, term, expect, verdict, result_node
 **Novelty ≠ relevance.** The format layer decides only whether an outcome is new; whether a novel check is *relevant* to the settled subject — or a strawman testing something adjacent — MUST be decided by the active settlement policy, not the core format. Tools SHOULD refuse to file re-litigation warrants carrying neither (a) nor (b); verifiers SHOULD flag them `WARN: re-litigation cites nothing new`. NOTE: because novelty is purely syntactic, a permissive-policy store may accumulate unbounded fingerprint-distinct but irrelevant re-litigations; implementations SHOULD provide configurable limits — a policy choice, not a format requirement.
 
 §7 is itself challengeable under (b): a check demonstrating that the rule forces a wrong settlement is admissible evidence against the rule.
+
+**Report-string convention.** Where this document names verifier report strings (`key-state conflict`, `invalid threshold policy`, `unadopted root`, `genesis.json unverified`, `re-litigation cites nothing new`), the normative text is the message after the verifier's severity and record-identifier columns; CLI output MAY prepend structured fields (severity, abbreviated WarrantID).
 
 ## 8. Test vectors (MUST PASS)
 
@@ -137,17 +139,17 @@ The three example warrants form the chain propose → reject (failing check + cl
 
 A real portable check: *"`C1[λxy.x] S K` reduces to `S` within 20 ATP"* — Σ-GLYPH's TV-10, filed as a warrant whose reason anyone can re-run.
 
-| Artifact | SHA-256 |
+| Artifact / identity | value |
 | --- | --- |
 | SKI term (root NodeHash; 5 APPLY object blobs `*.bin`, genesis I/K/S intrinsic — no leaf blobs needed) | `97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad` |
 | `check.json` (JCS bytes: `{"ski":1, "term":…, "atp":20, "expect":H(S)}`) | `0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad` |
-| accept warrant (`"warrant":"0.2"`), demo-seed signed | `8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0` |
+| accept warrant **WarrantID** (`"warrant":"0.2"`, demo-seed signed) | `8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0` |
 
 A v0.2 implementation with a Σ-GLYPH Book I v0.5 oracle MUST re-run the check against the object blobs and obtain `pass` with `result = H(S)` and `atp_spent = 20`. A v0.1 implementation MUST reject the warrant body (ski@v1 reserved) — that rejection is itself conformant.
 
 ## 9. Multi-root stores (v0.3)
 
-A store is a DAG. A **root** is a record with empty `prior`. A root is **well-signed** if its filing signature is valid (and bound, where key state is configured). A root is **settlement-active** only if either (1) it is listed in the verifier's local trust configuration as a genesis root for this store, or (2) it is adopted by a settlement-active root through an `accept` warrant whose `subject.hash` is the WarrantID of the root to be adopted and whose signatures satisfy the adopting root's current settlement policy, including any threshold rule. Verifiers MAY verify inactive roots for local integrity but MUST exclude them from settlement and foreclosure calculations and MUST report `WARN: unadopted root`.
+A store is a DAG. A **root** is a record with empty `prior`. A root is **well-signed** if its filing signature is valid (and bound, where key state is configured). A root is eligible to become settlement-active only if it is well-signed and schema-valid under §6; a trusted-but-broken root is still reported under §6 but MUST be excluded from settlement and foreclosure calculations until repaired. Given eligibility, a root is **settlement-active** only if either (1) it is listed in the verifier's local trust configuration as a genesis root for this store, or (2) it is adopted by a settlement-active root through an `accept` warrant whose `subject.hash` is the WarrantID of the root to be adopted and whose signatures satisfy the adopting root's current settlement policy, including any threshold rule. Verifiers MAY verify inactive roots for local integrity but MUST exclude them from settlement and foreclosure calculations and MUST report `WARN: unadopted root`.
 
 **Adoption is scoped:** adopting root A makes root B settlement-active for A's jurisdiction only. Two roots that never reference each other are separate jurisdictions sharing a blob store — by design.
 

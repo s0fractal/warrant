@@ -14,6 +14,9 @@ jobs:
         run: python3 impl/warrant.py conformance examples
       - name: Selftest (live round-trip + tamper detection)
         run: python3 impl/warrant.py selftest
+      # The sigma pin is intentionally fixed for reproducible conformance.
+      # Refresh ONLY when Book I vectors intentionally change; the refresh
+      # commit MUST cite old/new sigma commits + both conformance outputs.
       - name: ski@v1 runtime conformance (SPEC s8.2, oracle = sigma-glyph pinned)
         run: |
           git clone -q https://github.com/s0fractal/sigma-glyph /tmp/sigma-glyph
@@ -29,7 +32,7 @@ jobs:
         run: ./impl-go/warrant-go selftest examples
       - name: Go verifies warrant store layout
         run: ./impl-go/warrant-go verify .warrants
-      - name: Cross-implementation verification agreement
+      - name: "Cross-implementation agreement: differential + negative + settlement"
         run: SIGMA_GLYPH=/tmp/sigma-glyph/impl ./tests/agree_check.sh
       - name: Settlement-grade verification of the repo's own store
         run: |

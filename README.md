@@ -46,13 +46,14 @@ alias warrant="python3 $PWD/impl/warrant.py"   # no packaging yet — this is it
 ```bash
 warrant init                          # .warrants/ store in your repo
 warrant keygen --out me.key           # Ed25519; prints your pubkey
-POL=$(warrant policy add policy.txt)  # pin the rules in force -> hash
+printf 'demo diff\n' > diff.patch     # the thing being decided about
+POL=$(warrant policy add examples/policy.txt)   # pin the rules in force -> hash
 
 P=$(warrant propose --subject diff.patch --under $POL \
       --reason "utility fns needed" --actor me@host --key me.key)
-R=$(warrant reject $P --check check.sh --verdict fail \
+R=$(warrant reject $P --check examples/check.sh --verdict fail \
       --reason "clause 1: coverage drop" --actor me@host --key me.key)
-A=$(warrant accept $R --check check.sh --verdict pass \
+A=$(warrant accept $R --check examples/check.sh --verdict pass \
       --actor me@host --key me.key)
 
 warrant why $A                        # decision -> reasons -> checks -> policy, verified
@@ -67,7 +68,7 @@ Not an agent framework. Not a blockchain. Not observability. It is one file form
 
 ## Spec and status
 
-`SPEC.md` — the format (v0.2), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes: `prose`, `cmd@v1` (a check command run in a container), and — new in v0.2 — **`ski@v1`**: a portable, deterministic, budget-bounded check. The check is a content-addressed SKI term evaluated per [Σ-GLYPH Book I](https://github.com/s0fractal/sigma-glyph); the verdict is a hash comparison; work AND peak memory are bounded by the ATP budget, so re-verifying a stranger's reason is safe by construction. `warrant check <hash>` re-runs one.
+`SPEC.md` — the format (v0.3 draft: the v0.1/v0.2 body schema plus v0.3 settlement, key-state and multi-root rules), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes: `prose`, `cmd@v1` (a check command run in a container), and — new in v0.2 — **`ski@v1`**: a portable, deterministic, budget-bounded check. The check is a content-addressed SKI term evaluated per [Σ-GLYPH Book I](https://github.com/s0fractal/sigma-glyph); the verdict is a hash comparison; work AND peak memory are bounded by the ATP budget, so re-verifying a stranger's reason is safe by construction. `warrant check <hash>` re-runs one.
 
 `impl/warrant.py` — reference implementation (M1): the five verbs on a plain-file store, one file, stdlib + Ed25519 (`pip install cryptography`). It must pass its own law:
 
@@ -96,6 +97,8 @@ Beyond integrity (`verify`), v0.3 adds settlement semantics (SPEC §5.1/§7/§9)
 python3 impl/warrant.py verify --settlement --trust-config trust.json
 python3 impl/warrant.py settle <settling-wid> candidate-body.json
 ./impl-go/warrant-go verify --settlement --trust-config trust.json <store>
+# NB: Python takes a global --store flag; Go verify/settle take the store as a
+# positional argument — Go is deliberately verify-only (no filing surface).
 ```
 
 Settlement-active roots come from your local trust configuration (plus
