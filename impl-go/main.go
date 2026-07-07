@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 var (
@@ -76,6 +77,26 @@ func main() {
 		if !selftest(dir) {
 			os.Exit(1)
 		}
+	case "canon":
+		// canon <body.json>: print {warrant_id, canon_hex} for a bare body.
+		// Exists so a differential harness can compare canonicalization across
+		// implementations (the design rule in SPEC line 5).
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: warrant-go canon <body.json>")
+			os.Exit(2)
+		}
+		body, err := readJSON(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "canon:", err)
+			os.Exit(2)
+		}
+		canon, err := canonicalJSON(body)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "canon:", err)
+			os.Exit(2)
+		}
+		id, _ := warrantID(body)
+		fmt.Printf("{\"warrant_id\":%q,\"canon_hex\":%q}\n", id, hex.EncodeToString(canon))
 	default:
 		usage()
 		os.Exit(2)
@@ -171,14 +192,41 @@ func writeCanonical(b *bytes.Buffer, v any) error {
 	return nil
 }
 
+// quoteJSONString serializes a string per RFC 8785 (JCS). We deliberately do
+// NOT delegate to encoding/json: Go's encoder emits short escapes only for
+// \\ \" \n \r \t and uses \u00xx for every other control byte — but JCS
+// (ECMAScript JSON.stringify) also requires the two-char \b (U+0008) and
+// \f (U+000C) short forms. Delegating diverges from the Python reference and
+// from RFC 8785 on those two code points, silently splitting the WarrantID.
 func quoteJSONString(s string) ([]byte, error) {
 	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(s); err != nil {
-		return nil, err
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(&b, `\u%04x`, r) // lowercase hex, matches JCS + Python
+			} else {
+				b.WriteRune(r)
+			}
+		}
 	}
-	return bytes.TrimRight(b.Bytes(), "\n"), nil
+	b.WriteByte('"')
+	return b.Bytes(), nil
 }
 
 func blobHash(data []byte) string {
@@ -261,7 +309,7 @@ func validateSubject(v any) []string {
 	}
 	if note, exists := m["note"]; exists {
 		s, ok := note.(string)
-		if !ok || len(s) > 200 {
+		if !ok || utf8.RuneCountInString(s) > 200 { // chars = code points, per SPEC §2 (matches Python)
 			errs = append(errs, "subject.note must be a string of <=200 chars")
 		}
 	}
@@ -1127,7 +1175,17 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		for _, s := range sigs {
 			if !verifySig(wid, s) {
 				out("ERR", wid, "bad signature")
-			} else if sm, ok := s.(map[string]any); ok && sm["actor"] == actorID {
+				continue
+			}
+			// SPEC §5 MUST: no keyring configured, so the key->actor binding is
+			// unverified even though the signature is cryptographically valid.
+			sm, _ := s.(map[string]any)
+			key, _ := sm["key"].(string)
+			if len(key) > 12 {
+				key = key[:12]
+			}
+			out("WARN", wid, fmt.Sprintf("binding unverified (no keyring): key %s claims actor %v", key, sm["actor"]))
+			if sm["actor"] == actorID {
 				actorSigned = true
 			}
 		}

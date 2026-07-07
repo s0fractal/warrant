@@ -21,7 +21,14 @@ echo "python verify exit: $py (nonzero expected: body is schema-invalid)"
 echo "go     verify exit: $go_ (nonzero expected: same bytes)"
 if [ "$py" -ne 0 ] && [ "$go_" -ne 0 ]; then
     echo "AGREE: both implementations reject the invalid record"
-    exit 0
+else
+    echo "DIVERGENCE: implementations disagree on a verification outcome"
+    exit 1
 fi
-echo "DIVERGENCE: implementations disagree on a verification outcome"
-exit 1
+
+# Differential canonicalization: the schema-reject case above only proves both
+# reject one bad input. This proves both compute IDENTICAL WarrantIDs across the
+# full JCS-escaping surface (every control byte, multibyte, astral, key order) —
+# the check that actually enforces "agree on every WarrantID" (SPEC line 5).
+echo "--- differential canonicalization ---"
+python3 tests/differential.py

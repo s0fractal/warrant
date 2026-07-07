@@ -292,7 +292,13 @@ def verify_store(store, quiet=False):
         for s in sigs:
             if not verify_sig(wid, s):
                 out("ERR", wid, f"bad signature by {s.get('actor')}")
-            elif s.get("actor") == body["actor"]["id"]:
+                continue
+            # SPEC §5 MUST: with no keyring configured, the key↔actor binding is
+            # unverified even though the signature is cryptographically valid —
+            # the filer chose the key, so this actor claim is unproven.
+            out("WARN", wid, f"binding unverified (no keyring): key "
+                             f"{str(s.get('key',''))[:12]} claims actor {s.get('actor')}")
+            if s.get("actor") == body["actor"]["id"]:
                 actor_signed = True
         if sigs and not actor_signed:
             out("ERR", wid, "no valid signature by body.actor.id")
@@ -576,6 +582,8 @@ def main():
     cf = sub.add_parser("conformance")
     cf.add_argument("examples", nargs="?", default="examples")
     sub.add_parser("selftest")
+    cn = sub.add_parser("canon", help="print {warrant_id, canon_hex} for a bare body JSON")
+    cn.add_argument("file")
 
     args = ap.parse_args()
     store = Store(args.store)
@@ -641,6 +649,10 @@ def main():
         sys.exit(0 if conformance(args.examples) else 1)
     elif args.cmd == "selftest":
         sys.exit(0 if selftest() else 1)
+    elif args.cmd == "canon":
+        body = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        print(json.dumps({"warrant_id": warrant_id(body),
+                          "canon_hex": canon(body).hex()}))
 
 
 if __name__ == "__main__":
