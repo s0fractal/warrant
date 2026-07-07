@@ -62,11 +62,59 @@ func main() {
 		}
 	case "verify":
 		dir := "examples"
-		if len(os.Args) > 2 {
-			dir = os.Args[2]
+		settlement := false
+		trustConfig := ""
+		var genesis []string
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--settlement", "-settlement":
+				settlement = true
+			case "--trust-config", "-trust-config":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "verify: --trust-config requires a file")
+					os.Exit(2)
+				}
+				i++
+				trustConfig = args[i]
+			case "--genesis", "-genesis":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "verify: --genesis requires a WarrantID")
+					os.Exit(2)
+				}
+				i++
+				genesis = append(genesis, args[i])
+			default:
+				dir = args[i]
+			}
 		}
-		errs, _ := verifyDir(dir, false)
+		var errs int
+		if settlement {
+			errs, _ = verifyDirSettlement(dir, trustConfig, genesis, false)
+		} else {
+			errs, _ = verifyDir(dir, false)
+		}
 		if errs != 0 {
+			os.Exit(1)
+		}
+	case "settle":
+		if len(os.Args) < 5 {
+			fmt.Fprintln(os.Stderr, "usage: warrant-go settle <store> <settling-wid> <candidate-body.json>")
+			os.Exit(2)
+		}
+		_, records, blobs, err := loadVerifyData(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		body, err := readJSON(os.Args[4])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		verdict := settlementAdmissibility(records, blobs, os.Args[3], body)
+		fmt.Println(verdict)
+		if strings.HasPrefix(verdict, "inadmissible") {
 			os.Exit(1)
 		}
 	case "selftest":
@@ -104,7 +152,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [dir] | selftest [examples_dir]")
+	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [--settlement] [--trust-config file] [--genesis wid] [dir] | settle <store> <settling-wid> <candidate-body.json> | selftest [examples_dir]")
 }
 
 func readJSON(path string) (map[string]any, error) {
@@ -1060,6 +1108,800 @@ type verifyRecord struct {
 	err   error
 }
 
+type settlementContext struct {
+	records        map[string]map[string]any
+	blobs          map[string][]byte
+	roots          map[string]bool
+	activeRoots    map[string]bool
+	activeRecords  map[string]bool
+	invalidPolicy  map[string]bool
+	globalWarnings [][2]string
+	conflictActors map[string]bool
+	keysBefore     func(string) map[string]map[string]bool
+}
+
+func loadVerifyData(dir string) ([]verifyRecord, map[string]map[string]any, map[string][]byte, error) {
+	recordsDir := filepath.Join(dir, "records")
+	blobsDir := filepath.Join(dir, "blobs")
+	storeMode := isDir(recordsDir) && isDir(blobsDir)
+	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var recList []verifyRecord
+	records := map[string]map[string]any{}
+	blobs := map[string][]byte{}
+	for _, path := range blobFiles {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if storeMode {
+			name := filepath.Base(path)
+			if isHex64(name) {
+				blobs[name] = data
+			}
+		} else {
+			blobs[blobHash(data)] = data
+		}
+	}
+	for _, path := range recordFiles {
+		label := filepath.Base(path)
+		claim := ""
+		if storeMode {
+			claim = strings.TrimSuffix(label, ".json")
+		}
+		env, err := readJSON(path)
+		rec := verifyRecord{label: label, claim: claim, env: env, err: err}
+		recList = append(recList, rec)
+		if err != nil || env == nil {
+			continue
+		}
+		body, ok := env["body"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if storeMode {
+			records[claim] = env
+		} else if wid, err := warrantID(body); err == nil {
+			records[wid] = env
+		}
+	}
+	return recList, records, blobs, nil
+}
+
+func citedBlobs(body map[string]any) map[string]bool {
+	out := map[string]bool{}
+	for _, h := range getStringArray(body, "under") {
+		out[h] = true
+	}
+	for _, h := range getStringArray(body, "evidence") {
+		out[h] = true
+	}
+	if subj, ok := body["subject"].(map[string]any); ok {
+		if h, ok := subj["hash"].(string); ok {
+			out[h] = true
+		}
+	}
+	for _, item := range getArray(body, "because") {
+		r, ok := item.(map[string]any)
+		if !ok || r["kind"] != "check" {
+			continue
+		}
+		if h, ok := r["check"].(string); ok {
+			out[h] = true
+		}
+		if h, ok := r["transcript"].(string); ok {
+			out[h] = true
+		}
+	}
+	return out
+}
+
+func priorClosure(records map[string]map[string]any, wid string) map[string]bool {
+	seen := map[string]bool{}
+	env := records[wid]
+	if env == nil {
+		return seen
+	}
+	body, _ := env["body"].(map[string]any)
+	stack := append([]string{}, getStringArray(body, "prior")...)
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[cur] || records[cur] == nil {
+			continue
+		}
+		seen[cur] = true
+		b, _ := records[cur]["body"].(map[string]any)
+		stack = append(stack, getStringArray(b, "prior")...)
+	}
+	return seen
+}
+
+func fingerprint(reason, body map[string]any, blobs map[string][]byte) (string, bool) {
+	if reason["kind"] != "check" {
+		return "", false
+	}
+	runtime, _ := reason["runtime"].(string)
+	verdict, _ := reason["verdict"].(string)
+	switch runtime {
+	case "cmd@v1":
+		transcript, ok := reason["transcript"].(string)
+		if !ok || transcript == "" {
+			return "", false
+		}
+		check, _ := reason["check"].(string)
+		if blobs[check] == nil || blobs[transcript] == nil {
+			return "", false
+		}
+		evidence := getStringArray(body, "evidence")
+		for _, h := range evidence {
+			if blobs[h] == nil {
+				return "", false
+			}
+		}
+		sort.Strings(evidence)
+		return "cmd@v1\x00" + strings.Join(evidence, ",") + "\x00" + verdict + "\x00" + transcript, true
+	case "ski@v1":
+		check, ok := reason["check"].(string)
+		if !ok || blobs[check] == nil {
+			return "", false
+		}
+		parsed, err := parseSkiCheckBlob(blobs[check])
+		if err != nil {
+			return "", false
+		}
+		_, result, _, err := runSkiCheckFromStore(blobs, check)
+		if err != nil {
+			return "", false
+		}
+		return "ski@v1\x00" + hash32Hex(parsed.term) + "\x00" + hash32Hex(parsed.expect) + "\x00" + verdict + "\x00" + result, true
+	default:
+		return "", false
+	}
+}
+
+func tunnelFingerprints(records map[string]map[string]any, blobs map[string][]byte, wid string) map[string]bool {
+	out := map[string]bool{}
+	for rwid := range priorClosure(records, wid) {
+		body, _ := records[rwid]["body"].(map[string]any)
+		for _, item := range getArray(body, "because") {
+			if r, ok := item.(map[string]any); ok {
+				if fp, ok := fingerprint(r, body, blobs); ok {
+					out[fp] = true
+				}
+			}
+		}
+	}
+	return out
+}
+
+func settlementAdmissibility(records map[string]map[string]any, blobs map[string][]byte, settlingWid string, candidateBody map[string]any) string {
+	knownBlobs := map[string]bool{}
+	for rwid := range priorClosure(records, settlingWid) {
+		body, _ := records[rwid]["body"].(map[string]any)
+		for h := range citedBlobs(body) {
+			knownBlobs[h] = true
+		}
+	}
+	if env := records[settlingWid]; env != nil {
+		if body, ok := env["body"].(map[string]any); ok {
+			for h := range citedBlobs(body) {
+				knownBlobs[h] = true
+			}
+		}
+	}
+	evidence := getStringArray(candidateBody, "evidence")
+	sort.Strings(evidence)
+	for _, h := range evidence {
+		if !knownBlobs[h] {
+			return "admissible: (a) new evidence"
+		}
+	}
+	old := tunnelFingerprints(records, blobs, settlingWid)
+	if env := records[settlingWid]; env != nil {
+		if body, ok := env["body"].(map[string]any); ok {
+			for _, item := range getArray(body, "because") {
+				if r, ok := item.(map[string]any); ok {
+					if fp, ok := fingerprint(r, body, blobs); ok {
+						old[fp] = true
+					}
+				}
+			}
+		}
+	}
+	for _, item := range getArray(candidateBody, "because") {
+		r, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if fp, ok := fingerprint(r, candidateBody, blobs); ok && !old[fp] {
+			return "admissible: (b) new outcome fingerprint"
+		}
+	}
+	return "inadmissible: cites nothing new"
+}
+
+func parsePolicyBlob(blobs map[string][]byte, h string) (map[string]any, bool) {
+	raw := blobs[h]
+	if raw == nil {
+		return nil, false
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, false
+	}
+	doc, ok := v.(map[string]any)
+	if !ok || doc["warrant_policy"] != "0.3" {
+		return nil, false
+	}
+	canon, err := canonicalJSON(doc)
+	if err != nil || !bytes.Equal(canon, raw) || len(doc) != 2 {
+		return nil, true
+	}
+	th, ok := doc["threshold"].(map[string]any)
+	if !ok || len(th) != 2 {
+		return nil, true
+	}
+	minN, ok := th["min_sigs"].(json.Number)
+	if !ok || !intJSONRe.MatchString(minN.String()) {
+		return nil, true
+	}
+	min64, err := minN.Int64()
+	if err != nil {
+		return nil, true
+	}
+	rawActors, ok := th["actors"].([]any)
+	if !ok || len(rawActors) == 0 {
+		return nil, true
+	}
+	seen := map[string]bool{}
+	actors := make([]string, 0, len(rawActors))
+	for _, item := range rawActors {
+		a, ok := item.(string)
+		if !ok || a == "" || seen[a] {
+			return nil, true
+		}
+		seen[a] = true
+		actors = append(actors, a)
+	}
+	if min64 < 1 || min64 > int64(len(actors)) {
+		return nil, true
+	}
+	return map[string]any{"min_sigs": int(min64), "actors": actors}, false
+}
+
+func recordPolicy(blobs map[string][]byte, body map[string]any) ([]map[string]any, bool) {
+	var policies []map[string]any
+	invalid := false
+	for _, h := range getStringArray(body, "under") {
+		p, bad := parsePolicyBlob(blobs, h)
+		if bad {
+			invalid = true
+		}
+		if p != nil {
+			policies = append(policies, p)
+		}
+	}
+	return policies, invalid
+}
+
+func validSigActors(wid string, env map[string]any, keys map[string]map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	for _, s := range getArray(env, "sigs") {
+		if !verifySig(wid, s) {
+			continue
+		}
+		sm, _ := s.(map[string]any)
+		actor, _ := sm["actor"].(string)
+		key, _ := sm["key"].(string)
+		if keys != nil {
+			if keys[actor] == nil || !keys[actor][key] {
+				continue
+			}
+		}
+		out[actor] = true
+	}
+	return out
+}
+
+func thresholdSatisfied(wid string, env map[string]any, policy map[string]any, keys map[string]map[string]bool, conflicted map[string]bool) bool {
+	rawActors, _ := policy["actors"].([]string)
+	var actors []string
+	for _, a := range rawActors {
+		if conflicted == nil || !conflicted[a] {
+			actors = append(actors, a)
+		}
+	}
+	if len(actors) == 0 {
+		return false
+	}
+	minSigs, _ := policy["min_sigs"].(int)
+	if minSigs > len(actors) {
+		minSigs = len(actors)
+	}
+	signers := validSigActors(wid, env, keys)
+	n := 0
+	for _, a := range actors {
+		if signers[a] {
+			n++
+		}
+	}
+	return n >= minSigs
+}
+
+func policiesSatisfied(blobs map[string][]byte, wid string, env map[string]any, keys map[string]map[string]bool) bool {
+	body, _ := env["body"].(map[string]any)
+	policies, invalid := recordPolicy(blobs, body)
+	if invalid {
+		return false
+	}
+	if len(policies) == 0 {
+		for _, s := range getArray(env, "sigs") {
+			if verifySig(wid, s) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range policies {
+		if !thresholdSatisfied(wid, env, p, keys, nil) {
+			return false
+		}
+	}
+	return true
+}
+
+func parseKeyBlob(blobs map[string][]byte, h string) (string, string, bool) {
+	raw := blobs[h]
+	if raw == nil {
+		return "", "", false
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return "", "", false
+	}
+	doc, ok := v.(map[string]any)
+	if !ok || len(doc) != 2 {
+		return "", "", false
+	}
+	canon, err := canonicalJSON(doc)
+	if err != nil || !bytes.Equal(canon, raw) {
+		return "", "", false
+	}
+	actor, ok1 := doc["actor"].(string)
+	key, ok2 := doc["key"].(string)
+	if !ok1 || !ok2 || actor == "" || !isHex64(key) {
+		return "", "", false
+	}
+	return actor, key, true
+}
+
+func settlementCtx(dir string, records map[string]map[string]any, blobs map[string][]byte, trustPath string, explicitGenesis []string) settlementContext {
+	ctx := settlementContext{
+		records:        records,
+		blobs:          blobs,
+		roots:          map[string]bool{},
+		activeRoots:    map[string]bool{},
+		activeRecords:  map[string]bool{},
+		invalidPolicy:  map[string]bool{},
+		conflictActors: map[string]bool{},
+	}
+	trust := map[string]any{}
+	if trustPath != "" {
+		if m, err := readJSON(trustPath); err == nil {
+			trust = m
+		}
+	}
+	genesis := map[string]bool{}
+	for _, g := range explicitGenesis {
+		genesis[g] = true
+	}
+	for _, g := range getStringArray(trust, "genesis_roots") {
+		genesis[g] = true
+	}
+	gpath := filepath.Join(dir, "genesis.json")
+	if raw, err := os.ReadFile(gpath); err == nil {
+		if trust["genesis_json_sha256"] == blobHash(raw) {
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.UseNumber()
+			var v any
+			if err := dec.Decode(&v); err == nil {
+				if doc, ok := v.(map[string]any); ok {
+					for _, g := range getStringArray(doc, "roots") {
+						genesis[g] = true
+					}
+				}
+			}
+		} else {
+			ctx.globalWarnings = append(ctx.globalWarnings, [2]string{"store", "genesis.json unverified"})
+		}
+	}
+	for wid, env := range records {
+		body, _ := env["body"].(map[string]any)
+		if len(getStringArray(body, "prior")) == 0 {
+			ctx.roots[wid] = true
+		}
+		_, bad := recordPolicy(blobs, body)
+		if bad {
+			ctx.invalidPolicy[wid] = true
+		}
+	}
+	for g := range genesis {
+		if records[g] != nil {
+			ctx.activeRoots[g] = true
+		}
+	}
+	recordRootsCache := map[string]map[string]bool{}
+	var recordRoots func(string) map[string]bool
+	recordRoots = func(wid string) map[string]bool {
+		if cached := recordRootsCache[wid]; cached != nil {
+			return cached
+		}
+		out := map[string]bool{}
+		env := records[wid]
+		if env == nil {
+			return out
+		}
+		body, _ := env["body"].(map[string]any)
+		prior := getStringArray(body, "prior")
+		if len(prior) == 0 {
+			out[wid] = true
+		} else {
+			for _, p := range prior {
+				for r := range recordRoots(p) {
+					out[r] = true
+				}
+			}
+		}
+		recordRootsCache[wid] = out
+		return out
+	}
+	changed := true
+	for changed {
+		changed = false
+		for root := range ctx.roots {
+			if ctx.activeRoots[root] {
+				continue
+			}
+			for _, wid := range sortedRecordIDs(records) {
+				env := records[wid]
+				body, _ := env["body"].(map[string]any)
+				if body["decision"] != "accept" || getSubjectHash(body) != root || ctx.invalidPolicy[wid] {
+					continue
+				}
+				activePrior := false
+				for r := range recordRoots(wid) {
+					if ctx.activeRoots[r] {
+						activePrior = true
+					}
+				}
+				if activePrior && policiesSatisfied(blobs, wid, env, nil) {
+					ctx.activeRoots[root] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	for wid := range records {
+		if ctx.invalidPolicy[wid] {
+			continue
+		}
+		for r := range recordRoots(wid) {
+			if ctx.activeRoots[r] {
+				ctx.activeRecords[wid] = true
+			}
+		}
+	}
+	genesisKeys := map[string]map[string]bool{}
+	if actors, ok := trust["actors"].(map[string]any); ok {
+		for actor, raw := range actors {
+			genesisKeys[actor] = map[string]bool{}
+			if arr, ok := raw.([]any); ok {
+				for _, item := range arr {
+					if key, ok := item.(string); ok {
+						genesisKeys[actor][key] = true
+					}
+				}
+			}
+		}
+	}
+	ancestorsCache := map[string]map[string]bool{}
+	ancestors := func(wid string) map[string]bool {
+		if ancestorsCache[wid] == nil {
+			ancestorsCache[wid] = priorClosure(records, wid)
+		}
+		return ancestorsCache[wid]
+	}
+	depth := func(wid string) int { return len(ancestors(wid)) }
+	rotationCache := map[string][2]string{}
+	rotationOK := map[string]bool{}
+	rotation := func(wid string) (string, string, bool) {
+		if _, seen := rotationCache[wid]; seen || rotationOK[wid] {
+			v := rotationCache[wid]
+			return v[0], v[1], rotationOK[wid]
+		}
+		env := records[wid]
+		if env == nil {
+			rotationCache[wid] = [2]string{}
+			return "", "", false
+		}
+		body, _ := env["body"].(map[string]any)
+		if body["decision"] == "accept" {
+			a, k, ok := parseKeyBlob(blobs, getSubjectHash(body))
+			if ok {
+				rotationCache[wid] = [2]string{a, k}
+				rotationOK[wid] = true
+				return a, k, true
+			}
+		}
+		rotationCache[wid] = [2]string{}
+		return "", "", false
+	}
+	keysCache := map[string]map[string]map[string]bool{}
+	var keysBefore func(string) map[string]map[string]bool
+	var rotationAuthorized func(string) bool
+	keysBefore = func(wid string) map[string]map[string]bool {
+		if cached := keysCache[wid]; cached != nil {
+			return cloneKeyMap(cached)
+		}
+		keys := cloneKeyMap(genesisKeys)
+		aws := keysOfBool(ancestors(wid))
+		sort.Slice(aws, func(i, j int) bool {
+			di, dj := depth(aws[i]), depth(aws[j])
+			if di != dj {
+				return di < dj
+			}
+			return aws[i] < aws[j]
+		})
+		for _, awid := range aws {
+			if actor, key, ok := rotation(awid); ok && rotationAuthorized(awid) {
+				keys[actor] = map[string]bool{key: true}
+			}
+		}
+		keysCache[wid] = cloneKeyMap(keys)
+		return keys
+	}
+	rotationAuthorized = func(wid string) bool {
+		actor, incoming, ok := rotation(wid)
+		if !ok || ctx.invalidPolicy[wid] || !ctx.activeRecords[wid] {
+			return false
+		}
+		env := records[wid]
+		proof := false
+		for _, s := range getArray(env, "sigs") {
+			sm, _ := s.(map[string]any)
+			if verifySig(wid, s) && sm["actor"] == actor && sm["key"] == incoming {
+				proof = true
+			}
+		}
+		if !proof {
+			return false
+		}
+		priorKeys := keysBefore(wid)
+		body, _ := env["body"].(map[string]any)
+		policies, bad := recordPolicy(blobs, body)
+		if bad {
+			return false
+		}
+		if len(policies) > 0 {
+			for _, p := range policies {
+				if !thresholdSatisfied(wid, env, p, priorKeys, nil) {
+					return false
+				}
+			}
+			return true
+		}
+		for _, s := range getArray(env, "sigs") {
+			sm, _ := s.(map[string]any)
+			key, _ := sm["key"].(string)
+			if verifySig(wid, s) && sm["actor"] == actor && priorKeys[actor] != nil && priorKeys[actor][key] {
+				return true
+			}
+		}
+		return false
+	}
+	authorizedRotations := map[string]map[string]bool{}
+	for _, wid := range sortedRecordIDs(records) {
+		if actor, _, ok := rotation(wid); ok && rotationAuthorized(wid) {
+			if authorizedRotations[actor] == nil {
+				authorizedRotations[actor] = map[string]bool{}
+			}
+			authorizedRotations[actor][wid] = true
+		}
+	}
+	for actor, wids := range authorizedRotations {
+		maximal := map[string]bool{}
+		for wid := range wids {
+			maximal[wid] = true
+		}
+		for a := range wids {
+			for b := range wids {
+				if a != b && ancestors(b)[a] {
+					delete(maximal, a)
+				}
+			}
+		}
+		if len(maximal) > 1 {
+			ctx.conflictActors[actor] = true
+		}
+	}
+	ctx.keysBefore = keysBefore
+	return ctx
+}
+
+func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) (int, int) {
+	recList, records, blobs, err := loadVerifyData(dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1, 0
+	}
+	errs, warns := 0, 0
+	out := func(level, wid, msg string) {
+		if level == "ERR" {
+			errs++
+		} else if level == "WARN" {
+			warns++
+		}
+		if !quiet {
+			fmt.Printf("%-4s %.12s  %s\n", level, wid, msg)
+		}
+	}
+	ctx := settlementCtx(dir, records, blobs, trustConfig, genesis)
+	for _, w := range ctx.globalWarnings {
+		out("WARN", w[0], w[1])
+	}
+	for _, root := range keysOfBool(ctx.roots) {
+		if !ctx.activeRoots[root] {
+			out("WARN", root, "unadopted root")
+		}
+	}
+	for _, rec := range recList {
+		wid := rec.claim
+		if wid == "" {
+			wid = strings.TrimSuffix(rec.label, ".warrant.json")
+		}
+		env := rec.env
+		if rec.err != nil {
+			out("ERR", wid, rec.err.Error())
+			continue
+		}
+		if len(env) != 2 {
+			out("ERR", wid, "envelope must be {body, sigs}")
+			continue
+		}
+		body, ok := env["body"].(map[string]any)
+		if !ok {
+			out("ERR", wid, "body is not an object")
+			continue
+		}
+		if _, ok := env["sigs"].([]any); !ok {
+			out("ERR", wid, "sigs must be a list")
+			continue
+		}
+		if ctx.invalidPolicy[wid] {
+			out("ERR", wid, "invalid threshold policy")
+		}
+		for _, msg := range validateBody(body) {
+			out("ERR", wid, "schema: "+msg)
+		}
+		got, err := warrantID(body)
+		if err != nil {
+			out("ERR", wid, "WarrantID canonicalization: "+err.Error())
+			continue
+		}
+		if rec.claim != "" {
+			if got != rec.claim {
+				out("ERR", wid, "WarrantID mismatch: recomputed "+got[:12])
+				continue
+			}
+		} else {
+			wid = got
+		}
+		sigs := env["sigs"].([]any)
+		if len(sigs) == 0 {
+			out("ERR", wid, "no signatures")
+		}
+		actorID := getActorID(body)
+		actorSigned := false
+		for _, s := range sigs {
+			if !verifySig(wid, s) {
+				out("ERR", wid, "bad signature")
+				continue
+			}
+			sm, _ := s.(map[string]any)
+			actor, _ := sm["actor"].(string)
+			key, _ := sm["key"].(string)
+			keys := ctx.keysBefore(wid)
+			bound := !ctx.conflictActors[actor] && keys[actor] != nil && keys[actor][key]
+			short := key
+			if len(short) > 12 {
+				short = short[:12]
+			}
+			if bound {
+				if !quiet {
+					fmt.Printf("INFO %.12s  signature bound: key %s claims actor %s\n", wid, short, actor)
+				}
+			} else {
+				out("WARN", wid, "signature unbound: key "+short+" claims actor "+actor)
+			}
+			if actor == actorID {
+				actorSigned = true
+			}
+		}
+		if len(sigs) > 0 && !actorSigned {
+			out("ERR", wid, "no valid signature by body.actor.id")
+		}
+		for _, p := range getStringArray(body, "prior") {
+			prev, ok := records[p]
+			if !ok {
+				out("ERR", wid, "prior "+p[:12]+" not in store")
+				continue
+			}
+			prevBody, _ := prev["body"].(map[string]any)
+			if getInt(prevBody, "ts") > getInt(body, "ts") {
+				out("WARN", wid, "ts decreases along prior edge "+p[:12])
+			}
+		}
+		for _, h := range referencedBlobs(body) {
+			if blobs[h] == nil && records[h] == nil {
+				out("WARN", wid, "unresolved blob "+h[:12])
+			}
+		}
+		if body["decision"] == "supersede" && records[getSubjectHash(body)] == nil {
+			out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
+		}
+		if isUnverifiable(body) {
+			out("WARN", wid, "UNVERIFIABLE: reject with prose-only reasons")
+		}
+		for _, item := range getArray(body, "because") {
+			r, ok := item.(map[string]any)
+			if !ok || r["kind"] != "check" || r["runtime"] != "ski@v1" {
+				continue
+			}
+			checkHex, ok := r["check"].(string)
+			if !ok {
+				continue
+			}
+			got, _, _, err := runSkiCheckFromStore(blobs, checkHex)
+			if err != nil {
+				continue
+			}
+			if claimed, ok := r["verdict"].(string); ok && claimed != got {
+				out("WARN", wid, "ski@v1 verdict mismatch: claimed "+claimed+", got "+got)
+			}
+		}
+		if ctx.activeRecords[wid] {
+			if ctx.conflictActors[actorID] {
+				out("WARN", wid, "key-state conflict")
+			}
+			if body["decision"] == "accept" || body["decision"] == "reject" {
+				priors := keysOfBool(priorClosure(records, wid))
+				sort.Strings(priors)
+				for _, prior := range priors {
+					pbody, _ := records[prior]["body"].(map[string]any)
+					if ctx.activeRecords[prior] && (pbody["decision"] == "accept" || pbody["decision"] == "reject") && getSubjectHash(pbody) == getSubjectHash(body) {
+						if strings.HasPrefix(settlementAdmissibility(records, blobs, prior, body), "inadmissible") {
+							out("WARN", wid, "re-litigation cites nothing new")
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+	if !quiet {
+		fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
+	}
+	return errs, warns
+}
+
 func verifyDir(dir string, quiet bool) (int, int) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
@@ -1427,6 +2269,44 @@ func getActorID(body map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func getSubjectHash(body map[string]any) string {
+	if subj, ok := body["subject"].(map[string]any); ok {
+		if h, ok := subj["hash"].(string); ok {
+			return h
+		}
+	}
+	return ""
+}
+
+func keysOfBool(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedRecordIDs(records map[string]map[string]any) []string {
+	out := make([]string, 0, len(records))
+	for k := range records {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func cloneKeyMap(in map[string]map[string]bool) map[string]map[string]bool {
+	out := make(map[string]map[string]bool, len(in))
+	for actor, keys := range in {
+		out[actor] = map[string]bool{}
+		for key, ok := range keys {
+			out[actor][key] = ok
+		}
+	}
+	return out
 }
 
 func referencedBlobs(body map[string]any) []string {
