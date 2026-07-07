@@ -1,0 +1,6 @@
+closed-schema probe: ['because[1]: check reason has unknown fields']
+SELFTEST: ALL PASS
+CONFORMANCE: ALL PASS (20/20)
+DIFFERENTIAL: ALL AGREE (43/43)
+NEGATIVE: ALL AGREE
+gov001 gate 2 dispositions verified
