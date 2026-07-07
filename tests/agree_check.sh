@@ -38,3 +38,9 @@ python3 tests/differential.py
 # a hand-crafted ski@v1 verdict lie (Opus 4.8 review follow-up).
 echo "--- negative-path differential ---"
 python3 tests/negative.py
+
+# v0.3 settlement differential: both impls must agree on settlement-active
+# roots, genesis.json handling, threshold policies, re-litigation
+# admissibility and key-state derivation (SPEC s5.1/s7/s9).
+echo "--- settlement differential ---"
+python3 tests/settlement.py

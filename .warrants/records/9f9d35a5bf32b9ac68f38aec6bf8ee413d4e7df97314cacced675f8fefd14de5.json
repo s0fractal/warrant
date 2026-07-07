@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Zero-relay implementation cycle per the PR #4 pattern: brief (evidence) -> codex exec (gpt-5.5) in isolated clone -> maintainer cold verification -> this warrant. Delivered: Python reference (+406) and Go parity (+888) for SPEC s5.1/s7/s9 - tunnel + outcome fingerprints + settle verb + relitigation refusal, settlement-active root derivation with policy-authorized adoption, advisory genesis.json (pinned-hash or unused + WARN), threshold policy parsing with ERR on invalid, key-state derivation in DAG order with maximal-conflict detection and conflicted-key exclusion. tests/settlement.py: 13 differential scenarios, identical warning strings enforced across impls. Cold verification: full acceptance block green; plain mode BYTE-IDENTICAL to v0.2 behavior (old-vs-new diff empty; sigma-glyph 18-record store agrees across impls); validate_body untouched - zero body schema changes. Maintainer spot-check found the one brief case the run skipped - stale-rotation-replay non-conflict, the exact attack DeepSeek refuted at the GOV-001 gate - added it, both impls pass. Implementation convention accepted: key-rotation subject blobs are verifier-local JCS {actor,key} (SPEC mandates semantics, not an interchange format). Wired into agree_check.sh and CI. GOV-001 arc complete: Kimi's governance critique -> 3-family gate -> SPEC v0.3 -> differential implementation, tagged v0.3."
+      },
+      {
+        "check": "6404758ad29c5f9fbc82aa96148e2a23ee55654d1600295826cb38362e8e22c0",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "eafac912cb51aeca842ae439b8f20ebc9df31b34492ed8af6ec5e0f3ff58476c",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "3664a16f7ad32867ceccdf668ecceb36c2639bba443fe19bd9c1339fd8f772a3"
+    ],
+    "prior": [
+      "4820ba49953ead2728e628f35d6c66378ea5d32a47192441e8fa57925c30acc6"
+    ],
+    "subject": {
+      "hash": "f757ab4ad349a026441731c3ef3e1efc5a7331fb11d4a6b9807ca4dd01dab643",
+      "note": "SPEC v0.3 implementation gate: settlement/multi-root/key-state in BOTH impls (codex zero-relay, 1732 lines), settlement differential ALL AGREE incl. maintainer spot-check"
+    },
+    "ts": 1783450944,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "97e6453a16c679f2f3240972f7dc746186daf6b65c605f23815e5180d3aee1826ef434ba38ef19a00956312b7f261aed62b21a8583567dae86b51b00e299bd07"
+    }
+  ]
+}

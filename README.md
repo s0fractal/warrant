@@ -86,3 +86,20 @@ python3 impl/warrant.py selftest               # live round-trip + tamper detect
 First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.
 
 License: MIT.
+
+## v0.3: settlement-grade verification (DRAFT)
+
+Beyond integrity (`verify`), v0.3 adds settlement semantics (SPEC §5.1/§7/§9):
+
+```bash
+python3 impl/warrant.py verify --settlement --trust-config trust.json
+python3 impl/warrant.py settle <settling-wid> candidate-body.json
+./impl-go/warrant-go verify --settlement --trust-config trust.json <store>
+```
+
+Settlement-active roots come from your local trust configuration (plus
+policy-authorized adoptions); `genesis.json` is advisory and must be pinned to
+be used. Re-litigation of a settled subject requires new evidence or a new
+outcome fingerprint — prose never re-opens anything. Key rotation/revocation
+are warrants; key state derives from the DAG. Both implementations must agree
+on every settlement outcome: `python3 tests/settlement.py`.
