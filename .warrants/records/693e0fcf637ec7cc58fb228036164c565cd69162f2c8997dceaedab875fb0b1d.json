@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "No P0 identity/settlement split. P1 cyclic-prior: record_roots recursed without a visited set -> two-record cycle crashed the verifier before per-record validation; fixed iteratively + shape-defensive in Python AND Go (the Go recordRoots had the identical memoize-after-recursion defect). P1 ski fail-open: verify_store swallowed RuntimeError silently (and a malformed-JSON check blob leaked JSONDecodeError past it - latent crash); run_ski_check now raises stable path-free reason classes, base verify WARNs `ski@v1 unverified: <class>`, settlement-grade escalates to ERR when the claim is settlement-active. P2-a malformed-JSON -> bounded `unloadable record` ERR, verification continues. P2-b WARRANT_REQUIRE_SIGMA strict mode fails the two silent SKIPs, CI runs strict. P2-c cryptography version-bounded, tests/hostile.py a required gate, per-Action SHA pin documented as follow-up (digests not guessed to avoid a red build). tests/hostile.py asserts no crash + Python/Go count agreement on cycles/self-cycle/deep-chain/cycle+valid/malformed-JSON/unverified-ski. All existing suites green; own store still 10 records 0/0. Verified locally on the MacBook."
+      },
+      {
+        "check": "c6fd3db01c17cf668d453b965dcee8fe07be5ced074d9f5e72b0f8a640b1c960",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "03d32c12d49709bcb324f6b9dcb382d660bb483de9279f43b0c004aa6b6a07a8",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "ad5381e7f64d70aec61f1d9c073ec99a87fe21d127a5f697a130a306f55deef5"
+    ],
+    "prior": [
+      "b7738c1d208bdc9d425ae694a9accc09d74904540aae518e7c292b11d5b72a9e"
+    ],
+    "subject": {
+      "hash": "158ec717f10e40e9e9140ad9054ac8077e3d9079c3968fe68efb66b9cfb2b1d3",
+      "note": "Codex v0.3 runtime hardening audit: no P0; two P1 (cyclic-prior crash, ski fail-open) + P2s fixed in both impls"
+    },
+    "ts": 1783545432,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "3b39b2a910297cbd818e3f2b43b05aa3b25576f20aca673680934e7f90e9bfc52786721ad7c9f2d8b212aaa76bf94f67e4599ab761c10ad9ca1d372ce8ccb20d"
+    }
+  ]
+}

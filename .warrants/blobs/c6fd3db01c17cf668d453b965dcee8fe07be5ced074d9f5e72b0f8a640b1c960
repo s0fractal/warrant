@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Adjudication check: warrant v0.3 runtime hardening fixes (repo root; needs SIGMA_GLYPH)."""
+import os, subprocess, sys
+env = dict(os.environ, SIGMA_GLYPH=os.path.expanduser("~/Projects/sigma-glyph/impl"),
+           WARRANT_REQUIRE_SIGMA="1")
+ok = True
+for cmd, want in ((["python3","tests/hostile.py"], "HOSTILE: ALL PASS"),
+                  (["python3","tests/differential.py"], "DIFFERENTIAL: ALL AGREE"),
+                  (["python3","tests/negative.py"], "NEGATIVE: ALL AGREE"),
+                  (["python3","tests/settlement.py"], "SETTLEMENT: ALL AGREE"),
+                  (["python3","impl/warrant.py","selftest"], "SELFTEST: ALL PASS")):
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    last = p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "(no output)"
+    print(last)
+    ok &= p.returncode == 0 and want in p.stdout
+# the P1 probes: cyclic prior + malformed JSON must NOT traceback
+import tempfile, json as J, hashlib, pathlib
+with tempfile.TemporaryDirectory() as td:
+    r = pathlib.Path(td); (r/"records").mkdir(); (r/"blobs").mkdir()
+    base = {"warrant":"0.2","decision":"propose","subject":{"hash":"0"*64},"under":["0"*64],"because":[],"evidence":[],"actor":{"id":"x"},"prior":[],"ts":1}
+    for wid,pr in (("a"*64,["b"*64]),("b"*64,["a"*64])):
+        J.dump({"body":dict(base,prior=pr),"sigs":[]}, open(r/"records"/f"{wid}.json","w"))
+    p = subprocess.run(["python3","impl/warrant.py","--store",str(r),"verify","--settlement","--genesis","a"*64], capture_output=True, text=True, env=env)
+    ok &= "Traceback" not in p.stderr and "errors" in p.stdout
+    print("cyclic prior: bounded report, no traceback" if "Traceback" not in p.stderr else "cyclic prior: TRACEBACK")
+print("warrant hardening fixes verified" if ok else "CHECK FAILED")
+sys.exit(0 if ok else 1)

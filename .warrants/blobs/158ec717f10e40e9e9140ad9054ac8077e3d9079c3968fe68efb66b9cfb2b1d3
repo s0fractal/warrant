@@ -1,0 +1,255 @@
+# Warrant v0.3 Runtime Hardening Audit — Codex — 2026-07-08
+
+Reviewer posture: independent adversarial review of current `master`
+(`a4270f8`). I ran the repository suites, then reran the optional `ski@v1`
+paths against the actual sibling Sigma checkout, and finally supplied malformed
+stores and cyclic prior graphs directly to the verifier.
+
+Severity ladder:
+
+- P0: conforming implementations disagree on identity or settlement outcome.
+- P1: security, trust, or availability behavior is unsafe or fail-open.
+- P2: robustness, CI, diagnostics, or maintenance correctness.
+- P3: roadmap.
+
+## Verdict
+
+No P0 identity or Python/Go settlement split was found in the shipped vectors.
+With `SIGMA_GLYPH` configured, the full differential and `ski@v1`
+re-litigation suites agree.
+
+The verifier is not yet hardened for hostile store input. The Python
+settlement path recursively trusts the shape of `prior` before completing base
+validation and can be crashed by a two-record cycle. Separately, settlement
+verification silently suppresses every `ski@v1` rerun failure, including an
+absent oracle, so a supposedly executable claim can degrade to unchecked data
+without a warning. Both are P1 for a settlement-grade verifier.
+
+## Verified state
+
+Observed:
+
+```text
+python3 tests/differential.py
+# DIFFERENTIAL: ALL AGREE (43/43)
+
+python3 tests/negative.py
+# NEGATIVE: ALL AGREE
+
+SIGMA_GLYPH=/Users/s0fractal/Projects/sigma-glyph/impl \
+  python3 tests/settlement.py
+# SETTLEMENT: ALL AGREE
+# includes all three re-litigation ski@v1 cases
+
+SIGMA_GLYPH=/Users/s0fractal/Projects/sigma-glyph/impl \
+  python3 tests/pedantic_edges.py
+# PEDANTIC-EDGES: ALL AGREE (15/15)
+
+(cd impl-go && go test ./... && go vet ./...)
+# pass; package currently has no Go unit-test files
+```
+
+Without `SIGMA_GLYPH`, the first settlement run printed:
+
+```text
+SKIP  re-litigation ski@v1 fingerprints (sigma oracle not found)
+SKIP  ski@v1 verdict lie (sigma oracle not found)
+```
+
+Those paths passed only after the explicit environment variable was supplied.
+
+The working tree was clean before this review file was added.
+
+## P0 findings
+
+None.
+
+## P1 findings
+
+### P1: a two-record `prior` cycle crashes Python settlement verification
+
+`_settlement_context.record_roots()` recursively follows `prior` without a
+visited or in-progress set:
+
+```python
+def record_roots(wid):
+    env = recs.get(wid)
+    if not env:
+        return set()
+    if not env["body"]["prior"]:
+        return {wid}
+    out = set()
+    for p in env["body"]["prior"]:
+        out.update(record_roots(p))
+    return out
+```
+
+The settlement context is constructed before the regular verification loop
+reports WarrantID, schema, and signature errors. A malformed store can
+therefore terminate the entire verifier instead of producing a bounded report.
+
+Reproduction:
+
+```bash
+tmp=$(mktemp -d)
+mkdir -p "$tmp/records" "$tmp/blobs"
+TMPX="$tmp" python3 - <<'PY'
+import json, os
+root = os.environ["TMPX"]
+a, b, z = "a" * 64, "b" * 64, "0" * 64
+base = {
+    "warrant": "0.2",
+    "decision": "propose",
+    "subject": {"hash": z},
+    "under": [z],
+    "because": [],
+    "evidence": [],
+    "actor": {"id": "x"},
+    "ts": 1,
+}
+for wid, prior in ((a, [b]), (b, [a])):
+    body = dict(base, prior=prior)
+    with open(f"{root}/records/{wid}.json", "w") as f:
+        json.dump({"body": body, "sigs": []}, f)
+PY
+python3 impl/warrant.py --store "$tmp" verify --settlement \
+  --genesis "$(printf 'a%.0s' {1..64})"
+rm -rf "$tmp"
+```
+
+Observed:
+
+```text
+RecursionError: maximum recursion depth exceeded
+```
+
+Concrete fix:
+
+- Make root discovery iterative or use tri-color DFS with memoization.
+- Detect cycles explicitly and report an `ERR` for each involved record.
+- Perform enough envelope/body validation before settlement graph traversal
+  that malformed shapes cannot be dereferenced as valid bodies.
+- Audit the corresponding Go traversal even though this reproduction was
+  confirmed against Python only.
+
+Required tests:
+
+- two-record cycle;
+- self-cycle;
+- long acyclic chain beyond Python's ordinary recursion depth;
+- cycle plus unrelated valid records, proving verification continues;
+- Python/Go agreement on error outcome and no panic/traceback.
+
+### P1: `ski@v1` verification silently fails open
+
+In `verify_store`, rerun failures are discarded:
+
+```python
+try:
+    got, rh, _ = run_ski_check(store, r["check"])
+    if got != r["verdict"]:
+        out("WARN", wid, ...)
+except RuntimeError:
+    pass
+```
+
+`RuntimeError` includes at least:
+
+- Sigma runtime unavailable;
+- check blob missing;
+- malformed/non-canonical check blob;
+- referenced runtime data unavailable.
+
+These cases are materially different, but all result in zero diagnostic output.
+The local default lookup is `~/sigma-glyph/impl`; the sibling checkout in the
+audited environment is `~/Projects/sigma-glyph/impl`. Consequently, the
+nominal test run skipped the executable checks until `SIGMA_GLYPH` was set.
+
+For a settlement-grade verifier, “claim reran and matched” and “claim was not
+executed” must not be observationally equivalent.
+
+Concrete fix:
+
+- Base verification: emit a stable warning such as
+  `ski@v1 unverified: <reason class>`.
+- Settlement-grade verification: make an unavailable or malformed runtime
+  claim an error when that claim participates in an active record,
+  fingerprint, adoption, or foreclosure decision.
+- Do not place raw filesystem paths or exception internals in normative
+  diagnostics; classify errors into stable reason codes.
+- Keep a CLI escape hatch only if the trust model explicitly defines an
+  offline/no-runtime mode. It must be visible in the final summary.
+
+Required tests:
+
+- oracle absent;
+- check blob absent;
+- malformed JSON check;
+- non-JCS check;
+- CAS child absent;
+- rerun verdict mismatch;
+- successful rerun;
+- explicit assertions for warning/error counts, not a silent `SKIP`.
+
+## P2 findings
+
+### P2: malformed JSON aborts the Python verifier and suppresses the remaining report
+
+`Store.all_records()` calls `json.loads` without handling per-record failures:
+
+```python
+for p in sorted(self.records.glob("*.json")):
+    out[p.stem] = json.loads(p.read_text())
+```
+
+A record containing `{broken` produces a Python traceback. The Go verifier
+instead emits a structured record error and continues to its summary.
+
+Concrete fix:
+
+- Parse records independently into valid records plus load errors.
+- Report invalid UTF-8, I/O failure, malformed JSON, wrong top-level type, and
+  invalid filename/WarrantID as bounded verification errors.
+- Continue checking unaffected records.
+- Apply the same defensive parsing to trust config and a hash-authorized
+  `genesis.json`; trust input errors should be explicit and fail closed.
+
+### P2: the optional integration tests can be green while their critical cases are skipped
+
+The direct test scripts print `SKIP` when Sigma is not found and still finish
+successfully. CI currently supplies a pinned Sigma checkout, so the shipped
+workflow exercised the paths during this audit's reviewed revision. Local
+`agree_check.sh` and downstream automation can nevertheless mistake partial
+coverage for a complete pass.
+
+Concrete fix:
+
+- Add `--require-sigma` or an environment-controlled strict mode.
+- Enable strict mode in `agree_check.sh` and CI.
+- Print a final executed/skipped count.
+- Provide a root test command that builds `impl-go/warrant-go`, locates or
+  checks out the pinned Sigma revision, and runs the complete matrix.
+
+### P2: CI dependencies are not fully immutable
+
+The workflow pins the Sigma source commit, which is good, but GitHub Actions
+are referenced by mutable major tags and `cryptography` is installed without a
+version/hash constraint.
+
+For a repository centered on reproducible settlement and trust roots, pin
+Actions by commit SHA and Python dependencies with hashes. Consider a fixed
+runner image rather than `ubuntu-latest`.
+
+## Acceptance criteria
+
+- Neither malformed JSON nor cyclic `prior` input produces a traceback,
+  panic, hang, or unbounded recursion.
+- Verification continues across unrelated valid records.
+- Python and Go agree on error/warning counts for the new hostile-store
+  fixtures.
+- Every `ski@v1` claim ends in one of: verified match, verified mismatch, or
+  explicit unverifiable error/warning. There is no silent fourth state.
+- Strict CI fails if required `ski@v1` cases are skipped.
+- Existing WarrantIDs, conformance vectors, and the shipped store remain
+  unchanged.
+

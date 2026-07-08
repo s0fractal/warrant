@@ -1,0 +1,7 @@
+HOSTILE: ALL PASS
+DIFFERENTIAL: ALL AGREE (43/43)
+NEGATIVE: ALL AGREE
+SETTLEMENT: ALL AGREE
+SELFTEST: ALL PASS
+cyclic prior: bounded report, no traceback
+warrant hardening fixes verified
