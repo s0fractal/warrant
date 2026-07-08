@@ -217,6 +217,12 @@ def case_invalid_policy(tmp):
 def case_relitigation(tmp):
     sg = W.load_sigma()
     if sg is None:
+        # Codex v0.3 hardening audit P2: a green run that silently skipped its
+        # critical ski@v1 cases must be distinguishable from a complete pass.
+        if os.environ.get("WARRANT_REQUIRE_SIGMA"):
+            print("FAIL  re-litigation ski@v1 fingerprints: WARRANT_REQUIRE_SIGMA "
+                  "set but the Σ-GLYPH oracle was not found (set SIGMA_GLYPH)")
+            return False
         print("SKIP  re-litigation ski@v1 fingerprints (sigma oracle not found)")
         return True
     store, keys, opaque = setup(tmp)

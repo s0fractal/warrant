@@ -176,15 +176,17 @@ def run_ski_check(store, check_hex, sg=None):
     Raises RuntimeError if the check blob is malformed or the oracle missing."""
     sg = sg or load_sigma()
     if sg is None:
-        raise RuntimeError("ski@v1 runtime unavailable: sigma_glyph.py not found "
-                           "(set SIGMA_GLYPH to its impl directory)")
-    p = store.blobs / check_hex
+        raise RuntimeError("runtime unavailable")   # reason class; the CLI hint
+    p = store.blobs / check_hex                       # is printed by cmd_check, not here
     if not p.exists():
-        raise RuntimeError(f"check blob {check_hex[:12]} not in store")
+        raise RuntimeError("check blob missing")
     raw = p.read_bytes()
-    doc = json.loads(raw)
+    try:
+        doc = json.loads(raw)                # was leaking JSONDecodeError past the
+    except ValueError:                       # caller's `except RuntimeError` (crash)
+        raise RuntimeError("malformed check blob (not JSON)")
     if canon(doc) != raw:
-        raise RuntimeError("ski check blob is not JCS-canonical (SPEC s3.1)")
+        raise RuntimeError("malformed check blob (not JCS-canonical)")
     err = validate_ski_blob(doc)
     if err:
         raise RuntimeError(f"invalid ski check blob: {err}")
@@ -263,10 +265,31 @@ class Store:
         p = self.records / f"{wid}.json"
         return json.loads(p.read_text()) if p.exists() else None
 
-    def all_records(self):
+    def all_records(self, load_errors=None):
+        """Parse each record independently (Codex v0.3 hardening audit P2):
+        a malformed record file MUST NOT abort the whole verifier. Unreadable /
+        non-JSON / wrong-top-level-type records are collected in `load_errors`
+        (a dict wid -> reason class) and skipped, so verification continues
+        over the rest and reports a bounded error count."""
         out = {}
         for p in sorted(self.records.glob("*.json")):
-            out[p.stem] = json.loads(p.read_text())
+            try:
+                raw = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                if load_errors is not None:
+                    load_errors[p.stem] = "unreadable or invalid UTF-8"
+                continue
+            try:
+                env = json.loads(raw)
+            except json.JSONDecodeError:
+                if load_errors is not None:
+                    load_errors[p.stem] = "malformed JSON"
+                continue
+            if not isinstance(env, dict) or not isinstance(env.get("body"), dict):
+                if load_errors is not None:
+                    load_errors[p.stem] = "wrong top-level shape (no body object)"
+                continue
+            out[p.stem] = env
         return out
 
 
@@ -502,15 +525,27 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
             invalid_policy.add(wid)
 
     def record_roots(wid):
-        env = recs.get(wid)
-        if not env:
-            return set()
-        if not env["body"]["prior"]:
-            return {wid}
-        out = set()
-        for p in env["body"]["prior"]:
-            out.update(record_roots(p))
-        return out
+        # iterative + cycle-safe + shape-defensive (Codex v0.3 hardening audit
+        # P1): a `prior` cycle must never crash the verifier with unbounded
+        # recursion, and a malformed body must not be dereferenced as valid.
+        roots, seen, stack = set(), set(), [wid]
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            env = recs.get(cur)
+            body = env.get("body") if isinstance(env, dict) else None
+            if not isinstance(body, dict):
+                continue
+            prior = body.get("prior")
+            if not isinstance(prior, list):
+                continue                          # malformed shape: not a root, no edges
+            if not prior:
+                roots.add(cur)
+            else:
+                stack.extend(p for p in prior if isinstance(p, str))
+        return roots
 
     genesis_keys = {a: set(keys) for a, keys in trust.get("actors", {}).items()}
     ancestors_cache = {}
@@ -650,7 +685,10 @@ def verify_store(store, quiet=False, settlement=None):
         if not quiet:
             print(f"{level:4} {wid[:12]}  {msg}")
 
-    recs = store.all_records()
+    load_errors = {}
+    recs = store.all_records(load_errors)
+    for wid, reason in sorted(load_errors.items()):
+        out("ERR", wid, f"unloadable record: {reason}")
     ctx = None
     if settlement is not None:
         ctx = _settlement_context(store, settlement.get("trust_config"),
@@ -730,15 +768,23 @@ def verify_store(store, quiet=False, settlement=None):
             out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
         if is_unverifiable(body):
             out("WARN", wid, "UNVERIFIABLE: reject with prose-only reasons")
-        for r in body["because"]:                   # re-run ski@v1 claims if we can
+        for r in body["because"]:                   # re-run ski@v1 claims
             if r.get("kind") == "check" and r.get("runtime") == "ski@v1":
                 try:
                     got, rh, _ = run_ski_check(store, r["check"])
                     if got != r["verdict"]:
                         out("WARN", wid, f"ski@v1 verdict mismatch: claimed "
                                          f"{r['verdict']}, re-run gives {got} ({rh[:12]})")
-                except RuntimeError:
-                    pass                            # oracle absent/blob elsewhere: skip
+                except RuntimeError as ex:
+                    # Codex v0.3 hardening audit P1: "reran and matched" and
+                    # "not executed" MUST NOT be observationally equivalent.
+                    # Base verification: a stable, path-free WARN. Settlement-
+                    # grade: an ERR when the claim participates in an active
+                    # record (an unexecuted claim can't be trusted to settle).
+                    reason = str(ex)                # already a stable reason class
+                    settle_active = ctx is not None and wid in ctx["active_records"]
+                    lvl = "ERR" if (settlement is not None and settle_active) else "WARN"
+                    out(lvl, wid, f"ski@v1 unverified: {reason}")
         if ctx is not None and wid in ctx["active_records"]:
             if body["actor"]["id"] in ctx["conflict_actors"]:
                 out("WARN", wid, WARN_KEY_CONFLICT)
@@ -1076,7 +1122,9 @@ def main():
         try:
             verdict, rh, spent = run_ski_check(store, args.hash)
         except RuntimeError as ex:
-            sys.exit(str(ex))
+            hint = ("  (set SIGMA_GLYPH to the Σ-GLYPH impl directory)"
+                    if str(ex) == "runtime unavailable" else "")
+            sys.exit(f"ski@v1 unverified: {ex}{hint}")
         print(f"{verdict}  result={rh}  atp_spent={spent}")
         sys.exit(0 if verdict == "pass" else 1)
     elif args.cmd == "verify":

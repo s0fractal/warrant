@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Hostile-store hardening regression (Codex v0.3 runtime hardening audit).
+
+A malformed or adversarial `.warrants` store MUST produce a bounded report,
+never a traceback / panic / unbounded recursion, and Python and Go MUST agree
+on the error/warning counts. Also: an unverifiable `ski@v1` claim MUST surface
+(WARN in base verification, never a silent skip).
+
+Stdlib only. Go binary built on demand.
+"""
+import hashlib, json, os, re, subprocess, sys, tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+PY = [sys.executable, str(ROOT / "impl" / "warrant.py")]
+GO = ROOT / "impl-go" / "warrant-go"
+Z = "0" * 64
+GEN = "a" * 64
+ok = []
+
+
+def chk(name, cond):
+    ok.append(cond)
+    print(("OK  " if cond else "FAIL") + "  " + name)
+
+
+def canon(b):
+    return json.dumps(b, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False).encode()
+
+
+def wid_of(body):
+    return hashlib.sha256(canon(body)).hexdigest()
+
+
+def base(**kw):
+    b = {"warrant": "0.2", "decision": "propose", "subject": {"hash": Z},
+         "under": [Z], "because": [], "evidence": [], "actor": {"id": "x"},
+         "prior": [], "ts": 1}
+    b.update(kw)
+    return b
+
+
+def write_store(tmp, records):
+    (tmp / "records").mkdir(parents=True)
+    (tmp / "blobs").mkdir(parents=True)
+    for wid, env in records.items():
+        (tmp / "records" / f"{wid}.json").write_text(json.dumps(env))
+    return tmp
+
+
+def parse_counts(text):
+    m = re.search(r"verify: (\d+) records, (\d+) errors, (\d+) warnings", text)
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
+def run(cmd, cwd=None):
+    return subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=120)
+
+
+def verify_py(store, settlement=False):
+    args = PY + ["--store", str(store), "verify"]
+    if settlement:
+        args += ["--settlement", "--genesis", GEN]
+    return run(args)
+
+
+def verify_go(store, settlement=False):
+    args = [str(GO), "verify"]
+    if settlement:
+        args += ["--settlement", "--genesis", GEN]
+    return run(args + [str(store)])
+
+
+def agree(name, store, settlement=False):
+    """Neither impl crashes; both emit a bounded report with equal counts."""
+    rp, rg = verify_py(store, settlement), verify_go(store, settlement)
+    cp, cg = parse_counts(rp.stdout), parse_counts(rg.stdout)
+    no_crash = "Traceback" not in rp.stderr and "goroutine" not in rg.stderr
+    chk(f"{name}: no crash (py+go bounded report)", no_crash and cp is not None and cg is not None)
+    chk(f"{name}: py/go agree on counts {cp} == {cg}", cp == cg)
+
+
+def main():
+    if not GO.exists():
+        b = run(["go", "build", "-o", "warrant-go", "."], cwd=ROOT / "impl-go")
+        if b.returncode != 0:
+            b = run(["env", f"GOCACHE={ROOT/'impl-go'/'.gocache'}", "go", "build",
+                     "-o", "warrant-go", "."], cwd=ROOT / "impl-go")
+        assert GO.exists(), "warrant-go build failed"
+
+    with tempfile.TemporaryDirectory() as td:
+        # two-record prior cycle
+        a, b = "a" * 64, "b" * 64
+        s = write_store(Path(td) / "cycle2",
+                        {a: {"body": base(prior=[b]), "sigs": []},
+                         b: {"body": base(prior=[a]), "sigs": []}})
+        agree("two-record cycle", s, settlement=True)
+
+        # self-cycle
+        s = write_store(Path(td) / "selfcycle",
+                        {a: {"body": base(prior=[a]), "sigs": []}})
+        agree("self-cycle", s, settlement=True)
+
+        # long acyclic chain beyond ordinary recursion depth
+        recs, prev = {}, None
+        for _ in range(3000):
+            body = base(prior=[prev] if prev else [])
+            w = wid_of(body)
+            recs[w] = {"body": body, "sigs": []}
+            prev = w
+        s = write_store(Path(td) / "deep", recs)
+        agree("3000-deep acyclic chain", s)
+
+        # cycle PLUS an unrelated well-formed root — verification must continue
+        c = "c" * 64
+        genb = base()
+        genw = wid_of(genb)
+        recs = {a: {"body": base(prior=[b]), "sigs": []},
+                b: {"body": base(prior=[a]), "sigs": []},
+                genw: {"body": genb, "sigs": []}}
+        s = write_store(Path(td) / "cycleplus", recs)
+        rp = verify_py(s)
+        chk("cycle+valid: verification continues over all 3 records",
+            parse_counts(rp.stdout) is not None and parse_counts(rp.stdout)[0] == 3)
+        agree("cycle+valid", s)
+
+        # malformed JSON record — bounded ERR, not a traceback
+        s = Path(td) / "badjson"
+        (s / "records").mkdir(parents=True)
+        (s / "blobs").mkdir(parents=True)
+        (s / "records" / (c + ".json")).write_text("{broken")
+        rp, rg = verify_py(s), verify_go(s)
+        chk("malformed JSON: py bounded ERR (no traceback)",
+            "Traceback" not in rp.stderr and parse_counts(rp.stdout) is not None
+            and parse_counts(rp.stdout)[1] >= 1)
+        chk("malformed JSON: go bounded (no panic)",
+            "goroutine" not in rg.stderr and parse_counts(rg.stdout) is not None)
+
+        # ski@v1 whose check blob is absent -> base verify WARNs, never silent
+        ski_reason = {"kind": "check", "check": "d" * 64, "runtime": "ski@v1",
+                      "verdict": "pass"}
+        body = base(decision="accept", because=[ski_reason])
+        w = wid_of(body)
+        s = write_store(Path(td) / "skimissing", {w: {"body": body, "sigs": []}})
+        rp = verify_py(s)
+        chk("ski@v1 missing check blob: base verify surfaces it (not silent)",
+            "ski@v1 unverified" in rp.stdout)
+
+    print("\nHOSTILE: ALL PASS" if all(ok) else "\nHOSTILE: FAILURES")
+    sys.exit(0 if all(ok) else 1)
+
+
+if __name__ == "__main__":
+    main()

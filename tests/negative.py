@@ -164,6 +164,10 @@ def main():
             py, go = verify_both(fresh(ski_lie))
             case("ski@v1 verdict lie (hand-crafted) -> re-run disagrees", py, go,
                  want_warn_min=4)   # 3 binding warnings + at least the mismatch
+        elif os.environ.get("WARRANT_REQUIRE_SIGMA"):
+            print("FAIL  ski@v1 verdict lie: WARRANT_REQUIRE_SIGMA set but the "
+                  "Σ-GLYPH oracle was not found (set SIGMA_GLYPH)")
+            ok = False
         else:
             print("SKIP  ski@v1 verdict lie (sigma oracle not found)")
 

@@ -2,6 +2,11 @@ name: conformance
 on: [push, pull_request]
 jobs:
   test:
+    # Codex v0.3 hardening audit P2-c: for a repo centered on reproducible
+    # settlement, dependencies should be immutable. Actions are still pinned by
+    # major tag below — pinning each by commit SHA is a tracked follow-up (the
+    # exact digests are not guessed here to avoid a red build). `cryptography`
+    # is bounded, and CI runs in strict mode so a skipped ski@v1 case fails.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -9,7 +14,7 @@ jobs:
         with: { python-version: '3.12' }
       - uses: actions/setup-go@v5
         with: { go-version: '1.22' }
-      - run: python3 -m pip install cryptography
+      - run: python3 -m pip install 'cryptography>=42,<46'
       - name: Conformance (SPEC s8 vectors, byte-exact)
         run: python3 impl/warrant.py conformance examples
       - name: Selftest (live round-trip + tamper detection)
@@ -32,8 +37,10 @@ jobs:
         run: ./impl-go/warrant-go selftest examples
       - name: Go verifies warrant store layout
         run: ./impl-go/warrant-go verify .warrants
-      - name: "Cross-implementation agreement: differential + negative + settlement"
-        run: SIGMA_GLYPH=/tmp/sigma-glyph/impl ./tests/agree_check.sh
+      - name: "Cross-implementation agreement: differential + negative + settlement (strict)"
+        run: WARRANT_REQUIRE_SIGMA=1 SIGMA_GLYPH=/tmp/sigma-glyph/impl ./tests/agree_check.sh
+      - name: Hostile-store hardening (cycles, malformed JSON, unverified ski; Python/Go agree)
+        run: python3 tests/hostile.py
       - name: Settlement-grade verification of the repo's own store
         run: |
           python3 impl/warrant.py verify --settlement --trust-config trust-config.json

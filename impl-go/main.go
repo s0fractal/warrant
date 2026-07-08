@@ -1566,29 +1566,40 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		}
 	}
 	recordRootsCache := map[string]map[string]bool{}
-	var recordRoots func(string) map[string]bool
-	recordRoots = func(wid string) map[string]bool {
+	// iterative + cycle-safe (Codex v0.3 hardening audit P1): the previous
+	// memoized recursion wrote the cache only AFTER recursing, so a `prior`
+	// cycle recursed forever (stack overflow) — the same defect as Python.
+	recordRoots := func(wid string) map[string]bool {
 		if cached := recordRootsCache[wid]; cached != nil {
 			return cached
 		}
-		out := map[string]bool{}
-		env := records[wid]
-		if env == nil {
-			return out
-		}
-		body, _ := env["body"].(map[string]any)
-		prior := getStringArray(body, "prior")
-		if len(prior) == 0 {
-			out[wid] = true
-		} else {
-			for _, p := range prior {
-				for r := range recordRoots(p) {
-					out[r] = true
-				}
+		roots := map[string]bool{}
+		seen := map[string]bool{}
+		stack := []string{wid}
+		for len(stack) > 0 {
+			cur := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if seen[cur] {
+				continue
+			}
+			seen[cur] = true
+			env := records[cur]
+			if env == nil {
+				continue
+			}
+			body, _ := env["body"].(map[string]any)
+			if body == nil {
+				continue
+			}
+			prior := getStringArray(body, "prior")
+			if len(prior) == 0 {
+				roots[cur] = true
+			} else {
+				stack = append(stack, prior...)
 			}
 		}
-		recordRootsCache[wid] = out
-		return out
+		recordRootsCache[wid] = roots
+		return roots
 	}
 	genesisKeys := map[string]map[string]bool{}
 	if actors, ok := trust["actors"].(map[string]any); ok {
