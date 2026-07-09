@@ -78,7 +78,7 @@
   <p>The record's hash is its identity. Change a byte of the body and its WarrantID changes — a citation still names the original bytes, so it no longer resolves to the altered record. Given the ID, tampering is detectable by anyone holding it; it does not rest on trusting a server.</p>
 
   <h2>Why not just logs?</h2>
-  <p>A trace tells you what an agent did. A warrant records <strong>why it was allowed to</strong> — and the record survives the agent. Logs are mutable, vendor-shaped prose. Warrants are:</p>
+  <p>A trace tells you what an agent did. A warrant records <strong>why it was allowed to</strong> — and the record survives the agent. Logs are mutable and vendor-specific. Warrants are:</p>
   <ul>
     <li><strong>Immutable</strong> — identity is the hash of the content.</li>
     <li><strong>Signed</strong> — you know which actor decided (Ed25519).</li>
@@ -88,14 +88,16 @@
   </ul>
 
   <h2>Don't trust this page — re-run it</h2>
-  <p>The spec's own law is that two independent implementations MUST agree on every WarrantID and every verification outcome. Both ship in the repo. Run them:</p>
-<pre><span class="cmt"># Python reference — SPEC §8 vectors, byte-exact, then a live tamper-detection round-trip</span>
+  <p>The spec's design rule is that two independent implementations MUST agree on every WarrantID and every verification outcome. Both ship in the repo. Run them:</p>
+<pre>$ pip install cryptography            <span class="cmt"># the one dependency (Ed25519)</span>
+
+<span class="cmt"># Python reference — SPEC §8 vectors, byte-exact, then a live tamper-detection round-trip</span>
 $ python3 impl/warrant.py conformance examples
 <span class="out">CONFORMANCE: ALL PASS (20/20)</span>
 $ python3 impl/warrant.py selftest
 <span class="out">SELFTEST: ALL PASS</span>
 
-<span class="cmt"># independent Go implementation (stdlib-only) — the SAME vectors</span>
+<span class="cmt"># independent Go implementation (stdlib-only, Go 1.22+) — the SAME vectors</span>
 $ (cd impl-go &amp;&amp; go build -o warrant-go .) &amp;&amp; ./impl-go/warrant-go conformance examples
 <span class="out">CONFORMANCE: ALL PASS (20/20)</span>
 
@@ -105,7 +107,7 @@ $ python3 tests/settlement.py
   <p class="note">That agreement is a spec <em>requirement</em>; these suites are the evidence it currently holds — the 20 SPEC §8 conformance vectors plus the settlement and hostile cross-checks. Outputs are real, from an actual run. Python needs one package (<code>cryptography</code>, for Ed25519); the Go implementation is standard-library only. (The page itself is zero-dependency; the reference impl is not.)</p>
 
   <h2>Reasons you can actually re-run</h2>
-  <p>A reason is not just prose. Three runtimes: <code>prose</code>, <code>cmd@v1</code> (a check command run in a container), and <code>ski@v1</code> — a portable, deterministic, budget-bounded check. An <code>ski@v1</code> reason is a content-addressed SKI term evaluated per <a href="https://github.com/s0fractal/sigma-glyph">Σ-GLYPH Book I</a>; the verdict is a hash comparison, and work <em>and peak memory</em> are bounded by an ATP budget. That bound is what makes re-running a stranger's reason tractable — it caps the cost, it does not vouch for the reason. The Go implementation re-runs <code>ski@v1</code> natively; the Python one re-runs it only when pointed at a <code>sigma_glyph</code> module via <code>SIGMA_GLYPH</code>, and otherwise says so:</p>
+  <p>A reason is not just prose. Reasons come in two kinds — <code>prose</code> and <code>check</code> — and a check runs under one of two runtimes: <code>cmd@v1</code> (the check run as a command in an isolated container; you supply the runner) or <code>ski@v1</code> — a portable, deterministic, budget-bounded check. An <code>ski@v1</code> reason is a content-addressed SKI term evaluated per <a href="https://github.com/s0fractal/sigma-glyph">Σ-GLYPH Book I</a>; the verdict is a hash comparison, and work <em>and peak memory</em> are bounded by an ATP budget. That bound is what makes re-running a stranger's reason tractable — it caps the cost, it does not vouch for the reason. The Go implementation re-runs <code>ski@v1</code> natively; the Python one re-runs it only when pointed at a <code>sigma_glyph</code> module via <code>SIGMA_GLYPH</code>, and otherwise says so:</p>
 <pre>$ python3 impl/warrant.py conformance examples
 <span class="cmt"># ...</span>
 <span class="dim">OK   ski: runtime re-run SKIPPED (no sigma_glyph; set SIGMA_GLYPH)</span>
@@ -116,7 +118,7 @@ $ ./impl-go/warrant-go conformance examples
   <p class="note">The intended bridge between the two projects, precisely: where a reason is <code>ski@v1</code>, <strong>Σ-GLYPH is the compute model and Warrant the decision layer that cites it</strong> — Warrant otherwise runs on its own. In the other direction, <a href="https://github.com/s0fractal/sigma-glyph/tree/master/.warrants">Σ-GLYPH adopts its releases as warrants</a> (its whole governance chain is signed decision records), so the compute core is governed by the format that runs on it.</p>
 
   <h2>Held to its own standard</h2>
-  <p>The format was adopted from GOV-001 rev 4 after an adversarial review gate by three model families (Codex, Gemini 3.1 Pro, DeepSeek v4 Pro). The <a href="https://github.com/s0fractal/warrant/tree/master/reviews">open review directory</a> holds 14 documents — critiques, gate records, and point-by-point maintainer responses — with input from four families (Codex, DeepSeek, Gemini, Qwen). The <a href="https://github.com/s0fractal/warrant/blob/master/tests/hostile.py">hostile-input suite</a> exists because a reviewer found recursive <code>prior</code> traversal that raised <code>RecursionError</code> in Python on a cyclic chain — and the Go implementation had the equivalent defect. Both now traverse iteratively, cycle-safe:</p>
+  <p>The format was adopted from GOV-001 rev 4 after an adversarial review gate by three model families (Codex, Gemini 3.1 Pro, DeepSeek v4 Pro). The <a href="https://github.com/s0fractal/warrant/tree/master/reviews">open review directory</a> holds 14 documents — critiques, gate records, and point-by-point maintainer responses — with input from five model families (Codex, DeepSeek, Gemini, Claude Opus 4.8, Qwen). The <a href="https://github.com/s0fractal/warrant/blob/master/tests/hostile.py">hostile-input suite</a> exists because a reviewer found recursive <code>prior</code> traversal that raised <code>RecursionError</code> in Python on a cyclic chain — and the Go implementation had the equivalent defect. Both now traverse iteratively, cycle-safe:</p>
 <pre>$ python3 tests/hostile.py
 <span class="out">HOSTILE: ALL PASS</span>   <span class="cmt"># cycles, self-cycle, 3000-deep chains, malformed JSON, unverified ski — no crash; Python/Go agree</span></pre>
 
