@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<!--
+  Warrant — credibility-first landing page.
+  Hand-written, zero dependencies, zero build step. Every command shown was
+  actually run; every pasted output is real. v0.3 is a DRAFT and this page
+  says so. If this page and the spec disagree, the spec wins.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warrant — signed decision records for AI agents</title>
+<style>
+  :root {
+    --bg:#0c0e10; --fg:#c9d1d9; --dim:#8b949e; --line:#20252b;
+    --ok:#3fb950; --accent:#7ee0c0; --code:#080a0b; --link:#58a6ff; --warn:#d0a85e;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.65 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    padding:0 20px;
+  }
+  main { max-width:760px; margin:0 auto; padding:64px 0 96px; }
+  h1 { font-size:2.1rem; letter-spacing:-0.02em; margin:0 0 .2em; }
+  h2 {
+    font-size:1.05rem; text-transform:uppercase; letter-spacing:.12em;
+    color:var(--dim); margin:3.2em 0 1em; border-bottom:1px solid var(--line);
+    padding-bottom:.5em; font-weight:600;
+  }
+  h3 { font-size:1rem; margin:1.6em 0 .3em; color:var(--fg); }
+  p { margin:.7em 0; }
+  a { color:var(--link); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .lede { font-size:1.15rem; color:var(--fg); margin:.4em 0 0; }
+  .sub { color:var(--dim); margin:.2em 0 0; }
+  pre {
+    background:var(--code); border:1px solid var(--line); border-radius:6px;
+    padding:14px 16px; overflow-x:auto; font-size:.86rem; line-height:1.5; margin:.8em 0;
+  }
+  pre .out { color:var(--ok); }
+  pre .cmt { color:var(--dim); }
+  pre .k { color:var(--accent); }
+  pre .dim { color:var(--dim); }
+  code { color:var(--accent); }
+  p code, li code, td code { background:var(--code); padding:.05em .35em; border-radius:3px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:0 28px; }
+  ul { padding-left:1.2em; margin:.5em 0; }
+  li { margin:.35em 0; }
+  .status { color:var(--warn); border:1px solid #3a2f16; background:#14110a; border-radius:5px; padding:.15em .6em; font-size:.8rem; }
+  .scope { background:#0a1310; border:1px solid #163a2c; border-radius:6px; padding:2px 18px; margin:1.2em 0; }
+  footer { margin-top:4em; padding-top:1.5em; border-top:1px solid var(--line); color:var(--dim); font-size:.85rem; }
+  footer a { color:var(--dim); }
+  .note { color:var(--dim); font-size:.9rem; }
+  @media (max-width:560px){ .grid{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Warrant</h1>
+  <p class="lede">A decision record for AI agents. Signed, hash-addressed, with reasons you can re-run.</p>
+  <p class="sub">When an agent accepts, rejects, or proposes something, it writes a small JSON record: <strong>what</strong> was decided, <strong>under</strong> which policy, <strong>because</strong> of which reasons, on <strong>which</strong> evidence — signed by the actor, addressed by its own hash. <span class="status">v0.3 — DRAFT</span></p>
+
+<pre>{
+  <span class="k">"decision"</span>: <span class="out">"reject"</span>,
+  <span class="k">"subject"</span>:  { "hash": "d5cf37…", "note": "PR-42" },
+  <span class="k">"under"</span>:    [ "cb3a0a…  (policy in force, by hash)" ],
+  <span class="k">"because"</span>:  [
+    { "kind": "check", "check": "05d234…", "runtime": "cmd@v1",
+      "verdict": "fail", "transcript": "9dc0c3…" },
+    { "kind": "prose", "text": "clause 1: coverage 87.0 -> 84.2" }
+  ],
+  <span class="k">"actor"</span>:    { "id": "agent-b@vendor2" },
+  <span class="k">"prior"</span>:    [ "00f79f…" ]
+}</pre>
+  <p>The record's hash is its identity. Change a byte of the body and its WarrantID changes — a citation still names the original bytes, so it no longer resolves to the altered record. Given the ID, tampering is detectable by anyone holding it; it does not rest on trusting a server.</p>
+
+  <h2>Why not just logs?</h2>
+  <p>A trace tells you what an agent did. A warrant records <strong>why it was allowed to</strong> — and the record survives the agent. Logs are mutable, vendor-shaped prose. Warrants are:</p>
+  <ul>
+    <li><strong>Immutable</strong> — identity is the hash of the content.</li>
+    <li><strong>Signed</strong> — you know which actor decided (Ed25519).</li>
+    <li><strong>Anchored</strong> — <code>under</code> pins the exact bytes of the policy in force, not "the policy" in someone's memory.</li>
+    <li><strong>Re-checkable</strong> — a reason can be an executable check; re-run it and get the same verdict.</li>
+    <li><strong>Linked</strong> — <code>prior</code> makes decisions a chain: propose → reject (with reasons) → revise → accept. A rejection is a first-class record, not an absence.</li>
+  </ul>
+
+  <h2>Don't trust this page — re-run it</h2>
+  <p>The spec's own law is that two independent implementations MUST agree on every WarrantID and every verification outcome. Both ship in the repo. Run them:</p>
+<pre><span class="cmt"># Python reference — SPEC §8 vectors, byte-exact, then a live tamper-detection round-trip</span>
+$ python3 impl/warrant.py conformance examples
+<span class="out">CONFORMANCE: ALL PASS (20/20)</span>
+$ python3 impl/warrant.py selftest
+<span class="out">SELFTEST: ALL PASS</span>
+
+<span class="cmt"># independent Go implementation (stdlib-only) — the SAME vectors</span>
+$ (cd impl-go &amp;&amp; go build -o warrant-go .) &amp;&amp; ./impl-go/warrant-go conformance examples
+<span class="out">CONFORMANCE: ALL PASS (20/20)</span>
+
+<span class="cmt"># the two implementations agree on every settlement outcome, not just integrity</span>
+$ python3 tests/settlement.py
+<span class="out">SETTLEMENT: ALL AGREE</span></pre>
+  <p class="note">That agreement is a spec <em>requirement</em>; these suites are the evidence it currently holds — the 20 SPEC §8 conformance vectors plus the settlement and hostile cross-checks. Outputs are real, from an actual run. Python needs one package (<code>cryptography</code>, for Ed25519); the Go implementation is standard-library only. (The page itself is zero-dependency; the reference impl is not.)</p>
+
+  <h2>Reasons you can actually re-run</h2>
+  <p>A reason is not just prose. Three runtimes: <code>prose</code>, <code>cmd@v1</code> (a check command run in a container), and <code>ski@v1</code> — a portable, deterministic, budget-bounded check. An <code>ski@v1</code> reason is a content-addressed SKI term evaluated per <a href="https://github.com/s0fractal/sigma-glyph">Σ-GLYPH Book I</a>; the verdict is a hash comparison, and work <em>and peak memory</em> are bounded by an ATP budget. That bound is what makes re-running a stranger's reason tractable — it caps the cost, it does not vouch for the reason. The Go implementation re-runs <code>ski@v1</code> natively; the Python one re-runs it only when pointed at a <code>sigma_glyph</code> module via <code>SIGMA_GLYPH</code>, and otherwise says so:</p>
+<pre>$ python3 impl/warrant.py conformance examples
+<span class="cmt"># ...</span>
+<span class="dim">OK   ski: runtime re-run SKIPPED (no sigma_glyph; set SIGMA_GLYPH)</span>
+
+$ ./impl-go/warrant-go conformance examples
+<span class="cmt"># ...native evaluator:</span>
+<span class="out">OK   ski: re-run -> pass, H(S), 20 ATP</span></pre>
+  <p class="note">The intended bridge between the two projects, precisely: where a reason is <code>ski@v1</code>, <strong>Σ-GLYPH is the compute model and Warrant the decision layer that cites it</strong> — Warrant otherwise runs on its own. In the other direction, <a href="https://github.com/s0fractal/sigma-glyph/tree/master/.warrants">Σ-GLYPH adopts its releases as warrants</a> (its whole governance chain is signed decision records), so the compute core is governed by the format that runs on it.</p>
+
+  <h2>Held to its own standard</h2>
+  <p>The format was adopted from GOV-001 rev 4 after an adversarial review gate by three model families (Codex, Gemini 3.1 Pro, DeepSeek v4 Pro). The <a href="https://github.com/s0fractal/warrant/tree/master/reviews">open review directory</a> holds 14 documents — critiques, gate records, and point-by-point maintainer responses — with input from four families (Codex, DeepSeek, Gemini, Qwen). The <a href="https://github.com/s0fractal/warrant/blob/master/tests/hostile.py">hostile-input suite</a> exists because a reviewer found recursive <code>prior</code> traversal that raised <code>RecursionError</code> in Python on a cyclic chain — and the Go implementation had the equivalent defect. Both now traverse iteratively, cycle-safe:</p>
+<pre>$ python3 tests/hostile.py
+<span class="out">HOSTILE: ALL PASS</span>   <span class="cmt"># cycles, self-cycle, 3000-deep chains, malformed JSON, unverified ski — no crash; Python/Go agree</span></pre>
+
+  <h2>What it is not</h2>
+  <div class="grid">
+    <div>
+      <ul>
+        <li>Not an agent framework.</li>
+        <li>Not a blockchain, token, or consensus network.</li>
+        <li>Not observability or a log aggregator.</li>
+      </ul>
+    </div>
+    <div>
+      <ul>
+        <li>One file format and a handful of verbs, deliberately small.</li>
+        <li>Specified precisely enough to re-implement from the document, in any language.</li>
+        <li>No server, no vendor, no account — the store is plain, content-addressed files.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="scope">
+  <h3>Scope, status &amp; non-goals</h3>
+  <p class="note"><strong>DRAFT.</strong> The v0.1/v0.2 body schema is stable and vector-pinned; the v0.3 additions (settlement §7, multi-root stores §9, key state §5.1) are document-level rules still under review, and their verification <em>outcomes</em> may change before v0.3 freezes — WarrantIDs themselves will not.</p>
+  <p class="note"><strong>What it does:</strong> records who decided what, under which pinned rules, and lets anyone check that a record's canonical bytes match a known WarrantID and that its signature verifies under <em>locally configured</em> key state. A valid signature proves which key signed — not that the key should be trusted; trust roots are your configuration, and <code>genesis.json</code> is advisory until you pin it.</p>
+  <p class="note"><strong>What it does not:</strong> judge whether a decision was <em>correct</em>; enforce anything at runtime; guarantee that a store stays available or that an <em>un-pinned</em> record isn't substituted. Its cryptographic mechanisms are exactly SHA-256 content addressing and Ed25519 signatures — no confidentiality, trusted timestamping, availability, consensus, or global identity.</p>
+  </div>
+
+  <footer>
+    <p><strong>Read on:</strong>
+      <a href="https://github.com/s0fractal/warrant/blob/master/SPEC.md">SPEC v0.3</a> ·
+      <a href="https://github.com/s0fractal/warrant/tree/master/examples">worked vectors (real hashes &amp; signatures)</a> ·
+      <a href="https://github.com/s0fractal/warrant/tree/master/reviews">reviews</a> ·
+      <a href="https://github.com/s0fractal/sigma-glyph">Σ-GLYPH (the substrate)</a>
+    </p>
+    <p><a href="https://github.com/s0fractal/warrant">github.com/s0fractal/warrant</a> · MIT</p>
+  </footer>
+
+</main>
+</body>
+</html>
