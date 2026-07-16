@@ -18,21 +18,21 @@ had if the agent were sealed.
 
 ## 0. Install the verifier (~2 min)
 
-Works today, from source (Python 3.9+):
+One line (Python 3.9+):
 
 ```bash
-git clone https://github.com/s0fractal/warrant && cd warrant
-pip install .            # installs the `warrant` command + a bundled Σ-GLYPH oracle
+pipx install warrant-verify    # or: pip install warrant-verify
 ```
-
-> A one-line `pipx install warrant-verify` is coming once it's published to PyPI.
 
 The tool is ~1200 lines of Python you can read in an afternoon (`impl/warrant.py`).
 The only dependency is `cryptography` (for Ed25519). The Σ-GLYPH check engine is
 bundled, so **nothing below needs a network connection.**
 
+Then grab this pack and step into it:
+
 ```bash
-cd demos/air-canada/pack        # the evidence pack lives here
+git clone https://github.com/s0fractal/warrant
+cd warrant/demos/air-canada/pack        # the evidence pack lives here
 ```
 
 ---
