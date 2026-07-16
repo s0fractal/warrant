@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "warrant-verify"
-version = "0.3.0"
+version = "0.4.0"
 description = "Verify what an AI agent decided — signed, hash-addressed decision records with reasons you can re-run on your own machine."
 readme = "README.md"
 requires-python = ">=3.9"
