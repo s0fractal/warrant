@@ -35,10 +35,12 @@ Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
 [project.scripts]
 warrant = "warrant:main"
 warrant-mcp = "warrant_mcp:main"
+warrant-anchor = "warrant_anchor:main"
 
 [tool.setuptools]
 # Flat modules under impl/: the reference implementation, the bundled Σ-GLYPH
 # Book I oracle (so ski@v1 reasons re-run offline, no separate clone), the MCP
-# sealing proxy, and the ski@v1 policy-predicate authoring library.
-py-modules = ["warrant", "sigma_glyph", "warrant_mcp", "ski_policy"]
+# sealing proxy, the ski@v1 policy-predicate authoring library, and the RFC 6962
+# Merkle batching/anchoring tool.
+py-modules = ["warrant", "sigma_glyph", "warrant_mcp", "ski_policy", "warrant_anchor"]
 package-dir = { "" = "impl" }

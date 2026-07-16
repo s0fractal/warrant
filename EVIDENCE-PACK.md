@@ -86,9 +86,21 @@ Any warrant store is already 90% of a pack — add a `manifest.json`. See
 that pins a policy, encodes a policy predicate as a re-executable `ski@v1` check,
 files a signed `propose → reject` chain, and writes the manifest and keyring.
 
-## Not in v0 (deferred)
+## Anchoring at scale
 
-Batch/Merkle anchoring of many packs to a public transparency log, eIDAS
-qualified timestamps, and a signed manifest are out of scope for v0 — the
-per-record hash+signature already makes a pack tamper-evident on its own. These
-belong to the metering/anchoring layer, not the portable format.
+Anchoring every warrant to a public log or timestamp is absurd in bulk.
+`warrant-anchor` builds one **RFC 6962 Merkle tree** (the Certificate
+Transparency / Sigstore primitive) over a batch of WarrantIDs, so you anchor only
+the **root** — one timestamp for thousands of warrants — and later prove any
+single warrant was in the batch with a short inclusion proof:
+
+```bash
+warrant-anchor root  ./pack                     # the batch Merkle root
+warrant-anchor prove ./pack <wid> > proof.json  # inclusion proof for one warrant
+warrant-anchor verify <wid> proof.json <root>   # 0 if that warrant is in the batch
+```
+
+Submitting the root to a public transparency log, an OpenTimestamps / eIDAS
+qualified timestamp, or an on-chain commitment is an external step (the metering
+/ anchoring layer), and a signed manifest is deferred — the per-record
+hash+signature already makes a pack tamper-evident on its own.
