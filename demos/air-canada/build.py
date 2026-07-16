@@ -28,6 +28,7 @@ IMPL = HERE.parent.parent / "impl"
 sys.path.insert(0, str(IMPL))
 
 import sigma_glyph as sg          # noqa: E402  (bundled Book I oracle)
+import ski_policy as sp           # noqa: E402  (re-executable policy predicates)
 import warrant as w               # noqa: E402  (reference implementation)
 
 PACK = HERE / "pack"
@@ -60,41 +61,25 @@ SUBJECT_JSON = (
 
 
 def build_ski_check(store):
-    """Pin the policy predicate as a Σ-GLYPH Book I term and store the nodes.
+    """Pin the policy predicate as a re-executable Σ-GLYPH Book I term.
 
-    Predicate value: `retroactive_bereavement_refund_permitted` = Church-FALSE.
-    In Book I, Church-FALSE is `K I` = APPLY(K,I). We evaluate `I (K I)` so the
-    check does REAL reduction (term hash != result hash) rather than merely
-    restating the answer: I applied to FALSE returns FALSE.
+    The policy rule, as a boolean formula over the facts of this request:
 
-        term    = APPLY(I, FALSE)          # reduces...
-        result  = FALSE = APPLY(K, I)      # ...to Church-FALSE
-        expect  = NodeHash(FALSE)
+        permit = within_window AND NOT retroactive
 
-    Returns (check_hex, term_hex, expect_hex, atp) with atp = exact spend."""
-    false_bytes = sg.FALSE_BYTES                       # APPLY(K, I)
-    term_bytes = sg.ser(sg.APPLY, sg.F_LEFT | sg.F_RIGHT,
-                        left=sg.I_H, right=sg.FALSE_H)  # APPLY(I, FALSE)
+    with facts { within_window: true, retroactive: true } (the passenger asked to
+    apply the discount retroactively). The formula reduces to Church-FALSE — "not
+    permitted". `ski_policy` compiles it, stores the nodes, and pins the exact
+    budget. Anyone re-runs the term and gets the same verdict.
 
-    # Store the two composite nodes at their NodeHash (== sha256 == warrant blob
-    # hash). I and K are genesis-intrinsic and need no store entry.
-    store.put_blob(false_bytes)
-    term_hex = store.put_blob(term_bytes)
-    expect_hex = sg.FALSE_H.hex()
-
-    # Compute the exact ATP spend on a private Σ store, then pin it as the budget
-    # (tight bound: a verifier re-running with this budget reaches normal form).
-    sgs = sg.Store()
-    sgs.put(false_bytes)
-    sgs.put(term_bytes)
-    result, atp = sg.eval_hash(bytes.fromhex(term_hex), 1000, sgs)
-    assert sg.term_hash(result).hex() == expect_hex, "predicate did not reduce to FALSE"
-
-    check_doc = {"ski": 1, "term": term_hex, "atp": atp, "expect": expect_hex}
-    check_hex = store.put_blob(w.canon(check_doc))
-    assert w.validate_ski_blob({"ski": 1, "term": term_hex, "atp": atp,
-                                "expect": expect_hex}) is None
-    return check_hex, term_hex, expect_hex, atp
+    Returns (check_hex, term_hex, expect_hex, atp)."""
+    check = sp.compile_check(
+        sp.And(sp.Fact("within_window", True),
+               sp.Not(sp.Fact("retroactive", True))),
+        store.put_blob)
+    assert check.result is False, "policy must deny a retroactive request"
+    d = check.doc
+    return check.blob, d["term"], d["expect"], d["atp"]
 
 
 class Args:
@@ -175,8 +160,8 @@ def main():
         "records": [w_propose, w_reject],
         "ski_checks": [
             {"check": check_hex, "term": term_hex, "expect": expect_hex,
-             "atp": atp, "means": "policy predicate "
-             "retroactive_bereavement_refund_permitted = FALSE (not permitted)"}
+             "atp": atp, "means": "policy predicate (within_window AND NOT "
+             "retroactive) = FALSE for this request (retroactive=true) -> not permitted"}
         ],
         "expected_verification": {"errors": 0},
         "how_to_verify": "warrant --store .warrants verify",

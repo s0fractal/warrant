@@ -9,7 +9,7 @@
         "text": "policy clause 2: bereavement discount cannot be claimed retroactively"
       },
       {
-        "check": "35cc62a3fba9ddfac013c94a7fe59953f4d47987e7b4c919ec8bf9973c9278fd",
+        "check": "b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f",
         "kind": "check",
         "runtime": "ski@v1",
         "verdict": "pass"
@@ -34,7 +34,7 @@
     {
       "actor": "policy-guard@aircanada",
       "key": "55154f42065ea5a1bea05463826be2684eb92df92c100027aabaae57ca554207",
-      "sig": "115446e1020caf1295dd25a03f6aaf18370d5b90ed6ba5b14acb467cff4b2a641250d59cd2bbf7b5fb408d755741b54ed14a62fe3dc6a0d4affb947eff9e910c"
+      "sig": "d1e3f5ab78705d00124169fba8c52d14bbfabddef891ddcca3f8bf4c988831c398b17ad997e5467ae69aaf86815faeb4b880a509fad4c44fc731798e943b800d"
     }
   ]
 }
