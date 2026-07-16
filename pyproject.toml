@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "warrant-verify"
+version = "0.3.0"
+description = "Verify what an AI agent decided — signed, hash-addressed decision records with reasons you can re-run on your own machine."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "s0fractal" }]
+keywords = [
+    "ai-agents", "agent-provenance", "audit-trail", "eu-ai-act",
+    "verifiable", "sigstore", "decision-record", "compliance",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Legal Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = ["cryptography>=41"]
+
+[project.urls]
+Homepage = "https://github.com/s0fractal/warrant"
+Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
+"Evidence Pack format" = "https://github.com/s0fractal/warrant/blob/master/EVIDENCE-PACK.md"
+
+# Single console command. The distribution is `warrant-verify` (the bare name
+# `warrant` is taken on PyPI); the import module and the CLI stay `warrant`.
+[project.scripts]
+warrant = "warrant:main"
+
+[tool.setuptools]
+# Two flat modules under impl/: the reference implementation and the bundled
+# Σ-GLYPH Book I oracle (so ski@v1 reasons re-run offline, no separate clone).
+py-modules = ["warrant", "sigma_glyph"]
+package-dir = { "" = "impl" }

@@ -144,17 +144,26 @@ def is_unverifiable(body):
 
 # ---------- ski@v1 runtime (SPEC §3.1, v0.2) ----------
 def load_sigma():
-    """Load the Σ-GLYPH Book I oracle. Path: $SIGMA_GLYPH (dir containing
-    sigma_glyph.py) or ~/sigma-glyph/impl. Returns module or None."""
+    """Load the Σ-GLYPH Book I oracle. Search order (first hit wins):
+      1. $SIGMA_GLYPH/sigma_glyph.py   — explicit override (e.g. a dev checkout)
+      2. sigma_glyph.py next to this file — the BUNDLED oracle, so an installed
+         `warrant` re-runs ski@v1 reasons offline with no separate clone
+      3. ~/sigma-glyph/impl/sigma_glyph.py — a conventional local checkout
+    Returns the module or None (None -> ski@v1 reasons report as unverified)."""
     import importlib.util
-    path = Path(os.environ.get("SIGMA_GLYPH",
-                               Path.home() / "sigma-glyph/impl")) / "sigma_glyph.py"
-    if not path.exists():
-        return None
-    spec = importlib.util.spec_from_file_location("sigma_glyph", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    candidates = []
+    if os.environ.get("SIGMA_GLYPH"):
+        candidates.append(Path(os.environ["SIGMA_GLYPH"]) / "sigma_glyph.py")
+    candidates.append(Path(__file__).resolve().parent / "sigma_glyph.py")
+    candidates.append(Path.home() / "sigma-glyph/impl" / "sigma_glyph.py")
+    for path in candidates:
+        if not path.exists():
+            continue
+        spec = importlib.util.spec_from_file_location("sigma_glyph", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    return None
 
 
 def validate_ski_blob(doc):

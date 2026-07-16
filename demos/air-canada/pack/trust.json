@@ -1,0 +1,13 @@
+{
+  "actors": {
+    "chatbot@aircanada": [
+      "bc7cbcb5636375fa1d82434d466724d92377f53b980695dd49d26d0ce12205a5"
+    ],
+    "policy-guard@aircanada": [
+      "55154f42065ea5a1bea05463826be2684eb92df92c100027aabaae57ca554207"
+    ]
+  },
+  "genesis_roots": [
+    "7d8f2e7db31500ba9e401d6d3aa9e5bdea483c0cfd77c61dd374f4278cd1173e"
+  ]
+}
