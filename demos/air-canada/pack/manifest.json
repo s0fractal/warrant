@@ -1,0 +1,25 @@
+{
+  "decision": "74ed55444013d383bee7bccf9a24313ea2960db10f651859388906a8cc2ac24c",
+  "evidence_pack": "0",
+  "expected_verification": {
+    "errors": 0
+  },
+  "how_to_verify": "warrant --store .warrants verify",
+  "produced_by": "warrant demos/air-canada/build.py",
+  "records": [
+    "7d8f2e7db31500ba9e401d6d3aa9e5bdea483c0cfd77c61dd374f4278cd1173e",
+    "74ed55444013d383bee7bccf9a24313ea2960db10f651859388906a8cc2ac24c"
+  ],
+  "root": "7d8f2e7db31500ba9e401d6d3aa9e5bdea483c0cfd77c61dd374f4278cd1173e",
+  "ski_checks": [
+    {
+      "atp": 7,
+      "check": "35cc62a3fba9ddfac013c94a7fe59953f4d47987e7b4c919ec8bf9973c9278fd",
+      "expect": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
+      "means": "policy predicate retroactive_bereavement_refund_permitted = FALSE (not permitted)",
+      "term": "814cea4f4a96aff37eb1d6220e22512d2471e76e04f02395a15aee0084cdd155"
+    }
+  ],
+  "story": "Moffatt v. Air Canada, 2024 BCCRT 149",
+  "title": "Air Canada \u2014 retroactive bereavement refund, refused"
+}

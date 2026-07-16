@@ -19,6 +19,15 @@ jobs:
         run: python3 impl/warrant.py conformance examples
       - name: Selftest (live round-trip + tamper detection)
         run: python3 impl/warrant.py selftest
+      - name: Package smoke test (pip install . -> `warrant` CLI, bundled oracle, offline, any cwd)
+        run: |
+          python3 -m pip install .
+          ( cd /tmp && warrant selftest )
+          ( cd /tmp && warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
+      - name: Evidence-pack guard (demo packs verify; ski re-executes; no private keys shipped)
+        run: python3 tests/evidence_pack.py
+      - name: MCP sealing proxy (classifier, sealer, stdio round-trip -> verifiable pack)
+        run: python3 tests/mcp_seal.py
       # The sigma pin is intentionally fixed for reproducible conformance.
       # Refresh ONLY when Book I vectors intentionally change; the refresh
       # commit MUST cite old/new sigma commits + both conformance outputs.

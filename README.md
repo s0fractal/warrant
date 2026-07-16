@@ -39,9 +39,12 @@ A rejection is a first-class record, not an absence. This is the part that matte
 
 ```bash
 git clone https://github.com/s0fractal/warrant && cd warrant
-pip install cryptography                       # the one dependency (Ed25519)
-alias warrant="python3 $PWD/impl/warrant.py"   # no packaging yet — this is it
+pip install .          # installs the `warrant` command + a bundled Σ-GLYPH oracle
 ```
+
+`ski@v1` reasons re-run **offline** — the Σ-GLYPH Book I check engine ships inside
+the package, so no separate clone is needed. (A one-line `pipx install
+warrant-verify` lands once it's on PyPI.)
 
 ```bash
 warrant init                          # .warrants/ store in your repo
@@ -61,6 +64,13 @@ warrant verify                        # every hash, signature, and link in the s
 ```
 
 The store is plain files, content-addressed, git-friendly. No server, no vendor, no account.
+
+## Try it on a real case
+
+Verify what an AI agent decided — the Air Canada chatbot case, as the record the
+airline never had. Fifteen minutes, offline, trusting nothing but this tool:
+**[`demos/air-canada/`](demos/air-canada/)**. The portable bundle format those
+records travel in is specified in **[`EVIDENCE-PACK.md`](EVIDENCE-PACK.md)**.
 
 ## What it is not
 

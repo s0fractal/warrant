@@ -1,3 +1,11 @@
 __pycache__/
 *.pyc
 impl-go/warrant-go
+
+# Python packaging build artifacts (pip install . / build)
+/build/
+*.egg-info/
+dist/
+
+# warrant-mcp commerce demo: pack is generated fresh by run.sh (live timestamps)
+demos/mcp-commerce/pack/

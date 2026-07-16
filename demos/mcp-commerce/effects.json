@@ -1,0 +1,7 @@
+{
+  "shop.search_products": ["search"],
+  "shop.add_to_cart": ["source_change"],
+  "shop.checkout": ["spend"],
+  "shop.request_refund": ["transfer"],
+  "shop.overspend_attempt": ["spend"]
+}

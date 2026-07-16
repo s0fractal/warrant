@@ -1,0 +1,13 @@
+{
+  "actors": {
+    "agent@vendor-a": [
+      "64c30815ff26d5c4aff8e11274a38ed6dd0553049da4c10372a9575b7a776909"
+    ],
+    "auditor@vendor-b": [
+      "4508a07aa941707f3eb2db94c8897a80b2c1197476b6de213ac273df7d86c4ff"
+    ]
+  },
+  "genesis_roots": [
+    "62b770f1e1af5471505b0de5ed5851ca41bc714b2be4bda5330205a5185f4198"
+  ]
+}

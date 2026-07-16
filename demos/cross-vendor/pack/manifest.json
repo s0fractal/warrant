@@ -1,0 +1,19 @@
+{
+  "decision": "62b770f1e1af5471505b0de5ed5851ca41bc714b2be4bda5330205a5185f4198",
+  "evidence_pack": "0",
+  "expected_verification": {
+    "errors": 0
+  },
+  "how_to_verify": "warrant --store .warrants verify --settlement --trust-config trust.json",
+  "produced_by": "warrant demos/cross-vendor/build.py",
+  "records": [
+    "62b770f1e1af5471505b0de5ed5851ca41bc714b2be4bda5330205a5185f4198"
+  ],
+  "root": "62b770f1e1af5471505b0de5ed5851ca41bc714b2be4bda5330205a5185f4198",
+  "threshold": "2-of-2",
+  "title": "Cross-vendor settlement, 2-of-2 witnessed",
+  "witnesses": [
+    "agent@vendor-a",
+    "auditor@vendor-b"
+  ]
+}

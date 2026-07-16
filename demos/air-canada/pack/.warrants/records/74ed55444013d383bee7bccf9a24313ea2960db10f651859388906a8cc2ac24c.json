@@ -1,0 +1,40 @@
+{
+  "body": {
+    "actor": {
+      "id": "policy-guard@aircanada"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "policy clause 2: bereavement discount cannot be claimed retroactively"
+      },
+      {
+        "check": "35cc62a3fba9ddfac013c94a7fe59953f4d47987e7b4c919ec8bf9973c9278fd",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "reject",
+    "evidence": [],
+    "prior": [
+      "7d8f2e7db31500ba9e401d6d3aa9e5bdea483c0cfd77c61dd374f4278cd1173e"
+    ],
+    "subject": {
+      "hash": "494ad3316bfa51b24f2dba6878a165235463a2d5529f4ad41246c545052a41ec",
+      "note": "retroactive bereavement refund request"
+    },
+    "ts": 1708304400,
+    "under": [
+      "c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "policy-guard@aircanada",
+      "key": "55154f42065ea5a1bea05463826be2684eb92df92c100027aabaae57ca554207",
+      "sig": "115446e1020caf1295dd25a03f6aaf18370d5b90ed6ba5b14acb467cff4b2a641250d59cd2bbf7b5fb408d755741b54ed14a62fe3dc6a0d4affb947eff9e910c"
+    }
+  ]
+}

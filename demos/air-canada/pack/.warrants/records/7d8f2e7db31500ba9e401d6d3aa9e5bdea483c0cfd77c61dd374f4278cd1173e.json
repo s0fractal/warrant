@@ -1,0 +1,32 @@
+{
+  "body": {
+    "actor": {
+      "id": "chatbot@aircanada"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "passenger requested a refund"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [],
+    "prior": [],
+    "subject": {
+      "hash": "494ad3316bfa51b24f2dba6878a165235463a2d5529f4ad41246c545052a41ec",
+      "note": "retroactive bereavement refund request"
+    },
+    "ts": 1708300800,
+    "under": [
+      "c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "chatbot@aircanada",
+      "key": "bc7cbcb5636375fa1d82434d466724d92377f53b980695dd49d26d0ce12205a5",
+      "sig": "c2093f1b1784b0ef3d4d9c509daccbfda2859ac1c0b0d57f8051ee9de54bb0300eeb1012b37038f658bac00352bc3a4c69dd83c7b432d3bb53fb75bfe678fd04"
+    }
+  ]
+}
