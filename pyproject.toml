@@ -38,7 +38,7 @@ warrant-mcp = "warrant_mcp:main"
 
 [tool.setuptools]
 # Flat modules under impl/: the reference implementation, the bundled Σ-GLYPH
-# Book I oracle (so ski@v1 reasons re-run offline, no separate clone), and the
-# MCP sealing proxy.
-py-modules = ["warrant", "sigma_glyph", "warrant_mcp"]
+# Book I oracle (so ski@v1 reasons re-run offline, no separate clone), the MCP
+# sealing proxy, and the ski@v1 policy-predicate authoring library.
+py-modules = ["warrant", "sigma_glyph", "warrant_mcp", "ski_policy"]
 package-dir = { "" = "impl" }

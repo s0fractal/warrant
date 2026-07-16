@@ -44,8 +44,8 @@ warrant --store .warrants verify
 ```
 
 ```
-WARN 74ed55444013  binding unverified (no keyring): key 55154f42065e claims actor policy-guard@aircanada
 WARN 7d8f2e7db315  binding unverified (no keyring): key bc7cbcb56363 claims actor chatbot@aircanada
+WARN 9084cd23f205  binding unverified (no keyring): key 55154f42065e claims actor policy-guard@aircanada
 
 verify: 2 records, 0 errors, 2 warnings
 ```
@@ -65,18 +65,19 @@ to trust yet. We fix that in step 4. (Exit code is 0.)
 The refusal cites a check. Don't trust its verdict — **re-run it:**
 
 ```bash
-warrant --store .warrants check 35cc62a3fba9ddfac013c94a7fe59953f4d47987e7b4c919ec8bf9973c9278fd
+warrant --store .warrants check b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f
 ```
 
 ```
-pass  result=65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098  atp_spent=7
+pass  result=65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098  atp_spent=17
 ```
 
-You just evaluated, on your own machine, the deterministic policy predicate the
-agent pinned: `retroactive_bereavement_refund_permitted`. It reduces to
-**Church-FALSE** (`65cd957f…` — the Σ-GLYPH NodeHash of "false") in **7 units of
-metered work**. "Not permitted." You did not trust Air Canada's servers, or
-ours, to tell you the answer — you *computed* it.
+You just evaluated, on your own machine, the deterministic policy rule the agent
+pinned — `permit = within_window AND NOT retroactive`, over the facts of this
+request (`retroactive = true`). It reduces to **Church-FALSE** (`65cd957f…` — the
+Σ-GLYPH NodeHash of "false") in **17 units of metered work**. "Not permitted." You
+did not trust Air Canada's servers, or ours, to tell you the answer — you
+*computed* it from the policy and the facts.
 
 This is the property no log and no dashboard can give you: *it is safe to re-run
 a stranger's `ski@v1` reason on your own machine*. The computation is total,
@@ -95,13 +96,13 @@ implementations (Python, Go, Rust).
 ## 3. Read the whole decision as a chain (~2 min)
 
 ```bash
-warrant --store .warrants why 74ed55444013d383bee7bccf9a24313ea2960db10f651859388906a8cc2ac24c
+warrant --store .warrants why 9084cd23f205cdd6e013deb6c6e2a84e4a5f4f469fb8f77ba443dfed44716f5a
 ```
 
 ```
-REJECT 74ed55444013d383 by policy-guard@aircanada  subject=494ad3316bfa retroactive bereavement refund request
+REJECT 9084cd23f205cdd6 by policy-guard@aircanada  subject=494ad3316bfa retroactive bereavement refund request
   - prose: policy clause 2: bereavement discount cannot be claimed retroactively
-  - check 35cc62a3fba9 [ski@v1] -> pass
+  - check b423b6a82c34 [ski@v1] -> pass
   under policy c8d453b05c7d
   PROPOSE 7d8f2e7db31500ba by chatbot@aircanada  subject=494ad3316bfa retroactive bereavement refund request
     - prose: passenger requested a refund
@@ -124,8 +125,8 @@ warrant --store .warrants verify --settlement --trust-config trust.json
 ```
 
 ```
-INFO 74ed55444013  signature bound: key 55154f42065e claims actor policy-guard@aircanada
 INFO 7d8f2e7db315  signature bound: key bc7cbcb56363 claims actor chatbot@aircanada
+INFO 9084cd23f205  signature bound: key 55154f42065e claims actor policy-guard@aircanada
 
 verify: 2 records, 0 errors, 0 warnings
 ```
@@ -142,12 +143,12 @@ Copy the pack and quietly edit one field of the refusal — say, soften the note
 
 ```bash
 cp -r . /tmp/tampered && cd /tmp/tampered
-# edit .warrants/records/74ed...json — change subject.note to anything
+# edit .warrants/records/9084...json — change subject.note to anything
 warrant --store .warrants verify
 ```
 
 ```
-ERR  74ed55444013  WarrantID mismatch: recomputed e22673465d45
+ERR  9084cd23f205  WarrantID mismatch: recomputed a different id
 
 verify: 2 records, 1 errors, 1 warnings   (exit code 1)
 ```
