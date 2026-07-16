@@ -6,3 +6,6 @@ impl-go/warrant-go
 /build/
 *.egg-info/
 dist/
+
+# warrant-mcp commerce demo: pack is generated fresh by run.sh (live timestamps)
+demos/mcp-commerce/pack/
