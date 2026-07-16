@@ -1,0 +1,1 @@
+{"threshold":{"actors":["agent@vendor-a","auditor@vendor-b"],"min_sigs":2},"warrant_policy":"0.3"}

@@ -1,0 +1,37 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@vendor-a"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "both vendors confirm delivery and release of funds"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [],
+    "prior": [],
+    "subject": {
+      "hash": "8731789878b595efb602747649c221b0d36d3919db9abaa69d01daf9ae687f2b",
+      "note": "cross-vendor settlement ORD-7788"
+    },
+    "ts": 1708300800,
+    "under": [
+      "31bdb27851274f0380fa1ebedf030795d855226c86bbcc6c59d4994f4d4f0fa0"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@vendor-a",
+      "key": "64c30815ff26d5c4aff8e11274a38ed6dd0553049da4c10372a9575b7a776909",
+      "sig": "659f2192811fdc88a47abd8bf0830197c21b3e4f03f1d698e1df23868be3e7d1f3d4598171c09cb963295d7c986d94eef9f13ff2b907d80eed62325e834ed90a"
+    },
+    {
+      "actor": "auditor@vendor-b",
+      "key": "4508a07aa941707f3eb2db94c8897a80b2c1197476b6de213ac273df7d86c4ff",
+      "sig": "d84c860e7c4a17a2e37d3962f7a455ffa44c1729aa9304b4bb55ce37c1f77bf0e996f2467d88a8a2afdbd3f49ea019b27aa5014488ed081366638feba71fe301"
+    }
+  ]
+}
