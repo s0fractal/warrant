@@ -2,6 +2,10 @@ __pycache__/
 *.pyc
 impl-go/warrant-go
 
+# Go build cache (regenerable; must never be committed)
+impl-go/.gocache/
+.gocache/
+
 # Python packaging build artifacts (pip install . / build)
 /build/
 *.egg-info/
