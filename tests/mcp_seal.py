@@ -27,7 +27,7 @@ def _load(name, relpath):
 
 
 W = _load("warrant_impl", "impl/warrant.py")
-M = _load("warrant_mcp", "integrations/mcp/warrant_mcp.py")
+M = _load("warrant_mcp", "impl/warrant_mcp.py")
 
 ok = []
 
@@ -81,7 +81,7 @@ def test_stdio_proxy():
     effects_path = os.path.join(d, "effects.json")
     open(effects_path, "w").write(json.dumps(effects))
     mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
-    cmd = [sys.executable, os.path.join(ROOT, "integrations", "mcp", "warrant_mcp.py"),
+    cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
            "--store", d, "--actor", "agent@test", "--key", keyfile(d),
            "--effects", effects_path, "--", sys.executable, mock]
     calls = [

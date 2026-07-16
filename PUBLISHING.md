@@ -77,19 +77,11 @@ python3 -m venv /tmp/tv && /tmp/tv/bin/pip install -i https://test.pypi.org/simp
   `demos/air-canada/README.md` to the real one-liner (`pipx install
   warrant-verify`).
 
-## Follow-up: the `warrant-mcp` console command
+## What ships
 
-`integrations/mcp/warrant_mcp.py` runs from the repo today. To ship it as a
-`warrant-mcp` command in a later release, make it an installed module and add a
-second entry point:
-
-```toml
-[project.scripts]
-warrant = "warrant:main"
-warrant-mcp = "warrant_mcp:main"
-```
-
-Left out of 0.3.0 to keep the core verifier's surface single-purpose.
+The wheel installs two console commands: `warrant` (verify) and `warrant-mcp`
+(seal an MCP server's actions into an evidence pack), plus the bundled Σ-GLYPH
+oracle. All three modules live in `impl/`.
 
 ## Manual fallback (if you ever bypass CI)
 

@@ -34,7 +34,7 @@ from pathlib import Path
 try:
     import warrant as W                                    # installed package
 except ModuleNotFoundError:
-    _p = Path(__file__).resolve().parents[2] / "impl" / "warrant.py"
+    _p = Path(__file__).resolve().parent / "warrant.py"    # sibling in impl/
     _spec = importlib.util.spec_from_file_location("warrant", _p)
     W = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(W)

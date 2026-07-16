@@ -29,13 +29,16 @@ Homepage = "https://github.com/s0fractal/warrant"
 Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
 "Evidence Pack format" = "https://github.com/s0fractal/warrant/blob/master/EVIDENCE-PACK.md"
 
-# Single console command. The distribution is `warrant-verify` (the bare name
-# `warrant` is taken on PyPI); the import module and the CLI stay `warrant`.
+# Two console commands. The distribution is `warrant-verify` (the bare name
+# `warrant` is taken on PyPI); the import module and the verifier CLI stay
+# `warrant`. `warrant-mcp` is the MCP sealing proxy.
 [project.scripts]
 warrant = "warrant:main"
+warrant-mcp = "warrant_mcp:main"
 
 [tool.setuptools]
-# Two flat modules under impl/: the reference implementation and the bundled
-# Σ-GLYPH Book I oracle (so ski@v1 reasons re-run offline, no separate clone).
-py-modules = ["warrant", "sigma_glyph"]
+# Flat modules under impl/: the reference implementation, the bundled Σ-GLYPH
+# Book I oracle (so ski@v1 reasons re-run offline, no separate clone), and the
+# MCP sealing proxy.
+py-modules = ["warrant", "sigma_glyph", "warrant_mcp"]
 package-dir = { "" = "impl" }

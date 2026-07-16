@@ -13,25 +13,24 @@ built" into "here's a pack **your agent** produces, live."
 ## Install
 
 ```bash
-pip install .              # from the warrant repo — gives the `warrant` verifier
+pip install .              # gives both `warrant` (verify) and `warrant-mcp` (seal)
 ```
-
-The proxy runs from the repo (`python3 integrations/mcp/warrant_mcp.py …`); it
-imports the installed `warrant`. A `warrant-mcp` console command is a documented
-follow-up (see [`../../PUBLISHING.md`](../../PUBLISHING.md)).
 
 ## Use
 
 ```bash
 warrant keygen --out agent.key                    # once: the agent's signing key
 
-python3 integrations/mcp/warrant_mcp.py \
+warrant-mcp \
     --store ./session \                            # the evidence pack lands here
     --actor coding-agent@acme \
     --key agent.key \
     --effects effects.json \                       # optional; see below
     -- <your MCP server command>                   # e.g. npx @modelcontextprotocol/server-github
 ```
+
+(Source: `impl/warrant_mcp.py` — runnable directly as
+`python3 impl/warrant_mcp.py …` from a checkout too.)
 
 Point your MCP host (Claude Desktop, an agent runtime) at *this* command instead
 of the server directly. Traffic is forwarded untouched; sealing happens on the

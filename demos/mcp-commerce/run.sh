@@ -6,7 +6,7 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 WARRANT="python3 $ROOT/impl/warrant.py"
-PROXY="python3 $ROOT/integrations/mcp/warrant_mcp.py"
+PROXY="python3 $ROOT/impl/warrant_mcp.py"
 
 KEYDIR=$(mktemp -d)
 $WARRANT keygen --out "$KEYDIR/agent.key" >/dev/null   # the agent's signing key
