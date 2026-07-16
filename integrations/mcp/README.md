@@ -13,8 +13,12 @@ built" into "here's a pack **your agent** produces, live."
 ## Install
 
 ```bash
-pip install .              # from the warrant repo — gives `warrant` + this proxy
+pip install .              # from the warrant repo — gives the `warrant` verifier
 ```
+
+The proxy runs from the repo (`python3 integrations/mcp/warrant_mcp.py …`); it
+imports the installed `warrant`. A `warrant-mcp` console command is a documented
+follow-up (see [`../../PUBLISHING.md`](../../PUBLISHING.md)).
 
 ## Use
 
