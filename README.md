@@ -38,13 +38,12 @@ A rejection is a first-class record, not an absence. This is the part that matte
 ## Ten minutes
 
 ```bash
-git clone https://github.com/s0fractal/warrant && cd warrant
-pip install .          # installs the `warrant` command + a bundled Σ-GLYPH oracle
+pipx install warrant-verify   # or: pip install warrant-verify
 ```
 
-`ski@v1` reasons re-run **offline** — the Σ-GLYPH Book I check engine ships inside
-the package, so no separate clone is needed. (A one-line `pipx install
-warrant-verify` lands once it's on PyPI.)
+Installs the `warrant` verifier and the `warrant-mcp` sealer. `ski@v1` reasons
+re-run **offline** — the Σ-GLYPH Book I check engine ships inside the package, so
+no separate clone is needed. (From a checkout: `git clone … && pip install .`.)
 
 ```bash
 warrant init                          # .warrants/ store in your repo
