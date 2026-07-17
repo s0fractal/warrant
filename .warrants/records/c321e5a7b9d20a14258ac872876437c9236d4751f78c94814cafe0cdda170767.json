@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "First external acceptance-gate audit (Gemini 3.1 Pro High via agy, fed the recent diffs + both differential fuzzers). It found real defects the fuzzers had blind spots to. REAL, fixed: (1) Python verifier crashed AttributeError on a non-object signature entry -- s.get('actor') on a str; verify_store now guards non-list sigs + non-dict entries, and _iter_sigs() routes every settlement-path sig iteration through the same guard (Go was safe). (2) Python crashed RecursionError on deeply-nested JSON while Go returned bounded (Gemini had the direction inverted); all_records now catches RecursionError. (3) Fuzzer soundness: fuzz_differential Loop C used (cp>0)!=(cg>0), which silently PASSES a shared accept of a malformed record; strengthened to both-must-reject, which immediately exposed a no-op exp_num mutation in my own fuzzer. Added dirty cases (sigs_notlist, sig_scalar, deep_nest) + hostile.py named regressions. REFUTED empirically: ATP uint32 wrap in Go force (force cost <=3; R-S already uint64 with the check before narrowing; cost<=remaining always), scalar-record crash (handled), and 2 'missing' blocklist keys (accept 0/128 in Python AND Go -- rejected at decode); the 2 keys were blocklisted anyway as defense-in-depth. Lesson: external audit is the gate, self-review the substrate. cmd@v1 re-runs conformance PY+GO, selftest, the full suite, both fuzzer seeds, and sigma-conformance; transcript pinned. Filed in sigma-glyph as a sibling adjudication."
+      },
+      {
+        "check": "4efda2b4a38d5c03c52e1fd49728590827c644d55e1aeea4a2b34d2b89efad30",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "c9da62c50da68f5cad06beb1fb81c3d6dbbff48792fcf49cd03ae49223dd3e8d",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "09fad7f2e4c1cef645084d4d4ca6ad3c51302d5ba4d95564bde52718e57874a5"
+    ],
+    "prior": [
+      "628b9daebeecad8956068c58a3c89eec8832483eb2bc47ce28bce44939f487b1"
+    ],
+    "subject": {
+      "hash": "a92ffffd3ed755ae6337c56a1933602fd2275f330831840e8b0a2c6d5932310b",
+      "note": "Gemini 3.1 Pro external audit: fixed 2 verifier crashes (non-object sig; deep-nest) + a fuzzer blind spot (Loop C shared-accept); 3 findings refuted. Suite + fuzzers green."
+    },
+    "ts": 1784314084,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "e217dae3219873f586add2ce09b040293c0a2486ba36653355283378894f041eb3ef614d052f006fbbd3b0b5c1fcfb7fba85dc32ef39b294f12678a2debfde04"
+    }
+  ]
+}

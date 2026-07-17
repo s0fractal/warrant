@@ -1,0 +1,14 @@
+go build OK
+ok  python3 impl/warrant.py conformance -> CONFORMANCE: ALL PASS (20/20)
+ok  ./impl-go/warrant-go conformance examples -> CONFORMANCE: ALL PASS (20/20)
+ok  python3 impl/warrant.py selftest -> SELFTEST: ALL PASS
+ok  python3 tests/differential.py -> DIFFERENTIAL: ALL AGREE (43/43)
+ok  python3 tests/negative.py -> NEGATIVE: ALL AGREE
+ok  python3 tests/hostile.py -> HOSTILE: ALL PASS
+ok  python3 tests/settlement.py -> SETTLEMENT: ALL AGREE
+ok  python3 tests/pedantic_edges.py -> PEDANTIC-EDGES: ALL AGREE (15/15)
+ok  python3 tests/ski_policy.py -> SKI-POLICY: ALL PASS
+ok  python3 tests/fuzz_differential.py --iters -> FUZZ-DIFFERENTIAL: ALL AGREE (450/450) seed=1337
+ok  python3 tests/fuzz_differential.py --iters -> FUZZ-DIFFERENTIAL: ALL AGREE (450/450) seed=4242
+ok  ./impl-go/warrant-go sigma-conformance /Users/s0fractal/Projects/sigma-glyph/tests/spec_conformance/vectors.json -> SIGMA CONFORMANCE: ALL PASS (33/33 eval)
+gemini audit fixes verified
