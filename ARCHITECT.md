@@ -38,6 +38,18 @@ rewrites, or spec prose without a vector behind it.
 
 ## Progress log
 
+- **2026-07-17 — external audit round (Gemini 3.1 Pro via `agy`).** First external
+  acceptance-gate pass. It found real defects the fuzzers had blind spots to:
+  a Python verifier crash on a non-object signature entry (`s.get` on a str), a
+  Python `RecursionError` crash on deeply-nested JSON (Go was bounded), and a
+  **fuzzer-soundness** gap — Loop C's `!=` invariant hid a *shared* accept of a
+  malformed record (and caught a no-op `exp_num` mutation once strengthened).
+  All fixed; Loop C now requires both-reject; `book1_fuzz` now sends `2^32-1`
+  budgets; new hostile.py regressions. Three other findings (ATP `force` wrap,
+  2 missing blocklist keys, scalar-record crash) were refuted empirically; the
+  2 keys were blocklisted anyway as defense-in-depth. See
+  `reviews/2026-07-gemini31pro-agy-audit{,-response}.md`. Lesson recorded:
+  external audit is the gate, self-review is the substrate.
 - **2026-07-17 (Fable 5, architect):** shipped **W2**. The fuzzer immediately
   found three real defects, all fixed the same pass:
   - GO `readJSON` silently ignored **trailing content** after the JSON value

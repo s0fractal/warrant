@@ -205,9 +205,14 @@ def main():
         def m_runtime(env):
             env["body"]["because"] = [{"kind": "check", "check": rand_hex(rng),
                                        "runtime": "wasm@v1", "verdict": "pass"}]
+        def m_scalar_cosig(env):
+            # a non-object co-sig entry alongside the valid actor signature: both
+            # impls MUST exclude it and keep the record valid (0 errors), never
+            # crash on it (Gemini 3.1 Pro audit — Python .get() on a str sig).
+            env["sigs"].append(rng.choice(["x", 7, None, []]))
         int_safe = [m_junk_sig, m_tamper_sig, m_forge_actor, m_extra_top, m_extra_subject,
                     m_extra_reason, m_badhash, m_note, m_decision, m_empty_because,
-                    m_ts_int_edge, m_dangling, m_runtime]
+                    m_ts_int_edge, m_dangling, m_runtime, m_scalar_cosig]
 
         for i in range(args.iters):
             store, path = fresh()
@@ -225,28 +230,41 @@ def main():
                 fails.append(("B-verify", i, mut.__name__, cp, cg))
 
         # ---- Loop C: dirty (non-integer / dup-key / trailing) -> both MUST reject ----
+        kinds = ["float_ts", "str_ts", "dup_key", "trailing", "exp_num",
+                 "sigs_notlist", "sig_scalar", "deep_nest"]
         for i in range(args.iters):
             store, path = fresh()
             raw = open(path).read()
             env = json.loads(raw)
-            kind = rng.choice(["float_ts", "str_ts", "dup_key", "trailing", "exp_num"])
+            kind = rng.choice(kinds)
             if kind == "float_ts":
                 env["body"]["ts"] = 1.5
                 text = json.dumps(env)
             elif kind == "str_ts":
                 env["body"]["ts"] = "123"
                 text = json.dumps(env)
-            elif kind == "exp_num":
-                text = json.dumps(env).replace('"ts":' + str(env["body"]["ts"]), '"ts":1e3', 1)
+            elif kind == "exp_num":   # exponent-notation number (a float, invalid)
+                text = re.sub(r'"ts":\s*-?\d+', '"ts": 1e3', json.dumps(env), count=1)
             elif kind == "dup_key":
                 text = json.dumps(env)[:-1] + ',"body":{"warrant":"0.2"}}'  # duplicate body key
+            elif kind == "sigs_notlist":
+                env["sigs"] = "nope"          # sigs is not an array
+                text = json.dumps(env)
+            elif kind == "sig_scalar":
+                env["sigs"] = [rng.choice(["malicious", 123, None])]  # non-object sig entry
+                text = json.dumps(env)
+            elif kind == "deep_nest":         # deeply-nested body: parser recursion
+                text = '{"body":' + "[" * 50000 + "]" * 50000 + ',"sigs":[]}'
             else:  # trailing content after the JSON value
                 text = json.dumps(env) + "\n{}"
             open(path, "w").write(text)
             cp, cg = verify_both(store)
-            # both MUST reject (errors > 0); a one-sided accept is a P0 split
-            if cp is None or cg is None or (cp[0] > 0) != (cg[0] > 0):
-                fails.append(("C-reject-split", i, kind, cp, cg))
+            # Both MUST REJECT (errors > 0) — strengthened from the earlier
+            # "disagree" check, which silently passed a SHARED accept of a
+            # malformed record (Gemini 3.1 Pro audit, 2026-07). Neither impl may
+            # crash: a None (no summary line) is itself a failure.
+            if cp is None or cg is None or not (cp[0] > 0 and cg[0] > 0):
+                fails.append(("C-reject", i, kind, cp, cg))
 
     total = args.iters * 3
     if fails:

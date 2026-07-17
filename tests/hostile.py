@@ -206,6 +206,31 @@ def main():
             "goroutine" not in rg.stderr and parse_counts(rg.stdout) is not None
             and parse_counts(rg.stdout)[1] >= 1)
 
+        # A signature entry that is not an object MUST NOT crash the verifier
+        # (Gemini 3.1 Pro audit: Python `s.get('actor')` on a str sig threw).
+        body = base(decision="propose")
+        w = wid_of(body)
+        s = write_store(Path(td) / "sigscalar", {w: {"body": body, "sigs": ["evil"]}})
+        rp, rg = verify_py(s), verify_go(s)
+        chk("non-object signature entry: no crash, py/go agree",
+            "Traceback" not in rp.stderr and "goroutine" not in rg.stderr
+            and parse_counts(rp.stdout) is not None
+            and parse_counts(rp.stdout) == parse_counts(rg.stdout))
+
+        # Deeply-nested JSON MUST be a bounded report, not a stack overflow / panic
+        # (Gemini 3.1 Pro audit: Python raised RecursionError; both must survive).
+        s = Path(td) / "deepnest"
+        (s / "records").mkdir(parents=True)
+        (s / "blobs").mkdir(parents=True)
+        (s / "records" / (GEN + ".json")).write_text(
+            '{"body":' + "[" * 100000 + "]" * 100000 + ',"sigs":[]}')
+        rp, rg = verify_py(s), verify_go(s)
+        chk("deeply-nested record: py bounded (no RecursionError crash)",
+            "Traceback" not in rp.stderr and "RecursionError" not in rp.stderr
+            and parse_counts(rp.stdout) is not None and parse_counts(rp.stdout)[1] >= 1)
+        chk("deeply-nested record: go bounded (no stack-overflow panic)",
+            "goroutine" not in rg.stderr and parse_counts(rg.stdout) is not None)
+
     print("\nHOSTILE: ALL PASS" if all(ok) else "\nHOSTILE: FAILURES")
     sys.exit(0 if all(ok) else 1)
 

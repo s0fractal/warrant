@@ -276,6 +276,11 @@ _ED25519_SMALL_ORDER = {bytes.fromhex(h) for h in (
     "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
     "0000000000000000000000000000000000000000000000000000000000000000",
     "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+    # non-canonical sign-bit variants of the x=0 torsion points (y=1, y=p-1):
+    # current libs reject these at decode; blocklisted as defense-in-depth so a
+    # lenient third implementation cannot accept them (Gemini 3.1 Pro audit).
+    "0100000000000000000000000000000000000000000000000000000000000080",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 )}
 
 
@@ -354,6 +359,13 @@ class Store:
             except ValueError:
                 if load_errors is not None:
                     load_errors[p.stem] = "malformed JSON"
+                continue
+            except RecursionError:
+                # Deeply-nested JSON overflows the parser's recursion. A verifier
+                # MUST bound this to a report, not a crash (Gemini 3.1 Pro audit,
+                # 2026-07: Python raised RecursionError where Go returned cleanly).
+                if load_errors is not None:
+                    load_errors[p.stem] = "malformed JSON (nesting too deep)"
                 continue
             if not isinstance(env, dict) or not isinstance(env.get("body"), dict):
                 if load_errors is not None:
@@ -530,9 +542,17 @@ def _record_policy(store, body):
     return valid, invalid
 
 
+def _iter_sigs(env):
+    """Yield only well-formed dict signature entries so callers can .get()
+    safely (envelope sigs are attacker-shaped; a non-list or a non-dict entry
+    must not crash settlement math). Gemini 3.1 Pro audit, 2026-07."""
+    s = env.get("sigs")
+    return [x for x in s if isinstance(x, dict)] if isinstance(s, list) else []
+
+
 def _valid_sig_actors(wid, env, allowed_keys=None):
     actors = set()
-    for s in env.get("sigs", []):
+    for s in _iter_sigs(env):
         if not verify_sig(wid, s):
             continue
         actor = s.get("actor")
@@ -557,7 +577,7 @@ def _policies_satisfied(store, wid, env, keys=None, conflicted=frozenset()):
     if invalid:
         return False
     if not policies:
-        return any(verify_sig(wid, s) for s in env.get("sigs", []))
+        return any(verify_sig(wid, s) for s in _iter_sigs(env))
     return all(_threshold_satisfied(wid, env, p, keys, conflicted) for p in policies)
 
 
@@ -575,7 +595,7 @@ def _well_signed(wid, env):
     if validate_body(env.get("body", {})):
         return False
     return any(verify_sig(wid, s) and s.get("actor") == env["body"]["actor"]["id"]
-               for s in env.get("sigs", []))
+               for s in _iter_sigs(env))
 
 
 def _settlement_context(store, trust_config=None, genesis_roots=None):
@@ -668,7 +688,7 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
             return False
         actor, incoming = rot
         proof = any(verify_sig(wid, s) and s.get("actor") == actor
-                    and s.get("key") == incoming for s in env.get("sigs", []))
+                    and s.get("key") == incoming for s in _iter_sigs(env))
         if not proof:
             return False
         prior_keys = keys_before(wid)
@@ -680,7 +700,7 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
         else:
             ok = any(verify_sig(wid, s) and s.get("actor") == actor
                      and s.get("key") in prior_keys.get(actor, set())
-                     for s in env.get("sigs", []))
+                     for s in _iter_sigs(env))
         rotation_auth_cache[wid] = ok
         return ok
 
@@ -781,10 +801,19 @@ def verify_store(store, quiet=False, settlement=None):
             out("ERR", wid, f"WarrantID mismatch: recomputed {got[:12]}")
             continue
         sigs = env.get("sigs", [])
+        if not isinstance(sigs, list):
+            out("ERR", wid, "sigs must be a list")
+            sigs = []
         if not sigs:
             out("ERR", wid, "no signatures")
         actor_signed = False
         for s in sigs:
+            if not isinstance(s, dict):
+                # A signature entry that is not an object is malformed. Report and
+                # skip WITHOUT touching s.get(...) — a bare `s.get` crashed the
+                # verifier on a string sig entry (Gemini 3.1 Pro audit, 2026-07).
+                out("WARN", wid, "signature entry is not an object (excluded)")
+                continue
             if not verify_sig(wid, s):
                 # SPEC §5/§6: a co-signature that fails to verify is reported and
                 # EXCLUDED, not fatal. The envelope is not hashed and co-sigs MAY
