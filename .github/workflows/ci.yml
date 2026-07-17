@@ -50,7 +50,11 @@ jobs:
         run: ./impl-go/warrant-go selftest examples
       - name: Go verifies warrant store layout
         run: ./impl-go/warrant-go verify .warrants
-      - name: "Cross-implementation agreement: differential + negative + settlement (strict)"
+      - name: Build Rust implementation (third canonicalizer)
+        run: cd impl-rs && cargo build --release
+      - name: Rust conformance (§8 WarrantIDs + §8.3 negatives, independent JCS+SHA-256)
+        run: ./impl-rs/target/release/warrant-rs conformance examples
+      - name: "Cross-implementation agreement: differential (PY/GO/RS) + negative + settlement (strict)"
         run: WARRANT_REQUIRE_SIGMA=1 SIGMA_GLYPH=/tmp/sigma-glyph/impl ./tests/agree_check.sh
       - name: Hostile-store hardening (cycles, malformed JSON, unverified ski; Python/Go agree)
         run: python3 tests/hostile.py

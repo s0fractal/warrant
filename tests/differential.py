@@ -20,6 +20,10 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = [sys.executable, os.path.join(ROOT, "impl", "warrant.py"), "canon"]
 GO = [os.environ.get("WARRANT_GO", os.path.join(ROOT, "impl-go", "warrant-go")), "canon"]
+# Third independent canonicalizer (Rust); included when built.
+_rs = os.environ.get("WARRANT_RS", os.path.join(ROOT, "impl-rs", "target", "release", "warrant-rs"))
+RS = [_rs, "canon"]
+RS_AVAILABLE = os.path.exists(_rs)
 
 
 def body(note="", actor="agent-x@vendor", extra_reason=None, ts=1751700000):
@@ -80,21 +84,20 @@ def main():
         try:
             py, pyerr = run(PY, path)
             go, goerr = run(GO, path)
+            rs, rserr = run(RS, path) if RS_AVAILABLE else (py, None)  # skip if not built
         finally:
             os.unlink(path)
-        if py is None or go is None:
-            print(f"ERROR {name}: py={pyerr!r} go={goerr!r}")
+        if py is None or go is None or rs is None:
+            print(f"ERROR {name}: py={pyerr!r} go={goerr!r} rs={rserr!r}")
             fails += 1
             continue
-        if py == go:
-            print(f"OK    {name}  {py['warrant_id'][:16]}…")
+        if py == go == rs:
+            tag = "PY/GO/RS" if RS_AVAILABLE else "PY/GO"
+            print(f"OK    {name}  {py['warrant_id'][:16]}…  ({tag})")
         else:
             fails += 1
             print(f"FAIL  {name}")
-            print(f"      PY id={py['warrant_id']}")
-            print(f"      GO id={go['warrant_id']}")
-            print(f"      PY canon={py['canon_hex']}")
-            print(f"      GO canon={go['canon_hex']}")
+            print(f"      PY id={py['warrant_id']}  GO id={go['warrant_id']}  RS id={rs['warrant_id']}")
     print(f"\nDIFFERENTIAL: {'ALL AGREE' if not fails else 'DIVERGENCE'} "
           f"({total - fails}/{total})")
     return 0 if not fails else 1

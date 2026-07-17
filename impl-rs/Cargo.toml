@@ -1,0 +1,18 @@
+[package]
+name = "warrant-rs"
+version = "0.1.0"
+edition = "2021"
+
+# Third independent implementation of the Warrant canonicalization + schema +
+# WarrantID + weak-key layer (SPEC §2/§3/§4/§5/§8), from scratch, NO external
+# crates — mirroring sigma-glyph's impl-rs discipline. Ed25519 signature
+# verification is a separate increment; this binary covers the layer where the
+# consensus-split bugs live (JCS escaping, dup keys, note length, ts, weak keys).
+
+[[bin]]
+name = "warrant-rs"
+path = "src/main.rs"
+
+[profile.release]
+overflow-checks = true
+strip = true

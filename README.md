@@ -94,6 +94,14 @@ python3 impl/warrant.py selftest               # live round-trip + tamper detect
 ./impl-go/warrant-go selftest examples         # schema and verification edges
 ```
 
+`impl-rs/` — a third, independent **Rust** implementation of the canonicalization + schema + WarrantID + weak-key layer (from scratch, no external crates), where the cross-implementation consensus-split bugs live:
+
+```bash
+(cd impl-rs && cargo build --release)                 # no crates; binary not committed
+./impl-rs/target/release/warrant-rs conformance examples   # §8 WarrantIDs + §8.3 negatives
+python3 tests/differential.py                         # now three-way: PY/GO/RS agree byte-exact
+```
+
 First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.
 
 License: MIT.

@@ -30,7 +30,7 @@ an external audit returns 0×P0/P1. Self-review is a substrate, never the gate.
 | W2 | Differential **fuzzer** PY↔GO over canon + verify + dirty-input reject | CI gate, multi-seed, 0 divergences | **done** (`tests/fuzz_differential.py`, in CI) |
 | W1 | Ed25519 residual → normative: SPEC §5 small-order MUST + §8.3 negative conformance vector | §8.3 vector gates a 3rd implementer | **done** |
 | W4 | §8.3 negative battery (weak-key + schema-invalid) checked by both `conformance` commands; parse-layer rejections (dup-key/trailing/canonicality) referenced to the cross-impl harnesses | `examples/conformance-negatives.json`, both impls 40/40 | **done** |
-| W3 | Third independent implementation (**Rust**) of the verifier, mirroring sigma's discipline | byte-exact on §8 + differential + fuzzer | todo (multi-session) |
+| W3 | Third independent implementation (**Rust**) of the verifier, mirroring sigma's discipline | byte-exact on §8 + differential + fuzzer | **increment 1 done** (canon/schema/WarrantID/weak-key layer, no crates; 3-way differential PY/GO/RS 43/43; Ed25519 sig-verify = increment 2) |
 | X1 | Combined CI: Book III / sigma store verified by the live warrant CLI, so cross-repo coupling regressions surface | CI job across both repos | todo |
 
 **Explicitly NOT doing** (anti-gold-plating): new features, marketing, elegance
@@ -38,6 +38,17 @@ rewrites, or spec prose without a vector behind it.
 
 ## Progress log
 
+- **2026-07-17 — W3 increment 1 (Rust third implementation).** `impl-rs/`
+  (`warrant-rs`, from scratch, no external crates — mirrors sigma's Rust
+  discipline) implements the layer where consensus-split bugs live: a from-scratch
+  SHA-256, an I-JSON parser (rejecting duplicate keys, trailing content, raw
+  control bytes, and — added this pass — decoding UTF-16 surrogate pairs), JCS
+  canonicalization, schema validation, and the weak-Ed25519 blocklist. It
+  recomputes all three §8 WarrantIDs byte-exact and passes the §8.3 negatives
+  (`conformance` 33/33), and `tests/differential.py` is now **three-way
+  (PY/GO/RS), 43/43** across the adversarial escaping/unicode battery. CI builds
+  it and runs both. Ed25519 signature verification (SHA-512 + curve, from
+  scratch) is increment 2.
 - **2026-07-17 — external audit round 2 (GPT-OSS 120B via `agy`).** Different
   model family; targeted the newest surface (C1 Lean proof, §8.3 negatives).
   **No P0/P1** — independently confirmed the C1 proof is sound/non-vacuous

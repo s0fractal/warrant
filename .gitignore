@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 impl-go/warrant-go
 
+# Rust build artifacts (regenerable; the binary is not committed)
+impl-rs/target/
+
 # Go build cache (regenerable; must never be committed)
 impl-go/.gocache/
 .gocache/
