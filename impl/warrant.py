@@ -258,9 +258,42 @@ def sign_envelope(body, actor, key_path):
             "sig": sk.sign(bytes.fromhex(wid)).hex()}
 
 
+# SPEC §5: small-order and non-canonical Ed25519 public keys are rejected.
+# Such a key lets an ALL-ZERO signature verify for a large fraction of messages
+# (small-order forgery), so an attacker mints a "valid signature" attributing a
+# decision to any actor id without knowing a secret; and libraries disagree on
+# which of these they accept (Python `cryptography` and Go `crypto/ed25519`
+# already differ), so the SAME envelope can verify in one impl and not another —
+# exactly the consensus split the design rule forbids. The two checks below are
+# byte- and integer-only, so every implementation agrees by construction.
+_ED25519_P = (1 << 255) - 19
+_ED25519_SMALL_ORDER = {bytes.fromhex(h) for h in (
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+    "0000000000000000000000000000000000000000000000000000000000000080",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+)}
+
+
+def weak_ed25519_pubkey(raw):
+    """True if `raw` (32 bytes) is a small-order or non-canonically-encoded
+    Ed25519 public key that a conforming verifier MUST reject (SPEC §5)."""
+    if len(raw) != 32 or raw in _ED25519_SMALL_ORDER:
+        return True
+    y = int.from_bytes(raw, "little") & ((1 << 255) - 1)   # drop the sign bit
+    return y >= _ED25519_P                                  # non-canonical y
+
+
 def verify_sig(wid, sig):
     try:
-        pk = Ed25519PublicKey.from_public_bytes(bytes.fromhex(sig["key"]))
+        key = bytes.fromhex(sig["key"])
+        if weak_ed25519_pubkey(key):
+            return False
+        pk = Ed25519PublicKey.from_public_bytes(key)
         pk.verify(bytes.fromhex(sig["sig"]), bytes.fromhex(wid))
         return True
     except Exception:

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -711,9 +712,13 @@ func sigmaEval(term [32]byte, atp uint32, store sigmaStore) (*sigmaTerm, uint32)
 		}
 		t = next
 		spent += cost
-		if sigmaSize(t)-1 > uint64(spent) {
-			return &sigmaTerm{kind: "dis", h: sigmaATP}, spent
-		}
+		// The memory bound `size − 1 ≤ spent` is a THEOREM (Book I §3.4,
+		// Lean-proved); it needs no runtime re-check. The fence that used to
+		// sit here returned a canonical DISSONANCE(ATP) if it ever fired —
+		// laundering a would-be implementation bug into a canonical outcome,
+		// which Book I §3.6 forbids (local faults MUST NOT serialize as
+		// DISSONANCE). Neither the Python oracle nor the Rust impl has such
+		// a fence. (Fable 5 sigma-glyph review, 2026-07.)
 	}
 }
 
@@ -757,10 +762,19 @@ func sigmaStep(t *sigmaTerm, remaining uint32, store sigmaStore) (*sigmaTerm, ui
 			}
 			if f.left.kind == "app" && sigmaGlyphEq(f.left.left, sigmaSHash) {
 				x, y, z := f.left.right, f.right, a
-				cost := uint32(1 + sigmaSize(z))
-				if cost > remaining {
+				// R-S cost = 1 + size(z), computed in uint64: size(z) can
+				// legally approach 2³² at near-max budgets (size ≤ 1 + spent),
+				// and a uint32 narrowing here made an unaffordable step look
+				// affordable — a Book I §3.4 violation ("a step costing more
+				// than 2³²−1 is unreachable for any canonical budget → ATP
+				// Exhausted, not implementation-defined") and a consensus
+				// split against the Python (bignum) and Rust (u64) impls.
+				// (Fable 5 sigma-glyph review, 2026-07.)
+				cost64 := 1 + sigmaSize(z)
+				if cost64 > uint64(remaining) {
 					return nil, 0, "atp"
 				}
+				cost := uint32(cost64)
 				return &sigmaTerm{
 					kind: "app",
 					left: &sigmaTerm{
@@ -967,11 +981,46 @@ func verifySig(wid string, sig any) bool {
 	if err != nil || len(rawSig) != ed25519.SignatureSize {
 		return false
 	}
+	if weakEd25519PubKey(key) {
+		return false
+	}
 	msg, err := hex.DecodeString(wid)
 	if err != nil || len(msg) != 32 {
 		return false
 	}
 	return ed25519.Verify(ed25519.PublicKey(key), msg, rawSig)
+}
+
+// SPEC §5: small-order and non-canonical Ed25519 public keys are rejected.
+// Such a key lets an all-zero signature verify for a fraction of messages
+// (small-order forgery), and Python `cryptography` / Go `crypto/ed25519`
+// disagree on which they accept — so the same envelope can verify in one impl
+// and not the other. Byte/integer checks only, so every impl agrees. (Fable 5
+// review, 2026-07: reproduced a 16/64 vs 17/64 accept split on the all-zero
+// key.)
+var ed25519SmallOrder = map[string]bool{
+	"0100000000000000000000000000000000000000000000000000000000000000": true,
+	"c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a": true,
+	"0000000000000000000000000000000000000000000000000000000000000080": true,
+	"26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05": true,
+	"ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f": true,
+	"26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85": true,
+	"0000000000000000000000000000000000000000000000000000000000000000": true,
+	"c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa": true,
+}
+
+var ed25519P = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 255), big.NewInt(19))
+
+func weakEd25519PubKey(raw []byte) bool {
+	if len(raw) != 32 || ed25519SmallOrder[hex.EncodeToString(raw)] {
+		return true
+	}
+	be := make([]byte, 32) // little-endian -> big-endian, sign bit cleared
+	for i := 0; i < 32; i++ {
+		be[i] = raw[31-i]
+	}
+	be[0] &= 0x7f
+	return new(big.Int).SetBytes(be).Cmp(ed25519P) >= 0 // non-canonical y
 }
 
 func conformance(dir string) bool {

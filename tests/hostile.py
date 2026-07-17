@@ -169,6 +169,28 @@ def main():
             "ski@v1 unverified" in rp.stdout and "ski@v1 unverified" in rg.stdout)
         agree("ski@v1 over-budget atp", s)
 
+        # small-order / non-canonical Ed25519 public keys MUST be rejected
+        # (SPEC §5): an all-zero (small-order) key lets a zero signature verify
+        # for a fraction of messages, and Python/Go libraries disagree on which
+        # they accept -> a real consensus split. Filing a record whose only
+        # signature uses such a key MUST error in BOTH, for EVERY message.
+        for keyhex in ("00" * 32,
+                       "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"):
+            splits = 0
+            for n in range(24):
+                body = base(decision="accept", actor={"id": "x"}, ts=n + 1)
+                w = wid_of(body)
+                env = {"body": body,
+                       "sigs": [{"actor": "x", "key": keyhex, "sig": "00" * 64}]}
+                s = write_store(Path(td) / f"weakkey_{keyhex[:6]}_{n}", {w: env})
+                rp, rg = verify_py(s), verify_go(s)
+                cp, cg = parse_counts(rp.stdout), parse_counts(rg.stdout)
+                # both MUST report >=1 error (no valid signature by actor), and agree
+                if not (cp and cg and cp[1] >= 1 and cg[1] >= 1 and cp == cg):
+                    splits += 1
+            chk(f"small-order key {keyhex[:6]}: rejected in both, every message",
+                splits == 0)
+
         # duplicate member name in a record body -> invalid I-JSON (SPEC §4),
         # bounded malformed error in BOTH, never last-wins.
         s = Path(td) / "dupkey"
