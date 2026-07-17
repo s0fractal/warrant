@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Kimi K3 (OpenRouter) reviewed the spec adversarially; each finding verified against both impls before disposition. ONE confirmed live cross-impl split: Go base verify swallowed an unexecutable ski@v1 check (continue) while Python WARNed -> 4-vs-3 warnings; Go now WARNs to match and escalates to ERR under settlement when the reason is settlement-active. Co-signature griefing: an invalid signature is now a WARN and is excluded, not fatal; a record errs only if no valid signature by body.actor.id remains, so a lone junk co-sig can no longer invalidate a good record (this alters a verification OUTCOME and is the one change flagged for ratification -- this warrant is that ratification). ski@v1 re-execution budget (default 100M ATP, identical in both, env-overridable): an over-budget check is reported unverified, never evaluated -- closes the uint32-atp DoS. Duplicate member names rejected as invalid I-JSON in both (object_pairs_hook / token-scanner), not last-wins. SPEC: recursive unknown-field rule + code-point lengths (2), unknown-runtime reject (3), Book I pin + re-exec budget (3.1), normative escaping + dup-name reject (4), Ed25519 acceptance S<L + co-sig exclusion (5), individual sig verification + rotation-subject-is-a-blob fix + step (7) ski re-execution severity model (6). Deferred: cofactor/small-order Ed25519 differential vector; a \u00a78 escaping vector (differential.py already covers it). Verified locally on the MacBook; own store green."
+      },
+      {
+        "check": "537d126dcd61f1c005effe2c9f59542483d65aec0b2a02f666068171944a3afa",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "486dfe5ca6890be0e1d7388ce6505a2ea6d700c237b50d91eb5a4b6370dab51b",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "27ea0cc4b31d3f3d1f2744972087d5ad13ced422e7b99aa64fa2dfb80db255bf"
+    ],
+    "prior": [
+      "693e0fcf637ec7cc58fb228036164c565cd69162f2c8997dceaedab875fb0b1d"
+    ],
+    "subject": {
+      "hash": "1626abac6eae4e64591eb6f038e95b14252f6d7e1adeddc05dd85720e26ea8db",
+      "note": "Kimi K3 spec review: fixed a confirmed PY/GO ski@v1-unverified split, co-signature griefing, ski re-exec budget, dup-key I-JSON; SPEC 2-6 hardened. Both impls byte-identical, suite green."
+    },
+    "ts": 1784302756,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "cafe0e526af11884517d8a207ac3835b3b2b8af6a53187536225f0e675236a4848ecc2848df5886a50449a226b542db672ea2436d78564a87826a686ec178b0b"
+    }
+  ]
+}

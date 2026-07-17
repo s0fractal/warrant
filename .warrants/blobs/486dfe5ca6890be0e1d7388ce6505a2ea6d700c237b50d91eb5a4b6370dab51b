@@ -1,0 +1,11 @@
+go build OK
+ok  python3 impl/warrant.py conformance examples -> CONFORMANCE: ALL PASS (20/20)
+ok  ./impl-go/warrant-go conformance examples -> CONFORMANCE: ALL PASS (20/20)
+ok  python3 impl/warrant.py selftest -> SELFTEST: ALL PASS
+ok  python3 tests/differential.py -> DIFFERENTIAL: ALL AGREE (43/43)
+ok  python3 tests/negative.py -> NEGATIVE: ALL AGREE
+ok  python3 tests/hostile.py -> HOSTILE: ALL PASS
+ok  python3 tests/settlement.py -> SETTLEMENT: ALL AGREE
+ok  python3 tests/pedantic_edges.py -> PEDANTIC-EDGES: ALL AGREE (15/15)
+ok  python3 tests/ski_policy.py -> SKI-POLICY: ALL PASS
+kimi-k3 review fixes verified
