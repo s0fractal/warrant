@@ -137,15 +137,52 @@ def main():
         chk("malformed JSON: go bounded (no panic)",
             "goroutine" not in rg.stderr and parse_counts(rg.stdout) is not None)
 
-        # ski@v1 whose check blob is absent -> base verify WARNs, never silent
+        # ski@v1 whose check blob is absent -> base verify WARNs, never silent,
+        # and PY/GO MUST agree (Kimi K3 review: Go used to `continue` silently,
+        # leaving PY at N warnings and GO at N-1 — a real cross-impl split).
         ski_reason = {"kind": "check", "check": "d" * 64, "runtime": "ski@v1",
                       "verdict": "pass"}
         body = base(decision="accept", because=[ski_reason])
         w = wid_of(body)
         s = write_store(Path(td) / "skimissing", {w: {"body": body, "sigs": []}})
-        rp = verify_py(s)
+        rp, rg = verify_py(s), verify_go(s)
         chk("ski@v1 missing check blob: base verify surfaces it (not silent)",
-            "ski@v1 unverified" in rp.stdout)
+            "ski@v1 unverified" in rp.stdout and "ski@v1 unverified" in rg.stdout)
+        agree("ski@v1 missing check blob", s)
+
+        # ski@v1 whose atp exceeds the re-execution budget -> reported unverified
+        # (a WARN), never evaluated, never a hang (Kimi K3 review: uint32 atp is a
+        # ~4.3e9 DoS ceiling for a verifier re-running a stranger's check).
+        over = {"ski": 1, "term": "e" * 64, "atp": 100_000_001, "expect": "f" * 64}
+        cb = canon(over)
+        ch = hashlib.sha256(cb).hexdigest()
+        ski_over = {"kind": "check", "check": ch, "runtime": "ski@v1", "verdict": "pass"}
+        body = base(decision="accept", because=[ski_over])
+        w = wid_of(body)
+        s = Path(td) / "skiatp"
+        (s / "records").mkdir(parents=True)
+        (s / "blobs").mkdir(parents=True)
+        (s / "records" / f"{w}.json").write_text(json.dumps({"body": body, "sigs": []}))
+        (s / "blobs" / ch).write_bytes(cb)
+        rp, rg = verify_py(s), verify_go(s)
+        chk("ski@v1 over-budget atp: reported unverified, not evaluated",
+            "ski@v1 unverified" in rp.stdout and "ski@v1 unverified" in rg.stdout)
+        agree("ski@v1 over-budget atp", s)
+
+        # duplicate member name in a record body -> invalid I-JSON (SPEC §4),
+        # bounded malformed error in BOTH, never last-wins.
+        s = Path(td) / "dupkey"
+        (s / "records").mkdir(parents=True)
+        (s / "blobs").mkdir(parents=True)
+        (s / "records" / (c + ".json")).write_text(
+            '{"body":{"warrant":"0.2","ts":1,"ts":2},"sigs":[]}')
+        rp, rg = verify_py(s), verify_go(s)
+        chk("duplicate key record: py bounded ERR (no last-wins)",
+            "Traceback" not in rp.stderr and parse_counts(rp.stdout) is not None
+            and parse_counts(rp.stdout)[1] >= 1)
+        chk("duplicate key record: go bounded ERR (no last-wins)",
+            "goroutine" not in rg.stderr and parse_counts(rg.stdout) is not None
+            and parse_counts(rg.stdout)[1] >= 1)
 
     print("\nHOSTILE: ALL PASS" if all(ok) else "\nHOSTILE: FAILURES")
     sys.exit(0 if all(ok) else 1)

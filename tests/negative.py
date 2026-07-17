@@ -139,6 +139,33 @@ def main():
         case("dangling prior + supersede subject (SPEC s7 MUST)", py, go,
              want_errors=True)
 
+        # Kimi K3 review: a co-signature that fails to verify is EXCLUDED, not
+        # fatal (SPEC §5/§6). Appending one junk co-sig to a record that keeps
+        # its valid actor signature MUST NOT invalidate it — otherwise anyone
+        # with store write access can grief any record into failing.
+        def append_junk_cosig(s):
+            p = record_path(s, w1)
+            env = json.load(open(p))
+            env["sigs"].append({"actor": "griefer@evil",
+                                "key": "00" * 32, "sig": "00" * 64})
+            json.dump(env, open(p, "w"), indent=2, sort_keys=True)
+        py, go = verify_both(fresh(append_junk_cosig))
+        case("junk co-signature appended -> WARN, not fatal", py, go,
+             want_errors=False, want_warn_min=1)
+
+        # ...but stripping the record down to ONLY a junk co-sig (no valid
+        # actor signature) MUST still error — the exclusion doesn't create a
+        # bypass, it just refuses to let extra noise destroy a good record.
+        def only_junk_cosig(s):
+            p = record_path(s, w1)
+            env = json.load(open(p))
+            env["sigs"] = [{"actor": "tester@negative",
+                            "key": "00" * 32, "sig": "00" * 64}]
+            json.dump(env, open(p, "w"), indent=2, sort_keys=True)
+        py, go = verify_both(fresh(only_junk_cosig))
+        case("only an invalid signature remains -> error", py, go,
+             want_errors=True)
+
         if W.load_sigma() is not None:
             # The CLI refuses to file a verdict it cannot reproduce (good), so an
             # honest filer can't create this record. Craft it by hand — the way an

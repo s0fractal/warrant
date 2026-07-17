@@ -13,9 +13,27 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
+
+// skiReexecMaxATP bounds the work a verifier will spend re-executing a
+// stranger's ski@v1 reason (SPEC §3.1). The atp ceiling is uint32 (~4.3e9); a
+// verifier re-running arbitrary checks caps it so a pathological-but-legal atp
+// cannot be a DoS. Over the cap the reason is reported as *unverified* (a WARN,
+// never a silent skip, never a verdict). MUST match the Python default
+// (SKI_REEXEC_MAX_ATP) so the two implementations agree by default.
+var skiReexecMaxATP = skiATPBudget()
+
+func skiATPBudget() uint32 {
+	if v := os.Getenv("WARRANT_SKI_MAX_ATP"); v != "" {
+		if n, err := strconv.ParseUint(v, 10, 32); err == nil {
+			return uint32(n)
+		}
+	}
+	return 100_000_000
+}
 
 var (
 	hex64Re   = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -165,6 +183,15 @@ func readJSON(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SPEC §4 / RFC 7493 I-JSON: duplicate member names are invalid. Go's
+	// decoder silently keeps the last (same as Python's stock json.loads); we
+	// reject them so both implementations — and any strict reimplementation —
+	// agree that a dup-key record is malformed, not last-wins.
+	if dup, err := jsonHasDupKeys(data); err != nil {
+		return nil, err
+	} else if dup {
+		return nil, errors.New("duplicate member name (invalid I-JSON)")
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	var v any
@@ -176,6 +203,60 @@ func readJSON(path string) (map[string]any, error) {
 		return nil, errors.New("top-level JSON is not an object")
 	}
 	return m, nil
+}
+
+// jsonHasDupKeys reports whether any object in the JSON stream repeats a member
+// name (SPEC §4). Walks the token stream because stock decoding has already
+// collapsed duplicates by the time you hold a map.
+func jsonHasDupKeys(data []byte) (bool, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	return scanDupKeys(dec)
+}
+
+func scanDupKeys(dec *json.Decoder) (bool, error) {
+	t, err := dec.Token()
+	if err != nil {
+		return false, err
+	}
+	delim, ok := t.(json.Delim)
+	if !ok {
+		return false, nil // scalar
+	}
+	switch delim {
+	case '{':
+		seen := map[string]bool{}
+		for dec.More() {
+			kt, err := dec.Token()
+			if err != nil {
+				return false, err
+			}
+			key, ok := kt.(string)
+			if !ok {
+				return false, errors.New("object member name is not a string")
+			}
+			if seen[key] {
+				return true, nil
+			}
+			seen[key] = true
+			if dup, err := scanDupKeys(dec); err != nil || dup {
+				return dup, err
+			}
+		}
+		if _, err := dec.Token(); err != nil { // consume '}'
+			return false, err
+		}
+	case '[':
+		for dec.More() {
+			if dup, err := scanDupKeys(dec); err != nil || dup {
+				return dup, err
+			}
+		}
+		if _, err := dec.Token(); err != nil { // consume ']'
+			return false, err
+		}
+	}
+	return false, nil
 }
 
 // canonicalJSON implements the exact v0.1 JCS subset used by SPEC §4:
@@ -602,6 +683,9 @@ func runSkiCheck(checkBytes []byte, store sigmaStore) (string, string, uint32, e
 	check, err := parseSkiCheckBlob(checkBytes)
 	if err != nil {
 		return "", "", 0, fmt.Errorf("invalid ski check blob: %w", err)
+	}
+	if check.atp > skiReexecMaxATP { // SPEC §3.1: local re-execution budget
+		return "", "", 0, errors.New("atp exceeds re-execution budget")
 	}
 	result, spent := sigmaEval(check.term, check.atp, store)
 	resultHash := sigmaTermHash(result)
@@ -1857,7 +1941,12 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 		actorSigned := false
 		for _, s := range sigs {
 			if !verifySig(wid, s) {
-				out("ERR", wid, "bad signature")
+				// SPEC §5/§6: a co-signature that fails to verify is reported
+				// and EXCLUDED, not fatal — a lone junk co-sig (which anyone with
+				// store write access can append) MUST NOT invalidate an
+				// otherwise-good record. The ERR below still fires if no valid
+				// signature by body.actor.id remains.
+				out("WARN", wid, "signature does not verify (excluded)")
 				continue
 			}
 			sm, _ := s.(map[string]any)
@@ -1924,6 +2013,15 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 			}
 			got, _, _, err := runSkiCheckFromStore(blobs, checkHex)
 			if err != nil {
+				// "reran and matched" and "not executed" MUST NOT look alike
+				// (SPEC §6). Settlement-grade: ERR when the claim is in an
+				// active record (an unexecuted claim can't be trusted to
+				// settle); otherwise a stable WARN, never a silent skip.
+				lvl := "WARN"
+				if ctx.activeRecords[wid] {
+					lvl = "ERR"
+				}
+				out(lvl, wid, "ski@v1 unverified: "+err.Error())
 				continue
 			}
 			if claimed, ok := r["verdict"].(string); ok && claimed != got {
@@ -2069,7 +2167,10 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		actorSigned := false
 		for _, s := range sigs {
 			if !verifySig(wid, s) {
-				out("ERR", wid, "bad signature")
+				// SPEC §5/§6: a failed co-signature is reported and EXCLUDED,
+				// not fatal (see settlement path). ERR still fires below if no
+				// valid signature by body.actor.id remains.
+				out("WARN", wid, "signature does not verify (excluded)")
 				continue
 			}
 			// SPEC §5 MUST: no keyring configured, so the key->actor binding is
@@ -2132,6 +2233,10 @@ func verifyDir(dir string, quiet bool) (int, int) {
 			}
 			got, _, _, err := runSkiCheckFromStore(blobs, checkHex)
 			if err != nil {
+				// Base verification: an unexecutable ski@v1 claim is a stable
+				// WARN (SPEC §6), never a silent skip — this is the PY/GO
+				// divergence the Kimi review surfaced (Go used to `continue`).
+				out("WARN", wid, "ski@v1 unverified: "+err.Error())
 				continue
 			}
 			if claimed, ok := r["verdict"].(string); ok && claimed != got {

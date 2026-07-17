@@ -29,6 +29,14 @@ VERSION = "0.2"           # version written into NEW records
 ACCEPTED = ("0.1", "0.2")  # versions this implementation validates
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 DECISIONS = ("propose", "accept", "reject", "supersede")
+# SPEC §3.1: re-executing a stranger's ski@v1 reason is safe by construction
+# (terminating, work+memory bounded by atp), but the atp ceiling is uint32
+# (~4.3e9). A verifier re-running arbitrary strangers' checks caps the work it
+# will spend so a pathological-but-legal atp cannot be a DoS. Over the cap, the
+# reason is reported as *unverified* (a WARN, never a silent skip and never a
+# verdict). Both implementations ship the SAME default so they agree by default;
+# operators MAY raise it (SPEC §3.1) accepting the divergence that implies.
+SKI_REEXEC_MAX_ATP = int(os.environ.get("WARRANT_SKI_MAX_ATP", 100_000_000))
 BODY_FIELDS = {"warrant", "decision", "subject", "under", "because",
                "evidence", "actor", "prior", "ts"}
 RUNTIMES = {"0.1": ("cmd@v1",),            # ski@v1 reserved in 0.1 bodies
@@ -45,6 +53,24 @@ WARN_KEY_CONFLICT = "key-state conflict"
 def canon(body):
     return json.dumps(body, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False).encode("utf-8")
+
+
+def _reject_dup_keys(pairs):
+    """object_pairs_hook enforcing I-JSON (SPEC §4): duplicate member names are
+    invalid. Stock parsers silently keep the last — a canonicalization attack
+    surface and a split against any strict I-JSON reimplementation. Raise so
+    ingestion treats a dup-key object as malformed, not last-wins."""
+    d = {}
+    for k, v in pairs:
+        if k in d:
+            raise ValueError(f"duplicate member name: {k}")
+        d[k] = v
+    return d
+
+
+def loads_ijson(raw):
+    """json.loads that rejects duplicate member names (SPEC §4 / RFC 7493)."""
+    return json.loads(raw, object_pairs_hook=_reject_dup_keys)
 
 
 def warrant_id(body):
@@ -199,6 +225,8 @@ def run_ski_check(store, check_hex, sg=None):
     err = validate_ski_blob(doc)
     if err:
         raise RuntimeError(f"invalid ski check blob: {err}")
+    if doc["atp"] > SKI_REEXEC_MAX_ATP:   # SPEC §3.1: local re-execution budget
+        raise RuntimeError("atp exceeds re-execution budget")
 
     class BlobCAS:                       # adapter: warrant blobs -> Σ-GLYPH store
         def get(self, h):
@@ -289,8 +317,8 @@ class Store:
                     load_errors[p.stem] = "unreadable or invalid UTF-8"
                 continue
             try:
-                env = json.loads(raw)
-            except json.JSONDecodeError:
+                env = loads_ijson(raw)          # SPEC §4: reject duplicate keys
+            except ValueError:
                 if load_errors is not None:
                     load_errors[p.stem] = "malformed JSON"
                 continue
@@ -725,7 +753,14 @@ def verify_store(store, quiet=False, settlement=None):
         actor_signed = False
         for s in sigs:
             if not verify_sig(wid, s):
-                out("ERR", wid, f"bad signature by {s.get('actor')}")
+                # SPEC §5/§6: a co-signature that fails to verify is reported and
+                # EXCLUDED, not fatal. The envelope is not hashed and co-sigs MAY
+                # be appended by anyone with store write access, so a lone junk
+                # co-sig MUST NOT be able to invalidate an otherwise-good record
+                # (a griefing/availability vector). The record still ERRs below
+                # if no *valid* signature by body.actor.id remains.
+                out("WARN", wid, f"signature does not verify (excluded): "
+                                 f"actor {s.get('actor')}")
                 continue
             if ctx is None:
                 # SPEC §5 MUST: with no keyring configured, the key↔actor binding is
@@ -1146,7 +1181,7 @@ def main():
         sys.exit(1 if errs else 0)
     elif args.cmd == "settle":
         store.require()
-        body = json.loads(Path(args.candidate_body).read_text(encoding="utf-8"))
+        body = loads_ijson(Path(args.candidate_body).read_text(encoding="utf-8"))
         verdict = settlement_admissibility(store, args.settling_wid, body)
         print(verdict)
         sys.exit(1 if verdict.startswith(("inadmissible", "invalid candidate")) else 0)
@@ -1155,7 +1190,7 @@ def main():
     elif args.cmd == "selftest":
         sys.exit(0 if selftest() else 1)
     elif args.cmd == "canon":
-        body = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        body = loads_ijson(Path(args.file).read_text(encoding="utf-8"))
         print(json.dumps({"warrant_id": warrant_id(body),
                           "canon_hex": canon(body).hex()}))
 
