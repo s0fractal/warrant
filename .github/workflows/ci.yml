@@ -54,6 +54,11 @@ jobs:
         run: WARRANT_REQUIRE_SIGMA=1 SIGMA_GLYPH=/tmp/sigma-glyph/impl ./tests/agree_check.sh
       - name: Hostile-store hardening (cycles, malformed JSON, unverified ski; Python/Go agree)
         run: python3 tests/hostile.py
+      - name: "Differential fuzzer (randomized PY/GO agreement over canon/verify, multi-seed)"
+        run: |
+          for s in 1337 4242 20240717; do
+            python3 tests/fuzz_differential.py --iters 400 --seed "$s"
+          done
       - name: Settlement-grade verification of the repo's own store
         run: |
           python3 impl/warrant.py verify --settlement --trust-config trust-config.json

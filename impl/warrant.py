@@ -823,7 +823,15 @@ def verify_store(store, quiet=False, settlement=None):
             prev = recs.get(p)
             if prev is None:
                 out("ERR", wid, f"prior {p[:12]} not in store")
-            elif prev["body"]["ts"] > body["ts"]:
+            # The ts-edge check must not crash on adversarial input: either body's
+            # `ts` may be a non-integer in a schema-invalid record (already ERR'd
+            # above). Compare only when both are real integers; otherwise the
+            # schema error stands and the edge check is simply skipped. (Found by
+            # tests/fuzz_differential.py — a string ts crashed the comparison.)
+            elif (isinstance(prev["body"].get("ts"), int)
+                  and not isinstance(prev["body"].get("ts"), bool)
+                  and isinstance(body.get("ts"), int) and not isinstance(body.get("ts"), bool)
+                  and prev["body"]["ts"] > body["ts"]):
                 out("WARN", wid, f"ts decreases along prior edge {p[:12]}")
         # SPEC s6/s7: reference resolution is split by field kind. under,
         # evidence, check, transcript MUST resolve to BLOBS - a hash present

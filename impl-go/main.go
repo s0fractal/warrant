@@ -199,6 +199,14 @@ func readJSON(path string) (map[string]any, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, err
 	}
+	// Reject trailing content after the JSON value (SPEC §4 / GOV-anchors §3):
+	// Go's decoder stops at the first value and would silently ignore a second,
+	// so a record with junk appended verified in Go while Python (json.loads)
+	// rejected it — a real consensus split found by tests/fuzz_differential.py.
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return nil, errors.New("trailing content after JSON value")
+	}
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil, errors.New("top-level JSON is not an object")
@@ -1976,7 +1984,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 		}
 		if rec.claim != "" {
 			if got != rec.claim {
-				out("ERR", wid, "WarrantID mismatch: recomputed "+got[:12])
+				out("ERR", wid, "WarrantID mismatch: recomputed "+sh12(got))
 				continue
 			}
 		} else {
@@ -2024,24 +2032,24 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 		for _, p := range getStringArray(body, "prior") {
 			prev, ok := records[p]
 			if !ok {
-				out("ERR", wid, "prior "+p[:12]+" not in store")
+				out("ERR", wid, "prior "+sh12(p)+" not in store")
 				continue
 			}
 			prevBody, _ := prev["body"].(map[string]any)
 			if getInt(prevBody, "ts") > getInt(body, "ts") {
-				out("WARN", wid, "ts decreases along prior edge "+p[:12])
+				out("WARN", wid, "ts decreases along prior edge "+sh12(p))
 			}
 		}
 		for _, h := range referencedBlobs(body) {
 			if blobs[h] == nil {
-				out("WARN", wid, "unresolved blob "+h[:12])
+				out("WARN", wid, "unresolved blob "+sh12(h))
 			}
 		}
 		if subj, ok := body["subject"].(map[string]any); ok {
 			if h, ok := subj["hash"].(string); ok {
 				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
 				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
-					out("WARN", wid, "unresolved blob "+h[:12])
+					out("WARN", wid, "unresolved blob "+sh12(h))
 				}
 			}
 		}
@@ -2202,7 +2210,7 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		}
 		if rec.claim != "" {
 			if got != rec.claim {
-				out("ERR", wid, "WarrantID mismatch: recomputed "+got[:12])
+				out("ERR", wid, "WarrantID mismatch: recomputed "+sh12(got))
 				continue
 			}
 		} else {
@@ -2240,24 +2248,24 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		for _, p := range getStringArray(body, "prior") {
 			prev, ok := records[p]
 			if !ok {
-				out("ERR", wid, "prior "+p[:12]+" not in store")
+				out("ERR", wid, "prior "+sh12(p)+" not in store")
 				continue
 			}
 			prevBody, _ := prev["body"].(map[string]any)
 			if getInt(prevBody, "ts") > getInt(body, "ts") {
-				out("WARN", wid, "ts decreases along prior edge "+p[:12])
+				out("WARN", wid, "ts decreases along prior edge "+sh12(p))
 			}
 		}
 		for _, h := range referencedBlobs(body) {
 			if blobs[h] == nil {
-				out("WARN", wid, "unresolved blob "+h[:12])
+				out("WARN", wid, "unresolved blob "+sh12(h))
 			}
 		}
 		if subj, ok := body["subject"].(map[string]any); ok {
 			if h, ok := subj["hash"].(string); ok {
 				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
 				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
-					out("WARN", wid, "unresolved blob "+h[:12])
+					out("WARN", wid, "unresolved blob "+sh12(h))
 				}
 			}
 		}
@@ -2571,6 +2579,18 @@ func getStringArray(m map[string]any, key string) []string {
 		}
 	}
 	return out
+}
+
+// sh12 truncates to 12 chars for display WITHOUT panicking on shorter strings.
+// Blob refs, prior entries and subject hashes can be attacker-controlled short
+// strings in a malformed record; a raw s[:12] slice panics the whole verifier
+// (found by tests/fuzz_differential.py). Python slicing is length-safe; this
+// makes Go match.
+func sh12(s string) string {
+	if len(s) < 12 {
+		return s
+	}
+	return s[:12]
 }
 
 func getInt(m map[string]any, key string) int64 {
