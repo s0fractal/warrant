@@ -1,0 +1,41 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Adjudicates the warrant-repo fixes from the Fable 5 Sigma-GLYPH v0.6.6 review (subject: the review doc). warrant-go is the third independent Book I evaluator, so its conformance is in scope. P0-a: R-S cost was narrowed to uint32 -- 1+size(z) wraps at 2^32, making an unaffordable step look affordable and splitting warrant-go from Python (bignum) and Rust (u64); Book I s3.4 mandates ATP Exhausted over 2^32-1. Fixed in uint64, narrow after the affordability check; verified no other uint32 cost/size narrowing survives (force cost is bounded <=3 by construction). P1: removed sigmaEval's size-1<=spent fence, which returned a canonical DISSONANCE(ATP) on a theorem and would have laundered the P0 wrap into a canonical outcome (Book I s3.6). P0-b: verify_sig accepted small-order/non-canonical Ed25519 pubkeys -- an all-zero key + all-zero sig verified for ~17/64 messages (Python) vs ~16/64 (Go), a consensus split and an actor-spoof without a keyring; both impls now reject the 8 torsion encodings + non-canonical y>=p (byte/integer-only, agree by construction). This also de-flaked negative.py, whose only-invalid-sig case had used an all-zero key. cmd@v1 check re-runs conformance PY+GO, selftest, the full suite, and warrant-go sigma-conformance 33/33; transcript pinned. Filed in sigma-glyph as 49cdeec6."
+      },
+      {
+        "check": "e95c0a4a76614c4c7d59990d9908f9744a8846edec5b9a9e56ec664c8c51d21d",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "0f0dd0c734dbcd7abf7052cfac89f828772d71f192d55bfb6aa023a599de7018",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [],
+    "prior": [
+      "bc1f438682257ae53e03e45657ad97bde1d8d409721c257479a03efd50071e70"
+    ],
+    "subject": {
+      "hash": "0cdea380e2627c1d70647ff313eff711393185fb25678a9beb37dfaf966abcf5",
+      "note": "Sigma-glyph review, warrant side: fixed warrant-go Book I R-S uint32 overflow (P0), removed a non-normative memory fence (P1), and rejected small-order Ed25519 keys in both impls (P0). Suite green."
+    },
+    "ts": 1784308036,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "5bb419f86decedf4dd8492b195ddeb972f9d2cb49f5b6c6a463dad6632c83ec4ea6e009b90c2ce50857729fd7848361bc7fa2ca6e4ae54c7bd320b86cc78050b"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+# Σ-GLYPH v0.6.6 — Fable 5 review (self-conducted)
+
+**Reviewer:** Claude Fable 5 (`claude-fable-5@sigma-glyph`), 2026-07-17.
+**Method (run-first, per `reviews/README.md`):** re-ran the full suite before critiquing —
+`impl/sigma_glyph.py` ALL PASS; `sigma_wave.py` 30/30; `sigma_federation.py` 37/37;
+`federation_differential.py` 40/40; `governance_differential.py` 27/27; Rust `book1 conformance`
+49/49; **warrant-go `sigma-conformance` 33/33** (the Go Book I evaluator); `anchor_governance.py
+selftest` 20/20; `verify_anchors.py` OK; `.warrants` 47 records / 0 errors. Every finding below was
+reproduced with a concrete input, and each fix re-verified against those suites.
+
+Severity ladder (repo protocol): **P0** two conforming nodes disagree on a hash / a verifier accepts
+what another rejects; **P1** spec silent where implementers must guess; **P2** clarity; **P3** roadmap.
+
+---
+
+## (A) Verdict
+
+Book I's *reduction* semantics are solid and now triple-implemented, but the **third Book I
+implementation — warrant-go's `ski@v1` evaluator — carried a real consensus split** (Book I §3.4 ATP
+arithmetic) that the vectors don't reach, and **every Ed25519 verifier in the federation (both repos)
+accepted small-order keys**, which is both a cross-implementation split and an actor-spoofing surface.
+Both are now fixed with byte/integer-only checks that agree by construction. The constitution
+(GOV-anchors v1.0.2) and Book III hold up; the main residual risk is cross-repo version-skew, not an
+internal defect.
+
+## (B) Findings
+
+### P0 — warrant-go Book I: R-S cost `uint32` truncation → consensus split (FIXED)
+`impl-go/main.go` (warrant repo), `sigmaStep` R-S branch: `cost := uint32(1 + sigmaSize(z))`.
+`sigmaSize` returns `uint64`; the narrowing to `uint32` **wraps** when `1 + size(z)` reaches 2³².
+Book I §3.4 is explicit: *"a step whose price exceeds 2³²−1 is unreachable for any canonical budget →
+ATP Exhausted, not implementation-defined."* The Python oracle computes this cost as a bignum and the
+Rust impl as `u64` with `saturating_add`; **warrant-go alone** could wrap `cost` to a small value,
+treat an unaffordable R-S step as affordable, and diverge on both `spent` and the result hash.
+*Reachability:* `size(z) ≤ 1 + spent ≤ 1 + atp ≤ 2³²`, so it needs an adversarial term near the
+uint32 ATP ceiling — expensive to trigger, but a legal input and a true two-nodes-disagree defect.
+**Fix:** compute `cost` in `uint64`, compare against `uint64(remaining)`, narrow only after the
+affordability check. Conformance 33/33 unchanged.
+
+### P0 — Ed25519 small-order / non-canonical public keys accepted (FIXED, both repos)
+Every Ed25519 verifier in the federation — warrant `impl/warrant.py` + `impl-go/main.go`, and
+sigma-glyph `tools/warrant_verify.py` + `tools/anchor_governance.py:counted_sigs` — verified
+signatures against the *stated* public key with no validity check on the key itself. Two consequences,
+both reproduced:
+1. **Small-order forgery.** With an all-zero (small-order) public key, an **all-zero signature
+   verifies for a large fraction of messages** — measured **17/64** random messages under Python
+   `cryptography`, **16/64** under Go `crypto/ed25519`. So without an out-of-band keyring, an attacker
+   files a record whose signature "verifies", binding a decision to any `actor` id they choose,
+   ~1 time in 8.
+2. **Consensus split.** The Python and Go counts differ (17 vs 16), i.e. there exist specific
+   (key, sig, message) triples that verify in one implementation and not the other — the exact
+   "two conforming nodes disagree" class the design rule forbids. (sigma-glyph's governance is
+   partially shielded because `counted_sigs` also requires the key to be in the out-of-band
+   `trust_actors` roster; the raw auditors and warrant base-verify are not.)
+**Fix:** reject small-order and non-canonically-encoded Ed25519 public keys before verification, via a
+byte-exact blocklist of the 8 canonical torsion encodings plus a `y ≥ p` non-canonical check —
+integer/byte comparisons only, so every implementation agrees by construction. Verified: all 8 torsion
+encodings rejected in both languages; the three genuine roster keys are not weak; all real signatures
+still verify; conformance and the governance store re-verify clean.
+
+### P1 — warrant-go Book I: a non-normative memory fence laundered faults into DISSONANCE (FIXED)
+`sigmaEval` carried `if sigmaSize(t)-1 > uint64(spent) { return DISSONANCE(ATP) }`. The bound
+`size − 1 ≤ spent` is a **theorem** (Book I §3.4, Lean-mechanized), so on correct accounting the fence
+is dead code; but if it *ever* fired (e.g. via the P0 R-S wrap above, which makes `size` outrun
+`spent`), it converted an implementation bug into a **canonical** `DISSONANCE(ATP Exhausted)` — which
+Book I §3.6 forbids ("local faults MUST NOT serialize as DISSONANCE") and which would have *masked*
+the P0 rather than surfacing it as a conformance failure. Neither the Python oracle nor the Rust impl
+has such a fence. **Fix:** removed it; the theorem needs no runtime re-check, and the P0 fix removes
+the only way it could have fired.
+
+### P2 — cross-repo co-signature semantic skew (documented; sigma insulated)
+Today's Warrant hardening (Kimi K3 adjudication) changed Warrant SPEC §5/§6 so that an **invalid
+co-signature is a WARN-and-exclude, not a fatal ERR**. Reproduced: on a store with one junk co-sig
+appended to an otherwise-valid record, sigma-glyph's shipped `tools/warrant_verify.py` reports
+**1 error** (old "all signatures verify" rule) while the upstream Warrant CLI at HEAD reports
+**0 errors**. Two auditors of the *same* store now disagree. This is **not** a conformance break for
+sigma-glyph: GOV-anchors §0/§6 pin Warrant SPEC v0.3 by content hash
+(`73758bdb…`, verified against `proposals/refs/warrant-SPEC-v0.3-snapshot.md`), and pinned deps are
+frozen — sigma is entitled to the older semantics. But the shipped read-only auditor and the live CLI
+drifting apart is an operational trap. **Recommendation:** leave the pin as-is (correct per §0), and
+when a future release re-pins to a newer Warrant SPEC, run it through the §7 gate and update
+`warrant_verify.py` in lockstep. (No code change made to the pin here.)
+
+## (C) Nits
+- `book-1-truth.md` §3.4 says a step over 2³²−1 is "unreachable for any canonical budget" but the ATP
+  ceiling *is* 2³²−1, so a step costing exactly 2³² is reachable-at-the-boundary; the P0 above is the
+  proof. The prose is fine; it's the Go impl that disagreed with it. Consider a conformance vector at
+  `atp = 2³²−1` with an R-S whose `size(z)` pushes cost to the boundary (currently untested — all
+  vectors are tiny-budget).
+- `warrant_verify.py` docstring still says "v0.1/v0.2 record bodies"; the store now also holds v0.2
+  `ski@v1` reasons — accurate enough, but the DAG has three roots now (`14d413f2/276b6f98/a30bd202`),
+  worth a one-line note that it's a forest.
+
+## (D) The one next step
+**Independent external audit** of two narrow surfaces this self-review necessarily can't check with
+fresh eyes: (1) the Book I ATP-arithmetic boundary — note that an *executable* vector for the R-S
+overflow is infeasible (reaching `size(z) ≈ 2³²` costs ≈2³² ATP to build), so the fix is
+correct-by-construction, `uint64` cost with the affordability check before any narrowing; an auditor
+should confirm no *other* `uint32` narrowing on a cost/size path survives in warrant-go; and (2) the
+Ed25519 small-order **blocklist completeness** — the 8 canonical torsion encodings plus `y ≥ p` should
+cover every small-order and non-canonical public key, but this is exactly the kind of set an
+independent reviewer should re-derive rather than trust.
+
+---
+
+### Fixes applied with this review
+- **warrant repo** `impl-go/main.go`: R-S cost in `uint64` (P0); memory-fence removed (P1); small-order
+  Ed25519 pubkey rejection (P0). `impl/warrant.py`: small-order rejection (P0). `tests/hostile.py`:
+  regression that both impls reject small-order keys for every message; `tests/negative.py` de-flaked
+  (it had used an all-zero key, which intermittently "verified" — this review's P0 in miniature).
+- **sigma-glyph repo** `tools/warrant_verify.py`, `tools/anchor_governance.py`: small-order Ed25519
+  pubkey rejection (P0), matching the Warrant CLI.
+
+All suites green in both repos after the fixes.
