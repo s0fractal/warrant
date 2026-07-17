@@ -1,12 +1,12 @@
 //! Ed25519 signature VERIFICATION, from scratch, no external crates (RFC 8032).
 //! Only verification is needed (Warrant never signs in Rust). Field is the
 //! 5×51-bit representation mod p = 2^255-19; points are extended Edwards
-//! coordinates. `verify` uses the full 512-bit SHA-512 output as the scalar for
-//! [H]A — valid because a legitimately-generated public key A = [s]B lies in the
-//! prime-order (order-L) subgroup, so [H]A = [H mod L]A; this matches the RFC
-//! for every real signature and avoids a separate mod-L scalar reduction.
-//! (Small-order / mixed-torsion adversarial keys are rejected upstream by the
-//! weak-key blocklist and the S<L canonicity check.)
+//! coordinates. `verify` reduces the SHA-512 challenge mod L (`mod_l`) and checks
+//! [S]B = R + [k]A cofactorless — RFC-exact for EVERY key, including mixed-torsion
+//! ones (an earlier draft used the unreduced 512-bit hash, which the Gemini 3.1
+//! Pro audit showed diverges from the RFC on mixed-torsion keys). Non-canonical
+//! point encodings (y ≥ p, x=0 with sign 1) and non-canonical S (S ≥ L) are
+//! rejected; small-order keys are additionally rejected upstream by the blocklist.
 
 const MASK51: u64 = (1u64 << 51) - 1;
 type Fe = [u64; 5];
@@ -210,13 +210,10 @@ fn fe_mul(a: &Fe, b: &Fe) -> Fe {
     let mut r1 = (c1 & M) as u64;
     r1 += r0 >> 51;
     r0 &= MASK51;
-    [
-        r0,
-        r1,
-        (c2 & M) as u64,
-        (c3 & M) as u64,
-        (c4 & M) as u64,
-    ]
+    let mut r2 = (c2 & M) as u64;
+    r2 += r1 >> 51; // keep r1 masked so every output limb is < 2^51 (Gemini audit P2)
+    r1 &= MASK51;
+    [r0, r1, r2, (c3 & M) as u64, (c4 & M) as u64]
 }
 
 fn fe_sq(a: &Fe) -> Fe {
@@ -476,8 +473,11 @@ fn pt_decompress(s: &[u8; 32]) -> Option<Pt> {
             return None;
         }
     }
-    if x == fe_zero() && sign == 1 {
-        return None; // x=0 with sign 1 is non-canonical
+    if fe_eq(&x, &fe_zero()) && sign == 1 {
+        // x=0 with sign 1 is a non-canonical encoding (e.g. the identity point
+        // 0100..0080). MUST reduce before the zero test — a strict array compare
+        // misses an unreduced 0 (= p in limbs). (Gemini 3.1 Pro audit P0.)
+        return None;
     }
     if fe_is_negative(&x) != (sign == 1) {
         x = fe_neg(&x);
@@ -508,6 +508,59 @@ fn scalar_lt_l(s: &[u8; 32]) -> bool {
     false // equal is not < L
 }
 
+// L = 2^252 + 27742317777372353535851937790883648493 (Ed25519 group order)
+const L4: [u64; 4] = [
+    0x5812631a5cf5d3ed,
+    0x14def9dea2f79cd6,
+    0x0000000000000000,
+    0x1000000000000000,
+];
+
+fn ge256(a: &[u64; 4], b: &[u64; 4]) -> bool {
+    for i in (0..4).rev() {
+        if a[i] != b[i] {
+            return a[i] > b[i];
+        }
+    }
+    true
+}
+
+fn sub256(a: &mut [u64; 4], b: &[u64; 4]) {
+    let mut borrow = 0u128;
+    for i in 0..4 {
+        let v = (a[i] as u128).wrapping_sub(b[i] as u128).wrapping_sub(borrow);
+        a[i] = v as u64;
+        borrow = (v >> 127) & 1;
+    }
+}
+
+/// Reduce a 64-byte little-endian value mod L (RFC 8032 scalar reduction).
+/// Bit-by-bit MSB-first; the accumulator stays < L < 2^253, so [u64;4] suffices.
+fn mod_l(h: &[u8; 64]) -> [u8; 32] {
+    let mut r = [0u64; 4];
+    for byte_i in (0..64).rev() {
+        for bit in (0..8).rev() {
+            // r <<= 1
+            let c0 = r[0] >> 63;
+            let c1 = r[1] >> 63;
+            let c2 = r[2] >> 63;
+            r[0] <<= 1;
+            r[1] = (r[1] << 1) | c0;
+            r[2] = (r[2] << 1) | c1;
+            r[3] = (r[3] << 1) | c2;
+            r[0] |= ((h[byte_i] >> bit) & 1) as u64;
+            if ge256(&r, &L4) {
+                sub256(&mut r, &L4);
+            }
+        }
+    }
+    let mut out = [0u8; 32];
+    for i in 0..4 {
+        out[i * 8..i * 8 + 8].copy_from_slice(&r[i].to_le_bytes());
+    }
+    out
+}
+
 /// RFC 8032 verify. `pk` = 32-byte public key, `sig` = 64 bytes, `msg` = message.
 pub fn verify(pk: &[u8; 32], sig: &[u8; 64], msg: &[u8]) -> bool {
     let mut r_bytes = [0u8; 32];
@@ -531,7 +584,7 @@ pub fn verify(pk: &[u8; 32], sig: &[u8; 64], msg: &[u8]) -> bool {
     buf.extend_from_slice(&r_bytes);
     buf.extend_from_slice(pk);
     buf.extend_from_slice(msg);
-    let k = sha512(&buf);
+    let k = mod_l(&sha512(&buf)); // reduce mod L for RFC-exact consensus on ALL keys
     let (bx, by) = base_xy();
     let base = Pt {
         t: fe_mul(&bx, &by),
@@ -582,5 +635,20 @@ pub fn selftest() -> bool {
     let mut bad = sig;
     bad[0] ^= 1;
     chk("tampered sig rejected", !verify(&pk, &bad, b""));
+    // Gemini audit P0-1: the non-canonical identity encoding (0100..0080) as R
+    // MUST NOT decompress (x=0 with sign bit set).
+    let mut noncanon = [0u8; 32];
+    noncanon[0] = 1;
+    noncanon[31] = 0x80;
+    chk("non-canonical identity (0100..80) rejected", pt_decompress(&noncanon).is_none());
+    // and the canonical identity (0100..00) DOES decompress
+    let mut ident = [0u8; 32];
+    ident[0] = 1;
+    chk("canonical identity (0100..00) decompresses", pt_decompress(&ident).is_some());
+    // Gemini audit P0-2: mod_l matches the reference reduction on a known vector.
+    // H = all-0xff (512 bits); (2^512-1) mod L computed by the reference:
+    let all_ff = [0xffu8; 64];
+    let want_mod_l = hexbytes("000f9c44e31106a447938568a71b0ed065bef517d273ecce3d9a307c1b419903");
+    chk("mod_l(0xff..) matches reference", mod_l(&all_ff) == want_mod_l);
     ok
 }

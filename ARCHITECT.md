@@ -38,6 +38,17 @@ rewrites, or spec prose without a vector behind it.
 
 ## Progress log
 
+- **2026-07-17 — external audit round 3 (Gemini 3.1 Pro, Ed25519 crypto).**
+  Targeted the from-scratch Rust Ed25519. Found **two real P0s** the RFC-TV1 +
+  452-case differential missed: `pt_decompress` accepted the non-canonical
+  identity `0100..0080` (strict array `==` missed an unreduced zero -> use
+  `fe_eq`), and `verify` used the unreduced 512-bit hash as scalar, diverging
+  from RFC on mixed-torsion keys (`A=A0+T8`) -> added `mod_l` and reduce k mod L.
+  Plus a benign P2 (`fe_mul` r1 mask). Re-validated: `edtest` PASS, §8 sigs
+  verify, Ed25519 differential now 472/472 incl. 20 mixed-torsion cases. See
+  `reviews/2026-07-gemini31pro-ed25519-audit{,-response}.md`. Lesson: a random
+  differential can't reach the canonicality/cofactor edges; adversarial algebra
+  can. **Three external models across three rounds now back the codebase.**
 - **2026-07-17 — W3 increment 2 (from-scratch Ed25519 in Rust) — W3 COMPLETE.**
   `impl-rs/src/ed25519.rs`: SHA-512, the 5×51-bit field mod 2^255-19 (mul/sq/
   invert/sqrt), extended-coordinate Edwards points (add/double/scalarmul),

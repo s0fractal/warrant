@@ -77,6 +77,64 @@ def main():
             disagree += 1
             print(f"DISAGREE [small-order accepted by RS] {k[:12]}")
 
+    # MIXED-TORSION keys (A = A0 + T8): the case where an unreduced-k verifier
+    # diverges from RFC 8032 (Gemini audit P0-2). RS reduces mod L, so it MUST
+    # agree with Python on these too. (Both reject a signature not made for A.)
+    p = 2**255 - 19
+    d = (-121665 * pow(121666, p - 2, p)) % p
+    I = pow(2, (p - 1) // 4, p)
+
+    def dec(b):  # decompress 32-byte -> (x,y) or None
+        y = int.from_bytes(b, "little") & ((1 << 255) - 1)
+        if y >= p:
+            return None
+        sign = b[31] >> 7
+        u = (y * y - 1) % p
+        v = (d * y * y + 1) % p
+        x = (u * pow(v, 3, p) * pow(u * pow(v, 7, p), (p - 5) // 8, p)) % p
+        if (v * x * x - u) % p != 0:
+            x = (x * I) % p
+        if (v * x * x - u) % p != 0:
+            return None
+        if x == 0 and sign:
+            return None
+        if x & 1 != sign:
+            x = p - x
+        return (x, y)
+
+    def enc(pt):
+        x, y = pt
+        b = bytearray((y % p).to_bytes(32, "little"))
+        b[31] |= (x & 1) << 7
+        return bytes(b)
+
+    def add(pp, qq):  # affine Edwards add
+        x1, y1 = pp
+        x2, y2 = qq
+        den = pow(1 + d * x1 * x2 * y1 * y2, p - 2, p)
+        x3 = ((x1 * y2 + y1 * x2) * den) % p
+        den2 = pow(1 - d * x1 * x2 * y1 * y2, p - 2, p)
+        y3 = ((y1 * y2 + x1 * x2) * den2) % p
+        return (x3, y3)
+
+    # a torsion point of order 8 (one of the canonical small-order encodings)
+    t8 = dec(bytes.fromhex("c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"))
+    for i in range(20):
+        seed = hashlib.sha256(f"tors:{i}".encode()).digest()
+        sk = Ed25519PrivateKey.from_private_bytes(seed)
+        pk = sk.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        a0 = dec(pk)
+        if a0 is None or t8 is None:
+            continue
+        mixed = enc(add(a0, t8)).hex()   # A + T8 (mixed torsion, passes blocklist)
+        msg = hashlib.sha256(f"tm:{i}".encode()).digest().hex()
+        sig = sk.sign(bytes.fromhex(msg)).hex()  # signature for A0, not A+T8
+        total += 1
+        if rs_verify(mixed, sig, msg) != py_verify(mixed, sig, msg):
+            disagree += 1
+            print(f"DISAGREE [mixed-torsion] case {i}")
+
     if disagree:
         print(f"\nED25519-DIFFERENTIAL: DIVERGENCE ({total - disagree}/{total}) seed={args.seed}")
         return 1
