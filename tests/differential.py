@@ -48,6 +48,13 @@ def cases():
     yield ("backspace+formfeed", body(note="tab" + chr(8) + "in" + chr(12) + "end"))
     # Multibyte / astral / quotes / backslashes.
     yield ("cyrillic-note", body(note="привіт-світ" * 5))
+    # Unicode normalization is NOT applied (SPEC §4): NFC vs NFD is different
+    # content -> different bytes -> different WarrantID, but every implementation
+    # must agree byte-exact on each form (none normalizes).
+    import unicodedata as _ud
+    _txt = "\u0439 cafe\u0301 \u0133"
+    yield ("nfc-precomposed", body(note=_ud.normalize("NFC", _txt)))
+    yield ("nfd-decomposed", body(note=_ud.normalize("NFD", _txt)))
     yield ("emoji-astral", body(note="deploy \U0001F680 ship \U0001F525"))
     yield ("quote-backslash", body(note='he said "\\x" \\ end'))
     yield ("del+c1", body(note="a" + chr(0x7F) + "b" + chr(0x9F) + "c"))

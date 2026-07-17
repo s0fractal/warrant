@@ -80,6 +80,8 @@ WarrantID = SHA-256( canonical_json(body) )
 
 **Duplicate member names are invalid (MUST).** Bodies and all schema blobs are I-JSON (RFC 7493): an object with a repeated member name is malformed and MUST be rejected, not silently resolved last-wins. Stock JSON parsers (Python's `json`, Go's `encoding/json`) keep the last occurrence silently; an implementation MUST detect and reject duplicates so a dup-key object cannot mean "malformed" to a strict reimplementation and "last-wins" to a lenient one.
 
+**Unicode normalization is NOT applied (MUST NOT).** Strings are canonicalized and hashed as their exact sequence of Unicode code points; a verifier MUST NOT apply NFC/NFD (or any) normalization, and MUST NOT reject a string for not being normalized. Two strings that differ only by normalization form (e.g. `й` as U+0439 vs. `и`+U+0306) are different content and hash to different WarrantIDs — as a content-addressed system requires. The reference implementations agree byte-exact on both forms (they never normalize). Requiring NFC would force a full Unicode normalization database into every implementation (including the from-scratch ones) and would reject legitimate content; the deliberate choice is to hash exactly what was written. PRODUCERS SHOULD emit NFC so that a string mangled by an *external* system (an editor, a database, a filesystem that silently normalizes) does not later fail to resolve — but that is a producer discipline, not a verifier rule, because such external mangling would break any hash-addressed format and is outside this spec's boundary.
+
 ## 5. Envelope and signatures (MUST)
 
 A stored warrant is an envelope:
