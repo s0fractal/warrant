@@ -1,0 +1,11 @@
+ok  python3 impl/warrant.py conformance -> CONFORMANCE: ALL PASS (45/45)
+ok  ./impl-go/warrant-go conformance examples -> CONFORMANCE: ALL PASS (45/45)
+ok  ./impl-rs/target/release/warrant-rs conformance examples -> RUST-WARRANT CONFORMANCE: ALL PASS (36/36)
+ok  ./impl-rs/target/release/warrant-rs edtest -> ED25519 SELFTEST: ALL PASS
+ok  python3 tests/differential.py -> DIFFERENTIAL: ALL AGREE (43/43)
+ok  python3 tests/ed25519_differential.py --n -> ED25519-DIFFERENTIAL: ALL AGREE (622/622) seed=1337
+ok  python3 tests/negative.py -> NEGATIVE: ALL AGREE
+ok  python3 tests/hostile.py -> HOSTILE: ALL PASS
+ok  python3 tests/fuzz_differential.py --iters -> FUZZ-DIFFERENTIAL: ALL AGREE (450/450) seed=1337
+ok  python3 impl/warrant.py selftest -> SELFTEST: ALL PASS
+ed25519 audit fixes verified

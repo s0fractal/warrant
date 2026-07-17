@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Third external round, targeting the highest-risk new artifact: the from-scratch Rust Ed25519 verifier (impl-rs/src/ed25519.rs). It found TWO REAL P0s the RFC-TV1 + 452-case differential had not caught -- the bugs live in canonicality/cofactor edges random legitimate inputs never reach. P0-a: pt_decompress accepted the non-canonical identity encoding 0100..0080 because `x == fe_zero()` was a strict array compare that missed an UNREDUCED zero (u=y^2-1 came out as p in limbs); fixed with fe_eq(&x,&fe_zero()). P0-b: verify used the unreduced 512-bit SHA-512 output as the scalar for [k]A, which diverges from RFC 8032 on MIXED-TORSION keys (A=A0+T8 passes the weak-key blocklist since it is not pure small-order; L=5 mod 8 makes [H]A != [H mod L]A); fixed by adding mod_l (bit-by-bit 512-bit reduction mod L) so verify is now the exact RFC cofactorless equation for every key. Benign P2 (fe_mul r1 mask) also fixed. Re-validated: edtest PASS (RFC 8032 TV1 + both P0 regressions + mod_l reference match), all three \u00a78 signatures verify, Ed25519 differential vs Python now 472/472 (200 keypairs x valid/tampered/wrong-msg + small-order + 20 mixed-torsion), three-way canon 43/43, full suite green. Lesson: a large random differential is necessary but not sufficient for from-scratch crypto -- adversarial algebra reaches the edges it cannot. cmd@v1 re-runs conformance PY/GO/RS + edtest + both differentials + the suite; transcript pinned. This completes W3 (a third independent Python+Go+Rust verifier) and the architect backlog."
+      },
+      {
+        "check": "745b415da1ea9fca037238745da2a9048fadb758db7b3d0f76ad53f007c5676c",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "35a8d649329b7851b875499364c2100e8d1f665634e2ed779272ebfc20eb4b2b",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "5e8249b3e2ca717e600a3b7f42694b870f57111da34aef0a4a6d1d5874c2bbc0"
+    ],
+    "prior": [
+      "c321e5a7b9d20a14258ac872876437c9236d4751f78c94814cafe0cdda170767"
+    ],
+    "subject": {
+      "hash": "1eadaa361804d2c86dc7443dad7002dcb727d8ef5d005d627dc44054f912a126",
+      "note": "Gemini 3.1 Pro Ed25519 crypto audit: fixed 2 P0s in the from-scratch Rust verifier (non-canonical identity decompress; mixed-torsion k-not-reduced-mod-L). RS now RFC-exact; differential 472/472."
+    },
+    "ts": 1784318959,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "5f19854b2fc6712528e9dbd1205ff7b267ad3983308bbe715fbeb60d1116168ffcb209e0e9ce9a0690f9004b22ffeb75c619a6aadd2af1d40ae43466afd5d10e"
+    }
+  ]
+}
