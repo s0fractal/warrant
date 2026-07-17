@@ -94,12 +94,14 @@ python3 impl/warrant.py selftest               # live round-trip + tamper detect
 ./impl-go/warrant-go selftest examples         # schema and verification edges
 ```
 
-`impl-rs/` — a third, independent **Rust** implementation of the canonicalization + schema + WarrantID + weak-key layer (from scratch, no external crates), where the cross-implementation consensus-split bugs live:
+`impl-rs/` — a third, independent **Rust** implementation (from scratch, no external crates): JCS canonicalization, schema, WarrantID, the weak-key blocklist, **and a from-scratch Ed25519 verifier** (SHA-512 + the 2^255-19 field + Edwards curve). It verifies all three §8 signatures and agrees with Python/Go byte-exact:
 
 ```bash
 (cd impl-rs && cargo build --release)                 # no crates; binary not committed
-./impl-rs/target/release/warrant-rs conformance examples   # §8 WarrantIDs + §8.3 negatives
-python3 tests/differential.py                         # now three-way: PY/GO/RS agree byte-exact
+./impl-rs/target/release/warrant-rs conformance examples   # §8 WarrantIDs + signatures + §8.3 negatives
+./impl-rs/target/release/warrant-rs edtest            # Ed25519 selftest (RFC 8032 TV1)
+python3 tests/differential.py                         # three-way canon: PY/GO/RS agree byte-exact
+python3 tests/ed25519_differential.py                 # Ed25519: Rust vs Python cryptography agree
 ```
 
 First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.

@@ -30,7 +30,7 @@ an external audit returns 0×P0/P1. Self-review is a substrate, never the gate.
 | W2 | Differential **fuzzer** PY↔GO over canon + verify + dirty-input reject | CI gate, multi-seed, 0 divergences | **done** (`tests/fuzz_differential.py`, in CI) |
 | W1 | Ed25519 residual → normative: SPEC §5 small-order MUST + §8.3 negative conformance vector | §8.3 vector gates a 3rd implementer | **done** |
 | W4 | §8.3 negative battery (weak-key + schema-invalid) checked by both `conformance` commands; parse-layer rejections (dup-key/trailing/canonicality) referenced to the cross-impl harnesses | `examples/conformance-negatives.json`, both impls 40/40 | **done** |
-| W3 | Third independent implementation (**Rust**) of the verifier, mirroring sigma's discipline | byte-exact on §8 + differential + fuzzer | **increment 1 done** (canon/schema/WarrantID/weak-key layer, no crates; 3-way differential PY/GO/RS 43/43; Ed25519 sig-verify = increment 2) |
+| W3 | Third independent implementation (**Rust**) of the verifier, mirroring sigma's discipline | byte-exact on §8 + differential | **done** (canon/schema/WarrantID/weak-key **+ from-scratch Ed25519**; verifies all three §8 signatures; 3-way canon differential 43/43; Ed25519 differential vs Python 452/452; no external crates) |
 | X1 | Combined CI: Book III / sigma store verified by the live warrant CLI, so cross-repo coupling regressions surface | CI job across both repos | todo |
 
 **Explicitly NOT doing** (anti-gold-plating): new features, marketing, elegance
@@ -38,6 +38,19 @@ rewrites, or spec prose without a vector behind it.
 
 ## Progress log
 
+- **2026-07-17 — W3 increment 2 (from-scratch Ed25519 in Rust) — W3 COMPLETE.**
+  `impl-rs/src/ed25519.rs`: SHA-512, the 5×51-bit field mod 2^255-19 (mul/sq/
+  invert/sqrt), extended-coordinate Edwards points (add/double/scalarmul),
+  point decompression, and RFC 8032 verification — all from scratch, no crates.
+  Validated three ways: the RFC 8032 official test vector 1; **all three §8
+  warrant signatures verify** (agreeing with PY/GO on the real pinned sigs);
+  and a **452-case differential vs Python `cryptography`** (200 keypairs ×
+  valid/tampered/wrong-message + small-order rejection), 0 divergences. `verify`
+  uses the full 512-bit SHA-512 output as the scalar for [H]A (valid for a
+  legitimate order-L key), avoiding a separate mod-L reduction; small-order and
+  non-canonical keys are pre-rejected by the weak-key blocklist + the S<L check.
+  `warrant-rs` is now a full third verifier of the canon/schema/WarrantID/
+  weak-key/signature layer. CI runs the selftest + the Ed25519 differential.
 - **2026-07-17 — W3 increment 1 (Rust third implementation).** `impl-rs/`
   (`warrant-rs`, from scratch, no external crates — mirrors sigma's Rust
   discipline) implements the layer where consensus-split bugs live: a from-scratch

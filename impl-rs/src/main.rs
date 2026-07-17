@@ -6,6 +6,8 @@
 //!   warrant-rs conformance [examples]   -> SPEC §8 WarrantIDs + §8.3 negatives
 //! Ed25519 signature verification is a separate increment.
 
+mod ed25519;
+
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -604,6 +606,29 @@ fn weak_ed25519_pubkey(raw: &[u8]) -> bool {
     be >= P
 }
 
+fn verify_sig(wid_hex: &str, sig: &BTreeMap<String, Json>) -> bool {
+    let key = match sig.get("key").and_then(as_str).and_then(decode_hex) {
+        Some(k) if k.len() == 32 => k,
+        _ => return false,
+    };
+    if weak_ed25519_pubkey(&key) {
+        return false;
+    }
+    let sigb = match sig.get("sig").and_then(as_str).and_then(decode_hex) {
+        Some(s) if s.len() == 64 => s,
+        _ => return false,
+    };
+    let msg = match decode_hex(wid_hex) {
+        Some(m) if m.len() == 32 => m,
+        _ => return false,
+    };
+    let mut pk = [0u8; 32];
+    pk.copy_from_slice(&key);
+    let mut sg = [0u8; 64];
+    sg.copy_from_slice(&sigb);
+    ed25519::verify(&pk, &sg, &msg)
+}
+
 // ---------- commands ----------
 fn read(path: &str) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|err| format!("cannot read {path}: {err}"))
@@ -650,6 +675,13 @@ fn cmd_conformance(dir: &str) -> bool {
                 let id = body.map(warrant_id);
                 chk(&format!("schema {name}"), body.map(validate_body).is_some_and(|e| e.is_empty()));
                 chk(&format!("WarrantID {name}"), matches!(&id, Some(Ok(h)) if h == want));
+                // verify every signature over the WarrantID (independent Ed25519)
+                if let Some(sigs) = as_obj(&env).and_then(|m| m.get("sigs")).and_then(as_arr) {
+                    for s in sigs.iter().filter_map(as_obj) {
+                        let actor = s.get("actor").and_then(as_str).unwrap_or("?");
+                        chk(&format!("sig {name} by {actor}"), verify_sig(want, s));
+                    }
+                }
             }
             Err(err) => chk(&format!("read {name}: {err}"), false),
         }
@@ -705,6 +737,37 @@ fn main() -> ExitCode {
             if cmd_conformance(dir) {
                 ExitCode::SUCCESS
             } else {
+                ExitCode::FAILURE
+            }
+        }
+        Some("verify-sig") => {
+            // verify-sig <pubkey_hex> <sig_hex> <msg_hex> -> prints true|false
+            let ok = (|| {
+                let key = decode_hex(args.get(2)?)?;
+                let sigb = decode_hex(args.get(3)?)?;
+                let msg = decode_hex(args.get(4)?)?;
+                if key.len() != 32 || sigb.len() != 64 {
+                    return Some(false);
+                }
+                if weak_ed25519_pubkey(&key) {
+                    return Some(false);
+                }
+                let mut pk = [0u8; 32];
+                pk.copy_from_slice(&key);
+                let mut sg = [0u8; 64];
+                sg.copy_from_slice(&sigb);
+                Some(ed25519::verify(&pk, &sg, &msg))
+            })()
+            .unwrap_or(false);
+            println!("{ok}");
+            ExitCode::SUCCESS
+        }
+        Some("edtest") => {
+            if ed25519::selftest() {
+                println!("ED25519 SELFTEST: ALL PASS");
+                ExitCode::SUCCESS
+            } else {
+                println!("ED25519 SELFTEST: FAILURES");
                 ExitCode::FAILURE
             }
         }
