@@ -89,7 +89,7 @@ A stored warrant is an envelope:
 ```
 
 - `sig` = Ed25519 signature over the 32 raw bytes of the WarrantID. Verification is pure Ed25519 (RFC 8032, no context, no pre-hash): the message is the 32-byte WarrantID itself.
-- **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`) and MUST reject a malformed (non-canonical) public-key or signature-point encoding. This closes the well-known EdDSA verifier splits ("Taming the many EdDSAs") where a crafted envelope verifies under one library and not another. NOTE (known residual): libraries still differ on cofactored vs. cofactorless verification and on small-order public keys; those cases require an attacker-chosen key and are flagged here for a future hardening vector — an implementation SHOULD prefer a strict RFC 8032 cofactorless verifier.
+- **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`), MUST reject a malformed (non-canonical) public-key or signature-point encoding, and **MUST reject a small-order or non-canonically-encoded public key** before verifying. A small-order public key (the 8 torsion points, e.g. all-zero) lets an all-zero signature verify for a large fraction of messages, and libraries disagree on which such keys they accept — so a crafted envelope would verify under one library and not another ("Taming the many EdDSAs"). The rejection set is a byte-exact blocklist of the 8 canonical torsion encodings plus a non-canonical check (`y ≥ p` after clearing the sign bit), so every implementation agrees by construction; it is a normative negative-conformance vector (§8.3), not a library-dependent heuristic. Implementations SHOULD additionally prefer a strict RFC 8032 cofactorless verifier.
 - ≥1 signature MUST be present and MUST include one whose `actor` equals `body.actor.id` and which verifies. If no *valid* signature by `body.actor.id` is present, the record is invalid (§6 ERR).
 - Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is). **A co-signature that fails to verify is reported and EXCLUDED, not fatal (MUST):** because anyone with store write access can append envelope signatures, a single junk co-signature MUST NOT be able to invalidate a record that still carries a valid signature by `body.actor.id`. An invalid signature is a §6 WARN; only the *absence* of a valid actor signature is an ERR. (For settlement thresholds, §5.1, an invalid signature simply does not count.)
 - Key↔actor binding is out of scope for v0.1 (use your existing PKI/keyring); implementations MUST verify signatures against the stated key and report the binding as unverified if no keyring is configured.
@@ -161,6 +161,15 @@ A real portable check: *"`C1[λxy.x] S K` reduces to `S` within 20 ATP"* — Σ-
 | accept warrant **WarrantID** (`"warrant":"0.2"`, demo-seed signed) | `8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0` |
 
 A v0.2 implementation with a Σ-GLYPH Book I v0.5 oracle MUST re-run the check against the object blobs and obtain `pass` with `result = H(S)` and `atp_spent = 20`. A v0.1 implementation MUST reject the warrant body (ski@v1 reserved) — that rejection is itself conformant.
+
+### 8.3. Negative conformance vectors (MUST REJECT)
+
+The positive vectors above pin what a conforming implementation MUST *accept*; equally normative is what it MUST *reject*. `examples/conformance-negatives.json` is a machine-readable battery every implementation MUST pass:
+
+- **`weak_ed25519_pubkeys`** — signature verification MUST fail for each listed public key, for any message and signature (§5): the 8 canonical small-order torsion encodings, their non-canonical sign-bit variants, and a `y ≥ p` non-canonical key.
+- **`schema_invalid`** — `validate(body)` MUST return ≥1 error for each listed body: a float `ts`, a missing field, an unknown body field, an unknown *nested* field (§2 recursive), a non-hex subject hash, a `reject` with zero reasons, `ski@v1` in a `"0.1"` body, a `note` over 200 code points (§2), and an unknown `runtime` (§3).
+
+Both reference implementations' `conformance` command loads and checks this file. Behaviors that are rejection-of-malformed-*bytes* rather than schema (duplicate member names, trailing content after the JSON value, non-JCS-canonical blobs — §4) are exercised by the cross-implementation harnesses (`tests/hostile.py`, `tests/fuzz_differential.py`) since they concern the parse layer, not a body value; a third implementation MUST agree there too.
 
 ## 9. Multi-root stores (v0.3)
 

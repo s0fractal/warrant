@@ -1153,6 +1153,41 @@ func conformance(dir string) bool {
 			fmt.Sprintf("%s %s %d %v", verdict, result, spent, err))
 	}
 
+	// SPEC §8.3 negative conformance: a conforming verifier MUST reject each.
+	if negRaw, err := os.ReadFile(filepath.Join(dir, "conformance-negatives.json")); err == nil {
+		var neg struct {
+			WeakKeys      []string `json:"weak_ed25519_pubkeys"`
+			SchemaInvalid []struct {
+				Why  string         `json:"why"`
+				Body map[string]any `json:"body"`
+			} `json:"schema_invalid"`
+		}
+		if json.Unmarshal(negRaw, &neg) == nil {
+			for _, k := range neg.WeakKeys {
+				kb, _ := hex.DecodeString(k)
+				sig := map[string]any{"actor": "x", "key": k, "sig": strings.Repeat("00", 64)}
+				chk("neg: weak Ed25519 key "+k[:12]+" rejected",
+					weakEd25519PubKey(kb) && !verifySig(strings.Repeat("00", 64), sig), "")
+			}
+			// re-decode bodies with UseNumber so ints stay ints (matches readJSON)
+			var negN struct {
+				SchemaInvalid []struct {
+					Why  string `json:"why"`
+					Body json.RawMessage `json:"body"`
+				} `json:"schema_invalid"`
+			}
+			_ = json.Unmarshal(negRaw, &negN)
+			for _, c := range negN.SchemaInvalid {
+				dec := json.NewDecoder(bytes.NewReader(c.Body))
+				dec.UseNumber()
+				var b any
+				_ = dec.Decode(&b)
+				bm, _ := b.(map[string]any)
+				chk("neg: schema-invalid ("+c.Why+")", len(validateBody(bm)) > 0, "")
+			}
+		}
+	}
+
 	passed := 0
 	for _, v := range ok {
 		if v {

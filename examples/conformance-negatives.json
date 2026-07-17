@@ -1,0 +1,213 @@
+{
+  "conformance_negatives": "0",
+  "note": "SPEC \u00a78.3. A conforming verifier MUST reject every item here. weak_ed25519_pubkeys: signature verification MUST fail for the key regardless of message/signature. schema_invalid: validate(body) MUST return >=1 error.",
+  "weak_ed25519_pubkeys": [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000080",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+    "0100000000000000000000000000000000000000000000000000000000000080",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  ],
+  "schema_invalid": [
+    {
+      "why": "float ts (no floats, \u00a72)",
+      "body": {
+        "warrant": "0.2",
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1.5
+      }
+    },
+    {
+      "why": "missing field (actor)",
+      "body": {
+        "warrant": "0.2",
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "unknown body field (\u00a72)",
+      "body": {
+        "warrant": "0.2",
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1,
+        "_extra": 1
+      }
+    },
+    {
+      "why": "non-hex subject hash",
+      "body": {
+        "warrant": "0.2",
+        "decision": "propose",
+        "subject": {
+          "hash": "zz"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "reject with zero reasons (\u00a72)",
+      "body": {
+        "warrant": "0.2",
+        "decision": "reject",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "ski@v1 in a 0.1 body (\u00a73.1 reserved)",
+      "body": {
+        "warrant": "0.1",
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [
+          {
+            "kind": "check",
+            "check": "0000000000000000000000000000000000000000000000000000000000000000",
+            "runtime": "ski@v1",
+            "verdict": "pass"
+          }
+        ],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "note > 200 code points (\u00a72)",
+      "body": {
+        "warrant": "0.2",
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "note": "\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "unknown runtime (\u00a73)",
+      "body": {
+        "warrant": "0.2",
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [
+          {
+            "kind": "check",
+            "check": "0000000000000000000000000000000000000000000000000000000000000000",
+            "runtime": "wasm@v1",
+            "verdict": "pass"
+          }
+        ],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "nested unknown field in subject (\u00a72 recursive)",
+      "body": {
+        "warrant": "0.2",
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "x": 1
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    }
+  ]
+}

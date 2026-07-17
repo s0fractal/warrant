@@ -1077,6 +1077,17 @@ def conformance(examples_dir):
                     verdict == "pass" and spent == 20
                     and rh == "887045bc22935aec5cba2dc11400d4e4357bc34d06681a6e92f06e7795b1f8a6",
                     f"{verdict} {rh} {spent}")
+
+    neg = d / "conformance-negatives.json"        # SPEC §8.3 (MUST reject each)
+    if neg.exists():
+        doc = json.loads(neg.read_text(encoding="utf-8"))
+        for k in doc.get("weak_ed25519_pubkeys", []):
+            sig = {"actor": "x", "key": k, "sig": "00" * 64}
+            chk(f"neg: weak Ed25519 key {k[:12]} rejected",
+                weak_ed25519_pubkey(bytes.fromhex(k)) and not verify_sig("00" * 64, sig))
+        for case in doc.get("schema_invalid", []):
+            chk(f"neg: schema-invalid ({case['why']})", bool(validate_body(case["body"])))
+
     print(f"\n{'CONFORMANCE: ALL PASS' if all(ok) else 'CONFORMANCE: FAILURES PRESENT'}"
           f" ({sum(ok)}/{len(ok)})")
     return all(ok)

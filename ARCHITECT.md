@@ -28,8 +28,8 @@ an external audit returns 0×P0/P1. Self-review is a substrate, never the gate.
 | id | item | done-criterion | status |
 |----|------|----------------|--------|
 | W2 | Differential **fuzzer** PY↔GO over canon + verify + dirty-input reject | CI gate, multi-seed, 0 divergences | **done** (`tests/fuzz_differential.py`, in CI) |
-| W1 | Ed25519 residual → normative: SPEC §5 blocklist + §8 conformance vector; version/CHANGELOG note for the co-sig + weak-key behavioral changes | §8 vector gates a 3rd implementer | todo |
-| W4 | §8 vectors for escaping / dup-key / trailing-content / weak-key (today only in tests, not normative vectors) | vectors pinned in SPEC §8 | todo |
+| W1 | Ed25519 residual → normative: SPEC §5 small-order MUST + §8.3 negative conformance vector | §8.3 vector gates a 3rd implementer | **done** |
+| W4 | §8.3 negative battery (weak-key + schema-invalid) checked by both `conformance` commands; parse-layer rejections (dup-key/trailing/canonicality) referenced to the cross-impl harnesses | `examples/conformance-negatives.json`, both impls 40/40 | **done** |
 | W3 | Third independent implementation (**Rust**) of the verifier, mirroring sigma's discipline | byte-exact on §8 + differential + fuzzer | todo (multi-session) |
 | X1 | Combined CI: Book III / sigma store verified by the live warrant CLI, so cross-repo coupling regressions surface | CI job across both repos | todo |
 
@@ -38,6 +38,15 @@ rewrites, or spec prose without a vector behind it.
 
 ## Progress log
 
+- **2026-07-17 — W1 + W4 shipped (normative negatives).** `examples/conformance-negatives.json`
+  is a machine-readable §8.3 battery every implementation MUST reject: 11 weak
+  Ed25519 keys (signature verification must fail) + 9 schema-invalid bodies
+  (validate must error). Both `conformance` commands load and check it (now
+  40/40 each). SPEC §5 upgrades the small-order rejection from "known residual"
+  to a normative MUST tied to that vector; §8.3 documents the battery and points
+  parse-layer rejections (dup-key/trailing/canonicality) at the cross-impl
+  harnesses. Closes the "prose without a vector" gap for the recent crypto/schema
+  hardening.
 - **2026-07-17 — external audit round (Gemini 3.1 Pro via `agy`).** First external
   acceptance-gate pass. It found real defects the fuzzers had blind spots to:
   a Python verifier crash on a non-object signature entry (`s.get` on a str), a
