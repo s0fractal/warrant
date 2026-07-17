@@ -38,6 +38,14 @@ rewrites, or spec prose without a vector behind it.
 
 ## Progress log
 
+- **2026-07-17 — external audit round 2 (GPT-OSS 120B via `agy`).** Different
+  model family; targeted the newest surface (C1 Lean proof, §8.3 negatives).
+  **No P0/P1** — independently confirmed the C1 proof is sound/non-vacuous
+  (propext-only, faithful A-2/A-3) and the negatives are correctly implemented.
+  One real P2: wrong-length pubkeys weren't pinned — adding them **caught a panic
+  in my own conformance harness** (`k[:12]` on a short key, Go), fixed with
+  `sh12`. Battery now 45/45 both impls. See
+  `reviews/2026-07-gptoss120b-agy-audit{,-response}.md`.
 - **2026-07-17 — W1 + W4 shipped (normative negatives).** `examples/conformance-negatives.json`
   is a machine-readable §8.3 battery every implementation MUST reject: 11 weak
   Ed25519 keys (signature verification must fail) + 9 schema-invalid bodies

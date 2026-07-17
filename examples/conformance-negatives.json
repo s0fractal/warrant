@@ -1,6 +1,6 @@
 {
   "conformance_negatives": "0",
-  "note": "SPEC \u00a78.3. A conforming verifier MUST reject every item here. weak_ed25519_pubkeys: signature verification MUST fail for the key regardless of message/signature. schema_invalid: validate(body) MUST return >=1 error.",
+  "note": "SPEC \u00a78.3. A conforming verifier MUST reject every item here. weak_ed25519_pubkeys: signature verification MUST fail for the key regardless of message/signature. schema_invalid: validate(body) MUST return >=1 error. (wrong-length pubkeys included: a non-32-byte key MUST be rejected.)",
   "weak_ed25519_pubkeys": [
     "0000000000000000000000000000000000000000000000000000000000000000",
     "0100000000000000000000000000000000000000000000000000000000000000",
@@ -12,7 +12,10 @@
     "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
     "0100000000000000000000000000000000000000000000000000000000000080",
     "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "00",
+    "000000000000000000000000000000000000000000000000000000000000000000",
+    "00000000000000000000000000000000000000000000000000000000000000"
   ],
   "schema_invalid": [
     {
@@ -196,6 +199,44 @@
         "subject": {
           "hash": "0000000000000000000000000000000000000000000000000000000000000000",
           "x": 1
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "missing field (warrant)",
+      "body": {
+        "decision": "propose",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "under": [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ],
+        "because": [],
+        "evidence": [],
+        "actor": {
+          "id": "x"
+        },
+        "prior": [],
+        "ts": 1
+      }
+    },
+    {
+      "why": "missing field (decision)",
+      "body": {
+        "warrant": "0.2",
+        "subject": {
+          "hash": "0000000000000000000000000000000000000000000000000000000000000000"
         },
         "under": [
           "0000000000000000000000000000000000000000000000000000000000000000"

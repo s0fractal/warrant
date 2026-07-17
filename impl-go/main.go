@@ -1166,7 +1166,7 @@ func conformance(dir string) bool {
 			for _, k := range neg.WeakKeys {
 				kb, _ := hex.DecodeString(k)
 				sig := map[string]any{"actor": "x", "key": k, "sig": strings.Repeat("00", 64)}
-				chk("neg: weak Ed25519 key "+k[:12]+" rejected",
+				chk("neg: weak Ed25519 key "+sh12(k)+" rejected",
 					weakEd25519PubKey(kb) && !verifySig(strings.Repeat("00", 64), sig), "")
 			}
 			// re-decode bodies with UseNumber so ints stay ints (matches readJSON)
