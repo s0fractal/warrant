@@ -231,6 +231,63 @@ def main():
         chk("deeply-nested record: go bounded (no stack-overflow panic)",
             "goroutine" not in rg.stderr and parse_counts(rg.stdout) is not None)
 
+        # verify_store TOTALITY (Kimi full-audit, 2026-07): a schema-invalid
+        # record whose fields are type-CONFUSED (not merely bad-valued) MUST
+        # produce a bounded report, never an uncaught TypeError/KeyError. Before
+        # the fix the Python verifier crashed on each of these while Go stayed
+        # bounded — and, worse, a single such record aborted verification of the
+        # WHOLE store (an availability vector).
+        type_confusions = {
+            "prior_int": {"prior": 5},
+            "prior_list_int": {"prior": [5]},
+            "under_int": {"under": 5},
+            "under_list_int": {"under": [5]},
+            "evidence_int": {"evidence": 5},
+            "because_dict": {"because": {}},
+            "because_list_int": {"because": [5]},
+            "subject_str": {"subject": "x"},
+            "decision_int": {"decision": 5},
+            "actor_str": {"actor": "x"},
+        }
+        for name, mut in type_confusions.items():
+            body = base(**mut)
+            w = wid_of(body)
+            s = write_store(Path(td) / f"tc_{name}", {w: {"body": body, "sigs": []}})
+            rp = verify_py(s)
+            chk(f"totality {name}: py bounded (no TypeError/KeyError)",
+                "Traceback" not in rp.stderr and parse_counts(rp.stdout) is not None
+                and parse_counts(rp.stdout)[1] >= 1)
+
+        # AVAILABILITY: one good record + one type-confused record. The bad record
+        # MUST NOT abort verification of the good one (both appear in the report).
+        good = base(decision="accept", actor={"id": "g"}, ts=7)
+        gw = wid_of(good)
+        bad = base(prior=5, ts=8)
+        bw = wid_of(bad)
+        s = write_store(Path(td) / "tc_availability",
+                        {gw: {"body": good, "sigs": []},
+                         bw: {"body": bad, "sigs": []}})
+        rp = verify_py(s)
+        cp = parse_counts(rp.stdout)
+        chk("totality availability: one bad record does not abort the store",
+            "Traceback" not in rp.stderr and cp is not None and cp[0] == 2)
+
+        # `why` on a deep LINEAR prior-chain MUST NOT raise RecursionError
+        # (was recursive; `seen` did not help a non-cyclic chain).
+        s = Path(td) / "tc_whychain"
+        (s / "records").mkdir(parents=True)
+        (s / "blobs").mkdir(parents=True)
+        prev, tip = [], None
+        for i in range(1600):
+            b = base(ts=i + 1, prior=prev)
+            w = wid_of(b)
+            (s / "records" / f"{w}.json").write_text(json.dumps({"body": b, "sigs": []}))
+            prev, tip = [w], w
+        rw = run(PY + ["--store", str(s), "why", tip])
+        chk("totality why(deep linear chain): no RecursionError",
+            "Traceback" not in rw.stderr and "RecursionError" not in rw.stderr
+            and rw.returncode == 0)
+
     print("\nHOSTILE: ALL PASS" if all(ok) else "\nHOSTILE: FAILURES")
     sys.exit(0 if all(ok) else 1)
 

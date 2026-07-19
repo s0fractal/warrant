@@ -162,10 +162,16 @@ def _validate_reason(r, version=VERSION):
 
 
 def is_unverifiable(body):
-    """Protocol rule (SPEC §3): a reject whose every reason is prose."""
-    return (body["decision"] == "reject"
-            and bool(body["because"])
-            and all(r.get("kind") == "prose" for r in body["because"]))
+    """Protocol rule (SPEC §3): a reject whose every reason is prose.
+
+    Shape-defensive: called from the verifier on possibly schema-invalid
+    records, so a type-confused `because` (non-list, or non-dict entries)
+    must yield False rather than raise (Kimi full-audit, 2026-07)."""
+    because = body.get("because") if isinstance(body, dict) else None
+    if not isinstance(because, list) or not because:
+        return False
+    return (body.get("decision") == "reject"
+            and all(isinstance(r, dict) and r.get("kind") == "prose" for r in because))
 
 
 # ---------- ski@v1 runtime (SPEC §3.1, v0.2) ----------
@@ -656,8 +662,17 @@ def _settlement_context(store, trust_config=None, genesis_roots=None):
         if wid not in rotation_cache:
             env = recs.get(wid)
             rotation_cache[wid] = None
-            if env and env["body"]["decision"] == "accept":
-                rotation_cache[wid] = _parse_key_blob(store, env["body"]["subject"]["hash"])
+            # Shape-defensive: rotation() is called for every ancestor in a
+            # record's prior-closure, and an ancestor may be schema-invalid
+            # (e.g. missing "decision"/"subject"). Dereferencing it as a valid
+            # body crashed settlement with a KeyError when an ACTIVE record had
+            # a malformed ancestor (Kimi full-audit, 2026-07). A malformed
+            # ancestor simply carries no rotation.
+            body = env.get("body") if isinstance(env, dict) else None
+            if isinstance(body, dict) and body.get("decision") == "accept":
+                subj = body.get("subject")
+                if isinstance(subj, dict) and isinstance(subj.get("hash"), str):
+                    rotation_cache[wid] = _parse_key_blob(store, subj["hash"])
         return rotation_cache[wid]
 
     def keys_before(wid):
@@ -794,7 +809,8 @@ def verify_store(store, quiet=False, settlement=None):
         body = env["body"]
         if ctx is not None and wid in ctx["invalid_policy"]:
             out("ERR", wid, ERR_INVALID_THRESHOLD)
-        for m in validate_body(body):
+        schema_errs = validate_body(body)
+        for m in schema_errs:
             out("ERR", wid, f"schema: {m}")
         got = warrant_id(body)
         if got != wid:
@@ -807,6 +823,12 @@ def verify_store(store, quiet=False, settlement=None):
         if not sigs:
             out("ERR", wid, "no signatures")
         actor_signed = False
+        # body.actor may be type-confused in a schema-invalid record (already
+        # ERR'd above); dereference it defensively so a string/scalar `actor`
+        # cannot crash the signature loop with a valid co-signature attached
+        # (Kimi full-audit, 2026-07: `actor:"x"` + valid sig → TypeError).
+        _actor = body.get("actor") if isinstance(body, dict) else None
+        body_actor_id = _actor.get("id") if isinstance(_actor, dict) else None
         for s in sigs:
             if not isinstance(s, dict):
                 # A signature entry that is not an object is malformed. Report and
@@ -844,11 +866,23 @@ def verify_store(store, quiet=False, settlement=None):
                 else:
                     out("WARN", wid, f"signature unbound: key "
                                      f"{str(key)[:12]} claims actor {actor}")
-            if s.get("actor") == body["actor"]["id"]:
+            if body_actor_id is not None and s.get("actor") == body_actor_id:
                 actor_signed = True
         if sigs and not actor_signed:
             out("ERR", wid, "no valid signature by body.actor.id")
-        for p in body["prior"]:
+        # SPEC totality (Kimi full-audit, 2026-07): the semantic/DAG checks
+        # below assume well-*typed* prior/under/evidence/because/subject. A
+        # schema-invalid record may type-confuse them (e.g. prior:5, subject:"x")
+        # and previously crashed the verifier with an uncaught TypeError/KeyError
+        # — a store-wide AVAILABILITY vector, since one malformed record aborted
+        # the whole run. The schema ERR is already reported above; here we simply
+        # skip the parts of the semantic report that a wrong *type* makes
+        # meaningless, WITHOUT suppressing the warnings a well-typed-but-invalid
+        # record (e.g. a bad-*value* hash) still earns — matching the Go impl's
+        # bounded report so PY/GO stay in lockstep (tests/fuzz_differential.py).
+        for p in (body["prior"] if isinstance(body.get("prior"), list) else []):
+            if not isinstance(p, str):
+                continue
             prev = recs.get(p)
             if prev is None:
                 out("ERR", wid, f"prior {p[:12]} not in store")
@@ -867,22 +901,32 @@ def verify_store(store, quiet=False, settlement=None):
         # only as a stored record does not resolve them. subject.hash MAY
         # resolve to a WarrantID only where a rule explicitly names one
         # (supersede subjects; root-adoption/rotation accept subjects).
-        blob_refs = list(body["under"]) + list(body["evidence"])
-        blob_refs += [r["check"] for r in body["because"] if r.get("kind") == "check"]
-        blob_refs += [r["transcript"] for r in body["because"]
-                      if r.get("kind") == "check" and "transcript" in r]
+        # Type-guarded (see totality note above): well-typed inputs flow through
+        # unchanged (transparent to the fuzzer); a type-confused field just
+        # contributes no refs rather than raising.
+        _under = body["under"] if isinstance(body.get("under"), list) else []
+        _evidence = body["evidence"] if isinstance(body.get("evidence"), list) else []
+        _because = body["because"] if isinstance(body.get("because"), list) else []
+        _because = [r for r in _because if isinstance(r, dict)]
+        blob_refs = [h for h in (list(_under) + list(_evidence)) if isinstance(h, str)]
+        blob_refs += [r["check"] for r in _because
+                      if r.get("kind") == "check" and isinstance(r.get("check"), str)]
+        blob_refs += [r["transcript"] for r in _because
+                      if r.get("kind") == "check" and isinstance(r.get("transcript"), str)]
         for h in blob_refs:
             if not store.has_blob(h):
                 out("WARN", wid, f"unresolved blob {h[:12]}")
-        subj = body["subject"]["hash"]
-        subj_may_be_record = body["decision"] in ("supersede", "accept")
-        if not store.has_blob(subj) and not (subj_may_be_record and subj in recs):
-            out("WARN", wid, f"unresolved blob {subj[:12]}")
-        if body["decision"] == "supersede" and body["subject"]["hash"] not in recs:
-            out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
+        _subject = body.get("subject") if isinstance(body, dict) else None
+        subj = _subject.get("hash") if isinstance(_subject, dict) else None
+        if isinstance(subj, str):
+            subj_may_be_record = body.get("decision") in ("supersede", "accept")
+            if not store.has_blob(subj) and not (subj_may_be_record and subj in recs):
+                out("WARN", wid, f"unresolved blob {subj[:12]}")
+            if body.get("decision") == "supersede" and subj not in recs:
+                out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
         if is_unverifiable(body):
             out("WARN", wid, "UNVERIFIABLE: reject with prose-only reasons")
-        for r in body["because"]:                   # re-run ski@v1 claims
+        for r in _because:                          # re-run ski@v1 claims
             if r.get("kind") == "check" and r.get("runtime") == "ski@v1":
                 try:
                     got, rh, _ = run_ski_check(store, r["check"])
@@ -916,34 +960,48 @@ def verify_store(store, quiet=False, settlement=None):
     return errs, warns
 
 
+WHY_MAX_DEPTH = 4096
+
+
 def why(store, wid, depth=0, seen=None):
-    seen = seen if seen is not None else set()
-    env = store.get_record(wid)
-    pad = "  " * depth
-    if env is None:
-        print(f"{pad}?? {wid[:16]} (not in store)")
-        return
-    body = env["body"]
-    ok = warrant_id(body) == wid and all(verify_sig(wid, s) for s in env["sigs"])
-    mark = "" if ok else "  [VERIFY FAILED]"
-    unv = "  [unverifiable]" if is_unverifiable(body) else ""
-    note = body["subject"].get("note", "")
-    print(f"{pad}{body['decision'].upper()} {wid[:16]} by {body['actor']['id']}"
-          f"  subject={body['subject']['hash'][:12]} {note}{mark}{unv}")
-    for r in body["because"]:
-        if r["kind"] == "prose":
-            print(f"{pad}  - prose: {r['text']}")
-        else:
-            print(f"{pad}  - check {r['check'][:12]} [{r['runtime']}] -> {r['verdict']}")
-    for h in body["under"]:
-        print(f"{pad}  under policy {h[:12]}"
-              + ("" if store.has_blob(h) else " (unresolved)"))
-    if wid in seen:
-        print(f"{pad}  (cycle)")
-        return
-    seen.add(wid)
-    for p in body["prior"]:
-        why(store, p, depth + 1, seen)
+    # Iterative pre-order DAG walk. Was recursive: a deep *linear* prior-chain
+    # (no cycle, so `seen` did not help) exhausted Python's call stack and
+    # raised RecursionError — a `why` on hostile input crashed instead of
+    # printing (Kimi full-audit, 2026-07). An explicit stack removes the call-
+    # depth limit; `seen` still cuts cycles and depth is bounded defensively.
+    seen = set()
+    stack = [(wid, depth)]
+    while stack:
+        cur, d = stack.pop()
+        env = store.get_record(cur)
+        pad = "  " * d
+        if env is None:
+            print(f"{pad}?? {cur[:16]} (not in store)")
+            continue
+        body = env["body"]
+        ok = warrant_id(body) == cur and all(verify_sig(cur, s) for s in env["sigs"])
+        mark = "" if ok else "  [VERIFY FAILED]"
+        unv = "  [unverifiable]" if is_unverifiable(body) else ""
+        note = body["subject"].get("note", "")
+        print(f"{pad}{body['decision'].upper()} {cur[:16]} by {body['actor']['id']}"
+              f"  subject={body['subject']['hash'][:12]} {note}{mark}{unv}")
+        for r in body["because"]:
+            if r["kind"] == "prose":
+                print(f"{pad}  - prose: {r['text']}")
+            else:
+                print(f"{pad}  - check {r['check'][:12]} [{r['runtime']}] -> {r['verdict']}")
+        for h in body["under"]:
+            print(f"{pad}  under policy {h[:12]}"
+                  + ("" if store.has_blob(h) else " (unresolved)"))
+        if cur in seen:
+            print(f"{pad}  (cycle)")
+            continue
+        seen.add(cur)
+        if d >= WHY_MAX_DEPTH:
+            print(f"{pad}  (max depth {WHY_MAX_DEPTH} reached)")
+            continue
+        for p in reversed(body["prior"]):
+            stack.append((p, d + 1))
 
 
 # ---------- filing ----------
