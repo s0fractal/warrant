@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude-fable-5@warrant"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Recovered from an interrupted Kimi Code multi-agent run (session_ccff46ce, 2026-07-18): the audit found, but never wrote up or fixed, that verify_store is NOT TOTAL. After reporting a body schema errors it kept dereferencing the same fields it had just flagged as wrong-TYPED, so a type-confused record (prior:5, subject a string, actor a string plus a valid signature, ...) raised an uncaught TypeError/KeyError where Go returns a bounded report -- and because the exception escaped the whole-store loop, ONE malformed record denied verification of every other record (an availability vector). Also: settlement KeyError on a schema-invalid ancestor, and a why RecursionError on a deep linear prior-chain. Confirmed independently against HEAD 707b2c9 (10 crash shapes + availability + deep why). Fixed: type-guard the verify_store semantic block so it stays transparent to well-typed input (PY/GO counts unchanged, fuzz stays 450/450) and skips only the fragments a wrong TYPE makes meaningless; shape-defensive is_unverifiable and settlement rotation(); iterative why() with WHY_MAX_DEPTH. A blanket continue-on-schema-error was tried and rejected (it broke fuzz m_badhash by suppressing warnings a bad-VALUE record legitimately earns). Regression locked in tests/hostile.py (+18 checks). cmd@v1 re-runs conformance + hostile + fuzz + differential + ed25519; transcript pinned. Same verifier-totality class as the Gemini 3.1 Pro round, on the code path that pass had not reached."
+      },
+      {
+        "check": "1efad2ca3b13caf6acd65c5371e102293e92f45b8d87e7e57abf4b8b37bf72cd",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "980afe0fe43654945d527a5b41d9584d4435793bdcafcce8112dbac7cf55a28f",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "f33e9ddbe9d186302c5f60a20e42390aed3038e34cdc9dba9177bd88ed724e80"
+    ],
+    "prior": [
+      "3da04a27a6563b67eba82ef3ac479c08d952db860e4303872d1dbb88f74f75e7"
+    ],
+    "subject": {
+      "hash": "dc85cbce103e349b2d98a155b5fdbd5b12f27f3198820ec73c3d96d9d322bce2",
+      "note": "Kimi K3 full audit: fixed verify_store totality -- type-confused and hostile records no longer crash the whole-store run; settlement KeyError and deep-why RecursionError fixed. Battery green."
+    },
+    "ts": 1784461485,
+    "under": [
+      "68bc07ab90bdf7dca203a768fce38c61cd3236954e8deb307470bfb79d7b89dd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude-fable-5@warrant",
+      "key": "3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27",
+      "sig": "3e455e8ab2e9218b471fbc12ec89a727cb541d5c4532617da181007ca403ca2de2694c531a66973c10af459ec199374c4150e2c9ab9bf8e9f2078f2b16a8ea03"
+    }
+  ]
+}

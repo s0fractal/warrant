@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Re-runnable cmd@v1 check for the Kimi K3 full-audit adjudication.
+# Proves verifier totality (no crash on hostile/type-confused stores) and that
+# the full battery still agrees. Run from the warrant repo root.
+set -euo pipefail
+PY=${WARRANT_PY:-python3}
+$PY impl/warrant.py conformance | grep -q "ALL PASS (45/45)"
+$PY tests/hostile.py         | grep -q "HOSTILE: ALL PASS"
+$PY tests/fuzz_differential.py | grep -q "FUZZ-DIFFERENTIAL: ALL AGREE"
+$PY tests/differential.py    | grep -q "DIFFERENTIAL: ALL AGREE (45/45)"
+$PY tests/ed25519_differential.py | grep -q "ED25519-DIFFERENTIAL: ALL AGREE"
+echo "PASS: verifier total (hostile bounded), full battery agrees"
