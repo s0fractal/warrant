@@ -2057,6 +2057,14 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 }
 
 func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) (int, int) {
+	// A settlement verify is a STORE operation: require records/ (matching
+	// Python's Store.require), so a dir with blobs/ but no records/ is a bounded
+	// "no store" error in both — not a Go flat-mode silent (0,0,0) exit 0
+	// (Kimi K3 gate P1-6, blobs-without-records direction).
+	if !isDir(filepath.Join(dir, "records")) {
+		fmt.Fprintf(os.Stderr, "no store at %s (run: warrant init)\n", dir)
+		return 1, 0
+	}
 	recList, records, blobs, err := loadVerifyData(dir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

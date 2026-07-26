@@ -610,6 +610,18 @@ def case_verifier_hardening_k3(tmp):
     child = body("accept", put_blob(s10, b"b"), [pol], "a@t"); child["ts"] = 2 ** 63 - 1; child["prior"] = [wp]
     open(os.path.join(s10, "records", W.warrant_id(child) + ".json"), "w").write(json.dumps({"body": child, "sigs": []}))
     ok &= cparity("k3: out-of-int64 ts-edge parity", s10, trust_file(s10, roots=[]))
+
+    # P1-6b: blobs/ present but records/ absent -> a settlement verify is a "no
+    # store" error (rc 1, no summary) in BOTH, not a Go flat-mode silent (0,0,0).
+    s6b = tmp + "_p6b"; W.Store(s6b).init(); shutil.rmtree(os.path.join(s6b, "records"))
+    py, go = verify_both(s6b, trust_file(s6b, roots=[]))
+    good = (py.returncode == 1 and go.returncode == 1
+            and counts(py.stdout) is None and counts(go.stdout) is None)
+    print(("OK   " if good else "FAIL "), "k3: blobs/ without records/ is 'no store' in both",
+          "rc", py.returncode, go.returncode)
+    if not good:
+        print("PY:", py.stdout, py.stderr, "\nGO:", go.stdout, go.stderr)
+    ok &= good
     return ok
 
 
