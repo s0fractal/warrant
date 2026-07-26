@@ -110,8 +110,10 @@ def report_lines(out):
 
 
 def counts(out):
+    # Compare ALL THREE fields (records, errors, warnings): dropping the record
+    # count hid a Python/Go divergence on the malformed-record fixture.
     m = re.search(r"verify: (\d+) records, (\d+) errors, (\d+) warnings", out)
-    return (int(m.group(2)), int(m.group(3))) if m else None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
 
 
 def verify_both(store, trust):
@@ -327,6 +329,166 @@ def case_stale_replay(tmp):
     return ok and no_conflict
 
 
+def case_trust_failclosed(tmp):
+    """A REQUESTED settlement verification whose supplied trust config is
+    unusable is ONE global ERR in BOTH implementations, exit 1 — never a silent
+    fail-open (Codex refactor gate: Go previously returned 0 errors / exit 0)."""
+    store = tmp
+    W.Store(store).init()
+    ok = True
+    writes = {
+        "malformed.json": "{ not json",
+        "arr.json": "[1,2,3]",
+        "trail.json": '{"genesis_roots":[]} x',
+        "dup.json": '{"a":1,"a":2}',
+        # nested-schema-invalid: these once crashed Python and fail-open in Go
+        "actors-list.json": '{"actors":[]}',
+        "actors-int.json": '{"actors":{"a":1}}',
+        "bad-root.json": '{"genesis_roots":[123]}',
+        "bad-gh.json": '{"genesis_json_sha256":5}',
+        "unknown.json": '{"x":1}',
+    }
+    for fn, content in writes.items():
+        open(os.path.join(store, fn), "w").write(content)
+    # invalid UTF-8 and NaN/Infinity must fail-close identically in both impls
+    open(os.path.join(store, "utf8.json"), "wb").write(b'{"genesis_roots":["\xff\xfe"]}')
+    open(os.path.join(store, "nan.json"), "w").write('{"genesis_roots":[NaN]}')
+    open(os.path.join(store, "inf.json"), "w").write('{"genesis_json_sha256":Infinity}')
+    bad = {
+        "invalid utf-8": os.path.join(store, "utf8.json"),
+        "NaN constant": os.path.join(store, "nan.json"),
+        "Infinity constant": os.path.join(store, "inf.json"),
+        "missing file": os.path.join(store, "nope.json"),
+        "malformed json": os.path.join(store, "malformed.json"),
+        "non-object": os.path.join(store, "arr.json"),
+        "trailing content": os.path.join(store, "trail.json"),
+        "duplicate keys": os.path.join(store, "dup.json"),
+        "actors not object": os.path.join(store, "actors-list.json"),
+        "actor keys not list": os.path.join(store, "actors-int.json"),
+        "genesis_roots bad type": os.path.join(store, "bad-root.json"),
+        "genesis hash bad type": os.path.join(store, "bad-gh.json"),
+        "unknown field": os.path.join(store, "unknown.json"),
+    }
+    for name, tp in bad.items():
+        py, go = verify_both(store, tp)
+        ok &= assert_verify("trust fail-closed: " + name, py, go,
+                            must_contain=(W.ERR_SETTLEMENT_TRUST,))
+        ok &= (py.returncode == 1 and go.returncode == 1)
+    # a VALID trust config must NOT trip the failure (no regression)
+    good = trust_file(store, roots=[])
+    py, go = verify_both(store, good)
+    ok &= assert_verify("valid trust config verifies clean", py, go)
+    ok &= (W.ERR_SETTLEMENT_TRUST not in "\n".join(report_lines(py.stdout)))
+
+    # NON-EMPTY store: the fail-closed continuation is short-circuit — one global
+    # ERR, exit 1, NO partial base-grade report — identical in Python and Go (the
+    # earlier Py (1,1) vs Go (1,2)/(2,2) divergence is closed).
+    nstore = store + "_nonempty"
+    W.Store(nstore).init()
+    key = os.path.join(nstore, "k"); write_key(key, 1)
+    pol = put_blob(nstore, b'{"p":1}')
+    subj = put_blob(nstore, b"s")
+    add_record(nstore, body("accept", subj, [pol], "a@t"), [("a@t", key)])
+    nbad = os.path.join(nstore, "bad.json"); open(nbad, "w").write("{ nope")
+    py, go = verify_both(nstore, nbad)
+    ok &= assert_verify("non-empty store: broken trust short-circuits", py, go,
+                        must_contain=(W.ERR_SETTLEMENT_TRUST,))
+    ok &= (py.returncode == 1 and go.returncode == 1)
+    return ok
+
+
+def case_composition_parity(tmp):
+    """Cross-impl parity on the COMPOSITIONS that broke the item-0 done-candidate
+    gate (Codex): a fail-closed trust short-circuit must not depend on a malformed
+    record, and a hash-pinned genesis.json must parse under the same strict I-JSON
+    domain in both implementations."""
+    ok = True
+
+    # (1) broken trust + a malformed record -> ONE global ERR, no partial report
+    s1 = tmp + "_malformed"
+    W.Store(s1).init()
+    open(os.path.join(s1, "records", "junk.json"), "w").write("{ not a record")
+    bad = os.path.join(s1, "bad.json"); open(bad, "w").write("{ nope")
+    py, go = verify_both(s1, bad)
+    ok &= assert_verify("broken trust + malformed record short-circuits", py, go,
+                        must_contain=(W.ERR_SETTLEMENT_TRUST,))
+    ok &= (py.returncode == 1 and go.returncode == 1)
+
+    # (2) hash-pinned genesis.json with a DUPLICATE `roots` key: both reject the
+    # duplicate under the same digest, so the attacker root is NOT adopted.
+    s2 = tmp + "_genesis"
+    W.Store(s2).init()
+    key = os.path.join(s2, "k"); write_key(key, 1)
+    subj = put_blob(s2, b"decided")
+    pol = put_blob(s2, b'{"warrant_policy":"0.3","threshold":{"min_sigs":1,"actors":["a@t"]}}')
+    rootwid = add_record(s2, body("accept", subj, [pol], "a@t"), [("a@t", key)])
+    tf = os.path.join(s2, "trust.json")
+    # (2a) NON-VACUOUS baseline: a CLEAN pinned genesis DOES adopt the root —
+    #      no unadopted-root warning.
+    clean = b'{"roots":["' + rootwid.encode() + b'"]}'
+    open(os.path.join(s2, "genesis.json"), "wb").write(clean)
+    open(tf, "w").write(json.dumps({"genesis_json_sha256": W.blob_hash(clean),
+                                    "actors": {"a@t": [pubkey(key)]}}))
+    py, go = verify_both(s2, tf)
+    ok &= assert_verify("clean pinned genesis adopts the root", py, go)
+    ok &= (W.WARN_UNADOPTED_ROOT not in "\n".join(report_lines(py.stdout)))
+    # (2b) a DUPLICATE `roots` key under the same digest must NOT adopt the
+    #      attacker root — proven by the unadopted-root warning appearing.
+    dup = b'{"roots":[],"roots":["' + rootwid.encode() + b'"]}'
+    open(os.path.join(s2, "genesis.json"), "wb").write(dup)
+    open(tf, "w").write(json.dumps({"genesis_json_sha256": W.blob_hash(dup),
+                                    "actors": {"a@t": [pubkey(key)]}}))
+    py, go = verify_both(s2, tf)
+    ok &= assert_verify("dup-key genesis: attacker root NOT adopted", py, go,
+                        must_contain=(W.WARN_UNADOPTED_ROOT,))
+    # (2c) a NULL / scalar `roots` under a pinned digest is a bounded no-op, not a
+    #      Python traceback — identical in both.
+    for shape in (b'{"roots":null}', b'{"roots":7}'):
+        open(os.path.join(s2, "genesis.json"), "wb").write(shape)
+        open(tf, "w").write(json.dumps({"genesis_json_sha256": W.blob_hash(shape),
+                                        "actors": {"a@t": [pubkey(key)]}}))
+        py, go = verify_both(s2, tf)
+        ok &= assert_verify("genesis roots=%s is bounded" % shape.decode(), py, go)
+    return ok
+
+
+def case_ijson_domain_edges(tmp):
+    """Adversarial I-JSON domain edges found in a self-audit (Codex unavailable):
+    every one must fail-close identically in Python and Go and never traceback."""
+    store = tmp
+    W.Store(store).init()
+    ok = True
+    binaries = {
+        "empty file": b"",
+        "whitespace only": b"   \n\t ",
+        "BOM + object": b"\xef\xbb\xbf{\"genesis_roots\":[]}",
+        "deep nesting": b"{\"genesis_roots\":" + b"[" * 2000 + b"]" * 2000 + b"}",
+        "nested dup key in actors": b'{"actors":{"a":["' + b"a" * 64 + b'"],"a":[]}}',
+        "invalid utf-8 in root": b'{"genesis_roots":["\xff\xfe"]}',
+    }
+    for name, content in binaries.items():
+        fn = os.path.join(store, re.sub(r"\W", "_", name) + ".json")
+        open(fn, "wb").write(content)
+        py, go = verify_both(store, fn)
+        ok &= assert_verify("i-json edge: " + name, py, go,
+                            must_contain=(W.ERR_SETTLEMENT_TRUST,))
+        ok &= (py.returncode == 1 and go.returncode == 1)
+
+    # base-mode (no settlement) record count also matches with a malformed record
+    ns = store + "_base"
+    W.Store(ns).init()
+    key = os.path.join(ns, "k"); write_key(key, 1)
+    add_record(ns, body("accept", put_blob(ns, b"s"), [put_blob(ns, b'{"p":1}')], "a@t"),
+               [("a@t", key)])
+    open(os.path.join(ns, "records", "junk.json"), "w").write("{ bad")
+    pyb = sh(PY + ["--store", ns, "verify"])
+    gob = sh([GO, "verify", ns])
+    ok &= (counts(pyb.stdout) == counts(gob.stdout))
+    print(("OK   " if counts(pyb.stdout) == counts(gob.stdout) else "FAIL "),
+          "base mode valid+malformed record count", counts(pyb.stdout), counts(gob.stdout))
+    return ok
+
+
 def main():
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
@@ -336,6 +498,9 @@ def main():
         ok &= case_relitigation(os.path.join(tmp, "relit"))
         ok &= case_key_state(os.path.join(tmp, "keys"))
         ok &= case_stale_replay(os.path.join(tmp, "stale"))
+        ok &= case_trust_failclosed(os.path.join(tmp, "trust"))
+        ok &= case_composition_parity(os.path.join(tmp, "compose"))
+        ok &= case_ijson_domain_edges(os.path.join(tmp, "ijson"))
     print(f"\nSETTLEMENT: {'ALL AGREE' if ok else 'DIVERGENCE'}")
     return 0 if ok else 1
 

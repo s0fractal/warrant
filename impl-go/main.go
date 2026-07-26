@@ -184,10 +184,25 @@ func readJSON(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeStrictJSON(data)
+}
+
+// decodeStrictJSON is the ONE strict I-JSON decode shared by every
+// content-addressed / trust input (records, trust config, genesis.json), so all
+// of them reject the same way: duplicate member names, trailing content, and a
+// non-object top level. Using it for genesis.json closes the divergence where Go
+// accepted a duplicate `roots` key that Python rejected under the same pinned
+// digest.
+func decodeStrictJSON(data []byte) (map[string]any, error) {
+	// One shared I-JSON domain. Go's encoding/json silently substitutes U+FFFD for
+	// malformed UTF-8, which Python (read_text/decode utf-8) rejects — a real
+	// trust/genesis authority split. Reject invalid UTF-8 up front so both agree.
+	if !utf8.Valid(data) {
+		return nil, errors.New("invalid UTF-8")
+	}
 	// SPEC §4 / RFC 7493 I-JSON: duplicate member names are invalid. Go's
 	// decoder silently keeps the last (same as Python's stock json.loads); we
-	// reject them so both implementations — and any strict reimplementation —
-	// agree that a dup-key record is malformed, not last-wins.
+	// reject them so both implementations agree a dup-key object is malformed.
 	if dup, err := jsonHasDupKeys(data); err != nil {
 		return nil, err
 	} else if dup {
@@ -199,10 +214,7 @@ func readJSON(path string) (map[string]any, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, err
 	}
-	// Reject trailing content after the JSON value (SPEC §4 / GOV-anchors §3):
-	// Go's decoder stops at the first value and would silently ignore a second,
-	// so a record with junk appended verified in Go while Python (json.loads)
-	// rejected it — a real consensus split found by tests/fuzz_differential.py.
+	// Reject trailing content after the JSON value (SPEC §4 / GOV-anchors §3).
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
 		return nil, errors.New("trailing content after JSON value")
@@ -545,6 +557,58 @@ func validateReason(v any, warrantVersion string) []string {
 
 func isHex64(s string) bool {
 	return hex64Re.MatchString(s)
+}
+
+// validateTrust mirrors Python _validate_trust_config: closed-schema nested-type
+// validation so a REQUESTED settlement verification fails closed on invalid
+// trust in BOTH implementations. Returns "" (valid) or a reason.
+func validateTrust(m map[string]any) string {
+	allowed := map[string]bool{"genesis_roots": true, "actors": true, "genesis_json_sha256": true}
+	for k := range m {
+		if !allowed[k] {
+			return "trust config has unknown fields"
+		}
+	}
+	if gr, ok := m["genesis_roots"]; ok {
+		arr, ok := gr.([]any)
+		if !ok {
+			return "genesis_roots must be a list of hex64"
+		}
+		for _, x := range arr {
+			s, ok := x.(string)
+			if !ok || !isHex64(s) {
+				return "genesis_roots must be a list of hex64"
+			}
+		}
+	}
+	if ac, ok := m["actors"]; ok {
+		obj, ok := ac.(map[string]any)
+		if !ok {
+			return "actors must be an object"
+		}
+		for a, keys := range obj {
+			if a == "" {
+				return "actors keys must be nonempty actor-id strings"
+			}
+			arr, ok := keys.([]any)
+			if !ok {
+				return "each actor's keys must be a list of hex64"
+			}
+			for _, k := range arr {
+				s, ok := k.(string)
+				if !ok || !isHex64(s) {
+					return "each actor's keys must be a list of hex64"
+				}
+			}
+		}
+	}
+	if gh, ok := m["genesis_json_sha256"]; ok {
+		s, ok := gh.(string)
+		if !ok || !isHex64(s) {
+			return "genesis_json_sha256 must be hex64"
+		}
+	}
+	return ""
 }
 
 type skiCheck struct {
@@ -1672,7 +1736,7 @@ func parseKeyBlob(blobs map[string][]byte, h string) (string, string, bool) {
 	return actor, key, true
 }
 
-func settlementCtx(dir string, records map[string]map[string]any, blobs map[string][]byte, trustPath string, explicitGenesis []string) settlementContext {
+func settlementCtx(dir string, records map[string]map[string]any, blobs map[string][]byte, trust map[string]any, explicitGenesis []string) settlementContext {
 	ctx := settlementContext{
 		records:        records,
 		blobs:          blobs,
@@ -1682,11 +1746,11 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		invalidPolicy:  map[string]bool{},
 		conflictActors: map[string]bool{},
 	}
-	trust := map[string]any{}
-	if trustPath != "" {
-		if m, err := readJSON(trustPath); err == nil {
-			trust = m
-		}
+	// Trust is parsed AND validated once by the caller (verifyDirSettlement) and
+	// passed by value, so the bytes that pass the fail-closed guard are the bytes
+	// that define authority (no second read, no nested-invalid escape).
+	if trust == nil {
+		trust = map[string]any{}
 	}
 	genesis := map[string]bool{}
 	for _, g := range explicitGenesis {
@@ -1698,12 +1762,11 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 	gpath := filepath.Join(dir, "genesis.json")
 	if raw, err := os.ReadFile(gpath); err == nil {
 		if trust["genesis_json_sha256"] == blobHash(raw) {
-			dec := json.NewDecoder(bytes.NewReader(raw))
-			dec.UseNumber()
-			var v any
-			if err := dec.Decode(&v); err == nil {
-				if doc, ok := v.(map[string]any); ok {
-					for _, g := range getStringArray(doc, "roots") {
+			// Parse the EXACT hashed bytes with the SAME strict I-JSON parser as
+			// Python (duplicate-key/trailing rejecting); roots must be hex64.
+			if doc, err := decodeStrictJSON(raw); err == nil {
+				for _, g := range getStringArray(doc, "roots") {
+					if isHex64(g) {
 						genesis[g] = true
 					}
 				}
@@ -1979,7 +2042,32 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 			fmt.Printf("%-4s %.12s  %s\n", level, wid, msg)
 		}
 	}
-	ctx := settlementCtx(dir, records, blobs, trustConfig, genesis)
+	// Fail-closed trust construction (Codex refactor gate + recheck): a REQUESTED
+	// settlement verification whose supplied trust config is missing / malformed /
+	// non-object / NESTED-schema-invalid is one global ERR with the SAME stable
+	// reason as Python — never a silent fail-open. Parse AND validate ONCE, then
+	// pass the value into settlementCtx (no second read).
+	var trust map[string]any
+	if trustConfig != "" {
+		m, err := readJSON(trustConfig)
+		if err == nil {
+			if verr := validateTrust(m); verr != "" {
+				err = errors.New(verr)
+			}
+		}
+		if err != nil {
+			// Fail-closed continuation identical to Python: report the one global
+			// ERR and STOP — the requested settlement verification did not happen,
+			// no partial base-grade report.
+			out("ERR", "settlement", "settlement trust config unavailable")
+			if !quiet {
+				fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
+			}
+			return errs, warns
+		}
+		trust = m
+	}
+	ctx := settlementCtx(dir, records, blobs, trust, genesis)
 	for _, w := range ctx.globalWarnings {
 		out("WARN", w[0], w[1])
 	}

@@ -45,6 +45,11 @@ python3 tests/negative.py
 echo "--- settlement differential ---"
 python3 tests/settlement.py
 
+# Generic verifier-refactor plumbing: single record snapshot + fail-closed trust
+# context + version/reason-scoped runtime dispatch hook (no wave/Sigma code).
+echo "--- runtime dispatch hook ---"
+python3 tests/runtime_hook.py
+
 # Pedantic edges: ts bounds (the audit P0), note schema bounds, blob-vs-record
 # resolution, unbound-threshold adoption, settle candidate validity.
 echo "--- pedantic edges ---"
