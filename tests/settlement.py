@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -110,8 +111,10 @@ def report_lines(out):
 
 
 def counts(out):
+    # Compare ALL THREE fields (records, errors, warnings): dropping the record
+    # count hid a Python/Go divergence on the malformed-record fixture.
     m = re.search(r"verify: (\d+) records, (\d+) errors, (\d+) warnings", out)
-    return (int(m.group(2)), int(m.group(3))) if m else None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
 
 
 def verify_both(store, trust):
@@ -327,6 +330,301 @@ def case_stale_replay(tmp):
     return ok and no_conflict
 
 
+def case_trust_failclosed(tmp):
+    """A REQUESTED settlement verification whose supplied trust config is
+    unusable is ONE global ERR in BOTH implementations, exit 1 — never a silent
+    fail-open (Codex refactor gate: Go previously returned 0 errors / exit 0)."""
+    store = tmp
+    W.Store(store).init()
+    ok = True
+    writes = {
+        "malformed.json": "{ not json",
+        "arr.json": "[1,2,3]",
+        "trail.json": '{"genesis_roots":[]} x',
+        "dup.json": '{"a":1,"a":2}',
+        # nested-schema-invalid: these once crashed Python and fail-open in Go
+        "actors-list.json": '{"actors":[]}',
+        "actors-int.json": '{"actors":{"a":1}}',
+        "bad-root.json": '{"genesis_roots":[123]}',
+        "bad-gh.json": '{"genesis_json_sha256":5}',
+        "unknown.json": '{"x":1}',
+    }
+    for fn, content in writes.items():
+        open(os.path.join(store, fn), "w").write(content)
+    # invalid UTF-8 and NaN/Infinity must fail-close identically in both impls
+    open(os.path.join(store, "utf8.json"), "wb").write(b'{"genesis_roots":["\xff\xfe"]}')
+    open(os.path.join(store, "nan.json"), "w").write('{"genesis_roots":[NaN]}')
+    open(os.path.join(store, "inf.json"), "w").write('{"genesis_json_sha256":Infinity}')
+    bad = {
+        "invalid utf-8": os.path.join(store, "utf8.json"),
+        "NaN constant": os.path.join(store, "nan.json"),
+        "Infinity constant": os.path.join(store, "inf.json"),
+        "missing file": os.path.join(store, "nope.json"),
+        "malformed json": os.path.join(store, "malformed.json"),
+        "non-object": os.path.join(store, "arr.json"),
+        "trailing content": os.path.join(store, "trail.json"),
+        "duplicate keys": os.path.join(store, "dup.json"),
+        "actors not object": os.path.join(store, "actors-list.json"),
+        "actor keys not list": os.path.join(store, "actors-int.json"),
+        "genesis_roots bad type": os.path.join(store, "bad-root.json"),
+        "genesis hash bad type": os.path.join(store, "bad-gh.json"),
+        "unknown field": os.path.join(store, "unknown.json"),
+    }
+    for name, tp in bad.items():
+        py, go = verify_both(store, tp)
+        ok &= assert_verify("trust fail-closed: " + name, py, go,
+                            must_contain=(W.ERR_SETTLEMENT_TRUST,))
+        ok &= (py.returncode == 1 and go.returncode == 1)
+    # a VALID trust config must NOT trip the failure (no regression)
+    good = trust_file(store, roots=[])
+    py, go = verify_both(store, good)
+    ok &= assert_verify("valid trust config verifies clean", py, go)
+    ok &= (W.ERR_SETTLEMENT_TRUST not in "\n".join(report_lines(py.stdout)))
+
+    # NON-EMPTY store: the fail-closed continuation is short-circuit — one global
+    # ERR, exit 1, NO partial base-grade report — identical in Python and Go (the
+    # earlier Py (1,1) vs Go (1,2)/(2,2) divergence is closed).
+    nstore = store + "_nonempty"
+    W.Store(nstore).init()
+    key = os.path.join(nstore, "k"); write_key(key, 1)
+    pol = put_blob(nstore, b'{"p":1}')
+    subj = put_blob(nstore, b"s")
+    add_record(nstore, body("accept", subj, [pol], "a@t"), [("a@t", key)])
+    nbad = os.path.join(nstore, "bad.json"); open(nbad, "w").write("{ nope")
+    py, go = verify_both(nstore, nbad)
+    ok &= assert_verify("non-empty store: broken trust short-circuits", py, go,
+                        must_contain=(W.ERR_SETTLEMENT_TRUST,))
+    ok &= (py.returncode == 1 and go.returncode == 1)
+    return ok
+
+
+def case_composition_parity(tmp):
+    """Cross-impl parity on the COMPOSITIONS that broke the item-0 done-candidate
+    gate (Codex): a fail-closed trust short-circuit must not depend on a malformed
+    record, and a hash-pinned genesis.json must parse under the same strict I-JSON
+    domain in both implementations."""
+    ok = True
+
+    # (1) broken trust + a malformed record -> ONE global ERR, no partial report
+    s1 = tmp + "_malformed"
+    W.Store(s1).init()
+    open(os.path.join(s1, "records", "junk.json"), "w").write("{ not a record")
+    bad = os.path.join(s1, "bad.json"); open(bad, "w").write("{ nope")
+    py, go = verify_both(s1, bad)
+    ok &= assert_verify("broken trust + malformed record short-circuits", py, go,
+                        must_contain=(W.ERR_SETTLEMENT_TRUST,))
+    ok &= (py.returncode == 1 and go.returncode == 1)
+
+    # (2) hash-pinned genesis.json with a DUPLICATE `roots` key: both reject the
+    # duplicate under the same digest, so the attacker root is NOT adopted.
+    s2 = tmp + "_genesis"
+    W.Store(s2).init()
+    key = os.path.join(s2, "k"); write_key(key, 1)
+    subj = put_blob(s2, b"decided")
+    pol = put_blob(s2, b'{"warrant_policy":"0.3","threshold":{"min_sigs":1,"actors":["a@t"]}}')
+    rootwid = add_record(s2, body("accept", subj, [pol], "a@t"), [("a@t", key)])
+    tf = os.path.join(s2, "trust.json")
+    # (2a) NON-VACUOUS baseline: a CLEAN pinned genesis DOES adopt the root —
+    #      no unadopted-root warning.
+    clean = b'{"roots":["' + rootwid.encode() + b'"]}'
+    open(os.path.join(s2, "genesis.json"), "wb").write(clean)
+    open(tf, "w").write(json.dumps({"genesis_json_sha256": W.blob_hash(clean),
+                                    "actors": {"a@t": [pubkey(key)]}}))
+    py, go = verify_both(s2, tf)
+    ok &= assert_verify("clean pinned genesis adopts the root", py, go)
+    ok &= (W.WARN_UNADOPTED_ROOT not in "\n".join(report_lines(py.stdout)))
+    # (2b) a DUPLICATE `roots` key under the same digest must NOT adopt the
+    #      attacker root — proven by the unadopted-root warning appearing.
+    dup = b'{"roots":[],"roots":["' + rootwid.encode() + b'"]}'
+    open(os.path.join(s2, "genesis.json"), "wb").write(dup)
+    open(tf, "w").write(json.dumps({"genesis_json_sha256": W.blob_hash(dup),
+                                    "actors": {"a@t": [pubkey(key)]}}))
+    py, go = verify_both(s2, tf)
+    ok &= assert_verify("dup-key genesis: attacker root NOT adopted", py, go,
+                        must_contain=(W.WARN_UNADOPTED_ROOT,))
+    # (2c) a NULL / scalar `roots` under a pinned digest is a bounded no-op, not a
+    #      Python traceback — identical in both.
+    for shape in (b'{"roots":null}', b'{"roots":7}'):
+        open(os.path.join(s2, "genesis.json"), "wb").write(shape)
+        open(tf, "w").write(json.dumps({"genesis_json_sha256": W.blob_hash(shape),
+                                        "actors": {"a@t": [pubkey(key)]}}))
+        py, go = verify_both(s2, tf)
+        ok &= assert_verify("genesis roots=%s is bounded" % shape.decode(), py, go)
+    return ok
+
+
+def case_ijson_domain_edges(tmp):
+    """Adversarial I-JSON domain edges found in a self-audit (Codex unavailable):
+    every one must fail-close identically in Python and Go and never traceback."""
+    store = tmp
+    W.Store(store).init()
+    ok = True
+    binaries = {
+        "empty file": b"",
+        "whitespace only": b"   \n\t ",
+        "BOM + object": b"\xef\xbb\xbf{\"genesis_roots\":[]}",
+        "deep nesting": b"{\"genesis_roots\":" + b"[" * 2000 + b"]" * 2000 + b"}",
+        "nested dup key in actors": b'{"actors":{"a":["' + b"a" * 64 + b'"],"a":[]}}',
+        "invalid utf-8 in root": b'{"genesis_roots":["\xff\xfe"]}',
+    }
+    for name, content in binaries.items():
+        fn = os.path.join(store, re.sub(r"\W", "_", name) + ".json")
+        open(fn, "wb").write(content)
+        py, go = verify_both(store, fn)
+        ok &= assert_verify("i-json edge: " + name, py, go,
+                            must_contain=(W.ERR_SETTLEMENT_TRUST,))
+        ok &= (py.returncode == 1 and go.returncode == 1)
+
+    # base-mode (no settlement) record count also matches with a malformed record
+    ns = store + "_base"
+    W.Store(ns).init()
+    key = os.path.join(ns, "k"); write_key(key, 1)
+    add_record(ns, body("accept", put_blob(ns, b"s"), [put_blob(ns, b'{"p":1}')], "a@t"),
+               [("a@t", key)])
+    open(os.path.join(ns, "records", "junk.json"), "w").write("{ bad")
+    pyb = sh(PY + ["--store", ns, "verify"])
+    gob = sh([GO, "verify", ns])
+    ok &= (counts(pyb.stdout) == counts(gob.stdout))
+    print(("OK   " if counts(pyb.stdout) == counts(gob.stdout) else "FAIL "),
+          "base mode valid+malformed record count", counts(pyb.stdout), counts(gob.stdout))
+    return ok
+
+
+def case_verifier_hardening_k3(tmp):
+    """The four SEVERE pre-existing verifier bugs the Kimi K3 gate found (crashes
+    + a canonicalization consensus split), now fixed. Each must produce a bounded,
+    Python==Go public report (assert_verify fails if either crashes — no summary
+    line — or they disagree)."""
+    ok = True
+
+    # -0 canonicalization: same record bytes must have the same WarrantID (Go used
+    # to emit "-0" and reject the record Python accepted).
+    s = tmp + "_negzero"; W.Store(s).init()
+    key = os.path.join(s, "k"); write_key(key, 1)
+    pol = put_blob(s, b'{"p":1}'); subj = put_blob(s, b"s")
+    b0 = body("accept", subj, [pol], "a@t"); b0["ts"] = 0
+    wid = W.warrant_id(b0)
+    env = {"body": json.loads(W.canon(b0).replace(b'"ts":0', b'"ts":-0').decode("utf-8")),
+           "sigs": [W.sign_envelope(b0, "a@t", key)]}
+    open(os.path.join(s, "records", wid + ".json"), "w").write(json.dumps(env))
+    py, go = verify_both(s, trust_file(s, roots=[]))
+    ok &= assert_verify("k3: ts=-0 canon/WarrantID parity", py, go)
+
+    # blob named by a hex64 that is a DIRECTORY (dangling ref + would crash PY).
+    s = tmp + "_dirblob"; W.Store(s).init()
+    key = os.path.join(s, "k"); write_key(key, 1)
+    os.mkdir(os.path.join(s, "blobs", "a" * 64))
+    add_record(s, body("accept", "b" * 64, ["a" * 64], "a@t"), [("a@t", key)])
+    py, go = verify_both(s, trust_file(s, roots=[]))
+    ok &= assert_verify("k3: dir-as-blob is bounded + parity", py, go)
+
+    # lone surrogate in a body string: PY used to UnicodeEncodeError in canon().
+    s = tmp + "_surrogate"; W.Store(s).init()
+    raw = ('{"body":{"warrant":"0.2","decision":"accept","subject":{"hash":"' + "c" * 64
+           + '"},"under":["' + "d" * 64 + '"],"because":[],"evidence":[],"actor":{"id":'
+           '"\\ud800evil"},"prior":[],"ts":1},"sigs":[]}')
+    open(os.path.join(s, "records", "e" * 64 + ".json"), "w").write(raw)
+    py, go = verify_both(s, trust_file(s, roots=[]))
+    # P1 (the crash) is fixed: both produce a bounded summary with equal counts.
+    # The message STRING still differs (PY "WarrantID uncomputable" vs GO
+    # "WarrantID mismatch" — GO substitutes U+FFFD and recomputes a different id);
+    # that residual is a tracked P2, so assert counts + no-crash, not full parity.
+    good = (counts(py.stdout) is not None and counts(py.stdout) == counts(go.stdout))
+    print(("OK   " if good else "FAIL "),
+          "k3: lone-surrogate bounded + count parity (P2 msg differs)",
+          counts(py.stdout), counts(go.stdout))
+    ok &= good
+
+    # prior cycle (A->B->A) with a rotation-shaped A: Go used to stack-overflow.
+    s = tmp + "_cycle"; W.Store(s).init()
+    key = os.path.join(s, "k"); write_key(key, 3)
+    sk = W.load_key(key); pub = W.pubkey_hex(sk)
+    A, B = "a" * 64, "b" * 64
+    kb = put_json_blob(s, {"actor": "att", "key": pub})
+    gp = put_blob(s, b'{"g":1}')
+    rb = body("accept", "f" * 64, [gp], "att"); Rw = W.warrant_id(rb)
+    add_record(s, rb, [("att", key)])
+
+    def raw_signed(fn, bdy):
+        sig = {"actor": "att", "key": pub, "sig": sk.sign(bytes.fromhex(fn)).hex()}
+        open(os.path.join(s, "records", fn + ".json"), "w").write(
+            json.dumps({"body": bdy, "sigs": [sig]}))
+    ab = body("accept", kb, [gp], "att"); ab["prior"] = [B]; raw_signed(A, ab)
+    bb = body("propose", "e" * 64, [gp], "att"); bb["prior"] = [A, Rw]; raw_signed(B, bb)
+    tf = trust_file(s, roots=[Rw], actors={"att": [pub]})
+    py, go = verify_both(s, tf)
+    ok &= assert_verify("k3: prior-cycle+rotation is bounded (no Go stack overflow)", py, go)
+
+    # --- the count-parity findings (P1-6..P1-10): Python==Go public summary ---
+    def cparity(name, store, trust):
+        py, go = verify_both(store, trust)
+        good = (counts(py.stdout) is not None
+                and counts(py.stdout) == counts(go.stdout)
+                and py.returncode == go.returncode)
+        print(("OK   " if good else "FAIL "), name,
+              counts(py.stdout), counts(go.stdout), "rc", py.returncode, go.returncode)
+        if not good:
+            print("PY:", py.stdout, py.stderr, "\nGO:", go.stdout, go.stderr)
+        return good
+
+    def one_record(store, key_byte, mut):
+        W.Store(store).init()
+        k = os.path.join(store, "k"); write_key(k, key_byte)
+        pol = put_blob(store, b'{"p":1}'); subj = put_blob(store, b"s")
+        b = body("accept", subj, [pol], "a@t"); b["ts"] = 1
+        env = mut(b, k)
+        open(os.path.join(store, "records", W.warrant_id(b) + ".json"), "w").write(json.dumps(env))
+        return store
+
+    # P1-6: records/ present, blobs/ removed -> both verify with unresolved refs.
+    s6 = one_record(tmp + "_p6", 1, lambda b, k: {"body": b, "sigs": [W.sign_envelope(b, "a@t", k)]})
+    shutil.rmtree(os.path.join(s6, "blobs"))
+    ok &= cparity("k3: records/ without blobs/ (no silent zero)", s6, trust_file(s6, roots=[]))
+
+    # P1-7: sigs is not a list -> one ERR, record skipped, in both.
+    s7 = one_record(tmp + "_p7", 1, lambda b, k: {"body": b, "sigs": "not-a-list"})
+    ok &= cparity("k3: sigs-not-a-list count parity", s7, trust_file(s7, roots=[]))
+
+    # P1-8: an actorless sig must NOT satisfy a type-confused (string) body actor
+    # via coercion to "" — Go's settlement path disagreed with its own base path.
+    s8 = tmp + "_p8"; W.Store(s8).init(); k8 = os.path.join(s8, "k"); write_key(k8, 1)
+    pol8 = put_blob(s8, b'{"p":1}'); sub8 = put_blob(s8, b"s")
+    b8 = body("accept", sub8, [pol8], "a@t"); b8["actor"] = "x"; b8["ts"] = 1
+    w8 = W.warrant_id(b8)
+    sig8 = {"key": pubkey(k8), "sig": W.load_key(k8).sign(bytes.fromhex(w8)).hex()}
+    open(os.path.join(s8, "records", w8 + ".json"), "w").write(
+        json.dumps({"body": b8, "sigs": [sig8]}))
+    ok &= cparity("k3: actorless-sig no spurious match", s8, trust_file(s8, roots=[]))
+
+    # P1-9: schema-invalid scalar `prior` is NOT a phantom root.
+    s9 = one_record(tmp + "_p9", 1,
+                    lambda b, k: (b.__setitem__("prior", 5), {"body": b, "sigs": []})[1])
+    ok &= cparity("k3: scalar-prior no phantom root", s9, trust_file(s9, roots=[]))
+
+    # P1-10: out-of-int64 ts on a prior edge (no int64-clamp WARN flip).
+    s10 = tmp + "_p10"; W.Store(s10).init(); k = os.path.join(s10, "k"); write_key(k, 1)
+    pol = put_blob(s10, b'{"p":1}')
+    prev = body("accept", put_blob(s10, b"a"), [pol], "a@t"); prev["ts"] = 2 ** 63
+    wp = W.warrant_id(prev)
+    open(os.path.join(s10, "records", wp + ".json"), "w").write(json.dumps({"body": prev, "sigs": []}))
+    child = body("accept", put_blob(s10, b"b"), [pol], "a@t"); child["ts"] = 2 ** 63 - 1; child["prior"] = [wp]
+    open(os.path.join(s10, "records", W.warrant_id(child) + ".json"), "w").write(json.dumps({"body": child, "sigs": []}))
+    ok &= cparity("k3: out-of-int64 ts-edge parity", s10, trust_file(s10, roots=[]))
+
+    # P1-6b: blobs/ present but records/ absent -> a settlement verify is a "no
+    # store" error (rc 1, no summary) in BOTH, not a Go flat-mode silent (0,0,0).
+    s6b = tmp + "_p6b"; W.Store(s6b).init(); shutil.rmtree(os.path.join(s6b, "records"))
+    py, go = verify_both(s6b, trust_file(s6b, roots=[]))
+    good = (py.returncode == 1 and go.returncode == 1
+            and counts(py.stdout) is None and counts(go.stdout) is None)
+    print(("OK   " if good else "FAIL "), "k3: blobs/ without records/ is 'no store' in both",
+          "rc", py.returncode, go.returncode)
+    if not good:
+        print("PY:", py.stdout, py.stderr, "\nGO:", go.stdout, go.stderr)
+    ok &= good
+    return ok
+
+
 def main():
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
@@ -336,6 +634,10 @@ def main():
         ok &= case_relitigation(os.path.join(tmp, "relit"))
         ok &= case_key_state(os.path.join(tmp, "keys"))
         ok &= case_stale_replay(os.path.join(tmp, "stale"))
+        ok &= case_trust_failclosed(os.path.join(tmp, "trust"))
+        ok &= case_composition_parity(os.path.join(tmp, "compose"))
+        ok &= case_ijson_domain_edges(os.path.join(tmp, "ijson"))
+        ok &= case_verifier_hardening_k3(os.path.join(tmp, "k3hard"))
     print(f"\nSETTLEMENT: {'ALL AGREE' if ok else 'DIVERGENCE'}")
     return 0 if ok else 1
 

@@ -42,11 +42,88 @@ BODY_FIELDS = {"warrant", "decision", "subject", "under", "because",
 RUNTIMES = {"0.1": ("cmd@v1",),            # ski@v1 reserved in 0.1 bodies
             "0.2": ("cmd@v1", "ski@v1")}   # SPEC s3.1
 
+# Runtime dispatch registry (generic plumbing, empty by default). Keyed by an
+# EXACT (body_version, reason_runtime) so a handler runs ONLY for a shape-valid
+# check reason whose body version authorizes that runtime — never for every store
+# (Codex refactor gate: a global list could change a legacy 0.1/0.2 store's result
+# merely by being installed). The handler receives the SINGLE settlement context,
+# the SINGLE record snapshot, a verifier-owned `mode`, the reporter, and the
+# reason-bearing record — but NOT the raw `settlement` inputs, so it cannot build
+# a second authority. Empty here: no non-core runtime is registered.
+_RUNTIME_HANDLERS = {}
+# Core runtimes are executed by the base verifier and MUST NOT be overlaid by a
+# registered handler (Codex refactor recheck): otherwise installing a handler for
+# ("0.2","cmd@v1")/("0.2","ski@v1") would change a legacy store's report.
+_CORE_RUNTIMES = frozenset({"cmd@v1", "ski@v1"})
+
+
+def register_runtime(body_version, runtime, handler):
+    """Register a handler for exactly (body_version, runtime). Refuses duplicates
+    and refuses to overlay a core runtime. `runtime` MUST already be allowed by
+    RUNTIMES[body_version] (a handler cannot smuggle in an unversioned runtime)."""
+    if runtime in _CORE_RUNTIMES:
+        raise ValueError(f"cannot overlay core runtime {runtime!r}")
+    key = (body_version, runtime)
+    if key in _RUNTIME_HANDLERS:
+        raise ValueError(f"runtime handler already registered for {key}")
+    if runtime not in RUNTIMES.get(body_version, ()):
+        raise ValueError(f"runtime {runtime!r} not authorized by body version {body_version!r}")
+    _RUNTIME_HANDLERS[key] = handler
+
+
+class _RuntimeView:
+    """Read-only execution context for a REGISTERED runtime handler.
+
+    Trust model (stated, per Codex item-0 recheck): a registered handler is
+    GOVERNED verifier-extension code — part of the TCB. In-process Python cannot
+    be a security sandbox against malicious extension code. What this view DOES
+    guarantee is that it retains **no reference to the verifier's live record map
+    or raw store**, so accidental (or private-attribute) mutation by a handler
+    cannot corrupt core verification or crash the record loop; and that blob bytes
+    are reached only through a digest-authenticating resolver whose usage counter
+    is **verifier-owned** (not an attribute on this object). All record access
+    returns deep copies of a private snapshot taken before dispatch. An
+    adversarial-plugin model would require a real process/WASM boundary (out of
+    scope for item 0)."""
+    __slots__ = ("_bodies", "_active", "_roots", "_blob")
+
+    def __init__(self, bodies, active, roots, blob):
+        self._bodies = bodies      # {wid: deep-copied body} — a PRIVATE snapshot
+        self._active = active      # frozenset | None
+        self._roots = roots        # {wid: frozenset} | None
+        self._blob = blob          # bound resolver (verifier-owned counter closure)
+
+    def blob(self, h):
+        """Blob bytes iff they hash to `h`, else None — the only path to store
+        bytes. Every attempted read (incl. wrong-digest) is counted by the
+        verifier-owned meter."""
+        return self._blob(h)
+
+    def record_body(self, wid):
+        """A deep COPY of a record body, or None. Mutating it cannot affect
+        verification (and the underlying snapshot is not the verifier's live map)."""
+        b = self._bodies.get(wid) if isinstance(wid, str) else None
+        return json.loads(json.dumps(b)) if b is not None else None
+
+    def warrant_ids(self):
+        return frozenset(self._bodies)
+
+    def active_records(self):
+        return self._active                             # frozenset | None (base mode)
+
+    def record_roots(self, wid):
+        return self._roots.get(wid, frozenset()) if self._roots else frozenset()
+
 WARN_RELITIGATION = "re-litigation cites nothing new"
 WARN_UNADOPTED_ROOT = "unadopted root"
 WARN_GENESIS_UNVERIFIED = "genesis.json unverified"
 ERR_INVALID_THRESHOLD = "invalid threshold policy"
 WARN_KEY_CONFLICT = "key-state conflict"
+# One STABLE cross-language reason (Codex refactor gate): a REQUESTED settlement
+# verification whose supplied trust config is missing/unreadable/malformed/schema-
+# invalid is one global ERR with this exact string in BOTH Python and Go — never
+# a silent fail-open (Go previously ignored the read error and returned 0 errors).
+ERR_SETTLEMENT_TRUST = "settlement trust config unavailable"
 
 
 # ---------- canonicalization & identity (SPEC §4) ----------
@@ -68,9 +145,19 @@ def _reject_dup_keys(pairs):
     return d
 
 
+def _reject_constant(sym):
+    # I-JSON / RFC 7493: NaN, Infinity, -Infinity are not valid JSON. Python's
+    # stock json.loads accepts them by default (Go's decoder rejects them), so a
+    # pinned genesis/trust value could activate a root in Python but not Go —
+    # reject them so both share one actual I-JSON domain.
+    raise ValueError(f"invalid I-JSON constant: {sym}")
+
+
 def loads_ijson(raw):
-    """json.loads that rejects duplicate member names (SPEC §4 / RFC 7493)."""
-    return json.loads(raw, object_pairs_hook=_reject_dup_keys)
+    """json.loads restricted to I-JSON: rejects duplicate member names AND the
+    non-JSON constants NaN/Infinity/-Infinity (SPEC §4 / RFC 7493)."""
+    return json.loads(raw, object_pairs_hook=_reject_dup_keys,
+                      parse_constant=_reject_constant)
 
 
 def warrant_id(body):
@@ -219,8 +306,8 @@ def run_ski_check(store, check_hex, sg=None):
     if sg is None:
         raise RuntimeError("runtime unavailable")   # reason class; the CLI hint
     p = store.blobs / check_hex                       # is printed by cmd_check, not here
-    if not p.exists():
-        raise RuntimeError("check blob missing")
+    if not (isinstance(check_hex, str) and HEX64.match(check_hex) and p.is_file()):
+        raise RuntimeError("check blob missing")      # absent / dir / non-hex: bounded
     raw = p.read_bytes()
     try:
         doc = json.loads(raw)                # was leaking JSONDecodeError past the
@@ -334,7 +421,12 @@ class Store:
         return h
 
     def has_blob(self, h):
-        return (self.blobs / h).exists()
+        # A blob exists only if `h` is a hex64 name AND names a regular file —
+        # matching Go (which admits only hex64-named regular files into its blob
+        # map). A raw `.exists()` on an attacker-controlled string was a path
+        # traversal / existence oracle (`../records`) and returned True for a
+        # directory, splitting parity and crashing later reads (Kimi K3 gate).
+        return HEX64.match(h) is not None and (self.blobs / h).is_file()
 
     def put_record(self, env):
         wid = warrant_id(env["body"])
@@ -404,8 +496,9 @@ def prior_closure(recs, wid):
     return seen
 
 
-def tunnel(store, wid):
-    recs = store.all_records()
+def tunnel(store, wid, recs=None):
+    if recs is None:                    # single-snapshot: callers inside verify_store
+        recs = store.all_records()      # MUST thread their loaded recs (no reload)
     records = prior_closure(recs, wid)
     blobs = set()
     for rwid in records:
@@ -450,10 +543,11 @@ def fingerprint(reason, body, store):
     return None
 
 
-def tunnel_fingerprints(store, wid):
-    recs = store.all_records()
+def tunnel_fingerprints(store, wid, recs=None):
+    if recs is None:
+        recs = store.all_records()
     fps = set()
-    for rwid in tunnel(store, wid)["records"]:
+    for rwid in tunnel(store, wid, recs)["records"]:
         body = recs[rwid]["body"]
         for r in body["because"]:
             fp = fingerprint(r, body, store)
@@ -462,12 +556,13 @@ def tunnel_fingerprints(store, wid):
     return fps
 
 
-def settlement_admissibility(store, settling_wid, candidate_body):
+def settlement_admissibility(store, settling_wid, candidate_body, recs=None):
     errs = validate_body(candidate_body)
     if errs:                       # a schema-invalid candidate is never admissible
         return f"invalid candidate: {errs[0]}"
-    tun = tunnel(store, settling_wid)
-    recs = store.all_records()
+    if recs is None:
+        recs = store.all_records()
+    tun = tunnel(store, settling_wid, recs)
     settling_body = recs.get(settling_wid, {}).get("body")
     known_blobs = set(tun["blobs"])
     if settling_body:
@@ -475,7 +570,7 @@ def settlement_admissibility(store, settling_wid, candidate_body):
     for h in sorted(candidate_body.get("evidence", [])):
         if h not in known_blobs:
             return "admissible: (a) new evidence"
-    old_fps = tunnel_fingerprints(store, settling_wid)
+    old_fps = tunnel_fingerprints(store, settling_wid, recs)
     if settling_body:
         for r in settling_body["because"]:
             fp = fingerprint(r, settling_body, store)
@@ -494,15 +589,59 @@ def _load_trust_config(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+TRUST_FIELDS = {"genesis_roots", "actors", "genesis_json_sha256"}
+
+
+def _validate_trust_config(doc):
+    """Closed-schema validation of a trust config (Codex refactor recheck): the
+    fail-closed guard must cover NESTED types, not just top-level JSON shape —
+    `{"actors":[]}` or `{"actors":{"a":1}}` previously crashed settlement in
+    Python while Go returned 0 errors. Returns None or a stable error string."""
+    if not isinstance(doc, dict):
+        return "trust config must be a JSON object"
+    if set(doc) - TRUST_FIELDS:
+        return "trust config has unknown fields"
+    gr = doc.get("genesis_roots")
+    if gr is not None and not (isinstance(gr, list) and all(_is_hex64(x) for x in gr)):
+        return "genesis_roots must be a list of hex64"
+    ac = doc.get("actors")
+    if ac is not None:
+        if not isinstance(ac, dict):
+            return "actors must be an object"
+        for a, keys in ac.items():
+            if not (isinstance(a, str) and a):
+                return "actors keys must be nonempty actor-id strings"
+            if not (isinstance(keys, list) and all(_is_hex64(k) for k in keys)):
+                return "each actor's keys must be a list of hex64"
+    gh = doc.get("genesis_json_sha256")
+    if gh is not None and not _is_hex64(gh):
+        return "genesis_json_sha256 must be hex64"
+    return None
+
+
 def _trust_roots(store, trust, explicit_roots):
     roots = set(explicit_roots or []) | set(trust.get("genesis_roots", []))
     warnings = []
     g = store.root / "genesis.json"
     if g.exists():
-        got = blob_hash(g.read_bytes())
-        if trust.get("genesis_json_sha256") == got:
-            doc = json.loads(g.read_text(encoding="utf-8"))
-            roots.update(doc.get("roots", []))
+        try:
+            raw = g.read_bytes()                        # read ONCE
+        except OSError:
+            raw = None                                  # present but unreadable (e.g. a dir)
+        if raw is not None and trust.get("genesis_json_sha256") == blob_hash(raw):
+            # Parse the EXACT bytes whose digest was checked (no second read):
+            # a hash-pinned input must not have a read_bytes/read_text TOCTOU that
+            # lets a swapped value inject an attacker root (Codex item-0 recheck).
+            try:
+                doc = loads_ijson(raw.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                doc = {}
+            # Total genesis schema: `roots` may be absent, null, or a scalar in a
+            # hostile pinned file — iterate ONLY a list (matching Go's
+            # getStringArray, which yields nothing for a non-list), so an invalid
+            # shape is a bounded no-op in both, never a Python traceback.
+            if isinstance(doc, dict) and isinstance(doc.get("roots"), list):
+                roots.update(r for r in doc["roots"] if _is_hex64(r))
         else:
             warnings.append(("store", WARN_GENESIS_UNVERIFIED))
     return roots, warnings
@@ -510,8 +649,8 @@ def _trust_roots(store, trust, explicit_roots):
 
 def _parse_policy_blob(store, h):
     p = store.blobs / h
-    if not p.exists():
-        return None, False
+    if not (isinstance(h, str) and HEX64.match(h) and p.is_file()):
+        return None, False                          # absent / dir / non-hex: not a policy
     raw = p.read_bytes()
     try:
         doc = json.loads(raw)
@@ -604,9 +743,19 @@ def _well_signed(wid, env):
                for s in _iter_sigs(env))
 
 
-def _settlement_context(store, trust_config=None, genesis_roots=None):
-    recs = store.all_records()
-    trust = _load_trust_config(trust_config)
+def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None, trust=None):
+    # Single-snapshot rule (Codex refactor gate): callers that have already
+    # loaded the records MUST pass them, so base verification, active-set
+    # derivation, key state, and any runtime dispatcher all reason over ONE
+    # immutable observation of the store (no TOCTOU between two all_records reads).
+    if recs is None:
+        recs = store.all_records()
+    # Single trust-parse rule: verify_store parses AND validates the trust config
+    # once and passes the validated VALUE, so the bytes that pass the fail-closed
+    # guard are exactly the bytes that define authority (no trust TOCTOU / no
+    # nested-invalid escape). Legacy callers that pass only a path still work.
+    if trust is None:
+        trust = _load_trust_config(trust_config)
     genesis, global_warnings = _trust_roots(store, trust, genesis_roots)
     roots = {wid for wid, env in recs.items() if not env["body"].get("prior")}
     well = {wid for wid, env in recs.items() if _well_signed(wid, env)}
@@ -792,16 +941,68 @@ def verify_store(store, quiet=False, settlement=None):
 
     load_errors = {}
     recs = store.all_records(load_errors)
+    ctx = None
+    trust_doc = {}
+    # Trust preflight runs BEFORE any per-record report so a fail-closed
+    # short-circuit is EXACTLY one global ERR — a malformed record must not add an
+    # error ahead of it (cross-impl parity: Go also emits nothing per-record on a
+    # trust failure). Parse (I-JSON, dup-key/trailing-rejecting) AND closed-schema-
+    # validate the trust config ONCE, then pass the value into context construction.
+    if settlement is not None:
+        trust_path = settlement.get("trust_config")
+        trust_ok = True
+        if trust_path:
+            try:
+                trust_doc = loads_ijson(Path(trust_path).read_text(encoding="utf-8"))
+                err = _validate_trust_config(trust_doc)
+                if err:
+                    raise ValueError(err)
+            except Exception:
+                trust_ok = False
+        if not trust_ok:
+            out("ERR", "settlement", ERR_SETTLEMENT_TRUST)
+            if not quiet:
+                print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
+            return errs, warns
+    # Trust preflight passed (or base grade): now emit per-record load errors and
+    # build the single settlement context over the SAME `recs` snapshot.
     for wid, reason in sorted(load_errors.items()):
         out("ERR", wid, f"unloadable record: {reason}")
-    ctx = None
     if settlement is not None:
-        ctx = _settlement_context(store, settlement.get("trust_config"),
-                                  settlement.get("genesis_roots"))
+        ctx = _settlement_context(store, genesis_roots=settlement.get("genesis_roots"),
+                                  recs=recs, trust=trust_doc)
         for wid, msg in ctx["global_warnings"]:
             out("WARN", wid, msg)
         for root in sorted(ctx["roots"] - ctx["active_roots"]):
             out("WARN", root, WARN_UNADOPTED_ROOT)
+    # Verifier-owned mode + a single read-only view passed to runtime handlers.
+    # Built only when a handler is registered (deep copy has a cost); retains no
+    # live recs/store and owns its own CAS meter (counts wrong-digest reads too).
+    # On a trust-config failure verify_store has already returned; so when the
+    # loop runs with settlement requested, ctx is always present. Mode is exactly
+    # "base" or "settlement".
+    _runtime_mode = "settlement" if ctx is not None else "base"
+    _runtime_view = None
+    if _RUNTIME_HANDLERS:
+        _rt_reads = {"blobs": 0, "bytes": 0}
+
+        def _rt_blob(h, _store=store, _reads=_rt_reads):
+            if not (isinstance(h, str) and HEX64.match(h)):
+                return None
+            p = _store.blobs / h
+            if not p.exists():
+                return None
+            raw = p.read_bytes()
+            _reads["blobs"] += 1                        # count ATTEMPTED work,
+            _reads["bytes"] += len(raw)                 # including wrong-digest reads
+            return raw if blob_hash(raw) == h else None
+
+        _rt_bodies = {w: json.loads(json.dumps(e["body"]))
+                      for w, e in recs.items() if isinstance(e.get("body"), dict)}
+        _rt_active = frozenset(ctx["active_records"]) if ctx is not None else None
+        _rt_roots = ({w: frozenset(ctx["record_roots"](w)) for w in recs}
+                     if ctx is not None else None)
+        _runtime_view = _RuntimeView(_rt_bodies, _rt_active, _rt_roots, _rt_blob)
     for wid, env in recs.items():
         if set(env) != {"body", "sigs"}:
             out("ERR", wid, "envelope must be {body, sigs}")
@@ -812,14 +1013,24 @@ def verify_store(store, quiet=False, settlement=None):
         schema_errs = validate_body(body)
         for m in schema_errs:
             out("ERR", wid, f"schema: {m}")
-        got = warrant_id(body)
+        try:
+            got = warrant_id(body)
+        except (UnicodeEncodeError, ValueError):
+            # A body that cannot be canonicalized (e.g. a lone surrogate in a
+            # string, which Python's json accepts but UTF-8 cannot encode) has no
+            # computable WarrantID — a bounded ERR, never a traceback (Kimi K3 gate).
+            out("ERR", wid, "WarrantID uncomputable (record contains invalid characters)")
+            continue
         if got != wid:
             out("ERR", wid, f"WarrantID mismatch: recomputed {got[:12]}")
             continue
         sigs = env.get("sigs", [])
         if not isinstance(sigs, list):
+            # A non-list `sigs` is a malformed envelope: one ERR, then SKIP the
+            # record (like Go) — don't also emit "no signatures" nor process this
+            # record's blob refs, which produced extra PY-only warnings (K3 gate).
             out("ERR", wid, "sigs must be a list")
-            sigs = []
+            continue
         if not sigs:
             out("ERR", wid, "no signatures")
         actor_signed = False
@@ -952,11 +1163,27 @@ def verify_store(store, quiet=False, settlement=None):
                     if (prior in ctx["active_records"]
                             and prior_body["decision"] in ("accept", "reject")
                             and prior_body["subject"]["hash"] == body["subject"]["hash"]):
-                        if settlement_admissibility(store, prior, body).startswith("inadmissible"):
+                        if settlement_admissibility(store, prior, body, recs).startswith("inadmissible"):
                             out("WARN", wid, WARN_RELITIGATION)
                         break
+        # Version/reason-scoped runtime dispatch: only for a SCHEMA-VALID record
+        # whose (body_version, runtime) has a registered handler. It receives the
+        # single ctx/snapshot, the verifier mode, the reporter, and THIS reason —
+        # not raw settlement. A handler exception is attributed to THIS record and
+        # can never abort the core report. Empty registry => zero effect.
+        if _RUNTIME_HANDLERS and not schema_errs:
+            for r in _because:
+                if r.get("kind") != "check":
+                    continue
+                handler = _RUNTIME_HANDLERS.get((body.get("warrant"), r.get("runtime")))
+                if handler is None:
+                    continue
+                try:
+                    handler(_runtime_view, _runtime_mode, out, wid, r)
+                except Exception:
+                    out("ERR", wid, f"runtime {r.get('runtime')} dispatcher raised (fail-closed)")
     if not quiet:
-        print(f"\nverify: {len(recs)} records, {errs} errors, {warns} warnings")
+        print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
     return errs, warns
 
 

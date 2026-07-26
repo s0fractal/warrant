@@ -184,10 +184,25 @@ func readJSON(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeStrictJSON(data)
+}
+
+// decodeStrictJSON is the ONE strict I-JSON decode shared by every
+// content-addressed / trust input (records, trust config, genesis.json), so all
+// of them reject the same way: duplicate member names, trailing content, and a
+// non-object top level. Using it for genesis.json closes the divergence where Go
+// accepted a duplicate `roots` key that Python rejected under the same pinned
+// digest.
+func decodeStrictJSON(data []byte) (map[string]any, error) {
+	// One shared I-JSON domain. Go's encoding/json silently substitutes U+FFFD for
+	// malformed UTF-8, which Python (read_text/decode utf-8) rejects — a real
+	// trust/genesis authority split. Reject invalid UTF-8 up front so both agree.
+	if !utf8.Valid(data) {
+		return nil, errors.New("invalid UTF-8")
+	}
 	// SPEC §4 / RFC 7493 I-JSON: duplicate member names are invalid. Go's
 	// decoder silently keeps the last (same as Python's stock json.loads); we
-	// reject them so both implementations — and any strict reimplementation —
-	// agree that a dup-key record is malformed, not last-wins.
+	// reject them so both implementations agree a dup-key object is malformed.
 	if dup, err := jsonHasDupKeys(data); err != nil {
 		return nil, err
 	} else if dup {
@@ -199,10 +214,7 @@ func readJSON(path string) (map[string]any, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, err
 	}
-	// Reject trailing content after the JSON value (SPEC §4 / GOV-anchors §3):
-	// Go's decoder stops at the first value and would silently ignore a second,
-	// so a record with junk appended verified in Go while Python (json.loads)
-	// rejected it — a real consensus split found by tests/fuzz_differential.py.
+	// Reject trailing content after the JSON value (SPEC §4 / GOV-anchors §3).
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
 		return nil, errors.New("trailing content after JSON value")
@@ -298,7 +310,16 @@ func writeCanonical(b *bytes.Buffer, v any) error {
 		if !intJSONRe.MatchString(s) {
 			return fmt.Errorf("non-integer JSON number: %s", s)
 		}
-		b.WriteString(s)
+		// Normalize the integer per RFC 8785 (JCS): -0 -> 0. Python's json.loads
+		// parses -0 to int 0, so its canonical bytes (and WarrantID) use "0";
+		// writing "-0" verbatim split consensus on an identical record (Kimi K3
+		// gate). big.Int.String is canonical for every value the regex admits, so
+		// the only value this changes is "-0".
+		bi, ok := new(big.Int).SetString(s, 10)
+		if !ok {
+			return fmt.Errorf("non-integer JSON number: %s", s)
+		}
+		b.WriteString(bi.String())
 	case []any:
 		b.WriteByte('[')
 		for i, item := range x {
@@ -545,6 +566,58 @@ func validateReason(v any, warrantVersion string) []string {
 
 func isHex64(s string) bool {
 	return hex64Re.MatchString(s)
+}
+
+// validateTrust mirrors Python _validate_trust_config: closed-schema nested-type
+// validation so a REQUESTED settlement verification fails closed on invalid
+// trust in BOTH implementations. Returns "" (valid) or a reason.
+func validateTrust(m map[string]any) string {
+	allowed := map[string]bool{"genesis_roots": true, "actors": true, "genesis_json_sha256": true}
+	for k := range m {
+		if !allowed[k] {
+			return "trust config has unknown fields"
+		}
+	}
+	if gr, ok := m["genesis_roots"]; ok {
+		arr, ok := gr.([]any)
+		if !ok {
+			return "genesis_roots must be a list of hex64"
+		}
+		for _, x := range arr {
+			s, ok := x.(string)
+			if !ok || !isHex64(s) {
+				return "genesis_roots must be a list of hex64"
+			}
+		}
+	}
+	if ac, ok := m["actors"]; ok {
+		obj, ok := ac.(map[string]any)
+		if !ok {
+			return "actors must be an object"
+		}
+		for a, keys := range obj {
+			if a == "" {
+				return "actors keys must be nonempty actor-id strings"
+			}
+			arr, ok := keys.([]any)
+			if !ok {
+				return "each actor's keys must be a list of hex64"
+			}
+			for _, k := range arr {
+				s, ok := k.(string)
+				if !ok || !isHex64(s) {
+					return "each actor's keys must be a list of hex64"
+				}
+			}
+		}
+	}
+	if gh, ok := m["genesis_json_sha256"]; ok {
+		s, ok := gh.(string)
+		if !ok || !isHex64(s) {
+			return "genesis_json_sha256 must be hex64"
+		}
+	}
+	return ""
 }
 
 type skiCheck struct {
@@ -1313,7 +1386,7 @@ type settlementContext struct {
 func loadVerifyData(dir string) ([]verifyRecord, map[string]map[string]any, map[string][]byte, error) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
-	storeMode := isDir(recordsDir) && isDir(blobsDir)
+	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
 		return nil, nil, nil, err
@@ -1672,7 +1745,7 @@ func parseKeyBlob(blobs map[string][]byte, h string) (string, string, bool) {
 	return actor, key, true
 }
 
-func settlementCtx(dir string, records map[string]map[string]any, blobs map[string][]byte, trustPath string, explicitGenesis []string) settlementContext {
+func settlementCtx(dir string, records map[string]map[string]any, blobs map[string][]byte, trust map[string]any, explicitGenesis []string) settlementContext {
 	ctx := settlementContext{
 		records:        records,
 		blobs:          blobs,
@@ -1682,11 +1755,11 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		invalidPolicy:  map[string]bool{},
 		conflictActors: map[string]bool{},
 	}
-	trust := map[string]any{}
-	if trustPath != "" {
-		if m, err := readJSON(trustPath); err == nil {
-			trust = m
-		}
+	// Trust is parsed AND validated once by the caller (verifyDirSettlement) and
+	// passed by value, so the bytes that pass the fail-closed guard are the bytes
+	// that define authority (no second read, no nested-invalid escape).
+	if trust == nil {
+		trust = map[string]any{}
 	}
 	genesis := map[string]bool{}
 	for _, g := range explicitGenesis {
@@ -1696,14 +1769,17 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		genesis[g] = true
 	}
 	gpath := filepath.Join(dir, "genesis.json")
-	if raw, err := os.ReadFile(gpath); err == nil {
-		if trust["genesis_json_sha256"] == blobHash(raw) {
-			dec := json.NewDecoder(bytes.NewReader(raw))
-			dec.UseNumber()
-			var v any
-			if err := dec.Decode(&v); err == nil {
-				if doc, ok := v.(map[string]any); ok {
-					for _, g := range getStringArray(doc, "roots") {
+	if _, statErr := os.Stat(gpath); statErr == nil {
+		// genesis.json is PRESENT: match Python, which reaches this branch on
+		// exists() and treats an unreadable/dir/hash-mismatch as unverified (a
+		// bounded WARN) rather than a silent skip.
+		raw, readErr := os.ReadFile(gpath)
+		if readErr == nil && trust["genesis_json_sha256"] == blobHash(raw) {
+			// Parse the EXACT hashed bytes with the SAME strict I-JSON parser as
+			// Python (duplicate-key/trailing rejecting); roots must be hex64.
+			if doc, err := decodeStrictJSON(raw); err == nil {
+				for _, g := range getStringArray(doc, "roots") {
+					if isHex64(g) {
 						genesis[g] = true
 					}
 				}
@@ -1714,7 +1790,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 	}
 	for wid, env := range records {
 		body, _ := env["body"].(map[string]any)
-		if len(getStringArray(body, "prior")) == 0 {
+		if priorIsEmpty(body) {
 			ctx.roots[wid] = true
 		}
 		_, bad := recordPolicy(blobs, body)
@@ -1851,7 +1927,24 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		keysCache[wid] = cloneKeyMap(keys)
 		return keys
 	}
+	// Cache + pre-seed (matches Python's rotation_auth_cache): seeding `false`
+	// before computing means a re-entrant call for the SAME wid — which happens
+	// when a record is in its own prior-closure (a prior cycle with a rotation) —
+	// returns false immediately instead of recursing forever (Go previously
+	// stack-overflowed with no report; Python was bounded). Cleared each fixpoint
+	// iteration alongside keysCache.
+	rotationAuthCache := map[string]bool{}
+	var rotationAuthCompute func(string) bool
 	rotationAuthorized = func(wid string) bool {
+		if v, ok := rotationAuthCache[wid]; ok {
+			return v
+		}
+		rotationAuthCache[wid] = false
+		r := rotationAuthCompute(wid)
+		rotationAuthCache[wid] = r
+		return r
+	}
+	rotationAuthCompute = func(wid string) bool {
 		actor, incoming, ok := rotation(wid)
 		if !ok || ctx.invalidPolicy[wid] || !ctx.activeRecords[wid] {
 			return false
@@ -1910,6 +2003,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 	for {
 		recomputeActive()
 		keysCache = map[string]map[string]map[string]bool{}
+		rotationAuthCache = map[string]bool{}
 		grew := false
 		for root := range ctx.roots {
 			if ctx.activeRoots[root] || !wellSigned[root] {
@@ -1963,6 +2057,14 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 }
 
 func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) (int, int) {
+	// A settlement verify is a STORE operation: require records/ (matching
+	// Python's Store.require), so a dir with blobs/ but no records/ is a bounded
+	// "no store" error in both — not a Go flat-mode silent (0,0,0) exit 0
+	// (Kimi K3 gate P1-6, blobs-without-records direction).
+	if !isDir(filepath.Join(dir, "records")) {
+		fmt.Fprintf(os.Stderr, "no store at %s (run: warrant init)\n", dir)
+		return 1, 0
+	}
 	recList, records, blobs, err := loadVerifyData(dir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -1979,7 +2081,32 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 			fmt.Printf("%-4s %.12s  %s\n", level, wid, msg)
 		}
 	}
-	ctx := settlementCtx(dir, records, blobs, trustConfig, genesis)
+	// Fail-closed trust construction (Codex refactor gate + recheck): a REQUESTED
+	// settlement verification whose supplied trust config is missing / malformed /
+	// non-object / NESTED-schema-invalid is one global ERR with the SAME stable
+	// reason as Python — never a silent fail-open. Parse AND validate ONCE, then
+	// pass the value into settlementCtx (no second read).
+	var trust map[string]any
+	if trustConfig != "" {
+		m, err := readJSON(trustConfig)
+		if err == nil {
+			if verr := validateTrust(m); verr != "" {
+				err = errors.New(verr)
+			}
+		}
+		if err != nil {
+			// Fail-closed continuation identical to Python: report the one global
+			// ERR and STOP — the requested settlement verification did not happen,
+			// no partial base-grade report.
+			out("ERR", "settlement", "settlement trust config unavailable")
+			if !quiet {
+				fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
+			}
+			return errs, warns
+		}
+		trust = m
+	}
+	ctx := settlementCtx(dir, records, blobs, trust, genesis)
 	for _, w := range ctx.globalWarnings {
 		out("WARN", w[0], w[1])
 	}
@@ -2034,7 +2161,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 		if len(sigs) == 0 {
 			out("ERR", wid, "no signatures")
 		}
-		actorID := getActorID(body)
+		actorID := getActorID(body) // for the key-state-conflict check below
 		actorSigned := false
 		for _, s := range sigs {
 			if !verifySig(wid, s) {
@@ -2062,8 +2189,18 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 			} else {
 				out("WARN", wid, "signature unbound: key "+short+" claims actor "+actor)
 			}
-			if actor == actorID {
-				actorSigned = true
+			// Match Python (and Go's own base path): count a signature only if the
+			// body has a VALID actor.id ({id: string}) and the sig's actor is a
+			// present string equal to it. A type-confused body actor and an
+			// actorless sig both coerce to "" and previously spuriously matched in
+			// the settlement path only (Kimi K3 gate P1-8; Go was self-inconsistent
+			// base vs settlement).
+			if ba, ok := body["actor"].(map[string]any); ok {
+				if id, ok := ba["id"].(string); ok {
+					if sa, ok := sm["actor"].(string); ok && sa == id {
+						actorSigned = true
+					}
+				}
 			}
 		}
 		if len(sigs) > 0 && !actorSigned {
@@ -2076,7 +2213,9 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 				continue
 			}
 			prevBody, _ := prev["body"].(map[string]any)
-			if getInt(prevBody, "ts") > getInt(body, "ts") {
+			pTs, pOk := tsBig(prevBody)
+			cTs, cOk := tsBig(body)
+			if pOk && cOk && pTs.Cmp(cTs) > 0 {
 				out("WARN", wid, "ts decreases along prior edge "+sh12(p))
 			}
 		}
@@ -2153,7 +2292,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 func verifyDir(dir string, quiet bool) (int, int) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
-	storeMode := isDir(recordsDir) && isDir(blobsDir)
+	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
 
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
@@ -2292,7 +2431,9 @@ func verifyDir(dir string, quiet bool) (int, int) {
 				continue
 			}
 			prevBody, _ := prev["body"].(map[string]any)
-			if getInt(prevBody, "ts") > getInt(body, "ts") {
+			pTs, pOk := tsBig(prevBody)
+			cTs, cOk := tsBig(body)
+			if pOk && cOk && pTs.Cmp(cTs) > 0 {
 				out("WARN", wid, "ts decreases along prior edge "+sh12(p))
 			}
 		}
@@ -2353,9 +2494,16 @@ func verifyInputs(dir, recordsDir, blobsDir string, storeMode bool) ([]string, [
 		if err != nil {
 			return nil, nil, err
 		}
-		blobFiles, err := listFiles(blobsDir)
-		if err != nil {
-			return nil, nil, err
+		// A store is defined by records/; a missing blobs/ is tolerated as an
+		// empty blob set (every ref then unresolved) — matching Python, which
+		// verifies the records with has_blob=False rather than silently reporting
+		// zero records via a flat-mode fallback (Kimi K3 gate P1-6).
+		var blobFiles []string
+		if isDir(blobsDir) {
+			blobFiles, err = listFiles(blobsDir)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 		return recordFiles, blobFiles, nil
 	}
@@ -2640,6 +2788,47 @@ func getInt(m map[string]any, key string) int64 {
 	}
 	i, _ := n.Int64()
 	return i
+}
+
+// priorIsEmpty mirrors Python's `not body.get("prior")` for root detection: a
+// record is a root iff its prior is absent/nil or a *falsy* value (empty array,
+// empty string/map, 0, false). A scalar like `5` or a non-empty `[5]` is truthy
+// and therefore NOT a root — Go previously coerced any malformed prior to an
+// empty string list and invented a phantom root (Kimi K3 gate P1-9).
+func priorIsEmpty(body map[string]any) bool {
+	p, ok := body["prior"]
+	if !ok {
+		return true
+	}
+	switch v := p.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(v) == 0
+	case string:
+		return v == ""
+	case bool:
+		return !v
+	case map[string]any:
+		return len(v) == 0
+	case json.Number:
+		f, _ := v.Float64()
+		return f == 0
+	}
+	return false
+}
+
+// tsBig parses a ts as an arbitrary-precision integer (Python compares raw ints,
+// including out-of-int64 bignums; getInt's int64 clamp flipped the ts-edge WARN,
+// Kimi K3 gate P1-10). Non-integer ts -> (nil,false) so the edge is skipped in
+// both, matching Python's `isinstance(ts, int)` guard.
+func tsBig(body map[string]any) (*big.Int, bool) {
+	n, ok := body["ts"].(json.Number)
+	if !ok {
+		return nil, false
+	}
+	bi, ok := new(big.Int).SetString(n.String(), 10)
+	return bi, ok
 }
 
 func stringArrayEqual(a, b []string) bool {
