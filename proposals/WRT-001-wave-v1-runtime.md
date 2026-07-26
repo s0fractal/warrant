@@ -166,16 +166,41 @@ The rev-8/rev-9 gates showed the budget cannot come next: it would meter an
 unstable computation (R0 is live-head, effective-lifecycle and §7 are unfinished).
 Ordered close-out before adoption:
 
-0. **Generic Warrant verifier refactor — DONE-CANDIDATE (working tree; self-audited).**
-   Status is *self-audited*, not independently gated: after the last three
-   independent gates, a fresh author-run adversarial sweep of ~20 untested
-   parser/parity edges (empty/BOM/deep-nesting/nested-dup/UTF-8/NaN trust and
-   genesis inputs, base-mode record counts) found **zero** new Python↔Go
-   divergence, and every one of the 17 gate countervectors has a permanent test.
-   But author self-review carries blindness the independent gates did not — so
-   this MUST get one more independent family pass (Codex/Gemini/DeepSeek, per the
-   Decision Process) **before** it is committed to the governed repo. Do not
-   commit or register `0.2+sigma-wave.1` on self-audit alone.
+0. **Generic Warrant verifier refactor — regression-free per an independent gate,
+   with a corrected (narrowed) scope (working tree; branch, not master).**
+
+   **SCOPE (what item 0 delivers and claims parity for):** (a) one record
+   snapshot threaded through settlement/re-litigation; (b) the **trust-config and
+   hash-pinned `genesis.json` *config* inputs** parsed once under one strict
+   I-JSON domain (invalid-UTF-8 / NaN-Infinity / dup-key / trailing / non-object
+   rejected; genesis a bounded no-op incl. present-but-unreadable → WARN, never a
+   traceback), with **Python↔Go parity at the public `verify` report level for
+   those config inputs**; (c) fail-closed trust short-circuit; (d) the read-only,
+   version/reason-scoped runtime dispatch (Python).
+
+   **NON-CLAIMS (explicitly out of scope):** item 0 does **not** claim
+   verifier-wide Python↔Go parity or crash-freedom on adversarial **record /
+   blob / policy / canonicalization** inputs. Those belong to the ongoing
+   verifier-hardening track (the Kimi full-audit line).
+
+   **Independent gate:** Kimi K3 ran an adversarial gate
+   (`reviews/2026-07-kimi-k3-item0-adversarial-gate.md`), forbidden from
+   rubber-stamping. Verdict `AMEND` — 11 P1 counter-vectors. Triage: **all 11 are
+   in verifier code byte-identical to `origin/master` (pre-existing latent bugs,
+   NOT item-0 regressions)**; the gate refuted an over-broad contract claim (now
+   narrowed above) and surfaced one in-scope item (`genesis.json`-as-directory
+   traceback), **fixed** (Python guard + Go parity WARN). item-0's own changes are
+   regression-free.
+
+   **Before adoption of `wave@v1`:** the severe *pre-existing* findings —
+   verifier crashes (Go stack-overflow on a prior-cycle+rotation store; Python
+   tracebacks on dir-as-blob / dir-as-genesis / lone-surrogate record) and the
+   `-0` canonicalization/WarrantID **consensus split** — are not item-0
+   regressions, but `wave@v1` runs *inside* this verifier, so a verifier that
+   crashes or splits consensus on crafted input undermines the trust premise
+   `wave@v1` depends on. Recommend fixing those (verifier-hardening track) as a
+   prerequisite. Do not commit to master or register `0.2+sigma-wave.1` until that
+   scoping decision is made and, for adoption, the 2-of-3 governance gate signs.
    - **One record snapshot, threaded everywhere:** `verify_store` loads records
      once and threads that snapshot through the settlement context, the runtime
      handlers, **and the re-litigation path** (`settlement_admissibility`/`tunnel`/

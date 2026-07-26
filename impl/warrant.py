@@ -619,8 +619,11 @@ def _trust_roots(store, trust, explicit_roots):
     warnings = []
     g = store.root / "genesis.json"
     if g.exists():
-        raw = g.read_bytes()                            # read ONCE
-        if trust.get("genesis_json_sha256") == blob_hash(raw):
+        try:
+            raw = g.read_bytes()                        # read ONCE
+        except OSError:
+            raw = None                                  # present but unreadable (e.g. a dir)
+        if raw is not None and trust.get("genesis_json_sha256") == blob_hash(raw):
             # Parse the EXACT bytes whose digest was checked (no second read):
             # a hash-pinned input must not have a read_bytes/read_text TOCTOU that
             # lets a swapped value inject an attacker root (Codex item-0 recheck).

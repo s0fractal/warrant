@@ -1760,8 +1760,12 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		genesis[g] = true
 	}
 	gpath := filepath.Join(dir, "genesis.json")
-	if raw, err := os.ReadFile(gpath); err == nil {
-		if trust["genesis_json_sha256"] == blobHash(raw) {
+	if _, statErr := os.Stat(gpath); statErr == nil {
+		// genesis.json is PRESENT: match Python, which reaches this branch on
+		// exists() and treats an unreadable/dir/hash-mismatch as unverified (a
+		// bounded WARN) rather than a silent skip.
+		raw, readErr := os.ReadFile(gpath)
+		if readErr == nil && trust["genesis_json_sha256"] == blobHash(raw) {
 			// Parse the EXACT hashed bytes with the SAME strict I-JSON parser as
 			// Python (duplicate-key/trailing rejecting); roots must be hex64.
 			if doc, err := decodeStrictJSON(raw); err == nil {
