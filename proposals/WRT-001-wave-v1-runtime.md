@@ -192,15 +192,17 @@ Ordered close-out before adoption:
    traceback), **fixed** (Python guard + Go parity WARN). item-0's own changes are
    regression-free.
 
-   **Before adoption of `wave@v1`:** the severe *pre-existing* findings —
-   verifier crashes (Go stack-overflow on a prior-cycle+rotation store; Python
-   tracebacks on dir-as-blob / dir-as-genesis / lone-surrogate record) and the
-   `-0` canonicalization/WarrantID **consensus split** — are not item-0
-   regressions, but `wave@v1` runs *inside* this verifier, so a verifier that
-   crashes or splits consensus on crafted input undermines the trust premise
-   `wave@v1` depends on. Recommend fixing those (verifier-hardening track) as a
-   prerequisite. Do not commit to master or register `0.2+sigma-wave.1` until that
-   scoping decision is made and, for adoption, the 2-of-3 governance gate signs.
+   **Verifier-hardening prerequisite — DONE.** The severe *pre-existing* findings
+   (Go stack-overflow on a prior-cycle+rotation store; Python tracebacks on
+   dir-as-blob / dir-as-genesis / lone-surrogate record; the `-0`
+   canonicalization/WarrantID **consensus split**) plus the count-parity gaps were
+   fixed and independently re-gated by Kimi K3 (all 11 confirmed FIXED, no new P1;
+   `reviews/2026-07-kimi-k3-item0-regate.md`). This generic verifier refactor +
+   hardening is landed on `master`. **`wave@v1` itself is NOT adopted here:**
+   `0.2+sigma-wave.1` is **not registered** in `ACCEPTED`/`RUNTIMES` and this doc
+   is PROPOSED, not adopted. Adoption still requires the deferred items below
+   (budget, key-state → R1) and a **2-of-3 governance threshold warrant** signed by
+   roster keys — a git merge of the refactor is not that adoption.
    - **One record snapshot, threaded everywhere:** `verify_store` loads records
      once and threads that snapshot through the settlement context, the runtime
      handlers, **and the re-litigation path** (`settlement_admissibility`/`tunnel`/
