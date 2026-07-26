@@ -489,6 +489,73 @@ def case_ijson_domain_edges(tmp):
     return ok
 
 
+def case_verifier_hardening_k3(tmp):
+    """The four SEVERE pre-existing verifier bugs the Kimi K3 gate found (crashes
+    + a canonicalization consensus split), now fixed. Each must produce a bounded,
+    Python==Go public report (assert_verify fails if either crashes — no summary
+    line — or they disagree)."""
+    ok = True
+
+    # -0 canonicalization: same record bytes must have the same WarrantID (Go used
+    # to emit "-0" and reject the record Python accepted).
+    s = tmp + "_negzero"; W.Store(s).init()
+    key = os.path.join(s, "k"); write_key(key, 1)
+    pol = put_blob(s, b'{"p":1}'); subj = put_blob(s, b"s")
+    b0 = body("accept", subj, [pol], "a@t"); b0["ts"] = 0
+    wid = W.warrant_id(b0)
+    env = {"body": json.loads(W.canon(b0).replace(b'"ts":0', b'"ts":-0').decode("utf-8")),
+           "sigs": [W.sign_envelope(b0, "a@t", key)]}
+    open(os.path.join(s, "records", wid + ".json"), "w").write(json.dumps(env))
+    py, go = verify_both(s, trust_file(s, roots=[]))
+    ok &= assert_verify("k3: ts=-0 canon/WarrantID parity", py, go)
+
+    # blob named by a hex64 that is a DIRECTORY (dangling ref + would crash PY).
+    s = tmp + "_dirblob"; W.Store(s).init()
+    key = os.path.join(s, "k"); write_key(key, 1)
+    os.mkdir(os.path.join(s, "blobs", "a" * 64))
+    add_record(s, body("accept", "b" * 64, ["a" * 64], "a@t"), [("a@t", key)])
+    py, go = verify_both(s, trust_file(s, roots=[]))
+    ok &= assert_verify("k3: dir-as-blob is bounded + parity", py, go)
+
+    # lone surrogate in a body string: PY used to UnicodeEncodeError in canon().
+    s = tmp + "_surrogate"; W.Store(s).init()
+    raw = ('{"body":{"warrant":"0.2","decision":"accept","subject":{"hash":"' + "c" * 64
+           + '"},"under":["' + "d" * 64 + '"],"because":[],"evidence":[],"actor":{"id":'
+           '"\\ud800evil"},"prior":[],"ts":1},"sigs":[]}')
+    open(os.path.join(s, "records", "e" * 64 + ".json"), "w").write(raw)
+    py, go = verify_both(s, trust_file(s, roots=[]))
+    # P1 (the crash) is fixed: both produce a bounded summary with equal counts.
+    # The message STRING still differs (PY "WarrantID uncomputable" vs GO
+    # "WarrantID mismatch" — GO substitutes U+FFFD and recomputes a different id);
+    # that residual is a tracked P2, so assert counts + no-crash, not full parity.
+    good = (counts(py.stdout) is not None and counts(py.stdout) == counts(go.stdout))
+    print(("OK   " if good else "FAIL "),
+          "k3: lone-surrogate bounded + count parity (P2 msg differs)",
+          counts(py.stdout), counts(go.stdout))
+    ok &= good
+
+    # prior cycle (A->B->A) with a rotation-shaped A: Go used to stack-overflow.
+    s = tmp + "_cycle"; W.Store(s).init()
+    key = os.path.join(s, "k"); write_key(key, 3)
+    sk = W.load_key(key); pub = W.pubkey_hex(sk)
+    A, B = "a" * 64, "b" * 64
+    kb = put_json_blob(s, {"actor": "att", "key": pub})
+    gp = put_blob(s, b'{"g":1}')
+    rb = body("accept", "f" * 64, [gp], "att"); Rw = W.warrant_id(rb)
+    add_record(s, rb, [("att", key)])
+
+    def raw_signed(fn, bdy):
+        sig = {"actor": "att", "key": pub, "sig": sk.sign(bytes.fromhex(fn)).hex()}
+        open(os.path.join(s, "records", fn + ".json"), "w").write(
+            json.dumps({"body": bdy, "sigs": [sig]}))
+    ab = body("accept", kb, [gp], "att"); ab["prior"] = [B]; raw_signed(A, ab)
+    bb = body("propose", "e" * 64, [gp], "att"); bb["prior"] = [A, Rw]; raw_signed(B, bb)
+    tf = trust_file(s, roots=[Rw], actors={"att": [pub]})
+    py, go = verify_both(s, tf)
+    ok &= assert_verify("k3: prior-cycle+rotation is bounded (no Go stack overflow)", py, go)
+    return ok
+
+
 def main():
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
@@ -501,6 +568,7 @@ def main():
         ok &= case_trust_failclosed(os.path.join(tmp, "trust"))
         ok &= case_composition_parity(os.path.join(tmp, "compose"))
         ok &= case_ijson_domain_edges(os.path.join(tmp, "ijson"))
+        ok &= case_verifier_hardening_k3(os.path.join(tmp, "k3hard"))
     print(f"\nSETTLEMENT: {'ALL AGREE' if ok else 'DIVERGENCE'}")
     return 0 if ok else 1
 

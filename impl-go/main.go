@@ -310,7 +310,16 @@ func writeCanonical(b *bytes.Buffer, v any) error {
 		if !intJSONRe.MatchString(s) {
 			return fmt.Errorf("non-integer JSON number: %s", s)
 		}
-		b.WriteString(s)
+		// Normalize the integer per RFC 8785 (JCS): -0 -> 0. Python's json.loads
+		// parses -0 to int 0, so its canonical bytes (and WarrantID) use "0";
+		// writing "-0" verbatim split consensus on an identical record (Kimi K3
+		// gate). big.Int.String is canonical for every value the regex admits, so
+		// the only value this changes is "-0".
+		bi, ok := new(big.Int).SetString(s, 10)
+		if !ok {
+			return fmt.Errorf("non-integer JSON number: %s", s)
+		}
+		b.WriteString(bi.String())
 	case []any:
 		b.WriteByte('[')
 		for i, item := range x {
@@ -1918,7 +1927,24 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		keysCache[wid] = cloneKeyMap(keys)
 		return keys
 	}
+	// Cache + pre-seed (matches Python's rotation_auth_cache): seeding `false`
+	// before computing means a re-entrant call for the SAME wid — which happens
+	// when a record is in its own prior-closure (a prior cycle with a rotation) —
+	// returns false immediately instead of recursing forever (Go previously
+	// stack-overflowed with no report; Python was bounded). Cleared each fixpoint
+	// iteration alongside keysCache.
+	rotationAuthCache := map[string]bool{}
+	var rotationAuthCompute func(string) bool
 	rotationAuthorized = func(wid string) bool {
+		if v, ok := rotationAuthCache[wid]; ok {
+			return v
+		}
+		rotationAuthCache[wid] = false
+		r := rotationAuthCompute(wid)
+		rotationAuthCache[wid] = r
+		return r
+	}
+	rotationAuthCompute = func(wid string) bool {
 		actor, incoming, ok := rotation(wid)
 		if !ok || ctx.invalidPolicy[wid] || !ctx.activeRecords[wid] {
 			return false
@@ -1977,6 +2003,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 	for {
 		recomputeActive()
 		keysCache = map[string]map[string]map[string]bool{}
+		rotationAuthCache = map[string]bool{}
 		grew := false
 		for root := range ctx.roots {
 			if ctx.activeRoots[root] || !wellSigned[root] {

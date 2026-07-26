@@ -306,8 +306,8 @@ def run_ski_check(store, check_hex, sg=None):
     if sg is None:
         raise RuntimeError("runtime unavailable")   # reason class; the CLI hint
     p = store.blobs / check_hex                       # is printed by cmd_check, not here
-    if not p.exists():
-        raise RuntimeError("check blob missing")
+    if not (isinstance(check_hex, str) and HEX64.match(check_hex) and p.is_file()):
+        raise RuntimeError("check blob missing")      # absent / dir / non-hex: bounded
     raw = p.read_bytes()
     try:
         doc = json.loads(raw)                # was leaking JSONDecodeError past the
@@ -421,7 +421,12 @@ class Store:
         return h
 
     def has_blob(self, h):
-        return (self.blobs / h).exists()
+        # A blob exists only if `h` is a hex64 name AND names a regular file —
+        # matching Go (which admits only hex64-named regular files into its blob
+        # map). A raw `.exists()` on an attacker-controlled string was a path
+        # traversal / existence oracle (`../records`) and returned True for a
+        # directory, splitting parity and crashing later reads (Kimi K3 gate).
+        return HEX64.match(h) is not None and (self.blobs / h).is_file()
 
     def put_record(self, env):
         wid = warrant_id(env["body"])
@@ -644,8 +649,8 @@ def _trust_roots(store, trust, explicit_roots):
 
 def _parse_policy_blob(store, h):
     p = store.blobs / h
-    if not p.exists():
-        return None, False
+    if not (isinstance(h, str) and HEX64.match(h) and p.is_file()):
+        return None, False                          # absent / dir / non-hex: not a policy
     raw = p.read_bytes()
     try:
         doc = json.loads(raw)
@@ -1008,7 +1013,14 @@ def verify_store(store, quiet=False, settlement=None):
         schema_errs = validate_body(body)
         for m in schema_errs:
             out("ERR", wid, f"schema: {m}")
-        got = warrant_id(body)
+        try:
+            got = warrant_id(body)
+        except (UnicodeEncodeError, ValueError):
+            # A body that cannot be canonicalized (e.g. a lone surrogate in a
+            # string, which Python's json accepts but UTF-8 cannot encode) has no
+            # computable WarrantID — a bounded ERR, never a traceback (Kimi K3 gate).
+            out("ERR", wid, "WarrantID uncomputable (record contains invalid characters)")
+            continue
         if got != wid:
             out("ERR", wid, f"WarrantID mismatch: recomputed {got[:12]}")
             continue
