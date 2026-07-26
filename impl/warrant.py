@@ -1026,8 +1026,11 @@ def verify_store(store, quiet=False, settlement=None):
             continue
         sigs = env.get("sigs", [])
         if not isinstance(sigs, list):
+            # A non-list `sigs` is a malformed envelope: one ERR, then SKIP the
+            # record (like Go) — don't also emit "no signatures" nor process this
+            # record's blob refs, which produced extra PY-only warnings (K3 gate).
             out("ERR", wid, "sigs must be a list")
-            sigs = []
+            continue
         if not sigs:
             out("ERR", wid, "no signatures")
         actor_signed = False

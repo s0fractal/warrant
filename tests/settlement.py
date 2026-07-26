@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -553,6 +554,62 @@ def case_verifier_hardening_k3(tmp):
     tf = trust_file(s, roots=[Rw], actors={"att": [pub]})
     py, go = verify_both(s, tf)
     ok &= assert_verify("k3: prior-cycle+rotation is bounded (no Go stack overflow)", py, go)
+
+    # --- the count-parity findings (P1-6..P1-10): Python==Go public summary ---
+    def cparity(name, store, trust):
+        py, go = verify_both(store, trust)
+        good = (counts(py.stdout) is not None
+                and counts(py.stdout) == counts(go.stdout)
+                and py.returncode == go.returncode)
+        print(("OK   " if good else "FAIL "), name,
+              counts(py.stdout), counts(go.stdout), "rc", py.returncode, go.returncode)
+        if not good:
+            print("PY:", py.stdout, py.stderr, "\nGO:", go.stdout, go.stderr)
+        return good
+
+    def one_record(store, key_byte, mut):
+        W.Store(store).init()
+        k = os.path.join(store, "k"); write_key(k, key_byte)
+        pol = put_blob(store, b'{"p":1}'); subj = put_blob(store, b"s")
+        b = body("accept", subj, [pol], "a@t"); b["ts"] = 1
+        env = mut(b, k)
+        open(os.path.join(store, "records", W.warrant_id(b) + ".json"), "w").write(json.dumps(env))
+        return store
+
+    # P1-6: records/ present, blobs/ removed -> both verify with unresolved refs.
+    s6 = one_record(tmp + "_p6", 1, lambda b, k: {"body": b, "sigs": [W.sign_envelope(b, "a@t", k)]})
+    shutil.rmtree(os.path.join(s6, "blobs"))
+    ok &= cparity("k3: records/ without blobs/ (no silent zero)", s6, trust_file(s6, roots=[]))
+
+    # P1-7: sigs is not a list -> one ERR, record skipped, in both.
+    s7 = one_record(tmp + "_p7", 1, lambda b, k: {"body": b, "sigs": "not-a-list"})
+    ok &= cparity("k3: sigs-not-a-list count parity", s7, trust_file(s7, roots=[]))
+
+    # P1-8: an actorless sig must NOT satisfy a type-confused (string) body actor
+    # via coercion to "" — Go's settlement path disagreed with its own base path.
+    s8 = tmp + "_p8"; W.Store(s8).init(); k8 = os.path.join(s8, "k"); write_key(k8, 1)
+    pol8 = put_blob(s8, b'{"p":1}'); sub8 = put_blob(s8, b"s")
+    b8 = body("accept", sub8, [pol8], "a@t"); b8["actor"] = "x"; b8["ts"] = 1
+    w8 = W.warrant_id(b8)
+    sig8 = {"key": pubkey(k8), "sig": W.load_key(k8).sign(bytes.fromhex(w8)).hex()}
+    open(os.path.join(s8, "records", w8 + ".json"), "w").write(
+        json.dumps({"body": b8, "sigs": [sig8]}))
+    ok &= cparity("k3: actorless-sig no spurious match", s8, trust_file(s8, roots=[]))
+
+    # P1-9: schema-invalid scalar `prior` is NOT a phantom root.
+    s9 = one_record(tmp + "_p9", 1,
+                    lambda b, k: (b.__setitem__("prior", 5), {"body": b, "sigs": []})[1])
+    ok &= cparity("k3: scalar-prior no phantom root", s9, trust_file(s9, roots=[]))
+
+    # P1-10: out-of-int64 ts on a prior edge (no int64-clamp WARN flip).
+    s10 = tmp + "_p10"; W.Store(s10).init(); k = os.path.join(s10, "k"); write_key(k, 1)
+    pol = put_blob(s10, b'{"p":1}')
+    prev = body("accept", put_blob(s10, b"a"), [pol], "a@t"); prev["ts"] = 2 ** 63
+    wp = W.warrant_id(prev)
+    open(os.path.join(s10, "records", wp + ".json"), "w").write(json.dumps({"body": prev, "sigs": []}))
+    child = body("accept", put_blob(s10, b"b"), [pol], "a@t"); child["ts"] = 2 ** 63 - 1; child["prior"] = [wp]
+    open(os.path.join(s10, "records", W.warrant_id(child) + ".json"), "w").write(json.dumps({"body": child, "sigs": []}))
+    ok &= cparity("k3: out-of-int64 ts-edge parity", s10, trust_file(s10, roots=[]))
     return ok
 
 

@@ -1386,7 +1386,7 @@ type settlementContext struct {
 func loadVerifyData(dir string) ([]verifyRecord, map[string]map[string]any, map[string][]byte, error) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
-	storeMode := isDir(recordsDir) && isDir(blobsDir)
+	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
 		return nil, nil, nil, err
@@ -1790,7 +1790,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 	}
 	for wid, env := range records {
 		body, _ := env["body"].(map[string]any)
-		if len(getStringArray(body, "prior")) == 0 {
+		if priorIsEmpty(body) {
 			ctx.roots[wid] = true
 		}
 		_, bad := recordPolicy(blobs, body)
@@ -2153,7 +2153,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 		if len(sigs) == 0 {
 			out("ERR", wid, "no signatures")
 		}
-		actorID := getActorID(body)
+		actorID := getActorID(body) // for the key-state-conflict check below
 		actorSigned := false
 		for _, s := range sigs {
 			if !verifySig(wid, s) {
@@ -2181,8 +2181,18 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 			} else {
 				out("WARN", wid, "signature unbound: key "+short+" claims actor "+actor)
 			}
-			if actor == actorID {
-				actorSigned = true
+			// Match Python (and Go's own base path): count a signature only if the
+			// body has a VALID actor.id ({id: string}) and the sig's actor is a
+			// present string equal to it. A type-confused body actor and an
+			// actorless sig both coerce to "" and previously spuriously matched in
+			// the settlement path only (Kimi K3 gate P1-8; Go was self-inconsistent
+			// base vs settlement).
+			if ba, ok := body["actor"].(map[string]any); ok {
+				if id, ok := ba["id"].(string); ok {
+					if sa, ok := sm["actor"].(string); ok && sa == id {
+						actorSigned = true
+					}
+				}
 			}
 		}
 		if len(sigs) > 0 && !actorSigned {
@@ -2195,7 +2205,9 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 				continue
 			}
 			prevBody, _ := prev["body"].(map[string]any)
-			if getInt(prevBody, "ts") > getInt(body, "ts") {
+			pTs, pOk := tsBig(prevBody)
+			cTs, cOk := tsBig(body)
+			if pOk && cOk && pTs.Cmp(cTs) > 0 {
 				out("WARN", wid, "ts decreases along prior edge "+sh12(p))
 			}
 		}
@@ -2272,7 +2284,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 func verifyDir(dir string, quiet bool) (int, int) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
-	storeMode := isDir(recordsDir) && isDir(blobsDir)
+	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
 
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
@@ -2411,7 +2423,9 @@ func verifyDir(dir string, quiet bool) (int, int) {
 				continue
 			}
 			prevBody, _ := prev["body"].(map[string]any)
-			if getInt(prevBody, "ts") > getInt(body, "ts") {
+			pTs, pOk := tsBig(prevBody)
+			cTs, cOk := tsBig(body)
+			if pOk && cOk && pTs.Cmp(cTs) > 0 {
 				out("WARN", wid, "ts decreases along prior edge "+sh12(p))
 			}
 		}
@@ -2472,9 +2486,16 @@ func verifyInputs(dir, recordsDir, blobsDir string, storeMode bool) ([]string, [
 		if err != nil {
 			return nil, nil, err
 		}
-		blobFiles, err := listFiles(blobsDir)
-		if err != nil {
-			return nil, nil, err
+		// A store is defined by records/; a missing blobs/ is tolerated as an
+		// empty blob set (every ref then unresolved) — matching Python, which
+		// verifies the records with has_blob=False rather than silently reporting
+		// zero records via a flat-mode fallback (Kimi K3 gate P1-6).
+		var blobFiles []string
+		if isDir(blobsDir) {
+			blobFiles, err = listFiles(blobsDir)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 		return recordFiles, blobFiles, nil
 	}
@@ -2759,6 +2780,47 @@ func getInt(m map[string]any, key string) int64 {
 	}
 	i, _ := n.Int64()
 	return i
+}
+
+// priorIsEmpty mirrors Python's `not body.get("prior")` for root detection: a
+// record is a root iff its prior is absent/nil or a *falsy* value (empty array,
+// empty string/map, 0, false). A scalar like `5` or a non-empty `[5]` is truthy
+// and therefore NOT a root — Go previously coerced any malformed prior to an
+// empty string list and invented a phantom root (Kimi K3 gate P1-9).
+func priorIsEmpty(body map[string]any) bool {
+	p, ok := body["prior"]
+	if !ok {
+		return true
+	}
+	switch v := p.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(v) == 0
+	case string:
+		return v == ""
+	case bool:
+		return !v
+	case map[string]any:
+		return len(v) == 0
+	case json.Number:
+		f, _ := v.Float64()
+		return f == 0
+	}
+	return false
+}
+
+// tsBig parses a ts as an arbitrary-precision integer (Python compares raw ints,
+// including out-of-int64 bignums; getInt's int64 clamp flipped the ts-edge WARN,
+// Kimi K3 gate P1-10). Non-integer ts -> (nil,false) so the edge is skipped in
+// both, matching Python's `isinstance(ts, int)` guard.
+func tsBig(body map[string]any) (*big.Int, bool) {
+	n, ok := body["ts"].(json.Number)
+	if !ok {
+		return nil, false
+	}
+	bi, ok := new(big.Int).SetString(n.String(), 10)
+	return bi, ok
 }
 
 func stringArrayEqual(a, b []string) bool {
