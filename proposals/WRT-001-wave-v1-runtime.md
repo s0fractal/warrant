@@ -261,13 +261,22 @@ is charged in two steps so nothing over-ceiling is ever materialized:
    this charge → exhausted, no read.
 2. Let `r = remaining` after the resolution charge (`= ceiling − cost`). Read **at
    most `r` bytes**. If the blob is not fully consumed within `r` bytes it is
-   oversize → exhausted **without materializing beyond `r`**. A read truncated at
-   `r` cannot pass digest authentication, so an over-budget blob is exhausted, not
-   authenticated.
+   oversize → exhausted **without materializing the whole blob**. A read truncated
+   at `r` cannot pass digest authentication, so an over-budget blob is exhausted,
+   not authenticated.
 
-Total bytes materialized is therefore `≤ ceiling` exactly — the earlier
-`remaining + 1` sentinel is dropped because it could materialize one byte past the
-ceiling.
+**The size source must not itself be a seam.** Detecting "oversize" MUST NOT
+depend on a separate `stat()` read: a `stat()`-then-`read()` shape is a
+compositional countervector (a concurrent writer swaps a small file for a large
+one between the two calls, so the read materializes past the ceiling before the
+digest check runs — sigma-glyph `docs/compositional-countervectors.md` §5.2). The
+authoritative bound is the **CAS-committed blob length**, which is bound to the
+immutable digest identity (the file named by hash `h` cannot change its authentic
+content without ceasing to be `h`), so a store that indexes length by digest
+checks `length ≤ r` with no read/stat race. A bare-filesystem prototype without
+such an index approximates by reading `≤ r` bytes from a **single handle** (never
+a stat/read pair) and treating any content beyond `r` as oversize — materializing
+`O(r)`, never the whole blob and never via a race.
 
 **Determinism / parity (DEFERRED to post-item-2).** `cost` is intended to be a
 pure integer function of the content-addressed inputs and a fixed traversal
