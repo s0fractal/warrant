@@ -64,6 +64,26 @@ warrant verify                        # every hash, signature, and link in the s
 
 The store is plain files, content-addressed, git-friendly. No server, no vendor, no account.
 
+## Machine-readable output (`--json`)
+
+For CI, MCP, or an agent framework, add `--json` to `verify` and get exactly one
+`warrant.verify-report@v0` object on stdout — no human text to parse:
+
+```sh
+warrant verify --json ./evidence-pack | jq -e '.ok'          # exit 0 iff errors == 0
+```
+
+```json
+{"report":"warrant.verify-report@v0","grade":"base","ok":true,
+ "records":3,"errors":0,"warnings":1,
+ "findings":[{"level":"WARN","subject":"<WarrantID>","message":"..."}]}
+```
+
+`ok == (errors == 0)`; the counts and exit status are identical to the text mode.
+Both the Python and Go verifiers emit the same report; the shape is a non-normative
+integration convenience — it is **not** a Warrant, is unsigned, and carries no
+settlement authority.
+
 ## Try it on a real case
 
 Verify what an AI agent decided — the Air Canada chatbot case, as the record the

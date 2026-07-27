@@ -966,9 +966,15 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
 
 
 # ---------- verification (SPEC §6) ----------
-def verify_store(store, quiet=False, settlement=None):
-    """Return (n_errors, n_warnings). Prints a report unless quiet."""
+def verify_store(store, quiet=False, settlement=None, report_out=None):
+    """Return (n_errors, n_warnings). Prints a report unless quiet. If report_out
+    (a dict) is given it is populated with the structured verify-report fields
+    (records/errors/warnings/findings) that back the NON-NORMATIVE verify_report()
+    integration API. The text output and exit code are byte-identical whether or
+    not report_out is passed — findings are an additive side-channel, never a
+    second derivation of the result."""
     errs = warns = 0
+    findings = []
 
     def out(level, wid, msg):
         nonlocal errs, warns
@@ -976,11 +982,24 @@ def verify_store(store, quiet=False, settlement=None):
             errs += 1
         elif level == "WARN":
             warns += 1
+        if report_out is not None:
+            # subject keeps the FULL WarrantID / "settlement" / "store"; only the
+            # text rendering truncates to 12 chars. Emission order is deterministic
+            # (records are iterated in sorted-WarrantID order), so findings are too.
+            findings.append({"level": level, "subject": wid, "message": msg})
         if not quiet:
             print(f"{level:4} {wid[:12]}  {msg}")
 
     load_errors = {}
     recs = store.all_records(load_errors)
+
+    def _finish():
+        if report_out is not None:
+            report_out["records"] = len(recs) + len(load_errors)
+            report_out["errors"] = errs
+            report_out["warnings"] = warns
+            report_out["findings"] = findings
+        return errs, warns
     ctx = None
     trust_doc = {}
     # Trust preflight runs BEFORE any per-record report so a fail-closed
@@ -1003,7 +1022,7 @@ def verify_store(store, quiet=False, settlement=None):
             out("ERR", "settlement", ERR_SETTLEMENT_TRUST)
             if not quiet:
                 print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
-            return errs, warns
+            return _finish()
     # Trust preflight passed (or base grade): now emit per-record load errors and
     # build the single settlement context over the SAME `recs` snapshot.
     for wid, reason in sorted(load_errors.items()):
@@ -1224,7 +1243,33 @@ def verify_store(store, quiet=False, settlement=None):
                     out("ERR", wid, f"runtime {r.get('runtime')} dispatcher raised (fail-closed)")
     if not quiet:
         print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
-    return errs, warns
+    return _finish()
+
+
+VERIFY_REPORT_VERSION = "warrant.verify-report@v0"
+
+
+def verify_report(store, settlement=None):
+    """NON-NORMATIVE machine-readable verification result for external agents
+    (CI / MCP / LangGraph). This is NOT a Warrant: it is unsigned, carries no
+    settlement semantics, and its shape (``warrant.verify-report@v0``) is an
+    integration convenience, not part of SPEC — the normative result is still the
+    error/warning counts and exit status. ``ok == (errors == 0)``; ``grade`` is
+    ``settlement`` when a settlement context was requested, else ``base``; findings
+    are in the verifier's deterministic emission order and always include warnings.
+    Runs the SAME core as the text verifier (one derivation), so counts and exit
+    status match ``verify`` exactly."""
+    report_out = {}
+    verify_store(store, quiet=True, settlement=settlement, report_out=report_out)
+    return {
+        "report": VERIFY_REPORT_VERSION,
+        "grade": "settlement" if settlement is not None else "base",
+        "ok": report_out["errors"] == 0,
+        "records": report_out["records"],
+        "errors": report_out["errors"],
+        "warnings": report_out["warnings"],
+        "findings": report_out["findings"],
+    }
 
 
 WHY_MAX_DEPTH = 4096
@@ -1510,6 +1555,9 @@ def main():
                     help="trusted genesis root WarrantID; repeatable")
     vf.add_argument("--trust-config",
                     help="local trust JSON: genesis_roots, genesis_json_sha256, actors")
+    vf.add_argument("--json", action="store_true",
+                    help="emit exactly one warrant.verify-report@v0 JSON object "
+                         "(no human text); same counts and exit status as text mode")
     stl = sub.add_parser("settle")
     stl.add_argument("settling_wid")
     stl.add_argument("candidate_body")
@@ -1583,6 +1631,10 @@ def main():
         if args.settlement:
             settlement = {"genesis_roots": args.genesis,
                           "trust_config": args.trust_config}
+        if args.json:
+            report = verify_report(store, settlement=settlement)
+            print(json.dumps(report, separators=(",", ":"), ensure_ascii=False))
+            sys.exit(1 if report["errors"] else 0)
         errs, _ = verify_store(store, settlement=settlement)
         sys.exit(1 if errs else 0)
     elif args.cmd == "settle":

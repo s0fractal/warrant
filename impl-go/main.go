@@ -82,6 +82,7 @@ func main() {
 	case "verify":
 		dir := "examples"
 		settlement := false
+		jsonMode := false
 		trustConfig := ""
 		var genesis []string
 		args := os.Args[2:]
@@ -89,6 +90,8 @@ func main() {
 			switch args[i] {
 			case "--settlement", "-settlement":
 				settlement = true
+			case "--json", "-json":
+				jsonMode = true
 			case "--trust-config", "-trust-config":
 				if i+1 >= len(args) {
 					fmt.Fprintln(os.Stderr, "verify: --trust-config requires a file")
@@ -107,11 +110,20 @@ func main() {
 				dir = args[i]
 			}
 		}
+		var report *verifyReport
+		if jsonMode {
+			report = &verifyReport{}
+		}
 		var errs int
 		if settlement {
-			errs, _ = verifyDirSettlement(dir, trustConfig, genesis, false)
+			errs, _ = verifyDirSettlement(dir, trustConfig, genesis, jsonMode, report)
 		} else {
-			errs, _ = verifyDir(dir, false)
+			errs, _ = verifyDir(dir, jsonMode, report)
+		}
+		if jsonMode && report.Report != "" {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetEscapeHTML(false)
+			_ = enc.Encode(report)
 		}
 		if errs != 0 {
 			os.Exit(1)
@@ -176,7 +188,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [--settlement] [--trust-config file] [--genesis wid] [dir] | settle <store> <settling-wid> <candidate-body.json> | selftest [examples_dir]")
+	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [--settlement] [--trust-config file] [--genesis wid] [--json] [dir] | settle <store> <settling-wid> <candidate-body.json> | selftest [examples_dir]")
 }
 
 func readJSON(path string) (map[string]any, error) {
@@ -2132,7 +2144,30 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 	return ctx
 }
 
-func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) (int, int) {
+// finding is one machine-readable WARN/ERR line (INFO is text-only, never a
+// finding). subject is the FULL WarrantID / "settlement" / "store".
+type finding struct {
+	Level   string `json:"level"`
+	Subject string `json:"subject"`
+	Message string `json:"message"`
+}
+
+// verifyReport is the NON-NORMATIVE machine-readable verify result backing
+// `warrant-go verify --json` (mirrors Python verify_report / the
+// warrant.verify-report@v0 shape). It is NOT a Warrant: unsigned, no settlement
+// semantics, an integration convenience only. Findings are in the verifier's
+// deterministic emission order; ok == (errors == 0).
+type verifyReport struct {
+	Report   string    `json:"report"`
+	Grade    string    `json:"grade"`
+	OK       bool      `json:"ok"`
+	Records  int       `json:"records"`
+	Errors   int       `json:"errors"`
+	Warnings int       `json:"warnings"`
+	Findings []finding `json:"findings"`
+}
+
+func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, report *verifyReport) (int, int) {
 	// A settlement verify is a STORE operation: require records/ (matching
 	// Python's Store.require), so a dir with blobs/ but no records/ is a bounded
 	// "no store" error in both — not a Go flat-mode silent (0,0,0) exit 0
@@ -2153,9 +2188,26 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 		} else if level == "WARN" {
 			warns++
 		}
+		if report != nil {
+			report.Findings = append(report.Findings, finding{level, wid, msg})
+		}
 		if !quiet {
 			fmt.Printf("%-4s %.12s  %s\n", level, wid, msg)
 		}
+	}
+	finish := func() (int, int) {
+		if report != nil {
+			report.Report = "warrant.verify-report@v0"
+			report.Grade = "settlement"
+			report.OK = errs == 0
+			report.Records = len(recList)
+			report.Errors = errs
+			report.Warnings = warns
+			if report.Findings == nil {
+				report.Findings = []finding{}
+			}
+		}
+		return errs, warns
 	}
 	// Fail-closed trust construction (Codex refactor gate + recheck): a REQUESTED
 	// settlement verification whose supplied trust config is missing / malformed /
@@ -2178,7 +2230,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 			if !quiet {
 				fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
 			}
-			return errs, warns
+			return finish()
 		}
 		trust = m
 	}
@@ -2362,10 +2414,10 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool) 
 	if !quiet {
 		fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
 	}
-	return errs, warns
+	return finish()
 }
 
-func verifyDir(dir string, quiet bool) (int, int) {
+func verifyDir(dir string, quiet bool, report *verifyReport) (int, int) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
 	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
@@ -2427,9 +2479,26 @@ func verifyDir(dir string, quiet bool) (int, int) {
 		} else if level == "WARN" {
 			warns++
 		}
+		if report != nil {
+			report.Findings = append(report.Findings, finding{level, wid, msg})
+		}
 		if !quiet {
 			fmt.Printf("%-4s %.12s  %s\n", level, wid, msg)
 		}
+	}
+	finish := func() (int, int) {
+		if report != nil {
+			report.Report = "warrant.verify-report@v0"
+			report.Grade = "base"
+			report.OK = errs == 0
+			report.Records = len(recList)
+			report.Errors = errs
+			report.Warnings = warns
+			if report.Findings == nil {
+				report.Findings = []finding{}
+			}
+		}
+		return errs, warns
 	}
 
 	for _, rec := range recList {
@@ -2561,7 +2630,7 @@ func verifyDir(dir string, quiet bool) (int, int) {
 	if !quiet {
 		fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
 	}
-	return errs, warns
+	return finish()
 }
 
 func verifyInputs(dir, recordsDir, blobsDir string, storeMode bool) ([]string, []string, error) {
@@ -2666,7 +2735,7 @@ func selftest(dir string) bool {
 	chk("prose-only reject -> schema-valid", len(errs) == 0, strings.Join(errs, "; "))
 	chk("prose-only reject -> unverifiable", isUnverifiable(proseOnly), "")
 
-	errsN, warnsN := verifyDir(dir, true)
+	errsN, warnsN := verifyDir(dir, true, nil)
 	chk("examples verify with unresolved blobs as warnings", errsN == 0 && warnsN > 0, fmt.Sprintf("errors=%d warnings=%d", errsN, warnsN))
 
 	tmp, err := os.MkdirTemp("", "warrant-go-selftest-*")
@@ -2681,7 +2750,7 @@ func selftest(dir string) bool {
 			return false
 		}
 	}
-	errsMissing, _ := verifyDir(tmp, true)
+	errsMissing, _ := verifyDir(tmp, true, nil)
 	chk("missing prior -> error", errsMissing > 0, fmt.Sprintf("errors=%d", errsMissing))
 
 	passed := 0
