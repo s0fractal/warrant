@@ -92,10 +92,25 @@ run_grep() { local label="$1" needle="$2"; shift 2; local out
 # vector and a vector's `id` is free-form, so a vector named after the expected
 # summary satisfies `grep -qF` while the real summary says something else
 # entirely (Codex sibling-pin re-gate). Anchoring is the whole fix.
-run_grep_line() { local label="$1" needle="$2"; shift 2; local out
-        if out=$("$@" 2>&1) && printf '%s' "$out" | grep -qxF -- "$needle"; then c_ok "$label"
-        else c_bad "$label (expected the exact line: $needle)"
-             printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
+# run_coverage <label> <vectors.json> <producer...> : pass iff the producer
+# exits 0 AND tools/book1_coverage.py accepts its transcript.
+#
+# Deliberately not a grep. `grep -qxF` anchors to a LINE but not to a POSITION,
+# and a vector `id` is free-form data that may contain newlines -- so an id can
+# forge the expected summary as its own physical line while the producer's real
+# summary reports something else entirely (Codex sibling-pin re-gate 2). The
+# decision procedure is positional and lives in the helper, which the selftest
+# and both repos' CI also call: one code path, so a caller cannot quietly drift
+# back to a weaker rule while the suite stays green.
+run_coverage() { local label="$1" vectors="$2"; shift 2; local out rc
+        out=$("$@" 2>&1); rc=$?
+        if [ $rc -eq 0 ] && printf '%s\n' "$out" \
+             | python3 "$SELF/tools/book1_coverage.py" --check "$vectors" >/dev/null 2>&1
+        then c_ok "$label"
+        else c_bad "$label"
+             printf '%s\n' "$out" | tail -6 | sed 's/^/        | /'
+             printf '%s\n' "$out" | python3 "$SELF/tools/book1_coverage.py" \
+               --check "$vectors" 2>&1 >/dev/null | sed 's/^/        | /'; fi; }
 
 # ---------------------------------------------------------------- locate repos
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -141,19 +156,19 @@ fi
 hdr "A. Book I consensus — warrant's Go evaluator vs sigma's vectors"
 
 if [ -n "$WGO" ]; then
-  # Bind ALL PASS to the ACTUAL coverage, derived from the vector file itself.
-  # Matching a bare "ALL PASS" is what let warrant-go report success over 33 of
-  # 49 vectors for weeks; matching the derived counts as a SUBSTRING is still
-  # forgeable through a vector id. tools/book1_coverage.py owns both the counting
-  # and the producer's summary prefix, and X1 matches the whole line -- one
-  # artifact, mirrored, rather than three copies of the same rule.
-  COVERAGE="$(python3 "$SELF/tools/book1_coverage.py" \
-                "$SIGMA/tests/spec_conformance/vectors.json" 2>/dev/null)"
+  # Bind ALL PASS to the ACTUAL coverage, and to the summary's POSITION.
+  # tools/book1_coverage.py owns the counting, the producer's prefix, and the
+  # decision procedure; it is mirrored alongside X1 for the same reason X1 is
+  # mirrored. Three matchers failed here in sequence -- a bare "ALL PASS", the
+  # derived counts as a substring, then the counts anchored to a line -- each
+  # defeated by data the producer echoes back. See the module docstring.
+  V="$SIGMA/tests/spec_conformance/vectors.json"
+  COVERAGE="$(python3 "$SELF/tools/book1_coverage.py" "$V" 2>/dev/null)"
   if [ -z "$COVERAGE" ]; then
     c_bad "A1 could not derive expected coverage from sigma's vectors.json"
   else
-    run_grep_line "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#SIGMA CONFORMANCE: ALL PASS }" \
-      "$COVERAGE" "$WGO" sigma-conformance "$SIGMA/tests/spec_conformance/vectors.json"
+    run_coverage "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#SIGMA CONFORMANCE: ALL PASS }" \
+      "$V" "$WGO" sigma-conformance "$V"
   fi
 else
   c_skip "A1 warrant-go sigma-conformance (go toolchain or build unavailable)"

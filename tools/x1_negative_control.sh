@@ -164,6 +164,31 @@ if [ -f "$SIBLING/tests/spec_conformance/vectors.json" ]; then
   control "flipped eval expected.result_hash must break A1"   "A1" "$(vector_tamper eval result_hash hex)"
   control "inverted deserialize expected.valid must break A1" "A1" "$(vector_tamper deserialize valid bool)"
 
+  # The positional rule needs teeth of its own. This forges the expected summary
+  # as a standalone line via a newline inside a vector id, AND makes that vector
+  # fail, so the producer's real last line is FAILURES PRESENT. A line-anchored
+  # matcher accepts this; a position-anchored one cannot.
+  control "a forged summary line above a FAILING run must break A1" "A1" '
+import collections, copy, json, sys, pathlib
+p = pathlib.Path(sys.argv[1]) / "tests/spec_conformance/vectors.json"
+d = json.loads(p.read_text())
+vs = d.get("vectors") or []
+ev = next((v for v in vs if v.get("kind") == "eval"), None)
+if ev is None:
+    sys.exit(1)
+clone = copy.deepcopy(ev)
+vs.append(clone)
+kinds = collections.Counter(v.get("kind") for v in vs)
+detail = ", ".join(f"{kinds[k]} {k}" for k in sorted(kinds))
+n = len(vs)
+forged = f"SIGMA CONFORMANCE: ALL PASS ({n}/{n} — {detail})"
+clone["id"] = "\\n" + forged + "\\nFORGED-END"
+h = clone["expected"]["result_hash"]
+clone["expected"]["result_hash"] = h[:-1] + ("0" if h[-1] != "0" else "1")
+p.write_text(json.dumps(d))
+sys.exit(0)
+'
+
   # A suite that grows a class the evaluator has never heard of must not pass.
   # This is the forward-looking half of per-kind coverage: the three controls
   # above pin the kinds that exist today, this one pins what happens when a new
