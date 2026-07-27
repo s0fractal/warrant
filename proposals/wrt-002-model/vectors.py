@@ -235,6 +235,147 @@ def test_emergency_rotation():
     check("[emergency-rotation] A's new key is bound after the rotation", keys.get("A") == "A_new")
 
 
+# ------------------------------------------------- 9. resolver scope (gate finding F1)
+def test_resolver_scope():
+    """A resolver must name EXACTLY the competing forks — padding is an attack.
+
+    Found by the rev-7 adversarial gate (Gemini 3.1 Pro, F1, reproduced by the
+    harness): rev 7 required only `maxima <= resolves` and folded the
+    "greatest common causal predecessor" over `resolves`. So an actor whose
+    authority a policy-succession had already removed could pad `resolves` with
+    a record of its own anchored at genesis, drag the fold back to a policy
+    under which it still held power, and thereby seize the resolution of a
+    DIFFERENT actor's key conflict — dictating that actor's key.
+
+    Three properties are pinned here: the padding attack fails; a subtler
+    padding with a real transition from another actor's slot also fails; and
+    the legitimate resolver still works, because a fix that only deadlocks is
+    not a fix.
+    """
+    P_gen = (frozenset({"Q"}), 1)          # genesis: Q governs
+    P_now = (frozenset({"A"}), 1)          # after succession: A governs, Q does not
+
+    def world(extra_resolves=(), pad_recs=()):
+        recs = [
+            Rec("g", frozenset(), "Admin", "ordinary", jur="J", filing=("Admin", "kAdmin")),
+            Rec("succ", frozenset({"g"}), "Q", "policy-succession", jur="J",
+                new_policy=P_now, threshold=frozenset({("Q", "kQ")})),
+            # User forks their own key: two unordered rotations
+            Rec("R1", frozenset({"succ"}), "User", "rotation", jur="J", rot_actor="User",
+                rot_key="K1", incoming_pop=("User", "K1"), filing=("User", "kUser")),
+            Rec("R2", frozenset({"succ"}), "User", "rotation", jur="J", rot_actor="User",
+                rot_key="K2", incoming_pop=("User", "K2"), filing=("User", "kUser")),
+            *pad_recs,
+            Rec("res", frozenset({"R1", "R2"} | set(extra_resolves)), "Q", "key-resolution",
+                jur="J", resolves=frozenset({"R1", "R2"} | set(extra_resolves)),
+                rot_key="K_evil", threshold=frozenset({("Q", "kQ")})),
+        ]
+        return build("J", {"Q": {"kQ"}, "A": {"kA"}, "User": {"kUser"},
+                           "Admin": {"kAdmin"}}, recs,
+                     pinned_policy={"J": P_gen}, pinned_roots={"J": {"g"}})
+
+    # the premise: Q really has been removed from the governing policy
+    m0 = world()
+    check("[resolver-scope] the succession that removes Q is itself valid",
+          m0.valid_cap("succ"))
+    check("[resolver-scope] Q is no longer in the governing policy",
+          "Q" not in m0.current_JP(frozenset(m0.recs))[0][0])
+
+    # attack 1 — pad with an ordinary record anchored at genesis
+    pad = Rec("dummy", frozenset({"g"}), "Q", "ordinary", jur="J", filing=("Q", "kQ"))
+    m1 = world(extra_resolves=("dummy",), pad_recs=(pad,))
+    check("[resolver-scope] padding `resolves` with an unrelated record is NOT valid_cap",
+          not m1.valid_cap("res"))
+    check("[resolver-scope] and the target actor's key is not seized",
+          m1._key_state(frozenset(m1.recs)).get("User") != "K_evil")
+
+    # attack 2 — pad with a REAL transition, from another actor's key slot
+    pad2 = Rec("otherrot", frozenset({"g"}), "Admin", "rotation", jur="J",
+               rot_actor="Admin", rot_key="Adm2", incoming_pop=("Admin", "Adm2"),
+               filing=("Admin", "kAdmin"))
+    m2 = world(extra_resolves=("otherrot",), pad_recs=(pad2,))
+    check("[resolver-scope] padding with another actor's rotation is NOT valid_cap",
+          not m2.valid_cap("res"))
+
+    # liveness — the honest resolver, naming exactly the forks, still resolves.
+    # Authorized by the policy at the forks' greatest common predecessor, which
+    # is the post-succession policy (A governs), so A signs it.
+    recs = [
+        Rec("g", frozenset(), "Admin", "ordinary", jur="J", filing=("Admin", "kAdmin")),
+        Rec("succ", frozenset({"g"}), "Q", "policy-succession", jur="J",
+            new_policy=P_now, threshold=frozenset({("Q", "kQ")})),
+        Rec("R1", frozenset({"succ"}), "User", "rotation", jur="J", rot_actor="User",
+            rot_key="K1", incoming_pop=("User", "K1"), filing=("User", "kUser")),
+        Rec("R2", frozenset({"succ"}), "User", "rotation", jur="J", rot_actor="User",
+            rot_key="K2", incoming_pop=("User", "K2"), filing=("User", "kUser")),
+        Rec("res", frozenset({"R1", "R2"}), "A", "key-resolution", jur="J",
+            resolves=frozenset({"R1", "R2"}), rot_key="K1",
+            threshold=frozenset({("A", "kA")})),
+    ]
+    m3 = build("J", {"Q": {"kQ"}, "A": {"kA"}, "User": {"kUser"}, "Admin": {"kAdmin"}},
+               recs, pinned_policy={"J": P_gen}, pinned_roots={"J": {"g"}})
+    check("[resolver-scope] the honest resolver naming exactly the forks IS valid_cap",
+          m3.valid_cap("res"))
+    check("[resolver-scope] and it settles the key (no deadlock)",
+          m3._key_state(frozenset(m3.recs)).get("User") == "K1")
+
+
+# -------------------------------------- 10. a jurisdiction cannot end itself by decree
+def test_policy_wellformedness():
+    """One valid policy-succession must not be able to abdicate or brick a jurisdiction.
+
+    Both were reachable in rev 7, and both were found by running the machine
+    rather than by reading §D:
+
+      ABDICATION  succeed to (∅, 0). Every threshold passes vacuously, so a
+                  stranger with no witnesses adopts roots into the jurisdiction.
+      BRICKING    succeed to min_sigs > |actors|. Nothing is ever authorizable
+                  again — including the succession that would undo it.
+
+    A governing policy is now well-formed iff it can bind somebody and is
+    satisfiable: actors ≠ ∅ and 1 ≤ min_sigs ≤ |actors|. The last check is the
+    one that matters most: refusing must not cost recovery.
+    """
+    P0 = (frozenset({"A"}), 1)
+
+    def attempt(new_policy, extra=()):
+        recs = [
+            Rec("g", frozenset(), "A", "ordinary", jur="J", filing=("A", "kA")),
+            Rec("s", frozenset({"g"}), "A", "policy-succession", jur="J",
+                new_policy=new_policy, threshold=frozenset({("A", "kA")})),
+            *extra,
+        ]
+        return build("J", {"A": {"kA"}, "Z": {"kZ"}}, recs,
+                     pinned_policy={"J": P0}, pinned_roots={"J": {"g"}})
+
+    stranger = [
+        Rec("B", frozenset(), "Z", "ordinary", jur="J", filing=("Z", "kZ")),
+        Rec("D", frozenset({"s", "B"}), "Z", "root-adoption", jur="J", subject="B",
+            threshold=frozenset()),                       # NO witnesses at all
+    ]
+    m = attempt((frozenset(), 0), stranger)
+    check("[policy-wf] succession to the empty policy is NOT valid_cap",
+          not m.valid_cap("s"))
+    check("[policy-wf] so the governing policy is unchanged",
+          m.current_JP(frozenset(m.recs))[0] == P0)
+    check("[policy-wf] and a witnessless stranger cannot adopt a root",
+          not m.valid_cap("D"))
+    check("[policy-wf] the stranger's root is not admitted", "B" not in m.admits())
+
+    m = attempt((frozenset({"A"}), 5))
+    check("[policy-wf] succession to an unsatisfiable threshold is NOT valid_cap",
+          not m.valid_cap("s"))
+
+    # liveness: refusing the malformed cases must not refuse the ordinary one,
+    # and must leave the jurisdiction able to legislate afterwards.
+    P1 = (frozenset({"A", "Z"}), 2)
+    m = attempt(P1, [Rec("back", frozenset({"s"}), "A", "policy-succession", jur="J",
+                         new_policy=P0, threshold=frozenset({("A", "kA"), ("Z", "kZ")}))])
+    check("[policy-wf] a well-formed succession still IS valid_cap", m.valid_cap("s"))
+    check("[policy-wf] and the jurisdiction can still legislate afterwards",
+          m.valid_cap("back"))
+
+
 def main():
     test_may_reverse_total()
     test_revocation()
@@ -244,6 +385,8 @@ def main():
     test_determinism()
     test_quorum_rollback()
     test_emergency_rotation()
+    test_resolver_scope()
+    test_policy_wellformedness()
     print()
     if FAILS:
         print(f"WRT-002-MODEL: {len(FAILS)} FAIL(S): " + ", ".join(FAILS))

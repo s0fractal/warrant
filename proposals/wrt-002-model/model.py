@@ -115,6 +115,36 @@ def descends(a: str, b: str, recs: dict) -> bool:
     return b in pre_events(a, recs)
 
 
+def well_formed_policy(policy) -> bool:
+    """A governing policy must be able to bind somebody, and be satisfiable.
+
+    rev 7 placed no constraint on `(actors, min_sigs)`, and a single legitimate
+    policy-succession could therefore end a jurisdiction two ways, both found by
+    running the machine rather than reading it:
+
+      * ABDICATION -- succeed to `(frozenset(), 0)`. Every threshold check then
+        passes vacuously: a stranger with no witnesses at all can adopt roots and
+        succeed the policy again. The jurisdiction is permanently open.
+      * BRICKING -- succeed to `min_sigs > |actors|`. No witness set can ever
+        satisfy it, so nothing is authorizable again -- including the
+        policy-succession that would undo it. This is the liveness self-destruct
+        class that killed a predecessor of rev 6.
+
+    Both are refused here, fail-closed, at the only place that matters: a policy
+    that is not well-formed authorizes nothing, so a succession INTO one cannot
+    be authorized by the policy it would replace either.
+    """
+    if not policy:
+        return False
+    try:
+        actors, need = policy
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(need, int) or isinstance(need, bool):
+        return False
+    return bool(actors) and 1 <= need <= len(actors)
+
+
 # ========================================================================= THE MACHINE
 class Model:
     def __init__(self, world: World, cut: frozenset, J: str):
@@ -157,6 +187,21 @@ class Model:
             out[actor] = CONFLICT if conf else val
         return out
 
+    def _slot_maxima(self, E: frozenset, res_kind: str, actor=None) -> set:
+        """The competing forks a resolver of `res_kind` may legitimately resolve.
+
+        Same filtering as _policy_state / _key_state, so a resolver cannot claim
+        to settle a fork set that the slot does not actually have.
+        """
+        if res_kind == "policy-resolution":
+            trans = [w for w in E if self.recs[w].kind == "policy-succession"
+                     and self.recs[w].jur == self.J and self._valid.get(w)]
+        else:
+            trans = [w for w in E if self.recs[w].kind == "rotation"
+                     and self.recs[w].rot_actor == actor and self._valid.get(w)]
+        return {w for w in trans
+                if not any(w2 != w and descends(w2, w, self.recs) for w2 in trans)}
+
     def _resolve_slot(self, E, transitions, base, base_id, value, ident,
                       kind="policy-resolution"):
         """Shared maximal-succession + resolver logic (§D.2b). Returns (value, id, conflicted)."""
@@ -168,7 +213,7 @@ class Model:
             return value(maxima[0]), ident(maxima[0]), False
         # >=2 maximal, DAG-unordered => conflict unless a valid_cap resolver descends ALL
         resolvers = [w for w in E if self.recs[w].kind == kind and self._valid.get(w)
-                     and set(maxima) <= set(self.recs[w].resolves)
+                     and set(maxima) == set(self.recs[w].resolves)
                      and all(descends(w, m, self.recs) for m in maxima)]
         if len(resolvers) == 1:
             return value(resolvers[0]), ident(resolvers[0]), False
@@ -216,7 +261,7 @@ class Model:
 
     # ---- Layer 1: valid_cap (§D.1) ----
     def _threshold_ok(self, witnesses, policy, keystate):
-        if not policy:
+        if not well_formed_policy(policy):
             return False
         actors, need = policy
         good = {a for (a, k) in witnesses if a in actors and keystate.get(a) == k}
@@ -236,12 +281,53 @@ class Model:
         if r.kind == "root-adoption":
             return self._threshold_ok(r.threshold, polv, keys)
         if r.kind == "policy-succession":
+            # Refuse at FILING time, not merely at use time: a succession into an
+            # unusable policy would otherwise be recorded as authorized and only
+            # reveal itself later as a jurisdiction that can no longer act.
+            if not well_formed_policy(r.new_policy):
+                return False
             return self._threshold_ok(r.threshold, polv, keys)   # current policy at pre-state
         if r.kind in ("policy-resolution", "key-resolution"):
-            # a resolver is authorized by the PRE-CONFLICT (greatest common causal-predecessor)
-            # policy of the maxima it resolves, NOT the conflicted merged state (§D.2b).
-            pres = [pre_events(x, self.recs) for x in r.resolves if x in self.recs]
-            common = frozenset.intersection(*pres) if pres else frozenset()
+            # A resolver is authorized by the PRE-CONFLICT (greatest common
+            # causal-predecessor) policy of the maxima it resolves, NOT the
+            # conflicted merged state (§D.2b).
+            #
+            # That fold is only sound if `resolves` names EXACTLY the competing
+            # forks. rev 7 required merely `maxima <= resolves`, and computed the
+            # intersection over `resolves` — so a filer could pad the set with any
+            # record anchored near genesis and drag the "greatest common
+            # predecessor" back to a policy-state under which they still held
+            # authority. Found by an adversarial gate (Gemini 3.1 Pro, F1,
+            # reproduced): an actor whose authority a policy-succession had
+            # already removed padded `resolves` with one ordinary record of its
+            # own, and thereby seized the resolution of ANOTHER actor's key
+            # conflict, dictating that actor's key.
+            #
+            # So the set is now pinned three ways before the fold: same slot,
+            # same jurisdiction, and exactly the maxima at the resolver's own
+            # pre-state. Fail closed on every mismatch.
+            if r.kind == "policy-resolution" and not well_formed_policy(r.new_policy):
+                return False                      # same rule as a succession
+            slot_kinds = ({"policy-succession", "policy-resolution"}
+                          if r.kind == "policy-resolution" else
+                          {"rotation", "key-resolution"})
+            tgt = list(r.resolves)
+            if not tgt or any(x not in self.recs for x in tgt):
+                return False                      # names something outside the cut
+            if any(self.recs[x].kind not in slot_kinds for x in tgt):
+                return False                      # padding with an unrelated record
+            if any(self.recs[x].jur != r.jur for x in tgt):
+                return False                      # padding from another jurisdiction
+            actor = None
+            if r.kind == "key-resolution":
+                actors = {self.recs[x].rot_actor for x in tgt}
+                if len(actors) != 1:
+                    return False                  # a resolver addresses ONE key slot
+                actor = next(iter(actors))
+            if set(tgt) != self._slot_maxima(E, r.kind, actor):
+                return False                      # not exactly the competing forks
+            pres = [pre_events(x, self.recs) for x in tgt]
+            common = frozenset.intersection(*pres)
             pol_pre = self.current_JP(common)
             keys_pre = self._key_state(common)
             return self._threshold_ok(r.threshold, pol_pre[0] if pol_pre else None, keys_pre)

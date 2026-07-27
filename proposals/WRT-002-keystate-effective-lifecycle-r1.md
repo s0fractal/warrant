@@ -266,8 +266,10 @@ has none — so §5's "governing policy" needs an explicit primitive.
   policy-successions → policy-conflict marker (fail-closed). Resolved by a
   **`policy-conflict-resolution`** event: a threshold `accept` whose subject is a single
   chosen governing-policy blob, which **DAG-descends every maximal conflicting
-  policy-succession** and is authorized by the **greatest common causal-predecessor
-  policy-state** those forks share (the last non-conflicted policy all descend from). If
+  policy-succession and names exactly those maxima — no more** (see D.2b: a resolver that
+  may name extra records can choose its own authorizing history), and is authorized by the
+  **greatest common causal-predecessor policy-state** those forks share, computed by
+  folding over the maxima themselves (the last non-conflicted policy all descend from). If
   the competitors share **no** single authorized common-predecessor policy inside the
   cut, the jurisdiction's policy-state is **terminally conflicted** (fail-closed; no
   checkpoint authorizable). Its witnesses + a cleared marker enter provenance.
@@ -391,6 +393,40 @@ in_lineage(e)          := e's authorizing transition ∈ selected_lineage(its sl
 Uses `valid_cap` ONLY (permanent) ⇒ no dependency on effectiveness ⇒ no cycle. A losing
 policy/key branch is gated by `in_lineage`, **not** by superseding its record (fixing the
 rev-6 "losing branch never becomes ineffective" gap).
+
+**Resolver scope is EXACT, and the pre-conflict fold is over the maxima (rev 8).**
+
+```
+resolves(r) = maxima(slot, preEvents(r))       # exactly — neither more nor less
+prestate(r) = ⋂ { preEvents(m) : m ∈ maxima }  # fold over the FORKS, not over resolves
+```
+
+Rev 7 required only `maxima ⊆ resolves` and folded the "greatest common causal
+predecessor" over `resolves` itself. Those two together are a capability-escalation
+path, reproduced against the model by an independent gate (Gemini 3.1 Pro, F1): a filer
+pads `resolves` with any record anchored near genesis — one of its own ordinary records
+suffices — which drags the intersection back to a policy-state under which it still held
+authority. In the reproduction, an actor **already removed from the governing policy by a
+valid succession** thereby seized the resolution of a *different* actor's key conflict and
+dictated that actor's key. Every member of `resolves` must therefore be a transition of
+the same slot (and, for a key slot, of the same target actor) in the same jurisdiction,
+and the set must equal the maxima. Fail closed on any mismatch. Vectors:
+`[resolver-scope]` in `proposals/wrt-002-model/vectors.py`.
+
+**A governing policy MUST be well-formed (rev 8).** `(actors, min_sigs)` is usable iff
+`actors ≠ ∅ ∧ 1 ≤ min_sigs ≤ |actors|`. A `policy-succession` or `policy-resolution` into
+a policy that is not well-formed is **not `valid_cap`**, and an ill-formed policy
+authorizes nothing. Rev 7 constrained neither end, so one otherwise-legitimate succession
+could end a jurisdiction in two opposite ways — both found by executing the model:
+
+| | succession to | consequence |
+|---|---|---|
+| **abdication** | `(∅, 0)` | every threshold passes vacuously; a stranger with **no witnesses at all** adopts roots and legislates. The jurisdiction is permanently open. |
+| **bricking** | `min_sigs > \|actors\|` | no witness set can ever satisfy it, so nothing is authorizable again — **including the succession that would undo it**. This is the liveness self-destruct class that killed a predecessor of rev 6. |
+
+Refusing them must not cost recovery, so the vectors pin that too: a well-formed
+succession is still `valid_cap`, and the jurisdiction can still legislate afterwards
+(`[policy-wf]`).
 
 ### D.3 Layer 3 — `effective(x)`: lifecycle (well-founded on causal depth)
 
