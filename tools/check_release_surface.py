@@ -114,6 +114,51 @@ def subcommands(top_help):
     return names
 
 
+def offers(help_output, flag):
+    """True iff `help_output` advertises exactly this flag, as a whole token.
+
+    A plain `flag in help_output` is a substring test, and that is the defect
+    class this repository has now spent four review rounds on elsewhere: it
+    accepts a documented `--js` because the CLI offers `--json`, and a
+    documented `--store` because it offers `--store-mode`. Documentation for a
+    flag that does not exist would pass while a stranger following it hits
+    `unrecognized arguments` — the exact failure this gate was built to prevent.
+
+    Flag names are [A-Za-z0-9-], so the match must not be adjacent to one.
+    """
+    return re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", help_output) is not None
+
+
+def selftest():
+    """Pin the matching rule, so a future edit cannot quietly widen it."""
+    help_output = ("usage: warrant verify [--store-mode] [--json]\n"
+                   "  --store-mode  fail closed on an uninitialised store\n"
+                   "  --json        emit one warrant.verify-report@v0 object\n"
+                   "  -h, --help    show this help\n")
+    cases = [
+        (True,  "--json",        "exact long flag"),
+        (True,  "--store-mode",  "exact hyphenated flag"),
+        (True,  "-h",            "exact short flag"),
+        (False, "--js",          "prefix of a real flag"),
+        (False, "--store",       "prefix ending at a hyphen"),
+        (False, "--store-mod",   "prefix of a hyphenated flag"),
+        (False, "--jsonl",       "real flag is a prefix of the documented one"),
+        (False, "--nonexistent", "absent entirely"),
+    ]
+    bad = 0
+    for should, flag, name in cases:
+        got = offers(help_output, flag)
+        if got != should:
+            bad += 1
+        print(f"  {'OK  ' if got == should else 'FAIL'} "
+              f"{'accept' if should else 'reject'}: {flag:15} ({name})")
+    if bad:
+        print(f"\nRELEASE-SURFACE: {bad} SELFTEST FAILURE(S)")
+        return 1
+    print(f"\nRELEASE-SURFACE: SELFTEST ALL PASS ({len(cases)} cases)")
+    return 0
+
+
 def help_text(cmd, cache={}):
     key = tuple(cmd)
     if key not in cache:
@@ -129,7 +174,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin", help="directory holding the installed console scripts "
                                   "(default: run the checkout via python3 impl/)")
+    ap.add_argument("--selftest", action="store_true",
+                    help="run the matching rule's own rejection matrix and exit")
     args = ap.parse_args()
+    if args.selftest:
+        return selftest()
 
     def invoke(cli):
         if args.bin:
@@ -167,7 +216,7 @@ def main():
 
         for flag in flags:
             checked += 1
-            if flag not in scope and flag not in top:
+            if not offers(scope, flag) and not offers(top, flag):
                 problems.append(
                     f"{doc}:{line}: `{cli} {sub or ''} {flag}`".rstrip() +
                     f" is documented, but {where} does not offer `{flag}`")
