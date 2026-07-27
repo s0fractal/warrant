@@ -63,12 +63,23 @@ jobs:
       - name: X1 coupling matrix (HEAD vs HEAD)
         env:
           X1_SEEDS: '1 2 3'
+          # Both are the defaults; they are set here anyway so the mode CI runs
+          # in is visible in the workflow and cannot be changed by editing a
+          # default in the script. A crossing that does not run is a failure, and
+          # a missing mirror file is a failure -- there is no bootstrap window
+          # left now that X1 is landed in both repositories.
+          X1_DEGRADED: '0'
+          X1_BOOTSTRAP: '0'
         run: bash tools/x1_cross_repo.sh
 
       - name: Negative control — the gate must be able to FAIL
         # Guards against a vacuous green. Each control corrupts one thing in the
         # sibling and names the X1 step that must go red; a control that finds
         # nothing to tamper, or turns a *different* step red, fails the job.
-        # Both are real failure modes that this control caught in itself — see
-        # the header of tools/x1_negative_control.sh.
+        # Covers every Book I vector kind separately, gate deletion, and an
+        # unbuildable sibling — see the header of tools/x1_negative_control.sh
+        # for the drafts of this file that were themselves vacuous.
+        env:
+          X1_DEGRADED: '0'
+          X1_BOOTSTRAP: '0'
         run: bash tools/x1_negative_control.sh

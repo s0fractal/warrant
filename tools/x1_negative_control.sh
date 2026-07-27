@@ -8,18 +8,21 @@
 # would find out. So on every CI run we hand X1 a deliberately corrupted sibling
 # and require it to reject it — at the step we predicted.
 #
-# Two drafting mistakes are baked into the rules below, both found by running
-# this against the real repos rather than by reasoning about it:
+# Every rule below was written because a draft of this file broke it:
 #
 #   * The first draft lived inline in the workflow and tampered
-#     `tests/spec_conformance/vectors.json`. That file exists only in
-#     sigma-glyph, so from sigma's side (sibling = warrant) the control found
-#     nothing to tamper, exited 0 and went green having tested NOTHING — the
-#     exact vacuous green it was written to prevent.
-#   * The second draft corrupted "the first 64-hex string" in that file. That is
-#     `book1_anchor`, which A1 does not read: X1 went red at D2 (anchor digest)
-#     while the Book I consensus check sailed through. A control that goes red
-#     for the wrong reason proves nothing about the step it claims to cover.
+#     `tests/spec_conformance/vectors.json`, which exists only in sigma-glyph.
+#     From sigma's side (sibling = warrant) it found nothing to tamper, exited 0
+#     and went green having tested NOTHING — the vacuous green it was written to
+#     prevent.
+#   * The second corrupted "the first 64-hex string" in that file. That is
+#     `book1_anchor`, which A1 does not read: X1 went red at D2 while the Book I
+#     consensus check sailed through.
+#   * The third targeted `vectors[0].expected` — correct in form, but vector 0 is
+#     `OBJ-I`, kind=`object`. So it proved only that ONE object vector is read,
+#     while `eval` and `deserialize` — 41 of the 49 — had no control at all
+#     (Codex X1 gate, P1). A regression that silently dropped every deserialize
+#     vector would have left this file green.
 #
 # RULES
 #   1. Every control names the X1 step it must turn red, and passes only if THAT
@@ -28,8 +31,10 @@
 #   2. A control that finds nothing to tamper is a HARD ERROR, never a skip.
 #   3. Controls corrupt a field that is *semantically load-bearing for the named
 #      step*, not merely a byte inside a file the step happens to hash.
-#   4. At least one control must run in each direction, and each direction is
-#      told out loud which controls do not apply to it.
+#   4. Each vector KIND gets its own control. Per-kind coverage is a claim, and a
+#      claim with no control behind it is the thing X1 exists to catch.
+#   5. Both directions run, and each direction is told out loud which controls do
+#      not apply to it.
 #
 #   SIBLING=/path/to/sibling tools/x1_negative_control.sh
 set -uo pipefail
@@ -77,6 +82,34 @@ control() {
   fi
 }
 
+# vector_tamper <kind> <field> <hex|bool> — flip one expected field of the first
+# vector of that kind, so each control names the class it is responsible for.
+vector_tamper() {
+  cat <<PYEOF
+import json, sys, pathlib
+p = pathlib.Path(sys.argv[1]) / "tests/spec_conformance/vectors.json"
+d = json.loads(p.read_text())
+for v in d.get("vectors", []):
+    if v.get("kind") != "$1":
+        continue
+    exp = v.get("expected")
+    if not isinstance(exp, dict) or "$2" not in exp:
+        continue
+    val = exp["$2"]
+    if "$3" == "hex":
+        if not (isinstance(val, str) and len(val) == 64):
+            continue
+        exp["$2"] = val[:-1] + ("0" if val[-1] != "0" else "1")
+    else:
+        if not isinstance(val, bool):
+            continue
+        exp["$2"] = not val
+    p.write_text(json.dumps(d))
+    sys.exit(0)
+sys.exit(1)
+PYEOF
+}
+
 echo "X1 negative controls (sibling: $SIBLING)"
 
 # --------------------------------------------------------------------------
@@ -121,35 +154,24 @@ sys.exit(1)
 '
 
 # --------------------------------------------------------------------------
-# Control 2 — Book I consensus (A1). Corrupts an EXPECTED RESULT HASH, the
-# claim warrant-go actually re-derives. sigma-glyph holds the vectors, so this
-# applies only when the sibling is sigma.
+# Controls 2-4 — ONE PER VECTOR KIND (A1). sigma-glyph holds the vectors, so
+# these apply only when the sibling is sigma. Together they are the teeth
+# behind A1's per-kind coverage assertion: object, eval and deserialize must
+# each be genuinely executed by warrant-go for X1 to be green.
 # --------------------------------------------------------------------------
 if [ -f "$SIBLING/tests/spec_conformance/vectors.json" ]; then
-  control "flipped expected result-hash must break A1" "A1" '
-import json, sys, pathlib
-p = pathlib.Path(sys.argv[1]) / "tests/spec_conformance/vectors.json"
-d = json.loads(p.read_text())
-for v in d.get("vectors", []):
-    exp = v.get("expected")
-    if isinstance(exp, dict):
-        for k, val in exp.items():
-            if isinstance(val, str) and len(val) == 64:
-                exp[k] = val[:-1] + ("0" if val[-1] != "0" else "1")
-                p.write_text(json.dumps(d))
-                sys.exit(0)
-sys.exit(1)
-'
+  control "flipped object expected.hash must break A1"        "A1" "$(vector_tamper object hash hex)"
+  control "flipped eval expected.result_hash must break A1"   "A1" "$(vector_tamper eval result_hash hex)"
+  control "inverted deserialize expected.valid must break A1" "A1" "$(vector_tamper deserialize valid bool)"
 else
-  echo "  n/a   expected-result-hash flip — the sibling holds no Book I vectors"
+  echo "  n/a   per-kind Book I controls — the sibling holds no vectors.json"
   echo "        (we are sigma-glyph; A1 reads OUR vectors, and CI must not corrupt those)"
 fi
 
 # --------------------------------------------------------------------------
-# Control 3 — reverse direction (C1). warrant's ski@v1 conformance pins the
+# Control 5 — reverse direction (C1). warrant's ski@v1 conformance pins the
 # check blob by hash; corrupting it makes `warrant conformance` refuse. warrant
-# holds examples/, so this applies only when the sibling is warrant — the
-# mirror image of control 2, which is what keeps the two sides symmetric.
+# holds examples/, so this applies only when the sibling is warrant.
 # --------------------------------------------------------------------------
 if [ -f "$SIBLING/examples/ski/check.json" ]; then
   control "corrupted ski check-blob must break C1" "C1" '
@@ -165,6 +187,46 @@ sys.exit(0)
 else
   echo "  n/a   ski check-blob corruption — the sibling holds no examples/ski"
   echo "        (we are warrant; C1 reads OUR examples, and CI must not corrupt those)"
+fi
+
+# --------------------------------------------------------------------------
+# Control 6 — gate REMOVAL must go red (E). Divergence was already detected;
+# deletion was not, and deletion is the cheaper attack: drop X1 from one repo
+# and its workflow simply stops running, while the other side used to skip and
+# stay green (Codex X1 gate, P1). Runs from both directions.
+# --------------------------------------------------------------------------
+control "deleting a mirrored X1 file must break E" "E:" '
+import sys, pathlib
+root = pathlib.Path(sys.argv[1])
+for rel in ("tools/x1_negative_control.sh", "tools/x1_cross_repo.sh",
+            ".github/workflows/x1-cross-repo.yml"):
+    p = root / rel
+    if p.exists():
+        p.unlink()
+        sys.exit(0)
+sys.exit(1)
+'
+
+# --------------------------------------------------------------------------
+# Control 7 — an unbuildable sibling must NOT be green (A1). warrant-go is
+# built from the warrant tree, so this control exists exactly when the sibling
+# is warrant. It is the direct countervector for "required Go crossings can
+# silently SKIP and the job still passes".
+# --------------------------------------------------------------------------
+# Note the guard: sigma-glyph ALSO has an impl-go (its federation implementation),
+# so "the sibling has a Go tree" is not the question. A1 builds *warrant's*
+# evaluator, so this control applies exactly when the sibling IS warrant — the
+# same detection X1 itself uses.
+if [ -f "$SIBLING/SPEC.md" ] && [ -f "$SIBLING/impl-go/main.go" ]; then
+  control "an unbuildable sibling Go tree must break A1 (not skip)" "A1" '
+import sys, pathlib
+p = pathlib.Path(sys.argv[1]) / "impl-go/main.go"
+p.write_text(p.read_text() + "\nthis is not valid go\n")
+sys.exit(0)
+'
+else
+  echo "  n/a   unbuildable-Go control — the sibling is not warrant"
+  echo "        (we are warrant; A1 builds OUR impl-go, and CI must not corrupt that)"
 fi
 
 echo

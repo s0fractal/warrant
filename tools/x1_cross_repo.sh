@@ -23,20 +23,39 @@
 # It runs suites. It hunts no counter-vectors. Green here is necessary, never
 # sufficient, and must never be reported as "independently gated".
 #
+# STRICT BY DEFAULT
+# A crossing that cannot run is not a crossing that passed. X1 used to `c_skip`
+# A1/A2/C2 when the Go toolchain or build was unavailable and still print
+# ALL PASS -- so a sibling whose Go code did not compile produced a green gate
+# with no Go implementation tested at all (Codex X1 gate, P1). Now every skip of
+# a required crossing is a FAILURE unless X1_DEGRADED=1 is set explicitly, which
+# is for local exploration only and must never be set in CI.
+#
 # USAGE
-#   tools/x1_cross_repo.sh                 # clone sibling at HEAD
+#   tools/x1_cross_repo.sh                 # clone sibling at HEAD, strict
 #   SIBLING=/path/to/sibling tools/x1_cross_repo.sh   # use a local checkout
 #   X1_SEEDS="1 2 3" tools/x1_cross_repo.sh           # more fuzzer seeds
+#   X1_DEGRADED=1 tools/x1_cross_repo.sh              # allow skips (NOT for CI)
+#   X1_BOOTSTRAP=1 tools/x1_cross_repo.sh             # sibling has no X1 yet
 set -uo pipefail
 
 FAIL=0
 PASS=0
 SKIP=0
+DEGRADED="${X1_DEGRADED:-0}"
 declare -a FAILED_STEPS=()
 
 c_ok()   { printf '  \033[32mOK\033[0m    %s\n' "$1"; PASS=$((PASS+1)); }
 c_bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); FAILED_STEPS+=("$1"); }
-c_skip() { printf '  \033[33mSKIP\033[0m  %s\n' "$1"; SKIP=$((SKIP+1)); }
+# A required crossing that did not run. Fatal unless explicitly degraded.
+c_skip() {
+  if [ "$DEGRADED" = "1" ]; then
+    printf '  \033[33mSKIP\033[0m  %s  (X1_DEGRADED=1)\n' "$1"; SKIP=$((SKIP+1))
+  else
+    printf '  \033[31mFAIL\033[0m  %s  <- required crossing did not run\n' "$1"
+    FAIL=$((FAIL+1)); FAILED_STEPS+=("$1 (did not run)")
+  fi
+}
 hdr()    { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # run <label> <command...> : pass iff exit 0
@@ -44,9 +63,11 @@ run() { local label="$1"; shift; local out
         if out=$("$@" 2>&1); then c_ok "$label"
         else c_bad "$label"; printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
 
-# run_grep <label> <needle> <command...> : pass iff exit 0 AND stdout matches
+# run_grep <label> <needle> <command...> : pass iff exit 0 AND stdout matches.
+# `needle` is matched literally (-F): callers pass computed coverage strings that
+# contain regex metacharacters.
 run_grep() { local label="$1" needle="$2"; shift 2; local out
-        if out=$("$@" 2>&1) && printf '%s' "$out" | grep -q -- "$needle"; then c_ok "$label"
+        if out=$("$@" 2>&1) && printf '%s' "$out" | grep -qF -- "$needle"; then c_ok "$label"
         else c_bad "$label (expected: $needle)"; printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
 
 # ---------------------------------------------------------------- locate repos
@@ -93,8 +114,27 @@ fi
 hdr "A. Book I consensus — warrant's Go evaluator vs sigma's vectors"
 
 if [ -n "$WGO" ]; then
-  run_grep "A1 warrant-go sigma-conformance over sigma HEAD vectors" "ALL PASS" \
-    "$WGO" sigma-conformance "$SIGMA/tests/spec_conformance/vectors.json"
+  # Bind ALL PASS to the ACTUAL coverage, derived from the vector file itself.
+  # Matching the bare substring "ALL PASS" is what let warrant-go report success
+  # over 33 of 49 vectors for weeks (Codex X1 gate, P1): a summary line is only
+  # evidence if the number in it is checked against the suite it claims to cover.
+  # The expected string is computed here, so adding a vector or a whole new kind
+  # tightens the assertion automatically instead of loosening it.
+  COVERAGE="$(python3 - "$SIGMA/tests/spec_conformance/vectors.json" <<'PY'
+import collections, json, sys
+d = json.load(open(sys.argv[1]))
+vs = d["vectors"]
+c = collections.Counter(v.get("kind") for v in vs)
+kinds = ", ".join(f"{c[k]} {k}" for k in sorted(c))
+print(f"ALL PASS ({len(vs)}/{len(vs)} — {kinds})")
+PY
+)"
+  if [ -z "$COVERAGE" ]; then
+    c_bad "A1 could not derive expected coverage from sigma's vectors.json"
+  else
+    run_grep "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#ALL PASS }" \
+      "$COVERAGE" "$WGO" sigma-conformance "$SIGMA/tests/spec_conformance/vectors.json"
+  fi
 else
   c_skip "A1 warrant-go sigma-conformance (go toolchain or build unavailable)"
 fi
@@ -115,9 +155,18 @@ run_grep "B1 warrant HEAD verifies sigma HEAD .warrants (verify-report@v0)" '"ok
   env SIGMA_GLYPH="$SIGMA/impl" python3 - "$WARRANT/impl/warrant.py" "$SIGMA/.warrants" <<'PY'
 import json, subprocess, sys
 wp, store = sys.argv[1], sys.argv[2]
-out = subprocess.run([sys.executable, wp, "--store", store, "verify", "--store-mode", "--json"],
-                     capture_output=True, text=True).stdout.strip()
+p = subprocess.run([sys.executable, wp, "--store", store, "verify", "--store-mode", "--json"],
+                   capture_output=True, text=True)
+out = p.stdout.strip()
+# The report is only half the boundary. Discarding the exit status accepts a
+# verifier that prints ok:true and exits non-zero, and discarding stderr accepts
+# one that pollutes a stream documented as carrying exactly one JSON object
+# (Codex X1 gate, P2). Bind all three to each other.
+assert p.stderr == "", f"verifier wrote to stderr: {p.stderr[:300]!r}"
+assert out.count("\n") == 0, "report must be exactly one physical line"
 r = json.loads(out)
+assert p.returncode == (0 if r["ok"] else 1), \
+    f"exit {p.returncode} disagrees with ok={r['ok']} (expected 0 iff ok)"
 assert r["report"] == "warrant.verify-report@v0", r["report"]
 assert r["ok"] == (r["errors"] == 0), "ok/errors disagree"
 assert r["errors"] == sum(1 for f in r["findings"] if f["level"] == "ERR"), "errors != ERR findings"
@@ -179,11 +228,24 @@ hdr "E. Mirror integrity — the gate itself is the same gate on both sides"
 
 # X1 only means anything if both repos run the SAME X1. Nothing else checks
 # that, so a well-meaning fix on one side would silently turn one coupling gate
-# into two different ones. Absent-in-the-sibling is a SKIP (X1 lands in one repo
-# before the other); present-but-different is a FAILURE.
+# into two different ones.
+#
+# ABSENCE IS FATAL, NOT A SKIP. Treating a missing mirror as "landing in
+# progress" is a permanent bypass once landing is done (Codex X1 gate, P1):
+# delete X1 from one repo and its workflow stops running, while the surviving
+# repo sees the file absent, skips, and stays green — so the gate can be removed
+# from the coupling without either side going red. The bootstrap window is now
+# explicit and opt-in: X1_BOOTSTRAP=1 for the single landing where one side has
+# X1 and the other does not. CI never sets it.
+BOOTSTRAP="${X1_BOOTSTRAP:-0}"
 for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh .github/workflows/x1-cross-repo.yml; do
   if [ ! -f "$SIB/$f" ]; then
-    c_skip "E:$f not in $SIB_NAME yet (landing in progress?)"
+    if [ "$BOOTSTRAP" = "1" ]; then
+      printf '  \033[33mSKIP\033[0m  E:%s absent in %s (X1_BOOTSTRAP=1)\n' "$f" "$SIB_NAME"
+      SKIP=$((SKIP+1))
+    else
+      c_bad "E:$f is MISSING from $SIB_NAME — the gate was removed from one side"
+    fi
   elif [ "$(shasum -a 256 "$SELF/$f" | awk '{print $1}')" = "$(shasum -a 256 "$SIB/$f" | awk '{print $1}')" ]; then
     c_ok "E:$f byte-identical in both repos"
   else
@@ -234,10 +296,19 @@ PY
 
 # ===================================================================== verdict
 hdr "X1 RESULT"
-printf '  pass=%d fail=%d skip=%d\n' "$PASS" "$FAIL" "$SKIP"
-if [ "$FAIL" -eq 0 ]; then
+MODE="$([ "$DEGRADED" = 1 ] && echo DEGRADED || echo strict)"
+[ "${X1_BOOTSTRAP:-0}" = 1 ] && MODE="$MODE+bootstrap"
+printf '  pass=%d fail=%d skip=%d  (mode: %s)\n' "$PASS" "$FAIL" "$SKIP" "$MODE"
+if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
   echo "  X1-CROSS-REPO: ALL PASS  (regression gate only — NOT an independent gate)"
   exit 0
+elif [ "$FAIL" -eq 0 ]; then
+  # Only reachable under X1_DEGRADED / X1_BOOTSTRAP. Never call this a pass: the
+  # finding was precisely that a green summary printed over crossings that never
+  # ran reads to a human as coverage.
+  printf '  X1-CROSS-REPO: INCOMPLETE — %d required crossing(s) did not run.\n' "$SKIP"
+  echo "  Not a pass. CI runs strict, with zero skips."
+  exit 1
 else
   printf '  X1-CROSS-REPO: FAIL\n'
   for s in "${FAILED_STEPS[@]}"; do printf '    - %s\n' "$s"; done
