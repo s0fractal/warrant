@@ -33,9 +33,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Documentation that makes promises to a stranger. Anything listed here is a
-# contract: if it shows a command, that command must work in the shipped artifact.
-DOCS = ["README.md", "EVIDENCE-PACK.md", "demos/air-canada/README.md", "PUBLISHING.md"]
+# Documentation that makes promises to a stranger. Anything discovered here is a
+# contract: if it shows a command, that command must work in the shipped
+# artifact. Discovery is by directory rather than by list, because a hand-kept
+# list is exactly the thing that goes stale the day someone adds a doc -- and a
+# stale list would make this gate quietly stop covering the new promise.
+DOC_ROOTS = [".", "demos", "profiles", "docs", "integrations"]
+
+# Excluded on purpose, with reasons:
+#   reviews/    external reviewers quote commands that may never have existed
+#   proposals/  design documents describe surfaces that deliberately do not exist yet
+#   briefs/     instructions to reviewers, same reason
+#   archive/    historical, by definition about older surfaces
+DOC_EXCLUDE = {"reviews", "proposals", "briefs", "archive", "scratchpad",
+               "build", "dist", ".git", "node_modules"}
 
 # Commands whose surface we own. `warrant-go` is a Go binary documented beside
 # the Python one; it is checked too when present, since the README offers it as
@@ -47,9 +58,26 @@ KNOWN_CLIS = {"warrant", "warrant-mcp", "warrant-anchor"}
 PLACEHOLDER = re.compile(r"^<.*>$|^\$\w+$|^\.\.\.$")
 
 
+def docs():
+    """Every markdown file that speaks to a user, newest layout discovered live."""
+    seen = []
+    for root in DOC_ROOTS:
+        base = ROOT / root
+        if not base.is_dir():
+            continue
+        pattern = "*.md" if root == "." else "**/*.md"
+        for p in sorted(base.glob(pattern)):
+            if any(part in DOC_EXCLUDE for part in p.relative_to(ROOT).parts):
+                continue
+            rel = str(p.relative_to(ROOT))
+            if rel not in seen:
+                seen.append(rel)
+    return seen
+
+
 def documented_invocations():
-    """Yield (doc, lineno, cli, subcommand, flags) for each documented command."""
-    for rel in DOCS:
+    """Yield (doc, lineno, cli, argv, flags) for each documented command."""
+    for rel in docs():
         p = ROOT / rel
         if not p.exists():
             continue
