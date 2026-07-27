@@ -1,10 +1,19 @@
 # WRT-002: Key-state, authorized effective-lifecycle, and the R1 checkpoint
 
-**Status:** DRAFT **rev 6** (2026-07-27) — model design only. **No production
-signatures, no adoption, no code, no runtime registration, and NO frozen wire bytes.**
-Specifies the settlement substrate WRT-001's stored (R1) wave citation depends on —
-Deferred items **1 (authorized effective-lifecycle)** and **2 (key-state → R1
+**Status:** DRAFT **rev 7 — definition pass** (2026-07-27) — model design only. **No
+production signatures, no adoption, no code, no runtime registration, and NO frozen wire
+bytes.** Specifies the settlement substrate WRT-001's stored (R1) wave citation depends
+on — Deferred items **1 (authorized effective-lifecycle)** and **2 (key-state → R1
 checkpoint)**. Adoption requires the full Decision Process; none is performed here.
+
+**rev 7 is a DEFINITION PASS (per the rev-6 re-gate).** §D below gives the machine as
+transition equations / pseudocode — the **normative core**; §§0–6 are context and
+**where prose differs from §D, §D governs**. §D closes the four rev-6 findings by
+splitting effectiveness into **three ordered layers with no negation cycle**
+(`valid_cap` → `selected_lineage`/`admits` → `effective`), a **finite checkpoint
+certificate identity** (no consumer/successor dependency, WRT-001-compatible), and a
+**closed `may_reverse` table**. The immediate next step is **B: a hermetic executable
+reference model** that runs §7's countervectors against §D — before any wire-byte freeze.
 
 **rev history.** rev 1–4 built the cut, self-exclusion, immutable pre-state, frozen
 signature predicates, ACI provenance merge, policy-state, causal binding, total manifest,
@@ -54,7 +63,7 @@ Naïve `active − supersede-targets` is a **censorship primitive**; a live-head
 citation cannot converge in an append-only store (WRT-001:133-141). The effective set
 is defined *by* key-state and policy-state over a *fixed historical cut*, authorized by
 *frozen evidence* under a *role-appropriate* rule, committed by a *causally-anchored*
-checkpoint. rev 6 specifies: the cut (§2); a **total** frozen manifest (§3); a **total
+checkpoint. §D (rev 7) defines: the cut (§2); a **total** frozen manifest (§3); a **total
 ACI-provenance algebra** with authorization ≠ effect, root-adoption, and filing-key
 boundness (§4); a **target-role authorization matrix** (§5) over a **jurisdiction
 policy-state** (§5.5); the checkpoint with distinct resolvers and succession (§6).
@@ -320,11 +329,130 @@ settlement-active citation, WRT-001 §5).
 checkpoint WID; the citation ranks over that checkpoint's effective set (minus its own
 WID), never live-head.
 
-**BYTES DEFERRED (explicit).** rev 6 does not freeze the `checkpoint@v1` / manifest /
+**BYTES DEFERRED (explicit).** rev 7 does not freeze the `checkpoint@v1` / manifest /
 policy-blob schemas and canonical layouts; the domain-separated hashing inputs for the
 four roots; the canonical encoding of key-state and policy-state **including conflict
 markers**; `sequence` genesis/gap encoding; or validation severities. Per the gate,
 bytes are frozen only **after** this model (§§2–6) survives another re-gate.
+
+## D. Formal definitions (rev 7 — normative; governs where §§0–6 prose differs)
+
+Over `E = cut(F)` with the total manifest (§3). All functions are pure functions of
+`(cut, manifest)`. Effectiveness is **three ordered layers**; each uses only strictly
+earlier layers and the causal past, so the whole is well-founded — **no `effective↔
+effective` negation cycle** (the rev-6 defect).
+
+### D.1 Layer 1 — `valid_cap(e)`: immutable causal authorization (permanent)
+
+```
+valid_cap(e) := e's manifest witnesses satisfy e's role rule (may_use, D.4),
+                evaluated against the PRE-STATE key/policy derived from the
+                valid_cap events in preEvents(e) ONLY.
+```
+Permanent — a function of the causal past alone; never of effectiveness or of later
+events. This breaks the revocation cycle: a revocation `S` of `R:K0→K1` is `valid_cap`
+because `K1 ∈ preState(S)` (R's effect is in S's causal past), **with no requirement that
+`R` remain effective**. `carried_cap(e)` = the capability `e` exercised (D.4 tuple).
+
+### D.2a Layer 2 — `admits(J)`: path-aware root admission (distance-stratified)
+
+```
+dist(r)     := 0 if r ∈ pinned(J)
+               else 1 + min{ dist(root_of(D.adopting_record))
+                             : valid_cap adoption D targets r }      # ∞ if none
+reversed(r) := ∃ valid_cap S superseding an adoption D that targets r, with
+               cap(S).kind = JP ∧ cap(S).J = J ∧ authority_dist(cap(S)) < dist(r)
+admits(J)   := { r : dist(r) < ∞ ∧ ¬reversed(r) }
+```
+Uses `valid_cap` of adoptions (permanent) — **not** lifecycle `effective` — so the
+rev-5/6 `{A}→{A,B}→{A}` oscillation cannot form. A reversal's **authority lineage**
+(`authority_dist`) must be strictly lower distance than `r`; its **record reachability**
+is irrelevant to admission (the two dependencies are separated, per the re-gate). `dist`
+is the **minimum over adoption paths**. Roots are decided in increasing `dist`, so none
+feeds its own admission/reversal.
+
+### D.2b Layer 2 — `selected_lineage`: which branch won each conflict
+
+```
+state(slot)            := fold of valid_cap transitions (rotation | policy-succession)
+                          for slot; ≥2 maximal DAG-unordered ⇒ conflict marker
+                          (slot UNUSABLE) unless a valid_cap resolver descends every
+                          maximal competitor and is valid_cap under pre-conflict
+                          authority ⇒ it selects one branch.
+selected_lineage(slot) := the genesis→…→winner chain of valid_cap transitions for slot.
+in_lineage(e)          := e's authorizing transition ∈ selected_lineage(its slot),
+                          or e uses no conflicted slot.
+```
+Uses `valid_cap` ONLY (permanent) ⇒ no dependency on effectiveness ⇒ no cycle. A losing
+policy/key branch is gated by `in_lineage`, **not** by superseding its record (fixing the
+rev-6 "losing branch never becomes ineffective" gap).
+
+### D.3 Layer 3 — `effective(x)`: lifecycle (well-founded on causal depth)
+
+```
+effective(x) := active_cut(x, admits(J))       # root-reachable to admits(J) ∧ eligible
+                                               #   manifest entry ∧ bound actor-filing
+              ∧ valid_cap(x)                    # D.1
+              ∧ in_lineage(x)                   # D.2b — losing branch ⇒ gated out
+              ∧ ¬∃ S : effective(S) ∧ valid_cap(S) ∧ supersedes(S, x)
+                       ∧ may_reverse(carried_cap(S), carried_cap(x), preState(S))
+```
+Well-founded: the first three conjuncts read the causal past + Layers 1–2; the `S`-clause
+reads **strictly-later** superseders (`supersedes ⇒ deeper`). `effective(S)` does **not**
+require the effectiveness of `S`'s authorization basis (that is `valid_cap`, Layer 1) — so
+there is no `R=¬S ∧ S=R` cycle.
+
+### D.4 `may_reverse` — closed table, fail-closed default
+
+```
+kind := SELF | JP | RP        # JP = jurisdiction policy (adoption, resolution,
+                              #   policy-succession, checkpoint, ordinary quorum);
+                              #   RP = rotation policy for a key-slot.
+                              # rev-6 ADOPTION-AUTHORITY / RESOLUTION-QUORUM ⇒ JP (removed).
+cap  := (kind, principal, J, target_slot, policy_ref)
+
+may_reverse(new, prior, prestate) :=
+  if ¬well_formed(new) ∨ ¬well_formed(prior):          False        # fail-closed
+  elif prior.kind = SELF:
+        (new.kind=SELF ∧ new.principal=prior.principal)             # same actor ONLY
+      ∨ (new.kind=JP ∧ new.J=prior.J ∧ governs(new, prior.target_slot)
+                     ∧ new.policy_ref = current_JP(prior.J, prestate))
+  elif prior.kind = JP:
+        new.kind=JP ∧ new.J=prior.J
+      ∧ same_policy_lineage(new.principal, prior.principal, prior.J, prestate)
+      ∧ new.policy_ref = current_JP(prior.J, prestate)
+  elif prior.kind = RP:
+        new.kind=RP ∧ new.J=prior.J ∧ new.target_slot=prior.target_slot
+      ∧ new.policy_ref = current_RP(prior.J, prior.target_slot, prestate)
+  else:                                                 False        # default
+```
+Total: every `(prior.kind × new)` → exactly one Boolean. `SELF(A)` cannot reverse
+`SELF(B)` (distinct principals); same-shape quorums in different `J` do not compare
+(J-scoped); cross-actor emergency rotation is reversed only by `current_RP(J, slot)`,
+never `A`'s or the filer's personal authority. `same_policy_lineage(a,b,…)` := `a=b` or
+`a` is a selected-lineage succession-descendant of `b`; `current_JP/RP` = the derived
+(D.2b) policy at `prestate`.
+
+### D.5 Checkpoint certificate — finite, consumer-independent, WRT-001 identity
+
+```
+P    := hash( { J, sequence, frontier, effective_set_root, key_state_root,
+                policy_state_root, manifest_root } )       # state blob; NO signatures
+AW_i := hash( actor_i, key_i, policy_context, sig_i-over-P )   # immutable: hash covers sig
+auth_root := setcommit({ AW_i : the chosen set satisfies current_JP(J, cut(frontier)) })
+CID  := hash( P, auth_root )                                    # THE checkpoint identity
+```
+`verify(CID)`: resolve `P`; rebuild `cut(P.frontier)`; derive `current_JP(J)` (D.2b);
+resolve each `AW_i`; check `sig_i-over-P` by a key **bound** to `actor_i`; check the set
+satisfies `current_JP`. **Immutable** — `CID` covers `P` and the exact `AW` signature
+bytes, so a late envelope signature is a *different* `AW` outside `auth_root`.
+**Consumer-independent** — no wave citation or successor is needed to freeze it (kills the
+tail-dependency and the citation↔checkpoint cycle). **No self-hash cycle** — the `AW`
+sign `P`, not `CID`. **WRT-001 identity**: `CID` is the WarrantID-shaped id WRT-001 §6
+binds (supersedes the rev-6 proposal-digest and the accept `body.prior==frontier` vehicle
+— the frontier now lives inside `P`). **Succession**: certificate `n+1` includes `CIDₙ`
+in `cut(Fₙ₊₁)` and extends the cut; competing `CID`s at one `(J,sequence)` are a conflict
+resolved by a certificate descending both.
 
 ## 7. Countervectors before the next design gate
 
@@ -370,9 +498,10 @@ Permanent Python↔Go differential vectors, fail-closed and bounded:
 
 - **Design only.** No signatures, adoption, registration, code, or frozen bytes. The
   sigma reference path keeps labelling its stored-reason demo as *anticipating* R1.
-- **Ordering.** rev 6 is the model; a re-gate of §§2–6 precedes the byte-freeze
-  revision, which precedes implementation. Items 1–2 precede the WRT-001 §8 budget
-  freeze. §7-novelty/tunnel and the governed profile anchor remain deferred.
+- **Ordering.** rev 7 (§D) is the definition pass; the next step is a hermetic
+  **executable reference model** running §7 against §D, then the byte-freeze revision,
+  then implementation. Items 1–2 precede the WRT-001 §8 budget freeze. §7-novelty/tunnel
+  and the governed profile anchor remain deferred.
 - **Gate.** Adoption requires ≥3 independent-family review, all P0/P1 closed; a
   reference-implementation gate with all §7 vectors ALL PASS **and** Python↔Go
   differential parity (incl. byte-identical merge-permutation `derived`) over frozen
