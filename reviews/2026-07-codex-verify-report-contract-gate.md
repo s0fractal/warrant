@@ -1,7 +1,7 @@
 # Codex gate: `docs/verify-report-contract`
 
-Date: 2026-07-27  
-Candidate: `8febf8c148db6a2658dc5d3f4325d3725a60516d`  
+Date: 2026-07-27
+Candidate: `8febf8c148db6a2658dc5d3f4325d3725a60516d`
 Verdict: **AMEND**
 
 ## Finding
@@ -39,4 +39,3 @@ This is a test-ownership amendment, not a request to change the report format.
 - `./tests/agree_check.sh`: **ALL PASS**
 - static inspection confirms both implementations currently emit the promised
   closed shape and count every `ERR`/`WARN` finding.
-
