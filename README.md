@@ -66,6 +66,14 @@ The store is plain files, content-addressed, git-friendly. No server, no vendor,
 
 ## Machine-readable output (`--json`)
 
+> **Requires `warrant-verify` 0.5.0 or newer.** `0.4.0` (2026-07-16) predates
+> this boundary, so against that release the commands below give
+> `error: unrecognized arguments: --store-mode --json`. That gap — the README
+> documenting a surface no published artifact had — is now a release gate:
+> `tools/check_release_surface.py` runs in CI against the checkout and in the
+> publish workflow against the built wheel, so a release that cannot do what this
+> file promises fails to publish.
+
 For CI, MCP, or an agent framework, add `--json` to `verify` and get exactly one
 `warrant.verify-report@v0` object (one physical line) on stdout — no human text to
 parse. Add `--store-mode` so a path that is not an initialized store fails closed
@@ -112,9 +120,49 @@ Two guarantees a consumer may rely on (surfaced by the first external consumer):
 ## Try it on a real case
 
 Verify what an AI agent decided — the Air Canada chatbot case, as the record the
-airline never had. Fifteen minutes, offline, trusting nothing but this tool:
-**[`demos/air-canada/`](demos/air-canada/)**. The portable bundle format those
-records travel in is specified in **[`EVIDENCE-PACK.md`](EVIDENCE-PACK.md)**.
+airline never had. **No clone, no build, no account.** Download the pack, check
+it, and re-run the reason yourself:
+
+```bash
+pipx install warrant-verify
+curl -LO https://github.com/s0fractal/warrant/releases/latest/download/air-canada-pack.zip
+unzip air-canada-pack.zip
+
+warrant --store air-canada-pack/.warrants verify        # every hash, signature, link
+warrant --store air-canada-pack/.warrants why  9084cd23f205cdd6e013deb6c6e2a84e4a5f4f469fb8f77ba443dfed44716f5a
+warrant --store air-canada-pack/.warrants check b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f
+```
+
+That last line is the part nothing else does: it **re-executes the reason** on
+your machine — a content-addressed, budget-bounded Σ-GLYPH term — and prints
+`pass result=65cd957fee7e… atp_spent=17`. The same bytes give the same verdict
+for anyone, forever. You are not trusting a log; you are recomputing the argument.
+
+The walkthrough is in **[`demos/air-canada/`](demos/air-canada/)**; the packs are
+built by `tools/build_release_packs.sh`, which refuses to ship a pack containing
+anything key-shaped and verifies each zip the way a stranger will — unzipped, in
+an empty directory, with no repo on the path — before it is attached to a
+release. Packs ship from **0.5.0 onward**; the release process is in
+[`PUBLISHING.md`](PUBLISHING.md). The portable bundle format is specified in
+**[`EVIDENCE-PACK.md`](EVIDENCE-PACK.md)**.
+
+## Use it as a CI gate
+
+```yaml
+- uses: s0fractal/warrant@master     # or pin a release tag once one is cut
+  with:
+    store: ./evidence-pack           # a pack, or a .warrants store
+    version: '0.5.0'                 # pin the verifier for a reproducible gate
+```
+
+Installs the verifier, verifies the store, fails the job on any error, and writes
+a summary. Outputs `ok`, `records`, `errors`, `warnings`, and the full
+`warrant.verify-report@v0` object. See [`action.yml`](action.yml).
+
+The action does a **capability check, not a version check**: it asks the
+installed verifier whether it actually offers `verify --store-mode --json` and
+fails with that sentence if it does not, rather than letting you discover it as
+an argparse error three steps later.
 
 ## What it is not
 
