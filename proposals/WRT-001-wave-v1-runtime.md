@@ -35,8 +35,12 @@ A `wave@v1` reason is `{kind: "check", check: <hex64>, runtime:
 ```json
 { "check": "sigma-glyph.wave@v1", "entry": "<hex64 precedent-entry@v1>",
   "query_assertion": "<hex64 wave-assertion>", "threshold": <int16>,
-  "ruleset": "<hex64 governed Σ anchor-set>" }
+  "ruleset": "<hex64 governed Σ anchor-set>", "budget": <uint32> }
 ```
+
+`budget` is the committed re-execution cost ceiling for THIS citation (§8),
+analogous to `ski@v1`'s `atp` — it travels with the reason (content-addressed,
+inside the WarrantID) so every verifier meters the same ceiling.
 
 ### 2. Ruleset binds the executed semantics
 
@@ -160,6 +164,59 @@ Until both exist with vectors, a wave citation is **not** settlement-novelty-
 integrated and MUST NOT close or re-open any settlement it touches. Consuming
 documents MUST NOT claim §7 registration/closure is specified.
 
+### 8. Deterministic re-execution budget
+
+`ski@v1` is safe to re-run for a stranger because ATP bounds its work AND memory.
+`wave@v1` does no graph reduction; its work is **object resolution + set scans**
+(deriving the snapshot, cardinality, gathering `select()` candidates). Left
+unbounded, a crafted store/citation makes re-verification a DoS. So `wave@v1`
+carries its own deterministic cost meter — **not ATP; the natural units of THIS
+runtime.**
+
+**Committed ceiling.** `check.budget` (uint32) is the cost ceiling for evaluating
+this citation, content-addressed inside the reason (like `ski@v1`'s `atp`).
+
+**Cost function (pinned by the runtime version; integer-only, so every
+implementation and re-run agree exactly).** The verifier accrues a single monotone
+integer `cost`:
+
+- **`+ (1 + n)`** for each blob resolved through the CAS accessor, where `n` is the
+  number of canonical bytes read (the `1` charges the resolution + digest; `n`
+  charges materialization). Blobs: check, entry, view, C0, projection-policy,
+  vocabulary, ruleset anchor-set, selection-policy, cited assertion, query
+  assertion, and every candidate's subject blob.
+- **`+ 1`** per **active record examined** (snapshot derivation, cardinality scan,
+  candidate gathering).
+- **`+ 1`** per **assertion candidate** handed to Book III `select()`.
+- **`+ 1`** per **closed-schema validation** (each `v_*` / `validate_assertion`).
+
+**Effective ceiling & exhaustion.** The ceiling is
+`min(check.budget, WARRANT_WAVE_MAX_COST)`, where the latter is a local operator
+cap (env-configurable, pinned default so impls agree by default — mirrors
+`SKI_REEXEC_MAX_ATP`). If `check.budget > WARRANT_WAVE_MAX_COST` the reason is
+`unverified` ("budget exceeds re-execution cap"), `cost` unspent. If accrued
+`cost` would exceed the ceiling at any step, evaluation stops and the reason is
+`unverified` ("budget exhausted") — never `pass`/`fail`. `unverified` is ERR for a
+settlement-active citation (§5), exactly as an unexecutable `ski@v1` reason.
+
+**Bounded read (anti-meter DoS — Book I ADR-001 discipline).** Before a blob read,
+if `remaining = ceiling − cost < 1` → exhausted. Read **at most `remaining + 1`**
+bytes; a blob larger than that → exhausted *without materializing it*, so sizing an
+attack payload can never exhaust memory before exhaustion is reported. A read
+truncated by the cap cannot pass digest authentication, so an over-budget blob is
+exhausted, not authenticated.
+
+**Determinism / parity.** `cost` is a pure integer function of the
+content-addressed inputs and the fixed traversal order. The cross-implementation
+parity gate (deferred item 7) MUST compare the exact `cost` and the
+verdict/exhausted boundary, not just the verdict.
+
+**Required vectors** (before adoption): *exact-limit* (`check.budget == true cost`
+→ verdict emitted); *one-under* (`check.budget = cost − 1` → `unverified` budget
+exhausted); *over-cap* (`check.budget > WARRANT_WAVE_MAX_COST` → `unverified`);
+*determinism* (re-run yields identical `cost`); and (deferred) Go/Rust agree on
+`cost` byte-for-byte.
+
 ## Deferred (named, not faked) — REORDERED after the rev-8 gate
 
 The rev-8/rev-9 gates showed the budget cannot come next: it would meter an
@@ -270,11 +327,12 @@ Ordered close-out before adoption:
 3. **Exact §7 fingerprint (recomputed, not claimed) + recursive tunnel closure**
    (§7), with novelty and foreclosure vectors.
 4. **Externally governed profile anchor** (§2) pinned in the ruleset.
-5. **Deterministic re-execution budget** — a simple cost model, **not** ATP
-   verbatim; natural units: **canonical bytes read, WarrantIDs examined
-   (checkpoint/cardinality), assertion candidates passed to `select`, a fixed cost
-   per schema/digest check** — with `unverified` on exhaustion and exact-limit /
-   one-over-limit vectors. Meaningful only once 1–2 fix which computation is metered.
+5. **Deterministic re-execution budget — SPECIFIED in §8** (cost model = `1 + bytes`
+   per blob read, `+1` per record examined / candidate / schema check; committed
+   `check.budget`; local `WARRANT_WAVE_MAX_COST` cap; bounded reads; `unverified` on
+   exhaustion). Remaining for adoption: the reference prototype + the exact-limit /
+   one-under / over-cap / determinism vectors, and (item 7) cross-impl `cost` parity.
+   The metered set is stable only once item-1/2 fix which set is scanned.
 6. **Direct-R0 abstention vectors** (pin-only / structurally-derived terms).
 7. **Cross-implementation parity** (Go/Rust) over frozen fixture bytes — the final
    structural gate.
