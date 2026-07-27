@@ -185,6 +185,21 @@ def loads_ijson(raw):
                    parse_constant=_reject_constant))
 
 
+def _canon_eq(doc, raw):
+    """``canon(doc) == raw``, but a doc carrying a lone surrogate (which canon
+    cannot UTF-8 encode) counts as NON-canonical rather than raising. The CAS
+    blob round-trip paths below (policy blob, canonical JSON blob, ski check
+    blob) use PLAIN ``json.loads`` — which keeps lone surrogates, unlike
+    ``loads_ijson`` which rejects them — so they must treat an un-encodable doc
+    as simply not matching its raw bytes. This matches Go, whose decoder
+    substitutes U+FFFD and then fails the identical canon comparison: both reach
+    a bounded "not canonical" outcome instead of a Python-only crash."""
+    try:
+        return canon(doc) == raw
+    except (UnicodeEncodeError, ValueError):
+        return False
+
+
 def warrant_id(body):
     return hashlib.sha256(canon(body)).hexdigest()
 
@@ -338,7 +353,7 @@ def run_ski_check(store, check_hex, sg=None):
         doc = json.loads(raw)                # was leaking JSONDecodeError past the
     except ValueError:                       # caller's `except RuntimeError` (crash)
         raise RuntimeError("malformed check blob (not JSON)")
-    if canon(doc) != raw:
+    if not _canon_eq(doc, raw):
         raise RuntimeError("malformed check blob (not JCS-canonical)")
     err = validate_ski_blob(doc)
     if err:
@@ -540,7 +555,7 @@ def _read_json_blob_if_canonical(store, h):
         doc = json.loads(raw)
     except Exception:
         return None
-    return doc if canon(doc) == raw else None
+    return doc if _canon_eq(doc, raw) else None
 
 
 def fingerprint(reason, body, store):
@@ -683,7 +698,7 @@ def _parse_policy_blob(store, h):
         return None, False
     if not isinstance(doc, dict) or doc.get("warrant_policy") != "0.3":
         return None, False
-    if canon(doc) != raw:
+    if not _canon_eq(doc, raw):
         return None, True
     if set(doc) != {"warrant_policy", "threshold"}:
         return None, True

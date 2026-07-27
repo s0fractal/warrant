@@ -571,6 +571,23 @@ def case_verifier_hardening_k3(tmp):
           "k3: lone-surrogate trust key fail-closed in BOTH", py.returncode, go.returncode)
     ok &= good
 
+    # a lone surrogate in a POLICY blob (Kimi K3 re-gate finding): the policy /
+    # canonical-JSON / ski-check blob paths use PLAIN json.loads (not loads_ijson),
+    # then call canon() -- which raises UnicodeEncodeError on a lone surrogate.
+    # Python used to CRASH here (canon outside the try) while Go substitutes U+FFFD
+    # and reports a bounded "invalid threshold policy". Now Python treats an
+    # un-encodable doc as non-canonical, matching Go byte-for-byte.
+    s = tmp + "_polsurr"; W.Store(s).init()
+    k = os.path.join(s, "k"); write_key(k, 1)
+    pol = put_blob(s, b'{"threshold":{"actors":["\\ud800evil"],"min_sigs":1},'
+                      b'"warrant_policy":"0.3"}')
+    subj = put_blob(s, b"s")
+    add_record(s, body("accept", subj, [pol], "a@t", ts=1), [("a@t", k)])
+    tf = trust_file(s, actors={"a@t": [pubkey(k)]})
+    py, go = verify_both(s, tf)
+    ok &= assert_verify("k3: lone-surrogate policy blob bounded + full parity (no crash)",
+                        py, go)
+
     # prior cycle (A->B->A) with a rotation-shaped A: Go used to stack-overflow.
     s = tmp + "_cycle"; W.Store(s).init()
     key = os.path.join(s, "k"); write_key(key, 3)
