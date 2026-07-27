@@ -978,19 +978,23 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
 
     def out(level, wid, msg):
         nonlocal errs, warns
-        # Fail-closed reporter boundary (Codex countervector gate P1-2): out() is
-        # handed to runtime handlers. A malformed reporter call MUST NOT make text
-        # and JSON disagree, leak a non-ERR/WARN level or a non-string value into
-        # the machine report, or crash JSON serialization. Validate BEFORE any
-        # count/finding mutation and RAISE; the dispatcher's try/except turns it
-        # into exactly one stable fail-closed ERR, identically in quiet (JSON) and
-        # loud (text) modes. Core callers always pass valid args, so this only
-        # bites a buggy governed extension.
-        if (level not in ("ERR", "WARN")
-                or not isinstance(wid, str) or not isinstance(msg, str)):
-            raise ValueError(
-                f"invalid reporter call (level={level!r}, "
-                f"subject={type(wid).__name__}, message={type(msg).__name__})")
+        # Fail-closed reporter boundary (Codex countervector gate P1-2 / re-gate):
+        # out() is handed to runtime handlers. A malformed reporter call MUST NOT
+        # make text and JSON disagree, leak a non-ERR/WARN level or a non-string
+        # value into the machine report, or crash JSON serialization. Require the
+        # EXACT built-in str (not isinstance — a str subclass can carry a hostile
+        # __getitem__/__format__ that executes only during loud rendering, AFTER a
+        # count mutation, making the renderer change the verdict). Validate BEFORE
+        # any count/finding mutation and BEFORE touching the values, and raise a
+        # FIXED message (never format an attacker-controlled value while rejecting
+        # it). The dispatcher's try/except turns this into exactly one stable
+        # fail-closed ERR, identically in quiet (JSON) and loud (text) modes. Core
+        # callers always pass exact str, so this only bites a buggy governed
+        # extension.
+        if (type(level) is not str or level not in ("ERR", "WARN")
+                or type(wid) is not str or type(msg) is not str):
+            raise ValueError("invalid reporter call: level must be exactly 'ERR' "
+                             "or 'WARN' and subject/message must be exact str")
         if level == "ERR":
             errs += 1
         elif level == "WARN":

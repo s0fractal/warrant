@@ -240,35 +240,60 @@ def main():
     check("[quiet-invariance] report_out counts match return",
           (rep["errors"], rep["warnings"]) == (e1, w1))
 
-    # 10. no-store preflight (Codex gate P1-1): a non-store must NEVER be ok:true,
-    #     and --json must still return one report in Python API + both CLIs.
-    import shutil
-    nostore = {}
-    nostore["missing-path"] = os.path.join(tempfile.mkdtemp(), "does-not-exist")
-    nostore["non-store-dir"] = tempfile.mkdtemp()
+    # 10a. Python is store-only (Store.require checks records/): verify_report + the
+    #      --json CLI fail closed on EVERY non-store shape, and Python text/JSON agree
+    #      on exit. (Codex gate P1-1.)
+    py_nonstore = {
+        "missing-path": os.path.join(tempfile.mkdtemp(), "does-not-exist"),
+        "non-store-dir": tempfile.mkdtemp(),
+    }
     rf = tempfile.mkdtemp(); open(os.path.join(rf, "records"), "w").write("x")
-    nostore["records-as-file"] = rf
+    py_nonstore["records-as-file"] = rf
     bw = tempfile.mkdtemp(); os.mkdir(os.path.join(bw, "blobs"))
-    nostore["blobs-no-records"] = bw
-    for label, path in nostore.items():
+    py_nonstore["blobs-no-records"] = bw
+    for label, path in py_nonstore.items():
         api = W.verify_report(W.Store(path))
         pj = sh(PY + ["--store", path, "verify", "--json"])
-        gj = sh([GO, "verify", "--json", path])
-        pjo, gjo = one_json_object(pj.stdout), one_json_object(gj.stdout)
+        pt = sh(PY + ["--store", path, "verify"])
+        pjo = one_json_object(pj.stdout)
         good = (api["ok"] is False and api["errors"] == 1
                 and any(f["subject"] == "store" for f in api["findings"])
-                and pjo is not None and gjo is not None
-                and pjo["ok"] is False and gjo["ok"] is False
-                and pj.returncode == 1 and gj.returncode == 1
-                and pj.stderr == "" and gj.stderr == "")
-        check(f"[no-store:{label}] fail-closed ok:false, one report, clean stderr", good,
-              f"api={api.get('ok')} py={pjo and pjo.get('ok')}/{pj.returncode} "
-              f"go={gjo and gjo.get('ok')}/{gj.returncode} pyerr={pj.stderr[:60]!r}")
-    # an initialized EMPTY store is a successful verification (ok:true), not no-store
+                and pjo is not None and pjo["ok"] is False
+                and pj.returncode == 1 and pt.returncode == pj.returncode
+                and pj.stderr == "")
+        check(f"[py-nonstore:{label}] fail-closed ok:false, one report, text/json same exit",
+              good, f"api={api.get('ok')} json={pjo and pjo.get('ok')}/{pj.returncode} "
+              f"text-rc={pt.returncode} stderr={pj.stderr[:60]!r}")
+
+    # 10b. Renderer-independence for Go (Codex re-gate P1): the report sink MUST NOT
+    #      reclassify the input. Go text and Go --json select the SAME verifier —
+    #      flat mode is preserved in both. Compare exit AND (when text emits a
+    #      summary) counts on the real flat examples/, an empty dir, and a missing
+    #      path; the missing path is the only fail-closed case (rc 1, one report).
+    empty_dir = tempfile.mkdtemp()
+    for label, path, expect_report in [("examples", "examples", False),
+                                       ("empty-flat-dir", empty_dir, False),
+                                       ("missing-path", py_nonstore["missing-path"], True)]:
+        gt = sh([GO, "verify", path])
+        gj = sh([GO, "verify", "--json", path])
+        gjo = one_json_object(gj.stdout)
+        gt_counts = counts_from_text(gt.stdout)
+        good = (gt.returncode == gj.returncode and gjo is not None and gj.stderr == ""
+                and (gt_counts is None
+                     or gt_counts == (gjo["records"], gjo["errors"], gjo["warnings"])))
+        if expect_report:
+            good = good and gjo["ok"] is False and gt.returncode == 1
+        check(f"[go-renderer-indep:{label}] Go text and --json select the same verifier",
+              good, f"text rc{gt.returncode} {gt_counts} | json rc{gj.returncode} "
+              f"{gjo and (gjo['records'],gjo['errors'],gjo['warnings'])} stderr={gj.stderr[:60]!r}")
+
+    # 10c. an initialized EMPTY store is a successful verification (ok:true), both.
     es = tempfile.mkdtemp(); W.Store(es).init()
     api = W.verify_report(W.Store(es))
-    check("[no-store:empty-store] initialized empty store is ok:true records:0",
-          api["ok"] is True and api["records"] == 0 and api["errors"] == 0)
+    ge = sh([GO, "verify", "--json", es]); geo = one_json_object(ge.stdout)
+    check("[empty-store] initialized empty store is ok:true records:0 (Py API + Go)",
+          api["ok"] is True and api["records"] == 0 and api["errors"] == 0
+          and geo is not None and geo["ok"] is True and geo["records"] == 0)
 
     # 11. generic runtime reporter (Codex gate P1-2): a registered handler making a
     #     malformed reporter call must be renderer-INDEPENDENT (text==quiet==report),
@@ -286,11 +311,25 @@ def main():
                 "actor": {"id": "a@t"}, "prior": [], "ts": 1}
         st.put_record({"body": body, "sigs": [W.sign_envelope(body, "a@t", kp)]})
         return dd
+    # hostile str SUBCLASSES (Codex re-gate P1): isinstance(x, str) would admit
+    # these; their __getitem__/__format__ execute code only during loud rendering,
+    # AFTER a count mutation — making text and JSON disagree. The exact-type check
+    # must reject them BEFORE any mutation/rendering.
+    class SliceBomb(str):
+        def __getitem__(self, k):
+            raise RuntimeError("slice bomb")
+
+    class FormatBomb(str):
+        def __format__(self, spec):
+            raise RuntimeError("format bomb")
+
     reporters = {
         "invalid-level": lambda v, m, o, w, r: o("INFO", w, "x"),
         "nonstr-subject": lambda v, m, o, w, r: o("WARN", 7, "x"),
         "dict-message": lambda v, m, o, w, r: o("WARN", w, {"x": "y"}),
         "bytes-message": lambda v, m, o, w, r: o("WARN", w, b"bytes"),
+        "slicebomb-subject": lambda v, m, o, w, r: o("WARN", SliceBomb(w), "hw"),
+        "formatbomb-message": lambda v, m, o, w, r: o("WARN", w, FormatBomb("hw")),
         "valid-warn": lambda v, m, o, w, r: o("WARN", w, "handler ran"),
     }
     for label, handler in reporters.items():
@@ -303,9 +342,12 @@ def main():
             json.dumps(r2); ser = True
         except TypeError:
             ser = False
-        good = ((te, tw) == (qe, qw) == (r2["errors"], r2["warnings"]) and ser
+        # a malformed reporter call fails closed (>=1 error) in EVERY renderer;
+        # a valid WARN keeps errors==0. Either way loud == quiet == report.
+        errs_ok = (r2["errors"] == 0) if label == "valid-warn" else (r2["errors"] >= 1)
+        good = ((te, tw) == (qe, qw) == (r2["errors"], r2["warnings"]) and ser and errs_ok
                 and all(f["level"] in ("ERR", "WARN") for f in r2["findings"]))
-        check(f"[reporter:{label}] renderer-independent, serializable, schema-valid",
+        check(f"[reporter:{label}] renderer-independent, serializable, schema-valid, fail-closed",
               good, f"text={(te,tw)} quiet={(qe,qw)} report={(r2['errors'],r2['warnings'])} ser={ser}")
     W._RUNTIME_HANDLERS.pop(("0.2", TEST_RT), None)
 

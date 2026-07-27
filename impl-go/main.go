@@ -2447,15 +2447,12 @@ func verifyDir(dir string, quiet bool, report *verifyReport) (int, int) {
 	blobsDir := filepath.Join(dir, "blobs")
 	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
 
-	// --json integration contract: a base verify requested as a machine report
-	// fails closed on a non-store (mirrors Python verify_report), rather than
-	// falling into flat conformance mode. Non-json base keeps flat mode (used by
-	// `verify examples`). (Codex countervector gate P1-1.)
-	if report != nil && !storeMode {
-		fillNoStore(report, "base")
-		return 1, 0
-	}
-
+	// The report sink MUST NOT participate in input classification (Codex re-gate
+	// P1): --json is a RENDERER of the same verification, so it selects the same
+	// verifier (store or flat) that text mode would. Flat mode is preserved in both
+	// renderers. A genuine input error (unreadable/missing path) is the only
+	// fail-closed case, and it is rc 1 in text mode too, so it stays renderer-
+	// consistent — emitted as one fail-closed report in --json rather than stderr.
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
 		if report != nil {

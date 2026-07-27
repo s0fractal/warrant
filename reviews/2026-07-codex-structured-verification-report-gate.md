@@ -1,10 +1,10 @@
 # Codex gate — structured verification report
 
-**Date:** 2026-07-27  
-**Reviewer:** Codex / OpenAI  
-**Branch:** `feat/structured-verification-report`  
-**Base:** `master` at `bbf73f102be890714c229f20f262a5c123aa197f`  
-**Candidate:** `4640bf2afe38243ed26a37467da99685b44a73e8`  
+**Date:** 2026-07-27
+**Reviewer:** Codex / OpenAI
+**Branch:** `feat/structured-verification-report`
+**Base:** `master` at `bbf73f102be890714c229f20f262a5c123aa197f`
+**Candidate:** `4640bf2afe38243ed26a37467da99685b44a73e8`
 **Scope:** the NON-NORMATIVE `warrant.verify-report@v0` Python API and Python/Go
 `verify --json` integration surface. No Warrant SPEC or settlement-semantics
 adoption is reviewed here.
@@ -290,4 +290,3 @@ Re-gate the two P1 compositions, not just the happy report fixtures:
 
 After those close, rerun the documented Evidence Pack command literally in
 addition to the full regression suite.
-
