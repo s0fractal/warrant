@@ -49,6 +49,16 @@ sit inside content-addressed bytes (the reason inside the WarrantID, the check
 inside its own digest), every verifier meters the same ceiling and the check
 cannot silently under-declare a cheaper bound than the reason it authenticates.
 
+*This adds a field the core 0.2 reason schema does not permit* (`_validate_reason`
+admits only `{kind, check, runtime, verdict, transcript}`). That is exactly the
+kind of validation change the new body version licenses (see "Why a new body
+version"): a `wave@v1` reason is the core check reason **plus `budget`**, and a
+wave-version validator MUST admit it while a clean 0.2 validator still rejects the
+whole record as an unknown version. The reference prototype is a *wrapper* over
+the core 0.2 validator, so it keeps the reason core-clean and threads the ceiling
+out-of-band (modelling "in hand before blob work"); a real wave-version validator
+carries `budget` in the reason bytes.
+
 ### 2. Ruleset binds the executed semantics
 
 The runtime implements **exactly one governed anchor-set hash**. `check.ruleset`
