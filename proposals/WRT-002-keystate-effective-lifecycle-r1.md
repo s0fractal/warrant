@@ -12,8 +12,13 @@ transition equations / pseudocode — the **normative core**; §§0–6 are cont
 splitting effectiveness into **three ordered layers with no negation cycle**
 (`valid_cap` → `selected_lineage`/`admits` → `effective`), a **finite checkpoint
 certificate identity** (no consumer/successor dependency, WRT-001-compatible), and a
-**closed `may_reverse` table**. The immediate next step is **B: a hermetic executable
-reference model** that runs §7's countervectors against §D — before any wire-byte freeze.
+**closed `may_reverse` table**. **B (done): a hermetic executable reference model** —
+`proposals/wrt-002-model/` — runs §7's countervectors against §D (`WRT-002-MODEL: ALL
+PASS`, 29 checks), proving termination/uniqueness of the revocation & root equations,
+resolver-selected-lineage gating, a total `may_reverse`, and a finite consumer-independent
+checkpoint `CID`. Building it found four real defects prose had not surfaced (now fixed in
+§D). The model is design-only (no crypto, no wire bytes); the byte-freeze revision comes
+after this model survives its own re-gate.
 
 **rev history.** rev 1–4 built the cut, self-exclusion, immutable pre-state, frozen
 signature predicates, ACI provenance merge, policy-state, causal binding, total manifest,
