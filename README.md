@@ -96,6 +96,19 @@ mode for loose example files. The shape is a non-normative integration
 convenience: it is **not** a Warrant, is unsigned, and carries no settlement
 authority.
 
+Two guarantees a consumer may rely on (surfaced by the first external consumer):
+
+- **Counts bind the findings.** `errors` equals the number of `ERR` findings and
+  `warnings` equals the number of `WARN` findings — always, in both
+  implementations. `findings` carries every `ERR`/`WARN` event (never `INFO`), so a
+  consumer may cross-check `errors`/`warnings` against the finding levels and reject
+  a report where they disagree.
+- **`warrant.verify-report@v0` is a CLOSED schema.** Exactly the seven top-level
+  keys above, and exactly `{level, subject, message}` per finding — no more. Any
+  future additive field ships under a **new tag** (`@v1`), never inside `@v0`, so a
+  strict consumer that rejects an unknown top-level or finding key stays correct
+  across Warrant versions. Gate on the exact `report` tag you understand.
+
 ## Try it on a real case
 
 Verify what an AI agent decided — the Air Canada chatbot case, as the record the
