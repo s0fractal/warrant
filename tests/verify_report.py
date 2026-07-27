@@ -295,6 +295,30 @@ def main():
           api["ok"] is True and api["records"] == 0 and api["errors"] == 0
           and geo is not None and geo["ok"] is True and geo["records"] == 0)
 
+    # 10d. explicit --store-mode disambiguates the empty-shape (Codex re-gate 2 P1):
+    #      the four non-store shapes fail closed IDENTICALLY in Python and Go and in
+    #      BOTH renderers, and an empty flat dir is no longer a silent ok:true. The
+    #      flag (not the renderer) selects the verifier, so text == JSON.
+    for label, path in py_nonstore.items():
+        pj = sh(PY + ["--store", path, "verify", "--json", "--store-mode"])
+        pt = sh(PY + ["--store", path, "verify", "--store-mode"])
+        gj = sh([GO, "verify", "--store-mode", "--json", path])
+        gt = sh([GO, "verify", "--store-mode", path])
+        pjo, gjo = one_json_object(pj.stdout), one_json_object(gj.stdout)
+        good = (pjo is not None and gjo is not None
+                and pjo["ok"] is False and gjo["ok"] is False        # Py == Go
+                and pj.returncode == pt.returncode == 1              # Py text == json exit
+                and gj.returncode == gt.returncode == 1              # Go text == json exit
+                and gj.stderr == "" and pj.stderr == ""
+                and any(f["subject"] == "store" for f in gjo["findings"]))
+        check(f"[store-mode:{label}] Py/Go parity, renderer-independent, fail-closed", good,
+              f"py={pjo and pjo.get('ok')}/{pj.returncode} go={gjo and gjo.get('ok')}/{gj.returncode} "
+              f"goText={gt.returncode}")
+    # a real store under --store-mode is unchanged (ok:true), both renderers/impls
+    esj = sh([GO, "verify", "--store-mode", "--json", es]); esjo = one_json_object(esj.stdout)
+    check("[store-mode:empty-store] a real (empty) store still verifies ok:true",
+          esjo is not None and esjo["ok"] is True and esjo["records"] == 0)
+
     # 11. generic runtime reporter (Codex gate P1-2): a registered handler making a
     #     malformed reporter call must be renderer-INDEPENDENT (text==quiet==report),
     #     bounded to one dispatcher ERR, schema-valid (levels subset ERR|WARN), and
@@ -323,6 +347,31 @@ def main():
         def __format__(self, spec):
             raise RuntimeError("format bomb")
 
+    # handlers that SWALLOW the boundary rejection (Codex re-gate 2 P1): the fault
+    # must be latched in verifier-owned state, so a broad try/except in the handler
+    # cannot restore ok:true. The verifier-owned reporter no longer raises, so there
+    # is nothing to catch — but even a handler that expects/handles an exception
+    # must still yield exactly one fail-closed ERR.
+    def swallow_invalid(v, m, o, w, r):
+        try:
+            o("INFO", w, "invalid")
+        except Exception:
+            pass
+
+    def swallow_then_valid(v, m, o, w, r):
+        try:
+            o("WARN", SliceBomb(w), "x")
+        except Exception:
+            pass
+        o("WARN", w, "legit")               # a valid WARN after a swallowed violation
+
+    def multi_swallow(v, m, o, w, r):
+        for _ in range(5):
+            try:
+                o("INFO", w, "bad")
+            except Exception:
+                pass
+
     reporters = {
         "invalid-level": lambda v, m, o, w, r: o("INFO", w, "x"),
         "nonstr-subject": lambda v, m, o, w, r: o("WARN", 7, "x"),
@@ -330,6 +379,9 @@ def main():
         "bytes-message": lambda v, m, o, w, r: o("WARN", w, b"bytes"),
         "slicebomb-subject": lambda v, m, o, w, r: o("WARN", SliceBomb(w), "hw"),
         "formatbomb-message": lambda v, m, o, w, r: o("WARN", w, FormatBomb("hw")),
+        "swallow-invalid": swallow_invalid,
+        "swallow-then-valid": swallow_then_valid,
+        "multi-swallow": multi_swallow,
         "valid-warn": lambda v, m, o, w, r: o("WARN", w, "handler ran"),
     }
     for label, handler in reporters.items():

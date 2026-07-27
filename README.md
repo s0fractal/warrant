@@ -68,12 +68,15 @@ The store is plain files, content-addressed, git-friendly. No server, no vendor,
 
 For CI, MCP, or an agent framework, add `--json` to `verify` and get exactly one
 `warrant.verify-report@v0` object (one physical line) on stdout — no human text to
-parse. The Python CLI takes the store via the global `--store`; the Go CLI takes it
-as a positional argument. An Evidence Pack's store is its `.warrants/` directory:
+parse. Add `--store-mode` so a path that is not an initialized store fails closed
+(`ok:false`) instead of being silently treated as an empty verification — this is
+what makes `.ok` a safe store-verification predicate. The Python CLI takes the
+store via the global `--store`; the Go CLI takes it as a positional argument. An
+Evidence Pack's store is its `.warrants/` directory:
 
 ```sh
-warrant --store ./evidence-pack/.warrants verify --json | jq -e '.ok'   # exit 0 iff errors == 0
-warrant-go verify --json ./evidence-pack/.warrants | jq -e '.ok'        # Go: positional store
+warrant --store ./evidence-pack/.warrants verify --store-mode --json | jq -e '.ok'
+warrant-go verify --store-mode --json ./evidence-pack/.warrants | jq -e '.ok'   # Go: positional store
 ```
 
 ```json
@@ -82,14 +85,16 @@ warrant-go verify --json ./evidence-pack/.warrants | jq -e '.ok'        # Go: po
  "findings":[{"level":"WARN","subject":"<WarrantID>","message":"..."}]}
 ```
 
-`ok == (errors == 0)`; the counts and exit status are identical to text mode, and a
-missing/uninitialized store fails closed (`ok:false`, one `ERR` with subject
-`store`), never a silent `ok:true`. Python and Go agree on the **normative** fields
-— `report`, `grade`, `ok`, `records`, `errors`, `warnings`, and the set of
-`(level, subject)` findings — so branch on those. A finding's `message` is
-human-oriented prose and **may differ between the two implementations** (do not
-branch on it). The shape is a non-normative integration convenience: it is **not**
-a Warrant, is unsigned, and carries no settlement authority.
+`ok == (errors == 0)`; the counts and exit status are identical to text mode. Under
+`--store-mode` a missing/uninitialized store fails closed (`ok:false`, one `ERR`
+with subject `store`) in both implementations, so Python and Go agree on the
+**normative** fields — `report`, `grade`, `ok`, `records`, `errors`, `warnings`,
+and the set of `(level, subject)` findings; branch on those. A finding's `message`
+is human-oriented prose and **may differ between the two implementations** (do not
+branch on it). Without `--store-mode`, the Go CLI keeps a legacy flat-directory
+mode for loose example files. The shape is a non-normative integration
+convenience: it is **not** a Warrant, is unsigned, and carries no settlement
+authority.
 
 ## Try it on a real case
 

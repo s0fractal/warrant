@@ -83,6 +83,7 @@ func main() {
 		dir := "examples"
 		settlement := false
 		jsonMode := false
+		storeStrict := false
 		trustConfig := ""
 		var genesis []string
 		args := os.Args[2:]
@@ -92,6 +93,8 @@ func main() {
 				settlement = true
 			case "--json", "-json":
 				jsonMode = true
+			case "--store-mode", "-store-mode":
+				storeStrict = true
 			case "--trust-config", "-trust-config":
 				if i+1 >= len(args) {
 					fmt.Fprintln(os.Stderr, "verify: --trust-config requires a file")
@@ -116,9 +119,10 @@ func main() {
 		}
 		var errs int
 		if settlement {
+			// settlement grade already requires records/, so store-strict is implied.
 			errs, _ = verifyDirSettlement(dir, trustConfig, genesis, jsonMode, report)
 		} else {
-			errs, _ = verifyDir(dir, jsonMode, report)
+			errs, _ = verifyDir(dir, jsonMode, report, storeStrict)
 		}
 		if jsonMode {
 			// Default encoding escapes U+2028/U+2029 (and <,>,&), so the report is
@@ -190,7 +194,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [--settlement] [--trust-config file] [--genesis wid] [--json] [dir] | settle <store> <settling-wid> <candidate-body.json> | selftest [examples_dir]")
+	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [--settlement] [--trust-config file] [--genesis wid] [--json] [--store-mode] [dir] | settle <store> <settling-wid> <candidate-body.json> | selftest [examples_dir]")
 }
 
 func readJSON(path string) (map[string]any, error) {
@@ -2442,10 +2446,25 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 	return finish()
 }
 
-func verifyDir(dir string, quiet bool, report *verifyReport) (int, int) {
+func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (int, int) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
 	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
+
+	// --store-mode (explicit flag, NOT the renderer) requires an initialized store,
+	// so a machine/store caller fails closed on a non-store instead of silently
+	// flat-verifying an empty directory (Codex re-gate 2 P1: an empty flat dir must
+	// not be indistinguishable from a verified empty store). The selection is the
+	// SAME for text and --json, so it does not reintroduce renderer-dependent
+	// classification. Without the flag, legacy positional auto/flat verify stands.
+	if storeStrict && !storeMode {
+		if report != nil {
+			fillNoStore(report, "base")
+			return 1, 0
+		}
+		fmt.Fprintf(os.Stderr, "no store at %s (run: warrant init)\n", dir)
+		return 1, 0
+	}
 
 	// The report sink MUST NOT participate in input classification (Codex re-gate
 	// P1): --json is a RENDERER of the same verification, so it selects the same
@@ -2770,7 +2789,7 @@ func selftest(dir string) bool {
 	chk("prose-only reject -> schema-valid", len(errs) == 0, strings.Join(errs, "; "))
 	chk("prose-only reject -> unverifiable", isUnverifiable(proseOnly), "")
 
-	errsN, warnsN := verifyDir(dir, true, nil)
+	errsN, warnsN := verifyDir(dir, true, nil, false)
 	chk("examples verify with unresolved blobs as warnings", errsN == 0 && warnsN > 0, fmt.Sprintf("errors=%d warnings=%d", errsN, warnsN))
 
 	tmp, err := os.MkdirTemp("", "warrant-go-selftest-*")
@@ -2785,7 +2804,7 @@ func selftest(dir string) bool {
 			return false
 		}
 	}
-	errsMissing, _ := verifyDir(tmp, true, nil)
+	errsMissing, _ := verifyDir(tmp, true, nil, false)
 	chk("missing prior -> error", errsMissing > 0, fmt.Sprintf("errors=%d", errsMissing))
 
 	passed := 0

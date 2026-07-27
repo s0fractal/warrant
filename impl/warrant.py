@@ -977,24 +977,12 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
     findings = []
 
     def out(level, wid, msg):
+        # TRUSTED internal reporter: core verification code only ever calls this
+        # with exact-str ("ERR"/"WARN", a WarrantID/"settlement"/"store", an
+        # f-string). The UNTRUSTED runtime-handler boundary does NOT get this
+        # closure — it gets a validating, latching wrapper (see the dispatch loop),
+        # so a hostile handler cannot poison counts/findings here.
         nonlocal errs, warns
-        # Fail-closed reporter boundary (Codex countervector gate P1-2 / re-gate):
-        # out() is handed to runtime handlers. A malformed reporter call MUST NOT
-        # make text and JSON disagree, leak a non-ERR/WARN level or a non-string
-        # value into the machine report, or crash JSON serialization. Require the
-        # EXACT built-in str (not isinstance — a str subclass can carry a hostile
-        # __getitem__/__format__ that executes only during loud rendering, AFTER a
-        # count mutation, making the renderer change the verdict). Validate BEFORE
-        # any count/finding mutation and BEFORE touching the values, and raise a
-        # FIXED message (never format an attacker-controlled value while rejecting
-        # it). The dispatcher's try/except turns this into exactly one stable
-        # fail-closed ERR, identically in quiet (JSON) and loud (text) modes. Core
-        # callers always pass exact str, so this only bites a buggy governed
-        # extension.
-        if (type(level) is not str or level not in ("ERR", "WARN")
-                or type(wid) is not str or type(msg) is not str):
-            raise ValueError("invalid reporter call: level must be exactly 'ERR' "
-                             "or 'WARN' and subject/message must be exact str")
         if level == "ERR":
             errs += 1
         elif level == "WARN":
@@ -1254,10 +1242,32 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 handler = _RUNTIME_HANDLERS.get((body.get("warrant"), r.get("runtime")))
                 if handler is None:
                     continue
+                # The handler gets a VALIDATING, LATCHING reporter — never the raw
+                # `out`. An invalid reporter call (level not exactly ERR/WARN, or a
+                # subject/message that is not an EXACT built-in str — incl. a
+                # hostile str subclass) is recorded in verifier-owned per-dispatch
+                # state and NOT applied. The wrapper does NOT raise, so a handler
+                # cannot suppress the consequence with a broad try/except (Codex
+                # re-gate 2 P1). After the handler returns OR raises, exactly one
+                # fail-closed ERR is folded if it crashed OR tripped the latch —
+                # bounded and identical across quiet/loud/report renderers.
+                fault = {"bad": False}
+
+                def _reporter(level, w, msg, _fault=fault):
+                    if (type(level) is not str or level not in ("ERR", "WARN")
+                            or type(w) is not str or type(msg) is not str):
+                        _fault["bad"] = True         # latch; do not apply, do not raise
+                        return
+                    out(level, w, msg)
+
+                crashed = False
                 try:
-                    handler(_runtime_view, _runtime_mode, out, wid, r)
+                    handler(_runtime_view, _runtime_mode, _reporter, wid, r)
                 except Exception:
-                    out("ERR", wid, f"runtime {r.get('runtime')} dispatcher raised (fail-closed)")
+                    crashed = True
+                if crashed or fault["bad"]:
+                    out("ERR", wid, f"runtime {r.get('runtime')} fail-closed "
+                                    f"(invalid reporter call or handler error)")
     if not quiet:
         print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
     return _finish()
@@ -1590,6 +1600,11 @@ def main():
     vf.add_argument("--json", action="store_true",
                     help="emit exactly one warrant.verify-report@v0 JSON object "
                          "(no human text); same counts and exit status as text mode")
+    vf.add_argument("--store-mode", action="store_true",
+                    help="require an initialized store (records/); fail closed on a "
+                         "non-store. Python always verifies store-only, so this is a "
+                         "no-op here — it exists for a portable store-strict command "
+                         "line with the Go CLI (which also has a legacy flat mode)")
     stl = sub.add_parser("settle")
     stl.add_argument("settling_wid")
     stl.add_argument("candidate_body")
