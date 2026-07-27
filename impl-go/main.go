@@ -1404,10 +1404,29 @@ func sigmaConformance(path string) bool {
 		fmt.Println("FAIL vectors list missing")
 		return false
 	}
+	// Every vector kind in the suite is executed. Silently skipping a kind is
+	// how this command previously reported "ALL PASS" over 33 of 49 vectors:
+	// the `object` (serialization/NodeHash) and `deserialize` (§4.1 rejection)
+	// classes were never run, so warrant-go was billed as a third independent
+	// Book I implementation while the byte-rejection class — where independent
+	// implementations diverge most — went unchecked. An unknown kind is now a
+	// FAILURE, not a skip, mirroring tests/spec_conformance/run_reference.py.
 	total, passed := 0, 0
+	byKind := map[string]int{}
 	for _, item := range vectors {
 		v, ok := item.(map[string]any)
-		if !ok || v["kind"] != "eval" {
+		if !ok {
+			fmt.Println("FAIL vector is not an object")
+			total++
+			continue
+		}
+		kind, _ := v["kind"].(string)
+		byKind[kind]++
+		if kind != "eval" {
+			total++
+			if sigmaNonEvalVector(kind, v) {
+				passed++
+			}
 			continue
 		}
 		total++
@@ -1450,12 +1469,73 @@ func sigmaConformance(path string) bool {
 			fmt.Printf("FAIL %s result=%s spent=%d want=%s spent=%d\n", id, gotHash, spent, wantHash, wantSpent64)
 		}
 	}
+	kinds := make([]string, 0, len(byKind))
+	for k := range byKind {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	parts := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		parts = append(parts, fmt.Sprintf("%d %s", byKind[k], k))
+	}
+	coverage := strings.Join(parts, ", ")
 	if passed == total {
-		fmt.Printf("\nSIGMA CONFORMANCE: ALL PASS (%d/%d eval)\n", passed, total)
+		fmt.Printf("\nSIGMA CONFORMANCE: ALL PASS (%d/%d — %s)\n", passed, total, coverage)
 		return true
 	}
-	fmt.Printf("\nSIGMA CONFORMANCE: FAILURES PRESENT (%d/%d eval)\n", passed, total)
+	fmt.Printf("\nSIGMA CONFORMANCE: FAILURES PRESENT (%d/%d — %s)\n", passed, total, coverage)
 	return false
+}
+
+// sigmaNonEvalVector runs the vector classes that are not term evaluation.
+// Semantics are fixed by tests/spec_conformance/run_reference.py:
+//
+//	object      — serializing the described node MUST yield these bytes, and
+//	              NodeHash(bytes) MUST equal expected.hash.
+//	deserialize — the bytes MUST parse iff expected.valid; an invalid buffer
+//	              materializes the Canonical Invalid Object rather than an error.
+//
+// An unrecognized kind fails: a suite may add a class, and an implementation
+// that quietly ignores it is claiming a conformance it has not demonstrated.
+func sigmaNonEvalVector(kind string, v map[string]any) bool {
+	id, _ := v["id"].(string)
+	expected, _ := v["expected"].(map[string]any)
+	bytesHex, _ := v["bytes"].(string)
+	raw, hexErr := hex.DecodeString(bytesHex)
+
+	switch kind {
+	case "object":
+		want, _ := expected["hash"].(string)
+		if hexErr != nil || want == "" {
+			fmt.Println("FAIL", id, "malformed object vector")
+			return false
+		}
+		got := hash32Hex(hash32(raw))
+		if got != want {
+			fmt.Printf("FAIL %s node_hash=%s want=%s\n", id, got, want)
+			return false
+		}
+		fmt.Println("OK  ", id)
+		return true
+
+	case "deserialize":
+		wantValid, ok := expected["valid"].(bool)
+		if hexErr != nil || !ok {
+			fmt.Println("FAIL", id, "malformed deserialize vector")
+			return false
+		}
+		_, gotValid := sigmaDeserialize(raw)
+		if gotValid != wantValid {
+			fmt.Printf("FAIL %s deserialize valid=%v want=%v\n", id, gotValid, wantValid)
+			return false
+		}
+		fmt.Println("OK  ", id)
+		return true
+
+	default:
+		fmt.Printf("FAIL %s unknown vector kind %q — this implementation cannot claim conformance over it\n", id, kind)
+		return false
+	}
 }
 
 type verifyRecord struct {
