@@ -1,5 +1,28 @@
 name: conformance
 on: [push, pull_request]
+
+# ONE pin of the sibling repo, for the whole workflow. Symmetric to sigma-glyph's
+# $WARRANT_PIN. A pin is what makes the conformance gate reproducible; it is not a
+# substitute for testing against the sibling's HEAD, which is what
+# tools/x1_cross_repo.sh does.
+#
+# WHAT THE PIN MEANS: a VERIFIED COMPATIBLE BASELINE — the sibling commit whose
+# consumed surfaces this repo has been checked against — not "the sibling's
+# latest". Being behind HEAD is the normal state and is not a defect.
+#
+# REFRESH ONLY when a surface this workflow consumes actually changes: Book I
+# vectors or the evaluator, the ski@v1 runtime contract, the verify-report
+# boundary, or the anchor-trust roster. Do NOT refresh because X1 reports drift;
+# X1's drift report is context for a human, never a trigger. Treating "behind
+# HEAD" as the trigger is a ping-pong generator, because merging the pin bump
+# itself moves this repo's HEAD and so obliges the sibling to bump in reply,
+# forever, over commits that changed nothing either side consumes.
+#
+# A refresh commit MUST cite the old and new sibling commits, name the consumed
+# surface that changed, and include the conformance outputs run at the new pin.
+env:
+  SIGMA_PIN: c5ab2ab218bbeaaf4d80d2e49be2cc7b48fb7f37
+
 jobs:
   test:
     # Codex v0.3 hardening audit P2-c: for a repo centered on reproducible
@@ -32,20 +55,29 @@ jobs:
         run: python3 tests/ski_policy.py
       - name: Merkle anchoring (RFC 6962 structure, inclusion proofs, store integration)
         run: python3 tests/anchor.py
-      # The sigma pin is intentionally fixed for reproducible conformance.
-      # Refresh ONLY when Book I vectors intentionally change; the refresh
-      # commit MUST cite old/new sigma commits + both conformance outputs.
+      # Pin semantics and the refresh rule are at the top of this file.
       - name: ski@v1 runtime conformance (SPEC s8.2, oracle = sigma-glyph pinned)
         run: |
           git clone -q https://github.com/s0fractal/sigma-glyph /tmp/sigma-glyph
-          git -C /tmp/sigma-glyph checkout -q 01a1def27bb9d482de2502026c06d5365834b36c
+          git -C /tmp/sigma-glyph checkout -q "$SIGMA_PIN"
           SIGMA_GLYPH=/tmp/sigma-glyph/impl python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
       - name: Build Go implementation
         run: cd impl-go && go build -o warrant-go .
       - name: Go conformance (second implementation)
         run: ./impl-go/warrant-go conformance examples
-      - name: Go sigma-glyph eval conformance (pinned vectors)
-        run: ./impl-go/warrant-go sigma-conformance /tmp/sigma-glyph/tests/spec_conformance/vectors.json
+      # Exit status alone would accept the historical false pass: this command
+      # once printed "ALL PASS (33/33 eval)" and exited 0 while skipping the 8
+      # object and 8 deserialize vectors entirely. Derive the expected summary
+      # from the PINNED vector file and require a literal match, so the pinned
+      # job is bound to the same coverage X1 checks at HEAD.
+      - name: Go sigma-glyph conformance, exact coverage (pinned vectors)
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=/tmp/sigma-glyph/tests/spec_conformance/vectors.json
+          EXPECT="$(python3 tools/book1_coverage.py "$V")"
+          echo "expecting: $EXPECT"
+          ./impl-go/warrant-go sigma-conformance "$V" | tee /dev/stderr | grep -qF "$EXPECT"
       - name: Go selftest (schema and verification edges)
         run: ./impl-go/warrant-go selftest examples
       - name: Go verifies warrant store layout
