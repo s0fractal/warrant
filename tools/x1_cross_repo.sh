@@ -33,17 +33,22 @@
 #
 # THE LANDING SEAM (read before merging this to either master)
 # A cross-repo merge is not atomic, so the FIRST of the two master merges
-# necessarily sees the sibling's master without X1 — a real mirror-absence, and
-# under the rules above a red gate. That window is expected and must be crossed
-# deliberately, not papered over by leaving absence permanently skippable:
+# necessarily sees the sibling's master without the new X1 — a real
+# mirror-absence, and under the rules above a red gate. That window is expected
+# and must be crossed deliberately, not papered over by leaving absence
+# permanently skippable:
 #
-#   1. merge on one master (explicitly authorised; X1 there will be red on E
-#      until step 2, and that redness is CORRECT);
-#   2. merge on the other master immediately — this is not a step to postpone;
-#   3. re-run X1 strict on BOTH masters and require ALL PASS;
-#   4. only then update the reproducible sibling pins, in their own commit.
+#   1. land tools/book1_coverage.py and the pin change on BOTH masters first.
+#      A1 derives its expected summary from that helper, so X1 cannot move
+#      before the artifact it depends on exists on both sides. (The original X1
+#      landing had no such dependency and went the other way round: X1 first,
+#      pins after. Order follows the dependency, not habit.)
+#   2. merge X1 on one master (explicitly authorised; section E there will be
+#      red until step 3, and that redness is CORRECT);
+#   3. merge X1 on the other master immediately — not a step to postpone;
+#   4. re-run X1 strict on BOTH masters and require fail=0, skip=0.
 #
-# X1_BOOTSTRAP=1 exists for step 1 alone and CI never sets it.
+# X1_BOOTSTRAP=1 exists for step 2 alone and CI never sets it.
 #
 # USAGE
 #   tools/x1_cross_repo.sh                 # clone sibling at HEAD, strict
@@ -84,14 +89,6 @@ run_grep() { local label="$1" needle="$2"; shift 2; local out
         if out=$("$@" 2>&1) && printf '%s' "$out" | grep -qF -- "$needle"; then c_ok "$label"
         else c_bad "$label (expected: $needle)"; printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
 
-# run_grep_line <label> <exact line> <command...> : pass iff exit 0 AND some
-# WHOLE line equals the expected text.
-#
-# Use this wherever the expected text overlaps data the producer echoes back. A
-# substring match there is forgeable: `sigma-conformance` prints one line per
-# vector and a vector's `id` is free-form, so a vector named after the expected
-# summary satisfies `grep -qF` while the real summary says something else
-# entirely (Codex sibling-pin re-gate). Anchoring is the whole fix.
 # run_coverage <label> <vectors.json> <producer...> : pass iff the producer
 # exits 0 AND tools/book1_coverage.py accepts its transcript.
 #
@@ -139,6 +136,10 @@ SIGMA=$(  [ "$OWN" = warrant ] && echo "$SIB"  || echo "$SELF")
 hdr "X1 cross-repo coupling gate — HEAD vs HEAD"
 echo "  own      : $OWN      $(git -C "$SELF" log -1 --format='%h %ad' --date=short 2>/dev/null)"
 echo "  sibling  : $SIB_NAME $(git -C "$SIB"  log -1 --format='%h %ad' --date=short 2>/dev/null)"
+# A2 contributes one step per fuzzer seed, so the pass TOTAL depends on this and
+# a bare "N/N" is ambiguous between runs. Print it, so a transcript says which
+# configuration produced its numbers.
+echo "  seeds    : ${X1_SEEDS:-1 2}"
 
 # ------------------------------------------------------------------- toolchain
 have() { command -v "$1" >/dev/null 2>&1; }
