@@ -96,6 +96,40 @@ def semantic(o):
             sorted((f["level"], f["subject"]) for f in o["findings"]))
 
 
+REPORT_TOP_KEYS = {"report", "grade", "ok", "records", "errors", "warnings", "findings"}
+FINDING_KEYS = {"level", "subject", "message"}
+
+
+def report_contract_ok(rep):
+    """The OWNER-SIDE producer contract the README now promises (Codex contract
+    gate): warrant.verify-report@v0 is a CLOSED schema and its counts bind its
+    findings. Returns (ok, reason). A later producer change that drifts from the
+    published shape MUST fail here, not only in a downstream consumer."""
+    if not isinstance(rep, dict):
+        return False, "report is not an object"
+    if set(rep) != REPORT_TOP_KEYS:
+        return False, f"top-level keys {sorted(rep)} != documented v0 set"
+    err_c = warn_c = 0
+    for f in rep["findings"]:
+        if not isinstance(f, dict) or set(f) != FINDING_KEYS:
+            return False, "a finding is not exactly {level, subject, message}"
+        if f["level"] not in ("ERR", "WARN"):
+            return False, f"finding level {f['level']!r} is not ERR/WARN"
+        err_c += f["level"] == "ERR"
+        warn_c += f["level"] == "WARN"
+    if err_c != rep["errors"]:
+        return False, f"errors {rep['errors']} != |ERR findings| {err_c}"
+    if warn_c != rep["warnings"]:
+        return False, f"warnings {rep['warnings']} != |WARN findings| {warn_c}"
+    return True, "ok"
+
+
+def contract(name, rep):
+    """Assert report_contract_ok on one report and register a pass/fail line."""
+    good, why = report_contract_ok(rep)
+    return check(f"[contract:{name}] closed v0 schema + counts bind findings", good, why)
+
+
 def counts_from_text(out):
     import re
     m = re.search(r"(\d+) records, (\d+) errors, (\d+) warnings", out)
@@ -125,6 +159,9 @@ def run_vector(name, d, settlement_args):
                 repr(go_json.stderr[:160]))
     if pj is None or gj is None:
         return
+    # OWNER-SIDE producer contract on every Python and Go report (Codex contract gate)
+    contract(f"{name}/py", pj)
+    contract(f"{name}/go", gj)
     # counts + exit parity between text and JSON (Python)
     text_counts = counts_from_text(py_text.stdout)
     ok &= check(f"[{name}] text/JSON same counts (PY)",
@@ -264,6 +301,9 @@ def main():
         check(f"[py-nonstore:{label}] fail-closed ok:false, one report, text/json same exit",
               good, f"api={api.get('ok')} json={pjo and pjo.get('ok')}/{pj.returncode} "
               f"text-rc={pt.returncode} stderr={pj.stderr[:60]!r}")
+        contract(f"py-nonstore:{label}/api", api)
+        if pjo is not None:
+            contract(f"py-nonstore:{label}/cli", pjo)
 
     # 10b. Renderer-independence for Go (Codex re-gate P1): the report sink MUST NOT
     #      reclassify the input. Go text and Go --json select the SAME verifier —
@@ -286,6 +326,8 @@ def main():
         check(f"[go-renderer-indep:{label}] Go text and --json select the same verifier",
               good, f"text rc{gt.returncode} {gt_counts} | json rc{gj.returncode} "
               f"{gjo and (gjo['records'],gjo['errors'],gjo['warnings'])} stderr={gj.stderr[:60]!r}")
+        if gjo is not None:
+            contract(f"go-renderer-indep:{label}", gjo)
 
     # 10c. an initialized EMPTY store is a successful verification (ok:true), both.
     es = tempfile.mkdtemp(); W.Store(es).init()
@@ -294,6 +336,9 @@ def main():
     check("[empty-store] initialized empty store is ok:true records:0 (Py API + Go)",
           api["ok"] is True and api["records"] == 0 and api["errors"] == 0
           and geo is not None and geo["ok"] is True and geo["records"] == 0)
+    contract("empty-store/api", api)
+    if geo is not None:
+        contract("empty-store/go", geo)
 
     # 10d. explicit --store-mode disambiguates the empty-shape (Codex re-gate 2 P1):
     #      the four non-store shapes fail closed IDENTICALLY in Python and Go and in
@@ -314,10 +359,16 @@ def main():
         check(f"[store-mode:{label}] Py/Go parity, renderer-independent, fail-closed", good,
               f"py={pjo and pjo.get('ok')}/{pj.returncode} go={gjo and gjo.get('ok')}/{gj.returncode} "
               f"goText={gt.returncode}")
+        if pjo is not None:
+            contract(f"store-mode:{label}/py", pjo)
+        if gjo is not None:
+            contract(f"store-mode:{label}/go", gjo)
     # a real store under --store-mode is unchanged (ok:true), both renderers/impls
     esj = sh([GO, "verify", "--store-mode", "--json", es]); esjo = one_json_object(esj.stdout)
     check("[store-mode:empty-store] a real (empty) store still verifies ok:true",
           esjo is not None and esjo["ok"] is True and esjo["records"] == 0)
+    if esjo is not None:
+        contract("store-mode:empty-store/go", esjo)
 
     # 11. generic runtime reporter (Codex gate P1-2): a registered handler making a
     #     malformed reporter call must be renderer-INDEPENDENT (text==quiet==report),
@@ -401,6 +452,9 @@ def main():
                 and all(f["level"] in ("ERR", "WARN") for f in r2["findings"]))
         check(f"[reporter:{label}] renderer-independent, serializable, schema-valid, fail-closed",
               good, f"text={(te,tw)} quiet={(qe,qw)} report={(r2['errors'],r2['warnings'])} ser={ser}")
+        # the FULL machine report for this fixture must also honour the closed
+        # schema + counts binding (a fault ERR still keeps errors==|ERR findings|).
+        contract(f"reporter:{label}", W.verify_report(W.Store(dd)))
     W._RUNTIME_HANDLERS.pop(("0.2", TEST_RT), None)
 
     # 12. U+2028 / U+2029 must not split the output: exactly ONE physical line in
@@ -421,6 +475,25 @@ def main():
     check("[u2028] GO output is exactly one physical line",
           len(gj.stdout.rstrip("\n").splitlines()) == 1 and one_json_object(gj.stdout) is not None,
           f"lines={len(gj.stdout.rstrip(chr(10)).splitlines())}")
+
+    # 13. the contract assertion has TEETH: it must REJECT a drifted producer, not
+    #     pass vacuously (Codex contract gate).
+    base = {"report": "warrant.verify-report@v0", "grade": "base", "ok": True,
+            "records": 1, "errors": 0, "warnings": 0, "findings": []}
+    def mut(**kw):
+        r = dict(base); r.update(kw); return r
+    violations = {
+        "extra top-level key": mut(extra=1),
+        "missing top-level key": {k: v for k, v in base.items() if k != "grade"},
+        "errors != |ERR findings|": mut(errors=1),
+        "warnings != |WARN findings|": mut(warnings=1),
+        "INFO finding level": mut(errors=0, findings=[{"level": "INFO", "subject": "x", "message": "y"}]),
+        "finding extra key": mut(errors=1, findings=[{"level": "ERR", "subject": "x", "message": "y", "code": 9}]),
+    }
+    for label, bad in violations.items():
+        good, _ = report_contract_ok(bad)
+        check(f"[contract-teeth] rejects: {label}", not good)
+    check("[contract-teeth] accepts the valid baseline", report_contract_ok(base)[0])
 
     print()
     if FAILS:
