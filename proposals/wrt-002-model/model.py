@@ -264,11 +264,36 @@ class Model:
         if not well_formed_policy(policy):
             return False
         actors, need = policy
-        good = {a for (a, k) in witnesses if a in actors and keystate.get(a) == k}
+        good = {a for (a, k) in witnesses if a in actors and self._bound(a, k, keystate)}
         return len(good) >= need
 
     def _bound(self, actor, key, keystate):
-        return keystate.get(actor) == key
+        """A key is BOUND iff it IS the actor's key in the relevant pre-state (§D.1).
+
+        Two ways this compared equal when nothing was bound at all — both found by
+        an adversarial gate (Kimi K3, F1 and F2, both reproduced), both fail-OPEN,
+        and both present since rev 1:
+
+          * `keystate[actor]` is the string CONFLICT when the slot is unusable, and
+            a plain `==` let a filer present CONFLICT *as their key*. §D.2b says a
+            conflicted slot is UNUSABLE; instead it was usable by anyone. An
+            ordinary record "signed" with the marker computed `effective`, and a
+            2-of-2 policy-succession carrying the marker plus one real signature
+            seized the jurisdiction.
+          * `keystate.get(actor)` is `None` for an actor with no key, and
+            `None == None` is True — so `(Z, None)` was "bound" for every keyless
+            Z. Keyless actors authored effective records, satisfied governance
+            thresholds, and counted toward checkpoint authorization.
+
+        Binding now requires a key that exists, is not the conflict marker, and
+        matches. Absence and conflict are refusals, not wildcards.
+        """
+        if key is None or key == CONFLICT:
+            return False
+        cur = keystate.get(actor)
+        if cur is None or cur == CONFLICT:
+            return False
+        return cur == key
 
     def _compute_valid_cap(self, w: str) -> bool:
         r = self.recs[w]
@@ -277,7 +302,16 @@ class Model:
         pol = self.current_JP(E)
         polv = pol[0] if pol else None
         if r.kind == "ordinary":
-            return bool(r.filing and self._bound(*r.filing, keys))
+            # The filing key must be the RECORD ACTOR's. Checking only that *some*
+            # key is bound detaches authorization from identity (Kimi K3, F9,
+            # reproduced): a record naming Mallory as actor was authorized by
+            # Alice's key, so the SELF capability and the right to revoke attached
+            # to the non-signing Mallory while Alice, who actually authorized it,
+            # could not reverse it. Rotations are exempt on purpose -- a bound
+            # quorum filer rotating someone else's compromised key is the
+            # emergency-recovery path, and it carries RP, not SELF.
+            return bool(r.filing and r.filing[0] == r.actor
+                        and self._bound(*r.filing, keys))
         if r.kind == "root-adoption":
             return self._threshold_ok(r.threshold, polv, keys)
         if r.kind == "policy-succession":
@@ -547,24 +581,71 @@ def may_reverse(new: Optional[Cap], prior: Optional[Cap], model, prestate, targe
 
 
 # ============================================================ §D.5 checkpoint CID
+def sign_over(state: dict, actor: str, key: str):
+    """An authorization witness: the signature is over THIS state, and says so.
+
+    A witness used to be a bare `(actor, key)` pair, which is a claim about
+    identity and nothing about what was attested. Carrying the signed object
+    makes `checkpoint_authorized` able to refuse a witness set lifted from
+    another checkpoint.
+    """
+    return (actor, key, ("sig-over", _canon(state)))
+
+
 def checkpoint_CID(state: dict, auth_witnesses: frozenset):
     """CID = hash(P, auth_root). P hashes the state; each AW hashes its (actor,key,sig-over-P)
     bytes, so a late/extra signature is a *different* AW outside auth_root. Consumer- and
     successor-independent."""
     P = _canon(state)
-    auth_root = _canon(frozenset(_canon(("AW", a, k, ("sig-over", P))) for (a, k) in auth_witnesses))
+    auth_root = _canon(frozenset(
+        _canon(("AW", aw[0], aw[1], aw[2] if len(aw) > 2 else ("sig-over", P)))
+        for aw in auth_witnesses))
     return _canon(("CID", P, auth_root))
 
 
 def checkpoint_authorized(state, auth_witnesses, model: "Model") -> bool:
-    """The AW set must satisfy J's current governing policy over cut(frontier), with each
-    signer's key BOUND — replay reads only these committed AW, never a live envelope."""
-    E = frozenset(model.recs)
+    """The AW set must satisfy J's governing policy AS OF cut(P.frontier), with each
+    signer's key BOUND at that same cut, and each signature taken over THIS P.
+
+    Two defects an adversarial gate reproduced here (Kimi K3, F6 and F8):
+
+      * §D.5 says "rebuild `cut(P.frontier)`", and this read the VERIFIER's whole
+        cut instead. So a pinned, fully-authorized CID stopped verifying after a
+        routine signer rotation, and a below-threshold set became authorized
+        after a later policy-succession. The CID bytes were frozen; the verdict
+        was not — which is exactly the immutability and consumer-independence
+        §D.5 claims.
+      * the `state` argument was never read, so a policy-satisfying witness set
+        attested ANY state blob: the witnesses were bound to nothing. Only an
+        external CID comparison tied content to signatures, which means the
+        oracle alone could not tell a real checkpoint from a substituted one.
+
+    Both are closed by evaluating at the frontier and requiring each witness to
+    carry `("sig-over", P)` for the P being verified.
+    """
+    frontier = state.get("frontier") if isinstance(state, dict) else None
+    if not frontier:
+        return False                      # a checkpoint with no frontier authorizes nothing
+    E = frozenset()
+    for w in frontier:
+        if w not in model.recs:
+            return False                  # frontier cites a record outside the cut
+        E |= closure(w, model.recs)
     pol = model.current_JP(E)
     if not pol:
         return False
     keys = model._key_state(E)
-    return model._threshold_ok(frozenset(auth_witnesses), pol[0], keys)
+
+    P = _canon(state)
+    plain = set()
+    for aw in auth_witnesses:
+        if len(aw) == 2:                  # (actor, key) — a signature over nothing
+            return False
+        actor, key, sig = aw
+        if sig != ("sig-over", P):        # signed a DIFFERENT state
+            return False
+        plain.add((actor, key))
+    return model._threshold_ok(frozenset(plain), pol[0], keys)
 
 
 def _canon(x):

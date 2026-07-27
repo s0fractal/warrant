@@ -413,6 +413,26 @@ the same slot (and, for a key slot, of the same target actor) in the same jurisd
 and the set must equal the maxima. Fail closed on any mismatch. Vectors:
 `[resolver-scope]` in `proposals/wrt-002-model/vectors.py`.
 
+**Binding is not equality (rev 8).** A witness key is BOUND iff the actor's key-state
+holds *that key*: `None` (no key) and the `CONFLICT` sentinel are **refusals, not
+values**, and an `ordinary` record's filing key must be the record actor's own. Rev 7
+compared with a plain `==` in all three places, so — reproduced by an independent gate
+(Kimi K3, F1/F2/F9) — presenting the conflict marker as one's key satisfied a filing and
+counted toward quorum (a slot §D.2b calls UNUSABLE was usable by anyone); a keyless actor
+bound with a null key and counted toward checkpoint authorization; and a record naming
+one actor could be authorized by another's key, attaching SELF and the right to revoke to
+the non-signer. Rotations remain exempt from the actor/filing tie: a bound quorum filer
+rotating someone else's compromised key is the recovery path, and carries RP, not SELF.
+
+**Checkpoint authorization is scoped to `cut(P.frontier)`, and witnesses sign P (rev 8).**
+`checkpoint_authorized` MUST derive `current_JP(J)` and key-state from the frontier's
+causal closure, and every authorization witness MUST carry its signature over *this* `P`.
+Rev 7 read the verifier's own cut and ignored `state` entirely, so (F6) a pinned,
+fully-authorized `CID` stopped verifying after a routine signer rotation while a
+below-threshold set gained authorization after a later succession — the bytes were frozen
+and the verdict was not — and (F8) a policy-satisfying witness set attested *any* state
+blob, leaving content tied to signatures only by an external CID comparison.
+
 **A governing policy MUST be well-formed (rev 8).** `(actors, min_sigs)` is usable iff
 `actors ≠ ∅ ∧ 1 ≤ min_sigs ≤ |actors|`. A `policy-succession` or `policy-resolution` into
 a policy that is not well-formed is **not `valid_cap`**, and an ill-formed policy
@@ -427,6 +447,24 @@ could end a jurisdiction in two opposite ways — both found by executing the mo
 Refusing them must not cost recovery, so the vectors pin that too: a well-formed
 succession is still `valid_cap`, and the jurisdiction can still legislate afterwards
 (`[policy-wf]`).
+
+### OPEN against rev 8 — four reproduced defects with no fix here
+
+The same gate reproduced four more, and they are **not closed**. They share one root:
+**Layer 2a consumes Layer 1's permanence without Layer 2b's gate**, which is exactly the
+trade that bought the cycle-freedom. Patching them individually risks reintroducing the
+rev-6 non-monotone loop, so they are recorded as the rev-9 design agenda rather than
+papered over. Reproductions are in
+`reviews/2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md`, Appendix A.
+
+| id | what reproduces |
+|---|---|
+| **F3 (P0)** | A supersede authorized *solely* by a resolver-**rejected** policy branch — which never even descends its target — reverses an adoption in `admits`, and revoking the censor plus re-adopting cannot restore admission. **A dead branch permanently censors a root.** This is the censorship primitive WRT-002 exists to eliminate, laundered through governance that was already rejected. |
+| **F4 (P1)** | The dual: an adoption authorized only under the dead branch admits a root the selected governance never adopted, and records on it compute `effective`. |
+| **F5 (P1)** | `selected_lineage` is non-monotone in the cut: once a later succession descends the resolver, the single-maximal path returns a closure containing *both* forks, so a rejected succession re-enters the lineage and computes `effective`. The pinned property holds only at the resolver tip. |
+| **F7 (P1)** | Two honest quorums resolving one fork differently brick the slot permanently: the rule only ever counts *more* resolvers, so a later unanimous re-resolution is `valid_cap` yet impotent, and no succession is authorizable again. One governance race = permanent deadlock. (Verified identical in rev 7 and rev 8 — the rev-8 resolver-scope rule did not cause it.) |
+
+Until F3 is closed, **the design does not yet deliver its own headline property.**
 
 ### D.3 Layer 3 — `effective(x)`: lifecycle (well-founded on causal depth)
 

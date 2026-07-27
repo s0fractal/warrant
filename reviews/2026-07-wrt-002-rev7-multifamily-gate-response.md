@@ -15,33 +15,68 @@ iterated, converges on that family's blind spot; the project's own Decision
 Process asks for ≥3 independent families. The reviewers here are
 `moonshotai/kimi-k3`, `google/gemini-3.1-pro-preview` and `deepseek/deepseek-v4-pro`,
 driven by `tools/adversarial_gate.py`: each emits counter-vectors as executable
-Python, the harness runs them against a pristine copy of
+Python, the harness runs them against a throwaway copy of
 `proposals/wrt-002-model/`, and feeds back the verbatim transcript before asking
-for a revision. A reviewer's confidence decides nothing; execution does.
+for a revision. A reviewer's confidence decides nothing; execution does. (One
+caveat about *which* copy Kimi's blocks met is stated in full below, rather than
+in a footnote — it is the kind of thing a gate must not let itself hide.)
 
 ## Outcome in one line
 
-**Two real defects, both in the authorization algebra, both fixed, both now
-pinned by vectors.** Both were reachable through a single otherwise-legitimate
-record. Neither was found by the six prior Codex gates, and neither is visible
-from the 29 green checks that existed before today.
+**Nine reproduced defects. Six closed here; four left open on purpose, including
+one that defeats the design's headline property.** rev 7 passed 29 green checks
+and six Codex gates while every one of these was reachable.
 
 | id | source | severity | status |
 |---|---|---|---|
-| F1 resolver-scope escalation | Gemini 3.1 Pro | **P0** | **confirmed, fixed** (§D.2b + model + `[resolver-scope]`) |
-| policy abdication `(∅,0)` | mine, from Kimi's discarded reasoning | **P0** | **confirmed, fixed** (§5.5 + model + `[policy-wf]`) |
-| policy bricking `min_sigs>\|actors\|` | same | **P0** | **confirmed, fixed** (same) |
-| F2 self-resolution deadlock | Gemini 3.1 Pro | P1 claimed | **refuted as designed** — structurally impossible, see below |
-| F3 SELF cannot reverse RP | Gemini 3.1 Pro | P1 claimed | **refuted as designed** — §D.4 matrix, deliberate |
-| F1 "cut omission is censorship" | DeepSeek v4 Pro | P0 claimed | **rejected** — compares two different cuts |
-| F2 "conflict is a permanent deadlock" | DeepSeek v4 Pro | P0 claimed | **refuted by execution** — the documented resolver works |
+| resolver-scope escalation | Gemini F1 | **P0** | **fixed** (§D.2b, `[resolver-scope]`) |
+| policy abdication `(∅,0)` | mine, from Kimi's scrap | **P0** | **fixed** (§5.5, `[policy-wf]`) |
+| policy bricking `min_sigs>\|actors\|` | same | **P0** | **fixed** (same) |
+| CONFLICT marker binds as a key | Kimi F1 | **P0** | **fixed** (`[binding]`) |
+| absent key binds (`None == None`) | Kimi F2 | **P0** | **fixed** (`[binding]`) |
+| checkpoint verdict flips retroactively | Kimi F6 | P1 | **fixed** (`[checkpoint-scope]`) |
+| witnesses bound to no state | Kimi F8 | P2 | **fixed** (same) |
+| actor and filing witness detached | Kimi F9 | P2 | **fixed** (`[binding]`) |
+| duplicate `(J,sequence)` CIDs | Kimi F10 | P2 | no longer reproduces after the above |
+| **dead branch censors a root permanently** | **Kimi F3** | **P0** | **OPEN** |
+| dead branch admits an unauthorized root | Kimi F4 | P1 | **OPEN** |
+| `selected_lineage` non-monotone in the cut | Kimi F5 | P1 | **OPEN** |
+| competing resolvers brick the jurisdiction | Kimi F7 | P1 | **OPEN** |
+| "cut omission is censorship" | DeepSeek F1 | P0 claimed | **rejected** — compares two different cuts |
+| "conflict is a permanent deadlock" | DeepSeek F2 | P0 claimed | **refuted by execution** |
+| self-resolution deadlock | Gemini F2 | P1 claimed | **refuted as designed** |
+| SELF cannot reverse RP | Gemini F3 | P1 claimed | **refuted as designed** |
 
-Two reviewers returned **REJECT**. Neither REJECT is supported by its own
-evidence; the one genuine P0 among the six claims came from Gemini's F1, and the
-other two P0s came from following a line of reasoning Kimi produced but never
-turned into a reproduction. That asymmetry is the point of the harness: a verdict
-is worth nothing, a reproduction is worth checking, and checking is what
-separates them.
+Three reviewers, three **REJECT** verdicts. Two of them were not supported by
+their own evidence. The third — Kimi's — is, and it is the one that matters.
+
+### Two things about this gate that must not be smoothed over
+
+**1. Kimi's reproductions executed against a model I had already modified.** Its
+run was still in round 1 when I landed the rev-8 resolver-scope and
+well-formedness fixes in the working tree; the harness copies the model at
+*execution* time, so its round-2 blocks ran against rev 8 while its prompt held
+rev 7. The review's own words — "against a pristine `model.py`" — are therefore
+wrong, and that is a defect in how I sequenced the work, not in the review.
+
+I did not leave it as a caveat. I re-ran all ten blocks against both revisions,
+in isolation: **nine reproduce identically on rev 7 and rev 8.** Only F7 differs,
+and only in one assertion — rev 7 accepted a resolver-of-resolvers as `valid_cap`
+where rev 8 refuses it. So I extracted F7's *substance* and ran it separately on
+both: two competing resolvers brick the jurisdiction in rev 7 exactly as in
+rev 8, and the rev-7 resolver-of-resolvers was `valid_cap` yet equally impotent.
+**My fix did not cause the deadlock; it removed a record that was valid and
+useless.** The confound changes nothing about the findings, but nobody should
+have to take that on trust — the check is three commands and it is written down
+here because it would have been easy to omit.
+
+**2. The best reviewer of the three did not follow the protocol on its first
+run**, hit the token ceiling, and produced 94 KB of raw reasoning with no review.
+Had I accepted "0 reproductions" as its answer, the P0 that binds a conflicted
+key slot open would still be in the design. The harness had two defects that
+caused this (metadata inside the block instead of on the fence line; an empty
+round becoming the review body) — both are fixed, and both are worth remembering
+as *gate* failures rather than reviewer failures.
 
 ---
 
@@ -167,6 +202,32 @@ termination, checkpoint CID determinism, and the quorum-rollback rejection. Two
 families, no access to each other's work, both unable to reopen the cycle. That
 is worth more than either REJECT verdict.
 
+## The four that stay open, and why they are not patched
+
+Kimi's F3, F4, F5 and F7 share one root: **Layer 2a consumes Layer 1's
+permanence without Layer 2b's gate.** `_compute_admits` and `dist()` read
+`valid_cap` only — which is precisely the property that bought rev 7 its
+freedom from the rev-6 `effective ↔ effective` cycle. The consequence is that a
+policy branch a resolver *rejected* still carries authority into root admission:
+
+* **F3 (P0)** a supersede authorized solely under the dead branch — one that
+  never even descends its target — reverses an adoption, and revoking the
+  censor plus re-adopting cannot restore it. A dead branch **permanently
+  censors a root and every record on it.** WRT-002 exists to remove exactly
+  this primitive; here it is, laundered through rejected governance.
+* **F4 (P1)** the dual: the dead branch admits a root the selected governance
+  never adopted.
+* **F5 (P1)** gating is non-monotone in the cut — once a later succession
+  descends the resolver, both forks re-enter the lineage.
+* **F7 (P1)** two honest quorums resolving one fork differently brick the slot
+  forever; a later unanimous re-resolution is `valid_cap` yet impotent.
+
+Each has an obvious-looking local patch, and each local patch reaches straight
+back into the layering that keeps the machine well-founded. Fixing them one at a
+time tonight is how rev 6 was born. They are the rev-9 agenda, and **until F3 is
+closed the design does not deliver its own headline property** — which is the
+honest reason not to advance this proposal.
+
 ## Coverage — what nobody examined
 
 No reviewer attacked the **total manifest's `ineligible` entries** — the
@@ -181,14 +242,18 @@ round, and they should go to a family that has not seen this one.
 
 ## State after this gate
 
-`vectors.py` is 43 checks, ALL PASS, up from 29. The four additions are not
-restatements of the design — three of them are attacks that worked yesterday.
+`vectors.py` is **53 checks, ALL PASS, up from 29**. Every addition is an attack
+that worked against rev 7, not a restatement of the design.
 
-This gate is **necessary and not sufficient**. It found two P0 classes in an
-algebra that six prior gates had signed off on, which is evidence about the
-process, not only about the design: single-family review had been converging.
-Whether rev 8 is adopted is the maintainer's decision, and the untested manifest
-joint above is a reason to hold rather than to advance.
+This gate is **necessary and not sufficient**, and its result is mostly evidence
+about the *process*: nine reproduced defects — five of them P0 — in an algebra
+six consecutive gates had signed off on. Single-family review had been
+converging, not verifying.
+
+**Recommendation: do not adopt.** Not because the fixes are unsound, but because
+F3 is open and F3 is the property the proposal exists to provide. rev 9 should
+take the Layer-2a/2b composition as one problem, and the manifest joint below
+should go to a fourth family that has not seen this round.
 
 ---
 

@@ -151,8 +151,9 @@ def test_checkpoint_cid():
     state = {"J": "J", "sequence": 1, "frontier": ("A",),
              "effective_set_root": ("e",), "key_state_root": ("k",),
              "policy_state_root": ("p",), "manifest_root": ("m",)}
-    aw_full = frozenset({("A", "kA"), ("B", "kB")})     # 2-of-2 satisfies P
-    aw_one = frozenset({("A", "kA")})                    # below threshold
+    aw_full = frozenset({M.sign_over(state, "A", "kA"),
+                         M.sign_over(state, "B", "kB")})   # 2-of-2 satisfies P
+    aw_one = frozenset({M.sign_over(state, "A", "kA")})    # below threshold
     cid_full = checkpoint_CID(state, aw_full)
     cid_full_again = checkpoint_CID(state, aw_full)
     check("[checkpoint] CID is deterministic / content-addressed", cid_full == cid_full_again)
@@ -162,7 +163,7 @@ def test_checkpoint_cid():
           checkpoint_authorized(state, aw_full, m))
     # a LATE extra signature is a *different* AW -> different auth set -> different CID,
     # so the originally-pinned CID's verdict is unchanged (consumer-independent freeze).
-    aw_late = aw_full | {("A", "kA2")}
+    aw_late = aw_full | {M.sign_over(state, "A", "kA2")}
     check("[checkpoint] a late/extra signature yields a DIFFERENT CID (cannot flip the pinned one)",
           checkpoint_CID(state, aw_late) != cid_full)
     check("[checkpoint] the pinned CID verifies without any successor or citation",
@@ -376,6 +377,79 @@ def test_policy_wellformedness():
           m.valid_cap("back"))
 
 
+# ------------------------------- 11. fail-open binding + checkpoint scope (gate rev 7)
+def test_binding_and_checkpoint_scope():
+    """The five fail-OPEN paths a three-family gate reproduced against rev 7.
+
+    Every one of these let something through that §D says must be refused, and
+    all five predate rev 1. Sources: Kimi K3 F1, F2, F9, F6, F8 — each was a
+    runnable counter-vector executed by tools/adversarial_gate.py.
+    """
+    P = (frozenset({"A", "B"}), 2)
+    base = [Rec("g", frozenset(), "A", "ordinary", jur="J", filing=("A", "kA"))]
+
+    # --- F1: the CONFLICT marker must not be presentable as a key -------------
+    recs = base + [
+        Rec("R1", frozenset({"g"}), "A", "rotation", jur="J", rot_actor="A",
+            rot_key="K1", incoming_pop=("A", "K1"), filing=("A", "kA")),
+        Rec("R2", frozenset({"g"}), "A", "rotation", jur="J", rot_actor="A",
+            rot_key="K2", incoming_pop=("A", "K2"), filing=("A", "kA")),
+        # someone files "as A", presenting the conflict sentinel as their key
+        Rec("x", frozenset({"R1", "R2"}), "A", "ordinary", jur="J",
+            filing=("A", M.CONFLICT)),
+    ]
+    m = build("J", {"A": {"kA"}, "B": {"kB"}}, recs, pinned_policy={"J": P},
+              pinned_roots={"J": {"g"}})
+    check("[binding] the key slot really is conflicted",
+          m._key_state(frozenset(m.recs)).get("A") == M.CONFLICT)
+    check("[binding] presenting the CONFLICT marker as a key is NOT bound",
+          not m.valid_cap("x"))
+    check("[binding] a conflicted slot cannot be counted toward a threshold",
+          not m._threshold_ok(frozenset({("A", M.CONFLICT), ("B", "kB")}), P,
+                              m._key_state(frozenset(m.recs))))
+
+    # --- F2: an actor with no key must not bind with a null key ---------------
+    recs = base + [Rec("z", frozenset({"g"}), "Z", "ordinary", jur="J",
+                       filing=("Z", None))]
+    m = build("J", {"A": {"kA"}}, recs, pinned_policy={"J": P},
+              pinned_roots={"J": {"g"}})
+    check("[binding] a keyless actor's null key is NOT bound", not m.valid_cap("z"))
+    check("[binding] and a null witness cannot satisfy a threshold",
+          not m._threshold_ok(frozenset({("A", "kA"), ("Z", None)}), P,
+                              m._key_state(frozenset(m.recs))))
+
+    # --- F9: the filing key must be the record actor's ------------------------
+    recs = base + [Rec("m", frozenset({"g"}), "Mallory", "ordinary", jur="J",
+                       filing=("A", "kA"))]        # Alice's key, Mallory's name
+    m = build("J", {"A": {"kA"}, "Mallory": {"kM"}}, recs, pinned_policy={"J": P},
+              pinned_roots={"J": {"g"}})
+    check("[binding] a record cannot be filed under another actor's key",
+          not m.valid_cap("m"))
+
+    # --- F6/F8: checkpoint authorization is scoped to cut(P.frontier) ---------
+    recs = base + [
+        Rec("later", frozenset({"g"}), "A", "rotation", jur="J", rot_actor="A",
+            rot_key="kA2", incoming_pop=("A", "kA2"), filing=("A", "kA")),
+    ]
+    m = build("J", {"A": {"kA"}, "B": {"kB"}}, recs, pinned_policy={"J": P},
+              pinned_roots={"J": {"g"}})
+    state = {"J": "J", "sequence": 1, "frontier": ("g",),
+             "effective_set_root": ("e",), "key_state_root": ("k",),
+             "policy_state_root": ("p",), "manifest_root": ("m",)}
+    aw = frozenset({M.sign_over(state, "A", "kA"), M.sign_over(state, "B", "kB")})
+    check("[checkpoint-scope] a signer rotation AFTER the frontier does not "
+          "un-authorize a pinned checkpoint", checkpoint_authorized(state, aw, m))
+
+    other = dict(state, sequence=2)
+    lifted = frozenset({M.sign_over(other, "A", "kA"), M.sign_over(other, "B", "kB")})
+    check("[checkpoint-scope] witnesses signed over a DIFFERENT state do not "
+          "authorize this one", not checkpoint_authorized(state, lifted, m))
+    check("[checkpoint-scope] bare (actor,key) witnesses attest nothing",
+          not checkpoint_authorized(state, frozenset({("A", "kA"), ("B", "kB")}), m))
+    check("[checkpoint-scope] a frontier citing an unknown record authorizes nothing",
+          not checkpoint_authorized(dict(state, frontier=("nope",)), aw, m))
+
+
 def main():
     test_may_reverse_total()
     test_revocation()
@@ -387,6 +461,7 @@ def main():
     test_emergency_rotation()
     test_resolver_scope()
     test_policy_wellformedness()
+    test_binding_and_checkpoint_scope()
     print()
     if FAILS:
         print(f"WRT-002-MODEL: {len(FAILS)} FAIL(S): " + ", ".join(FAILS))
