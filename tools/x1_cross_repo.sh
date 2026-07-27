@@ -33,17 +33,22 @@
 #
 # THE LANDING SEAM (read before merging this to either master)
 # A cross-repo merge is not atomic, so the FIRST of the two master merges
-# necessarily sees the sibling's master without X1 — a real mirror-absence, and
-# under the rules above a red gate. That window is expected and must be crossed
-# deliberately, not papered over by leaving absence permanently skippable:
+# necessarily sees the sibling's master without the new X1 — a real
+# mirror-absence, and under the rules above a red gate. That window is expected
+# and must be crossed deliberately, not papered over by leaving absence
+# permanently skippable:
 #
-#   1. merge on one master (explicitly authorised; X1 there will be red on E
-#      until step 2, and that redness is CORRECT);
-#   2. merge on the other master immediately — this is not a step to postpone;
-#   3. re-run X1 strict on BOTH masters and require ALL PASS;
-#   4. only then update the reproducible sibling pins, in their own commit.
+#   1. land tools/book1_coverage.py and the pin change on BOTH masters first.
+#      A1 derives its expected summary from that helper, so X1 cannot move
+#      before the artifact it depends on exists on both sides. (The original X1
+#      landing had no such dependency and went the other way round: X1 first,
+#      pins after. Order follows the dependency, not habit.)
+#   2. merge X1 on one master (explicitly authorised; section E there will be
+#      red until step 3, and that redness is CORRECT);
+#   3. merge X1 on the other master immediately — not a step to postpone;
+#   4. re-run X1 strict on BOTH masters and require fail=0, skip=0.
 #
-# X1_BOOTSTRAP=1 exists for step 1 alone and CI never sets it.
+# X1_BOOTSTRAP=1 exists for step 2 alone and CI never sets it.
 #
 # USAGE
 #   tools/x1_cross_repo.sh                 # clone sibling at HEAD, strict
@@ -84,6 +89,26 @@ run_grep() { local label="$1" needle="$2"; shift 2; local out
         if out=$("$@" 2>&1) && printf '%s' "$out" | grep -qF -- "$needle"; then c_ok "$label"
         else c_bad "$label (expected: $needle)"; printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
 
+# run_coverage <label> <vectors.json> <producer...> : pass iff the producer
+# exits 0 AND tools/book1_coverage.py accepts its transcript.
+#
+# Deliberately not a grep. `grep -qxF` anchors to a LINE but not to a POSITION,
+# and a vector `id` is free-form data that may contain newlines -- so an id can
+# forge the expected summary as its own physical line while the producer's real
+# summary reports something else entirely (Codex sibling-pin re-gate 2). The
+# decision procedure is positional and lives in the helper, which the selftest
+# and both repos' CI also call: one code path, so a caller cannot quietly drift
+# back to a weaker rule while the suite stays green.
+run_coverage() { local label="$1" vectors="$2"; shift 2; local out rc
+        out=$("$@" 2>&1); rc=$?
+        if [ $rc -eq 0 ] && printf '%s\n' "$out" \
+             | python3 "$SELF/tools/book1_coverage.py" --check "$vectors" >/dev/null 2>&1
+        then c_ok "$label"
+        else c_bad "$label"
+             printf '%s\n' "$out" | tail -6 | sed 's/^/        | /'
+             printf '%s\n' "$out" | python3 "$SELF/tools/book1_coverage.py" \
+               --check "$vectors" 2>&1 >/dev/null | sed 's/^/        | /'; fi; }
+
 # ---------------------------------------------------------------- locate repos
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if   [ -f "$SELF/SPEC.md" ] && [ -d "$SELF/impl-go" ] && grep -qi '^# Warrant' "$SELF/README.md" 2>/dev/null; then
@@ -111,6 +136,10 @@ SIGMA=$(  [ "$OWN" = warrant ] && echo "$SIB"  || echo "$SELF")
 hdr "X1 cross-repo coupling gate — HEAD vs HEAD"
 echo "  own      : $OWN      $(git -C "$SELF" log -1 --format='%h %ad' --date=short 2>/dev/null)"
 echo "  sibling  : $SIB_NAME $(git -C "$SIB"  log -1 --format='%h %ad' --date=short 2>/dev/null)"
+# A2 contributes one step per fuzzer seed, so the pass TOTAL depends on this and
+# a bare "N/N" is ambiguous between runs. Print it, so a transcript says which
+# configuration produced its numbers.
+echo "  seeds    : ${X1_SEEDS:-1 2}"
 
 # ------------------------------------------------------------------- toolchain
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -128,26 +157,19 @@ fi
 hdr "A. Book I consensus — warrant's Go evaluator vs sigma's vectors"
 
 if [ -n "$WGO" ]; then
-  # Bind ALL PASS to the ACTUAL coverage, derived from the vector file itself.
-  # Matching the bare substring "ALL PASS" is what let warrant-go report success
-  # over 33 of 49 vectors for weeks (Codex X1 gate, P1): a summary line is only
-  # evidence if the number in it is checked against the suite it claims to cover.
-  # The expected string is computed here, so adding a vector or a whole new kind
-  # tightens the assertion automatically instead of loosening it.
-  COVERAGE="$(python3 - "$SIGMA/tests/spec_conformance/vectors.json" <<'PY'
-import collections, json, sys
-d = json.load(open(sys.argv[1]))
-vs = d["vectors"]
-c = collections.Counter(v.get("kind") for v in vs)
-kinds = ", ".join(f"{c[k]} {k}" for k in sorted(c))
-print(f"ALL PASS ({len(vs)}/{len(vs)} — {kinds})")
-PY
-)"
+  # Bind ALL PASS to the ACTUAL coverage, and to the summary's POSITION.
+  # tools/book1_coverage.py owns the counting, the producer's prefix, and the
+  # decision procedure; it is mirrored alongside X1 for the same reason X1 is
+  # mirrored. Three matchers failed here in sequence -- a bare "ALL PASS", the
+  # derived counts as a substring, then the counts anchored to a line -- each
+  # defeated by data the producer echoes back. See the module docstring.
+  V="$SIGMA/tests/spec_conformance/vectors.json"
+  COVERAGE="$(python3 "$SELF/tools/book1_coverage.py" "$V" 2>/dev/null)"
   if [ -z "$COVERAGE" ]; then
     c_bad "A1 could not derive expected coverage from sigma's vectors.json"
   else
-    run_grep "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#ALL PASS }" \
-      "$COVERAGE" "$WGO" sigma-conformance "$SIGMA/tests/spec_conformance/vectors.json"
+    run_coverage "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#SIGMA CONFORMANCE: ALL PASS }" \
+      "$V" "$WGO" sigma-conformance "$V"
   fi
 else
   c_skip "A1 warrant-go sigma-conformance (go toolchain or build unavailable)"
@@ -264,7 +286,11 @@ hdr "E. Mirror integrity — the gate itself is the same gate on both sides"
 # explicit and opt-in: X1_BOOTSTRAP=1 for the single landing where one side has
 # X1 and the other does not. CI never sets it.
 BOOTSTRAP="${X1_BOOTSTRAP:-0}"
-for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh .github/workflows/x1-cross-repo.yml; do
+# tools/book1_coverage.py is mirrored too: A1 derives its expected summary
+# from it, so the two sides asserting different coverage rules would be the
+# same class of silent divergence E exists to catch.
+for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh \
+         tools/book1_coverage.py .github/workflows/x1-cross-repo.yml; do
   if [ ! -f "$SIB/$f" ]; then
     if [ "$BOOTSTRAP" = "1" ]; then
       printf '  \033[33mSKIP\033[0m  E:%s absent in %s (X1_BOOTSTRAP=1)\n' "$f" "$SIB_NAME"
