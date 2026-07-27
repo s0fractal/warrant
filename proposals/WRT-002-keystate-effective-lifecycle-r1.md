@@ -1,22 +1,24 @@
 # WRT-002: Key-state, authorized effective-lifecycle, and the R1 checkpoint
 
-**Status:** DRAFT **rev 4** (2026-07-27) — model design only. **No production
+**Status:** DRAFT **rev 5** (2026-07-27) — model design only. **No production
 signatures, no adoption, no code, no runtime registration, and NO frozen wire bytes.**
 Specifies the settlement substrate WRT-001's stored (R1) wave citation depends on —
 Deferred items **1 (authorized effective-lifecycle)** and **2 (key-state → R1
 checkpoint)**. Adoption requires the full Decision Process; none is performed here.
 
-**rev history.** rev 1 (no immutable cut) → rev 2 (cut, self-exclusion, causal
-supersede, immutable pre-state) → rev 3 (all signature predicates frozen, ACI
-provenance merge, jurisdiction policy-state, causal frontier binding). The rev-3
-re-gate (`reviews/2026-07-codex-wrt-002-rev3-design-regate.md`) confirmed **the ACI
-provenance carrier is sound** and asked to close the **event vocabulary and role
-semantics** riding on it: total manifest, target-role authorization matrix,
-root-adoption in the algebra, and distinct conflict resolvers. **rev 4 closes those
-and still does not freeze bytes.** The conceptual key rev 4 adds: **event
-*authorization* is permanent; event *effect* is lifecycle-gated** — two separate
-functions (P2), which is what lets "never retroactively withdrawn" and "revocation is
-a supersede" coexist without oscillation.
+**rev history.** rev 1 (no immutable cut) → rev 2 (cut, self-exclusion, immutable
+pre-state) → rev 3 (all signature predicates frozen, ACI provenance merge, policy-state,
+causal frontier binding) → rev 4 (total manifest, target-role matrix, root-adoption in
+the algebra, authorization ≠ effect). The rev-4 re-gate
+(`reviews/2026-07-codex-wrt-002-rev4-design-regate.md`) confirmed **the cut, total
+manifest, ACI carrier, auth/effect split, and resolver shapes all survive**, and asked
+to close the remaining **authority algebra around lifecycle**. **rev 5 closes those and
+still does not freeze bytes:** a supersede is a typed `lifecycle-supersede` carrying its
+**authorization class** so it cannot be rolled back by a weaker authority through depth
+(§4/§5); governance reversal uses the **current** effective policy-state, not a retired
+historical quorum (§5); `active_roots` is the **least fixed point** from genesis so
+untrusted roots cannot mutually bootstrap (§4); and emergency rotation's **filer-vs-
+target** distinction is pinned so the bound-filing rule preserves it (§4).
 
 **Warrant-level, not wave-level.** These are general settlement primitives; WRT-001
 and ADR-008 consume them; WRT-002 sits below both.
@@ -50,7 +52,7 @@ Naïve `active − supersede-targets` is a **censorship primitive**; a live-head
 citation cannot converge in an append-only store (WRT-001:133-141). The effective set
 is defined *by* key-state and policy-state over a *fixed historical cut*, authorized by
 *frozen evidence* under a *role-appropriate* rule, committed by a *causally-anchored*
-checkpoint. rev 4 specifies: the cut (§2); a **total** frozen manifest (§3); a **total
+checkpoint. rev 5 specifies: the cut (§2); a **total** frozen manifest (§3); a **total
 ACI-provenance algebra** with authorization ≠ effect, root-adoption, and filing-key
 boundness (§4); a **target-role authorization matrix** (§5) over a **jurisdiction
 policy-state** (§5.5); the checkpoint with distinct resolvers and succession (§6).
@@ -108,11 +110,25 @@ record the quorum marks `ineligible` → the effective set excludes it, but the 
 (associative/commutative/idempotent) → a pure, order-independent function of the causal
 past.
 
-**Event vocabulary (now complete for `active_cut`).** A typed authorized event is one
-of: `root-adoption`, `rotation`, `revocation` (a supersede of a rotation),
-`policy-succession`, `key-conflict-resolution`, `policy-conflict-resolution`. Each is
-authorized by its **manifest `threshold`/`incoming-pop` witnesses** under its role rule
-(§5), against the **derived-effective state** (below) of its own `preEvents`.
+**Event vocabulary (complete for `active_cut`).** A typed authorized event is one of:
+`root-adoption`, `rotation`, `lifecycle-supersede`, `policy-succession`,
+`key-conflict-resolution`, `policy-conflict-resolution`. A **`lifecycle-supersede`** is a
+supersede of **any** record and **carries the authorization class it exercised** (SELF /
+jurisdiction-policy / rotation-policy / adoption-authority / resolution-quorum); a
+`revocation` of a rotation is the rotation-policy case. The class travels on the
+lifecycle edge so superseding a supersede cannot downgrade authority (§5). Each event is
+authorized by its manifest `threshold`/`incoming-pop`/`actor-filing` witnesses under its
+§5 role rule, against the **derived-effective state** (below) of its own `preEvents`.
+
+**Emergency rotation — filer vs target (P2).** A `rotation`'s enclosing `body.actor.id`
+(the **filer**) MAY be an already-bound quorum actor **distinct from** the target actor
+named in the incoming-key subject blob. The filer's `actor-filing` witness is
+key-state-bound (satisfying the rotation record's own eligibility); the **target actor's
+incoming key supplies the separate `incoming-pop`**, and the governing `threshold`
+authorizes it. **No outgoing target-actor signature is required** — so the threshold
+emergency-replacement path survives the bound-filing rule. A conforming verifier MUST
+NOT require the rotated actor to file the record (which would make the incoming unbound
+key fail `active_cut` and silently delete the emergency path).
 
 **Authorization is PERMANENT; effect is LIFECYCLE-GATED (the P2 split).** Two separate
 functions over an event set `E`:
@@ -129,12 +145,18 @@ functions over an event set `E`:
 
 **One derivation from the EFFECTIVE authorized events** (`derived(E)`):
 
-- **`active_roots(J, E)`** — the genesis-pinned roots for `J`, plus every root reached
-  by an **effective** `root-adoption` event whose adopting record is itself active for
-  `J`. A `root-adoption` points at the adopted root via `subject.hash` (**not** via
-  `prior` ancestry), so when the cut joins the adopting branch and the separately-rooted
-  adopted branch, the adoption event is what activates the second branch for `J`.
-  Adoption is reversible only through the §5 target-role matrix.
+- **`active_roots(J, E)`** — the **LEAST fixed point** seeded by exactly `J`'s
+  trust-config-pinned genesis roots, then repeatedly adding the target root of every
+  **effective, authorized `root-adoption` whose adopting record is ALREADY root-reachable
+  to the current set**. An adoption points at the adopted root via `subject.hash`
+  (**not** `prior` ancestry), so it is what joins a separately-rooted branch into `J`.
+  Least-FP is **mandatory**: two non-pinned roots that mutually adopt each other activate
+  **neither** — a greatest/self-supporting closure is forbidden (it would let untrusted
+  roots bootstrap their own authority; ACI union alone does not choose between the two
+  fixed points). **Stratification:** (1) `active_roots` least-FP from genesis; (2)
+  `active_cut` (reachability + bound eligible filing); (3) the effectiveness recurrence.
+  An event on a not-yet-active root never contributes, so it cannot bootstrap the root
+  that would make it active. Adoption is reversible only through the §5 matrix.
 - **`active_cut(X, J, E)`** — `X` is root-reachable to `active_roots(J,E)`, has an
   `eligible` manifest entry, and its `actor-filing` witness is **key-state-bound in
   `derived(preEvents(X))`** (rev 4's explicit choice: an R1 filing witness MUST be by a
@@ -161,12 +183,24 @@ the causal rule `X ∈ closure(S)\{S}`:
 
 | Target `X`'s role | Authorization to supersede `X` |
 |---|---|
-| ordinary actor-owned record | **SELF** (a key authoritative for `X.actor.id`) **or** `J`'s governing policy-state |
-| `rotation` / `revocation` | the SPEC §5.1 **current-policy rule** governing that actor's key-state (threshold against pre-state keys, or the same actor's bound key where no policy) |
-| `policy-succession` / `policy-conflict-resolution` | the **governing policy-state quorum** (never a single SELF) |
-| `root-adoption` | the **adopting-jurisdiction authority** (the policy under which the adoption was authorized) |
-| `key-conflict-resolution` | the same quorum that authorized the resolution |
+| ordinary actor-owned record | **SELF** (a key authoritative for `X.actor.id`) **or** `J`'s **current** governing policy-state |
+| `rotation` (incl. `revocation`) | the SPEC §5.1 **current-policy rule** governing that actor's key-state (threshold against pre-state keys, or the actor's bound key where no policy) |
+| `lifecycle-supersede` | **authority no weaker than the class `X` itself exercised** (the class carried on `X`'s lifecycle edge, §4): a quorum-class supersede is reversible only by that quorum class, a SELF supersede by SELF — **no downgrade through depth** |
+| `policy-succession` / `policy-conflict-resolution` | `J`'s **current** governing policy-state quorum (never a single SELF) |
+| `root-adoption` | `J`'s **current** effective governing policy-state at `preEvents(S)` — **NOT** the historical policy that authorized the original adoption |
+| `key-conflict-resolution` | `J`'s **current** governing policy-state — **NOT** the historical quorum that filed the resolution |
 | `checkpoint` | **not** ordinary supersession — governed only by checkpoint succession/conflict (§6) |
+
+**Current, not historical, governance (closes quorum resurrection).** Reversal of a
+`root-adoption` or a governance resolution uses the **current effective jurisdiction
+policy-state at `preEvents(S)`**, so a retired quorum (`P0={A,B}` after a valid
+succession to `P1={C,D}`) can no longer roll back its historical acts; rotation
+revocation continues under its SPEC current-policy rule (already current at pre-state).
+
+**Authority provenance travels the lifecycle edge (closes laundering).** Because every
+supersede is a `lifecycle-supersede` carrying its class (§4), superseding it needs
+authority no weaker than that class: quorum `S1` → filer-only `S2` **fails**, and
+`quorum S1 → quorum S2 → SELF S3` cannot launder authority down through depth.
 
 `X.under` is **never** a lifecycle authority (a check/evidence policy). Everything is
 per-jurisdiction. This matrix is what §4's `effective(record)` consults when deciding
@@ -237,7 +271,7 @@ settlement-active citation, WRT-001 §5).
 checkpoint WID; the citation ranks over that checkpoint's effective set (minus its own
 WID), never live-head.
 
-**BYTES DEFERRED (explicit).** rev 4 does not freeze the `checkpoint@v1` / manifest /
+**BYTES DEFERRED (explicit).** rev 5 does not freeze the `checkpoint@v1` / manifest /
 policy-blob schemas and canonical layouts; the domain-separated hashing inputs for the
 four roots; the canonical encoding of key-state and policy-state **including conflict
 markers**; `sequence` genesis/gap encoding; or validation severities. Per the gate,
@@ -255,12 +289,19 @@ Permanent Python↔Go differential vectors, fail-closed and bounded:
   its own revocation → deterministic; adopted-root cross-branch merge → second branch
   activated only via the `root-adoption` event; **bound-vs-unbound filing** → unbound
   filing key ⇒ not effective; authorization-permanent-vs-effect-gated (a revoked
-  rotation's later supersede stays authorized).
+  rotation's later supersede stays authorized); **mutual-untrusted-adoption** (two
+  non-pinned roots adopt each other) → **neither** active (least-FP); one-pinned /
+  one-adopted → adopted becomes active; **emergency rotation** (bound quorum filer, a
+  *different* target actor in the key blob, no outgoing target signature, incoming-key
+  PoP + quorum) → authorized and the new key binds.
 - **role matrix (§5):** **one-filer rollback of every quorum-governed target**
-  (policy-succession, threshold rotation/revocation, root-adoption,
-  conflict-resolution, checkpoint) → rejected; ordinary SELF supersede → effective;
-  foreign non-self below quorum → ineffective; `X.under`-only → never authorizes;
-  stale/unordered supersede → ineffective.
+  (policy-succession, threshold rotation, root-adoption, conflict-resolution, checkpoint)
+  → rejected; **authority-laundering through depth** (quorum `S1` → filer-only `S2` →
+  fails; quorum→quorum→SELF `S3` → fails) → rejected; SELF `S1` → same-actor `S2` may
+  reinstate; **retired-quorum resurrection** (`P0` supersedes an adoption/resolution
+  after succession to `P1`) → rejected (current policy-state governs); ordinary SELF
+  supersede → effective; foreign non-self below quorum → ineffective; `X.under`-only →
+  never authorizes; stale/unordered supersede → ineffective.
 - **policy-state (§5.5):** pinned-genesis-without-policy → no checkpoint; two adoption
   `under` policies → neither is authority; policy succession by the prior policy; policy
   fork → `policy-conflict-resolution` by the common predecessor; no common predecessor →
@@ -273,7 +314,7 @@ Permanent Python↔Go differential vectors, fail-closed and bounded:
 
 - **Design only.** No signatures, adoption, registration, code, or frozen bytes. The
   sigma reference path keeps labelling its stored-reason demo as *anticipating* R1.
-- **Ordering.** rev 4 is the model; a re-gate of §§2–6 precedes the byte-freeze
+- **Ordering.** rev 5 is the model; a re-gate of §§2–6 precedes the byte-freeze
   revision, which precedes implementation. Items 1–2 precede the WRT-001 §8 budget
   freeze. §7-novelty/tunnel and the governed profile anchor remain deferred.
 - **Gate.** Adoption requires ≥3 independent-family review, all P0/P1 closed; a
