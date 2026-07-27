@@ -200,6 +200,15 @@ func decodeStrictJSON(data []byte) (map[string]any, error) {
 	if !utf8.Valid(data) {
 		return nil, errors.New("invalid UTF-8")
 	}
+	// RFC 7493 I-JSON: strings must be valid Unicode. A lone-surrogate escape
+	// (\ud800 not forming a pair) is valid ASCII bytes, so utf8.Valid passes it;
+	// Go's decoder then substitutes U+FFFD while Python keeps the surrogate code
+	// point — the same bytes parse to different strings, splitting the domain.
+	// Reject unpaired surrogate escapes so both implementations treat them as
+	// malformed (matches Python's _reject_lone_surrogates).
+	if hasLoneSurrogateEscape(data) {
+		return nil, errors.New("lone surrogate in string (invalid I-JSON)")
+	}
 	// SPEC §4 / RFC 7493 I-JSON: duplicate member names are invalid. Go's
 	// decoder silently keeps the last (same as Python's stock json.loads); we
 	// reject them so both implementations agree a dup-key object is malformed.
@@ -224,6 +233,73 @@ func decodeStrictJSON(data []byte) (map[string]any, error) {
 		return nil, errors.New("top-level JSON is not an object")
 	}
 	return m, nil
+}
+
+// hasLoneSurrogateEscape scans the raw JSON bytes for a \uXXXX escape that
+// denotes an unpaired UTF-16 surrogate. A high surrogate (D800-DBFF) is valid
+// only when immediately followed by a low-surrogate escape (DC00-DFFF); a low
+// surrogate alone, or a high not followed by a low, is invalid I-JSON. A pair of
+// backslashes (\\) is a literal backslash, not the start of an escape, so we
+// skip both bytes and never treat the following "uXXXX" as an escape.
+func hasLoneSurrogateEscape(data []byte) bool {
+	n := len(data)
+	for i := 0; i+1 < n; {
+		if data[i] != '\\' {
+			i++
+			continue
+		}
+		if data[i+1] == '\\' { // escaped backslash: consume both
+			i += 2
+			continue
+		}
+		if data[i+1] != 'u' || i+6 > n {
+			i += 2
+			continue
+		}
+		cp, ok := hex4(data[i+2 : i+6])
+		if !ok {
+			i += 2
+			continue
+		}
+		if cp >= 0xDC00 && cp <= 0xDFFF { // lone low surrogate
+			return true
+		}
+		if cp >= 0xD800 && cp <= 0xDBFF { // high surrogate: needs a low next
+			if i+12 > n || data[i+6] != '\\' || data[i+7] != 'u' {
+				return true
+			}
+			lo, ok := hex4(data[i+8 : i+12])
+			if !ok || lo < 0xDC00 || lo > 0xDFFF {
+				return true
+			}
+			i += 12 // valid pair
+			continue
+		}
+		i += 6 // non-surrogate escape
+	}
+	return false
+}
+
+// hex4 parses exactly four hex digits into a code unit.
+func hex4(b []byte) (int, bool) {
+	if len(b) != 4 {
+		return 0, false
+	}
+	v := 0
+	for _, c := range b {
+		v <<= 4
+		switch {
+		case c >= '0' && c <= '9':
+			v |= int(c - '0')
+		case c >= 'a' && c <= 'f':
+			v |= int(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			v |= int(c-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return v, true
 }
 
 // jsonHasDupKeys reports whether any object in the JSON stream repeats a member

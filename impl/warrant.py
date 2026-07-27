@@ -153,11 +153,51 @@ def _reject_constant(sym):
     raise ValueError(f"invalid I-JSON constant: {sym}")
 
 
+def _reject_lone_surrogates(obj):
+    """RFC 7493 I-JSON: every string is valid Unicode — no unpaired surrogates.
+    Python's json keeps a lone-surrogate escape (``\\ud800``) as a surrogate
+    code point in the resulting str; Go's decoder substitutes U+FFFD. Left
+    unchecked the two implementations parse the SAME bytes into DIFFERENT string
+    values, splitting the I-JSON domain (observably: a record/trust actor id with
+    a lone surrogate is ``uncomputable`` in Python but a distinct recomputed id
+    in Go). Reject in both so a lone surrogate is uniformly malformed. A valid
+    surrogate PAIR (``\\ud800\\udc00``) is combined by json.loads into a single
+    non-surrogate code point and is left untouched — only unpaired ones raise."""
+    if isinstance(obj, str):
+        if any(0xD800 <= ord(c) <= 0xDFFF for c in obj):
+            raise ValueError("lone surrogate in string (invalid I-JSON)")
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            _reject_lone_surrogates(k)
+            _reject_lone_surrogates(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            _reject_lone_surrogates(v)
+    return obj
+
+
 def loads_ijson(raw):
-    """json.loads restricted to I-JSON: rejects duplicate member names AND the
-    non-JSON constants NaN/Infinity/-Infinity (SPEC §4 / RFC 7493)."""
-    return json.loads(raw, object_pairs_hook=_reject_dup_keys,
-                      parse_constant=_reject_constant)
+    """json.loads restricted to I-JSON: rejects duplicate member names, the
+    non-JSON constants NaN/Infinity/-Infinity, AND unpaired surrogates in any
+    string or member name (SPEC §4 / RFC 7493)."""
+    return _reject_lone_surrogates(
+        json.loads(raw, object_pairs_hook=_reject_dup_keys,
+                   parse_constant=_reject_constant))
+
+
+def _canon_eq(doc, raw):
+    """``canon(doc) == raw``, but a doc carrying a lone surrogate (which canon
+    cannot UTF-8 encode) counts as NON-canonical rather than raising. The CAS
+    blob round-trip paths below (policy blob, canonical JSON blob, ski check
+    blob) use PLAIN ``json.loads`` — which keeps lone surrogates, unlike
+    ``loads_ijson`` which rejects them — so they must treat an un-encodable doc
+    as simply not matching its raw bytes. This matches Go, whose decoder
+    substitutes U+FFFD and then fails the identical canon comparison: both reach
+    a bounded "not canonical" outcome instead of a Python-only crash."""
+    try:
+        return canon(doc) == raw
+    except (UnicodeEncodeError, ValueError):
+        return False
 
 
 def warrant_id(body):
@@ -313,7 +353,7 @@ def run_ski_check(store, check_hex, sg=None):
         doc = json.loads(raw)                # was leaking JSONDecodeError past the
     except ValueError:                       # caller's `except RuntimeError` (crash)
         raise RuntimeError("malformed check blob (not JSON)")
-    if canon(doc) != raw:
+    if not _canon_eq(doc, raw):
         raise RuntimeError("malformed check blob (not JCS-canonical)")
     err = validate_ski_blob(doc)
     if err:
@@ -515,7 +555,7 @@ def _read_json_blob_if_canonical(store, h):
         doc = json.loads(raw)
     except Exception:
         return None
-    return doc if canon(doc) == raw else None
+    return doc if _canon_eq(doc, raw) else None
 
 
 def fingerprint(reason, body, store):
@@ -658,7 +698,7 @@ def _parse_policy_blob(store, h):
         return None, False
     if not isinstance(doc, dict) or doc.get("warrant_policy") != "0.3":
         return None, False
-    if canon(doc) != raw:
+    if not _canon_eq(doc, raw):
         return None, True
     if set(doc) != {"warrant_policy", "threshold"}:
         return None, True
