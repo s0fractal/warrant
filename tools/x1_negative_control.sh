@@ -229,6 +229,33 @@ else
   echo "        (we are warrant; A1 builds OUR impl-go, and CI must not corrupt that)"
 fi
 
+# --------------------------------------------------------------------------
+# Control 8 — a polluted machine boundary must go red (B1). The report is
+# specified as exactly one JSON object on stdout, and B1's stream assertion
+# used to normalise the stream before checking it, which made the check
+# vacuous (Codex X1 re-gate, P2). An assertion with no control behind it is a
+# claim, so: emit one extra blank line ahead of the report and require B1 to
+# reject it. warrant holds the verifier, so this runs when the sibling is
+# warrant.
+# --------------------------------------------------------------------------
+if [ -f "$SIBLING/SPEC.md" ] && [ -f "$SIBLING/impl/warrant.py" ]; then
+  control "a blank line before the JSON report must break B1" "B1" '
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1]) / "impl/warrant.py"
+src = p.read_text()
+needle = "            print(json.dumps(report, separators="
+i = src.find(needle)
+if i < 0:
+    sys.exit(1)
+indent = " " * 12
+p.write_text(src[:i] + indent + "print()\n" + src[i:])
+sys.exit(0)
+'
+else
+  echo "  n/a   polluted-boundary control — the sibling is not warrant"
+  echo "        (we are warrant; B1 runs OUR verifier, and CI must not corrupt that)"
+fi
+
 echo
 if [ "$RAN" -eq 0 ]; then
   echo "X1-NEGATIVE-CONTROL: FAIL — no control ran at all. That is precisely the"

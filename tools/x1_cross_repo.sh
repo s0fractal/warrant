@@ -31,6 +31,20 @@
 # a required crossing is a FAILURE unless X1_DEGRADED=1 is set explicitly, which
 # is for local exploration only and must never be set in CI.
 #
+# THE LANDING SEAM (read before merging this to either master)
+# A cross-repo merge is not atomic, so the FIRST of the two master merges
+# necessarily sees the sibling's master without X1 — a real mirror-absence, and
+# under the rules above a red gate. That window is expected and must be crossed
+# deliberately, not papered over by leaving absence permanently skippable:
+#
+#   1. merge on one master (explicitly authorised; X1 there will be red on E
+#      until step 2, and that redness is CORRECT);
+#   2. merge on the other master immediately — this is not a step to postpone;
+#   3. re-run X1 strict on BOTH masters and require ALL PASS;
+#   4. only then update the reproducible sibling pins, in their own commit.
+#
+# X1_BOOTSTRAP=1 exists for step 1 alone and CI never sets it.
+#
 # USAGE
 #   tools/x1_cross_repo.sh                 # clone sibling at HEAD, strict
 #   SIBLING=/path/to/sibling tools/x1_cross_repo.sh   # use a local checkout
@@ -157,13 +171,25 @@ import json, subprocess, sys
 wp, store = sys.argv[1], sys.argv[2]
 p = subprocess.run([sys.executable, wp, "--store", store, "verify", "--store-mode", "--json"],
                    capture_output=True, text=True)
-out = p.stdout.strip()
 # The report is only half the boundary. Discarding the exit status accepts a
 # verifier that prints ok:true and exits non-zero, and discarding stderr accepts
 # one that pollutes a stream documented as carrying exactly one JSON object
 # (Codex X1 gate, P2). Bind all three to each other.
+#
+# Check RAW stdout, before any normalisation. The first version of this assertion
+# ran `.strip()` and then counted newlines, which is vacuous: strip removes the
+# very characters the check is about, so a leading blank line, two trailing
+# newlines, and a whitespace-only suffix line all passed as "exactly one physical
+# line" (Codex X1 re-gate, P2). The contract is that stdout is the JSON object
+# and at most one terminating newline -- nothing else.
+raw = p.stdout
 assert p.stderr == "", f"verifier wrote to stderr: {p.stderr[:300]!r}"
-assert out.count("\n") == 0, "report must be exactly one physical line"
+out = raw[:-1] if raw.endswith("\n") else raw
+assert out, "verifier produced no report on stdout"
+assert "\n" not in out, (
+    "stdout must be the report and at most ONE terminating newline; got "
+    f"{raw[:120]!r}")
+assert out == out.strip(), f"stdout carries stray whitespace around the report: {raw[:120]!r}"
 r = json.loads(out)
 assert p.returncode == (0 if r["ok"] else 1), \
     f"exit {p.returncode} disagrees with ok={r['ok']} (expected 0 iff ok)"
