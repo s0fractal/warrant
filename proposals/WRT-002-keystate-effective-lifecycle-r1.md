@@ -1,271 +1,337 @@
 # WRT-002: Key-state, authorized effective-lifecycle, and the R1 checkpoint
 
-**Status:** DRAFT / PROPOSED (2026-07-27) — design only. **No production signatures,
-no adoption, no cross-implementation port.** This document specifies the settlement
-substrate that WRT-001's stored (R1) wave citation depends on — WRT-001 §Deferred
-items **1 (authorized effective-lifecycle)** and **2 (key-state → R1 checkpoint)**,
-which that document declares **inseparable** ("the effective set is defined *by* key
-state") and orders **before** the budget freeze (WRT-001 §8). Adoption requires the
-Decision Process: ≥3 independent-family review with every P0/P1 closed, a reference
-implementation gate, and a 2-of-3 governance threshold warrant — **none of which
-this draft performs.**
+**Status:** DRAFT **rev 2** (2026-07-27) — design only. **No production signatures,
+no adoption, no code, no runtime registration, and no frozen wire bytes.** This
+document specifies the settlement substrate WRT-001's stored (R1) wave citation
+depends on — its Deferred items **1 (authorized effective-lifecycle)** and **2
+(key-state → R1 checkpoint)**, declared inseparable and ordered before the §8 budget
+freeze. Adoption requires the Decision Process (≥3 independent-family review, all
+P0/P1 closed; a reference-implementation gate with Python↔Go parity; a 2-of-3
+governance threshold warrant) — none performed here.
 
-**Why Warrant-level, not wave-level.** Key-state, authorized supersession, and a
-point-in-time effective checkpoint are **general settlement primitives** — they
-govern *any* stored settlement citation, not only `sigma-glyph.wave@v1`. WRT-001
-consumes them; it does not own them. Kept separate so WRT-001 stays the runtime
-contract and WRT-002 is the substrate it binds.
+**rev 2** answers the Codex design gate (`reviews/2026-07-codex-wrt-002-design-gate.md`),
+which correctly found rev 1 was not a closed replay machine: it committed an output
+root but no immutable input cut, ignored that envelope signatures are outside the
+WarrantID (so growth immunity was false), left "the policy that admitted X"
+undefined, and gave no total causal transition algorithm. rev 2 fixes these in the
+order the gate prescribed and **explicitly defers the wire-byte freeze** to a later
+revision, after this model is itself attacked.
+
+**Why Warrant-level, not wave-level.** Key-state, authorized supersession, an
+immutable historical cut, and a checkpoint are **general settlement primitives** —
+they govern *any* stored settlement citation. WRT-001 and ADR-008 consume them;
+WRT-002 sits **below** both.
 
 ---
 
 ## 0. What this builds on in current Warrant (grounding)
 
-The design is written against the EXACT shipped settlement semantics; it does not
-reinvent them. Anchors (`impl/warrant.py`, `impl-go/main.go`, `SPEC.md`):
+Anchored to shipped semantics (`impl/warrant.py`, `impl-go/main.go`, `SPEC.md`):
 
-- **Supersede is a bare marker today — no authorization, no eviction.** SPEC §7
-  (SPEC.md:125) requires only that `subject.hash` be the superseded WarrantID; there
-  is **no** clause on *who* may supersede. The impl checks only subject presence
-  (warrant.py:1136 / main.go:2235) and a valid self-signature by `body.actor.id`.
-  Crucially, `active_records` (warrant.py:915-919 = `record_roots(wid) ∩ active_roots`,
-  well-signed, valid-policy) **does not subtract supersede targets at all** — so
-  today a superseded record **remains eligible**. Eligibility == effective. R1 must
-  introduce BOTH the authorization gate AND the effective/eligible distinction.
-- **Key-state is well-defined and implemented.** `keys_before(wid)`
-  (warrant.py:867-876 / `keysBefore` main.go:1909): start from genesis-pinned
-  `actor→keys`, walk ancestors in DAG order (`(depth, wid)`), and for each *authorized*
-  rotation replace that actor's key set — **latest authorized rotation wins**, else
-  the genesis key. `threshold_keys(wid) = keys_before(wid)` (warrant.py:878-883);
-  a signature counts for an actor only if valid AND by a key bound at that DAG
-  position (SPEC.md:113). Seeded by the trust config's `actors` (warrant.py:835).
-- **Rotation** (SPEC.md:103; `rotation_authorized`, warrant.py:885-909 /
-  main.go:1938-1985): an `accept` whose subject is a key blob `{actor,key}`, requiring
-  proof-of-possession by the incoming key **plus** either the threshold satisfied
-  against `prior_keys = keys_before(wid)`, or (no explicit policy) a valid signature
-  by a key already bound to the actor. The incoming key's PoP does not count toward
-  the threshold.
-- **Conflict is detected but its RESOLUTION is dormant.** `conflict_actors`
-  (warrant.py:945-953) flags an actor with >1 maximal (mutually DAG-unordered)
-  authorized rotation; SPEC.md:105 says a conflicted key MUST NOT count toward a
-  quorum "until a later warrant — authorized by the unconflicted remainder —
-  resolves it; if the threshold would become unsatisfiable, it is reduced to exclude
-  the conflicted actor strictly for conflict resolution." The reduction helper
-  exists — `_threshold_satisfied(..., conflicted=frozenset())` (warrant.py:711-717) —
-  **but every derivation caller passes an empty `conflicted` set**; `conflict_actors`
-  is computed *after* the fixpoint and consumed only by the bound-report and a
-  `WARN: key-state conflict` (warrant.py:1158). So the spec'd resolution path is
-  present-but-unwired. (There is **no** `resolved_key_state` identifier in-tree; the
-  liveness fix is the DAG-descendant non-conflict rule of SPEC.md:105, pinned by the
-  stale-rotation-replay test tests/settlement.py:302-330, with the rejected
-  "freeze-transitions" alternative recorded in GOV-001:195-205.)
-- **Everything is live-head; no checkpoint exists.** `_settlement_context` reasons
-  over ONE immutable observation of `all_records()` (warrant.py:786-792), but that is
-  the *current* head, recomputed each verify. There is no `authorized_effective_active_for`,
-  no effective set, and no committed point-in-time snapshot anywhere in either impl
-  (those names appear only in proposals/reviews). `active_records`/key-state are
-  mutually dependent and iterated to a fixpoint (warrant.py:911-937).
-- **Trust config / genesis seed authority, fail-closed.** Closed schema
-  `{genesis_roots, actors, genesis_json_sha256}` (warrant.py:592-619). `actors` →
-  genesis keys; `genesis_roots` → initial `active_roots` (∩ well-signed); a root is
-  settlement-active only if genesis-pinned or adopted by an active root's threshold
-  (SPEC.md:178, warrant.py:923-935). `genesis.json` is **advisory** and used only if
-  its hash matches the pinned `genesis_json_sha256` (single read, TOCTOU-safe,
-  warrant.py:625-646); otherwise `WARN: genesis.json unverified` (SPEC.md:182).
+- **Supersede today is a bare marker: no authorization, no eviction.** SPEC §7
+  (SPEC.md:125) requires only `subject.hash == superseded WarrantID`; the impl checks
+  only subject presence (warrant.py:1136 / main.go:2235) plus a valid self-signature.
+  `active_records` (warrant.py:915-919) **never subtracts supersede targets** — a
+  superseded record stays eligible. Today **eligibility == effective**; R1 introduces
+  the distinction *and* the authorization gate.
+- **Key-state is implemented.** `keys_before(wid)` (warrant.py:867-876): genesis-pinned
+  `actor→keys`, walk ancestors in DAG order, each *authorized* rotation **replaces**
+  that actor's key set (latest-authorized-wins). `threshold_keys = keys_before`;
+  a signature counts only if valid AND by a key bound at that DAG position
+  (SPEC.md:113).
+- **Rotation** (SPEC.md:103; `rotation_authorized`, warrant.py:885-909): an `accept`
+  whose subject is a key blob `{actor,key}`, requiring incoming proof-of-possession
+  **plus** either the governing threshold satisfied against `keys_before`, **or**
+  (no explicit policy) a valid signature by a key already bound to the actor.
+  Threshold-authorized **emergency replacement without the outgoing key** is
+  deliberately allowed (incoming PoP + governing quorum) — WRT-002 preserves this.
+- **Conflict is detected; its RESOLUTION is dormant.** `conflict_actors`
+  (warrant.py:945-953) flags an actor with >1 maximal DAG-unordered authorized
+  rotation. SPEC.md:105 says a conflicted key must not count until a later warrant
+  *authorized by the unconflicted remainder* resolves it (threshold reduced if
+  needed). The reduction helper `_threshold_satisfied(..., conflicted=)`
+  (warrant.py:711) exists but is **never called with a non-empty `conflicted`**;
+  `conflict_actors` is report-only, computed live/global *after* the active-set
+  fixpoint — it does **not** provide as-of-cut semantics. (No `resolved_key_state`
+  identifier exists in-tree; the liveness fix is the DAG-descendant non-conflict rule,
+  pinned by tests/settlement.py:302-330, rationale in GOV-001:195-205.)
+- **Everything is live-head; no checkpoint, no effective set.** `_settlement_context`
+  reasons over one immutable observation of `all_records()` (warrant.py:786-792) — but
+  that observation is the *current* head, recomputed each verify. No
+  `authorized_effective_active_for`, no committed cut anywhere.
+- **Trust config / genesis seed authority, fail-closed** (warrant.py:592-647).
+  The **actor→key seeds come from the validated trust config's `actors` map**; the
+  **pinned `genesis.json` establishes ROOTS only** (advisory, used only if its hash
+  matches `genesis_json_sha256`; else `WARN: genesis.json unverified`, SPEC.md:182).
+- **The key map is NOT monotone.** History grows monotonically, but a rotation
+  *replaces* an actor's key set, so the derived key-state changes; only a fixed cut
+  yields a fixed state.
 
-The one load-bearing fact the design turns on: **Warrant settlement authenticates
-only a self-signature for supersede, and does not evict on it.** That is the hole
-items 1–2 close.
+The load-bearing fact: **Warrant authenticates only a self-signature for supersede,
+does not evict on it, and its WarrantID excludes the envelope signatures that carry
+authorization.** WRT-002 closes exactly that.
 
----
+## 1. The problem (one coupled problem)
 
-## 1. The problem (two coupled gaps)
+**1a. Naïve effective-lifecycle is a CENSORSHIP PRIMITIVE.** Defining the effective set
+as `active_records` minus every supersede target lets any actor evict any WarrantID
+on a bare self-signature (§0). WRT-001 §6 forbids it and keeps R0 over *raw*
+eligibility — correct, but R0 then cannot reflect *legitimate* supersession at all.
 
-### 1a. Naïve effective-lifecycle is a CENSORSHIP PRIMITIVE
+**1b. A stored citation over live-head cannot converge.** A settlement-active reason
+ranked over the current effective set is *live*: store growth restages it, so a
+filed precedent goes `stale → unverified → ERR` and poisons prior citations
+(WRT-001:133-141). A stored citation needs a **committed, growth-immune** effective
+set — a **checkpoint** — that is itself **authorized** and **replayable from
+committed inputs**, not from the current store.
 
-Warrant's `active_records` is an **eligibility** set: a record an active `supersede`
-has targeted is *still eligible* (SPEC §7). It is tempting to define the effective
-set as `active_records` **minus every active-supersede target**. But because
-eligibility checks only a self-signature, **any actor can file a `supersede` of any
-other actor's WarrantID** and thereby evict it from the effective set — removing it
-from a jurisdiction's index, its `select()` candidacy, and cardinality counts. That
-is a griefing / eviction attack, not lifecycle. WRT-001 §6 therefore forbids the
-naïve derivation and keeps **R0** ranking over **raw** eligibility (never
-subtracting supersedes) — correct, but it means R0 cannot reflect *legitimate*
-supersession at all. R0 is a raw query, not an effective view.
+These are one problem: the effective set is defined *by* key-state over a *fixed
+historical cut*; the checkpoint commits that cut, that state, and the *evidence* that
+authorized it. rev 2 specifies the five pieces the Codex gate ordered:
 
-### 1b. A stored citation over live-head cannot converge
+1. an **immutable input cut** (§2),
+2. committed **authorization witnesses** (§3),
+3. a **causal, stratified transition algorithm** (§4),
+4. **lifecycle-policy resolution** (§5),
+5. the **R1 checkpoint object** — vehicle chosen, **bytes deferred** (§6).
 
-A settlement-active reason that ranks over the **current** effective set is **live**:
-any later record that joins the set changes the ranking, so a filed precedent goes
-`stale`, and `stale → unverified → ERR` then poisons every prior citation in an
-append-only store. WRT-001 §6 makes R0 an **ephemeral, non-filing** query for this
-reason. A **stored, replayable** citation needs a **committed, growth-immune**
-effective set fixed at a point in time — a **checkpoint** — and that checkpoint must
-itself be **authorized** (not self-filed), or the censorship/forgery problem simply
-moves up one level.
+## 2. The immutable input cut (Codex step 1)
 
-**These are one problem.** The effective set is defined *by* key state (who was
-authorized to act, and to supersede, as of a point in history); the checkpoint
-commits *that* set. So key-state (§2), authorized supersession (§3), and the R1
-checkpoint (§4) are specified together.
+**Frontier.** A checkpoint commits a **frontier `F`**: a JCS-canonical **sorted set of
+WarrantIDs**. The **cut** is the strict prior-closure of the frontier:
 
-## 2. Key-state (the authority clock)
+```
+cut(F) = ⋃_{w ∈ F} priorClosure(w)      # priorClosure(w) = w and all records reachable via prior edges
+```
 
-**Definition.** The **key-state at a history position `p`** is the map
-`actor → { authorized public keys }` that a settlement verifier honours for
-signatures evaluated as of `p`. It is derived from the settlement lineage — genesis
-/ trust-config seed bindings, plus each authorized rotation — and is **monotone in
-the committed history**, never in wall-clock.
+`cut(F)` is downward-closed by construction (every record's priors are in it) and is
+a pure function of the frontier plus content-addressed record bodies — no store head,
+no `ts`, no global epoch (Warrant has none; SPEC.md:105). Post-frontier growth is
+**invisible** to `cut(F)`: this is where growth-immunity comes from.
 
-**Requirements the design pins (mechanics grounded in §0):**
+**Self-exclusion by construction.** The checkpoint record is filed *after* `F` (it
+cites `F`), so it is not in any `priorClosure(w ∈ F)` and is **never a member of its
+own cut**. The rev-1 identity cycle (a root committed inside the body that includes
+the committing WID) cannot arise: the effective set is derived over `cut(F)`, which
+excludes the checkpoint.
 
-- **Seed.** The trust config / pinned `genesis.json` establishes the initial
-  `actor → keys` bindings and the genesis roots that anchor each jurisdiction.
-- **Rotation.** An actor rotates a key only via a record **authorized by the actor's
-  current key-state** (a new key is bound only if the rotation is signed by a key
-  already authoritative for that actor). A rotation is a state transition, not a
-  free assertion.
-- **Conflict.** When the lineage admits two maximal, DAG-unordered authorized
-  rotations for one actor (`conflict_actors`, warrant.py:945), that actor's key is
-  **not** honoured — fail-closed, never pick-one-arbitrarily (SPEC.md:105).
-- **Liveness + resolution (a dormant path WRT-002 must ACTIVATE).** SPEC.md:105
-  already fixes the deadlock: a conflicted key must not count toward a quorum until a
-  later warrant *authorized by the unconflicted remainder* resolves it, reducing the
-  threshold to exclude the conflicted actor strictly for that resolution (this is
-  what stops a compromised key from vetoing its own resolution forever —
-  GOV-001:195-205's "perpetual-veto self-destruct"). But today that path is
-  **present-but-unwired**: the reduction helper `_threshold_satisfied(..., conflicted=)`
-  (warrant.py:711) is never called with a non-empty `conflicted` set, so
-  `conflict_actors` is report-only (§0). Because R1 makes the effective set and the
-  checkpoint *depend* on key-state, WRT-002 requires the resolution to be wired into
-  the derivation fixpoint — otherwise a conflict deadlocks the very key-state a
-  checkpoint must commit. The stale-rotation-replay non-conflict (an ancestor replay
-  is DAG-ordered → harmless, tests/settlement.py:302-330) is preserved.
-- **As-of-checkpoint, not live-head.** For R1, the authoritative key-state is the one
-  **committed by the checkpoint** (§4), so a key rotated *after* the checkpoint does
-  not retroactively change what the checkpoint authorized.
+**No filer omission of a rival inside the cut.** The effective set is *derived* over
+`cut(F)` (§4/§5), never filer-listed — so a rival that is in `cut(F)` cannot be
+dropped; it is included or superseded by the deterministic derivation. A rival that
+is **concurrent and outside** `cut(F)` is a genuinely different history line that this
+checkpoint does not attest to; merging it is a *later* checkpoint over a larger
+frontier. To stop frontier-gerrymandering, **`F` must be an antichain of `cut(F)`**
+(no member of `F` is a prior of another) and the checkpoint's completeness is an
+**authorized** claim (§6): only `J`'s threshold may assert "`F` is the frontier",
+so a single filer cannot unilaterally choose a cut that omits a rival.
 
-## 3. Authorized effective-lifecycle
+**Vectors:** omitted-already-present rival (in `cut(F)` → still derived); post-cut
+growth (invisible → replay unchanged); untrusted `ts`/epoch backfill (ignored — cut
+is causal, not temporal); checkpoint self-inclusion (impossible by construction).
 
-**The authorization rule (closes 1a).** A `supersede` of target `X` is **EFFECTIVE**
-only if its filer is **authorized to supersede `X`** — i.e., the superseder's
-signature is honoured by the key-state (§2) **and** the superseder satisfies the same
-governing authority that admitted `X`:
+## 3. Committed authorization witnesses (Codex step 2)
 
-- **self-authorized** — the supersede is signed by a currently-authorized key of the
-  **same actor** named in `X`'s body (`X.actor.id`): an actor may retract or replace
-  its own record; **or**
-- **policy-authorized** — the supersede meets the **jurisdiction's threshold policy
-  that governs `X`** (`X.under` / the root policy): the same authority that could have
-  admitted `X` may retire it.
+**The seam.** A WarrantID hashes only the **body**; SPEC §5 permits appending
+envelope co-signatures without changing any WID. Threshold satisfaction (adoption,
+rotation, supersede authorization) is evaluated from those *mutable* signatures. So a
+checkpoint that commits only WIDs/roots is not growth-immune: appending a co-signature
+to a supersede `S` after the checkpoint can make `S` authorized and evict a target —
+with no WID, policy, or committed-root change (Codex countervector).
 
-A `supersede` that is merely *eligible* (self-signed by a foreign actor, or by a key
-not authoritative for its claimed actor, or failing the governing threshold) is
-**not effective**: it stays in the store as a record but **does not evict its
-target**. This is exactly what defeats the censorship primitive.
+**Fix — the checkpoint commits the evidence, and replay uses only it.** For every
+**authorized state transition** in `cut(F)` that the derivation relies on — each
+root-adoption, rotation, and *effective* supersede — the checkpoint commits a
+**witness manifest**: a JCS-canonical, sorted list of
 
-**Effective set.** `authorized_effective_active_for(J, checkpoint)` =
-the records active for jurisdiction `J` as of `checkpoint`, **minus** every target of
-an **authorized** supersede (per the rule above), evaluated under the key-state the
-checkpoint commits. This — not raw eligibility, and not raw-minus-targets — is what a
-checkpoint commits and a stored citation ranks over.
+```
+{ warrant_id, sig_witnesses: [ {actor, key, sig}, … ] }
+```
 
-**Supersede-of-supersede (the fold).** Supersession is resolved as a fold over the
-**authorized-supersede relation**, not a one-pass subtraction:
+where `sig_witnesses` is the **exact multiset of signatures the derivation counted**
+for that transition. The checkpoint commits a **`witness_root`** (a set-commitment
+over the manifest). **Replay authorizes each transition using ONLY the committed
+witnesses**, never the live envelope — a signature appended after the checkpoint is
+not in the manifest, so it cannot change the replay. Conversely, a witness in the
+manifest that no longer verifies (key/body mismatch) fails the checkpoint
+(`unverified`). This freezes rotation authorization (hence the key-state pin) and
+supersede authorization against ordinary later growth.
 
-- if an authorized supersede `S₁` targets `X`, `X` is not effective;
-- if `S₁` is itself targeted by an authorized supersede `S₂`, then `S₁` is not
-  effective, so its eviction of `X` **no longer stands** — `X` reverts to effective
-  **unless** another authorized supersede still targets it;
-- the fold is computed to a fixed point over the committed lineage and MUST be
-  deterministic and order-independent (a set relation, not a sequence).
+(Equivalent alternative, noted not chosen: represent every authorization as its own
+content-addressed record so nothing lives in a mutable envelope. That is a larger
+Warrant change; the witness manifest is the minimal fix and is what rev 2 specs.)
 
-**Competing authorized supersedes** of the same target do not "double-evict"; the
-target is simply not effective. Competing supersedes that would *reinstate*
-different states surface as a **settlement conflict** (like a Book III ConflictSet),
-never a silent arithmetic merge.
+**Vectors:** exact-before (one sig, `S` unauthorized, `X` kept) and exact-after (a
+co-signature appended — replay unchanged because the manifest is authoritative);
+witness that stops verifying → `unverified`.
 
-## 4. The R1 authorized historical checkpoint
+## 4. Causal, stratified transition algorithm (Codex step 3)
 
-**Object.** An R1 checkpoint is a **settlement record** (candidate tag
-`checkpoint@v1`) that commits, for a jurisdiction `J` at an epoch:
+The dependency graph has **negative edges** (a rotation enables a key; a key-signed
+supersede can revoke that rotation), so a "current-state, re-evaluate-after-effects"
+fixpoint is non-monotone and can oscillate (rev-1's flaw). rev 2 uses a **causal,
+DAG-positioned** derivation with an **immutable pre-state rule**.
 
-- `jurisdiction` (a genesis root WID);
-- `epoch`;
-- `effective_set_root` — a canonical set-commitment (a hash over the sorted effective
-  WarrantIDs) of `authorized_effective_active_for(J, self)` — the output of §3's
-  **authorized** derivation, not raw eligibility. (This is a Warrant-level primitive;
-  the ADR-008 profile's `assertion_set_root` is one *consumer* of such a root, not a
-  dependency of it — WRT-002 sits **below** ADR-008.)
-- a **key-state pin** — the committed key-state (or its root) the derivation was
-  authorized under (§2 "as-of-checkpoint");
-- the **governing policy** reference that authorizes the checkpoint itself.
+**Authority-state as a function of the causal past.** For each record `w ∈ cut(F)`
+define `AS(w)` = the authority state (key-state + conflict markers + effective
+markers) obtained by folding the transitions along `priorClosure(w)`, where **each
+transition is authorized against its own strict-causal pre-state**
+`preAS(w) = merge(AS(p) for p in w.prior)` (the empty merge = the genesis seed). `AS`
+is well-founded on the acyclic causal order and is a **pure function of `cut(F)` +
+the committed witnesses** — deterministic and order-independent (a linear extension is
+used only for iteration; a record never reads a concurrent branch's effect, only a
+`merge` at its own `prior` join).
 
-**Authorization (non-forgeable).** A checkpoint is valid **only if it is
-threshold-authorized by `J`'s governing policy** — signed to the jurisdiction's
-threshold, **not self-filed**. A self-signed "checkpoint" is rejected, so an attacker
-cannot mint a checkpoint that commits a censorship-derived or fabricated set.
+**Monotone authorization (breaks the cycle).** A transition `w` is authorized iff its
+committed witnesses satisfy the rule against `preAS(w)`. **Once authorized, that
+authorization is never retroactively withdrawn.** For `R: K0→K1` then a same-actor
+supersede `S` of `R` signed by `K1`: `K1 ∈ preAS(S)` because `R` is in `S`'s causal
+past and was authorized in an earlier stratum, so **`S` is authorized**; `S`'s
+revocation of `R` applies only in states that have `S` in *their* past — it does not
+un-authorize `S` itself. No oscillation; a single deterministic outcome.
 
-**Growth-immunity + replayability.** Because the checkpoint commits a **root** of the
-effective set at an epoch under a **pinned** key-state, later store growth cannot
-change the committed root. A verifier **replays** the checkpoint: it recomputes
-`authorized_effective_active_for(J, checkpoint)` from the committed inputs and
-**requires it to equal `effective_set_root`**; a mismatch is `unverified`. A stored
-citation that binds a valid checkpoint is therefore replayable and immune to store
-growth — the property R0 live-head cannot have.
+**Conflict state (carried, not post-hoc).** `AS(w)` carries a per-actor conflict
+marker: an actor is conflicted at `w` iff two authorized rotations for it are maximal
+and DAG-unordered within `priorClosure(w)`. A conflicted actor's key **does not count**
+toward any quorum evaluated at or after `w` (fail-closed). **Resolution** is an
+authorized record `Q` that (a) **descends from every maximal conflicting rotation**
+(so it is causally after the whole conflict), and (b) is authorized against `preAS(Q)`
+by the **unconflicted remainder** of the governing quorum, with the threshold reduced
+to exclude the conflicted actor strictly for `Q` (SPEC.md:105). If no unconflicted
+remainder can satisfy even the reduced threshold, the actor **stays conflicted
+(terminal, fail-closed)** — the jurisdiction cannot use that actor until a wider
+quorum acts; the derivation never guesses.
 
-**Binding from WRT-001.** WRT-001 §6 already requires that a **stored** (settlement-
-active) `wave@v1` reason **explicitly carry the authorized checkpoint WarrantID**, and
-that a verifier **reject a settlement-active wave reason that names no checkpoint**.
-WRT-002 supplies what that WID must resolve to and how it is checked: resolve the
-checkpoint, verify it is threshold-authorized and valid (§4), replay its
-`effective_set_root`, and rank the citation over the checkpoint's authorized
-effective set (minus the bound citation's own WID) — never over live-head. This is
-what makes a stored precedent both censorship-resistant and convergent.
+**Supersede-of-supersede (formal recurrence, acyclic by causality).** A supersede `S`
+of `X` requires `X ∈ priorClosure(S) \ {S}` (§5 causal rule), so supersede chains
+strictly increase in causal depth and are acyclic. Over `cut(F)`:
 
-## 5. Countervectors (before adoption)
+```
+effective(X) ⇔ active_cut(X)  ∧  ¬∃ S : authorizedSupersede(S, X) ∧ effective(S)
+```
 
-Every one must be a permanent differential vector (Python ↔ Go), fail-closed, and
-bounded. Effective-lifecycle / key-state (extends WRT-001 item 1's list):
+where `active_cut(X)` is root-reachability + well-signedness + valid-policy computed
+over `cut(F)` (the existing `active_records` predicate, but scoped to the cut, not
+live-head), and `authorizedSupersede(S,X)` is §5. The recurrence terminates
+(well-founded on causal depth) and is deterministic. Competing authorized supersedes
+of one `X` do not double-evict — `X` is simply not effective; competing transitions
+that would reinstate *different* states surface as a settlement **conflict**, never a
+silent merge.
 
-- **foreign supersede** — a supersede of `X` self-signed by an actor other than
-  `X.actor.id` and failing `X`'s threshold → **not effective**, `X` stays in the set;
-- **unbound-key supersede** — signed by a key not authoritative for its claimed actor
-  under the key-state → not effective;
-- **wrong-policy supersede** — meets *a* threshold but not the one governing `X` →
-  not effective;
-- **authorized self supersede** — signed by `X`'s own authorized key → `X` evicted;
-- **authorized policy supersede** — meets `X`'s governing threshold → `X` evicted;
-- **chained** `S₂`-supersedes-`S₁`-supersedes-`X` → `X` reinstated (fold fixed point);
-- **competing** authorized supersedes → conflict surfaced, not silent merge;
-- **unrelated** supersede (target not in `J`'s set) → no effect on the set;
-- **rotation-then-supersede** — a key rotated after the checkpoint does not change
-  the checkpoint's authorized set (as-of-checkpoint key-state).
+**Vectors:** rotation-enables-its-own-revocation (no oscillation, `S` authorized,
+`R` revoked forward); resolver descends only one of two maxima → not a valid resolver;
+two policy actors simultaneously conflicted → threshold reduced deterministically or
+terminal-conflict; chained `S₂`-supersedes-`S₁`-supersedes-`X` → `X` reinstated.
 
-Checkpoint (§4):
+## 5. Lifecycle-policy resolution (Codex step 4)
 
-- **forged checkpoint** — self-filed, below threshold → rejected;
-- **censorship-derived checkpoint** — commits a raw-minus-targets set (not the
-  authorized derivation) → replay mismatch → `unverified`;
-- **stale-under-growth** — new records join after the checkpoint; the committed root
-  is unchanged and the bound citation still replays;
-- **key-state-pin tamper** — a checkpoint whose committed key-state does not match its
-  replayed derivation → `unverified`;
-- **checkpoint-less stored citation** — a settlement-active wave reason naming no
-  checkpoint → rejected (WRT-001 §6).
+Ordinary records are **not threshold-admitted** (only root-adoption and rotations are),
+so "the policy that admitted `X`" does not exist. rev 2 defines the lifecycle authority
+explicitly. A supersede `S` of `X` is **authorizedSupersede(S, X)** for jurisdiction
+`J`, evaluated against `preAS(S)` with the committed witnesses (§3), iff **both** the
+causal rule and one authorization path hold:
 
-## 6. Non-goals, ordering, and the gate
+- **Causal position (required).** `X ∈ priorClosure(S) \ {S}`. A supersede must
+  causally descend its target; an old-branch or concurrent `S` is **ineffective**
+  (defeats "stale key on a fork revokes a later record").
+- **Authorization path (one of):**
+  - **SELF** — `S` carries a signature by a key authoritative for `X.actor.id` in
+    `preAS(S)`. An actor may retire its own record; **self-authorization is
+    sufficient alone** and does not additionally require lifecycle policy.
+  - **JURISDICTION POLICY** — for a non-self supersede, `S`'s committed witnesses
+    satisfy **`J`'s governing settlement policy** (the same threshold that governs
+    root-adoption / makes `J` settlement-active), evaluated at `preAS(S)`. This is
+    **not** `X.under`: `X.under` is a check/evidence policy, may be zero/one/several,
+    and is not a lifecycle authority — rev 2 explicitly forbids using it to authorize
+    supersession.
 
-- **Design only.** No signatures, no adoption, no registration of any runtime; no
-  cross-impl port. The reference-prototype path in `sigma-glyph` continues to label
-  its stored-reason demonstration as *anticipating* R1, not a permitted R0.
-- **Ordering.** Items 1–2 are inseparable and precede the WRT-001 §8 budget **freeze**
-  (the exact re-execution cost trace is frozen only once the effective-set scan is
-  fixed here). §7 (novelty fingerprint / tunnel closure) and the governed profile
-  anchor remain deferred; R1 does not depend on them.
-- **Gate.** Adoption requires: ≥3 independent-family review with every P0/P1 closed;
-  a reference-implementation gate with all §5 vectors ALL PASS **and** Python↔Go
-  differential parity; a settlement/liveness re-check of the rotation + checkpoint
-  transitions (the conflict-resolution / perpetual-veto self-destruct class,
-  SPEC.md:105 + GOV-001:195-205); and a 2-of-3 governance threshold warrant. Until all of that lands, `wave@v1` stays structurally open for
-  stored precedent, and only the ephemeral R0 query is available.
+**Jurisdiction-relativity.** A record reachable from two adopted roots may be effective
+in `J₁` and superseded in `J₂` independently; a checkpoint is for **one `J`**, and all
+of §4/§5 is evaluated within that `J`. `J`'s governing settlement policy is the policy
+under which `J`'s genesis/adopted root is settlement-active (SPEC.md:178), resolved to
+a single policy per jurisdiction; if a jurisdiction's root admits no single governing
+threshold policy, only SELF supersession is available there (fail-closed, never a
+guess among candidates).
+
+**Vectors:** foreign non-self supersede below `J`'s quorum → ineffective; the same
+meeting `J`'s quorum → effective; self-supersede by the actor's authorized key →
+effective; target with zero/multiple `X.under` policies → `X.under` never authorizes;
+target shared by two jurisdictions → per-`J` outcome; unordered/stale-key supersede →
+ineffective (causal rule).
+
+## 6. The R1 checkpoint object — vehicle chosen, bytes DEFERRED (Codex step 5)
+
+**Versioning vehicle (chosen).** A checkpoint is **an `accept` Warrant whose subject
+is a canonical `checkpoint@v1` blob** — the same shape as a rotation (an `accept`
+whose subject is a key blob), so **no new body version is required** and the existing
+closed 0.1/0.2 body schema is unchanged (SPEC v0.3 adds no body schema). The
+checkpoint's **threshold authorization is the `accept`'s own signatures satisfying
+`J`'s governing settlement policy** — a checkpoint is valid only if threshold-signed
+by `J`, never self-filed. The `checkpoint@v1` subject blob commits, for `(J, sequence)`:
+
+- `jurisdiction` (a genesis/adopted root WID for `J`);
+- `sequence` (a per-`J` monotone counter; **not** a wall-clock epoch — Warrant has no
+  global time);
+- `frontier` (§2, the sorted WID set whose strict prior-closure is the cut);
+- `effective_set_root` (§4/§5 output over the cut, self-excluded);
+- `key_state_root` (the canonical committed key-state **including conflict markers**);
+- `witness_root` (§3);
+- `governing_policy` (the resolved single lifecycle/adoption policy for `J`).
+
+**Replay contract.** A verifier resolves the checkpoint `accept`, checks its
+signatures satisfy `J`'s governing policy, rebuilds `cut(frontier)` from
+content-addressed bodies, re-runs §4/§5 **using only the committed witnesses**, and
+requires the recomputed `effective_set_root` / `key_state_root` to **equal** the
+committed values; any mismatch, any unverifiable witness, or a non-antichain frontier
+is `unverified` (ERR for a settlement-active citation, per WRT-001 §5). Competing
+checkpoints at one `(J, sequence)` are a settlement **conflict** (like a Book III
+ConflictSet), never a silent pick.
+
+**Binding from WRT-001.** WRT-001 §6 already requires a stored `wave@v1` reason to
+name an authorized checkpoint WID and rejects one that names none. WRT-002 supplies
+what that WID resolves to (a threshold-authorized `checkpoint@v1` accept) and how it
+is replayed; the citation then ranks over the checkpoint's authorized effective set
+(minus the citation's own WID), never over live-head.
+
+**BYTES DEFERRED (explicit).** rev 2 does **not** freeze: the closed `checkpoint@v1`
+blob schema and canonical byte layout; the **domain-separated** hashing inputs for
+`effective_set_root` / `key_state_root` / `witness_root`; the canonical encoding of
+key-state-with-conflicts; the `governing_policy` resolution bytes; or the exact
+validation severities. Per the gate, these are frozen **only after** §§2–5 are
+themselves attacked in review, so Python and Go can then be built to one contract.
+Until then no implementation should start.
+
+## 7. Countervectors before the next design gate
+
+All must become permanent Python↔Go differential vectors, fail-closed and bounded.
+The Codex gate's ten, plus §§2–5:
+
+1. checkpoint omits a rival already inside `cut(F)` → still derived (not omittable);
+2. record with old `ts` appended after the checkpoint → invisible (causal cut);
+3. checkpoint self-inclusion → impossible by construction;
+4. threshold co-signature appended after the checkpoint → replay unchanged (witness
+   manifest authoritative);
+5. unordered / stale-key supersede of a later or concurrent target → ineffective;
+6. target with zero/multiple `X.under` policies; target shared by two jurisdictions;
+7. rotation enables its own revocation → deterministic, no oscillation;
+8. resolver descends from only one of two conflicting maxima → not a valid resolver;
+9. two policy actors simultaneously conflicted → deterministic reduction or terminal;
+10. competing checkpoints at one `(J, sequence)` → conflict, not silent pick;
+plus: foreign vs jurisdiction-quorum supersede; self-supersede; chained
+supersede-of-supersede reinstatement; a witness that stops verifying.
+
+## 8. Non-goals, ordering, and the gate
+
+- **Design only.** No signatures, adoption, runtime registration, code, or frozen
+  bytes. The sigma reference path keeps labelling its stored-reason demo as
+  *anticipating* R1, not a permitted R0.
+- **Ordering.** §§2–5 are the substrate; the §6 byte freeze is next (rev 3), then
+  implementation. Items 1–2 precede the WRT-001 §8 budget **freeze** (the exact
+  re-execution scan set is fixed only once §4/§5 are). §7 novelty/tunnel and the
+  governed profile anchor remain independently deferred.
+- **Gate.** Adoption requires ≥3 independent-family review with every P0/P1 closed; a
+  reference-implementation gate with all §7 vectors ALL PASS **and** Python↔Go
+  differential parity over the frozen `checkpoint@v1` bytes; a settlement/liveness
+  re-check of the rotation + resolution + checkpoint transitions (the conflict-
+  resolution / perpetual-veto self-destruct class, SPEC.md:105 + GOV-001:195-205);
+  and a 2-of-3 governance threshold warrant. Until all of that lands, `wave@v1` stays
+  structurally open for stored precedent; only the ephemeral R0 query is available.
