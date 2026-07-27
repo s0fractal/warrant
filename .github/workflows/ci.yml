@@ -79,9 +79,13 @@ jobs:
         run: |
           set -euo pipefail
           V=/tmp/sigma-glyph/tests/spec_conformance/vectors.json
-          EXPECT="$(python3 tools/book1_coverage.py "$V")"
-          echo "expecting: $EXPECT"
-          ./impl-go/warrant-go sigma-conformance "$V" | tee /dev/stderr | grep -qxF "$EXPECT"
+          echo "expecting: $(python3 tools/book1_coverage.py "$V")"
+          # --check, not grep: the rule is POSITIONAL (the summary must be the
+          # transcript's last line) because a vector id may contain newlines and
+          # can otherwise forge a standalone line anywhere above it. pipefail
+          # binds the producer's own exit status into the same decision.
+          ./impl-go/warrant-go sigma-conformance "$V" | tee /dev/stderr \
+            | python3 tools/book1_coverage.py --check "$V"
       - name: Go selftest (schema and verification edges)
         run: ./impl-go/warrant-go selftest examples
       - name: Go verifies warrant store layout
