@@ -118,7 +118,7 @@ def key():
     return k
 
 
-def call(model, messages, max_tokens=24000, retries=3):
+def call(model, messages, max_tokens=32000, retries=3):
     body = json.dumps({"model": model, "messages": messages,
                        "max_tokens": max_tokens}).encode()
     last = None
@@ -146,8 +146,13 @@ def call(model, messages, max_tokens=24000, retries=3):
     sys.exit(f"openrouter failed after {retries} attempts: {last}")
 
 
-REPRO_RE = re.compile(
-    r"```repro\s+([^\n]*)\n(.*?)```", re.S)
+# Two accepted shapes, because reviewers reliably produce both and rejecting the
+# second would silently discard real counter-vectors:
+#   ```repro id=F1 severity=P0 title=...        <- meta on the fence line
+#   ```python\nrepro id=F1 severity=P0 ...      <- meta on the first body line
+REPRO_RE = re.compile(r"```repro[ \t]*([^\n]*)\n(.*?)```", re.S)
+REPRO_INLINE_RE = re.compile(
+    r"```(?:python|py)?[ \t]*\n[ \t]*repro[ \t]+([^\n]*)\n(.*?)```", re.S)
 
 
 def parse_repros(text):
@@ -158,7 +163,10 @@ def parse_repros(text):
     everything after the first word would mislabel the finding in the review.
     """
     out = []
-    for meta_line, code in REPRO_RE.findall(text):
+    found = REPRO_RE.findall(text) + REPRO_INLINE_RE.findall(text)
+    for meta_line, code in found:
+        if not code.strip() or "..." == code.strip():
+            continue                       # a sketch of a block, not a block
         meta = {}
         rest = meta_line
         for k in ("id", "severity"):
@@ -172,7 +180,12 @@ def parse_repros(text):
         else:
             meta["title"] = rest.strip()
         out.append((meta, code))
-    return out
+    # de-duplicate by id, keeping the last (a repaired block supersedes its
+    # earlier draft when a reviewer re-emits the same id in one message)
+    dedup = {}
+    for meta, code in out:
+        dedup[meta.get("id") or f"anon{len(dedup)}"] = (meta, code)
+    return list(dedup.values())
 
 
 def run_repro(workdir, code):
@@ -273,17 +286,10 @@ def main():
 
     rounds = [("round 1 — blind attack", r1)]
     all_results = []
+    last = r1                    # last NON-EMPTY reviewer message
 
     for rnd in (2, 3):
-        repros = parse_repros(rounds[-1][1])
-        if not repros:
-            print(f"[gate] no repro blocks in round {rnd - 1}", file=sys.stderr)
-            if rnd == 2:
-                rounds.append(("round 2 — skipped, no reproductions offered", ""))
-                continue
-            break
-        print(f"[gate] executing {len(repros)} reproduction(s) from round {rnd - 1} ...",
-              file=sys.stderr)
+        repros = parse_repros(last)
         blocks = []
         for meta, code in repros:
             res = run_repro(workdir, code)
@@ -291,9 +297,24 @@ def main():
             mark = "REPRODUCED" if res["violation"] else "not reproduced"
             print(f"  [{meta.get('id', '?')}] {mark} (exit {res['exit']})", file=sys.stderr)
             blocks.append(transcript_block(meta, res))
-        feedback = "\n".join(blocks)
+        if repros:
+            print(f"[gate] executed {len(repros)} reproduction(s) from round {rnd - 1}",
+                  file=sys.stderr)
+        else:
+            print(f"[gate] no parseable repro block in round {rnd - 1}", file=sys.stderr)
+        feedback = "\n".join(blocks) if blocks else (
+            "(NOTHING TO RUN. Your previous message contained no block I could "
+            "execute. A reproduction must be a fenced block whose opening line is "
+            "```repro id=... severity=... title=... followed by real Python — not "
+            "an outline, not prose, not `...`.)")
 
-        if rnd == 2:
+        if not repros and rnd == 2:
+            ask = ("I could not execute anything you wrote, so no finding of yours "
+                   "is yet supported by evidence. Re-emit every attack you actually "
+                   "believe in as a runnable ```repro block, in the exact format "
+                   "above. If an attack cannot be made runnable, drop it to "
+                   "'Questions' and say why. Do not restate the design.")
+        elif rnd == 2:
             ask = ("Here is exactly what happened when I ran your reproductions "
                    "against a pristine model. Now revise, honestly:\n"
                    "  * for each REPRODUCED block, confirm the violation is the one "
@@ -328,11 +349,16 @@ def main():
             {"role": "user", "content":
                 f"SUBJECT: {t['subject']}\n\n{brief}\n\n{REPRO_RULES}\n\n"
                 f"===== NORMATIVE SECTION =====\n{normative}\n\n{sources}"},
-            {"role": "assistant", "content": rounds[-1][1]},
+            {"role": "assistant", "content": last},
             {"role": "user", "content":
                 f"===== EXECUTION TRANSCRIPTS (produced by running your code) =====\n"
                 f"{feedback}\n\n{ask}"}])
         rounds.append((f"round {rnd}", resp))
+        # An empty or whitespace reply must never become the review body — that
+        # is how the first run of this harness produced a document consisting of
+        # a header and two appendices with nothing in between.
+        if resp.strip():
+            last = resp
 
     out = ROOT / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -352,7 +378,7 @@ def main():
         f"> The harness grades nothing and is not a reviewer. Adjudication is a "
         f"separate, human-authorised step (AGENTS.md §4).\n\n")
 
-    body = rounds[-1][1].strip()
+    body = last.strip()
     appendix = ["\n\n---\n\n## Appendix A — machine-executed reproductions (verbatim)\n"]
     for rnd, meta, code, res in all_results:
         appendix.append(
