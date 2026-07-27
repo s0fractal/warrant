@@ -518,21 +518,57 @@ def case_verifier_hardening_k3(tmp):
     py, go = verify_both(s, trust_file(s, roots=[]))
     ok &= assert_verify("k3: dir-as-blob is bounded + parity", py, go)
 
-    # lone surrogate in a body string: PY used to UnicodeEncodeError in canon().
+    # lone surrogate in a body string. Originally PY UnicodeEncodeError'd in
+    # canon(); the first fix bounded it but LEFT A DOMAIN SPLIT — PY kept the
+    # surrogate ("WarrantID uncomputable") while GO substituted U+FFFD and
+    # recomputed a DIFFERENT id ("WarrantID mismatch"). A lone surrogate is not
+    # valid I-JSON (RFC 7493), so both now reject it as an unloadable/malformed
+    # record: same count AND same class (Codex budget-gate inherited item-0 P1).
     s = tmp + "_surrogate"; W.Store(s).init()
     raw = ('{"body":{"warrant":"0.2","decision":"accept","subject":{"hash":"' + "c" * 64
            + '"},"under":["' + "d" * 64 + '"],"because":[],"evidence":[],"actor":{"id":'
            '"\\ud800evil"},"prior":[],"ts":1},"sigs":[]}')
     open(os.path.join(s, "records", "e" * 64 + ".json"), "w").write(raw)
     py, go = verify_both(s, trust_file(s, roots=[]))
-    # P1 (the crash) is fixed: both produce a bounded summary with equal counts.
-    # The message STRING still differs (PY "WarrantID uncomputable" vs GO
-    # "WarrantID mismatch" — GO substitutes U+FFFD and recomputes a different id);
-    # that residual is a tracked P2, so assert counts + no-crash, not full parity.
-    good = (counts(py.stdout) is not None and counts(py.stdout) == counts(go.stdout))
+    good = (counts(py.stdout) is not None and counts(py.stdout) == counts(go.stdout)
+            and "uncomputable" not in py.stdout and "mismatch" not in py.stdout
+            and "mismatch" not in go.stdout)  # neither admits it to the id domain
     print(("OK   " if good else "FAIL "),
-          "k3: lone-surrogate bounded + count parity (P2 msg differs)",
+          "k3: lone-surrogate rejected as malformed in BOTH (domain unified)",
           counts(py.stdout), counts(go.stdout))
+    ok &= good
+
+    # a VALID surrogate PAIR (emoji U+1F600) is legal I-JSON: json.loads combines
+    # it to a single non-surrogate code point and Go decodes it identically. The
+    # rejection MUST NOT catch it — both accept and recompute the SAME WarrantID.
+    s = tmp + "_pair"; W.Store(s).init()
+    raw = ('{"body":{"warrant":"0.2","decision":"accept","subject":{"hash":"' + "c" * 64
+           + '"},"under":["' + "d" * 64 + '"],"because":[],"evidence":[],"actor":{"id":'
+           '"\\ud83d\\ude00"},"prior":[],"ts":1},"sigs":[]}')
+    open(os.path.join(s, "records", "f" * 64 + ".json"), "w").write(raw)
+    py, go = verify_both(s, trust_file(s, roots=[]))
+    # extract the recomputed id from each ("WarrantID mismatch: recomputed <id>")
+    def recid(o):
+        m = re.search(r"recomputed ([0-9a-f]{12})", o); return m.group(1) if m else None
+    good = (counts(py.stdout) == counts(go.stdout) and recid(py.stdout) is not None
+            and recid(py.stdout) == recid(go.stdout))
+    print(("OK   " if good else "FAIL "),
+          "k3: valid surrogate pair preserved + identical id (not over-rejected)",
+          recid(py.stdout), recid(go.stdout))
+    ok &= good
+
+    # a lone surrogate in a TRUST actor key must fail-close identically (this is
+    # the trust/genesis authority surface Codex named): both reject the trust
+    # config and emit the one global settlement ERR, byte-identical.
+    s = tmp + "_trustsurr"; W.Store(s).init()
+    tp = os.path.join(s, "trust.json")
+    open(tp, "w").write('{"actors":{"\\ud800evil":["' + "a" * 64 + '"]}}')
+    py = sh(PY + ["--store", s, "verify", "--settlement", "--trust-config", tp])
+    go = sh([GO, "verify", "--settlement", "--trust-config", tp, s])
+    good = (py.returncode == 1 and go.returncode == 1
+            and W.ERR_SETTLEMENT_TRUST in py.stdout and W.ERR_SETTLEMENT_TRUST in go.stdout)
+    print(("OK   " if good else "FAIL "),
+          "k3: lone-surrogate trust key fail-closed in BOTH", py.returncode, go.returncode)
     ok &= good
 
     # prior cycle (A->B->A) with a rotation-shaped A: Go used to stack-overflow.
