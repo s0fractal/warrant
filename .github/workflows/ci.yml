@@ -67,9 +67,13 @@ jobs:
         run: ./impl-go/warrant-go conformance examples
       # Exit status alone would accept the historical false pass: this command
       # once printed "ALL PASS (33/33 eval)" and exited 0 while skipping the 8
-      # object and 8 deserialize vectors entirely. Derive the expected summary
-      # from the PINNED vector file and require a literal match, so the pinned
-      # job is bound to the same coverage X1 checks at HEAD.
+      # object and 8 deserialize vectors entirely. So the expected summary is
+      # DERIVED from the pinned vector file — and matched with -x, ANCHORED to a
+      # whole line. A substring match is forgeable: the producer prints one line
+      # per vector and a vector's id is data, so an id equal to the expected text
+      # satisfies a substring check while the real summary says something else.
+      - name: Book I coverage assertion behaves (rejection matrix)
+        run: python3 tools/book1_coverage.py --selftest
       - name: Go sigma-glyph conformance, exact coverage (pinned vectors)
         shell: bash
         run: |
@@ -77,7 +81,7 @@ jobs:
           V=/tmp/sigma-glyph/tests/spec_conformance/vectors.json
           EXPECT="$(python3 tools/book1_coverage.py "$V")"
           echo "expecting: $EXPECT"
-          ./impl-go/warrant-go sigma-conformance "$V" | tee /dev/stderr | grep -qF "$EXPECT"
+          ./impl-go/warrant-go sigma-conformance "$V" | tee /dev/stderr | grep -qxF "$EXPECT"
       - name: Go selftest (schema and verification edges)
         run: ./impl-go/warrant-go selftest examples
       - name: Go verifies warrant store layout
