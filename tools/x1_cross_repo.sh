@@ -84,6 +84,19 @@ run_grep() { local label="$1" needle="$2"; shift 2; local out
         if out=$("$@" 2>&1) && printf '%s' "$out" | grep -qF -- "$needle"; then c_ok "$label"
         else c_bad "$label (expected: $needle)"; printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
 
+# run_grep_line <label> <exact line> <command...> : pass iff exit 0 AND some
+# WHOLE line equals the expected text.
+#
+# Use this wherever the expected text overlaps data the producer echoes back. A
+# substring match there is forgeable: `sigma-conformance` prints one line per
+# vector and a vector's `id` is free-form, so a vector named after the expected
+# summary satisfies `grep -qF` while the real summary says something else
+# entirely (Codex sibling-pin re-gate). Anchoring is the whole fix.
+run_grep_line() { local label="$1" needle="$2"; shift 2; local out
+        if out=$("$@" 2>&1) && printf '%s' "$out" | grep -qxF -- "$needle"; then c_ok "$label"
+        else c_bad "$label (expected the exact line: $needle)"
+             printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
+
 # ---------------------------------------------------------------- locate repos
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if   [ -f "$SELF/SPEC.md" ] && [ -d "$SELF/impl-go" ] && grep -qi '^# Warrant' "$SELF/README.md" 2>/dev/null; then
@@ -129,24 +142,17 @@ hdr "A. Book I consensus — warrant's Go evaluator vs sigma's vectors"
 
 if [ -n "$WGO" ]; then
   # Bind ALL PASS to the ACTUAL coverage, derived from the vector file itself.
-  # Matching the bare substring "ALL PASS" is what let warrant-go report success
-  # over 33 of 49 vectors for weeks (Codex X1 gate, P1): a summary line is only
-  # evidence if the number in it is checked against the suite it claims to cover.
-  # The expected string is computed here, so adding a vector or a whole new kind
-  # tightens the assertion automatically instead of loosening it.
-  COVERAGE="$(python3 - "$SIGMA/tests/spec_conformance/vectors.json" <<'PY'
-import collections, json, sys
-d = json.load(open(sys.argv[1]))
-vs = d["vectors"]
-c = collections.Counter(v.get("kind") for v in vs)
-kinds = ", ".join(f"{c[k]} {k}" for k in sorted(c))
-print(f"ALL PASS ({len(vs)}/{len(vs)} — {kinds})")
-PY
-)"
+  # Matching a bare "ALL PASS" is what let warrant-go report success over 33 of
+  # 49 vectors for weeks; matching the derived counts as a SUBSTRING is still
+  # forgeable through a vector id. tools/book1_coverage.py owns both the counting
+  # and the producer's summary prefix, and X1 matches the whole line -- one
+  # artifact, mirrored, rather than three copies of the same rule.
+  COVERAGE="$(python3 "$SELF/tools/book1_coverage.py" \
+                "$SIGMA/tests/spec_conformance/vectors.json" 2>/dev/null)"
   if [ -z "$COVERAGE" ]; then
     c_bad "A1 could not derive expected coverage from sigma's vectors.json"
   else
-    run_grep "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#ALL PASS }" \
+    run_grep_line "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#SIGMA CONFORMANCE: ALL PASS }" \
       "$COVERAGE" "$WGO" sigma-conformance "$SIGMA/tests/spec_conformance/vectors.json"
   fi
 else
@@ -264,7 +270,11 @@ hdr "E. Mirror integrity — the gate itself is the same gate on both sides"
 # explicit and opt-in: X1_BOOTSTRAP=1 for the single landing where one side has
 # X1 and the other does not. CI never sets it.
 BOOTSTRAP="${X1_BOOTSTRAP:-0}"
-for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh .github/workflows/x1-cross-repo.yml; do
+# tools/book1_coverage.py is mirrored too: A1 derives its expected summary
+# from it, so the two sides asserting different coverage rules would be the
+# same class of silent divergence E exists to catch.
+for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh \
+         tools/book1_coverage.py .github/workflows/x1-cross-repo.yml; do
   if [ ! -f "$SIB/$f" ]; then
     if [ "$BOOTSTRAP" = "1" ]; then
       printf '  \033[33mSKIP\033[0m  E:%s absent in %s (X1_BOOTSTRAP=1)\n' "$f" "$SIB_NAME"

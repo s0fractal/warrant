@@ -163,6 +163,25 @@ if [ -f "$SIBLING/tests/spec_conformance/vectors.json" ]; then
   control "flipped object expected.hash must break A1"        "A1" "$(vector_tamper object hash hex)"
   control "flipped eval expected.result_hash must break A1"   "A1" "$(vector_tamper eval result_hash hex)"
   control "inverted deserialize expected.valid must break A1" "A1" "$(vector_tamper deserialize valid bool)"
+
+  # A suite that grows a class the evaluator has never heard of must not pass.
+  # This is the forward-looking half of per-kind coverage: the three controls
+  # above pin the kinds that exist today, this one pins what happens when a new
+  # one appears.
+  control "a vector of an UNKNOWN kind must break A1" "A1" '
+import copy, json, sys, pathlib
+p = pathlib.Path(sys.argv[1]) / "tests/spec_conformance/vectors.json"
+d = json.loads(p.read_text())
+vs = d.get("vectors") or []
+if not vs:
+    sys.exit(1)
+clone = copy.deepcopy(vs[0])
+clone["id"] = "NEW-CLASS-1"
+clone["kind"] = "quantum"
+vs.append(clone)
+p.write_text(json.dumps(d))
+sys.exit(0)
+'
 else
   echo "  n/a   per-kind Book I controls — the sibling holds no vectors.json"
   echo "        (we are sigma-glyph; A1 reads OUR vectors, and CI must not corrupt those)"
@@ -199,7 +218,7 @@ control "deleting a mirrored X1 file must break E" "E:" '
 import sys, pathlib
 root = pathlib.Path(sys.argv[1])
 for rel in ("tools/x1_negative_control.sh", "tools/x1_cross_repo.sh",
-            ".github/workflows/x1-cross-repo.yml"):
+            "tools/book1_coverage.py", ".github/workflows/x1-cross-repo.yml"):
     p = root / rel
     if p.exists():
         p.unlink()
