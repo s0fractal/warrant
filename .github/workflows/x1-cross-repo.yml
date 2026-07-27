@@ -1,0 +1,74 @@
+# X1 — cross-repo coupling gate (warrant <-> sigma-glyph), HEAD against HEAD.
+#
+# The existing conformance jobs pin the sibling BY COMMIT on purpose, and this
+# workflow does NOT replace them: pinned = the reproducibility gate. But a pin is
+# a snapshot, so a change on either HEAD stays invisible until a human bumps it.
+# Measured 2026-07-27, the pins had drifted 19 days apart (sigma pinned three
+# different warrant commits at once; warrant pinned a sigma commit older than its
+# last 50 commits) and nothing anywhere ran HEAD against HEAD. X1 is that canary.
+#
+# A red X1 with green pinned jobs means: the seam moved, bump or fix deliberately.
+#
+# NOT AN INDEPENDENT GATE (AGENTS.md §3). It runs suites; it hunts no
+# counter-vectors. Green here is necessary and never sufficient.
+name: x1-cross-repo
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Daily. The sibling can move without touching this repo, so time — not our
+    # own pushes — is the trigger that actually catches sibling-side drift.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [sibling-head-moved]
+
+concurrency:
+  group: x1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install python deps
+        run: pip install --quiet cryptography
+
+      - name: Clone sibling at HEAD (deliberately UNPINNED — that is the point)
+        run: |
+          set -euo pipefail
+          case "${{ github.repository }}" in
+            */warrant)     SIB=sigma-glyph ;;
+            */sigma-glyph) SIB=warrant ;;
+            *) echo "X1: unexpected repository ${{ github.repository }}" >&2; exit 2 ;;
+          esac
+          git clone -q --depth 50 "https://github.com/s0fractal/$SIB.git" /tmp/$SIB
+          echo "SIBLING=/tmp/$SIB" >> "$GITHUB_ENV"
+          echo "X1 sibling: $SIB @ $(git -C /tmp/$SIB rev-parse --short HEAD)"
+
+      - name: X1 coupling matrix (HEAD vs HEAD)
+        env:
+          X1_SEEDS: '1 2 3'
+        run: bash tools/x1_cross_repo.sh
+
+      - name: Negative control — the gate must be able to FAIL
+        # Guards against a vacuous green. Each control corrupts one thing in the
+        # sibling and names the X1 step that must go red; a control that finds
+        # nothing to tamper, or turns a *different* step red, fails the job.
+        # Both are real failure modes that this control caught in itself — see
+        # the header of tools/x1_negative_control.sh.
+        run: bash tools/x1_negative_control.sh
