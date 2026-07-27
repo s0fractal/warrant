@@ -978,6 +978,19 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
 
     def out(level, wid, msg):
         nonlocal errs, warns
+        # Fail-closed reporter boundary (Codex countervector gate P1-2): out() is
+        # handed to runtime handlers. A malformed reporter call MUST NOT make text
+        # and JSON disagree, leak a non-ERR/WARN level or a non-string value into
+        # the machine report, or crash JSON serialization. Validate BEFORE any
+        # count/finding mutation and RAISE; the dispatcher's try/except turns it
+        # into exactly one stable fail-closed ERR, identically in quiet (JSON) and
+        # loud (text) modes. Core callers always pass valid args, so this only
+        # bites a buggy governed extension.
+        if (level not in ("ERR", "WARN")
+                or not isinstance(wid, str) or not isinstance(msg, str)):
+            raise ValueError(
+                f"invalid reporter call (level={level!r}, "
+                f"subject={type(wid).__name__}, message={type(msg).__name__})")
         if level == "ERR":
             errs += 1
         elif level == "WARN":
@@ -1259,11 +1272,26 @@ def verify_report(store, settlement=None):
     are in the verifier's deterministic emission order and always include warnings.
     Runs the SAME core as the text verifier (one derivation), so counts and exit
     status match ``verify`` exactly."""
+    grade = "settlement" if settlement is not None else "base"
+    # Fail-closed at the machine-consumption boundary (Codex countervector gate
+    # P1-1): an uninitialized store (no records/ directory — a missing path, a
+    # records/ that is a file, or blobs/ without records/) is NOT an empty
+    # successful verification. Return one stable fail-closed report so an agent can
+    # tell "verified empty initialized store" (ok:true, records:0) from "not a
+    # store" (ok:false, one ERR whose subject is `store`). An initialized but empty
+    # store still falls through to the normal ok:true path.
+    if not store.records.is_dir():
+        return {
+            "report": VERIFY_REPORT_VERSION, "grade": grade, "ok": False,
+            "records": 0, "errors": 1, "warnings": 0,
+            "findings": [{"level": "ERR", "subject": "store",
+                          "message": "no store (records/ is missing or not a directory)"}],
+        }
     report_out = {}
     verify_store(store, quiet=True, settlement=settlement, report_out=report_out)
     return {
         "report": VERIFY_REPORT_VERSION,
-        "grade": "settlement" if settlement is not None else "base",
+        "grade": grade,
         "ok": report_out["errors"] == 0,
         "records": report_out["records"],
         "errors": report_out["errors"],
@@ -1626,15 +1654,20 @@ def main():
         print(f"{verdict}  result={rh}  atp_spent={spent}")
         sys.exit(0 if verdict == "pass" else 1)
     elif args.cmd == "verify":
-        store.require()
         settlement = None
         if args.settlement:
             settlement = {"genesis_roots": args.genesis,
                           "trust_config": args.trust_config}
         if args.json:
+            # --json ALWAYS emits exactly one JSON object, even on a preflight
+            # failure (verify_report is fail-closed on a missing store) — so the
+            # machine contract holds without going through Store.require()'s exit.
+            # ensure_ascii=True keeps it to one physical line (a U+2028/U+2029 in a
+            # subject/message can't split the output for line-based consumers).
             report = verify_report(store, settlement=settlement)
-            print(json.dumps(report, separators=(",", ":"), ensure_ascii=False))
+            print(json.dumps(report, separators=(",", ":"), ensure_ascii=True))
             sys.exit(1 if report["errors"] else 0)
+        store.require()
         errs, _ = verify_store(store, settlement=settlement)
         sys.exit(1 if errs else 0)
     elif args.cmd == "settle":

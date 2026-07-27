@@ -120,10 +120,12 @@ func main() {
 		} else {
 			errs, _ = verifyDir(dir, jsonMode, report)
 		}
-		if jsonMode && report.Report != "" {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetEscapeHTML(false)
-			_ = enc.Encode(report)
+		if jsonMode {
+			// Default encoding escapes U+2028/U+2029 (and <,>,&), so the report is
+			// always exactly ONE physical line for line-based consumers (jq/JSONL).
+			// The verify funcs always populate the report (a fail-closed no-store
+			// report included), so there is always exactly one object to emit.
+			_ = json.NewEncoder(os.Stdout).Encode(report)
 		}
 		if errs != 0 {
 			os.Exit(1)
@@ -2167,17 +2169,40 @@ type verifyReport struct {
 	Findings []finding `json:"findings"`
 }
 
+// fillNoStore populates a fail-closed report for a verify preflight failure (no
+// initialized store) so `verify --json` still emits exactly one report object,
+// consistently with the Python verify_report() API (Codex countervector gate
+// P1-1). An agent can then tell "verified empty store" from "not a store".
+func fillNoStore(r *verifyReport, grade string) {
+	r.Report = "warrant.verify-report@v0"
+	r.Grade = grade
+	r.OK = false
+	r.Records = 0
+	r.Errors = 1
+	r.Warnings = 0
+	r.Findings = []finding{{Level: "ERR", Subject: "store",
+		Message: "no store (records/ is missing or not a directory)"}}
+}
+
 func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, report *verifyReport) (int, int) {
 	// A settlement verify is a STORE operation: require records/ (matching
 	// Python's Store.require), so a dir with blobs/ but no records/ is a bounded
 	// "no store" error in both — not a Go flat-mode silent (0,0,0) exit 0
 	// (Kimi K3 gate P1-6, blobs-without-records direction).
 	if !isDir(filepath.Join(dir, "records")) {
+		if report != nil {
+			fillNoStore(report, "settlement")
+			return 1, 0
+		}
 		fmt.Fprintf(os.Stderr, "no store at %s (run: warrant init)\n", dir)
 		return 1, 0
 	}
 	recList, records, blobs, err := loadVerifyData(dir)
 	if err != nil {
+		if report != nil {
+			fillNoStore(report, "settlement")
+			return 1, 0
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1, 0
 	}
@@ -2422,8 +2447,21 @@ func verifyDir(dir string, quiet bool, report *verifyReport) (int, int) {
 	blobsDir := filepath.Join(dir, "blobs")
 	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
 
+	// --json integration contract: a base verify requested as a machine report
+	// fails closed on a non-store (mirrors Python verify_report), rather than
+	// falling into flat conformance mode. Non-json base keeps flat mode (used by
+	// `verify examples`). (Codex countervector gate P1-1.)
+	if report != nil && !storeMode {
+		fillNoStore(report, "base")
+		return 1, 0
+	}
+
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
+		if report != nil {
+			fillNoStore(report, "base")
+			return 1, 0
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1, 0
 	}

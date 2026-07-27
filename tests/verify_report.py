@@ -31,6 +31,10 @@ spec = importlib.util.spec_from_file_location(
 W = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(W)
 
+TEST_RT = "test@v1"
+if TEST_RT not in W.RUNTIMES["0.2"]:
+    W.RUNTIMES["0.2"] = W.RUNTIMES["0.2"] + (TEST_RT,)
+
 FAILS = []
 
 
@@ -92,33 +96,50 @@ def semantic(o):
             sorted((f["level"], f["subject"]) for f in o["findings"]))
 
 
+def counts_from_text(out):
+    import re
+    m = re.search(r"(\d+) records, (\d+) errors, (\d+) warnings", out)
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
 def run_vector(name, d, settlement_args):
     """Run the full invariant battery for one store fixture."""
     py_text = sh(PY + ["--store", d, "verify"] + settlement_args)
     py_json = sh(PY + ["--store", d, "verify", "--json"] + settlement_args)
-    go_args = [GO, "verify"] + settlement_args + ["--json", d]
-    go_json = sh(go_args)
+    go_text = sh([GO, "verify"] + settlement_args + [d])
+    go_json = sh([GO, "verify"] + settlement_args + ["--json", d])
 
     pj = one_json_object(py_json.stdout)
     gj = one_json_object(go_json.stdout)
 
     ok = True
-    ok &= check(f"[{name}] PY --json is exactly one JSON object", pj is not None,
-                repr(py_json.stdout[:200]) + " ERR:" + py_json.stderr[:120])
-    ok &= check(f"[{name}] GO --json is exactly one JSON object", gj is not None,
-                repr(go_json.stdout[:200]) + " ERR:" + go_json.stderr[:120])
+    ok &= check(f"[{name}] PY --json is exactly one physical line / JSON object",
+                pj is not None, repr(py_json.stdout[:200]) + " ERR:" + py_json.stderr[:120])
+    ok &= check(f"[{name}] GO --json is exactly one physical line / JSON object",
+                gj is not None, repr(go_json.stdout[:200]) + " ERR:" + go_json.stderr[:120])
+    # JSON mode emits NO human text on stdout beyond the object, and nothing on
+    # stderr (a preflight failure is the report itself, not a stderr diagnostic).
+    ok &= check(f"[{name}] PY --json stderr is empty", py_json.stderr == "",
+                repr(py_json.stderr[:160]))
+    ok &= check(f"[{name}] GO --json stderr is empty", go_json.stderr == "",
+                repr(go_json.stderr[:160]))
     if pj is None or gj is None:
         return
     # counts + exit parity between text and JSON (Python)
-    import re
-    m = re.search(r"(\d+) records, (\d+) errors, (\d+) warnings", py_text.stdout)
-    text_counts = (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+    text_counts = counts_from_text(py_text.stdout)
     ok &= check(f"[{name}] text/JSON same counts (PY)",
                 text_counts == (pj["records"], pj["errors"], pj["warnings"]),
                 f"text={text_counts} json={(pj['records'], pj['errors'], pj['warnings'])}")
     ok &= check(f"[{name}] text/JSON same exit (PY)",
                 py_text.returncode == py_json.returncode,
                 f"{py_text.returncode} vs {py_json.returncode}")
+    # counts + exit parity between text and JSON (Go). Go base text mode uses flat
+    # mode on a non-store, so only compare when Go text actually produced a summary.
+    go_text_counts = counts_from_text(go_text.stdout)
+    if go_text_counts is not None:
+        ok &= check(f"[{name}] text/JSON same counts (GO)",
+                    go_text_counts == (gj["records"], gj["errors"], gj["warnings"]),
+                    f"text={go_text_counts} json={(gj['records'], gj['errors'], gj['warnings'])}")
     ok &= check(f"[{name}] ok == (errors==0)", pj["ok"] == (pj["errors"] == 0))
     ok &= check(f"[{name}] warnings field present", "warnings" in pj)
     ok &= check(f"[{name}] report tag + grade",
@@ -218,6 +239,94 @@ def main():
     W.verify_store(W.Store(d), quiet=True, report_out=rep)
     check("[quiet-invariance] report_out counts match return",
           (rep["errors"], rep["warnings"]) == (e1, w1))
+
+    # 10. no-store preflight (Codex gate P1-1): a non-store must NEVER be ok:true,
+    #     and --json must still return one report in Python API + both CLIs.
+    import shutil
+    nostore = {}
+    nostore["missing-path"] = os.path.join(tempfile.mkdtemp(), "does-not-exist")
+    nostore["non-store-dir"] = tempfile.mkdtemp()
+    rf = tempfile.mkdtemp(); open(os.path.join(rf, "records"), "w").write("x")
+    nostore["records-as-file"] = rf
+    bw = tempfile.mkdtemp(); os.mkdir(os.path.join(bw, "blobs"))
+    nostore["blobs-no-records"] = bw
+    for label, path in nostore.items():
+        api = W.verify_report(W.Store(path))
+        pj = sh(PY + ["--store", path, "verify", "--json"])
+        gj = sh([GO, "verify", "--json", path])
+        pjo, gjo = one_json_object(pj.stdout), one_json_object(gj.stdout)
+        good = (api["ok"] is False and api["errors"] == 1
+                and any(f["subject"] == "store" for f in api["findings"])
+                and pjo is not None and gjo is not None
+                and pjo["ok"] is False and gjo["ok"] is False
+                and pj.returncode == 1 and gj.returncode == 1
+                and pj.stderr == "" and gj.stderr == "")
+        check(f"[no-store:{label}] fail-closed ok:false, one report, clean stderr", good,
+              f"api={api.get('ok')} py={pjo and pjo.get('ok')}/{pj.returncode} "
+              f"go={gjo and gjo.get('ok')}/{gj.returncode} pyerr={pj.stderr[:60]!r}")
+    # an initialized EMPTY store is a successful verification (ok:true), not no-store
+    es = tempfile.mkdtemp(); W.Store(es).init()
+    api = W.verify_report(W.Store(es))
+    check("[no-store:empty-store] initialized empty store is ok:true records:0",
+          api["ok"] is True and api["records"] == 0 and api["errors"] == 0)
+
+    # 11. generic runtime reporter (Codex gate P1-2): a registered handler making a
+    #     malformed reporter call must be renderer-INDEPENDENT (text==quiet==report),
+    #     bounded to one dispatcher ERR, schema-valid (levels subset ERR|WARN), and
+    #     JSON-serializable. A valid WARN must fold into the count in all renderers.
+    def rt_store(handler):
+        W._RUNTIME_HANDLERS.pop(("0.2", TEST_RT), None)
+        W.register_runtime("0.2", TEST_RT, handler)
+        dd = tempfile.mkdtemp(); st = W.Store(dd); st.init()
+        kp = os.path.join(dd, "k.hex"); open(kp, "w").write("11" * 32)
+        chk = st.put_blob(b"cb"); subj = st.put_blob(b"sb"); pol = st.put_blob(b'{"p":"x"}')
+        body = {"warrant": "0.2", "decision": "accept", "subject": {"hash": subj},
+                "under": [pol], "because": [{"kind": "check", "check": chk,
+                "runtime": TEST_RT, "verdict": "pass"}], "evidence": [],
+                "actor": {"id": "a@t"}, "prior": [], "ts": 1}
+        st.put_record({"body": body, "sigs": [W.sign_envelope(body, "a@t", kp)]})
+        return dd
+    reporters = {
+        "invalid-level": lambda v, m, o, w, r: o("INFO", w, "x"),
+        "nonstr-subject": lambda v, m, o, w, r: o("WARN", 7, "x"),
+        "dict-message": lambda v, m, o, w, r: o("WARN", w, {"x": "y"}),
+        "bytes-message": lambda v, m, o, w, r: o("WARN", w, b"bytes"),
+        "valid-warn": lambda v, m, o, w, r: o("WARN", w, "handler ran"),
+    }
+    for label, handler in reporters.items():
+        dd = rt_store(handler)
+        te, tw = W.verify_store(W.Store(dd), quiet=False)
+        qe, qw = W.verify_store(W.Store(dd), quiet=True)
+        r2 = {}
+        W.verify_store(W.Store(dd), quiet=True, report_out=r2)
+        try:
+            json.dumps(r2); ser = True
+        except TypeError:
+            ser = False
+        good = ((te, tw) == (qe, qw) == (r2["errors"], r2["warnings"]) and ser
+                and all(f["level"] in ("ERR", "WARN") for f in r2["findings"]))
+        check(f"[reporter:{label}] renderer-independent, serializable, schema-valid",
+              good, f"text={(te,tw)} quiet={(qe,qw)} report={(r2['errors'],r2['warnings'])} ser={ser}")
+    W._RUNTIME_HANDLERS.pop(("0.2", TEST_RT), None)
+
+    # 12. U+2028 / U+2029 must not split the output: exactly ONE physical line in
+    #     both implementations (Codex gate P2-3). Actor id carries the separator.
+    d = tempfile.mkdtemp(); st = W.Store(d); st.init()
+    kp = os.path.join(d, "k"); open(kp, "w").write((bytes([1]) * 32).hex() + "\n")
+    pol = st.put_blob(b"p"); subj = st.put_blob(b"s")
+    sep_actor = "a\u2028b\u2029c"  # U+2028 LINE SEP + U+2029 PARAGRAPH SEP in the id
+    body = {"warrant": "0.2", "decision": "accept", "subject": {"hash": subj},
+            "under": [pol], "because": [], "evidence": [],
+            "actor": {"id": sep_actor}, "prior": [], "ts": 1}
+    st.put_record({"body": body, "sigs": [W.sign_envelope(body, sep_actor, kp)]})
+    pj = sh(PY + ["--store", d, "verify", "--json"])
+    gj = sh([GO, "verify", "--json", d])
+    check("[u2028] PY output is exactly one physical line",
+          len(pj.stdout.rstrip("\n").splitlines()) == 1 and one_json_object(pj.stdout) is not None,
+          f"lines={len(pj.stdout.rstrip(chr(10)).splitlines())}")
+    check("[u2028] GO output is exactly one physical line",
+          len(gj.stdout.rstrip("\n").splitlines()) == 1 and one_json_object(gj.stdout) is not None,
+          f"lines={len(gj.stdout.rstrip(chr(10)).splitlines())}")
 
     print()
     if FAILS:
