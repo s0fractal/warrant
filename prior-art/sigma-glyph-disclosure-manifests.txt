@@ -1,0 +1,439 @@
+# Disclosure manifest — v0.5.0
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            2578754dc5034cd03190f3bb57a848aded1fc955
+# authored (claim)  2026-07-05T20:56:38+03:00
+# committed (claim) 2026-07-05T20:56:38+03:00
+# files             16
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+1695341a45cbc4a3d270d792ffa56ac37cf1fbc6e4c27cfc653360d79d50d6d6  CHANGELOG.md
+42547e0e9dd205efd7d195d1e662e2d1efbc0e70953e76d558f23aeabd7ec461  README.md
+5278627d12b23a52560b58b34d53450fef525fe9cdd084e0f1db71866cb4a26e  ROADMAP.md
+2afea94430ce9377fa457644095c5f051bfe3731850d8c62c03d59cefa2ece54  impl/sigma_glyph.py
+6c8839d944e51837d99b753cb5f5333b37591f3b97f627fd546cb6f8b005d6d3  impl/sigma_wave.py
+b244fe25d2818fb9efe2a25d5c2fadf78663ca558acd7ff44ff684b302459d1d  spec/ANCHORS.txt
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+3703acdf76dabeb366e9af6f857d4b64ed3478985d0f13681ac6274461a9dcb0  spec/book-1-truth.md
+3dd04b0b2fceb285db5ceaf014816ef8d7ad209c9711bf395a1280baece0c15b  spec/book-2-navigation.md
+970efd97f3b8700c2ce27d1968df2e9e187d7ae5e205ec2aea3e30bac1ba5926  tests/spec_conformance/README.md
+a6c410205c5b6a3d44e884fa56f42f9310c5e11ef544aae6334349aa60c81a1b  tests/spec_conformance/generate.py
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+4cf8a4d53eb3c7e44b8b78dfd77651858851037b2cd6bd091079c43ddb6e464f  tests/spec_conformance/vectors.json
+7f204d67913b6608582a93ff4ee6c380a5b1e1906b297ad71824a0d310319d90  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  520925545f7fbe46db49e8f88453b1138a0306a246614bc8c95e41b72a4f41b4
+
+# Disclosure manifest — v0.5.1
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            69f8bbb3ca3ef3c0de5001165952404919fc5f11
+# authored (claim)  2026-07-07T03:48:32+03:00
+# committed (claim) 2026-07-07T03:48:32+03:00
+# files             16
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+afd6a8013ec1ef8278f413421e9f6b8bd3f0c1e49ddfb17c6aea58a124a56ab7  CHANGELOG.md
+e9a413c6dfdd1354a2ef24f0044aa7a0a3f1fee6304432cce609021dd8dc25aa  README.md
+5278627d12b23a52560b58b34d53450fef525fe9cdd084e0f1db71866cb4a26e  ROADMAP.md
+2afea94430ce9377fa457644095c5f051bfe3731850d8c62c03d59cefa2ece54  impl/sigma_glyph.py
+6b241667a50d50571bdacc16a5009d6197417d4235e017fd26c0990c0f19c373  impl/sigma_wave.py
+b093341c1d10f613b45131fd1af7161a4efa8c405c4f7b494fd914c158279c20  spec/ANCHORS.txt
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+867eae0b598107088a0d3a0b913812b847e31726efd4e11a6b1738fbe572e6de  spec/book-1-truth.md
+5b026a94f760b39e3c027d3f676d6176bfd03492fc13552668f1bc1558537c2c  spec/book-2-navigation.md
+970efd97f3b8700c2ce27d1968df2e9e187d7ae5e205ec2aea3e30bac1ba5926  tests/spec_conformance/README.md
+ce10bfeec33edf2f88dbe2321c12aab0561be84be5100d0aeeaddc5d0ed6ca1e  tests/spec_conformance/generate.py
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+d4f6e33fbef77d005cca3f40d20ca61093f84732e9387fbd13f8fed279bf677c  tests/spec_conformance/vectors.json
+5dad4c8b05833fc390bb39d04cf7cc87c206da72933102bbf0addaa08a1f2c50  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  ee97dd85c29ce179affb8201ec2e6b9d747372c4cc35196e0ae3fb89f280b793
+
+# Disclosure manifest — v0.5.2
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            2edc6757d7c422c2115c8a4aaae412693697073a
+# authored (claim)  2026-07-07T21:02:25+03:00
+# committed (claim) 2026-07-07T21:02:25+03:00
+# files             16
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+61c1fb9457e2299733d16592b3858855ff43700f930596cb63c5ff6787c2674a  CHANGELOG.md
+64c20cab5d219de22903919ee6a0c259448a5776a92a19a6736b03dc3aa51e13  README.md
+5278627d12b23a52560b58b34d53450fef525fe9cdd084e0f1db71866cb4a26e  ROADMAP.md
+4d7a022b36a428d86901211d4f2aeffc77ad7fc5caea41d92ba8dea3e77e29b1  impl/sigma_glyph.py
+0ff9f3027276445cde93c114bc6b295d6c7d5c604f908b9e8ee757f9c193ac3c  impl/sigma_wave.py
+cc1b114b86c66aa7ea5620b379b95d63d4bae1ffc8b1b787ddc3da3fee4bc9b1  spec/ANCHORS.txt
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+fb1302ae143bc5566987369b07152a2aa1960cb7053f655631c5a4ce8ca52c11  spec/book-2-navigation.md
+970efd97f3b8700c2ce27d1968df2e9e187d7ae5e205ec2aea3e30bac1ba5926  tests/spec_conformance/README.md
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  c0bf112339eb065c5db9a2c9a268005a7709dc18a0f030c103ef62ea00ae0cc9
+
+# Disclosure manifest — v0.6.0
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            9d5f8a37a1f36f6da7814ba89243865cd9da58e1
+# authored (claim)  2026-07-07T23:18:54+03:00
+# committed (claim) 2026-07-07T23:18:54+03:00
+# files             23
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+4c936da962fb3d3d6f98dee38c232fecf0a3bc674e7a69fd52bae5199065598d  CHANGELOG.md
+4a0c1a438d7d93b2ad87f8a86f79243d690b139076eb633e7462a66bac64f414  README.md
+151d27f021710fca61cbd006df06518f1c8334d0c33934bb488b9353bf6e19bb  ROADMAP.md
+f89f00676ea59811bd7fb2abdc951b39709e009899a78965e5c005be919c7e26  impl-go/.gitignore
+bfb2ecda81bdb163e32f8b175b6f28e4aae8f2b229287a2be67627fa6c8951a6  impl-go/go.mod
+7f389a2a2b9a528df5a3fb2bc9fd883f23e27d99528533caca9b2b23a561964e  impl-go/main.go
+8e2a0530c87739b584a91e3cf29cbe70720556e381f3c20bb984dfc49f45f170  impl/sigma_federation.py
+4d7a022b36a428d86901211d4f2aeffc77ad7fc5caea41d92ba8dea3e77e29b1  impl/sigma_glyph.py
+0ff9f3027276445cde93c114bc6b295d6c7d5c604f908b9e8ee757f9c193ac3c  impl/sigma_wave.py
+ec6cf46657f77c8492ddfd54a20305955b334c3ffd0578b4e980f8f704e872fc  spec/ANCHORS.txt
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+63440e3cc87506d076aeae4c8fdaa78aea566da66c9c6f5b975585c36a41b470  spec/book-2-navigation.md
+c5899e71ed67b7bb6c41481dae6427297bbc3d72c8fb7848db75505dee5b3d19  spec/book-3-federation.md
+a39624b98ce73032cb782d32e1052af5726859c3d0de530ce49c3f7983d77f66  tests/federation_differential.py
+970efd97f3b8700c2ce27d1968df2e9e187d7ae5e205ec2aea3e30bac1ba5926  tests/spec_conformance/README.md
+fb8b82bf96dbc918021bebabdc7ab5846c673229c9a43125530ffc3e2a011b05  tests/spec_conformance/federation_vectors.json
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  e066a92417b483ef72c67352f5470ada71a771258f4247d72e630d79c00e449d
+
+# Disclosure manifest — v0.6.1
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            3ca9815109a84d1ba50d73868398effb54f9e47f
+# authored (claim)  2026-07-08T01:56:55+03:00
+# committed (claim) 2026-07-08T01:56:55+03:00
+# files             28
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+3daa89bf3c8ebe065537cafbfe9918ede1d673ce6ce7c4769cf54e56739d8692  CHANGELOG.md
+385d8fe5febcc1bd8bdc01ca749291d120f2ff830cb45e7fc1ebb41c7dd0e794  QUICKSTART.md
+7e5f2fcecd7310c70f61516ff43c4bcf48dc76aff1382f2e46bfebc94ed2821e  README.md
+35b33a97a56b577755c598722383c094de347de09a5e39de8f999c8c71613867  ROADMAP.md
+f89f00676ea59811bd7fb2abdc951b39709e009899a78965e5c005be919c7e26  impl-go/.gitignore
+bfb2ecda81bdb163e32f8b175b6f28e4aae8f2b229287a2be67627fa6c8951a6  impl-go/go.mod
+7f389a2a2b9a528df5a3fb2bc9fd883f23e27d99528533caca9b2b23a561964e  impl-go/main.go
+23d5b33b8ed9d732921c214704d926994057a4b952a84b19390f7d5bfab8a931  impl/sigma_federation.py
+845e18e6179e9827f1cfd9c50491fb29ff0d5226b5d82159d6028566dcf9f92e  impl/sigma_glyph.py
+c48dedf3d89ae9084abbf8cfb0a4e038ce3b5ca46a86fff078a0ff1d24929e7d  impl/sigma_wave.py
+210d64b3774e62035432e42462b4a44563bd0d4bfb8f939caa8365e4d5e26d9b  proofs/README.md
+83fbc155824491288326b37d65838dc7394f1c27947b3d74fbb7e699b87268e1  proofs/SizeBound.lean
+6645c8aadf41b19aa2b06c090921d3ad66efe79ec7e026f5d994a64bc50f3e45  proofs/bridge_check.py
+efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee  proofs/lean-toolchain
+a54c8d71d0ca2048c555b686ecf833e1e6545179c2077ec7ff21f3332c2a5ef1  spec/ANCHORS.txt
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+9df3c0e5f606c37a5294cae23a66505b2eb66dcb3e398ff0b3570f656bdc63b6  spec/book-2-navigation.md
+ece99c39e181d6ca7dfc90ec366a7dee4e19c34bb34f2a1be6d69974a0317280  spec/book-3-federation.md
+a39624b98ce73032cb782d32e1052af5726859c3d0de530ce49c3f7983d77f66  tests/federation_differential.py
+6e3bebb5a9876be1b5d39750961c7ee03cdcb65d630397024b80403a7a6eb59b  tests/spec_conformance/README.md
+fb8b82bf96dbc918021bebabdc7ab5846c673229c9a43125530ffc3e2a011b05  tests/spec_conformance/federation_vectors.json
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  262eae596be0b2850aefc9c033735f6801ef800937780b1f9586ff6a49097e3c
+
+# Disclosure manifest — v0.6.2
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            860be254d34e27c80474d323bad8606e8c7c0eed
+# authored (claim)  2026-07-08T16:57:57+03:00
+# committed (claim) 2026-07-08T16:57:57+03:00
+# files             31
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+de59071adc4c24d39b1407ee6b4856761a8e5c3136a1e3edea6c66fb66c57a44  CHANGELOG.md
+385d8fe5febcc1bd8bdc01ca749291d120f2ff830cb45e7fc1ebb41c7dd0e794  QUICKSTART.md
+441722a0f57e1cdf1bde5a0f0fa70ab06e7e000cb811071aad6f2dbb59200dee  README.md
+fd2903a84d17bb5512a04f0fae35b2c382b937102c070a961315f2668abdd1b0  ROADMAP.md
+7549565dcc8250ddfc883739f0774b5d4aff320da2d14ed1e6683a23c105abd5  examples/two-jurisdictions/README.md
+3638c069486964e7f2b7dfe263c75b9f129403705853fcc07c8bf2698a1a7f73  examples/two-jurisdictions/demo.py
+f89f00676ea59811bd7fb2abdc951b39709e009899a78965e5c005be919c7e26  impl-go/.gitignore
+bfb2ecda81bdb163e32f8b175b6f28e4aae8f2b229287a2be67627fa6c8951a6  impl-go/go.mod
+7f389a2a2b9a528df5a3fb2bc9fd883f23e27d99528533caca9b2b23a561964e  impl-go/main.go
+23d5b33b8ed9d732921c214704d926994057a4b952a84b19390f7d5bfab8a931  impl/sigma_federation.py
+845e18e6179e9827f1cfd9c50491fb29ff0d5226b5d82159d6028566dcf9f92e  impl/sigma_glyph.py
+c48dedf3d89ae9084abbf8cfb0a4e038ce3b5ca46a86fff078a0ff1d24929e7d  impl/sigma_wave.py
+210d64b3774e62035432e42462b4a44563bd0d4bfb8f939caa8365e4d5e26d9b  proofs/README.md
+83fbc155824491288326b37d65838dc7394f1c27947b3d74fbb7e699b87268e1  proofs/SizeBound.lean
+6645c8aadf41b19aa2b06c090921d3ad66efe79ec7e026f5d994a64bc50f3e45  proofs/bridge_check.py
+efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee  proofs/lean-toolchain
+81a6a156ca290b9d4f8d6e8d4a51234a8a025def2ccc23a3546f6bac30fe1cdd  spec/ANCHORS.txt
+f9711f3a8c7d61047fd0361aa840ddb59ccbf81cbea6716f2ad0fa38ee2aed0c  spec/GOV-anchors.md
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+9df3c0e5f606c37a5294cae23a66505b2eb66dcb3e398ff0b3570f656bdc63b6  spec/book-2-navigation.md
+ece99c39e181d6ca7dfc90ec366a7dee4e19c34bb34f2a1be6d69974a0317280  spec/book-3-federation.md
+a39624b98ce73032cb782d32e1052af5726859c3d0de530ce49c3f7983d77f66  tests/federation_differential.py
+6e3bebb5a9876be1b5d39750961c7ee03cdcb65d630397024b80403a7a6eb59b  tests/spec_conformance/README.md
+fb8b82bf96dbc918021bebabdc7ab5846c673229c9a43125530ffc3e2a011b05  tests/spec_conformance/federation_vectors.json
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  682365ce83b49f48a78eb96f282034531461f8f53bdfa6e6386cf353b84fc68b
+
+# Disclosure manifest — v0.6.3
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            05993d213ee43fc9cf5a760d5e7f3f310b5b5a3f
+# authored (claim)  2026-07-08T17:33:15+03:00
+# committed (claim) 2026-07-08T17:33:15+03:00
+# files             33
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+8bcbe10885fc303f6da9facb875a4b4b320036b4249e452cc6d7d8c6b6640b77  CHANGELOG.md
+385d8fe5febcc1bd8bdc01ca749291d120f2ff830cb45e7fc1ebb41c7dd0e794  QUICKSTART.md
+c429816c89e631c7ebb53b06d4a3fe6b729f970f5daf82045f3326538d1cf1ae  README.md
+fd2903a84d17bb5512a04f0fae35b2c382b937102c070a961315f2668abdd1b0  ROADMAP.md
+7549565dcc8250ddfc883739f0774b5d4aff320da2d14ed1e6683a23c105abd5  examples/two-jurisdictions/README.md
+3638c069486964e7f2b7dfe263c75b9f129403705853fcc07c8bf2698a1a7f73  examples/two-jurisdictions/demo.py
+f89f00676ea59811bd7fb2abdc951b39709e009899a78965e5c005be919c7e26  impl-go/.gitignore
+bfb2ecda81bdb163e32f8b175b6f28e4aae8f2b229287a2be67627fa6c8951a6  impl-go/go.mod
+782e217012c93b0ce69eddf72547faef68ca522c4e6a94f2c4d36b2d3692fd23  impl-go/main.go
+23d5b33b8ed9d732921c214704d926994057a4b952a84b19390f7d5bfab8a931  impl/sigma_federation.py
+845e18e6179e9827f1cfd9c50491fb29ff0d5226b5d82159d6028566dcf9f92e  impl/sigma_glyph.py
+c48dedf3d89ae9084abbf8cfb0a4e038ce3b5ca46a86fff078a0ff1d24929e7d  impl/sigma_wave.py
+210d64b3774e62035432e42462b4a44563bd0d4bfb8f939caa8365e4d5e26d9b  proofs/README.md
+83fbc155824491288326b37d65838dc7394f1c27947b3d74fbb7e699b87268e1  proofs/SizeBound.lean
+6645c8aadf41b19aa2b06c090921d3ad66efe79ec7e026f5d994a64bc50f3e45  proofs/bridge_check.py
+efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee  proofs/lean-toolchain
+33dd69cf8e3f77ee60569574e866621dde9dbc821d4c96b1bb997cb684aed7ac  spec/ANCHORS.txt
+f9711f3a8c7d61047fd0361aa840ddb59ccbf81cbea6716f2ad0fa38ee2aed0c  spec/GOV-anchors.md
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+9df3c0e5f606c37a5294cae23a66505b2eb66dcb3e398ff0b3570f656bdc63b6  spec/book-2-navigation.md
+ece99c39e181d6ca7dfc90ec366a7dee4e19c34bb34f2a1be6d69974a0317280  spec/book-3-federation.md
+a39624b98ce73032cb782d32e1052af5726859c3d0de530ce49c3f7983d77f66  tests/federation_differential.py
+84456766f04cb0ff15ccd2d9666dbb502f37bb26d3540a9458e39b228cd24b50  tests/governance_differential.py
+99067506478817478f4634ec1be5597d9b842dea692cea25456a2f113d6eb9e5  tests/spec_conformance/README.md
+fb8b82bf96dbc918021bebabdc7ab5846c673229c9a43125530ffc3e2a011b05  tests/spec_conformance/federation_vectors.json
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+6fd441f0650284180c389adb4179c8e38966816d8519f059539b4f2fb06c33d4  tests/spec_conformance/governance_vectors.json
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  f70c160a02ff35f6807d70463eaf3dbe8eaf0dbc966e7a647bceda3c961f2180
+
+# Disclosure manifest — v0.6.4
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            bed389d7bdb6527a4eca71ddb26dd3d6e43b42ff
+# authored (claim)  2026-07-08T23:31:34+03:00
+# committed (claim) 2026-07-08T23:31:34+03:00
+# files             48
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+67843e46c931a9bc736441534aaf51d5702f9e4a247dde7418ab3fd0845c1ebe  CHANGELOG.md
+385d8fe5febcc1bd8bdc01ca749291d120f2ff830cb45e7fc1ebb41c7dd0e794  QUICKSTART.md
+b6f0e35f52910e369e611831c18071801f64d80302eee6c61a65007cd8b7b435  README.md
+762ce74022a94c2eefb70f2fba854e3c0d06254517858771a41dca8b6cc9021a  ROADMAP.md
+7549565dcc8250ddfc883739f0774b5d4aff320da2d14ed1e6683a23c105abd5  examples/two-jurisdictions/README.md
+3638c069486964e7f2b7dfe263c75b9f129403705853fcc07c8bf2698a1a7f73  examples/two-jurisdictions/demo.py
+f89f00676ea59811bd7fb2abdc951b39709e009899a78965e5c005be919c7e26  impl-go/.gitignore
+bfb2ecda81bdb163e32f8b175b6f28e4aae8f2b229287a2be67627fa6c8951a6  impl-go/go.mod
+cc49383aabe43e09bac833916007636ed77eec7fc43c1bed65ea02d980b8c3ed  impl-go/main.go
+b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d  impl-rs/.gitignore
+1a9bfb9f8b8e6038fa46d896a5eb3f1b7750cd86cf0700e2e5f9b0a762bc236a  impl-rs/Cargo.toml
+84eb4694e2e84a2815343254939ebe1f542ab9303261bd7fa55474004d5e3b1e  impl-rs/src/main.rs
+23d5b33b8ed9d732921c214704d926994057a4b952a84b19390f7d5bfab8a931  impl/sigma_federation.py
+845e18e6179e9827f1cfd9c50491fb29ff0d5226b5d82159d6028566dcf9f92e  impl/sigma_glyph.py
+c48dedf3d89ae9084abbf8cfb0a4e038ce3b5ca46a86fff078a0ff1d24929e7d  impl/sigma_wave.py
+989528452e2f7ba111d5977a668151dd473ca7315bca4ed95998a17be416b6db  proofs/BytesRun.lean
+8c3621023818ba5ff3b39ef0e56b05f543ef199f09c76778dd26da6b135e4289  proofs/EvalMachine.lean
+2f2938e3d467d63267cdaeb05661e937b9ab2909c690de850168c7ac4cbb8e0f  proofs/EvalRun.lean
+b7da103329a2e901c4b84339363ff7cd88ef67bdadde259251937203fea8a546  proofs/LutData.lean
+ca04fcd606e40c71e3644808cfdfad12440dee2667b24415b8210445229a9464  proofs/MachineBytes.lean
+74816cbea04779006d127cc2c35f6587054aabe1b7de01014950b77c2d3ef97f  proofs/README.md
+a1b4e8e1759a6356daec98a536c24bcd8c75aeed21be33e9e40f905fd520577b  proofs/Sha256.lean
+83fbc155824491288326b37d65838dc7394f1c27947b3d74fbb7e699b87268e1  proofs/SizeBound.lean
+e43159da3809d91876daa5ff1a9fa3a549338b568d24ada02387816e8f93e704  proofs/WaveAlgebra.lean
+b94cb2f313f6c157dc686784b68557f3186abb57e8f7c6600e5fc40692849050  proofs/WaveRun.lean
+6645c8aadf41b19aa2b06c090921d3ad66efe79ec7e026f5d994a64bc50f3e45  proofs/bridge_check.py
+88de445cb95a0642bc1511872d34f00677ae698cf48ef76fb5d98c73cbeb1731  proofs/byte_bridge_check.py
+d0db6e41d21b38b41e1fbfd2ff4f3b5d653416f0962a9a985db1ab63cbf8307b  proofs/eval_bridge_check.py
+45885ff4a4073c7a9b091c07f63008b24397c80ffefc02a9e851ba972752b42e  proofs/gen_lut_lean.py
+efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee  proofs/lean-toolchain
+a1b517945d035ad1a0e4c33f0d22527d76fd7433523f8ad6b4d46a6f1d549c39  proofs/wave_bridge_check.py
+e2a26a08276cbd3532d4773cc7bd512e4b7f6aafd414f7397de05524843f20d1  spec/ANCHORS.txt
+a14a33ae661108d5a2ee772b118cb4ba547f894b717394f8689256abef73b9fe  spec/GOV-anchors.md
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+9df3c0e5f606c37a5294cae23a66505b2eb66dcb3e398ff0b3570f656bdc63b6  spec/book-2-navigation.md
+ece99c39e181d6ca7dfc90ec366a7dee4e19c34bb34f2a1be6d69974a0317280  spec/book-3-federation.md
+a39624b98ce73032cb782d32e1052af5726859c3d0de530ce49c3f7983d77f66  tests/federation_differential.py
+84456766f04cb0ff15ccd2d9666dbb502f37bb26d3540a9458e39b228cd24b50  tests/governance_differential.py
+99067506478817478f4634ec1be5597d9b842dea692cea25456a2f113d6eb9e5  tests/spec_conformance/README.md
+fb8b82bf96dbc918021bebabdc7ab5846c673229c9a43125530ffc3e2a011b05  tests/spec_conformance/federation_vectors.json
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+e68d366d7099cd2546ffbcc627d8fa8c53706435c80c5316ea54916d46ac4822  tests/spec_conformance/governance_vectors.json
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  c362dbf2531b428b0bef520fc01c7725ae09369f4f9396ddf5f567cfe2b0db7c
+
+# Disclosure manifest — v0.6.5
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            1c2148e226037ad5a6bbec8861dc833b024623e3
+# authored (claim)  2026-07-09T13:29:02+03:00
+# committed (claim) 2026-07-09T13:29:02+03:00
+# files             48
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+bbf07fc2d81237b92a0be59e9af6b48905c3d4433d78d70b547d93933566af2a  CHANGELOG.md
+385d8fe5febcc1bd8bdc01ca749291d120f2ff830cb45e7fc1ebb41c7dd0e794  QUICKSTART.md
+42cb1305b8de068c6a2f13ea9ec1c580adc39adb6a03e228996c8d59d2339c15  README.md
+762ce74022a94c2eefb70f2fba854e3c0d06254517858771a41dca8b6cc9021a  ROADMAP.md
+7549565dcc8250ddfc883739f0774b5d4aff320da2d14ed1e6683a23c105abd5  examples/two-jurisdictions/README.md
+3638c069486964e7f2b7dfe263c75b9f129403705853fcc07c8bf2698a1a7f73  examples/two-jurisdictions/demo.py
+f89f00676ea59811bd7fb2abdc951b39709e009899a78965e5c005be919c7e26  impl-go/.gitignore
+bfb2ecda81bdb163e32f8b175b6f28e4aae8f2b229287a2be67627fa6c8951a6  impl-go/go.mod
+cc49383aabe43e09bac833916007636ed77eec7fc43c1bed65ea02d980b8c3ed  impl-go/main.go
+b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d  impl-rs/.gitignore
+1a9bfb9f8b8e6038fa46d896a5eb3f1b7750cd86cf0700e2e5f9b0a762bc236a  impl-rs/Cargo.toml
+84eb4694e2e84a2815343254939ebe1f542ab9303261bd7fa55474004d5e3b1e  impl-rs/src/main.rs
+23d5b33b8ed9d732921c214704d926994057a4b952a84b19390f7d5bfab8a931  impl/sigma_federation.py
+23b28cf86076824c527ed3e474764762f61bb7ed61e7cad6bf75e2169c837318  impl/sigma_glyph.py
+c48dedf3d89ae9084abbf8cfb0a4e038ce3b5ca46a86fff078a0ff1d24929e7d  impl/sigma_wave.py
+989528452e2f7ba111d5977a668151dd473ca7315bca4ed95998a17be416b6db  proofs/BytesRun.lean
+72915d83019a09a8b81b40d683fd83d762c54ef599b77b0621f74020dc98cb80  proofs/EvalMachine.lean
+2f2938e3d467d63267cdaeb05661e937b9ab2909c690de850168c7ac4cbb8e0f  proofs/EvalRun.lean
+b7da103329a2e901c4b84339363ff7cd88ef67bdadde259251937203fea8a546  proofs/LutData.lean
+ca04fcd606e40c71e3644808cfdfad12440dee2667b24415b8210445229a9464  proofs/MachineBytes.lean
+975d408f7c29c44925ae15db6a432fe52c6bb2fd6b0833b457dfc5d0233116b3  proofs/README.md
+a1b4e8e1759a6356daec98a536c24bcd8c75aeed21be33e9e40f905fd520577b  proofs/Sha256.lean
+83fbc155824491288326b37d65838dc7394f1c27947b3d74fbb7e699b87268e1  proofs/SizeBound.lean
+e43159da3809d91876daa5ff1a9fa3a549338b568d24ada02387816e8f93e704  proofs/WaveAlgebra.lean
+b94cb2f313f6c157dc686784b68557f3186abb57e8f7c6600e5fc40692849050  proofs/WaveRun.lean
+6645c8aadf41b19aa2b06c090921d3ad66efe79ec7e026f5d994a64bc50f3e45  proofs/bridge_check.py
+88de445cb95a0642bc1511872d34f00677ae698cf48ef76fb5d98c73cbeb1731  proofs/byte_bridge_check.py
+d0db6e41d21b38b41e1fbfd2ff4f3b5d653416f0962a9a985db1ab63cbf8307b  proofs/eval_bridge_check.py
+45885ff4a4073c7a9b091c07f63008b24397c80ffefc02a9e851ba972752b42e  proofs/gen_lut_lean.py
+efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee  proofs/lean-toolchain
+a1b517945d035ad1a0e4c33f0d22527d76fd7433523f8ad6b4d46a6f1d549c39  proofs/wave_bridge_check.py
+7aa02ac4b93702127bd36267112af20307e8731d6e3795a9334d3ebb915ac630  spec/ANCHORS.txt
+db8e857d686bc1908746114c6b8594319a7ba4f5afd7a992c8f722d22b3b0585  spec/GOV-anchors.md
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+9df3c0e5f606c37a5294cae23a66505b2eb66dcb3e398ff0b3570f656bdc63b6  spec/book-2-navigation.md
+ece99c39e181d6ca7dfc90ec366a7dee4e19c34bb34f2a1be6d69974a0317280  spec/book-3-federation.md
+a39624b98ce73032cb782d32e1052af5726859c3d0de530ce49c3f7983d77f66  tests/federation_differential.py
+84456766f04cb0ff15ccd2d9666dbb502f37bb26d3540a9458e39b228cd24b50  tests/governance_differential.py
+99067506478817478f4634ec1be5597d9b842dea692cea25456a2f113d6eb9e5  tests/spec_conformance/README.md
+fb8b82bf96dbc918021bebabdc7ab5846c673229c9a43125530ffc3e2a011b05  tests/spec_conformance/federation_vectors.json
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+e68d366d7099cd2546ffbcc627d8fa8c53706435c80c5316ea54916d46ac4822  tests/spec_conformance/governance_vectors.json
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  e7c9c44dd2ec27ee7b656376eb7b6d21822f13575067d7a9ed80da1d46c7ac04
+
+# Disclosure manifest — v0.6.6
+# repository        https://github.com/s0fractal/sigma-glyph.git
+# commit            a7e8c71a33487b1c0ce7fa3a20c6cc6afb8b343e
+# authored (claim)  2026-07-10T15:07:44+03:00
+# committed (claim) 2026-07-10T15:07:44+03:00
+# files             51
+#
+# Dates above are self-asserted by git and prove nothing on their own.
+# Independent attestations are recorded in PRIOR-ART.md.
+
+4cb14c224f10e15222641bbd1e08121a3f1d45deb366cdc4b232e326bf9c60e5  CHANGELOG.md
+385d8fe5febcc1bd8bdc01ca749291d120f2ff830cb45e7fc1ebb41c7dd0e794  QUICKSTART.md
+07ef0b6ba76945d18d7e77f59e9fe43b100e73bf6bcf39ec2de74bb659ea86ee  README.md
+8406c81e9e436b919c33b6849ce25303a26de2ef51184a323bac0200b215204a  ROADMAP.md
+cf87f0087a9ad2b87d610dd3cfd9f04cfe4d8de0b0c7bab5cf549f3ec088e301  docs/index.html
+f7b1ca90422e348ebfb5192ea1403a313c6f2be340de3ec7e4951b0070a2fd3c  examples/fold_nonassoc.py
+3d978e47180884f33b60bb6f57912d61a29d1298adbcf7de165e5b2212445602  examples/mem_diverge.py
+7549565dcc8250ddfc883739f0774b5d4aff320da2d14ed1e6683a23c105abd5  examples/two-jurisdictions/README.md
+3638c069486964e7f2b7dfe263c75b9f129403705853fcc07c8bf2698a1a7f73  examples/two-jurisdictions/demo.py
+f89f00676ea59811bd7fb2abdc951b39709e009899a78965e5c005be919c7e26  impl-go/.gitignore
+bfb2ecda81bdb163e32f8b175b6f28e4aae8f2b229287a2be67627fa6c8951a6  impl-go/go.mod
+059fe34ad35e54df9958ad2143f7378b223510080102c0b0e65e8c6f2cb2056a  impl-go/main.go
+b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d  impl-rs/.gitignore
+1a9bfb9f8b8e6038fa46d896a5eb3f1b7750cd86cf0700e2e5f9b0a762bc236a  impl-rs/Cargo.toml
+84eb4694e2e84a2815343254939ebe1f542ab9303261bd7fa55474004d5e3b1e  impl-rs/src/main.rs
+23d5b33b8ed9d732921c214704d926994057a4b952a84b19390f7d5bfab8a931  impl/sigma_federation.py
+23b28cf86076824c527ed3e474764762f61bb7ed61e7cad6bf75e2169c837318  impl/sigma_glyph.py
+c48dedf3d89ae9084abbf8cfb0a4e038ce3b5ca46a86fff078a0ff1d24929e7d  impl/sigma_wave.py
+989528452e2f7ba111d5977a668151dd473ca7315bca4ed95998a17be416b6db  proofs/BytesRun.lean
+72915d83019a09a8b81b40d683fd83d762c54ef599b77b0621f74020dc98cb80  proofs/EvalMachine.lean
+2f2938e3d467d63267cdaeb05661e937b9ab2909c690de850168c7ac4cbb8e0f  proofs/EvalRun.lean
+b7da103329a2e901c4b84339363ff7cd88ef67bdadde259251937203fea8a546  proofs/LutData.lean
+ca04fcd606e40c71e3644808cfdfad12440dee2667b24415b8210445229a9464  proofs/MachineBytes.lean
+975d408f7c29c44925ae15db6a432fe52c6bb2fd6b0833b457dfc5d0233116b3  proofs/README.md
+a1b4e8e1759a6356daec98a536c24bcd8c75aeed21be33e9e40f905fd520577b  proofs/Sha256.lean
+83fbc155824491288326b37d65838dc7394f1c27947b3d74fbb7e699b87268e1  proofs/SizeBound.lean
+e43159da3809d91876daa5ff1a9fa3a549338b568d24ada02387816e8f93e704  proofs/WaveAlgebra.lean
+b94cb2f313f6c157dc686784b68557f3186abb57e8f7c6600e5fc40692849050  proofs/WaveRun.lean
+6645c8aadf41b19aa2b06c090921d3ad66efe79ec7e026f5d994a64bc50f3e45  proofs/bridge_check.py
+88de445cb95a0642bc1511872d34f00677ae698cf48ef76fb5d98c73cbeb1731  proofs/byte_bridge_check.py
+d0db6e41d21b38b41e1fbfd2ff4f3b5d653416f0962a9a985db1ab63cbf8307b  proofs/eval_bridge_check.py
+45885ff4a4073c7a9b091c07f63008b24397c80ffefc02a9e851ba972752b42e  proofs/gen_lut_lean.py
+efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee  proofs/lean-toolchain
+a1b517945d035ad1a0e4c33f0d22527d76fd7433523f8ad6b4d46a6f1d549c39  proofs/wave_bridge_check.py
+e5bfc8019b42f3bf8201bb515486552508f25544910a2ad4565f01558335246f  spec/ANCHORS.txt
+f7ca204b3773ea1b6b5e288fa59240c24e9b14f49fa3cb6ba8db1a405b5ae8c3  spec/GOV-anchors.md
+07ddd994c397ee253065cf62636f51a99ba638afa18344da43afbf842f1fe4ec  spec/LORE.md
+9e35f22bffe40d0442b20ed98e8a9f7880de96bc325373d47e3f6c00865e94f1  spec/appendix-a-complexity.md
+eccf2dd08f1201059a261e788efa9120dd78433fbf6915639015c25966040000  spec/book-1-truth.md
+9df3c0e5f606c37a5294cae23a66505b2eb66dcb3e398ff0b3570f656bdc63b6  spec/book-2-navigation.md
+ece99c39e181d6ca7dfc90ec366a7dee4e19c34bb34f2a1be6d69974a0317280  spec/book-3-federation.md
+a39624b98ce73032cb782d32e1052af5726859c3d0de530ce49c3f7983d77f66  tests/federation_differential.py
+84456766f04cb0ff15ccd2d9666dbb502f37bb26d3540a9458e39b228cd24b50  tests/governance_differential.py
+99067506478817478f4634ec1be5597d9b842dea692cea25456a2f113d6eb9e5  tests/spec_conformance/README.md
+fb8b82bf96dbc918021bebabdc7ab5846c673229c9a43125530ffc3e2a011b05  tests/spec_conformance/federation_vectors.json
+4cbb223f1998276db62b7390aea855415d70d32653bec3eb1dae163b8594d324  tests/spec_conformance/generate.py
+2ab354b4ede71cc4d9a28429649761073c973a3a7ee0725e9e1f20c3315c2a30  tests/spec_conformance/governance_vectors.json
+ef73be8b24813e6b6794489a88eb31896300f4b15beee3429970774fa200c751  tests/spec_conformance/run_reference.py
+dbfe6cfc33d0d92c70112287274ed5f82b953c53732398260d813d173234b088  tests/spec_conformance/test_properties.py
+322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85  tests/spec_conformance/vectors.json
+ff1f0255a4bff08911fd199aab2edaf63c0423b4d46d16f02f59ffd67e3f4914  tests/spec_conformance/wave_vectors.json
+
+manifest_sha256  99cbab2170dce0a5d1b0a890286aea5c61ecf01a3c2eea9c143ef7c6e13eae40
