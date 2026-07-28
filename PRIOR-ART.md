@@ -82,6 +82,41 @@ This does **not** make anything older. It makes it unable to *claim* to be
 older, which is the point: it converts a writable git date into a checkable
 floor.
 
+### Accidental corroboration — a committed build cache
+
+`impl-go/.gocache/` was committed by mistake at `9421f02` and removed in
+`2de1d17`. It is worthless as code, but each of its 454 `-a` entries carries one
+field the Go build system wrote and git never saw: unix nanoseconds.
+
+```bash
+python3 tools/cache_timestamps.py 9421f02
+```
+
+```
+build earliest 2026-07-07T21:49:02+00:00
+build latest   2026-07-07T21:59:54+00:00   (spread 10.9 min)
+git claims     2026-07-07T22:59:08+00:00   (self-asserted, writable)
+consistent: commit follows the build by 59.2 min
+```
+
+An eleven-minute compile, committed an hour later the same evening. Git dates
+are writable and the commit hash covers the forgery, so it is internally
+consistent; these stamps are not covered by it. Forging a commit date while
+keeping hundreds of nanosecond build stamps consistent with it, at a plausible
+compile spread, is a different and much easier thing to get wrong.
+
+This is **corroboration, never proof** — the cache files are as writable as
+anything else, and a careful forger fixes them too. It is one weak independent
+signal, it costs nothing because the bytes are already archived, and it is listed
+here rather than leaned on.
+
+It is also the reason the history is not being rewritten to purge the cache.
+Removing 56 MB of junk would change every commit hash after it, voiding the
+manifests above, orphaning the Software Heritage snapshots, and breaking the
+sibling-repository commit pins — to destroy evidence that happens to support us.
+The cache is gone from every live branch and is gitignored; that is the whole of
+the cleanup that was worth doing.
+
 ## Honest limits
 
 - **Bitcoin time is not wall-clock time.** Block timestamps are asserted by
