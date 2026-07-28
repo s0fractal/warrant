@@ -6,14 +6,23 @@ argue about the same table instead of about vibes. It is a *mapping*, not a
 compliance claim: no format makes a deployment compliant, and several Article 12
 obligations are organisational, not representational.
 
-**Applicability, as amended.** The AI Act's original dates for high-risk systems
-were superseded by the *Digital Omnibus on AI* — provisional agreement 7 May
-2026, Parliament's final approval 16 June 2026 — which defers them:
+**Applicability — a deferral that is agreed but not yet in force.** The *Digital
+Omnibus on AI* would defer the AI Act's high-risk dates. Both co-legislators have
+acted — provisional agreement 7 May 2026, Parliament's position 16 June 2026,
+Council 29 June 2026 — but as checked on **28 July 2026** the file
+([2025/0359(COD)](https://oeil.europarl.europa.eu/oeil/en/procedure-file/pdf?reference=2025%2F0359%28COD%29))
+still stands at *awaiting signature*. A vote is not a signature and a signature
+is not publication in the Official Journal, so the amended dates are **not law
+yet** and the original dates are what currently binds:
 
-| High-risk category | Original | As amended |
+| High-risk category | In force today | If the Omnibus completes |
 |---|---|---|
-| Annex III (stand-alone high-risk) | 2 August 2026 | **2 December 2027** |
-| Annex I (AI embedded in regulated products) | 2 August 2027 | **2 August 2028** |
+| Annex III (stand-alone high-risk) | **2 August 2026** | 2 December 2027 |
+| Annex I (AI embedded in regulated products) | **2 August 2027** | 2 August 2028 |
+
+Plan against the earlier column and treat the later one as the expected relief;
+the reverse is how a deployment discovers it is late. Re-check the procedure file
+before relying on either — this table decays, which is why it carries a date.
 
 Article 12 requires automatic recording of events over the system's lifetime;
 Article 19 + Article 26(6) set the retention floor (at least six months unless
@@ -23,11 +32,17 @@ simplification instrument — but it **renumbers and inserts articles**, so trea
 every article number in this document as a pointer to the consolidated text
 rather than as a citation, and check it against that text before relying on it.
 
-*Dates verified 2026-07-27 against contemporaneous law-firm summaries of the
-agreed Omnibus, not against the Official Journal. An earlier draft of this
-profile stated the obligations apply from 2 August 2026, which the amendments had
-already made wrong — a reminder that a compliance mapping decays without a date
-on it.*
+*Dates checked 2026-07-28 against the Parliament procedure file and
+contemporaneous law-firm summaries — not against the Official Journal, which is
+the only source that settles it.*
+
+*This section has now been wrong in both directions, which is the point of dating
+it. A first draft gave 2 August 2026 with no mention of the Omnibus. A second
+called the deferral "as amended" and struck the original dates out — but the
+amendment is still awaiting signature, so that correction overshot and would have
+told a reader the earlier deadline no longer applied to them. A compliance
+mapping decays, and it decays toward whichever answer the author found most
+recently; the date is what lets the next reader catch it.*
 
 ---
 
