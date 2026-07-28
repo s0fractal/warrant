@@ -72,7 +72,7 @@ TARGETS = {
         "workdir": None,                      # filled by stage_workdir()
         "sources": ["tools/settle.py", "policies/gate-settlement.json",
                     "tests/settlement_gate.py"],
-        "baseline": ["python3", "settlement_gate.py"],
+        "baseline": ["python3", "tests/settlement_gate.py"],
         "baseline_expect": "SETTLE-GATE: ALL PASS",
         "module": "settle",
         "subject": "settle.py gate-settlement rule (executed-repro blocking, per-clause novelty)",
@@ -219,10 +219,24 @@ def call_local(model, messages, ctx=32768):
 
 
 def stage_workdir(t):
-    """Copy the reviewed files into a self-contained directory for the harness."""
+    """Copy the reviewed files into a self-contained tree, KEEPING their paths.
+
+    Flattening these was a harness defect that silently destroyed reviews. The
+    reviewer is shown each source under its repository path (`pack()` writes
+    `===== FILE: policies/gate-settlement.json =====`), so it reasonably writes
+    counter-vectors that open those paths -- and every one of them died with
+    FileNotFoundError against a flat directory. Two different families lost
+    entire rounds to it before anyone read a transcript, and their silence looked
+    exactly like "the design held".
+
+    A gate whose environment breaks the reviewer's code is worse than no gate: it
+    manufactures the appearance of a clean review out of an unrunnable one.
+    """
     d = Path(tempfile.mkdtemp(prefix="advgate-stage-"))
     for rel in t["stage"]:
-        shutil.copy2(ROOT / rel, d / Path(rel).name)
+        dest = d / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / rel, dest)
     return d
 
 
@@ -306,6 +320,11 @@ def run_repro(workdir, code):
         script.write_text(code)
         env = dict(os.environ)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        # Every directory holding a module is importable, so `import settle`
+        # works while `policies/gate-settlement.json` still resolves. Preserving
+        # the layout without this would trade one broken environment for another.
+        pkg_dirs = sorted({str(f.parent) for f in sandbox.rglob("*.py")})
+        env["PYTHONPATH"] = os.pathsep.join([str(sandbox), *pkg_dirs])
         try:
             p = subprocess.run([sys.executable, "_repro.py"], cwd=sandbox, env=env,
                                capture_output=True, text=True, timeout=EXEC_TIMEOUT)
