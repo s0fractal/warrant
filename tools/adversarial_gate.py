@@ -109,9 +109,20 @@ Rules that decide whether your finding survives:
   * The block runs with the model directory as CWD, so `import MODULE` works.
     Nothing else is available: no network, no repo, no pip installs.
   * A reproduction that DEMONSTRATES the violation must exit 0 and print a line
-    starting with `VIOLATION:`. Write it so it FAILS LOUDLY (raises, or exits
-    non-zero) if the machine actually behaves correctly -- an unconditional
-    print proves nothing and I will show you the transcript either way.
+    of the form:
+
+        VIOLATION: expected=<required> got=<observed> -- what broke
+
+    `expected` and `got` MUST DIFFER, and I check that mechanically. This is not
+    bookkeeping: the commonest way a counter-vector fools everyone, including its
+    author, is to `assert` the CORRECT behaviour, watch the assert pass, and then
+    print `VIOLATION` unconditionally -- so the violation fires precisely when
+    the machine is right. It has already happened here. Stating both sides makes
+    the claim a disagreement I can verify instead of a sentence I must trust.
+  * Write the block so it FAILS LOUDLY (raises, or exits non-zero) when the
+    machine behaves correctly. An unconditional print proves nothing, and a
+    `VIOLATION:` line whose `expected` equals its `got` is recorded as NOT
+    reproduced, with the reason handed back to you.
   * `id` must be unique. `severity` is one of P0/P1/P2.
   * `clause` names the normative clause your block breaks, exactly as it is
     numbered in the section quoted to you (e.g. `D.3`, `7.2`). This is how
@@ -305,19 +316,52 @@ def run_repro(workdir, code):
             "exit": rc,
             "stdout": stdout[-MAX_OUTPUT:],
             "stderr": stderr[-MAX_OUTPUT:],
-            "violation": rc == 0 and any(
-                l.startswith("VIOLATION:") for l in stdout.splitlines()),
+            "violation": rc == 0 and _demonstrates(stdout)[0],
+            "why": _demonstrates(stdout)[1],
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+VIOLATION_RE = re.compile(
+    r"^VIOLATION:\s*expected\s*=\s*(.+?)\s+got\s*=\s*(.*?)\s*(?:--.*)?$")
+
+
+def _demonstrates(stdout):
+    """Did this run demonstrate a DISAGREEMENT, or merely announce one?
+
+    A counter-vector claims the machine produced the wrong outcome, so it must
+    name both outcomes and they must differ. Checking that mechanically closes
+    the way a repro fools its own author: assert the CORRECT behaviour, watch the
+    assert pass, print VIOLATION unconditionally -- a violation that fires exactly
+    when the machine is right. Observed here on 2026-07-28 from a local reviewer,
+    which had already been recorded as a reproduced P0 before anyone read the code.
+
+    Returns (demonstrated, reason). The reason goes back to the reviewer, because
+    a silent demotion teaches nothing and the protocol has a repair round for
+    exactly this.
+    """
+    lines = [l for l in stdout.splitlines() if l.startswith("VIOLATION:")]
+    if not lines:
+        return False, "no VIOLATION: line"
+    for line in lines:
+        m = VIOLATION_RE.match(line.strip())
+        if not m:
+            return False, ("VIOLATION: line does not state expected=<...> got=<...>, "
+                           "so the claim is not a checkable disagreement")
+        exp, got = m.group(1).strip(), m.group(2).strip()
+        if exp == got:
+            return False, (f"expected and got are the same value ({exp!r}); the run "
+                           "agreed with the rule, so nothing was demonstrated")
+    return True, "expected and got differ"
+
+
 def transcript_block(meta, res):
-    verdict = ("REPRODUCED — exited 0 and printed VIOLATION"
+    verdict = ("REPRODUCED — exited 0 and demonstrated a disagreement"
                if res["violation"] else
                "NOT REPRODUCED — " + (
-                   f"exit {res['exit']}" if res["exit"] else
-                   "exit 0 but no VIOLATION line was printed"))
+                   f"exit {res['exit']}" if res["exit"]
+                   else res.get("why", "no VIOLATION line")))
     return (f"### repro {meta.get('id', '?')} "
             f"[{meta.get('severity', '?')}] {meta.get('title', '')}\n"
             f"HARNESS VERDICT: {verdict}\n"
