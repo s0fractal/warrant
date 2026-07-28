@@ -41,6 +41,8 @@ one place is the only kind that can be checked.
 Exit 0 = every documented invocation is accepted by the binaries under test.
 """
 import argparse
+import base64
+import hashlib
 import os
 import re
 import shlex
@@ -227,49 +229,159 @@ MODULES = {"warrant": "warrant", "warrant-mcp": "warrant_mcp",
 # PYTHONPATH, no user site) and the caller verifies the origin it prints.
 PARSE_SNIPPET = """
 import sys
-extra = sys.argv[1]
-if extra:
-    sys.path.insert(0, extra)
-mod = __import__(sys.argv[2])
-origin = getattr(mod, "__file__", "") or "?"
-sys.stderr.write("MODULE-ORIGIN " + origin + "\\n")
-if sys.argv[3] == "dist":
-    # Which installed distribution OWNS this file? A directory match is not
-    # ownership: an empty venv with a .pth and three hand-written modules
-    # satisfied it (Codex release-surface re-gate 3). Ask the metadata.
-    try:
-        from importlib.metadata import distributions
-        import os
-        owner = ""
-        want = os.path.realpath(origin)
-        for d in distributions():
-            for f in (d.files or []):
-                try:
-                    if os.path.realpath(str(d.locate_file(f))) == want:
-                        owner = (d.metadata["Name"] or "") + " " + (d.version or "")
-                        break
-                except Exception:
-                    pass
-            if owner:
-                break
-        sys.stderr.write("MODULE-DIST " + (owner or "<none>") + "\\n")
-    except Exception as e:
-        sys.stderr.write("MODULE-DIST <error: " + str(e) + ">\\n")
+extra, modpath = sys.argv[1], sys.argv[3]
+if modpath:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(sys.argv[2], modpath)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[sys.argv[2]] = mod
+    spec.loader.exec_module(mod)
+else:
+    if extra:
+        sys.path.insert(0, extra)
+    mod = __import__(sys.argv[2])
+sys.stderr.write("MODULE-ORIGIN " + (getattr(mod, "__file__", "") or "?") + "\\n")
 if not hasattr(mod, "parse_cli"):
     raise SystemExit(3)
-argv = sys.argv[4:]
 try:
-    mod.parse_cli(argv)
+    mod.parse_cli(sys.argv[4:])
 except SystemExit as e:
     raise SystemExit(2 if e.code else 0)
 raise SystemExit(0)
 """
 
+
 DIST_NAME = "warrant-verify"
 
 
+def _canon_dist(name):
+    """PEP 503 canonical form, so `warrant-verify-evil` cannot pass as ours."""
+    return re.sub(r"[-_.]+", "-", name).strip().lower()
+
+
+def inspect_distribution(binroot):
+    """Decide what this artifact IS, using only the filesystem. No code runs.
+
+    Every earlier version asked the module to describe itself, which is
+    backwards: a hand-written module printed `MODULE-DIST warrant-verify 9.9` on
+    its own stderr and the gate believed it, because the last line won (Codex
+    release-surface re-gate 4). A subject cannot be its own provenance. The
+    distribution is identified HERE, by reading dist-info, before the target
+    interpreter is started at all.
+    """
+    problems = []
+    venv = Path(binroot).resolve().parent
+    site = sorted(venv.glob("lib/python*/site-packages")) or sorted(
+        venv.glob("Lib/site-packages"))
+    if not site:
+        return None, [f"no site-packages under {venv}"]
+    site = site[0]
+
+    cands = [d for d in site.glob("*.dist-info")
+             if _canon_dist(d.name.rsplit("-", 2)[0]) == _canon_dist(DIST_NAME)]
+    if not cands:
+        return None, [f"no `{DIST_NAME}` distribution is installed in {site} — "
+                      f"whatever this environment provides, it is not the package "
+                      f"under test"]
+    info_dir = cands[0]
+
+    meta_path = info_dir / "METADATA"
+    meta = meta_path.read_text(errors="replace") if meta_path.exists() else ""
+    name = next((l.split(":", 1)[1].strip() for l in meta.splitlines()
+                 if l.lower().startswith("name:")), "")
+    if _canon_dist(name) != _canon_dist(DIST_NAME):
+        problems.append(f"dist-info declares Name: {name!r}, which is not "
+                        f"`{DIST_NAME}` (exact canonical match required)")
+    version = next((l.split(":", 1)[1].strip() for l in meta.splitlines()
+                    if l.lower().startswith("version:")), "?")
+
+    record = {}
+    rec = info_dir / "RECORD"
+    if not rec.exists():
+        problems.append("dist-info has no RECORD; the installed files cannot be "
+                        "attributed to the distribution")
+    else:
+        for line in rec.read_text(errors="replace").splitlines():
+            parts = line.rsplit(",", 2)
+            if len(parts) == 3 and parts[1].startswith("sha256="):
+                record[parts[0]] = parts[1][len("sha256="):]
+
+    eps, section = {}, ""
+    ep = info_dir / "entry_points.txt"
+    if not ep.exists():
+        problems.append("dist-info has no entry_points.txt; the console commands "
+                        "the documentation names are not declared by this package")
+    else:
+        for line in ep.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("["):
+                section = line.strip("[]")
+            elif "=" in line and section == "console_scripts":
+                k, v = (x.strip() for x in line.split("=", 1))
+                eps[k] = v
+
+    return {"name": name, "version": version, "site": site, "record": record,
+            "eps": eps, "info_dir": info_dir}, problems
+
+
+def _record_digest(info, path):
+    """(recorded, actual) sha256 for a file, as RECORD spells them."""
+    site = info["site"].resolve()
+    target = Path(path).resolve()
+    actual = base64.urlsafe_b64encode(
+        hashlib.sha256(target.read_bytes()).digest()).decode().rstrip("=")
+    for key, want in info["record"].items():
+        try:
+            if (site / key).resolve() == target:
+                return want, actual
+        except (OSError, ValueError):
+            continue
+    return None, actual
+
+
+def check_artifact(binroot, info, problems):
+    """The wheel must OWN its modules and INSTALL its commands, verifiably."""
+    site = info["site"]
+    for cli, mod in MODULES.items():
+        modfile = site / f"{mod}.py"
+        if not modfile.exists():
+            problems.append(f"`{mod}.py` is not in {site} — this environment does "
+                            f"not contain the package's own module")
+        else:
+            want, got = _record_digest(info, modfile)
+            if want is None:
+                problems.append(f"`{mod}.py` is not listed in the distribution's "
+                                f"RECORD — it is not a file this package installed")
+            elif want != got:
+                problems.append(f"`{mod}.py` does not match RECORD (recorded "
+                                f"{want[:12]}…, found {got[:12]}…) — replaced since "
+                                f"installation")
+
+        declared = info["eps"].get(cli)
+        if declared is None:
+            problems.append(f"`{cli}` is not declared as a console script by the "
+                            f"distribution")
+        elif declared.split(":")[0] != mod:
+            problems.append(f"`{cli}` is declared to dispatch to `{declared}`, "
+                            f"not `{mod}`")
+
+        script = Path(binroot) / cli
+        if not script.exists():
+            problems.append(f"console script `{cli}` is missing from {binroot}")
+            continue
+        if not os.access(script, os.X_OK):
+            problems.append(f"console script `{cli}` is not executable — a file "
+                            f"that cannot be run is not a command")
+        elif script.read_bytes()[:2] != b"#!":
+            problems.append(f"console script `{cli}` has no shebang — a text file "
+                            f"containing the right words is not a command")
+    return problems
+
+
+
+
 def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None,
-             want_dist=False):
+             modroot=None):
     """(ok, detail) — does the CLI's OWN parser+invariants accept this argv?
 
     Parser-only, and that is not a detail. An earlier version RAN the command to
@@ -287,8 +399,12 @@ def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None,
     # -I isolates the interpreter: no PYTHONPATH, no user site-packages. Without
     # it the environment decides which parser answers, and the answer is about
     # some other artifact.
-    cmd = ([python, "-I", "-c", PARSE_SNIPPET, extra_path or "", mod,
-            "dist" if want_dist else "nodist"] + argv[1:])
+    # When the artifact has been vetted, load THAT EXACT FILE by path rather
+    # than importing by name: a .pth or a stray sys.path entry can otherwise
+    # decide which module answers, and the answer would be about something else.
+    modpath = str(Path(modroot) / f"{mod}.py") if modroot else ""
+    cmd = ([python, "-I", "-c", PARSE_SNIPPET, extra_path or "", mod, modpath]
+           + argv[1:])
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
@@ -303,10 +419,7 @@ def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None,
             origin = ln[len("MODULE-ORIGIN "):].strip()
         elif ln.startswith("MODULE-DIST "):
             dist = ln[len("MODULE-DIST "):].strip()
-    if want_dist and not dist.startswith(DIST_NAME):
-        return False, (f"the parser at {origin} is not owned by an installed "
-                       f"`{DIST_NAME}` distribution (owner: {dist or '<unknown>'}) "
-                       f"— this is not the artifact it claims to be")
+
     if expect_origin is not None:
         if not origin:
             return False, "the parser did not report where it was imported from"
@@ -325,6 +438,72 @@ def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None,
                if not l.startswith("MODULE-ORIGIN")]
         return False, (err[-1] if err else "rejected by the CLI")
     return False, f"parser exited {p.returncode} (fail-closed)"
+
+
+def _artifact_checks():
+    """Permanent cases for the TRUSTED preflight, built as real little venv trees.
+
+    All four of these were demonstrated by hand once. A demonstration is
+    evidence about the day it ran (Codex release-surface re-gate 4, P2), so they
+    live here now, in the same function the gate calls.
+    """
+    out = []
+    root = Path(tempfile.mkdtemp())
+
+    def venv(name, dist="warrant-verify", version="1.0", eps=True,
+             record=True, executable=True, shebang=True, tamper=False):
+        v = root / name
+        site = v / "lib" / "python3.99" / "site-packages"
+        site.mkdir(parents=True)
+        (v / "bin").mkdir(parents=True)
+        body = "def parse_cli(argv=None):\n    return None\n"
+        digests = {}
+        for mod in MODULES.values():
+            f = site / f"{mod}.py"
+            f.write_text(body)
+            digests[f"{mod}.py"] = base64.urlsafe_b64encode(
+                hashlib.sha256(f.read_bytes()).digest()).decode().rstrip("=")
+            if tamper and mod == "warrant_anchor":
+                f.write_text(body + "# changed after install\n")
+        d = site / f"{_canon_dist(dist).replace('-', '_')}-{version}.dist-info"
+        d.mkdir()
+        (d / "METADATA").write_text(f"Name: {dist}\nVersion: {version}\n")
+        if record:
+            (d / "RECORD").write_text(
+                "\n".join(f"{k},sha256={h}," for k, h in digests.items()))
+        if eps:
+            (d / "entry_points.txt").write_text(
+                "[console_scripts]\n" +
+                "".join(f"{c} = {m}:main\n" for c, m in MODULES.items()))
+        for c in MODULES:
+            s = v / "bin" / c
+            s.write_text("#!/bin/sh\nexit 0\n" if shebang else "not a script\n")
+            if executable:
+                s.chmod(0o755)
+        return v / "bin"
+
+    def clean(binroot):
+        info, probs = inspect_distribution(binroot)
+        if info is not None:
+            probs = check_artifact(binroot, info, probs)
+        return not probs
+
+    out.append(("a well-formed artifact passes the preflight", clean(venv("good"))))
+    out.append(("a venv with no such distribution is rejected",
+                not clean(venv("nodist", dist="something-else"))))
+    out.append(("`warrant-verify-evil` is not `warrant-verify`",
+                not clean(venv("evil", dist="warrant-verify-evil"))))
+    out.append(("a module changed after install is rejected (RECORD)",
+                not clean(venv("tampered", tamper=True))))
+    out.append(("a non-executable console script is rejected",
+                not clean(venv("noexec", executable=False))))
+    out.append(("a console script with no shebang is rejected",
+                not clean(venv("noshebang", shebang=False))))
+    out.append(("undeclared console scripts are rejected",
+                not clean(venv("noeps", eps=False))))
+    out.append(("a distribution with no RECORD is rejected",
+                not clean(venv("norecord", record=False))))
+    return out
 
 
 def _hostile_runtime_checks(extra):
@@ -472,6 +651,7 @@ warrant --store ./pack verify --store-mode --json | jq -e '.ok'
                    "--key", "k"])),
     ]
     checks += _hostile_runtime_checks(extra)
+    checks += _artifact_checks()
     bad = 0
     for name, ok in checks:
         if not ok:
@@ -526,17 +706,23 @@ def main():
     # build_parser() cannot, and saying "24 invocations rejected" about it would
     # be precise-sounding and wrong. Fail closed, but name the actual condition:
     # an artifact we cannot introspect is not an artifact we have checked.
+    modroot = None
     if args.bin:
-        ep_problems = check_entry_points(Path(args.bin).resolve())
-        if ep_problems:
-            print(f"RELEASE SURFACE: FAIL — {target} does not install the commands "
-                  f"the documentation names:\n")
-            for e in ep_problems:
+        # TRUSTED PREFLIGHT, filesystem only, before any target code runs.
+        info, art_problems = inspect_distribution(Path(args.bin).resolve())
+        if info is not None:
+            art_problems = check_artifact(Path(args.bin).resolve(), info, art_problems)
+        if art_problems:
+            print(f"RELEASE SURFACE: FAIL — {target} is not the artifact it "
+                  f"claims to be:\n")
+            for e in art_problems:
                 print(f"  {e}")
             return 1
+        modroot = str(info["site"])
+        target = (f"{info['name']} {info['version']} installed in {args.bin}")
 
     probe = validate(python, extra, "warrant", ["warrant", "--help"],
-                     expect_origin=expect_origin, want_dist=bool(args.bin))
+                     expect_origin=expect_origin, modroot=modroot)
     if not probe[0] and "parse_cli" in probe[1]:
         print(f"RELEASE SURFACE: CANNOT VALIDATE — {target} has no parser-only "
               f"entry point (`parse_cli`).\n\n"
@@ -561,7 +747,7 @@ def main():
                 ok, detail = validate(python, extra, argv[0],
                                       concretise(argv, ROOT),
                                       expect_origin=expect_origin,
-                                      want_dist=bool(args.bin))
+                                      modroot=modroot)
                 if not ok:
                     problems.append(f"{rel}:{lineno}: `{' '.join(argv)}`\n"
                                     f"      -> {detail}")
