@@ -108,19 +108,33 @@ def outcome_fingerprint(subject, finding):
     }))
 
 
+# Values that name no clause. `unstated` is the worst of them because the repro
+# rules INSTRUCT reviewers to write it for a property the document never states --
+# so without this list every distinct unwritten-property defect shares one claim
+# key by design, and refuting any one of them clears all the others.
+NON_IDENTIFYING = {"", "unstated", "unknown", "none", "n/a", "-", "?"}
+
+
 def claim_key(finding):
     """The relevance key: which normative clause this finding breaks.
 
-    Falls back to the finding's own id when a reviewer did not name a clause. The
-    fallback is deliberately WEAK -- an unnamed clause cannot be matched against
-    prior rounds, so it always reads as novel. That errs toward blocking, which is
-    the safe direction: an unclassifiable finding should stop the queue and get a
-    human's eye, not slip through as a duplicate.
+    A named clause is the unit of a claim: re-deriving it with different code is a
+    restatement, and refuting it on the current text closes it. That only holds if
+    the key really identifies a clause. When it does not, findings that share it
+    are NOT the same defect, and treating them as one lets a refutation of A
+    silently close a live B.
+
+    Demonstrated on 2026-07-28: two distinct `unstated` defects, one reproduced
+    against superseded text and never retested, the other refuted against the
+    current text -- SETTLED, with the first never looked at again. So anything
+    non-identifying is keyed per finding instead, which reads as novel every time
+    and errs toward blocking. An unclassifiable finding should stop the queue and
+    get a human's eye rather than slip through as somebody else's duplicate.
     """
-    clause = (finding.get("clause") or "").strip()
-    if not clause:
-        return f"unclassified:{finding.get('id', '?')}"
-    return f"clause:{clause.lower()}"
+    clause = (finding.get("clause") or "").strip().lower()
+    if clause in NON_IDENTIFYING:
+        return f"unidentified:{finding.get('id', '?')}:{finding.get('repro_sha256', '')[:12]}"
+    return f"clause:{clause}"
 
 
 SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2}

@@ -132,6 +132,9 @@ Rules that decide whether your finding survives:
     something the section never states, write `clause=unstated` and say in the
     finding which property you believe is implied but unwritten -- an unwritten
     property that can be violated IS a finding, and often the most valuable one.
+    `unstated` findings are never merged with each other: they name no clause, so
+    settlement keys them individually rather than letting a refutation of one
+    close the rest.
   * Runtime cap: 60 seconds. No sleeps, no unbounded loops.
   * If you cannot write a runnable reproduction for something you suspect, do
     NOT dress it up as a finding: file it under 'Questions' and say what you

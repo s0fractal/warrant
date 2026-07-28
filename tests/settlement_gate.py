@@ -171,6 +171,29 @@ stale_regate = (
 check("later re-gate of old text cannot settle current text",
       run(stale_regate, current=NEW)["state"], "BLOCKED")
 
+# 13. REGRESSION. The repro rules tell reviewers to write `clause=unstated` for a
+#     property the document never states, so without special handling every
+#     distinct unwritten-property defect shares one claim key by design. Then
+#     refuting any one of them closes all the rest. Demonstrated 2026-07-28,
+#     starting from a local reviewer's observation that clause keys merge:
+#     one `unstated` defect reproduced on superseded text and never retested,
+#     another refuted on current text, and the item read SETTLED.
+unstated = ([ledger("kimi@moonshot", OLD, [finding("B", "unstated", True,
+                                                   repro="1" * 64)],
+                    at="2026-07-01T00:00:00Z")]
+            + [ledger(f, NEW, [finding("A", "unstated", False, repro="2" * 64)])
+               for f in three])
+check("unstated findings are not one claim", run(unstated)["claims_total"], 2)
+check("refuting one unstated defect cannot clear another",
+      run(unstated)["state"], "UNRESOLVED")
+
+# 13a. A real clause id still normalises: same clause, different spelling, one
+#      claim. That is the behaviour worth keeping, and the fix must not cost it.
+check("real clause ids still normalise",
+      run([ledger(three[0], NEW, [finding("F1", "D.3", True),
+                                  finding("F2", "d.3 ", True, repro="e" * 64)])
+           ])["claims_total"], 1)
+
 # 12. A ledger whose evidence does not hash to its own digests is unreadable,
 #     not merely weak: settling under it would restate an unverifiable claim.
 tampered = ledger(three[0], NEW, [dict(finding("F1", "D.3", True),

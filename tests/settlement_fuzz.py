@@ -59,7 +59,7 @@ POLICY = json.loads(_pol.read_text())
 
 SUBJECTS = [c * 64 for c in "abc"]
 FAMILIES = ["codex@openai", "kimi@moonshot", "gemini@google", "qwen3-coder@local"]
-CLAUSES = ["D.3", "D.4", "7", "unstated", ""]
+CLAUSES = ["D.3", "d.3 ", "D.4", "7", "unstated", "UNSTATED", "n/a", ""]
 SEVERITIES = ["P0", "P1", "P2", "P?", ""]
 
 
@@ -124,6 +124,10 @@ def main():
                         # Cleared only if some gate re-ran this claim on the
                         # current subject and it did not reproduce there.
                         key = S.claim_key(f)
+                        # Must be the SAME claim, keyed exactly as settle keys it
+                        # -- comparing on the raw clause string would let a
+                        # collision the tool makes hide from the property meant
+                        # to catch collisions.
                         retested = any(
                             S.claim_key(g) == key and not g["reproduced"]
                             for l2 in leds if l2["subject_sha256"] == current
