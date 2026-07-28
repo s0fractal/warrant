@@ -39,6 +39,18 @@ one place is the only kind that can be checked.
     python3 tools/check_release_surface.py --selftest           # rejection matrix
 
 Exit 0 = every documented invocation is accepted by the binaries under test.
+
+THREAT MODEL, AND WHERE IT STOPS
+--------------------------------
+Declared: the wheel is the provenance root; the installation must match it; the
+console wrappers must be pip's minimal dispatch shape; documented argv must be
+accepted by the CLI's own parser and post-parse invariants. Within that, the
+checker executes nothing but a parser.
+
+Outside it, and NOT claimed: a venv whose `.pth` runs code at interpreter
+startup; a compromised Python; a wheel that is itself malicious and honestly
+described. Those are a different problem than "do the docs match the artifact",
+and pretending otherwise would make this file's guarantee vaguer, not stronger.
 """
 import argparse
 import ast
@@ -326,6 +338,76 @@ def inspect_distribution(binroot):
             "eps": eps, "info_dir": info_dir}, problems
 
 
+def _attr_chain(node):
+    """`sys.exit` -> ("sys", "exit"); anything not a plain dotted name -> None."""
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return tuple(reversed(parts))
+
+
+def _is_main_guard(node):
+    return (isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name)
+            and node.test.left.id == "__name__"
+            and len(node.test.ops) == 1
+            and isinstance(node.test.ops[0], ast.Eq)
+            and len(node.test.comparators) == 1
+            and isinstance(node.test.comparators[0], ast.Constant)
+            and node.test.comparators[0].value == "__main__"
+            and not node.orelse)
+
+
+def _is_argv0(node):
+    return (isinstance(node, ast.Subscript)
+            and _attr_chain(node.value) == ("sys", "argv")
+            and isinstance(node.slice, ast.Constant) and node.slice.value == 0)
+
+
+def _is_argv0_normalisation(stmt):
+    """The `sys.argv[0] = …` line pip emits, in either shape it uses.
+
+    Bounded on purpose: the value must be `re.sub(<const>, <const>, argv0)` or
+    `argv0.removesuffix(<const>)`. Constants and argv[0] only -- no other name
+    may appear, so this cannot become a hiding place.
+    """
+    if not (isinstance(stmt, ast.Assign) and len(stmt.targets) == 1
+            and _is_argv0(stmt.targets[0])
+            and isinstance(stmt.value, ast.Call)):
+        return False
+    call = stmt.value
+    chain = _attr_chain(call.func)
+    if chain == ("re", "sub"):
+        args = call.args
+        return (len(args) == 3 and all(isinstance(a, ast.Constant) for a in args[:2])
+                and _is_argv0(args[2]) and not call.keywords)
+    if isinstance(call.func, ast.Attribute) and call.func.attr == "removesuffix" \
+            and _is_argv0(call.func.value):
+        return (len(call.args) == 1 and isinstance(call.args[0], ast.Constant)
+                and not call.keywords)
+    return False
+
+
+def _is_dispatch(stmt, func):
+    """Exactly `sys.exit(<func>())`, with no arguments to either call."""
+    if isinstance(stmt, ast.Expr):
+        call = stmt.value
+    elif isinstance(stmt, ast.Return):
+        return False
+    else:
+        return False
+    return (isinstance(call, ast.Call) and _attr_chain(call.func) == ("sys", "exit")
+            and len(call.args) == 1 and not call.keywords
+            and isinstance(call.args[0], ast.Call)
+            and isinstance(call.args[0].func, ast.Name)
+            and call.args[0].func.id == func
+            and not call.args[0].args and not call.args[0].keywords)
+
+
 def check_wrapper(text, module, func, venv):
     """Verify a console wrapper STATICALLY. Nothing here executes it.
 
@@ -386,17 +468,31 @@ def check_wrapper(text, module, func, venv):
             return problems + [f"imports from `{node.module}`, not the declared "
                                f"entry point `{module}`"]
         if isinstance(node, ast.If):
-            for stmt in ast.walk(node):
-                if (isinstance(stmt, ast.Call) and isinstance(stmt.func, ast.Attribute)
-                        and stmt.func.attr == "exit"):
-                    for arg in stmt.args:
-                        if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name) \
-                                and arg.func.id == func:
-                            dispatches = True
-                elif isinstance(stmt, ast.Call) and isinstance(stmt.func, ast.Name) \
-                        and stmt.func.id not in (func, "re", "sub"):
-                    return problems + [f"calls `{stmt.func.id}()`, which pip's "
-                                       f"wrapper does not"]
+            # STRUCTURE, not a walk. ast.walk() visits nodes and asks whether
+            # any of them looks wrong, which is a filter, not a shape: it
+            # accepted `sys.modules["os"].system("touch marker")` sitting beside
+            # the dispatch, because that call's func is an Attribute rather than
+            # a Name (Codex final bounded re-gate). The guard body is now
+            # matched statement by statement against the only two shapes pip
+            # emits, and anything else is a rejection.
+            if not _is_main_guard(node):
+                return problems + ["has a top-level `if` that is not "
+                                   "`if __name__ == '__main__':`"]
+            seen_exit = 0
+            for stmt in node.body:
+                if _is_argv0_normalisation(stmt):
+                    continue
+                if _is_dispatch(stmt, func):
+                    seen_exit += 1
+                    continue
+                return problems + [
+                    f"has `{ast.unparse(stmt).splitlines()[0][:60]}` in its "
+                    f"__main__ guard; pip's wrapper contains only the optional "
+                    f"argv[0] normalisation and `sys.exit({func}())`"]
+            if seen_exit != 1:
+                return problems + [f"calls `sys.exit({func}())` {seen_exit} times; "
+                                   f"pip's wrapper calls it exactly once"]
+            dispatches = True
             continue
         return problems + [f"contains a top-level {type(node).__name__}; pip's "
                            f"wrapper has only imports and the __main__ guard"]
@@ -789,6 +885,34 @@ def _wheel_root_checks():
          "if __name__ == '__main__':\n    sys.exit(main())\n", False),
         ("a wrapper with no shebang is rejected",
          "import sys\nfrom warrant_mcp import main\n", False),
+        # the walk-vs-structure countervector: the dispatch is present and
+        # correct, and a second statement smuggles execution in beside it
+        ("a wrapper smuggling `sys.modules['os'].system(...)` is rejected",
+         "#!/venv/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+         "if __name__ == '__main__':\n"
+         "    sys.modules['os'].system('touch /tmp/marker')\n"
+         "    sys.exit(main())\n", False),
+        ("pip's argv[0] normalisation is still accepted",
+         "#!/venv/bin/python3\nimport re\nimport sys\n"
+         "from warrant_mcp import main\n"
+         "if __name__ == '__main__':\n"
+         "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])\n"
+         "    sys.exit(main())\n", True),
+        ("the removesuffix form is still accepted",
+         "#!/venv/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+         "if __name__ == '__main__':\n"
+         "    sys.argv[0] = sys.argv[0].removesuffix('.exe')\n"
+         "    sys.exit(main())\n", True),
+        ("a guard that is not `__name__ == __main__` is rejected",
+         "#!/venv/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+         "if True:\n    sys.exit(main())\n", False),
+        ("dispatching twice is rejected",
+         "#!/venv/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+         "if __name__ == '__main__':\n    sys.exit(main())\n"
+         "    sys.exit(main())\n", False),
+        ("passing arguments to the entry point is rejected",
+         "#!/venv/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+         "if __name__ == '__main__':\n    sys.exit(main('extra'))\n", False),
     ]
     for name, text, should_pass in cases:
         issues = check_wrapper(text, "warrant_mcp", "main", "/venv")
