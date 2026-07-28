@@ -123,6 +123,32 @@ def claim_key(finding):
     return f"clause:{clause.lower()}"
 
 
+SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2}
+
+
+def claim_severity(severities):
+    """Most severe label across a claim, plus whether any label was unrecognised.
+
+    This was a P0 in this file's first revision, found on its own gate: severity
+    was `max()` over raw strings, and in ASCII '?' > '1' > '0', so the LEAST
+    severe label won and an unparsed `P?` beat everything. Since `P?` is not in
+    `blocking_severities`, a reproduced P0 sharing a clause with one unlabelled
+    finding stopped blocking entirely and the item reported SETTLED -- the exact
+    false settlement this tool exists to prevent, produced by a sort order.
+
+    Two rules follow, both fail-closed. Severity is ranked explicitly, never
+    lexically. An unrecognised label is not harmless: it means the harness could
+    not read how bad a thing that DID reproduce is, so it blocks and a human
+    looks. The report says `P?` rather than silently promoting it, because
+    inventing a severity would be its own false claim.
+    """
+    severities = list(severities)
+    known = [s for s in severities if s in SEVERITY_RANK]
+    unknown = len(known) != len(severities)
+    label = min(known, key=lambda s: SEVERITY_RANK[s]) if known else "P?"
+    return label, unknown
+
+
 def load_policy(path):
     if not path.exists():
         sys.exit(f"no gate policy at {path} -- settlement has no rules to apply")
@@ -188,8 +214,10 @@ def settle(item, policy, ledger_dir=None):
     for key, rec in sorted(claims.items()):
         on_current = [s for s in rec["seen"] if s["subject"] == current]
         blocked_ever = [s for s in rec["seen"] if s["reproduced"]]
-        sev = max((s["severity"] for s in blocked_ever), default="P?")
-        if sev not in policy["blocking_severities"]:
+        if not blocked_ever:
+            continue
+        sev, sev_unknown = claim_severity(s["severity"] for s in blocked_ever)
+        if not (sev_unknown or sev in policy["blocking_severities"]):
             continue
         if any(s["reproduced"] for s in on_current):
             blocking.append({"claim": key, "severity": sev,

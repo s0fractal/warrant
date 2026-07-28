@@ -116,6 +116,32 @@ check("P2 does not block",
       run([ledger(f, NEW, [finding("F1", "D.9", True, severity="P2")])
            for f in three])["state"], "SETTLED")
 
+# 9a. REGRESSION, P0 found on this file's own gate. Severity was `max()` over
+#     strings; in ASCII '?' > '1' > '0', so the least severe label won and an
+#     unparsed `P?` beat a real P0. One unlabelled finding sharing a clause with
+#     a reproduced P0 disabled the whole claim and the item read SETTLED.
+mixed = run([ledger(three[0], NEW, [finding("F1", "D.3", True, severity="P0")]),
+             ledger(three[1], NEW, [finding("F2", "D.3", True, severity="P?",
+                                            repro="e" * 64)]),
+             ledger(three[2], NEW, [])])
+check("unlabelled sibling cannot mask a P0", mixed["state"], "BLOCKED")
+check("most severe label wins, not the lexical max",
+      mixed["blocking"][0]["severity"] if mixed["blocking"] else None, "P0")
+
+# 9b. A reproduced finding whose severity the harness could not read blocks on
+#     its own. Unknown is not harmless -- it means nobody knows how bad it is.
+check("unparsable severity blocks by itself",
+      run([ledger(f, NEW, [finding("F1", "D.7", True, severity="P?")])
+           for f in three])["state"], "BLOCKED")
+
+# 9c. And the ranking is by severity, not by string order, in the other
+#     direction too: P0 must win over P1, which lexical max got backwards.
+check("P0 outranks P1",
+      run([ledger(three[0], NEW, [finding("F1", "D.5", True, severity="P1"),
+                                  finding("F2", "D.5", True, severity="P0",
+                                          repro="a" * 64)])])["blocking"][0]["severity"],
+      "P0")
+
 # 10. The policy is pinned by hash in the report: a decision taken under other
 #     rules must not be mistakable for one taken under these.
 _cli = next(p for p in (ROOT / "tools" / "settle.py", HERE / "settle.py") if p.exists())

@@ -367,6 +367,8 @@ def main():
         if repros:
             print(f"[gate] executed {len(repros)} reproduction(s) from round {rnd - 1}",
                   file=sys.stderr)
+            # Persist NOW. The reviewer may not survive the next round.
+            emit_ledger(args, t, normative, all_results, complete=False)
         else:
             print(f"[gate] no parseable repro block in round {rnd - 1}", file=sys.stderr)
         feedback = "\n".join(blocks) if blocks else (
@@ -461,14 +463,28 @@ def main():
     print(f"\nreview delivered: {args.out}  "
           f"({len(all_results)} reproductions executed, {ran} reproduced)")
 
-    # Settlement ledger. The markdown above is for humans; this is the machine
-    # record `tools/settle.py` reads to decide whether the argument has ended.
-    # It carries only what EXECUTED here -- reviewer prose has no slot in it,
-    # deliberately: an assertion must not be able to reach the settlement rule.
-    #
-    # Only the LAST result per repro id is kept. A reviewer who repairs a block
-    # re-emits the same id, and the repaired run is the one that stands; keeping
-    # the broken draft too would let one finding count twice.
+    emit_ledger(args, t, normative, all_results, complete=True)
+
+
+def emit_ledger(args, t, normative, all_results, complete):
+    """Write the machine record `tools/settle.py` reads.
+
+    Called after EVERY execution batch, not only at the end. On this tool's first
+    real run the reviewer's quota ran out in round 3 and twelve already-executed
+    reproductions died with the process -- transcripts gone, nothing to re-read,
+    no way to tell a refuted attack from an attack that never ran. Executed
+    evidence is the expensive part and the only part that decides anything; it is
+    written the moment it exists.
+
+    `complete` records whether the reviewer finished. A partial ledger is real
+    evidence and must be readable, but it must never be mistaken for a finished
+    gate, so it says which it is.
+
+    Reviewer prose has no slot here, deliberately: an assertion must not be able
+    to reach the settlement rule. Only the LAST result per repro id is kept -- a
+    reviewer who repairs a block re-emits the same id, and keeping the broken
+    draft too would let one finding count twice.
+    """
     final = {}
     for rnd, meta, code, res in all_results:
         final[meta.get("id") or f"anon{len(final)}"] = (rnd, meta, code, res)
@@ -483,6 +499,7 @@ def main():
         "subject_sha256": subject_sha256,
         "subject_label": t["subject"],
         "review": args.out,
+        "complete": complete,
         "findings": [{
             "id": meta.get("id"),
             "severity": (meta.get("severity") or "P?").upper(),
@@ -500,8 +517,10 @@ def main():
     ledger_dir.mkdir(parents=True, exist_ok=True)
     ledger_path = ledger_dir / (Path(args.out).stem + ".json")
     ledger_path.write_text(json.dumps(ledger, indent=2, sort_keys=True) + "\n")
-    print(f"settlement ledger: {ledger_path.relative_to(ROOT)}  "
-          f"(family {family}, subject {subject_sha256[:12]})")
+    print(f"settlement ledger{'' if complete else ' (PARTIAL)'}: "
+          f"{ledger_path.relative_to(ROOT)}  "
+          f"(family {family}, subject {subject_sha256[:12]}, "
+          f"{len(ledger['findings'])} executed)", file=sys.stderr)
 
 
 if __name__ == "__main__":
