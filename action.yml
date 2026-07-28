@@ -59,12 +59,27 @@ runs:
   steps:
     - name: Install warrant-verify
       shell: bash
+      # `${{ }}` interpolation splices the value into the script BEFORE bash sees
+      # it, so a caller-controlled `version` was executing as shell — the script
+      # injection GitHub documents, in the one step that installs the verifier
+      # this action's entire result depends on. Every other input already went
+      # through `env` for exactly this reason; this one was missed.
+      env:
+        IN_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        if [ "${{ inputs.version }}" = "latest" ]; then
+        # Belt as well as braces: a version is a PEP 440 specifier, and anything
+        # else is a caller error worth naming rather than passing to pip. Quoting
+        # alone would already stop the injection; this stops the confusing
+        # failure too.
+        if ! printf '%s' "$IN_VERSION" | grep -Eq '^(latest|[A-Za-z0-9._+!-]+)$'; then
+          echo "::error::invalid 'version' input: expected 'latest' or a PEP 440 version"
+          exit 1
+        fi
+        if [ "$IN_VERSION" = "latest" ]; then
           python3 -m pip install --quiet --upgrade warrant-verify
         else
-          python3 -m pip install --quiet "warrant-verify==${{ inputs.version }}"
+          python3 -m pip install --quiet "warrant-verify==$IN_VERSION"
         fi
         installed="$(python3 -m pip show warrant-verify | awk '/^Version:/{print $2}')"
         echo "warrant-verify $installed"
