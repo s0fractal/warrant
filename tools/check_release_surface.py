@@ -231,10 +231,33 @@ extra = sys.argv[1]
 if extra:
     sys.path.insert(0, extra)
 mod = __import__(sys.argv[2])
-sys.stderr.write("MODULE-ORIGIN " + (getattr(mod, "__file__", "") or "?") + "\\n")
+origin = getattr(mod, "__file__", "") or "?"
+sys.stderr.write("MODULE-ORIGIN " + origin + "\\n")
+if sys.argv[3] == "dist":
+    # Which installed distribution OWNS this file? A directory match is not
+    # ownership: an empty venv with a .pth and three hand-written modules
+    # satisfied it (Codex release-surface re-gate 3). Ask the metadata.
+    try:
+        from importlib.metadata import distributions
+        import os
+        owner = ""
+        want = os.path.realpath(origin)
+        for d in distributions():
+            for f in (d.files or []):
+                try:
+                    if os.path.realpath(str(d.locate_file(f))) == want:
+                        owner = (d.metadata["Name"] or "") + " " + (d.version or "")
+                        break
+                except Exception:
+                    pass
+            if owner:
+                break
+        sys.stderr.write("MODULE-DIST " + (owner or "<none>") + "\\n")
+    except Exception as e:
+        sys.stderr.write("MODULE-DIST <error: " + str(e) + ">\\n")
 if not hasattr(mod, "parse_cli"):
     raise SystemExit(3)
-argv = sys.argv[3:]
+argv = sys.argv[4:]
 try:
     mod.parse_cli(argv)
 except SystemExit as e:
@@ -242,8 +265,11 @@ except SystemExit as e:
 raise SystemExit(0)
 """
 
+DIST_NAME = "warrant-verify"
 
-def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None):
+
+def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None,
+             want_dist=False):
     """(ok, detail) — does the CLI's OWN parser+invariants accept this argv?
 
     Parser-only, and that is not a detail. An earlier version RAN the command to
@@ -255,13 +281,14 @@ def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None):
     `parse_cli`, an unexpected exit code, and an import whose origin is not the
     artifact under test are all failures.
     """
-    mod = MODULES.get(cli)
+    mod = MODULES.get(Path(cli).name)
     if mod is None:
         return False, f"no parser-only entry point known for `{cli}`"
     # -I isolates the interpreter: no PYTHONPATH, no user site-packages. Without
     # it the environment decides which parser answers, and the answer is about
     # some other artifact.
-    cmd = [python, "-I", "-c", PARSE_SNIPPET, extra_path or "", mod] + argv[1:]
+    cmd = ([python, "-I", "-c", PARSE_SNIPPET, extra_path or "", mod,
+            "dist" if want_dist else "nodist"] + argv[1:])
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
@@ -270,10 +297,16 @@ def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None):
     except OSError as e:
         return False, f"could not run the parser: {e}"
 
-    origin = ""
+    origin, dist = "", ""
     for ln in (p.stderr or "").splitlines():
         if ln.startswith("MODULE-ORIGIN "):
             origin = ln[len("MODULE-ORIGIN "):].strip()
+        elif ln.startswith("MODULE-DIST "):
+            dist = ln[len("MODULE-DIST "):].strip()
+    if want_dist and not dist.startswith(DIST_NAME):
+        return False, (f"the parser at {origin} is not owned by an installed "
+                       f"`{DIST_NAME}` distribution (owner: {dist or '<unknown>'}) "
+                       f"— this is not the artifact it claims to be")
     if expect_origin is not None:
         if not origin:
             return False, "the parser did not report where it was imported from"
@@ -329,6 +362,32 @@ def _hostile_runtime_checks(extra):
                      expect_origin="/nonexistent/elsewhere")
     out.append(("a parser imported from outside the artifact is rejected", not ok))
     return out
+
+
+def check_entry_points(binroot):
+    """The wheel's console scripts must EXIST and point at the right modules.
+
+    Importing a module says nothing about whether the command a reader types is
+    installed: deleting `<venv>/bin/warrant-mcp` left a real wheel reporting a
+    clean pass, because the gate never looked at the scripts (Codex
+    release-surface re-gate 3). A documented `warrant-mcp …` is a promise about
+    an executable, not about an importable module.
+    """
+    problems = []
+    for cli, mod in MODULES.items():
+        script = binroot / cli
+        if not script.exists():
+            problems.append(f"console script `{cli}` is missing from {binroot}")
+            continue
+        try:
+            body = script.read_text(errors="replace")
+        except OSError as e:
+            problems.append(f"console script `{cli}` is unreadable: {e}")
+            continue
+        if mod not in body:
+            problems.append(f"console script `{cli}` does not dispatch to `{mod}` "
+                            f"— the entry-point mapping is not what the docs assume")
+    return problems
 
 
 def selftest():
@@ -393,11 +452,24 @@ warrant --store ./pack verify --store-mode --json | jq -e '.ok'
         # real CLI still exits 2
         ("post-parse invariant enforced (mcp needs a downstream command)",
          not accepted(["warrant-mcp", "--store", "s", "--actor", "a", "--key", "k"])),
-        # path-qualified invocations are ours
+        # path-qualified invocations are ours, and are judged on the FLAG rather
+        # than on argv[0] being unfamiliar. The previous pair of cases was
+        # vacuous: both the valid and the invalid absolute command failed, for
+        # the same wrong reason (Codex release-surface re-gate 3).
         ("path-qualified CLI is recognised",
          invocations("/tmp/tv/bin/warrant selftest --nope", WHEEL_CLIS)[0] != []),
-        ("path-qualified CLI is validated, not waved through",
+        ("path-qualified VALID command is accepted",
+         accepted(["/tmp/tv/bin/warrant", "verify", "--store-mode", "--json"])),
+        ("path-qualified INVALID flag is rejected",
          not accepted(["/tmp/tv/bin/warrant", "verify", "--definitely-not-real"])),
+        # argv invariants that live past parse_args are part of the contract
+        ("propose without --subject is rejected",
+         not accepted(["warrant", "propose", "--actor", "a", "--key", "k"])),
+        ("supersede without a prior id is rejected",
+         not accepted(["warrant", "supersede", "--actor", "a", "--key", "k"])),
+        ("propose WITH --subject is accepted",
+         accepted(["warrant", "propose", "--subject", "f", "--actor", "a",
+                   "--key", "k"])),
     ]
     checks += _hostile_runtime_checks(extra)
     bad = 0
@@ -454,8 +526,17 @@ def main():
     # build_parser() cannot, and saying "24 invocations rejected" about it would
     # be precise-sounding and wrong. Fail closed, but name the actual condition:
     # an artifact we cannot introspect is not an artifact we have checked.
+    if args.bin:
+        ep_problems = check_entry_points(Path(args.bin).resolve())
+        if ep_problems:
+            print(f"RELEASE SURFACE: FAIL — {target} does not install the commands "
+                  f"the documentation names:\n")
+            for e in ep_problems:
+                print(f"  {e}")
+            return 1
+
     probe = validate(python, extra, "warrant", ["warrant", "--help"],
-                     expect_origin=expect_origin)
+                     expect_origin=expect_origin, want_dist=bool(args.bin))
     if not probe[0] and "parse_cli" in probe[1]:
         print(f"RELEASE SURFACE: CANNOT VALIDATE — {target} has no parser-only "
               f"entry point (`parse_cli`).\n\n"
@@ -479,7 +560,8 @@ def main():
                 checked += 1
                 ok, detail = validate(python, extra, argv[0],
                                       concretise(argv, ROOT),
-                                      expect_origin=expect_origin)
+                                      expect_origin=expect_origin,
+                                      want_dist=bool(args.bin))
                 if not ok:
                     problems.append(f"{rel}:{lineno}: `{' '.join(argv)}`\n"
                                     f"      -> {detail}")

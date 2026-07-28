@@ -1658,6 +1658,19 @@ def parse_cli(argv=None):
     """
     ap = build_parser()
     args = ap.parse_args(argv)
+
+    # Pure argv invariants. These used to live in the dispatch below, mixed with
+    # store access, so the only way to discover that `propose` needs --subject
+    # was to run it against a real store -- and a documentation checker that
+    # stopped at parse_args reported a surface the CLI does not accept (Codex
+    # release-surface re-gate 3). Nothing here touches the filesystem.
+    if args.cmd == "propose" and not args.subject:
+        ap.error("propose requires --subject")
+    if args.cmd in ("accept", "reject", "supersede") and args.prior_id is None:
+        if args.cmd == "supersede":
+            ap.error("supersede requires the warrant id being superseded")
+        if not (args.subject and args.under):
+            ap.error(f"{args.cmd} without a prior requires --subject and --under")
     return args
 
 
@@ -1678,18 +1691,12 @@ def main():
         store.require()
         print(store.put_blob(Path(args.file).read_bytes()))
     elif args.cmd == "propose":
-        store.require()
-        if not args.subject:
-            sys.exit("propose requires --subject")
+        store.require()                      # --subject checked in parse_cli
         file_warrant(store, "propose", resolve_blob_arg(store, args.subject),
                      args, note=args.note)
     elif args.cmd in ("accept", "reject", "supersede"):
-        store.require()
+        store.require()                      # argv invariants checked in parse_cli
         if args.prior_id is None:
-            if args.cmd == "supersede":
-                sys.exit("supersede requires the warrant id being superseded")
-            if not (args.subject and args.under):
-                sys.exit(f"{args.cmd} without a prior requires --subject and --under")
             file_warrant(store, args.cmd, resolve_blob_arg(store, args.subject),
                          args, note=args.note)
             return
