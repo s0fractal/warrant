@@ -149,6 +149,20 @@ def claim_severity(severities):
     return label, unknown
 
 
+def subject_for_target(name):
+    """Recompute the reviewed subject's hash from the LIVE files.
+
+    Shares one definition with the gate rather than copying the slice rule: two
+    copies would drift, and a settlement decided against a stale notion of "the
+    subject" is the defect this function exists to close.
+    """
+    sys.path.insert(0, str(ROOT / "tools"))
+    import adversarial_gate as ag                       # noqa: PLC0415
+
+    t = ag.TARGETS[name]
+    return sha256_hex(ag.slice_section(*t["normative"])), t["subject"]
+
+
 def load_policy(path):
     if not path.exists():
         sys.exit(f"no gate policy at {path} -- settlement has no rules to apply")
@@ -171,8 +185,16 @@ def load_ledgers(item, ledger_dir=None):
     return out
 
 
-def settle(item, policy, ledger_dir=None):
+def settle(item, policy, ledger_dir=None, current=None):
     ledgers = load_ledgers(item, ledger_dir)
+    if not current:
+        # Fail closed. Guessing which revision is current is exactly the P0 this
+        # parameter replaced; refusing to guess is the whole fix.
+        return {"item": item, "state": "NO-SUBJECT",
+                "reason": "no current subject given -- pass --subject or --target",
+                "current_subject": "", "subject_label": "", "families_on_current": [],
+                "gates_total": len(ledgers), "blocking": [], "unresolved": [],
+                "restatements": [], "claims_total": 0, "policy_sha256": None}
     if not ledgers:
         # Same shape as every other outcome. A report that drops fields when it
         # has nothing to say invites a consumer to read "absent" as "clean".
@@ -182,13 +204,19 @@ def settle(item, policy, ledger_dir=None):
                 "gates_total": 0, "blocking": [], "unresolved": [],
                 "restatements": [], "claims_total": 0, "policy_sha256": None}
 
-    # The current subject is the newest revision any gate examined. Everything is
-    # judged against THAT -- a verdict on superseded text settles nothing about
-    # the text on the branch.
+    # The current subject is supplied by the CALLER, from the live reviewed bytes.
+    # It was once inferred as max(produced_at) across ledgers, and that was a P0
+    # (found by Codex, 2026-07-28): `produced_at` is a string the harness writes,
+    # so re-gating an OLDER revision later made the old text "current". A claim
+    # reproduced against the real current text then sat outside the current
+    # subject, its non-reproduction on the old text counted as the live result,
+    # and the item reported SETTLED with the defect still open.
+    #
+    # The rule this violated is the project's own: trust the hash, not the host.
+    # Metadata about an artifact never decides what the artifact is.
     subjects = {}
     for led in ledgers:
         subjects.setdefault(led["subject_sha256"], led.get("subject_label", "?"))
-    current = max(ledgers, key=lambda l: l.get("produced_at", ""))["subject_sha256"]
 
     claims = {}          # claim_key -> best-known state
     restatements = []
@@ -264,12 +292,23 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--item", required=True)
     ap.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
+    ap.add_argument("--subject", help="sha256 of the reviewed bytes now on the branch")
+    ap.add_argument("--target", help="recompute --subject from this gate target's live files")
     ap.add_argument("--ledger-dir", type=Path, default=None)
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
     policy = load_policy(args.policy)
-    report = settle(args.item, policy, args.ledger_dir)
+    if args.subject and args.target:
+        sys.exit("give --subject or --target, not both")
+    if not (args.subject or args.target):
+        sys.exit("settlement needs the current subject: pass --subject <sha256> "
+                 "or --target <name>. It is never inferred -- inferring it from "
+                 "ledger timestamps was a P0 (false SETTLED with the defect open).")
+    current = args.subject
+    if args.target:
+        current, _ = subject_for_target(args.target)
+    report = settle(args.item, policy, args.ledger_dir, current)
     # The policy is pinned BY HASH in the report, the way `under` pins a policy
     # in a warrant body (SPEC.md §2): a settlement decided under different rules
     # must not be mistakable for this one.

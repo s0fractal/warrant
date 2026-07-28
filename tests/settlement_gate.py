@@ -48,12 +48,17 @@ def finding(fid, clause, reproduced, severity="P0", repro=None, transcript=None)
             "transcript_sha256": transcript or ("d" * 64), "reproduced": reproduced}
 
 
-def run(ledgers):
+def run(ledgers, current=NEW):
+    """`current` is always passed explicitly: settle() never infers it.
+
+    Inferring it from ledger timestamps was a P0 (Codex, 2026-07-28) -- see the
+    regression at the end of this file.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
         for i, led in enumerate(ledgers):
             (d / f"{i:02d}.json").write_text(json.dumps(led))
-        return S.settle("x", POLICY, d)
+        return S.settle("x", POLICY, d, current)
 
 
 three = ["codex@openai", "kimi@moonshot", "gemini@google"]
@@ -146,9 +151,30 @@ check("P0 outranks P1",
 #     rules must not be mistakable for one taken under these.
 _cli = next(p for p in (ROOT / "tools" / "settle.py", HERE / "settle.py") if p.exists())
 r = subprocess.run([sys.executable, str(_cli), "--item", "nope", "--json",
-                    "--policy", str(_pol)], capture_output=True, text=True)
+                    "--subject", NEW, "--policy", str(_pol)],
+                   capture_output=True, text=True)
 check("report pins the policy hash",
       len(json.loads(r.stdout)["policy_sha256"]), 64)
+
+# 11. REGRESSION, P0 found by Codex on 2026-07-28. The current revision used to be
+#     inferred as max(produced_at) across ledgers. Re-gating an OLDER revision
+#     LATER therefore made the old text "current": the live defect fell outside
+#     the current subject, its non-reproduction on the superseded text counted as
+#     the standing result, and the item reported SETTLED with the P0 still open.
+#     `produced_at` is a string the harness writes -- metadata about an artifact
+#     must never decide what the artifact is.
+stale_regate = (
+    [ledger(f, NEW, [finding("F1", "D.3", True)] if f == three[0] else [],
+            at="2026-07-28T10:00:00Z") for f in three]
+    + [ledger(f, OLD, [finding("F1", "D.3", False, repro="e" * 64)],
+              at="2026-07-29T09:00:00Z") for f in three])
+check("later re-gate of old text cannot settle current text",
+      run(stale_regate, current=NEW)["state"], "BLOCKED")
+
+# 11a. And the subject is never guessed. A caller that does not say which bytes
+#      are on the branch gets a refusal, not a default.
+check("missing subject fails closed",
+      S.settle("x", POLICY, None, None)["state"], "NO-SUBJECT")
 
 print("\nSETTLE-GATE: " + ("ALL PASS" if not FAILED else f"{FAILED} FAILED"))
 sys.exit(1 if FAILED else 0)
