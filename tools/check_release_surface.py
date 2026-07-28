@@ -41,6 +41,7 @@ one place is the only kind that can be checked.
 Exit 0 = every documented invocation is accepted by the binaries under test.
 """
 import argparse
+import ast
 import base64
 import zipfile
 import hashlib
@@ -325,6 +326,90 @@ def inspect_distribution(binroot):
             "eps": eps, "info_dir": info_dir}, problems
 
 
+def check_wrapper(text, module, func, venv):
+    """Verify a console wrapper STATICALLY. Nothing here executes it.
+
+    The previous version ran `<script> --help` and accepted exit 0. Two things
+    were wrong with that (Codex release-surface re-gate 6). It does not prove
+    dispatch -- a script that prints `usage: warrant-mcp` and exits 0 satisfies
+    it while calling nothing -- and `--help` is only safe once argparse is
+    reached, so a hostile wrapper's own statements run first. The gate itself
+    created a file that way.
+
+    So the wrapper is parsed, not run, and must be pip's minimal shape and
+    nothing more:
+
+        #!<the venv's python>
+        import sys                      # and optionally `re`
+        from <module> import <func>
+        if __name__ == '__main__':
+            sys.argv[0] = ...           # optional
+            sys.exit(<func>())
+
+    Any other statement, import, or call is a rejection. A wrapper that does
+    more than dispatch is not the command the wheel declared.
+    """
+    problems = []
+    lines = text.splitlines()
+    if not lines or not lines[0].startswith("#!"):
+        return [f"has no shebang"]
+    interp = lines[0][2:].strip().split()[0]
+    # Compare the interpreter's DIRECTORY, without following the interpreter
+    # itself: a venv's `python3.x` is a symlink to the system interpreter, so
+    # resolving it walks straight out of the venv and every wrapper looks wrong.
+    interp_dir = os.path.realpath(os.path.dirname(interp))
+    inside = (interp_dir + os.sep).startswith(os.path.realpath(venv) + os.sep)
+    if not inside:
+        problems.append(f"its shebang points at {interp}, outside {venv} — it "
+                        f"would run a different interpreter than the one verified")
+
+    body = "\n".join(lines[1:])
+    try:
+        tree = ast.parse(body)
+    except SyntaxError as e:
+        return problems + [f"is not valid Python ({e.msg}) — pip's wrapper is"]
+
+    imported, dispatches = False, False
+    for node in tree.body:
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            continue                                   # docstring / encoding
+        if isinstance(node, ast.Import):
+            if all(a.name in ("sys", "re") for a in node.names):
+                continue
+            return problems + [f"imports {', '.join(a.name for a in node.names)}; "
+                               f"a dispatch wrapper imports only sys/re and the "
+                               f"entry point"]
+        if isinstance(node, ast.ImportFrom):
+            if node.module == module and any(a.name == func for a in node.names):
+                imported = True
+                continue
+            return problems + [f"imports from `{node.module}`, not the declared "
+                               f"entry point `{module}`"]
+        if isinstance(node, ast.If):
+            for stmt in ast.walk(node):
+                if (isinstance(stmt, ast.Call) and isinstance(stmt.func, ast.Attribute)
+                        and stmt.func.attr == "exit"):
+                    for arg in stmt.args:
+                        if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name) \
+                                and arg.func.id == func:
+                            dispatches = True
+                elif isinstance(stmt, ast.Call) and isinstance(stmt.func, ast.Name) \
+                        and stmt.func.id not in (func, "re", "sub"):
+                    return problems + [f"calls `{stmt.func.id}()`, which pip's "
+                                       f"wrapper does not"]
+            continue
+        return problems + [f"contains a top-level {type(node).__name__}; pip's "
+                           f"wrapper has only imports and the __main__ guard"]
+
+    if not imported:
+        problems.append(f"never imports `{func}` from `{module}` — it cannot "
+                        f"dispatch to the entry point the wheel declares")
+    if not dispatches:
+        problems.append(f"never calls `{func}()` — printing a usage line is not "
+                        f"running the command")
+    return problems
+
+
 def inspect_wheel(wheel):
     """The PROVENANCE ROOT: the wheel file itself, read as a zip. No code runs.
 
@@ -426,21 +511,15 @@ def check_installation(binroot, wheel_info, problems):
         if not os.access(script, os.X_OK):
             problems.append(f"console script `{cli}` is not executable")
             continue
-        # Run the real command, with the one argument that is safe by
-        # construction: --help exits before any work. A script that is a valid
-        # shebang file and still `exit 99` passed every static check there is.
+        # STATIC. The wrapper is never executed: see check_wrapper.
         try:
-            r = subprocess.run([str(script), "--help"], capture_output=True,
-                               text=True, timeout=60, stdin=subprocess.DEVNULL)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            problems.append(f"console script `{cli}` did not run: {e}")
+            text = script.read_text(errors="replace")
+        except OSError as e:
+            problems.append(f"console script `{cli}` is unreadable: {e}")
             continue
-        if r.returncode != 0:
-            problems.append(f"console script `{cli} --help` exited "
-                            f"{r.returncode} — it is installed but it does not work")
-        elif cli not in (r.stdout + r.stderr):
-            problems.append(f"console script `{cli} --help` does not identify "
-                            f"itself as `{cli}`")
+        func = (declared or f"{mod}:main").split(":")[-1]
+        for issue in check_wrapper(text, mod, func, venv):
+            problems.append(f"console script `{cli}` {issue}")
     return problems
 
 
@@ -647,7 +726,7 @@ def _wheel_root_checks():
                 z.writestr(f"{m}.py", modbody)
         return w
 
-    def install(w, tag, modbody=None, script_exit=0):
+    def install(w, tag, modbody=None, wrapper=None):
         v = root / f"venv-{tag}"
         site = v / "lib" / "python3.99" / "site-packages"
         site.mkdir(parents=True)
@@ -655,10 +734,12 @@ def _wheel_root_checks():
         with zipfile.ZipFile(w) as z:
             for m in MODULES.values():
                 (site / f"{m}.py").write_bytes(modbody or z.read(f"{m}.py"))
-        for c in MODULES:
+        for c, m in MODULES.items():
             s = v / "bin" / c
-            s.write_text(f"#!/bin/sh\nif [ \"$1\" = --help ]; then echo {c}; "
-                         f"exit {script_exit}; fi\nexit {script_exit}\n")
+            s.write_text(wrapper(v, m) if wrapper else
+                         f"#!{v}/bin/python3\nimport sys\n"
+                         f"from {m} import main\n"
+                         f"if __name__ == '__main__':\n    sys.exit(main())\n")
             s.chmod(0o755)
         return v / "bin"
 
@@ -673,14 +754,45 @@ def _wheel_root_checks():
     out.append(("a module edited after install is caught BY THE WHEEL",
                 not clean(good, install(good, "tampered",
                                         modbody=body + b"# changed\n"))))
-    out.append(("a console script that exits non-zero is caught",
-                not clean(good, install(good, "exit99", script_exit=99))))
+    out.append(("a wrapper that does not dispatch is caught",
+                not clean(good, install(
+                    good, "nodispatch",
+                    wrapper=lambda v, m: f"#!{v}/bin/python3\nimport sys\n"
+                                         f"print('usage: {m}')\nsys.exit(0)\n"))))
     out.append(("an entry point naming the wrong FUNCTION is caught",
                 not clean(build(eps_func="not_main"),
                           install(good, "wrongfunc"))))
     out.append(("a wheel with the wrong distribution name is caught",
                 not clean(build(name="warrant-verify-evil"),
                           install(good, "evilname"))))
+
+    # The wrapper is verified statically; these drive check_wrapper directly.
+    real = ("#!/venv/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+            "if __name__ == '__main__':\n    sys.exit(main())\n")
+    cases = [
+        ("pip's real wrapper is accepted", real, True),
+        ("a wrapper that only prints a usage line is rejected",
+         "#!/venv/bin/python3\nimport sys\nprint('usage: warrant-mcp')\n"
+         "sys.exit(0)\n", False),
+        ("a wrapper with a side effect is rejected",
+         "#!/venv/bin/python3\nimport sys\nopen('/tmp/x','w').write('hi')\n"
+         "from warrant_mcp import main\n"
+         "if __name__ == '__main__':\n    sys.exit(main())\n", False),
+        ("a wrapper importing a different module is rejected",
+         "#!/venv/bin/python3\nimport sys\nfrom something_else import main\n"
+         "if __name__ == '__main__':\n    sys.exit(main())\n", False),
+        ("a wrapper dispatching to another function is rejected",
+         "#!/venv/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+         "if __name__ == '__main__':\n    sys.exit(other())\n", False),
+        ("a wrapper whose shebang leaves the venv is rejected",
+         "#!/usr/bin/python3\nimport sys\nfrom warrant_mcp import main\n"
+         "if __name__ == '__main__':\n    sys.exit(main())\n", False),
+        ("a wrapper with no shebang is rejected",
+         "import sys\nfrom warrant_mcp import main\n", False),
+    ]
+    for name, text, should_pass in cases:
+        issues = check_wrapper(text, "warrant_mcp", "main", "/venv")
+        out.append((name, (not issues) == should_pass))
     return out
 
 
