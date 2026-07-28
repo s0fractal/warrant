@@ -40,10 +40,12 @@ USAGE
 Key: $OPENROUTER_API_KEY or ~/.config/openrouter/key.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -80,7 +82,7 @@ You cannot run code. I can, and I will run whatever you write, unmodified,
 against a pristine copy of the model directory. Emit each reproduction as its
 own fenced block using EXACTLY this form:
 
-```repro id=F1 severity=P0 title=short title here
+```repro id=F1 severity=P0 clause=D.3 title=short title here
 import model
 # ... build the store, drive the machine, and DEMONSTRATE the violation ...
 assert something_that_must_not_happen, "explain what D says must not happen"
@@ -96,6 +98,14 @@ Rules that decide whether your finding survives:
     non-zero) if the machine actually behaves correctly -- an unconditional
     print proves nothing and I will show you the transcript either way.
   * `id` must be unique. `severity` is one of P0/P1/P2.
+  * `clause` names the normative clause your block breaks, exactly as it is
+    numbered in the section quoted to you (e.g. `D.3`, `7.2`). This is how
+    settlement tells a genuinely new defect from the same defect re-derived with
+    different code: a claim against a clause already broken in an earlier round
+    is recorded as a restatement, not as a new blocker. If your attack breaks
+    something the section never states, write `clause=unstated` and say in the
+    finding which property you believe is implied but unwritten -- an unwritten
+    property that can be violated IS a finding, and often the most valuable one.
   * Runtime cap: 60 seconds. No sleeps, no unbounded loops.
   * If you cannot write a runnable reproduction for something you suspect, do
     NOT dress it up as a finding: file it under 'Questions' and say what you
@@ -169,7 +179,7 @@ def parse_repros(text):
             continue                       # a sketch of a block, not a block
         meta = {}
         rest = meta_line
-        for k in ("id", "severity"):
+        for k in ("id", "severity", "clause"):
             m = re.search(rf"\b{k}\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|(\S+))", rest)
             if m:
                 meta[k] = m.group(1) or m.group(2) or m.group(3) or ""
@@ -249,6 +259,8 @@ def main():
     ap.add_argument("--target", default="wrt-002", choices=sorted(TARGETS))
     ap.add_argument("--out", required=True, help="reviews/<file>.md")
     ap.add_argument("--model", default=os.environ.get("OPENROUTER_MODEL"))
+    ap.add_argument("--family", help="reviewer family id for settlement, e.g. "
+                                     "kimi@moonshot; defaults to the model's vendor prefix")
     args = ap.parse_args()
     if not args.model:
         sys.exit("set --model or OPENROUTER_MODEL")
@@ -393,6 +405,48 @@ def main():
     out.write_text(header + body + "".join(appendix) + "".join(intermediate) + "\n")
     print(f"\nreview delivered: {args.out}  "
           f"({len(all_results)} reproductions executed, {ran} reproduced)")
+
+    # Settlement ledger. The markdown above is for humans; this is the machine
+    # record `tools/settle.py` reads to decide whether the argument has ended.
+    # It carries only what EXECUTED here -- reviewer prose has no slot in it,
+    # deliberately: an assertion must not be able to reach the settlement rule.
+    #
+    # Only the LAST result per repro id is kept. A reviewer who repairs a block
+    # re-emits the same id, and the repaired run is the one that stands; keeping
+    # the broken draft too would let one finding count twice.
+    final = {}
+    for rnd, meta, code, res in all_results:
+        final[meta.get("id") or f"anon{len(final)}"] = (rnd, meta, code, res)
+    subject_sha256 = hashlib.sha256(normative.encode("utf-8")).hexdigest()
+    family = args.family or (args.model.split("/")[0] if "/" in args.model else args.model)
+    ledger = {
+        "item": args.target,
+        "family": family,
+        "model": args.model,
+        "host": socket.gethostname(),
+        "produced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "subject_sha256": subject_sha256,
+        "subject_label": t["subject"],
+        "review": args.out,
+        "findings": [{
+            "id": meta.get("id"),
+            "severity": (meta.get("severity") or "P?").upper(),
+            "clause": meta.get("clause", ""),
+            "title": meta.get("title", ""),
+            "repro_sha256": hashlib.sha256(code.encode("utf-8")).hexdigest(),
+            "transcript_sha256": hashlib.sha256(
+                (res["stdout"] + res["stderr"] + str(res["exit"])).encode("utf-8")
+            ).hexdigest(),
+            "exit": res["exit"],
+            "reproduced": res["violation"],
+        } for _, meta, code, res in final.values()],
+    }
+    ledger_dir = ROOT / "reviews" / "ledgers"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    ledger_path = ledger_dir / (Path(args.out).stem + ".json")
+    ledger_path.write_text(json.dumps(ledger, indent=2, sort_keys=True) + "\n")
+    print(f"settlement ledger: {ledger_path.relative_to(ROOT)}  "
+          f"(family {family}, subject {subject_sha256[:12]})")
 
 
 if __name__ == "__main__":

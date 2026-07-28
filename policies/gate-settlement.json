@@ -1,0 +1,14 @@
+{
+  "gate_policy": "0.1",
+  "scope": "adversarial design gates in this repository",
+  "min_families": 3,
+  "blocking_severities": ["P0", "P1"],
+  "novelty": "clause",
+  "notes": {
+    "min_families": "Three, because measured here one family iterated six times found only P1s and the first three-family round found six P0s. Diversity is what found them, not depth.",
+    "blocking": "Only a reproduction that executed -- exit 0 and a VIOLATION line -- can block. An assertion, however confident, is a Question. This is what lets settlement survive co-located roster keys: a repro is re-runnable by a stranger, a signature is not.",
+    "novelty": "Per normative clause, not per transcript. SPEC.md §7 delegates relevance to the active policy and warns that purely syntactic novelty is unbounded; without this a reviewer perturbs the repro and manufactures findings forever.",
+    "custody": "Roster keys claude-fable-5 and codex were co-located on one host as of 2026-07-28. Two signatures from one host are ONE custody, and no report produced under this policy may present them as independent attestation.",
+    "not_adoption": "Settlement authorises a merge under this policy. Governance adoption is a separate threshold warrant signed by roster keys (AGENTS.md §2)."
+  }
+}
