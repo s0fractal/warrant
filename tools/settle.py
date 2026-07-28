@@ -270,11 +270,28 @@ def settle(item, policy, ledger_dir=None, current=None):
     for led in ledgers:
         subjects.setdefault(led["subject_sha256"], led.get("subject_label", "?"))
 
+    # A finding with no clause has no inferable identity: not from the clause
+    # (there is none) and not from the code (a re-test is new code, so new bytes).
+    # Keying it per finding kept two distinct `unstated` defects apart -- and made
+    # every one of them immortal, since no re-test could ever land on the same
+    # key. Safety without liveness is still a defect; three families refuting a
+    # thing must be able to close it.
+    #
+    # So closure is EXPLICIT: a finding may name the claim it re-tests, and that
+    # citation is itself evidence -- the closing reproduction ran, is stored with
+    # its transcript, and anyone can re-run it. Nothing closes by accident, and
+    # nothing is closed by a sentence.
     claims = {}          # claim_key -> best-known state
     restatements = []
+    cited, defined = set(), set()
     for led in ledgers:
         for f in led.get("findings", []):
-            key = claim_key(f)
+            closes = (f.get("closes") or "").strip()
+            key = closes if closes else claim_key(f)
+            if closes:
+                cited.add(closes)
+            else:
+                defined.add(key)
             rec = claims.setdefault(key, {"key": key, "seen": [], "fingerprints": set()})
             fp = outcome_fingerprint(led["subject_sha256"], f)
             if fp in rec["fingerprints"]:
@@ -289,6 +306,10 @@ def settle(item, policy, ledger_dir=None, current=None):
                 "title": f.get("title", ""), "reproduced": bool(f["reproduced"]),
                 "subject": led["subject_sha256"], "ledger": led["_path"],
             })
+
+    # A citation that names nothing is a no-op that LOOKS like a closure, which
+    # is the most dangerous shape a mistake can take here: it reads as work done.
+    dangling = sorted(cited - defined)
 
     blocking, unresolved = [], []
     for key, rec in sorted(claims.items()):
@@ -328,8 +349,13 @@ def settle(item, policy, ledger_dir=None, current=None):
             f"{len(families)} families gated the current subject; no reproduced claim "
             f"remains")
 
+    if dangling:
+        state = "BLOCKED" if state == "SETTLED" else state
+        reason += f" | closes= names no known claim: {', '.join(dangling[:3])}"
+
     return {
         "item": item, "state": state, "reason": reason,
+        "dangling_closes": dangling,
         "current_subject": current, "subject_label": subjects.get(current, "?"),
         "families_on_current": families,
         "gates_total": len(ledgers),

@@ -134,7 +134,10 @@ Rules that decide whether your finding survives:
     property that can be violated IS a finding, and often the most valuable one.
     `unstated` findings are never merged with each other: they name no clause, so
     settlement keys them individually rather than letting a refutation of one
-    close the rest.
+    close the rest. The other side of that: to show a PREVIOUS unstated finding
+    is fixed, add `closes=<its claim key>` to a block that re-runs the old attack
+    and no longer reproduces. Without the citation the old claim stays open
+    forever, because a re-test is new code and nothing can match it up.
   * Runtime cap: 60 seconds. No sleeps, no unbounded loops.
   * If you cannot write a runnable reproduction for something you suspect, do
     NOT dress it up as a finding: file it under 'Questions' and say what you
@@ -294,7 +297,7 @@ def parse_repros(text):
             continue                       # a sketch of a block, not a block
         meta = {}
         rest = meta_line
-        for k in ("id", "severity", "clause"):
+        for k in ("id", "severity", "clause", "closes"):
             m = re.search(rf"\b{k}\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|(\S+))", rest)
             if m:
                 meta[k] = m.group(1) or m.group(2) or m.group(3) or ""
@@ -614,6 +617,7 @@ def emit_ledger(args, t, normative, all_results, complete):
             "id": meta.get("id"),
             "severity": (meta.get("severity") or "P?").upper(),
             "clause": meta.get("clause", ""),
+            "closes": meta.get("closes", ""),
             "title": meta.get("title", ""),
             "repro_sha256": hashlib.sha256(code.encode("utf-8")).hexdigest(),
             "transcript_sha256": hashlib.sha256(

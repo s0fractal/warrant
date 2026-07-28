@@ -42,9 +42,10 @@ def ledger(family, subject, findings, at="2026-07-28T10:00:00Z", item="x"):
             "review": "r.md", "findings": findings}
 
 
-def finding(fid, clause, reproduced, severity="P0", repro=None, transcript=None):
+def finding(fid, clause, reproduced, severity="P0", repro=None, transcript=None,
+            closes=""):
     return {"id": fid, "severity": severity, "clause": clause, "title": fid,
-            "repro_sha256": repro or ("c" * 64), "exit": 0,
+            "repro_sha256": repro or ("c" * 64), "exit": 0, "closes": closes,
             "transcript_sha256": transcript or ("d" * 64), "reproduced": reproduced}
 
 
@@ -193,6 +194,38 @@ check("real clause ids still normalise",
       run([ledger(three[0], NEW, [finding("F1", "D.3", True),
                                   finding("F2", "d.3 ", True, repro="e" * 64)])
            ])["claims_total"], 1)
+
+# 14. REGRESSION, and the mirror of 13. Keying unclassified findings per finding
+#     kept distinct `unstated` defects apart -- and made every one immortal: a
+#     re-test is new code, so new bytes, so it can never land on the same key.
+#     Three families refuting a thing could not close it. Safety without liveness
+#     is still a defect, and this is the shape gemini found in WRT-002.
+UNSTATED_KEY = "unidentified:F1:111111111111"
+_old = [ledger("kimi@moonshot", OLD, [finding("F1", "unstated", True, repro="1" * 64)],
+               at="2026-07-01T00:00:00Z")]
+
+check("re-test without citation cannot close (still safe)",
+      run(_old + [ledger(f, NEW, [finding("F1", "unstated", False, repro="2" * 64)])
+                  for f in three])["state"], "UNRESOLVED")
+
+check("explicit citation closes it (liveness)",
+      run(_old + [ledger(f, NEW, [finding("R", "unstated", False, repro="2" * 64,
+                                          closes=UNSTATED_KEY)])
+                  for f in three])["state"], "SETTLED")
+
+# 14a. Citing a claim does not close it -- refuting it does. A closure that still
+#      reproduces is the defect standing, whatever the reviewer meant to say.
+check("citation that still reproduces blocks",
+      run(_old + [ledger(f, NEW, [finding("R", "unstated", True, repro="2" * 64,
+                                          closes=UNSTATED_KEY)])
+                  for f in three])["state"], "BLOCKED")
+
+# 14b. A citation naming no known claim is a no-op that LOOKS like work done --
+#      the most dangerous shape a mistake takes here, so it is named and blocks.
+_ghost = run([ledger(f, NEW, [finding("R", "unstated", False, repro="9" * 64,
+                                      closes="unidentified:GHOST:0")]) for f in three])
+check("dangling citation blocks", _ghost["state"], "BLOCKED")
+check("dangling citation is named", _ghost["dangling_closes"], ["unidentified:GHOST:0"])
 
 # 12. A ledger whose evidence does not hash to its own digests is unreadable,
 #     not merely weak: settling under it would restate an unverifiable claim.
