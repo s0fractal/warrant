@@ -182,7 +182,11 @@ def invocations(logical_line, known):
                 argv[0] = re.sub(r"^\w+=\$?$", "", argv[0]) or (argv[1] if len(argv) > 1 else "")
                 if argv[0] == "" and len(argv) > 1:
                     argv = argv[1:]
-                if argv and argv[0] in known:
+                # Match on BASENAME: `/tmp/tv/bin/warrant selftest` is our CLI
+                # and PUBLISHING.md documents exactly that form, which an
+                # exact-name match ignored entirely (Codex re-gate 2).
+                if argv and Path(argv[0]).name in known:
+                    argv = [Path(argv[0]).name] + argv[1:]
                     found.append(argv)
             current = []
             continue
@@ -213,60 +217,118 @@ MODULES = {"warrant": "warrant", "warrant-mcp": "warrant_mcp",
 
 # Parse the argv with the CLI's own parser and NOTHING ELSE. No dispatch, no
 # filesystem, no subprocess, no network.
-PARSE_ONLY = (
-    "import sys, json\n"
-    "sys.path.insert(0, sys.argv[1])\n" if False else "")
-
+# Parse the argv with the CLI's own parser and post-parse invariants, and
+# NOTHING ELSE. No dispatch, no filesystem, no subprocess, no network.
+#
+# The module reports where it was imported FROM, because otherwise the gate can
+# be told a lie about which artifact it checked: with PYTHONPATH pointing at a
+# new checkout, the OLD 0.4.0 wheel "passed" 24/24 using the new parser (Codex
+# release-surface re-gate 2). The interpreter is run with -I (isolated: no
+# PYTHONPATH, no user site) and the caller verifies the origin it prints.
 PARSE_SNIPPET = """
 import sys
 extra = sys.argv[1]
 if extra:
     sys.path.insert(0, extra)
 mod = __import__(sys.argv[2])
+sys.stderr.write("MODULE-ORIGIN " + (getattr(mod, "__file__", "") or "?") + "\\n")
+if not hasattr(mod, "parse_cli"):
+    raise SystemExit(3)
 argv = sys.argv[3:]
 try:
-    mod.build_parser().parse_args(argv)
+    mod.parse_cli(argv)
 except SystemExit as e:
     raise SystemExit(2 if e.code else 0)
 raise SystemExit(0)
 """
 
 
-def validate(python, extra_path, cli, argv, timeout=30):
-    """(ok, detail) — does the CLI's OWN PARSER accept this argv?
+def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None):
+    """(ok, detail) — does the CLI's OWN parser+invariants accept this argv?
 
-    Parser-only, and that is not a detail. The previous version ran the command
-    to find out whether it parsed, so checking a documented
-    `warrant keygen --out <path>` CREATED A KEY FILE outside the temp directory
-    (Codex release-surface re-gate). A documentation change could have triggered
-    filesystem, subprocess or network effects in CI. Nothing here executes a
-    command: the module is imported, `build_parser()` is called, and the argv is
-    parsed.
+    Parser-only, and that is not a detail. An earlier version RAN the command to
+    find out whether it parsed, so checking a documented
+    `warrant keygen --out <path>` created a key file outside the temp directory.
+    Nothing here executes a command.
 
-    FAIL-CLOSED everywhere. A timeout used to be reported as "accepted -- it got
-    past parsing", which assumes exactly what is being tested: an executable
-    that sleeps before building its parser would pass. Timeouts, import
-    failures, missing entry points and unexpected exit codes are all failures.
+    FAIL-CLOSED everywhere: timeouts, unreachable interpreters, a module without
+    `parse_cli`, an unexpected exit code, and an import whose origin is not the
+    artifact under test are all failures.
     """
     mod = MODULES.get(cli)
     if mod is None:
         return False, f"no parser-only entry point known for `{cli}`"
-    cmd = [python, "-c", PARSE_SNIPPET, extra_path or "", mod] + argv[1:]
+    # -I isolates the interpreter: no PYTHONPATH, no user site-packages. Without
+    # it the environment decides which parser answers, and the answer is about
+    # some other artifact.
+    cmd = [python, "-I", "-c", PARSE_SNIPPET, extra_path or "", mod] + argv[1:]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL,
-                           env={**os.environ, "COLUMNS": "200"})
+                           stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return False, f"parser did not answer within {timeout}s (fail-closed)"
     except OSError as e:
         return False, f"could not run the parser: {e}"
+
+    origin = ""
+    for ln in (p.stderr or "").splitlines():
+        if ln.startswith("MODULE-ORIGIN "):
+            origin = ln[len("MODULE-ORIGIN "):].strip()
+    if expect_origin is not None:
+        if not origin:
+            return False, "the parser did not report where it was imported from"
+        if not str(Path(origin).resolve()).startswith(str(Path(expect_origin).resolve())):
+            return False, (f"imported the parser from {origin}, which is NOT inside "
+                           f"{expect_origin} — this run would be about a different "
+                           f"artifact")
+
     if p.returncode == 0:
         return True, "accepted"
+    if p.returncode == 3:
+        return False, (f"`{mod}` has no parse_cli(); this artifact predates the "
+                       f"parser-only entry point and cannot be validated")
     if p.returncode == 2:
-        err = (p.stderr or p.stdout).strip().splitlines()
-        return False, (err[-1] if err else "rejected by the parser")
-    return False, (f"parser exited {p.returncode} (fail-closed); "
-                   f"{(p.stderr or p.stdout).strip().splitlines()[-1:] or ['no output']}")
+        err = [l for l in (p.stderr or p.stdout).strip().splitlines()
+               if not l.startswith("MODULE-ORIGIN")]
+        return False, (err[-1] if err else "rejected by the CLI")
+    return False, f"parser exited {p.returncode} (fail-closed)"
+
+
+def _hostile_runtime_checks(extra):
+    """Permanent cases for the runtime failure modes, not one-off manual proofs.
+
+    Each of these was demonstrated by hand once and then claimed as closed. A
+    demonstration is evidence about the day it ran; only a test is protection
+    (Codex release-surface re-gate 2, P2).
+    """
+    out = []
+    tmp = tempfile.mkdtemp()
+
+    sleepy = Path(tmp) / "sleepy.sh"
+    sleepy.write_text("#!/bin/sh\nsleep 600\n")
+    sleepy.chmod(0o755)
+    out.append(("a sleeping interpreter is fail-closed, not 'accepted'",
+                not validate(str(sleepy), extra, "warrant", ["warrant", "verify"],
+                             timeout=3)[0]))
+
+    weird = Path(tmp) / "weird.sh"
+    weird.write_text("#!/bin/sh\nexit 7\n")
+    weird.chmod(0o755)
+    out.append(("an unexpected exit code is fail-closed",
+                not validate(str(weird), extra, "warrant", ["warrant", "verify"])[0]))
+
+    # the checker must never have side effects: this argv would create a key
+    key = Path(tmp) / "should-not-exist.key"
+    ok, _ = validate(sys.executable, extra, "warrant",
+                     ["warrant", "keygen", "--out", str(key)])
+    out.append(("validating `keygen --out` creates nothing",
+                ok and not key.exists()))
+
+    # artifact confusion: an import from outside the artifact under test
+    ok, _ = validate(sys.executable, extra, "warrant", ["warrant", "verify"],
+                     expect_origin="/nonexistent/elsewhere")
+    out.append(("a parser imported from outside the artifact is rejected", not ok))
+    return out
 
 
 def selftest():
@@ -327,7 +389,17 @@ warrant --store ./pack verify --store-mode --json | jq -e '.ok'
          not validate(py, extra, "warrant-nope", ["warrant-nope"])[0]),
         ("a parser that cannot be reached is fail-closed",
          not validate("/nonexistent/python", extra, "warrant", ["warrant", "verify"])[0]),
+        # post-parse invariants are part of the contract: this parses and the
+        # real CLI still exits 2
+        ("post-parse invariant enforced (mcp needs a downstream command)",
+         not accepted(["warrant-mcp", "--store", "s", "--actor", "a", "--key", "k"])),
+        # path-qualified invocations are ours
+        ("path-qualified CLI is recognised",
+         invocations("/tmp/tv/bin/warrant selftest --nope", WHEEL_CLIS)[0] != []),
+        ("path-qualified CLI is validated, not waved through",
+         not accepted(["/tmp/tv/bin/warrant", "verify", "--definitely-not-real"])),
     ]
+    checks += _hostile_runtime_checks(extra)
     bad = 0
     for name, ok in checks:
         if not ok:
@@ -364,21 +436,29 @@ def main():
     # warrant-go invocation validated against a binary from the checkout, which
     # the wheel does not ship (Codex release-surface re-gate, P2).
     if args.bin:
-        python = str(Path(args.bin).resolve() / "python")
+        binroot = Path(args.bin).resolve()
+        python = str(binroot / "python")
         if not Path(python).exists():
-            python = str(Path(args.bin).resolve() / "python3")
-        extra, target = "", f"the wheel installed in {args.bin}"
+            python = str(binroot / "python3")
+        extra = ""
+        # The parser must come from THIS environment, not from a checkout that
+        # happens to be on the path.
+        expect_origin = str(binroot.parent)
+        target = f"the wheel installed in {args.bin}"
     else:
-        python, extra, target = sys.executable, str(ROOT / "impl"), "this checkout"
+        python, extra = sys.executable, str(ROOT / "impl")
+        expect_origin = str(ROOT / "impl")
+        target = "this checkout"
 
     # Preflight: can this artifact be validated at all? A release that predates
     # build_parser() cannot, and saying "24 invocations rejected" about it would
     # be precise-sounding and wrong. Fail closed, but name the actual condition:
     # an artifact we cannot introspect is not an artifact we have checked.
-    probe = validate(python, extra, "warrant", ["warrant", "--help"])
-    if not probe[0] and "build_parser" in probe[1]:
+    probe = validate(python, extra, "warrant", ["warrant", "--help"],
+                     expect_origin=expect_origin)
+    if not probe[0] and "parse_cli" in probe[1]:
         print(f"RELEASE SURFACE: CANNOT VALIDATE — {target} has no parser-only "
-              f"entry point (`build_parser`).\n\n"
+              f"entry point (`parse_cli`).\n\n"
               f"  {probe[1]}\n\n"
               f"That entry point is what lets a documented argv be checked without\n"
               f"running it. Releases before it exists cannot be gated this way; the\n"
@@ -397,7 +477,9 @@ def main():
                 if argv[0] in SOURCE_CLIS:
                     continue          # not part of the wheel contract; see below
                 checked += 1
-                ok, detail = validate(python, extra, argv[0], concretise(argv, ROOT))
+                ok, detail = validate(python, extra, argv[0],
+                                      concretise(argv, ROOT),
+                                      expect_origin=expect_origin)
                 if not ok:
                     problems.append(f"{rel}:{lineno}: `{' '.join(argv)}`\n"
                                     f"      -> {detail}")

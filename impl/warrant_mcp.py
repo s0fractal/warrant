@@ -263,13 +263,28 @@ def build_parser():
     return ap
 
 
-def main(argv=None):
+def parse_cli(argv=None):
+    """Parse an argv AND apply the pure post-parse invariants. No side effects.
+
+    `build_parser().parse_args()` is not the whole CLI contract: a command can
+    parse and still be rejected a line later by a check main() performs. A
+    checker that stops at parse_args therefore reports a surface the CLI does
+    not actually accept -- warrant-mcp with no downstream command parsed cleanly
+    here while the real CLI exited 2 (Codex release-surface re-gate 2).
+
+    So both the checker and main() go through this one function, and everything
+    it does is pure: no filesystem, no subprocess, no network.
+    """
     ap = build_parser()
     args = ap.parse_args(argv)
-
     server_cmd = args.server[1:] if args.server and args.server[0] == "--" else args.server
     if not server_cmd:
         ap.error("provide the downstream server command after --")
+    return args, server_cmd
+
+
+def main(argv=None):
+    args, server_cmd = parse_cli(argv)
     effects_map = json.loads(Path(args.effects).read_text()) if args.effects else {}
     store_dir = Path(args.store) / ".warrants"
     sealer = Sealer(store_dir, args.actor, args.key, effects_map, args.ceiling)
