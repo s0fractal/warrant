@@ -174,7 +174,7 @@ def subject_for_target(name):
     import adversarial_gate as ag                       # noqa: PLC0415
 
     t = ag.TARGETS[name]
-    return sha256_hex(ag.slice_section(*t["normative"])), t["subject"]
+    return ag.subject_hash(t), t["subject"]
 
 
 def check_preimages(led):

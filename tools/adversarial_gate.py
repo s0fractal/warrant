@@ -224,6 +224,34 @@ def call_local(model, messages, ctx=32768):
     return text
 
 
+def subject_hash(t):
+    """Hash of everything the reviewer is shown that governs the verdict.
+
+    The subject was the normative prose slice alone, which is wrong whenever the
+    reviewed artifact is code: two different revisions of `settle.py` hashed
+    identically because AGENTS.md had not moved, so findings against superseded
+    code would have counted as findings against what is on the branch now. That
+    is the same defect Codex reported in settle.py itself -- deciding what the
+    artifact is from something other than the artifact -- reproduced one layer up
+    in the target definition that feeds it.
+
+    Sources are folded in by path and content, sorted, so the hash is stable
+    across machines and changes exactly when the reviewed bytes change. A gate in
+    flight when the code moves is therefore a gate on the old subject, and
+    settlement will say so instead of crediting it to the new one.
+    """
+    h = hashlib.sha256()
+    h.update(slice_section(*t["normative"]).encode("utf-8"))
+    for rel in sorted(t.get("sources", [])):
+        path = ROOT / rel
+        if path.exists():
+            h.update(rel.encode("utf-8"))
+            h.update(b"\x00")
+            h.update(path.read_bytes())
+            h.update(b"\x00")
+    return h.hexdigest()
+
+
 def stage_workdir(t):
     """Copy the reviewed files into a self-contained tree, KEEPING their paths.
 
@@ -601,7 +629,7 @@ def emit_ledger(args, t, normative, all_results, complete):
     final = {}
     for rnd, meta, code, res in all_results:
         final[meta.get("id") or f"anon{len(final)}"] = (rnd, meta, code, res)
-    subject_sha256 = hashlib.sha256(normative.encode("utf-8")).hexdigest()
+    subject_sha256 = subject_hash(t)
     family = args.family or (args.model.split("/")[0] if "/" in args.model else args.model)
     ledger = {
         "item": args.target,
