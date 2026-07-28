@@ -62,6 +62,21 @@ MAX_OUTPUT = 6000          # chars of transcript fed back per reproduction
 # A target names: the brief, the normative text, the runnable model, and the
 # command that must already pass before any review starts.
 TARGETS = {
+    "settle": {
+        "brief": "briefs/SETTLE-GATE-brief.md",
+        "normative": ("AGENTS.md", "## Hard rules", "## Precedent"),
+        # Staged, not a checked-in duplicate: the reviewed bytes are the live
+        # ones, so a gate can never pass against a stale copy of the tool.
+        "stage": ["tools/settle.py", "policies/gate-settlement.json",
+                  "tests/settlement_gate.py"],
+        "workdir": None,                      # filled by stage_workdir()
+        "sources": ["tools/settle.py", "policies/gate-settlement.json",
+                    "tests/settlement_gate.py"],
+        "baseline": ["python3", "settlement_gate.py"],
+        "baseline_expect": "SETTLE-GATE: ALL PASS",
+        "module": "settle",
+        "subject": "settle.py gate-settlement rule (executed-repro blocking, per-clause novelty)",
+    },
     "wrt-002": {
         "brief": "briefs/WRT-002-rev7-adversarial-gate.md",
         "normative": ("proposals/WRT-002-keystate-effective-lifecycle-r1.md",
@@ -83,7 +98,7 @@ against a pristine copy of the model directory. Emit each reproduction as its
 own fenced block using EXACTLY this form:
 
 ```repro id=F1 severity=P0 clause=D.3 title=short title here
-import model
+import MODULE
 # ... build the store, drive the machine, and DEMONSTRATE the violation ...
 assert something_that_must_not_happen, "explain what D says must not happen"
 print("VIOLATION: <one line naming the property of D that just broke>")
@@ -91,7 +106,7 @@ print("VIOLATION: <one line naming the property of D that just broke>")
 
 Rules that decide whether your finding survives:
 
-  * The block runs with the model directory as CWD, so `import model` works.
+  * The block runs with the model directory as CWD, so `import MODULE` works.
     Nothing else is available: no network, no repo, no pip installs.
   * A reproduction that DEMONSTRATES the violation must exit 0 and print a line
     starting with `VIOLATION:`. Write it so it FAILS LOUDLY (raises, or exits
@@ -126,6 +141,39 @@ def key():
     if not k:
         sys.exit("no OpenRouter key: set OPENROUTER_API_KEY or write ~/.config/openrouter/key")
     return k
+
+
+def call_cli(cli, model, messages):
+    """Drive a locally installed agent CLI instead of OpenRouter.
+
+    Run in an EMPTY temp directory, never the checkout. `tools/ai-review.sh`
+    learned this the hard way: a skip-permissions agent WILL follow any path it
+    can reach, and round 1 must be blind. Everything the reviewer is allowed to
+    see is inlined in the prompt.
+    """
+    prompt = "\n\n".join(f"===== {m['role'].upper()} =====\n{m['content']}"
+                          for m in messages)
+    argv = {"kimi": [cli, "-p", prompt],
+            "codex": [cli, "exec", "--skip-git-repo-check", prompt]}.get(
+                Path(cli).name, [cli, "-p", prompt])
+    if model and Path(cli).name == "kimi":
+        argv[1:1] = ["-m", model]
+    tmp = tempfile.mkdtemp(prefix="advgate-cli-")
+    try:
+        p = subprocess.run(argv, cwd=tmp, capture_output=True, text=True, timeout=3600)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if p.returncode != 0 and not p.stdout.strip():
+        sys.exit(f"{cli} failed (exit {p.returncode}):\n{p.stderr[-3000:]}")
+    return p.stdout
+
+
+def stage_workdir(t):
+    """Copy the reviewed files into a self-contained directory for the harness."""
+    d = Path(tempfile.mkdtemp(prefix="advgate-stage-"))
+    for rel in t["stage"]:
+        shutil.copy2(ROOT / rel, d / Path(rel).name)
+    return d
 
 
 def call(model, messages, max_tokens=32000, retries=3):
@@ -259,14 +307,20 @@ def main():
     ap.add_argument("--target", default="wrt-002", choices=sorted(TARGETS))
     ap.add_argument("--out", required=True, help="reviews/<file>.md")
     ap.add_argument("--model", default=os.environ.get("OPENROUTER_MODEL"))
+    ap.add_argument("--cli", help="path to a local agent CLI (kimi, codex); "
+                                   "when set, OpenRouter is not used")
     ap.add_argument("--family", help="reviewer family id for settlement, e.g. "
                                      "kimi@moonshot; defaults to the model's vendor prefix")
     args = ap.parse_args()
-    if not args.model:
-        sys.exit("set --model or OPENROUTER_MODEL")
+    if not args.model and not args.cli:
+        sys.exit("set --model, OPENROUTER_MODEL, or --cli")
+    _api = call
+    if args.cli:
+        def _api(model, messages, **kw):                    # noqa: ARG001
+            return call_cli(args.cli, model, messages)
 
     t = TARGETS[args.target]
-    workdir = ROOT / t["workdir"]
+    workdir = stage_workdir(t) if t.get("stage") else ROOT / t["workdir"]
 
     # The baseline must already pass, or a 'finding' could just be a broken tree.
     base = subprocess.run(t["baseline"], cwd=workdir, capture_output=True, text=True)
@@ -274,6 +328,7 @@ def main():
         sys.exit(f"baseline did not pass; refusing to review a broken tree:\n{base.stdout[-2000:]}")
     print(f"[gate] baseline: {t['baseline_expect']}", file=sys.stderr)
 
+    repro_rules = REPRO_RULES.replace("MODULE", t.get("module", "model"))
     brief = (ROOT / t["brief"]).read_text()
     normative = slice_section(*t["normative"])
     sources = pack(t["sources"])
@@ -287,10 +342,10 @@ def main():
         "those too. State plainly what you did not examine.")
 
     print(f"[gate] round 1 ({args.model}) ...", file=sys.stderr)
-    r1 = call(args.model, [
+    r1 = _api(args.model, [
         {"role": "system", "content": system},
         {"role": "user", "content":
-            f"SUBJECT: {t['subject']}\n\n{brief}\n\n{REPRO_RULES}\n\n"
+            f"SUBJECT: {t['subject']}\n\n{brief}\n\n{repro_rules}\n\n"
             f"===== NORMATIVE SECTION (this governs) =====\n{normative}\n\n"
             f"{sources}\n\n"
             "Hunt now. Emit your findings, each with a ```repro block. You have "
@@ -356,10 +411,10 @@ def main():
                    "document, so any mismatch will be visible.")
 
         print(f"[gate] round {rnd} ({args.model}) ...", file=sys.stderr)
-        resp = call(args.model, [
+        resp = _api(args.model, [
             {"role": "system", "content": system},
             {"role": "user", "content":
-                f"SUBJECT: {t['subject']}\n\n{brief}\n\n{REPRO_RULES}\n\n"
+                f"SUBJECT: {t['subject']}\n\n{brief}\n\n{repro_rules}\n\n"
                 f"===== NORMATIVE SECTION =====\n{normative}\n\n{sources}"},
             {"role": "assistant", "content": last},
             {"role": "user", "content":

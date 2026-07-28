@@ -13,10 +13,17 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
+HERE = Path(__file__).resolve().parent
+# Runs from the repo AND from a flat staging directory (the adversarial gate
+# copies the reviewed files into one). A suite that only runs in its home layout
+# cannot be handed to a reviewer, and a gate that cannot run the suite is a gate
+# reviewing prose.
+sys.path[:0] = [str(ROOT / "tools"), str(HERE)]
 import settle as S                                          # noqa: E402
 
-POLICY = json.loads((ROOT / "policies" / "gate-settlement.json").read_text())
+_pol = next(p for p in (ROOT / "policies" / "gate-settlement.json",
+                        HERE / "gate-settlement.json") if p.exists())
+POLICY = json.loads(_pol.read_text())
 OLD, NEW = "a" * 64, "b" * 64
 FAILED = 0
 
@@ -111,8 +118,9 @@ check("P2 does not block",
 
 # 10. The policy is pinned by hash in the report: a decision taken under other
 #     rules must not be mistakable for one taken under these.
-r = subprocess.run([sys.executable, str(ROOT / "tools" / "settle.py"),
-                    "--item", "nope", "--json"], capture_output=True, text=True)
+_cli = next(p for p in (ROOT / "tools" / "settle.py", HERE / "settle.py") if p.exists())
+r = subprocess.run([sys.executable, str(_cli), "--item", "nope", "--json",
+                    "--policy", str(_pol)], capture_output=True, text=True)
 check("report pins the policy hash",
       len(json.loads(r.stdout)["policy_sha256"]), 64)
 
