@@ -111,3 +111,13 @@ jobs:
         run: |
           python3 impl/warrant.py verify --settlement --trust-config trust-config.json
           ./impl-go/warrant-go verify --settlement --trust-config trust-config.json .warrants
+      # Catches docs that promise a subcommand or flag this tree does not have.
+      # The publish workflow runs the same check against the built wheel, which
+      # is where the promise actually reaches a stranger.
+      # The matching rule gets its own rejection matrix, for the same reason the
+      # coverage assertion did: a flag check that matches substrings accepts a
+      # documented `--js` because the CLI offers `--json`.
+      - name: Documented CLI surface exists
+        run: |
+          python3 tools/check_release_surface.py --selftest
+          python3 tools/check_release_surface.py

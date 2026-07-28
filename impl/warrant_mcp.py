@@ -244,8 +244,14 @@ def run_proxy(server_cmd, sealer):
           f"{sealer.store.root}", file=sys.stderr)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog="warrant-mcp", description=__doc__.splitlines()[0])
+def build_parser():
+    """The CLI's argument parser, built WITHOUT dispatching anything.
+
+    Exposed so a checker can validate a documented argv without running the
+    command. Asking "does this parse?" by executing it is how a documentation
+    check ends up creating files.
+    """
+    ap = argparse.ArgumentParser(prog="warrant-mcp", description=__doc__.splitlines()[0], allow_abbrev=False)
     ap.add_argument("--store", required=True, help="evidence-pack dir (.warrants inside)")
     ap.add_argument("--actor", required=True)
     ap.add_argument("--key", required=True, help="Ed25519 seed file (warrant keygen)")
@@ -254,11 +260,31 @@ def main(argv=None):
                     help="seal calls of this class and above (default A2)")
     ap.add_argument("server", nargs=argparse.REMAINDER,
                     help="-- <downstream MCP server command>")
-    args = ap.parse_args(argv)
+    return ap
 
+
+def parse_cli(argv=None):
+    """Parse an argv AND apply the pure post-parse invariants. No side effects.
+
+    `build_parser().parse_args()` is not the whole CLI contract: a command can
+    parse and still be rejected a line later by a check main() performs. A
+    checker that stops at parse_args therefore reports a surface the CLI does
+    not actually accept -- warrant-mcp with no downstream command parsed cleanly
+    here while the real CLI exited 2 (Codex release-surface re-gate 2).
+
+    So both the checker and main() go through this one function, and everything
+    it does is pure: no filesystem, no subprocess, no network.
+    """
+    ap = build_parser()
+    args = ap.parse_args(argv)
     server_cmd = args.server[1:] if args.server and args.server[0] == "--" else args.server
     if not server_cmd:
         ap.error("provide the downstream server command after --")
+    return args, server_cmd
+
+
+def main(argv=None):
+    args, server_cmd = parse_cli(argv)
     effects_map = json.loads(Path(args.effects).read_text()) if args.effects else {}
     store_dir = Path(args.store) / ".warrants"
     sealer = Sealer(store_dir, args.actor, args.key, effects_map, args.ceiling)

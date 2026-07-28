@@ -39,6 +39,14 @@ jobs:
           /tmp/wv/bin/pip install dist/*.whl
           ( cd /tmp && /tmp/wv/bin/warrant selftest )
           ( cd /tmp && /tmp/wv/bin/warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
+      # The artifact must be able to do everything the docs tell a stranger to
+      # do. 0.4.0 shipped while the README documented `verify --store-mode
+      # --json` as the machine boundary; the release predated the feature, so
+      # `pip install warrant-verify` + the README gave `unrecognized arguments`.
+      # This step is what makes that state unpublishable rather than merely
+      # regrettable.
+      - name: Documented CLI surface exists in the built wheel
+        run: python3 tools/check_release_surface.py --wheel "$(ls dist/*.whl)" --bin /tmp/wv/bin
       - uses: actions/upload-artifact@v4
         with:
           name: dist

@@ -19,14 +19,18 @@ pip install .              # gives both `warrant` (verify) and `warrant-mcp` (se
 ## Use
 
 ```bash
-warrant keygen --out agent.key                    # once: the agent's signing key
+# once: the agent's signing key
+warrant keygen --out agent.key
 
+# --store is where the evidence pack lands; --effects is optional (see below);
+# everything after `--` is your MCP server command, e.g.
+# npx @modelcontextprotocol/server-github
 warrant-mcp \
-    --store ./session \                            # the evidence pack lands here
+    --store ./session \
     --actor coding-agent@acme \
     --key agent.key \
-    --effects effects.json \                       # optional; see below
-    -- <your MCP server command>                   # e.g. npx @modelcontextprotocol/server-github
+    --effects effects.json \
+    -- <your MCP server command>
 ```
 
 (Source: `impl/warrant_mcp.py` — runnable directly as

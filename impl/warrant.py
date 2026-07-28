@@ -1547,10 +1547,37 @@ def selftest():
 
 
 # ---------- CLI ----------
-def main():
-    ap = argparse.ArgumentParser(prog="warrant", description=__doc__.splitlines()[0])
+class _NoAbbrevParser(argparse.ArgumentParser):
+    """A subparser that refuses abbreviations too.
+
+    `allow_abbrev=False` on the top-level parser does NOT propagate: argparse
+    builds subparsers from the kwargs given to `add_parser`, so `verify
+    --store-m` still parsed as `--store-mode` until this existed.
+    """
+
+    def __init__(self, *a, **kw):
+        kw.setdefault("allow_abbrev", False)
+        super().__init__(*a, **kw)
+
+
+def build_parser():
+    """The CLI's argument parser, built WITHOUT dispatching anything.
+
+    Exposed so a caller can validate an argv -- e.g. every command this
+    repository's documentation promises -- without executing it. Before this
+    existed, the only way to ask "is this argv accepted?" was to run the
+    command, and running `warrant keygen --out /some/path` to find out whether
+    it parses creates a key file. A checker must not have side effects.
+
+    `allow_abbrev=False` throughout: argparse otherwise accepts `--reas` for
+    `--reason`, which is a surface that silently disappears the day a longer
+    option shares the prefix. Published commands should name flags in full.
+    """
+    ap = argparse.ArgumentParser(prog="warrant", description=__doc__.splitlines()[0],
+                                 allow_abbrev=False)
     ap.add_argument("--store", default=".warrants")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd", required=True,
+                            parser_class=_NoAbbrevParser)
 
     sub.add_parser("init")
     kg = sub.add_parser("keygen")
@@ -1614,7 +1641,41 @@ def main():
     cn = sub.add_parser("canon", help="print {warrant_id, canon_hex} for a bare body JSON")
     cn.add_argument("file")
 
-    args = ap.parse_args()
+    return ap
+
+
+def parse_cli(argv=None):
+    """Parse an argv AND apply the pure post-parse invariants. No side effects.
+
+    `build_parser().parse_args()` is not the whole CLI contract: a command can
+    parse and still be rejected a line later by a check main() performs. A
+    checker that stops at parse_args therefore reports a surface the CLI does
+    not actually accept -- warrant-mcp with no downstream command parsed cleanly
+    here while the real CLI exited 2 (Codex release-surface re-gate 2).
+
+    So both the checker and main() go through this one function, and everything
+    it does is pure: no filesystem, no subprocess, no network.
+    """
+    ap = build_parser()
+    args = ap.parse_args(argv)
+
+    # Pure argv invariants. These used to live in the dispatch below, mixed with
+    # store access, so the only way to discover that `propose` needs --subject
+    # was to run it against a real store -- and a documentation checker that
+    # stopped at parse_args reported a surface the CLI does not accept (Codex
+    # release-surface re-gate 3). Nothing here touches the filesystem.
+    if args.cmd == "propose" and not args.subject:
+        ap.error("propose requires --subject")
+    if args.cmd in ("accept", "reject", "supersede") and args.prior_id is None:
+        if args.cmd == "supersede":
+            ap.error("supersede requires the warrant id being superseded")
+        if not (args.subject and args.under):
+            ap.error(f"{args.cmd} without a prior requires --subject and --under")
+    return args
+
+
+def main():
+    args = parse_cli()
     store = Store(args.store)
 
     if args.cmd == "init":
@@ -1630,18 +1691,12 @@ def main():
         store.require()
         print(store.put_blob(Path(args.file).read_bytes()))
     elif args.cmd == "propose":
-        store.require()
-        if not args.subject:
-            sys.exit("propose requires --subject")
+        store.require()                      # --subject checked in parse_cli
         file_warrant(store, "propose", resolve_blob_arg(store, args.subject),
                      args, note=args.note)
     elif args.cmd in ("accept", "reject", "supersede"):
-        store.require()
+        store.require()                      # argv invariants checked in parse_cli
         if args.prior_id is None:
-            if args.cmd == "supersede":
-                sys.exit("supersede requires the warrant id being superseded")
-            if not (args.subject and args.under):
-                sys.exit(f"{args.cmd} without a prior requires --subject and --under")
             file_warrant(store, args.cmd, resolve_blob_arg(store, args.subject),
                          args, note=args.note)
             return
