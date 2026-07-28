@@ -132,10 +132,30 @@ def store_proof(store_dir, wid):
 
 
 # ---------- CLI ----------
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog="warrant-anchor",
+class _NoAbbrevParser(argparse.ArgumentParser):
+    """A subparser that refuses abbreviations too.
+
+    `allow_abbrev=False` on the top-level parser does NOT propagate: argparse
+    builds subparsers from the kwargs given to `add_parser`, so `verify
+    --store-m` still parsed as `--store-mode` until this existed.
+    """
+
+    def __init__(self, *a, **kw):
+        kw.setdefault("allow_abbrev", False)
+        super().__init__(*a, **kw)
+
+
+def build_parser():
+    """The CLI's argument parser, built WITHOUT dispatching anything.
+
+    Exposed so a checker can validate a documented argv without running the
+    command. Asking "does this parse?" by executing it is how a documentation
+    check ends up creating files.
+    """
+    ap = argparse.ArgumentParser(prog="warrant-anchor", allow_abbrev=False,
                                  description=__doc__.splitlines()[0])
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd", required=True,
+                            parser_class=_NoAbbrevParser)
     r = sub.add_parser("root", help="print the batch Merkle root")
     r.add_argument("store")
     p = sub.add_parser("prove", help="inclusion proof (JSON) for one warrant")
@@ -145,6 +165,11 @@ def main(argv=None):
     v.add_argument("wid")
     v.add_argument("proof")
     v.add_argument("root")
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
     args = ap.parse_args(argv)
 
     def sdir(s):

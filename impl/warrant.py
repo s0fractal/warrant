@@ -1547,10 +1547,37 @@ def selftest():
 
 
 # ---------- CLI ----------
-def main():
-    ap = argparse.ArgumentParser(prog="warrant", description=__doc__.splitlines()[0])
+class _NoAbbrevParser(argparse.ArgumentParser):
+    """A subparser that refuses abbreviations too.
+
+    `allow_abbrev=False` on the top-level parser does NOT propagate: argparse
+    builds subparsers from the kwargs given to `add_parser`, so `verify
+    --store-m` still parsed as `--store-mode` until this existed.
+    """
+
+    def __init__(self, *a, **kw):
+        kw.setdefault("allow_abbrev", False)
+        super().__init__(*a, **kw)
+
+
+def build_parser():
+    """The CLI's argument parser, built WITHOUT dispatching anything.
+
+    Exposed so a caller can validate an argv -- e.g. every command this
+    repository's documentation promises -- without executing it. Before this
+    existed, the only way to ask "is this argv accepted?" was to run the
+    command, and running `warrant keygen --out /some/path` to find out whether
+    it parses creates a key file. A checker must not have side effects.
+
+    `allow_abbrev=False` throughout: argparse otherwise accepts `--reas` for
+    `--reason`, which is a surface that silently disappears the day a longer
+    option shares the prefix. Published commands should name flags in full.
+    """
+    ap = argparse.ArgumentParser(prog="warrant", description=__doc__.splitlines()[0],
+                                 allow_abbrev=False)
     ap.add_argument("--store", default=".warrants")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd", required=True,
+                            parser_class=_NoAbbrevParser)
 
     sub.add_parser("init")
     kg = sub.add_parser("keygen")
@@ -1614,6 +1641,11 @@ def main():
     cn = sub.add_parser("canon", help="print {warrant_id, canon_hex} for a bare body JSON")
     cn.add_argument("file")
 
+    return ap
+
+
+def main():
+    ap = build_parser()
     args = ap.parse_args()
     store = Store(args.store)
 

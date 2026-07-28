@@ -244,8 +244,14 @@ def run_proxy(server_cmd, sealer):
           f"{sealer.store.root}", file=sys.stderr)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog="warrant-mcp", description=__doc__.splitlines()[0])
+def build_parser():
+    """The CLI's argument parser, built WITHOUT dispatching anything.
+
+    Exposed so a checker can validate a documented argv without running the
+    command. Asking "does this parse?" by executing it is how a documentation
+    check ends up creating files.
+    """
+    ap = argparse.ArgumentParser(prog="warrant-mcp", description=__doc__.splitlines()[0], allow_abbrev=False)
     ap.add_argument("--store", required=True, help="evidence-pack dir (.warrants inside)")
     ap.add_argument("--actor", required=True)
     ap.add_argument("--key", required=True, help="Ed25519 seed file (warrant keygen)")
@@ -254,6 +260,11 @@ def main(argv=None):
                     help="seal calls of this class and above (default A2)")
     ap.add_argument("server", nargs=argparse.REMAINDER,
                     help="-- <downstream MCP server command>")
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
     args = ap.parse_args(argv)
 
     server_cmd = args.server[1:] if args.server and args.server[0] == "--" else args.server
