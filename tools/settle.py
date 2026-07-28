@@ -163,6 +163,31 @@ def subject_for_target(name):
     return sha256_hex(ag.slice_section(*t["normative"])), t["subject"]
 
 
+def check_preimages(led):
+    """Recompute each finding's hashes from the preimages carried beside them.
+
+    Catches corruption and drift -- a ledger hand-edited, truncated, merged
+    badly, or written by a harness whose hashing changed. It does NOT catch
+    forgery: whoever can write a ledger can write a consistent one, and that
+    trust boundary (documented in the policy) is not closed here and must not be
+    described as if it were.
+
+    Findings that carry no preimage are left alone rather than rejected: older
+    ledgers predate the field, and refusing to read real recorded evidence
+    because of its age would discard exactly what this tool is for.
+    """
+    bad = []
+    for f in led.get("findings", []):
+        if "repro" in f and sha256_hex(f["repro"]) != f["repro_sha256"]:
+            bad.append(f"{f.get('id')}: repro hash mismatch")
+        t = f.get("transcript")
+        if t is not None:
+            recomputed = sha256_hex(t["stdout"] + t["stderr"] + str(t["exit"]))
+            if recomputed != f["transcript_sha256"]:
+                bad.append(f"{f.get('id')}: transcript hash mismatch")
+    return bad
+
+
 def load_policy(path):
     if not path.exists():
         sys.exit(f"no gate policy at {path} -- settlement has no rules to apply")
@@ -195,6 +220,19 @@ def settle(item, policy, ledger_dir=None, current=None):
                 "current_subject": "", "subject_label": "", "families_on_current": [],
                 "gates_total": len(ledgers), "blocking": [], "unresolved": [],
                 "restatements": [], "claims_total": 0, "policy_sha256": None}
+    corrupt = []
+    for led in ledgers:
+        corrupt += [f"{led['_path']} {m}" for m in check_preimages(led)]
+    if corrupt:
+        # Fail closed and loudly. A ledger whose evidence does not hash to its
+        # own digests is not weak evidence, it is unreadable evidence, and
+        # settling under it would be the false claim this tool exists to stop.
+        return {"item": item, "state": "CORRUPT",
+                "reason": "; ".join(corrupt[:5]),
+                "current_subject": current or "", "subject_label": "",
+                "families_on_current": [], "gates_total": len(ledgers),
+                "blocking": [], "unresolved": [], "restatements": [],
+                "claims_total": 0, "policy_sha256": None}
     if not ledgers:
         # Same shape as every other outcome. A report that drops fields when it
         # has nothing to say invites a consumer to read "absent" as "clean".

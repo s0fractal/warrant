@@ -168,6 +168,45 @@ def call_cli(cli, model, messages):
     return p.stdout
 
 
+def call_local(model, messages, ctx=32768):
+    """Drive a model running on this machine through ollama's local HTTP API.
+
+    WHY THIS MATTERS MORE THAN IT LOOKS
+    A reviewer family used to cost money, so diversity had a per-round price and
+    the cheap path was another round of the family already paid for -- which is
+    exactly how one item collected eight same-family gates and no P0. A local
+    model makes a fourth family cost electricity.
+
+    The quality gap is real and does not need hiding, because this harness makes
+    it harmless: only a reproduction that EXECUTES can block. A weaker reviewer
+    that emits twenty confident wrong counter-vectors costs twenty local
+    subprocess runs and blocks nothing. It cannot rubber-stamp either -- it has
+    no authority to grant. Its worst case is wasted free compute; its best case
+    is a defect the paid families did not look for. That asymmetry is what makes
+    a cheap reviewer worth running at all.
+
+    `num_ctx` is set explicitly: ollama's default window silently truncates, and
+    a reviewer that never saw half the source would file findings against code
+    that is not there -- a failure indistinguishable, from the outside, from a
+    bad model.
+    """
+    prompt = "\n\n".join(f"===== {m['role'].upper()} =====\n{m['content']}"
+                          for m in messages)
+    body = json.dumps({"model": model, "prompt": prompt, "stream": False,
+                       "options": {"num_ctx": ctx}}).encode()
+    req = urllib.request.Request("http://localhost:11434/api/generate", data=body,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=3600) as r:
+            out = json.load(r)
+    except urllib.error.URLError as e:
+        sys.exit(f"local model unreachable ({e}); is `ollama serve` running?")
+    text = out.get("response", "")
+    if not text.strip():
+        sys.exit(f"local model {model} returned nothing")
+    return text
+
+
 def stage_workdir(t):
     """Copy the reviewed files into a self-contained directory for the harness."""
     d = Path(tempfile.mkdtemp(prefix="advgate-stage-"))
@@ -307,15 +346,20 @@ def main():
     ap.add_argument("--target", default="wrt-002", choices=sorted(TARGETS))
     ap.add_argument("--out", required=True, help="reviews/<file>.md")
     ap.add_argument("--model", default=os.environ.get("OPENROUTER_MODEL"))
+    ap.add_argument("--local", help="ollama model name; runs on this machine, no key, no bill")
     ap.add_argument("--cli", help="path to a local agent CLI (kimi, codex); "
                                    "when set, OpenRouter is not used")
     ap.add_argument("--family", help="reviewer family id for settlement, e.g. "
                                      "kimi@moonshot; defaults to the model's vendor prefix")
     args = ap.parse_args()
-    if not args.model and not args.cli:
-        sys.exit("set --model, OPENROUTER_MODEL, or --cli")
+    if not (args.model or args.cli or args.local):
+        sys.exit("set --model, OPENROUTER_MODEL, --cli, or --local")
+    args.model = args.model or args.local or args.cli
     _api = call
-    if args.cli:
+    if args.local:
+        def _api(model, messages, **kw):                    # noqa: ARG001
+            return call_local(args.local, messages)
+    elif args.cli:
         def _api(model, messages, **kw):                    # noqa: ARG001
             return call_cli(args.cli, model, messages)
 
@@ -509,6 +553,14 @@ def emit_ledger(args, t, normative, all_results, complete):
             "transcript_sha256": hashlib.sha256(
                 (res["stdout"] + res["stderr"] + str(res["exit"])).encode("utf-8")
             ).hexdigest(),
+            # The preimages travel WITH their hashes. A first version stored only
+            # the digests, which survived a crashed run in the sense that the
+            # fact survived and the evidence did not -- leaving a finding nobody
+            # could read, judge, or re-run. A hash shipped without its preimage
+            # is an assertion, and this file exists to hold the opposite.
+            "repro": code,
+            "transcript": {"stdout": res["stdout"], "stderr": res["stderr"],
+                           "exit": res["exit"]},
             "exit": res["exit"],
             "reproduced": res["violation"],
         } for _, meta, code, res in final.values()],

@@ -171,6 +171,23 @@ stale_regate = (
 check("later re-gate of old text cannot settle current text",
       run(stale_regate, current=NEW)["state"], "BLOCKED")
 
+# 12. A ledger whose evidence does not hash to its own digests is unreadable,
+#     not merely weak: settling under it would restate an unverifiable claim.
+tampered = ledger(three[0], NEW, [dict(finding("F1", "D.3", True),
+                                       repro="print(1)", repro_sha256="0" * 64)])
+check("preimage mismatch fails closed", run([tampered])["state"], "CORRUPT")
+
+# 12a. Consistent preimages pass through untouched, and a finding that carries
+#      none is still read -- older ledgers predate the field, and discarding real
+#      recorded evidence over its age is its own kind of loss.
+good_code = "print('VIOLATION: x')"
+consistent = ledger(three[0], NEW, [dict(
+    finding("F1", "D.3", True), repro=good_code,
+    repro_sha256=S.sha256_hex(good_code),
+    transcript={"stdout": "VIOLATION: x\n", "stderr": "", "exit": 0},
+    transcript_sha256=S.sha256_hex("VIOLATION: x\n" + "" + "0"))])
+check("consistent preimages are accepted", run([consistent])["state"], "BLOCKED")
+
 # 11a. And the subject is never guessed. A caller that does not say which bytes
 #      are on the branch gets a refusal, not a default.
 check("missing subject fails closed",
