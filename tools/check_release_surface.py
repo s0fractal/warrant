@@ -42,6 +42,7 @@ Exit 0 = every documented invocation is accepted by the binaries under test.
 """
 import argparse
 import base64
+import zipfile
 import hashlib
 import os
 import re
@@ -324,6 +325,125 @@ def inspect_distribution(binroot):
             "eps": eps, "info_dir": info_dir}, problems
 
 
+def inspect_wheel(wheel):
+    """The PROVENANCE ROOT: the wheel file itself, read as a zip. No code runs.
+
+    An installed venv cannot be its own root of trust. Editing a module AND its
+    digest in the installed RECORD produced a clean pass, because RECORD lives
+    inside the very thing it vouches for (Codex release-surface re-gate 5). The
+    artifact you publish is the wheel; that is what must vouch for what is
+    installed.
+
+    Returns (info, problems) with the canonical name, version, the module
+    digests taken FROM THE WHEEL, and the declared console-script targets in
+    full `module:function` form.
+    """
+    problems = []
+    try:
+        z = zipfile.ZipFile(wheel)
+    except (OSError, zipfile.BadZipFile) as e:
+        return None, [f"{wheel} is not a readable wheel: {e}"]
+
+    dist_info = sorted({n.split("/")[0] for n in z.namelist()
+                        if n.endswith(".dist-info/METADATA")
+                        or "/.dist-info/" in n or n.split("/")[0].endswith(".dist-info")})
+    dist_info = [d for d in dist_info if d.endswith(".dist-info")]
+    if not dist_info:
+        return None, [f"{wheel} contains no .dist-info"]
+    di = dist_info[0]
+
+    meta = z.read(f"{di}/METADATA").decode(errors="replace")
+    name = next((l.split(":", 1)[1].strip() for l in meta.splitlines()
+                 if l.lower().startswith("name:")), "")
+    version = next((l.split(":", 1)[1].strip() for l in meta.splitlines()
+                    if l.lower().startswith("version:")), "?")
+    if _canon_dist(name) != _canon_dist(DIST_NAME):
+        problems.append(f"the wheel declares Name: {name!r}, not `{DIST_NAME}`")
+
+    digests = {}
+    for mod in MODULES.values():
+        member = f"{mod}.py"
+        if member not in z.namelist():
+            problems.append(f"the wheel does not contain `{member}`")
+            continue
+        digests[member] = hashlib.sha256(z.read(member)).hexdigest()
+
+    eps, section = {}, ""
+    try:
+        for line in z.read(f"{di}/entry_points.txt").decode(errors="replace").splitlines():
+            line = line.strip()
+            if line.startswith("["):
+                section = line.strip("[]")
+            elif "=" in line and section == "console_scripts":
+                k, v = (x.strip() for x in line.split("=", 1))
+                eps[k] = v
+    except KeyError:
+        problems.append("the wheel declares no console scripts")
+
+    return {"name": name, "version": version, "digests": digests, "eps": eps,
+            "wheel": str(wheel)}, problems
+
+
+def check_installation(binroot, wheel_info, problems):
+    """The installation must match the WHEEL, and its commands must actually run."""
+    binroot = Path(binroot).resolve()
+    venv = binroot.parent
+    site = sorted(venv.glob("lib/python*/site-packages")) or sorted(
+        venv.glob("Lib/site-packages"))
+    if not site:
+        return problems + [f"no site-packages under {venv}"]
+    site = site[0]
+
+    for cli, mod in MODULES.items():
+        member = f"{mod}.py"
+        installed = site / member
+        want = wheel_info["digests"].get(member)
+        if want is None:
+            continue                                   # already reported
+        if not installed.exists():
+            problems.append(f"`{member}` from the wheel is not installed in {site}")
+        else:
+            got = hashlib.sha256(installed.read_bytes()).hexdigest()
+            if got != want:
+                problems.append(
+                    f"installed `{member}` does not match the WHEEL "
+                    f"(wheel {want[:12]}…, installed {got[:12]}…). The installed "
+                    f"RECORD is not consulted: it lives inside the thing it "
+                    f"vouches for.")
+
+        declared = wheel_info["eps"].get(cli)
+        if declared is None:
+            problems.append(f"the wheel does not declare a `{cli}` console script")
+        elif declared != f"{mod}:main":
+            problems.append(f"the wheel declares `{cli} = {declared}`, not "
+                            f"`{mod}:main` — the target FUNCTION is part of the "
+                            f"contract, not just the module")
+
+        script = binroot / cli
+        if not script.exists():
+            problems.append(f"console script `{cli}` is missing from {binroot}")
+            continue
+        if not os.access(script, os.X_OK):
+            problems.append(f"console script `{cli}` is not executable")
+            continue
+        # Run the real command, with the one argument that is safe by
+        # construction: --help exits before any work. A script that is a valid
+        # shebang file and still `exit 99` passed every static check there is.
+        try:
+            r = subprocess.run([str(script), "--help"], capture_output=True,
+                               text=True, timeout=60, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            problems.append(f"console script `{cli}` did not run: {e}")
+            continue
+        if r.returncode != 0:
+            problems.append(f"console script `{cli} --help` exited "
+                            f"{r.returncode} — it is installed but it does not work")
+        elif cli not in (r.stdout + r.stderr):
+            problems.append(f"console script `{cli} --help` does not identify "
+                            f"itself as `{cli}`")
+    return problems
+
+
 def _record_digest(info, path):
     """(recorded, actual) sha256 for a file, as RECORD spells them."""
     site = info["site"].resolve()
@@ -506,6 +626,64 @@ def _artifact_checks():
     return out
 
 
+def _wheel_root_checks():
+    """The wheel is the root; the installation is checked against it.
+
+    Built as a real wheel plus a real installation, so these exercise
+    inspect_wheel/check_installation exactly as the gate does.
+    """
+    out = []
+    root = Path(tempfile.mkdtemp())
+    body = b"def main():\n    return 0\n\n\ndef parse_cli(argv=None):\n    return None\n"
+
+    def build(name="warrant-verify", version="1.0", eps_func="main", modbody=body):
+        w = root / f"{name.replace('-', '_')}-{version}.whl"
+        di = f"{name.replace('-', '_')}-{version}.dist-info"
+        with zipfile.ZipFile(w, "w") as z:
+            z.writestr(f"{di}/METADATA", f"Name: {name}\nVersion: {version}\n")
+            z.writestr(f"{di}/entry_points.txt", "[console_scripts]\n" + "".join(
+                f"{c} = {m}:{eps_func}\n" for c, m in MODULES.items()))
+            for m in MODULES.values():
+                z.writestr(f"{m}.py", modbody)
+        return w
+
+    def install(w, tag, modbody=None, script_exit=0):
+        v = root / f"venv-{tag}"
+        site = v / "lib" / "python3.99" / "site-packages"
+        site.mkdir(parents=True)
+        (v / "bin").mkdir(parents=True)
+        with zipfile.ZipFile(w) as z:
+            for m in MODULES.values():
+                (site / f"{m}.py").write_bytes(modbody or z.read(f"{m}.py"))
+        for c in MODULES:
+            s = v / "bin" / c
+            s.write_text(f"#!/bin/sh\nif [ \"$1\" = --help ]; then echo {c}; "
+                         f"exit {script_exit}; fi\nexit {script_exit}\n")
+            s.chmod(0o755)
+        return v / "bin"
+
+    def clean(w, binroot):
+        info, probs = inspect_wheel(w)
+        if info is not None:
+            probs = check_installation(binroot, info, probs)
+        return not probs
+
+    good = build()
+    out.append(("wheel + matching installation passes", clean(good, install(good, "ok"))))
+    out.append(("a module edited after install is caught BY THE WHEEL",
+                not clean(good, install(good, "tampered",
+                                        modbody=body + b"# changed\n"))))
+    out.append(("a console script that exits non-zero is caught",
+                not clean(good, install(good, "exit99", script_exit=99))))
+    out.append(("an entry point naming the wrong FUNCTION is caught",
+                not clean(build(eps_func="not_main"),
+                          install(good, "wrongfunc"))))
+    out.append(("a wheel with the wrong distribution name is caught",
+                not clean(build(name="warrant-verify-evil"),
+                          install(good, "evilname"))))
+    return out
+
+
 def _hostile_runtime_checks(extra):
     """Permanent cases for the runtime failure modes, not one-off manual proofs.
 
@@ -652,6 +830,7 @@ warrant --store ./pack verify --store-mode --json | jq -e '.ok'
     ]
     checks += _hostile_runtime_checks(extra)
     checks += _artifact_checks()
+    checks += _wheel_root_checks()
     bad = 0
     for name, ok in checks:
         if not ok:
@@ -678,6 +857,8 @@ def main():
     ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--bin", help="directory holding an installed wheel's console "
                                   "scripts; its python validates the wheel's parsers")
+    ap.add_argument("--wheel", help="the published wheel: the provenance root "
+                                    "for everything --bin is checked against")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     if args.selftest:
@@ -708,18 +889,31 @@ def main():
     # an artifact we cannot introspect is not an artifact we have checked.
     modroot = None
     if args.bin:
-        # TRUSTED PREFLIGHT, filesystem only, before any target code runs.
-        info, art_problems = inspect_distribution(Path(args.bin).resolve())
-        if info is not None:
-            art_problems = check_artifact(Path(args.bin).resolve(), info, art_problems)
+        if not args.wheel:
+            print("RELEASE SURFACE: REFUSING — --bin without --wheel.\n\n"
+                  "  An installation cannot vouch for itself: its RECORD lives "
+                  "inside the very\n  thing it is supposed to attest, and editing "
+                  "a module together with its digest\n  produced a clean pass. "
+                  "Pass the wheel that was published; it is the root.",
+                  file=sys.stderr)
+            return 2
+        # TRUSTED PREFLIGHT. The wheel is the provenance root, read as a zip;
+        # the installation is then checked AGAINST it. No target code runs yet.
+        winfo, art_problems = inspect_wheel(Path(args.wheel))
+        if winfo is not None:
+            art_problems = check_installation(Path(args.bin).resolve(), winfo,
+                                              art_problems)
         if art_problems:
-            print(f"RELEASE SURFACE: FAIL — {target} is not the artifact it "
-                  f"claims to be:\n")
+            print(f"RELEASE SURFACE: FAIL — the installation in {args.bin} does "
+                  f"not match the wheel {args.wheel}:\n")
             for e in art_problems:
                 print(f"  {e}")
             return 1
-        modroot = str(info["site"])
-        target = (f"{info['name']} {info['version']} installed in {args.bin}")
+        venv = Path(args.bin).resolve().parent
+        site = (sorted(venv.glob("lib/python*/site-packages")) or
+                sorted(venv.glob("Lib/site-packages")))[0]
+        modroot = str(site)
+        target = f"{winfo['name']} {winfo['version']} from {Path(args.wheel).name}"
 
     probe = validate(python, extra, "warrant", ["warrant", "--help"],
                      expect_origin=expect_origin, modroot=modroot)

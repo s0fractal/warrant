@@ -46,7 +46,7 @@ jobs:
       # This step is what makes that state unpublishable rather than merely
       # regrettable.
       - name: Documented CLI surface exists in the built wheel
-        run: python3 tools/check_release_surface.py --bin /tmp/wv/bin
+        run: python3 tools/check_release_surface.py --wheel "$(ls dist/*.whl)" --bin /tmp/wv/bin
       - uses: actions/upload-artifact@v4
         with:
           name: dist
