@@ -1,0 +1,125 @@
+{
+  "complete": true,
+  "family": "codex@openai",
+  "findings": [
+    {
+      "clause": "7",
+      "exit": 0,
+      "id": "F1",
+      "repro": "import json\nimport tempfile\nfrom pathlib import Path\nimport settle\n\nPOLICY = {\n    \"gate_policy\": \"0.1\",\n    \"min_families\": 3,\n    \"blocking_severities\": [\"P0\", \"P1\"],\n    \"novelty\": \"clause\",\n}\nOLD, NEW = \"a\" * 64, \"b\" * 64\n\ndef finding(fid, reproduced, repro_hash, transcript_hash):\n    return {\n        \"id\": fid,\n        \"severity\": \"P0\",\n        \"clause\": \"D.3\",\n        \"title\": fid,\n        \"repro_sha256\": repro_hash,\n        \"transcript_sha256\": transcript_hash,\n        \"reproduced\": reproduced,\n    }\n\ndef ledger(family, subject, findings):\n    return {\n        \"item\": \"x\",\n        \"family\": family,\n        \"subject_sha256\": subject,\n        \"subject_label\": \"subject\",\n        \"findings\": findings,\n    }\n\nledgers = [\n    ledger(\"old-family\", OLD, [\n        finding(\"original-exploit\", True, \"1\" * 64, \"2\" * 64),\n    ]),\n    ledger(\"alpha\", NEW, [\n        finding(\"different-probe\", False, \"3\" * 64, \"4\" * 64),\n    ]),\n    ledger(\"beta\", NEW, []),\n    ledger(\"gamma\", NEW, []),\n]\n\nwith tempfile.TemporaryDirectory() as tmp:\n    directory = Path(tmp)\n    for index, value in enumerate(ledgers):\n        (directory / f\"{index:02d}.json\").write_text(json.dumps(value))\n    report = settle.settle(\"x\", POLICY, directory, NEW)\n\ngot = report[\"state\"]\nassert got == \"SETTLED\", (\n    f\"rule 7 requires UNRESOLVED until original-exploit itself is re-run; got {got}\"\n)\nprint(f\"VIOLATION: expected=UNRESOLVED got={got} -- a different non-reproducing probe against the same clause closed an unretested exploit\")\n",
+      "repro_sha256": "4b7f84030a37a85cc4f536ec792b997810a6046cdf3245f55087ce3c4cf70472",
+      "reproduced": true,
+      "severity": "P0",
+      "title": "different probe falsely closes stale defect",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: expected=UNRESOLVED got=SETTLED -- a different non-reproducing probe against the same clause closed an unretested exploit\n"
+      },
+      "transcript_sha256": "e5f7ebe437fb481bd6759be5922cb6cfad16dd712dac493a2cd78ff2445d8310"
+    },
+    {
+      "clause": "unstated",
+      "exit": 0,
+      "id": "F2",
+      "repro": "import json\nimport tempfile\nfrom pathlib import Path\nimport settle\n\n# Implied but unwritten property: deduplication must not discard a load-bearing\n# severity field that the outcome fingerprint does not contain.\nPOLICY = {\n    \"gate_policy\": \"0.1\",\n    \"min_families\": 3,\n    \"blocking_severities\": [\"P0\", \"P1\"],\n    \"novelty\": \"clause\",\n}\nCURRENT = \"b\" * 64\n\ndef finding(fid, severity):\n    return {\n        \"id\": fid,\n        \"severity\": severity,\n        \"clause\": \"D.3\",\n        \"title\": \"same executed outcome\",\n        \"repro_sha256\": \"1\" * 64,\n        \"transcript_sha256\": \"2\" * 64,\n        \"reproduced\": True,\n    }\n\ndef ledger(family, findings):\n    return {\n        \"item\": \"x\",\n        \"family\": family,\n        \"subject_sha256\": CURRENT,\n        \"subject_label\": \"current\",\n        \"findings\": findings,\n    }\n\n# File order makes the P2 observation enter the claim first. The byte-identical\n# P0 observation then has the same fingerprint and is skipped before severity\n# aggregation.\nledgers = [\n    ledger(\"alpha\", [finding(\"initial-rating\", \"P2\")]),\n    ledger(\"beta\", [finding(\"corrected-rating\", \"P0\")]),\n    ledger(\"gamma\", []),\n]\n\nwith tempfile.TemporaryDirectory() as tmp:\n    directory = Path(tmp)\n    for index, value in enumerate(ledgers):\n        (directory / f\"{index:02d}.json\").write_text(json.dumps(value))\n    report = settle.settle(\"x\", POLICY, directory, CURRENT)\n\ngot = report[\"state\"]\nassert got == \"SETTLED\", f\"a reproduced P0 on the current subject must BLOCK; got {got}\"\nprint(f\"VIOLATION: expected=BLOCKED got={got} -- outcome dedupe discarded the later P0 label before claim severity was computed\")\n",
+      "repro_sha256": "2c7187fe00b440cb01c01fdbe997e2c88cfd3422b686eae8c6d18d4b021d8f44",
+      "reproduced": true,
+      "severity": "P0",
+      "title": "fingerprint dedupe erases P0 severity",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: expected=BLOCKED got=SETTLED -- outcome dedupe discarded the later P0 label before claim severity was computed\n"
+      },
+      "transcript_sha256": "697f9ab23d259770a0897c471d2c4e61cddc4228c203773a89d9a0c2d1e473ef"
+    },
+    {
+      "clause": "unstated",
+      "exit": 0,
+      "id": "F3",
+      "repro": "import json\nimport tempfile\nfrom pathlib import Path\nimport settle\n\n# Implied but unwritten property: an outcome fingerprint must preserve which\n# digest identifies the subject and which identifies the reproduction.\nPOLICY = {\n    \"gate_policy\": \"0.1\",\n    \"min_families\": 3,\n    \"blocking_severities\": [\"P0\", \"P1\"],\n    \"novelty\": \"clause\",\n}\n\nmessage = \"VIOLATION: expected=safe got=broken -- live current defect\"\nstdout = message + \"\\n\"\nold_subject_bytes = \"# revision A; also used as the current repro\\nprint(\" + repr(message) + \")\\n\"\nnew_subject_bytes = \"# revision B; also used as the old repro\\nprint(\" + repr(message) + \")\\n\"\nOLD = settle.sha256_hex(old_subject_bytes)\nNEW = settle.sha256_hex(new_subject_bytes)\ntranscript = {\"stdout\": stdout, \"stderr\": \"\", \"exit\": 0}\ntranscript_hash = settle.sha256_hex(stdout + \"\" + \"0\")\n\ndef finding(fid, repro):\n    return {\n        \"id\": fid,\n        \"severity\": \"P0\",\n        \"clause\": \"D.3\",\n        \"title\": \"executed defect\",\n        \"repro\": repro,\n        \"repro_sha256\": settle.sha256_hex(repro),\n        \"transcript\": transcript,\n        \"transcript_sha256\": transcript_hash,\n        \"reproduced\": True,\n    }\n\ndef ledger(family, subject, findings):\n    return {\n        \"item\": \"x\",\n        \"family\": family,\n        \"subject_sha256\": subject,\n        \"subject_label\": \"subject\",\n        \"findings\": findings,\n    }\n\n# Old outcome evidence is {subject=OLD, repro=NEW}.\n# Current outcome evidence is {subject=NEW, repro=OLD}.\n# Sorting turns both into the same untyped pair.\nledgers = [\n    ledger(\"old-family\", OLD, [finding(\"old-observation\", new_subject_bytes)]),\n    ledger(\"alpha\", NEW, [finding(\"current-observation\", old_subject_bytes)]),\n    ledger(\"beta\", NEW, []),\n    ledger(\"gamma\", NEW, []),\n]\n\nwith tempfile.TemporaryDirectory() as tmp:\n    directory = Path(tmp)\n    for index, value in enumerate(ledgers):\n        (directory / f\"{index:02d}.json\").write_text(json.dumps(value))\n    report = settle.settle(\"x\", POLICY, directory, NEW)\n\ngot = report[\"state\"]\nassert got == \"UNRESOLVED\", (\n    f\"the implementation must exhibit the role-swap bug as UNRESOLVED; got {got}\"\n)\nprint(f\"VIOLATION: expected=BLOCKED got={got} -- a reproduced current finding was discarded because subject and repro hashes were sorted without role tags\")\n",
+      "repro_sha256": "082615ad4786bf8447b294b4677ae316a119b4aaaf715b4fd029d340251de673",
+      "reproduced": true,
+      "severity": "P0",
+      "title": "sorted evidence swaps subject and repro roles",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: expected=BLOCKED got=UNRESOLVED -- a reproduced current finding was discarded because subject and repro hashes were sorted without role tags\n"
+      },
+      "transcript_sha256": "364a0bdb1dd2b46f5c9ed098c77acf73f616805620c039214b29e1915e28f522"
+    },
+    {
+      "clause": "unstated",
+      "exit": 0,
+      "id": "F4",
+      "repro": "import json\nimport tempfile\nfrom pathlib import Path\nimport settle\n\n# Implied but unwritten property: a normative clause identity includes its\n# document or namespace, not merely its local number.\nPOLICY = {\n    \"gate_policy\": \"0.1\",\n    \"min_families\": 3,\n    \"blocking_severities\": [\"P0\", \"P1\"],\n    \"novelty\": \"clause\",\n}\nOLD, NEW = \"a\" * 64, \"b\" * 64\n\ndef finding(fid, title, reproduced, repro_hash, transcript_hash):\n    return {\n        \"id\": fid,\n        \"severity\": \"P0\",\n        \"clause\": \"D.3\",\n        \"title\": title,\n        \"repro_sha256\": repro_hash,\n        \"transcript_sha256\": transcript_hash,\n        \"reproduced\": reproduced,\n    }\n\ndef ledger(family, subject, findings):\n    return {\n        \"item\": \"x\",\n        \"family\": family,\n        \"subject_sha256\": subject,\n        \"subject_label\": \"multi-document subject\",\n        \"findings\": findings,\n    }\n\nledgers = [\n    ledger(\"old-family\", OLD, [\n        finding(\"DOC-A-F1\", \"Document A D.3 authorization bypass\",\n                True, \"1\" * 64, \"2\" * 64),\n    ]),\n    ledger(\"alpha\", NEW, [\n        finding(\"DOC-B-F1\", \"Document B D.3 unrelated probe\",\n                False, \"3\" * 64, \"4\" * 64),\n    ]),\n    ledger(\"beta\", NEW, []),\n    ledger(\"gamma\", NEW, []),\n]\n\nwith tempfile.TemporaryDirectory() as tmp:\n    directory = Path(tmp)\n    for index, value in enumerate(ledgers):\n        (directory / f\"{index:02d}.json\").write_text(json.dumps(value))\n    report = settle.settle(\"x\", POLICY, directory, NEW)\n\ngot = report[\"state\"]\nassert got == \"SETTLED\", (\n    f\"Document A D.3 was never re-run and therefore must remain UNRESOLVED; got {got}\"\n)\nprint(f\"VIOLATION: expected=UNRESOLVED got={got} -- refuting Document B D.3 silently closed the distinct Document A D.3 defect\")\n",
+      "repro_sha256": "1ce8133fd026f601b8f08f0c787bef329220ca224d87bfb21dd92f8d05f14562",
+      "reproduced": true,
+      "severity": "P0",
+      "title": "clause key omits document identity",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: expected=UNRESOLVED got=SETTLED -- refuting Document B D.3 silently closed the distinct Document A D.3 defect\n"
+      },
+      "transcript_sha256": "4d033bfd8b871143f65e05ad9630b0be4152815d29f97def8525d0276e906b78"
+    },
+    {
+      "clause": "unstated",
+      "exit": 0,
+      "id": "F5",
+      "repro": "import json\nimport tempfile\nfrom pathlib import Path\nimport settle\n\n# Implied but unwritten property: distinct unnamed properties must not merge merely\n# because reviewers reused an ID and a generic reproduction driver.\nPOLICY = {\n    \"gate_policy\": \"0.1\",\n    \"min_families\": 3,\n    \"blocking_severities\": [\"P0\", \"P1\"],\n    \"novelty\": \"clause\",\n}\nOLD, NEW = \"a\" * 64, \"b\" * 64\ngeneric_driver = \"import runpy\\nrunpy.run_path('probe.py', run_name='__main__')\\n\"\nrepro_hash = settle.sha256_hex(generic_driver)\n\ndef finding(title, reproduced, stdout, exit_code):\n    transcript = {\"stdout\": stdout, \"stderr\": \"\", \"exit\": exit_code}\n    return {\n        \"id\": \"F1\",\n        \"severity\": \"P0\",\n        \"clause\": \"unstated\",\n        \"title\": title,\n        \"repro\": generic_driver,\n        \"repro_sha256\": repro_hash,\n        \"transcript\": transcript,\n        \"transcript_sha256\": settle.sha256_hex(stdout + \"\" + str(exit_code)),\n        \"reproduced\": reproduced,\n    }\n\ndef ledger(family, subject, findings):\n    return {\n        \"item\": \"x\",\n        \"family\": family,\n        \"subject_sha256\": subject,\n        \"subject_label\": \"subject\",\n        \"findings\": findings,\n    }\n\nold_finding = finding(\n    \"authorization bypass\",\n    True,\n    \"VIOLATION: expected=denied got=allowed -- authorization bypass\\n\",\n    0,\n)\nunrelated_current_finding = finding(\n    \"unrelated formatting hypothesis\",\n    False,\n    \"NO VIOLATION\\n\",\n    1,\n)\nledgers = [\n    ledger(\"old-family\", OLD, [old_finding]),\n    ledger(\"alpha\", NEW, [unrelated_current_finding]),\n    ledger(\"beta\", NEW, []),\n    ledger(\"gamma\", NEW, []),\n]\n\nwith tempfile.TemporaryDirectory() as tmp:\n    directory = Path(tmp)\n    for index, value in enumerate(ledgers):\n        (directory / f\"{index:02d}.json\").write_text(json.dumps(value))\n    report = settle.settle(\"x\", POLICY, directory, NEW)\n\ngot = report[\"state\"]\nassert got == \"SETTLED\" and report[\"claims_total\"] == 1, (\n    f\"the distinct unnamed defects must remain separate and stale one unresolved; got {report}\"\n)\nprint(f\"VIOLATION: expected=UNRESOLVED got={got} -- reviewer ID reuse plus a shared generic driver merged two unrelated unstated properties\")\n",
+      "repro_sha256": "c470310ec79b39252d163847b88199000c0a0f55556852358a5e46d41601eb0e",
+      "reproduced": true,
+      "severity": "P0",
+      "title": "unstated key still collides across rounds",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: expected=UNRESOLVED got=SETTLED -- reviewer ID reuse plus a shared generic driver merged two unrelated unstated properties\n"
+      },
+      "transcript_sha256": "955fac9df42a3c3291b7ba91696e8dc1f3c19f093676395d1e2525018c7ec324"
+    },
+    {
+      "clause": "unstated",
+      "exit": 0,
+      "id": "F6",
+      "repro": "import json\nimport tempfile\nfrom pathlib import Path\nimport settle\n\n# Implied but unwritten property: min_families measures actual model-family\n# diversity, not distinct spellings of a free-form command-line value.\nPOLICY = {\n    \"gate_policy\": \"0.1\",\n    \"min_families\": 3,\n    \"blocking_severities\": [\"P0\", \"P1\"],\n    \"novelty\": \"clause\",\n}\nCURRENT = \"b\" * 64\n\ndef ledger(family):\n    return {\n        \"item\": \"x\",\n        \"family\": family,\n        \"model\": \"same-model\",\n        \"subject_sha256\": CURRENT,\n        \"subject_label\": \"current\",\n        \"findings\": [],\n    }\n\nledgers = [ledger(\"codex\"), ledger(\"CODEX\"), ledger(\"codex \")]\n\nwith tempfile.TemporaryDirectory() as tmp:\n    directory = Path(tmp)\n    for index, value in enumerate(ledgers):\n        (directory / f\"{index:02d}.json\").write_text(json.dumps(value))\n    report = settle.settle(\"x\", POLICY, directory, CURRENT)\n\ngot = report[\"state\"]\nassert got == \"SETTLED\", f\"one actual family cannot satisfy min_families=3; got {got}\"\nprint(f\"VIOLATION: expected=OPEN got={got} -- three aliases of one family were counted as three-family diversity\")\n",
+      "repro_sha256": "e7b31e2cef15a06477ca14a5514c48b451799e899aa7db772b911bb007237230",
+      "reproduced": true,
+      "severity": "P1",
+      "title": "family aliases satisfy diversity threshold",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: expected=OPEN got=SETTLED -- three aliases of one family were counted as three-family diversity\n"
+      },
+      "transcript_sha256": "2447910cc54fbd4504c767d28714c082071ade82ed7c0fd8db9726f5fbb5b887"
+    },
+    {
+      "clause": "unstated",
+      "exit": 0,
+      "id": "F7",
+      "repro": "import json\nimport tempfile\nfrom pathlib import Path\nimport settle\n\n# Implied but unwritten property: a settlement policy must be rejected if its\n# semantics erase the hard rule that an executed current P0 holds the queue.\nCURRENT = \"b\" * 64\nbad_policy = {\n    \"gate_policy\": \"0.1\",\n    \"scope\": \"test\",\n    \"min_families\": 0,\n    \"blocking_severities\": [],\n    \"novelty\": \"clause\",\n}\nledger = {\n    \"item\": \"x\",\n    \"family\": \"alpha\",\n    \"subject_sha256\": CURRENT,\n    \"subject_label\": \"current\",\n    \"findings\": [{\n        \"id\": \"F1\",\n        \"severity\": \"P0\",\n        \"clause\": \"D.3\",\n        \"title\": \"live executed P0\",\n        \"repro_sha256\": \"1\" * 64,\n        \"transcript_sha256\": \"2\" * 64,\n        \"reproduced\": True,\n    }],\n}\n\nwith tempfile.TemporaryDirectory() as tmp:\n    directory = Path(tmp)\n    policy_path = directory / \"policy.json\"\n    policy_path.write_text(json.dumps(bad_policy))\n    loaded_policy = settle.load_policy(policy_path)\n    (directory / \"ledger.json\").write_text(json.dumps(ledger))\n    report = settle.settle(\"x\", loaded_policy, directory, CURRENT)\n\ngot = report[\"state\"]\nassert got == \"SETTLED\", (\n    f\"load_policy should reject a policy that disables every blocker; got settlement state {got}\"\n)\nprint(f\"VIOLATION: expected=POLICY-REJECTED got={got} -- version-only validation admitted a policy that settles a live reproduced P0\")\n",
+      "repro_sha256": "0457a21936a0d2a8b82ae3ac098256a10fad1e7f89b817381f9cdb00a479c4b1",
+      "reproduced": true,
+      "severity": "P0",
+      "title": "policy validation permits disabling all blockers",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: expected=POLICY-REJECTED got=SETTLED -- version-only validation admitted a policy that settles a live reproduced P0\n"
+      },
+      "transcript_sha256": "33bf13d0c5bba86c215af8b321c838959426e920908c251f7e7c20eb803fbb0a"
+    }
+  ],
+  "host": "m4.local",
+  "item": "settle",
+  "model": "/opt/homebrew/bin/codex",
+  "produced_at": "2026-07-28T20:04:32Z",
+  "review": "reviews/2026-07-codex-settle-gate.md",
+  "subject_label": "settle.py gate-settlement rule (executed-repro blocking, per-clause novelty)",
+  "subject_sha256": "bb62d83759c7247737936528d408c47886d1b5256bf7d4a7a85fe394d5d803bf"
+}

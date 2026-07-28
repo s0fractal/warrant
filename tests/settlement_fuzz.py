@@ -58,7 +58,9 @@ _pol = next(p for p in (ROOT / "policies" / "gate-settlement.json",
 POLICY = json.loads(_pol.read_text())
 
 SUBJECTS = [c * 64 for c in "abc"]
-FAMILIES = ["codex@openai", "kimi@moonshot", "gemini@google", "qwen3-coder@local"]
+FAMILIES = ["codex@openai", "kimi@moonshot", "gemini@google", "qwen3-coder@local",
+            "codex@oai", "CODEX@OPENAI"]      # aliases: must not buy diversity
+DOCS = ["DocA.md", "DocB.md"]
 CLAUSES = ["D.3", "d.3 ", "D.4", "7", "unstated", "UNSTATED", "n/a", ""]
 SEVERITIES = ["P0", "P1", "P2", "P?", ""]
 
@@ -78,12 +80,13 @@ def draw_ledgers(rng):
                 "transcript": {"stdout": out_s, "stderr": "", "exit": 0},
                 "transcript_sha256": S.sha256_hex(out_s + "" + "0"),
                 "exit": 0, "reproduced": rng.random() < 0.5,
+                "closes": "",
             })
         out.append({
             "item": "x", "family": rng.choice(FAMILIES), "model": "m", "host": "h",
             "produced_at": f"2026-07-{rng.randint(1, 28):02d}T00:00:00Z",
             "subject_sha256": rng.choice(SUBJECTS), "subject_label": "L",
-            "review": "r.md", "findings": findings,
+            "document": rng.choice(DOCS), "review": "r.md", "findings": findings,
         })
     return out
 
@@ -123,13 +126,16 @@ def main():
                     else:
                         # Cleared only if some gate re-ran this claim on the
                         # current subject and it did not reproduce there.
-                        key = S.claim_key(f)
+                        key = S.claim_key(f, led["document"], led["family"])
                         # Must be the SAME claim, keyed exactly as settle keys it
                         # -- comparing on the raw clause string would let a
                         # collision the tool makes hide from the property meant
                         # to catch collisions.
                         retested = any(
-                            S.claim_key(g) == key and not g["reproduced"]
+                            S.claim_key(g, l2["document"], l2["family"]) == key
+                            and not g["reproduced"]
+                            and (g.get("closes") or
+                                 g["repro_sha256"] == f["repro_sha256"])
                             for l2 in leds if l2["subject_sha256"] == current
                             for g in l2["findings"])
                         if not retested:

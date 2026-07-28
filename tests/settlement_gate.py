@@ -36,10 +36,11 @@ def check(name, got, want):
         FAILED += 1
 
 
-def ledger(family, subject, findings, at="2026-07-28T10:00:00Z", item="x"):
+def ledger(family, subject, findings, at="2026-07-28T10:00:00Z", item="x",
+           document="DOC.md"):
     return {"item": item, "family": family, "model": family, "host": "h",
             "produced_at": at, "subject_sha256": subject, "subject_label": "L",
-            "review": "r.md", "findings": findings}
+            "document": document, "review": "r.md", "findings": findings}
 
 
 def finding(fid, clause, reproduced, severity="P0", repro=None, transcript=None,
@@ -184,7 +185,7 @@ unstated = ([ledger("kimi@moonshot", OLD, [finding("B", "unstated", True,
                     at="2026-07-01T00:00:00Z")]
             + [ledger(f, NEW, [finding("A", "unstated", False, repro="2" * 64)])
                for f in three])
-check("unstated findings are not one claim", run(unstated)["claims_total"], 2)
+check("unstated findings are not one claim", run(unstated)["claims_total"], 4)
 check("refuting one unstated defect cannot clear another",
       run(unstated)["state"], "UNRESOLVED")
 
@@ -200,7 +201,7 @@ check("real clause ids still normalise",
 #     re-test is new code, so new bytes, so it can never land on the same key.
 #     Three families refuting a thing could not close it. Safety without liveness
 #     is still a defect, and this is the shape gemini found in WRT-002.
-UNSTATED_KEY = "unidentified:F1:111111111111"
+UNSTATED_KEY = "unidentified:kimi@moonshot:F1:111111111111"
 _old = [ledger("kimi@moonshot", OLD, [finding("F1", "unstated", True, repro="1" * 64)],
                at="2026-07-01T00:00:00Z")]
 
@@ -226,6 +227,70 @@ _ghost = run([ledger(f, NEW, [finding("R", "unstated", False, repro="9" * 64,
                                       closes="unidentified:GHOST:0")]) for f in three])
 check("dangling citation blocks", _ghost["state"], "BLOCKED")
 check("dangling citation is named", _ghost["dangling_closes"], ["unidentified:GHOST:0"])
+
+# 15. REGRESSIONS from the Codex gate of 2026-07-28. Seven reproduced findings,
+#     all against the shape of this file's own reasoning rather than its syntax.
+
+# F1: a DIFFERENT probe on the same clause is not a re-test. "Probe B did not
+#     fire" says nothing about probe A, which is the one that fired.
+_a_old = [ledger("codex@openai", OLD, [finding("A", "D.3", True, repro="1" * 64)],
+                 at="2026-07-01T00:00:00Z")]
+check("different probe cannot close a stale defect",
+      run(_a_old + [ledger(f, NEW, [finding("B", "D.3", False, repro="2" * 64)])
+                    for f in three])["state"], "UNRESOLVED")
+check("the same probe re-run does close it",
+      run(_a_old + [ledger(f, NEW, [finding("A", "D.3", False, repro="1" * 64)])
+                    for f in three])["state"], "SETTLED")
+
+# F2: a repeated outcome is not novel, but it is still a record. Dropping it
+#     discarded its severity, so a P0 sharing a fingerprint with an earlier
+#     unlabelled entry vanished.
+_dup = run([ledger(three[0], NEW, [finding("A", "D.3", True, severity="P?",
+                                           repro="7" * 64),
+                                   finding("A", "D.3", True, severity="P0",
+                                           repro="7" * 64)])])
+check("fingerprint dedupe does not erase severity",
+      _dup["blocking"][0]["severity"] if _dup["blocking"] else None, "P0")
+
+# F3: subject and repro are roles, not an unordered set. Sorting them together
+#     let (subject=X, repro=Y) collide with (subject=Y, repro=X).
+X, Y = "e" * 64, "f" * 64
+check("subject and repro do not swap in the fingerprint",
+      S.outcome_fingerprint(X, {"repro_sha256": Y, "reproduced": True,
+                                "transcript_sha256": "d" * 64})
+      != S.outcome_fingerprint(Y, {"repro_sha256": X, "reproduced": True,
+                                   "transcript_sha256": "d" * 64}), True)
+
+# F4: `D.3` identifies nothing without the document that numbers it.
+check("same clause number in two documents is two claims",
+      run([ledger("codex@openai", OLD, [finding("A", "D.3", True, repro="1" * 64)],
+                  document="DocA.md", at="2026-07-01T00:00:00Z")]
+          + [ledger(f, NEW, [finding("B", "D.3", False, repro="1" * 64)],
+                    document="DocB.md") for f in three])["state"], "UNRESOLVED")
+
+# F5: two families numbering a finding F1 and sharing a boilerplate driver are
+#     not one defect.
+check("unstated keys separate reviewers",
+      S.claim_key({"clause": "unstated", "id": "F1", "repro_sha256": "9" * 64},
+                  "DOC.md", "codex@openai")
+      != S.claim_key({"clause": "unstated", "id": "F1", "repro_sha256": "9" * 64},
+                     "DOC.md", "kimi@moonshot"), True)
+
+# F6: three spellings of one reviewer are not three reviewers.
+_alias = run([ledger(a, NEW, [finding("X", "D.9", False, repro="3" * 64)])
+              for a in ["codex@openai", "codex@oai", "Codex@OpenAI"]])
+check("aliases do not satisfy diversity", _alias["state"], "OPEN")
+check("unrecognised families are named", _alias["unrecognised_families"],
+      ["codex@oai"])
+
+# F7: a rule set that forbids nothing is the absence of a policy, not a lenient
+#     one, and must not be reachable by editing a file that still parses.
+check("policy with no blocking severities is rejected",
+      bool(S.policy_problems({**POLICY, "blocking_severities": []})), True)
+check("policy that does not block P0 is rejected",
+      bool(S.policy_problems({**POLICY, "blocking_severities": ["P1", "P2"]})), True)
+check("policy with no family roster is rejected",
+      bool(S.policy_problems({**POLICY, "recognized_families": []})), True)
 
 # 12. A ledger whose evidence does not hash to its own digests is unreadable,
 #     not merely weak: settling under it would restate an unverifiable claim.

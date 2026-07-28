@@ -95,14 +95,16 @@ def sha256_hex(text):
 def outcome_fingerprint(subject, finding):
     """§7 cmd@v1 outcome fingerprint: {runtime, sorted evidence, verdict, transcript}.
 
-    Evidence hashes are sorted because the `evidence` array is not ordered by
-    JCS -- §7 says so explicitly, and an unsorted fingerprint would make two
-    identical outcomes look distinct depending on emission order.
+    §7 sorts the `evidence` array because it is unordered THERE. Sorting subject
+    and repro together here was a misreading: they are different roles, not two
+    interchangeable members of a set, so (subject=X, repro=Y) and (subject=Y,
+    repro=X) collapsed to one fingerprint. Codex reproduced it -- a live finding
+    discarded as an already-seen outcome. Named fields, sorted keys via jcs().
     """
-    evidence = sorted([finding["repro_sha256"], subject])
     return sha256_hex(jcs({
         "runtime": "cmd@v1",
-        "evidence": evidence,
+        "subject": subject,
+        "repro": finding["repro_sha256"],
         "verdict": "reproduced" if finding["reproduced"] else "not-reproduced",
         "transcript": finding["transcript_sha256"],
     }))
@@ -115,7 +117,7 @@ def outcome_fingerprint(subject, finding):
 NON_IDENTIFYING = {"", "unstated", "unknown", "none", "n/a", "-", "?"}
 
 
-def claim_key(finding):
+def claim_key(finding, document="", family=""):
     """The relevance key: which normative clause this finding breaks.
 
     A named clause is the unit of a claim: re-deriving it with different code is a
@@ -132,9 +134,16 @@ def claim_key(finding):
     get a human's eye rather than slip through as somebody else's duplicate.
     """
     clause = (finding.get("clause") or "").strip().lower()
+    doc = (finding.get("document") or document or "").strip().lower()
     if clause in NON_IDENTIFYING:
-        return f"unidentified:{finding.get('id', '?')}:{finding.get('repro_sha256', '')[:12]}"
-    return f"clause:{clause}"
+        # Reviewer identity is part of the key. Two families both numbering a
+        # finding `F1` and both driving it with the same boilerplate produced one
+        # key for two unrelated properties (Codex F5).
+        return (f"unidentified:{family}:{finding.get('id', '?')}:"
+                f"{finding.get('repro_sha256', '')[:12]}")
+    # `D.3` names nothing without the document that numbers it. Refuting D.3 of
+    # one text silently closed D.3 of another (Codex F4).
+    return f"clause:{doc}:{clause}"
 
 
 SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2}
@@ -206,9 +215,43 @@ def load_policy(path):
     if not path.exists():
         sys.exit(f"no gate policy at {path} -- settlement has no rules to apply")
     pol = json.loads(path.read_text())
-    if pol.get("gate_policy") != "0.1":
-        sys.exit(f"unsupported gate_policy {pol.get('gate_policy')!r}")
+    for problem in policy_problems(pol):
+        sys.exit(f"invalid gate policy {path}: {problem}")
     return pol
+
+
+def policy_problems(pol):
+    """Reject a policy that cannot gate anything.
+
+    Validation checked the version string and nothing else, so a policy with an
+    empty `blocking_severities` -- or `min_families: 0` -- was accepted and
+    settled a live reproduced P0 (Codex F7). A rule set that forbids nothing is
+    not a lenient policy, it is the absence of one, and it must not be reachable
+    by editing a file that still says `gate_policy: 0.1`.
+    """
+    if pol.get("gate_policy") != "0.1":
+        return [f"unsupported gate_policy {pol.get('gate_policy')!r}"]
+    bad = []
+    sev = pol.get("blocking_severities")
+    if not isinstance(sev, list) or not sev:
+        bad.append("blocking_severities must be a non-empty list")
+    elif not set(sev) <= set(SEVERITY_RANK):
+        bad.append(f"unknown severities {sorted(set(sev) - set(SEVERITY_RANK))}")
+    elif "P0" not in sev:
+        bad.append("P0 must be blocking; a policy that settles over a reproduced "
+                   "P0 is not a gate")
+    n = pol.get("min_families")
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        bad.append("min_families must be an integer >= 1")
+    fams = pol.get("recognized_families")
+    if not isinstance(fams, list) or not fams:
+        bad.append("recognized_families must be a non-empty list; without a "
+                   "roster, aliases of one reviewer satisfy the diversity rule")
+    elif len({f.lower() for f in fams}) != len(fams):
+        bad.append("recognized_families contains case-duplicate entries")
+    if pol.get("novelty") != "clause":
+        bad.append(f"unsupported novelty rule {pol.get('novelty')!r}")
+    return bad
 
 
 def load_ledgers(item, ledger_dir=None):
@@ -287,16 +330,20 @@ def settle(item, policy, ledger_dir=None, current=None):
     for led in ledgers:
         for f in led.get("findings", []):
             closes = (f.get("closes") or "").strip()
-            key = closes if closes else claim_key(f)
+            key = closes if closes else claim_key(
+                f, led.get("document", ""), led["family"])
             if closes:
                 cited.add(closes)
             else:
                 defined.add(key)
             rec = claims.setdefault(key, {"key": key, "seen": [], "fingerprints": set()})
             fp = outcome_fingerprint(led["subject_sha256"], f)
-            if fp in rec["fingerprints"]:
-                continue                      # byte-identical outcome, already counted
-            if rec["seen"] and f["reproduced"]:
+            # A repeated outcome is not novel, but it is still a record. Skipping
+            # it entirely discarded its SEVERITY too, so a later P0 that happened
+            # to share a fingerprint with an earlier unlabelled entry vanished and
+            # the claim settled (Codex F2). Novelty and existence are different
+            # questions; only the first is what a fingerprint answers.
+            if rec["seen"] and f["reproduced"] and fp not in rec["fingerprints"]:
                 restatements.append({"claim": key, "family": led["family"],
                                      "id": f.get("id"), "fingerprint": fp[:12]})
             rec["fingerprints"].add(fp)
@@ -305,6 +352,7 @@ def settle(item, policy, ledger_dir=None, current=None):
                 "severity": (f.get("severity") or "P?").upper(),
                 "title": f.get("title", ""), "reproduced": bool(f["reproduced"]),
                 "subject": led["subject_sha256"], "ledger": led["_path"],
+                "repro": f.get("repro_sha256", ""), "closes": closes,
             })
 
     # A citation that names nothing is a no-op that LOOKS like a closure, which
@@ -320,18 +368,37 @@ def settle(item, policy, ledger_dir=None, current=None):
         sev, sev_unknown = claim_severity(s["severity"] for s in blocked_ever)
         if not (sev_unknown or sev in policy["blocking_severities"]):
             continue
+        # A claim is retested only by evidence that addresses THE SAME attack:
+        # the identical reproduction re-run, or an explicit `closes=` citation.
+        # Accepting any non-reproducing finding that shared the clause meant a
+        # different probe -- one that never triggered the defect in the first
+        # place -- closed an exploit nobody had re-run (Codex F1). "Probe B did
+        # not fire" says nothing whatever about probe A.
+        live_repros = {s["repro"] for s in blocked_ever}
+        retested = [s for s in on_current
+                    if not s["reproduced"] and (s["closes"] or s["repro"] in live_repros)]
         if any(s["reproduced"] for s in on_current):
             blocking.append({"claim": key, "severity": sev,
                              "title": blocked_ever[-1]["title"],
                              "family": blocked_ever[-1]["family"]})
-        elif blocked_ever and not on_current:
+        elif not retested:
             # Reproduced once, never re-run against the text now on the branch.
             # Not a pass. Not a failure. A gap, and it is named as one.
             unresolved.append({"claim": key, "severity": sev,
                                "title": blocked_ever[-1]["title"],
                                "last_seen_subject": blocked_ever[-1]["subject"][:12]})
 
-    families = sorted({l["family"] for l in ledgers if l["subject_sha256"] == current})
+    # Diversity is the whole reason the threshold exists, and it was counted by
+    # taking distinct values of a command-line flag. `codex@openai`,
+    # `codex@oai` and `Codex@OpenAI` counted as three independent families and
+    # settled an item (Codex F6). Only families the policy recognises count;
+    # anything else is reported rather than silently believed or silently
+    # dropped.
+    roster = {f.lower() for f in policy["recognized_families"]}
+    seen_fams = {l["family"].strip().lower() for l in ledgers
+                 if l["subject_sha256"] == current}
+    families = sorted(seen_fams & roster)
+    unrecognised = sorted(seen_fams - roster)
     enough_families = len(families) >= policy["min_families"]
 
     if blocking:
@@ -342,8 +409,10 @@ def settle(item, policy, ledger_dir=None, current=None):
             f"against the current subject -- re-gate before settling")
     elif not enough_families:
         state, reason = "OPEN", (
-            f"only {len(families)} family/families gated the current subject; "
-            f"policy requires {policy['min_families']}")
+            f"only {len(families)} recognised family/families gated the current "
+            f"subject; policy requires {policy['min_families']}"
+            + (f" (ignored, not on roster: {', '.join(unrecognised)})"
+               if unrecognised else ""))
     else:
         state, reason = "SETTLED", (
             f"{len(families)} families gated the current subject; no reproduced claim "
@@ -358,6 +427,7 @@ def settle(item, policy, ledger_dir=None, current=None):
         "dangling_closes": dangling,
         "current_subject": current, "subject_label": subjects.get(current, "?"),
         "families_on_current": families,
+        "unrecognised_families": unrecognised,
         "gates_total": len(ledgers),
         "blocking": blocking, "unresolved": unresolved,
         "restatements": restatements,

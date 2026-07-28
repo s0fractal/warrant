@@ -639,6 +639,9 @@ def emit_ledger(args, t, normative, all_results, complete):
         "produced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "subject_sha256": subject_sha256,
         "subject_label": t["subject"],
+        # The document a clause number refers to. `D.3` identifies nothing on its
+        # own, and two targets numbering their own D.3 collided into one claim.
+        "document": t["normative"][0],
         "review": args.out,
         "complete": complete,
         "findings": [{
