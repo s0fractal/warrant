@@ -44,6 +44,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -108,21 +109,28 @@ Rules that decide whether your finding survives:
 
   * The block runs with the model directory as CWD, so `import MODULE` works.
     Nothing else is available: no network, no repo, no pip installs.
-  * A reproduction that DEMONSTRATES the violation must exit 0 and print a line
-    of the form:
+  * A violation is declared ONLY by calling `harness.violation(expected, got)`.
+    The module is injected beside your block; a `VIOLATION` line you print
+    yourself is ignored and the finding is recorded NOT reproduced.
 
-        VIOLATION: expected=<required> got=<observed> -- what broke
+    This is not ceremony. Twice now a reviewer here has written the shape
 
-    `expected` and `got` MUST DIFFER, and I check that mechanically. This is not
-    bookkeeping: the commonest way a counter-vector fools everyone, including its
-    author, is to `assert` the CORRECT behaviour, watch the assert pass, and then
-    print `VIOLATION` unconditionally -- so the violation fires precisely when
-    the machine is right. It has already happened here. Stating both sides makes
-    the claim a disagreement I can verify instead of a sentence I must trust.
-  * Write the block so it FAILS LOUDLY (raises, or exits non-zero) when the
-    machine behaves correctly. An unconditional print proves nothing, and a
-    `VIOLATION:` line whose `expected` equals its `got` is recorded as NOT
-    reproduced, with the reason handed back to you.
+        assert result["state"] == "UNRESOLVED"       # the CORRECT behaviour
+        print("VIOLATION: expected=UNRESOLVED got=SETTLED")
+
+    where the assert passes, the printed `got` is a word the reviewer typed, and
+    the violation therefore fires precisely when the machine is RIGHT. Both times
+    it was recorded as a reproduced P0 until a human read the source. Requiring a
+    stated disagreement did not stop the second one, because typing two different
+    words is not a disagreement -- it is a sentence about one.
+
+    `harness.violation` compares the two values at runtime and exits non-zero when
+    they match, so the inverted shape cannot pass through it. Pass `got` as an
+    EXPRESSION READ FROM THE RUN -- `result["state"]`, `len(claims)` -- never a
+    literal. Passing two different literals still technically counts and is
+    visible in the source as exactly what it is; if the transcripts show you did
+    that, the finding will be treated accordingly.
+  * Write the block so it fails loudly when the machine behaves correctly.
   * `id` must be unique. `severity` is one of P0/P1/P2.
   * `clause` names the normative clause your block breaks, exactly as it is
     numbered in the section quoted to you (e.g. `D.3`, `7.2`). This is how
@@ -173,7 +181,7 @@ def call_cli(cli, model, messages):
     argv = {"kimi": [cli, "-p", prompt],
             "codex": [cli, "exec", "--skip-git-repo-check", prompt]}.get(
                 Path(cli).name, [cli, "-p", prompt])
-    if model and Path(cli).name == "kimi":
+    if model and Path(cli).name == "kimi" and not model.startswith("/"):
         argv[1:1] = ["-m", model]
     tmp = tempfile.mkdtemp(prefix="advgate-cli-")
     try:
@@ -252,6 +260,28 @@ def subject_hash(t, ref="HEAD"):
         h.update(blob)
         h.update(b"\x00")
     return h.hexdigest()
+
+
+HARNESS_MODULE = """\
+import sys
+
+_NONCE = "{nonce}"
+
+
+def violation(expected, got, note=""):
+    # Declare a demonstrated disagreement. The HARNESS decides whether it is one.
+    #
+    # `got` must be an expression evaluated from the run -- result["state"], not
+    # a literal you typed. The comparison happens here, at runtime, so a block
+    # that asserts the CORRECT behaviour and then announces a violation cannot
+    # pass: it hands identical values in and exits non-zero.
+    if str(expected) == str(got):
+        print("NO VIOLATION: expected and got are both %r -- the machine agreed "
+              "with the rule" % (expected,), file=sys.stderr)
+        raise SystemExit(1)
+    print("VIOLATION[%s]: expected=%s got=%s%s"
+          % (_NONCE, expected, got, (" -- " + note) if note else ""))
+"""
 
 
 def read_at(ref, rel):
@@ -361,12 +391,13 @@ def parse_repros(text):
     return list(dedup.values())
 
 
-def run_repro(workdir, code):
+def run_repro(workdir, code, nonce):
     """Run one reproduction in a throwaway copy of the model directory."""
     tmp = tempfile.mkdtemp(prefix="advgate-")
     try:
         sandbox = Path(tmp) / "model"
         shutil.copytree(workdir, sandbox, ignore=shutil.ignore_patterns("__pycache__"))
+        (sandbox / "harness.py").write_text(HARNESS_MODULE.format(nonce=nonce))
         script = sandbox / "_repro.py"
         script.write_text(code)
         env = dict(os.environ)
@@ -386,18 +417,14 @@ def run_repro(workdir, code):
             "exit": rc,
             "stdout": stdout[-MAX_OUTPUT:],
             "stderr": stderr[-MAX_OUTPUT:],
-            "violation": rc == 0 and _demonstrates(stdout)[0],
-            "why": _demonstrates(stdout)[1],
+            "violation": rc == 0 and _demonstrates(stdout, nonce)[0],
+            "why": _demonstrates(stdout, nonce)[1],
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-VIOLATION_RE = re.compile(
-    r"^VIOLATION:\s*expected\s*=\s*(.+?)\s+got\s*=\s*(.*?)\s*(?:--.*)?$")
-
-
-def _demonstrates(stdout):
+def _demonstrates(stdout, nonce):
     """Did this run demonstrate a DISAGREEMENT, or merely announce one?
 
     A counter-vector claims the machine produced the wrong outcome, so it must
@@ -411,19 +438,16 @@ def _demonstrates(stdout):
     a silent demotion teaches nothing and the protocol has a repair round for
     exactly this.
     """
-    lines = [l for l in stdout.splitlines() if l.startswith("VIOLATION:")]
-    if not lines:
-        return False, "no VIOLATION: line"
-    for line in lines:
-        m = VIOLATION_RE.match(line.strip())
-        if not m:
-            return False, ("VIOLATION: line does not state expected=<...> got=<...>, "
-                           "so the claim is not a checkable disagreement")
-        exp, got = m.group(1).strip(), m.group(2).strip()
-        if exp == got:
-            return False, (f"expected and got are the same value ({exp!r}); the run "
-                           "agreed with the rule, so nothing was demonstrated")
-    return True, "expected and got differ"
+    if any(l.startswith(f"VIOLATION[{nonce}]:") for l in stdout.splitlines()):
+        return True, "harness-issued: expected and got differed at runtime"
+    if any(l.startswith("VIOLATION") for l in stdout.splitlines()):
+        return False, ("a VIOLATION line was printed by hand. Only "
+                       "harness.violation(expected, got) counts: it compares the "
+                       "values AT RUNTIME, so a block that asserts the correct "
+                       "behaviour and then announces a violation cannot pass. A "
+                       "hand-written line is no evidence that `got` came from the "
+                       "run at all -- it is a string you typed")
+    return False, "no harness-issued violation"
 
 
 def transcript_block(meta, res):
@@ -491,6 +515,7 @@ def main():
     args.ref = subprocess.run(["git", "-C", str(ROOT), "rev-parse", args.ref],
                               capture_output=True, text=True,
                               check=True).stdout.strip()
+    nonce = secrets.token_hex(8)   # unguessable, so a hand-written line cannot forge it
     print(f"[gate] reviewing commit {args.ref[:12]}", file=sys.stderr)
     workdir = stage_workdir(t, args.ref) if t.get("stage") else ROOT / t["workdir"]
 
@@ -531,7 +556,7 @@ def main():
         repros = parse_repros(last)
         blocks = []
         for meta, code in repros:
-            res = run_repro(workdir, code)
+            res = run_repro(workdir, code, nonce)
             all_results.append((rnd - 1, meta, code, res))
             mark = "REPRODUCED" if res["violation"] else "not reproduced"
             print(f"  [{meta.get('id', '?')}] {mark} (exit {res['exit']})", file=sys.stderr)
