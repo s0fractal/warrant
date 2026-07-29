@@ -1729,6 +1729,21 @@ def main():
         sys.exit(0 if verdict == "pass" else 1)
     elif args.cmd == "verify":
         settlement = None
+        if not args.settlement and (args.trust_config or args.genesis):
+            # Silently dropping these produced a verifier that was handed a
+            # keyring and then reported "binding unverified (no keyring)" for
+            # every signature -- a false statement about its own inputs, and the
+            # reason a store showing 0 errors and 55 warnings looked alarming to
+            # every outside reader. Key state is derived only under settlement
+            # grade, so say that rather than ignoring the flag and describing the
+            # world as if it had not been given.
+            sys.exit("--trust-config/--genesis are used only by settlement-grade "
+                     "verification, and were supplied without --settlement.\n"
+                     "  run:  warrant verify --settlement --trust-config <file>\n"
+                     "Without --settlement the key<->actor binding is not derived "
+                     "at all, and every signature is reported as unverified "
+                     "binding -- which would have been misleading here, since you "
+                     "did provide a keyring.")
         if args.settlement:
             settlement = {"genesis_roots": args.genesis,
                           "trust_config": args.trust_config}
