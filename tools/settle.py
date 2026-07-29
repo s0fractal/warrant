@@ -243,12 +243,14 @@ def policy_problems(pol):
     n = pol.get("min_families")
     if not isinstance(n, int) or isinstance(n, bool) or n < 1:
         bad.append("min_families must be an integer >= 1")
-    fams = pol.get("recognized_families")
+    fams = pol.get("gating_families")
     if not isinstance(fams, list) or not fams:
-        bad.append("recognized_families must be a non-empty list; without a "
-                   "roster, aliases of one reviewer satisfy the diversity rule")
+        bad.append("gating_families must be a non-empty list; without a roster, "
+                   "aliases of one reviewer satisfy the diversity rule")
     elif len({f.lower() for f in fams}) != len(fams):
-        bad.append("recognized_families contains case-duplicate entries")
+        bad.append("gating_families contains case-duplicate entries")
+    if set(map(str.lower, pol.get("probe_families", []))) & {f.lower() for f in fams or []}:
+        bad.append("a family cannot be both gating and a probe")
     if pol.get("novelty") != "clause":
         bad.append(f"unsupported novelty rule {pol.get('novelty')!r}")
     return bad
@@ -404,11 +406,13 @@ def settle(item, policy, ledger_dir=None, current=None):
     # settled an item (Codex F6). Only families the policy recognises count;
     # anything else is reported rather than silently believed or silently
     # dropped.
-    roster = {f.lower() for f in policy["recognized_families"]}
+    gating = {f.lower() for f in policy["gating_families"]}
+    probes = {f.lower() for f in policy.get("probe_families", [])}
     seen_fams = {l["family"].strip().lower() for l in ledgers
                  if l["subject_sha256"] == current}
-    families = sorted(seen_fams & roster)
-    unrecognised = sorted(seen_fams - roster)
+    families = sorted(seen_fams & gating)
+    probed = sorted(seen_fams & probes)
+    unrecognised = sorted(seen_fams - gating - probes)
     enough_families = len(families) >= policy["min_families"]
 
     if blocking:
@@ -419,9 +423,11 @@ def settle(item, policy, ledger_dir=None, current=None):
             f"against the current subject -- re-gate before settling")
     elif not enough_families:
         state, reason = "OPEN", (
-            f"only {len(families)} recognised family/families gated the current "
-            f"subject; policy requires {policy['min_families']}"
-            + (f" (ignored, not on roster: {', '.join(unrecognised)})"
+            f"only {len(families)} gating family/families on the current subject; "
+            f"policy requires {policy['min_families']}"
+            + (f". Probes ran ({', '.join(probed)}) and their findings count as "
+               f"findings, but a probe is not a gate" if probed else "")
+            + (f". Off-roster, ignored: {', '.join(unrecognised)}"
                if unrecognised else ""))
     else:
         state, reason = "SETTLED", (
@@ -438,6 +444,7 @@ def settle(item, policy, ledger_dir=None, current=None):
         "current_subject": current, "subject_label": subjects.get(current, "?"),
         "families_on_current": families,
         "unrecognised_families": unrecognised,
+        "probes_on_current": probed,
         "gates_total": len(ledgers),
         "blocking": blocking, "unresolved": unresolved,
         "restatements": restatements,

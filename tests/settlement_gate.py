@@ -65,6 +65,7 @@ def run(ledgers, current=NEW):
 
 
 three = ["codex@openai", "kimi@moonshot", "gemini@google"]
+PROBE = "qwen3-coder@local"
 
 # 1. A reproduced P0 on the current subject blocks, no matter how many families
 #    say nothing about it. Silence from others is not acquittal.
@@ -290,8 +291,25 @@ check("policy with no blocking severities is rejected",
       bool(S.policy_problems({**POLICY, "blocking_severities": []})), True)
 check("policy that does not block P0 is rejected",
       bool(S.policy_problems({**POLICY, "blocking_severities": ["P1", "P2"]})), True)
-check("policy with no family roster is rejected",
-      bool(S.policy_problems({**POLICY, "recognized_families": []})), True)
+check("policy with no gating roster is rejected",
+      bool(S.policy_problems({**POLICY, "gating_families": []})), True)
+check("a family cannot be both gating and probe",
+      bool(S.policy_problems({**POLICY, "probe_families": ["codex@openai"]})), True)
+
+# 17. Probes are read, and do not manufacture a quorum. Measured 2026-07-29:
+#     across four runs the local models yielded one useful observation and one
+#     forged violation, while every finding that survived verification came from
+#     one paid family. Counting probes toward diversity would produce the
+#     appearance of an independent gate out of noise.
+_probes_only = run([ledger(PROBE, NEW, [finding("F1", "D.4", False, repro="8" * 64)]),
+                    ledger("deepseek-coder@local", NEW, []),
+                    ledger("gemma3@local", NEW, [])])
+check("three probes are not three families", _probes_only["state"], "OPEN")
+check("probes are named, not ignored", _probes_only["probes_on_current"],
+      ["deepseek-coder@local", "gemma3@local", PROBE])
+check("a probe's reproduced finding still blocks",
+      run([ledger(PROBE, NEW, [finding("F1", "D.4", True, repro="8" * 64)])
+           ])["state"], "BLOCKED")
 
 # 16. REGRESSION. A crash is not a refutation. On 2026-07-29 seven stored
 #     counter-vectors were re-run after the policy schema gained a required key;

@@ -13,14 +13,19 @@
     "novelty": "Per normative clause, not per transcript. SPEC.md \u00a77 delegates relevance to the active policy and warns that purely syntactic novelty is unbounded; without this a reviewer perturbs the repro and manufactures findings forever.",
     "custody": "Roster keys claude-fable-5 and codex were co-located on one host as of 2026-07-28. Two signatures from one host are ONE custody, and no report produced under this policy may present them as independent attestation.",
     "not_adoption": "Settlement authorises a merge under this policy. Governance adoption is a separate threshold warrant signed by roster keys (AGENTS.md \u00a72).",
-    "recognized_families": "Diversity was counted from distinct values of a command-line flag, so three spellings of one reviewer satisfied the three-family rule. Only rosters listed here count; adding a family is a deliberate act."
+    "recognized_families": "Diversity was counted from distinct values of a command-line flag, so three spellings of one reviewer satisfied the three-family rule. Only rosters listed here count; adding a family is a deliberate act.",
+    "gating_families": "Only these satisfy min_families. Measured on this repository, 2026-07-29: across four gate runs codex produced seven findings that all survived verification, while the local models produced one useful observation and one forged violation. Counting probes toward a quorum would manufacture the appearance of an independent gate out of noise -- which is the exact failure this whole mechanism exists to prevent, and it would be committed first by the mechanism itself.",
+    "probe_families": "Run them: they are free, their findings are read, and one of them did surface a real clause-collision. They are stochastic probes, not reviewers, and they do not count toward diversity. A finding from a probe is worth exactly as much as its reproduction, same as any other."
   },
-  "recognized_families": [
+  "gating_families": [
     "codex@openai",
     "kimi@moonshot",
     "gemini@google",
-    "deepseek@deepseek",
+    "deepseek@deepseek"
+  ],
+  "probe_families": [
     "qwen3-coder@local",
-    "deepseek-coder@local"
+    "deepseek-coder@local",
+    "gemma3@local"
   ]
 }
