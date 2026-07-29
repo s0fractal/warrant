@@ -1,0 +1,38 @@
+{
+  "gate_policy": "0.1",
+  "scope": "adversarial design gates in this repository",
+  "min_families": 3,
+  "blocking_severities": [
+    "P0",
+    "P1"
+  ],
+  "novelty": "clause",
+  "notes": {
+    "min_families": "Three, because measured here one family iterated six times found only P1s and the first three-family round found six P0s. Diversity is what found them, not depth.",
+    "blocking": "Only a reproduction that executed -- exit 0 and a VIOLATION line -- can block. An assertion, however confident, is a Question. This is what lets settlement survive co-located roster keys: a repro is re-runnable by a stranger, a signature is not.",
+    "novelty": "Per normative clause, not per transcript. SPEC.md \u00a77 delegates relevance to the active policy and warns that purely syntactic novelty is unbounded; without this a reviewer perturbs the repro and manufactures findings forever.",
+    "custody": "Roster keys claude-fable-5 and codex were co-located on one host as of 2026-07-28. Two signatures from one host are ONE custody, and no report produced under this policy may present them as independent attestation.",
+    "not_adoption": "Settlement authorises a merge under this policy. Governance adoption is a separate threshold warrant signed by roster keys (AGENTS.md \u00a72).",
+    "recognized_families": "Diversity was counted from distinct values of a command-line flag, so three spellings of one reviewer satisfied the three-family rule. Only rosters listed here count; adding a family is a deliberate act.",
+    "gating_families": "Only these satisfy min_families. Measured on this repository, 2026-07-29: across four gate runs codex produced seven findings that all survived verification, while the local models produced one useful observation and one forged violation. Counting probes toward a quorum would manufacture the appearance of an independent gate out of noise -- which is the exact failure this whole mechanism exists to prevent, and it would be committed first by the mechanism itself.",
+    "probe_families": "Run them: they are free, their findings are read, and one of them did surface a real clause-collision. They are stochastic probes, not reviewers, and they do not count toward diversity. A finding from a probe is worth exactly as much as its reproduction, same as any other.",
+    "ungated_landing": "A rule that cannot be satisfied is not a strict rule, it is a rule people route around, and the first to route around it would be the maintainer. With every gating family unavailable, min_families can never be met, so the honest state is not OPEN-forever but UNGATED: nothing is wrong, and nothing was independently checked. Naming that is the whole value; hiding it behind a threshold nobody can reach would turn the mechanism into decoration, which is worse than not having it."
+  },
+  "gating_families": [
+    "codex@openai",
+    "kimi@moonshot",
+    "gemini@google",
+    "deepseek@deepseek"
+  ],
+  "probe_families": [
+    "qwen3-coder@local",
+    "deepseek-coder@local",
+    "gemma3@local"
+  ],
+  "ungated_landing": {
+    "permitted": true,
+    "requires": "an explicit attestation naming who took responsibility and what was run in place of a gate",
+    "since": "2026-07-29",
+    "reason": "no gating family is affordable; the steward assigned merge responsibility to the maintainer actor"
+  }
+}

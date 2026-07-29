@@ -1,0 +1,32 @@
+{
+  "complete": true,
+  "document": "AGENTS.md",
+  "family": "deepseek-coder@local",
+  "findings": [
+    {
+      "clause": "D.3",
+      "closes": "",
+      "exit": 1,
+      "id": "F1",
+      "repro": "import settle\n# Assume we have a ledger and policy loaded as per the setup in the test suite\nledger = {\n    \"item\": \"x\",\n    \"family\": \"codex@openai\",\n    \"subject_sha256\": \"new\" * 32,\n    \"findings\": [\n        {\"id\": \"F1\", \"clause\": \"D.3\", \"severity\": \"P0\", \"reproduced\": True}\n    ]\n}\npolicy = {\n    \"gate_policy\": \"0.1\",\n    \"blocking_severities\": [\"P0\"],\n    \"novelty\": \"clause\",\n    \"recognized_families\": [\"codex@openai\"]\n}\n# Call the settle function with the loaded ledger and policy\nresult = settle.settle(\"x\", policy, None, \"new\" * 32)\nassert result[\"state\"] == \"BLOCKED\", \"Expected P0 finding to block but got SETTLED or other state\"\nprint(\"VIOLATION: expected=BLOCKED got=\" + result[\"state\"])\n",
+      "repro_sha256": "a752948bfdb5517dcd1d441bf0390ff1074ee0595f81fb7cf33920ae45972082",
+      "reproduced": false,
+      "severity": "P0",
+      "title": "reproduce P0 finding",
+      "transcript": {
+        "exit": 1,
+        "stderr": "Traceback (most recent call last):\n  File \"/private/var/folders/3j/t95dsnsj7wlc35dpwlwpdy8r0000gn/T/advgate-h2pf1cf3/model/_repro.py\", line 19, in <module>\n    assert result[\"state\"] == \"BLOCKED\", \"Expected P0 finding to block but got SETTLED or other state\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Expected P0 finding to block but got SETTLED or other state\n",
+        "stdout": ""
+      },
+      "transcript_sha256": "df6534392879c1ccb18ee72c786689eb5b992bc513d6548c0890a0c49f24d326"
+    }
+  ],
+  "host": "m4.local",
+  "item": "settle",
+  "model": "deepseek-coder-v2:16b",
+  "produced_at": "2026-07-29T13:08:37Z",
+  "review": "reviews/2026-07-deepseek-settle-gate.md",
+  "reviewed_ref": "2cade435d77e2d81c6e6cb140a5147b8724f29e5",
+  "subject_label": "settle.py gate-settlement rule (executed-repro blocking, per-clause novelty)",
+  "subject_sha256": "cffa6261884164b2f5ad3ebc844ce745da3d2ca7947afee87b7d12710b44d7df"
+}
