@@ -224,7 +224,7 @@ def call_local(model, messages, ctx=32768):
     return text
 
 
-def subject_hash(t):
+def subject_hash(t, ref="HEAD"):
     """Hash of everything the reviewer is shown that governs the verdict.
 
     The subject was the normative prose slice alone, which is wrong whenever the
@@ -241,19 +241,36 @@ def subject_hash(t):
     settlement will say so instead of crediting it to the new one.
     """
     h = hashlib.sha256()
-    h.update(slice_section(*t["normative"]).encode("utf-8"))
+    h.update(slice_section(*t["normative"], ref=ref).encode("utf-8"))
     for rel in sorted(t.get("sources", [])):
-        path = ROOT / rel
-        if path.exists():
-            h.update(rel.encode("utf-8"))
-            h.update(b"\x00")
-            h.update(path.read_bytes())
-            h.update(b"\x00")
+        try:
+            blob = read_at(ref, rel)
+        except subprocess.CalledProcessError:
+            continue
+        h.update(rel.encode("utf-8"))
+        h.update(b"\x00")
+        h.update(blob)
+        h.update(b"\x00")
     return h.hexdigest()
 
 
-def stage_workdir(t):
+def read_at(ref, rel):
+    """Bytes of one path at a git ref. Never from the working tree."""
+    return subprocess.run(["git", "-C", str(ROOT), "show", f"{ref}:{rel}"],
+                          capture_output=True, check=True).stdout
+
+
+def stage_workdir(t, ref="HEAD"):
     """Copy the reviewed files into a self-contained tree, KEEPING their paths.
+
+    Read at a git REF, never from the working tree. Reading the disk meant a
+    branch switch during a run silently changed what was under review: one gate
+    died when its files vanished mid-flight, and another computed its subject
+    hash from whatever happened to be checked out, filing a ledger against a
+    state matching no branch at all. `disclosure_manifest.py` already carried
+    this rule in writing -- a manifest depending on an uncommitted checkout
+    describes a state no one else can reach -- and this file was built ignoring
+    it.
 
     Flattening these was a harness defect that silently destroyed reviews. The
     reviewer is shown each source under its repository path (`pack()` writes
@@ -270,7 +287,7 @@ def stage_workdir(t):
     for rel in t["stage"]:
         dest = d / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / rel, dest)
+        dest.write_bytes(read_at(ref, rel))
     return d
 
 
@@ -423,8 +440,8 @@ def transcript_block(meta, res):
             f"--- exit: {res['exit']} ---\n")
 
 
-def slice_section(path, start, end):
-    txt = (ROOT / path).read_text()
+def slice_section(path, start, end, ref="HEAD"):
+    txt = read_at(ref, path).decode("utf-8", "replace")
     i = txt.find(start)
     if i < 0:
         return txt
@@ -432,10 +449,15 @@ def slice_section(path, start, end):
     return txt[i:] if j < 0 else txt[i:j]
 
 
-def pack(paths):
-    return "\n\n".join(
-        f"===== FILE: {p} =====\n{(ROOT / p).read_text()}"
-        for p in paths if (ROOT / p).exists())
+def pack(paths, ref="HEAD"):
+    out = []
+    for p in paths:
+        try:
+            out.append(f"===== FILE: {p} =====\n"
+                       f"{read_at(ref, p).decode('utf-8', 'replace')}")
+        except subprocess.CalledProcessError:
+            continue
+    return "\n\n".join(out)
 
 
 def main():
@@ -443,6 +465,9 @@ def main():
     ap.add_argument("--target", default="wrt-002", choices=sorted(TARGETS))
     ap.add_argument("--out", required=True, help="reviews/<file>.md")
     ap.add_argument("--model", default=os.environ.get("OPENROUTER_MODEL"))
+    ap.add_argument("--ref", default="HEAD",
+                    help="git ref to review; resolved to a commit and pinned for "
+                         "the run, so a branch moving cannot change the subject")
     ap.add_argument("--local", help="ollama model name; runs on this machine, no key, no bill")
     ap.add_argument("--cli", help="path to a local agent CLI (kimi, codex); "
                                    "when set, OpenRouter is not used")
@@ -461,7 +486,13 @@ def main():
             return call_cli(args.cli, model, messages)
 
     t = TARGETS[args.target]
-    workdir = stage_workdir(t) if t.get("stage") else ROOT / t["workdir"]
+    # Pin to a commit NOW: a symbolic ref would still follow a branch that moves
+    # under a run taking an hour.
+    args.ref = subprocess.run(["git", "-C", str(ROOT), "rev-parse", args.ref],
+                              capture_output=True, text=True,
+                              check=True).stdout.strip()
+    print(f"[gate] reviewing commit {args.ref[:12]}", file=sys.stderr)
+    workdir = stage_workdir(t, args.ref) if t.get("stage") else ROOT / t["workdir"]
 
     # The baseline must already pass, or a 'finding' could just be a broken tree.
     base = subprocess.run(t["baseline"], cwd=workdir, capture_output=True, text=True)
@@ -471,8 +502,8 @@ def main():
 
     repro_rules = REPRO_RULES.replace("MODULE", t.get("module", "model"))
     brief = (ROOT / t["brief"]).read_text()
-    normative = slice_section(*t["normative"])
-    sources = pack(t["sources"])
+    normative = slice_section(*t["normative"], ref=args.ref)
+    sources = pack(t["sources"], args.ref)
 
     system = (
         "You are an independent adversarial reviewer. Your job is to BREAK a "
@@ -629,7 +660,7 @@ def emit_ledger(args, t, normative, all_results, complete):
     final = {}
     for rnd, meta, code, res in all_results:
         final[meta.get("id") or f"anon{len(final)}"] = (rnd, meta, code, res)
-    subject_sha256 = subject_hash(t)
+    subject_sha256 = subject_hash(t, args.ref)
     family = args.family or (args.model.split("/")[0] if "/" in args.model else args.model)
     ledger = {
         "item": args.target,
@@ -642,6 +673,7 @@ def emit_ledger(args, t, normative, all_results, complete):
         # The document a clause number refers to. `D.3` identifies nothing on its
         # own, and two targets numbering their own D.3 collided into one claim.
         "document": t["normative"][0],
+        "reviewed_ref": args.ref,
         "review": args.out,
         "complete": complete,
         "findings": [{
