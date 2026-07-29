@@ -1,5 +1,11 @@
 # HANDOFF: SPEC v0.3 implementation gate
 
+> **Counts in this file are transcripts of real runs and go stale.** They said
+> 20/20 until 2026-07-29, long after the suite had grown to 45. Re-run the
+> commands rather than trusting the paste; a stale transcript in a handover
+> document is the first thing a technical reviewer finds and the last thing
+> anyone thinks to check.
+
 ## Commands
 
 Run from the repository root:
@@ -38,7 +44,7 @@ OK   ski: check blob hash
 OK   ski: 0.1 body MUST reject ski@v1 
 OK   ski: re-run -> pass, H(S), 20 ATP 
 
-CONFORMANCE: ALL PASS (20/20)
+CONFORMANCE: ALL PASS (45/45)
 OK   unknown body field -> invalid
 OK   ski@v1 runtime -> invalid
 OK   reject with zero reasons -> invalid
@@ -69,7 +75,7 @@ OK   ski: 0.1 body MUST reject ski@v1
 OK   ski: check blob hash
 OK   ski: re-run -> pass, H(S), 20 ATP
 
-CONFORMANCE: ALL PASS (20/20)
+CONFORMANCE: ALL PASS (45/45)
 OK    ctrl-U+0000  10c52de408e7d41e…
 OK    ctrl-U+0001  392b1261992547ff…
 OK    ctrl-U+0002  121e2d2ad67c8d1c…
