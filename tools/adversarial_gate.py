@@ -130,6 +130,11 @@ Rules that decide whether your finding survives:
     literal. Passing two different literals still technically counts and is
     visible in the source as exactly what it is; if the transcripts show you did
     that, the finding will be treated accordingly.
+  * If the attack RUNS and the property HOLDS, say so: call `harness.refuted("what
+    you tried")`. Do not just let the block exit. A block that ran, printed a
+    finding, and called neither is recorded `inconclusive` and closes nothing --
+    it cannot be read as evidence either way, because printing a result and
+    demonstrating one are different acts and only the second is checkable.
   * Write the block so it fails loudly when the machine behaves correctly.
   * `id` must be unique. `severity` is one of P0/P1/P2.
   * `clause` names the normative clause your block breaks, exactly as it is
@@ -266,6 +271,14 @@ HARNESS_MODULE = """\
 import sys
 
 _NONCE = "{nonce}"
+
+
+def refuted(note=""):
+    # Declare that the attack RAN and the property HELD. Say it explicitly:
+    # exiting quietly cannot be told apart from a block that printed a finding
+    # and forgot to call violation(), and reading that as a refutation lets a
+    # demonstration close the very claim it demonstrates.
+    print("REFUTED[%s]: %s" % (_NONCE, note or "attack ran, property held"))
 
 
 def violation(expected, got, note=""):
@@ -425,9 +438,19 @@ def run_repro(workdir, code, nonce):
             # Observed re-running seven stored counter-vectors after a policy
             # schema change: every one died on a KeyError, and read as two
             # outcomes they would all have looked like clean refutations.
+            # Four outcomes. `refuted` requires the reviewer to SAY the property
+            # held -- via harness.refuted(), or via violation() finding the two
+            # values equal. Kimi's paid gate emitted seven blocks that ran, printed
+            # a demonstrated defect, and never called violation(); read as
+            # "exit 0, therefore refuted" they were recorded as evidence AGAINST
+            # the defects they had just shown, and could have closed those very
+            # claims. Anything that ran without saying which is `inconclusive`,
+            # and inconclusive closes nothing.
             "outcome": ("violation" if rc == 0 and _demonstrates(stdout, nonce)[0]
-                        else "refuted" if "NO VIOLATION:" in stderr or rc == 0
-                        else "unrunnable"),
+                        else "refuted" if f"REFUTED[{nonce}]:" in stdout
+                                          or "NO VIOLATION:" in stderr
+                        else "unrunnable" if rc != 0
+                        else "inconclusive"),
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

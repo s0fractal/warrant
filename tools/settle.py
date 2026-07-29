@@ -69,6 +69,7 @@ USAGE
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -135,7 +136,12 @@ def claim_key(finding, document="", family=""):
     """
     clause = (finding.get("clause") or "").strip().lower()
     doc = (finding.get("document") or document or "").strip().lower()
-    if clause in NON_IDENTIFYING:
+    # `unstated.` is one character off the mandated spelling and used to sail
+    # past the set as a real clause identifier (Kimi F3). Strip surrounding
+    # punctuation and whitespace before deciding, and require what remains to
+    # look like an identifier at all.
+    bare = clause.strip(" .,:;-–—()[]'\"")
+    if bare in NON_IDENTIFYING or not re.fullmatch(r"[a-z0-9][a-z0-9._/-]*", bare or ""):
         # Reviewer identity is part of the key. Two families both numbering a
         # finding `F1` and both driving it with the same boilerplate produced one
         # key for two unrelated properties (Codex F5).
@@ -143,7 +149,7 @@ def claim_key(finding, document="", family=""):
                 f"{finding.get('repro_sha256', '')[:12]}")
     # `D.3` names nothing without the document that numbers it. Refuting D.3 of
     # one text silently closed D.3 of another (Codex F4).
-    return f"clause:{doc}:{clause}"
+    return f"clause:{doc}:{bare}"
 
 
 SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2}
@@ -249,6 +255,9 @@ def policy_problems(pol):
                    "aliases of one reviewer satisfy the diversity rule")
     elif len({f.lower() for f in fams}) != len(fams):
         bad.append("gating_families contains case-duplicate entries")
+    elif any(not isinstance(f, str) or not f.strip() for f in fams):
+        bad.append("gating_families contains a blank entry; a ledger with an "
+                   "empty family string would then satisfy the diversity rule")
     if set(map(str.lower, pol.get("probe_families", []))) & {f.lower() for f in fams or []}:
         bad.append("a family cannot be both gating and a probe")
     if pol.get("novelty") != "clause":
@@ -270,6 +279,17 @@ def load_ledgers(item, ledger_dir=None):
 
 
 def settle(item, policy, ledger_dir=None, current=None):
+    problems = policy_problems(policy)
+    if problems:
+        # Validation lived only in load_policy(), on the CLI path, so any caller
+        # passing a dict -- every test in this repository, and any embedder --
+        # bypassed it entirely (Kimi F5).
+        return {"item": item, "state": "BAD-POLICY", "reason": "; ".join(problems),
+                "current_subject": current or "", "subject_label": "",
+                "families_on_current": [], "probes_on_current": [],
+                "gates_total": 0, "blocking": [], "unresolved": [],
+                "restatements": [], "claims_total": 0, "policy_sha256": None,
+                "dangling_closes": [], "unrecognised_families": []}
     ledgers = load_ledgers(item, ledger_dir)
     if not current:
         # Fail closed. Guessing which revision is current is exactly the P0 this
@@ -358,23 +378,26 @@ def settle(item, policy, ledger_dir=None, current=None):
                 # Absent on ledgers predating the distinction; those recorded
                 # only reproduced/not, so treat a non-reproduction as a genuine
                 # refutation rather than retroactively voiding old evidence.
+                # A ledger predating the outcome field says only reproduced-or-not.
+                # Defaulting the negative case to `refuted` let an old crash count
+                # as a refutation (Kimi F2); `inconclusive` is what we actually
+                # know about it, and it closes nothing.
                 "outcome": f.get("outcome", "violation" if f["reproduced"]
-                                 else "refuted"),
+                                 else "inconclusive"),
             })
 
     # A citation that names nothing is a no-op that LOOKS like a closure, which
     # is the most dangerous shape a mistake can take here: it reads as work done.
     dangling = sorted(cited - defined)
 
-    blocking, unresolved = [], []
+    blocking, unresolved, noted = [], [], []
     for key, rec in sorted(claims.items()):
         on_current = [s for s in rec["seen"] if s["subject"] == current]
         blocked_ever = [s for s in rec["seen"] if s["reproduced"]]
         if not blocked_ever:
             continue
         sev, sev_unknown = claim_severity(s["severity"] for s in blocked_ever)
-        if not (sev_unknown or sev in policy["blocking_severities"]):
-            continue
+        blocks = sev_unknown or sev in policy["blocking_severities"]
         # A claim is retested only by evidence that addresses THE SAME attack:
         # the identical reproduction re-run, or an explicit `closes=` citation.
         # Accepting any non-reproducing finding that shared the clause meant a
@@ -386,9 +409,23 @@ def settle(item, policy, ledger_dir=None, current=None):
         # refutation: the seven counter-vectors re-run on 2026-07-29 all died on
         # a schema change, and counting those as "did not reproduce" would have
         # closed seven live claims on the strength of an ImportError.
-        retested = [s for s in on_current
-                    if s["outcome"] == "refuted"
-                    and (s["closes"] or s["repro"] in live_repros)]
+        # EVERY attack that reproduced must be retested, not just one of them.
+        # Re-running attack A and finding it fixed says nothing about attack B on
+        # the same clause -- yet it closed the claim, and B vanished from the
+        # report entirely rather than being carried as unresolved (Kimi F1).
+        closed_by_citation = any(s["outcome"] == "refuted" and s["closes"]
+                                 for s in on_current)
+        cleared = {s["repro"] for s in on_current
+                   if s["outcome"] == "refuted" and s["repro"] in live_repros}
+        retested = closed_by_citation or bool(live_repros and live_repros <= cleared)
+        if not blocks:
+            # Below the blocking bar, so it holds nothing up -- but the docstring
+            # promises nothing is quietly dropped, and a stale unretested P2 was
+            # vanishing from the report entirely (Kimi F7).
+            if not retested:
+                noted.append({"claim": key, "severity": sev,
+                              "title": blocked_ever[-1]["title"]})
+            continue
         if any(s["reproduced"] for s in on_current):
             blocking.append({"claim": key, "severity": sev,
                              "title": blocked_ever[-1]["title"],
@@ -448,6 +485,7 @@ def settle(item, policy, ledger_dir=None, current=None):
         "gates_total": len(ledgers),
         "blocking": blocking, "unresolved": unresolved,
         "restatements": restatements,
+        "noted_below_bar": noted,
         "claims_total": len(claims),
         "policy_sha256": None,      # filled by main(), see note there
     }

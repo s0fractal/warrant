@@ -329,6 +329,60 @@ _ran = ([ledger("codex@openai", OLD, [finding("A", "D.3", True, repro="1" * 64)]
                                    outcome="refuted")]) for f in three])
 check("a re-test that ran and held does close it", run(_ran)["state"], "SETTLED")
 
+# 18. REGRESSIONS from the paid Kimi gate, 2026-07-29. Seven findings, every one
+#     aimed at the reasoning. Six were real; the seventh exposed a defect in the
+#     harness rather than in this file.
+
+# F1: one retested attack closed a claim carrying two, and the never-retested one
+#     vanished from the report instead of being carried as unresolved.
+_two = [ledger("codex@openai", OLD, [finding("A", "D.3", True, repro="1" * 64),
+                                     finding("B", "D.3", True, repro="2" * 64)],
+               at="2026-07-01T00:00:00Z")]
+check("retesting one of two attacks closes nothing",
+      run(_two + [ledger(f, NEW, [finding("A", "D.3", False, repro="1" * 64,
+                                          outcome="refuted")]) for f in three])["state"],
+      "UNRESOLVED")
+check("retesting both does close it",
+      run(_two + [ledger(f, NEW, [finding("A", "D.3", False, repro="1" * 64,
+                                          outcome="refuted"),
+                                  finding("B", "D.3", False, repro="2" * 64,
+                                          outcome="refuted")]) for f in three])["state"],
+      "SETTLED")
+
+# F2: a ledger with no `outcome` says only reproduced-or-not. Reading the negative
+#     case as a refutation let an old crash close a live claim.
+_noout = [{k: v for k, v in finding("A", "D.3", False, repro="1" * 64).items()
+           if k != "outcome"}]
+check("a missing outcome closes nothing",
+      run([ledger("codex@openai", OLD, [finding("A", "D.3", True, repro="1" * 64)],
+                  at="2026-07-01T00:00:00Z")]
+          + [ledger(f, NEW, _noout) for f in three])["state"], "UNRESOLVED")
+
+# F3: `unstated.` is one character off the mandated spelling and sailed past the
+#     placeholder set as a real clause identifier.
+check("punctuated placeholders are still placeholders",
+      S.claim_key({"clause": "unstated.", "id": "F", "repro_sha256": "a" * 64},
+                  "D.md", "codex@openai").startswith("unidentified:"), True)
+
+# F5: validation lived only on the CLI path, so every caller passing a dict --
+#     including every test here -- bypassed it.
+check("settle() validates its own policy",
+      S.settle("x", {**POLICY, "gating_families": []}, None, NEW)["state"], "BAD-POLICY")
+
+# F6: a blank string in the roster is matched by a ledger with a blank family.
+check("a blank gating family is rejected",
+      bool(S.policy_problems({**POLICY, "gating_families": ["codex@openai", ""]})), True)
+
+# F7: below the blocking bar is not the same as gone. The docstring promises
+#     nothing is quietly dropped; a stale unretested P2 was disappearing.
+_p2 = run([ledger("codex@openai", OLD, [finding("A", "D.3", True, severity="P2",
+                                                repro="1" * 64)],
+                  at="2026-07-01T00:00:00Z")]
+          + [ledger(f, NEW, []) for f in three])
+check("a stale sub-threshold claim is still reported",
+      bool(_p2["noted_below_bar"]), True)
+check("and it does not block", _p2["state"], "SETTLED")
+
 # 12. A ledger whose evidence does not hash to its own digests is unreadable,
 #     not merely weak: settling under it would restate an unverifiable claim.
 tampered = ledger(three[0], NEW, [dict(finding("F1", "D.3", True),
