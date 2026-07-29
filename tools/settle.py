@@ -458,6 +458,21 @@ def settle(item, policy, ledger_dir=None, current=None):
         state, reason = "UNRESOLVED", (
             f"{len(unresolved)} claim(s) reproduced on earlier text and never re-run "
             f"against the current subject -- re-gate before settling")
+    elif not families and not any(f.lower() in {x.lower() for x in policy["gating_families"]}
+                                  for f in seen_fams):
+        # No gating family reviewed this subject AND none is available. That is a
+        # different fact from "not enough yet", and collapsing the two is how a
+        # permanently unsatisfiable threshold turns into decoration people route
+        # around. UNGATED says: nothing is wrong, and nothing was independently
+        # checked. Landing under it is permitted by policy and must carry an
+        # attestation naming who took responsibility.
+        state, reason = "UNGATED", (
+            f"no gating family reviewed this subject"
+            + (f"; probes ran ({', '.join(probed)}) and a probe is not a gate"
+               if probed else "")
+            + ". Landing is permitted under policy.ungated_landing and requires "
+              "an attestation naming who took responsibility and what was run "
+              "in place of a gate")
     elif not enough_families:
         state, reason = "OPEN", (
             f"only {len(families)} gating family/families on the current subject; "

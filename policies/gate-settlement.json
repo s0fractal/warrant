@@ -15,7 +15,8 @@
     "not_adoption": "Settlement authorises a merge under this policy. Governance adoption is a separate threshold warrant signed by roster keys (AGENTS.md \u00a72).",
     "recognized_families": "Diversity was counted from distinct values of a command-line flag, so three spellings of one reviewer satisfied the three-family rule. Only rosters listed here count; adding a family is a deliberate act.",
     "gating_families": "Only these satisfy min_families. Measured on this repository, 2026-07-29: across four gate runs codex produced seven findings that all survived verification, while the local models produced one useful observation and one forged violation. Counting probes toward a quorum would manufacture the appearance of an independent gate out of noise -- which is the exact failure this whole mechanism exists to prevent, and it would be committed first by the mechanism itself.",
-    "probe_families": "Run them: they are free, their findings are read, and one of them did surface a real clause-collision. They are stochastic probes, not reviewers, and they do not count toward diversity. A finding from a probe is worth exactly as much as its reproduction, same as any other."
+    "probe_families": "Run them: they are free, their findings are read, and one of them did surface a real clause-collision. They are stochastic probes, not reviewers, and they do not count toward diversity. A finding from a probe is worth exactly as much as its reproduction, same as any other.",
+    "ungated_landing": "A rule that cannot be satisfied is not a strict rule, it is a rule people route around, and the first to route around it would be the maintainer. With every gating family unavailable, min_families can never be met, so the honest state is not OPEN-forever but UNGATED: nothing is wrong, and nothing was independently checked. Naming that is the whole value; hiding it behind a threshold nobody can reach would turn the mechanism into decoration, which is worse than not having it."
   },
   "gating_families": [
     "codex@openai",
@@ -27,5 +28,11 @@
     "qwen3-coder@local",
     "deepseek-coder@local",
     "gemma3@local"
-  ]
+  ],
+  "ungated_landing": {
+    "permitted": true,
+    "requires": "an explicit attestation naming who took responsibility and what was run in place of a gate",
+    "since": "2026-07-29",
+    "reason": "no gating family is affordable; the steward assigned merge responsibility to the maintainer actor"
+  }
 }

@@ -304,7 +304,10 @@ check("a family cannot be both gating and probe",
 _probes_only = run([ledger(PROBE, NEW, [finding("F1", "D.4", False, repro="8" * 64)]),
                     ledger("deepseek-coder@local", NEW, []),
                     ledger("gemma3@local", NEW, [])])
-check("three probes are not three families", _probes_only["state"], "OPEN")
+# UNGATED rather than OPEN since 2026-07-29: probes still fail to make a quorum,
+# which is this case's point, and the state now also says WHY -- no gating family
+# reviewed it, as opposed to not enough of them having done so yet.
+check("three probes are not three families", _probes_only["state"], "UNGATED")
 check("probes are named, not ignored", _probes_only["probes_on_current"],
       ["deepseek-coder@local", "gemma3@local", PROBE])
 check("a probe's reproduced finding still blocks",
@@ -382,6 +385,20 @@ _p2 = run([ledger("codex@openai", OLD, [finding("A", "D.3", True, severity="P2",
 check("a stale sub-threshold claim is still reported",
       bool(_p2["noted_below_bar"]), True)
 check("and it does not block", _p2["state"], "SETTLED")
+
+# 19. UNGATED is not OPEN. From 2026-07-29 no gating family is affordable, so
+#     min_families can never be met and every item would sit OPEN forever. A rule
+#     that cannot be satisfied is not strict, it is routed around -- and the first
+#     to route around it would be the maintainer. UNGATED says the true thing:
+#     nothing is wrong, and nothing was independently checked.
+check("probes alone report UNGATED, not OPEN",
+      run([ledger("qwen3-coder@local", NEW, []),
+           ledger("deepseek-coder@local", NEW, [])])["state"], "UNGATED")
+check("one gating family is OPEN, not UNGATED",
+      run([ledger("codex@openai", NEW, [])])["state"], "OPEN")
+check("a probe's reproduced finding still blocks an ungated item",
+      run([ledger("qwen3-coder@local", NEW,
+                  [finding("F1", "D.4", True, repro="8" * 64)])])["state"], "BLOCKED")
 
 # 12. A ledger whose evidence does not hash to its own digests is unreadable,
 #     not merely weak: settling under it would restate an unverifiable claim.
