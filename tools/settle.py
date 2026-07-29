@@ -353,6 +353,11 @@ def settle(item, policy, ledger_dir=None, current=None):
                 "title": f.get("title", ""), "reproduced": bool(f["reproduced"]),
                 "subject": led["subject_sha256"], "ledger": led["_path"],
                 "repro": f.get("repro_sha256", ""), "closes": closes,
+                # Absent on ledgers predating the distinction; those recorded
+                # only reproduced/not, so treat a non-reproduction as a genuine
+                # refutation rather than retroactively voiding old evidence.
+                "outcome": f.get("outcome", "violation" if f["reproduced"]
+                                 else "refuted"),
             })
 
     # A citation that names nothing is a no-op that LOOKS like a closure, which
@@ -375,8 +380,13 @@ def settle(item, policy, ledger_dir=None, current=None):
         # place -- closed an exploit nobody had re-run (Codex F1). "Probe B did
         # not fire" says nothing whatever about probe A.
         live_repros = {s["repro"] for s in blocked_ever}
+        # Only a run that actually EXECUTED can close a claim. A crash is not a
+        # refutation: the seven counter-vectors re-run on 2026-07-29 all died on
+        # a schema change, and counting those as "did not reproduce" would have
+        # closed seven live claims on the strength of an ImportError.
         retested = [s for s in on_current
-                    if not s["reproduced"] and (s["closes"] or s["repro"] in live_repros)]
+                    if s["outcome"] == "refuted"
+                    and (s["closes"] or s["repro"] in live_repros)]
         if any(s["reproduced"] for s in on_current):
             blocking.append({"claim": key, "severity": sev,
                              "title": blocked_ever[-1]["title"],

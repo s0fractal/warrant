@@ -44,9 +44,10 @@ def ledger(family, subject, findings, at="2026-07-28T10:00:00Z", item="x",
 
 
 def finding(fid, clause, reproduced, severity="P0", repro=None, transcript=None,
-            closes=""):
+            closes="", outcome=None):
     return {"id": fid, "severity": severity, "clause": clause, "title": fid,
             "repro_sha256": repro or ("c" * 64), "exit": 0, "closes": closes,
+            "outcome": outcome or ("violation" if reproduced else "refuted"),
             "transcript_sha256": transcript or ("d" * 64), "reproduced": reproduced}
 
 
@@ -291,6 +292,24 @@ check("policy that does not block P0 is rejected",
       bool(S.policy_problems({**POLICY, "blocking_severities": ["P1", "P2"]})), True)
 check("policy with no family roster is rejected",
       bool(S.policy_problems({**POLICY, "recognized_families": []})), True)
+
+# 16. REGRESSION. A crash is not a refutation. On 2026-07-29 seven stored
+#     counter-vectors were re-run after the policy schema gained a required key;
+#     every one died on KeyError before touching the subject. Read as two
+#     outcomes -- reproduced or not -- that is seven live claims closing on the
+#     strength of an exception, and the fixes would have been declared verified
+#     by a test that never ran.
+_crashed = ([ledger("codex@openai", OLD, [finding("A", "D.3", True, repro="1" * 64)],
+                    at="2026-07-01T00:00:00Z")]
+            + [ledger(f, NEW, [finding("A", "D.3", False, repro="1" * 64,
+                                       outcome="unrunnable")]) for f in three])
+check("a crashed re-test closes nothing", run(_crashed)["state"], "UNRESOLVED")
+
+_ran = ([ledger("codex@openai", OLD, [finding("A", "D.3", True, repro="1" * 64)],
+                at="2026-07-01T00:00:00Z")]
+        + [ledger(f, NEW, [finding("A", "D.3", False, repro="1" * 64,
+                                   outcome="refuted")]) for f in three])
+check("a re-test that ran and held does close it", run(_ran)["state"], "SETTLED")
 
 # 12. A ledger whose evidence does not hash to its own digests is unreadable,
 #     not merely weak: settling under it would restate an unverifiable claim.

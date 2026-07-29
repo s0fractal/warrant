@@ -419,6 +419,15 @@ def run_repro(workdir, code, nonce):
             "stderr": stderr[-MAX_OUTPUT:],
             "violation": rc == 0 and _demonstrates(stdout, nonce)[0],
             "why": _demonstrates(stdout, nonce)[1],
+            # Three outcomes, not two. A block that CRASHED refutes nothing, and
+            # calling it "did not reproduce" is how a claim closes because the
+            # interface moved under it rather than because the defect went away.
+            # Observed re-running seven stored counter-vectors after a policy
+            # schema change: every one died on a KeyError, and read as two
+            # outcomes they would all have looked like clean refutations.
+            "outcome": ("violation" if rc == 0 and _demonstrates(stdout, nonce)[0]
+                        else "refuted" if "NO VIOLATION:" in stderr or rc == 0
+                        else "unrunnable"),
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -721,6 +730,7 @@ def emit_ledger(args, t, normative, all_results, complete):
                            "exit": res["exit"]},
             "exit": res["exit"],
             "reproduced": res["violation"],
+            "outcome": res.get("outcome", "refuted" if not res["violation"] else "violation"),
         } for _, meta, code, res in final.values()],
     }
     ledger_dir = ROOT / "reviews" / "ledgers"
