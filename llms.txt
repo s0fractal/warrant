@@ -37,6 +37,18 @@ Nothing here asks to be believed. Every claim below is one command away, offline
 no account:
 
 ```bash
+python3 tools/check.py                  # everything, one verdict
+```
+
+That runs all 24 checks the repository's claims rest on and prints one line. A
+check that could not run — Go not built, oracle missing — is reported UNRUN with
+its own exit status, never as passed: a harness printing ALL PASS while silently
+skipping the Go suites would be claiming two implementations agreed on the
+strength of never having asked one of them.
+
+Individual pieces, if you want them:
+
+```bash
 python3 impl/warrant.py selftest        # ALL PASS
 python3 impl/warrant.py conformance     # ALL PASS (45/45)
 python3 tests/differential.py           # ALL AGREE  — Python vs Go, byte-exact
@@ -96,6 +108,19 @@ verifiable provenance that hides its own open items is arguing against itself:
   than assuming its own fixes.
 - Part of the Lean chain rests transitively on `native_decide`, which puts the
   compiler in the trusted base.
+- **`cmd@v1` verdicts are trusted, by specification.** SPEC §7 states the
+  verifier does not re-execute them — their trust model is the container. So a
+  `cmd@v1` outcome fingerprint carries the verdict its filer wrote, and the
+  re-litigation novelty test can be satisfied by writing a different word. The
+  same hole was closed for `ski@v1`, where re-execution is available and the
+  re-run verdict is now what the fingerprint records. This one is a limit of the
+  format, not of the code, and it is stated rather than patched over.
+- **Multi-root stores (§9) are verified only as far as root admission.** The
+  threshold rule that gates adoption is exercised, including that an unbound key
+  claiming an actor does not satisfy it. Deeper §9 behaviour is not covered by a
+  vector here.
+- **`impl-rs` does not verify stores** — it implements canonicalization,
+  conformance and Ed25519. Store verification parity is Python against Go only.
 
 ## Optional
 

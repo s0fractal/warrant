@@ -57,8 +57,12 @@ Everything below is verifiable offline. No account, no key, no service.
 
 ```bash
 pipx install warrant-verify
-warrant verify --store-mode --json <pack>      # one machine-readable object
+warrant --store <pack>/.warrants verify --store-mode --json
 ```
+
+That prints exactly one `warrant.verify-report@v0` object: `ok` is true only when
+`errors` is zero, and a path that is not a store fails closed rather than
+verifying successfully over nothing.
 
 | Claim | How to check |
 |---|---|
