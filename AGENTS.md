@@ -35,14 +35,21 @@ are not style — breaking them corrupts the thing this project exists to protec
    never approval of the next. A standing authorization is bounded by its policy
    and by nothing else; where the policy is silent, the answer is no.
 
-6. **Never present co-located keys as independent parties.** As of 2026-07-28
+> **Rules 6 and 7 below are DRAFTED, NOT ADOPTED.** They were written by an
+> agent and are not in force. Adoption is a threshold warrant signed by roster
+> keys (rule 2) and has not happened. Rules 1–5 are the rules. This marker sits
+> here rather than only in the Precedent section sixty lines down, because a
+> reader scanning "Hard rules" would otherwise take them as binding — and an
+> agent citing an unadopted rule as authority is the exact move rule 2 forbids.
+
+6. **[DRAFT, NOT IN FORCE]** **Never present co-located keys as independent parties.** As of 2026-07-28
    the roster keys `claude-fable-5` and `codex` sat in one directory on one host,
    so any process there could sign as both. Two such signatures are **one
    custody**, and a report that calls them a 2-of-3 quorum makes the same false
    claim rule 2 forbids. State custody as it is; when keys are separated, say
    which hosts hold them.
 
-7. **Settlement, not consent, ends a gate.** A gated item is decided by
+7. **[DRAFT, NOT IN FORCE]** **Settlement, not consent, ends a gate.** A gated item is decided by
    `tools/settle.py` under `policies/gate-settlement.json`, and the default is
    inverted from what it was: an item is **settled unless a reproduction
    executes**. Silence blocks nothing. Only a counter-vector that ran — exit 0
