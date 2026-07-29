@@ -40,19 +40,33 @@ Add protection to `pypi` if you want a manual approval gate before each publish
 
 1. Bump `version` in `pyproject.toml` (e.g. `0.3.0` → `0.3.1`) and merge to
    `master`.
-2. Cut a GitHub Release with tag **`v0.3.1`** (the `v` + the exact pyproject
-   version — the workflow fails the build if they disagree):
+2. Build the evidence packs the README tells strangers to download. The README's
+   "no clone, no build, no account" quest is only true if these assets exist on
+   the release:
 
    ```bash
-   gh release create v0.3.1 --generate-notes
+   tools/build_release_packs.sh          # -> dist/*.zip + dist/SHA256SUMS
    ```
-3. The `publish` workflow builds, runs `twine check`, installs the wheel and
-   proves it runs offline, then publishes to PyPI via OIDC. Watch it:
+
+   The script refuses to publish a pack containing anything key-shaped, and
+   verifies each zip unzipped in an empty directory with no repo on the path —
+   i.e. as the stranger will.
+3. Cut a GitHub Release with tag **`v0.3.1`** (the `v` + the exact pyproject
+   version — the workflow fails the build if they disagree), attaching those
+   assets:
+
+   ```bash
+   gh release create v0.3.1 --generate-notes dist/*.zip dist/SHA256SUMS
+   ```
+4. The `publish` workflow builds, runs `twine check`, installs the wheel, proves
+   it runs offline, and checks that the wheel actually offers every CLI surface
+   the documentation promises (`tools/check_release_surface.py`), then publishes
+   to PyPI via OIDC. Watch it:
 
    ```bash
    gh run watch
    ```
-4. Confirm the public install:
+5. Confirm the public install:
 
    ```bash
    pipx install warrant-verify        # or: pip install warrant-verify

@@ -1,0 +1,175 @@
+name: 'Warrant verify'
+description: >-
+  Verify an evidence pack or warrant store: every hash, signature and link.
+  Offline, no server, no account — the verifier is a pip package and the store
+  is plain files. Fails the job when the store does not verify.
+author: s0fractal
+branding:
+  icon: 'check-circle'
+  color: 'gray-dark'
+
+inputs:
+  store:
+    description: >-
+      Path to the warrant store, or to an evidence pack containing `.warrants/`.
+      Defaults to `.warrants` in the workspace.
+    required: false
+    default: '.warrants'
+  settlement:
+    description: >-
+      Verify at settlement grade instead of base integrity. Requires `trust-config`.
+    required: false
+    default: 'false'
+  trust-config:
+    description: 'Path to the trust configuration (required when settlement is true).'
+    required: false
+    default: ''
+  allow-warnings:
+    description: >-
+      When `false`, warnings also fail the job. Errors always fail it.
+      Note that an unbound-signature warning is normal without a trust config.
+    required: false
+    default: 'true'
+  version:
+    description: >-
+      Version of `warrant-verify` to install from PyPI. Pin this for a
+      reproducible gate; `latest` tracks releases.
+    required: false
+    default: 'latest'
+
+outputs:
+  ok:
+    description: '`true` when the store verified with zero errors.'
+    value: ${{ steps.verify.outputs.ok }}
+  records:
+    description: 'Number of records verified.'
+    value: ${{ steps.verify.outputs.records }}
+  errors:
+    description: 'Number of ERR findings.'
+    value: ${{ steps.verify.outputs.errors }}
+  warnings:
+    description: 'Number of WARN findings.'
+    value: ${{ steps.verify.outputs.warnings }}
+  report:
+    description: 'The full `warrant.verify-report@v0` JSON object (one line).'
+    value: ${{ steps.verify.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install warrant-verify
+      shell: bash
+      # `${{ }}` interpolation splices the value into the script BEFORE bash sees
+      # it, so a caller-controlled `version` was executing as shell — the script
+      # injection GitHub documents, in the one step that installs the verifier
+      # this action's entire result depends on. Every other input already went
+      # through `env` for exactly this reason; this one was missed.
+      env:
+        IN_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        # Belt as well as braces: a version is a PEP 440 specifier, and anything
+        # else is a caller error worth naming rather than passing to pip. Quoting
+        # alone would already stop the injection; this stops the confusing
+        # failure too.
+        if ! printf '%s' "$IN_VERSION" | grep -Eq '^(latest|[A-Za-z0-9._+!-]+)$'; then
+          echo "::error::invalid 'version' input: expected 'latest' or a PEP 440 version"
+          exit 1
+        fi
+        if [ "$IN_VERSION" = "latest" ]; then
+          python3 -m pip install --quiet --upgrade warrant-verify
+        else
+          python3 -m pip install --quiet "warrant-verify==$IN_VERSION"
+        fi
+        installed="$(python3 -m pip show warrant-verify | awk '/^Version:/{print $2}')"
+        echo "warrant-verify $installed"
+
+        # Capability check, not a version check: the action consumes the
+        # `warrant.verify-report@v0` machine boundary (`verify --store-mode
+        # --json`), which arrived in 0.5.0. Ask the installed verifier what it
+        # can do rather than trusting a version string — and if it cannot, say
+        # exactly that, instead of letting the user meet an argparse error three
+        # steps later with no idea which of their inputs was wrong.
+        if ! warrant verify --help 2>&1 | grep -q -- '--store-mode'; then
+          echo "::error::warrant-verify $installed does not offer 'verify --store-mode --json' \
+        (the warrant.verify-report@v0 machine boundary this action consumes; it arrived in 0.5.0). \
+        Set this action's 'version:' input to 0.5.0 or newer."
+          exit 1
+        fi
+
+    - name: Verify
+      id: verify
+      shell: bash
+      env:
+        IN_STORE: ${{ inputs.store }}
+        IN_SETTLEMENT: ${{ inputs.settlement }}
+        IN_TRUST: ${{ inputs.trust-config }}
+        IN_ALLOW_WARNINGS: ${{ inputs.allow-warnings }}
+      run: |
+        set -uo pipefail
+
+        store="$IN_STORE"
+        # An evidence pack is a directory containing `.warrants/`; accept either.
+        if [ -d "$store/.warrants" ]; then store="$store/.warrants"; fi
+
+        args=( --store "$store" verify --store-mode --json )
+        if [ "$IN_SETTLEMENT" = "true" ]; then
+          if [ -z "$IN_TRUST" ]; then
+            echo "::error::settlement=true requires trust-config"; exit 1
+          fi
+          # --store-mode and --settlement are both fail-closed; keep both.
+          args=( --store "$store" verify --store-mode --settlement --trust-config "$IN_TRUST" --json )
+        fi
+
+        report="$(warrant "${args[@]}")" || true
+        if [ -z "$report" ]; then
+          echo "::error::warrant produced no report (is '$store' a warrant store?)"
+          exit 1
+        fi
+
+        # Parse and enforce the @v0 contract the README pins: closed schema, and
+        # counts that bind the findings. A report that violates its own contract
+        # is not a pass, whatever `ok` says.
+        python3 - "$report" <<'PY' > /tmp/warrant-summary.txt || exit 1
+        import json, os, sys
+        r = json.loads(sys.argv[1])
+        if r.get("report") != "warrant.verify-report@v0":
+            print(f"::error::unexpected report tag {r.get('report')!r}", file=sys.stderr); raise SystemExit(1)
+        if set(r) != {"report","grade","ok","records","errors","warnings","findings"}:
+            print("::error::verify-report@v0 is a closed schema; unexpected keys present", file=sys.stderr); raise SystemExit(1)
+        errs = sum(1 for f in r["findings"] if f["level"] == "ERR")
+        warns = sum(1 for f in r["findings"] if f["level"] == "WARN")
+        if r["errors"] != errs or r["warnings"] != warns or r["ok"] != (r["errors"] == 0):
+            print("::error::report counts disagree with findings", file=sys.stderr); raise SystemExit(1)
+        with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+            fh.write(f"ok={str(r['ok']).lower()}\n")
+            fh.write(f"records={r['records']}\n")
+            fh.write(f"errors={r['errors']}\n")
+            fh.write(f"warnings={r['warnings']}\n")
+            fh.write(f"report={json.dumps(r, separators=(',',':'))}\n")
+        print(f"grade={r['grade']} records={r['records']} errors={r['errors']} warnings={r['warnings']}")
+        for f in r["findings"][:20]:
+            print(f"  {f['level']}  {f['subject'][:12]}  {f['message']}")
+        if len(r["findings"]) > 20:
+            print(f"  ... and {len(r['findings']) - 20} more")
+        PY
+        cat /tmp/warrant-summary.txt
+
+        errors=$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['errors'])" "$report")
+        warnings=$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['warnings'])" "$report")
+
+        {
+          echo "### Warrant verification"
+          echo ""
+          echo '```'
+          cat /tmp/warrant-summary.txt
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+        if [ "$errors" -ne 0 ]; then
+          echo "::error::warrant verification failed with $errors error(s)"; exit 1
+        fi
+        if [ "$IN_ALLOW_WARNINGS" != "true" ] && [ "$warnings" -ne 0 ]; then
+          echo "::error::warrant verification produced $warnings warning(s) and allow-warnings is false"; exit 1
+        fi
+        echo "warrant: verified ($errors errors, $warnings warnings)"
