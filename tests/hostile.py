@@ -284,9 +284,15 @@ def main():
             (s / "records" / f"{w}.json").write_text(json.dumps({"body": b, "sigs": []}))
             prev, tip = [w], w
         rw = run(PY + ["--store", str(s), "why", tip])
+        # Asserts what this case is actually for: `why` must not blow the stack on
+        # a deep linear chain. It used to also require rc==0, which quietly bound
+        # it to a second claim -- these records carry NO signatures, and `why` now
+        # reports an unsigned link as unverified rather than treating an empty
+        # signature list as vacuously fine. Totality is the property under test.
         chk("totality why(deep linear chain): no RecursionError",
-            "Traceback" not in rw.stderr and "RecursionError" not in rw.stderr
-            and rw.returncode == 0)
+            "Traceback" not in rw.stderr and "RecursionError" not in rw.stderr)
+        chk("why(deep chain of unsigned records) does not report success",
+            rw.returncode != 0)
 
     print("\nHOSTILE: ALL PASS" if all(ok) else "\nHOSTILE: FAILURES")
     sys.exit(0 if all(ok) else 1)

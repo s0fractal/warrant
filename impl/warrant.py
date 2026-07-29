@@ -1361,6 +1361,13 @@ def why(store, wid, depth=0, seen=None):
     # raised RecursionError — a `why` on hostile input crashed instead of
     # printing (Kimi full-audit, 2026-07). An explicit stack removes the call-
     # depth limit; `seen` still cuts cycles and depth is bounded defensively.
+    # `why` printed [VERIFY FAILED] and `?? (not in store)` honestly and then
+    # exited 0 regardless, so `warrant why "$ID" && echo ok` reported success for
+    # a chain containing a record whose signature does not verify, and for an id
+    # absent from the store entirely. verify was made fail-closed at the machine
+    # boundary by an earlier gate; why was left behind. The OUTPUT was never the
+    # problem -- the exit status was.
+    missing = failed = 0
     seen = set()
     stack = [(wid, depth)]
     while stack:
@@ -1369,9 +1376,18 @@ def why(store, wid, depth=0, seen=None):
         pad = "  " * d
         if env is None:
             print(f"{pad}?? {cur[:16]} (not in store)")
+            missing += 1
             continue
         body = env["body"]
-        ok = warrant_id(body) == cur and all(verify_sig(cur, s) for s in env["sigs"])
+        # `all()` over an empty list is True, so a record carrying NO signatures
+        # walked through here marked as verified -- absence of signatures read as
+        # signatures being fine. verify treats an unsigned record as an ERR; why
+        # must not present it as a clean link in the chain it claims to verify.
+        sigs = env["sigs"]
+        ok = (warrant_id(body) == cur and bool(sigs)
+              and all(verify_sig(cur, s) for s in sigs))
+        if not ok:
+            failed += 1
         mark = "" if ok else "  [VERIFY FAILED]"
         unv = "  [unverifiable]" if is_unverifiable(body) else ""
         note = body["subject"].get("note", "")
@@ -1394,6 +1410,7 @@ def why(store, wid, depth=0, seen=None):
             continue
         for p in reversed(body["prior"]):
             stack.append((p, d + 1))
+    return missing, failed
 
 
 # ---------- filing ----------
@@ -1754,7 +1771,12 @@ def main():
         file_warrant(store, args.cmd, subject, args, note=note)
     elif args.cmd == "why":
         store.require()
-        why(store, args.id)
+        missing, failed = why(store, args.id)
+        # Non-zero when the walk could not do what the command claims to do:
+        # SPEC §6(4) makes an unresolved `prior` an error, and a record whose id
+        # does not recompute or whose signatures do not verify is not a link in a
+        # verified chain. `warrant why "$ID" && ...` must not succeed on either.
+        sys.exit(1 if (missing or failed) else 0)
     elif args.cmd == "check":
         store.require()
         try:
