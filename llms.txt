@@ -60,6 +60,30 @@ If a document and a command disagree, **the command is right**. Two files in thi
 repository were wrong about their own test counts and PyPI status until they were
 caught; the fix was to generate the numbers rather than type them.
 
+## Interoperating with the provenance world
+
+This format was an island: a reader with in-toto, SLSA, Sigstore or Rekor tooling
+could do nothing with a warrant record. `tools/intoto.py` expresses a decision as
+an **in-toto Statement v1** so the stack sits *on* that ecosystem rather than
+beside it — in-toto says what happened to an artefact, a warrant says who was
+allowed to decide it and on which re-runnable reasons.
+
+```bash
+python3 tools/intoto.py wrap <WarrantID>        # Statement on stdout
+python3 tools/intoto.py check <statement.json>  # does it bind to this store?
+```
+
+`check` recomputes every digest against the store rather than validating a
+schema: a Statement can be perfectly well-formed and describe a record that does
+not exist, and a bridge must not pass that through. Ten tamper cases are pinned.
+
+Two honest limits. The Statement is **not signed** here — DSSE wrapping and Rekor
+submission are separate steps with separate trust, deliberately not hidden inside
+a converter. And the `predicateType` lives under
+`github.com/s0fractal/warrant`, a URI this project controls; an external audit
+proposed `warrant.dev`, which it does not own, and minting a type under someone
+else's namespace is a false claim about who defines it.
+
 ## The specification
 
 - [SPEC.md](SPEC.md): the format. §5.1 key state, §6 verification, §7 settlement,

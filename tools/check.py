@@ -79,6 +79,8 @@ CHECKS = [
      ["python3", "tests/mcp_seal.py"], None),
     ("ed25519 differential (Rust vs Python)",
      ["python3", "tests/ed25519_differential.py", "--n", "50"], "rs"),
+    ("in-toto bridge (Statement v1 shape + binding, tamper matrix)",
+     ["python3", "tools/intoto.py", "selftest"], None),
     ("documented CLI surface exists",
      ["python3", "tools/check_release_surface.py"], None),
     ("gate settlement rule (47 cases)",
