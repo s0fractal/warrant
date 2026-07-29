@@ -12,10 +12,17 @@ then every release publishes itself.
 
 ## One-time setup (you, on the web — I can't do this part)
 
+> **Already done.** `warrant-verify` is live on PyPI (0.3.0 and 0.4.0, published
+> 2026-07-16 via Trusted Publishing). This section is kept for the next project
+> and for re-establishing the publisher if it is ever lost; skip it unless one of
+> those applies. Current released version is checkable at
+> <https://pypi.org/project/warrant-verify/> — and if this note and PyPI ever
+> disagree, PyPI is right.
+
 ### 1. Add a "pending publisher" on PyPI
 
-The project doesn't exist on PyPI yet, so use a *pending* publisher (it creates
-the project on first publish). Go to
+If the project did not yet exist on PyPI you would use a *pending* publisher (it
+creates the project on first publish). Go to
 <https://pypi.org/manage/account/publishing/> → "Add a pending publisher" and
 enter **exactly**:
 
