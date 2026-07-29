@@ -13,6 +13,7 @@ for r in [Rec("g",frozenset(),"Admin","ordinary",jur="J",filing=("Admin","kAdmin
     w.add(r)
 m=Model(w,frozenset(w.recs),"J")
 assert not m.in_lineage("succ_lose"), "premise: the branch must actually lose"
-harness.violation(expected="X not admitted (its authorising quorum lost)",
+harness.violation(expected="X not admitted",
                   got=("X admitted" if "X" in m.admits() else "X not admitted"),
-                  note="quorum existing only under the losing policy adopts a root that reaches admits()")
+                  note="a quorum existing only under the losing policy adopts a root "
+                       "and it reaches admits()")

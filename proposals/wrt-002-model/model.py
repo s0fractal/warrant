@@ -249,7 +249,26 @@ class Model:
         if r.kind == "policy-succession":
             sel = self.selected_lineage_policy()
             return (w in sel) if sel else (not self._conflicted_policy())
-        return True    # ordinary/rotation/supersede gated via their basis in effective()
+        if r.kind in ("root-adoption", "supersede", "rotation", "ordinary"):
+            # The policy IDENTITY that authorized w must itself be on the selected
+            # lineage. Returning True unconditionally here assumed these records
+            # were "gated via their basis in effective()" -- root-adoption is not,
+            # because _compute_admits reads valid_cap directly and never consults
+            # this function. A quorum existing only under a losing policy could
+            # therefore adopt a root and have it reach admits() (2026-07-29,
+            # from a Qwen web review whose own reproduction did not show it).
+            #
+            # Well-founded: _policy_state folds valid_cap only and never reads
+            # _admits, so admits -> lineage -> policy_state terminates.
+            _, pid, conf = self._policy_state(pre_events(w, self.recs))
+            if conf:
+                return False
+            if isinstance(pid, tuple) and len(pid) == 2 and pid[0] == "policy":
+                sel = self.selected_lineage_policy()
+                if sel and pid[1] not in sel:
+                    return False
+            return True
+        return True
 
     def _conflicted_policy(self):
         _, _, conf = self._policy_state(frozenset(self.recs))
@@ -449,8 +468,19 @@ class Model:
 
     def _compute_admits(self):
         dist = {r: 0 for r in self.w.pinned_roots.get(self.J, set())}  # genesis, distance 0
+        # valid_cap ALONE was the admission test, and valid_cap is deliberately
+        # lineage-blind (it is permanent, so the rev-5/6 oscillation cannot form).
+        # That left a quorum existing only under a LOSING policy able to adopt a
+        # root and have it admitted: valid_cap, effective, in_lineage and admits
+        # all accepted it. Adoption additionally requires that the policy identity
+        # which authorized it is on the selected lineage.
+        #
+        # This is NOT the change of reversed() to effective() that a reviewer
+        # proposed -- that would reintroduce the oscillation test_root_oscillation
+        # exists to catch. Lineage is about which branch won, not about lifecycle.
         adoptions = [w for w in self.recs if self.recs[w].kind == "root-adoption"
-                     and self.recs[w].jur == self.J and self._valid.get(w)]
+                     and self.recs[w].jur == self.J and self._valid.get(w)
+                     and self.in_lineage(w)]
         # iterate to a distance fixpoint (monotone: distances only shrink toward min-path)
         changed = True
         while changed:

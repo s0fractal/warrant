@@ -121,6 +121,43 @@ def test_losing_branch():
     check("[losing-branch] policy-state resolved (not conflicted)", not conf)
 
 
+def test_losing_quorum_cannot_adopt():
+    """A quorum that exists ONLY under the losing policy adopts a root.
+
+    Regression for the 2026-07-29 finding. `admits` tested valid_cap alone, and
+    valid_cap is deliberately lineage-blind (permanent, so the rev-5/6 oscillation
+    cannot form). That left the losing branch able to authorise a root adoption
+    that valid_cap, effective, in_lineage AND admits all accepted.
+
+    The fix filters adoptions by in_lineage. It is NOT the change of reversed()
+    to effective() that was proposed alongside -- that reintroduces the
+    oscillation test_root_oscillation exists to catch. Lineage is which branch
+    won; effective is lifecycle. Different properties.
+    """
+    P_gen = (frozenset({"Q"}), 1)
+    P_lose = (frozenset({"Q", "Z"}), 2)
+    P_win = (frozenset({"A"}), 1)
+    recs = [
+        Rec("g", frozenset(), "Admin", "ordinary", jur="J", filing=("Admin", "kAdmin")),
+        Rec("succ_lose", frozenset({"g"}), "Q", "policy-succession", jur="J",
+            new_policy=P_lose, threshold=frozenset({("Q", "kQ")})),
+        Rec("succ_win", frozenset({"g"}), "Q", "policy-succession", jur="J",
+            new_policy=P_win, threshold=frozenset({("Q", "kQ")})),
+        Rec("res", frozenset({"succ_lose", "succ_win"}), "Q", "policy-resolution",
+            jur="J", resolves=frozenset({"succ_lose", "succ_win"}), new_policy=P_win,
+            threshold=frozenset({("Q", "kQ")})),
+        # authorised only by P_lose: needs Q+Z, which P_win does not contain
+        Rec("adopt_X", frozenset({"succ_lose"}), "Q", "root-adoption", jur="J",
+            subject="X", threshold=frozenset({("Q", "kQ"), ("Z", "kZ")})),
+    ]
+    m = build("J", {"Q": {"kQ"}, "A": {"kA"}, "Z": {"kZ"}, "Admin": {"kAdmin"}}, recs,
+              pinned_policy={"J": P_gen}, pinned_roots={"J": {"g"}})
+    check("[losing-quorum] premise: the authorising branch really lost",
+          not m.in_lineage("succ_lose"))
+    check("[losing-quorum] its adoption does NOT reach admits()",
+          "X" not in m.admits())
+
+
 # ------------------------------------------------------- 4. root oscillation vector
 def test_root_oscillation():
     """Pinned A; adoption D adopts B; supersede S of D filed on B. Must TERMINATE with one
@@ -454,6 +491,7 @@ def main():
     test_may_reverse_total()
     test_revocation()
     test_losing_branch()
+    test_losing_quorum_cannot_adopt()
     test_root_oscillation()
     test_checkpoint_cid()
     test_determinism()

@@ -288,9 +288,19 @@ def violation(expected, got, note=""):
     # a literal you typed. The comparison happens here, at runtime, so a block
     # that asserts the CORRECT behaviour and then announces a violation cannot
     # pass: it hands identical values in and exits non-zero.
-    if str(expected) == str(got):
+    e, o = str(expected).strip(), str(got).strip()
+    if e == o:
         print("NO VIOLATION: expected and got are both %r -- the machine agreed "
-              "with the rule" % (expected,), file=sys.stderr)
+              "with the rule" % (e,), file=sys.stderr)
+        raise SystemExit(1)
+    if e in o or o in e:
+        # One value decorating the other is how a violation survives agreement:
+        # expected="X not admitted (because the quorum lost)" against
+        # got="X not admitted" compares unequal while meaning the same thing.
+        # Caught here after the author of this check wrote exactly that and read
+        # the resulting VIOLATION as a live defect. Prose belongs in `note`.
+        print("NO VIOLATION: %r and %r differ only by decoration -- put the "
+              "reasoning in note= and compare bare values" % (e, o), file=sys.stderr)
         raise SystemExit(1)
     print("VIOLATION[%s]: expected=%s got=%s%s"
           % (_NONCE, expected, got, (" -- " + note) if note else ""))
