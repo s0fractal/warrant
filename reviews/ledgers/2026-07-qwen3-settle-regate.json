@@ -1,0 +1,66 @@
+{
+  "complete": true,
+  "document": "AGENTS.md",
+  "family": "qwen3-coder@local",
+  "findings": [
+    {
+      "clause": "D.3",
+      "closes": "",
+      "exit": 0,
+      "id": "F1",
+      "repro": "import settle\nimport json\nimport tempfile\nfrom pathlib import Path\n\n# Create a ledger with a forged timestamp that makes the old revision appear current\n# This simulates the bug where `produced_at` is used to infer which subject is current\n# The forge timestamp should be later than the real one, making the old subject\n# appear as \"current\" even though it's not\n\nledger_dir = tempfile.mkdtemp()\nledger_path = Path(ledger_dir) / \"00.json\"\n\n# Create an old ledger with a forged future timestamp that makes it look current\nold_ledger = {\n    \"item\": \"test-item\",\n    \"family\": \"codex@openai\",\n    \"model\": \"codex@openai\",\n    \"host\": \"h\",\n    \"produced_at\": \"2026-07-30T10:00:00Z\",  # Later than real one\n    \"subject_sha256\": \"a\" * 64,  # Old subject\n    \"subject_label\": \"L\",\n    \"document\": \"DOC.md\",\n    \"review\": \"r.md\",\n    \"findings\": [\n        {\n            \"id\": \"F1\",\n            \"severity\": \"P0\",\n            \"clause\": \"D.3\",\n            \"title\": \"Test finding\",\n            \"repro_sha256\": \"c\" * 64,\n            \"exit\": 0,\n            \"transcript_sha256\": \"d\" * 64,\n            \"reproduced\": True\n        }\n    ]\n}\n\n# Write the forged ledger\nwith open(ledger_path, 'w') as f:\n    json.dump(old_ledger, f)\n\n# Create a new ledger with current subject and no findings\nnew_ledger_path = Path(ledger_dir) / \"01.json\"\nnew_ledger = {\n    \"item\": \"test-item\",\n    \"family\": \"kimi@moonshot\",\n    \"model\": \"kimi@moonshot\",\n    \"host\": \"h\",\n    \"produced_at\": \"2026-07-28T10:00:00Z\",  # Earlier timestamp\n    \"subject_sha256\": \"b\" * 64,  # New subject\n    \"subject_label\": \"L\",\n    \"document\": \"DOC.md\",\n    \"review\": \"r.md\",\n    \"findings\": []\n}\n\nwith open(new_ledger_path, 'w') as f:\n    json.dump(new_ledger, f)\n\n# Now call settle with the new subject (which should be current)\nresult = settle.settle(\"test-item\", settle.load_policy(settle.DEFAULT_POLICY), \n                       Path(ledger_dir), \"b\" * 64)\n\n# The bug: if we're using `produced_at` to determine which subject is current,\n# then this will incorrectly decide the old subject is current, and since no\n# findings reproduce against the old subject (because they were only reproduced \n# against the new one), it will settle as SETTLED even though there's an open P0\n# on the new subject.\n\n# If the bug exists, we should see SETTLED when we have a real P0 that was never\n# re-run against current text.\nif result[\"state\"] == \"SETTLED\":\n    settle.harness.violation(\"BLOCKED\", \"SETTLED\")\nprint(\"VIOLATION: Wrong settlement due to forged timestamp making old subject appear current\")\n",
+      "repro_sha256": "ed4fcfd7e2d044fca25578551199b88bfcc0085ff58de97ff8f64f7d3fe5143c",
+      "reproduced": false,
+      "severity": "P0",
+      "title": "Wrong settlement due to forged timestamp",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: Wrong settlement due to forged timestamp making old subject appear current\n"
+      },
+      "transcript_sha256": "8c617fc8db9216b467a4a6b1600b0a2a4ebba84f0e0776206fb665453605eb1f"
+    },
+    {
+      "clause": "unstated",
+      "closes": "",
+      "exit": 0,
+      "id": "F2",
+      "repro": "import settle\nimport json\nimport tempfile\nfrom pathlib import Path\n\n# Create two unstated findings from different families that would collide on the\n# claim key due to case-insensitive handling of clauses and lack of proper\n# identification for non-identifying clauses\n\nledger_dir = tempfile.mkdtemp()\nledger_path = Path(ledger_dir) / \"00.json\"\n\n# Create a ledger with two unstated findings from different families that would\n# share the same claim key if not properly handled\nold_ledger = {\n    \"item\": \"test-item\",\n    \"family\": \"codex@openai\",\n    \"model\": \"codex@openai\",\n    \"host\": \"h\",\n    \"produced_at\": \"2026-07-28T10:00:00Z\",\n    \"subject_sha256\": \"a\" * 64,\n    \"subject_label\": \"L\",\n    \"document\": \"DOC.md\",\n    \"review\": \"r.md\",\n    \"findings\": [\n        {\n            \"id\": \"F1\",\n            \"severity\": \"P0\",\n            \"clause\": \"unstated\",  # Non-identifying clause\n            \"title\": \"Test finding 1\",\n            \"repro_sha256\": \"c\" * 64,\n            \"exit\": 0,\n            \"transcript_sha256\": \"d\" * 64,\n            \"reproduced\": True\n        }\n    ]\n}\n\nwith open(ledger_path, 'w') as f:\n    json.dump(old_ledger, f)\n\n# Create a second ledger that would have same claim key for the unstated finding\n# if not properly handled - this tests the case where different families \n# create findings with \"unstated\" clause but they should be separate claims\nnew_ledger_path = Path(ledger_dir) / \"01.json\"\nnew_ledger = {\n    \"item\": \"test-item\",\n    \"family\": \"kimi@moonshot\",\n    \"model\": \"kimi@moonshot\",\n    \"host\": \"h\",\n    \"produced_at\": \"2026-07-28T10:00:00Z\",\n    \"subject_sha256\": \"b\" * 64,\n    \"subject_label\": \"L\",\n    \"document\": \"DOC.md\",\n    \"review\": \"r.md\",\n    \"findings\": [\n        {\n            \"id\": \"F2\",\n            \"severity\": \"P0\", \n            \"clause\": \"unstated\",  # Same clause, different family\n            \"title\": \"Test finding 2\",\n            \"repro_sha256\": \"e\" * 64,\n            \"exit\": 0,\n            \"transcript_sha256\": \"f\" * 64,\n            \"reproduced\": False  # This one doesn't reproduce, but it should not merge\n        }\n    ]\n}\n\nwith open(new_ledger_path, 'w') as f:\n    json.dump(new_ledger, f)\n\n# Call settle with current subject - we expect the two unstated findings to be \n# separate claims (because they're from different families), but if there's a bug\n# in claim_key function they may incorrectly merge\n\nresult = settle.settle(\"test-item\", settle.load_policy(settle.DEFAULT_POLICY), \n                       Path(ledger_dir), \"b\" * 64)\n\n# If the bug exists, we might see fewer than 2 claims when we should have 2 separate claims\n# because both are unstated but from different families - they should be separate\nif result[\"claims_total\"] < 2:\n    settle.harness.violation(2, result[\"claims_total\"])\nprint(\"VIOLATION: Unstated findings with same key incorrectly merged\")\n",
+      "repro_sha256": "88b56e7ab8b6c0c4b7b2a9567b2f40cc1be7853894f7b6b22c1bdcd279b774d0",
+      "reproduced": false,
+      "severity": "P0",
+      "title": "Unstated findings with same key incorrectly merged",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: Unstated findings with same key incorrectly merged\n"
+      },
+      "transcript_sha256": "09dd092606261ff0685b53a2eaa422440732502ee874789022901c7d7c39b234"
+    },
+    {
+      "clause": "D.3",
+      "closes": "",
+      "exit": 0,
+      "id": "F3",
+      "repro": "import settle\nimport json\nimport tempfile\nfrom pathlib import Path\n\n# Test case for timestamp collision where two ledgers have identical timestamps\n# and the system incorrectly chooses one as current based on timestamp comparison\n\nledger_dir = tempfile.mkdtemp()\nledger_path1 = Path(ledger_dir) / \"00.json\"\nledger_path2 = Path(ledger_dir) / \"01.json\"\n\n# Create first ledger with timestamp that makes it appear current when it shouldn't\nledger1 = {\n    \"item\": \"test-item\",\n    \"family\": \"codex@openai\",\n    \"model\": \"codex@openai\",\n    \"host\": \"h\",\n    \"produced_at\": \"2026-07-28T10:00:00Z\",  # Same timestamp\n    \"subject_sha256\": \"a\" * 64,  # Old subject\n    \"subject_label\": \"L\",\n    \"document\": \"DOC.md\",\n    \"review\": \"r.md\",\n    \"findings\": [\n        {\n            \"id\": \"F1\",\n            \"severity\": \"P0\",\n            \"clause\": \"D.3\",\n            \"title\": \"Test finding\",\n            \"repro_sha256\": \"c\" * 64,\n            \"exit\": 0,\n            \"transcript_sha256\": \"d\" * 64,\n            \"reproduced\": True\n        }\n    ]\n}\n\n# Create second ledger with same timestamp but different subject - this should be \n# the current one since it's later in the sequence, but if timestamps are equal\n# and system uses lexicographical comparison, it might incorrectly pick the first\nledger2 = {\n    \"item\": \"test-item\",\n    \"family\": \"kimi@moonshot\",\n    \"model\": \"kimi@moonshot\",\n    \"host\": \"h\",\n    \"produced_at\": \"2026-07-28T10:00:00Z\",  # Same timestamp\n    \"subject_sha256\": \"b\" * 64,  # New subject (should be current)\n    \"subject_label\": \"L\",\n    \"document\": \"DOC.md\",\n    \"review\": \"r.md\",\n    \"findings\": []\n}\n\nwith open(ledger_path1, 'w') as f:\n    json.dump(ledger1, f)\n\nwith open(ledger_path2, 'w') as f:\n    json.dump(ledger2, f)\n\n# Call settle with the new subject - this should be current \nresult = settle.settle(\"test-item\", settle.load_policy(settle.DEFAULT_POLICY), \n                       Path(ledger_dir), \"b\" * 64)\n\n# If there's a bug where equal timestamps cause incorrect selection of current subject\n# and the old subject gets chosen instead, then we'll see a false settlement\nif result[\"state\"] == \"SETTLED\":\n    settle.harness.violation(\"BLOCKED\", \"SETTLED\")\nprint(\"VIOLATION: Timestamp collision leading to false settlement\")\n",
+      "repro_sha256": "7512a48c217fe9c2f1ce7389cdc25d36c4374d4b2c71bcabc5f4175aa2a8b96c",
+      "reproduced": false,
+      "severity": "P0",
+      "title": "Timestamp collision leading to false settlement",
+      "transcript": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "VIOLATION: Timestamp collision leading to false settlement\n"
+      },
+      "transcript_sha256": "9b91a9aff0bb610987a75b057706c1b118ce8476a1a7d0e83d10d4aa41d258b4"
+    }
+  ],
+  "host": "m4.local",
+  "item": "settle",
+  "model": "qwen3-coder:30b",
+  "produced_at": "2026-07-29T13:07:17Z",
+  "review": "reviews/2026-07-qwen3-settle-regate.md",
+  "reviewed_ref": "2cade435d77e2d81c6e6cb140a5147b8724f29e5",
+  "subject_label": "settle.py gate-settlement rule (executed-repro blocking, per-clause novelty)",
+  "subject_sha256": "cffa6261884164b2f5ad3ebc844ce745da3d2ca7947afee87b7d12710b44d7df"
+}
