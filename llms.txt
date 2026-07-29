@@ -1,0 +1,110 @@
+# Warrant
+
+> A decision record for AI agents: signed, hash-addressed, with reasons you can
+> re-run. When an agent accepts, rejects or proposes something it writes a small
+> JSON record saying **what** was decided, **under** which policy (pinned by the
+> hash of its exact bytes), **because** of which reasons, on **which** evidence.
+> The record's hash is its identity, so nothing can be quietly edited afterwards.
+
+This file exists because reviewers kept reporting things that were not true. Four
+model reviews in four days filed findings that were artefacts of not knowing what
+they were looking at — files "missing" that were on `master` while the reviewer
+read a feature branch, a tool "printing 33/33" read out of an archived evidence
+blob, a "three-week" sibling pin that was same-day. A fifth session spent 785,000
+tokens reading and produced no finding at all. None of them were careless. They
+were oriented badly, and that was this repository's fault, not theirs.
+
+So: read this before concluding anything.
+
+## Orient yourself first
+
+- **`master` is the only thing in force.** Everything on a branch is a candidate:
+  readable, citable, **not adopted**. Check the ref before reporting anything
+  absent — that single mistake accounts for most false findings here.
+- **Present is not adopted.** A document existing on a branch, or even on
+  `master`, says nothing about its governance status. Location is a fact about
+  git; adoption is a threshold warrant signed by roster keys, recorded in
+  `.warrants/`, never a commit message and never a heading.
+- [MAP.md](MAP.md): generated from git — for every document this repository
+  cites, which ref actually holds it. Several live in the sibling repository
+  `sigma-glyph`, and the map says which branch.
+- [AGENTS.md](AGENTS.md): conduct rules. Rules 1–5 are in force; 6–7 are marked
+  DRAFT and are not.
+
+## Check anything in one command
+
+Nothing here asks to be believed. Every claim below is one command away, offline,
+no account:
+
+```bash
+python3 impl/warrant.py selftest        # ALL PASS
+python3 impl/warrant.py conformance     # ALL PASS (45/45)
+python3 tests/differential.py           # ALL AGREE  — Python vs Go, byte-exact
+python3 tests/negative.py               # ALL AGREE  — MUST-REJECT vectors
+python3 tools/repo_map.py --check-map   # every cited document is located
+```
+
+If a document and a command disagree, **the command is right**. Two files in this
+repository were wrong about their own test counts and PyPI status until they were
+caught; the fix was to generate the numbers rather than type them.
+
+## The specification
+
+- [SPEC.md](SPEC.md): the format. §5.1 key state, §6 verification, §7 settlement,
+  §9 multi-root stores. Deliberately boring — implementable in a day, and any two
+  implementations must agree byte-exact on every WarrantID.
+- [profiles/eu-ai-act-article-12.md](profiles/eu-ai-act-article-12.md): mapping to
+  the EU AI Act record-keeping clause, with its gaps stated in the same document.
+- Three implementations that agree on every vector: `impl/` (Python), `impl-go/`,
+  `impl-rs/` (no third-party crates, own SHA-256 and Ed25519).
+
+## If you are reviewing this project
+
+Read [sigma-glyph/reviews/README.md](https://github.com/s0fractal/sigma-glyph/blob/master/reviews/README.md)
+for the protocol, and `reviews/` here for the 74 prior reviews so you do not
+rediscover settled points.
+
+Four things that will save you a wasted pass:
+
+1. **Running the green suites is not a review.** They are green. Every real
+   finding here was green-and-still-broken; saying "suites pass" will be rejected
+   (AGENTS.md §3).
+2. **A finding is a reproduction, not a sentence.** Counter-vectors are executed
+   against a pinned commit by `tools/adversarial_gate.py`. Anything that does not
+   run is a Question — an honest and useful category, but not a finding.
+3. **Write blocks that can fail.** The commonest defect in submitted
+   counter-vectors here is a block that reports a violation whatever the machine
+   does: asserting the *correct* behaviour and then printing VIOLATION, or
+   printing it in every branch of an if/else. Three separate reviewers did this,
+   and so did the author of the check that catches it.
+4. **Say what you did not examine.** It is worth more than a confident sweep.
+
+## Where the honest gaps are
+
+Stated here so you do not have to find them, and because a project about
+verifiable provenance that hides its own open items is arguing against itself:
+
+- **No independent gate is currently available.** The reviewing families are
+  unaffordable or restricted, so items land UNGATED under a recorded attestation
+  naming who took responsibility. `policies/gate-settlement.json` defines that
+  state; it is disclosed rather than dressed up as a passed gate.
+- **WRT-002 is design-only** and carries open findings from three reviewer
+  families plus one confirmed here on 2026-07-29 (a quorum authorised only by a
+  losing policy branch could adopt a root — fixed, with the negative control run).
+- **`settle.py` reports UNRESOLVED about itself**: claims raised against
+  superseded revisions that were never re-run to a decision. It says so rather
+  than assuming its own fixes.
+- Part of the Lean chain rests transitively on `native_decide`, which puts the
+  compiler in the trusted base.
+
+## Optional
+
+- [PRIOR-ART.md](PRIOR-ART.md): defensive publication record — Software Heritage
+  archival, timestamped disclosure manifests, and a plain statement of what a
+  timestamp does and does not prove.
+- [TRADEMARK.md](TRADEMARK.md): licences stay permissive; conformance claims are
+  tied to passing the published vectors.
+- [MODEL-ACTORS.md](MODEL-ACTORS.md): model actors hold roster keys here; what
+  that protects and what it explicitly does not claim.
+- [standards/CEN-JTC21-contribution.md](standards/CEN-JTC21-contribution.md):
+  draft contribution on third-party verifiability of agent decision records.
