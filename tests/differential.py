@@ -25,6 +25,21 @@ _rs = os.environ.get("WARRANT_RS", os.path.join(ROOT, "impl-rs", "target", "rele
 RS = [_rs, "canon"]
 RS_AVAILABLE = os.path.exists(_rs)
 
+# Go is REQUIRED here -- a differential suite with one implementation compares
+# nothing, so a missing binary must fail. It should fail legibly: this is the
+# first command a new implementer runs, and it greeted them with a raw
+# FileNotFoundError traceback pointing at a temp path, while the Rust check three
+# lines above degrades to a polite skip. Fail loudly is right; fail
+# incomprehensibly is not.
+if not os.path.exists(GO[0]):
+    sys.exit(
+        f"warrant-go not found at {GO[0]}\n"
+        f"  build it:  (cd {os.path.join(ROOT, 'impl-go')} && go build -o warrant-go .)\n"
+        f"  or point:  WARRANT_GO=/path/to/warrant-go python3 tests/differential.py\n"
+        f"This suite compares two independent implementations; with one of them "
+        f"missing there is nothing to compare, so it stops rather than reporting "
+        f"agreement it did not observe.")
+
 
 def body(note="", actor="agent-x@vendor", extra_reason=None, ts=1751700000):
     b = {
