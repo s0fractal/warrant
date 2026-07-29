@@ -139,7 +139,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "usage: warrant-go settle <store> <settling-wid> <candidate-body.json>")
 			os.Exit(2)
 		}
-		_, records, blobs, err := loadVerifyData(os.Args[2])
+		_, records, blobs, _, err := loadVerifyData(os.Args[2])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
@@ -1557,26 +1557,36 @@ type settlementContext struct {
 	keysBefore     func(string) map[string]map[string]bool
 }
 
-func loadVerifyData(dir string) ([]verifyRecord, map[string]map[string]any, map[string][]byte, error) {
+func loadVerifyData(dir string) ([]verifyRecord, map[string]map[string]any, map[string][]byte, map[string]bool, error) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
 	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	var recList []verifyRecord
 	records := map[string]map[string]any{}
 	blobs := map[string][]byte{}
+	corruptBlobs := map[string]bool{}
 	for _, path := range blobFiles {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		if storeMode {
+			// Store mode indexes by FILENAME, so the name is taken as the address.
+			// Nothing checked that the bytes hash to it: a policy or evidence blob
+			// could be replaced wholesale and verify still reported 0 errors
+			// (2026-07-29, demonstrated on the Air Canada evidence pack). Flat mode
+			// indexes by content and so degrades to "unresolved blob", a warning --
+			// which is the wrong severity for bytes that contradict their address.
 			name := filepath.Base(path)
 			if isHex64(name) {
 				blobs[name] = data
+				if blobHash(data) != name {
+					corruptBlobs[name] = true
+				}
 			}
 		} else {
 			blobs[blobHash(data)] = data
@@ -1604,7 +1614,7 @@ func loadVerifyData(dir string) ([]verifyRecord, map[string]map[string]any, map[
 			records[wid] = env
 		}
 	}
-	return recList, records, blobs, nil
+	return recList, records, blobs, corruptBlobs, nil
 }
 
 func citedBlobs(body map[string]any) map[string]bool {
@@ -2281,7 +2291,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 		fmt.Fprintf(os.Stderr, "no store at %s (run: warrant init)\n", dir)
 		return 1, 0
 	}
-	recList, records, blobs, err := loadVerifyData(dir)
+	recList, records, blobs, corruptBlobs, err := loadVerifyData(dir)
 	if err != nil {
 		if report != nil {
 			fillNoStore(report, "settlement")
@@ -2459,6 +2469,8 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 		for _, h := range referencedBlobs(body) {
 			if blobs[h] == nil {
 				out("WARN", wid, "unresolved blob "+sh12(h))
+			} else if corruptBlobs[h] {
+				out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
 			}
 		}
 		if subj, ok := body["subject"].(map[string]any); ok {
@@ -2466,6 +2478,8 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
 				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
 					out("WARN", wid, "unresolved blob "+sh12(h))
+			} else if corruptBlobs[h] {
+				out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
 				}
 			}
 		}
@@ -2565,6 +2579,7 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 	var recList []verifyRecord
 	records := map[string]map[string]any{}
 	blobs := map[string][]byte{}
+	corruptBlobs := map[string]bool{}
 
 	for _, path := range blobFiles {
 		data, err := os.ReadFile(path)
@@ -2575,6 +2590,9 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 			name := filepath.Base(path)
 			if isHex64(name) {
 				blobs[name] = data
+				if blobHash(data) != name {
+					corruptBlobs[name] = true
+				}
 			}
 			continue
 		}
@@ -2719,6 +2737,8 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 		for _, h := range referencedBlobs(body) {
 			if blobs[h] == nil {
 				out("WARN", wid, "unresolved blob "+sh12(h))
+			} else if corruptBlobs[h] {
+				out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
 			}
 		}
 		if subj, ok := body["subject"].(map[string]any); ok {
@@ -2726,6 +2746,8 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
 				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
 					out("WARN", wid, "unresolved blob "+sh12(h))
+			} else if corruptBlobs[h] {
+				out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
 				}
 			}
 		}

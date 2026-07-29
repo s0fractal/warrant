@@ -468,6 +468,27 @@ class Store:
         # directory, splitting parity and crashing later reads (Kimi K3 gate).
         return HEX64.match(h) is not None and (self.blobs / h).is_file()
 
+    def blob_intact(self, h):
+        """Do the bytes at `blobs/<h>` actually hash to `<h>`?
+
+        SPEC §1 defines every referenced artifact as "addressed by SHA-256(bytes)",
+        so a file sitting at that name whose content hashes to something else is
+        not a blob -- it is different bytes wearing the address of the real ones.
+
+        Nothing checked this. A cited evidence blob, or the POLICY blob a decision
+        names in `under`, could be replaced wholesale and `verify` still reported
+        ok=true, errors=0. Demonstrated 2026-07-29 on the Air Canada evidence pack:
+        the bereavement policy text was swapped for "Refunds are ALWAYS granted
+        retroactively" and the pack still verified clean -- while the README's
+        headline promise is that `under` pins the exact bytes of the policy that
+        was in force. sigma-glyph's sixty-line auditor caught it; both shipped
+        implementations did not.
+        """
+        try:
+            return blob_hash((self.blobs / h).read_bytes()) == h
+        except OSError:
+            return False
+
     def put_record(self, env):
         wid = warrant_id(env["body"])
         (self.records / f"{wid}.json").write_text(
@@ -1190,7 +1211,15 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                       if r.get("kind") == "check" and isinstance(r.get("transcript"), str)]
         for h in blob_refs:
             if not store.has_blob(h):
+                # Absence stays a WARNING (SPEC §6(5)): blobs may live elsewhere,
+                # so "I cannot check this" is not "this is false".
                 out("WARN", wid, f"unresolved blob {h[:12]}")
+            elif not store.blob_intact(h):
+                # Present with the wrong bytes is the opposite case: the store was
+                # read and it contradicts its own addressing. That is corruption,
+                # not absence, and it is an ERROR.
+                out("ERR", wid, f"blob {h[:12]} content does not match its address "
+                                f"(store claims these bytes are SHA-256 {h[:12]}…)")
         _subject = body.get("subject") if isinstance(body, dict) else None
         subj = _subject.get("hash") if isinstance(_subject, dict) else None
         if isinstance(subj, str):

@@ -109,6 +109,23 @@ def main():
         py, go = verify_both(fresh(tamper_sig))
         case("tampered signature", py, go, want_errors=True)
 
+        # SPEC §1 addresses every referenced artifact by SHA-256(bytes), so a file
+        # at that name whose content hashes elsewhere is different bytes wearing the
+        # real ones' address. Nothing checked it: on 2026-07-29 the Air Canada
+        # evidence pack's POLICY blob was replaced with "Refunds are ALWAYS granted
+        # retroactively" and both implementations reported ok=true, errors=0 -- while
+        # the README's headline promise is that `under` pins the exact bytes of the
+        # policy that was in force. sigma-glyph's sixty-line auditor caught it.
+        #
+        # Absence stays a WARNING (§6(5)): blobs may live elsewhere, so "cannot
+        # check" is not "false". Present-with-wrong-bytes is an ERROR: the store was
+        # read and it contradicts its own addressing.
+        def swap_blob(s):
+            b = os.path.join(s, "blobs", under)
+            open(b, "wb").write(b"a completely different policy\n")
+        py, go = verify_both(fresh(swap_blob))
+        case("blob present at its address, wrong bytes", py, go, want_errors=True)
+
         def forge_actor(s):
             p = record_path(s, w1)
             env = json.load(open(p))
