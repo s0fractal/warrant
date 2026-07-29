@@ -126,6 +126,14 @@ def main():
         py, go = verify_both(fresh(swap_blob))
         case("blob present at its address, wrong bytes", py, go, want_errors=True)
 
+        # The subject is the thing the decision is ABOUT. The first version of the
+        # integrity check covered under/evidence/check/transcript and missed this
+        # one -- the same covers-less-than-it-claims shape, one commit later.
+        def swap_subject(s):
+            open(os.path.join(s, "blobs", subj), "wb").write(b"a different subject\n")
+        py, go = verify_both(fresh(swap_subject))
+        case("subject blob present at its address, wrong bytes", py, go, want_errors=True)
+
         def forge_actor(s):
             p = record_path(s, w1)
             env = json.load(open(p))

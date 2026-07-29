@@ -1226,6 +1226,15 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
             subj_may_be_record = body.get("decision") in ("supersede", "accept")
             if not store.has_blob(subj) and not (subj_may_be_record and subj in recs):
                 out("WARN", wid, f"unresolved blob {subj[:12]}")
+            elif store.has_blob(subj) and not store.blob_intact(subj):
+                # The subject is the thing the decision is ABOUT, so swapping it
+                # makes the record a decision about different bytes than it names --
+                # if anything worse than swapping evidence. The first version of
+                # this check covered under/evidence/check/transcript and missed
+                # exactly this one, which is the "covers less than it claims" shape
+                # this file keeps finding, here one commit after finding it.
+                out("ERR", wid, f"subject blob {subj[:12]} content does not match "
+                                f"its address")
             if body.get("decision") == "supersede" and subj not in recs:
                 out("ERR", wid, "supersede subject MUST be the superseded WarrantID (SPEC s7)")
         if is_unverifiable(body):
