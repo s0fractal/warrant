@@ -8,9 +8,10 @@
 
 mod ed25519;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process::ExitCode;
 
 type Hash = [u8; 32];
@@ -716,6 +717,296 @@ fn cmd_conformance(dir: &str) -> bool {
     }
 }
 
+
+// ---------- store verification (SPEC §6, BASE grade) ----------
+//
+// The third implementation verified canonicalization and conformance but not
+// stores, so the strongest claim this project could make was that TWO
+// implementations agree on a verification outcome. On the surface where being
+// wrong matters most -- does this store verify -- parity was a pair, not a trio.
+//
+// Scope is deliberately narrow and stated rather than implied: §6 base checks
+// only. No settlement grade, no key state, no trust config. `ski@v1` reasons are
+// reported as `ski@v1 unverified: runtime unavailable`, which is exactly what the
+// Python verifier prints when its oracle is absent -- so parity is testable
+// against `warrant verify` rather than approximately similar to it.
+struct Rec {
+    wid: String,
+    env: Json,
+}
+
+fn list_dir(path: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(entries) = fs::read_dir(path) {
+        for e in entries.flatten() {
+            if let Some(name) = e.file_name().to_str() {
+                out.push(name.to_string());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+fn cmd_verify(store: &str) -> ExitCode {
+    let records_dir = format!("{store}/records");
+    let blobs_dir = format!("{store}/blobs");
+    if !Path::new(&records_dir).is_dir() {
+        // Fail closed, and in the same SHAPE as the other two: a diagnostic and a
+        // non-zero status, with no summary line. Printing "0 records, 1 errors"
+        // here made this implementation the only one to summarise a store that
+        // does not exist, which reads as a verification that ran.
+        eprintln!("no store at {store} (run: warrant init)");
+        return ExitCode::from(1);
+    }
+
+    // Blob names are addresses. A file whose bytes hash elsewhere is different
+    // bytes wearing the real ones' address, so integrity is recorded up front.
+    let mut blob_ok: BTreeMap<String, bool> = BTreeMap::new();
+    for name in list_dir(&blobs_dir) {
+        if !is_hex64(&name) {
+            continue;
+        }
+        let intact = read(&format!("{blobs_dir}/{name}"))
+            .map(|d| encode_hex(&sha256(&d)) == name)
+            .unwrap_or(false);
+        blob_ok.insert(name, intact);
+    }
+
+    let mut errs = 0usize;
+    let mut warns = 0usize;
+    let mut recs: Vec<Rec> = Vec::new();
+    let mut unloadable: Vec<(String, String)> = Vec::new();
+    for name in list_dir(&records_dir) {
+        if !name.ends_with(".json") {
+            continue;
+        }
+        let wid = name.trim_end_matches(".json").to_string();
+        match read(&format!("{records_dir}/{name}")).and_then(|d| Parser::parse(&d)) {
+            Ok(env) => recs.push(Rec { wid, env }),
+            Err(e) => unloadable.push((wid, e)),
+        }
+    }
+    let known: BTreeSet<String> = recs.iter().map(|r| r.wid.clone()).collect();
+
+    let mut out = |lvl: &str, wid: &str, msg: String| {
+        let short: String = wid.chars().take(12).collect();
+        println!("{lvl} {short}  {msg}");
+    };
+
+    for (wid, why) in &unloadable {
+        out("ERR ", wid, format!("unloadable record: {why}"));
+        errs += 1;
+    }
+
+    for r in &recs {
+        let obj = match as_obj(&r.env) {
+            Some(o) if o.contains_key("body") && o.contains_key("sigs") => o,
+            _ => {
+                out("ERR ", &r.wid, "envelope must be {body, sigs}".to_string());
+                errs += 1;
+                continue;
+            }
+        };
+        let body = &obj["body"];
+        for m in validate_body(body) {
+            out("ERR ", &r.wid, format!("schema: {m}"));
+            errs += 1;
+        }
+        // A record whose id does not recompute is not the record its name claims,
+        // so every further check against that name is meaningless. One error, then
+        // skip -- matching the other two implementations, which learned this from a
+        // gate finding about exactly the extra warnings the alternative produces.
+        match warrant_id(body) {
+            Ok(got) if got == r.wid => {}
+            Ok(got) => {
+                let s: String = got.chars().take(12).collect();
+                out("ERR ", &r.wid, format!("WarrantID mismatch: recomputed {s}"));
+                errs += 1;
+                continue;
+            }
+            Err(_) => {
+                out("ERR ", &r.wid,
+                    "WarrantID uncomputable (record contains invalid characters)".to_string());
+                errs += 1;
+                continue;
+            }
+        }
+
+        // Signatures: each is judged on its own. An invalid one is excluded with a
+        // warning rather than condemning the record, so one bad co-signature
+        // cannot be used to invalidate somebody else's good record; the record
+        // errors only if no valid signature by its own actor remains.
+        let bm = as_obj(body);
+        let actor = bm
+            .and_then(|m| m.get("actor"))
+            .and_then(as_obj)
+            .and_then(|m| m.get("id"))
+            .and_then(as_str)
+            .unwrap_or("");
+        match obj.get("sigs").and_then(as_arr) {
+            None => {
+                out("ERR ", &r.wid, "sigs must be a list".to_string());
+                errs += 1;
+            }
+            Some(sigs) if sigs.is_empty() => {
+                out("ERR ", &r.wid, "no signatures".to_string());
+                errs += 1;
+            }
+            Some(sigs) => {
+                let mut actor_ok = false;
+                for s in sigs {
+                    match as_obj(s) {
+                        None => {
+                            out("WARN", &r.wid,
+                                "signature entry is not an object (excluded)".to_string());
+                            warns += 1;
+                        }
+                        Some(sm) => {
+                            let who = sm.get("actor").and_then(as_str).unwrap_or("?");
+                            if verify_sig(&r.wid, sm) {
+                                if who == actor {
+                                    actor_ok = true;
+                                }
+                                let key: String = sm
+                                    .get("key")
+                                    .and_then(as_str)
+                                    .unwrap_or("")
+                                    .chars()
+                                    .take(12)
+                                    .collect();
+                                // No keyring here by construction: this
+                                // implementation has no trust config, so the
+                                // key<->actor binding is unproven and says so.
+                                out("WARN", &r.wid,
+                                    format!("binding unverified (no keyring): key {key} claims actor {who}"));
+                                warns += 1;
+                            } else {
+                                out("WARN", &r.wid,
+                                    format!("signature does not verify (excluded): actor {who}"));
+                                warns += 1;
+                            }
+                        }
+                    }
+                }
+                if !actor_ok {
+                    out("ERR ", &r.wid, "no valid signature by body.actor.id".to_string());
+                    errs += 1;
+                }
+            }
+        }
+
+        // prior MUST resolve to a stored warrant (§6(4)); and along each edge `ts`
+        // must not decrease, which is a WARNING because a clock is not authority --
+        // §5.1 makes key validity derive from DAG order, never from trusting `ts`.
+        //
+        // This check was missing from the first version of this function, and the
+        // three-way differential caught it as a one-warning gap on the
+        // filename-swap case: fourteen against fifteen. A missing check does not
+        // look like a missing check, it looks like a divergence somewhere else.
+        // Json::Int holds canonical integer TEXT, so compare numerically: a
+        // lexicographic compare would call 9 later than 10.
+        fn ts_of(v: Option<&Json>) -> Option<i128> {
+            match v {
+                Some(Json::Int(t)) => t.parse::<i128>().ok(),
+                _ => None,
+            }
+        }
+        let my_ts = ts_of(bm.and_then(|m| m.get("ts")));
+        if let Some(prior) = bm.and_then(|m| m.get("prior")).and_then(as_arr) {
+            for p in prior.iter().filter_map(as_str) {
+                let s: String = p.chars().take(12).collect();
+                if !known.contains(p) {
+                    out("ERR ", &r.wid, format!("prior {s} not in store"));
+                    errs += 1;
+                    continue;
+                }
+                let prev_ts = ts_of(recs.iter().find(|q| q.wid == p)
+                    .and_then(|q| as_obj(&q.env))
+                    .and_then(|m| m.get("body"))
+                    .and_then(as_obj)
+                    .and_then(|m| m.get("ts")));
+                if let (Some(prev), Some(mine)) = (prev_ts, my_ts) {
+                    if prev > mine {
+                        out("WARN", &r.wid, format!("ts decreases along prior edge {s}"));
+                        warns += 1;
+                    }
+                }
+            }
+        }
+
+        // Blob references: absent is a warning (they may live elsewhere), present
+        // with the wrong bytes is an error (the store contradicts its addressing).
+        let mut refs: Vec<String> = Vec::new();
+        for key in ["under", "evidence"] {
+            if let Some(a) = bm.and_then(|m| m.get(key)).and_then(as_arr) {
+                refs.extend(a.iter().filter_map(as_str).map(|s| s.to_string()));
+            }
+        }
+        let mut ski_reasons = 0usize;
+        if let Some(bc) = bm.and_then(|m| m.get("because")).and_then(as_arr) {
+            for reason in bc.iter().filter_map(as_obj) {
+                for key in ["check", "transcript"] {
+                    if let Some(h) = reason.get(key).and_then(as_str) {
+                        refs.push(h.to_string());
+                    }
+                }
+                if reason.get("runtime").and_then(as_str) == Some("ski@v1") {
+                    ski_reasons += 1;
+                }
+            }
+        }
+        for h in &refs {
+            let s: String = h.chars().take(12).collect();
+            match blob_ok.get(h) {
+                None => {
+                    out("WARN", &r.wid, format!("unresolved blob {s}"));
+                    warns += 1;
+                }
+                Some(false) => {
+                    out("ERR ", &r.wid,
+                        format!("blob {s} content does not match its address"));
+                    errs += 1;
+                }
+                Some(true) => {}
+            }
+        }
+        if let Some(subj) = bm
+            .and_then(|m| m.get("subject"))
+            .and_then(as_obj)
+            .and_then(|m| m.get("hash"))
+            .and_then(as_str)
+        {
+            let s: String = subj.chars().take(12).collect();
+            let decision = bm.and_then(|m| m.get("decision")).and_then(as_str).unwrap_or("");
+            let may_be_record = decision == "supersede" || decision == "accept";
+            match blob_ok.get(subj) {
+                None if !(may_be_record && known.contains(subj)) => {
+                    out("WARN", &r.wid, format!("unresolved blob {s}"));
+                    warns += 1;
+                }
+                Some(false) => {
+                    out("ERR ", &r.wid,
+                        format!("subject blob {s} content does not match its address"));
+                    errs += 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Not executed here, and it must not look like it was: "re-ran and
+        // matched" and "was not executed" must never be observationally equal.
+        for _ in 0..ski_reasons {
+            out("WARN", &r.wid, "ski@v1 unverified: runtime unavailable".to_string());
+            warns += 1;
+        }
+    }
+
+    println!("\nverify: {} records, {} errors, {} warnings",
+             recs.len() + unloadable.len(), errs, warns);
+    if errs > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     match args.get(1).map(String::as_str) {
@@ -732,6 +1023,10 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        Some("verify") => {
+            let store = args.get(2).map(String::as_str).unwrap_or(".warrants");
+            cmd_verify(store)
+        }
         Some("conformance") => {
             let dir = args.get(2).map(String::as_str).unwrap_or("examples");
             if cmd_conformance(dir) {
@@ -772,7 +1067,8 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("usage: warrant-rs canon <body.json> | conformance [examples_dir]");
+            eprintln!("usage: warrant-rs canon <body.json> | conformance [examples_dir] \
+| verify <store>  (verify is SPEC s6 BASE grade: no settlement, no key state)");
             ExitCode::from(2)
         }
     }

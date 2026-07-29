@@ -92,6 +92,10 @@ CHECKS = [
     ("go: verify own store (settlement grade)",
      [str(GO), "verify", "--settlement", "--trust-config",
       "trust-config.json", ".warrants"], "go"),
+    ("three-way store verification (PY/GO/RS agree on broken stores)",
+     ["python3", "tests/verify_three_way.py"], "go+rs"),
+    ("rust: verify own store (SPEC §6 base grade)",
+     [str(RS), "verify", ".warrants"], "rs"),
     ("rust: conformance", [str(RS), "conformance", "examples"], "rs"),
     ("rust: ed25519 selftest", [str(RS), "edtest"], "rs"),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
@@ -99,6 +103,8 @@ CHECKS = [
 ]
 
 NEEDS = {
+    "go+rs": (lambda: NEEDS["go"][0]() and NEEDS["rs"][0](),
+              "needs impl-go/warrant-go and impl-rs built"),
     "sigma+go": (lambda: NEEDS["sigma"][0]() and NEEDS["go"][0](),
                  "needs both the Σ-GLYPH oracle and impl-go/warrant-go"),
     "go": (lambda: GO.is_file(),

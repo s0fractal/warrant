@@ -92,7 +92,9 @@ else's namespace is a false claim about who defines it.
 - [profiles/eu-ai-act-article-12.md](profiles/eu-ai-act-article-12.md): mapping to
   the EU AI Act record-keeping clause, with its gaps stated in the same document.
 - Three implementations that agree on every vector: `impl/` (Python), `impl-go/`,
-  `impl-rs/` (no third-party crates, own SHA-256 and Ed25519).
+  `impl-rs/` (no third-party crates, own SHA-256 and Ed25519). All three now also
+  agree on whether a **store** verifies, on broken stores as well as clean ones —
+  see the base-grade limit under the gaps below.
 
 ## If you are reviewing this project
 
@@ -143,8 +145,12 @@ verifiable provenance that hides its own open items is arguing against itself:
   threshold rule that gates adoption is exercised, including that an unbound key
   claiming an actor does not satisfy it. Deeper §9 behaviour is not covered by a
   vector here.
-- **`impl-rs` does not verify stores** — it implements canonicalization,
-  conformance and Ed25519. Store verification parity is Python against Go only.
+- **`impl-rs` verifies stores at SPEC §6 BASE grade only** — no settlement, no
+  key state, no trust config, and `ski@v1` reasons are reported
+  `ski@v1 unverified: runtime unavailable` because it has no oracle. Three-way
+  parity is therefore a claim about base-grade verification, tested in
+  `tests/verify_three_way.py` on nine deliberately broken stores; settlement-grade
+  parity remains Python against Go.
 
 ## Reporting a defect
 
