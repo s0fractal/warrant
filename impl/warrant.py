@@ -178,8 +178,31 @@ def _reject_lone_surrogates(obj):
 
 def loads_ijson(raw):
     """json.loads restricted to I-JSON: rejects duplicate member names, the
-    non-JSON constants NaN/Infinity/-Infinity, AND unpaired surrogates in any
-    string or member name (SPEC §4 / RFC 7493)."""
+    non-JSON constants NaN/Infinity/-Infinity, unpaired surrogates in any string
+    or member name, AND a leading byte order mark (SPEC §4 / RFC 7493).
+
+    On the BOM: RFC 8259 §8.1 says a receiver MAY ignore one rather than treat it
+    as an error, so accepting it is not a grammar violation — which is exactly the
+    problem. "MAY" means two conformant implementations legitimately disagree, and
+    a content-addressed format cannot afford that: the same record would arrive as
+    two byte strings with two different SHA-256s.
+
+    SCOPE OF THIS CHECK, MEASURED RATHER THAN ASSUMED (2026-07-30). Python's
+    `json.loads` accepts `b"\\xef\\xbb\\xbf{\\"a\\":1}"` and returns `{'a': 1}` —
+    `detect_encoding` strips a BOM from BYTES — while Go's `encoding/json` rejects
+    it. But every call site in this file passes a `str` (`read_text`, or an
+    explicit `.decode("utf-8")`), and `json.loads` on a `str` beginning with U+FEFF
+    already fails. Checked end-to-end on a signed store: the pre-fix verifier
+    reported `unloadable record: malformed JSON` and agreed with Go's error count.
+
+    So this is NOT the repair of a live split between the implementations — that
+    claim was checked and withdrawn. It converts an incidental refusal into a named
+    one, and it guards the bytes-input surface of this function for callers outside
+    this file. That surface was not hypothetical: OAIP called it on raw artifact
+    bytes, where the BOM was genuinely accepted."""
+    bom = b"\xef\xbb\xbf" if isinstance(raw, (bytes, bytearray)) else "﻿"
+    if raw[:len(bom)] == bom:
+        raise ValueError("leading byte order mark (not canonical I-JSON)")
     return _reject_lone_surrogates(
         json.loads(raw, object_pairs_hook=_reject_dup_keys,
                    parse_constant=_reject_constant))
