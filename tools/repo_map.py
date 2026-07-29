@@ -67,10 +67,16 @@ def git(repo, *args, ok_fail=False):
 def refs_of(repo):
     """Local branches plus everything on origin, newest-looking first."""
     out = []
-    for line in git(repo, "for-each-ref", "--format=%(refname:short)",
+    # Filter on the FULL refname: the short form of refs/remotes/origin/HEAD is
+    # bare "origin", which does not end in "/HEAD" and so slipped through as a
+    # local branch. MAP.md then listed a branch named `origin` marked "on origin:
+    # no" -- a ref that does not exist, in the generated file a reviewer reads to
+    # find out which refs do.
+    for line in git(repo, "for-each-ref", "--format=%(refname)\t%(refname:short)",
                     "refs/heads", "refs/remotes/origin").splitlines():
-        if line and not line.endswith("/HEAD"):
-            out.append(line)
+        full, _, short = line.partition("\t")
+        if short and not full.endswith("/HEAD"):
+            out.append(short)
     # master first: if a document is on the trunk that is the answer worth giving
     out.sort(key=lambda r: (r.split("/")[-1] != "master", r))
     return out
@@ -213,12 +219,19 @@ def main():
         "| Ref | Head | On origin |",
         "|---|---|---|",
     ]
+    # Branches that exist ONLY on origin belong here too. Listing local refs
+    # alone under-reported what a reader can fetch: after five merged branches
+    # were deleted locally they vanished from the map while still being cited in
+    # commit history, so the file answering "which refs exist" stopped answering
+    # it. Deleting them was tidy; letting the map forget them was not.
+    local = [r for r in refs_of(ROOT) if not r.startswith("origin/")]
     remote = {r.split("/", 1)[1] for r in refs_of(ROOT) if r.startswith("origin/")}
-    for ref in refs_of(ROOT):
-        if ref.startswith("origin/"):
-            continue
+    for ref in local:
         sha = git(ROOT, "rev-parse", "--short", ref).strip()
         out.append(f"| `{ref}` | `{sha}` | {'yes' if ref in remote else '**no**'} |")
+    for ref in sorted(remote - set(local)):
+        sha = git(ROOT, "rev-parse", "--short", f"origin/{ref}").strip()
+        out.append(f"| `{ref}` | `{sha}` | origin only (fetch it) |")
 
     if unresolved:
         out += ["", "## Cited and resolving nowhere", "",
