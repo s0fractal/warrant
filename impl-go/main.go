@@ -1699,11 +1699,17 @@ func fingerprint(reason, body map[string]any, blobs map[string][]byte) (string, 
 		if err != nil {
 			return "", false
 		}
-		_, result, _, err := runSkiCheckFromStore(blobs, check)
+		// The RE-RUN verdict, never the claimed one. SPEC §7 defines the outcome
+		// fingerprint as what a check "re-runs to"; using the reason's verdict made
+		// it what the filer SAID it ran to, so writing the opposite word produced a
+		// "new" fingerprint over an identical re-execution and re-opened settled
+		// questions for free. Both implementations computed the real verdict and
+		// discarded it in the same place.
+		rerunVerdict, result, _, err := runSkiCheckFromStore(blobs, check)
 		if err != nil {
 			return "", false
 		}
-		return "ski@v1\x00" + hash32Hex(parsed.term) + "\x00" + hash32Hex(parsed.expect) + "\x00" + verdict + "\x00" + result, true
+		return "ski@v1\x00" + hash32Hex(parsed.term) + "\x00" + hash32Hex(parsed.expect) + "\x00" + rerunVerdict + "\x00" + result, true
 	default:
 		return "", false
 	}

@@ -597,10 +597,23 @@ def fingerprint(reason, body, store):
         if doc is None or validate_ski_blob(doc):
             return None
         try:
-            _got, result_hash, _spent = run_ski_check(store, reason["check"])
+            rerun_verdict, result_hash, _spent = run_ski_check(store, reason["check"])
         except RuntimeError:
             return None
-        return ("ski@v1", doc["term"], doc["expect"], verdict, result_hash)
+        # The RE-RUN verdict, never the claimed one. SPEC §7 defines the outcome
+        # fingerprint as what a check "re-runs to"; using reason["verdict"] made it
+        # what the filer SAID it ran to. Both were computed here and the real one
+        # was discarded.
+        #
+        # Exploit, demonstrated 2026-07-29: file a re-litigation citing the SAME
+        # check, whose re-execution gives the SAME result hash, and simply write
+        # the opposite verdict. term, expect and result_hash are identical, the
+        # verdict field differs, so the fingerprint is "new" and
+        # settlement_admissibility returns "(b) new outcome fingerprint". That is
+        # an unbounded free re-opener for any settled question -- exactly what §7
+        # exists to prevent. §6(7) flags the lie as a WARNING but admission does
+        # not consult it.
+        return ("ski@v1", doc["term"], doc["expect"], rerun_verdict, result_hash)
     return None
 
 

@@ -251,6 +251,18 @@ def case_relitigation(tmp):
         "restatement": body("accept", subject, [opaque], "a@x", prior=[settled],
                             because=[{"kind": "check", "runtime": "ski@v1",
                                        "check": pass_again, "verdict": "pass"}], ts=4),
+        # SPEC §7 says a re-litigation must carry a check that RE-RUNS TO a
+        # previously absent outcome fingerprint. Both implementations built that
+        # fingerprint from the CLAIMED verdict while discarding the one the runner
+        # had just returned, so citing the settled question's own check and simply
+        # writing the opposite word produced a "new" fingerprint over an identical
+        # re-execution -- an unbounded free re-opener for any settled question
+        # (2026-07-29). §6(7) flags the lie as a warning; admission never asked.
+        "lied verdict, same check": body("reject", subject, [opaque], "a@x",
+                                         prior=[settled],
+                                         because=[{"kind": "check", "runtime": "ski@v1",
+                                                    "check": pass_check,
+                                                    "verdict": "fail"}], ts=5),
     }
     ok = True
     for name, cand in candidates.items():
@@ -261,6 +273,7 @@ def case_relitigation(tmp):
             "new evidence": ("admissible: (a) new evidence", 0),
             "new fingerprint": ("admissible: (b) new outcome fingerprint", 0),
             "restatement": ("inadmissible: cites nothing new", 1),
+            "lied verdict, same check": ("inadmissible: cites nothing new", 1),
         }[name]
         ok &= assert_settle("re-litigation: " + name, py, go, want[0], want[1])
     restatement = candidates["restatement"]
