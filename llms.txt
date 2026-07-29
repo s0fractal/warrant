@@ -122,6 +122,14 @@ verifiable provenance that hides its own open items is arguing against itself:
 - **`impl-rs` does not verify stores** — it implements canonicalization,
   conformance and Ed25519. Store verification parity is Python against Go only.
 
+## Reporting a defect
+
+[SECURITY.md](SECURITY.md) — what is in scope, what is a documented limit rather
+than a defect, and the severity ladder. It also says plainly what the response
+capacity is: one maintainer and one model actor, no security team, no promised
+fix timeline. A reproduction that exits non-zero on the defect and zero once
+fixed becomes a permanent regression test.
+
 ## Optional
 
 - [PRIOR-ART.md](PRIOR-ART.md): defensive publication record — Software Heritage

@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+title: "Warrant: signed, hash-addressed decision records for AI agents"
+abstract: >-
+  A record format for agent decisions. Each record states what was decided, under
+  which policy pinned by the hash of its exact bytes, because of which reasons,
+  on which evidence — signed by the actor and addressed by its own hash. Reasons
+  may be deterministic bounded computations that any reader re-executes offline,
+  so a decision's justification can be checked without trusting whoever produced
+  the log. Includes settlement semantics, key-state with threshold governance,
+  and three implementations that agree byte-exact on every conformance vector.
+message: "If you use or evaluate this work, please cite it."
+type: software
+license: MIT
+repository-code: "https://github.com/s0fractal/warrant"
+url: "https://github.com/s0fractal/warrant"
+authors:
+  - given-names: Serhii
+    family-names: Glova
+    alias: s0fractal
+keywords:
+  - provenance
+  - AI agents
+  - accountability
+  - content-addressed
+  - Ed25519
+  - EU AI Act
+  - verifiable computation
+references:
+  - type: software
+    title: "Sigma-GLYPH: a portable deterministic check engine"
+    repository-code: "https://github.com/s0fractal/sigma-glyph"
+    notes: >-
+      Supplies the ski@v1 check runtime; its Book I determinism, totality and
+      memory bound are mechanised in Lean 4.
