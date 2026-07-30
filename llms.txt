@@ -106,7 +106,7 @@ else's namespace is a false claim about who defines it.
 - Three implementations that agree on every vector: `impl/` (Python), `impl-go/`,
   `impl-rs/` (no third-party crates, own SHA-256 and Ed25519). All three now also
   agree on whether a **store** verifies, on broken stores as well as clean ones —
-  see the base-grade limit under the gaps below.
+  bounded by SA-6 (base grade) in the threat model.
 
 ## If you are reviewing this project
 
@@ -129,52 +129,53 @@ Four things that will save you a wasted pass:
    and so did the author of the check that catches it.
 4. **Say what you did not examine.** It is worth more than a confident sweep.
 
-## Where the honest gaps are
+## Security assumptions and non-goals
 
-Stated here so you do not have to find them, and because a project about
-verifiable provenance that hides its own open items is arguing against itself:
+This section used to be "Where the honest gaps are" and carried its own copy of
+the list. The items have not changed and none has been softened; they now live in
+one place, in the form a standards reader expects:
+**[THREAT-MODEL.md](THREAT-MODEL.md) → "Security assumptions and non-goals"** —
+ten scoped assumptions (`SA-1` … `SA-10`) and six explicit non-goals
+(`NG-1` … `NG-6`), each with its reasoning, alongside the attacker-capability
+matrix they bound.
 
-- **No independent gate is currently available.** The reviewing families are
-  unaffordable or restricted, so items land UNGATED under a recorded attestation
-  naming who took responsibility. `policies/gate-settlement.json` defines that
-  state; it is disclosed rather than dressed up as a passed gate.
-- **WRT-002 is design-only** and carries open findings from three reviewer
-  families plus one confirmed here on 2026-07-29 (a quorum authorised only by a
-  losing policy branch could adopt a root — fixed, with the negative control run).
-- **`settle.py` reports UNRESOLVED about itself**: claims raised against
-  superseded revisions that were never re-run to a decision. It says so rather
-  than assuming its own fixes.
-- Part of the Lean chain rests transitively on `native_decide`, which puts the
-  compiler in the trusted base.
-- **`cmd@v1` verdicts are trusted, by specification.** SPEC §7 states the
-  verifier does not re-execute them — their trust model is the container. So a
-  `cmd@v1` outcome fingerprint carries the verdict its filer wrote, and the
-  re-litigation novelty test can be satisfied by writing a different word. The
-  same hole was closed for `ski@v1`, where re-execution is available and the
-  re-run verdict is now what the fingerprint records. This one is a limit of the
-  format, not of the code, and it is stated rather than patched over.
-- **Multi-root stores (§9) are verified only as far as root admission.** The
-  threshold rule that gates adoption is exercised, including that an unbound key
-  claiming an actor does not satisfy it. Deeper §9 behaviour is not covered by a
-  vector here.
-- **`impl-rs` verifies stores at SPEC §6 BASE grade only** — no settlement, no
-  key state, no trust config, and `ski@v1` reasons are reported
-  `ski@v1 unverified: runtime unavailable` because it has no oracle. Three-way
-  parity is therefore a claim about base-grade verification, tested in
-  `tests/verify_three_way.py` on nine deliberately broken stores; settlement-grade
-  parity remains Python against Go.
+Not duplicated here on purpose. This file has been caught overstating four times;
+a residual list maintained in two places is how the fifth would happen.
+
+The sharpest five, stated at full strength so a summary cannot read softer than
+the thing it summarises:
+
+- **SA-2** — anyone with a keypair can file a record claiming **any** actor id.
+  The signature verifies against the key in the envelope, `warrant verify` exits
+  0 with one WARN, and it cannot be configured to fail on that. The format's
+  only external consumer had to build its own keyring instead.
+- **SA-1** — `cmd@v1` verdicts are trusted by specification, so a settled matter
+  can be re-opened by filing the same check with the opposite verdict. *By
+  writing a different word.*
+- **SA-3** — a threshold assumes independent custody and has not had it: **zero**
+  multi-signature records in this repository, five in `sigma-glyph`, three of
+  those five signed from one host.
+- **SA-6** — three-way implementation parity is a claim about **base grade**
+  only; settlement-grade parity is Python against Go, and §9 multi-root is
+  vectored only as far as root admission.
+- **SA-10** — no independent gate is currently available, so items land UNGATED
+  under a recorded attestation rather than a passed gate.
+
+These are stated boundaries of the threat model, not defects. A report showing
+one is *worse than stated* is in scope and welcome; one restating it is not.
 
 ## Reporting a defect
 
-[THREAT-MODEL.md](THREAT-MODEL.md) — DRAFT, added 2026-07-30: one attacker-
-capability matrix instead of five scattered places, and the disclosed weaknesses
-in one list. Read it before filing anything: two of its rows are documented
-limits, and a report restating one is not a finding.
+[THREAT-MODEL.md](THREAT-MODEL.md) — DRAFT, added 2026-07-30: one
+attacker-capability matrix instead of five scattered places, and the formal
+"Security assumptions and non-goals" section referenced above. Read it before
+filing anything: two of its rows are scoped assumptions rather than defects, and
+a report restating one is not a finding.
 
-[SECURITY.md](SECURITY.md) — what is in scope, what is a documented limit rather
+[SECURITY.md](SECURITY.md) — what is in scope, what is a scoped assumption rather
 than a defect, and the severity ladder. It also says plainly what the response
-capacity is: one maintainer and one model actor, no security team, no promised
-fix timeline. A reproduction that exits non-zero on the defect and zero once
+capacity is: one accountable maintainer, one model actor holding a bounded
+delegation under them, no security team, no promised fix timeline. A reproduction that exits non-zero on the defect and zero once
 fixed becomes a permanent regression test.
 
 ## Optional
@@ -184,7 +185,14 @@ fixed becomes a permanent regression test.
   timestamp does and does not prove.
 - [TRADEMARK.md](TRADEMARK.md): licences stay permissive; conformance claims are
   tied to passing the published vectors.
-- [MODEL-ACTORS.md](MODEL-ACTORS.md): model actors hold roster keys here; what
-  that protects and what it explicitly does not claim.
+- [MODEL-ACTORS.md](MODEL-ACTORS.md): model actors here are **delegated, bounded
+  actors under a human-held root of authority** — never the maintainer of record
+  and never where non-repudiation rests. What the delegation covers, what a
+  model's signature does and does not attest, how much of the threshold has
+  actually been exercised, and the four places the current text and the mechanism
+  still disagree.
+- [MAINTAINER-LEASE.md](MAINTAINER-LEASE.md): the delegation instrument itself —
+  named holder, enumerated acts, exclusions, no self-amendment, revocable by the
+  steward at will.
 - [standards/CEN-JTC21-contribution.md](standards/CEN-JTC21-contribution.md):
   draft contribution on third-party verifiability of agent decision records.
