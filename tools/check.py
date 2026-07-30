@@ -79,6 +79,8 @@ CHECKS = [
      ["python3", "tests/anchor.py"], None),
     ("mcp sealing proxy (stdio round-trip -> verifiable pack)",
      ["python3", "tests/mcp_seal.py"], None),
+    ("mcp server (stdio: file/verify/show tools + tamper control)",
+     ["python3", "integrations/mcp-server/test_server.py"], None),
     ("ed25519 differential (Rust vs Python)",
      ["python3", "tests/ed25519_differential.py", "--n", "50"], "rs"),
     ("in-toto bridge (Statement v1 shape + binding, tamper matrix)",

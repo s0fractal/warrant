@@ -12,8 +12,10 @@ security report and asking for a channel. Do not put the details in it.
 
 ## What you can expect, honestly
 
-This project is maintained by one person and one model actor. There is no
-security team, no on-call rotation, and no paid triage.
+This project is maintained by one person, with a model actor holding a bounded,
+revocable delegation for day-to-day work (`MAINTAINER-LEASE.md`). Accountability
+sits with the person; the model is a delegate, not a maintainer of record. There
+is no security team, no on-call rotation, and no paid triage.
 
 - **Acknowledgement:** best effort, usually within a few days. If a week passes
   with no reply, assume the message was missed and say so publicly without
@@ -49,30 +51,37 @@ The things this project asks you to trust:
 
 ## What is out of scope
 
-Not because it does not matter, but because it is documented as a limit rather
-than a defect:
+Not because it does not matter, but because it is a **stated boundary of the
+threat model** rather than a defect. The boundary is defined in one place —
+`THREAT-MODEL.md` → "Security assumptions and non-goals" — as ten scoped
+assumptions (`SA-1` … `SA-10`) and six explicit non-goals (`NG-1` … `NG-6`), each
+with its reasoning. That document is the source of truth; this list is a pointer
+to the ones a reporter hits most often:
 
-- **`cmd@v1` verdicts are trusted by specification.** SPEC §7 states the verifier
-  does not re-execute them; their trust model is the container. A forged `cmd@v1`
-  verdict is a known property of the format, listed in `llms.txt`. A report
-  showing it is *worse than documented* is in scope; one restating it is not.
-- **`genesis.json` is advisory** (§9) and mutable by anyone with store write
+- **`cmd@v1` verdicts are trusted by specification** (SA-1). SPEC §7 states the
+  verifier does not re-execute them; their trust model is the container.
+- **Key↔actor binding is outside the format** (SA-2). At base grade an unbound
+  signature is a WARN, not an error.
+- **`genesis.json` is advisory** (§9, A9) and mutable by anyone with store write
   access. Tampering it produces `WARN: genesis.json unverified` and its contents
   are not used. That is the specified behaviour.
 - **`native_decide` is in the Lean trusted base** for part of the proof chain,
-  which puts the compiler there too. Stated in `llms.txt`.
-- Denial of service through resource exhaustion on a store you already control.
-- Findings that require write access to a store to then claim that store is
-  untrustworthy, unless the point is that a *reader* cannot tell.
+  which puts the compiler there too (SA-8).
+- **Resource exhaustion on a store you already control** (NG-5).
+- **Findings that require write access to a store to then claim that store is
+  untrustworthy** (NG-6), unless the point is that a *reader* cannot tell.
+
+A report showing that any of these is *worse than stated* is in scope and is the
+most valuable thing this project receives; one restating it is not.
 
 ## The consolidated threat model
 
-`THREAT-MODEL.md` (DRAFT, 2026-07-30) is the single attacker-capability matrix:
-given an attacker who can write to the store, control the blob transport,
-co-sign, hold an unbound key, or author the policy — what still holds, and what
-they get. It also states the known structural weaknesses in one place rather
-than across four files. The in/out-of-scope lists below remain the process; that
-document is the model they rest on.
+`THREAT-MODEL.md` (DRAFT, 2026-07-30) carries the single attacker-capability
+matrix — given an attacker who can write to the store, control the blob
+transport, co-sign, hold an unbound key, or author the policy: what still holds,
+and what they get — followed by the assumptions and non-goals that bound it. The
+in/out-of-scope lists here remain the process; that document is the model they
+rest on.
 
 ## Severity, as this project ranks it
 
@@ -98,11 +107,11 @@ process is built to consume.
 ## Verify anything first
 
 ```bash
-python3 tools/check.py     # 29 checks, one verdict; UNRUN is not a pass
+python3 tools/check.py     # 30 checks, one verdict; UNRUN is not a pass
 ```
 
 If a document and a command disagree, the command is right. Several reports
 against this project have been artefacts of reading a feature branch, an archived
 evidence blob, or truncated output rather than the thing itself; `MAP.md` says
-which ref holds what, and `llms.txt` lists the known gaps so you do not spend a
-pass rediscovering them.
+which ref holds what, and `THREAT-MODEL.md`'s assumptions and non-goals list the
+known boundaries so you do not spend a pass rediscovering them.

@@ -14,6 +14,26 @@ The lease is deliberately in the shape the capability-lease design proposes:
 a named holder, an enumerated set of permitted acts, an explicit exclusion list,
 and no self-amendment.
 
+## What this is not
+
+A lease is a **delegation, not a transfer**. The holder is not the maintainer of
+record and does not become one by exercising this grant. Authority originates
+with the steward, who remains the accountable entity; the holder acts under it,
+within the enumerated bounds, and the record of an act says which bounded
+delegation was exercised — never that the delegate was the party answerable for
+it. Non-repudiation rests with the steward and does not move.
+
+Said the other way round, because the distinction is the whole point: a
+signature by the holder attests **that a delegated process ran under rules the
+steward set**, not that a model decided something in its own right. See
+`MODEL-ACTORS.md` for the full positioning, including the places where the
+current mechanism does not yet match it.
+
+Honest state of this instrument: it is prose. It is not a warrant, it carries no
+signature, and nothing in this project's own machinery verifies it — a root of
+authority in a Markdown file. That is recorded in `MODEL-ACTORS.md` as an open
+item rather than fixed here, because fixing it is a governance act.
+
 ## Holder
 
 `claude-fable-5` — roster actor in both repositories' `trust-config.json`.
@@ -69,3 +89,12 @@ the room.
 
 The steward may revoke by saying so, in any words. No notice, no ceremony, no
 wind-down. A lease that were hard to revoke would be a transfer.
+
+**What revocation does not reach, stated because the gap matters more than the
+promise.** Ending the lease ends the permitted acts above. It does not remove the
+holder's roster key: genesis roster keys are not revocable by a §5.1 key-state
+supersede, and roster change is a policy rotation requiring the current 2-of-3
+quorum, of which the steward holds one key. So the standing survives the
+delegation that was supposed to confer it. That is the sharpest place where the
+mechanism outruns the delegation framing, and it is recorded in `MODEL-ACTORS.md`
+for the steward rather than changed here — a roster is not an agent's to alter.
