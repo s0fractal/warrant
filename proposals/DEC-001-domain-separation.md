@@ -1,11 +1,18 @@
 # DEC-001 — Signature domain separation: adopt now, or decline permanently
 
-**Status: OPEN. A recommendation, not a decision.** This document was written by
-the maintainer actor (`claude-fable-5`) on 2026-07-30 and decides nothing. No
-shipped code path changed; `SPEC.md` §5 is unchanged; all three implementations
-sign and verify exactly what they signed and verified yesterday. The prototype
-(`tools/domain_separation_prototype.py`) is clearly marked DRAFT and is called by
-no verb, no verifier and no test.
+**Status: OPEN. A recommendation, not a decision. Option A is IMPLEMENTED on a
+branch, which is not the same thing.** This document was written by the
+maintainer actor (`claude-fable-5`) on 2026-07-30 and decides nothing.
+
+As of 2026-07-31 the branch `feat/domain-separation` implements option A across
+SPEC §5, all three implementations, the conformance vectors and a migration
+verb. **Adoption is a threshold warrant signed by roster keys (`AGENTS.md` rule
+2); a branch is not adoption and this document does not record one.** The
+prototype named below was replaced there by `tools/signature_vectors.py`.
+
+**One factual claim in §4.3 and §6 of this document turned out to be false, and
+it is the claim the cost argument rests on** — see §4.3 point 4 and the
+correction appended to §7. The maintainer decides in front of that, too.
 
 **The maintainer decides.** This document exists so that the decision is made
 once, in front of the actual bytes, rather than defaulted into by silence.
@@ -152,10 +159,11 @@ the only coherent choices are flag-day or never.
    envelopes change. SPEC §8 must say so explicitly, because "the vectors are
    unchanged but the signatures are different" is exactly the sentence a
    re-implementer will misread.
-4. **Records whose signing key is unavailable cannot be migrated.** For this
-   project's corpus that set is empty (one custody, all keys held). For anyone
-   else it would not be, and that is the honest reason this is a now-or-never
-   decision rather than an anytime one.
+4. **Records whose signing key is unavailable cannot be migrated.** ~~For this
+   project's corpus that set is empty (one custody, all keys held).~~ **FALSE, as
+   measured 2026-07-31 — see the correction in §7.** For anyone else it would not
+   be empty either, and that is the honest reason this is a now-or-never decision
+   rather than an anytime one.
 5. **`sigma-glyph`'s 50 records** are the only cross-repository dependency; they
    are re-signed by the same process, and the sibling repository's cross-repo
    canary (`tools/x1_cross_repo.sh`) pins the pair, so the two must move
@@ -264,3 +272,50 @@ identical, which is what makes the migration cheap.
 Cross-protocol illustration: a signature over
 `SHA-256("a message signed under some other protocol\n")` is **accepted as a
 Warrant signature today** and **rejected under the proposal**.
+
+---
+
+## 8. Correction, 2026-07-31: the corpus is NOT wholly re-signable
+
+§2 and §4.3 assert that every existing warrant is re-signable at zero cost
+because "the corpus is small and wholly under one custody". The first half is
+right and was re-verified: re-signing changes only `sigs[].sig`, and all four
+example vectors keep their WarrantID byte-for-byte (`tools/signature_vectors.py`
+recomputes it rather than asserting it).
+
+The second half is wrong. The private key for `claude-fable-5@warrant` /
+`claude-fable-5@sigma-glyph` — public key
+`3449536017e5b4a4c7e134999cbd9fe94c5354bd9132d6c1e32f024bfd90eb27`, the signer of
+**all 16 records in this repository's `.warrants/`** and of part of `sigma-glyph`'s
+50 — is not present on the host where this work was done. Searched: `~/.config/warrant/`
+(which holds `codex.key` and `s0fractal.key` and, per `AGENTS.md` rule 6, held this
+one on 2026-07-28), every file under `~/Projects`, `~/.Trash` and the agent
+scratchpads, every 64-hex string in every git object of both repositories, and
+every agent transcript on the host. Not found.
+
+That does not prove the key is destroyed — the likeliest reading is that it was
+deliberately moved off this host after the co-located-keys finding that produced
+`AGENTS.md` rule 6, which is a *good* thing to have done. It does mean:
+
+- the migration is **not** executable by whoever holds this checkout; it is
+  executable only where that key lives;
+- until it runs, this repository's own store fails verification under §5 — 16
+  records, 16 errors, all three implementations agreeing exactly;
+- the cost line in §6 ("re-signing costs no identity") is still true, and the
+  cost line in §2 ("all signed by keys held by this project") is not established.
+
+The generalisable lesson is the one §4.3 point 4 already stated and then
+exempted itself from: **"all keys are held" is a claim about an operational
+fact, and a decision that rests on it should verify it before, not after.** For
+a corpus of 73 records under one nominal custody, the un-re-signable subset was
+66. An outside adopter's would be worse.
+
+Migration command, to be run where the key lives (both repositories):
+
+    python3 impl/warrant.py --store .warrants resign --key <claude-fable-5.key>
+    python3 <warrant>/impl/warrant.py --store <sigma-glyph>/.warrants \
+        resign --key <claude-fable-5.key>
+
+`resign` refuses to touch a signature made by any other key, names each record it
+could not migrate, and exits non-zero if any remain — so a partial migration
+cannot report success.

@@ -607,27 +607,74 @@ fn weak_ed25519_pubkey(raw: &[u8]) -> bool {
     be >= P
 }
 
-fn verify_sig(wid_hex: &str, sig: &BTreeMap<String, Json>) -> bool {
-    let key = match sig.get("key").and_then(as_str).and_then(decode_hex) {
-        Some(k) if k.len() == 32 => k,
-        _ => return false,
-    };
-    if weak_ed25519_pubkey(&key) {
-        return false;
+// SPEC §5 -- signature domain separation (`warrant-sig-v1`), adopted 2026-07-31
+// under proposals/DEC-001-domain-separation.md.
+//
+//     msg = "warrant-sig-v1:" || WarrantID_raw          15 + 32 = 47 bytes
+//
+// Still pure RFC 8032 Ed25519 over a byte string -- NOT Ed25519ctx. This
+// verifier is written from scratch, so Ed25519ctx would mean implementing and
+// differentially testing RFC 8032's dom2 prefix here from nothing; a fixed
+// ASCII prefix buys the same separation with no new primitive. See
+// impl/warrant.py for the full argument.
+pub const SIG_DOMAIN: &[u8] = b"warrant-sig-v1:";
+
+/// The §6 report string for a signature made under the pre-0.6.0 bare-WarrantID
+/// construction. Byte-identical in all three implementations (SPEC §5).
+pub const LEGACY_SIG_MESSAGE: &str = "signature does not verify (excluded): LEGACY pre-v1 signature construction (signed the bare 32-byte WarrantID; SPEC 5 requires \"warrant-sig-v1:\" || WarrantID). Re-sign with: warrant resign --key <keyfile>";
+
+/// The exact bytes a Warrant signature covers, or None when `wid_hex` is not a
+/// 32-byte hex digest.
+fn sig_message(wid_hex: &str) -> Option<Vec<u8>> {
+    let raw = decode_hex(wid_hex).filter(|m| m.len() == 32)?;
+    let mut msg = Vec::with_capacity(SIG_DOMAIN.len() + 32);
+    msg.extend_from_slice(SIG_DOMAIN);
+    msg.extend_from_slice(&raw);
+    Some(msg)
+}
+
+/// Key and signature bytes, screened exactly once, so `verify_sig` and
+/// `legacy_sig` cannot drift on which keys they reject.
+fn sig_parts(sig: &BTreeMap<String, Json>) -> Option<([u8; 32], [u8; 64])> {
+    let key = sig.get("key").and_then(as_str).and_then(decode_hex)?;
+    if key.len() != 32 || weak_ed25519_pubkey(&key) {
+        return None;
     }
-    let sigb = match sig.get("sig").and_then(as_str).and_then(decode_hex) {
-        Some(s) if s.len() == 64 => s,
-        _ => return false,
-    };
-    let msg = match decode_hex(wid_hex) {
-        Some(m) if m.len() == 32 => m,
-        _ => return false,
-    };
+    let sigb = sig.get("sig").and_then(as_str).and_then(decode_hex)?;
+    if sigb.len() != 64 {
+        return None;
+    }
     let mut pk = [0u8; 32];
     pk.copy_from_slice(&key);
     let mut sg = [0u8; 64];
     sg.copy_from_slice(&sigb);
-    ed25519::verify(&pk, &sg, &msg)
+    Some((pk, sg))
+}
+
+fn verify_sig(wid_hex: &str, sig: &BTreeMap<String, Json>) -> bool {
+    let (pk, sg) = match sig_parts(sig) {
+        Some(v) => v,
+        None => return false,
+    };
+    match sig_message(wid_hex) {
+        Some(msg) => ed25519::verify(&pk, &sg, &msg),
+        None => false,
+    }
+}
+
+/// True if `sig` is valid over the BARE 32-byte WarrantID -- the construction
+/// SPEC §5 replaced. DIAGNOSIS ONLY; no caller treats it as acceptance. A
+/// verifier accepting both messages would have no separation at all, since an
+/// attacker would just use the legacy one (DEC-001 §4.3).
+fn legacy_sig(wid_hex: &str, sig: &BTreeMap<String, Json>) -> bool {
+    let (pk, sg) = match sig_parts(sig) {
+        Some(v) => v,
+        None => return false,
+    };
+    match decode_hex(wid_hex).filter(|m| m.len() == 32) {
+        Some(msg) => ed25519::verify(&pk, &sg, &msg),
+        None => false,
+    }
 }
 
 // ---------- commands ----------
@@ -703,6 +750,31 @@ fn cmd_conformance(dir: &str) -> bool {
                     let why = c.get("why").and_then(as_str).unwrap_or("?");
                     let invalid = c.get("body").map(validate_body).is_some_and(|e| !e.is_empty());
                     chk(&format!("neg: schema-invalid ({why})"), invalid);
+                }
+            }
+        }
+    }
+    // SPEC §8.5 signature-construction battery. The message bytes are pinned
+    // because every way of building them wrong still reproduces all five §8
+    // WarrantIDs -- nothing else in this command would notice.
+    if let Ok(sv) = read(&format!("{dir}/signature-vectors.json")).and_then(|d| Parser::parse(&d)) {
+        if let Some(m) = as_obj(&sv) {
+            if let Some(cases) = m.get("message").and_then(as_arr) {
+                for c in cases.iter().filter_map(as_obj) {
+                    let why: String = c.get("why").and_then(as_str).unwrap_or("?").chars().take(60).collect();
+                    let wid = c.get("warrant_id").and_then(as_str).unwrap_or("");
+                    let want = c.get("message_hex").and_then(as_str).unwrap_or("");
+                    let got = sig_message(wid).map(|b| encode_hex(&b));
+                    chk(&format!("sig-msg: {why}"), got.as_deref() == Some(want));
+                }
+            }
+            for (field, expect) in [("accept", true), ("reject", false)] {
+                if let Some(cases) = m.get(field).and_then(as_arr) {
+                    for c in cases.iter().filter_map(as_obj) {
+                        let why: String = c.get("why").and_then(as_str).unwrap_or("?").chars().take(60).collect();
+                        let wid = c.get("warrant_id").and_then(as_str).unwrap_or("").to_string();
+                        chk(&format!("sig-{field}: {why}"), verify_sig(&wid, c) == expect);
+                    }
                 }
             }
         }
@@ -880,6 +952,12 @@ fn cmd_verify(store: &str) -> ExitCode {
                                 // key<->actor binding is unproven and says so.
                                 out("WARN", &r.wid,
                                     format!("binding unverified (no keyring): key {key} claims actor {who}"));
+                                warns += 1;
+                            } else if legacy_sig(&r.wid, sm) {
+                                // Diagnosis, not acceptance (SPEC §5): the one
+                                // failure a verifier can name, it names.
+                                out("WARN", &r.wid,
+                                    format!("{LEGACY_SIG_MESSAGE}: actor {who}"));
                                 warns += 1;
                             } else {
                                 out("WARN", &r.wid,
