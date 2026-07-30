@@ -1190,11 +1190,26 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 keys = ctx["keys_before"](wid)
                 bound = (actor not in ctx["conflict_actors"]
                          and key in keys.get(actor, set()))
-                if quiet:
-                    pass
-                elif bound:
-                    print(f"INFO {wid[:12]}  signature bound: key "
-                          f"{str(key)[:12]} claims actor {actor}")
+                # RENDERER-INDEPENDENCE (2026-07-30). This was:
+                #     if quiet: pass
+                #     elif bound: print(INFO ...)
+                #     else: out("WARN", ...)
+                # `quiet` is meant to suppress the INFO line only. Written that
+                # way it also swallowed the WARN — so `verify --settlement
+                # --trust-config` printed `1 warnings` in text mode and emitted
+                # `"warnings":0, "findings":[]` for the SAME store in --json,
+                # while Go emitted the warning in both. An unbound signature —
+                # a key claiming an actor the operator's own keyring does not
+                # vouch for — was therefore invisible to exactly the consumer
+                # told to consume the JSON. Found by the first external
+                # consumer (the sibling `oaip` ledger, which documented it in
+                # impl/oaip.py and built its own enforcement around it).
+                # The INFO line is the renderer-dependent part; the WARN is
+                # verification truth and must reach every renderer.
+                if bound:
+                    if not quiet:
+                        print(f"INFO {wid[:12]}  signature bound: key "
+                              f"{str(key)[:12]} claims actor {actor}")
                 else:
                     out("WARN", wid, f"signature unbound: key "
                                      f"{str(key)[:12]} claims actor {actor}")
@@ -1351,11 +1366,14 @@ VERIFY_REPORT_VERSION = "warrant.verify-report@v0"
 
 
 def verify_report(store, settlement=None):
-    """NON-NORMATIVE machine-readable verification result for external agents
-    (CI / MCP / LangGraph). This is NOT a Warrant: it is unsigned, carries no
-    settlement semantics, and its shape (``warrant.verify-report@v0``) is an
-    integration convenience, not part of SPEC — the normative result is still the
-    error/warning counts and exit status. ``ok == (errors == 0)``; ``grade`` is
+    """Machine-readable verification result for external agents (CI / MCP /
+    LangGraph), specified by SPEC §11. This is NOT a Warrant: it is unsigned,
+    has no WarrantID and carries no settlement authority. Its shape
+    (``warrant.verify-report@v0``) IS normative for anything that prints that
+    tag — until 2026-07-30 the contract lived only in README.md and this
+    docstring said "not part of SPEC", which was true of the record format and
+    read as "unspecified" by everyone integrating against it.
+    ``ok == (errors == 0)``; ``grade`` is
     ``settlement`` when a settlement context was requested, else ``base``; findings
     are in the verifier's deterministic emission order and always include warnings.
     Runs the SAME core as the text verifier (one derivation), so counts and exit

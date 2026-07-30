@@ -69,6 +69,8 @@ CHECKS = [
      ["python3", "tests/evidence_pack.py"], None),
     ("verify-report@v0 machine boundary",
      ["python3", "tests/verify_report.py"], "go"),
+    ("json schemas vs the corpus (both directions)",
+     ["python3", "tools/schema_check.py"], None),
     ("pedantic edges (parity on the awkward cases)",
      ["python3", "tests/pedantic_edges.py"], "go"),
     ("ski@v1 policy predicates (real re-execution)",
@@ -100,6 +102,11 @@ CHECKS = [
      [str(RS), "verify", ".warrants"], "rs"),
     ("rust: conformance", [str(RS), "conformance", "examples"], "rs"),
     ("rust: ed25519 selftest", [str(RS), "edtest"], "rs"),
+    # DRAFT artifact for an OPEN decision (proposals/DEC-001). It is here so the
+    # vectors cannot rot while the decision is pending, NOT because anything in
+    # it is in force: it touches no verifier and SPEC §5 is unchanged.
+    ("DRAFT domain-separation vectors reproduce (decision pending, nothing in force)",
+     ["python3", "tools/domain_separation_prototype.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),
 ]

@@ -100,9 +100,8 @@ with subject `store`) in both implementations, so Python and Go agree on the
 and the set of `(level, subject)` findings; branch on those. A finding's `message`
 is human-oriented prose and **may differ between the two implementations** (do not
 branch on it). Without `--store-mode`, the Go CLI keeps a legacy flat-directory
-mode for loose example files. The shape is a non-normative integration
-convenience: it is **not** a Warrant, is unsigned, and carries no settlement
-authority.
+mode for loose example files — pass `--store-mode`. The report is **not** a
+Warrant: it is unsigned and carries no settlement authority.
 
 Two guarantees a consumer may rely on (surfaced by the first external consumer):
 
@@ -116,6 +115,13 @@ Two guarantees a consumer may rely on (surfaced by the first external consumer):
   future additive field ships under a **new tag** (`@v1`), never inside `@v0`, so a
   strict consumer that rejects an unknown top-level or finding key stays correct
   across Warrant versions. Gate on the exact `report` tag you understand.
+
+**The contract is specified in [`SPEC.md` §11](SPEC.md#11-verification-report--warrantverify-reportv0), not here.** This section is the
+tour; §11 is what a producer commits to by printing the tag and what a consumer
+may rely on when it reads it, with `schemas/verify-report-v0.schema.json`
+alongside. Until 2026-07-30 §11 did not exist and this README was the only
+statement of a contract a CI system branches on — a machine boundary specified
+in a marketing document.
 
 ## Try it on a real case
 

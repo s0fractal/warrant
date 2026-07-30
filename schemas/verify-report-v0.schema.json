@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/s0fractal/warrant/schemas/verify-report-v0.schema.json",
+  "title": "warrant.verify-report@v0 (SPEC §11)",
+  "description": "The machine-readable verification report. CLOSED SCHEMA: exactly seven top-level members and exactly {level, subject, message} per finding. Two guarantees this schema CANNOT express and a consumer MUST still check: errors == |ERR findings|, warnings == |WARN findings| (§11.1 counts-bind-findings), and ok == (errors == 0). It also cannot express §11.2 (one physical line, empty stderr, exit status parity).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["report", "grade", "ok", "records", "errors", "warnings", "findings"],
+  "properties": {
+    "report": {"const": "warrant.verify-report@v0"},
+    "grade": {"enum": ["base", "settlement"]},
+    "ok": {"type": "boolean"},
+    "records": {"type": "integer", "minimum": 0},
+    "errors": {"type": "integer", "minimum": 0},
+    "warnings": {"type": "integer", "minimum": 0},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "subject", "message"],
+        "properties": {
+          "level": {"enum": ["ERR", "WARN"]},
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A full hex64 WarrantID, or a reserved subject from the §13.3 registry: \"store\" or \"settlement\". Consumers MUST NOT assume hex64."
+          },
+          "message": {
+            "type": "string",
+            "description": "NON-NORMATIVE human prose. MAY differ between conformant implementations for the same input; a consumer MUST NOT branch on it."
+          }
+        }
+      }
+    }
+  }
+}

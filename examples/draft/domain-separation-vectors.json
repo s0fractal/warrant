@@ -1,0 +1,69 @@
+{
+  "draft_vectors": "warrant.draft-domain-separation-vectors@v0",
+  "status": "DRAFT. NOT ADOPTED, NOT IMPLEMENTED. SPEC \u00a75 is unchanged and all three implementations sign and verify the LEGACY message. See proposals/DEC-001-domain-separation.md.",
+  "domain_separator_ascii": "warrant-sig-v1:",
+  "domain_separator_hex": "77617272616e742d7369672d76313a",
+  "construction_legacy": "msg = WarrantID_raw (32 bytes)",
+  "construction_proposed": "msg = b\"warrant-sig-v1:\" || WarrantID_raw (47 bytes)",
+  "cases": [
+    {
+      "vector": "examples/propose.warrant.json",
+      "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "message_legacy_hex": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+      "message_proposed_hex": "77617272616e742d7369672d76313a00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+      "sig_legacy": "9d37f0e7cd3dcbd9de5d34dcf23e06c1916498f007c7e6937138fb9ea6781b7e3922842b03e49322140fb5f282a0901f0dd09bf96ad2e9551e6f4ff1cfe59b03",
+      "sig_proposed": "36bf44a04ecad6f5d46379acedbef86322a4b3cd715b87119d57c0f6add2f70c4701e0dd2dd890e58fcf6b053f24c148c4c970b1eb36bb3bcd0591a0ed949002",
+      "sig_legacy_equals_stored_signature": true,
+      "cross": {
+        "legacy_sig_under_legacy_rule": true,
+        "legacy_sig_under_proposed_rule": false,
+        "proposed_sig_under_legacy_rule": false,
+        "proposed_sig_under_proposed_rule": true
+      },
+      "warrant_id_after_resign": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1"
+    },
+    {
+      "vector": "examples/reject.warrant.json",
+      "warrant_id": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "message_legacy_hex": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8",
+      "message_proposed_hex": "77617272616e742d7369672d76313a5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8",
+      "sig_legacy": "779a4df46b84727d52b1e52c49875eb7a4bc326fffec575ee9c0b5ef3a594d920fcbc4e955f98b1a05a872d97dd1ac13fce99dbccd482c808f193c3eeb4d210d",
+      "sig_proposed": "46571f4f6d7de488dc20fa40ebddec5a81ca406516390d95a45ddd10ed6d816bcc81098a3dcd7e4acb0285d548cda7f8de6c0b9c99fe4ee32e951ef44f23f80f",
+      "sig_legacy_equals_stored_signature": true,
+      "cross": {
+        "legacy_sig_under_legacy_rule": true,
+        "legacy_sig_under_proposed_rule": false,
+        "proposed_sig_under_legacy_rule": false,
+        "proposed_sig_under_proposed_rule": true
+      },
+      "warrant_id_after_resign": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8"
+    },
+    {
+      "vector": "examples/accept.warrant.json",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "message_legacy_hex": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "message_proposed_hex": "77617272616e742d7369672d76313abc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "sig_legacy": "c72e16f18452287e0c52dd3c85fd8bf0d901b734a1c441cdbe13afbab590b0955c37866569adf81d0bb14aa25140b9b59b8d4e109fff364a9645512591fd0005",
+      "sig_proposed": "db19ae73113791a9482f94b04aaacf6041c424241f66804841ef4b81bd5209ad618efb7a62857d15f1b64b447a4e6d5639b247e5270bf17086a5a87fe4346703",
+      "sig_legacy_equals_stored_signature": true,
+      "cross": {
+        "legacy_sig_under_legacy_rule": true,
+        "legacy_sig_under_proposed_rule": false,
+        "proposed_sig_under_legacy_rule": false,
+        "proposed_sig_under_proposed_rule": true
+      },
+      "warrant_id_after_resign": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78"
+    }
+  ],
+  "cross_protocol_replay_illustration": {
+    "explanation": "The signer intended to sign a digest in an unrelated protocol. Under SPEC \u00a75 as written, that signature is a valid Warrant signature for the record whose WarrantID equals that digest. No such record exists today, and finding a body that canonicalizes to a CHOSEN digest is a second-preimage problem \u2014 this is a cross-protocol hazard, not a forgery recipe.",
+    "foreign_payload_utf8": "a message signed under some other protocol\n",
+    "foreign_digest": "4051f4523cdb1b91a9c1e7392c8bf65497088e3c1f01c6cebfbd688d3deb2e2e",
+    "foreign_sig": "03705b1001776fb15e23ea310d54404d957b0f801c3ab49fe57f2d55e72f63c150850ba865222c32c0a6b9ee77b200bd1117a667e40f8368ea46c609a2584a03",
+    "accepted_as_warrant_signature_today": true,
+    "accepted_as_warrant_signature_under_proposal": false
+  }
+}

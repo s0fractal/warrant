@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Vectors for the NON-NORMATIVE structured verify report (warrant.verify-report@v0).
+"""Vectors for the structured verify report (warrant.verify-report@v0, SPEC §11).
 
-Invariants (per the integration-API brief):
+The report is not a Warrant — unsigned, no WarrantID, no settlement authority —
+but printing the tag is a normative commitment (SPEC §11), so these vectors are
+the owner-side producer contract, not merely integration hygiene.
+
+Invariants (per the integration-API brief, now SPEC §11.1-§11.3):
   1. `warrant verify --json` (Py) and `warrant-go verify --json` (Go) each print
      EXACTLY ONE JSON object, no human text.
   2. Text output and exit code are byte-identical whether or not --json is used;
@@ -211,6 +215,37 @@ def main():
     tp = trust_for(d, kp)
     pj = run_vector("clean-settlement", d, ["--settlement", "--trust-config", tp])
     check("[clean-settlement] 0 errors", pj and pj["errors"] == 0)
+
+    # 2b. UNBOUND signature under settlement grade. The regression vector for the
+    #     2026-07-30 renderer split: Python's `if quiet: pass` swallowed the
+    #     `signature unbound` WARN, so `verify --settlement --trust-config`
+    #     printed "1 warnings" in TEXT and emitted warnings:0 / findings:[] in
+    #     --json for the same store, while Go emitted it in both. Every
+    #     invariant this suite already had missed it, because the quiet-invariance
+    #     fixture (case 9) has no settlement context and the settlement fixtures
+    #     are all BOUND — the bug lives strictly in ctx-present-and-unbound.
+    #     This is also the exact case an integrator cares about: a key claiming
+    #     an actor the operator's keyring does not vouch for.
+    d, st, kp, _ = store_with(blobs=[b"pol-unbound", b"subj-unbound"])
+    other = os.path.join(d, "other.key")
+    open(other, "w").write("22" * 32)          # bound in trust config...
+    pol, subj = W.blob_hash(b"pol-unbound"), W.blob_hash(b"subj-unbound")
+    uw = signed_record(st, kp, subj, [pol])     # ...but the record is signed by kp
+    tp = os.path.join(d, "trust.json")
+    open(tp, "w").write(json.dumps(
+        {"actors": {"a@t": [W.pubkey_hex(W.load_key(other))]}, "genesis_roots": [uw]}))
+    pj = run_vector("unbound-signature", d, ["--settlement", "--trust-config", tp])
+    check("[unbound-signature] the WARN reaches the machine report at all",
+          pj is not None and pj["warnings"] >= 1
+          and any(f["level"] == "WARN" and "unbound" in f["message"]
+                  for f in pj["findings"]),
+          f"warnings={pj and pj['warnings']} findings={pj and pj['findings']}")
+    # Renderer independence, stated as the negative control: with the defect
+    # present, loud counted the warning and quiet did not.
+    le, lw = W.verify_store(W.Store(d), quiet=False, settlement={"trust_config": tp})
+    qe, qw = W.verify_store(W.Store(d), quiet=True, settlement={"trust_config": tp})
+    check("[unbound-signature] loud == quiet (the defect made these differ)",
+          (le, lw) == (qe, qw) and lw >= 1, f"loud={(le,lw)} quiet={(qe,qw)}")
 
     # 3. malformed record
     d, st, kp, _ = store_with(records=[("f" * 64 + ".json", "{ bad")])

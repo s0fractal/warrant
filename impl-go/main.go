@@ -2254,11 +2254,15 @@ type finding struct {
 	Message string `json:"message"`
 }
 
-// verifyReport is the NON-NORMATIVE machine-readable verify result backing
-// `warrant-go verify --json` (mirrors Python verify_report / the
-// warrant.verify-report@v0 shape). It is NOT a Warrant: unsigned, no settlement
-// semantics, an integration convenience only. Findings are in the verifier's
-// deterministic emission order; ok == (errors == 0).
+// verifyReport is the machine-readable verify result backing
+// `warrant-go verify --json`, specified by SPEC §11 (mirrors Python
+// verify_report). It is NOT a Warrant: unsigned, no WarrantID, no settlement
+// authority — but the SHAPE is normative for anything printing the
+// warrant.verify-report@v0 tag. Findings are in the verifier's deterministic
+// emission order; ok == (errors == 0). NOTE (SPEC §11.3, open defect): without
+// --store-mode this CLI keeps a legacy flat-directory mode that reports
+// ok:true on an uninitialized directory where Python reports ok:false, under
+// the same tag. Consumers must pass --store-mode.
 type verifyReport struct {
 	Report   string    `json:"report"`
 	Grade    string    `json:"grade"`
