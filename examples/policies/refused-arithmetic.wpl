@@ -1,0 +1,10 @@
+# examples/policies/refused-arithmetic.wpl
+#
+# This file does NOT compile, on purpose: it is the example the tutorial uses
+# to show what a refusal looks like. WPL has no arithmetic, so a total refund
+# has to be computed where the facts are gathered and pinned as a fact.
+
+fact base_fare_cents: int = 55000
+fact tax_cents:       int = 10088
+
+check base_fare_cents + tax_cents <= 50000

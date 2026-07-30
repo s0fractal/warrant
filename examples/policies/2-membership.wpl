@@ -1,0 +1,7 @@
+# examples/policies/2-membership.wpl
+#
+# Self-serve refunds are available only where the desk operates.
+
+fact ticket_origin_country: string = "MX"
+
+check ticket_origin_country in ["CA", "US"]

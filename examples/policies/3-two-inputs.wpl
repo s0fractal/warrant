@@ -1,0 +1,16 @@
+# examples/policies/3-two-inputs.wpl
+#
+# Bereavement fare, the rule Air Canada's chatbot got wrong: the discount is
+# granted only when it is requested with at least the required notice BEFORE
+# travel, and never as a retroactive claim.
+#
+# days_until_travel is negative when the flight has already been taken.
+
+fact days_until_travel: int = -12
+fact min_notice_days:   int = 0
+fact fare_basis:        string = "bereavement"
+fact retroactive:       bool = true
+
+check fare_basis == "bereavement"
+      && days_until_travel >= min_notice_days
+      && !retroactive

@@ -1,0 +1,8 @@
+# examples/policies/1-threshold.wpl
+#
+# A refund is auto-approved only at or under the desk limit.
+# The facts are what this decision was made on; the limit is the policy.
+
+fact refund_amount_cents: int = 65088
+
+check refund_amount_cents <= 50000

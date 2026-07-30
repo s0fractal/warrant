@@ -75,6 +75,13 @@ CHECKS = [
      ["python3", "tests/pedantic_edges.py"], "go"),
     ("ski@v1 policy predicates (real re-execution)",
      ["python3", "tests/ski_policy.py"], "sigma"),
+    # The WPL front end. Includes the tutorial gate: every command in
+    # docs/authoring-checks.md is executed and its printed output compared, so
+    # the documentation cannot drift from the compiler. Also mutates the
+    # compiler on purpose and fails if the mutant survives -- a differential
+    # that cannot go red is decoration.
+    ("wpl policy language (differential vs the oracle, docs executed)",
+     ["python3", "tests/policy_lang.py"], "sigma"),
     ("merkle anchoring (RFC 6962 structure + inclusion proofs)",
      ["python3", "tests/anchor.py"], None),
     ("mcp sealing proxy (stdio round-trip -> verifiable pack)",
