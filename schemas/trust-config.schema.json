@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/s0fractal/warrant/schemas/trust-config.schema.json",
+  "title": "Trust configuration (SPEC §12)",
+  "description": "LOCAL VERIFIER CONFIGURATION, NOT PROTOCOL STATE. Unsigned, never hashed into a WarrantID, never authority on its own. Closed member set: an unknown member makes the configuration invalid, and a settlement verification REQUESTED with an invalid one MUST fail closed with exactly one ERR whose subject is \"settlement\" (§12.3) — a rule this schema cannot express. {} is valid and means \"no local trust\".",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "actors": {
+      "type": "object",
+      "description": "actor id -> genesis-bound Ed25519 public keys. Key state itself derives from key-state warrants (§5.1); this pins only where that derivation starts.",
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {"type": "array", "items": {"$ref": "#/$defs/hex64"}}
+    },
+    "genesis_roots": {
+      "type": "array",
+      "description": "§9(1): WarrantIDs of roots the operator pins as settlement-active for this store.",
+      "items": {"$ref": "#/$defs/hex64"}
+    },
+    "genesis_json_sha256": {
+      "$ref": "#/$defs/hex64",
+      "description": "§9: SHA-256 of the exact genesis.json bytes the operator accepted. Without a match, genesis.json is WARN: genesis.json unverified and its contents MUST NOT be used."
+    }
+  },
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

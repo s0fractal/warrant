@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/s0fractal/warrant/schemas/warrant-body.schema.json",
+  "title": "Warrant body (SPEC §2, §3, §3.1)",
+  "description": "A warrant body. DERIVATIVE AND SECONDARY: SPEC.md is normative and this file is a defect where they disagree. Passing this schema is NECESSARY AND NOT SUFFICIENT for conformance — JSON Schema cannot express canonicalization (§4), duplicate-member rejection (§4), signature acceptance (§5), ski@v1 re-execution (§6(7)) or settlement (§7). A validator that ran only this schema would accept records no verifier in this repository accepts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["warrant", "decision", "subject", "under", "because", "evidence", "actor", "prior", "ts"],
+  "properties": {
+    "warrant": {"enum": ["0.1", "0.2"]},
+    "decision": {"enum": ["propose", "accept", "reject", "supersede"]},
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash"],
+      "properties": {
+        "hash": {"$ref": "#/$defs/hex64"},
+        "note": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "§2: length is measured in Unicode CODE POINTS, never bytes or UTF-16 units. JSON Schema maxLength is defined on code points, which is the intended reading here; a validator measuring UTF-16 units would be wrong for astral-plane notes."
+        }
+      }
+    },
+    "under": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/hex64"}},
+    "because": {"type": "array", "items": {"$ref": "#/$defs/reason"}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/hex64"}},
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {"id": {"type": "string", "minLength": 1}}
+    },
+    "prior": {"type": "array", "items": {"$ref": "#/$defs/hex64"}},
+    "ts": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+  },
+  "allOf": [
+    {
+      "description": "§2: reject and supersede MUST carry >=1 reason. (accept SHOULD — a SHOULD is not expressible here and is deliberately not encoded.)",
+      "if": {"properties": {"decision": {"enum": ["reject", "supersede"]}}, "required": ["decision"]},
+      "then": {"properties": {"because": {"minItems": 1}}}
+    },
+    {
+      "description": "§3: ski@v1 is available in 0.2 bodies; in 0.1 it is reserved and MUST be rejected.",
+      "if": {"properties": {"warrant": {"const": "0.1"}}, "required": ["warrant"]},
+      "then": {
+        "properties": {
+          "because": {
+            "items": {
+              "if": {"properties": {"kind": {"const": "check"}}, "required": ["kind"]},
+              "then": {"properties": {"runtime": {"enum": ["cmd@v1"]}}}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reason": {
+      "type": "object",
+      "oneOf": [{"$ref": "#/$defs/prose"}, {"$ref": "#/$defs/check"}]
+    },
+    "prose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text"],
+      "properties": {"kind": {"const": "prose"}, "text": {"type": "string"}}
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "check", "runtime", "verdict"],
+      "properties": {
+        "kind": {"const": "check"},
+        "check": {"$ref": "#/$defs/hex64"},
+        "runtime": {
+          "enum": ["cmd@v1", "ski@v1"],
+          "description": "§13.1 registry. An unregistered runtime makes the record INVALID (§3) — this enum is the registry as of SPEC §13.1 and must be updated with it."
+        },
+        "verdict": {"enum": ["pass", "fail"]},
+        "transcript": {"$ref": "#/$defs/hex64"}
+      }
+    }
+  }
+}

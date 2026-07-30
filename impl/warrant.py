@@ -1351,11 +1351,14 @@ VERIFY_REPORT_VERSION = "warrant.verify-report@v0"
 
 
 def verify_report(store, settlement=None):
-    """NON-NORMATIVE machine-readable verification result for external agents
-    (CI / MCP / LangGraph). This is NOT a Warrant: it is unsigned, carries no
-    settlement semantics, and its shape (``warrant.verify-report@v0``) is an
-    integration convenience, not part of SPEC — the normative result is still the
-    error/warning counts and exit status. ``ok == (errors == 0)``; ``grade`` is
+    """Machine-readable verification result for external agents (CI / MCP /
+    LangGraph), specified by SPEC §11. This is NOT a Warrant: it is unsigned,
+    has no WarrantID and carries no settlement authority. Its shape
+    (``warrant.verify-report@v0``) IS normative for anything that prints that
+    tag — until 2026-07-30 the contract lived only in README.md and this
+    docstring said "not part of SPEC", which was true of the record format and
+    read as "unspecified" by everyone integrating against it.
+    ``ok == (errors == 0)``; ``grade`` is
     ``settlement`` when a settlement context was requested, else ``base``; findings
     are in the verifier's deterministic emission order and always include warnings.
     Runs the SAME core as the text verifier (one derivation), so counts and exit

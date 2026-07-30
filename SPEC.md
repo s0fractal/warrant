@@ -20,13 +20,15 @@ The body is a JSON object with exactly these fields (unknown fields MUST make th
 | `under` | array | MUST | ≥1 hex64 hashes of the policy blobs in force |
 | `because` | array | MUST* | Reasons (§3). *`reject` and `supersede` MUST have ≥1; `accept` SHOULD have ≥1; MAY be `[]` only for `propose` |
 | `evidence` | array | MUST | ≥0 hex64 hashes of input blobs the decision relied on |
-| `actor` | object | MUST | `{"id": <string>}` — stable actor identifier |
+| `actor` | object | MUST | `{"id": <nonempty string>}` — stable actor identifier |
 | `prior` | array | MUST | ≥0 WarrantIDs this record responds to or follows |
 | `ts` | integer | MUST | Unix seconds, UTC, in the inclusive range `0..9223372036854775807` (int64) |
 
 All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact). A body with a negative or out-of-int64-range integer field is schema-invalid; implementations MUST NOT silently clamp, wrap, or truncate numeric fields (an unchecked 64-bit narrowing is exactly the kind of silent verifier split this rule exists to prevent).
 
 **The unknown-field rule is recursive (MUST).** It applies not only to the body but to every object the schema names: `subject` (exactly `hash`, optional `note`), `actor` (exactly `id`), and each reason object (§3). An unknown member anywhere in that tree makes the record invalid. Leaving nested strictness implicit is a silent verifier split: one implementation accepts an extra key another rejects, while both compute the same WarrantID.
+
+**`actor.id` MUST be a nonempty string.** (Spec gap closed 2026-07-30: this table said `<string>` while all three implementations rejected `""` — Python, Go and Rust each answer `actor must be {id: <nonempty string>}`. Three implementations agreeing is not authority to write a spec from code, so it is recorded here as what it was: the document was silent where an implementer had to guess, and the guess they would have made — `""` is a string, therefore valid — would have produced a record every existing verifier rejects. `§6`'s rule that a valid signature by `body.actor.id` must exist gives the requirement its meaning: an empty actor id names nobody.)
 
 **String lengths are measured in Unicode code points (MUST), never bytes or UTF-16 units.** `subject.note` is ≤200 code points. Byte-length and code-point-length disagree for any non-ASCII string — exactly the silent split the integers-only rule guards against for numbers.
 
@@ -194,3 +196,202 @@ A store is a DAG. A **root** is a record with empty `prior`. A root is **well-si
 ## 10. Non-goals
 
 Consensus, ordering across actors, blob transport, privacy/encryption, PKI beyond §5.1's key-state warrants, and any opinion about how agents *make* decisions. Warrant records decisions; it does not take them.
+
+---
+
+*Sections 11–14 were added on 2026-07-30 and are appended rather than interleaved so that every existing cross-reference to §1–§10 keeps its number. They specify surfaces that already existed and were interoperated against — a report contract, a trust-configuration file, a runtime tag set — but were specified in a README, in two implementations, or nowhere.*
+
+## 11. Verification report — `warrant.verify-report@v0`
+
+A verifier MAY expose its result as a machine-readable **verification report**. Emitting one is OPTIONAL (a conformant verifier may have a text interface only — `impl-rs` does). **Emitting the tag `warrant.verify-report@v0` is what is normative:** a producer that prints that string commits to everything in this section, and a consumer that reads that string may rely on it.
+
+A report is **not a Warrant**: it is unsigned, has no WarrantID, is not stored, and carries no settlement authority. It is the verifier's answer about a store at a moment, not a record of a decision. Nothing in this section changes what `verify` (§6) *decides*; it fixes only how that answer is serialized. (Until 2026-07-30 the contract lived in `README.md` and both implementations' source called it "non-normative", meaning "not part of the record format". That was true and was read as "not specified", which is why a consumer had to read a README to integrate.)
+
+### 11.1. Shape (MUST)
+
+Exactly these seven top-level members, no others:
+
+```json
+{"report":"warrant.verify-report@v0","grade":"base","ok":true,
+ "records":3,"errors":0,"warnings":1,
+ "findings":[{"level":"WARN","subject":"<WarrantID>","message":"..."}]}
+```
+
+| Member | Type | Meaning |
+| --- | --- | --- |
+| `report` | string | Exactly `"warrant.verify-report@v0"` |
+| `grade` | string | `"base"` or `"settlement"` — the verification grade that was **requested** (§6 vs §7/§5.1/§9), not a claim about what succeeded |
+| `ok` | boolean | `errors == 0`, and nothing else |
+| `records` | integer | Number of records considered, **including records that could not be loaded** |
+| `errors` | integer | Number of `ERR` findings |
+| `warnings` | integer | Number of `WARN` findings |
+| `findings` | array | Every `ERR` and `WARN` event, each an object of exactly `level`, `subject`, `message` |
+
+- `level` MUST be `"ERR"` or `"WARN"`. `INFO` and any other level MUST NOT appear: a report carries the two severities §6 defines and nothing else.
+- `subject` MUST be the full 64-character lowercase-hex WarrantID of the record the finding is about, or one of the reserved non-hash subjects **`"store"`** (a finding about the store as a whole, e.g. the fail-closed no-store report of §11.3) and **`"settlement"`** (a finding about the requested settlement context as a whole, e.g. an unusable trust configuration). Consumers MUST NOT assume `subject` is hex64. Further reserved subjects are registered under §13.3.
+- `message` is human-oriented prose. It is **NOT normative** and **MAY differ between conformant implementations** for the same input. A consumer MUST NOT branch on it. (It differs today: an unloadable record is `unloadable record: malformed JSON` in Python and `invalid character 'b'` in Go.)
+- **Counts bind findings (MUST):** `errors` MUST equal the number of `ERR` findings and `warnings` MUST equal the number of `WARN` findings, in every report, always. A consumer MAY recompute both and MUST be permitted to reject a report where they disagree — that is a producer defect, not an ambiguity to tolerate.
+- **`ok` binds errors (MUST):** `ok == (errors == 0)`. `ok` is a statement about §6 errors only. A report MAY be `ok:true` with many warnings — including `binding unverified`, which is what an unconfigured keyring produces (§5.1). `ok:true` is not "this store is trustworthy"; it is "this verifier found no §6 error at the requested grade".
+
+### 11.2. Serialization and process contract (MUST)
+
+- The report MUST be exactly **one JSON value on stdout**, occupying exactly **one physical line**. In particular U+2028 and U+2029 inside a `message` or an `actor.id`-derived `subject` MUST NOT be emitted as raw line separators in a way that splits the output — a consumer reading one line MUST get the whole report. (Both implementations pass this vector; §4's raw-emission rule is about *canonical body bytes*, not about this transport.)
+- In report mode the verifier MUST NOT write human text to stdout, and MUST NOT write diagnostics to stderr: a preflight failure is expressed as the report itself (§11.3), never as a stderr message with no report.
+- Exit status MUST be `0` if and only if `ok` is `true`, and MUST equal the exit status the same invocation produces in text mode.
+- The counts in the report MUST equal the counts the same invocation reports in text mode. The report is a rendering of one verification, never a second derivation of it.
+- Findings MUST be emitted in an order that is **deterministic and stable**: re-running the same verifier over the same store MUST produce a byte-identical report. Two *different* implementations MUST agree on `report`, `grade`, `ok`, `records`, `errors`, `warnings` and on the **multiset of `(level, subject)` pairs**; they are NOT required to agree on finding order or on any `message`. That, and not byte-equality of the whole object, is the interoperable surface.
+
+### 11.3. Store mode and failing closed (MUST)
+
+A report is only interoperable when the verifier has been asked to treat its argument as a **store** (`--store-mode` in both reference CLIs). In store mode:
+
+- A path that is not an initialized store — missing, a `records/` that is not a directory, a `blobs/` with no `records/` — MUST produce `ok:false`, `records:0`, `errors:1`, `warnings:0`, and exactly one finding at level `ERR` with subject `store`. It MUST NOT be treated as an empty successful verification. This is what makes `.ok` a safe predicate: without it, "there was nothing to verify" and "everything verified" are the same JSON.
+- An **initialized but empty** store is a successful verification: `ok:true`, `records:0`, `errors:0`.
+
+**Known divergence (not resolved by this text).** *Without* `--store-mode`, the Go CLI retains a legacy flat-directory mode: on an uninitialized directory it emits `ok:true, records:0` while Python emits the fail-closed `ok:false` report — the same tag carrying opposite verdicts about the same path in two conformant implementations. That is disclosed in `README.md`, but the §5 design rule ("two independent implementations MUST agree on every verification outcome") does not carve out a legacy mode. The correct repair is for legacy flat mode to emit no `warrant.verify-report@v0` object at all, since flat mode is not a store verification; that is a behaviour change to a released surface and is recorded here as an open defect rather than legislated away. Consumers MUST pass `--store-mode`.
+
+### 11.4. Versioning and extension (MUST)
+
+`warrant.verify-report@v0` is a **closed schema**. Unknown top-level members and unknown finding members are not permitted, and a strict consumer MAY reject a report that carries any. Consequently:
+
+- A producer MUST NOT add a field to `@v0`, ever, including an "obviously harmless" one. Any additional field, any additional finding member, any additional `level`, and any change to the meaning of an existing member ships under a **new report tag** (`warrant.verify-report@v1`), registered per §13.3.
+- A consumer MUST gate on the exact `report` tag it understands and MUST NOT pattern-match a prefix.
+- A producer MAY emit a `@v1` report only when the consumer asked for it; the tag a consumer did not ask for is not a compatible substitute for the one it did.
+
+`schemas/verify-report-v0.schema.json` is the JSON Schema for this section (§14.2). Where schema and prose disagree, this prose is normative.
+
+## 12. Trust configuration (`trust-config.json`)
+
+§5.1 states that no interchangeable keyring format is mandated, and that remains true of *key state*, whose truth is the DAG of key-state warrants. But a verifier still needs somewhere to put the two things that cannot come from inside the store — which keys start bound, and which roots are settlement-active — and both reference implementations already read the identical file. Two implementations agreeing on a file format is an interop surface whether or not a document admits it, so this section specifies the file they read. It is **local verifier configuration, not protocol state**: it is unsigned, is never hashed into a WarrantID, and MUST NOT be shipped as authority. Supplying one is OPTIONAL; a verifier MAY offer a different mechanism, or none. Reading a file that claims this shape is what is specified.
+
+### 12.1. Shape (MUST)
+
+JSON object with a **closed** member set — an unknown member makes the configuration invalid:
+
+```json
+{ "actors": { "<actor-id>": ["<hex64 Ed25519 pubkey>", "..."] },
+  "genesis_roots": ["<hex64 WarrantID>", "..."],
+  "genesis_json_sha256": "<hex64>" }
+```
+
+| Member | Req | Meaning |
+| --- | --- | --- |
+| `actors` | MAY | Object mapping a **nonempty** actor id string to an array of hex64 Ed25519 public keys **genesis-bound** to that actor. Array MAY be empty. |
+| `genesis_roots` | MAY | Array of hex64 WarrantIDs the operator pins as settlement-active roots for this store (§9(1)). |
+| `genesis_json_sha256` | MAY | hex64 SHA-256 of the exact `genesis.json` bytes the operator has accepted (§9). |
+
+All three members are optional; `{}` is valid and means "no local trust", which is not the same as "no trust configuration supplied" (§12.3).
+
+### 12.2. Parsing and validation (MUST)
+
+- The file MUST be parsed in the same I-JSON domain as every other trust-bearing input (§4): duplicate member names, trailing content after the JSON value, invalid UTF-8 and unpaired surrogate escapes MUST be rejected. A trust input parsed more leniently than a record is a way to make two verifiers disagree about who is bound.
+- Validation is **closed and recursive**: an unknown top-level member, a non-object `actors`, an empty actor id, a non-array key list, or any element of `actors[*]`/`genesis_roots` that is not hex64, or a non-hex64 `genesis_json_sha256`, makes the configuration invalid. (Nested types are named explicitly because they were the actual split: `{"actors":[]}` and `{"actors":{"a":1}}` once crashed one implementation while the other returned zero errors.)
+- The file MUST NOT be canonicalized, hashed, or otherwise treated as content-addressed; it is not a blob.
+
+### 12.3. Fail-closed semantics (MUST)
+
+If a settlement-grade verification is **requested** with a trust configuration that is missing, unreadable, malformed, or schema-invalid, the verifier MUST report exactly one `ERR` with subject `settlement`, MUST NOT continue into a partial base-grade verification, and MUST NOT silently fall open to "no trust configured". A requested settlement verification that could not construct its trust did not happen, and MUST NOT be reported as one that found nothing wrong.
+
+If **no** trust configuration is supplied, key↔actor binding is reported as unverified (§5.1, §5 last bullet) — a WARN, never an ERR, and never a silent pass.
+
+`genesis_json_sha256` gates §9's advisory `genesis.json`: the file's bytes are read once, digested, and used only if the digest matches; otherwise `WARN: genesis.json unverified` and its contents MUST NOT be used. A `genesis.json` whose pinned digest matches but whose `roots` member is absent or not an array contributes no roots and MUST NOT be an error — a hostile shape behind a matching digest must be a bounded no-op in every implementation.
+
+`schemas/trust-config.schema.json` is the JSON Schema for this section (§14.2).
+
+## 13. Registries
+
+Three of this format's extension points are closed sets today: a new value requires editing this document, which means a new runtime cannot be tried without a spec change. This section says how each set grows and what a registration must contain. **There is no registry operator.** Until one exists (a neutral IANA-style registry is out of scope for a DRAFT spec by one maintainer), a registration is a pull request against this repository containing the fields below, and the registry is the tables in this document. Saying that plainly is the point: an unstaffed registry described as if it were staffed is worse than none.
+
+### 13.1. Reason-runtime tags (`because[].runtime`)
+
+Policy: **Specification Required** in the IETF sense — a registration MUST cite a stable, publicly readable document sufficient for an independent implementer, and MUST NOT be granted for a private or unstable one. A runtime tag is a promise about *verification*, so the bar is what a second implementer needs.
+
+| Tag | Body versions | Status | Defined in |
+| --- | --- | --- | --- |
+| `cmd@v1` | `0.1`, `0.2` | current | §3 |
+| `ski@v1` | `0.2` | current | §3.1 (Σ-GLYPH Book I **v0.5**) |
+
+A registration MUST supply: the tag, the body versions it is valid in, whether a verifier is expected to re-execute it (§6(7)) and with what budget unit, the exact outcome-fingerprint tuple for §7 novelty, the pinning rule for whatever ruleset it evaluates (as §3.1 requires of `ski@v1`), and a normative negative vector set (§8.3).
+
+Rules that hold regardless of registration:
+
+- Tags are `name@vN`. **A tag is immutable.** A semantic change — including evaluating a later revision of the same external ruleset — is a NEW tag, never a redefinition. `ski@v1` names Book I v0.5; Book I v0.6 would be `ski@v2`.
+- An unregistered `runtime` value makes the record invalid (§3, MUST). Unknown-means-invalid is what stops a forward-dated runtime from meaning "valid" to one verifier and "invalid" to another, and it is the reason this registry has to exist at all.
+- Adding a tag to a body version that already exists is a change to that version's validity surface, so a new tag MUST be introduced in a **new body version** (as `ski@v1` was introduced in `0.2` and remains reserved-and-rejected in `0.1`).
+- Experimental and private-use tags MUST use the prefix `x-` (e.g. `x-mycorp-wasm@v1`). Records carrying an `x-` tag are not interoperable by construction and MUST NOT be used in a store intended to be verified by anyone else. A registered tag MUST NOT begin with `x-`.
+
+### 13.2. Body format versions (`warrant`)
+
+| Value | Status | Adds |
+| --- | --- | --- |
+| `0.1` | current | base schema (§2, §3) |
+| `0.2` | current | `ski@v1` runtime (§3.1) |
+
+Policy: maintainer action recorded in `CHANGELOG.md` (§14.3), with the §8 vectors extended in the same change. A new body version MUST NOT invalidate any record valid under an earlier one (§4 of the version preamble), and MUST state, for every runtime tag in §13.1, whether it is admitted or reserved-and-rejected. Document-level versions that add no body schema (as v0.3 did) do NOT consume a `warrant` value.
+
+### 13.3. Report tags and reserved report subjects
+
+Report tags (`warrant.verify-report@vN`, §11) are registered here. Policy: **Specification Required**, same bar as §13.1, plus a published JSON Schema (§14.2) and a statement of what changed from the previous tag.
+
+| Tag | Status | Defined in |
+| --- | --- | --- |
+| `warrant.verify-report@v0` | current | §11 |
+
+Reserved non-hash `subject` values (§11.1) are registered here; a new one MUST be added by the same process, because a consumer distinguishing "a finding about a record" from "a finding about the run" does so by this list.
+
+| Subject | Meaning |
+| --- | --- |
+| `store` | the store as a whole (§11.3) |
+| `settlement` | the requested settlement context as a whole (§12.3) |
+
+Any other machine-readable document tag this project defines (`warrant.canon-vectors@v0`, §8.4; `conformance_negatives`, §8.3; `evidence_pack`, `EVIDENCE-PACK.md`) follows the same rule: closed schema, new tag for any additive change, never a new field inside an existing tag.
+
+## 14. Media type and schemas
+
+### 14.1. IANA considerations — `application/warrant+json` (DRAFT REGISTRATION, NOT FILED)
+
+**Status: this registration has NOT been submitted to IANA.** No expert review has been requested, no `application/warrant+json` registration exists, and until one does, the media type MUST be treated as unregistered. It is written out here so that the shape of the commitment is on the record before anyone depends on it, and so a future submission does not silently change the format to fit a form. Producers MAY use it on a private network today; nothing SHOULD depend on it being registered.
+
+Registration template (RFC 6838 §5.6, structured suffix per RFC 6839):
+
+- **Type name:** application
+- **Subtype name:** warrant+json
+- **Required parameters:** none
+- **Optional parameters:** `version` — the value of the body's `warrant` member (e.g. `version="0.2"`). Absent means the recipient MUST read the member itself. The parameter is a routing convenience and is NOT authoritative: where the parameter and the member disagree, the member wins, because only the member is inside the hash.
+- **Encoding considerations:** binary; UTF-8 per RFC 8259 and RFC 7493 (I-JSON). Content is exchanged as the exact bytes; any re-encoding, re-indentation, BOM insertion, or Unicode normalization changes the WarrantID and MUST NOT be performed by intermediaries (§4).
+- **Security considerations:** those of RFC 8259, RFC 7493 and RFC 8785, plus: a warrant is a *claim* until verified per §6; `ok` from a verifier is not a statement that the claim is true, only that the record is well-formed and signed. Signature acceptance is pinned (§5) — small-order and non-canonical Ed25519 public keys MUST be rejected. Consumers MUST NOT execute a `cmd@v1` check blob merely because it arrived in a record (its trust model is a container the recipient chose); `ski@v1` re-execution is bounded in work and memory by construction (§3.1) and is the only reason kind safe to re-run from an untrusted source. Recursive `prior` resolution over attacker-supplied data MUST be bounded. The format carries no confidentiality: everything in a body, including `subject.note` and prose reasons, is intended to be readable and quotable by anyone holding it.
+- **Interoperability considerations:** unknown members make a record invalid (§2, recursively). Duplicate member names MUST be rejected (§4). Recipients MUST NOT round-trip through a JSON library that reorders, re-escapes, HTML-escapes, or normalizes, and MUST NOT assume a lenient parser's last-wins behaviour.
+- **Published specification:** this document (`SPEC.md`), cited by the versioned permalink convention of §14.3.
+- **Applications that use this media type:** decision-record stores for AI agents and CI systems; audit and evidence-pack tooling.
+- **Fragment identifier considerations:** none defined. A WarrantID is not a fragment identifier.
+- **Additional information:** magic numbers — none. File extension — `.warrant.json` (records are conventionally stored as `<WarrantID>.json`). Macintosh file type code — none.
+- **Person & email address to contact for further information / Intended usage / Restrictions on usage / Author / Change controller:** the maintainer of `https://github.com/s0fractal/warrant`; intended usage COMMON; no usage restrictions; change controller the same, pending any transfer recorded in the change log.
+
+Two shapes deliberately do **not** get a media type here: the envelope (§5) is carried under the same type as the body it wraps, and the verification report (§11) is a tool output, not an interchange format — if it ever needs one it will be `application/warrant-report+json` under a report tag, registered per §13.3.
+
+### 14.2. JSON Schemas (`schemas/`)
+
+Published, versioned JSON Schema (draft 2020-12) files:
+
+| File | Covers |
+| --- | --- |
+| `schemas/warrant-body.schema.json` | the body, §2–§3.1, both `0.1` and `0.2` |
+| `schemas/warrant-envelope.schema.json` | the stored envelope, §5 |
+| `schemas/verify-report-v0.schema.json` | `warrant.verify-report@v0`, §11 |
+| `schemas/trust-config.schema.json` | trust configuration, §12 |
+| `schemas/evidence-pack-manifest.schema.json` | `manifest.json`, `EVIDENCE-PACK.md` |
+
+The schemas are **derivative and secondary**. Where a schema and this document disagree, this document is normative and the schema is a defect. Passing a schema is necessary and NOT sufficient for conformance: JSON Schema cannot express canonicalization (§4), signature acceptance (§5), re-execution (§6(7)), or settlement (§7), and a validator that only ran a schema would accept a record no verifier here would. `tools/schema_check.py` checks the schemas against the `examples/` corpus in both directions — every positive vector MUST validate, and every §8.3 negative vector MUST NOT — so a schema that has drifted from the vectors fails rather than reassuring.
+
+### 14.3. Citing a version of this document
+
+This specification has, until now, been citable only as "SPEC.md", which is a moving target: the sentence a reader quotes and the sentence in force can differ by a force-push. That is an odd property for a format whose whole argument is that a policy must be pinned by the hash of its exact bytes.
+
+The convention, from 2026-07-30:
+
+- **`CHANGELOG.md`** (Keep-a-Changelog shape, this repository's root) is the record of what changed in each release, reconstructed from git history for everything before it existed. Protocol-visible changes are marked; a release with no protocol-visible change says so.
+- **Cite this document by commit, not by branch.** The stable citation form is
+  `https://github.com/s0fractal/warrant/blob/<full-40-char-commit-sha>/SPEC.md#<anchor>`.
+  A `blob/master/SPEC.md` link is a convenience for a reader and MUST NOT be used where the exact text matters — in a `under` policy blob, a conformance claim (`TRADEMARK.md`), an audit report, or a registration.
+- **Pin by hash where a hash is available.** `SHA-256` of the exact `SPEC.md` bytes is the strongest citation and is what a `ski@v1`-style pinning rule (§3.1) expects of any ruleset it evaluates against. A tagged release commit is the second-strongest; a branch name is not a citation.
+- **A release tag is `vMAJOR.MINOR.PATCH` on the tooling**, which is *not* the protocol version. Four numbers coexist deliberately: the body version (`warrant`, §13.2), the document version in this file's title, the report tag (§13.3), and the package version. `CHANGELOG.md` states, per release, which of them moved. Conflating them is the single most common misreading of this project's status.

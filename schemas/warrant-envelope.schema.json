@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/s0fractal/warrant/schemas/warrant-envelope.schema.json",
+  "title": "Stored warrant envelope (SPEC §5)",
+  "description": "The stored form: a body plus its signatures. DERIVATIVE AND SECONDARY (see warrant-body.schema.json). This schema cannot express the part of §5 that matters — that >=1 signature MUST verify AND be by body.actor.id, that small-order and non-canonical Ed25519 public keys MUST be rejected, and that an invalid co-signature is a WARN-and-exclude rather than fatal. A structurally valid envelope here can still be an ERR under §6.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["body", "sigs"],
+  "properties": {
+    "body": {"$ref": "https://github.com/s0fractal/warrant/schemas/warrant-body.schema.json"},
+    "sigs": {
+      "type": "array",
+      "minItems": 1,
+      "description": "§5: >=1 signature MUST be present, and at least one MUST verify and carry actor == body.actor.id. Only the count is checkable here.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actor", "key", "sig"],
+        "properties": {
+          "actor": {"type": "string", "minLength": 1},
+          "key": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Ed25519 public key, 32 bytes, lowercase hex. §5 additionally REQUIRES rejecting the 8 small-order torsion encodings and non-canonical y — see examples/conformance-negatives.json."},
+          "sig": {"type": "string", "pattern": "^[0-9a-f]{128}$", "description": "Ed25519 signature over the 32 RAW BYTES of the WarrantID (§5). No context string, no domain separator, no pre-hash."}
+        }
+      }
+    }
+  }
+}

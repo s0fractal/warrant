@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/s0fractal/warrant/schemas/evidence-pack-manifest.schema.json",
+  "title": "Evidence Pack manifest.json (EVIDENCE-PACK.md, format v0)",
+  "description": "DELIBERATELY AN OPEN SCHEMA — the one place in this project where unknown members are allowed, because EVIDENCE-PACK.md says additional keys MUST be ignored by verifiers that do not understand them. That is safe here and nowhere else: the manifest is convenience metadata, the normative core of a pack is the .warrants/ store, and deleting the manifest entirely cannot change what the records say. A manifest is NOT evidence: nothing in it is signed or hashed, and a pack is valid because `warrant verify` returns 0 errors and each ski_check re-executes to its stated expect, not because this file asserts it.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["evidence_pack"],
+  "properties": {
+    "evidence_pack": {"const": "0", "description": "Format version, the string \"0\"."},
+    "title": {"type": "string"},
+    "story": {"type": "string"},
+    "produced_by": {"type": "string"},
+    "root": {"$ref": "#/$defs/hex64"},
+    "decision": {"$ref": "#/$defs/hex64"},
+    "records": {"type": "array", "items": {"$ref": "#/$defs/hex64"}},
+    "ski_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["check", "term", "expect", "atp"],
+        "properties": {
+          "check": {"$ref": "#/$defs/hex64"},
+          "term": {"$ref": "#/$defs/hex64"},
+          "expect": {"$ref": "#/$defs/hex64"},
+          "atp": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "means": {"type": "string", "description": "Plain-language meaning of the pinned predicate value. Prose, and prose is never proof — the re-execution is."}
+        }
+      }
+    },
+    "expected_verification": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {"errors": {"type": "integer", "minimum": 0}}
+    },
+    "how_to_verify": {"type": "string"}
+  },
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

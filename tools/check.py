@@ -69,6 +69,8 @@ CHECKS = [
      ["python3", "tests/evidence_pack.py"], None),
     ("verify-report@v0 machine boundary",
      ["python3", "tests/verify_report.py"], "go"),
+    ("json schemas vs the corpus (both directions)",
+     ["python3", "tools/schema_check.py"], None),
     ("pedantic edges (parity on the awkward cases)",
      ["python3", "tests/pedantic_edges.py"], "go"),
     ("ski@v1 policy predicates (real re-execution)",

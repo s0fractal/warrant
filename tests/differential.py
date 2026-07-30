@@ -145,15 +145,26 @@ def emit():
     out = []
     for name, b in cases():
         cb = W.canon(b)
+        # Canonicalization is INDEPENDENT of schema validity: a body that §2
+        # rejects (the 201-code-point note) still has exactly one canonical form,
+        # and every implementation must agree on it. Recording which is which
+        # keeps that distinction explicit instead of implied — and lets
+        # tools/schema_check.py cross-check the published JSON Schema against the
+        # reference validator on all of these bodies, in both directions.
         out.append({"name": name, "body": b, "canon_hex": cb.hex(),
-                    "warrant_id": hashlib.sha256(cb).hexdigest()})
+                    "warrant_id": hashlib.sha256(cb).hexdigest(),
+                    "schema_valid": not W.validate_body(b)})
     doc = {
         "canon_vectors": VECTORS_TAG,
         "note": ("SPEC §4 escaping/width battery, §8.4. For each case, "
                  "canonical_json(body) MUST equal the bytes in canon_hex and "
                  "SHA-256 of those bytes MUST equal warrant_id. Bodies are "
                  "given with ensure_ascii escaping so this file is pure ASCII; "
-                 "the escapes are JSON transport, not canonical output. Every "
+                 "the escapes are JSON transport, not canonical output. "
+                 "schema_valid says whether the body is also §2-schema-valid: "
+                 "canonicalization is independent of schema validity, and one "
+                 "case (a 201-code-point note) is canonical-and-invalid on "
+                 "purpose. Every "
                  "control code point U+0000..U+001F appears, plus the JCS "
                  "reimplementation traps: the \\b/\\f short forms, U+2028/29 "
                  "and <>& raw-emission, NFC vs NFD (never normalized), astral "

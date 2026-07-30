@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Vectors for the NON-NORMATIVE structured verify report (warrant.verify-report@v0).
+"""Vectors for the structured verify report (warrant.verify-report@v0, SPEC §11).
 
-Invariants (per the integration-API brief):
+The report is not a Warrant — unsigned, no WarrantID, no settlement authority —
+but printing the tag is a normative commitment (SPEC §11), so these vectors are
+the owner-side producer contract, not merely integration hygiene.
+
+Invariants (per the integration-API brief, now SPEC §11.1-§11.3):
   1. `warrant verify --json` (Py) and `warrant-go verify --json` (Go) each print
      EXACTLY ONE JSON object, no human text.
   2. Text output and exit code are byte-identical whether or not --json is used;

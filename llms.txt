@@ -40,7 +40,7 @@ no account:
 python3 tools/check.py                  # everything, one verdict
 ```
 
-That runs all 24 checks the repository's claims rest on and prints one line. A
+That runs all 28 checks the repository's claims rest on and prints one line. A
 check that could not run — Go not built, oracle missing — is reported UNRUN with
 its own exit status, never as passed: a harness printing ALL PASS while silently
 skipping the Go suites would be claiming two implementations agreed on the
@@ -87,8 +87,20 @@ else's namespace is a false claim about who defines it.
 ## The specification
 
 - [SPEC.md](SPEC.md): the format. §5.1 key state, §6 verification, §7 settlement,
-  §9 multi-root stores. Deliberately boring — implementable in a day, and any two
-  implementations must agree byte-exact on every WarrantID.
+  §9 multi-root stores, §11 the `warrant.verify-report@v0` machine boundary, §12
+  trust configuration, §13 registries, §14 media type and schemas. Deliberately
+  boring — implementable in a day, and any two implementations must agree
+  byte-exact on every WarrantID.
+- [CHANGELOG.md](CHANGELOG.md): what changed per release, and — the part that
+  trips reviewers — which of the **four** version numbers moved. The body version,
+  the SPEC document version, the report tag and the package version are different
+  numbers and are routinely read as one. Everything before 2026-07-30 is
+  reconstructed after the fact and says so.
+- `schemas/`: published JSON Schema for the body, envelope, verify report, trust
+  config and evidence-pack manifest. Passing a schema is **necessary and not
+  sufficient** — no schema can express canonicalization, signature acceptance,
+  re-execution or settlement, and `tools/schema_check.py` prints the classes it
+  cannot express rather than leaving them implied.
 - [profiles/eu-ai-act-article-12.md](profiles/eu-ai-act-article-12.md): mapping to
   the EU AI Act record-keeping clause, with its gaps stated in the same document.
 - Three implementations that agree on every vector: `impl/` (Python), `impl-go/`,
