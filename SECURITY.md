@@ -98,7 +98,7 @@ process is built to consume.
 ## Verify anything first
 
 ```bash
-python3 tools/check.py     # 29 checks, one verdict; UNRUN is not a pass
+python3 tools/check.py     # 30 checks, one verdict; UNRUN is not a pass
 ```
 
 If a document and a command disagree, the command is right. Several reports
