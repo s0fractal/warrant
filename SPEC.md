@@ -74,7 +74,7 @@ WarrantID = SHA-256( canonical_json(body) )
 
 `canonical_json` is RFC 8785 (JCS). Because bodies are I-JSON with integers only, this is exactly: UTF-8, object keys sorted, no insignificant whitespace, no float formatting questions. Reference (Python): `json.dumps(body, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')`.
 
-**String escaping is normative (MUST), not left to a library default.** Emit the two-character short escapes `\"` `\\` `\b` `\t` `\n` `\f` `\r`; escape every other code point below U+0020 as `\u00xx` with **lowercase** hex; emit every other character — including `<` `>` `&`, `/`, and all non-ASCII — as raw UTF-8. Do **not** escape `<` `>` `&` (Go's `encoding/json` does this by default: it MUST be disabled), do **not** `\u`-escape U+2028/U+2029, and do **not** use uppercase hex or the `\uXXXX` long form where a short escape applies. These are the classic JCS reimplementation splits; the §8 example vectors don't exercise them, so a conformant implementation MUST also agree on the escaping battery in `tests/differential.py`.
+**String escaping is normative (MUST), not left to a library default.** Emit the two-character short escapes `\"` `\\` `\b` `\t` `\n` `\f` `\r`; escape every other code point below U+0020 as `\u00xx` with **lowercase** hex; emit every other character — including `<` `>` `&`, `/`, and all non-ASCII — as raw UTF-8. Do **not** escape `<` `>` `&` (Go's `encoding/json` does this by default: it MUST be disabled), do **not** `\u`-escape U+2028/U+2029, and do **not** use uppercase hex or the `\uXXXX` long form where a short escape applies. These are the classic JCS reimplementation splits; the §8 example vectors don't exercise them, so a conformant implementation MUST also reproduce the escaping battery in **`examples/canon-vectors.json` (§8.4)** — machine-readable vectors, not a test script. (Before 2026-07-30 this clause pointed at `tests/differential.py`, which made a Python file normative and required a third-party implementer to read it; the harness is now the runner and the vectors are the artifact.)
 
 **Key ordering:** JCS sorts object member names by UTF-16 code unit. Every key this schema admits is fixed ASCII, for which UTF-16-unit order, Unicode-code-point order, and UTF-8 byte order coincide — so `sort_keys` (code point) and a bytewise sort are both correct here. Any future version that admits free-form object keys MUST sort by UTF-16 code unit per RFC 8785, not by code point.
 
@@ -172,6 +172,16 @@ The positive vectors above pin what a conforming implementation MUST *accept*; e
 - **`schema_invalid`** — `validate(body)` MUST return ≥1 error for each listed body: a float `ts`, a missing field, an unknown body field, an unknown *nested* field (§2 recursive), a non-hex subject hash, a `reject` with zero reasons, `ski@v1` in a `"0.1"` body, a `note` over 200 code points (§2), and an unknown `runtime` (§3).
 
 Both reference implementations' `conformance` command loads and checks this file. Behaviors that are rejection-of-malformed-*bytes* rather than schema (duplicate member names, trailing content after the JSON value, non-JCS-canonical blobs — §4) are exercised by the cross-implementation harnesses (`tests/hostile.py`, `tests/fuzz_differential.py`) since they concern the parse layer, not a body value; a third implementation MUST agree there too.
+
+### 8.4. Canonicalization vectors (MUST REPRODUCE, `examples/canon-vectors.json`)
+
+The §8/§8.2 vectors pin *records*; §8.3 pins what MUST be rejected. `examples/canon-vectors.json` pins the **§4 canonicalization surface** those never reach: a `warrant.canon-vectors@v0` document whose `cases` array carries, for each case, an input `body`, the canonical bytes as `canon_hex`, and the resulting `warrant_id`.
+
+For every case, an implementation MUST produce `canonical_json(body)` equal byte-for-byte to `canon_hex` and a WarrantID equal to `warrant_id`. The battery covers every control code point U+0000–U+001F (the `\b`/`\f` short-form trap that split Go's `encoding/json`), `<` `>` `&` `/` and U+2028/U+2029 emitted **raw** (§4), NFC vs NFD as distinct content, astral-plane code points, C1/DEL, control characters in `actor.id` and in a prose reason, a 9007199254740991 `ts`, the 200/201-code-point `note` boundary (the byte-vs-code-point split), and key-order insensitivity.
+
+The bodies are stored with `\uXXXX` transport escaping so the file is pure ASCII; that escaping is a property of *this file*, not of canonical output — canonical output is what `canon_hex` says.
+
+`tests/differential.py` is the harness that drives each implementation's `canon` command over these vectors; it compares implementations against each other **and** against the pinned bytes, so a drift shared by all of them is still a failure. Running it is not required for conformance; reproducing the vectors is.
 
 ## 9. Multi-root stores (v0.3)
 
