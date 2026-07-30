@@ -1,7 +1,7 @@
-# Warrant Format — Specification v0.3
+# Warrant Format — Specification v0.4
 
 **Status:** DRAFT. Key words MUST / MUST NOT / SHOULD / MAY per RFC 2119.
-**Versioning:** a body declares its format in the `warrant` field (`"0.1"` or `"0.2"`). Validators MUST validate a body against the rules of its declared version; unknown versions make the record invalid. v0.2 added exactly one thing: the `ski@v1` check runtime (§3.1). **v0.3 adds no body schema at all** — it specifies settlement semantics (§7), multi-root stores (§9), and key state (§5.1): document-level rules that activate only through v0.3 policy blobs and verifier configuration. Every v0.1/v0.2 record remains schema-valid under its declared version, and v0.3 rules MUST NOT turn any of them into a schema error. (Adopted from GOV-001 rev 4 after a three-family adversarial gate: Codex, Gemini 3.1 Pro, DeepSeek v4 Pro — see `proposals/` and `reviews/`.)
+**Versioning:** a body declares its format in the `warrant` field (`"0.1"` or `"0.2"`). Validators MUST validate a body against the rules of its declared version; unknown versions make the record invalid. v0.2 added exactly one thing: the `ski@v1` check runtime (§3.1). **v0.3 adds no body schema at all** — it specifies settlement semantics (§7), multi-root stores (§9), and key state (§5.1): document-level rules that activate only through v0.3 policy blobs and verifier configuration. **v0.4 adds no body schema either, and is nevertheless a BREAKING change**: it replaces the §5 signature message with a domain-separated one (`warrant-sig-v1`). Bodies, WarrantIDs and body versions are untouched — a migrated record has the same `warrant` value and the same WarrantID as before — but a v0.4 verifier and a v0.3 verifier reject each other's signatures, in both directions and by design. There is no version field that distinguishes them, because the discriminator is the signature itself: exactly one of the two messages verifies, never both (§5, §8.5). Every v0.1/v0.2 record remains schema-valid under its declared version, and v0.3 rules MUST NOT turn any of them into a schema error. (Adopted from GOV-001 rev 4 after a three-family adversarial gate: Codex, Gemini 3.1 Pro, DeepSeek v4 Pro — see `proposals/` and `reviews/`.)
 **Design rule:** two independent implementations MUST agree on every WarrantID and every verification outcome. Anything that cannot meet that bar stays out of this document.
 
 ## 1. Model
@@ -92,7 +92,22 @@ A stored warrant is an envelope:
 { "body": { ... }, "sigs": [ { "actor": "<id>", "key": "<hex64 Ed25519 pubkey>", "sig": "<hex128>" } ] }
 ```
 
-- `sig` = Ed25519 signature over the 32 raw bytes of the WarrantID. Verification is pure Ed25519 (RFC 8032, no context, no pre-hash): the message is the 32-byte WarrantID itself. *(NON-NORMATIVE NOTE, 2026-07-30: the absence of a domain separator means a signature here is indistinguishable from a signature over any other bare 32-byte SHA-256 digest, so a key reused in another such protocol creates cross-protocol replay potential. Whether to introduce a separator — a breaking change, cheapest while the user base is zero — is an OPEN decision recorded in `proposals/DEC-001-domain-separation.md`. **Nothing about the rule above has changed**; the note is here so a reader learns of the open question from the spec rather than from a reviewer.)*
+- **`sig` = Ed25519 signature over a domain-separated message (MUST).** The message is **not** the WarrantID. It is the 15-byte ASCII separator `warrant-sig-v1:` immediately followed by the **32 raw bytes** of the WarrantID:
+
+  ```
+  msg = "warrant-sig-v1:" || WarrantID_raw        15 + 32 = 47 bytes
+  separator bytes (hex) = 77617272616e742d7369672d76313a
+  ```
+
+  Precisely: the separator is the 15 ASCII characters `w a r r a n t - s i g - v 1 :`, with no NUL terminator, no length prefix and no separator between the two parts; the WarrantID is appended as the 32 bytes obtained by hex-decoding it, **not** as its 64 ASCII hex characters. The total is always exactly 47 bytes. Both parts are fixed-length, so the encoding is unambiguous without a length field. Signing and verification are **pure RFC 8032 Ed25519 over that byte string** — **not** Ed25519ctx, **not** Ed25519ph, no pre-hash, no context parameter passed to the primitive. Nothing else is signed: the envelope is not signed, `sigs` is not signed, and the body is signed only through its hash.
+
+  **The pre-0.6.0 construction — the bare 32-byte WarrantID with no separator — MUST NOT verify (MUST NOT).** A verifier MUST NOT accept both messages, under any flag, during any transition: a verifier that accepts the old one has no domain separation, because an attacker simply uses the old one. The two constructions are cleanly disjoint in both directions (`examples/signature-vectors.json`), so there is no dual-accept window and the change is a flag day. A verifier that *recognises* an old signature SHOULD say so rather than reporting only that verification failed (see the report string below); recognising is not accepting.
+
+  **Rationale.** Without a separator the signed message is byte-indistinguishable from any other bare 32-byte SHA-256 digest, so a key that also signs digests in another protocol — DSSE/in-toto payload digests, TUF metadata, Σ-GLYPH NodeHashes, RFC 6962 roots, Git object ids — produces signatures valid in both, in both directions. `warrant-sig-v1` names this protocol inside the bytes the key covers. Ed25519ctx is the orthodox instrument and is deliberately not used: Python's `cryptography` does not expose it, Go reaches it only through `ed25519.Options`, and a from-scratch verifier must implement RFC 8032's `dom2` prefix, so the orthodox choice is the one more likely to split verifiers — the failure this document's design rule ranks highest. `v1` versions the *signature scheme*, not the body: a future change becomes `warrant-sig-v2:` and is again disjoint from everything before it. (This clause implements option A of `proposals/DEC-001-domain-separation.md`; the vectors are §8.5.)
+
+  **Report string (MUST, §7 convention).** A verifier that recognises a signature valid over the bare WarrantID MUST report it with these exact bytes: `signature does not verify (excluded): LEGACY pre-v1 signature construction (signed the bare 32-byte WarrantID; SPEC 5 requires "warrant-sig-v1:" || WarrantID). Re-sign with: warrant resign --key <keyfile>` — an ASCII string, so three implementations and three JSON encoders emit one diagnosis. The signature is still excluded and §6's ERR still applies: this is a diagnosis, not an acceptance.
+
+  **Migration.** The WarrantID is SHA-256 of the canonical *body* and the envelope is not hashed, so re-signing a record rewrites `sig` and nothing else: no WarrantID moves, no `prior` edge breaks, no `under`/`evidence`/`subject` hash stops resolving, no settlement tunnel and no pinned genesis root changes. A record whose signing key is no longer available **cannot** be migrated and MUST be reported as such rather than left to fail as an ordinary bad signature.
 - **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`), MUST reject a malformed (non-canonical) public-key or signature-point encoding, and **MUST reject a small-order or non-canonically-encoded public key** before verifying. A small-order public key (the 8 torsion points, e.g. all-zero) lets an all-zero signature verify for a large fraction of messages, and libraries disagree on which such keys they accept — so a crafted envelope would verify under one library and not another ("Taming the many EdDSAs"). The rejection set is a byte-exact blocklist of the 8 canonical torsion encodings plus a non-canonical check (`y ≥ p` after clearing the sign bit), so every implementation agrees by construction; it is a normative negative-conformance vector (§8.3), not a library-dependent heuristic. Implementations SHOULD additionally prefer a strict RFC 8032 cofactorless verifier.
 - ≥1 signature MUST be present and MUST include one whose `actor` equals `body.actor.id` and which verifies. If no *valid* signature by `body.actor.id` is present, the record is invalid (§6 ERR).
 - Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is). **A co-signature that fails to verify is reported and EXCLUDED, not fatal (MUST):** because anyone with store write access can append envelope signatures, a single junk co-signature MUST NOT be able to invalidate a record that still carries a valid signature by `body.actor.id`. An invalid signature is a §6 WARN; only the *absence* of a valid actor signature is an ERR. (For settlement thresholds, §5.1, an invalid signature simply does not count.)
@@ -138,7 +153,7 @@ Outcome fingerprints: `ski@v1` — `{runtime, term, expect, verdict, result_node
 
 §7 is itself challengeable under (b): a check demonstrating that the rule forces a wrong settlement is admissible evidence against the rule.
 
-**Report-string convention.** Where this document names verifier report strings (`key-state conflict`, `invalid threshold policy`, `unadopted root`, `genesis.json unverified`, `re-litigation cites nothing new`), the normative text is the message after the verifier's severity and record-identifier columns; CLI output MAY prepend structured fields (severity, abbreviated WarrantID).
+**Report-string convention.** Where this document names verifier report strings (`key-state conflict`, `invalid threshold policy`, `unadopted root`, `genesis.json unverified`, `re-litigation cites nothing new`, and §5's `LEGACY pre-v1 signature construction` diagnosis), the normative text is the message after the verifier's severity and record-identifier columns; CLI output MAY prepend structured fields (severity, abbreviated WarrantID).
 
 ## 8. Test vectors (MUST PASS)
 
@@ -153,6 +168,8 @@ Deterministic vectors; full envelopes in `examples/`. Seed for the demo Ed25519 
 | accept WarrantID | `bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78` |
 
 The three example warrants form the chain propose → reject (failing check + clause citation) → accept (passing check), each `prior`-linked, each signature verifying against the WarrantID. An implementation MUST reproduce all five hashes byte-exactly and MUST verify all three signatures.
+
+**The five hashes above are unchanged by the 0.6.0 signature change, and the signatures inside the envelopes are all different.** That sentence is easy to misread, so it is stated twice: `examples/*.warrant.json` were re-signed under §5's `warrant-sig-v1` message, which rewrote every `sigs[].sig` and moved no WarrantID, because the WarrantID is SHA-256 of the canonical body and the envelope is not hashed. An implementation checking itself against a pre-0.6.0 copy of `examples/` will reproduce all five hashes and fail all three signatures.
 
 ### 8.2. ski@v1 vectors (v0.2, `examples/ski/`)
 
@@ -184,6 +201,18 @@ For every case, an implementation MUST produce `canonical_json(body)` equal byte
 The bodies are stored with `\uXXXX` transport escaping so the file is pure ASCII; that escaping is a property of *this file*, not of canonical output — canonical output is what `canon_hex` says.
 
 `tests/differential.py` is the harness that drives each implementation's `canon` command over these vectors; it compares implementations against each other **and** against the pinned bytes, so a drift shared by all of them is still a failure. Running it is not required for conformance; reproducing the vectors is.
+
+### 8.5. Signature-construction vectors (MUST PASS, `examples/signature-vectors.json`)
+
+§8 pins what a body hashes to; §8.3 pins what MUST be rejected; this pins **the bytes a key signs** (§5). It is a separate battery because every way of building the §5 message wrong still reproduces all five §8 WarrantIDs correctly — an implementation can pass every other vector in this document and still be unable to verify anybody else's signature.
+
+A `warrant.signature-vectors@v0` document with three arrays:
+
+- **`message`** — for each `warrant_id`, the exact `message_hex` an implementation MUST construct: 47 bytes, the separator's 15 bytes then the WarrantID's 32.
+- **`accept`** — `{warrant_id, key, sig}` triples that MUST verify. These are the signatures committed in `examples/`, so this array also pins that those files are not stale.
+- **`reject`** — triples that MUST NOT verify: the pre-v1 bare-WarrantID construction for each vector; the separator and digest concatenated in the wrong order; the separator followed by the WarrantID's ASCII hex rather than its bytes; the separator without its trailing colon; the separator alone; a `warrant-sig-v2:` separator that does not exist; and — the vector that names the hazard §5 exists to close — **a signature made over the bare SHA-256 digest of unrelated content, offered as a Warrant signature for the record whose WarrantID equals that digest.** A pre-0.6.0 verifier accepted that signature. A conforming one MUST NOT.
+
+All three reference implementations load this file from their `conformance` command. `tools/signature_vectors.py` regenerates it; every signature in it derives from §8's published demo seed, so a reader can reproduce the file from this document alone.
 
 ## 9. Multi-root stores (v0.3)
 

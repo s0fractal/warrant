@@ -37,7 +37,7 @@
     {
       "actor": "agent-b@vendor2",
       "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
-      "sig": "779a4df46b84727d52b1e52c49875eb7a4bc326fffec575ee9c0b5ef3a594d920fcbc4e955f98b1a05a872d97dd1ac13fce99dbccd482c808f193c3eeb4d210d"
+      "sig": "46571f4f6d7de488dc20fa40ebddec5a81ca406516390d95a45ddd10ed6d816bcc81098a3dcd7e4acb0285d548cda7f8de6c0b9c99fe4ee32e951ef44f23f80f"
     }
   ]
 }

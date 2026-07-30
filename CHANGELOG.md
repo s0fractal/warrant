@@ -10,9 +10,9 @@ All notable changes to this project are recorded here. The format follows
 | Number | What it versions | Current |
 | --- | --- | --- |
 | `warrant` body member | the record schema (SPEC §13.2) | `0.1`, `0.2` |
-| SPEC document version | the document, including rules that add no body schema | v0.3 (DRAFT) |
+| SPEC document version | the document, including rules that add no body schema | v0.4 (DRAFT) |
 | report tag | the machine boundary (SPEC §13.3) | `warrant.verify-report@v0` |
-| release tag / PyPI | the tooling | 0.5.0 |
+| release tag / PyPI | the tooling | 0.6.0 (unreleased) |
 
 A release moving only the tooling number changes **no** protocol surface. Each
 entry below says which of the four moved, and any entry that changes a
@@ -26,8 +26,51 @@ right.
 
 ## [Unreleased]
 
-Branch `feat/spec-consolidation`. **Nothing here is adopted or released**;
-this section exists so the work is legible before it is decided on.
+**Nothing here is adopted or released**; this section exists so the work is
+legible before it is decided on.
+
+### Changed — BREAKING, branch `feat/domain-separation`
+
+- **[protocol] SPEC §5: the signed message is now domain-separated.**
+  `msg = "warrant-sig-v1:" || WarrantID_raw` (47 bytes), still pure RFC 8032
+  Ed25519 over a byte string — not Ed25519ctx, which is the orthodox answer and
+  is not uniformly reachable from Python's `cryptography`, Go's `crypto/ed25519`
+  or a from-scratch verifier, so it is the choice more likely to split
+  implementations. The pre-0.6.0 bare-WarrantID message **MUST NOT verify**, and
+  no verifier accepts both at any time under any flag: accepting the old one is
+  the same as having no separation. This implements option A of
+  `proposals/DEC-001-domain-separation.md`. **Adoption of DEC-001 is a maintainer
+  act and this branch does not claim it.**
+
+  Which of the four numbers moved: **SPEC document version v0.3 → v0.4**;
+  **release tag 0.5.0 → 0.6.0**. Body versions `0.1`/`0.2` are unchanged and no
+  WarrantID moves — a migrated record has the same identity it had before,
+  because the WarrantID is SHA-256 of the canonical body and the envelope is not
+  hashed. The report tag stays `warrant.verify-report@v0`: the report's shape did
+  not change, only a finding's text.
+
+  There is no version field that tells the two apart. The discriminator is the
+  signature: exactly one of the two messages verifies, never both. So a verifier
+  that meets an old record reports §5's exact diagnosis — naming the
+  construction and the repair — instead of the bare "signature does not verify"
+  that a flipped byte also produces.
+
+- **[protocol] SPEC §8.5 + `examples/signature-vectors.json`:** a new MUST-PASS
+  battery pinning the 47 signed bytes, four signatures that MUST verify and ten
+  that MUST NOT — including the pre-v1 construction, the two concatenation
+  mistakes, a missing colon, and a signature over the bare SHA-256 digest of
+  unrelated content, which a pre-0.6.0 verifier accepted as a Warrant signature.
+  All three implementations read it from `conformance`.
+
+- `warrant resign --key <keyfile>` migrates a store in place. It rewrites only
+  `sigs[].sig`, and only for an entry whose `key` is the supplied key's public
+  key AND whose existing signature verifies over the bare WarrantID — proof the
+  holder of that key really signed that WarrantID, so no attribution is created.
+  Anything it cannot re-sign is named and the command exits non-zero.
+
+- `tools/domain_separation_prototype.py` and `examples/draft/` are replaced by
+  `tools/signature_vectors.py` and `examples/signature-vectors.json`: the
+  prototype cross-verified two candidate rules because neither was in force.
 
 ### Added
 

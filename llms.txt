@@ -107,6 +107,13 @@ else's namespace is a false claim about who defines it.
   `impl-rs/` (no third-party crates, own SHA-256 and Ed25519). All three now also
   agree on whether a **store** verifies, on broken stores as well as clean ones —
   see the base-grade limit under the gaps below.
+- **Signatures are domain-separated as of SPEC v0.4** (`feat/domain-separation`,
+  not adopted): the signed message is `"warrant-sig-v1:" || WarrantID_raw`, 47
+  bytes, still pure RFC 8032 Ed25519. The pre-0.6.0 bare-WarrantID message MUST
+  NOT verify and nothing accepts both. If you hold a record made before that,
+  `warrant resign --key <keyfile>` migrates it and no WarrantID changes; if you
+  do not hold its key, it cannot be migrated and the verifier says so by name
+  rather than reporting a generic bad signature.
 
 ## If you are reviewing this project
 

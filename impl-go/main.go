@@ -1138,32 +1138,99 @@ func isUnverifiable(body map[string]any) bool {
 	return true
 }
 
-func verifySig(wid string, sig any) bool {
+// SPEC §5 — signature domain separation (`warrant-sig-v1`), adopted 2026-07-31
+// under proposals/DEC-001-domain-separation.md.
+//
+//	msg = "warrant-sig-v1:" || WarrantID_raw          15 + 32 = 47 bytes
+//
+// Still pure RFC 8032 Ed25519 over a byte string — NOT Ed25519ctx, which Go
+// reaches only through ed25519.Options and Python's `cryptography` does not
+// expose at all. A fixed ASCII prefix buys the same separation in a form all
+// three implementations can reproduce byte-exactly, which this project ranks
+// above orthodoxy. See impl/warrant.py for the full reasoning; the two comments
+// are deliberately redundant because a re-implementer reads one file.
+var sigDomain = []byte("warrant-sig-v1:")
+
+// legacySigMessage is the §6 report string for a signature made under the
+// pre-0.6.0 bare-WarrantID construction. Byte-identical in all three
+// implementations (SPEC §5); pure ASCII on purpose.
+const legacySigMessage = `signature does not verify (excluded): LEGACY pre-v1 signature construction (signed the bare 32-byte WarrantID; SPEC 5 requires "warrant-sig-v1:" || WarrantID). Re-sign with: warrant resign --key <keyfile>`
+
+// sigMessage returns the exact bytes a Warrant signature covers, or ok=false
+// when wid is not a 32-byte hex digest.
+func sigMessage(wid string) ([]byte, bool) {
+	raw, err := hex.DecodeString(wid)
+	if err != nil || len(raw) != 32 {
+		return nil, false
+	}
+	msg := make([]byte, 0, len(sigDomain)+32)
+	msg = append(msg, sigDomain...)
+	msg = append(msg, raw...)
+	return msg, true
+}
+
+// sigParts decodes and screens the key/signature shared by verifySig and
+// legacySig, so the two cannot drift on which keys they reject.
+func sigParts(sig any) (ed25519.PublicKey, []byte, bool) {
 	s, ok := sig.(map[string]any)
 	if !ok {
-		return false
+		return nil, nil, false
 	}
 	keyHex, ok1 := s["key"].(string)
 	sigHex, ok2 := s["sig"].(string)
 	if !ok1 || !ok2 {
-		return false
+		return nil, nil, false
 	}
 	key, err := hex.DecodeString(keyHex)
 	if err != nil || len(key) != ed25519.PublicKeySize {
-		return false
+		return nil, nil, false
 	}
 	rawSig, err := hex.DecodeString(sigHex)
 	if err != nil || len(rawSig) != ed25519.SignatureSize {
-		return false
+		return nil, nil, false
 	}
 	if weakEd25519PubKey(key) {
+		return nil, nil, false
+	}
+	return ed25519.PublicKey(key), rawSig, true
+}
+
+func trunc(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
+}
+
+func verifySig(wid string, sig any) bool {
+	key, rawSig, ok := sigParts(sig)
+	if !ok {
+		return false
+	}
+	msg, ok := sigMessage(wid)
+	if !ok {
+		return false
+	}
+	return ed25519.Verify(key, msg, rawSig)
+}
+
+// legacySig reports whether sig is a valid signature over the BARE 32-byte
+// WarrantID — the construction SPEC §5 replaced. DIAGNOSIS ONLY: no caller
+// treats a true return as acceptance. A verifier that accepted both messages
+// would have no domain separation at all, since an attacker would simply use
+// the legacy one (DEC-001 §4.3). What it buys is that a record signed before
+// the flag day fails with a sentence naming the cause and the repair, instead
+// of the "signature does not verify" that a flipped byte produces too.
+func legacySig(wid string, sig any) bool {
+	key, rawSig, ok := sigParts(sig)
+	if !ok {
 		return false
 	}
 	msg, err := hex.DecodeString(wid)
 	if err != nil || len(msg) != 32 {
 		return false
 	}
-	return ed25519.Verify(ed25519.PublicKey(key), msg, rawSig)
+	return ed25519.Verify(key, msg, rawSig)
 }
 
 // SPEC §5: small-order and non-canonical Ed25519 public keys are rejected.
@@ -1351,6 +1418,41 @@ func conformance(dir string) bool {
 				_ = dec.Decode(&b)
 				bm, _ := b.(map[string]any)
 				chk("neg: schema-invalid ("+c.Why+")", len(validateBody(bm)) > 0, "")
+			}
+		}
+	}
+
+	// SPEC §8.5 signature-construction battery. The message bytes are pinned
+	// because every way of building them wrong still reproduces all five §8
+	// WarrantIDs — nothing else in this command would notice.
+	if svRaw, err := os.ReadFile(filepath.Join(dir, "signature-vectors.json")); err == nil {
+		type sigCase struct {
+			Why       string `json:"why"`
+			WarrantID string `json:"warrant_id"`
+			Key       string `json:"key"`
+			Sig       string `json:"sig"`
+		}
+		var sv struct {
+			Message []struct {
+				Why        string `json:"why"`
+				WarrantID  string `json:"warrant_id"`
+				MessageHex string `json:"message_hex"`
+			} `json:"message"`
+			Accept []sigCase `json:"accept"`
+			Reject []sigCase `json:"reject"`
+		}
+		if json.Unmarshal(svRaw, &sv) == nil {
+			for _, m := range sv.Message {
+				msg, okMsg := sigMessage(m.WarrantID)
+				chk("sig-msg: "+trunc(m.Why, 60), okMsg && hex.EncodeToString(msg) == m.MessageHex, "")
+			}
+			for _, a := range sv.Accept {
+				sig := map[string]any{"actor": "x", "key": a.Key, "sig": a.Sig}
+				chk("sig-accept: "+trunc(a.Why, 60), verifySig(a.WarrantID, sig), "")
+			}
+			for _, r := range sv.Reject {
+				sig := map[string]any{"actor": "x", "key": r.Key, "sig": r.Sig}
+				chk("sig-reject: "+trunc(r.Why, 60), !verifySig(r.WarrantID, sig), "")
 			}
 		}
 	}
@@ -2427,7 +2529,15 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 				// store write access can append) MUST NOT invalidate an
 				// otherwise-good record. The ERR below still fires if no valid
 				// signature by body.actor.id remains.
-				out("WARN", wid, "signature does not verify (excluded)")
+				//
+				// DIAGNOSIS, NOT ACCEPTANCE: the one failure a verifier can
+				// name — a signature made before the `warrant-sig-v1:`
+				// separator existed — it names. Still excluded, still ERRs.
+				if legacySig(wid, s) {
+					out("WARN", wid, legacySigMessage)
+				} else {
+					out("WARN", wid, "signature does not verify (excluded)")
+				}
 				continue
 			}
 			sm, _ := s.(map[string]any)
@@ -2712,8 +2822,14 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 			if !verifySig(wid, s) {
 				// SPEC §5/§6: a failed co-signature is reported and EXCLUDED,
 				// not fatal (see settlement path). ERR still fires below if no
-				// valid signature by body.actor.id remains.
-				out("WARN", wid, "signature does not verify (excluded)")
+				// valid signature by body.actor.id remains. A pre-v1 signature
+				// is named as such (SPEC §5) rather than left indistinguishable
+				// from a corrupted one.
+				if legacySig(wid, s) {
+					out("WARN", wid, legacySigMessage)
+				} else {
+					out("WARN", wid, "signature does not verify (excluded)")
+				}
 				continue
 			}
 			// SPEC §5 MUST: no keyring configured, so the key->actor binding is
