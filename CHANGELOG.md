@@ -54,6 +54,13 @@ this section exists so the work is legible before it is decided on.
   manifest, plus `tools/schema_check.py`, which checks them against the corpus in
   both directions (every positive artifact validates, every §8.3 negative body is
   rejected) and prints the rejection classes no schema can express.
+- `proposals/DEC-001-domain-separation.md`: the signature-domain-separation
+  decision — both options fully worked out, with a DRAFT prototype
+  (`tools/domain_separation_prototype.py`) and side-by-side old/new signature
+  vectors under `examples/draft/`. **A recommendation, not a decision**; SPEC §5
+  is unchanged and no shipped code path was touched. Recommends adopting a
+  separator now, because the cost is at its global minimum while the user base is
+  zero and rises monotonically after.
 - SPEC §14.3: how to cite a version of this document — by commit SHA or by the
   SHA-256 of the exact bytes, never by branch.
 - **[protocol]** SPEC §8.4 and `examples/canon-vectors.json`: the JCS escaping
@@ -63,12 +70,13 @@ this section exists so the work is legible before it is decided on.
   Python. Two cases are new: `<` `>` `&` raw emission and U+2028/U+2029 raw
   emission — both named normatively in §4 and exercised by no vector until now.
   All three implementations already agreed on both.
+
 ### Changed
 
 - **[protocol]** SPEC §2: `actor.id` is stated to be a **nonempty** string. The
   table said `<string>`; all three implementations already rejected `""`. A spec
   gap, recorded as one.
-- `tools/check.py`: 28 checks (was 27).
+- `tools/check.py`: 29 checks (was 27).
 
 ### Fixed
 

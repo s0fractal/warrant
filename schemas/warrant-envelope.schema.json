@@ -19,7 +19,7 @@
         "properties": {
           "actor": {"type": "string", "minLength": 1},
           "key": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Ed25519 public key, 32 bytes, lowercase hex. §5 additionally REQUIRES rejecting the 8 small-order torsion encodings and non-canonical y — see examples/conformance-negatives.json."},
-          "sig": {"type": "string", "pattern": "^[0-9a-f]{128}$", "description": "Ed25519 signature over the 32 RAW BYTES of the WarrantID (§5). No context string, no domain separator, no pre-hash."}
+          "sig": {"type": "string", "pattern": "^[0-9a-f]{128}$", "description": "Ed25519 signature over the 32 RAW BYTES of the WarrantID (§5). No context string, no domain separator, no pre-hash \u2014 an OPEN decision, proposals/DEC-001-domain-separation.md, nothing changed."}
         }
       }
     }
