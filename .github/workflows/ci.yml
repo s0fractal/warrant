@@ -26,16 +26,23 @@ env:
 jobs:
   test:
     # Codex v0.3 hardening audit P2-c: for a repo centered on reproducible
-    # settlement, dependencies should be immutable. Actions are still pinned by
-    # major tag below — pinning each by commit SHA is a tracked follow-up (the
-    # exact digests are not guessed here to avoid a red build). `cryptography`
-    # is bounded, and CI runs in strict mode so a skipped ski@v1 case fails.
+    # settlement, dependencies should be immutable. Every action in this repo is
+    # now pinned by commit SHA with the version in a trailing comment; the SHAs
+    # were resolved from each upstream repository, not guessed, and each is the
+    # commit the mutable tag pointed at when it was pinned. Read the comment as
+    # a label, never as the authority — the SHA is what runs. `cryptography` is
+    # bounded, and CI runs in strict mode so a skipped ski@v1 case fails.
+    #
+    # The cost is real and unautomated: a pinned action stops receiving patch
+    # updates, including security ones, until a human bumps the SHA by hand.
+    # Nothing in this repo watches for those. Bump deliberately, the same way
+    # SIGMA_PIN above is bumped.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: { python-version: '3.12' }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with: { go-version: '1.22' }
       - run: python3 -m pip install 'cryptography>=42,<46'
       # CI has no sibling checkout, so it cannot re-resolve cross-repo citations.
