@@ -150,13 +150,43 @@ class Check:
                 "verdict": verdict or "pass"}
 
 
+_GATE = None
+
+
+def _emission_gate():
+    # The file beside this one wins over anything on sys.path, for the reason
+    # given in `policy_lang._verifier`: an installed older copy would gate the
+    # emission of a check this code, not that code, is about to write.
+    global _GATE
+    if _GATE is None:
+        _q = Path(__file__).resolve().parent / "policy_lang.py"
+        if _q.is_file():
+            _s = importlib.util.spec_from_file_location("policy_lang_gate", _q)
+            pl = importlib.util.module_from_spec(_s)
+            _s.loader.exec_module(pl)
+        else:
+            import policy_lang as pl
+        _GATE = pl._validate_emission
+    return _GATE
+
+
 def compile_check(expr, put, atp_headroom=0):
     """Compile a predicate into a stored ski@v1 check.
 
     `put(bytes) -> hex_hash` stores a blob at its SHA-256 (a warrant
     `Store.put_blob` fits exactly). Returns a `Check`. The check's `atp` is the
-    exact spend (+ optional headroom); re-execution under it reaches normal form.
+    exact spend (+ optional headroom, which must be >= 0); re-execution under it
+    reaches normal form. The serialized check is validated and re-executed
+    before it is written — see `policy_lang._validate_emission`.
     """
+    if isinstance(atp_headroom, bool) or not isinstance(atp_headroom, int):
+        raise ValueError(
+            f"atp_headroom must be an integer, not {type(atp_headroom).__name__}")
+    if atp_headroom < 0:
+        raise ValueError(
+            f"atp_headroom must be >= 0, not {atp_headroom}: a negative "
+            "headroom pins an `atp` below the spend, and the verifier then "
+            "reports `fail` instead of reproducing the pinned verdict")
     term = _to_term(expr)
 
     # Materialize every node (the FALSE leaf + each APPLY) at its NodeHash.
@@ -188,7 +218,15 @@ def compile_check(expr, put, atp_headroom=0):
     else:
         raise ValueError(f"predicate did not reduce to a Church boolean ({rh[:12]})")
 
-    doc = {"ski": 1, "term": term_hex, "atp": atp + int(atp_headroom),
+    doc = {"ski": 1, "term": term_hex, "atp": atp + atp_headroom,
            "expect": rh}
-    blob = put(_canon(doc))
+    # Same emission gate as the WPL compiler, for the same reason: an `atp`
+    # below the spend yields a check that is well-formed, reduces correctly,
+    # and that the verifier answers `fail` to. Validated on the serialized
+    # bytes, and those bytes are what gets stored. The gate lives in
+    # `policy_lang` — the layer above — because ONE definition of "a check this
+    # store may hold" is worth an upward import; two definitions are how the
+    # two emitters drift apart. Imported lazily so this module still loads
+    # standalone for parsing and formula work.
+    blob = put(_emission_gate()(doc, priv, atp))
     return Check(doc, result, _formula(expr), _facts(expr, {}), blob)

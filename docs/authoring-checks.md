@@ -393,8 +393,13 @@ so there is never a question of which one you meant.
 
 `--max-atp N` sets the compile-time ceiling (default 1,000,000; the reference
 verifiers will re-run up to 100,000,000). `--headroom N` pins a larger `atp` than
-the check actually spends. `--json` prints the same report as machine-readable
-JSON.
+the check actually spends; `N` must be `>= 0` and the pinned total must stay
+inside both uint32 and the verifier's re-execution budget, because a check whose
+`atp` is under its own cost is not rejected as malformed — the verifier runs out
+of budget and reports **`fail`**, a wrong verdict from a correct term. The
+compiler re-executes the serialized check under its pinned `atp` before writing
+it and refuses anything a verifier would not accept. `--json` prints the same
+report as machine-readable JSON.
 
 ---
 
