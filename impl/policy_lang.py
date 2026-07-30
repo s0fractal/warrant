@@ -26,7 +26,7 @@ The compiler is NOT trusted code. A verifier never runs it: it re-runs the
 what makes a claimed verdict unfalsifiable-by-assertion.
 
 What the verifier's re-run does NOT establish is that the term means what the
-source text says. Three things make a mis-compilation detectable instead:
+source text says. Four things make a mis-compilation detectable instead:
 
   1. **Every compile is checked against the oracle before it is emitted.**
      `compile_source` evaluates the term it just built on the Σ-GLYPH Book I
@@ -48,6 +48,18 @@ source text says. Three things make a mis-compilation detectable instead:
      pinned fact, and every operator — `&&`, `||`, `!`, `==`, `!=`, `<`, `<=`,
      `>`, `>=`, `in` — is lowered to term structure that the verifier reduces.
      The compiler never folds a comparison into its answer.
+
+  4. **The bytes that get written are the bytes that were checked.** (1)–(3)
+     validate the *term*; for a while nothing validated the *blob*. The check
+     document also carries `atp` — the compiler's promise about what a verifier
+     may spend — and a wrong `atp` does not make the check malformed, it makes
+     the verifier run out of budget and answer `fail`. A wrong verdict, from a
+     term that is entirely correct. So `_validate_emission` serializes the doc,
+     decodes it back, puts it through `warrant.validate_ski_blob` — the
+     verifier's own acceptance predicate, imported rather than restated — and
+     reduces `term` under the PINNED `atp`, comparing against `expect`. Only
+     then, and only those exact bytes, are stored. (Codex, 2026-07-31:
+     `--headroom=-1` emitted a check its own verifier answered `fail` to.)
 
 WHAT IT COSTS (SPEC §3.1 budget)
 --------------------------------
@@ -82,7 +94,10 @@ Integers are encoded `v + 2**(W-1)` (two's complement with the sign bit flipped
 are their UTF-8 bytes, left-padded to the longer operand, read big-endian; NUL
 bytes are refused so padding cannot make two different strings equal.
 
-Depends only on the bundled Σ-GLYPH Book I oracle (`sigma_glyph`) + stdlib.
+Depends on the bundled Σ-GLYPH Book I oracle (`sigma_glyph`) + stdlib, and — at
+emission time only — on `warrant`, for the acceptance predicate an emitted check
+must satisfy. Both are modules of this same distribution. Parsing, evaluating
+and reporting need neither.
 """
 import argparse
 import importlib.util
@@ -942,6 +957,102 @@ def _canon(doc):
                       ensure_ascii=False).encode("utf-8")
 
 
+_VERIFIER = None
+
+
+def _verifier():
+    """The verifier module — imported, never restated.
+
+    `warrant.validate_ski_blob` IS the boundary an emitted check must clear,
+    and `warrant.SKI_REEXEC_MAX_ATP` IS the budget it will be re-run under. A
+    second copy of "atp is a uint32" living here would be free to drift out of
+    agreement with the code that does the rejecting — which is the exact
+    failure this function exists to prevent. Both modules ship in one
+    distribution (`py-modules` in pyproject.toml).
+
+    THE FILE NEXT TO THIS ONE WINS, and that ordering is the point rather than
+    a detail: `import warrant` resolves against sys.path, which during
+    development is an older *installed* release. Validating an artifact against
+    a verifier that is not the one shipped beside the compiler certifies
+    nothing about the pair a user actually gets. (Caught by the test harness,
+    which had a pip-installed copy on sys.path.)
+
+    A missing verifier is a hard failure, not a skipped check: a compiler whose
+    contract is "refuse what you cannot compile" cannot certify an artifact
+    against a contract it is unable to read."""
+    global _VERIFIER
+    if _VERIFIER is not None:
+        return _VERIFIER
+    p = Path(__file__).resolve().parent / "warrant.py"
+    if p.is_file():
+        spec = importlib.util.spec_from_file_location("warrant_verifier", p)
+        w = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(w)
+    else:
+        try:
+            import warrant as w
+        except ModuleNotFoundError:
+            raise CompilerBug(
+                "cannot emit a check: the verifier module (warrant) is neither "
+                "beside this file nor importable, so the artifact cannot be "
+                "validated against the rules that will judge it") from None
+    _VERIFIER = w
+    return w
+
+
+def _validate_emission(doc, priv, exact_atp):
+    """Re-run the SERIALIZED check, under the PINNED atp, before writing a byte.
+
+    (4) of the module docstring. The three guarantees above all concern the
+    *term*: it is walked, reduced and compared against two independent
+    interpreters. None of them looked at the `atp` field of the blob, which is
+    the compiler's own promise about what the verifier is allowed to spend —
+    so a bad `atp` produced a check that reduced correctly in the compiler and
+    reported `fail` in the verifier. (Reproduced 2026-07-31: `--headroom=-1`
+    pinned 494 against a 495 ATP spend; the verifier answered `fail`, not
+    "malformed".)
+
+    So this re-decodes the canonical bytes and works only from what came back:
+    the fields the verifier will read, checked by `validate_ski_blob`, then an
+    actual reduction of `term` under `atp` compared against `expect`. Nothing
+    the compiler computed is consulted; `exact_atp` is carried in for the error
+    message alone. Returns the validated bytes, which are the bytes the caller
+    must store — revalidating a doc and then serializing it again would be the
+    same gap one level down.
+    """
+    w = _verifier()
+    raw = _canon(doc)
+    emitted = json.loads(raw.decode("utf-8"))
+
+    err = w.validate_ski_blob(emitted)
+    if err:
+        raise PolicyError(
+            f"refusing to emit a check the verifier would reject: {err}. "
+            f"Pinned atp {doc['atp']} = {exact_atp} spent + "
+            f"{doc['atp'] - exact_atp} headroom.")
+    if emitted["atp"] > w.SKI_REEXEC_MAX_ATP:
+        raise PolicyError(
+            f"the pinned atp ({emitted['atp']}) is over the "
+            f"{w.SKI_REEXEC_MAX_ATP} ATP a reference verifier will re-execute "
+            "(SPEC §3.1), which reports the check as unverified rather than "
+            "returning a verdict. Lower --headroom.")
+
+    r, spent = sg.eval_hash(bytes.fromhex(emitted["term"]), emitted["atp"], priv)
+    if r == ("dis", sg.R_ATP):
+        raise PolicyError(
+            f"the pinned atp ({emitted['atp']}) is below the {exact_atp} ATP "
+            "this check spends, so a verifier re-running it would exhaust the "
+            "budget and report `fail` — a wrong verdict rather than an error. "
+            "Refusing to emit it.")
+    rh = sg.term_hash(r).hex()
+    if rh != emitted["expect"]:
+        raise CompilerBug(
+            f"the serialized check does not reproduce its own `expect`: "
+            f"re-running term under atp={emitted['atp']} gives {rh[:12]}, the "
+            f"blob pins {emitted['expect'][:12]} ({spent} ATP spent)")
+    return raw
+
+
 def _walk(t):
     """-> ([(hash, bytes)] children-first and deduplicated, root_hash, depth).
 
@@ -991,6 +1102,17 @@ def compile_source(src, put=None, *, name=None, atp_headroom=0,
     anything. Raises `PolicyError` for anything the author must fix —
     including a check that would cost more than `max_atp` — and `CompilerBug`
     if the emitted term disagrees with the reference interpreter."""
+    if isinstance(atp_headroom, bool) or not isinstance(atp_headroom, int):
+        raise PolicyError(
+            f"headroom must be an integer, not {type(atp_headroom).__name__}")
+    if atp_headroom < 0:
+        raise PolicyError(
+            f"headroom must be >= 0, not {atp_headroom}. Negative headroom pins "
+            "an `atp` BELOW what the check actually spends, so the verifier "
+            "re-runs it out of budget, the term dissipates instead of reducing "
+            "to the pinned `expect`, and the check reports `fail` — a WRONG "
+            "VERDICT, not an error. Use --max-atp to lower the compile budget; "
+            "headroom only ever widens what the verifier may spend.")
     prog = parse(src)
     expected = evaluate(prog)
 
@@ -1049,12 +1171,17 @@ def compile_source(src, put=None, *, name=None, atp_headroom=0,
             f"{expected} — refusing to emit. Formula: {prog.formula()}")
 
     doc = {"ski": 1, "term": term_hash.hex(),
-           "atp": atp + int(atp_headroom), "expect": rh}
+           "atp": atp + atp_headroom, "expect": rh}
+
+    # (4) of the module docstring. Everything above validated what the compiler
+    # MEANT to emit; this validates the bytes it is about to write.
+    raw = _validate_emission(doc, priv, atp)
+
     blob = None
     if put is not None:
         for _h, b in nodes:
             put(b)
-        blob = put(_canon(doc))
+        blob = put(raw)          # exactly the bytes `_validate_emission` ran
     return Compiled(prog, doc, result, blob, len(nodes), low.comparisons,
                     max_atp)
 
@@ -1103,7 +1230,9 @@ def main(argv=None):
                                    "(omit: compile without writing anything)")
     c.add_argument("--max-atp", type=int, default=DEFAULT_MAX_ATP)
     c.add_argument("--headroom", type=int, default=0,
-                   help="ATP added to the exact spend when pinning `atp`")
+                   help="ATP added to the exact spend when pinning `atp` "
+                        "(>= 0; the sum must stay a uint32 and within the "
+                        "verifier's re-execution budget)")
     c.add_argument("--json", action="store_true")
     e = sub.add_parser("explain", help="parse and evaluate without compiling")
     e.add_argument("file")

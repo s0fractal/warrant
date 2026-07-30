@@ -31,6 +31,9 @@ section F mutates the compiler on purpose and FAILS IF THE MUTANT SURVIVES.
   F. negative controls: injected mis-compilations must be caught
   G. budget: cost is pinned, reported, and refused when too large
   G2. size: the inputs that crashed instead of refusing (found by probing)
+  L. emission: the SERIALIZED blob is re-executed under its own pinned `atp`
+     before it is written -- the term being right is not the same as the
+     artifact being acceptable
   H. Air Canada: the README's check, rewritten, byte-for-byte
   I. reproducible compilation: same source -> same term hash
   J. integration: a warrant citing a WPL check verifies clean
@@ -597,6 +600,135 @@ def test_budget():
         str(dear.atp))
 
 
+# ------------------------------------------------------------- L. emission
+def _blob_count(store):
+    return len(list(store.blobs.iterdir()))
+
+
+def test_emission():
+    """The compiler must not emit a check its own verifier rejects.
+
+    Sections A-G all validate the TERM. This one validates the BLOB, because
+    the two came apart: `--headroom` reached the `atp` field unchecked, and a
+    wrong `atp` does not make a check malformed -- it makes the verifier run
+    out of budget and answer `fail`. Correct term, wrong verdict.
+
+    Reproduced by Codex, 2026-07-31, and re-run here before the fix:
+      --headroom=-1          -> compiled atp=494, verifier `fail` (spent 492)
+      --headroom=5000000000  -> compiled atp=5000000495, verifier
+                                "atp must be a uint32"
+
+    Every refusal below also asserts the store is untouched: a compiler that
+    refuses AFTER writing has not refused."""
+    src = "fact refund: int = 65088\nfact cap: int = 50000\ncheck refund <= cap"
+    exact = pl.compile_source(src).atp
+
+    # L1/L2 -- the two reported reproductions, as refusals.
+    for headroom, want, label in (
+            (-1, "must be >= 0", "L1 negative headroom is refused"),
+            (5_000_000_000, "uint32",
+             "L2 headroom past uint32 is refused")):
+        store = new_store()
+        before = _blob_count(store)
+        try:
+            pl.compile_source(src, store.put_blob, atp_headroom=headroom)
+            chk(False, label, "EMITTED -- compiler accepted it")
+        except pl.PolicyError as e:
+            chk(want in str(e) and _blob_count(store) == before,
+                label, f"{str(e)[:70]} / blobs {_blob_count(store)-before}")
+
+    # L3 -- the ceilings, at the boundary rather than near it. warrant rejects
+    # `atp` outside uint32 and refuses to re-execute past SKI_REEXEC_MAX_ATP,
+    # so the last accepted pin is exactly that budget.
+    ceiling = W.SKI_REEXEC_MAX_ATP
+    at_ceiling = pl.compile_source(src, atp_headroom=ceiling - exact)
+    chk(at_ceiling.atp == ceiling,
+        "L3a a pin at exactly the re-execution budget is allowed",
+        str(at_ceiling.atp))
+    for pin, label in ((ceiling + 1, "L3b one ATP past the re-exec budget"),
+                       (2 ** 32 - 1, "L3c the top of uint32"),
+                       (2 ** 32, "L3d the first value outside uint32")):
+        try:
+            pl.compile_source(src, atp_headroom=pin - exact)
+            chk(False, label + " is refused", f"EMITTED atp={pin}")
+        except pl.PolicyError:
+            chk(True, label + " is refused")
+
+    # L4 -- THE ONE THAT MATTERS. The gate must read the bytes being written,
+    # not the compiler's own variables. Tampering with `_canon` corrupts the
+    # doc AFTER every term-level check has passed and at the exact point of
+    # serialization, so only a gate that re-executes the serialized blob can
+    # see it. Each mutant that SURVIVES is a check written to disk that the
+    # verifier disagrees with.
+    saved_canon = pl._canon
+
+    def tamper(field, f):
+        def _c(doc):
+            return saved_canon({**doc, field: f(doc[field])})
+        return _c
+
+    mutants = [
+        ("L4a atp silently lowered below the spend", "atp", lambda a: a - 1),
+        ("L4b atp raised out of uint32", "atp", lambda a: 2 ** 32 + 7),
+        ("L4c expect pointing at another node", "expect",
+         lambda e: ("0" if e[0] != "0" else "1") + e[1:]),
+    ]
+    for label, field, f in mutants:
+        store = new_store()
+        before = _blob_count(store)
+        pl._canon = tamper(field, f)
+        try:
+            c = pl.compile_source(src, store.put_blob)
+        except (pl.PolicyError, pl.CompilerBug) as e:
+            chk(_blob_count(store) == before, label + " -> refused",
+                f"refused but wrote {_blob_count(store)-before} blobs")
+            continue
+        finally:
+            pl._canon = saved_canon
+        # Survived. Show precisely what the verifier makes of what was written.
+        try:
+            verdict, _rh, spent = W.run_ski_check(store, c.blob)
+            detail = f"SURVIVED -> verifier says {verdict} (spent {spent})"
+        except RuntimeError as e:
+            detail = f"SURVIVED -> verifier says {e}"
+        chk(False, label + " -> refused", detail)
+
+    # L5 -- the compiler's acceptance boundary IS the verifier's. Not a
+    # restatement of "uint32" here: the two are compared by running both.
+    for pin in (exact, exact + 1, ceiling, ceiling + 1, 2 ** 32 - 1, 2 ** 32):
+        try:
+            emitted = pl.compile_source(src, atp_headroom=pin - exact).doc
+            compiler_ok = True
+        except pl.PolicyError:
+            emitted, compiler_ok = {"ski": 1, "term": "0" * 64, "atp": pin,
+                                    "expect": "0" * 64}, False
+        verifier_ok = (W.validate_ski_blob(emitted) is None
+                       and pin <= W.SKI_REEXEC_MAX_ATP)
+        chk(compiler_ok == verifier_ok,
+            f"L5 compiler and verifier agree about atp={pin}",
+            f"compiler {compiler_ok} vs verifier {verifier_ok}")
+
+    # L6 -- the low-level emitter (`ski_policy.compile_check`) has the same
+    # `atp + headroom` line and now the same gate.
+    store = new_store()
+    before = _blob_count(store)
+    expr = sp.And(sp.Fact("within_window", True), sp.Not(sp.Fact("retro", True)))
+    try:
+        sp.compile_check(expr, store.put_blob, atp_headroom=-1)
+        chk(False, "L6 ski_policy refuses negative headroom too", "EMITTED")
+    except ValueError as e:
+        chk("must be >= 0" in str(e) and _blob_count(store) == before,
+            "L6 ski_policy refuses negative headroom too", str(e)[:70])
+
+    # ...and still emits a check the verifier reproduces.
+    store = new_store()
+    c = sp.compile_check(expr, store.put_blob, atp_headroom=25)
+    verdict, _, spent = W.run_ski_check(store, c.blob)
+    chk(verdict == "pass" and c.doc["atp"] == spent + 25,
+        "L6b ski_policy headroom still widens the pin, not the spend",
+        f"{verdict} pinned={c.doc['atp']} spent={spent}")
+
+
 # ------------------------------------------------------------ H. Air Canada
 AC_SOURCE_PATH = "demos/air-canada/policy.wpl"
 # From demos/air-canada/README.md, which a reader is invited to reproduce:
@@ -816,6 +948,7 @@ def main():
         test_differential()
         test_negative_controls()
         test_budget()
+        test_emission()
         test_large_inputs()
         test_air_canada()
         test_reproducible()

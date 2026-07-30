@@ -101,6 +101,39 @@ produced them, because they were reviewed (or not) separately.
   WarrantIDs, both bodies, the manifest's `records`/`root`/`ski_checks` and every
   figure in `demos/air-canada/README.md` are unchanged.)
 
+### Fixed — branch `fix/wpl-headroom-validation` (tooling only; no protocol surface)
+
+- **The WPL compiler emitted `ski@v1` checks its own verifier rejects.**
+  `--headroom` took any integer and the compiler wrote `atp + headroom`
+  unvalidated, while `warrant.validate_ski_blob` requires `0 <= atp < 2**32`.
+  Reported by Codex (external cross-family audit, 2026-07-31) with two
+  reproductions, both re-run here before the fix: `--headroom=-1` pinned
+  `atp=494` against a 495 ATP spend and the verifier answered **`fail`** — a
+  wrong verdict from a correct term, not an error — and
+  `--headroom=5000000000` pinned `atp=5000000495`, which the verifier rejected
+  as not a uint32.
+
+  Negative and non-integer headroom are now refused by name. The substantive
+  change is that `compile_source` serializes the check document, decodes it
+  back, puts it through `warrant.validate_ski_blob` (the verifier's own
+  predicate, imported rather than restated) and **re-executes `term` under the
+  pinned `atp`**, comparing against `expect` — then stores exactly those bytes.
+  The compiler's three existing guarantees all concerned the term; the blob's
+  own `atp` field was covered by none of them. `impl/ski_policy.py` had the
+  identical `atp + headroom` line and now shares the gate.
+
+  Section L of `tests/policy_lang.py` covers this: the two reproductions, both
+  ceilings at their exact boundary, a compiler-vs-verifier agreement check that
+  runs both rather than restating either, and three mutants that corrupt the
+  document at the moment of serialization — which only a gate reading the
+  serialized bytes can catch. 12 of its 17 assertions fail against the
+  pre-fix compiler.
+
+  Not fixed here, and not defects: `--max-atp` is a compile-time ceiling that
+  reaches no artifact, and `warrant file --ts` was already validated against
+  the verifier's own `validate_body` before writing — which is the pattern this
+  fix brings to the compiler.
+
 ### Added — at the merge of `feat/policy-frontend` into `master`
 
 - **THREAT-MODEL.md `SA-11`** — the WPL front end narrows, but does not close,
