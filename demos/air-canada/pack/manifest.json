@@ -17,6 +17,9 @@
       "check": "b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f",
       "expect": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
       "means": "policy predicate (within_window AND NOT retroactive) = FALSE for this request (retroactive=true) -> not permitted",
+      "recompile": "python3 impl/policy_lang.py compile demos/air-canada/policy.wpl",
+      "source": "ee6cda76bb3c1e0d38fe8234e66ba2e5cbce74aad0b404357ff603ba8fc74798",
+      "source_language": "wpl@v1",
       "term": "1b56d81b4378a2c4cc1965453db5edb9c6ab39fec7d91822a0e91e521dd06a8d"
     }
   ],

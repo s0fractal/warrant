@@ -27,7 +27,8 @@ right.
 ## [Unreleased]
 
 **Nothing here is adopted or released**; this section exists so the work is
-legible before it is decided on.
+legible before it is decided on. Entries are grouped by the branch that
+produced them, because they were reviewed (or not) separately.
 
 ### Changed — BREAKING, branch `feat/domain-separation`
 
@@ -72,7 +73,55 @@ legible before it is decided on.
   `tools/signature_vectors.py` and `examples/signature-vectors.json`: the
   prototype cross-verified two candidate rules because neither was in force.
 
-### Added
+### Added — branch `feat/policy-frontend` (tooling and docs only; no protocol surface)
+
+- **WPL v1 and `impl/policy_lang.py`** — a policy source language that compiles
+  to `ski@v1` terms, so authoring a re-runnable reason no longer means
+  hand-building combinator terms. `fact` declarations plus one boolean
+  expression over `==` `!=` `<` `<=` `>` `>=` `in` `&&` `||` `!`, on `bool`,
+  `int` and `string`; comparisons lower to bit-vector folds at the minimum width
+  that separates the operands. Every compile reports the exact ATP a verifier
+  will spend and the blobs it adds, and REFUSES at authoring time anything over
+  the budget rather than emitting a check that exhausts ATP in someone else's
+  verifier. `docs/policy-language-choice.md` records why this and not a CEL
+  subset; `docs/authoring-checks.md` is the tutorial.
+- **`tests/policy_lang.py`**, wired into `tools/check.py`: 120 checks, including
+  a differential over generated programs whose expected answer comes from
+  Python's own operators (never from the compiler) and whose actual answer is
+  read out of a real re-execution through `warrant.run_ski_check`; mutation
+  controls that fail if an injected mis-compilation survives; and a gate that
+  executes every command in the tutorial and compares its printed output.
+- **`demos/air-canada/policy.wpl`** — the demo's check, rewritten in WPL. It
+  compiles to a byte-identical `ski@v1` doc (same term, same `expect`, same
+  `atp` 17, same check blob `b423b6a8…`), asserted in `build.py`, so this branch
+  changed no record in the shipped pack and the README's figures still hold. The
+  pack now also carries the source blob, so the term can be traced to a readable
+  rule. (The two pack records did change on `master` afterwards, under the
+  domain-separation entry above: `sigs[].sig` was rewritten, nothing else. Both
+  WarrantIDs, both bodies, the manifest's `records`/`root`/`ski_checks` and every
+  figure in `demos/air-canada/README.md` are unchanged.)
+
+### Added — at the merge of `feat/policy-frontend` into `master`
+
+- **THREAT-MODEL.md `SA-11`** — the WPL front end narrows, but does not close,
+  the gap between a policy source and the term a verifier re-runs: the compiler
+  and its reference interpreter share a parser, so a shared misreading agrees
+  with itself and the differential stays green. The mitigation is the `formula`
+  line the compiler prints, read by a human. The branch stated this limit in
+  `llms.txt`'s residual list; `master` had meanwhile moved that list into
+  `THREAT-MODEL.md`, which promises that a limit stated anywhere else is stated
+  there too. Keeping both truths meant moving the item rather than duplicating
+  it. `SA-11` is the branch's own wording, not a new or softened claim.
+- **`tools/doc_counts.py`**, wired into `tools/check.py`: every count a document
+  states about this repository must equal the thing it counts — the number of
+  entries in `CHECKS`, the number of `SA-n` headings, the number of `NG-n`
+  items — and a claim whose wording stops matching is reported MISSING rather
+  than passing silently. It exists because both merged branches were already
+  wrong: each moved `CHECKS` without moving the sentence in `llms.txt` and
+  `SECURITY.md` that counts it, so each was off by one alone and the merge was
+  off by two, under green suites. Corrected to 33.
+- `tools/check.py`: 33 checks (was 31 on `master`, 31 on the branch, both
+  stating 30).
 
 - **[protocol]** SPEC §11: `warrant.verify-report@v0` specified in the spec.
   The contract a CI system branches on previously existed only in `README.md`

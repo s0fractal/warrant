@@ -85,6 +85,22 @@ integer, and budget-bounded — it cannot loop, cannot run away, cannot touch yo
 disk. The same bytes give the same hash on any of the three independent Σ-GLYPH
 implementations (Python, Go, Rust).
 
+The rule itself is readable. It is written in WPL — `policy.wpl` beside this
+file — and compiled to the term you just ran:
+
+```
+fact within_window: bool = true
+fact retroactive:   bool = true
+
+check within_window && !retroactive
+```
+
+Recompile it yourself and you get the same check hash, the same result and the
+same 17 ATP; the source is in the pack (`policies/check-source.*.wpl`) and in
+the store, so the term this record cites can be traced back to a rule you can
+read. See [`../../docs/authoring-checks.md`](../../docs/authoring-checks.md) to
+write your own.
+
 > **Honest scope.** This does *not* re-run the chatbot's neural reasoning — that
 > is not reproducible, and we don't pretend it is. It reproduces the
 > **deterministic policy rule around the decision**: what the policy said, and

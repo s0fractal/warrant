@@ -46,6 +46,11 @@ RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 CHECKS = [
     ("map: every cited document is located",
      ["python3", "tools/repo_map.py", "--check-map"], None),
+    # repo_map checks that a cited document exists; this checks that a document
+    # counting something still agrees with the thing it counts. Two clean merges
+    # each moved this list without moving the sentence describing it.
+    ("doc counts: stated totals equal what they count",
+     ["python3", "tools/doc_counts.py"], None),
     ("python: conformance (SPEC §8 vectors, byte-exact)",
      ["python3", "impl/warrant.py", "conformance", "examples"], None),
     ("python: selftest (round-trip + tamper detection)",
@@ -75,6 +80,13 @@ CHECKS = [
      ["python3", "tests/pedantic_edges.py"], "go"),
     ("ski@v1 policy predicates (real re-execution)",
      ["python3", "tests/ski_policy.py"], "sigma"),
+    # The WPL front end. Includes the tutorial gate: every command in
+    # docs/authoring-checks.md is executed and its printed output compared, so
+    # the documentation cannot drift from the compiler. Also mutates the
+    # compiler on purpose and fails if the mutant survives -- a differential
+    # that cannot go red is decoration.
+    ("wpl policy language (differential vs the oracle, docs executed)",
+     ["python3", "tests/policy_lang.py"], "sigma"),
     ("merkle anchoring (RFC 6962 structure + inclusion proofs)",
      ["python3", "tests/anchor.py"], None),
     ("mcp sealing proxy (stdio round-trip -> verifiable pack)",

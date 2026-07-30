@@ -254,6 +254,30 @@ responsibility. `policies/gate-settlement.json` defines that state. It is
 disclosed rather than dressed up as a passed gate, and it is the reason
 "validated" appears nowhere in this file without saying by what.
 
+#### SA-11. A WPL source is assumed to mean what its author reads it to mean
+
+`impl/policy_lang.py` compiles a readable policy source (WPL; tutorial in
+`docs/authoring-checks.md`) to the `ski@v1` term a verifier re-runs. It narrows
+the gap between a rule and its term; it does not close it.
+
+The compiler is **not** trusted code, and mis-compilation is caught three ways:
+every compile is checked against the Σ-GLYPH oracle before it is emitted — and
+because the term is closed over pinned facts, that covers the whole input space
+of that check; compilation is reproducible from a source blob a record can cite
+in `evidence`; and `tests/policy_lang.py` runs a differential whose expectation
+comes from Python's own operators, plus mutation controls that fail if an
+injected mis-compilation survives.
+
+What none of that covers: **nothing proves the parser reads a source the way its
+author does.** The compiler and its reference interpreter share the parser, so a
+shared misreading agrees with itself and the differential stays green. The
+mitigation is a reader, not a test — the compiler prints the `formula` line it
+actually parsed, and that line is the thing to check.
+
+Also unchanged by the front end, and easy to mistake for a proof: a `fact` is an
+assertion by whoever compiled it. The check proves the rule's verdict *given*
+those facts, never the facts.
+
 ### Explicit non-goals
 
 Properties Warrant deliberately does not provide. From SPEC §10 and

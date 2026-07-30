@@ -1,0 +1,14 @@
+# demos/air-canada/policy.wpl
+#
+# Moffatt v. Air Canada, 2024 BCCRT 149 — bereavement policy clauses 2 and 3:
+# the discount must be requested before travel and can never be claimed
+# retroactively. These are the facts of the passenger's request.
+#
+# This is the source the shipped pack's ski@v1 check is compiled from. It
+# reproduces the check blob b423b6a82c34…, result 65cd957f… (Church FALSE) and
+# atp_spent 17 that demos/air-canada/README.md tells a reader to expect.
+
+fact within_window: bool = true
+fact retroactive:   bool = true
+
+check within_window && !retroactive

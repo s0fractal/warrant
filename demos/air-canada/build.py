@@ -27,8 +27,9 @@ HERE = Path(__file__).resolve().parent
 IMPL = HERE.parent.parent / "impl"
 sys.path.insert(0, str(IMPL))
 
+import policy_lang as pl          # noqa: E402  (WPL v1 -> ski@v1 compiler)
 import sigma_glyph as sg          # noqa: E402  (bundled Book I oracle)
-import ski_policy as sp           # noqa: E402  (re-executable policy predicates)
+import ski_policy as sp           # noqa: E402  (the hand-built predecessor)
 import warrant as w               # noqa: E402  (reference implementation)
 
 PACK = HERE / "pack"
@@ -60,26 +61,43 @@ SUBJECT_JSON = (
 )
 
 
+POLICY_SOURCE = HERE / "policy.wpl"
+
+
 def build_ski_check(store):
     """Pin the policy predicate as a re-executable Σ-GLYPH Book I term.
 
-    The policy rule, as a boolean formula over the facts of this request:
+    The rule is written in WPL (`policy.wpl`, readable by anyone who has never
+    heard of a combinator) and compiled to a closed Book I term:
 
-        permit = within_window AND NOT retroactive
+        check within_window && !retroactive
 
-    with facts { within_window: true, retroactive: true } (the passenger asked to
-    apply the discount retroactively). The formula reduces to Church-FALSE — "not
-    permitted". `ski_policy` compiles it, stores the nodes, and pins the exact
-    budget. Anyone re-runs the term and gets the same verdict.
+    over the facts of this request { within_window: true, retroactive: true } —
+    the passenger asked to apply the discount retroactively. It reduces to
+    Church-FALSE, "not permitted". Anyone re-runs the term and gets the same
+    verdict; anyone can also re-run the COMPILER over `policy.wpl` and get the
+    same term, which is why the source is filed as evidence below.
 
-    Returns (check_hex, term_hex, expect_hex, atp)."""
-    check = sp.compile_check(
+    This used to be a hand-built `ski_policy` expression. The compiler emits a
+    byte-identical check — same term, same expect, same 17 ATP — and the
+    assertion below keeps it that way, so no record in the shipped pack had to
+    be re-signed and the README's figures still hold.
+
+    Returns (check_hex, term_hex, expect_hex, atp, source_hex)."""
+    check = pl.compile_file(POLICY_SOURCE, store.put_blob)
+    assert check.result is False, "policy must deny a retroactive request"
+
+    legacy = sp.compile_check(
         sp.And(sp.Fact("within_window", True),
                sp.Not(sp.Fact("retroactive", True))),
         store.put_blob)
-    assert check.result is False, "policy must deny a retroactive request"
+    assert check.doc == legacy.doc, (
+        f"WPL compilation drifted from the pinned hand-built check: "
+        f"{check.doc} != {legacy.doc}")
+
+    source_hex = store.put_blob(POLICY_SOURCE.read_bytes())
     d = check.doc
-    return check.blob, d["term"], d["expect"], d["atp"]
+    return check.blob, d["term"], d["expect"], d["atp"], source_hex
 
 
 class Args:
@@ -113,7 +131,7 @@ def main():
     subject_hex = store.put_blob(SUBJECT_JSON.encode())
 
     # Pin the policy predicate as a re-executable ski@v1 check.
-    check_hex, term_hex, expect_hex, atp = build_ski_check(store)
+    check_hex, term_hex, expect_hex, atp, source_hex = build_ski_check(store)
 
     # 1) chatbot proposes the (out-of-policy) refund.
     propose_args = Args(under=[policy_hex], reason=["passenger requested a refund"],
@@ -134,6 +152,8 @@ def main():
     (PACK / "policies").mkdir()
     (PACK / "subjects").mkdir()
     (PACK / "policies" / f"bereavement-policy.{policy_hex[:12]}.txt").write_text(POLICY_TEXT)
+    (PACK / "policies" / f"check-source.{source_hex[:12]}.wpl").write_text(
+        POLICY_SOURCE.read_text())
     (PACK / "subjects" / f"refund-request.{subject_hex[:12]}.json").write_text(SUBJECT_JSON + "\n")
 
     # trust.json: bind actor <-> key so `verify --settlement` reports bound
@@ -161,7 +181,9 @@ def main():
         "ski_checks": [
             {"check": check_hex, "term": term_hex, "expect": expect_hex,
              "atp": atp, "means": "policy predicate (within_window AND NOT "
-             "retroactive) = FALSE for this request (retroactive=true) -> not permitted"}
+             "retroactive) = FALSE for this request (retroactive=true) -> not permitted",
+             "source": source_hex, "source_language": pl.LANG_VERSION,
+             "recompile": "python3 impl/policy_lang.py compile demos/air-canada/policy.wpl"}
         ],
         "expected_verification": {"errors": 0},
         "how_to_verify": "warrant --store .warrants verify",

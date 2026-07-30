@@ -40,7 +40,7 @@ no account:
 python3 tools/check.py                  # everything, one verdict
 ```
 
-That runs all 30 checks the repository's claims rest on and prints one line. A
+That runs all 33 checks the repository's claims rest on and prints one line. A
 check that could not run — Go not built, oracle missing — is reported UNRUN with
 its own exit status, never as passed: a harness printing ALL PASS while silently
 skipping the Go suites would be claiming two implementations agreed on the
@@ -115,6 +115,14 @@ else's namespace is a false claim about who defines it.
   migrated and the verifier says so by name rather than reporting a generic bad
   signature. This repository's own 16 records were migrated on the host holding
   the key, which did not travel to do it.
+- **Policies are authored in WPL, not in combinators**:
+  [docs/authoring-checks.md](docs/authoring-checks.md) is the tutorial,
+  `impl/policy_lang.py` the compiler, `docs/policy-language-choice.md` why this
+  and not a CEL subset. A `ski@v1` check is a source file — `fact` declarations
+  plus one boolean expression — and the compiler reports the ATP a verifier will
+  spend, refusing anything over budget at authoring time instead of exhausting
+  someone else's verifier. It adds no protocol surface and no trusted code: the
+  verifier still re-runs the term. Its residual limit is SA-11.
 
 ## If you are reviewing this project
 
@@ -143,7 +151,7 @@ This section used to be "Where the honest gaps are" and carried its own copy of
 the list. The items have not changed and none has been softened; they now live in
 one place, in the form a standards reader expects:
 **[THREAT-MODEL.md](THREAT-MODEL.md) → "Security assumptions and non-goals"** —
-ten scoped assumptions (`SA-1` … `SA-10`) and six explicit non-goals
+eleven scoped assumptions (`SA-1` … `SA-11`) and six explicit non-goals
 (`NG-1` … `NG-6`), each with its reasoning, alongside the attacker-capability
 matrix they bound.
 
