@@ -54,6 +54,13 @@ this section exists so the work is legible before it is decided on.
   manifest, plus `tools/schema_check.py`, which checks them against the corpus in
   both directions (every positive artifact validates, every §8.3 negative body is
   rejected) and prints the rejection classes no schema can express.
+- `THREAT-MODEL.md`: one attacker-capability matrix (14 rows), consolidating what
+  was scattered across `SECURITY.md`, `llms.txt`, SPEC rationale and
+  `policies/gate-settlement.json`, with the disclosed structural weaknesses stated
+  in full: `cmd@v1` novelty satisfiable "by writing a different word", key↔actor
+  binding as a flat local keyring with unbound as WARN, co-located roster keys,
+  a non-independent reviewer quorum, hand-rolled crypto in a trust path, and
+  settlement's one-and-a-half implementations.
 - `proposals/DEC-001-domain-separation.md`: the signature-domain-separation
   decision — both options fully worked out, with a DRAFT prototype
   (`tools/domain_separation_prototype.py`) and side-by-side old/new signature

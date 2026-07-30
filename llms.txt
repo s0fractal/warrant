@@ -166,6 +166,11 @@ verifiable provenance that hides its own open items is arguing against itself:
 
 ## Reporting a defect
 
+[THREAT-MODEL.md](THREAT-MODEL.md) — DRAFT, added 2026-07-30: one attacker-
+capability matrix instead of five scattered places, and the disclosed weaknesses
+in one list. Read it before filing anything: two of its rows are documented
+limits, and a report restating one is not a finding.
+
 [SECURITY.md](SECURITY.md) — what is in scope, what is a documented limit rather
 than a defect, and the severity ladder. It also says plainly what the response
 capacity is: one maintainer and one model actor, no security team, no promised

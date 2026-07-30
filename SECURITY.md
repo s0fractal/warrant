@@ -65,6 +65,15 @@ than a defect:
 - Findings that require write access to a store to then claim that store is
   untrustworthy, unless the point is that a *reader* cannot tell.
 
+## The consolidated threat model
+
+`THREAT-MODEL.md` (DRAFT, 2026-07-30) is the single attacker-capability matrix:
+given an attacker who can write to the store, control the blob transport,
+co-sign, hold an unbound key, or author the policy — what still holds, and what
+they get. It also states the known structural weaknesses in one place rather
+than across four files. The in/out-of-scope lists below remain the process; that
+document is the model they rest on.
+
 ## Severity, as this project ranks it
 
 The ladder used in `reviews/` and in the gate policy:
