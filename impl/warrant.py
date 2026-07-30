@@ -407,11 +407,55 @@ def pubkey_hex(sk):
         serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
 
 
+# SPEC §5 — signature domain separation (`warrant-sig-v1`), adopted 2026-07-31
+# under proposals/DEC-001-domain-separation.md.
+#
+# The signed message is NOT the bare WarrantID. It is a fixed ASCII separator
+# followed by the 32 raw WarrantID bytes:
+#
+#     msg = b"warrant-sig-v1:" || WarrantID_raw          15 + 32 = 47 bytes
+#
+# WHY. Until 0.6.0 the message was the bare 32-byte WarrantID, which is
+# byte-indistinguishable from any other bare SHA-256 digest. A key that also
+# signs digests in another such protocol (DSSE/in-toto payload digests, TUF
+# metadata, Σ-GLYPH NodeHashes, RFC 6962 roots — all 32 bytes, all nearby) makes
+# each protocol's signatures syntactically valid in the other. That is
+# cross-protocol replay, and the standard fix is to name the protocol inside the
+# signed bytes.
+#
+# WHY NOT Ed25519ctx, which is the orthodox fix. Because this project's first
+# law is that independent implementations agree byte-exactly, and Ed25519ctx is
+# not uniformly reachable: Python's `cryptography` does not expose it, Go needs
+# `ed25519.Options`, and impl-rs's from-scratch verifier would need the RFC 8032
+# dom2 prefix built and differentially tested from nothing. A fixed ASCII prefix
+# is four lines in any language that can already verify Ed25519 and buys the
+# same separation, so the orthodox choice is the one likelier to split verifiers
+# — the failure this project ranks P0. This stays pure RFC 8032 Ed25519 over a
+# byte string.
+#
+# WHY NO LENGTH FIELD. Both parts are fixed-length (15 and 32), so the encoding
+# is unambiguous by construction. The separator is greppable in a hex dump.
+SIG_DOMAIN = b"warrant-sig-v1:"
+
+
+def sig_message(wid):
+    """The exact bytes an Ed25519 Warrant signature covers (SPEC §5).
+
+    Raises ValueError when `wid` is not 64 lowercase hex characters, because a
+    message built from a malformed WarrantID is not a Warrant signature message
+    at all — callers turn that into "does not verify", never into an exception
+    escaping the verifier."""
+    raw = bytes.fromhex(wid)
+    if len(raw) != 32:
+        raise ValueError(f"WarrantID must be 32 bytes, got {len(raw)}")
+    return SIG_DOMAIN + raw
+
+
 def sign_envelope(body, actor, key_path):
     sk = load_key(key_path)
     wid = warrant_id(body)
     return {"actor": actor, "key": pubkey_hex(sk),
-            "sig": sk.sign(bytes.fromhex(wid)).hex()}
+            "sig": sk.sign(sig_message(wid)).hex()}
 
 
 # SPEC §5: small-order and non-canonical Ed25519 public keys are rejected.
@@ -455,7 +499,40 @@ def verify_sig(wid, sig):
         if weak_ed25519_pubkey(key):
             return False
         pk = Ed25519PublicKey.from_public_bytes(key)
-        pk.verify(bytes.fromhex(sig["sig"]), bytes.fromhex(wid))
+        pk.verify(bytes.fromhex(sig["sig"]), sig_message(wid))
+        return True
+    except Exception:
+        return False
+
+
+# The §6 report string for a signature made under the pre-0.6.0 construction.
+# Normative (SPEC §5): all three implementations MUST emit these exact bytes, so
+# a consumer can branch on the diagnosis rather than on a rendering. Pure ASCII
+# on purpose — three languages, three JSON encoders, one byte string.
+LEGACY_SIG_MESSAGE = (
+    "signature does not verify (excluded): LEGACY pre-v1 signature construction "
+    "(signed the bare 32-byte WarrantID; SPEC 5 requires \"warrant-sig-v1:\" || "
+    "WarrantID). Re-sign with: warrant resign --key <keyfile>")
+
+
+def legacy_sig(wid, sig):
+    """True if `sig` is a valid signature over the BARE 32-byte WarrantID —
+    the pre-0.6.0 construction that SPEC §5 now forbids.
+
+    DIAGNOSIS ONLY. Nothing in this file treats a true return as acceptance;
+    the sole caller reports it. A verifier that accepted both messages would
+    have no domain separation at all — an attacker would simply use the legacy
+    one — so there is no dual-accept window, at any time, under any flag
+    (DEC-001 §4.3). What this buys is that a record signed under the old rule
+    fails with a sentence naming the cause and the fix, instead of the
+    indistinguishable "signature does not verify" that a corrupted byte, a
+    truncated file and a wrong key all produce."""
+    try:
+        key = bytes.fromhex(sig["key"])
+        if weak_ed25519_pubkey(key):
+            return False
+        Ed25519PublicKey.from_public_bytes(key).verify(
+            bytes.fromhex(sig["sig"]), bytes.fromhex(wid))
         return True
     except Exception:
         return False
@@ -1175,8 +1252,20 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 # co-sig MUST NOT be able to invalidate an otherwise-good record
                 # (a griefing/availability vector). The record still ERRs below
                 # if no *valid* signature by body.actor.id remains.
-                out("WARN", wid, f"signature does not verify (excluded): "
-                                 f"actor {s.get('actor')}")
+                #
+                # DIAGNOSIS, NOT ACCEPTANCE (SPEC §5). "signature does not
+                # verify" is the same sentence for a flipped byte, a truncated
+                # file, the wrong key, and a record signed before the
+                # `warrant-sig-v1:` separator existed — and only the last one
+                # has a mechanical fix. So the one case a verifier can name, it
+                # names. The signature is still excluded and the record still
+                # ERRs below; the only thing that changes is that a human is
+                # told which repair to attempt.
+                if legacy_sig(wid, s):
+                    out("WARN", wid, f"{LEGACY_SIG_MESSAGE}: actor {s.get('actor')}")
+                else:
+                    out("WARN", wid, f"signature does not verify (excluded): "
+                                     f"actor {s.get('actor')}")
                 continue
             if ctx is None:
                 # SPEC §5 MUST: with no keyring configured, the key↔actor binding is
@@ -1467,6 +1556,102 @@ def why(store, wid, depth=0, seen=None):
     return missing, failed
 
 
+# ---------- migration to warrant-sig-v1 (SPEC §5) ----------
+def resign_envelopes(paths, key_path, dry_run=False, log=print):
+    """Re-sign envelopes under the SPEC §5 `warrant-sig-v1` construction.
+
+    WHAT IT MAY CHANGE, AND WHAT IT MAY NOT. Exactly one field is written: the
+    `sig` hex of a signature entry whose `key` is the public key of `key_path`
+    AND whose existing signature verifies over the BARE WarrantID. That
+    conjunction is the whole safety argument — a valid legacy signature by that
+    key is proof the holder of that key really signed this WarrantID, so
+    replacing it with the same key's signature over the domain-separated
+    message transfers no attribution that did not already exist. `actor`,
+    `key`, and every byte of `body` are untouched.
+
+    THEREFORE THE WarrantID DOES NOT MOVE. The WarrantID is SHA-256 of the
+    canonical BODY and the envelope is not hashed (SPEC §4/§5), so no `prior`
+    edge, no `under`/`evidence`/`subject` reference, no settlement tunnel and no
+    genesis-root pin changes. That is the claim the whole migration rests on, so
+    this function does not assume it: it recomputes the WarrantID after
+    rewriting and refuses to write if it moved.
+
+    A signature this key cannot re-make is REPORTED, never dropped and never
+    forged. Returns a dict of counts plus the list of unmigratable entries, so a
+    caller can tell "migrated" from "silently left broken"."""
+    sk = load_key(key_path)
+    pub = pubkey_hex(sk)
+    res = {"files": 0, "resigned": 0, "already_current": 0,
+           "unmigratable": [], "unchanged_files": 0, "id_moved": []}
+    for p in paths:
+        p = Path(p)
+        try:
+            raw = p.read_text(encoding="utf-8")
+            env = json.loads(raw)
+        except Exception as e:
+            res["unmigratable"].append((str(p), None, f"unreadable envelope: {e}"))
+            continue
+        if not (isinstance(env, dict) and isinstance(env.get("body"), dict)
+                and isinstance(env.get("sigs"), list)):
+            res["unmigratable"].append((str(p), None, "not a {body, sigs} envelope"))
+            continue
+        res["files"] += 1
+        try:
+            wid = warrant_id(env["body"])
+        except Exception as e:
+            res["unmigratable"].append((str(p), None, f"WarrantID uncomputable: {e}"))
+            continue
+        changed = False
+        for s in env["sigs"]:
+            if not isinstance(s, dict):
+                res["unmigratable"].append((str(p), wid, "signature entry is not an object"))
+                continue
+            if verify_sig(wid, s):
+                res["already_current"] += 1
+                continue
+            if not legacy_sig(wid, s):
+                res["unmigratable"].append(
+                    (str(p), wid, f"signature by actor {s.get('actor')!r} verifies under "
+                                  f"NEITHER construction; not this migration's business"))
+                continue
+            if s.get("key") != pub:
+                res["unmigratable"].append(
+                    (str(p), wid, f"legacy signature by actor {s.get('actor')!r} was made "
+                                  f"with key {str(s.get('key'))[:16]}..., not the supplied "
+                                  f"{pub[:16]}... - re-run where that key lives"))
+                continue
+            s["sig"] = sk.sign(sig_message(wid)).hex()
+            changed = True
+            res["resigned"] += 1
+        if not changed:
+            res["unchanged_files"] += 1
+            continue
+        after = warrant_id(env["body"])
+        if after != wid:
+            # Unreachable unless the body was mutated. Kept because "re-signing
+            # does not move the identity" is the load-bearing claim, and a claim
+            # that is only asserted is the defect class this repo keeps finding.
+            res["id_moved"].append((str(p), wid, after))
+            continue
+        if not dry_run:
+            # Re-serialize with the store's one writer (indent=2, sorted keys)
+            # and keep the file's own trailing-newline convention: a migration
+            # that also reflows unrelated bytes makes its diff unreviewable,
+            # and some committed vectors (examples/*.warrant.json) end without
+            # a newline. The signature is the only thing that changes.
+            p.write_text(json.dumps(env, indent=2, sort_keys=True)
+                         + ("\n" if raw.endswith("\n") else ""), encoding="utf-8")
+        log(f"{'would re-sign' if dry_run else 're-signed'} {wid[:12]}  {p}")
+    return res
+
+
+def envelope_paths(store, files):
+    """Envelopes to migrate: explicit paths, else every record in the store."""
+    if files:
+        return [Path(f) for f in files]
+    return sorted(store.records.glob("*.json")) if store.records.is_dir() else []
+
+
 # ---------- filing ----------
 def resolve_blob_arg(store, val):
     """Accept a hex64 hash or a file path (file gets blob-added)."""
@@ -1609,6 +1794,19 @@ def conformance(examples_dir):
         for case in doc.get("schema_invalid", []):
             chk(f"neg: schema-invalid ({case['why']})", bool(validate_body(case["body"])))
 
+    sv = d / "signature-vectors.json"             # SPEC §8.5 (signature construction)
+    if sv.exists():
+        doc = json.loads(sv.read_text(encoding="utf-8"))
+        for m in doc.get("message", []):
+            # The bytes, pinned. Every way of building this message wrong
+            # leaves all five §8 WarrantIDs correct, so nothing else here
+            # catches it.
+            chk(f"sig-msg: {m['why']}", sig_message(m["warrant_id"]).hex() == m["message_hex"])
+        for a in doc.get("accept", []):
+            chk(f"sig-accept: {a['why'][:60]}", verify_sig(a["warrant_id"], a))
+        for r in doc.get("reject", []):
+            chk(f"sig-reject: {r['why'][:60]}", not verify_sig(r["warrant_id"], r))
+
     print(f"\n{'CONFORMANCE: ALL PASS' if all(ok) else 'CONFORMANCE: FAILURES PRESENT'}"
           f" ({sum(ok)}/{len(ok)})")
     return all(ok)
@@ -1744,6 +1942,15 @@ def build_parser():
     stl = sub.add_parser("settle")
     stl.add_argument("settling_wid")
     stl.add_argument("candidate_body")
+    rs = sub.add_parser("resign", help="re-sign envelopes under SPEC §5 "
+                                       "warrant-sig-v1 (migration from the pre-0.6.0 "
+                                       "bare-WarrantID construction)")
+    rs.add_argument("--key", required=True)
+    rs.add_argument("--dry-run", action="store_true",
+                    help="report what would change and what cannot be migrated; "
+                         "write nothing")
+    rs.add_argument("files", nargs="*",
+                    help="envelope files; default is every record in --store")
     cf = sub.add_parser("conformance")
     cf.add_argument("examples", nargs="?", default="examples")
     sub.add_parser("selftest")
@@ -1879,6 +2086,28 @@ def main():
         verdict = settlement_admissibility(store, args.settling_wid, body)
         print(verdict)
         sys.exit(1 if verdict.startswith(("inadmissible", "invalid candidate")) else 0)
+    elif args.cmd == "resign":
+        paths = envelope_paths(store, args.files)
+        if not paths:
+            sys.exit(f"nothing to re-sign: no envelope files given and "
+                     f"{store.records} holds no records")
+        r = resign_envelopes(paths, args.key, dry_run=args.dry_run)
+        print(f"\nresign: {r['files']} envelopes, {r['resigned']} signatures "
+              f"{'to re-sign' if args.dry_run else 're-signed'}, "
+              f"{r['already_current']} already warrant-sig-v1, "
+              f"{len(r['unmigratable'])} NOT migratable")
+        # NB: not `why` — that name is a module-level function, and binding it
+        # in main() made `warrant why` raise UnboundLocalError for every store.
+        # Caught by tests/hostile.py, which is why that suite tests `why` on a
+        # store this branch never touches.
+        for path, wid, reason in r["unmigratable"]:
+            print(f"  NOT MIGRATED  {(wid or '?')[:12]}  {path}\n                {reason}")
+        for path, before, after in r["id_moved"]:
+            print(f"  REFUSED (WarrantID moved {before[:12]} -> {after[:12]}) {path}")
+        # Fail closed: a migration that could not migrate something is not a
+        # migration that succeeded, and the exit status has to say so or a
+        # scripted `resign && commit` records a half-migrated store as done.
+        sys.exit(1 if (r["unmigratable"] or r["id_moved"]) else 0)
     elif args.cmd == "conformance":
         sys.exit(0 if conformance(args.examples) else 1)
     elif args.cmd == "selftest":

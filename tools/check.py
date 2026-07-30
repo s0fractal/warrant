@@ -102,11 +102,13 @@ CHECKS = [
      [str(RS), "verify", ".warrants"], "rs"),
     ("rust: conformance", [str(RS), "conformance", "examples"], "rs"),
     ("rust: ed25519 selftest", [str(RS), "edtest"], "rs"),
-    # DRAFT artifact for an OPEN decision (proposals/DEC-001). It is here so the
-    # vectors cannot rot while the decision is pending, NOT because anything in
-    # it is in force: it touches no verifier and SPEC §5 is unchanged.
-    ("DRAFT domain-separation vectors reproduce (decision pending, nothing in force)",
-     ["python3", "tools/domain_separation_prototype.py"], None),
+    # SPEC §5 signature domain separation, in force since 0.6.0 (DEC-001).
+    # The vectors pin the signed bytes; the suite drives all three binaries over
+    # a pre-v1 store, so "the three agree" is executed rather than assumed.
+    ("signature vectors reproduce (SPEC §8.5 warrant-sig-v1 construction)",
+     ["python3", "tools/signature_vectors.py"], None),
+    ("domain separation (PY/GO/RS agree; pre-v1 store diagnosed and migrated)",
+     ["python3", "tests/domain_separation.py"], "go+rs"),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),
 ]

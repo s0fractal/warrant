@@ -176,7 +176,7 @@ Not an agent framework. Not a blockchain. Not observability. It is one file form
 
 ## Spec and status
 
-`SPEC.md` — the format (v0.3 draft: the v0.1/v0.2 body schema plus v0.3 settlement, key-state and multi-root rules), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes: `prose`, `cmd@v1` (a check command run in a container), and — new in v0.2 — **`ski@v1`**: a portable, deterministic, budget-bounded check. The check is a content-addressed SKI term evaluated per [Σ-GLYPH Book I](https://github.com/s0fractal/sigma-glyph); the verdict is a hash comparison; work AND peak memory are bounded by the ATP budget, so re-verifying a stranger's reason is safe by construction. `warrant check <hash>` re-runs one.
+`SPEC.md` — the format (v0.4 draft: the v0.1/v0.2 body schema plus v0.3 settlement, key-state and multi-root rules, plus v0.4's domain-separated signature message), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes: `prose`, `cmd@v1` (a check command run in a container), and — new in v0.2 — **`ski@v1`**: a portable, deterministic, budget-bounded check. The check is a content-addressed SKI term evaluated per [Σ-GLYPH Book I](https://github.com/s0fractal/sigma-glyph); the verdict is a hash comparison; work AND peak memory are bounded by the ATP budget, so re-verifying a stranger's reason is safe by construction. `warrant check <hash>` re-runs one.
 
 `impl/warrant.py` — reference implementation (M1): the five verbs on a plain-file store, one file, stdlib + Ed25519 (`pip install cryptography`). It must pass its own law:
 
@@ -204,6 +204,38 @@ python3 tests/ed25519_differential.py                 # Ed25519: Rust vs Python 
 ```
 
 First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.
+
+### Signatures are domain-separated (v0.4, BREAKING)
+
+The message a key signs is **not** the WarrantID. It is
+
+```
+"warrant-sig-v1:" || WarrantID_raw          15 + 32 = 47 bytes
+```
+
+still pure RFC 8032 Ed25519 over a byte string (SPEC §5, vectors in §8.5). Before
+0.6.0 the message was the bare 32-byte WarrantID, which is indistinguishable from
+any other SHA-256 digest — so a key that also signed digests in another protocol
+produced signatures valid in both. There is no dual-accept window: a verifier
+that took the old message too would have no separation at all.
+
+A record signed before 0.6.0 therefore does not verify, and says why:
+
+```bash
+python3 impl/warrant.py verify
+# WARN <id>  signature does not verify (excluded): LEGACY pre-v1 signature
+#            construction ... Re-sign with: warrant resign --key <keyfile>
+
+python3 impl/warrant.py resign --key mykey.key --dry-run   # what would change
+python3 impl/warrant.py resign --key mykey.key             # migrate in place
+```
+
+`resign` rewrites only `sigs[].sig`, and only where the existing signature is a
+valid *old* signature by the key you gave it — so it re-signs what that key
+already signed and invents nothing. **No WarrantID moves**: identity is
+SHA-256 of the canonical body and the envelope is not hashed. A record whose key
+you do not hold is named and the command exits non-zero, because a partial
+migration that reports success is worse than one that stops.
 
 License: MIT.
 
