@@ -26,10 +26,35 @@ right.
 
 ## [Unreleased]
 
-Branch `feat/spec-consolidation`. **Nothing here is adopted or released**;
-this section exists so the work is legible before it is decided on.
+**Nothing here is adopted or released**; this section exists so the work is
+legible before it is decided on. Entries are grouped by the branch that
+produced them, because they were reviewed (or not) separately.
 
-### Added
+### Added — branch `feat/policy-frontend` (tooling and docs only; no protocol surface)
+
+- **WPL v1 and `impl/policy_lang.py`** — a policy source language that compiles
+  to `ski@v1` terms, so authoring a re-runnable reason no longer means
+  hand-building combinator terms. `fact` declarations plus one boolean
+  expression over `==` `!=` `<` `<=` `>` `>=` `in` `&&` `||` `!`, on `bool`,
+  `int` and `string`; comparisons lower to bit-vector folds at the minimum width
+  that separates the operands. Every compile reports the exact ATP a verifier
+  will spend and the blobs it adds, and REFUSES at authoring time anything over
+  the budget rather than emitting a check that exhausts ATP in someone else's
+  verifier. `docs/policy-language-choice.md` records why this and not a CEL
+  subset; `docs/authoring-checks.md` is the tutorial.
+- **`tests/policy_lang.py`**, wired into `tools/check.py`: 120 checks, including
+  a differential over generated programs whose expected answer comes from
+  Python's own operators (never from the compiler) and whose actual answer is
+  read out of a real re-execution through `warrant.run_ski_check`; mutation
+  controls that fail if an injected mis-compilation survives; and a gate that
+  executes every command in the tutorial and compares its printed output.
+- **`demos/air-canada/policy.wpl`** — the demo's check, rewritten in WPL. It
+  compiles to a byte-identical `ski@v1` doc (same term, same `expect`, same
+  `atp` 17, same check blob `b423b6a8…`), asserted in `build.py`, so no record
+  in the shipped pack changed and the README's figures still hold. The pack now
+  also carries the source blob, so the term can be traced to a readable rule.
+
+### Added — branch `feat/spec-consolidation`
 
 - **[protocol]** SPEC §11: `warrant.verify-report@v0` specified in the spec.
   The contract a CI system branches on previously existed only in `README.md`

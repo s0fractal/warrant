@@ -153,6 +153,21 @@ verifiable provenance that hides its own open items is arguing against itself:
   same hole was closed for `ski@v1`, where re-execution is available and the
   re-run verdict is now what the fingerprint records. This one is a limit of the
   format, not of the code, and it is stated rather than patched over.
+- **The WPL policy front end narrows, but does not close, the gap between a
+  source and its term.** `impl/policy_lang.py` compiles readable policy sources
+  (`docs/authoring-checks.md`) to `ski@v1` terms. It is not trusted code — the
+  verifier re-runs the term, not the compiler — and mis-compilation is caught
+  three ways: every compile is checked against the Σ-GLYPH oracle before it is
+  emitted (which, the term being closed over pinned facts, covers that check's
+  whole input space); compilation is reproducible from a source blob a record
+  can cite in `evidence`; and `tests/policy_lang.py` runs a differential whose
+  expectation comes from Python's operators, plus mutation controls that fail if
+  an injected mis-compilation survives. What is **not** covered: nothing proves
+  the *parser* reads a source the way its author does — compiler and reference
+  interpreter share it, and a shared misreading would agree. Read the `formula`
+  line the compiler prints. Also unchanged: a `fact` is asserted by whoever
+  compiled it; the check proves the rule's verdict given those facts, never the
+  facts.
 - **Multi-root stores (§9) are verified only as far as root admission.** The
   threshold rule that gates adoption is exercised, including that an unbound key
   claiming an actor does not satisfy it. Deeper §9 behaviour is not covered by a

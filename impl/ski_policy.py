@@ -1,5 +1,14 @@
 """ski_policy — author re-executable `ski@v1` policy predicates.
 
+NOTE (2026-07-31): this is now the LOW-LEVEL layer. `impl/policy_lang.py`
+compiles a readable source language (WPL — comparisons, `in`, `&&`/`||`/`!`
+over ints, strings and booleans) to the same `ski@v1` checks and reports what
+they cost; see `docs/authoring-checks.md`. This module remains because it is
+what the boolean core of that compiler emits, byte-for-byte: a boolean-only WPL
+source and the equivalent `And`/`Not` expression here produce the identical
+term, which `tests/policy_lang.py` pins. Write new policies in WPL; keep this
+for boolean formulas built programmatically.
+
 A policy predicate is a boolean formula over named atomic facts:
 
     permit = within_window AND NOT retroactive

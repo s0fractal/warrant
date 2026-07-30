@@ -178,6 +178,13 @@ Not an agent framework. Not a blockchain. Not observability. It is one file form
 
 `SPEC.md` — the format (v0.3 draft: the v0.1/v0.2 body schema plus v0.3 settlement, key-state and multi-root rules), canonicalization rules, and worked test vectors with real hashes and signatures (`examples/`). Reason runtimes: `prose`, `cmd@v1` (a check command run in a container), and — new in v0.2 — **`ski@v1`**: a portable, deterministic, budget-bounded check. The check is a content-addressed SKI term evaluated per [Σ-GLYPH Book I](https://github.com/s0fractal/sigma-glyph); the verdict is a hash comparison; work AND peak memory are bounded by the ATP budget, so re-verifying a stranger's reason is safe by construction. `warrant check <hash>` re-runs one.
 
+`docs/authoring-checks.md` — how to write a `ski@v1` check without knowing what a combinator is. Policy rules are authored in **WPL**, a small expression language (`fact` declarations plus one boolean expression: comparisons, `in`, `&&`, `||`, `!`), and `impl/policy_lang.py` compiles them to the term a verifier re-runs. The compiler reports the exact ATP the check will cost and refuses at authoring time anything it cannot compile inside the budget. It is deliberately *not* trusted code: the verifier re-runs the term, the compilation is reproducible from the pinned source blob, and every compile is checked against the Σ-GLYPH oracle before it is emitted.
+
+```bash
+python3 impl/policy_lang.py compile examples/policies/1-threshold.wpl
+python3 impl/policy_lang.py verify  examples/policies/1-threshold.wpl
+```
+
 `impl/warrant.py` — reference implementation (M1): the five verbs on a plain-file store, one file, stdlib + Ed25519 (`pip install cryptography`). It must pass its own law:
 
 ```bash
