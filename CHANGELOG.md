@@ -70,6 +70,20 @@ this section exists so the work is legible before it is decided on.
   gap, recorded as one.
 - `tools/check.py`: 28 checks (was 27).
 
+### Fixed
+
+- **[protocol]** `verify --settlement --trust-config` reported `1 warnings` in
+  text mode and `"warnings":0, "findings":[]` in `--json` for the same store when
+  a signature was **unbound** — a key claiming an actor the operator's own
+  keyring does not vouch for. Python's `quiet` branch, meant to suppress the
+  `INFO signature bound` line, swallowed the `WARN signature unbound` with it, so
+  the finding an integrator most needs was invisible to exactly the consumer told
+  to consume the JSON. Go emitted it in both renderers, so Python and Go
+  disagreed on a verification outcome — P0 by `SECURITY.md`'s ladder. Found by
+  the first external consumer (the sibling `oaip` ledger documented the behaviour
+  and built its own enforcement around it). Regression vector added with the
+  negative control run.
+
 ### Known defects recorded, not fixed
 
 - SPEC §11.3: without `--store-mode`, the Go CLI's legacy flat-directory mode

@@ -1190,11 +1190,26 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 keys = ctx["keys_before"](wid)
                 bound = (actor not in ctx["conflict_actors"]
                          and key in keys.get(actor, set()))
-                if quiet:
-                    pass
-                elif bound:
-                    print(f"INFO {wid[:12]}  signature bound: key "
-                          f"{str(key)[:12]} claims actor {actor}")
+                # RENDERER-INDEPENDENCE (2026-07-30). This was:
+                #     if quiet: pass
+                #     elif bound: print(INFO ...)
+                #     else: out("WARN", ...)
+                # `quiet` is meant to suppress the INFO line only. Written that
+                # way it also swallowed the WARN — so `verify --settlement
+                # --trust-config` printed `1 warnings` in text mode and emitted
+                # `"warnings":0, "findings":[]` for the SAME store in --json,
+                # while Go emitted the warning in both. An unbound signature —
+                # a key claiming an actor the operator's own keyring does not
+                # vouch for — was therefore invisible to exactly the consumer
+                # told to consume the JSON. Found by the first external
+                # consumer (the sibling `oaip` ledger, which documented it in
+                # impl/oaip.py and built its own enforcement around it).
+                # The INFO line is the renderer-dependent part; the WARN is
+                # verification truth and must reach every renderer.
+                if bound:
+                    if not quiet:
+                        print(f"INFO {wid[:12]}  signature bound: key "
+                              f"{str(key)[:12]} claims actor {actor}")
                 else:
                     out("WARN", wid, f"signature unbound: key "
                                      f"{str(key)[:12]} claims actor {actor}")
