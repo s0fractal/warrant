@@ -1,52 +1,78 @@
-# warrant MCP server — file decision records from any MCP client
+# warrant-mcp-server — file decision records from any MCP client
 
 Give an agent the ability to **file signed, hash-addressed decision records**
-and to **verify a store** — with two lines of config. This is the counterpart
-of [`integrations/mcp/`](../mcp/) (the sealing *proxy*, which records another
-server's tool-calls from the outside): here the agent files its **own**
-decisions, deliberately, as first-class warrants.
+and to **verify a store** — with two lines of config.
 
-Standard library only, stdio transport, no MCP SDK dependency. Everything runs
-through the warrant CLI as a subprocess (never imported internals), so the
-server tracks exactly the released command surface.
+The code is [`impl/warrant_mcp_server.py`](../../impl/warrant_mcp_server.py);
+this directory holds the registry manifest and this page. Standard library only,
+stdio transport, no MCP SDK dependency. Everything runs through the warrant CLI
+as a subprocess (never imported internals), so the server tracks exactly the
+released command surface.
+
+## Which one is this? (`warrant-mcp-server`, not `warrant-mcp`)
+
+Two programs ship in the same distribution and their names are one word apart:
+
+| Command | What it is | Wraps another server? |
+|---|---|---|
+| `warrant-mcp-server` | **this one.** An MCP *server*. The agent connects to it and files **its own** decisions, deliberately. | no — it refuses a downstream command |
+| [`warrant-mcp`](../mcp/) | a sealing *proxy*. It sits between a host and **someone else's** MCP server and seals the tool-calls passing through, from the outside. | yes — it requires one after `--` |
+
+`--help` on each says which you started, and neither answers to the other's
+prefix (`allow_abbrev=False` on both). If you meant to record what an existing
+server is doing, you want the proxy, and this is the wrong page.
 
 ## Where this is listed
 
-**Nowhere, yet.** [`server.json`](server.json) is the MCP Registry manifest and
-has been validated against the registry's own `/v0/validate` endpoint, but
-nothing has been submitted anywhere. [`LISTINGS.md`](../../LISTINGS.md) has the
-directories, the entry text, and the steps that are the maintainer's.
+**The official [MCP Registry](https://registry.modelcontextprotocol.io), as
+`io.github.s0fractal/warrant`**, published 2026-07-31 and live — query it with
+`?search=io.github.s0fractal/warrant`. PulseMCP and Glama ingest that registry,
+so the entry propagates without a second submission.
+[`LISTINGS.md`](../../LISTINGS.md) has the full state, including what is still
+unticked and what the registry's green does and does not mean.
 
-Note what the manifest does **not** contain: a `packages` block. This server is
-not shipped by the `warrant-verify` PyPI distribution — that distribution ships
-flat modules out of `impl/`, and this file is not one of them. The `warrant-mcp`
-console script is not it either: that is the sealing proxy above, a different
-program. **A clone is currently the only install path**, and the config below
-reflects that rather than pretending otherwise.
+The listing that went live carried **no `packages` block**: at 0.7.1 the
+distribution did not ship this server, so a clone was the only install path.
+[`server.json`](server.json) here now names the PyPI package — and cannot be
+published until **0.8.0 is on PyPI**, because the registry fetches
+`pypi.org/pypi/warrant-verify/0.8.0/json` and looks for an
+`mcp-name: io.github.s0fractal/warrant` marker in that release's README before
+it will accept the claim.
 
-## Config
+## Install and config
+
+```bash
+pip install warrant-verify        # 0.8.0 or newer
+warrant-mcp-server --store /abs/path/.warrants
+```
 
 Claude Code:
 
-```bash
-claude mcp add warrant -- python3 /path/to/warrant/integrations/mcp-server/server.py --store .warrants
+```
+claude mcp add warrant -- warrant-mcp-server --store /abs/path/.warrants
 ```
 
 Generic MCP client (Claude Desktop and most agent runtimes take this shape):
 
 ```json
 { "mcpServers": { "warrant": {
-    "command": "python3",
-    "args": ["/path/to/warrant/integrations/mcp-server/server.py",
-             "--store", "/path/to/project/.warrants"] } } }
+    "command": "warrant-mcp-server",
+    "args": ["--store", "/path/to/project/.warrants"] } } }
+```
+
+From a checkout, without installing anything:
+
+```bash
+python3 impl/warrant_mcp_server.py --store .warrants
 ```
 
 A relative `--store` resolves against the server process's working directory —
 prefer an absolute path unless you know your host launches servers in the
 project root. Options (each also an env var): `--store`/`WARRANT_STORE`,
 `--key`/`WARRANT_KEY`, `--actor`/`WARRANT_ACTOR`, `--warrant-cli`/`WARRANT_CLI`
-(a `warrant.py` path or an installed `warrant` binary; defaults to this
-checkout's `impl/warrant.py`, else `warrant` on PATH).
+(a `warrant.py` path or an installed `warrant` binary; defaults to the
+`warrant.py` sitting beside the module — `impl/` in a checkout, site-packages
+once installed — else `warrant` on PATH).
 
 ## Tools
 
@@ -92,7 +118,7 @@ portable term).
 ## Tests
 
 ```bash
-python3 integrations/mcp-server/test_server.py
+python3 tests/mcp_server.py
 ```
 
 Spawns the real server over stdio and checks: initialize/tools list, filing a
@@ -101,3 +127,11 @@ re-executing that check, a clean `verify-report@v0`, fail-closed verification
 of a missing store, and the negative control — one tampered byte in a stored
 record must flip the report to `ok:false` with an `ERR` finding. Also wired
 into `python3 tools/check.py`.
+
+The same suite can be pointed at an **installed** copy instead of the checkout,
+which is the only way to find out whether what PyPI ships actually starts:
+
+```bash
+python3 tests/mcp_server.py --server-cmd /tmp/tv/bin/warrant-mcp-server \
+    --impl /tmp/tv/lib/python3.13/site-packages
+```

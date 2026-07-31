@@ -24,9 +24,50 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
-## [Unreleased]
+## [Unreleased] — 0.8.0, not published
 
-Nothing. `master` is exactly `v0.6.0`.
+Tooling number only; **no protocol surface moves**. 0.7.0 and 0.7.1 are on PyPI
+and are not written up below — this file is still narrated through 0.6.0, and
+saying so is more useful than a reconstruction nobody checked.
+
+### Added — branch `feat/ship-mcp-server`
+
+- **`warrant-mcp-server`: the MCP server now ships in the wheel.** Until 0.7.1
+  the server was `integrations/mcp-server/server.py`, which `pyproject.toml`
+  could not ship — `package-dir = {"" = "impl"}` gives the flat namespace one
+  root — so the only install path was a clone. The module is now
+  `impl/warrant_mcp_server.py`, listed in `py-modules`, exposed as the console
+  script `warrant-mcp-server`. `pip install warrant-verify` gives a working MCP
+  server; `claude mcp add warrant -- warrant-mcp-server --store <abs>` registers
+  it.
+- **`README.md` carries `<!-- mcp-name: io.github.s0fractal/warrant -->`.** The
+  MCP Registry proves PyPI ownership by finding that token in the README of the
+  published release (`internal/validators/registries/pypi.go`), so it has to be
+  in the artifact before a manifest naming the package can be published.
+- `tools/doc_counts.py` now checks the distribution version against
+  `impl/warrant_mcp_server.py`'s `__version__` and both version fields of
+  `integrations/mcp-server/server.json`. A manifest whose version lags the
+  release points the registry at a different artifact, or at a 404.
+
+### Changed
+
+- `integrations/mcp-server/server.json` gains a `packages` block naming
+  `warrant-verify` 0.8.0, and bumps to `0.8.0`. It **cannot be published until
+  0.8.0 is on PyPI**; the registry fetches the version-specific metadata URL and
+  a 404 there is a hard failure. `runtimeHint: "uvx"` is deliberately absent:
+  a client composes `uvx … <identifier>`, the identifier is the distribution
+  name, and `uvx --from warrant-verify warrant-verify` is not a command that
+  exists — measured against the built wheel, not assumed.
+- `integrations/mcp-server/test_server.py` → `tests/mcp_server.py`, beside the
+  other suites, and it takes `--server-cmd` / `--impl` so the same tests can be
+  run against an **installed** copy rather than only the checkout.
+- `LISTINGS.md` corrected. It said "nothing here has been submitted. This
+  project is listed nowhere" after `io.github.s0fractal/warrant` had already
+  been published to the official MCP Registry.
+
+**Not gated.** No independent adversarial review ran on this branch; the suites
+are green, which is necessary and not sufficient (AGENTS.md §3). Nothing here is
+adopted, and nothing here is published.
 
 ## [0.6.0] — 2026-07-31
 

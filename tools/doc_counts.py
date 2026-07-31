@@ -216,6 +216,110 @@ WORD_CLAIMS = [
 ]
 
 
+def check_mcp_ownership_marker(server_name):
+    """README.md must carry the marker the MCP Registry checks PyPI ownership with.
+
+    Ported from the registry's own source rather than from its prose
+    (`internal/validators/registries/mcpname.go` on `main`): the token is the
+    literal `mcp-name: <server-name>` with EXACTLY one space after the colon,
+    and what follows it must be a boundary — end of content, any character
+    outside `[A-Za-z0-9._/-]`, or the start of `-->` / `--!>`. A trailing period
+    glued to the name is therefore not a match, which is the documented way to
+    get this wrong.
+
+    The registry reads the README **as published to PyPI** (`info.description`
+    of the version-specific metadata), so a marker deleted here does not fail
+    the publish to PyPI — it fails the registry publish afterwards, for a
+    release that has already shipped. Checking the source file is the last point
+    at which that is cheap. Nothing here touches the network.
+    """
+    if not server_name:
+        return ["integrations/mcp-server/server.json: no `name` — nothing to "
+                "match an ownership marker against"]
+
+    def is_name_char(c):
+        return c.isascii() and (c.isalnum() or c in "._-/")
+
+    def is_boundary(rest):
+        if not rest or not is_name_char(rest[0]):
+            return True
+        return rest.startswith("-->") or rest.startswith("--!>")
+
+    content, token, i = read("README.md"), f"mcp-name: {server_name}", 0
+    while True:
+        j = content.find(token, i)
+        if j < 0:
+            return [f"README.md: no `{token}` token followed by a boundary. The "
+                    f"MCP Registry reads this file as the PyPI package "
+                    f"description and refuses the packages block without it — "
+                    f"put it on its own line, or inside `<!-- … -->`, and do not "
+                    f"glue a period to the name"]
+        if is_boundary(content[j + len(token):]):
+            return []
+        i = j + 1
+
+
+def check_release_versions():
+    """The distribution version, written in four places, must be one number.
+
+    Shipping the MCP server created three new copies of it: the module's
+    `__version__` (which the server reports to its host as `serverInfo`), and
+    both version fields of the registry manifest — the server version and the
+    PyPI version inside `packages`. The registry fetches
+    `pypi.org/pypi/warrant-verify/<that version>/json`, so a manifest whose
+    number lags the release does not merely read wrong: it points the whole
+    listing at a different artifact, or at a 404.
+
+    This is defect class 8 with an audience outside the repository, which is why
+    it is counted here rather than trusted.
+    """
+    import json
+
+    failures = []
+    pyproject = read("pyproject.toml")
+    m = re.search(r'(?m)^version = "([^"]+)"', pyproject)
+    if m is None:
+        return ["pyproject.toml: no `version = \"…\"` line found"]
+    dist = m.group(1)
+
+    mod = read("impl/warrant_mcp_server.py")
+    m = re.search(r'(?m)^__version__ = "([^"]+)"', mod)
+    if m is None:
+        failures.append("impl/warrant_mcp_server.py: no `__version__` line — the "
+                        "server would report an unknown version to its host")
+    elif m.group(1) != dist:
+        failures.append(f"impl/warrant_mcp_server.py: __version__ is "
+                        f"{m.group(1)}, pyproject.toml version is {dist}")
+
+    manifest_path = ROOT / "integrations" / "mcp-server" / "server.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as ex:
+        return failures + [f"integrations/mcp-server/server.json: unreadable ({ex})"]
+
+    if manifest.get("version") != dist:
+        failures.append(f"integrations/mcp-server/server.json: version is "
+                        f"{manifest.get('version')!r}, pyproject.toml version "
+                        f"is {dist}")
+    failures += check_mcp_ownership_marker(manifest.get("name"))
+
+    pkgs = [p for p in manifest.get("packages") or []
+            if p.get("registryType") == "pypi"]
+    if not pkgs:
+        failures.append("integrations/mcp-server/server.json: no pypi `packages` "
+                        "entry — the listing offers no install path but a clone")
+    for p in pkgs:
+        if p.get("identifier") != "warrant-verify":
+            failures.append(f"integrations/mcp-server/server.json: pypi identifier "
+                            f"is {p.get('identifier')!r}, not `warrant-verify`")
+        if p.get("version") != dist:
+            failures.append(f"integrations/mcp-server/server.json: pypi package "
+                            f"version is {p.get('version')!r}, pyproject.toml "
+                            f"version is {dist} — the registry would resolve a "
+                            f"different release, or none")
+    return failures
+
+
 def main():
     tm = read("THREAT-MODEL.md")
     sa_headings = re.findall(r"^#### SA-(\d+)\.", tm, re.M)
@@ -246,6 +350,8 @@ def main():
     }
 
     failures = check_contract_page(pack_rows)
+    version_failures = check_release_versions()
+    failures += version_failures
 
     # THREAT-MODEL's own numbering must be dense and start at 1, otherwise a
     # count is not the same fact as the highest label the documents cite.
@@ -285,7 +391,10 @@ def main():
                 f"{fname}: {desc} says '{stated}', {where[key]} is "
                 f"{truth[key]} ('{expected}')")
 
-    n = len(CLAIMS) + len(WORD_CLAIMS) + len(pack_rows) + 3
+    # +5 for the listing identities: the release-version identities (module
+    # __version__, manifest version, manifest pypi identifier, manifest pypi
+    # version) against pyproject.toml, plus README.md's MCP ownership marker.
+    n = len(CLAIMS) + len(WORD_CLAIMS) + len(pack_rows) + 3 + 5
     if failures:
         for f in failures:
             print(f"FAIL  {f}")

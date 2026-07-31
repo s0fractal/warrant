@@ -3,11 +3,38 @@
   "name": "io.github.s0fractal/warrant",
   "title": "Warrant",
   "description": "Record an agent's decisions with reasons anyone can re-execute offline — verify recomputes them.",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "repository": {
     "url": "https://github.com/s0fractal/warrant",
     "source": "github",
     "subfolder": "integrations/mcp-server"
   },
-  "websiteUrl": "https://github.com/s0fractal/warrant/tree/master/integrations/mcp-server"
+  "websiteUrl": "https://github.com/s0fractal/warrant/tree/master/integrations/mcp-server",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "warrant-verify",
+      "version": "0.8.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "WARRANT_STORE",
+          "description": "Absolute path to the warrant store this server files into and verifies. Defaults to .warrants relative to the server process's working directory, which an MCP host does not guarantee.",
+          "isRequired": false
+        },
+        {
+          "name": "WARRANT_KEY",
+          "description": "Ed25519 signing key. If unset, one is generated next to the store on the first filing and the result says so; any process that can read it can sign as this actor.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "WARRANT_ACTOR",
+          "description": "Actor id written into filed warrants. Defaults to mcp-client@<hostname>.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
 }

@@ -3,33 +3,46 @@
 # Copyright (c) 2026 s0fractal. See LICENSE at the repository root.
 #
 # This header is on this file and not on its siblings for one reason: this file
-# is meant to be copied. The README tells you to point an MCP host straight at
-# it, so it travels away from the LICENSE that covers it more readily than
-# anything else in the repository. It does not establish a repo-wide convention.
-"""warrant MCP server — file and verify signed decision records from any MCP client.
+# travels. It ships as a flat top-level module in the `warrant-verify` wheel and
+# lands in a site-packages directory shared with other projects' files, and the
+# README still invites a reader to run it straight out of a checkout. It does not
+# establish a repo-wide convention.
+"""warrant-mcp-server — file and verify signed decision records from any MCP client.
 
 Point an MCP host (Claude Code, Claude Desktop, any agent runtime) at this
-script and the agent gets three tools:
+command and the agent gets three tools:
 
   warrant_file_decision   file a signed warrant (propose/accept/reject/supersede)
   warrant_verify_store    verify a store; returns the warrant.verify-report@v0 JSON
   warrant_show_reason     show a warrant's reasons; re-executes ski@v1 checks
 
+NOT to be confused with `warrant-mcp` (module `warrant_mcp`), which is a different
+program in the same distribution: that one is a *sealing proxy* — it wraps some
+OTHER MCP server and seals the tool-calls passing through it from the outside.
+This one is a *server*: the agent connects to it and files its own decisions
+deliberately. `warrant-mcp` takes a downstream server command after `--` and
+refuses to start without one; `warrant-mcp-server` takes no downstream command at
+all. If you are choosing between them: seal someone else's server -> `warrant-mcp`;
+give the agent decision records of its own -> `warrant-mcp-server`.
+
 Transport is MCP's stdio framing: newline-delimited JSON-RPC 2.0, requests on
 stdin, responses on stdout, logs on stderr. Standard library only.
 
-Everything goes through the warrant CLI as a subprocess (`python3 impl/warrant.py`
-from a checkout, or an installed `warrant` binary) — never through imported
+Everything goes through the warrant CLI as a subprocess — never through imported
 internals — so this server tracks the released command surface and nothing else.
 
-    python3 integrations/mcp-server/server.py --store .warrants \
+    pip install warrant-verify
+    warrant-mcp-server --store /abs/path/.warrants \
         [--key agent.key] [--actor me@host] [--warrant-cli /path/to/warrant]
+
+    # or, from a checkout, without installing:
+    python3 impl/warrant_mcp_server.py --store .warrants
 
 Trust model, honestly: this process signs with a locally held Ed25519 key. If no
 --key/WARRANT_KEY is configured, the first filing generates one next to the
 store (never inside it — evidence packs must not ship keys) and says so in the
 result. Any process on this host that can read that file can sign as this actor.
-See the integration README and SECURITY.md.
+See integrations/mcp-server/README.md and SECURITY.md.
 """
 import argparse
 import json
@@ -42,7 +55,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-__version__ = "0.1.0"
+# Kept equal to the distribution version and to both version fields of
+# `integrations/mcp-server/server.json` — `tools/doc_counts.py` fails if any of
+# the four drift. A registry manifest naming a package version that is not the
+# one this module ships is a listing that points at the wrong artifact.
+__version__ = "0.8.0"
 PROTOCOL_VERSION = "2025-06-18"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SUBPROCESS_TIMEOUT = 120
@@ -61,9 +78,18 @@ class Config:
 def resolve_cli(explicit):
     """Locate the warrant CLI. First hit wins:
       1. --warrant-cli / WARRANT_CLI (a warrant.py path, or an executable)
-      2. impl/warrant.py of the checkout this file sits in
+      2. `warrant.py` SITTING BESIDE this module
       3. an installed `warrant` on PATH
-    A *.py path runs under the current interpreter; anything else runs as-is."""
+    A *.py path runs under the current interpreter; anything else runs as-is.
+
+    Rule 2 is one rule covering both worlds on purpose. `warrant.py` is a flat
+    module of the same distribution, so it is beside this file in `impl/` of a
+    checkout and beside it again in site-packages once installed — the same
+    bytes the `warrant` console script dispatches to, reached without depending
+    on PATH (an MCP host may launch this server with an empty environment).
+    The previous form walked `parents[2]/impl/warrant.py` from
+    `integrations/mcp-server/`, which resolves to nothing once installed.
+    """
     cand = explicit or os.environ.get("WARRANT_CLI")
     if cand:
         if cand.endswith(".py"):
@@ -72,9 +98,9 @@ def resolve_cli(explicit):
                 sys.exit(f"warrant CLI not found: {cand}")
             return [sys.executable, str(p)]
         return [cand]
-    in_repo = Path(__file__).resolve().parents[2] / "impl" / "warrant.py"
-    if in_repo.is_file():
-        return [sys.executable, str(in_repo)]
+    sibling = Path(__file__).resolve().parent / "warrant.py"
+    if sibling.is_file():
+        return [sys.executable, str(sibling)]
     on_path = shutil.which("warrant")
     if on_path:
         return [on_path]
@@ -437,7 +463,10 @@ def serve(cfg):
 def build_parser():
     ap = argparse.ArgumentParser(
         prog="warrant-mcp-server", allow_abbrev=False,
-        description=__doc__.splitlines()[0])
+        description=__doc__.splitlines()[0]
+        + "  NOT `warrant-mcp`, which is the sealing proxy for someone else's "
+          "MCP server; this one serves the agent's own decisions and takes no "
+          "downstream command.")
     ap.add_argument("--store", default=os.environ.get("WARRANT_STORE", ".warrants"),
                     help="warrant store to file into / verify (env WARRANT_STORE; "
                          "default .warrants, relative to the server's cwd)")
@@ -450,13 +479,34 @@ def build_parser():
                     help="default actor id for filed warrants (env WARRANT_ACTOR)")
     ap.add_argument("--warrant-cli", default=None,
                     help="warrant CLI: a warrant.py path or an executable (env "
-                         "WARRANT_CLI). Default: this checkout's impl/warrant.py, "
-                         "else `warrant` on PATH.")
+                         "WARRANT_CLI). Default: the warrant.py beside this "
+                         "module (impl/ in a checkout, site-packages once "
+                         "installed), else `warrant` on PATH.")
     return ap
 
 
+def parse_cli(argv=None):
+    """Parse an argv AND apply the pure post-parse invariants. No side effects.
+
+    Same contract as `warrant` and `warrant-mcp`: `tools/check_release_surface.py`
+    calls this to decide whether a documented invocation is one the command
+    actually accepts, and main() goes through the same function, so the surface
+    that is checked is the surface that runs. Nothing here touches the
+    filesystem, spawns a process, or opens a socket.
+    """
+    ap = build_parser()
+    args = ap.parse_args(argv)
+
+    # An empty --store is not a store. Without this, `--store ""` parses, and
+    # `Path("")` is the current directory, so the server would silently file
+    # into ./records instead of refusing.
+    if not str(args.store).strip():
+        ap.error("--store must name a path (got an empty string)")
+    return args
+
+
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    args = parse_cli(argv)
     cfg = Config(args.store, args.key, args.actor, resolve_cli(args.warrant_cli))
     serve(cfg)
 

@@ -84,7 +84,7 @@ DOC_EXCLUDE = {"reviews", "proposals", "briefs", "archive", "scratchpad",
 # ships from source, not from the package; it is validated only when a built
 # binary is available, and its absence is announced rather than skipped
 # silently (see `report_scope`).
-WHEEL_CLIS = {"warrant", "warrant-mcp", "warrant-anchor"}
+WHEEL_CLIS = {"warrant", "warrant-mcp", "warrant-mcp-server", "warrant-anchor"}
 SOURCE_CLIS = {"warrant-go"}
 
 # Shell metacharacters that end one command and begin another. `$(` and `)` are
@@ -229,6 +229,7 @@ def concretise(argv, workdir):
 
 
 MODULES = {"warrant": "warrant", "warrant-mcp": "warrant_mcp",
+           "warrant-mcp-server": "warrant_mcp_server",
            "warrant-anchor": "warrant_anchor"}
 
 # Parse the argv with the CLI's own parser and NOTHING ELSE. No dispatch, no
@@ -1045,6 +1046,18 @@ warrant --store ./pack verify --store-mode --json | jq -e '.ok'
         # real CLI still exits 2
         ("post-parse invariant enforced (mcp needs a downstream command)",
          not accepted(["warrant-mcp", "--store", "s", "--actor", "a", "--key", "k"])),
+        # `warrant-mcp` and `warrant-mcp-server` are different programs that ship
+        # in the same wheel, and the pair of cases below is what keeps the
+        # difference executable rather than merely documented: the SERVER is
+        # complete with a store and nothing else, and it REFUSES the proxy's argv
+        # shape instead of silently ignoring the trailing command.
+        ("the MCP server needs no downstream command",
+         accepted(["warrant-mcp-server", "--store", "s"])),
+        ("the MCP server refuses the sealing proxy's argv shape",
+         not accepted(["warrant-mcp-server", "--store", "s", "--",
+                       "some-downstream-server"])),
+        ("the MCP server rejects an empty --store (post-parse invariant)",
+         not accepted(["warrant-mcp-server", "--store", ""])),
         # path-qualified invocations are ours, and are judged on the FLAG rather
         # than on argv[0] being unfamiliar. The previous pair of cases was
         # vacuous: both the valid and the invalid absolute command failed, for

@@ -269,7 +269,7 @@ reason is: **we maintain the boundary, not the bindings.**
 - `warrant_approval.py` — the boundary. `record_request` (who asked),
   `record_decision` (who sanctioned), `record_approval` (both, linked).
   Talks to warrant through the **CLI as a subprocess**, never by importing
-  internals — the same choice `integrations/mcp-server/server.py` makes, and the
+  internals — the same choice `impl/warrant_mcp_server.py` makes, and the
   reason `impl/` remains a dependency of nothing.
 - `examples/langgraph_approval.py` — the LangGraph binding. Executed.
 - `examples/pretooluse_hook.py` + `test_pretooluse_hook.py` — the hook binding.

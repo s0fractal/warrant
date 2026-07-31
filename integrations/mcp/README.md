@@ -10,10 +10,23 @@ session offline with `warrant verify`, trusting nothing but the tool.
 This turns the [Air Canada demo](../../demos/air-canada/) from "here's a pack we
 built" into "here's a pack **your agent** produces, live."
 
+## `warrant-mcp` is not `warrant-mcp-server`
+
+Two MCP commands ship in the same distribution and the names are one word apart.
+**This page is the proxy.** It wraps *somebody else's* MCP server and seals the
+tool-calls passing through it from the outside — the agent does not know it is
+being recorded, and it takes the downstream server command after `--`.
+
+[`warrant-mcp-server`](../mcp-server/) is the other one: a server the agent
+connects to, to file **its own** decisions deliberately. It takes no downstream
+command and refuses one. If you want the agent to record what it decided, that is
+the page you want; if you want a record of what an existing server was made to
+do, stay here.
+
 ## Install
 
 ```bash
-pip install .              # gives both `warrant` (verify) and `warrant-mcp` (seal)
+pip install .              # four commands; `warrant` verifies, `warrant-mcp` seals
 ```
 
 ## Use

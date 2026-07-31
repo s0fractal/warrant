@@ -1,9 +1,34 @@
 # Listings — where this project can be found, and what each one costs
 
-**Status: nothing here has been submitted. This project is listed nowhere.** The
-MCP server and the GitHub Action are both invisible outside this repository.
-This file is the prepared work; every remaining step is a human's, and each one
-is named.
+**Status, 2026-07-31: one listing is live.** `io.github.s0fractal/warrant` was
+published to the official MCP Registry and is queryable there. The GitHub
+Marketplace step is **still unticked** — the action remains invisible outside
+this repository.
+
+> **This paragraph used to say "nothing here has been submitted. This project is
+> listed nowhere."** It stopped being true the moment the registry accepted the
+> publish, and it stayed on the page afterwards. It is recorded rather than
+> quietly overwritten because a status line that survives the event it describes
+> is the same defect as a count nobody recounts — and this file is the one place
+> in the repository whose whole job is to say what is true outside it.
+
+What the live entry offers, exactly:
+
+| | |
+|---|---|
+| Listed | official MCP Registry, `io.github.s0fractal/warrant`, `status: active`, `isLatest: true` |
+| Published | 2026-07-31T18:19:25Z |
+| Manifest version published | `0.1.0` |
+| Install path it offers | **the repository.** The published manifest carries no `packages` block, so the entry points a reader at a clone |
+| Install path it does **not** offer | `pip install` / `uvx`. At 0.7.1 the distribution did not ship the server, so there was no honest package to name |
+| Verified how | the registry's own search API returned the record; a real MCP host (`claude mcp add` → `✔ Connected`) had been driven once before publishing |
+| Not verified | that anyone has found it, installed it, or run it. Zero known users |
+
+**The gap this branch closes.** 0.8.0 ships `warrant-mcp-server` as a console
+script, so `pip install warrant-verify` gives a working server. `server.json`
+here now carries a `packages` block and bumps to `0.8.0`. **Publishing that
+manifest fails until 0.8.0 is on PyPI** — see the ownership section below, which
+is the ordering constraint, not a formality.
 
 Two surfaces, in order of cheapness:
 
@@ -39,48 +64,65 @@ describes the old community list; it is out of date.
 | **Manifest** | [`integrations/mcp-server/server.json`](integrations/mcp-server/server.json) |
 | **Required fields** | `name`, `description`, `version` — that is all the schema demands |
 | **Namespace** | `io.github.s0fractal/*`, proven by GitHub OAuth device flow |
-| **Status** | Manifest written and **validated**; namespace auth and publish are the maintainer's |
+| **Status** | **PUBLISHED 2026-07-31 at manifest version `0.1.0`**, no `packages` block. The `0.8.0` manifest in the tree is a re-publish waiting on the PyPI release |
 
 `description` is capped at **100 characters** — the single most common rejection.
 Ours is 96.
 
-**What was actually verified, and what was not.** The manifest was POSTed to the
-registry's own `POST https://registry.modelcontextprotocol.io/v0/validate`
+**What the registry's green means, and what it does not.** The manifest was
+POSTed to the registry's own `POST https://registry.modelcontextprotocol.io/v0/validate`
 endpoint and came back `{"valid": true, "issues": []}`. That endpoint checks
-*shape*, and nothing else: the same endpoint returns `valid: true` for a manifest
-naming `this-package-does-not-exist-xyzzy-9999` as its package. It does not
-check that a package exists, that you own the namespace, or that the server
-runs. Read the green as "the JSON is well-formed", never as "this is ready".
+*shape*, and nothing else. Re-measured on 2026-07-31 against the current
+`0.8.0` manifest and against a copy of it with the package identifier replaced
+by `this-package-does-not-exist-xyzzy-9999` at version `1.2.3`:
+
+```
+$ curl -sS -X POST https://registry.modelcontextprotocol.io/v0/validate \
+    -H 'Content-Type: application/json' --data @integrations/mcp-server/server.json
+{"valid":true,"issues":[]}
+
+$ # same manifest, identifier replaced with a package that does not exist
+{"valid":true,"issues":[]}
+```
+
+**Both are `valid: true`.** The endpoint does not check that the package exists,
+that you own the namespace, or that the server runs; the ownership and existence
+checks happen at `publish`, against a token you had to authenticate to get. Read
+the green as "the JSON is well-formed", never as "this is ready" — a manifest
+that validates can still be a manifest naming nothing.
 
 **The registry is itself labelled "currently in preview"** — breaking changes and
 data resets are on the table. Listing there is cheap and reversible, but it is
 not a stable address yet.
 
-#### The blocker: `warrant-verify` does not ship this server
+#### The blocker that was published around, and how 0.8.0 removes it
 
-The manifest deliberately carries **no `packages` block**, because there is no
-honest one to write. `pyproject.toml` ships six flat modules out of `impl/`, and
-`integrations/mcp-server/server.py` is not one of them. Nor is the existing
-`warrant-mcp` console script a substitute: that is `warrant_mcp`, the sealing
-proxy, which records another server's tool-calls from the outside — a different
-program with a different job. So today the only install path is a clone, and a
-`packages` block claiming otherwise would be a manifest that lies.
+The manifest that went live carried **no `packages` block**, because at 0.7.1
+there was no honest one to write: `pyproject.toml` ships flat modules out of
+`impl/`, and the server lived in `integrations/mcp-server/server.py`, which is
+not one of them. Nor was the existing `warrant-mcp` console script a substitute:
+that is `warrant_mcp`, the sealing proxy, which records another server's
+tool-calls from the outside — a different program with a different job.
 
-Publishing as-is is legitimate and still worth doing: it lists the server and
-points at the repository. It just does not give anyone the two-lines-of-config
-install that is this channel's whole advantage.
+So the live entry lists the server and points at the repository, and a clone is
+the only install path it offers. That is honest and it is the weak version: the
+two-lines-of-config install is this channel's whole advantage, and the entry
+does not have it. Registry entries are mirrored by PulseMCP and Glama, so the
+weak version propagates.
 
-**Closing that gap is a substantive change and was deliberately not made here.**
-It is: move `server.py` to `impl/` (it cannot be shipped from `integrations/`
-under the current `package-dir = {"" = "impl"}`), add it to `py-modules`, add a
-console script, update `test_server.py` and the two READMEs that name the path —
-and then cut a release, because none of it exists for users until it is on PyPI.
-That is a new public command on a published distribution; it wants a version
-bump, the release-surface gates re-run, and a maintainer's decision on the
-command's name. Suggested name: `warrant-mcp-server`, deliberately distinct from
-the existing `warrant-mcp`.
+**0.8.0 closes it.** `impl/warrant_mcp_server.py` is the module (moved there
+because `package-dir = {"" = "impl"}` gives the flat namespace exactly one root
+— a file under `integrations/` cannot be in the wheel at all), listed in
+`py-modules`, and exposed as the console script **`warrant-mcp-server`**. The
+name is the one this file proposed before the command existed, and the collision
+with `warrant-mcp` is handled where it can be executed rather than only
+described: both parsers set `allow_abbrev=False`, `warrant-mcp` refuses to start
+without a downstream command after `--`, `warrant-mcp-server` **refuses one**,
+and `tools/check_release_surface.py --selftest` asserts all of that against the
+built wheel's own parsers.
 
-Once that release is out, the manifest gains this block and `version` bumps:
+The manifest in the tree now carries the block below, `version` bumped to
+`0.8.0` to match:
 
 ```json
 "packages": [
@@ -88,58 +130,94 @@ Once that release is out, the manifest gains this block and `version` bumps:
     "registryType": "pypi",
     "registryBaseUrl": "https://pypi.org",
     "identifier": "warrant-verify",
-    "version": "<the release that ships the console script>",
+    "version": "0.8.0",
     "transport": { "type": "stdio" },
-    "runtimeHint": "uvx",
-    "runtimeArguments": [
-      { "type": "named", "name": "--from", "value": "warrant-verify" }
-    ],
-    "environmentVariables": [
-      { "name": "WARRANT_STORE", "description": "Absolute path to the warrant store", "isRequired": false },
-      { "name": "WARRANT_KEY",   "description": "Ed25519 signing key; generated next to the store if unset", "isRequired": false, "isSecret": true }
-    ]
+    "environmentVariables": [ … WARRANT_STORE, WARRANT_KEY, WARRANT_ACTOR … ]
   }
 ]
 ```
 
-That exact block also validated `valid: true` against the same endpoint, so the
-shape is known good in advance.
+**`runtimeHint: "uvx"` was dropped, and this is the interesting part.** A client
+composes the runtime hint, the runtime arguments and then the *identifier* — and
+the identifier is the distribution name, `warrant-verify`, not the console
+script. Measured against the built 0.8.0 wheel:
 
-**And it needs one more thing, easy to miss.** The registry proves you own a
-PyPI package by looking for an `mcp-name:` string **in the package's README as
-published to PyPI**:
+```
+$ uvx --from ./warrant_verify-0.8.0-py3-none-any.whl warrant-verify --help
+An executable named `warrant-verify` is not provided by package `warrant-verify`.
+The following executables are available:
+- warrant
+- warrant-anchor
+- warrant-mcp
+- warrant-mcp-server
+```
 
-> The MCP Registry verifies ownership of PyPI packages by checking for the
-> existence of an `mcp-name: $SERVER_NAME` string in the package README (which
-> becomes the package description on PyPI). The string may be hidden in a
-> comment, but the `$SERVER_NAME` portion **MUST** match the server name from
-> `server.json`.
+The schema has no field that names which console script to run, so a
+`runtimeHint` here would encode a command that does not start. It is omitted
+rather than guessed — as it is in 262 of the 267 PyPI entries currently in the
+registry. The command a human needs is in `websiteUrl`'s README and in the entry
+text below; the manifest claims only what it can honestly claim, which is that
+this server is in this PyPI package at this version.
 
-So `README.md` — the one `pyproject.toml` points `readme` at — must contain:
+**And the ownership marker, which gates the whole thing.** Verified against the
+registry's **source**, not only its documentation —
+`internal/validators/registries/pypi.go` and `mcpname.go` on `main`:
+
+- `ValidatePyPI` fetches `https://pypi.org/pypi/<identifier>/<version>/json` and
+  reads `info.description`, which for a `text/markdown` upload is the **raw
+  README** of that exact release;
+- `containsMCPNameToken` looks for the literal `mcp-name: <server-name>` —
+  **one space after the colon** — and requires a trailing boundary
+  (`isMCPNameBoundary`: end of content, any character outside `[A-Za-z0-9._/-]`,
+  or the start of `-->` / `--!>`). A prefix match is rejected on purpose, so
+  `…/warrant-pro` cannot satisfy a claim to `…/warrant`;
+- a 404 on that URL is a hard failure with its own message — the version in the
+  manifest **must already be on PyPI**;
+- `registryBaseUrl` must be exactly `https://pypi.org`.
+
+Measured on the published `warrant-verify` 0.7.1: `info.description` is 18 225
+characters of raw markdown and contains **no** `mcp-name:` token. So a
+`packages` block naming 0.7.1 would be rejected today.
+
+`README.md` — the one `pyproject.toml` points `readme` at — therefore now
+carries, in the "Use it from an MCP client" section:
 
 ```
 <!-- mcp-name: io.github.s0fractal/warrant -->
 ```
 
-The token must be followed by a newline, whitespace, an HTML tag, or `-->`.
-A trailing period glued to the name breaks the match. This lands in the same
-release as the console script; adding it now would put a marker in the README
-for a listing that cannot yet be published.
+on its own line. A trailing period glued to the name breaks the match; the
+comment form is safe because the validator special-cases `-->`.
+
+**And the marker is now gated rather than remembered.** `tools/doc_counts.py`
+carries a port of `containsMCPNameToken`/`isMCPNameBoundary` and fails if
+`README.md` loses the token, gains a glued period, or gets a second space after
+the colon — all three demonstrated red. It has to be checked at the source file,
+because the registry reads the README *as published to PyPI*: a marker deleted
+here still publishes to PyPI perfectly happily, and only fails the registry
+afterwards, for a release that has already shipped.
 
 #### Remaining manual steps — the registry
 
-1. `mcp-publisher login github` — device-code OAuth, proves `io.github.s0fractal`.
-2. `mcp-publisher publish` from `integrations/mcp-server/`.
+**Order matters and is enforced by the registry, not by good manners.**
 
-Both are the maintainer's: step 1 authenticates as a person, step 2 is an
-outward-facing publication (AGENTS.md §5).
+1. Cut and publish **0.8.0 to PyPI** — with the `mcp-name:` marker in the README
+   that ships with it. Until this exists, step 3 fails with a 404 on
+   `pypi.org/pypi/warrant-verify/0.8.0/json`.
+2. `mcp-publisher login github` — device-code OAuth, proves `io.github.s0fractal`.
+3. `mcp-publisher publish` from `integrations/mcp-server/`. This is a
+   **re-publish** of an existing live entry, not a first listing; the registry
+   takes the new version and marks it `isLatest`.
+
+All three are the maintainer's: step 1 and step 3 are outward-facing
+publications and step 2 authenticates as a person (AGENTS.md §5).
 
 ### Every other directory
 
 | Directory | Mechanism | Hard requirements | Verdict |
 |---|---|---|---|
-| **PulseMCP** | none needed | — | **Free.** Its submit page redirects to the official registry, which it ingests daily. Publishing above gets this one at no extra cost. |
-| **Glama** | GitHub OAuth; maintainer proves write/admin on the repo | Optional `glama.json` whose only field is `maintainers` | **Free-ish.** Declares itself a superset of the official registry and ingests it. Full analysis builds the repo in a microVM from a Dockerfile we do not have, so expect a listing without a build score. |
+| **PulseMCP** | none needed | — | **Free, and now in flight.** Its submit page redirects to the official registry, which it ingests daily; the 2026-07-31 publish should surface here without another step. **Not confirmed** — nobody has looked for the entry, so treat it as expected rather than observed. |
+| **Glama** | GitHub OAuth; maintainer proves write/admin on the repo | Optional `glama.json` whose only field is `maintainers` | **Free-ish, same caveat.** Declares itself a superset of the official registry and ingests it, so the publish should propagate; unconfirmed. Full analysis builds the repo in a microVM from a Dockerfile we do not have, so expect a listing without a build score. |
 | **punkpeye/awesome-mcp-servers** | PR | Alphabetical within category, one line per server | **Cheapest direct win.** Also syncs into Glama. Entry text below. |
 | **mcpservers.org** | Web form at `/submit` — name, short description, link, category, contact email. Explicitly *"We do not accept PRs"* | none | **Worth it.** ~5 minutes. |
 | **mcp.so** | Form at `/submit?type=server` — repository URL and name | Sign-in + review on the free tier | **Worth it.** ~5 minutes. |
@@ -192,6 +270,12 @@ argument instead.
 > Standard library only: no MCP SDK, no network, no account, no database. The
 > server drives the `warrant` CLI as a subprocess rather than importing its
 > internals, so it tracks the released command surface and nothing else.
+>
+> `pip install warrant-verify`, then
+> `claude mcp add warrant -- warrant-mcp-server --store /abs/path/.warrants`.
+> (`warrant-mcp-server` is the server; the distribution's other MCP command,
+> `warrant-mcp`, is a sealing proxy for somebody else's server — different
+> program.)
 >
 > **What the signature is worth, and what it is not.** The server signs with an
 > Ed25519 key held on the same host, generating one next to the store if none is
