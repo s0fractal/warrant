@@ -22,6 +22,14 @@ Read one JSON object from stdin, print one JSON object to stdout, exit 0.
 implementable in an afternoon in any language. There is a working nine-line
 example at the end of it.
 
+If you would rather start from something that already runs, the repository has
+starter skeletons in Go and TypeScript under
+[`conformance-skeletons/`](https://github.com/s0fractal/warrant/tree/master/conformance-skeletons).
+Each is one file with no build step, answers `capabilities`, implements `canon`,
+and declines the other seven classes honestly — so it produces a real report the
+first time you run it, with the grade correctly withheld. They are not in this
+tarball: they are examples, and the pack is the thing whose bytes are pinned.
+
 ## Before you trust a green run
 
 ```
