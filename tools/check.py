@@ -97,6 +97,19 @@ CHECKS = [
      ["python3", "tests/ed25519_differential.py", "--n", "50"], "rs"),
     ("in-toto bridge (Statement v1 shape + binding, tamper matrix)",
      ["python3", "tools/intoto.py", "selftest"], None),
+    # Framework-free ON PURPOSE, and that is why it has no `needs` gate: gating
+    # a check on an optional third-party package would make every clean run
+    # report UNRUN, and an unrun check is not a passed one. The LangGraph
+    # binding in integrations/approval/examples/ is therefore NOT wired in here
+    # -- see docs/integration-study.md for why that is the recommendation and
+    # not an omission.
+    ("approval boundary (request/sanction pair, ski@v1 reason, tamper control)",
+     ["python3", "integrations/approval/warrant_approval.py", "selftest"], None),
+    # The hook binding IS testable on a clean checkout -- its contract is JSON on
+    # stdin and stdout, so no vendor package has to be installed to exercise it.
+    # That asymmetry against the LangGraph binding is the study's whole argument.
+    ("pretooluse hook binding (wire format, fail-open recording, tamper control)",
+     ["python3", "integrations/approval/examples/test_pretooluse_hook.py"], None),
     ("documented CLI surface exists",
      ["python3", "tools/check_release_surface.py"], None),
     ("gate settlement rule (47 cases)",
