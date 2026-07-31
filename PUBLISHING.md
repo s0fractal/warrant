@@ -105,9 +105,25 @@ left. Kept as a record of what the step was.
 
 ## What ships
 
-The wheel installs two console commands: `warrant` (verify) and `warrant-mcp`
-(seal an MCP server's actions into an evidence pack), plus the bundled Σ-GLYPH
-oracle. All three modules live in `impl/`.
+The wheel installs four console commands, plus the bundled Σ-GLYPH oracle:
+
+| Command | Module | What it is |
+|---|---|---|
+| `warrant` | `warrant.py` | the verifier / record CLI |
+| `warrant-mcp` | `warrant_mcp.py` | the sealing **proxy**: wraps another MCP server and seals its tool-calls |
+| `warrant-mcp-server` | `warrant_mcp_server.py` | the MCP **server**: the agent files its own decisions (0.8.0) |
+| `warrant-anchor` | `warrant_anchor.py` | RFC 6962 Merkle batching / anchoring |
+
+Every module ships from `impl/`, because `package-dir = {"" = "impl"}` gives the
+flat namespace exactly one root — a module anywhere else cannot be in the wheel
+at all. That is why `warrant_mcp_server.py` was moved there from
+`integrations/mcp-server/` rather than being shipped from where it was written.
+
+**A release that adds a console script also owes the MCP Registry a manifest
+bump.** `integrations/mcp-server/server.json` names the PyPI package *and its
+version*, and the registry refuses a version that is not on PyPI yet — so the
+order is: publish to PyPI, then `mcp-publisher publish`. `LISTINGS.md` has the
+ownership-marker requirement that must already be in the published README.
 
 ## Manual fallback (if you ever bypass CI)
 
