@@ -67,6 +67,73 @@ def load_pack_counts():
     return index["total_vectors"], negatives
 
 
+def load_pack_shape():
+    """Per-(class, grade) vector and MUST-REJECT counts, plus the derived totals.
+
+    `docs/conformance.html` is the page a stranger reads INSTEAD of this
+    repository, and it restates the whole pack as a table. A table is nine
+    hand-copied numbers next to a thing that moves whenever a vector is added,
+    which is this repository's most-repeated defect with more places to occur.
+    So the page is compared to the pack row by row, not just on its totals: a
+    row that goes stale, and a row that disappears entirely, are both findings.
+
+    `capabilities` carries no vectors — it is the mandatory declaration class —
+    so the class NAMES are counted from the grade lists plus that one, while the
+    rows are counted from the vector files.
+    """
+    import json
+    vdir = ROOT / "conformance" / "vectors"
+    index = json.loads((vdir / "index.json").read_text(encoding="utf-8"))
+    rows, base_total = {}, 0
+    for entry in index["files"]:
+        doc = json.loads((vdir / entry["file"]).read_text(encoding="utf-8"))
+        neg = sum(1 for v in doc["vectors"] if v["polarity"] == "negative")
+        rows[(entry["class"], entry["grade"])] = (entry["vectors"], neg)
+        if entry["grade"] == "base":
+            base_total += entry["vectors"]
+    classes = set(index["grades"]["base"]) | set(index["grades"]["settlement"])
+    return rows, base_total, len(classes) + 1        # + the mandatory declaration
+
+
+CONTRACT_PAGE = "docs/conformance.html"
+
+# One row of the class table on the contract page. The prose cell is not read.
+PAGE_ROW = re.compile(
+    r'<tr><td><code>([a-z-]+)</code></td><td>([a-z]+)</td>'
+    r'<td class="n">(\d+)</td><td class="n">(\d+)</td>')
+
+
+def check_contract_page(rows):
+    """The published class table must equal the pack it describes."""
+    failures = []
+    text = read(CONTRACT_PAGE)
+    found = {(c, g): (int(v), int(n)) for c, g, v, n in PAGE_ROW.findall(text)}
+
+    if "<code>capabilities</code>" not in text:
+        failures.append(
+            f"{CONTRACT_PAGE}: the mandatory `capabilities` class has no row; "
+            f"a candidate that never declares its grade cannot be tested at one")
+
+    for key in sorted(rows):
+        cls, grade = key
+        if key not in found:
+            failures.append(
+                f"{CONTRACT_PAGE}: no row for `{cls}` at {grade} grade, which the "
+                f"pack has ({rows[key][0]} vectors) -- the page under-reports the "
+                f"work by a whole class")
+        elif found[key] != rows[key]:
+            failures.append(
+                f"{CONTRACT_PAGE}: `{cls}` ({grade}) is written as "
+                f"{found[key][0]} vectors / {found[key][1]} MUST-REJECT, the pack "
+                f"has {rows[key][0]} / {rows[key][1]}")
+    for key in sorted(found):
+        if key not in rows:
+            failures.append(
+                f"{CONTRACT_PAGE}: has a row for `{key[0]}` at {key[1]} grade, "
+                f"which is not a class in conformance/vectors/index.json")
+    return failures
+
+
 # (file, human description, regex with ONE capturing group holding the number)
 # Each pattern is anchored on wording specific enough that it cannot match a
 # different sentence; if the wording changes, the claim is reported MISSING.
@@ -99,6 +166,33 @@ CLAIMS = [
     ("conformance/README.md", "conformance vector total",
      r"carry equal weight\.\*\* \d+ of the (\d+) vectors are MUST-REJECT",
      "vectors"),
+    # docs/conformance.html is served on GitHub Pages and is written to be read
+    # INSTEAD of the repository, so its numbers are the ones a stranger acts on
+    # and the ones nothing was counting until they were listed here.
+    (CONTRACT_PAGE, "conformance vector total",
+     r"The other \w+ carry\s+the (\d+) vectors", "vectors"),
+    (CONTRACT_PAGE, "count of MUST-REJECT vectors",
+     r"<strong>(\d+) of the \d+ vectors are MUST-REJECT", "negatives"),
+    (CONTRACT_PAGE, "vector total beside the MUST-REJECT count",
+     r"<strong>\d+ of the (\d+) vectors are MUST-REJECT", "vectors"),
+    (CONTRACT_PAGE, "MUST-REJECT count in the permissive-implementation banner",
+     r"PERMISSIVE IMPLEMENTATION: (\d+) of \d+ MUST-REJECT", "negatives"),
+    (CONTRACT_PAGE, "MUST-REJECT total in the permissive-implementation banner",
+     r"PERMISSIVE IMPLEMENTATION: \d+ of (\d+) MUST-REJECT", "negatives"),
+    (CONTRACT_PAGE, "count of refused inputs in what-you-get",
+     r"on the (\d+) inputs that must be refused", "negatives"),
+    (CONTRACT_PAGE, "vector total in the honest-state note",
+     r"each pass all (\d+) vectors at settlement grade", "vectors"),
+    (CONTRACT_PAGE, "base-grade vector total",
+     r"passes the (\d+) base vectors", "base_vectors"),
+    (CONTRACT_PAGE, "vector total in the per-vector spawn cost",
+     r"spawns your candidate (\d+) times", "vectors"),
+    # The landing page carries the same two numbers in its pitch to an
+    # implementer. Same page, same rot, same gate.
+    ("docs/index.html", "conformance vector total",
+     r"(\d+) vectors, \d+ of them MUST-REJECT", "vectors"),
+    ("docs/index.html", "count of MUST-REJECT vectors",
+     r"\d+ vectors, (\d+) of them MUST-REJECT", "negatives"),
 ]
 
 # The same two counts are also written as English words beside the numerals.
@@ -115,6 +209,10 @@ WORD_CLAIMS = [
      r"and (\w+) explicit non-goals", "ng"),
     ("SECURITY.md", "worded count of explicit non-goals",
      r"and (\w+) explicit non-goals", "ng"),
+    (CONTRACT_PAGE, "worded count of contract classes",
+     r"<h2>The (\w+) classes</h2>", "classes"),
+    (CONTRACT_PAGE, "worded count of vector-carrying classes",
+     r"The other (\w+) carry", "vector_classes"),
 ]
 
 
@@ -124,12 +222,17 @@ def main():
     ng_headings = re.findall(r"^- \*\*NG-(\d+)\.", tm, re.M)
 
     pack_total, pack_negatives = load_pack_counts()
+    pack_rows, base_total, class_count = load_pack_shape()
     truth = {
         "checks": load_checks(),
         "sa": len(sa_headings),
         "ng": len(ng_headings),
         "vectors": pack_total,
         "negatives": pack_negatives,
+        "base_vectors": base_total,
+        "classes": class_count,
+        # every class except the mandatory `capabilities` declaration
+        "vector_classes": class_count - 1,
     }
     where = {
         "checks": "len(CHECKS) in tools/check.py",
@@ -137,9 +240,12 @@ def main():
         "ng": "`- **NG-n.`` items in THREAT-MODEL.md",
         "vectors": "total_vectors in conformance/vectors/index.json",
         "negatives": "vectors with polarity=negative in conformance/vectors/",
+        "base_vectors": "base-grade vectors in conformance/vectors/index.json",
+        "classes": "grades.* in conformance/vectors/index.json, plus capabilities",
+        "vector_classes": "the same, minus capabilities",
     }
 
-    failures = []
+    failures = check_contract_page(pack_rows)
 
     # THREAT-MODEL's own numbering must be dense and start at 1, otherwise a
     # count is not the same fact as the highest label the documents cite.
@@ -179,7 +285,7 @@ def main():
                 f"{fname}: {desc} says '{stated}', {where[key]} is "
                 f"{truth[key]} ('{expected}')")
 
-    n = len(CLAIMS) + len(WORD_CLAIMS) + 2
+    n = len(CLAIMS) + len(WORD_CLAIMS) + len(pack_rows) + 3
     if failures:
         for f in failures:
             print(f"FAIL  {f}")

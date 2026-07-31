@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<!--
+  warrant-conformance/1 — the page a stranger reads INSTEAD of the repository.
+
+  Hand-written, zero dependencies, zero build step, same house style as
+  index.html. Every number here is pinned by tools/doc_counts.py against the
+  thing it counts, because a page that states a total nobody counts is the
+  defect this project keeps finding in itself.
+
+  Deliberately contains NO `warrant …` invocations. tools/check_release_surface.py
+  extracts documented CLI from *.md only, so a command written here would be a
+  documented surface with no gate behind it. The commands that ARE here
+  (curl / tar / run.py) are the pack's own, and are the same lines
+  conformance/README.md carries.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implement warrant-conformance/1</title>
+<style>
+  :root {
+    --bg:#0c0e10; --fg:#c9d1d9; --dim:#8b949e; --line:#20252b;
+    --ok:#3fb950; --accent:#7ee0c0; --code:#080a0b; --link:#58a6ff; --warn:#d0a85e;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.65 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    padding:0 20px;
+  }
+  main { max-width:760px; margin:0 auto; padding:64px 0 96px; }
+  h1 { font-size:2.1rem; letter-spacing:-0.02em; margin:0 0 .2em; }
+  h2 {
+    font-size:1.05rem; text-transform:uppercase; letter-spacing:.12em;
+    color:var(--dim); margin:3.2em 0 1em; border-bottom:1px solid var(--line);
+    padding-bottom:.5em; font-weight:600;
+  }
+  h3 { font-size:1rem; margin:1.6em 0 .3em; color:var(--fg); }
+  p { margin:.7em 0; }
+  a { color:var(--link); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .lede { font-size:1.15rem; color:var(--fg); margin:.4em 0 0; }
+  .sub { color:var(--dim); margin:.2em 0 0; }
+  pre {
+    background:var(--code); border:1px solid var(--line); border-radius:6px;
+    padding:14px 16px; overflow-x:auto; font-size:.86rem; line-height:1.5; margin:.8em 0;
+  }
+  pre .out { color:var(--ok); }
+  pre .cmt { color:var(--dim); }
+  pre .k { color:var(--accent); }
+  code { color:var(--accent); }
+  p code, li code, td code { background:var(--code); padding:.05em .35em; border-radius:3px; }
+  table { border-collapse:collapse; width:100%; font-size:.86rem; margin:.9em 0; display:block; overflow-x:auto; }
+  th, td { text-align:left; padding:.42em .7em; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); text-transform:uppercase; letter-spacing:.08em; font-size:.74rem; font-weight:600; }
+  td.n { text-align:right; white-space:nowrap; }
+  ul { padding-left:1.2em; margin:.5em 0; }
+  li { margin:.35em 0; }
+  .status { color:var(--warn); border:1px solid #3a2f16; background:#14110a; border-radius:5px; padding:.15em .6em; font-size:.8rem; }
+  .scope { background:#0a1310; border:1px solid #163a2c; border-radius:6px; padding:2px 18px; margin:1.2em 0; }
+  .honest { background:#14110a; border:1px solid #3a2f16; border-radius:6px; padding:2px 18px; margin:1.2em 0; }
+  footer { margin-top:4em; padding-top:1.5em; border-top:1px solid var(--line); color:var(--dim); font-size:.85rem; }
+  footer a { color:var(--dim); }
+  .note { color:var(--dim); font-size:.9rem; }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>warrant-conformance/1</h1>
+  <p class="lede">A verifier that has only ever agreed with itself has not been verified.</p>
+  <p class="sub">This is an invitation to write the fourth independent implementation of the Warrant record format, and a contract small enough that doing so is a finite piece of work with a result at the end of it. <span class="status">no external implementer yet</span></p>
+
+  <p>The question the contract exists to answer is not "does your code work". It is
+  the harder one: <strong>when your verifier says a record is valid, is it agreeing
+  with the specification, or with the implementation it was written next to?</strong>
+  Three implementations already agree here — and all three were written in this
+  repository, from one reading of one document, by one author. Agreement among
+  them is evidence about the document's clarity to us. It is not evidence about
+  the document.</p>
+
+  <p>So the pack does the one thing that would be worth something: it drives
+  <em>your</em> program against expectations copied from the specification, and it
+  never runs ours.</p>
+
+  <h2>What you implement</h2>
+
+  <p>One process. It reads a single JSON object from stdin, writes a single JSON
+  object to stdout, and exits 0 whenever it produced an answer — <em>including an
+  answer of "no"</em>. That last rule is the whole ergonomics of the thing: "this
+  signature does not verify" and "I crashed before deciding" are different facts,
+  and a contract that encodes both as a nonzero exit lets a broken program
+  impersonate a strict one.</p>
+
+<pre><span class="cmt">// in</span>
+{<span class="k">"warrant_conformance"</span>:<span class="out">"1"</span>, <span class="k">"id"</span>:<span class="out">"verify-sig/reject-04"</span>, <span class="k">"class"</span>:<span class="out">"verify-sig"</span>,
+ <span class="k">"input"</span>:{"warrant_id":"…","key":"…","sig":"…"}}
+
+<span class="cmt">// out</span>
+{<span class="k">"warrant_conformance"</span>:<span class="out">"1"</span>, <span class="k">"id"</span>:<span class="out">"verify-sig/reject-04"</span>, <span class="k">"output"</span>:{"valid":false}}
+
+<span class="cmt">// or, the only way to decline a vector — scored UNRUN, never a pass</span>
+{<span class="k">"warrant_conformance"</span>:<span class="out">"1"</span>, <span class="k">"id"</span>:<span class="out">"verify-sig/reject-04"</span>,
+ <span class="k">"unsupported"</span>:<span class="out">"no Ed25519 verification in this build"</span>}</pre>
+
+  <p>The expected answer is never sent, so there is nothing to echo back and
+  passing requires computing. Each invocation is independent; nothing is carried
+  between them. Your program may be a script, a compiled binary, or a shell
+  wrapper. The full contract is one page:
+  <a href="https://github.com/s0fractal/warrant/blob/master/conformance/CONTRACT.md">CONTRACT.md</a>,
+  and it ends with a working nine-line Python candidate that implements nothing,
+  scores every vector UNRUN, and reports exactly that.</p>
+
+  <h2>The nine classes</h2>
+
+  <p>A class is one question the format can be asked. <code>capabilities</code> is
+  mandatory — declining it is a contract violation, because a candidate that will
+  not say what it claims cannot be tested against its claim. The other eight carry
+  the 133 vectors:</p>
+
+  <table>
+    <tr><th>class</th><th>grade</th><th class="n">vectors</th><th class="n">must-reject</th><th>what it asks</th></tr>
+    <tr><td><code>capabilities</code></td><td>—</td><td class="n">—</td><td class="n">—</td><td>name, version, the grade you claim, the classes you implement</td></tr>
+    <tr><td><code>canon</code></td><td>base</td><td class="n">51</td><td class="n">0</td><td>RFC 8785 JCS canonical bytes, and the WarrantID that is their SHA-256</td></tr>
+    <tr><td><code>validate</code></td><td>base</td><td class="n">16</td><td class="n">12</td><td>is this body a well-formed record — unknown fields invalid <em>recursively</em></td></tr>
+    <tr><td><code>blob-hash</code></td><td>base</td><td class="n">4</td><td class="n">0</td><td>plain SHA-256 over raw bytes, no framing</td></tr>
+    <tr><td><code>sig-message</code></td><td>base</td><td class="n">4</td><td class="n">0</td><td>the 47 bytes a key signs: <code>"warrant-sig-v1:"</code> then the ID's <em>raw</em> 32</td></tr>
+    <tr><td><code>verify-sig</code></td><td>base</td><td class="n">28</td><td class="n">24</td><td>Ed25519 over those bytes; small-order and non-canonical keys must fail</td></tr>
+    <tr><td><code>parse</code></td><td>base</td><td class="n">20</td><td class="n">15</td><td>I-JSON at the door: duplicates, trailing content, BOM, lone surrogates</td></tr>
+    <tr><td><code>verify-store</code></td><td>base</td><td class="n">6</td><td class="n">5</td><td>a directory of records and blobs — how many errors, at least one</td></tr>
+    <tr><td><code>verify-store</code></td><td>settlement</td><td class="n">3</td><td class="n">2</td><td>§12.3 fail-closed trust: unreadable trust config is one error, not zero</td></tr>
+    <tr><td><code>ski-run</code></td><td>settlement</td><td class="n">1</td><td class="n">0</td><td>re-execute a budget-bounded check and reproduce its verdict</td></tr>
+  </table>
+
+  <p><strong>58 of the 133 vectors are MUST-REJECT.</strong> That ratio is
+  deliberate. An implementation whose <code>validate()</code> returns true
+  unconditionally passes every positive vector in the pack, so the negatives get
+  their own headline in the report rather than being averaged into a score:
+  <code>PERMISSIVE IMPLEMENTATION: 58 of 58 MUST-REJECT vectors were ACCEPTED.</code>
+  If no negative vector ran at all, the report says <em>that</em>, in place of a
+  score.</p>
+
+  <p>Two grades, and claiming the smaller one is a complete result rather than a
+  shortfall. <strong>base</strong> is the seven classes above the settlement rows;
+  <strong>settlement</strong> adds <code>ski-run</code> and the fail-closed trust
+  rules. You declare which you claim, the runner tests exactly that, and reports
+  the grade <em>achieved</em> — which may be lower. One FAIL, ERROR or UNRUN
+  withholds it.</p>
+
+  <h2>Running it</h2>
+
+<pre>curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.0.0.tar.gz
+tar xzf warrant-conformance-1.0.0.tar.gz
+cd warrant-conformance-1.0.0
+python3 run.py --candidate "./my-verifier probe"</pre>
+
+  <p>Python 3 standard library only. No install, no configuration, no network
+  after the download, and no clone of this repository. Measured end to end from an
+  empty directory with no repository present: <strong>0.6 s</strong> to download
+  and extract (32 KB), then <strong>~7 s</strong> for a full settlement run
+  against a Python candidate.</p>
+
+  <p>Those seconds are your program's start-up cost, paid once per vector. The
+  runner spawns your candidate 133 times rather than holding a session open,
+  because a stateless contract is one you can satisfy with a shell script — that
+  trade is worth stating rather than hiding behind a faster-looking number. A
+  compiled candidate is substantially quicker.</p>
+
+  <p>Before trusting a green run, break your own program on purpose:</p>
+
+<pre>python3 run.py --candidate "./my-verifier probe" --self-check</pre>
+
+  <p>That wraps <em>your</em> candidate in a proxy that corrupts specific answers —
+  every validity answer becomes yes; the signed message is built the superseded
+  pre-0.6.0 way; whole classes are quietly declined while a grade is still
+  claimed; the process exits nonzero instead of answering — and asserts that the
+  runner catches each one. Any <code>MISSED</code> line means the runner is broken
+  and its green runs mean nothing. A gate nobody has watched fail is not yet a
+  gate; this project has shipped that mistake more than once, which is why the
+  negative control is in the box rather than in our CI. Budget about 35 seconds
+  for it — it runs the whole suite five more times, once per mutation.</p>
+
+  <p>The vectors themselves are checkable. Every file is listed in
+  <code>MANIFEST.sha256</code>, and <code>python3 run.py --verify-pack</code>
+  prints the SHA-256 of that manifest — one hex string pinning the whole pack,
+  published in
+  <a href="https://github.com/s0fractal/warrant/blob/master/SPEC.md">SPEC</a> §8.6
+  at the revision you are implementing. Because the spec is versioned and tagged,
+  the comparison holds wherever the tarball came from: a mirror, a fork, a
+  colleague's copy. The runner refuses to produce a result from a pack whose
+  manifest does not match.</p>
+
+  <h2>What implementing it gets you</h2>
+  <ul>
+    <li><strong>An answer to the question at the top of this page</strong>, for
+      your own code. Not "my tests pass" but "my reading of the format and theirs
+      produce the same bytes, including on the 58 inputs that must be refused."</li>
+    <li><strong>A grade you can state, with the evidence for it re-runnable by
+      anyone.</strong> The report names every UNRUN vector; nothing is rounded up.</li>
+    <li><strong>The name.</strong>
+      <a href="https://github.com/s0fractal/warrant/blob/master/TRADEMARK.md">TRADEMARK.md</a>
+      conditions calling an implementation "Warrant" on this pack, and until the
+      pack existed that condition referred to a test nobody outside could
+      perform.</li>
+    <li><strong>Standing to say the spec is wrong.</strong> A vector you disagree
+      with is worth an issue. One drafted vector was withdrawn during development
+      for exactly that reason: <code>parse/top-level-array</code> asserted that a
+      non-object top level must be rejected by the parse layer, and the three
+      implementations turned out to enforce it at three different layers while
+      agreeing on the observable outcome. The layer is not the spec's business.</li>
+  </ul>
+
+  <p>And plainly, what it gets <em>us</em>, since you should know why you are being
+  asked: a reading of the specification produced by someone who was not in the room
+  when it was written. That is the only kind of evidence that the document, rather
+  than the habit, is what carries the format.</p>
+
+  <div class="honest">
+  <h3>The honest state of this</h3>
+  <p class="note"><strong>Three implementations, all ours.</strong> Python and Go
+  each pass all 133 vectors at settlement grade; Rust is deliberately base-only
+  and passes the 129 base vectors, reported as <em>reaching base</em> rather than
+  as failing settlement. Their agreement is byte-exact — canonical bytes,
+  WarrantIDs, signed messages, and store verdicts. All three live in one
+  repository and share one author.</p>
+  <p class="note"><strong>No external party has implemented this contract.</strong>
+  Zero outside implementations, zero forks, no independent gate has ever run
+  against the pack. The tarball has one recorded download at the time of writing,
+  and we cannot tell you it was a stranger. If you implement the contract you are
+  the first, and that is the accurate reason to find it interesting or to walk
+  away.</p>
+  <p class="note"><strong>"An afternoon in any language" is an estimate, not a
+  measurement.</strong> It was made by people who already knew the format, and it
+  has never been timed against anyone who did not. If it takes you materially
+  longer, the honest conclusion is that the contract or its documentation is at
+  fault — that is a bug worth reporting, and it is worth more to us than a passing
+  run.</p>
+  <p class="note"><strong>The timings above are the second set.</strong> Until
+  2026-07-31 the pack's own README — and the 0.7.0 release notes — said "904 ms
+  from extraction to verdict". That measured extraction plus a trivial candidate,
+  not anyone's first real run, and it was withdrawn when someone actually ran the
+  thing before quoting it. It is a small number and it went out to the audience
+  least able to check it, which is the reason it is named here rather than
+  silently replaced.</p>
+  <p class="note"><strong>The pack is not the definition of conformance.</strong>
+  Reproducing the vectors is; the pack is how a third party demonstrates that they
+  have. SPEC §8.6 is normative, this page is not, and where they disagree the spec
+  wins.</p>
+  </div>
+
+  <div class="scope">
+  <h3>Where the vectors come from</h3>
+  <p class="note">Compiled from the repository's normative <code>examples/</code>
+  directory (SPEC §8, §8.2–§8.5). Expectations are <strong>copied</strong> from
+  there and from the SPEC tables, never recomputed by running an implementation —
+  a pack that agreed with our code but not with the document is precisely the
+  failure it exists to prevent. Each vector carries its spec section and a
+  <code>why</code>.</p>
+  <p class="note">Two groups are authored for the pack rather than derived, and
+  say so in their vector files. <code>parse</code>: SPEC §8.3 names these
+  behaviours normatively but vectored them nowhere, so they were only ever
+  exercised by in-repo harnesses a third party cannot run. <code>verify-store</code>:
+  deterministic fixtures whose mutations are defects this project actually
+  shipped — including the policy blob swapped for <em>"Refunds are ALWAYS granted
+  retroactively"</em> at its own address, while both implementations still
+  reported the store clean.</p>
+  </div>
+
+  <footer>
+    <p><strong>Read on:</strong>
+      <a href="https://github.com/s0fractal/warrant/blob/master/conformance/CONTRACT.md">CONTRACT.md — the whole contract, one page</a> ·
+      <a href="https://github.com/s0fractal/warrant/blob/master/conformance/README.md">pack README</a> ·
+      <a href="https://github.com/s0fractal/warrant/blob/master/SPEC.md">SPEC §8.6</a> ·
+      <a href="./">Warrant, from the top</a>
+    </p>
+    <p><a href="https://github.com/s0fractal/warrant">github.com/s0fractal/warrant</a> · MIT ·
+       disagreements and defeats are both worth an issue</p>
+  </footer>
+
+</main>
+</body>
+</html>

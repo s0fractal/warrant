@@ -68,6 +68,12 @@ python3 conformance/run.py --candidate "./your-verifier probe" --self-check
 settlement) with UNRUN as its own outcome. `--self-check` corrupts your
 implementation on purpose and fails if the runner does not catch it.
 
+The invitation written for a stranger — the contract, the classes, and what is
+and is not true about it so far (no external implementer, and the "an afternoon
+in any language" figure is an estimate by people who already knew the format) —
+is `docs/conformance.html`, served at
+https://s0fractal.github.io/warrant/conformance.html.
+
 If a document and a command disagree, **the command is right**. Two files in this
 repository were wrong about their own test counts and PyPI status until they were
 caught; the fix was to generate the numbers rather than type them.
