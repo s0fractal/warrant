@@ -452,3 +452,40 @@ it costs a page of code — which is exactly why the recommendation is to keep t
 boundary and not the binding. Deleting the file loses nothing but a
 demonstration; keeping it while unable to run it would be the kind of claim this
 repository exists to avoid.
+
+## The dedicated callback surface, and why it is not the one to build on
+
+LangGraph 1.2.0 added `langgraph.callbacks` — a public, non-experimental hook whose
+own docstring calls it "the public callback surface for observing LangGraph-specific
+lifecycle transitions such as interrupt and resume". `GraphCallbackHandler` gives you
+`on_interrupt` and `on_resume`, passed through the ordinary `config["callbacks"]` key.
+It looks like exactly the integration point this study was looking for.
+
+It is not, and the reason is worth recording so nobody re-derives it:
+
+    >>> [f.name for f in dataclasses.fields(GraphResumeEvent)]
+    ['run_id', 'status', 'checkpoint_id', 'checkpoint_ns']
+
+**`on_resume` tells you that a decision arrived. It never tells you what it was.**
+A warrant records what was decided, so a hook that cannot see the decision cannot
+produce one — it can only witness that sanctioning happened.
+
+The decision *is* visible to a wrapping checkpointer, which receives it as a write to
+the `'__resume__'` channel. That route is closed on purpose: `RESUME` and `INTERRUPT`
+in `langgraph.constants` now raise `LangGraphDeprecatedSinceV10` — "this constant is
+now private and should not be used directly" — with removal targeted at 2.0. Building
+a signing path on it would be building on internals the maintainers have already
+announced they are taking away.
+
+So the position stays as the study concluded: own the interrupt payload, where the
+request and the decision are both in scope at the same moment, and treat
+`GraphCallbackHandler` as a complementary passive audit trail. Its `checkpoint_id` is
+the natural correlation key if you want one — which is a real use, just not this one.
+
+Two corrections to material circulating elsewhere, verified against the installed
+package rather than the prose: `add_human_in_the_loop` does not exist in langgraph
+1.2.10 or langchain 1.3.14 — a grep across both returns nothing — and
+`HumanInTheLoopMiddleware`'s payload is `action_requests`/`review_configs` with
+decision types `approve | edit | reject | respond`, not the `allow_accept`/`allow_edit`
+shape older documentation describes. Anyone binding to that schema should pin
+`langchain>=1.3,<2`; the `langgraph` primitives underneath it are the stable part.
