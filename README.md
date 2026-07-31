@@ -1,8 +1,17 @@
 # Warrant
 
-**A decision record for AI agents. Signed, hash-addressed, with reasons you can re-run.**
+**When a machine says something was allowed, can you check why — without trusting the machine that allowed it?**
 
-When an agent accepts, rejects, or proposes something, it writes a warrant: a small JSON record that says **what** was decided, **under** which policy, **because** of which reasons, based on **which** evidence — signed by the actor, addressed by its own hash, linked to the decisions that came before it.
+A green CI run, a signed audit log, an agent's own JSON summary: each is a claim
+about work, made by the party that did the work, covering exactly what that party
+decided it should cover. Warrant is a decision record built the other way round. It
+says **what** was decided, **under** which policy — pinned by hash, so "the policy"
+is a specific sequence of bytes rather than a name — **because** of which reasons,
+on **which** evidence, signed by the actor and addressed by its own hash. A reason
+can be an executable check, which means the argument is not something you read. It
+is something you re-run, on your own machine, and get the same verdict for.
+
+Concretely: when an agent accepts, rejects, or proposes something, it writes a small JSON record, linked to the decisions that came before it.
 
 ```json
 {
@@ -45,10 +54,11 @@ Installs the `warrant` verifier and the `warrant-mcp` sealer. `ski@v1` reasons
 re-run **offline** — the Σ-GLYPH Book I check engine ships inside the package, so
 no separate clone is needed. (From a checkout: `git clone … && pip install .`.)
 
-The current release is **0.6.0** (2026-07-31, tag `v0.6.0`), which is what that
-line installs; `CHANGELOG.md` lists the four releases on PyPI. That it installs
-and runs has been checked in a clean venv by the maintainer — it is not a claim
-that anyone else has installed it.
+The current release is **0.7.0** (2026-07-31, tag `v0.7.0`), which is what that
+line installs; five versions are on PyPI. `CHANGELOG.md` is written through 0.6.0
+and does not yet describe 0.7.0. That it installs and runs has been checked in a
+clean venv by the maintainer — it is not a claim that anyone else has installed
+it.
 
 ```bash
 warrant init                          # .warrants/ store in your repo
@@ -108,7 +118,9 @@ branch on it). Without `--store-mode`, the Go CLI keeps a legacy flat-directory
 mode for loose example files — pass `--store-mode`. The report is **not** a
 Warrant: it is unsigned and carries no settlement authority.
 
-Two guarantees a consumer may rely on (surfaced by the first external consumer):
+Two guarantees a consumer may rely on (surfaced by the first consumer outside this
+repository — the sibling `oaip` ledger, which is the same author's, not an outside
+adopter):
 
 - **Counts bind the findings.** `errors` equals the number of `ERR` findings and
   `warnings` equals the number of `WARN` findings — always, in both
@@ -182,7 +194,7 @@ an argparse error three steps later.
 
 ## What it is not
 
-Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: any language can implement it from the spec in an afternoon, and two implementations agree on every hash.
+Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three independent implementations agree on every hash, and the spec is meant to be implementable in any language in an afternoon — an estimate made by people who already knew the format, never yet measured against anyone who did not.
 
 ## Spec and status
 
@@ -222,6 +234,12 @@ python3 tests/ed25519_differential.py                 # Ed25519: Rust vs Python 
 
 ### Writing a fourth implementation
 
+Three implementations agreeing is evidence about how clearly the document reads
+**to the person who wrote it**. A fourth, written by someone who was not here, is
+evidence about the document. The invitation, with the contract, the nine classes
+and what is and is not true about it so far, is one page:
+**[warrant-conformance/1](https://s0fractal.github.io/warrant/conformance.html)**.
+
 `conformance/` is a self-contained pack for checking an implementation that is
 **not** one of these three — no clone, no install, and the runner never executes
 ours:
@@ -240,7 +258,7 @@ pass/fail — `impl-rs` claims and reaches SPEC §6 base grade, which is a compl
 result, not a shortfall. The pack ships as a release tarball pinned by hash in
 SPEC §8.6, and `TRADEMARK.md` conditions the name on it.
 
-First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.
+The only thing consuming the format so far is a sibling repository by the same author: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks. That is a working integration and it is worth reading; it is not an outside user, and there are none.
 
 ### Signatures are domain-separated (v0.4, BREAKING)
 

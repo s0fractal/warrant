@@ -87,6 +87,10 @@
     <li><strong>Linked</strong> — <code>prior</code> makes decisions a chain: propose → reject (with reasons) → revise → accept. A rejection is a first-class record, not an absence.</li>
   </ul>
 
+  <h2>Write the fourth implementation</h2>
+  <p>Three implementations agree here, and all three were written in this repository from one reading of one document. That is evidence about the document's clarity <em>to us</em>. The thing that would be worth something is a reading produced by someone who was not in the room — so there is a conformance pack that drives <strong>your</strong> verifier, never ours, and tells you which grade you reached.</p>
+  <p><strong><a href="conformance.html">The contract, the nine classes, and the honest state of it →</a></strong> One JSON object in, one out, exit 0 whenever you answered. 133 vectors, 58 of them MUST-REJECT. <span class="status">no external implementer yet</span></p>
+
   <h2>Don't trust this page — re-run it</h2>
   <p>The spec's design rule is that two independent implementations MUST agree on every WarrantID and every verification outcome. Both ship in the repo. Run them:</p>
 <pre>$ pip install cryptography            <span class="cmt"># the one dependency (Ed25519)</span>
@@ -149,6 +153,7 @@ $ ./impl-go/warrant-go conformance examples
 
   <footer>
     <p><strong>Read on:</strong>
+      <a href="conformance.html">implement warrant-conformance/1</a> ·
       <a href="https://github.com/s0fractal/warrant/blob/master/SPEC.md">SPEC v0.3</a> ·
       <a href="https://github.com/s0fractal/warrant/tree/master/examples">worked vectors (real hashes &amp; signatures)</a> ·
       <a href="https://github.com/s0fractal/warrant/tree/master/reviews">reviews</a> ·
