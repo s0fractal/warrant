@@ -1812,6 +1812,145 @@ def conformance(examples_dir):
     return all(ok)
 
 
+# ---------- conformance probe (the `warrant-conformance/1` candidate contract) ----------
+#
+# `conformance` above is this implementation checking ITSELF against files in
+# this checkout. That proves nothing to a third party, who would have to clone
+# this repository and run our Python to learn whether their Go verifier agrees.
+#
+# `probe` is the other direction: it makes THIS implementation a candidate under
+# an implementation-agnostic contract (conformance/CONTRACT.md). One JSON request
+# on stdin, one JSON response on stdout, exit 0 whenever an answer was produced —
+# the verdict travels in the response, never in the exit status, because "I say
+# no" and "I crashed" must not be the same observation. The expected value is
+# never sent, so a candidate cannot echo it back.
+PROBE_PROTOCOL = "1"
+PROBE_BASE_CLASSES = ("capabilities", "canon", "validate", "blob-hash",
+                      "sig-message", "verify-sig", "parse")
+PROBE_SETTLEMENT_CLASSES = ("verify-store", "ski-run")
+
+
+def _probe_b64(s):
+    import base64
+    if not isinstance(s, str):
+        raise ValueError("expected a base64 string")
+    return base64.b64decode(s.encode("ascii"), validate=True)
+
+
+def probe_answer(req):
+    """Answer one request. Returns (output_dict, unsupported_reason_or_None).
+
+    Anything this implementation genuinely cannot do returns an `unsupported`
+    reason rather than a wrong answer or a crash, because the runner reports
+    UNRUN as its own outcome and a silent skip would be scored as a pass.
+    """
+    cls = req.get("class")
+    inp = req.get("input") or {}
+
+    if cls == "capabilities":
+        classes = list(PROBE_BASE_CLASSES) + list(PROBE_SETTLEMENT_CLASSES)
+        if load_sigma() is None:
+            # No Σ-GLYPH oracle reachable: ski@v1 re-execution cannot happen.
+            # Saying so is the point — SPEC §6(7) forbids "was not executed"
+            # from looking like "ran and matched".
+            classes.remove("ski-run")
+        # `version` is informational and never compared; naming the body format
+        # it writes is more useful to a reader than a package number would be.
+        return {"name": "warrant-py (reference implementation)",
+                "version": f"body-format/{VERSION}", "grade": "settlement",
+                "classes": classes}, None
+
+    if cls == "canon":
+        try:
+            raw = canon(inp["body"])
+        except (ValueError, TypeError, UnicodeEncodeError) as e:
+            return {"error": str(e)[:200]}, None
+        return {"canon_hex": raw.hex(),
+                "warrant_id": hashlib.sha256(raw).hexdigest()}, None
+
+    if cls == "validate":
+        body = inp["body"]
+        if not isinstance(body, dict):
+            return {"valid": False, "errors": ["body is not a JSON object"]}, None
+        errs = validate_body(body)
+        return {"valid": not errs, "errors": errs}, None
+
+    if cls == "blob-hash":
+        return {"hash": blob_hash(_probe_b64(inp["bytes_base64"]))}, None
+
+    if cls == "sig-message":
+        try:
+            return {"message_hex": sig_message(inp["warrant_id"]).hex()}, None
+        except ValueError as e:
+            return {"error": str(e)[:200]}, None
+
+    if cls == "verify-sig":
+        sig = {"actor": "probe", "key": inp["key"], "sig": inp["sig"]}
+        return {"valid": bool(verify_sig(inp["warrant_id"], sig))}, None
+
+    if cls == "parse":
+        raw = _probe_b64(inp["bytes_base64"])
+        try:
+            loads_ijson(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as e:
+            return {"ok": False, "error": str(e)[:200]}, None
+        return {"ok": True}, None
+
+    if cls == "verify-store":
+        store = Store(inp["store_path"])
+        if not store.records.is_dir():
+            return {"error": "not a store"}, None
+        settlement = None
+        if inp.get("grade") == "settlement":
+            settlement = {"genesis_roots": inp.get("genesis") or [],
+                          "trust_config": inp.get("trust_config_path")}
+        errs, warns = verify_store(store, quiet=True, settlement=settlement)
+        return {"errors": errs, "warnings": warns}, None
+
+    if cls == "ski-run":
+        if load_sigma() is None:
+            return None, "no Σ-GLYPH oracle available for ski@v1 re-execution"
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            store = Store(td)
+            store.init()
+            for b64 in (inp.get("blobs_base64") or {}).values():
+                store.put_blob(_probe_b64(b64))
+            check_hex = store.put_blob(_probe_b64(inp["check_base64"]))
+            try:
+                verdict, rh, spent = run_ski_check(store, check_hex)
+            except RuntimeError as e:
+                return {"error": str(e)[:200]}, None
+            return {"verdict": verdict, "result_node_hash": rh,
+                    "atp_spent": spent}, None
+
+    return None, f"class {cls!r} is not implemented by this candidate"
+
+
+def probe(stream_in=None, stream_out=None):
+    """Read one request, write one response. Exit status is NOT the verdict.
+
+    Nonzero exit means "no answer was produced" and the runner scores that as a
+    protocol ERROR — distinct from both a failed vector and an unsupported one.
+    """
+    stream_in = stream_in or sys.stdin.buffer
+    stream_out = stream_out or sys.stdout
+    raw = stream_in.read()
+    req = json.loads(raw.decode("utf-8"))
+    if req.get("warrant_conformance") != PROBE_PROTOCOL:
+        raise ValueError(f"unsupported request protocol "
+                         f"{req.get('warrant_conformance')!r}")
+    out, unsupported = probe_answer(req)
+    resp = {"warrant_conformance": PROBE_PROTOCOL, "id": req.get("id")}
+    if unsupported is not None:
+        resp["unsupported"] = unsupported
+    else:
+        resp["output"] = out
+    print(json.dumps(resp, separators=(",", ":"), ensure_ascii=True),
+          file=stream_out)
+    return 0
+
+
 # ---------- selftest (live round-trip in a temp store) ----------
 def selftest():
     import tempfile
@@ -1954,6 +2093,10 @@ def build_parser():
     cf = sub.add_parser("conformance")
     cf.add_argument("examples", nargs="?", default="examples")
     sub.add_parser("selftest")
+    sub.add_parser("probe", help="answer ONE warrant-conformance/1 request read "
+                                 "from stdin (see conformance/CONTRACT.md); this "
+                                 "is how an external conformance runner drives "
+                                 "any implementation, including this one")
     cn = sub.add_parser("canon", help="print {warrant_id, canon_hex} for a bare body JSON")
     cn.add_argument("file")
 
@@ -2112,6 +2255,8 @@ def main():
         sys.exit(0 if conformance(args.examples) else 1)
     elif args.cmd == "selftest":
         sys.exit(0 if selftest() else 1)
+    elif args.cmd == "probe":
+        sys.exit(probe())
     elif args.cmd == "canon":
         body = loads_ijson(Path(args.file).read_text(encoding="utf-8"))
         print(json.dumps({"warrant_id": warrant_id(body),

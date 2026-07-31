@@ -48,6 +48,25 @@ def read(name):
     return (ROOT / name).read_text(encoding="utf-8")
 
 
+def load_pack_counts():
+    """How many conformance vectors there are, and how many are MUST-REJECT.
+
+    Counted from the built pack, not from a constant: the pack is generated from
+    `examples/`, so adding one negative vector upstream moves this number and
+    every sentence quoting it. The negative count is the one that matters — it is
+    the claim that the pack can tell a verifier apart from a program that returns
+    true, and it is quoted in three documents.
+    """
+    import json
+    vdir = ROOT / "conformance" / "vectors"
+    index = json.loads((vdir / "index.json").read_text(encoding="utf-8"))
+    negatives = 0
+    for entry in index["files"]:
+        doc = json.loads((vdir / entry["file"]).read_text(encoding="utf-8"))
+        negatives += sum(1 for v in doc["vectors"] if v["polarity"] == "negative")
+    return index["total_vectors"], negatives
+
+
 # (file, human description, regex with ONE capturing group holding the number)
 # Each pattern is anchored on wording specific enough that it cannot match a
 # different sentence; if the wording changes, the claim is reported MISSING.
@@ -64,6 +83,22 @@ CLAIMS = [
      r"non-goals\n\(`NG-1` … `NG-(\d+)`\)", "ng"),
     ("SECURITY.md", "count of explicit non-goals",
      r"non-goals \(`NG-1` … `NG-(\d+)`\)", "ng"),
+    ("README.md", "count of conformance vectors",
+     r'--candidate "\./your-verifier probe"\s+# (\d+) vectors', "vectors"),
+    ("README.md", "count of MUST-REJECT conformance vectors",
+     r"answer\. (\d+)\nof the \d+ vectors are MUST-REJECT", "negatives"),
+    ("README.md", "conformance vector total beside the MUST-REJECT count",
+     r"of the (\d+) vectors are MUST-REJECT", "vectors"),
+    ("llms.txt", "count of conformance vectors",
+     r"\n(\d+) vectors, \d+ of them MUST-REJECT", "vectors"),
+    ("llms.txt", "count of MUST-REJECT conformance vectors",
+     r"\n\d+ vectors, (\d+) of them MUST-REJECT", "negatives"),
+    ("conformance/README.md", "count of MUST-REJECT conformance vectors",
+     r"carry equal weight\.\*\* (\d+) of the \d+ vectors are MUST-REJECT",
+     "negatives"),
+    ("conformance/README.md", "conformance vector total",
+     r"carry equal weight\.\*\* \d+ of the (\d+) vectors are MUST-REJECT",
+     "vectors"),
 ]
 
 # The same two counts are also written as English words beside the numerals.
@@ -88,15 +123,20 @@ def main():
     sa_headings = re.findall(r"^#### SA-(\d+)\.", tm, re.M)
     ng_headings = re.findall(r"^- \*\*NG-(\d+)\.", tm, re.M)
 
+    pack_total, pack_negatives = load_pack_counts()
     truth = {
         "checks": load_checks(),
         "sa": len(sa_headings),
         "ng": len(ng_headings),
+        "vectors": pack_total,
+        "negatives": pack_negatives,
     }
     where = {
         "checks": "len(CHECKS) in tools/check.py",
         "sa": "`#### SA-n.` headings in THREAT-MODEL.md",
         "ng": "`- **NG-n.`` items in THREAT-MODEL.md",
+        "vectors": "total_vectors in conformance/vectors/index.json",
+        "negatives": "vectors with polarity=negative in conformance/vectors/",
     }
 
     failures = []

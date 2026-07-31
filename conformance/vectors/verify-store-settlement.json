@@ -1,0 +1,51 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "verify-store",
+  "grade": "settlement",
+  "source": "fixtures generated for this pack",
+  "note": "Settlement grade adds the fail-closed trust surface of SPEC \u00a712.3. A base-grade candidate answers these `unsupported`; a candidate that claims settlement and silently ignores the requested grade returns zero errors here and fails.",
+  "vectors": [
+    {
+      "id": "verify-store/settlement-trust-malformed",
+      "polarity": "negative",
+      "spec": "\u00a712.3",
+      "why": "MUST report exactly one ERR: a settlement verification was requested with an unparseable trust configuration. Falling open to 'no trust configured' would report a verification that did not happen",
+      "input": {
+        "store_dir": "stores/clean",
+        "grade": "settlement",
+        "trust_config": "trust/malformed.json"
+      },
+      "expect": {
+        "errors": 1
+      }
+    },
+    {
+      "id": "verify-store/settlement-trust-missing",
+      "polarity": "negative",
+      "spec": "\u00a712.3",
+      "why": "MUST report exactly one ERR: the trust configuration file does not exist. A requested settlement verification that could not construct its trust did not happen",
+      "input": {
+        "store_dir": "stores/clean",
+        "grade": "settlement",
+        "trust_config": "trust/does-not-exist.json"
+      },
+      "expect": {
+        "errors": 1
+      }
+    },
+    {
+      "id": "verify-store/settlement-trust-empty",
+      "polarity": "positive",
+      "spec": "\u00a79",
+      "why": "a valid trust configuration naming no genesis root: the store still verifies with zero errors; the roots are simply not settlement-active",
+      "input": {
+        "store_dir": "stores/clean",
+        "grade": "settlement",
+        "trust_config": "trust/empty.json"
+      },
+      "expect": {
+        "errors": 0
+      }
+    }
+  ]
+}

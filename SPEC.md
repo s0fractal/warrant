@@ -214,6 +214,51 @@ A `warrant.signature-vectors@v0` document with three arrays:
 
 All three reference implementations load this file from their `conformance` command. `tools/signature_vectors.py` regenerates it; every signature in it derives from §8's published demo seed, so a reader can reproduce the file from this document alone.
 
+### 8.6. The conformance pack (how a third party checks an implementation)
+
+§8–§8.5 pin the vectors. This section pins the **artifact that runs them against
+an implementation that is not ours**, because until it existed the only way to
+exercise the vectors was to clone this repository and run its Python — which asks
+a third-party implementer to trust the thing they are trying to check, and left
+the trademark policy (`TRADEMARK.md`) conditioned on a test nobody outside could
+perform.
+
+The pack is `conformance/` in this repository, distributed as a tarball attached
+to releases. It carries the vectors of §8–§8.5 with their expectations, a runner,
+and a negative control. The runner drives an implementation through the
+`warrant-conformance/1` CLI contract (`conformance/CONTRACT.md`): one JSON
+request on stdin, one JSON response on stdout, exit 0 whenever an answer was
+produced. **The runner does not import, link against, or execute a reference
+implementation**, and the expected value is never sent to the candidate.
+
+Conformance is reported at a **grade**, matching the split this document already
+makes between §6 verification and §7 settlement:
+
+| grade | classes |
+| --- | --- |
+| base | `canon`, `validate`, `blob-hash`, `sig-message`, `verify-sig`, `parse`, `verify-store` |
+| settlement | base, plus `ski-run` and settlement-grade `verify-store` (§12.3 fail-closed trust) |
+
+A candidate declares the grade it claims and is tested at exactly that grade. An
+implementation that claims base and reaches base is conformant at base grade;
+`impl-rs` is deliberately such an implementation. A vector the candidate declines
+is reported UNRUN — a distinct outcome from pass and from fail — and withholds
+the grade. Running the pack is not required for conformance; **reproducing the
+vectors is**. The pack is how a third party demonstrates that they have.
+
+**Pack integrity.** Every file is listed in `MANIFEST.sha256`, and the pack
+digest is SHA-256 of that manifest:
+
+| artifact | SHA-256 |
+| --- | --- |
+| conformance pack 1.0.0 (`MANIFEST.sha256`) | `f9c9d7174f5e8a9ec37d8df66923435243d66049b6abdfafb4236724a452ff30` |
+
+Verify with `python3 run.py --verify-pack` and compare against the line above at
+the spec revision you are implementing. Because this document is versioned and
+tagged (§14.3), that comparison holds wherever the tarball came from — a mirror,
+a fork, a colleague's copy. The runner refuses to produce a result from a pack
+whose manifest does not match.
+
 ## 9. Multi-root stores (v0.3)
 
 A store is a DAG. A **root** is a record with empty `prior`. A root is **well-signed** if its filing signature is valid (and bound, where key state is configured). A root is eligible to become settlement-active only if it is well-signed and schema-valid under §6; a trusted-but-broken root is still reported under §6 but MUST be excluded from settlement and foreclosure calculations until repaired. Given eligibility, a root is **settlement-active** only if either (1) it is listed in the verifier's local trust configuration as a genesis root for this store, or (2) it is adopted by a settlement-active root through an `accept` warrant whose `subject.hash` is the WarrantID of the root to be adopted and whose signatures satisfy the adopting root's current settlement policy, including any threshold rule. Verifiers MAY verify inactive roots for local integrity but MUST exclude them from settlement and foreclosure calculations and MUST report `WARN: unadopted root`.

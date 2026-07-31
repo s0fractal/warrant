@@ -1,0 +1,1580 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "canon",
+  "grade": "base",
+  "source": "examples/canon-vectors.json (SPEC \u00a78.4) + the SPEC \u00a78/\u00a78.2 tables",
+  "note": "Every expectation is copied from the vector file or the SPEC table; none is recomputed here.",
+  "vectors": [
+    {
+      "id": "canon/ctrl-U+0000",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0000",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0000y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303079227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "10c52de408e7d41e02d14a68d6c056ca260a74379cb69de7127f93c64b934c42"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0001",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0001",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0001y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303179227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "392b1261992547ffb82378b15f4abf0e33c982b70633a27890797343abe33dc9"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0002",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0002",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0002y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303279227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "121e2d2ad67c8d1c17b6823ad0bbda673197e91a935ffaad8a8f3a0a750231e9"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0003",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0003",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0003y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303379227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "449deac1ea9f7a72a347d89d71692e740dbec173655651cc7b004924e9f9779f"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0004",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0004",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0004y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303479227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "88edf288f84fb5982245ee700be8d0350fb42c4c42dfd3ce1976b390926fc712"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0005",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0005",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0005y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303579227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "a09fef385eef599ab34e781bf130ba69650087c375d42f47acbf4741ad53e84b"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0006",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0006",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0006y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303679227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "0b4049b207ae324ef6bfbd31b457329ba2e5855890ebb251a29656f4f2a44201"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0007",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0007",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0007y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030303779227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "378fcc2146cd3af60ad7b9b679d73f939335db89da6df64e6bbce36ef60ed3f8"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0008",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0008",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\by"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c6279227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "cb77c8ca4342e8f28882fd3f081b39b0d14e93638fb84f4dc866c54aa4ff7400"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0009",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0009",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\ty"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c7479227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "f5511fe377064a2491642f04666c31e138ddb70b501c5effd69207d61752e758"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+000A",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+000A",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\ny"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c6e79227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "87593df9401492fc6b0f6f22967539a33e7a9ca23b7ac421ff9b56fe55b1519f"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+000B",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+000B",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u000by"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030306279227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "7a031829272d42ba8f5bc3756aa7cec3bd83fe41ebd1c671ba8e169aab93f082"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+000C",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+000C",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\fy"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c6679227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "865598c74b2299ec1c797840561447fe29e57f8af83cfd4808cf9d28eb9ff1d1"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+000D",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+000D",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\ry"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c7279227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "ed8c787c2674045d10621979baf1678489fa2af5b249c5eae6aef16c69454bb0"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+000E",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+000E",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u000ey"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030306579227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "1e0e977f5599eddc780934dd3673565d4f82ace269a28688fe16a1848f478698"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+000F",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+000F",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u000fy"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030306679227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "363c968b79ea79afbb67ff7f35e64cafdd9a5296a646228daf8efc54fde64101"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0010",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0010",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0010y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313079227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "e8804b79fcf1d929b3eb4cb09159fc95f8f09affc8641a05e96b63f577502525"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0011",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0011",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0011y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313179227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "39311122dab7341b4364319adf7247c46a4a3d0768ceeff8a2c2dd0f398cc37a"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0012",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0012",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0012y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313279227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "e86620f367a2e6969ee2055df11adf734bbdbd75085827f27be401c8dd3d26f5"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0013",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0013",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0013y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313379227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "777722a8a84bd3b489a0df44b0bde9187873751e6481d470459170325d9add12"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0014",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0014",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0014y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313479227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "ec2b31783ab76bb91cb1e8ac4586ae2c9f9cd4757940517d66f1791ff40e3662"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0015",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0015",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0015y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313579227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "ce998b987a9a882b441249ae77b7f155554b55a3076783eeb5c22fff66c7192d"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0016",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0016",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0016y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313679227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "0effb19c249393a84a13101cb4d500dcadfa96e75ffe5747a02c3b5ef372aa6b"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0017",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0017",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0017y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313779227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "b2e26d9f9cc6f2ebfd74ab27c63cbbeb4be8d13ade98ac2abcd82cecbf3bff2f"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0018",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0018",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0018y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313879227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "56dca174964b2eb3c02bdbbe59b3ec9933fa60740e308bab9684f26842195014"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+0019",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+0019",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u0019y"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030313979227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "6cf694393b931d168e53a286672a00654624d37433be8a67620ec0269a39ec9c"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+001A",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+001A",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u001ay"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030316179227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "8b64e8e11c66813ad03136e0379fea33f199d956263480a3035332161d5e0438"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+001B",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+001B",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u001by"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030316279227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "49c02b2cbbcb42c65987354ffb69f095df7b427af3b702cc70c9becbd348a892"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+001C",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+001C",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u001cy"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030316379227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "25b6c1546b55f8f7a305577f86e46905c02cf8d24fb59580e2d552a5644d1c49"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+001D",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+001D",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u001dy"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030316479227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "af5da861bd76fc30ba6a3435093d44e0c2846805c09bcc7b0b6d522afcb11161"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+001E",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+001E",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u001ey"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030316579227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "63dd4fca28ec7213ee03064a1b8899747ede8e2affe356f95e36e49dd2bb4785"
+      }
+    },
+    {
+      "id": "canon/ctrl-U+001F",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-U+001F",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "x\u001fy"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22785c753030316679227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "bc890bf8ed6e82300863b4080b612bea713b00254a9fa0f15f442749d3f82cff"
+      }
+    },
+    {
+      "id": "canon/backspace+formfeed",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case backspace+formfeed",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "tab\bin\fend"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a227461625c62696e5c66656e64227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "4cf3799dde8485b7a0466df0fa900d6d03e7d921ad6aa8a8437821e7e301fd66"
+      }
+    },
+    {
+      "id": "canon/cyrillic-note",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case cyrillic-note",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "\u043f\u0440\u0438\u0432\u0456\u0442-\u0441\u0432\u0456\u0442\u043f\u0440\u0438\u0432\u0456\u0442-\u0441\u0432\u0456\u0442\u043f\u0440\u0438\u0432\u0456\u0442-\u0441\u0432\u0456\u0442\u043f\u0440\u0438\u0432\u0456\u0442-\u0441\u0432\u0456\u0442\u043f\u0440\u0438\u0432\u0456\u0442-\u0441\u0432\u0456\u0442"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22d0bfd180d0b8d0b2d196d1822dd181d0b2d196d182d0bfd180d0b8d0b2d196d1822dd181d0b2d196d182d0bfd180d0b8d0b2d196d1822dd181d0b2d196d182d0bfd180d0b8d0b2d196d1822dd181d0b2d196d182d0bfd180d0b8d0b2d196d1822dd181d0b2d196d182227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "ac672fa21c027de64f050b1691061f2524d1854eac62caff9f85ec2d185e343c"
+      }
+    },
+    {
+      "id": "canon/nfc-precomposed",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case nfc-precomposed",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "\u0439 caf\u00e9 \u0133"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22d0b920636166c3a920c4b3227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "11332e0e3201101bbd60a8d8c7df5475daf6831198a90445d1102063307f4e63"
+      }
+    },
+    {
+      "id": "canon/nfd-decomposed",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case nfd-decomposed",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "\u0438\u0306 cafe\u0301 \u0133"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22d0b8cc862063616665cc8120c4b3227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "574db9778fb728a29dd73a5ac23a9a9742b53a86789bf0f8ea1db05ae30e0c1b"
+      }
+    },
+    {
+      "id": "canon/emoji-astral",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case emoji-astral",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "deploy \ud83d\ude80 ship \ud83d\udd25"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a226465706c6f7920f09f9a80207368697020f09f94a5227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "e0385864a2616a1ba0ef0dafa290d2f7e62db8c57c9ca1099735bac43cf68bfa"
+      }
+    },
+    {
+      "id": "canon/quote-backslash",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case quote-backslash",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "he said \"\\x\" \\ end"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a2268652073616964205c225c5c785c22205c5c20656e64227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "48cc70e9a981bf5e9fae8815a17bec97fb31343cd51e71a94fe54d863a05f6c1"
+      }
+    },
+    {
+      "id": "canon/html-chars-raw",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case html-chars-raw",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "<a href=\"x\">1 & 2</a> / done"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a223c6120687265663d5c22785c223e31202620323c2f613e202f20646f6e65227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "e469174f08a5e2076fd5b9107b3f4f5dd0c6f0238d2bba9f1930b89eff9f49a5"
+      }
+    },
+    {
+      "id": "canon/line-paragraph-separators",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case line-paragraph-separators",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "a\u2028b\u2029c"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a2261e280a862e280a963227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "4dc7ddd4a8f076e3a11fbe4fd4b726b6fb09a1e065c7b99cc33b8f20a08ecb14"
+      }
+    },
+    {
+      "id": "canon/del+c1",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case del+c1",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "a\u007fb\u009fc"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22617f62c29f63227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "cb7f7b02776ce5c708fb94a4870d3d237f87c30f93e5d3eac423c8e2965c51ae"
+      }
+    },
+    {
+      "id": "canon/ctrl-in-actor",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-in-actor",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "a\tgent\u000b@v"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a22615c7467656e745c75303030624076227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "205c940292b43e83454c75deb95efce0a3af8887e24038896bd4b386f27ff633"
+      }
+    },
+    {
+      "id": "canon/ctrl-in-prose",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case ctrl-in-prose",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [
+            {
+              "kind": "prose",
+              "text": "line1\bline2"
+            }
+          ],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b7b226b696e64223a2270726f7365222c2274657874223a226c696e65315c626c696e6532227d5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "d518c34a563bf66c65b28362092f1fa515f64c0e144dd9e0213e6aca560115c5"
+      }
+    },
+    {
+      "id": "canon/large-ts",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case large-ts",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 9007199254740991
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161227d2c227473223a393030373139393235343734303939312c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "668cb9f2360f8324c62f3a1446303a2e00dc5804abe8f5ca3ced90c2b2f9bb0d"
+      }
+    },
+    {
+      "id": "canon/note-200-multibyte",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case note-200-multibyte",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "5bd9517d1ba80085486d92d296af2a26d6ba9067ff7a3c9ad9b99a03488aa75a"
+      }
+    },
+    {
+      "id": "canon/note-201-multibyte",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case note-201-multibyte",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431\u0431"
+          },
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "prior": [],
+          "ts": 1751700000
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a22d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1d0b1227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "7f523c4368375b7bb082e5f87e8760ec566f89fd049981ab89d9d485aa15593b"
+      }
+    },
+    {
+      "id": "canon/shuffled-keys",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case shuffled-keys",
+      "input": {
+        "body": {
+          "ts": 1751700000,
+          "prior": [],
+          "actor": {
+            "id": "agent-x@vendor"
+          },
+          "evidence": [],
+          "because": [],
+          "under": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "subject": {
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note": "order"
+          },
+          "decision": "propose",
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a226f72646572227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
+        "warrant_id": "0f55d094f083db455533399c18a1faabeb7d213708c69aaef72fa819c591140b"
+      }
+    },
+    {
+      "id": "canon/spec8-propose",
+      "polarity": "positive",
+      "spec": "\u00a78",
+      "why": "WarrantID of examples/propose.warrant.json, pinned in the SPEC \u00a78 table",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-a@vendor1"
+          },
+          "because": [
+            {
+              "kind": "prose",
+              "text": "utility functions needed in three modules"
+            }
+          ],
+          "decision": "propose",
+          "evidence": [
+            "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01"
+          ],
+          "prior": [],
+          "subject": {
+            "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+            "note": "PR-42: add lodash"
+          },
+          "ts": 1751673600,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1"
+      }
+    },
+    {
+      "id": "canon/spec8-reject",
+      "polarity": "positive",
+      "spec": "\u00a78",
+      "why": "WarrantID of examples/reject.warrant.json, pinned in the SPEC \u00a78 table",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-b@vendor2"
+          },
+          "because": [
+            {
+              "check": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c",
+              "kind": "check",
+              "runtime": "cmd@v1",
+              "transcript": "ca3e94e735d9232f3a2621d9a79813de520bc792b5e011d4662967de867fdb56",
+              "verdict": "fail"
+            },
+            {
+              "kind": "prose",
+              "text": "policy clause 1: coverage drops 87.0 -> 84.2"
+            }
+          ],
+          "decision": "reject",
+          "evidence": [
+            "ca3e94e735d9232f3a2621d9a79813de520bc792b5e011d4662967de867fdb56"
+          ],
+          "prior": [
+            "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1"
+          ],
+          "subject": {
+            "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+            "note": "PR-42"
+          },
+          "ts": 1751677200,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "warrant_id": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8"
+      }
+    },
+    {
+      "id": "canon/spec8-accept",
+      "polarity": "positive",
+      "spec": "\u00a78",
+      "why": "WarrantID of examples/accept.warrant.json, pinned in the SPEC \u00a78 table",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-b@vendor2"
+          },
+          "because": [
+            {
+              "check": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c",
+              "kind": "check",
+              "runtime": "cmd@v1",
+              "transcript": "4ff30ace915e2241fb788138a8493a61b28542146cb467462734ee6357a4fd70",
+              "verdict": "pass"
+            }
+          ],
+          "decision": "accept",
+          "evidence": [
+            "ee9bc45c7d8e6042d9174a7b3375750c15b15b63cdc6548dcdbd6eece5b29738",
+            "4ff30ace915e2241fb788138a8493a61b28542146cb467462734ee6357a4fd70"
+          ],
+          "prior": [
+            "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8"
+          ],
+          "subject": {
+            "hash": "ee9bc45c7d8e6042d9174a7b3375750c15b15b63cdc6548dcdbd6eece5b29738",
+            "note": "PR-42 rev2"
+          },
+          "ts": 1751680800,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78"
+      }
+    },
+    {
+      "id": "canon/spec8.2-ski-accept",
+      "polarity": "positive",
+      "spec": "\u00a78.2",
+      "why": "WarrantID of the 0.2 ski@v1 accept warrant",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-a@vendor1"
+          },
+          "because": [
+            {
+              "check": "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad",
+              "kind": "check",
+              "runtime": "ski@v1",
+              "verdict": "pass"
+            }
+          ],
+          "decision": "accept",
+          "evidence": [],
+          "prior": [],
+          "subject": {
+            "hash": "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad",
+            "note": "C1[\u03bbxy.x] S K behaves as K (TV-10)"
+          },
+          "ts": 1751684400,
+          "under": [
+            "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad"
+          ],
+          "warrant": "0.2"
+        }
+      },
+      "expect": {
+        "warrant_id": "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0"
+      }
+    }
+  ]
+}

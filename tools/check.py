@@ -134,6 +134,18 @@ CHECKS = [
      ["python3", "tools/signature_vectors.py"], None),
     ("domain separation (PY/GO/RS agree; pre-v1 store diagnosed and migrated)",
      ["python3", "tests/domain_separation.py"], "go+rs"),
+    # The conformance pack (SPEC §8.6): the artifact a third party runs against
+    # THEIR implementation without cloning this repository. Three checks, because
+    # three different things can rot independently -- the vectors can drift from
+    # examples/, the digest a stranger compares against can go stale in the SPEC,
+    # and the runner can stop being able to fail.
+    ("conformance pack: regenerates from examples/, SPEC §8.6 pins the digest",
+     ["python3", "tools/build_conformance_pack.py", "--check"], None),
+    ("conformance runner: detects a broken implementation (negative control)",
+     ["python3", "conformance/run.py", "--candidate",
+      "python3 impl/warrant.py probe", "--self-check"], "sigma"),
+    ("conformance runner: PY/GO/RS reach their declared grades",
+     ["python3", "tests/conformance_runner.py"], "go+rs"),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),
 ]

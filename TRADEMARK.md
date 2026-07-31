@@ -22,11 +22,33 @@ vectors it claims to implement.**
 
 - `tests/spec_conformance/vectors.json` and the negative vectors, for Σ-GLYPH
   Book I;
-- `warrant conformance` and `tests/negative.py`, for the Warrant format.
+- **the conformance pack, for the Warrant format** (SPEC §8.6):
 
-Passing is not an application to anyone. Run the vectors, publish which suite
-and which revision you ran, and say so. Nobody grants this and nobody can
-withhold it — the check is public, offline, and the same for everyone.
+  ```
+  curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.0.0.tar.gz
+  tar xzf warrant-conformance-1.0.0.tar.gz && cd warrant-conformance-1.0.0
+  python3 run.py --candidate "./your-verifier probe"
+  ```
+
+  No clone, no install, and the runner never executes ours — it drives yours
+  through the CLI contract in `CONTRACT.md`. Until this pack existed, this
+  section named `warrant conformance` and `tests/negative.py`: two commands
+  inside a checkout, which conditioned the name on a test nobody outside could
+  actually perform.
+
+Say which **grade** you claim. `base` (SPEC §6) and `settlement` (§7) are
+different amounts of implementation, and claiming base is a complete, honest
+claim — one of the three reference implementations is deliberately base-only. The
+runner reports the grade achieved, and reports separately anything it could not
+run, so "passes at base grade, 4 vectors above that grade not claimed" is a
+sentence you can publish exactly as printed.
+
+Passing is not an application to anyone. Run the vectors, publish which suite,
+which grade and which revision you ran, and say so. Nobody grants this and
+nobody can withhold it — the check is public, offline, and the same for
+everyone. Run `--self-check` first: it breaks your own implementation on purpose
+and fails if the runner does not notice, so the green run you publish is one you
+have watched go red.
 
 Everything else is unrestricted. Say your product "works with Warrant records",
 "reads Evidence Packs", "is based on Σ-GLYPH" — those are statements of fact and

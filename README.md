@@ -220,6 +220,26 @@ python3 tests/differential.py                         # three-way canon: PY/GO/R
 python3 tests/ed25519_differential.py                 # Ed25519: Rust vs Python cryptography agree
 ```
 
+### Writing a fourth implementation
+
+`conformance/` is a self-contained pack for checking an implementation that is
+**not** one of these three — no clone, no install, and the runner never executes
+ours:
+
+```bash
+python3 conformance/run.py --candidate "./your-verifier probe"   # 133 vectors
+python3 conformance/run.py --candidate "./your-verifier probe" --self-check
+```
+
+Your side of it is one page (`conformance/CONTRACT.md`): read one JSON request
+from stdin, print one JSON response, exit 0 whenever you produced an answer. 58
+of the 133 vectors are MUST-REJECT, so an implementation that accepts everything
+fails loudly rather than scoring well; `--self-check` breaks *your* program on
+purpose and fails if the runner does not notice. Grades are reported, not
+pass/fail — `impl-rs` claims and reaches SPEC §6 base grade, which is a complete
+result, not a shortfall. The pack ships as a release tarball pinned by hash in
+SPEC §8.6, and `TRADEMARK.md` conditions the name on it.
+
 First real user: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks.
 
 ### Signatures are domain-separated (v0.4, BREAKING)
