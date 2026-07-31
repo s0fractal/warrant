@@ -57,6 +57,32 @@ BASE_CLASSES = ["canon", "validate", "blob-hash", "sig-message", "verify-sig",
                 "parse", "verify-store"]
 SETTLEMENT_CLASSES = BASE_CLASSES + ["ski-run"]
 
+# The order a newcomer should implement the classes in, cheapest first, with one
+# line on what each actually costs. This is ADVISORY and it is DATA: the runner
+# reads it out of the pack when it has to tell a partial implementation what to
+# do next, rather than carrying an opinion of its own that nobody can review. A
+# stranger who disagrees can read it here and argue with it.
+#
+# The ranking is not vector count -- `verify-sig` has 28 vectors and is one
+# library call plus a key test, while `validate` has 16 and CONTRACT.md says
+# outright that it is not implementable without SPEC §2 and §3. It is the order
+# of dependency and of unavoidable work: canon underlies everything, the two
+# hash/concatenate classes cost an afternoon between them, and `verify-store`
+# cannot be attempted until four other classes answer.
+# The notes are one short line each, because they are printed inside a report
+# that wraps at 80 columns; the full account of every class is CONTRACT.md §5,
+# and duplicating it here would be a second description to keep in step.
+IMPLEMENTATION_ORDER = [
+    ("canon", "canonical JSON bytes + SHA-256; the foundation"),
+    ("blob-hash", "SHA-256 over the raw bytes; no JSON, no crypto"),
+    ("sig-message", "15 ASCII bytes + the hex-decoded WarrantID"),
+    ("verify-sig", "one Ed25519 verify + the small-order key test"),
+    ("parse", "is this I-JSON? your reader + RFC 7493's rules"),
+    ("validate", "the SPEC §2/§3 schema; 12 MUST-REJECTs list it"),
+    ("verify-store", "walk a store (§6); needs the four above first"),
+    ("ski-run", "settlement: a metered ski@v1 evaluator (§3.1)"),
+]
+
 # SPEC §8: the five pinned hashes. Copied from the SPEC table, not recomputed.
 SPEC8 = {
     "policy.txt": "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73",
@@ -515,6 +541,19 @@ def build(pack_root):
             index_files.append({"class": payload["class"], "grade": payload["grade"],
                                 "file": fname, "vectors": len(payload["vectors"])})
             counts[fname] = len(payload["vectors"])
+        # A class that exists in the pack but not in the order would be silently
+        # missing from the "what do I implement next" advice — the shape of
+        # defect this repository has shipped most often. Fail the build instead.
+        ordered = [c for c, _ in IMPLEMENTATION_ORDER]
+        present = {e["class"] for e in index_files}
+        if present - set(ordered):
+            raise SystemExit(
+                "IMPLEMENTATION_ORDER does not cover every class in the pack: "
+                f"{sorted(present - set(ordered))}")
+        if set(ordered) - present:
+            raise SystemExit(
+                "IMPLEMENTATION_ORDER names classes the pack does not have: "
+                f"{sorted(set(ordered) - present)}")
         index = {
             "tag": PACK_TAG,
             "pack_version": PACK_VERSION,
@@ -522,6 +561,10 @@ def build(pack_root):
             "contract": "CONTRACT.md",
             "spec": "SPEC.md — Warrant 0.6.0 (sections §2 §3 §4 §5 §6 §8)",
             "grades": {"base": BASE_CLASSES, "settlement": SETTLEMENT_CLASSES},
+            # Advisory, cheapest first. The runner reads this to tell a partial
+            # candidate what to write next; it fixes nothing normative.
+            "implementation_order": [{"class": c, "needs": n}
+                                     for c, n in IMPLEMENTATION_ORDER],
             "files": index_files,
             "total_vectors": sum(counts.values()),
         }

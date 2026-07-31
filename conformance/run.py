@@ -47,6 +47,13 @@ drives your own program through `stub/mutate.py`, a proxy that corrupts specific
 answers, and asserts that this runner detects each corruption. Run it before you
 believe a green run — a gate that cannot go red is decoration, and this project
 has shipped that mistake more than once.
+
+A mutation corrupts an ANSWER, so a mutation aimed at a class you have not
+written yet has nothing to corrupt. That is reported as INAPPLICABLE, with the
+class named, and it is neither a pass nor a failure: it is a statement that this
+particular proof is still owed. MISSED — a corruption that was applied and did
+not change the verdict — remains a loud failure, and so does INERT, where the
+proxy changed nothing about a class you DO implement.
 """
 import argparse
 import hashlib
@@ -56,6 +63,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 from pathlib import Path
 
 PACK = Path(__file__).resolve().parent
@@ -295,7 +303,93 @@ def grade_achieved(results):
     return achieved
 
 
-def summarize(results, claim, declared, digest, argv, out=sys.stdout):
+def next_steps(results, index):
+    """The classes this candidate declined, cheapest first, with what each costs.
+
+    The ordering is DATA read out of `vectors/index.json`, not an opinion
+    compiled into this runner: a stranger can read the pack and disagree with it,
+    and the pack builder refuses to build an index that does not place every
+    class. A class that somehow arrives without a place is still listed — last,
+    and saying so — because dropping it silently is the failure mode this whole
+    file exists to avoid.
+    """
+    unrun_by_class = {}
+    for r in results:
+        if r["outcome"] == UNRUN:
+            unrun_by_class[r["class"]] = unrun_by_class.get(r["class"], 0) + 1
+    order = (index or {}).get("implementation_order") or []
+    steps = [(e["class"], unrun_by_class[e["class"]], e.get("needs", ""))
+             for e in order if e.get("class") in unrun_by_class]
+    placed = {e.get("class") for e in order}
+    steps += [(c, n, "(this pack publishes no cost note for this class)")
+              for c, n in sorted(unrun_by_class.items()) if c not in placed]
+    return steps
+
+
+def diagnose_no_grade(results, claim, index, w):
+    """Say WHY no grade was reached — and never name output that is not there.
+
+    Three different states arrive here as the same `GRADE ACHIEVED: none`, and
+    they call for opposite actions:
+
+      * nothing ran at all;
+      * the candidate answered and was WRONG — read the failures;
+      * the candidate answered everything it has written and declined the rest,
+        which is what every implementation looks like on day one. There are no
+        failures to read, and telling someone to go read them is how a correct
+        report gets mistaken for a broken tool.
+    """
+    ran = [r for r in results if r["outcome"] != "NOT-CLAIMED"]
+    fails = [r for r in ran if r["outcome"] == FAIL]
+    errors = [r for r in ran if r["outcome"] == ERROR]
+    unrun = [r for r in ran if r["outcome"] == UNRUN]
+    passed = [r for r in ran if r["outcome"] == PASS]
+
+    if not ran:
+        w(f"  NOTHING RAN at {claim} grade, so this run establishes nothing "
+          f"either way.")
+        return
+    if fails or errors:
+        parts = []
+        if fails:
+            parts.append(f"{len(fails)} answered wrongly")
+        if errors:
+            parts.append(f"{len(errors)} violated the contract")
+        w(f"  WITHHELD BECAUSE WRONG: {' and '.join(parts)}, listed above. "
+          f"These are\n  disagreements with the spec, not missing code.")
+        if unrun:
+            w(f"  ({len(unrun)} further vectors are UNRUN — declined, not wrong. "
+              f"They also withhold\n  the grade, but the {len(fails) + len(errors)} "
+              f"above are the ones to read first.)")
+        return
+
+    classes = sorted({r["class"] for r in unrun})
+    plural = "class" if len(classes) == 1 else "classes"
+    w("  WITHHELD BECAUSE INCOMPLETE — nothing failed.")
+    w(f"  Every vector this candidate answered is correct: {len(passed)} of "
+      f"{len(passed)}. The grade is")
+    w(f"  withheld because {len(unrun)} vectors are UNRUN across {len(classes)} "
+      f"declined {plural}, and an unrun")
+    w("  vector cannot count toward a grade. This is the correct report for an")
+    w("  implementation in progress — it is what every implementer sees on the "
+      "first run.")
+    steps = next_steps(results, index)
+    if steps:
+        w()
+        w("  What to write next, cheapest first (CONTRACT.md §5 has each in "
+          "full):")
+        for cls, n, needs in steps[:3]:
+            w(f"    {cls:<14}{n:>3} unrun  — {needs}")
+        rest = steps[3:]
+        if rest:
+            w(f"    … then {', '.join(c for c, _, _ in rest)} "
+              f"({sum(n for _, n, _ in rest)} more vectors).")
+        w()
+    w("  Implement one class, re-run, and this line moves. Exit status 2 means")
+    w("  exactly this — gaps, not wrong answers (CONTRACT.md §7).")
+
+
+def summarize(results, claim, declared, digest, argv, index=None, out=sys.stdout):
     def w(line=""):
         print(line, file=out)
 
@@ -359,9 +453,15 @@ def summarize(results, claim, declared, digest, argv, out=sys.stdout):
         if len(accepted) > 12:
             w(f"    … and {len(accepted) - 12} more")
     else:
-        w(f"negative coverage: {len(negatives)} MUST-REJECT vectors ran, "
-          f"{len(negatives) - len(neg_unrun)} rejected as required"
-          + (f", {len(neg_unrun)} UNRUN" if neg_unrun else ""))
+        # "sent", not "ran": a declined vector was delivered and refused, and
+        # calling that a run is how 56 UNRUN vectors read as 56 rejections.
+        answered = len(negatives) - len(neg_unrun)
+        w(f"negative coverage: {len(negatives)} MUST-REJECT vectors sent, "
+          f"{answered} answered and rejected as\n  required"
+          + (f", {len(neg_unrun)} declined (UNRUN)" if neg_unrun else ""))
+        if answered == 0:
+            w("  Not one was actually answered, so this run says nothing yet "
+              "about what the\n  candidate REJECTS — only about what it computes.")
 
     if unrun:
         w()
@@ -385,7 +485,7 @@ def summarize(results, claim, declared, digest, argv, out=sys.stdout):
     w(f"GRADE CLAIMED : {claim}")
     w(f"GRADE ACHIEVED: {achieved or 'none'}")
     if achieved is None:
-        w("  Not even base grade. See the failures above.")
+        diagnose_no_grade(results, claim, index, w)
     elif GRADE_ORDER[achieved] < GRADE_ORDER[claim]:
         w(f"  CLAIM NOT MET: the candidate claimed {claim} and reached {achieved}.")
     return achieved, bad, unrun
@@ -403,6 +503,23 @@ def exit_status(results, claim):
 
 
 # ---------------------------------------------------------------- self-check
+# How bad each outcome is, so "the mutation made this vector worse" is a
+# comparison rather than a set membership test. UNRUN sits between them on
+# purpose: declining a vector is worse than answering it correctly and better
+# than violating the contract, and a candidate that declines everything — the
+# worked minimum in CONTRACT.md §8, which is where the document tells a newcomer
+# to start — must still show the `crash` mutation as a change for the worse. A
+# BAD/not-BAD split scored that candidate's UNRUN-to-ERROR as no change at all,
+# and then blamed the runner for missing it.
+SEVERITY = {"NOT-CLAIMED": 0, PASS: 0, UNRUN: 1, FAIL: 2, ERROR: 3}
+
+# Each case names the mutation, why it matters, and what "the runner noticed"
+# looks like for it. The detector is applied to the vectors that got WORSE than
+# the unmutated baseline, never to the whole run: a candidate's own UNRUN rows
+# are not evidence that the runner spotted a mutation, and scoring them as such
+# is a self-check that congratulates itself. Which classes a mutation can reach
+# is not listed here — `stub/mutate.py --describe` publishes it, so there is one
+# copy of that fact rather than two.
 SELF_CHECK_CASES = [
     ("accept-all",
      "answers true to every validity question — the 'accepts everything' "
@@ -423,6 +540,17 @@ SELF_CHECK_CASES = [
 ]
 
 
+def mutation_targets(mutate, timeout):
+    """Ask the proxy which classes each mutation can reach."""
+    proc = subprocess.run([sys.executable, str(mutate), "--describe"],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          timeout=timeout)
+    if proc.returncode != 0:
+        raise SystemExit(f"self-check: {mutate} --describe failed: "
+                         f"{proc.stderr.decode('utf-8', 'replace').strip()[:160]}")
+    return json.loads(proc.stdout.decode("utf-8"))["targets"]
+
+
 def self_check(argv, docs, claim, timeout, pack, out=sys.stdout):
     """Prove this runner can fail before anyone trusts it passing.
 
@@ -430,6 +558,34 @@ def self_check(argv, docs, claim, timeout, pack, out=sys.stdout):
     negative control is not a claim about our reference implementation — it is a
     claim about theirs: "if your verifier were permissive, this runner would say
     so, and here is it saying so."
+
+    WHAT A MUTATION THAT CANNOT APPLY MEANS
+    ---------------------------------------
+    The mutations corrupt answers. A candidate that answers three classes has
+    nothing to corrupt in the other five, so those mutations forward a response
+    they never touched. Reading that as "the runner missed a defect" tells an
+    implementer their tooling is broken on the first command the README asks them
+    to run — when what actually happened is that they have not written the class
+    yet. So each mutation lands in one of four states, and only two of them are
+    failures:
+
+      DETECTED      it changed at least one answer, and vectors that passed on
+                    the baseline run went bad. This is the proof being sought.
+      INAPPLICABLE  it changed nothing, and the classes it can reach are classes
+                    this candidate does not answer. Proves nothing, claims
+                    nothing, and is counted so the summary cannot pretend the
+                    self-check was complete.
+      MISSED        it changed an answer and NOTHING got worse. The runner is
+                    blind to a real defect — loud failure, exactly as before.
+      INERT         it changed nothing even though the candidate does answer the
+                    classes it targets. The negative control itself is broken,
+                    which is the same category of problem as MISSED and is
+                    reported as loudly.
+
+    The baseline is what makes the difference measurable, and it is also what
+    stops the old false positive: `false-unsupported` used to be scored DETECTED
+    against any candidate with UNRUN rows of its own, whether or not the mutation
+    had done anything.
     """
     def w(line=""):
         print(line, file=out)
@@ -437,35 +593,129 @@ def self_check(argv, docs, claim, timeout, pack, out=sys.stdout):
     mutate = pack / "stub" / "mutate.py"
     if not mutate.is_file():
         raise SystemExit(f"self-check needs {mutate}")
-    ok = True
+    targets = mutation_targets(mutate, timeout)
+
     w("SELF-CHECK — can this runner detect a broken implementation?")
     w()
+    with tempfile.TemporaryDirectory(prefix="warrant-selfcheck-") as base_td:
+        baseline = run_vectors(argv, docs, claim, timeout, pack, Path(base_td))
+    base_outcome = {r["id"]: r["outcome"] for r in baseline}
+    answered_classes = {r["class"] for r in baseline if r["outcome"] in (PASS, FAIL)}
+
+    broken, detected, inapplicable = [], [], []
     for mutation, why, detector in SELF_CHECK_CASES:
-        wrapped = [sys.executable, str(mutate), "--mutation", mutation, "--"] + argv
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="warrant-selfcheck-") as td:
+            log = Path(td) / "applied.log"
+            wrapped = [sys.executable, str(mutate), "--mutation", mutation,
+                       "--applied-log", str(log), "--"] + argv
             try:
                 declared = capabilities(wrapped, timeout)
                 grade = declared.get("grade", claim)
             except ContractError:
                 # `crash` breaks capabilities too; that is itself detection.
                 grade = claim
-                declared = {}
             results = run_vectors(wrapped, docs, min(grade, claim,
                                                      key=lambda g: GRADE_ORDER[g]),
                                   timeout, pack, Path(td))
-        caught = detector(results)
+            applied = len(log.read_text(encoding="utf-8").splitlines()) \
+                if log.is_file() else 0
+
+        # Only vectors the mutation made WORSE count. A defect the candidate
+        # already had is not evidence that the runner saw this mutation.
+        worse = [r for r in results
+                 if SEVERITY[r["outcome"]]
+                 > SEVERITY.get(base_outcome.get(r["id"]), 0)]
+        caught = detector(worse)
         status = exit_status(results, claim)
-        good = bool(caught) and status != EXIT_OK
-        ok &= good
-        w(f"  {'DETECTED' if good else 'MISSED  '}  mutation={mutation}")
-        w(f"            {why}")
-        w(f"            -> {len(caught)} vectors flagged, exit status {status}")
-        if not good:
-            w("            THIS RUNNER DID NOT NOTICE. Do not trust a green run.")
+        declared_targets = targets.get(mutation) or []
+        reachable = sorted(set(declared_targets) & answered_classes)
+
+        if applied == 0:
+            # It corrupted nothing. That is honest only if there was nothing of
+            # its kind to corrupt — a mutation that targets classes this
+            # candidate DOES answer, and still changed nothing, is a broken
+            # control, and a control that cannot fire must never read as calm.
+            state = "INAPPLICABLE" if declared_targets and not reachable else "INERT"
+        elif caught and status != EXIT_OK:
+            state = "DETECTED"
+        else:
+            state = "MISSED"
+        if state == "DETECTED":
+            detected.append(mutation)
+        elif state == "INAPPLICABLE":
+            inapplicable.append(mutation)
+        else:
+            broken.append(mutation)
+
+        w(f"  {state:<12}  mutation={mutation}")
+        w(f"                {why}")
+        if state == "INAPPLICABLE":
+            declined = sorted(declared_targets)
+            noun = "class" if len(declined) == 1 else "classes"
+            w(textwrap.fill(
+                f"-> nothing to corrupt: this mutation changes only the {noun} "
+                f"{', '.join(declined)}, which this candidate declines, so the "
+                f"answer the runner saw was the candidate's own.",
+                width=78, initial_indent=" " * 16, subsequent_indent=" " * 19))
+            w(textwrap.fill(
+                "Not a pass and not a failure: this mutation proves nothing "
+                "about the runner until that code exists. Re-run it then.",
+                width=78, initial_indent=" " * 19, subsequent_indent=" " * 19))
+        else:
+            w(f"                -> {applied} answers corrupted, {len(caught)} "
+              f"vectors newly flagged,\n                   exit status {status}")
+        if state == "MISSED":
+            w("                THIS RUNNER DID NOT NOTICE a corruption it was "
+              "given.\n                Do not trust a green run.")
+        if state == "INERT":
+            w(f"                THE NEGATIVE CONTROL IS BROKEN: this candidate "
+              f"answers "
+              f"{', '.join(reachable)},\n                which this mutation "
+              f"targets, yet it corrupted nothing. Fix "
+              f"stub/mutate.py\n                before believing any result "
+              f"from this runner.")
     w()
-    w("SELF-CHECK: " + ("the runner detected every deliberate defect."
-                        if ok else "FAILED — the runner missed a defect."))
-    return ok
+    return self_check_verdict(w, detected, inapplicable, broken)
+
+
+def self_check_verdict(w, detected, inapplicable, broken):
+    """One summary line that stays true when the run established nothing.
+
+    The green wording is earned by mutations that were APPLIED and caught, never
+    by the count of cases attempted — otherwise a candidate that can absorb no
+    mutation at all would collect a clean bill of health from a command that did
+    not test anything.
+    """
+    total = len(detected) + len(inapplicable) + len(broken)
+    if broken:
+        w("SELF-CHECK: FAILED — " + ", ".join(broken)
+          + (" was" if len(broken) == 1 else " were")
+          + " applied to this candidate and the runner did not\n  react as it "
+            "must. Its green runs mean nothing until this is fixed.")
+        return EXIT_FAIL
+    if not detected:
+        # Every mutation inapplicable: nothing was corrupted, so nothing was
+        # proved, and a green line here would be the decoration this command
+        # exists to rule out.
+        w(f"SELF-CHECK: INCONCLUSIVE — none of the {total} mutations could be "
+          f"applied to this\n  candidate, so this run establishes nothing about "
+          f"the runner. It is not a\n  verdict on your implementation either. "
+          f"Implement a class and run it again.")
+        return EXIT_FAIL
+    if inapplicable:
+        w(f"SELF-CHECK: the runner caught every defect that could be applied to "
+          f"this candidate")
+        w(f"  — {len(detected)} of {total}. The other {len(inapplicable)} had "
+          f"nothing to corrupt: {', '.join(inapplicable)}.")
+        w("  That is a gap in the proof, not a fault in your program or in the "
+          "runner.")
+        w("  Re-run this as those classes appear. What is established so far is "
+          "that the")
+        w("  runner reacts to a corrupted answer — not yet that it reacts to "
+          "every kind.")
+        return EXIT_OK
+    w("SELF-CHECK: the runner detected every deliberate defect.")
+    return EXIT_OK
 
 
 # ---------------------------------------------------------------- CLI
@@ -542,7 +792,7 @@ def main(argv=None):
 
     claim = args.claim or declared["grade"]
     if docs and args.self_check:
-        return EXIT_OK if self_check(cand, docs, claim, args.timeout, pack) else EXIT_FAIL
+        return self_check(cand, docs, claim, args.timeout, pack)
 
     with tempfile.TemporaryDirectory(prefix="warrant-conformance-") as td:
         results = run_vectors(cand, docs, claim, args.timeout, pack, Path(td))
@@ -556,15 +806,22 @@ def main(argv=None):
             "grade_claimed": claim, "grade_achieved": achieved,
             "counts": {k: sum(1 for r in results if r["outcome"] == k)
                        for k in (PASS, FAIL, UNRUN, ERROR, "NOT-CLAIMED")},
+            # `negatives_run` counts MUST-REJECT vectors SENT (its historical
+            # meaning); `negatives_answered` counts the ones the candidate
+            # actually answered. For a partial implementation those differ by
+            # everything, and only the second says anything about rejection.
             "negatives_run": sum(1 for r in results if r["polarity"] == "negative"
                                  and r["outcome"] != "NOT-CLAIMED"),
+            "negatives_answered": sum(1 for r in results
+                                      if r["polarity"] == "negative"
+                                      and r["outcome"] in (PASS, FAIL)),
             "negatives_accepted": sum(1 for r in results
                                       if r["polarity"] == "negative"
                                       and r["outcome"] == FAIL),
             "results": results,
         }, separators=(",", ":"), ensure_ascii=True))
     else:
-        summarize(results, claim, declared, digest, cand)
+        summarize(results, claim, declared, digest, cand, index=index)
     return exit_status(results, claim)
 
 

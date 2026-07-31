@@ -153,6 +153,14 @@ CHECKS = [
     # withheld, exit 2 -- and then corrupts their output to prove it can go red.
     ("conformance skeletons: Go and TS pass canon and decline the rest",
      ["python3", "tests/conformance_skeletons.py"], "go+node"),
+    # The outcomes being right is not the same as the report being readable. A
+    # partial candidate was told "See the failures above" with no failures above
+    # it, and `--self-check` called itself broken for not detecting mutations
+    # that had nothing to corrupt -- both on the first two commands a stranger
+    # runs. This asserts the wording, and that the self-check still goes red.
+    ("conformance diagnosis: an incomplete candidate is told why, and "
+     "--self-check can still fail",
+     ["python3", "tests/conformance_diagnosis.py"], "go+node"),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),
 ]
