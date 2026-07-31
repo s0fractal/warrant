@@ -194,7 +194,7 @@ an argparse error three steps later.
 
 ## What it is not
 
-Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three independent implementations agree on every hash, and the spec is meant to be implementable in any language in an afternoon — an estimate made by people who already knew the format, never yet measured against anyone who did not.
+Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three independent implementations agree on every hash, and the conformance contract's wire format plus one real class is an afternoon and full base grade is a few days — measured by writing two skeletons, not estimated, and still never measured against anyone who did not already know the format.
 
 ## Spec and status
 

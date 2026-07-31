@@ -31,6 +31,7 @@ USAGE
 """
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -146,6 +147,12 @@ CHECKS = [
       "python3 impl/warrant.py probe", "--self-check"], "sigma"),
     ("conformance runner: PY/GO/RS reach their declared grades",
      ["python3", "tests/conformance_runner.py"], "go+rs"),
+    # The starter skeletons are the first thing an outside implementer runs, so
+    # they are executed here rather than trusted. The suite asserts the shape of
+    # an HONESTLY INCOMPLETE result -- canon green, the rest UNRUN, grade
+    # withheld, exit 2 -- and then corrupts their output to prove it can go red.
+    ("conformance skeletons: Go and TS pass canon and decline the rest",
+     ["python3", "tests/conformance_skeletons.py"], "go+node"),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),
 ]
@@ -155,6 +162,12 @@ NEEDS = {
               "needs impl-go/warrant-go and impl-rs built"),
     "sigma+go": (lambda: NEEDS["sigma"][0]() and NEEDS["go"][0](),
                  "needs both the Σ-GLYPH oracle and impl-go/warrant-go"),
+    # The skeletons need the toolchains themselves, not the built binaries: they
+    # are `go run` and `node` one-file programs with no build step, which is the
+    # property that makes them a starting point rather than a project.
+    "go+node": (lambda: shutil.which("go") and shutil.which("node"),
+                "needs the go and node toolchains on PATH (the skeletons are "
+                "run, not compiled)"),
     "go": (lambda: GO.is_file(),
            "impl-go/warrant-go not built  ->  (cd impl-go && go build -o warrant-go .)"),
     "rs": (lambda: RS.is_file(),
