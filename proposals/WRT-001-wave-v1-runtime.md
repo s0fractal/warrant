@@ -4,6 +4,21 @@
 
 **Origin:** ADR-008 needs to cite a prior decision as *precedent* with a machine-checkable claim "decision X's projected wave coheres with query Q, under jurisdiction J's effective wave." `ski@v1` cannot express this: it evaluates a Book I SigmaNode graph and cannot parse a Book III JCS assertion, call Book II `wave()`/`LUT_COS`, or bind body-level evidence to a fact inside the term. So ADR-008 requires a **new Warrant check runtime**. The rev-1..7 gate history (in `sigma-glyph/reviews/`) established that this is a Warrant-level contract — not a string added to `RUNTIMES` — because it changes validation, severity, tunnel expansion, novelty fingerprinting, and future budget.
 
+**§8 gate record (what it passed and what it does not claim).** §8 was gated by
+Codex on 2026-07-27 (`reviews/2026-07-codex-wrt001-budget-spec-gate.md`) —
+verdict **AMEND**, five P1 and one P2. Three P1s are answered in the text below
+(the circular bootstrap, the bounded-read arithmetic, unmetered Book III
+selection). One P1 was **accepted rather than answered**: §8 is labelled a DRAFT
+*framework* precisely because the reviewer was right that an exact
+cross-implementation cost function cannot be written before the metered set is
+stable. The P2 and one further seam found on re-reading (the size-source
+paragraph in §8) were closed on 2026-07-31 **without a second gate**. The
+remaining P1 was an implementation finding, not a §8 finding, and is fixed on
+`master` — reproduced, with a control, in
+`reviews/2026-07-codex-wrt001-budget-spec-gate-response.md`. **No independent
+gate has run on the post-AMEND text**; §8 has not been re-gated, nothing here is
+adopted, and `0.2+sigma-wave.1` remains unregistered.
+
 **Reference prototype:** `sigma-glyph/examples/resonant_precedent_join_probe.py` — a hermetic fixture (real signed lineage, synthetic trust config, settlement-derived context) demonstrating the runtime rules against this repository's `_settlement_context`, `verify_store`, and `select`. It is a **wrapper prototype**: it does not implement the real single-context/one-reporter path (§3), R1, §7, or a governed profile anchor, and R0 is live-head (not the R1 checkpoint). Adopt after ≥3-family review and a real implementation gate, per the Decision Process.
 
 ---
@@ -245,38 +260,98 @@ identifier length). Exceeding either is `unverified` ("selection bound exceeded"
 not a silent truncation. These are governed profile constants, frozen with the
 exact trace after item 2.
 
-**Effective ceiling & exhaustion.** The ceiling is
-`min(reason.budget, WARRANT_WAVE_MAX_COST)`, where the latter is a local operator
-cap (env-configurable, pinned default so impls agree by default — mirrors
-`SKI_REEXEC_MAX_ATP`). If `reason.budget > WARRANT_WAVE_MAX_COST` the reason is
-`unverified` ("budget exceeds re-execution cap"), `cost` unspent. The meter
-charges **before** each action and stops the instant an action is unaffordable —
-it never performs work it cannot pay for and then notices afterward. `unverified`
-is ERR for a settlement-active citation (§5), exactly as an unexecutable `ski@v1`
-reason.
+**Ceiling, refusal, and what is portable.** These are two different rules and
+merging them would let a local setting masquerade as semantics. SPEC §3.1 already
+separates them for `ski@v1`; `wave@v1` MUST mirror it:
 
-**Bounded read (anti-meter DoS — Book I ADR-001 discipline).** A blob resolution
-is charged in two steps so nothing over-ceiling is ever materialized:
-1. Charge the resolution `+1` first. If `remaining = ceiling − cost < 1` **before**
-   this charge → exhausted, no read.
-2. Let `r = remaining` after the resolution charge (`= ceiling − cost`). Read **at
-   most `r` bytes**. If the blob is not fully consumed within `r` bytes it is
-   oversize → exhausted **without materializing the whole blob**. A read truncated
-   at `r` cannot pass digest authentication, so an over-budget blob is exhausted,
-   not authenticated.
+- **Portable:** the ceiling is `reason.budget`, and the cost function, the
+  exhaustion boundary and the verdict are functions of the content-addressed
+  inputs alone. Two verifiers that both **execute** must agree exactly.
+- **Local policy:** `WARRANT_WAVE_MAX_COST` is verifier *willingness*
+  (env-configurable, pinned default so implementations agree by default — mirrors
+  `SKI_REEXEC_MAX_ATP`). A verifier MAY refuse a reason whose `reason.budget`
+  exceeds its cap, and MUST then report `unverified` ("budget exceeds
+  re-execution cap") with `cost` unspent — never `pass`/`fail`, never a silent
+  skip. **A refusal is not a verdict.** Two differently-configured verifiers MAY
+  disagree on whether a given over-budget reason was re-executed; that divergence
+  is a deliberate local-policy choice, not a schema split.
+
+There is deliberately **no `min(reason.budget, cap)` ceiling**: an over-cap reason
+is refused, not silently metered down, because a silently lowered ceiling would
+make the exhaustion boundary — and therefore the verdict — depend on the
+environment. The meter charges **before** each action and stops the instant an
+action is unaffordable: it never performs work it cannot pay for and then notices
+afterward. `unverified` is ERR for a settlement-active citation (§5), exactly as
+an unexecutable `ski@v1` reason.
+
+**Bounded read (anti-meter DoS — the Book I size-priced-ATP discipline).** A blob
+costs `1 + n`. Let `R = ceiling − cost` measured **before** anything is charged
+for this resolution; the blob is affordable exactly when `n ≤ R − 1`.
+
+1. If `R < 1` → exhausted; no read, nothing resolved.
+2. Otherwise read **at most `R` bytes**, from a single handle.
+   - **Fewer than `R` bytes** (the blob ended) ⇒ `n ≤ R − 1` ⇒ `1 + n ≤ R`: the
+     blob is affordable; charge `1 + n`.
+   - **Exactly `R` bytes** ⇒ `n ≥ R` ⇒ `1 + n > R`: the blob is already
+     unaffordable ⇒ exhausted, nothing charged, nothing retained. The `R`-th byte
+     is a **sentinel** that decides the boundary; it is never payload and never
+     charged.
+
+Nothing beyond `R = ceiling − cost` bytes is ever materialized, so the ceiling
+bounds materialization and not merely the meter — while the exactly-affordable
+blob (`n = R − 1`) still executes. A read truncated at `R` cannot pass digest
+authentication, so an over-budget blob is exhausted, not authenticated.
+
+*(An earlier revision of this section charged the resolution `+1` first and then
+read `ceiling − cost = R − 1` bytes. That is one byte tighter and cannot decide
+the boundary: a full `R − 1`-byte read is consistent both with an
+exactly-affordable blob and with an oversize one, so it needs a second
+observation — either the sentinel it had just removed, or a metadata probe, which
+the next paragraph forbids.)*
 
 **The size source must not itself be a seam.** Detecting "oversize" MUST NOT
 depend on a separate `stat()` read: a `stat()`-then-`read()` shape is a
-compositional countervector (a concurrent writer swaps a small file for a large
+compositional countervector — a concurrent writer swaps a small file for a large
 one between the two calls, so the read materializes past the ceiling before the
-digest check runs — sigma-glyph `docs/compositional-countervectors.md` §5.2). The
-authoritative bound is the **CAS-committed blob length**, which is bound to the
-immutable digest identity (the file named by hash `h` cannot change its authentic
-content without ceasing to be `h`), so a store that indexes length by digest
-checks `length ≤ r` with no read/stat race. A bare-filesystem prototype without
-such an index approximates by reading `≤ r` bytes from a **single handle** (never
-a stat/read pair) and treating any content beyond `r` as oversize — materializing
-`O(r)`, never the whole blob and never via a race.
+digest check runs (sigma-glyph `docs/compositional-countervectors.md` §5.2).
+
+**The normative bound is the read itself.** The single-handle bounded read above
+is race-free *by construction*: there is no second observation for a concurrent
+writer to get between, and it holds over a store the verifier does not trust —
+which is the entire premise of re-running a stranger's citation.
+
+A CAS that indexes blob length by digest MAY consult that index to fail fast
+before opening a handle, and generally should, because it is cheaper. But the
+index is **not** authoritative and MUST NOT authorize reading beyond `R`. Content
+addressing binds a digest to its *authentic content*; it says nothing about what
+an index, a directory entry or an inode currently asserts about the bytes stored
+under that name. A length column is a claim by the store, and the attacker this
+rule exists for — one who can swap the bytes under a hash — can generally also
+write the length describing the file it replaced, or leave a stale one. Treating
+the index as the bound relocates the seam from the `(stat, read)` pair to the
+`(index, read)` pair instead of closing it. An earlier revision of this section
+had this inverted, naming the CAS length authoritative and the bounded read a
+prototype approximation; the bounded read is the stronger of the two.
+
+**What this meter does NOT bound (non-claims).** The comparison to `ski@v1` that
+opens §8 is one-sided and MUST NOT be read as parity:
+
+- **Peak memory is not bounded.** ATP bounds work *and* peak memory because Book I
+  prices by term size (`size − 1 ≤ spent`), so the bound is a theorem about the
+  reduction machine. `wave@v1`'s cost is an enumerated tariff over events. It
+  bounds *charged work*; the only memory it bounds is bytes materialized through
+  the CAS accessor. The candidate set, the record snapshot and the settlement
+  context are charged `+1` per record, not per byte.
+- **Work before dispatch is outside the ceiling.** `verify_store` loads and
+  snapshots the store before any reason is dispatched (Deferred item 0), so work
+  proportional to the store's size *precedes* the meter. The budget bounds a
+  citation's re-execution, not the verification needed to reach it.
+- **A `cost` integer is not portable yet.** Until the event trace is frozen (item
+  2), two conforming implementations may agree on the verdict and disagree on
+  `cost`. §8 therefore supports a *bound* — enough to make re-execution safe — and
+  not a *number*. Anything that needs the number (usage metering, billing,
+  quoting a price before execution) is **not** supported by §8 as written and MUST
+  NOT be claimed from it.
 
 **Determinism / parity (DEFERRED to post-item-2).** `cost` is intended to be a
 pure integer function of the content-addressed inputs and a fixed traversal
