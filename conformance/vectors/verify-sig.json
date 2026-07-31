@@ -1,0 +1,401 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "verify-sig",
+  "grade": "base",
+  "source": "examples/signature-vectors.json + examples/conformance-negatives.json",
+  "note": "24 of the 28 vectors here are MUST-NOT-VERIFY. A verifier that returns true unconditionally passes the other four.",
+  "vectors": [
+    {
+      "id": "verify-sig/accept-00",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/propose.warrant.json: the committed signature by agent-a@vendor1",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "36bf44a04ecad6f5d46379acedbef86322a4b3cd715b87119d57c0f6add2f70c4701e0dd2dd890e58fcf6b053f24c148c4c970b1eb36bb3bcd0591a0ed949002"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/accept-01",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/reject.warrant.json: the committed signature by agent-b@vendor2",
+      "input": {
+        "warrant_id": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "46571f4f6d7de488dc20fa40ebddec5a81ca406516390d95a45ddd10ed6d816bcc81098a3dcd7e4acb0285d548cda7f8de6c0b9c99fe4ee32e951ef44f23f80f"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/accept-02",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/accept.warrant.json: the committed signature by agent-b@vendor2",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "db19ae73113791a9482f94b04aaacf6041c424241f66804841ef4b81bd5209ad618efb7a62857d15f1b64b447a4e6d5639b247e5270bf17086a5a87fe4346703"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/accept-03",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/ski/accept-ski.warrant.json: the committed signature by agent-a@vendor1",
+      "input": {
+        "warrant_id": "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "18a77b15ff36ea817be796cfe57dafc87517667d03c999c010cddaacf85fb60509ac24340b696fa7d603acb310d2861883511cd09c6803bae55f5b323fe2fc03"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/reject-00",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/propose.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "9d37f0e7cd3dcbd9de5d34dcf23e06c1916498f007c7e6937138fb9ea6781b7e3922842b03e49322140fb5f282a0901f0dd09bf96ad2e9551e6f4ff1cfe59b03"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-01",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/reject.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "779a4df46b84727d52b1e52c49875eb7a4bc326fffec575ee9c0b5ef3a594d920fcbc4e955f98b1a05a872d97dd1ac13fce99dbccd482c808f193c3eeb4d210d"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-02",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/accept.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "c72e16f18452287e0c52dd3c85fd8bf0d901b734a1c441cdbe13afbab590b0955c37866569adf81d0bb14aa25140b9b59b8d4e109fff364a9645512591fd0005"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-03",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/ski/accept-ski.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "cfa95ca56e73cf5f9dac9a87c8901912ee7298069f6699011a86ad0903edafbcca144ac249b4ece59f60ee07f6787098c012b39b45a35ffc24f29567abdbc20c"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-04",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator and digest concatenated in the WRONG ORDER",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "deb3aefdf0d701fe733505b59e49daca9a868d839593f2985f318ebf2b4d8ab7cdb63da15af4b01b5abcb39b02f752b1462d1536e4090da95effeca4a144eb05"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-05",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator followed by the WarrantID's ASCII HEX, not its 32 bytes",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "dd8c588d751fed264dde21a6f91c32644f3aaff3b2a55fb208c7726135102c5c4843e4355b7e26ee927fe5af5a963242468a7fde64db6f8372a5618cc72ed409"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-06",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator without its trailing colon",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "25c5134615e4b5e44b422f5d00dc22aef62bd1f6eefb2f629d835d060480471b028eeadb83509dddcfb733406385bfbc31cbdd8105bb244db2dc325a2a355e09"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-07",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator only, no WarrantID",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "a8b1bfb2f205a67b7279758bddf4f9fa9873eb94486efbfa5279f289c52f1a8a8de3b5307dd02565b228499ba25f2a05431a5a93e54e9ee90b39684754e83b00"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-08",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: a v2 separator that does not exist yet",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "e5d3f4ee072e41388778495a2033817000a6e2b93601611bcf18a95fb234ad790466a34bb32d9600e57fac6b09ba3f4516e8c4170073fe7801fdced276059c04"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-09",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: CROSS-PROTOCOL REPLAY: a signature over the bare SHA-256 digest of unrelated content, offered as a Warrant signature for the record whose WarrantID equals that digest. A pre-0.6.0 verifier ACCEPTED this (DEC-001 \u00a73); rejecting it is the whole point of \u00a75's domain separator.",
+      "input": {
+        "warrant_id": "4051f4523cdb1b91a9c1e7392c8bf65497088e3c1f01c6cebfbd688d3deb2e2e",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "03705b1001776fb15e23ea310d54404d957b0f801c3ab49fe57f2d55e72f63c150850ba865222c32c0a6b9ee77b200bd1117a667e40f8368ea46c609a2584a03"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-00",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-01",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0100000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0100000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-02",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0000000000000000000000000000000000000000000000000000000000000080",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-03",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key ecffffffffffffff\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-04",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key c7176a703d4dd84f\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-05",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 26e8958fc2b227b0\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-06",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 26e8958fc2b227b0\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-07",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key c7176a703d4dd84f\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-08",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0100000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0100000000000000000000000000000000000000000000000000000000000080",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-09",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key ecffffffffffffff\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-10",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key ffffffffffffffff\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-11",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 00\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "00",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-12",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "000000000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-13",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "00000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "tag": "warrant.conformance-pack@v1",
+  "pack_version": "1.0.0",
+  "protocol": "warrant-conformance/1",
+  "contract": "CONTRACT.md",
+  "spec": "SPEC.md \u2014 Warrant 0.6.0 (sections \u00a72 \u00a73 \u00a74 \u00a75 \u00a76 \u00a78)",
+  "grades": {
+    "base": [
+      "canon",
+      "validate",
+      "blob-hash",
+      "sig-message",
+      "verify-sig",
+      "parse",
+      "verify-store"
+    ],
+    "settlement": [
+      "canon",
+      "validate",
+      "blob-hash",
+      "sig-message",
+      "verify-sig",
+      "parse",
+      "verify-store",
+      "ski-run"
+    ]
+  },
+  "files": [
+    {
+      "class": "canon",
+      "grade": "base",
+      "file": "canon.json",
+      "vectors": 51
+    },
+    {
+      "class": "blob-hash",
+      "grade": "base",
+      "file": "blob-hash.json",
+      "vectors": 4
+    },
+    {
+      "class": "validate",
+      "grade": "base",
+      "file": "validate.json",
+      "vectors": 16
+    },
+    {
+      "class": "sig-message",
+      "grade": "base",
+      "file": "sig-message.json",
+      "vectors": 4
+    },
+    {
+      "class": "verify-sig",
+      "grade": "base",
+      "file": "verify-sig.json",
+      "vectors": 28
+    },
+    {
+      "class": "parse",
+      "grade": "base",
+      "file": "parse.json",
+      "vectors": 20
+    },
+    {
+      "class": "verify-store",
+      "grade": "base",
+      "file": "verify-store.json",
+      "vectors": 6
+    },
+    {
+      "class": "verify-store",
+      "grade": "settlement",
+      "file": "verify-store-settlement.json",
+      "vectors": 3
+    },
+    {
+      "class": "ski-run",
+      "grade": "settlement",
+      "file": "ski-run.json",
+      "vectors": 1
+    }
+  ],
+  "total_vectors": 133
+}
