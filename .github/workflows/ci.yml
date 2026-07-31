@@ -33,10 +33,14 @@ jobs:
     # a label, never as the authority — the SHA is what runs. `cryptography` is
     # bounded, and CI runs in strict mode so a skipped ski@v1 case fails.
     #
-    # The cost is real and unautomated: a pinned action stops receiving patch
-    # updates, including security ones, until a human bumps the SHA by hand.
-    # Nothing in this repo watches for those. Bump deliberately, the same way
-    # SIGMA_PIN above is bumped.
+    # The cost is real and now half-watched: `.github/dependabot.yml` opens a
+    # weekly pull request when a pinned action has a newer release, rewriting
+    # both the SHA and the trailing comment. It notifies; it does not review and
+    # it does not merge, so the bump is still deliberate and still a human's —
+    # the same way SIGMA_PIN above is bumped. SIGMA_PIN itself is NOT in that
+    # config's scope and does not want to be: it is a verified-compatible
+    # baseline, not a version to chase, and x1-cross-repo.yml is already its
+    # canary.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
