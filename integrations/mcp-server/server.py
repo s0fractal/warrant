@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 s0fractal. See LICENSE at the repository root.
+#
+# This header is on this file and not on its siblings for one reason: this file
+# is meant to be copied. The README tells you to point an MCP host straight at
+# it, so it travels away from the LICENSE that covers it more readily than
+# anything else in the repository. It does not establish a repo-wide convention.
 """warrant MCP server — file and verify signed decision records from any MCP client.
 
 Point an MCP host (Claude Code, Claude Desktop, any agent runtime) at this
