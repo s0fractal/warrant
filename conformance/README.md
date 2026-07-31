@@ -47,10 +47,28 @@ answers on purpose, and asserts that the runner catches each one:
 | `false-unsupported` | claims a grade while quietly declining whole classes |
 | `crash` | exits nonzero instead of answering |
 
-If any line says `MISSED`, the runner is broken and its green runs mean nothing.
+Each mutation ends in one of four states, and only two of them are bad:
+
+| state | meaning |
+| --- | --- |
+| `DETECTED` | it corrupted at least one answer, and vectors that had passed went bad. This is the proof. |
+| `INAPPLICABLE` | it corrupted nothing, because the classes it changes are classes you have not written yet. Nothing is proved and nothing is claimed. |
+| `MISSED` | it corrupted an answer and the runner did not react. **The runner is broken** and its green runs mean nothing. |
+| `INERT` | it corrupted nothing about a class you *do* implement. The proxy is broken; same severity as `MISSED`. |
+
+`INAPPLICABLE` is the normal state on your first afternoon: a mutation breaks an
+*answer*, and a class you have not implemented gives no answer to break. The
+summary line says how many of the four actually applied, so "the runner detected
+everything it could" is never mistaken for "the runner was fully exercised" —
+and when *nothing* could be applied the run is reported `INCONCLUSIVE` and exits
+nonzero, because a self-check that tested nothing is not a self-check that
+passed.
+
 A gate nobody has watched fail is not yet a gate — this project has shipped that
 mistake more than once, which is why the negative control ships in the box rather
-than living in our CI.
+than living in our CI. The corollary is that it must still be able to fail: an
+applied mutation that slips through is a loud, nonzero failure, and no amount of
+`INAPPLICABLE` softens it.
 
 ## Reading the report
 
@@ -93,6 +111,23 @@ declare which you claim; the runner tests exactly that and reports the grade
 Claiming base and reaching base is complete and honest. One of the three
 reference implementations (`impl-rs`) is deliberately base-only, and this pack
 reports it as reaching base rather than as failing settlement.
+
+**`GRADE ACHIEVED: none` is two different situations**, and the report says which:
+
+* `WITHHELD BECAUSE INCOMPLETE` — nothing failed. You answered everything you
+  have written and declined the rest, so there is nothing to fix and there are no
+  failures to read. The report then lists the classes you have not written yet,
+  cheapest first, with one line each on what they cost. This is what a first run
+  looks like, and there is no shame in it: the worked minimum in
+  [`CONTRACT.md`](CONTRACT.md) §8 implements *nothing* and still produces an
+  honest report.
+* `WITHHELD BECAUSE WRONG` — you answered and disagreed with a pinned
+  expectation, or violated the contract. Those vectors are listed above the
+  verdict, and they are the ones to read.
+
+The ordering behind "cheapest first" is advisory and it is in the pack:
+`vectors/index.json` carries an `implementation_order` you can read and disagree
+with. Nothing normative depends on it.
 
 ## Exit statuses
 
@@ -160,8 +195,12 @@ A tarball attached to releases is one `curl`, one `tar`, and one command, with
 the integrity of the vectors checkable against a hash published in the spec.
 Measured end to end from a clean directory with no repository present:
 **0.6 s** to download and extract (32 KB), then **~7 s** for a full settlement
-run against a Python candidate, and **~35 s** for `--self-check`, which runs the
-suite five more times through the mutation proxy.
+run against a Python candidate, and **~48 s** for `--self-check`, which runs the
+vector suite five times: once unmutated, to establish what this candidate does
+before anything is broken to it, then once per mutation. The unmutated baseline
+is what lets the self-check tell a defect it introduced from one your candidate
+already had; it is also why that figure grew from the ~35 s an earlier revision
+of this file measured.
 
 Those seconds are your program's start-up cost, paid once per vector: the runner
 spawns the candidate 133 times rather than holding a session open, because a

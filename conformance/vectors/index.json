@@ -25,6 +25,40 @@
       "ski-run"
     ]
   },
+  "implementation_order": [
+    {
+      "class": "canon",
+      "needs": "canonical JSON bytes + SHA-256; the foundation"
+    },
+    {
+      "class": "blob-hash",
+      "needs": "SHA-256 over the raw bytes; no JSON, no crypto"
+    },
+    {
+      "class": "sig-message",
+      "needs": "15 ASCII bytes + the hex-decoded WarrantID"
+    },
+    {
+      "class": "verify-sig",
+      "needs": "one Ed25519 verify + the small-order key test"
+    },
+    {
+      "class": "parse",
+      "needs": "is this I-JSON? your reader + RFC 7493's rules"
+    },
+    {
+      "class": "validate",
+      "needs": "the SPEC \u00a72/\u00a73 schema; 12 MUST-REJECTs list it"
+    },
+    {
+      "class": "verify-store",
+      "needs": "walk a store (\u00a76); needs the four above first"
+    },
+    {
+      "class": "ski-run",
+      "needs": "settlement: a metered ski@v1 evaluator (\u00a73.1)"
+    }
+  ],
   "files": [
     {
       "class": "canon",

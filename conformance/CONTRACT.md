@@ -418,3 +418,10 @@ print(json.dumps(out))
 That scores every vector `UNRUN`, achieves no grade, and exits 2 — which is the
 correct description of it. Fill in one class at a time and watch the grade line
 move.
+
+The runner will tell you which class to fill in next: with no failures and some
+vectors `UNRUN` it reports `WITHHELD BECAUSE INCOMPLETE`, states that everything
+you answered was right, and names the cheapest classes you have not written, one
+line each. That ordering is advisory and lives in the pack — `implementation_order`
+in `vectors/index.json` — so you can read it and disagree with it. Nothing
+normative depends on it, and it never changes what is asked of you.

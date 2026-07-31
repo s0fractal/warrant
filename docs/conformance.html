@@ -179,8 +179,17 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   runner catches each one. Any <code>MISSED</code> line means the runner is broken
   and its green runs mean nothing. A gate nobody has watched fail is not yet a
   gate; this project has shipped that mistake more than once, which is why the
-  negative control is in the box rather than in our CI. Budget about 35 seconds
-  for it — it runs the whole suite five more times, once per mutation.</p>
+  negative control is in the box rather than in our CI. Budget about 48 seconds
+  for it — it runs the whole suite five times, once unmutated as a baseline and
+  then once per mutation.</p>
+
+  <p>On your first afternoon most of those mutations will report
+  <code>INAPPLICABLE</code> rather than <code>DETECTED</code>, and that is the
+  correct answer: a mutation corrupts an <em>answer</em>, and a class you have not
+  written yet gives it nothing to corrupt. The summary says how many of the four
+  actually applied, so a partial proof is never dressed up as a complete one —
+  and if none of them could be applied, the run is <code>INCONCLUSIVE</code> and
+  exits nonzero rather than green.</p>
 
   <p>The vectors themselves are checkable. Every file is listed in
   <code>MANIFEST.sha256</code>, and <code>python3 run.py --verify-pack</code>

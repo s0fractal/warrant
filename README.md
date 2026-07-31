@@ -253,7 +253,11 @@ Your side of it is one page (`conformance/CONTRACT.md`): read one JSON request
 from stdin, print one JSON response, exit 0 whenever you produced an answer. 58
 of the 133 vectors are MUST-REJECT, so an implementation that accepts everything
 fails loudly rather than scoring well; `--self-check` breaks *your* program on
-purpose and fails if the runner does not notice. Grades are reported, not
+purpose and fails if the runner does not notice — and reports a break that had
+nothing to corrupt as `INAPPLICABLE` rather than as its own failure, because on
+day one most of your classes do not exist yet. A partial implementation is told
+it is incomplete and which class is cheapest to write next; it is never told to
+go and read failures that are not there. Grades are reported, not
 pass/fail — `impl-rs` claims and reaches SPEC §6 base grade, which is a complete
 result, not a shortfall. The pack ships as a release tarball pinned by hash in
 SPEC §8.6, and `TRADEMARK.md` conditions the name on it.
