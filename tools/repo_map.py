@@ -42,7 +42,44 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SIBLING = ROOT.parent / ("sigma-glyph" if ROOT.name == "warrant" else "warrant")
+
+
+def _sibling():
+    """Where the other repository lives, without asking what this one is called.
+
+    This used to be `ROOT.parent / ("sigma-glyph" if ROOT.name == "warrant"
+    else "warrant")` — which resolved correctly only when the checkout
+    directory was literally named `warrant`. Run from a worktree named
+    anything else, `--regen` silently rewrote every sigma-glyph row to
+    "resolves nowhere" and wrote a MAP.md that looked authoritative and was
+    not. A check whose output depends on the name of the directory it runs in
+    is a check that reports the filesystem, not the repository.
+
+    Identity now comes from the git remote, with the old positional guess kept
+    only as a last resort and never as the thing that decides.
+    """
+    import subprocess as _sp
+    here = "warrant"
+    try:
+        url = _sp.run(["git", "-C", str(ROOT), "remote", "get-url", "origin"],
+                      capture_output=True, text=True, timeout=5).stdout.strip()
+        if url:
+            name = url.rstrip("/").rsplit("/", 1)[-1]
+            here = name[:-4] if name.endswith(".git") else name
+    except Exception:
+        pass
+    want = "sigma-glyph" if here == "warrant" else "warrant"
+    # A worktree lives outside the checkout tree, so the sibling is not
+    # necessarily beside it. Try the ordinary layout, then the real checkout
+    # the worktree belongs to.
+    for base in (ROOT.parent, Path.home() / "Projects"):
+        cand = base / want
+        if (cand / ".git").exists():
+            return cand
+    return ROOT.parent / want
+
+
+SIBLING = _sibling()
 
 # Identifiers this project cites as if the reader knows where they live.
 ID_RE = re.compile(r"\b(ADR-\d{3}|WRT-\d{3}|GOV-\d{3}|Book\s+(?:I{1,3}))\b")
