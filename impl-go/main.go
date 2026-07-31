@@ -167,6 +167,11 @@ func main() {
 		if !selftest(dir) {
 			os.Exit(1)
 		}
+	case "probe":
+		// probe: answer ONE warrant-conformance/1 request read from stdin.
+		// This is the surface an EXTERNAL conformance runner drives; see
+		// conformance/CONTRACT.md.
+		os.Exit(probeMain())
 	case "canon":
 		// canon <body.json>: print {warrant_id, canon_hex} for a bare body.
 		// Exists so a differential harness can compare canonicalization across
@@ -194,7 +199,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [--settlement] [--trust-config file] [--genesis wid] [--json] [--store-mode] [dir] | settle <store> <settling-wid> <candidate-body.json> | selftest [examples_dir]")
+	fmt.Fprintln(os.Stderr, "usage: warrant-go conformance [examples_dir] | sigma-conformance [vectors.json] | verify [--settlement] [--trust-config file] [--genesis wid] [--json] [--store-mode] [dir] | settle <store> <settling-wid> <candidate-body.json> | selftest [examples_dir] | probe (one warrant-conformance/1 request on stdin)")
 }
 
 func readJSON(path string) (map[string]any, error) {

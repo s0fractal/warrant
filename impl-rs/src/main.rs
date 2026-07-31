@@ -7,6 +7,7 @@
 //! Ed25519 signature verification is a separate increment.
 
 mod ed25519;
+mod probe;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -821,6 +822,24 @@ fn list_dir(path: &str) -> Vec<String> {
 }
 
 fn cmd_verify(store: &str) -> ExitCode {
+    match verify_counts(store, false) {
+        None => {
+            eprintln!("no store at {store} (run: warrant init)");
+            ExitCode::from(1)
+        }
+        Some((errs, _)) if errs > 0 => ExitCode::from(1),
+        Some(_) => ExitCode::SUCCESS,
+    }
+}
+
+/// SPEC §6 base-grade store verification. Returns (errors, warnings), or None
+/// when there is no store to verify.
+///
+/// Split out of `cmd_verify` so the conformance probe can report the same counts
+/// the CLI prints. A probe that re-derived them would be a second verifier, and
+/// a conformance result from a code path the product does not use is worth
+/// nothing.
+fn verify_counts(store: &str, quiet: bool) -> Option<(usize, usize)> {
     let records_dir = format!("{store}/records");
     let blobs_dir = format!("{store}/blobs");
     if !Path::new(&records_dir).is_dir() {
@@ -828,8 +847,7 @@ fn cmd_verify(store: &str) -> ExitCode {
         // non-zero status, with no summary line. Printing "0 records, 1 errors"
         // here made this implementation the only one to summarise a store that
         // does not exist, which reads as a verification that ran.
-        eprintln!("no store at {store} (run: warrant init)");
-        return ExitCode::from(1);
+        return None;
     }
 
     // Blob names are addresses. A file whose bytes hash elsewhere is different
@@ -861,7 +879,10 @@ fn cmd_verify(store: &str) -> ExitCode {
     }
     let known: BTreeSet<String> = recs.iter().map(|r| r.wid.clone()).collect();
 
-    let mut out = |lvl: &str, wid: &str, msg: String| {
+    let out = |lvl: &str, wid: &str, msg: String| {
+        if quiet {
+            return;
+        }
         let short: String = wid.chars().take(12).collect();
         println!("{lvl} {short}  {msg}");
     };
@@ -1080,9 +1101,11 @@ fn cmd_verify(store: &str) -> ExitCode {
         }
     }
 
-    println!("\nverify: {} records, {} errors, {} warnings",
-             recs.len() + unloadable.len(), errs, warns);
-    if errs > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS }
+    if !quiet {
+        println!("\nverify: {} records, {} errors, {} warnings",
+                 recs.len() + unloadable.len(), errs, warns);
+    }
+    Some((errs, warns))
 }
 
 fn main() -> ExitCode {
@@ -1135,6 +1158,9 @@ fn main() -> ExitCode {
             println!("{ok}");
             ExitCode::SUCCESS
         }
+        // One warrant-conformance/1 request on stdin, one response on stdout.
+        // See conformance/CONTRACT.md.
+        Some("probe") => probe::main(),
         Some("edtest") => {
             if ed25519::selftest() {
                 println!("ED25519 SELFTEST: ALL PASS");
@@ -1146,7 +1172,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!("usage: warrant-rs canon <body.json> | conformance [examples_dir] \
-| verify <store>  (verify is SPEC s6 BASE grade: no settlement, no key state)");
+| verify <store> | probe  (verify is SPEC s6 BASE grade: no settlement, no key state)");
             ExitCode::from(2)
         }
     }
