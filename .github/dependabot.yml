@@ -1,0 +1,62 @@
+# Freshness watch for the SHA-pinned actions.
+#
+# Every `uses:` in this repo is pinned to a full commit SHA with the version in
+# a trailing comment. That was the right call for jobs holding `id-token: write`
+# — a mutable ref hands the decision to whoever can move the tag — but it traded
+# automatic patch updates for reproducibility, and until this file existed
+# NOTHING watched the result. A pinned action that quietly stops receiving
+# security fixes is worse than the mutable ref it replaced.
+#
+# WHAT THIS AUTOMATES: Dependabot resolves each pinned SHA to its tag, notices a
+# newer release, and OPENS A PULL REQUEST rewriting the SHA and the trailing
+# `# vX.Y.Z` comment. Verified against dependabot-core: the SHA alone is the
+# source of truth (`file_parser.rb` calls `version_for_pinned_sha`); the comment
+# is rewritten only when it already ENDS WITH the resolved old version, which is
+# the form every pin in this repo uses. Announced 2022-10-31 in the GitHub
+# changelog; it is NOT described on any current docs page.
+#
+# WHAT THIS DOES NOT AUTOMATE — and this is the whole caveat:
+#
+#   * It does not review. It does not merge. A Dependabot PR is a notification
+#     with a diff attached, nothing more.
+#   * Merging one unread is its own hazard, larger here than in most repos:
+#     `publish.yml` holds `id-token: write` and mints an OIDC token PyPI accepts
+#     as this repository's identity. Anything running in that job can use it. An
+#     unreviewed bump of `pypa/gh-action-pypi-publish` is a supply-chain change
+#     to the job that publishes this package. Read the upstream diff between the
+#     old and new SHA before merging, every time.
+#   * It does not verify that the new SHA is the commit the new tag points at,
+#     nor that the tag was not moved. Dependabot trusts the upstream ref
+#     advertisement; so, transitively, does this repo.
+#   * Known upstream gap (dependabot-core#14716, open): when the currently
+#     pinned SHA has no tag pointing directly at it, Dependabot can advance to
+#     the BRANCH HEAD rather than the next release, and leaves the comment
+#     stale. Every SHA here was resolved from a release tag, so this should not
+#     fire — but "should not" is not "cannot", and the comment is a label while
+#     the SHA is what runs.
+#
+# `open-pull-requests-limit` is set ABOVE the number of distinct actions on
+# purpose. It defaults to 5 and then SILENTLY stops opening PRs — a freshness
+# mechanism that caps itself without saying so is the failure this file exists
+# to end.
+#
+# Deliberately NOT grouped into one PR. Grouping would bundle a
+# `pypa/gh-action-pypi-publish` bump — the OIDC-privileged one — into the same
+# diff as an `actions/checkout` bump, which invites one rubber stamp for both.
+# One action per PR costs more clicks and makes the privileged bump arrive
+# alone, where it has to be looked at.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    # For github-actions this means `.github/workflows/*.y[a]ml` plus a root
+    # `action.yml`/`action.yaml`; it is not a path into `.github`. The root
+    # `action.yml` here — the published composite action — is therefore in
+    # scope. It has no `uses:` steps today, only `shell: bash` ones, so there is
+    # nothing there to bump; the coverage matters the day one is added, which is
+    # exactly the day nobody would remember to widen this config.
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "ci"
