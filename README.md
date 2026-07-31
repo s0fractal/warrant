@@ -50,15 +50,18 @@ A rejection is a first-class record, not an absence. This is the part that matte
 pipx install warrant-verify   # or: pip install warrant-verify
 ```
 
-Installs the `warrant` verifier and the `warrant-mcp` sealer. `ski@v1` reasons
-re-run **offline** — the Σ-GLYPH Book I check engine ships inside the package, so
-no separate clone is needed. (From a checkout: `git clone … && pip install .`.)
+Installs four commands: the `warrant` verifier, the `warrant-mcp` sealing proxy,
+the `warrant-mcp-server` MCP server, and the `warrant-anchor` Merkle batcher.
+`ski@v1` reasons re-run **offline** — the Σ-GLYPH Book I check engine ships
+inside the package, so no separate clone is needed. (From a checkout:
+`git clone … && pip install .`.)
 
-The current release is **0.7.0** (2026-07-31, tag `v0.7.0`), which is what that
-line installs; five versions are on PyPI. `CHANGELOG.md` is written through 0.6.0
-and does not yet describe 0.7.0. That it installs and runs has been checked in a
-clean venv by the maintainer — it is not a claim that anyone else has installed
-it.
+The latest release **on PyPI is 0.7.1** (2026-07-31, tag `v0.7.1`), which is what
+that line installs today; six versions are published. **This checkout is 0.8.0
+and is not released** — so `warrant-mcp-server`, which 0.8.0 adds, is not
+installable from PyPI until that release is cut. `CHANGELOG.md` is written
+through 0.6.0. That each release installs and runs has been checked in a clean
+venv by the maintainer — it is not a claim that anyone else has installed it.
 
 ```bash
 warrant init                          # .warrants/ store in your repo
@@ -191,6 +194,39 @@ The action does a **capability check, not a version check**: it asks the
 installed verifier whether it actually offers `verify --store-mode --json` and
 fails with that sentence if it does not, rather than letting you discover it as
 an argparse error three steps later.
+
+## Use it from an MCP client
+
+<!-- mcp-name: io.github.s0fractal/warrant -->
+
+The package ships an MCP server. Installing it installs the command; there is no
+clone step and no MCP SDK dependency.
+
+```bash
+warrant-mcp-server --store /abs/path/.warrants
+```
+
+That is the process an MCP host launches over stdio. Registering it with Claude
+Code is one line:
+
+```
+claude mcp add warrant -- warrant-mcp-server --store /abs/path/.warrants
+```
+
+Three tools: `warrant_file_decision` files a propose / accept / reject /
+supersede and returns the record's hash; `warrant_verify_store` returns the
+`warrant.verify-report@v0` object; `warrant_show_reason` returns a decision's
+reasons **with its `ski@v1` checks re-executed**, so the fresh verdict arrives
+beside the filed one. Details, options and the trust model:
+[`integrations/mcp-server/`](integrations/mcp-server/).
+
+**`warrant-mcp-server` is not `warrant-mcp`.** They are two programs in one
+distribution and it is worth thirty seconds to get the right one:
+`warrant-mcp` is a *sealing proxy* — it wraps somebody else's MCP server and
+seals the tool-calls passing through it from the outside
+([`integrations/mcp/`](integrations/mcp/)). `warrant-mcp-server` is a *server* —
+the agent connects to it and files its own decisions on purpose. The proxy
+requires a downstream server command after `--`; the server refuses one.
 
 ## What it is not
 
