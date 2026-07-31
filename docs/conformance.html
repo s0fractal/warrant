@@ -158,8 +158,15 @@ python3 run.py --candidate "./my-verifier probe"</pre>
 
   <p>Python 3 standard library only. No install, no configuration, no network
   after the download, and no clone of this repository. Measured end to end from an
-  empty directory with no repository present: <strong>904 ms</strong> from
-  extraction to verdict, 32 KB downloaded.</p>
+  empty directory with no repository present: <strong>0.6 s</strong> to download
+  and extract (32 KB), then <strong>~7 s</strong> for a full settlement run
+  against a Python candidate.</p>
+
+  <p>Those seconds are your program's start-up cost, paid once per vector. The
+  runner spawns your candidate 133 times rather than holding a session open,
+  because a stateless contract is one you can satisfy with a shell script — that
+  trade is worth stating rather than hiding behind a faster-looking number. A
+  compiled candidate is substantially quicker.</p>
 
   <p>Before trusting a green run, break your own program on purpose:</p>
 
@@ -172,7 +179,8 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   runner catches each one. Any <code>MISSED</code> line means the runner is broken
   and its green runs mean nothing. A gate nobody has watched fail is not yet a
   gate; this project has shipped that mistake more than once, which is why the
-  negative control is in the box rather than in our CI.</p>
+  negative control is in the box rather than in our CI. Budget about 35 seconds
+  for it — it runs the whole suite five more times, once per mutation.</p>
 
   <p>The vectors themselves are checkable. Every file is listed in
   <code>MANIFEST.sha256</code>, and <code>python3 run.py --verify-pack</code>
@@ -229,6 +237,13 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   longer, the honest conclusion is that the contract or its documentation is at
   fault — that is a bug worth reporting, and it is worth more to us than a passing
   run.</p>
+  <p class="note"><strong>The timings above are the second set.</strong> Until
+  2026-07-31 the pack's own README — and the 0.7.0 release notes — said "904 ms
+  from extraction to verdict". That measured extraction plus a trivial candidate,
+  not anyone's first real run, and it was withdrawn when someone actually ran the
+  thing before quoting it. It is a small number and it went out to the audience
+  least able to check it, which is the reason it is named here rather than
+  silently replaced.</p>
   <p class="note"><strong>The pack is not the definition of conformance.</strong>
   Reproducing the vectors is; the pack is how a third party demonstrates that they
   have. SPEC §8.6 is normative, this page is not, and where they disagree the spec

@@ -185,6 +185,8 @@ CLAIMS = [
      r"each pass all (\d+) vectors at settlement grade", "vectors"),
     (CONTRACT_PAGE, "base-grade vector total",
      r"passes the (\d+) base vectors", "base_vectors"),
+    (CONTRACT_PAGE, "vector total in the per-vector spawn cost",
+     r"spawns your candidate (\d+) times", "vectors"),
     # The landing page carries the same two numbers in its pitch to an
     # implementer. Same page, same rot, same gate.
     ("docs/index.html", "conformance vector total",
