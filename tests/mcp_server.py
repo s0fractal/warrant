@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the warrant MCP server (integrations/mcp-server/server.py).
+"""Tests for warrant-mcp-server (impl/warrant_mcp_server.py).
 
   A. protocol: initialize / tools/list over real stdio, unknown method -> -32601.
   B. filing: warrant_file_decision propose + accept-with-ski-check land in a
@@ -12,21 +12,36 @@
 
 The server is exercised the way a host uses it — a subprocess speaking
 newline-delimited JSON-RPC — never by importing server internals. The test's
-only imports from the repo are warrant.Store/ski_policy, used to COMPILE a
-ski@v1 check blob into the store (authoring tooling, not the surface under test).
+only imports are warrant.Store/ski_policy, used to COMPILE a ski@v1 check blob
+into the store (authoring tooling, not the surface under test).
 
-Run: python3 integrations/mcp-server/test_server.py   (nonzero exit on failure)
+WHY IT TAKES ARGUMENTS
+----------------------
+The default run tests this checkout. `--server-cmd` and `--impl` point the same
+suite at an INSTALLED copy instead, so the console script a stranger gets from
+`pip install warrant-verify` is exercised by the tests rather than assumed to
+behave like the file in the tree. Testing only the checkout is how a package
+ships a server nobody ever started from the package.
+
+    python3 tests/mcp_server.py                    # this checkout
+    python3 tests/mcp_server.py \
+        --server-cmd /tmp/venv/bin/warrant-mcp-server \
+        --impl /tmp/venv/lib/python3.13/site-packages   # the installed wheel
+
+Nonzero exit on failure.
 """
+import argparse
 import importlib.util
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
-SERVER = os.path.join(HERE, "server.py")
+ROOT = os.path.dirname(HERE)
+SERVER = os.path.join(ROOT, "impl", "warrant_mcp_server.py")
 
 ok = []
 
@@ -36,9 +51,19 @@ def chk(cond, label, detail=""):
     print(("OK  " if cond else "FAIL"), label, "" if cond else f"-> {detail}")
 
 
-def _load(name, relpath):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(ROOT, relpath))
+def _load(name, implroot):
+    """Load an authoring module from the artifact under test, not from the tree.
+
+    When `--impl` names a venv's site-packages this loads the INSTALLED
+    warrant.py / ski_policy.py, so the ski@v1 blob the test compiles is compiled
+    by the same code the installed server will re-execute it with. Loading the
+    checkout's copy while testing an installed server would silently make the
+    test about two different artifacts at once.
+    """
+    spec = importlib.util.spec_from_file_location(
+        name, os.path.join(implroot, f"{name}.py"))
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
@@ -91,7 +116,21 @@ class Client:
         self.proc.wait(timeout=10)
 
 
-def main():
+def main(argv=None):
+    ap = argparse.ArgumentParser(allow_abbrev=False)
+    ap.add_argument("--server-cmd",
+                    help="command that starts the server under test (e.g. an "
+                         "installed `warrant-mcp-server`). Default: this "
+                         "checkout's impl/warrant_mcp_server.py")
+    ap.add_argument("--impl", default=os.path.join(ROOT, "impl"),
+                    help="directory holding warrant.py and ski_policy.py for "
+                         "the artifact under test (default: ./impl)")
+    args = ap.parse_args(argv)
+    server_argv = (shlex.split(args.server_cmd) if args.server_cmd
+                   else [sys.executable, SERVER])
+    print(f"server under test: {' '.join(server_argv)}")
+    print(f"authoring modules: {args.impl}\n")
+
     d = tempfile.mkdtemp(prefix="warrant-mcp-server-test-")
     store = os.path.join(d, ".warrants")
     key = os.path.join(d, "agent.key")
@@ -99,8 +138,8 @@ def main():
     policy = os.path.join(d, "policy.txt")
     open(policy, "w").write("clause 1: no retroactive application\n")
 
-    c = Client([sys.executable, SERVER, "--store", store, "--key", key,
-                "--actor", "agent@test"])
+    c = Client(server_argv + ["--store", store, "--key", key,
+                              "--actor", "agent@test"])
 
     try:
         # A. protocol
@@ -141,8 +180,8 @@ def main():
             "reject without reasons -> honest CLI error", str(err))
 
         # compile a real ski@v1 predicate into the store (authoring tooling)
-        W = _load("warrant_impl", "impl/warrant.py")
-        sp = _load("ski_policy", "impl/ski_policy.py")
+        W = _load("warrant", args.impl)
+        sp = _load("ski_policy", args.impl)
         check = sp.compile_check(
             sp.And(sp.Fact("within_window", True),
                    sp.Not(sp.Fact("retroactive", False))),

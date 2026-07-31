@@ -48,7 +48,7 @@ side ("binding unverified (no keyring): key X claims actor Y").
 HOW IT TALKS TO WARRANT
 -----------------------
 Through the CLI as a subprocess, never by importing internals -- the same choice
-`integrations/mcp-server/server.py` makes and for the same reason: the bridge
+`impl/warrant_mcp_server.py` makes and for the same reason: the bridge
 then tracks exactly the released command surface, and `impl/` stays a dependency
 of nothing.
 

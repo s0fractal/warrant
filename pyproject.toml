@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "warrant-verify"
-version = "0.7.1"
+version = "0.8.0"
 description = "Verify what an AI agent decided — signed, hash-addressed decision records with reasons you can re-run on your own machine."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -29,20 +29,36 @@ Homepage = "https://github.com/s0fractal/warrant"
 Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
 "Evidence Pack format" = "https://github.com/s0fractal/warrant/blob/master/EVIDENCE-PACK.md"
 
-# Two console commands. The distribution is `warrant-verify` (the bare name
+# Four console commands. The distribution is `warrant-verify` (the bare name
 # `warrant` is taken on PyPI); the import module and the verifier CLI stay
-# `warrant`. `warrant-mcp` is the MCP sealing proxy.
+# `warrant`.
+#
+# The two MCP commands are DIFFERENT PROGRAMS and the names have to carry that:
+#   warrant-mcp         the sealing PROXY. Wraps someone else's MCP server and
+#                       seals the tool-calls passing through it. Takes the
+#                       downstream server command after `--`.
+#   warrant-mcp-server  the MCP SERVER. The agent connects to it and files its
+#                       own decisions. Takes no downstream command.
+# `warrant-mcp-server` is the name LISTINGS.md proposed before either existed as
+# a shipped command, and it is deliberately not an abbreviation of the other:
+# `allow_abbrev=False` on both parsers means neither answers to the other's
+# prefix, and `--help` on each says which one you started.
 [project.scripts]
 warrant = "warrant:main"
 warrant-mcp = "warrant_mcp:main"
+warrant-mcp-server = "warrant_mcp_server:main"
 warrant-anchor = "warrant_anchor:main"
 
 [tool.setuptools]
 # Flat modules under impl/: the reference implementation, the bundled Σ-GLYPH
 # Book I oracle (so ski@v1 reasons re-run offline, no separate clone), the MCP
-# sealing proxy, the ski@v1 policy-predicate authoring library, the WPL ->
-# ski@v1 compiler an author actually writes against, and the RFC 6962 Merkle
-# batching/anchoring tool.
-py-modules = ["warrant", "sigma_glyph", "warrant_mcp", "ski_policy",
-              "policy_lang", "warrant_anchor"]
+# sealing proxy, the MCP decision server, the ski@v1 policy-predicate authoring
+# library, the WPL -> ski@v1 compiler an author actually writes against, and the
+# RFC 6962 Merkle batching/anchoring tool.
+#
+# `package-dir = {"" = "impl"}` is why `warrant_mcp_server.py` lives in `impl/`
+# and not in `integrations/mcp-server/` where it was written: setuptools has one
+# root for the flat namespace, so a module outside `impl/` cannot ship at all.
+py-modules = ["warrant", "sigma_glyph", "warrant_mcp", "warrant_mcp_server",
+              "ski_policy", "policy_lang", "warrant_anchor"]
 package-dir = { "" = "impl" }
