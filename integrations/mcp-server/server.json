@@ -1,0 +1,13 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.s0fractal/warrant",
+  "title": "Warrant",
+  "description": "Record an agent's decisions with reasons anyone can re-execute offline — verify recomputes them.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/s0fractal/warrant",
+    "source": "github",
+    "subfolder": "integrations/mcp-server"
+  },
+  "websiteUrl": "https://github.com/s0fractal/warrant/tree/master/integrations/mcp-server"
+}

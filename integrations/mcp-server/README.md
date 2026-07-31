@@ -10,6 +10,20 @@ Standard library only, stdio transport, no MCP SDK dependency. Everything runs
 through the warrant CLI as a subprocess (never imported internals), so the
 server tracks exactly the released command surface.
 
+## Where this is listed
+
+**Nowhere, yet.** [`server.json`](server.json) is the MCP Registry manifest and
+has been validated against the registry's own `/v0/validate` endpoint, but
+nothing has been submitted anywhere. [`LISTINGS.md`](../../LISTINGS.md) has the
+directories, the entry text, and the steps that are the maintainer's.
+
+Note what the manifest does **not** contain: a `packages` block. This server is
+not shipped by the `warrant-verify` PyPI distribution — that distribution ships
+flat modules out of `impl/`, and this file is not one of them. The `warrant-mcp`
+console script is not it either: that is the sealing proxy above, a different
+program. **A clone is currently the only install path**, and the config below
+reflects that rather than pretending otherwise.
+
 ## Config
 
 Claude Code:

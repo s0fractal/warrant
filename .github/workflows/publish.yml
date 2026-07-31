@@ -14,9 +14,14 @@ name: publish
 # that ref pointed at when it was pinned; the comment is a label, the SHA is
 # what runs.
 #
-# The trade is real and nothing here automates it away: a pinned action stops
-# receiving patch and security updates until a human resolves a new SHA and
-# commits it. No bot, schedule, or Dependabot config watches these.
+# The trade is real and only half of it is automated away. `.github/dependabot.yml`
+# now watches these pins weekly and OPENS A PULL REQUEST when a newer release
+# exists — it resolves the SHA to its tag itself and rewrites the trailing
+# `# vX.Y.Z` comment to match. It does not review and it does not merge. The
+# jobs below hold `id-token: write`, so merging such a bump unread is a
+# supply-chain change to the job that publishes this package, made without
+# looking — read the upstream diff between the two SHAs first. That file lists
+# what else this does not cover.
 
 on:
   release:
