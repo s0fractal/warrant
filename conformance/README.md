@@ -149,8 +149,17 @@ Considered, and rejected:
 
 A tarball attached to releases is one `curl`, one `tar`, and one command, with
 the integrity of the vectors checkable against a hash published in the spec.
-Measured end to end from a clean directory with no repository present: **904 ms**
-from extraction to verdict, 32 KB downloaded.
+Measured end to end from a clean directory with no repository present:
+**0.6 s** to download and extract (32 KB), then **~7 s** for a full settlement
+run against a Python candidate, and **~35 s** for `--self-check`, which runs the
+suite five more times through the mutation proxy.
+
+Those seconds are your program's start-up cost, paid once per vector: the runner
+spawns the candidate 133 times rather than holding a session open, because a
+stateless contract is one you can satisfy with a shell script. A compiled
+candidate is substantially faster. An earlier draft of this file claimed "904 ms
+from extraction to verdict" — that measured extraction plus a trivial candidate,
+and was the wrong number for anyone's first real run.
 
 ## Reporting a disagreement
 
