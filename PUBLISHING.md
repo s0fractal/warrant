@@ -12,10 +12,12 @@ then every release publishes itself.
 
 ## One-time setup (you, on the web — I can't do this part)
 
-> **Already done.** `warrant-verify` is live on PyPI (0.3.0 and 0.4.0, published
-> 2026-07-16 via Trusted Publishing). This section is kept for the next project
-> and for re-establishing the publisher if it is ever lost; skip it unless one of
-> those applies. Current released version is checkable at
+> **Already done.** `warrant-verify` is live on PyPI. Four releases have gone
+> out through Trusted Publishing: **0.3.0** and **0.4.0** (2026-07-16),
+> **0.5.0** (2026-07-30) and **0.6.0** (2026-07-31, the current release, tag
+> `v0.6.0`). This section is kept for the next project and for re-establishing
+> the publisher if it is ever lost; skip it unless one of those applies. The
+> current released version is checkable at
 > <https://pypi.org/project/warrant-verify/> — and if this note and PyPI ever
 > disagree, PyPI is right.
 
@@ -45,7 +47,7 @@ Add protection to `pypi` if you want a manual approval gate before each publish
 
 ## Releasing (every version, automated)
 
-1. Bump `version` in `pyproject.toml` (e.g. `0.3.0` → `0.3.1`) and merge to
+1. Bump `version` in `pyproject.toml` (e.g. `0.6.0` → `0.6.1`) and merge to
    `master`.
 2. Build the evidence packs the README tells strangers to download. The README's
    "no clone, no build, no account" quest is only true if these assets exist on
@@ -58,12 +60,12 @@ Add protection to `pypi` if you want a manual approval gate before each publish
    The script refuses to publish a pack containing anything key-shaped, and
    verifies each zip unzipped in an empty directory with no repo on the path —
    i.e. as the stranger will.
-3. Cut a GitHub Release with tag **`v0.3.1`** (the `v` + the exact pyproject
+3. Cut a GitHub Release with tag **`v0.6.1`** (the `v` + the exact pyproject
    version — the workflow fails the build if they disagree), attaching those
    assets:
 
    ```bash
-   gh release create v0.3.1 --generate-notes dist/*.zip dist/SHA256SUMS
+   gh release create v0.6.1 --generate-notes dist/*.zip dist/SHA256SUMS
    ```
 4. The `publish` workflow builds, runs `twine check`, installs the wheel, proves
    it runs offline, and checks that the wheel actually offers every CLI surface
@@ -80,10 +82,13 @@ Add protection to `pypi` if you want a manual approval gate before each publish
    warrant selftest
    ```
 
-## Dry run before the first real release (recommended)
+## Dry run on TestPyPI (optional)
 
-After the TestPyPI pending publisher + `testpypi` environment exist, trigger the
-workflow manually to publish to TestPyPI only:
+**Never actually performed.** All four real releases went straight to PyPI; the
+`testpypi` job has never run, so this path is documented and unexercised — read
+it as a plan, not as a tested procedure. After the TestPyPI pending publisher +
+`testpypi` environment exist, trigger the workflow manually to publish to
+TestPyPI only:
 
 ```bash
 gh workflow run publish.yml
@@ -92,11 +97,11 @@ python3 -m venv /tmp/tv && /tmp/tv/bin/pip install -i https://test.pypi.org/simp
 /tmp/tv/bin/warrant selftest
 ```
 
-## After the first publish
+## After the first publish — done
 
-- Flip the "coming once published" notes in `README.md` and
-  `demos/air-canada/README.md` to the real one-liner (`pipx install
-  warrant-verify`).
+`README.md` and `demos/air-canada/README.md` carry the real one-liner
+(`pipx install warrant-verify`); there are no "coming once published" notes
+left. Kept as a record of what the step was.
 
 ## What ships
 

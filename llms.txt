@@ -60,6 +60,21 @@ If a document and a command disagree, **the command is right**. Two files in thi
 repository were wrong about their own test counts and PyPI status until they were
 caught; the fix was to generate the numbers rather than type them.
 
+## What is published, and what that does not mean
+
+`warrant-verify` is on PyPI: **0.3.0**, **0.4.0**, **0.5.0** and **0.6.0**, the
+last of them on 2026-07-31 from tag `v0.6.0`, through the Trusted Publishing
+(OIDC) path in `.github/workflows/publish.yml`. `pipx install warrant-verify`
+gets 0.6.0 and it runs; the maintainer installed it into a clean venv and ran
+`warrant selftest` to `SELFTEST: ALL PASS`, and re-ran the README's no-clone
+quickstart end to end against the published wheel and the release assets.
+
+What that does **not** establish, because the flattering reading is as wrong as
+the pessimistic one: nobody outside the maintainer is known to have installed
+it, there are no reported users, no download figures are claimed, and a
+successful publish is not an independent gate (`AGENTS.md` rule 3) and not a
+governance adoption. If this section and PyPI ever disagree, PyPI is right.
+
 ## Interoperating with the provenance world
 
 This format was an island: a reader with in-toto, SLSA, Sigstore or Rekor tooling

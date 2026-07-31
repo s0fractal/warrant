@@ -12,7 +12,7 @@ All notable changes to this project are recorded here. The format follows
 | `warrant` body member | the record schema (SPEC §13.2) | `0.1`, `0.2` |
 | SPEC document version | the document, including rules that add no body schema | v0.4 (DRAFT) |
 | report tag | the machine boundary (SPEC §13.3) | `warrant.verify-report@v0` |
-| release tag / PyPI | the tooling | 0.6.0 (unreleased) |
+| release tag / PyPI | the tooling | 0.6.0 (tag `v0.6.0`, live on PyPI) |
 
 A release moving only the tooling number changes **no** protocol surface. Each
 entry below says which of the four moved, and any entry that changes a
@@ -26,9 +26,19 @@ right.
 
 ## [Unreleased]
 
-**Nothing here is adopted or released**; this section exists so the work is
-legible before it is decided on. Entries are grouped by the branch that
-produced them, because they were reviewed (or not) separately.
+Nothing. `master` is exactly `v0.6.0`.
+
+## [0.6.0] — 2026-07-31
+
+24 commits since 0.5.0. Tag `v0.6.0` (`0d147aa`), published the same day to
+PyPI as `warrant-verify` 0.6.0 through the Trusted Publishing (OIDC) path in
+`.github/workflows/publish.yml`.
+
+**Released is not adopted.** Entries are grouped by the branch that produced
+them, because they were reviewed (or not) separately, and nothing here has
+passed an independent gate. `proposals/DEC-001-domain-separation.md` is still
+marked OPEN: cutting a release ships the mechanism, it does not record the
+threshold warrant that adoption requires.
 
 ### Changed — BREAKING, branch `feat/domain-separation`
 
@@ -41,7 +51,8 @@ produced them, because they were reviewed (or not) separately.
   no verifier accepts both at any time under any flag: accepting the old one is
   the same as having no separation. This implements option A of
   `proposals/DEC-001-domain-separation.md`. **Adoption of DEC-001 is a maintainer
-  act and this branch does not claim it.**
+  act; shipping it in 0.6.0 is a release, not an adoption, and no threshold
+  warrant records one.**
 
   Which of the four numbers moved: **SPEC document version v0.3 → v0.4**;
   **release tag 0.5.0 → 0.6.0**. Body versions `0.1`/`0.2` are unchanged and no
@@ -348,7 +359,8 @@ body schema (§2), reasons (§3), JCS canonicalization and WarrantID (§4), the
 envelope and Ed25519 signatures (§5), verification (§6). Python reference
 implementation, five verbs, plain-file store, conformance vectors.
 
-[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/s0fractal/warrant/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/s0fractal/warrant/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/s0fractal/warrant/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/s0fractal/warrant/compare/v0.3...v0.3.0

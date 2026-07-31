@@ -45,6 +45,11 @@ Installs the `warrant` verifier and the `warrant-mcp` sealer. `ski@v1` reasons
 re-run **offline** — the Σ-GLYPH Book I check engine ships inside the package, so
 no separate clone is needed. (From a checkout: `git clone … && pip install .`.)
 
+The current release is **0.6.0** (2026-07-31, tag `v0.6.0`), which is what that
+line installs; `CHANGELOG.md` lists the four releases on PyPI. That it installs
+and runs has been checked in a clean venv by the maintainer — it is not a claim
+that anyone else has installed it.
+
 ```bash
 warrant init                          # .warrants/ store in your repo
 warrant keygen --out me.key           # Ed25519; prints your pubkey
@@ -155,11 +160,16 @@ release. Packs ship from **0.5.0 onward**; the release process is in
 ## Use it as a CI gate
 
 ```yaml
-- uses: s0fractal/warrant@master     # or pin a release tag once one is cut
+- uses: s0fractal/warrant@v0.6.0     # or @master to track HEAD
   with:
     store: ./evidence-pack           # a pack, or a .warrants store
-    version: '0.5.0'                 # pin the verifier for a reproducible gate
+    version: '0.6.0'                 # pin the verifier for a reproducible gate
 ```
+
+Pin **0.6.0 or newer**. 0.6.0 is the domain-separation flag day (below): a
+0.5.0 verifier does not accept a `warrant-sig-v1` signature, so pinning an
+older version against a store signed today fails every signature — the
+reverse of the 0.4.0/`--json` gap, and just as invisible until it fires.
 
 Installs the verifier, verifies the store, fails the job on any error, and writes
 a summary. Outputs `ok`, `records`, `errors`, `warnings`, and the full
