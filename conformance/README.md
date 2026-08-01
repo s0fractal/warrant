@@ -6,9 +6,9 @@ this runner never executes a Warrant reference implementation — it only knows 
 to talk to yours.
 
 ```
-curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.0.0.tar.gz
-tar xzf warrant-conformance-1.0.0.tar.gz
-cd warrant-conformance-1.0.0
+curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.1.0.tar.gz
+tar xzf warrant-conformance-1.1.0.tar.gz
+cd warrant-conformance-1.1.0
 python3 run.py --candidate "./my-verifier probe"
 ```
 

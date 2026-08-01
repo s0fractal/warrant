@@ -269,7 +269,7 @@ digest is SHA-256 of that manifest:
 
 | artifact | SHA-256 |
 | --- | --- |
-| conformance pack 1.0.0 (`MANIFEST.sha256`) | `646f74ef67a74c0aad076f1d6e7e573f3a74cbe9b28cb2100e99e3337d19f474` |
+| conformance pack 1.1.0 (`MANIFEST.sha256`) | `ddd825a86bd0bfe6bb15971bf32bc74dfa1aa10351a60c0001cbc81adee0c78f` |
 
 Verify with `python3 run.py --verify-pack` and compare against the line above at
 the spec revision you are implementing. Because this document is versioned and
