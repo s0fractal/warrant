@@ -148,3 +148,24 @@ save/git/url/https://github.com/s0fractal/warrant/ | jq .
 ```
 
 Nothing above requires an account, a key, or a payment.
+
+## IETF `draft-birkholz-verifiable-agent-conversations` (VAC)
+
+The nearest active work, and one layer up. VAC is a **record format for what an
+agent session was** — messages, tool calls, tool results, reasoning entries — signed
+so that the transcript offered later can be shown to be the transcript that
+happened. Its known `trace-format` values are the session-log formats coding
+agents already write to disk (`claude-jsonl`, `gemini-json`, `codex-jsonl`,
+`cursor-jsonl`), so its subject is normalising and signing those.
+
+Warrant sits below it: not the transcript but the **decision**, with a reason that
+re-executes. The two are complementary rather than competing — a conversation
+record says what was said, a warrant says what was decided and lets a stranger
+recompute whether the stated reason holds.
+
+A nine-finding implementation review of -00 is in
+[`reviews-outbound/2026-08-ietf-vac-draft-00.md`](reviews-outbound/2026-08-ietf-vac-draft-00.md).
+It was never sent to the authors; the file says why. One of its findings —
+that a specification can name a canonicalization while admitting a value domain
+that canonicalization cannot carry — turned out to describe **this** repository
+too, and was fixed here before the review was published (SPEC §2, integer domain).
