@@ -24,6 +24,53 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
+## 0.9.0 — the published package disagreed with the published pack
+
+**BREAKING for records with implausible timestamps; no real record is affected.**
+
+SPEC §2's integer domain is now ±(2^53−1) rather than int64, in all three
+implementations, the JSON schema and the specification. Identity is SHA-256 over
+RFC 8785 bytes and RFC 8785 §3.2.2.3 serializes numbers through an IEEE-754
+double, so above 2^53−1 the canonical bytes stop being a function of the value:
+`ts = 9223372036854775807` canonicalizes to `9223372036854776000` in any
+conforming JCS, and one logical record acquires two WarrantIDs. Reported by an
+external Codex review. Wrapping was rejected — it maps two values onto one
+WarrantID in a format whose identity *is* that hash, and breaks §6's
+non-decreasing `ts` rule along `prior` edges.
+
+Every JSON in this repository and its two siblings was scanned: no record, blob,
+vector or fixture carried an integer outside the new range, so nothing migrates
+and no WarrantID moves. The change was possible only while the user count is
+zero.
+
+**Why this release exists at all, rather than waiting.** Conformance pack 1.1.0
+tests the new bound. `warrant-verify` 0.8.0 implements the old one. Measured
+against the published wheel:
+
+```
+PERMISSIVE IMPLEMENTATION: 2 of 62 MUST-REJECT vectors were ACCEPTED.
+  accepted: validate/reject-11-ts-=-2^53
+  accepted: validate/reject-12-ts-=-int64-max
+```
+
+A stranger running `pip install warrant-verify` against the current pack would
+have been told the reference implementation is permissive. The pack and the
+package have to agree, and the package is the one that was behind.
+
+Also in this release:
+
+- `why` no longer rejects records `verify` accepts. SPEC §5 says a junk
+  co-signature MUST NOT invalidate a record that still carries a valid signature
+  by `body.actor.id`; `why` required every signature to verify, handing that
+  power to anyone who could write a file in the store. Both now use
+  `_well_signed`, so there is one definition of "signed" rather than two.
+- §2's integer rule is enforced by an explicit walk over every integer rather
+  than by `min_sigs > len(actors)` rejecting the same values coincidentally.
+- Conformance pack **1.1.0**: 138 vectors, 62 MUST-REJECT, digest
+  `ddd825a8…`. The corpus changed, so the version changed — 1.0.0 stays
+  published unaltered, because two people holding one filename must not have
+  two different files.
+
 ## [Unreleased] — 0.8.0, not published
 
 Tooling number only; **no protocol surface moves**. 0.7.0 and 0.7.1 are on PyPI
