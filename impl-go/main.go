@@ -36,6 +36,14 @@ func skiATPBudget() uint32 {
 	return 100_000_000
 }
 
+// SPEC §2: the largest integer any canonicalized JSON in this format may carry.
+// RFC 8785 §3.2.2.3 serializes numbers via ECMAScript Number::toString, i.e.
+// through an IEEE-754 double, so above 2^53-1 the canonical bytes stop being a
+// function of the value: 9223372036854775807 canonicalizes to
+// 9223372036854776000 in any conforming JCS, and one record acquires two
+// WarrantIDs. See impl/warrant.py JCS_SAFE_INT_MAX for the full note.
+const jcsSafeIntMax = 9007199254740991 // 2^53 - 1
+
 var (
 	hex64Re   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	intJSONRe = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
@@ -537,10 +545,17 @@ func validateBody(b map[string]any) []string {
 	errs = append(errs, validateHexArray("prior", b["prior"], false)...)
 	if n, ok := b["ts"].(json.Number); !ok || !intJSONRe.MatchString(n.String()) {
 		errs = append(errs, "ts must be an integer")
-	} else if v, err := n.Int64(); err != nil || v < 0 {
-		// SPEC s2: ts in 0..2^63-1; out-of-range is schema-invalid — never
-		// silently narrowed (a clamped Int64 here once split PY/GO warnings)
-		errs = append(errs, "ts must be an integer (unix seconds) in 0..2^63-1")
+	} else if v, err := n.Int64(); err != nil || v < 0 || v > jcsSafeIntMax {
+		// SPEC s2: ts in 0..2^53-1; out-of-range is schema-invalid — never
+		// silently narrowed (a clamped Int64 here once split PY/GO warnings).
+		//
+		// The bound was 2^63-1 until an external review observed that the schema
+		// admitted a domain the declared canonicalization cannot carry. Identity
+		// is SHA-256 over RFC 8785 bytes, and RFC 8785 §3.2.2.3 serializes
+		// numbers through ECMAScript's Number.prototype.toString, i.e. through an
+		// IEEE-754 double: 9223372036854775807 canonicalizes to
+		// 9223372036854776000 in any conforming JCS. Same record, two WarrantIDs.
+		errs = append(errs, "ts must be an integer (unix seconds) in 0..2^53-1")
 	}
 
 	because, ok := b["because"].([]any)

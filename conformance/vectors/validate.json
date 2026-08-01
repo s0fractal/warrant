@@ -485,6 +485,118 @@
       }
     },
     {
+      "id": "validate/reject-11-ts-=-2^53",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = 2^53 (integer domain, \u00a72): the first value a conforming RFC 8785 serializer cannot round-trip, so accepting it lets two implementations derive two WarrantIDs from one record",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 9007199254740992
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-12-ts-=-int64-max",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = int64 max (integer domain, \u00a72): valid under the pre-2026-08 rule; an ECMAScript JCS canonicalizes it as 9223372036854776000",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 9223372036854775807
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-13-ts-=-uint64-max",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = uint64 max (integer domain, \u00a72): rejection must not depend on the implementation's native integer width",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 18446744073709551615
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-14-ts-=--",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = -(2^53) (integer domain, \u00a72): the bound is symmetric, and ts has its own lower bound of 0 besides",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": -9007199254740992
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
       "id": "validate/reject-non-object",
       "polarity": "negative",
       "spec": "\u00a72",
@@ -498,6 +610,42 @@
       },
       "expect": {
         "valid": false
+      }
+    },
+    {
+      "id": "validate/int-domain-2^53-1-is-inside",
+      "polarity": "positive",
+      "spec": "\u00a72",
+      "why": "ts = 2^53-1 is the largest integer RFC 8785 round-trips, and is therefore valid, not the first invalid one",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-a@vendor1"
+          },
+          "because": [
+            {
+              "kind": "prose",
+              "text": "utility functions needed in three modules"
+            }
+          ],
+          "decision": "propose",
+          "evidence": [
+            "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01"
+          ],
+          "prior": [],
+          "subject": {
+            "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+            "note": "PR-42: add lodash"
+          },
+          "ts": 9007199254740991,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "valid": true
       }
     }
   ]

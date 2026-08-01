@@ -76,7 +76,7 @@
       "class": "validate",
       "grade": "base",
       "file": "validate.json",
-      "vectors": 16
+      "vectors": 21
     },
     {
       "class": "sig-message",
@@ -115,5 +115,5 @@
       "vectors": 1
     }
   ],
-  "total_vectors": 133
+  "total_vectors": 138
 }

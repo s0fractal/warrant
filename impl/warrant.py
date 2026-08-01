@@ -232,6 +232,37 @@ def blob_hash(b):
 
 
 # ---------- schema validation (SPEC §2, §3) ----------
+
+# SPEC §2: the largest integer any canonicalized JSON in this format may carry.
+#
+# Identity here is the SHA-256 of the RFC 8785 (JCS) serialization of the body,
+# and RFC 8785 §3.2.2.3 serializes numbers the way ECMAScript's
+# Number.prototype.toString does -- through an IEEE-754 double. Above 2^53-1
+# that is lossy, so the canonical bytes stop being a function of the value:
+#
+#     ts = 9223372036854775807   (int64 max, formerly a valid ts)
+#       this implementation, exact integers  ->  9223372036854775807
+#       any conforming JCS via ECMAScript    ->  9223372036854776000
+#
+# Two conforming implementations, two WarrantIDs, same logical record. The bound
+# was 2^63-1 until an external review pointed out that the schema admitted a
+# domain the declared canonicalization cannot carry -- the spec cited RFC 8785
+# and RFC 7493 while contradicting both. RFC 7493 §2.2 says exactly this and
+# recommends strings for anything wider.
+#
+# Narrowing is the fix rather than wrapping or clamping. Wrapping would map two
+# different values onto one canonical byte string, i.e. onto one WarrantID, in a
+# format whose identity IS that hash; and §6's "ts is non-decreasing along each
+# prior edge" stops being well-defined the moment ts can wrap. §2 already forbids
+# silent clamping for the same reason.
+#
+# The change costs nothing: every JSON in all three repositories was scanned and
+# no record, blob, vector or fixture carries an integer outside this range. The
+# only occurrence was this schema's own former `maximum`. 2^53-1 seconds is the
+# year 285428751; Unix seconds will not reach it.
+JCS_SAFE_INT_MAX = 9007199254740991          # 2**53 - 1
+
+
 def _is_hex64(x):
     return isinstance(x, str) and bool(HEX64.match(x))
 
@@ -270,8 +301,8 @@ def validate_body(b):
     if not (isinstance(b["prior"], list) and all(_is_hex64(h) for h in b["prior"])):
         e.append("prior must be a list of WarrantIDs (hex64)")
     if (not isinstance(b["ts"], int) or isinstance(b["ts"], bool)
-            or not (0 <= b["ts"] <= 9223372036854775807)):
-        e.append("ts must be an integer (unix seconds) in 0..2^63-1")
+            or not (0 <= b["ts"] <= JCS_SAFE_INT_MAX)):
+        e.append("ts must be an integer (unix seconds) in 0..2^53-1")
     bc = b["because"]
     if not isinstance(bc, list):
         e.append("because must be a list")
@@ -1522,13 +1553,32 @@ def why(store, wid, depth=0, seen=None):
             missing += 1
             continue
         body = env["body"]
-        # `all()` over an empty list is True, so a record carrying NO signatures
-        # walked through here marked as verified -- absence of signatures read as
-        # signatures being fine. verify treats an unsigned record as an ERR; why
-        # must not present it as a clean link in the chain it claims to verify.
+        # The predicate here must be the one §5 and §6 define, because `why`
+        # prints a verdict about the same records `verify` reports on and two
+        # verdicts from one store is the split this repository exists to forbid.
+        #
+        # It was `bool(sigs) and all(verify_sig(...))`. The `bool(sigs)` half is
+        # right and stays: `all()` over an empty list is True, so an unsigned
+        # record once walked through here marked as verified -- absence of
+        # signatures read as signatures being fine, while verify calls it an ERR.
+        #
+        # The `all()` half was wrong, and wrong against an explicit MUST. SPEC §5:
+        # "A co-signature that fails to verify is reported and EXCLUDED, not fatal
+        # (MUST): because anyone with store write access can append envelope
+        # signatures, a single junk co-signature MUST NOT be able to invalidate a
+        # record that still carries a valid signature by body.actor.id." Requiring
+        # every signature to verify handed exactly that power to anyone who could
+        # write a file: append one junk signature and `why` reports VERIFY FAILED
+        # on a record `verify --json` returns ok:true for. Reported by an external
+        # Codex review; it also made warrant_show_reason.chain_verified false over
+        # normatively valid records.
+        #
+        # `_well_signed` is that predicate, already used for the §9 eligibility
+        # gate, so there is now one definition of "this record is signed" rather
+        # than a second one spelled out here.
         sigs = env["sigs"]
         ok = (warrant_id(body) == cur and bool(sigs)
-              and all(verify_sig(cur, s) for s in sigs))
+              and _well_signed(cur, env))
         if not ok:
             failed += 1
         mark = "" if ok else "  [VERIFY FAILED]"

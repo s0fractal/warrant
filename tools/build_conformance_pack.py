@@ -181,6 +181,17 @@ def build_validate():
     out.append(vec("validate/reject-non-object", "negative", "§2",
                    "MUST reject: a body that is not a JSON object",
                    {"body": ["not", "an", "object"]}, {"valid": False}))
+    # The upper boundary of §2's integer domain, as a positive. The four
+    # negatives above it come from examples/conformance-negatives.json; without
+    # this one they are satisfied by an implementation that rejects every large
+    # integer, including the largest legal one -- a boundary tested from one side
+    # is a boundary nobody has located.
+    boundary = json.loads((EXAMPLES / "propose.warrant.json").read_text())["body"]
+    boundary["ts"] = 9007199254740991
+    out.append(vec("validate/int-domain-2^53-1-is-inside", "positive", "§2",
+                   "ts = 2^53-1 is the largest integer RFC 8785 round-trips, and "
+                   "is therefore valid, not the first invalid one",
+                   {"body": boundary}, {"valid": True}))
     return doc("validate", "base",
                "examples/*.warrant.json + examples/conformance-negatives.json (SPEC §8.3)",
                "The negatives carry the weight: an implementation whose validate() "

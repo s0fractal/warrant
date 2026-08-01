@@ -64,7 +64,7 @@ python3 conformance/run.py --candidate "./your-verifier probe"
 python3 conformance/run.py --candidate "./your-verifier probe" --self-check
 ```
 
-133 vectors, 58 of them MUST-REJECT, reported at a grade (SPEC §6 base or §7
+138 vectors, 62 of them MUST-REJECT, reported at a grade (SPEC §6 base or §7
 settlement) with UNRUN as its own outcome. `--self-check` corrupts your
 implementation on purpose and fails if the runner does not catch it.
 

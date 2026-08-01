@@ -498,9 +498,14 @@ fn validate_body(v: &Json) -> Vec<String> {
     // ts: integer in 0..2^63-1
     match &b["ts"] {
         Json::Int(s) => {
-            let ok = s.parse::<i128>().map(|n| (0..=9223372036854775807i128).contains(&n));
+            // SPEC §2: 2^53-1, not 2^63-1. Identity is SHA-256 over RFC 8785
+            // bytes, and RFC 8785 §3.2.2.3 serializes numbers through
+            // ECMAScript Number::toString, an IEEE-754 double -- above 2^53-1
+            // the canonical bytes stop being a function of the value and one
+            // record gets two WarrantIDs across conforming implementations.
+            let ok = s.parse::<i128>().map(|n| (0..=9007199254740991i128).contains(&n));
             if ok != Ok(true) {
-                e.push("ts must be an integer in 0..2^63-1".into());
+                e.push("ts must be an integer in 0..2^53-1".into());
             }
         }
         _ => e.push("ts must be an integer (unix seconds)".into()),

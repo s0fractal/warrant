@@ -118,13 +118,13 @@
   <p>A class is one question the format can be asked. <code>capabilities</code> is
   mandatory — declining it is a contract violation, because a candidate that will
   not say what it claims cannot be tested against its claim. The other eight carry
-  the 133 vectors:</p>
+  the 138 vectors:</p>
 
   <table>
     <tr><th>class</th><th>grade</th><th class="n">vectors</th><th class="n">must-reject</th><th>what it asks</th></tr>
     <tr><td><code>capabilities</code></td><td>—</td><td class="n">—</td><td class="n">—</td><td>name, version, the grade you claim, the classes you implement</td></tr>
     <tr><td><code>canon</code></td><td>base</td><td class="n">51</td><td class="n">0</td><td>RFC 8785 JCS canonical bytes, and the WarrantID that is their SHA-256</td></tr>
-    <tr><td><code>validate</code></td><td>base</td><td class="n">16</td><td class="n">12</td><td>is this body a well-formed record — unknown fields invalid <em>recursively</em></td></tr>
+    <tr><td><code>validate</code></td><td>base</td><td class="n">21</td><td class="n">16</td><td>is this body a well-formed record — unknown fields invalid <em>recursively</em></td></tr>
     <tr><td><code>blob-hash</code></td><td>base</td><td class="n">4</td><td class="n">0</td><td>plain SHA-256 over raw bytes, no framing</td></tr>
     <tr><td><code>sig-message</code></td><td>base</td><td class="n">4</td><td class="n">0</td><td>the 47 bytes a key signs: <code>"warrant-sig-v1:"</code> then the ID's <em>raw</em> 32</td></tr>
     <tr><td><code>verify-sig</code></td><td>base</td><td class="n">28</td><td class="n">24</td><td>Ed25519 over those bytes; small-order and non-canonical keys must fail</td></tr>
@@ -134,11 +134,11 @@
     <tr><td><code>ski-run</code></td><td>settlement</td><td class="n">1</td><td class="n">0</td><td>re-execute a budget-bounded check and reproduce its verdict</td></tr>
   </table>
 
-  <p><strong>58 of the 133 vectors are MUST-REJECT.</strong> That ratio is
+  <p><strong>62 of the 138 vectors are MUST-REJECT.</strong> That ratio is
   deliberate. An implementation whose <code>validate()</code> returns true
   unconditionally passes every positive vector in the pack, so the negatives get
   their own headline in the report rather than being averaged into a score:
-  <code>PERMISSIVE IMPLEMENTATION: 58 of 58 MUST-REJECT vectors were ACCEPTED.</code>
+  <code>PERMISSIVE IMPLEMENTATION: 62 of 62 MUST-REJECT vectors were ACCEPTED.</code>
   If no negative vector ran at all, the report says <em>that</em>, in place of a
   score.</p>
 
@@ -163,7 +163,7 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   against a Python candidate.</p>
 
   <p>Those seconds are your program's start-up cost, paid once per vector. The
-  runner spawns your candidate 133 times rather than holding a session open,
+  runner spawns your candidate 138 times rather than holding a session open,
   because a stateless contract is one you can satisfy with a shell script — that
   trade is worth stating rather than hiding behind a faster-looking number. A
   compiled candidate is substantially quicker.</p>
@@ -205,7 +205,7 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   <ul>
     <li><strong>An answer to the question at the top of this page</strong>, for
       your own code. Not "my tests pass" but "my reading of the format and theirs
-      produce the same bytes, including on the 58 inputs that must be refused."</li>
+      produce the same bytes, including on the 62 inputs that must be refused."</li>
     <li><strong>A grade you can state, with the evidence for it re-runnable by
       anyone.</strong> The report names every UNRUN vector; nothing is rounded up.</li>
     <li><strong>The name.</strong>
@@ -229,8 +229,8 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   <div class="honest">
   <h3>The honest state of this</h3>
   <p class="note"><strong>Three implementations, all ours.</strong> Python and Go
-  each pass all 133 vectors at settlement grade; Rust is deliberately base-only
-  and passes the 129 base vectors, reported as <em>reaching base</em> rather than
+  each pass all 138 vectors at settlement grade; Rust is deliberately base-only
+  and passes the 134 base vectors, reported as <em>reaching base</em> rather than
   as failing settlement. Their agreement is byte-exact — canonical bytes,
   WarrantIDs, signed messages, and store verdicts. All three live in one
   repository and share one author.</p>
