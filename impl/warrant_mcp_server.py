@@ -59,7 +59,7 @@ from pathlib import Path
 # `integrations/mcp-server/server.json` — `tools/doc_counts.py` fails if any of
 # the four drift. A registry manifest naming a package version that is not the
 # one this module ships is a listing that points at the wrong artifact.
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 PROTOCOL_VERSION = "2025-06-18"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SUBPROCESS_TIMEOUT = 120
