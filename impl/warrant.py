@@ -263,6 +263,37 @@ def blob_hash(b):
 JCS_SAFE_INT_MAX = 9007199254740991          # 2**53 - 1
 
 
+def int_domain_violation(obj):
+    """SPEC §2: the first integer outside +/-(2^53-1), or None.
+
+    §2 states the bound for "every integer anywhere in a body, in any schema
+    blob, and in any other JSON this format canonicalizes". Until this existed,
+    the only integer actually checked against it was `ts`; a threshold policy's
+    `min_sigs` was bounded only INDIRECTLY, by `min_sigs > len(actors)`. That
+    indirect bound happens to reject the same values, which is exactly what makes
+    it the wrong thing to rely on: the rule the document states and the rule the
+    code enforces were two different rules that agreed by coincidence, and a
+    reimplementer reading §2 would have written the stated one.
+
+    Iterative for the reason the sibling repository learned the hard way: a
+    recursive walker over hostile input has a depth at which it stops being a
+    function.
+    """
+    stack = [obj]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, bool):
+            continue
+        if isinstance(cur, int):
+            if not (-JCS_SAFE_INT_MAX <= cur <= JCS_SAFE_INT_MAX):
+                return cur
+        elif isinstance(cur, dict):
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return None
+
+
 def _is_hex64(x):
     return isinstance(x, str) and bool(HEX64.match(x))
 
@@ -303,6 +334,9 @@ def validate_body(b):
     if (not isinstance(b["ts"], int) or isinstance(b["ts"], bool)
             or not (0 <= b["ts"] <= JCS_SAFE_INT_MAX)):
         e.append("ts must be an integer (unix seconds) in 0..2^53-1")
+    bad_int = int_domain_violation(b)
+    if bad_int is not None:
+        e.append(f"integer {bad_int} is outside the §2 domain of +/-(2^53-1)")
     bc = b["because"]
     if not isinstance(bc, list):
         e.append("because must be a list")
@@ -876,7 +910,8 @@ def _parse_policy_blob(store, h):
             or not isinstance(actors, list) or not actors
             or not all(isinstance(a, str) and a for a in actors)
             or len(set(actors)) != len(actors)
-            or min_sigs < 1 or min_sigs > len(actors)):
+            or min_sigs < 1 or min_sigs > len(actors)
+            or int_domain_violation(doc) is not None):
         return None, True
     return {"min_sigs": min_sigs, "actors": actors}, False
 
