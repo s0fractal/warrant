@@ -169,3 +169,59 @@ It was never sent to the authors; the file says why. One of its findings —
 that a specification can name a canonicalization while admitting a value domain
 that canonicalization cannot carry — turned out to describe **this** repository
 too, and was fixed here before the review was published (SPEC §2, integer domain).
+
+## Pham & Hy, *Evaluating Agentic Bioinformatics through Function–Evidence–Validation* (arXiv:2607.27556, 2026-07-30)
+
+**Read in full — 47 pages — and recorded here because it argues against this
+project more than for it.** A survey mapping 109 agentic systems and 28
+evaluation resources across 128 publications in genomics, single-cell omics,
+protein science, drug discovery and computational pathology, proposing a
+framework that separates three things a reader is otherwise tempted to conflate:
+**Function** (which workflow operations a system demonstrably performs),
+**Evidence** (traceable support for its actions and claims), and **Validation**
+(what assurance has actually been established).
+
+Its Validation ladder is cumulative: `V1` demonstrated execution, `V2`
+*sufficient information for replay*, `V3` task-appropriate scientific evaluation,
+`V4` prospective empirical testing. That decomposition is close enough to this
+project's to be worth stating: a warrant's body is Function, its `because` and
+`evidence` are Evidence, and its re-executable `check` is the mechanism a `V2`
+claim would need.
+
+**What it establishes.** The gap is real and measured rather than asserted:
+
+> most systems implement multiple Function and Evidence dimensions, yet the
+> majority remain at V3. Broader operational scope therefore does not imply
+> stronger scientific assurance: additional agents, tools, databases, memory
+> modules, or predictive models may expand a workflow without establishing
+> replayability, verification, or empirical support for its principal claim.
+
+That is this project's thesis, arrived at independently, in another discipline,
+by people who have not heard of it.
+
+**What it does not establish, and this is the part that matters.** Across 47
+pages the words *tamper*, *malicious*, *forge*, *attack*, *threat model*,
+*cryptographic*, *signature*, *integrity* and *immutable* do not appear once.
+`adversarial` appears three times, each about adversarial *prompts* or fabricated
+identifiers used to test an agent — never about altering a record after the fact.
+No in-toto, no SLSA, no RO-Crate, no W3C PROV, no OpenTelemetry.
+
+So their *provenance* means scientific traceability for an honest researcher.
+The failure they are guarding against is sloppiness, hallucination and
+irreproducibility, not forgery. For that threat model, RO-Crate or W3C PROV plus
+a pinned container and a workflow engine is sufficient, and signatures are
+overhead. A whole discipline reached a formal statement of the problem without
+feeling the need for cryptography — which is the Antigravity objection to this
+project, independently confirmed from the other side.
+
+**And the honest further weakening:** their *largest* measured gaps are
+prospective empirical testing and closed-loop refinement, i.e. `V4`. Replayability
+lags execution, but it is not where the biggest hole is. Anyone tempted to cite
+this paper as demand for what warrant does should read that sentence first.
+
+**The one opening it leaves.** `V4` lives in regulated domains — drug discovery,
+clinical pathology — where a record acquires legal and financial weight and the
+honest researcher stops being the only party with an interest in what it says.
+That is where a tamper-evident record starts to differ from a merely reproducible
+one. It is a hypothesis about where to look next, not something this paper
+demonstrates, and it is recorded as the former.
