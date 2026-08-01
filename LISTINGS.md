@@ -1,34 +1,39 @@
 # Listings — where this project can be found, and what each one costs
 
-**Status, 2026-07-31: one listing is live.** `io.github.s0fractal/warrant` was
-published to the official MCP Registry and is queryable there. The GitHub
-Marketplace step is **still unticked** — the action remains invisible outside
-this repository.
+**Status, 2026-08-01: one listing is live, and it now installs.**
+`io.github.s0fractal/warrant` 0.8.0 is published to the official MCP Registry
+with a real install path. The GitHub Marketplace step is **still unticked** — the
+action remains invisible outside this repository.
 
-> **This paragraph used to say "nothing here has been submitted. This project is
-> listed nowhere."** It stopped being true the moment the registry accepted the
-> publish, and it stayed on the page afterwards. It is recorded rather than
-> quietly overwritten because a status line that survives the event it describes
-> is the same defect as a count nobody recounts — and this file is the one place
-> in the repository whose whole job is to say what is true outside it.
+> **This paragraph has now been wrong twice, in opposite directions.** It first
+> said "nothing here has been submitted. This project is listed nowhere," and
+> survived the publish that falsified it. It was then corrected to describe a
+> 0.1.0 entry offering only a clone — and survived the 0.8.0 publish that
+> falsified *that*, for most of a day. Both are the same defect: a status line
+> outliving the event it describes. Recorded rather than overwritten, because
+> this file's whole job is to say what is true outside the repository, and a file
+> with that job should show its own error rate.
 
 What the live entry offers, exactly:
 
 | | |
 |---|---|
-| Listed | official MCP Registry, `io.github.s0fractal/warrant`, `status: active`, `isLatest: true` |
-| Published | 2026-07-31T18:19:25Z |
-| Manifest version published | `0.1.0` |
-| Install path it offers | **the repository.** The published manifest carries no `packages` block, so the entry points a reader at a clone |
-| Install path it does **not** offer | `pip install` / `uvx`. At 0.7.1 the distribution did not ship the server, so there was no honest package to name |
-| Verified how | the registry's own search API returned the record; a real MCP host (`claude mcp add` → `✔ Connected`) had been driven once before publishing |
-| Not verified | that anyone has found it, installed it, or run it. Zero known users |
+| Listed | official MCP Registry, `io.github.s0fractal/warrant`, `status: active` |
+| Version published | **`0.8.0`**, `isLatest: true`, published 2026-08-01T13:12:30Z |
+| Install path it offers | **`pip`.** The manifest carries a `packages` block naming `warrant-verify` 0.8.0, transport `stdio` |
+| | `pip install warrant-verify` |
+| | `claude mcp add warrant -- warrant-mcp-server --store .warrants` |
+| Ownership proven by | the `mcp-name: io.github.s0fractal/warrant` marker in the package README on PyPI — the registry reads `info.description` and requires that literal |
+| Superseded entry | `0.1.0`, published 2026-07-31T18:19:25Z, `isLatest: false`. It carried **no** `packages` block deliberately: at 0.7.1 the distribution did not ship the server, so there was no honest package to name. It stays in the version history rather than being retracted |
+| Verified how | the registry's own search API returned both records; a real MCP host (`claude mcp add` → `✔ Connected`) was driven before the first publish |
+| Not verified | that anyone has found it, installed it, or run it. **Zero known users.** A listing is a shelf, not a reader |
 
-**The gap this branch closes.** 0.8.0 ships `warrant-mcp-server` as a console
-script, so `pip install warrant-verify` gives a working server. `server.json`
-here now carries a `packages` block and bumps to `0.8.0`. **Publishing that
-manifest fails until 0.8.0 is on PyPI** — see the ownership section below, which
-is the ordering constraint, not a formality.
+**What closed the gap.** 0.8.0 ships `warrant-mcp-server` as a console script, so
+`pip install warrant-verify` yields a working server. Publishing the manifest was
+blocked until 0.8.0 was on PyPI — the ownership section below is the ordering
+constraint, not a formality — and then blocked again on something more ordinary:
+the working tree sat on a stale branch, so the file the publisher was asked for
+was not the file on disk.
 
 Two surfaces, in order of cheapness:
 
@@ -64,7 +69,7 @@ describes the old community list; it is out of date.
 | **Manifest** | [`integrations/mcp-server/server.json`](integrations/mcp-server/server.json) |
 | **Required fields** | `name`, `description`, `version` — that is all the schema demands |
 | **Namespace** | `io.github.s0fractal/*`, proven by GitHub OAuth device flow |
-| **Status** | **PUBLISHED 2026-07-31 at manifest version `0.1.0`**, no `packages` block. The `0.8.0` manifest in the tree is a re-publish waiting on the PyPI release |
+| **Status** | **PUBLISHED at manifest version `0.8.0`** on 2026-08-01, `packages` block naming `warrant-verify` 0.8.0. The earlier `0.1.0` publish (2026-07-31, no `packages` block) remains in the version history as `isLatest: false` |
 
 `description` is capped at **100 characters** — the single most common rejection.
 Ours is 96.
@@ -95,22 +100,23 @@ that validates can still be a manifest naming nothing.
 data resets are on the table. Listing there is cheap and reversible, but it is
 not a stable address yet.
 
-#### The blocker that was published around, and how 0.8.0 removes it
+#### The blocker that was published around, and how 0.8.0 removed it
 
-The manifest that went live carried **no `packages` block**, because at 0.7.1
+The first manifest to go live carried **no `packages` block**, because at 0.7.1
 there was no honest one to write: `pyproject.toml` ships flat modules out of
 `impl/`, and the server lived in `integrations/mcp-server/server.py`, which is
 not one of them. Nor was the existing `warrant-mcp` console script a substitute:
 that is `warrant_mcp`, the sealing proxy, which records another server's
 tool-calls from the outside — a different program with a different job.
 
-So the live entry lists the server and points at the repository, and a clone is
-the only install path it offers. That is honest and it is the weak version: the
-two-lines-of-config install is this channel's whole advantage, and the entry
-does not have it. Registry entries are mirrored by PulseMCP and Glama, so the
-weak version propagates.
+So for one day the live entry listed the server and pointed at the repository,
+and a clone was the only install path it offered. That was honest and it was the
+weak version: the two-lines-of-config install is this channel's whole advantage,
+and the entry did not have it. Registry entries are mirrored by PulseMCP and
+Glama, so the weak version propagates — which is why the re-publish was worth
+doing rather than waiting for a later release to carry it.
 
-**0.8.0 closes it.** `impl/warrant_mcp_server.py` is the module (moved there
+**0.8.0 closed it, and it is now the published entry.** `impl/warrant_mcp_server.py` is the module (moved there
 because `package-dir = {"" = "impl"}` gives the flat namespace exactly one root
 — a file under `integrations/` cannot be in the wheel at all), listed in
 `py-modules`, and exposed as the console script **`warrant-mcp-server`**. The
