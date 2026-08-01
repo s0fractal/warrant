@@ -22,9 +22,27 @@ The body is a JSON object with exactly these fields (unknown fields MUST make th
 | `evidence` | array | MUST | ≥0 hex64 hashes of input blobs the decision relied on |
 | `actor` | object | MUST | `{"id": <nonempty string>}` — stable actor identifier |
 | `prior` | array | MUST | ≥0 WarrantIDs this record responds to or follows |
-| `ts` | integer | MUST | Unix seconds, UTC, in the inclusive range `0..9223372036854775807` (int64) |
+| `ts` | integer | MUST | Unix seconds, UTC, in the inclusive range `0..9007199254740991` (2^53−1 — see the integer domain rule below) |
 
-All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact). A body with a negative or out-of-int64-range integer field is schema-invalid; implementations MUST NOT silently clamp, wrap, or truncate numeric fields (an unchecked 64-bit narrowing is exactly the kind of silent verifier split this rule exists to prevent).
+All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact).
+
+**Integer domain (MUST).** Every integer anywhere in a body, in any schema blob, and in any other JSON this format canonicalizes MUST lie in the inclusive range **−9007199254740991 .. 9007199254740991** (±(2^53−1)). A body carrying an integer outside that range is schema-invalid. Implementations MUST NOT silently clamp, wrap, or truncate numeric fields.
+
+**Why this bound and not int64.** §4 defines a WarrantID as SHA-256 over the RFC 8785 (JCS) serialization of the body. RFC 8785 §3.2.2.3 serializes numbers the way ECMAScript's `Number.prototype.toString` does — through an IEEE-754 double. Above 2^53−1 that mapping is lossy, so the canonical bytes stop being a function of the value:
+
+```
+ts = 9223372036854775807            (int64 max — valid under the previous rule)
+  exact-integer implementation  ->  9223372036854775807
+  any conforming JCS            ->  9223372036854776000
+```
+
+Two conforming implementations, one logical record, two WarrantIDs. This rule read `0..2^63-1` until an external review observed that the schema admitted a domain the declared canonicalization cannot carry — the document cited RFC 8785 and RFC 7493 while contradicting both, and RFC 7493 §2.2 warns about precisely this, recommending strings for anything wider.
+
+**Why narrowing rather than wrapping.** Wrapping at 2^53 would map two different values onto one canonical byte string, and therefore onto one WarrantID, in a format whose identity *is* that hash — a collision introduced on purpose. It would also break §6's requirement that `ts` be non-decreasing along each `prior` edge, which stops being well-defined once `ts` can wrap. Extending the canonical form to carry wider integers as decimal strings was considered and rejected: it buys range no Unix timestamp needs, at the cost of a second number syntax in every implementation and every vector. 2^53−1 seconds is the year 285428751.
+
+**Where this rule actually binds.** The body schema admits exactly one integer — `ts` — because every other field is a string, a hex64, or an array or object of those, and the unknown-field rule (recursive, below) forbids adding one. So for bodies the global statement and the `ts` clause coincide, and an implementation checking only `ts` is observably correct on every schema-valid body. The rule earns its keep on **blobs**: a threshold policy's `min_sigs` and any integer a future schema blob admits are canonicalized by the same JCS and carry the same hazard. Both reference implementations now walk every integer at both boundaries rather than checking `ts` and relying on `min_sigs > len(actors)` to reject the rest — that indirect bound rejects the same values, which is precisely what made depending on it wrong: the stated rule and the enforced rule were two different rules agreeing by coincidence, and a reimplementer would have written the stated one.
+
+**Cost of the change: none measured.** Every JSON file in this repository and its two siblings was scanned; no record, blob, vector or fixture carried an integer outside the new range. The only occurrence was `schemas/warrant-body.schema.json`'s own former `maximum`. No WarrantID moves and nothing needs re-signing — which is true today and would not have been true after 1.0.
 
 **The unknown-field rule is recursive (MUST).** It applies not only to the body but to every object the schema names: `subject` (exactly `hash`, optional `note`), `actor` (exactly `id`), and each reason object (§3). An unknown member anywhere in that tree makes the record invalid. Leaving nested strictness implicit is a silent verifier split: one implementation accepts an extra key another rejects, while both compute the same WarrantID.
 
@@ -251,7 +269,7 @@ digest is SHA-256 of that manifest:
 
 | artifact | SHA-256 |
 | --- | --- |
-| conformance pack 1.0.0 (`MANIFEST.sha256`) | `2f764d6bb0265ec50a0213f361a2a6a6aed2a88ef53508c86c934078c2e77bae` |
+| conformance pack 1.0.0 (`MANIFEST.sha256`) | `646f74ef67a74c0aad076f1d6e7e573f3a74cbe9b28cb2100e99e3337d19f474` |
 
 Verify with `python3 run.py --verify-pack` and compare against the line above at
 the spec revision you are implementing. Because this document is versioned and

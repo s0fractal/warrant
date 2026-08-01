@@ -77,6 +77,8 @@ CHECKS = [
      ["python3", "tests/verify_report.py"], "go"),
     ("json schemas vs the corpus (both directions)",
      ["python3", "tools/schema_check.py"], None),
+    ("why/verify agree on what \"signed\" means (SPEC §5 co-signatures)",
+     ["python3", "tests/why_signature_predicate.py"], None),
     ("pedantic edges (parity on the awkward cases)",
      ["python3", "tests/pedantic_edges.py"], "go"),
     ("ski@v1 policy predicates (real re-execution)",

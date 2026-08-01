@@ -48,8 +48,15 @@ def main():
             "prior": [], "ts": 1}
 
     # --- ts bounds (the P0) ---
-    for ts, valid in ((0, True), (9223372036854775807, True),
-                      (9223372036854775808, False), (10 ** 100, False), (-1, False)):
+    # The upper bound is 2^53-1, not 2^63-1: SPEC §2's integer domain is limited
+    # by what RFC 8785 can round-trip, since a WarrantID is SHA-256 over JCS
+    # bytes and JCS serializes numbers through an IEEE-754 double. int64 max is
+    # now the FIRST case on the invalid side rather than the last valid one --
+    # this list encoded the old rule, and updating it is part of the fix, not a
+    # concession to it.
+    for ts, valid in ((0, True), (9007199254740991, True),
+                      (9007199254740992, False), (9223372036854775807, False),
+                      (18446744073709551615, False), (10 ** 100, False), (-1, False)):
         b = dict(base); b["ts"] = ts
         errs = W.validate_body(b)
         chk(f"py ts={ts} {'valid' if valid else 'invalid'}",
@@ -71,8 +78,8 @@ def main():
         py = subprocess.run([sys.executable, os.path.join(ROOT, "impl/warrant.py"),
                              "--store", store, "verify"], capture_output=True, text=True)
         go = subprocess.run([GO, "verify", store], capture_output=True, text=True)
-        py_err = "ts must be an integer (unix seconds) in 0..2^63-1" in py.stdout
-        go_err = "ts must be an integer (unix seconds) in 0..2^63-1" in go.stdout
+        py_err = "ts must be an integer (unix seconds) in 0..2^53-1" in py.stdout
+        go_err = "ts must be an integer (unix seconds) in 0..2^53-1" in go.stdout
         chk("oversized ts is schema ERR in BOTH (no silent clamp)", py_err and go_err,
             f"py={py_err} go={go_err}")
         chk("oversized-ts verify verdict parity",

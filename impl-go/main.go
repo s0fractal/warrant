@@ -36,6 +36,14 @@ func skiATPBudget() uint32 {
 	return 100_000_000
 }
 
+// SPEC §2: the largest integer any canonicalized JSON in this format may carry.
+// RFC 8785 §3.2.2.3 serializes numbers via ECMAScript Number::toString, i.e.
+// through an IEEE-754 double, so above 2^53-1 the canonical bytes stop being a
+// function of the value: 9223372036854775807 canonicalizes to
+// 9223372036854776000 in any conforming JCS, and one record acquires two
+// WarrantIDs. See impl/warrant.py JCS_SAFE_INT_MAX for the full note.
+const jcsSafeIntMax = 9007199254740991 // 2^53 - 1
+
 var (
 	hex64Re   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	intJSONRe = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
@@ -505,6 +513,47 @@ func warrantID(body map[string]any) (string, error) {
 	return blobHash(canon), nil
 }
 
+// intDomainViolation returns the first integer outside +/-(2^53-1), or nil.
+//
+// SPEC §2 states that bound for "every integer anywhere in a body, in any schema
+// blob, and in any other JSON this format canonicalizes". Only `ts` was actually
+// checked against it; a threshold policy's min_sigs was bounded indirectly, by
+// min_sigs > len(actors). That indirect bound rejects the same values, which is
+// what made it the wrong thing to rely on -- the stated rule and the enforced
+// rule were two rules agreeing by coincidence, and a reimplementer reading §2
+// would have written the stated one.
+//
+// Iterative, not recursive: a walker over hostile input must not have a depth at
+// which it stops being a function.
+func intDomainViolation(v any) *string {
+	stack := []any{v}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch x := cur.(type) {
+		case json.Number:
+			str := x.String()
+			if !intJSONRe.MatchString(str) {
+				continue // not an integer literal; §2 forbids floats elsewhere
+			}
+			n, err := strconv.ParseInt(str, 10, 64)
+			if err != nil || n > jcsSafeIntMax || n < -jcsSafeIntMax {
+				return strPtrW(fmt.Sprintf(
+					"integer %s is outside the §2 domain of +/-(2^53-1)", str))
+			}
+		case map[string]any:
+			for _, vv := range x {
+				stack = append(stack, vv)
+			}
+		case []any:
+			stack = append(stack, x...)
+		}
+	}
+	return nil
+}
+
+func strPtrW(s string) *string { return &s }
+
 func validateBody(b map[string]any) []string {
 	var errs []string
 	for k := range b {
@@ -537,10 +586,20 @@ func validateBody(b map[string]any) []string {
 	errs = append(errs, validateHexArray("prior", b["prior"], false)...)
 	if n, ok := b["ts"].(json.Number); !ok || !intJSONRe.MatchString(n.String()) {
 		errs = append(errs, "ts must be an integer")
-	} else if v, err := n.Int64(); err != nil || v < 0 {
-		// SPEC s2: ts in 0..2^63-1; out-of-range is schema-invalid — never
-		// silently narrowed (a clamped Int64 here once split PY/GO warnings)
-		errs = append(errs, "ts must be an integer (unix seconds) in 0..2^63-1")
+	} else if v, err := n.Int64(); err != nil || v < 0 || v > jcsSafeIntMax {
+		// SPEC s2: ts in 0..2^53-1; out-of-range is schema-invalid — never
+		// silently narrowed (a clamped Int64 here once split PY/GO warnings).
+		//
+		// The bound was 2^63-1 until an external review observed that the schema
+		// admitted a domain the declared canonicalization cannot carry. Identity
+		// is SHA-256 over RFC 8785 bytes, and RFC 8785 §3.2.2.3 serializes
+		// numbers through ECMAScript's Number.prototype.toString, i.e. through an
+		// IEEE-754 double: 9223372036854775807 canonicalizes to
+		// 9223372036854776000 in any conforming JCS. Same record, two WarrantIDs.
+		errs = append(errs, "ts must be an integer (unix seconds) in 0..2^53-1")
+	}
+	if bad := intDomainViolation(b); bad != nil {
+		errs = append(errs, *bad)
 	}
 
 	because, ok := b["because"].([]any)
@@ -1929,6 +1988,9 @@ func parsePolicyBlob(blobs map[string][]byte, h string) (map[string]any, bool) {
 		actors = append(actors, a)
 	}
 	if min64 < 1 || min64 > int64(len(actors)) {
+		return nil, true
+	}
+	if intDomainViolation(doc) != nil {
 		return nil, true
 	}
 	return map[string]any{"min_sigs": int(min64), "actors": actors}, false

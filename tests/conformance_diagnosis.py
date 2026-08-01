@@ -65,7 +65,7 @@ EXIT_OK, EXIT_FAIL, EXIT_GRADE_NOT_MET, EXIT_PROTOCOL = 0, 1, 2, 3
 
 # The real day-one implementations: one file each, `canon` and nothing else.
 # Filled in by main(), which compiles the Go one first -- this suite drives a
-# candidate up to nine times over 133 vectors, and `go run` recompiles on every
+# candidate up to nine times over 138 vectors, and `go run` recompiles on every
 # one of the ~1200 invocations. It is the same program either way;
 # `tests/conformance_skeletons.py` is where `go run` itself is exercised.
 PARTIAL = []

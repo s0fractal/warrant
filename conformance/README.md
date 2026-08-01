@@ -84,7 +84,7 @@ Four outcomes per vector, never three:
 Vectors above your claimed grade are reported as `NOT CLAIMED`, which is an
 honest result rather than a gap.
 
-**Negative vectors carry equal weight.** 58 of the 133 vectors are MUST-REJECT:
+**Negative vectors carry equal weight.** 62 of the 138 vectors are MUST-REJECT:
 bodies that must not validate, signatures that must not verify, bytes that must
 not parse, broken stores whose defects must be reported. An implementation whose
 `validate()` returns `true` unconditionally passes *every positive vector here*,
@@ -92,7 +92,7 @@ so failing the negatives gets its own headline rather than being averaged into a
 score:
 
 ```
-PERMISSIVE IMPLEMENTATION: 58 of 58 MUST-REJECT vectors were ACCEPTED.
+PERMISSIVE IMPLEMENTATION: 62 of 62 MUST-REJECT vectors were ACCEPTED.
 ```
 
 If no negative vector ran at all, the report says that too, in place of a score.
@@ -203,7 +203,7 @@ already had; it is also why that figure grew from the ~35 s an earlier revision
 of this file measured.
 
 Those seconds are your program's start-up cost, paid once per vector: the runner
-spawns the candidate 133 times rather than holding a session open, because a
+spawns the candidate 138 times rather than holding a session open, because a
 stateless contract is one you can satisfy with a shell script. A compiled
 candidate is substantially faster. An earlier draft of this file claimed "904 ms
 from extraction to verdict" — that measured extraction plus a trivial candidate,
