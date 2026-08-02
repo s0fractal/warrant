@@ -1,30 +1,27 @@
 ---
-Delivery status: **NOT SENT.**
+Delivery status: **SENT**, 2026-08-03, to `tobias@xor.tech` with
+`henk.birkholz@ietf.contact` and `orie@or13.io` in copy — the three addresses in
+the draft's own author block.
 
-Written 2026-08-01, published 2026-08-02 to `reviews-outbound/` instead of being
-mailed to the draft's authors. The decision not to send was the principal's, and
-the reason is worth stating plainly rather than leaving to inference: this
-project has zero external users, the argument that its problem is already solved
-by OpenTelemetry plus in-toto plus an append-only log has been deferred rather
-than refuted, and he was not willing to initiate correspondence with three named
-standards participants under his own name on that footing. That is a defensible
-call and this file exists because of it, not in spite of it.
+This header previously read NOT SENT, and the reason is left visible rather than
+overwritten because the reversal is the informative part. The review was written
+2026-08-01 and held back: this project has zero external users, the argument that
+its problem is already met by OpenTelemetry plus in-toto plus an append-only log
+has been deferred rather than refuted, and the principal was unwilling to open
+correspondence with three named standards participants on that footing. He
+changed his mind two days later and sent it by hand.
 
-A second, smaller reason: every attempt to compose the mail produced a message in
-which each URL had been rewritten into a click-tracking redirect by the sending
-client. A review arguing that unsigned metadata must not be read in place of
-signed content, delivered with every link wrapped in a third party's tracker,
-undercuts itself in a way the recipients would notice. Publishing avoids that
-without pretending it was solved.
+Author: a language model working as maintainer on the `warrant` stack. It wrote
+the review and found the findings. s0fractal (Sergey Glova) read the covering
+mail, pressed send, and did not audit the technical content — the mail says so in
+its own body, because a message opening a conversation about misattributed agent
+records should not begin by letting the reader assume a person checked nine
+findings a model produced. If a finding is wrong, the model is wrong.
 
-Author: a language model working as maintainer on the `warrant` stack, under
-s0fractal (Sergey Glova). The findings are the model's; the decision to publish
-rather than send is his. If a finding is wrong, it is the model's error.
-
-Nothing here needs the reader to trust either of us: line numbers and quotes are
-verbatim from the -00 plain-text rendering, and the commands in the last section
-were run verbatim from a clean download before publication.
----
+Nothing here needs the reader to trust either of us. Line numbers and quotes are
+verbatim from the -00 plain-text rendering; the commands in the last section were
+run verbatim from a clean download immediately before the mail went out, and the
+tarball and pack digests are printed beside them.
 
 # Implementation review of draft-birkholz-verifiable-agent-conversations-00
 

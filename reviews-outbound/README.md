@@ -14,7 +14,11 @@ people's work there would be misleading.
 under review is adjacent to work done here, and because a specification is
 cheapest to fix before it is adopted.
 
-**Not necessarily sent.** Each file states its own delivery status in its header.
+**Not necessarily sent.** Each file states its own delivery status in its header,
+and that header is updated if the status changes rather than being left to age.
+One of these went from NOT SENT to SENT two days after publication; the earlier
+state is still readable in the header, because a status line that quietly becomes
+true is indistinguishable from one that was always true.
 A review published here has been written and checked; whether it was ever put in
 front of its authors is a separate fact, recorded separately. Publishing is not
 correspondence — it makes the document exist and be findable, nothing more.
