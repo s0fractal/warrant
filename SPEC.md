@@ -169,6 +169,8 @@ Outcome fingerprints: `ski@v1` — `{runtime, term, expect, verdict, result_node
 
 **Novelty ≠ relevance.** The format layer decides only whether an outcome is new; whether a novel check is *relevant* to the settled subject — or a strawman testing something adjacent — MUST be decided by the active settlement policy, not the core format. Tools SHOULD refuse to file re-litigation warrants carrying neither (a) nor (b); verifiers SHOULD flag them `WARN: re-litigation cites nothing new`. NOTE: because novelty is purely syntactic, a permissive-policy store may accumulate unbounded fingerprint-distinct but irrelevant re-litigations; implementations SHOULD provide configurable limits — a policy choice, not a format requirement.
 
+**Anomaly ≠ novelty ≠ relevance.** An anomaly is a model-relative interpretation supplied as evidence. Outcome-fingerprint novelty is a syntactic property computed by this format. Relevance and consequence are policy judgments. None implies either of the others. This distinction is informative and adds no field, verifier behavior, or settlement rule.
+
 §7 is itself challengeable under (b): a check demonstrating that the rule forces a wrong settlement is admissible evidence against the rule.
 
 **Report-string convention.** Where this document names verifier report strings (`key-state conflict`, `invalid threshold policy`, `unadopted root`, `genesis.json unverified`, `re-litigation cites nothing new`, and §5's `LEGACY pre-v1 signature construction` diagnosis), the normative text is the message after the verifier's severity and record-identifier columns; CLI output MAY prepend structured fields (severity, abbreviated WarrantID).
