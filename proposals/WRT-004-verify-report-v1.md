@@ -1,21 +1,54 @@
 # WRT-004: `warrant.verify-report@v1` — a report that names what it read
 
-**Status:** DRAFT rev 1 (2026-08-11) — **design only. NOT ADOPTED, NOT
-REGISTERED.** No threshold warrant, no roster signature, no `@v1` bytes
-emitted by any implementation in this repository. §13.3 registration requires
-Specification Required, a published JSON Schema (§14.2), and a statement of
-what changed — this file is the third of those and a draft of the first.
+**Status: CLOSED AS CONTRACT — retained as research rationale.**
+**`warrant.verify-report@v1` is not registered and will not be, from this
+work. `@v0` is unchanged.**
 
-**Direction.** WRT-003 asked whether Warrant should specify a *second*
-machine-readable artifact and answered **no**: one artifact family, owned by
-Warrant. This is that decision made concrete. The line it holds: **each
-protocol judges its own bytes; other protocols compose judgements without
-appropriating them.**
+Closed by **its own stopping rule**, and the way it closed is the part worth
+keeping.
 
-**`warrant.verify-report@v0` is immutable and stays supported.** §11.4 makes
-it a closed schema and forbids adding a field to it, ever. `@v1` is a
-different tag, not a revision, and a consumer that asked for `@v0` never
-receives `@v1` (§11.4).
+§6 required two independent implementations to produce byte-identical
+`input_manifest` **and `judgement`**, within two adversarial rounds. Round 2
+declared success and both rounds spent — while the judgement half was never
+implemented and never gated. **I had written a gate whose condition I then
+did not meet, and reported passing it.** That is a P0, and no third round is
+owed: the whole purpose of writing a stopping rule before the code is that it
+binds when it starts to bite.
+
+The independent counter-vectors that arrived with it stand on their own, and
+each is reproduced:
+
+- **`seal()` never produced a byte view.** It read each file, took a digest,
+  and dropped the bytes. A judgement "derived only from that view" could not
+  parse a record, check a signature or resolve a check blob — it would have
+  to re-read the filesystem, restoring exactly the TOCTOU split that round 2
+  claimed to remove. The design's central sentence was not true of its own
+  reference implementation.
+- **The mutation invariant is false for unreadable files.** An `unreadable`
+  entry carries no digest, so replacing that file's entire contents leaves
+  `input_root` unchanged — verified: `a775d483…` before and after. "Any byte
+  change moves the root" was a claim the schema could not support.
+- **Symlink and path policy was not closed.** A store root that is itself a
+  symlink gives a record in Python and `[]` in Go; a symlinked trust config
+  is called `read` by both, contradicting the refusal rule; `--trust-config /`
+  yields `path:""` in one and `path:"/"` in the other, both violating the
+  path grammar.
+- **The mutation runner was vacuous on a broken baseline.** With Go absent
+  every gate run fails, so every mutant "dies" — reproduced: `14/14 mutants
+  killed, exit 0`, over a baseline that never went green.
+
+**What survives, and where it goes.** The ecosystem line is unchanged and was
+never what failed: each protocol judges its own bytes. Warrant keeps `@v0`
+exactly as it is. The composite receipt and any binding to an ecosystem
+snapshot stay **SEV-side** — which is precisely the fallback §6 named, so
+this outcome is the rule working rather than a loss.
+
+If a Warrant-owned receipt is ever revisited, it is a **new experiment with a
+new stopping rule**, not a third round of this one.
+
+The design text below is unchanged from round 2 and is wrong in the ways
+listed above. It is kept because the record of how it failed is worth more
+than the proposal was.
 
 ---
 

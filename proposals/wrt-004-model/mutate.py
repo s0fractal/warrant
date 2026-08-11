@@ -39,6 +39,24 @@ def main(argv):
     for name in ("input_manifest.py", "input_manifest.go"):
         shutil.copy(os.path.join(HERE, name), os.path.join(backup, name))
 
+    # PRISTINE PREFLIGHT. Without it every mutant "dies" whenever the gate
+    # is broken for an unrelated reason: with Go absent, each run fails, each
+    # failure counts as a kill, and the suite reports 14/14 and exit 0 over a
+    # baseline that never went green. A kill must be a transition from green
+    # to red, not merely red.
+    #
+    # (Added while CLOSING this direction, not to advance it: leaving a tool
+    # in the tree that reports success over a broken baseline would be
+    # leaving a trap for whoever reads the retained artifact.)
+    pre = subprocess.run([sys.executable, os.path.join(HERE, "gate.py")],
+                         capture_output=True, text=True)
+    if pre.returncode != 0:
+        print("FAIL  the pristine baseline is not green — every mutant would "
+              "'die' for a reason that has nothing to do with the mutation")
+        print(pre.stdout[-400:])
+        return 1
+    print("pristine baseline: green\n")
+
     survived, applied = [], 0
     try:
         for case in cases:

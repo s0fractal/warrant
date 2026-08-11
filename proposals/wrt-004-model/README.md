@@ -1,12 +1,27 @@
-# WRT-004 model — `input_manifest` / `input_root`
+# WRT-004 model — retained after the direction was **closed**
 
-Design-only. Emits no `warrant.verify-report@v1`, registers no tag, changes
-no behaviour in `impl/` or `impl-go/`.
+**`warrant.verify-report@v1` was killed as a contract by its own stopping
+rule.** See `proposals/WRT-004-verify-report-v1.md`. This directory is kept
+for the record of *how* it failed, not as a candidate.
 
-```
-python3 gate.py        # the WRT-004 §6 kill gate; exit status is the verdict
-python3 gate.py --keep # leave the materialized stores for inspection
-```
+**Do not read the code below as a specification.** It is wrong in ways the
+closure documents: `seal()` discards the bytes it hashes, so a judgement
+could not have been derived from it without re-reading the filesystem; an
+`unreadable` entry carries no digest, so changing that file's contents does
+not move `input_root`; and symlinked store roots and trust configs are
+handled inconsistently between the two implementations.
+
+The gate and the mutation runner still run, and `mutate.py` gained a
+**pristine preflight** during the closure — without it, a broken baseline
+made every mutant "die" and the suite reported 14/14 with exit 0 over a run
+that was never green. That fix is hygiene on a retained artifact, not an
+attempt to continue the direction: leaving a tool that reports success over
+a broken baseline would be leaving a trap.
+
+They are **not in CI**, deliberately. A green check for a closed direction
+implies life it does not have.
+
+---
 
 ## What it covers, and what it does not
 
