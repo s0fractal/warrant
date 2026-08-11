@@ -1,7 +1,7 @@
 # WRT-003: `warrant.verification-receipt@v0` — a citable verifier claim
 
-**Status:** DRAFT **rev 3** (2026-08-11) — **NOT ADOPTED, NOT ADOPTABLE, NOT
-GATED BY THIS PROJECT.** Two exact-SHA reviews have run against it; §9 is the
+**Status:** DRAFT **rev 4** (2026-08-11) — **NOT ADOPTED, NOT ADOPTABLE, NOT
+GATED BY THIS PROJECT.** Three exact-SHA reviews have run against it; §9 is the
 revision history and §0 says what changed most: **this file can no longer be
 adopted into force**, because the candidate it pins is not a complete wire
 contract. It asks whether the direction is worth specifying.
@@ -39,9 +39,19 @@ same judgement.
 That is not a defect to be patched in this file. It means the wire contract
 is unfinished, and a decision to adopt it would be adopting a hole. So the
 decision on offer is the smaller and more honest one: **is this direction
-worth specifying at all?** If yes, the missing semantics — issue-code
-registry, locator grammar, runtime and settlement internals — get completed
-*first*, under a new manifest, and adoption is a later question.
+worth specifying at all?**
+
+If yes, these get completed *first*, under a new manifest, and adoption is a
+later question:
+
+- the **issue-code registry** — the gap reproduced above;
+- **locator grammar** details;
+- **runtime and settlement** internals;
+- **parser precedence and aggregation** — the pinned corpus is eleven
+  single-fault cases and defines no behaviour for composite malformed input.
+  On the pinned model `BOM + duplicate member` yields only `BOM_PRESENT`;
+  an implementation that accumulates both codes passes every fixture and
+  disagrees on every composite input (§7).
 
 If the answer is no, §5 records the alternative that would replace it, and
 that outcome is a perfectly good result of filing this.
@@ -114,11 +124,19 @@ is supposed to be careful about. A digest makes the document
 **content-addressable**; it says nothing about **provenance** or **truth**.
 Anyone can write a receipt claiming anything.)*
 
-The honest promise is narrower: a receipt is a **citable verifier claim about
-specific bytes** — a claim whose subject cannot drift, whose contents cannot
-be silently edited, and which two verifiers that agree will produce
-identically. Its authority comes from **independent re-derivability**, which
-means *re-running*, not from the document. **Reliance requires either a
+The honest promise is narrower still — *(rev 4: rev 3 wrote "and which two
+verifiers that agree will produce identically", which is **the very property
+the paragraph above had just withdrawn**. A retraction that re-states the
+retracted claim four lines later is worse than no retraction, because it
+reads as careful.)*
+
+A receipt is a **citable verifier claim about specific bytes**: its subject
+cannot drift, and the document is content-addressed so it cannot be silently
+edited. That is all it currently offers. **Cross-verifier identity — two
+implementations producing the same bytes for the same judgement — is the
+goal a successor specification would exist to reach, not a property on
+offer today.** Authority would come from **independent re-derivability**,
+which means *re-running*, not from the document. **Reliance requires either a
 re-run or an external signed attestation binding the receipt to a producer.**
 That is strictly less than the report offers today in one respect — the
 report at least comes from the process you invoked — and strictly more in
@@ -127,19 +145,19 @@ another: it names the bytes it judged.
 The normative text is pinned in §7, deliberately **not copied here** — see
 §4.
 
-## 3. The honest cost of adopting it
+## 3. The honest cost of going this way
 
-**3.1 It takes a dependency Warrant does not own.** `core` is keyed by
+**3.1 It would take a dependency Warrant does not own.** `core` is keyed by
 `subroot_descriptor_digest`, an identity defined by `ecosystem.snapshot@v0`
-in the SEV repository. Adopting the receipt as written means Warrant's
-machine-readable surface depends on a neutral bundling format specified
+in the SEV repository. Specifying a receipt on this shape would make Warrant's
+machine-readable surface depend on a neutral bundling format defined
 elsewhere. **This is the strongest argument against adoption** and it is not
 mine to wave away: Warrant has kept its verification surface
 self-contained, and this breaks that. A Warrant-owned variant keyed by
 something Warrant defines is a legitimate counter-proposal, and the receipt's
 shape survives that change — only the binding does.
 
-**3.2 It inherits a versioning discipline Warrant already has.** *(rev 2 —
+**3.2 It would inherit a versioning discipline Warrant already has.** *(rev 2 —
 this section previously claimed the receipt would* oblige *one, and offered
 the point as a lesson. That was wrong in both directions and the correction
 is worth keeping visible.)*
@@ -179,9 +197,10 @@ time the document was what a second implementation would read, and each time
 it was wrong.
 
 So this proposal does not restate the contract. It **pins the exact bytes**
-(§7) and asks a question about them. If Warrant adopts, the normative text
-**moves into this repository** and SEV stops maintaining a normative copy,
-pinning Warrant's artifact instead — that boundary is already written down on
+(§7) and asks a question about them. If Warrant ever adopts a **completed
+successor** — not this file, which §8 says cannot be adopted — the normative
+text **lives in this repository** and SEV stops maintaining a normative copy,
+pinning Warrant's artifact instead. That boundary is already written down on
 the SEV side and is not something Warrant has to negotiate.
 
 ## 5. If the answer is no
@@ -263,21 +282,48 @@ carry it — the refusal set is pinned by the language-neutral corpus. A
 manifest that named only the prose would have pinned the description and not
 the boundary.)*
 
-**Normative precedence at the parser boundary**, stated because two artifacts
-now describe one thing: where the prose and the vectors disagree, **the
-vectors govern** — they are bytes, replayable by an implementation that
-reads no prose at all, and the disagreement itself would be a defect to
-report rather than interpret.
+**The vectors are conformance EVIDENCE, not normative authority.** *(rev 4 —
+rev 3 declared here that "where the prose and the vectors disagree, the
+vectors govern". That was wrong twice over, and both ways are worth stating.*
 
-**Freeze provenance** (non-normative, and deliberately separate from the
-candidate bytes above): both pinned documents describe *themselves* as
-`SKETCH` / design candidate at those commits — the `FROZEN` declarations are
-in SEV's `README.md` freeze table and were written later. That is ordinary
-freeze mechanics, not a contradiction, but the act and the subject are
-different things and this file pins only the subject. A reviewer wanting the
-act should read SEV's freeze table and `reviews/` ledger at `master`, which
-move; they are not pinned here precisely because they are not part of the
-candidate.
+*First, it was not mine to declare: SEV never delegated normative authority
+to its corpus, and the pinned spec treats a prose/vector disagreement as a
+**bug in one of them** — a defect to report, not a precedence rule. I
+asserted authority over another project's artifact, inside a third project's
+proposal.*
+
+*Second, the rule would not have worked even if I could make it. The corpus
+is **eleven single-fault cases** and says nothing about composition. On the
+pinned model, `BOM + duplicate member` yields `["BOM_PRESENT"]` and
+`duplicate + trailing data` yields `["DUPLICATE_MEMBER"]` — the parser
+short-circuits on the first fault. An implementation that **accumulates**
+both codes passes all eleven fixtures and disagrees on every composite
+input. The corpus pins examples and a code set; it does not pin the
+boundary.)*
+
+So: the vectors are pinned because they are the best available evidence of
+the parser's intent, and **parser precedence and aggregation join the list of
+things a successor specification has to define** (§0, §8).
+
+**Freeze provenance** — non-normative, pinned to exact commits, and
+deliberately separate from the candidate bytes above.
+
+Both pinned documents describe *themselves* as `SKETCH` / design candidate at
+their commits; the `FROZEN` declarations were written later, in SEV's
+`README.md` freeze table. That is ordinary freeze mechanics — the **act** and
+the **subject** are different things — but the act still has to be citable:
+
+| Act | Commit | `README.md` sha256 at that commit |
+|---|---|---|
+| Snapshot byte core declared frozen at `7935400` | SEV `21ee454` (2026-08-10) | `94a67241be94ebc3884b37ae6a10730e57cc98714962359c2aaeac2953920e06` |
+| Receipt core declared frozen at `1fb82d6` | SEV `167e0fb` (2026-08-10) | `1c6b76b4a45c9cbd82580004179ece64311e1d046d3ef2f9f057851a06bc9c82` |
+
+*(rev 4 — rev 3 said a reviewer wanting the act should read SEV's `master`,
+"which moves". For provenance that is the wrong answer and I should not have
+written it in a repository whose subject is provenance: git commits are
+immutable and there was no reason to point at a moving ref. These rows are
+**not** part of the candidate and adopting nothing about them is intended;
+they exist so the freeze can be checked without trusting a branch tip.)*
 
 **Explicitly NOT part of the candidate**, listed because they exist and could
 otherwise be mistaken for it:
@@ -303,9 +349,9 @@ would freeze a hole. Even a maintainer inclined to say yes should not adopt
 The three outcomes available:
 
 1. **"Worth specifying."** The missing semantics — issue-code registry,
-   locator grammar, runtime and settlement internals — are completed first,
-   under a new manifest and a new proposal. Adoption is a question for that
-   proposal, not this one.
+   locator grammar, runtime and settlement internals, and parser precedence
+   and aggregation — are completed first, under a new manifest and a new
+   proposal. Adoption is a question for that proposal, not this one.
 2. **"Not worth it — specify `warrant.verify-report@v1` instead."** §5. This
    closes WRT-003 cleanly and needs no ceremony.
 3. **"Neither."** SEV keeps the receipt as a consumer-side construction over
@@ -332,3 +378,11 @@ or substitutes for that.
   aim, the manifest completed with the parser boundary, freeze provenance
   separated from candidate bytes, and this history added so the file's own
   drift is legible without reading git.
+- **rev 4** — two P1s. §7 had **invented a normative precedence** ("the
+  vectors govern") that SEV never granted and that would not have worked
+  anyway, since eleven single-fault vectors cannot define composite
+  behaviour; withdrawn, with parser precedence added to the unfinished list.
+  And §2's "honest promise" **re-stated the cross-verifier reproducibility
+  the same section had just withdrawn**. Two P2s: the adoption path was
+  still written in the present tense mid-document, and freeze provenance
+  pointed at a moving ref instead of exact commits.
