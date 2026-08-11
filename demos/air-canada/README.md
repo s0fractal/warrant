@@ -16,42 +16,50 @@ had if the agent were sealed.
 
 ---
 
-## The 30-second version
-
-If you have Python and this checkout, one command shows the whole property:
+## The 30-second version — two commands, no demo script
 
 ```bash
-python3 demos/air-canada/tamper.py
+cp -r demos/air-canada/pack/.warrants /tmp/w && \
+python3 impl/warrant.py --store /tmp/w verify --json; echo "exit $?"
+
+# change one byte in the policy the records name in `under`
+python3 - <<'PY'
+p="/tmp/w/blobs/c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72"
+b=open(p,"rb").read(); i=next(i for i,c in enumerate(b) if chr(c).isdigit())
+open(p,"wb").write(b[:i]+b"7"+b[i+1:]); print("changed byte %d" % i)
+PY
+
+python3 impl/warrant.py --store /tmp/w verify --json; echo "exit $?"
 ```
 
-It verifies the sealed pack, changes **one byte** in the policy blob the
-decision names in `under` — digit to digit — and verifies again:
+Before: `"ok":true`, **exit 0**. After: `"ok":false`, **exit 1**, and two
+findings reading `blob c8d453b05c7d content does not match its address`.
 
-```
-policy blob:  c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72
-named in `under` by 2 record(s)
+The decision records are untouched. The verifier is the same binary. One
+byte moved in the file those records name by hash, and the exit status
+changed. Read the two JSON reports yourself — that is the whole claim, and
+nothing between you and it is interpreting anything.
 
-BEFORE   ok=True   errors=0   exit status: 0
-changed one byte at offset 68: '1' -> '7'  (bytes differing: 1)
-AFTER    ok=False  errors=2   exit status: 1
-         ERR 7d8f2e7db315  blob c8d453b05c7d content does not match its address
-         ERR 9084cd23f205  blob c8d453b05c7d content does not match its address
-```
-
-The demo then checks that the failure is **attributable**: both errors name
-that digest, and their subjects are exactly the records that name it in
-`under`. An unrelated verifier failure does not count as tamper detection —
-an earlier version accepted one, and said so cheerfully.
-
-The decision was not touched. The verifier was not changed. The file the
-decision *named by hash* moved by one character, and the exit status went
-from 0 to 1.
-
-That is the entire claim. It says nothing about whether the decision was
-*correct* or whether the policy *permitted* it — only that what was named
-either still is those bytes, or is not, and that anyone can tell which
-without asking the company. The walkthrough below is the same thing at human
-speed, with the pack, the trust config and the signatures explained.
+> ### Why there is no demo script here any more
+>
+> There was one, `tamper.py`, and it is **closed**. It still runs and now
+> exits non-zero, because its oracle produced a false PASS: it required an
+> error message to *contain the tampered digest*, which is not the same as
+> the report asserting a content-address mismatch. Rewriting both errors to
+> `blob c8d453b05c7d could not be read: permission denied` — right digest,
+> right subjects, wrong claim — printed five PASS lines and declared the
+> tamper detected.
+>
+> An earlier version of the same script tampered with the passenger's
+> **request** blob while calling it the policy. Both times the mechanism was
+> fine and the wrapper around it was the defect.
+>
+> The result worth keeping: this claim does not need a clever demo. Two raw
+> verifier runs and a visible one-byte diff say it completely, and every
+> interpretive layer added more false-PASS surface than value. What follows
+> below is the same thing at human speed, with the pack, the trust config
+> and the signatures explained — prose you can check against the commands
+> above rather than a program that checks itself.
 
 ---
 

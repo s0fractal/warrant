@@ -1,5 +1,25 @@
 #!/usr/bin/env python3
-"""One property: change one digit in the pinned policy, and verification goes red.
+"""CLOSED as an external artifact — its oracle produced a false PASS.
+
+**Do not quote a green run of this script.** It exits non-zero for that
+reason, while still printing what it does.
+
+The finding: the oracle required that an ERR *message contain the tampered
+digest*, which is not the same as the report asserting a content-address
+mismatch. Rewriting both ERRs to `blob c8d453b05c7d could not be read:
+permission denied` — right digest, right subjects, wrong claim — printed all
+five PASS and exited 0, asserting that a one-byte change had been detected
+when the report never said so.
+
+That is the fourth wrapper in a row whose *interpretation* was the defect
+while the mechanism underneath was fine. The conclusion is in the README:
+the external proof does not need a demo. Two raw `warrant verify` runs and a
+visible one-byte diff say it, and every interpretive layer added more
+false-PASS surface than value.
+
+Original description follows.
+
+One property: change one digit in the pinned policy, and verification goes red.
 
     python3 demos/air-canada/tamper.py
 
@@ -136,7 +156,14 @@ def main():
         print("\nThe verifier is the same. The decision is the same.")
         print("One digit moved in the file the decision named, and the")
         print("exit status went from 0 to %d." % rc_after)
-        return 0
+        print("\n" + "!" * 62)
+        print("CLOSED: these PASS lines are not trustworthy. The oracle")
+        print("accepts any ERR whose message merely contains the digest —")
+        print("including 'could not be read: permission denied', which")
+        print("asserts no mismatch at all. See README. Run the two raw")
+        print("commands instead; they need no oracle.")
+        print("!" * 62)
+        return 1
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
