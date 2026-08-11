@@ -24,14 +24,24 @@ If you have Python and this checkout, one command shows the whole property:
 python3 demos/air-canada/tamper.py
 ```
 
-It verifies the sealed pack, changes **one digit** in the policy file the
-decision names, and verifies again:
+It verifies the sealed pack, changes **one byte** in the policy blob the
+decision names in `under` — digit to digit — and verifies again:
 
 ```
+policy blob:  c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72
+named in `under` by 2 record(s)
+
 BEFORE   ok=True   errors=0   exit status: 0
+changed one byte at offset 68: '1' -> '7'  (bytes differing: 1)
 AFTER    ok=False  errors=2   exit status: 1
-         ERR subject blob 494ad3316bfa content does not match its address
+         ERR 7d8f2e7db315  blob c8d453b05c7d content does not match its address
+         ERR 9084cd23f205  blob c8d453b05c7d content does not match its address
 ```
+
+The demo then checks that the failure is **attributable**: both errors name
+that digest, and their subjects are exactly the records that name it in
+`under`. An unrelated verifier failure does not count as tamper detection —
+an earlier version accepted one, and said so cheerfully.
 
 The decision was not touched. The verifier was not changed. The file the
 decision *named by hash* moved by one character, and the exit status went

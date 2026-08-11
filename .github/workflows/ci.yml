@@ -62,6 +62,12 @@ jobs:
       # and an UNRUN check fails here rather than passing quietly.
       - name: One command (tools/check.py, UNRUN is not a pass)
         run: python3 tools/check.py --allow-unrun
+      # The exact command the demo's README tells an outsider to run. A green
+      # CI that never runs the external artifact says nothing about it -- the
+      # first version of this demo tampered with the wrong blob and CI was
+      # green throughout.
+      - name: Air Canada tamper demo (the external one-command claim)
+        run: python3 demos/air-canada/tamper.py
       - name: Conformance (SPEC s8 vectors, byte-exact)
         run: python3 impl/warrant.py conformance examples
       - name: Selftest (live round-trip + tamper detection)
