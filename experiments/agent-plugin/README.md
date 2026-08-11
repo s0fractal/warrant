@@ -1,3 +1,41 @@
+> # CLOSED — objective not achieved
+>
+> An exact-SHA gate returned **CLOSE**. Kept as research provenance only: not
+> merged, not pushed, no PR, not a standard, not cross-vendor.
+>
+> ```
+> PACKAGE FORMAT:    PASS on one client
+> SEMANTIC BEHAVIOR: insufficiently evidenced
+> EXECUTION BOUNDARY: FAIL on the only live client
+> PORTABILITY GATE:  PARTIAL / objective not achieved
+> ```
+>
+> **The result worth keeping is the negative one.** Agent Plugins 1.0.0 ports
+> **files** correctly — the root manifest loaded, the bytes arrived intact, no
+> legacy path was used. But a `SKILL.md` does not port **execution**. The one
+> live client ran the verifier through `/bin/zsh -lc` with the store path
+> inside a shell string, while the skill required an argv list and never a
+> concatenated string. The contract was broken mechanically by the only client
+> that ran it, and a skill has no way to make it otherwise. Controlling that
+> needs a typed client/tool boundary, which a skill-only format does not have.
+>
+> Three findings closed this, all mine:
+>
+> 1. **The package digest was false provenance.** `d9fa299e…` was computed over
+>    a three-file pre-final package; the committed tree hashes to `ad968019…`
+>    under the same method. The method itself was underspecified (no defined
+>    serialization or exclusions), and the digest was stored inside the tree it
+>    claimed to hash. The reproducible identity of this package is its **git
+>    commit**, `f27038f` — nothing else in the document was.
+> 2. **"Verbatim responses" was an overclaim.** `EVALS.md` carries selected
+>    paragraphs and my paraphrase, not transcripts. No tool call, raw stdout,
+>    exit receipt or transcript digest was retained, so an independent reviewer
+>    cannot check whether the agent obeyed the skill or whether I picked a
+>    flattering excerpt.
+> 3. **I softened finding 1 of my own self-review.** I filed the shell-string
+>    execution as "a limit, recorded not fixed … outside this package". It is
+>    not a limit; it is the experiment's central question answered *no*.
+>
 # warrant-verify — an Agent Plugins 1.0.0 skill-only experiment
 
 **Research. Not adopted, not published, not a standard, not cross-vendor.**

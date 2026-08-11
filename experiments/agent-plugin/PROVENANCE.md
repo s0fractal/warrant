@@ -38,16 +38,30 @@ Agent Skills frontmatter follows <https://agentskills.io/specification>
 (`name`, `description` required; `license`, `compatibility` optional and
 used).
 
-## Package digest
+## Package identity
 
-Over the package tree, `sha256` of the sorted per-file `sha256` list:
+**The digest previously claimed here was false provenance and is withdrawn.**
 
-```
-d9fa299e2be4585eec3c48235ceb410916f76687ccf28bfab9f84a2ffc24bede
-```
+It read `d9fa299e2be4585eec3c48235ceb410916f76687ccf28bfab9f84a2ffc24bede`,
+computed over a **three-file** pre-final package (`plugin.json`, `SKILL.md`,
+`SEMANTIC-BOUNDARY.md`). The committed tree has six files and hashes to
+`ad968019061e1a00dee1005d39a2cfac620426f38057e80d43f9618883f72bc7` under the
+same command. So the number did not identify this package, while sitting in
+the document whose job is identifying it.
 
-The bytes Codex installed into its plugin cache hash to the same value — the
-client copied the package, it did not rewrite it.
+Two further defects in the claim, worth stating because the fix is not a
+better number:
+
+- the method was underspecified — "sha256 of the sorted per-file sha256 list"
+  fixes no serialization, no filename handling and no exclusions, so three
+  reasonable implementations produce three different values;
+- the digest was stored **inside the tree it hashed**, which cannot be
+  self-consistent.
+
+The reproducible identity of this package is the git commit that contains it:
+`f27038f33f31ea4494da308815ad20836e5bd926`, with the closure commit on top.
+The claim that "the bytes Codex installed hash to the same value" was true of
+the three-file state and is not evidence about the committed package.
 
 ## What was not done
 
