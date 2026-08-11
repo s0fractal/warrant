@@ -1,8 +1,13 @@
-# WRT-003: `warrant.verification-receipt@v0` — a citable verification result
+# WRT-003: `warrant.verification-receipt@v0` — a citable verifier claim
 
-**Status:** DRAFT rev 1 (2026-08-11) — **NOT ADOPTED, NOT GATED BY THIS
-PROJECT.** No threshold warrant, no roster signature, no code in `impl/`, no
-wire bytes frozen *here*. This file asks one question and pins the artifact
+**Status:** DRAFT **rev 2** (2026-08-11) — **NOT ADOPTED, NOT GATED BY THIS
+PROJECT.** rev 2 answers an exact-SHA review of rev 1 that found three P1s,
+each of which is corrected **in place with the error left visible**: the
+alternative in §5 violated SPEC §11.4, the pins in §7 did not identify a
+unique candidate, and §2 promised citability the artifact cannot deliver.
+
+No threshold warrant, no roster signature, no code in `impl/`, no wire
+bytes frozen *here*. This file asks one question and pins the artifact
 the answer would be about; it does not merge a contract into Warrant.
 
 **Origin, stated first because it changes how you should read this.** The
@@ -73,10 +78,28 @@ as a closed sum type, and a structured issue list with locators. Plus
 aggregate counts bound to that issue multiset, so a receipt cannot report
 `ok` while its own sources say otherwise.
 
-**It is not a Warrant.** Unsigned, no WarrantID, no settlement authority —
-the same disclaimer the report already carries. It is a *statement by a
-verifier about specific bytes*, which is precisely what a third party needs
-in order to cite a verification **without re-running it**.
+**It is not a Warrant, and it is not an attestation.** Unsigned, no
+WarrantID, no settlement authority — the same disclaimer the report already
+carries. `producer.impl` is a free string and `producer.artifact_digest` may
+be `null`, so **nothing in a receipt proves that the named verifier existed,
+ran, or produced it.**
+
+*(rev 2 — the earlier text said a receipt is "precisely what a third party
+needs in order to cite a verification **without re-running it**". That was
+an overclaim, and the distinction it blurred is the one this whole document
+is supposed to be careful about. A digest makes the document
+**content-addressable**; it says nothing about **provenance** or **truth**.
+Anyone can write a receipt claiming anything.)*
+
+The honest promise is narrower: a receipt is a **citable verifier claim about
+specific bytes** — a claim whose subject cannot drift, whose contents cannot
+be silently edited, and which two verifiers that agree will produce
+identically. Its authority comes from **independent re-derivability**, which
+means *re-running*, not from the document. **Reliance requires either a
+re-run or an external signed attestation binding the receipt to a producer.**
+That is strictly less than the report offers today in one respect — the
+report at least comes from the process you invoked — and strictly more in
+another: it names the bytes it judged.
 
 The normative text is pinned in §7, deliberately **not copied here** — see
 §4.
@@ -93,17 +116,33 @@ self-contained, and this breaks that. A Warrant-owned variant keyed by
 something Warrant defines is a legitimate counter-proposal, and the receipt's
 shape survives that change — only the binding does.
 
-**3.2 It obliges a versioning discipline, immediately.** SEV tried to tighten
-one rule (`binding` requires a trust basis) as an amendment to the frozen
-`@v0`. The result was reproducible and ugly: **the same canonical bytes, the
-same type tag, two different verdicts**, with nothing on the wire to tell an
-implementation which contract judged them. A contract change that no byte
-announces is not an amendment — it is a silent fork. The tightening now ships
-as a separate tag, `@v1`, dispatched explicitly.
+**3.2 It inherits a versioning discipline Warrant already has.** *(rev 2 —
+this section previously claimed the receipt would* oblige *one, and offered
+the point as a lesson. That was wrong in both directions and the correction
+is worth keeping visible.)*
 
-This lesson is Warrant's too, independently of this proposal:
-`warrant.verify-report@v0` is normative for anything printing that tag, so
-the same trap is open there today.
+SEV tried to tighten one rule (`binding` requires a trust basis) as an
+amendment to the frozen `@v0`, and got the same canonical bytes under the
+same tag with two different verdicts. The tightening now ships as a separate
+tag, dispatched explicitly.
+
+**Warrant had already legislated this, and more precisely.** SPEC §11.4 makes
+`@v0` a closed schema, forbids adding any field "including an obviously
+harmless one", requires any change of meaning to ship under a new tag,
+requires consumers to gate on the exact tag and not a prefix, and forbids
+substituting a tag the consumer did not ask for. SEV rediscovered by
+stepping on it a rule this project had already written down.
+
+And the open same-tag divergence here is **not** hypothetical, which is what
+the earlier revision implied: SPEC §11.3 discloses it concretely — without
+`--store-mode`, the Go CLI's legacy flat mode emits `ok:true, records:0`
+where Python emits the fail-closed `ok:false`, *"the same tag carrying
+opposite verdicts about the same path in two conformant implementations"*,
+recorded there as an open defect rather than legislated away. That is a
+sharper instance than anything this proposal contributes.
+
+So the cost is real but narrower than stated: a second artifact means a
+second tag registry to keep honest under §13.3, not a new discipline.
 
 **3.3 A second artifact is a second thing to keep true.** Two machine-readable
 outputs that can disagree is a worse failure than one that says less.
@@ -124,13 +163,21 @@ the SEV side and is not something Warrant has to negotiate.
 
 ## 5. If the answer is no
 
-The alternative, stated so it can win: **grow `warrant.verify-report@v0`
-instead.** Give findings a closed code registry alongside the prose message,
-add per-record structure, and leave the byte-universe binding to whoever is
-doing the bundling. That keeps one artifact, keeps Warrant self-contained,
-and captures most of §1's gap. It would not give a *citable* result — the
-report still would not say which bytes it ranged over — but Warrant may
-reasonably decide that is not its job.
+The alternative, stated so it can win: **specify
+`warrant.verify-report@v1`.** Give findings a closed code registry alongside
+the prose message, add per-record structure, and leave the byte-universe
+binding to whoever is doing the bundling. One artifact family, Warrant stays
+self-contained, and most of §1's gap closes.
+
+*(rev 2: this section previously said "grow `@v0`". That is **forbidden** by
+SPEC §11.4 — `@v0` is a closed schema and a producer MUST NOT add a field to
+it, ever. A proposal that offered an alternative violating the host
+project's own normative text was not offering a real alternative. The
+substance is unchanged; the tag is.)*
+
+It would not give a result that names its own inputs — a `@v1` report still
+would not say which bytes it ranged over — but Warrant may reasonably decide
+that is not its job.
 
 A third outcome: adopt nothing, and let SEV keep the receipt as a consumer-side
 construction over Warrant's report, which is exactly what the live adapter
@@ -140,14 +187,21 @@ does today.
 
 **Was:**
 
-- An executable reference model with self-vectors, a language-neutral
-  conformance corpus replayed through the implementation, and a live adapter
-  that seals this repository's real `.warrants/` store and projects it.
+- An executable reference model with self-vectors **at the pinned freeze**
+  (§7). Note the asymmetry honestly: the language-neutral conformance corpus
+  that replays through the implementation, and the live adapter that seals
+  this repository's real `.warrants/` store, were **built later** — they
+  exercise SEV's current tree, not the pinned `@v0` bytes. They are evidence
+  that the shape survives contact with real data; they are not evidence
+  about the exact candidate.
 - **26 adversarial review rounds** in the SEV repository (Codex, some Kimi),
   each against an exact SHA, each filed under `sev/reviews/` with a ledger.
   Findings included several defects in the *guards* rather than the product,
   and those are recorded as such. (Counts are as of the pinned SEV commit in
-  §7; the ledger is the authority, not this sentence.)
+  §7; the ledger is the authority, not this sentence.) **Most of those
+  rounds gated the work that came AFTER the freeze** — the `@v1` split,
+  the projector, the corpus. The candidate itself was gated through the
+  round that froze it, and no further.
 
 **Was not:**
 
@@ -160,21 +214,41 @@ does today.
 - **No Warrant code.** This proposal adds no implementation, registers no
   runtime, and changes no existing behaviour.
 
-## 7. The pinned artifact
+## 7. The candidate, pinned unambiguously
 
-Bytes this proposal is about, at SEV `master` = `33a08a6`:
+*(rev 2 — the earlier table was self-contradicting and the correction is the
+substance of this revision. It pinned SEV's **current** bytes while the text
+said Warrant is asked about the **frozen `@v0`** and that `@v1` is out of
+scope. The current bytes contain `@v1`. It also pinned two conformance files
+that did not exist at the freeze, and it did **not** pin
+`ecosystem.snapshot@v0` at all — the very dependency §3.1 calls the strongest
+argument against adoption. "Pins the exact bytes" and "`@v1` is not on the
+table" could not both be true of that table.)*
 
-| Artifact | sha256 |
-|---|---|
-| `proposals/WARRANT-VERIFICATION-RECEIPT.md` | `1c0e0c1a59fc82c655a0589c100121c8755d28467dceb7af572d23a2d13838ed` |
-| `model/snapshot_model.py` (executable model) | `ef1d9fef6689f7d4d8d23ef9bcbee76457cff1ba0fde99a0f271a62a8afb7548` |
-| `conformance/signature-promotion.vectors.json` | `0dd38df8f17409c5599e9f4c20a4cce43df8a1b5fa87bb5245eae4d7765a18b9` |
-| `conformance/judgement-identity.vectors.json` | `450809a762b5e7bef0cdf91404dc0a4b0db41dab8b056a04843af47e98a1bad7` |
+**The candidate is exactly this, and nothing else:**
 
-The `@v0` core was frozen on the SEV side at its commit `1fb82d6` after a
-clean exact-SHA round. `@v1` (the trust-basis tightening) is **proposed and
-unratified** there, and this proposal does **not** ask Warrant to consider
-it — it is named here only because §3.2 is the lesson that produced it.
+| Role | Ref | sha256 |
+|---|---|---|
+| Receipt contract, `warrant.verification-receipt@v0` | SEV `1fb82d6` · `proposals/WARRANT-VERIFICATION-RECEIPT.md` | `d49c4ee5cf437877e11e376d5f0c9f99bcf739fb27cfcb184d3b3c438e59c453` |
+| Executable model at the freeze | SEV `1fb82d6` · `model/snapshot_model.py` | `ed89c8cfc19ca0266ccb5dceded505924921d7c2061e4871bcf219adca54f58a` |
+| **Dependency** — `ecosystem.snapshot@v0`, frozen byte core | SEV `7935400` · `spec/ECOSYSTEM-SNAPSHOT.md` | `814d8ac69c18274a1d93e12539c9002068ebfac877419d98603e7a2f78443422` |
+
+Adopting the receipt means adopting that snapshot document as a dependency.
+It is pinned here so the cost in §3.1 is a fact with a digest rather than a
+warning.
+
+**Explicitly NOT part of the candidate**, listed because they exist and could
+otherwise be mistaken for it:
+
+- `warrant.verification-receipt@v1` — the trust-basis tightening. Proposed
+  and unratified in SEV, named in §3.2 only as the story that produced the
+  versioning point, and **not before Warrant** in any form.
+- Everything in SEV `master` after those commits: the `@v1` dispatch, the
+  §4.1 PROV mapping, the projector, the conformance matrices built for
+  `@v1`. Newer, better tested, and **not the thing being asked about**.
+
+If Warrant ever wants the later work, that is a different proposal with a
+different manifest.
 
 ## 8. What a decision looks like
 
