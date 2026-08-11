@@ -91,6 +91,22 @@ neither an independent adversarial gate nor a governance adoption. The commits
 adversarial gate (Kimi K3) then returned `AMEND` with 11 reproducible findings the
 green suites had missed. This file exists so that does not recur.
 
+2026-08-11, measured across four consecutive external-artifact attempts, and
+recorded as a **heuristic, not a rule** — nothing here is adopted and no
+agent-written line in this file binds anyone: **no wrapper can assert more
+than the verifier's own output.** Four attempts to package one true claim
+each failed in the wrapper while the mechanism underneath held. A vertical
+slice sold integrity as authorization; a control labelled `$6400` executed
+`$640`; a demo tampered with the passenger's request while calling it the
+policy; and an oracle accepted `blob c8d453… could not be read: permission
+denied` as proof of a hash mismatch, printing five `PASS` lines over a report
+that asserted no mismatch at all. Each defect was found by an independent
+gate, never by the green suite of the thing containing it. The artifact
+became honest only when the interpreting layer was **removed**: two raw
+`warrant verify` runs and a visible one-byte diff, exit `0` then exit `1`,
+with nothing between the reader and the claim. If a proof is legible as two
+commands and a diff, a third program only adds surface for a false `PASS`.
+
 2026-07-28, measured on this repository and the reason rules 6–7 were added:
 the release-surface item took **eight** consecutive Codex gates, every one
 returning `AMEND`, every one filing same-layer P1s, and not one P0 in the chain —
