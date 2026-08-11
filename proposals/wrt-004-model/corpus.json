@@ -1,0 +1,47 @@
+{
+  "corpus": "wrt-004.input-manifest@v0",
+  "note": "Raw-byte stores, materialized identically for both implementations. Chosen to hit the places two languages disagree rather than the places they agree: HTML-escaping defaults, non-ASCII ordering, empty files, nesting, and paths whose order differs between byte and UTF-16 code-unit comparison. A corpus of well-behaved ASCII stores would pass on day one and prove nothing.",
+  "not_covered": "Symlinks, unreadable files and duplicate paths are specified in WRT-004 §3.1 but are not here: they are filesystem states, not byte content, and a JSON fixture cannot carry them. They need a separate materializing test, and the omission is listed so it is visible rather than assumed away.",
+  "stores": {
+    "plain": {
+      "note": "the ordinary case, so a failure elsewhere is not blamed on complexity",
+      "files": {
+        "genesis.json": "e30=",
+        "records/aaaa.json": "eyJhIjoxfQ==",
+        "blobs/p": "cG9saWN5"
+      }
+    },
+    "html-escapes": {
+      "note": "Go's encoding/json escapes < > & by default; Python's ensure_ascii=False does not. A path carrying all three is the cheapest way to catch a JCS divergence that would otherwise surface only on someone's real store.",
+      "files": {
+        "blobs/a<b>c&d": "eA==",
+        "records/aaaa.json": "eyJhIjoxfQ=="
+      }
+    },
+    "non-ascii": {
+      "note": "UTF-8 preserves code-point order, so byte-sort and code-point-sort must agree. An implementation sorting by UTF-16 code units reorders the astral character against the BMP one.",
+      "files": {
+        "blobs/Зоря": "eg==",
+        "blobs/🌀spiral": "cw==",
+        "blobs/~tilde": "dA==",
+        "records/aaaa.json": "eyJhIjoxfQ=="
+      }
+    },
+    "empty-and-nested": {
+      "note": "an empty file still has a digest, and a nested path is `other`, not skipped",
+      "files": {
+        "blobs/empty": "",
+        "records/aaaa.json": "eyJhIjoxfQ==",
+        "extra/deep/file.txt": "ZA==",
+        "genesis.json": "e30="
+      }
+    },
+    "record-shaped-but-not-json": {
+      "note": "role comes from layout, not from parseability -- an unreadable record is exactly the case where naming the bytes matters",
+      "files": {
+        "records/bbbb.json": "bm90IGpzb24gYXQgYWxs",
+        "blobs/p": "cG9saWN5"
+      }
+    }
+  }
+}

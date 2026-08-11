@@ -128,6 +128,18 @@ The gate is deliberately harsher than `@v0`'s, which requires only that two
 implementations agree on *counts and exit status*. Byte identity is the whole
 claim; a design that cannot reach it should not be registered.
 
+**Round 1 result: the gate passes for `input_manifest` and `input_root`.**
+`proposals/wrt-004-model/` holds a Python and a Go implementation — the Go
+written from this text rather than ported, so that a disagreement would be
+evidence about the specification — a raw-byte corpus, and the gate. 9/9
+mutations of the two implementations fail it. The corpus caught a real
+divergence on the first run: Go escapes `<`, `>` and `&` by default, so a
+store path containing them produced different bytes in the two languages.
+
+**This is one of two halves.** The judgement half is not gated and cannot be
+until §7's issue-code registry is closed. One round of the two allowed in §6
+is spent.
+
 ## 7. Open, and deliberately not decided here
 
 - **The issue-code registry** — the closed set for §4. This is exactly what
