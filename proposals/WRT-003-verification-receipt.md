@@ -1,21 +1,37 @@
 # WRT-003: `warrant.verification-receipt@v0` — a citable verifier claim
 
-**Status:** DRAFT **rev 4** (2026-08-11) — **NOT ADOPTED, NOT ADOPTABLE, NOT
-GATED BY THIS PROJECT.** Three exact-SHA reviews have run against it; §9 is the
-revision history and §0 says what changed most: **this file can no longer be
-adopted into force**, because the candidate it pins is not a complete wire
-contract. It asks whether the direction is worth specifying.
+**Status: CLOSED AS CONTRACT — retained as research rationale.**
+**Direction chosen: a Warrant-owned `warrant.verify-report@v1`.**
 
-No threshold warrant, no roster signature, no code in `impl/`, no wire
-bytes frozen *here*. This file asks one question and pins the artifact
-the answer would be about; it does not merge a contract into Warrant.
+This proposal asked whether Warrant should begin specifying a second
+machine-readable artifact. **The answer is no**, and the reasoning is in §5,
+which this file argued *against itself* from rev 2 onward: one artifact
+family, owned by Warrant, beats a second one bolted to an identity defined
+elsewhere.
 
-**Origin, stated first because it changes how you should read this.** The
-artifact was designed **outside** Warrant, in
-[`s0fractal/sev`](https://github.com/s0fractal/sev), by an agent, to solve a
-problem SEV had. It is a *candidate*, not a finding. SEV holds no authority
-here and its review record is not Warrant's gate — see §6 for exactly what
-was and was not validated.
+Closing it is not a rejection of the underlying need — §1's three gaps are
+real and measured. It is a decision about **where the need is met**: inside
+`warrant.verify-report@v1`, under Warrant's own tag registry (SPEC §11.4,
+§13.3), with no dependency on `ecosystem.snapshot@v0` and an `input_root`
+that Warrant defines. `@v0` remains immutable forever.
+
+**This is a choice of direction, not adoption of anything.** `@v1` does not
+exist yet; it has no bytes, no gate, and no threshold warrant.
+
+The ecosystem line the decision draws, and the reason it is the resonant
+one: **each protocol judges its own bytes; SEV composes judgements without
+appropriating them.** Warrant owns store bytes, verification and the report;
+SEV composes and projects; OAIP owns acceptance; BOS holds observer-relative
+appraisal; Σ-GLYPH owns reason-execution semantics. A receipt profile
+belonging to no one was the split-brain, and this closes it.
+
+**Why the file is kept rather than deleted.** Its §9 records four exact-SHA
+reviews and every P1 they found, each corrected in place with the error left
+visible: an alternative that violated the host project's own SPEC, pins that
+did not identify a candidate, a citability promise an unsigned document
+cannot make, a normative precedence I had no authority to declare, and a
+retraction that re-stated what it retracted. The reasoning that produced the
+decision is worth more than the proposal was.
 
 ---
 
@@ -378,6 +394,8 @@ or substitutes for that.
   aim, the manifest completed with the parser boundary, freeze provenance
   separated from candidate bytes, and this history added so the file's own
   drift is legible without reading git.
+- **rev 5** — closed. Direction chosen: Warrant-owned
+  `warrant.verify-report@v1`; §5's alternative wins. No contract adopted.
 - **rev 4** — two P1s. §7 had **invented a normative precedence** ("the
   vectors govern") that SEV never granted and that would not have worked
   anyway, since eleven single-fault vectors cannot define composite
