@@ -16,6 +16,35 @@ had if the agent were sealed.
 
 ---
 
+## The 30-second version
+
+If you have Python and this checkout, one command shows the whole property:
+
+```bash
+python3 demos/air-canada/tamper.py
+```
+
+It verifies the sealed pack, changes **one digit** in the policy file the
+decision names, and verifies again:
+
+```
+BEFORE   ok=True   errors=0   exit status: 0
+AFTER    ok=False  errors=2   exit status: 1
+         ERR subject blob 494ad3316bfa content does not match its address
+```
+
+The decision was not touched. The verifier was not changed. The file the
+decision *named by hash* moved by one character, and the exit status went
+from 0 to 1.
+
+That is the entire claim. It says nothing about whether the decision was
+*correct* or whether the policy *permitted* it — only that what was named
+either still is those bytes, or is not, and that anyone can tell which
+without asking the company. The walkthrough below is the same thing at human
+speed, with the pack, the trust config and the signatures explained.
+
+---
+
 ## 0. Install the verifier (~2 min)
 
 One line (Python 3.9+):
