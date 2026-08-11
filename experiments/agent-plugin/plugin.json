@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "warrant-verify",
+  "version": "0.1.0",
+  "description": "Run an existing local Warrant verifier and report exactly what it established without inferring correctness, authorization, or actor identity.",
+  "repository": "https://github.com/s0fractal/warrant",
+  "license": "Apache-2.0",
+  "keywords": ["warrant", "verification", "provenance", "integrity"]
+}
