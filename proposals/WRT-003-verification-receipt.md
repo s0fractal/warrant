@@ -1,10 +1,10 @@
 # WRT-003: `warrant.verification-receipt@v0` — a citable verifier claim
 
-**Status:** DRAFT **rev 2** (2026-08-11) — **NOT ADOPTED, NOT GATED BY THIS
-PROJECT.** rev 2 answers an exact-SHA review of rev 1 that found three P1s,
-each of which is corrected **in place with the error left visible**: the
-alternative in §5 violated SPEC §11.4, the pins in §7 did not identify a
-unique candidate, and §2 promised citability the artifact cannot deliver.
+**Status:** DRAFT **rev 3** (2026-08-11) — **NOT ADOPTED, NOT ADOPTABLE, NOT
+GATED BY THIS PROJECT.** Two exact-SHA reviews have run against it; §9 is the
+revision history and §0 says what changed most: **this file can no longer be
+adopted into force**, because the candidate it pins is not a complete wire
+contract. It asks whether the direction is worth specifying.
 
 No threshold warrant, no roster signature, no code in `impl/`, no wire
 bytes frozen *here*. This file asks one question and pins the artifact
@@ -21,12 +21,30 @@ was and was not validated.
 
 ## 0. The question
 
-> Does Warrant want a **second** machine-readable artifact — a signed-nothing,
-> snapshot-bound *receipt* — alongside `warrant.verify-report@v0`?
+> Should Warrant **begin specifying** a second machine-readable artifact — a
+> signed-nothing, snapshot-bound *receipt* — alongside
+> `warrant.verify-report@v0`?
 
-Everything below exists to make that question answerable. If the answer is
-no, §5 records the alternative that would replace it, and that outcome is a
-perfectly good result of filing this.
+**rev 3 narrows this from "should Warrant adopt this contract".** It cannot
+be that question, because the pinned candidate is not a complete wire
+contract. Reproduced on the pinned model at SEV `1fb82d6`: two canonical
+receipts over the *same* snapshot, trust config, grade and execution policy,
+differing only in one arbitrary `WARN` issue code, **both validate with no
+findings and produce different `core` digests**. The issue-code registry is
+an explicit extension point in the frozen text, so "byte-reproducible core
+across implementations" — §2's central promise — is not something the pinned
+bytes deliver. Two honest implementations can disagree on the digest of the
+same judgement.
+
+That is not a defect to be patched in this file. It means the wire contract
+is unfinished, and a decision to adopt it would be adopting a hole. So the
+decision on offer is the smaller and more honest one: **is this direction
+worth specifying at all?** If yes, the missing semantics — issue-code
+registry, locator grammar, runtime and settlement internals — get completed
+*first*, under a new manifest, and adoption is a later question.
+
+If the answer is no, §5 records the alternative that would replace it, and
+that outcome is a perfectly good result of filing this.
 
 ## 1. What already exists, and what it does not do
 
@@ -66,9 +84,14 @@ That is the boundary being real, measured rather than argued.
 One object per (sealed snapshot subroot, verification), split `core` /
 `producer`:
 
-- **`core`** is byte-reproducible across implementations *relative to*
-  (snapshot, trust config, grade, declared execution policy). Its digest is
-  citable: two verifiers that agree produce identical bytes.
+- **`core`** *aims to be* byte-reproducible across implementations relative
+  to (snapshot, trust config, grade, declared execution policy).
+
+  **It does not achieve that yet, and §0 exists because of it.** The frozen
+  text leaves the issue-code registry an extension point, so two receipts
+  over identical inputs differing only in an arbitrary `WARN` code both
+  validate and hash differently. The aim is the reason to specify; it is not
+  a property the candidate has.
 - **`producer`** is host-local (implementation name, artifact digest, local
   notes) and carries **no** cross-implementation agreement.
 
@@ -231,11 +254,30 @@ table" could not both be true of that table.)*
 |---|---|---|
 | Receipt contract, `warrant.verification-receipt@v0` | SEV `1fb82d6` · `proposals/WARRANT-VERIFICATION-RECEIPT.md` | `d49c4ee5cf437877e11e376d5f0c9f99bcf739fb27cfcb184d3b3c438e59c453` |
 | Executable model at the freeze | SEV `1fb82d6` · `model/snapshot_model.py` | `ed89c8cfc19ca0266ccb5dceded505924921d7c2061e4871bcf219adca54f58a` |
-| **Dependency** — `ecosystem.snapshot@v0`, frozen byte core | SEV `7935400` · `spec/ECOSYSTEM-SNAPSHOT.md` | `814d8ac69c18274a1d93e12539c9002068ebfac877419d98603e7a2f78443422` |
+| **Dependency** — `ecosystem.snapshot@v0`, prose | SEV `7935400` · `spec/ECOSYSTEM-SNAPSHOT.md` | `814d8ac69c18274a1d93e12539c9002068ebfac877419d98603e7a2f78443422` |
+| **Dependency** — the parser boundary, executable | SEV `7935400` · `conformance/parse-strict.vectors.json` | `dde19ca66aed52c772803cd7f5ef50653f8a2038974319c3d55794eed5bbe0d6` |
 
-Adopting the receipt means adopting that snapshot document as a dependency.
-It is pinned here so the cost in §3.1 is a fact with a digest rather than a
-warning.
+*(rev 3 adds the fourth row. The frozen snapshot surface includes
+`parse_strict`'s **complete refusal set**, and the prose spec alone does not
+carry it — the refusal set is pinned by the language-neutral corpus. A
+manifest that named only the prose would have pinned the description and not
+the boundary.)*
+
+**Normative precedence at the parser boundary**, stated because two artifacts
+now describe one thing: where the prose and the vectors disagree, **the
+vectors govern** — they are bytes, replayable by an implementation that
+reads no prose at all, and the disagreement itself would be a defect to
+report rather than interpret.
+
+**Freeze provenance** (non-normative, and deliberately separate from the
+candidate bytes above): both pinned documents describe *themselves* as
+`SKETCH` / design candidate at those commits — the `FROZEN` declarations are
+in SEV's `README.md` freeze table and were written later. That is ordinary
+freeze mechanics, not a contradiction, but the act and the subject are
+different things and this file pins only the subject. A reviewer wanting the
+act should read SEV's freeze table and `reviews/` ledger at `master`, which
+move; they are not pinned here precisely because they are not part of the
+candidate.
 
 **Explicitly NOT part of the candidate**, listed because they exist and could
 otherwise be mistaken for it:
@@ -252,9 +294,41 @@ different manifest.
 
 ## 8. What a decision looks like
 
-Adoption is the project's own process: a threshold warrant signed by roster
-keys, recorded in `.warrants/` (AGENTS.md rule 2). Nothing in this file, and
-no commit or PR carrying it, constitutes or substitutes for that.
+**This file cannot be adopted into force, and rev 3 says so rather than
+leaving it implied.** §0 explains why: the pinned candidate leaves wire
+semantics unspecified, and a threshold warrant over an incomplete contract
+would freeze a hole. Even a maintainer inclined to say yes should not adopt
+*this*.
 
-A rejection needs no ceremony — a maintainer saying "no, grow the report
-instead" closes this, and §5 is already written to make that easy.
+The three outcomes available:
+
+1. **"Worth specifying."** The missing semantics — issue-code registry,
+   locator grammar, runtime and settlement internals — are completed first,
+   under a new manifest and a new proposal. Adoption is a question for that
+   proposal, not this one.
+2. **"Not worth it — specify `warrant.verify-report@v1` instead."** §5. This
+   closes WRT-003 cleanly and needs no ceremony.
+3. **"Neither."** SEV keeps the receipt as a consumer-side construction over
+   Warrant's report, which is what the live adapter does today. Also a clean
+   close.
+
+Adoption of anything, whenever it comes, is this project's own process: a
+threshold warrant signed by roster keys, recorded in `.warrants/` (AGENTS.md
+rule 2). Nothing in this file, and no commit or PR carrying it, constitutes
+or substitutes for that.
+
+## 9. Revision history
+
+- **rev 1** — filed. Three P1s at exact-SHA review: the §5 alternative
+  violated SPEC §11.4; the §7 pins did not identify a unique candidate
+  (current bytes containing `@v1`, no snapshot dependency); §2 overclaimed
+  citability for an unsigned document.
+- **rev 2** — those three corrected in place, with the errors left visible.
+  Two further P1s: the GitHub PR title and body still carried rev 1's claims,
+  and the pinned `@v0` is not a complete wire contract — reproduced as two
+  valid receipts over identical inputs with different `core` digests.
+- **rev 3** — the question narrowed from *"adopt this"* to *"is this worth
+  specifying"*, §2's reproducibility claim demoted from a property to an
+  aim, the manifest completed with the parser boundary, freeze provenance
+  separated from candidate bytes, and this history added so the file's own
+  drift is legible without reading git.
