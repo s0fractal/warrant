@@ -47,7 +47,15 @@ warrant.verify-report@v1
 └── producer        local, explicitly non-authoritative
 ```
 
-## 3. `input_root` — Warrant's own, depending on nothing
+## 3. One atomic observation — `seal()` — and `input_root` over it
+
+The verifier loads the store's byte view **once**. `input_manifest` and the
+judgement are both derived from that view and from nothing else, so they
+cannot disagree about what exists. Anything the seal refuses is not judged.
+
+*(rev 2. Round 1 had two independent producers — a filesystem walk for the
+manifest and the verifier for the judgement — and they diverged on the first
+adversarial input.)*
 
 ```
 input_root = sha256( "warrant.verify-report.input@v1:" || JCS(entries) )
@@ -74,8 +82,30 @@ store it silently could not see.
 | Member | Value |
 |---|---|
 | `path` | store-relative, `/`-separated, no `.` or `..` segment, no leading `/` |
-| `sha256` | lowercase hex over the file's raw bytes as read |
 | `role` | `record` \| `blob` \| `genesis` \| `trust-config` \| `other` |
+| `state` | `read` \| `unreadable` \| `refused` |
+| `sha256` | present **iff** `state == "read"` — lowercase hex over the bytes obtained |
+| `reason` | present **iff** `state == "refused"` — `symlink` \| `not-a-regular-file` |
+
+*(rev 2 — rev 1 required failed reads to appear while making `sha256`
+mandatory over "raw bytes as read". There are no bytes after a failed read,
+so the contract was internally unsatisfiable. `state` is a sum type for that
+reason, and an entry that was never read carries **no** digest rather than a
+`null` one: a null would be a claim about bytes that do not exist.)*
+
+**A symlink is `refused`, not followed and not skipped.** Round 1 skipped it
+silently while a live verifier follows it, so `input_root` committed to `[]`
+over a store whose report judged one record — the manifest did not commit the
+bytes the judgement used. Refusing is visible in the observation, and because
+the judgement reads **only** the sealed view, the record is not judged either.
+This is a deliberate difference from `@v0`, which follows symlinks, and it is
+part of why `@v1` is a different tag.
+
+**`input_root` commits to the observed universe, not to the subset that moved
+the verdict.** A file no rule inspects still changes the root, and that is
+intended: two stores differing by an uninterpreted file are two different
+observations. What must never happen — and what round 1 allowed — is the
+manifest and the judgement disagreeing about *what exists*.
 
 **Order: ascending by the UTF-8 bytes of `path`.** Stated as bytes on
 purpose. UTF-8 preserves code-point order, so a Go implementation sorting
@@ -128,17 +158,37 @@ The gate is deliberately harsher than `@v0`'s, which requires only that two
 implementations agree on *counts and exit status*. Byte identity is the whole
 claim; a design that cannot reach it should not be registered.
 
-**Round 1 result: the gate passes for `input_manifest` and `input_root`.**
-`proposals/wrt-004-model/` holds a Python and a Go implementation — the Go
-written from this text rather than ported, so that a disagreement would be
-evidence about the specification — a raw-byte corpus, and the gate. 9/9
-mutations of the two implementations fail it. The corpus caught a real
-divergence on the first run: Go escapes `<`, `>` and `&` by default, so a
-store path containing them produced different bytes in the two languages.
+**Round 1 was REFUTED, and round 2 is this text.** The refutation is worth
+stating exactly, because all three failures were mine and two were in the
+design rather than the code:
 
-**This is one of two halves.** The judgement half is not gated and cannot be
-until §7's issue-code registry is closed. One round of the two allowed in §6
-is spent.
+- A live verifier follows a symlinked record. Round 1's manifest walked the
+  filesystem separately and skipped symlinks, so `input_root` committed to
+  `[]` while the report judged one record. **A manifest that does not commit
+  the bytes the judgement used is not a manifest** — which is why §3 is now
+  one sealed observation rather than two producers.
+- §3.1 required failed reads to appear while making `sha256` mandatory. That
+  is unsatisfiable; hence the `state` sum type.
+- Go's `encoding/json` escapes U+2028 even with `SetEscapeHTML(false)`, which
+  **SPEC §4 forbids outright** — and the repository already ships 47
+  machine-readable escaping vectors (§8.4) that decide it. I argued about
+  escaping in prose while the normative battery sat unrun. Both encoders are
+  now written out, and the battery runs in the gate.
+
+**Round 2 result: the gate passes.** `proposals/wrt-004-model/` holds the two
+implementations, a raw-byte corpus, the gate, and `mutate.py` — an
+**executable** mutation suite, because round 1 claimed 9/9 in a README table
+with no runner, which a reader could not check. 14/14 mutants are killed, and
+a missing anchor counts as a failure so the suite cannot rot into a silent
+pass. The gate and the mutants both run in CI; round 1's did not, so green
+checks said nothing about it.
+
+The materialized filesystem cases — symlink, unreadable file — and U+2028 are
+permanent vectors now, not corpus entries: a JSON fixture cannot carry a
+filesystem state.
+
+**Both rounds allowed by §6 are now spent.** The judgement half remains
+ungated and cannot be gated until §7's issue-code registry is closed.
 
 ## 7. Open, and deliberately not decided here
 

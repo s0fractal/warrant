@@ -1,0 +1,90 @@
+{
+  "mutants": "wrt-004.mutants@v0",
+  "note": "Every mutation is data, and `mutate.py` runs them. Round 1 claimed 9/9 in a README table with no runner in the repository, which is a claim a reader cannot check and a reviewer correctly refused. Each entry names a file, an exact anchor, and its replacement; a missing anchor is a failure, not a skip, so a mutant cannot rot into a silent pass when the code moves.",
+  "cases": [
+    {
+      "name": "Go escapes U+2028 (the round-1 divergence)",
+      "file": "input_manifest.go",
+      "anchor": "\t\t\tif r < 0x20 {",
+      "replacement": "\t\t\tif r < 0x20 || r == 0x2028 || r == 0x2029 {"
+    },
+    {
+      "name": "Go escapes < > &",
+      "file": "input_manifest.go",
+      "anchor": "\t\tdefault:\n\t\t\tif r < 0x20 {",
+      "replacement": "\t\tcase '<', '>', '&':\n\t\t\tb.WriteString(fmt.Sprintf(`\\u%04x`, r))\n\t\tdefault:\n\t\t\tif r < 0x20 {"
+    },
+    {
+      "name": "Go uses uppercase hex",
+      "file": "input_manifest.go",
+      "anchor": "b.WriteString(fmt.Sprintf(`\\u%04x`, r))",
+      "replacement": "b.WriteString(fmt.Sprintf(`\\u%04X`, r))"
+    },
+    {
+      "name": "Go follows symlinks instead of refusing",
+      "file": "input_manifest.go",
+      "anchor": "\t\tcase d.Type()&fs.ModeSymlink != 0:",
+      "replacement": "\t\tcase false:"
+    },
+    {
+      "name": "Go sorts by role, not path",
+      "file": "input_manifest.go",
+      "anchor": "return view[i].Path < view[j].Path",
+      "replacement": "return view[i].Role < view[j].Role"
+    },
+    {
+      "name": "Go emits a digest for unreadable bytes",
+      "file": "input_manifest.go",
+      "anchor": "\tif e.State == \"read\" {\n\t\tkv[\"sha256\"] = jcsString(e.Sha256)\n\t}",
+      "replacement": "\tkv[\"sha256\"] = jcsString(e.Sha256)"
+    },
+    {
+      "name": "Go drops the duplicate-path refusal",
+      "file": "input_manifest.go",
+      "anchor": "return nil, fmt.Errorf(\"duplicate path in the observation: %q\", e.Path)",
+      "replacement": "_ = e"
+    },
+    {
+      "name": "Python escapes non-ASCII",
+      "file": "input_manifest.py",
+      "anchor": "        else:\n            out.append(ch)",
+      "replacement": "        else:\n            out.append(ch if ord(ch) < 0x80 else \"\\\\u%04x\" % ord(ch))"
+    },
+    {
+      "name": "Python uses uppercase hex",
+      "file": "input_manifest.py",
+      "anchor": "out.append(\"\\\\u%04x\" % cp)",
+      "replacement": "out.append(\"\\\\u%04X\" % cp)"
+    },
+    {
+      "name": "Python drops the domain separator",
+      "file": "input_manifest.py",
+      "anchor": "hashlib.sha256(DOMAIN + jcs(view).encode(\"utf-8\"))",
+      "replacement": "hashlib.sha256(jcs(view).encode(\"utf-8\"))"
+    },
+    {
+      "name": "Python skips symlinks silently (the round-1 defect)",
+      "file": "input_manifest.py",
+      "anchor": "            if os.path.islink(full):",
+      "replacement": "            if os.path.islink(full):\n                continue\n            if False:"
+    },
+    {
+      "name": "Python treats an unreadable file as empty bytes",
+      "file": "input_manifest.py",
+      "anchor": "                except OSError:\n                    e[\"state\"] = \"unreadable\"",
+      "replacement": "                except OSError:\n                    e[\"state\"] = \"read\"\n                    e[\"sha256\"] = hashlib.sha256(b\"\").hexdigest()"
+    },
+    {
+      "name": "Python drops the duplicate-path refusal",
+      "file": "input_manifest.py",
+      "anchor": "raise ValueError(\"duplicate path in the observation: refused\")",
+      "replacement": "pass"
+    },
+    {
+      "name": "Python misclassifies blobs as other",
+      "file": "input_manifest.py",
+      "anchor": "    if parts[0] == \"blobs\" and len(parts) == 2:",
+      "replacement": "    if False:"
+    }
+  ]
+}

@@ -138,6 +138,57 @@ def main(argv):
                   after == go_after)
             prev = after
 
+        # THE round-1 refutation, now a permanent vector. A live verifier
+        # follows a symlinked record; the round-1 walk skipped it silently,
+        # so input_root committed to [] while the report judged one record.
+        sym = os.path.join(tmp, "symlink")
+        os.makedirs(os.path.join(sym, "records"), exist_ok=True)
+        target = os.path.join(tmp, "real.json")
+        with open(target, "wb") as fh:
+            fh.write(b'{"a":1}')
+        os.symlink(target, os.path.join(sym, "records", "linked.json"))
+        py_sym = run([sys.executable, PY, sym])[0]
+        go_sym = run([go_bin, sym])[0]
+        check("a symlink is visible in the observation",
+              py_sym is not None and b'"refused"' in py_sym
+              and b'"symlink"' in py_sym,
+              "manifest=%r" % (py_sym or b"")[:80])
+        check("...identically in both implementations", py_sym == go_sym)
+
+        # attempted-but-unreadable: round 1's schema could not represent it
+        # (sha256 was mandatory and there are no bytes), and the Python
+        # crashed with a traceback rather than refusing
+        unre = os.path.join(tmp, "unreadable")
+        os.makedirs(os.path.join(unre, "records"), exist_ok=True)
+        bad = os.path.join(unre, "records", "aaaa.json")
+        with open(bad, "wb") as fh:
+            fh.write(b"{}")
+        os.chmod(bad, 0)
+        try:
+            py_un = run([sys.executable, PY, unre])[0]
+            go_un = run([go_bin, unre])[0]
+            check("an unreadable file is stated, not crashed on",
+                  py_un is not None and b'"unreadable"' in py_un,
+                  "manifest=%r" % (py_un or b"")[:80])
+            check("...and carries no digest for bytes it never had",
+                  py_un is not None and b'"sha256"' not in py_un)
+            check("...identically in both implementations", py_un == go_un)
+        finally:
+            os.chmod(bad, 0o644)
+
+        # U+2028: encoding/json escapes it even with SetEscapeHTML(false),
+        # and SPEC §4 forbids that escaping outright
+        sep = os.path.join(tmp, "u2028")
+        os.makedirs(os.path.join(sep, "blobs"), exist_ok=True)
+        with open(os.path.join(sep, "blobs", "line\u2028sep"), "wb") as fh:
+            fh.write(b"x")
+        py_sep, go_sep = run([sys.executable, PY, sep])[0], run([go_bin, sep])[0]
+        check("U+2028 in a path is emitted raw, per SPEC §4",
+              py_sep is not None and b"\xe2\x80\xa8" in py_sep
+              and b"u2028" not in py_sep.lower())
+        check("...identically in both implementations", py_sep == go_sep,
+              "py=%r go=%r" % ((py_sep or b"")[:60], (go_sep or b"")[:60]))
+
         # The duplicate-path rule (§3.1) cannot be reached from store bytes —
         # a filesystem holds one file per path — so it is reachable only via
         # the trust config, whose basename can collide with a store-relative
@@ -168,6 +219,23 @@ def main(argv):
             print("\nstores kept in %s" % tmp)
         else:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    # The normative escaping battery SPEC §4 points at (§8.4). Round 1 hand-
+    # rolled an argument about escaping while the repository already shipped
+    # 47 machine-readable vectors that decide it; the Go failed one of them
+    # and nothing noticed, because nothing ran them.
+    vec_path = os.path.join(HERE, "..", "..", "examples", "canon-vectors.json")
+    with open(vec_path) as fh:
+        vectors = json.load(fh)
+    sys.path.insert(0, HERE)
+    import input_manifest as im
+    bad = []
+    for case in vectors["cases"]:
+        got = im.jcs(case["body"]).encode("utf-8")
+        if got.hex() != case["canon_hex"]:
+            bad.append(case["name"])
+    check("the §4 escaping battery passes (%d vectors)" % len(vectors["cases"]),
+          not bad, "failing: %s" % bad[:4])
 
     print()
     if failures:

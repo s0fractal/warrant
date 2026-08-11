@@ -42,6 +42,20 @@
         "records/bbbb.json": "bm90IGpzb24gYXQgYWxs",
         "blobs/p": "cG9saWN5"
       }
+    },
+    "control-chars": {
+      "note": "A path carrying U+0001, a tab, a backslash and a quote exercises the SPEC §4 short-escape table and the lowercase \\u00xx form on the Go encoder, which is otherwise only compared against Python over ASCII paths. The 47 normative §8.4 vectors are run against the Python encoder directly; this is how the Go one is reached. U+001F is chosen over U+0001 deliberately: its escape carries a hex LETTER, so an uppercase-hex implementation diverges observably. With U+0001 both render identically and the mutant survives while proving nothing — which is how this gap was found.",
+      "files": {
+        "records/aaaa.json": "eyJhIjoxfQ==",
+        "blobs/ctl\u001ftab\tback\\quote\"x": "Yw=="
+      }
+    },
+    "u2028": {
+      "note": "U+2028 must be emitted RAW per SPEC §4. Go's encoding/json escapes it even with SetEscapeHTML(false), which is exactly how round 1 diverged; the encoder is hand-written for this reason.",
+      "files": {
+        "blobs/line sep": "eA==",
+        "records/aaaa.json": "eyJhIjoxfQ=="
+      }
     }
   }
 }

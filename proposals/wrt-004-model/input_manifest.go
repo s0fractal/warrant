@@ -1,42 +1,124 @@
-// `warrant.verify-report@v1` input manifest — Go reference (WRT-004 §3).
+// `warrant.verify-report@v1` sealed observation — Go reference.
 //
-// Design only. Written from the proposal text, not translated from the
-// Python: a translation proves the translator agreed with itself, not that
-// the specification is unambiguous. Where the two disagree, the disagreement
-// is the finding.
+// Round 2 of WRT-004 §6, rebuilt after round 1 was refuted. Two defects were
+// mine, in this file: the walk silently skipped symlinks a live verifier
+// follows, and `encoding/json` escaped U+2028 even with SetEscapeHTML(false),
+// which SPEC §4 forbids outright. The encoder below is written out rather
+// than delegated, for that reason.
 //
-//	input_root = sha256("warrant.verify-report.input@v1:" || JCS(entries))
+// One atomic observation: seal() produces the byte view once, and everything
+// else derives from it, so the manifest and the judgement cannot disagree
+// about what exists.
 //
-// Usage:
-//
-//	input_manifest <store-dir> [--trust-config PATH]   # JCS bytes to stdout
-//	input_manifest <store-dir> --root                  # the root only
+//	input_manifest <store-dir> [--trust-config PATH]   # JCS bytes
+//	input_manifest <store-dir> --root                  # input_root only
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf16"
 )
 
 const domain = "warrant.verify-report.input@v1:"
 
 type entry struct {
-	Path   string `json:"path"`
-	Role   string `json:"role"`
-	Sha256 string `json:"sha256"`
+	Path   string
+	Role   string
+	State  string // read | unreadable | refused
+	Sha256 string // present iff State == "read"
+	Reason string // present iff State == "refused"
 }
 
-// roleOf maps store layout to a role. An unclassifiable file is `other`,
-// never omitted: a file the verifier read but cannot classify still has to be
-// named.
+// jcsString implements SPEC §4 string escaping exactly: the seven short
+// escapes, \u00xx LOWERCASE below U+0020, and everything else raw UTF-8 —
+// including < > & / and U+2028/U+2029, which encoding/json escapes and §4
+// says MUST NOT be escaped.
+func jcsString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if r < 0x20 {
+				b.WriteString(fmt.Sprintf(`\u%04x`, r))
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// utf16Less orders keys by UTF-16 code units, which is JCS's rule. Every key
+// here is ASCII, where it coincides with byte order; it is written out so a
+// future non-ASCII key does not silently change meaning.
+func utf16Less(a, b string) bool {
+	ua, ub := utf16.Encode([]rune(a)), utf16.Encode([]rune(b))
+	for i := 0; i < len(ua) && i < len(ub); i++ {
+		if ua[i] != ub[i] {
+			return ua[i] < ub[i]
+		}
+	}
+	return len(ua) < len(ub)
+}
+
+// jcsEntry emits one entry as a JCS object with its members in key order.
+// The optional members are omitted, not emitted as null: an entry that was
+// never read has no digest, and "sha256": null would be a claim about bytes
+// that do not exist.
+func jcsEntry(e entry) string {
+	kv := map[string]string{
+		"path": jcsString(e.Path), "role": jcsString(e.Role),
+		"state": jcsString(e.State),
+	}
+	if e.State == "read" {
+		kv["sha256"] = jcsString(e.Sha256)
+	}
+	if e.State == "refused" {
+		kv["reason"] = jcsString(e.Reason)
+	}
+	keys := make([]string, 0, len(kv))
+	for k := range kv {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return utf16Less(keys[i], keys[j]) })
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, jcsString(k)+":"+kv[k])
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+func jcsView(view []entry) string {
+	parts := make([]string, 0, len(view))
+	for _, e := range view {
+		parts = append(parts, jcsEntry(e))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
+
 func roleOf(rel string) string {
 	parts := strings.Split(rel, "/")
 	if parts[0] == "records" && len(parts) == 2 && strings.HasSuffix(rel, ".json") {
@@ -51,82 +133,78 @@ func roleOf(rel string) string {
 	return "other"
 }
 
-func entries(storeDir, trustConfig string) ([]entry, error) {
+// seal is the observation. A symlink is REFUSED — not followed, not skipped:
+// following it leaves the store's byte universe, and skipping it silently is
+// what made round 1's manifest disagree with the judgement.
+func seal(storeDir, trustConfig string) ([]entry, error) {
 	base, err := filepath.Abs(storeDir)
 	if err != nil {
 		return nil, err
 	}
-	var out []entry
+	var view []entry
 	err = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !d.Type().IsRegular() { // symlinks excluded, as in §3.1
+		if p == base {
 			return nil
-		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return err
 		}
 		rel, err := filepath.Rel(base, p)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		sum := sha256.Sum256(raw)
-		out = append(out, entry{Path: rel, Role: roleOf(rel),
-			Sha256: hex.EncodeToString(sum[:])})
+		e := entry{Path: rel, Role: roleOf(rel)}
+		switch {
+		case d.Type()&fs.ModeSymlink != 0:
+			e.State, e.Reason = "refused", "symlink"
+			view = append(view, e)
+			return nil
+		case d.IsDir():
+			return nil
+		case !d.Type().IsRegular():
+			e.State, e.Reason = "refused", "not-a-regular-file"
+			view = append(view, e)
+			return nil
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			e.State = "unreadable"
+		} else {
+			sum := sha256.Sum256(raw)
+			e.State, e.Sha256 = "read", hex.EncodeToString(sum[:])
+		}
+		view = append(view, e)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	if trustConfig != "" {
-		raw, err := os.ReadFile(trustConfig)
-		if err != nil {
-			return nil, err
+		e := entry{Path: filepath.Base(trustConfig), Role: "trust-config"}
+		raw, rerr := os.ReadFile(trustConfig)
+		if rerr != nil {
+			e.State = "unreadable"
+		} else {
+			sum := sha256.Sum256(raw)
+			e.State, e.Sha256 = "read", hex.EncodeToString(sum[:])
 		}
-		sum := sha256.Sum256(raw)
-		out = append(out, entry{Path: filepath.Base(trustConfig),
-			Role: "trust-config", Sha256: hex.EncodeToString(sum[:])})
+		view = append(view, e)
 	}
-	// Ordered by the UTF-8 bytes of `path`. In Go a `string` IS its UTF-8
-	// bytes, so `<` is already the specified order; the specification chose
-	// it so neither implementation needs a special comparator.
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	sort.Slice(view, func(i, j int) bool { return view[i].Path < view[j].Path })
 	seen := map[string]bool{}
-	for _, e := range out {
+	for _, e := range view {
 		if seen[e.Path] {
-			return nil, fmt.Errorf("duplicate path in manifest: %q (§3.1)", e.Path)
+			return nil, fmt.Errorf("duplicate path in the observation: %q", e.Path)
 		}
 		seen[e.Path] = true
 	}
-	return out, nil
+	return view, nil
 }
 
-// jcs writes the SPEC §4 JCS subset. SetEscapeHTML(false) is the whole reason
-// this is hand-rolled rather than a plain json.Marshal: Go escapes `<`, `>`
-// and `&` into <-style sequences by default, so a path containing any of
-// them would produce different bytes from a conforming implementation for the
-// same manifest. The struct field order is irrelevant — the tags are `path`,
-// `role`, `sha256`, already the sorted order JCS requires for these keys.
-func jcs(v any) ([]byte, error) {
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return nil, err
-	}
-	return bytes.TrimRight(b.Bytes(), "\n"), nil // Encode appends a newline
-}
-
-func inputRoot(ents []entry) (string, error) {
-	body, err := jcs(ents)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(append([]byte(domain), body...))
-	return hex.EncodeToString(sum[:]), nil
+func inputRoot(view []entry) string {
+	sum := sha256.Sum256([]byte(domain + jcsView(view)))
+	return hex.EncodeToString(sum[:])
 }
 
 func main() {
@@ -135,8 +213,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: input_manifest <store-dir> [--trust-config PATH] [--root]")
 		os.Exit(2)
 	}
-	trust := ""
-	rootOnly := false
+	trust, rootOnly := "", false
 	for i, a := range args {
 		if a == "--trust-config" && i+1 < len(args) {
 			trust = args[i+1]
@@ -145,24 +222,14 @@ func main() {
 			rootOnly = true
 		}
 	}
-	ents, err := entries(args[0], trust)
+	view, err := seal(args[0], trust)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(os.Stderr, "REFUSED:", err)
 		os.Exit(1)
 	}
 	if rootOnly {
-		root, err := inputRoot(ents)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
-		fmt.Println(root)
+		fmt.Println(inputRoot(view))
 		return
 	}
-	body, err := jcs(ents)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
-	os.Stdout.Write(body)
+	os.Stdout.WriteString(jcsView(view))
 }
