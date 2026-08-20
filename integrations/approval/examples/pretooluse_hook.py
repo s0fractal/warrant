@@ -88,6 +88,47 @@ def _tokens(command):
     return list(lexer)
 
 
+def _segment(tokens, start):
+    out = []
+    for value in tokens[start:]:
+        if value in SHELL_SEPARATORS:
+            break
+        out.append(value)
+    return out
+
+
+def _rm_is_destructive(args):
+    for option in args:
+        if option == "--":
+            return False
+        if option in {"--recursive", "--force"}:
+            return True
+        if option.startswith("-") and not option.startswith("--"):
+            flags = option.lstrip("-").lower()
+            if "r" in flags or "f" in flags:
+                return True
+    return False
+
+
+def _first_separator(tokens, start):
+    for index, value in enumerate(tokens[start:], start=start):
+        if value in SHELL_SEPARATORS:
+            return index
+    return None
+
+
+def _curl_pipes_to_shell(tokens, start):
+    separator = _first_separator(tokens, start + 1)
+    if separator is None or tokens[separator] != "|":
+        return False
+    target = [_command_name(value) for value in _segment(tokens, separator + 1)]
+    if not target:
+        return False
+    if target[0] in {"sh", "bash"}:
+        return True
+    return target[0] == "sudo" and len(target) > 1 and target[1] in {"sh", "bash"}
+
+
 def _danger(tokens, command):
     compact = "".join(command.split())
     if compact.startswith(":(){") and "};:" in compact:
@@ -95,45 +136,15 @@ def _danger(tokens, command):
 
     for i, token in enumerate(tokens):
         name = _command_name(token)
-        tail = []
-        for value in tokens[i + 1:]:
-            if value in SHELL_SEPARATORS:
-                break
-            tail.append(value)
-
-        if name == "rm":
-            for option in tail:
-                if option == "--":
-                    break
-                if option in {"--recursive", "--force"}:
-                    return "recursive/forced delete"
-                if option.startswith("-") and not option.startswith("--"):
-                    flags = option.lstrip("-").lower()
-                    if "r" in flags or "f" in flags:
-                        return "recursive/forced delete"
-
+        tail = _segment(tokens, i + 1)
+        if name == "rm" and _rm_is_destructive(tail):
+            return "recursive/forced delete"
         if name == "mkfs" or name.startswith("mkfs."):
             return "raw device write"
         if name == "dd" and any(value.startswith("of=/dev/") for value in tail):
             return "raw device write"
-
-        if name == "curl":
-            pipe = None
-            for j, value in enumerate(tokens[i + 1:], start=i + 1):
-                if value in SHELL_SEPARATORS:
-                    pipe = j if value == "|" else None
-                    break
-            if pipe is None:
-                continue
-            after = []
-            for value in tokens[pipe + 1:]:
-                if value in SHELL_SEPARATORS:
-                    break
-                after.append(_command_name(value))
-            if after and (after[0] in {"sh", "bash"}
-                          or (after[0] == "sudo" and len(after) > 1
-                              and after[1] in {"sh", "bash"})):
-                return "pipe-to-shell"
+        if name == "curl" and _curl_pipes_to_shell(tokens, i):
+            return "pipe-to-shell"
     return None
 
 

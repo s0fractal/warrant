@@ -70,7 +70,7 @@ jobs:
         run: python3 impl/warrant.py selftest
       - name: Package smoke test (pip install . -> `warrant` CLI, bundled oracle, offline, any cwd)
         run: |
-          python3 -m pip install --no-deps .
+          python3 -m pip install --no-deps .  # NOSONAR: exact PR checkout, not a registry dependency
           ( cd /tmp && warrant selftest )
           ( cd /tmp && warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
       - name: Evidence-pack guard (demo packs verify; ski re-executes; no private keys shipped)

@@ -379,6 +379,26 @@ def call(model, messages, max_tokens=32000, retries=3):
 # This is deliberately a line parser rather than a regex over the entire model
 # response. The response is untrusted and can be large; bounded line scans make
 # both the accepted grammar and the runtime obvious.
+def _repro_header(lines, index):
+    label = lines[index].strip()[3:].strip()
+    body_start = index + 1
+    if label == "repro" or label.startswith(("repro ", "repro\t")):
+        return label[5:].strip(), body_start
+    if label not in ("", "python", "py") or body_start >= len(lines):
+        return None
+    first = lines[body_start].strip()
+    if first == "repro" or first.startswith(("repro ", "repro\t")):
+        return first[5:].strip(), body_start + 1
+    return None
+
+
+def _closing_fence(lines, start):
+    for index in range(start, len(lines)):
+        if lines[index].strip() == "```":
+            return index
+    return None
+
+
 def _fenced_repros(text):
     lines = text.splitlines(keepends=True)
     found = []
@@ -388,39 +408,25 @@ def _fenced_repros(text):
         if not stripped.startswith("```"):
             i += 1
             continue
-
-        label = stripped[3:].strip()
-        meta_line = None
-        body_start = i + 1
-        if label == "repro" or label.startswith(("repro ", "repro\t")):
-            meta_line = label[5:].strip()
-        elif label in ("", "python", "py") and body_start < len(lines):
-            first = lines[body_start].strip()
-            if first == "repro" or first.startswith(("repro ", "repro\t")):
-                meta_line = first[5:].strip()
-                body_start += 1
-
-        if meta_line is None:
+        header = _repro_header(lines, i)
+        if header is None:
             i += 1
             continue
-
-        end = body_start
-        while end < len(lines) and lines[end].strip() != "```":
-            end += 1
-        if end == len(lines):
+        meta_line, body_start = header
+        end = _closing_fence(lines, body_start)
+        if end is None:
             break
         found.append((meta_line, "".join(lines[body_start:end])))
         i = end + 1
     return found
 
 
-def _pop_meta_attr(text, key, rest_of_line=False):
-    """Return (value, text-with-attribute-removed), without regex backtracking."""
+def _assignment(text, key):
     start = 0
     while True:
         at = text.find(key, start)
         if at < 0:
-            return None, text
+            return None
         before = text[at - 1] if at else " "
         after_key = at + len(key)
         after = text[after_key] if after_key < len(text) else " "
@@ -431,41 +437,50 @@ def _pop_meta_attr(text, key, rest_of_line=False):
         pos = after_key
         while pos < len(text) and text[pos].isspace():
             pos += 1
-        if pos >= len(text) or text[pos] != "=":
-            start = at + len(key)
-            continue
+        if pos < len(text) and text[pos] == "=":
+            return at, pos + 1
+        start = at + len(key)
+
+
+def _quoted_attr(text, pos, rest_of_line):
+    quote = text[pos]
+    value_start = pos + 1
+    end = text.find(quote, value_start)
+    if end < 0:
+        return text[value_start:], len(text)
+    remove_end = end + 1
+    # `title="prefix" remaining words` is an unquoted title that happens
+    # to begin with quotes, not a quoted attribute followed by garbage.
+    # Preserve the established parser contract for existing reviews.
+    if rest_of_line and text[remove_end:].strip():
+        return text[pos:].strip(), len(text)
+    return text[value_start:end], remove_end
+
+
+def _plain_attr(text, pos, rest_of_line):
+    if rest_of_line:
+        return text[pos:].strip(), len(text)
+    end = pos
+    while end < len(text) and not text[end].isspace():
+        end += 1
+    return text[pos:end], end
+
+
+def _pop_meta_attr(text, key, rest_of_line=False):
+    """Return (value, text-with-attribute-removed), without regex backtracking."""
+    assignment = _assignment(text, key)
+    if assignment is None:
+        return None, text
+    at, pos = assignment
+    while pos < len(text) and text[pos].isspace():
         pos += 1
-        while pos < len(text) and text[pos].isspace():
-            pos += 1
-        if pos >= len(text):
-            return "", text[:at]
-        if text[pos] in ("\"", "'"):
-            quote = text[pos]
-            value_start = pos + 1
-            end = text.find(quote, value_start)
-            if end < 0:
-                end = len(text)
-                remove_end = end
-            else:
-                remove_end = end + 1
-            # `title="prefix" remaining words` is an unquoted title that happens
-            # to begin with quotes, not a quoted attribute followed by garbage.
-            # Preserve the established parser contract for existing reviews.
-            if rest_of_line and text[remove_end:].strip():
-                value = text[pos:].strip()
-                remove_end = len(text)
-            else:
-                value = text[value_start:end]
-        elif rest_of_line:
-            value = text[pos:].strip()
-            remove_end = len(text)
-        else:
-            end = pos
-            while end < len(text) and not text[end].isspace():
-                end += 1
-            value = text[pos:end]
-            remove_end = end
-        return value, text[:at] + text[remove_end:]
+    if pos >= len(text):
+        return "", text[:at]
+    if text[pos] in ("\"", "'"):
+        value, remove_end = _quoted_attr(text, pos, rest_of_line)
+    else:
+        value, remove_end = _plain_attr(text, pos, rest_of_line)
+    return value, text[:at] + text[remove_end:]
 
 
 def parse_repros(text):
