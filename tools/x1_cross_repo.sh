@@ -64,30 +64,56 @@ SKIP=0
 DEGRADED="${X1_DEGRADED:-0}"
 declare -a FAILED_STEPS=()
 
-c_ok()   { printf '  \033[32mOK\033[0m    %s\n' "$1"; PASS=$((PASS+1)); }
-c_bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); FAILED_STEPS+=("$1"); }
+indent() {
+  sed 's/^/        | /'
+  return 0
+}
+
+c_ok() {
+  local label="$1"
+  printf '  \033[32mOK\033[0m    %s\n' "$label"
+  PASS=$((PASS+1))
+  return 0
+}
+c_bad() {
+  local label="$1"
+  printf '  \033[31mFAIL\033[0m  %s\n' "$label"
+  FAIL=$((FAIL+1))
+  FAILED_STEPS+=("$label")
+  return 0
+}
 # A required crossing that did not run. Fatal unless explicitly degraded.
 c_skip() {
-  if [ "$DEGRADED" = "1" ]; then
-    printf '  \033[33mSKIP\033[0m  %s  (X1_DEGRADED=1)\n' "$1"; SKIP=$((SKIP+1))
+  local label="$1"
+  if [[ "$DEGRADED" = "1" ]]; then
+    printf '  \033[33mSKIP\033[0m  %s  (X1_DEGRADED=1)\n' "$label"
+    SKIP=$((SKIP+1))
   else
-    printf '  \033[31mFAIL\033[0m  %s  <- required crossing did not run\n' "$1"
-    FAIL=$((FAIL+1)); FAILED_STEPS+=("$1 (did not run)")
+    printf '  \033[31mFAIL\033[0m  %s  <- required crossing did not run\n' "$label"
+    FAIL=$((FAIL+1))
+    FAILED_STEPS+=("$label (did not run)")
   fi
+  return 0
 }
-hdr()    { printf '\n\033[1m%s\033[0m\n' "$1"; }
+hdr() {
+  local heading="$1"
+  printf '\n\033[1m%s\033[0m\n' "$heading"
+  return 0
+}
 
 # run <label> <command...> : pass iff exit 0
 run() { local label="$1"; shift; local out
         if out=$("$@" 2>&1); then c_ok "$label"
-        else c_bad "$label"; printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
+        else c_bad "$label"; printf '%s\n' "$out" | tail -15 | indent; fi
+        return 0; }
 
 # run_grep <label> <needle> <command...> : pass iff exit 0 AND stdout matches.
 # `needle` is matched literally (-F): callers pass computed coverage strings that
 # contain regex metacharacters.
 run_grep() { local label="$1" needle="$2"; shift 2; local out
         if out=$("$@" 2>&1) && printf '%s' "$out" | grep -qF -- "$needle"; then c_ok "$label"
-        else c_bad "$label (expected: $needle)"; printf '%s\n' "$out" | tail -15 | sed 's/^/        | /'; fi; }
+        else c_bad "$label (expected: $needle)"; printf '%s\n' "$out" | tail -15 | indent; fi
+        return 0; }
 
 # run_coverage <label> <vectors.json> <producer...> : pass iff the producer
 # exits 0 AND tools/book1_coverage.py accepts its transcript.
@@ -101,28 +127,29 @@ run_grep() { local label="$1" needle="$2"; shift 2; local out
 # back to a weaker rule while the suite stays green.
 run_coverage() { local label="$1" vectors="$2"; shift 2; local out rc
         out=$("$@" 2>&1); rc=$?
-        if [ $rc -eq 0 ] && printf '%s\n' "$out" \
+        if [[ $rc -eq 0 ]] && printf '%s\n' "$out" \
              | python3 "$SELF/tools/book1_coverage.py" --check "$vectors" >/dev/null 2>&1
         then c_ok "$label"
         else c_bad "$label"
-             printf '%s\n' "$out" | tail -6 | sed 's/^/        | /'
+             printf '%s\n' "$out" | tail -6 | indent
              printf '%s\n' "$out" | python3 "$SELF/tools/book1_coverage.py" \
-               --check "$vectors" 2>&1 >/dev/null | sed 's/^/        | /'; fi; }
+               --check "$vectors" 2>&1 >/dev/null | indent; fi
+        return 0; }
 
 # ---------------------------------------------------------------- locate repos
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if   [ -f "$SELF/SPEC.md" ] && [ -d "$SELF/impl-go" ] && grep -qi '^# Warrant' "$SELF/README.md" 2>/dev/null; then
+if   [[ -f "$SELF/SPEC.md" ]] && [[ -d "$SELF/impl-go" ]] && grep -qi '^# Warrant' "$SELF/README.md" 2>/dev/null; then
   OWN=warrant
-elif [ -d "$SELF/spec" ] && [ -f "$SELF/spec/book-1-truth.md" ]; then
+elif [[ -d "$SELF/spec" ]] && [[ -f "$SELF/spec/book-1-truth.md" ]]; then
   OWN=sigma-glyph
 else
   echo "X1: cannot tell which repo this is (looked in $SELF)" >&2; exit 2
 fi
-SIB_NAME=$([ "$OWN" = warrant ] && echo sigma-glyph || echo warrant)
+SIB_NAME=$([[ "$OWN" = warrant ]] && echo sigma-glyph || echo warrant)
 
-if [ -n "${SIBLING:-}" ]; then
+if [[ -n "${SIBLING:-}" ]]; then
   SIB="$SIBLING"
-  [ -d "$SIB" ] || { echo "X1: SIBLING=$SIB does not exist" >&2; exit 2; }
+  [[ -d "$SIB" ]] || { echo "X1: SIBLING=$SIB does not exist" >&2; exit 2; }
 else
   SIB="$(mktemp -d)/$SIB_NAME"
   echo "X1: cloning $SIB_NAME at HEAD (no pin) ..."
@@ -130,8 +157,8 @@ else
     || { echo "X1: clone failed" >&2; exit 2; }
 fi
 
-WARRANT=$([ "$OWN" = warrant ] && echo "$SELF" || echo "$SIB")
-SIGMA=$(  [ "$OWN" = warrant ] && echo "$SIB"  || echo "$SELF")
+WARRANT=$([[ "$OWN" = warrant ]] && echo "$SELF" || echo "$SIB")
+SIGMA=$(  [[ "$OWN" = warrant ]] && echo "$SIB"  || echo "$SELF")
 
 hdr "X1 cross-repo coupling gate — HEAD vs HEAD"
 echo "  own      : $OWN      $(git -C "$SELF" log -1 --format='%h %ad' --date=short 2>/dev/null)"
@@ -142,21 +169,23 @@ echo "  sibling  : $SIB_NAME $(git -C "$SIB"  log -1 --format='%h %ad' --date=sh
 echo "  seeds    : ${X1_SEEDS:-1 2}"
 
 # ------------------------------------------------------------------- toolchain
-have() { command -v "$1" >/dev/null 2>&1; }
+have() {
+  local command_name="$1"
+  command -v "$command_name" >/dev/null 2>&1
+  return $?
+}
 have python3 || { echo "X1: python3 required" >&2; exit 2; }
 python3 -c 'import cryptography' 2>/dev/null || echo "  note: python 'cryptography' missing -> signature steps may skip"
 
 WGO=""
-if have go; then
-  if (cd "$WARRANT/impl-go" && go build -o warrant-go . >/dev/null 2>&1); then
-    WGO="$WARRANT/impl-go/warrant-go"
-  fi
+if have go && (cd "$WARRANT/impl-go" && go build -o warrant-go . >/dev/null 2>&1); then
+  WGO="$WARRANT/impl-go/warrant-go"
 fi
 
 # ================================================================= the crossings
 hdr "A. Book I consensus — warrant's Go evaluator vs sigma's vectors"
 
-if [ -n "$WGO" ]; then
+if [[ -n "$WGO" ]]; then
   # Bind ALL PASS to the ACTUAL coverage, and to the summary's POSITION.
   # tools/book1_coverage.py owns the counting, the producer's prefix, and the
   # decision procedure; it is mirrored alongside X1 for the same reason X1 is
@@ -165,7 +194,7 @@ if [ -n "$WGO" ]; then
   # defeated by data the producer echoes back. See the module docstring.
   V="$SIGMA/tests/spec_conformance/vectors.json"
   COVERAGE="$(python3 "$SELF/tools/book1_coverage.py" "$V" 2>/dev/null)"
-  if [ -z "$COVERAGE" ]; then
+  if [[ -z "$COVERAGE" ]]; then
     c_bad "A1 could not derive expected coverage from sigma's vectors.json"
   else
     run_coverage "A1 warrant-go sigma-conformance, exact coverage ${COVERAGE#SIGMA CONFORMANCE: ALL PASS }" \
@@ -175,7 +204,7 @@ else
   c_skip "A1 warrant-go sigma-conformance (go toolchain or build unavailable)"
 fi
 
-if [ -n "$WGO" ] && [ -f "$SIGMA/tests/book1_fuzz.py" ]; then
+if [[ -n "$WGO" ]] && [[ -f "$SIGMA/tests/book1_fuzz.py" ]]; then
   for seed in ${X1_SEEDS:-1 2}; do
     run_grep "A2 three-way book1 differential fuzzer (seed=$seed)" "ALL AGREE" \
       env WARRANT_GO="$WGO" python3 "$SIGMA/tests/book1_fuzz.py" --seed "$seed"
@@ -224,7 +253,7 @@ print(json.dumps({k: r[k] for k in ("grade","ok","records","errors","warnings")}
 print("ok: true" if r["ok"] else "ok: false")
 PY
 
-if [ -f "$SIGMA/tools/warrant_gate.py" ]; then
+if [[ -f "$SIGMA/tools/warrant_gate.py" ]]; then
   run_grep "B2 sigma's warrant_gate.py connector against warrant HEAD" "VERIFIED" \
     env SIGMA_GLYPH="$SIGMA/impl" WARRANT="python3 $WARRANT/impl/warrant.py" \
         WARRANT_PY="$WARRANT/impl/warrant.py" \
@@ -239,7 +268,7 @@ hdr "C. Reverse direction — warrant's ski@v1 against sigma's HEAD oracle"
 run_grep "C1 warrant conformance with SIGMA_GLYPH=sigma HEAD" "ALL PASS" \
   env SIGMA_GLYPH="$SIGMA/impl" python3 "$WARRANT/impl/warrant.py" conformance "$WARRANT/examples"
 
-if [ -n "$WGO" ]; then
+if [[ -n "$WGO" ]]; then
   run_grep "C2 warrant-go conformance (own vectors, sibling-built binary)" "ALL PASS" \
     "$WGO" conformance "$WARRANT/examples"
 else
@@ -265,7 +294,7 @@ for a, keys in trust["actors"].items():
 print(f"roster agrees: {sorted(ta)}")
 PY
 
-if [ -f "$SIGMA/tools/verify_anchors.py" ]; then
+if [[ -f "$SIGMA/tools/verify_anchors.py" ]]; then
   run_grep "D2 sigma anchors verify at HEAD" "anchors verified" \
     bash -c "cd '$SIGMA' && python3 tools/verify_anchors.py"
 else
@@ -291,18 +320,18 @@ BOOTSTRAP="${X1_BOOTSTRAP:-0}"
 # same class of silent divergence E exists to catch.
 for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh \
          tools/book1_coverage.py .github/workflows/x1-cross-repo.yml; do
-  if [ ! -f "$SIB/$f" ]; then
-    if [ "$BOOTSTRAP" = "1" ]; then
+  if [[ ! -f "$SIB/$f" ]]; then
+    if [[ "$BOOTSTRAP" = "1" ]]; then
       printf '  \033[33mSKIP\033[0m  E:%s absent in %s (X1_BOOTSTRAP=1)\n' "$f" "$SIB_NAME"
       SKIP=$((SKIP+1))
     else
       c_bad "E:$f is MISSING from $SIB_NAME — the gate was removed from one side"
     fi
-  elif [ "$(shasum -a 256 "$SELF/$f" | awk '{print $1}')" = "$(shasum -a 256 "$SIB/$f" | awk '{print $1}')" ]; then
+  elif [[ "$(shasum -a 256 "$SELF/$f" | awk '{print $1}')" = "$(shasum -a 256 "$SIB/$f" | awk '{print $1}')" ]]; then
     c_ok "E:$f byte-identical in both repos"
   else
     c_bad "E:$f DIFFERS between the repos — the two sides are not running the same gate"
-    diff -u "$SIB/$f" "$SELF/$f" | head -20 | sed 's/^/        | /'
+    diff -u "$SIB/$f" "$SELF/$f" | head -20 | indent
   fi
 done
 
@@ -348,13 +377,13 @@ PY
 
 # ===================================================================== verdict
 hdr "X1 RESULT"
-MODE="$([ "$DEGRADED" = 1 ] && echo DEGRADED || echo strict)"
-[ "${X1_BOOTSTRAP:-0}" = 1 ] && MODE="$MODE+bootstrap"
+MODE="$([[ "$DEGRADED" = 1 ]] && echo DEGRADED || echo strict)"
+[[ "${X1_BOOTSTRAP:-0}" = 1 ]] && MODE="$MODE+bootstrap"
 printf '  pass=%d fail=%d skip=%d  (mode: %s)\n' "$PASS" "$FAIL" "$SKIP" "$MODE"
-if [ "$FAIL" -eq 0 ] && [ "$SKIP" -eq 0 ]; then
+if [[ "$FAIL" -eq 0 ]] && [[ "$SKIP" -eq 0 ]]; then
   echo "  X1-CROSS-REPO: ALL PASS  (regression gate only — NOT an independent gate)"
   exit 0
-elif [ "$FAIL" -eq 0 ]; then
+elif [[ "$FAIL" -eq 0 ]]; then
   # Only reachable under X1_DEGRADED / X1_BOOTSTRAP. Never call this a pass: the
   # finding was precisely that a green summary printed over crossings that never
   # ran reads to a human as coverage.

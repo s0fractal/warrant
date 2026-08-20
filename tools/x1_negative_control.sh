@@ -41,9 +41,9 @@ set -uo pipefail
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 X1="$SELF/tools/x1_cross_repo.sh"
-[ -f "$X1" ] || { echo "negative-control: $X1 not found" >&2; exit 2; }
-[ -n "${SIBLING:-}" ] || { echo "negative-control: set SIBLING=/path/to/sibling" >&2; exit 2; }
-[ -d "$SIBLING" ] || { echo "negative-control: SIBLING=$SIBLING does not exist" >&2; exit 2; }
+[[ -f "$X1" ]] || { echo "negative-control: $X1 not found" >&2; exit 2; }
+[[ -n "${SIBLING:-}" ]] || { echo "negative-control: set SIBLING=/path/to/sibling" >&2; exit 2; }
+[[ -d "$SIBLING" ]] || { echo "negative-control: SIBLING=$SIBLING does not exist" >&2; exit 2; }
 
 RAN=0
 BAD=0
@@ -67,7 +67,7 @@ control() {
   rm -rf "$tmp"
   RAN=$((RAN+1))
 
-  if [ $rc -eq 0 ]; then
+  if [[ $rc -eq 0 ]]; then
     echo "  FAIL  $name — X1 PASSED on a tampered sibling; the gate is vacuous"
     BAD=$((BAD+1)); return
   fi
@@ -80,6 +80,7 @@ control() {
     printf '%s\n' "$out" | grep -E 'FAIL|pass=' | sed 's/^/        | /'
     BAD=$((BAD+1))
   fi
+  return 0
 }
 
 # vector_tamper <kind> <field> <hex|bool> — flip one expected field of the first
@@ -108,6 +109,7 @@ for v in d.get("vectors", []):
     sys.exit(0)
 sys.exit(1)
 PYEOF
+  return 0
 }
 
 echo "X1 negative controls (sibling: $SIBLING)"
@@ -159,7 +161,7 @@ sys.exit(1)
 # behind A1's per-kind coverage assertion: object, eval and deserialize must
 # each be genuinely executed by warrant-go for X1 to be green.
 # --------------------------------------------------------------------------
-if [ -f "$SIBLING/tests/spec_conformance/vectors.json" ]; then
+if [[ -f "$SIBLING/tests/spec_conformance/vectors.json" ]]; then
   control "flipped object expected.hash must break A1"        "A1" "$(vector_tamper object hash hex)"
   control "flipped eval expected.result_hash must break A1"   "A1" "$(vector_tamper eval result_hash hex)"
   control "inverted deserialize expected.valid must break A1" "A1" "$(vector_tamper deserialize valid bool)"
@@ -217,7 +219,7 @@ fi
 # check blob by hash; corrupting it makes `warrant conformance` refuse. warrant
 # holds examples/, so this applies only when the sibling is warrant.
 # --------------------------------------------------------------------------
-if [ -f "$SIBLING/examples/ski/check.json" ]; then
+if [[ -f "$SIBLING/examples/ski/check.json" ]]; then
   control "corrupted ski check-blob must break C1" "C1" '
 import json, sys, pathlib
 p = pathlib.Path(sys.argv[1]) / "examples/ski/check.json"
@@ -261,7 +263,7 @@ sys.exit(1)
 # so "the sibling has a Go tree" is not the question. A1 builds *warrant's*
 # evaluator, so this control applies exactly when the sibling IS warrant — the
 # same detection X1 itself uses.
-if [ -f "$SIBLING/SPEC.md" ] && [ -f "$SIBLING/impl-go/main.go" ]; then
+if [[ -f "$SIBLING/SPEC.md" ]] && [[ -f "$SIBLING/impl-go/main.go" ]]; then
   control "an unbuildable sibling Go tree must break A1 (not skip)" "A1" '
 import sys, pathlib
 p = pathlib.Path(sys.argv[1]) / "impl-go/main.go"
@@ -282,7 +284,7 @@ fi
 # reject it. warrant holds the verifier, so this runs when the sibling is
 # warrant.
 # --------------------------------------------------------------------------
-if [ -f "$SIBLING/SPEC.md" ] && [ -f "$SIBLING/impl/warrant.py" ]; then
+if [[ -f "$SIBLING/SPEC.md" ]] && [[ -f "$SIBLING/impl/warrant.py" ]]; then
   control "a blank line before the JSON report must break B1" "B1" '
 import re, sys, pathlib
 p = pathlib.Path(sys.argv[1]) / "impl/warrant.py"
@@ -301,12 +303,12 @@ else
 fi
 
 echo
-if [ "$RAN" -eq 0 ]; then
+if [[ "$RAN" -eq 0 ]]; then
   echo "X1-NEGATIVE-CONTROL: FAIL — no control ran at all. That is precisely the"
   echo "  vacuous case this script exists to prevent; treat it as a red gate."
   exit 1
 fi
-if [ "$BAD" -ne 0 ]; then
+if [[ "$BAD" -ne 0 ]]; then
   echo "X1-NEGATIVE-CONTROL: FAIL ($BAD of $((RAN+BAD)) controls did not behave)"
   exit 1
 fi
