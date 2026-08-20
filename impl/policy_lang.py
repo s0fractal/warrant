@@ -853,8 +853,12 @@ class _Lowering:
 
     def compare(self, op, lhs, rhs):
         a, b = self._value(lhs), self._value(rhs)
-        kind = ("bool" if isinstance(a, bool) else
-                "int" if isinstance(a, int) else "string")
+        if isinstance(a, bool):
+            kind = "bool"
+        elif isinstance(a, int):
+            kind = "int"
+        else:
+            kind = "string"
         shown = f"{_show(lhs)} {op} {_show(rhs)}"
         if op in (">", ">="):                 # one comparator, operands swapped
             a, b = b, a

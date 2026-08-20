@@ -210,7 +210,7 @@ def invocations(logical_line, known):
     return found, None
 
 
-def concretise(argv, workdir):
+def concretise(argv):
     """Replace documentation placeholders with values that parse.
 
     Only the VALUES are invented. Flag names, their form (`--x=v` vs `--x v`)
@@ -709,12 +709,10 @@ def validate(python, extra_path, cli, argv, timeout=30, expect_origin=None,
     except OSError as e:
         return False, f"could not run the parser: {e}"
 
-    origin, dist = "", ""
+    origin = ""
     for ln in (p.stderr or "").splitlines():
         if ln.startswith("MODULE-ORIGIN "):
             origin = ln[len("MODULE-ORIGIN "):].strip()
-        elif ln.startswith("MODULE-DIST "):
-            dist = ln[len("MODULE-DIST "):].strip()
 
     if expect_origin is not None:
         if not origin:
@@ -1188,7 +1186,7 @@ def main():
                     continue          # not part of the wheel contract; see below
                 checked += 1
                 ok, detail = validate(python, extra, argv[0],
-                                      concretise(argv, ROOT),
+                                      concretise(argv),
                                       expect_origin=expect_origin,
                                       modroot=modroot)
                 if not ok:
@@ -1198,7 +1196,7 @@ def main():
     go_documented = sum(
         1 for rel in docs()
         for _, line in logical_lines((ROOT / rel).read_text())
-        for argv in invocations(line, SOURCE_CLIS)[0])
+        for _ in invocations(line, SOURCE_CLIS)[0])
     if go_documented:
         print(f"note: {go_documented} documented `warrant-go` invocation(s) are NOT "
               f"covered here — warrant-go ships from source, not from the wheel, "

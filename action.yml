@@ -35,7 +35,7 @@ inputs:
       Version of `warrant-verify` to install from PyPI. Pin this for a
       reproducible gate; `latest` tracks releases.
     required: false
-    default: 'latest'
+    default: '0.9.0'
 
 outputs:
   ok:
@@ -77,9 +77,9 @@ runs:
           exit 1
         fi
         if [ "$IN_VERSION" = "latest" ]; then
-          python3 -m pip install --quiet --upgrade warrant-verify
+          python3 -m pip install --quiet --only-binary=:all: --upgrade warrant-verify
         else
-          python3 -m pip install --quiet "warrant-verify==$IN_VERSION"
+          python3 -m pip install --quiet --only-binary=:all: "warrant-verify==$IN_VERSION"
         fi
         installed="$(python3 -m pip show warrant-verify | awk '/^Version:/{print $2}')"
         echo "warrant-verify $installed"

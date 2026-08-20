@@ -81,9 +81,10 @@ def test_revocation():
     ]
     m = build("J", {"A": {"K0"}}, recs, pinned_roots={"J": {"g"}})
     try:
-        eff_R, eff_S = m.effective("R"), m.effective("S")
+        m.effective("R")
+        m.effective("S")
         raised = False
-    except RuntimeError as e:
+    except RuntimeError:
         raised = True
     check("[revocation] effective() terminates (no non-well-founded cycle)", not raised)
     if raised:
@@ -117,7 +118,7 @@ def test_losing_branch():
     check("[losing-branch] losing succession s1 is NOT in the selected lineage",
           not m.in_lineage("s1"))
     check("[losing-branch] winning resolver res IS in lineage", m.in_lineage("res"))
-    _, pid, conf = m._policy_state(frozenset(m.recs))
+    _, _, conf = m._policy_state(frozenset(m.recs))
     check("[losing-branch] policy-state resolved (not conflicted)", not conf)
 
 
@@ -211,7 +212,6 @@ def test_checkpoint_cid():
 def test_determinism():
     """The same DAG under shuffled parent/iteration orders yields byte-identical derived
     state (canonical())."""
-    P0 = (frozenset({"A", "B"}), 2)
     base = [
         Rec("g", frozenset(), "A", "ordinary", jur="J", filing=("A", "K0")),
         Rec("R", frozenset({"g"}), "A", "rotation", jur="J", rot_actor="A", rot_key="K1",
@@ -249,7 +249,7 @@ def test_quorum_rollback():
     check("[quorum-rollback] one-filer SELF rollback of a quorum succession is NOT valid_cap",
           not m.valid_cap("roll"))
     check("[quorum-rollback] the quorum succession survives (roll ineffective)",
-          m.effective("s") if m.recs["s"].kind == "policy-succession" else True or not m.effective("roll"))
+          m.recs["s"].kind == "policy-succession" and m.effective("s"))
     check("[quorum-rollback] the rollback record is ineffective", not m.effective("roll"))
 
 

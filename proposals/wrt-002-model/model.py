@@ -540,7 +540,6 @@ class Model:
             raise RuntimeError(f"NON-WELL-FOUNDED effective() cycle at {w}")
         self._eff_stack.add(w)
         try:
-            r = self.recs[w]
             ok = self.active_cut(w) and self._valid.get(w, False) and self.in_lineage(w)
             if ok:
                 for s in self.recs:
