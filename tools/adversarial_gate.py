@@ -43,7 +43,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import secrets
 import shutil
 import socket
@@ -376,9 +375,97 @@ def call(model, messages, max_tokens=32000, retries=3):
 # second would silently discard real counter-vectors:
 #   ```repro id=F1 severity=P0 title=...        <- meta on the fence line
 #   ```python\nrepro id=F1 severity=P0 ...      <- meta on the first body line
-REPRO_RE = re.compile(r"```repro[ \t]*([^\n]*)\n(.*?)```", re.S)
-REPRO_INLINE_RE = re.compile(
-    r"```(?:python|py)?[ \t]*\n[ \t]*repro[ \t]+([^\n]*)\n(.*?)```", re.S)
+#
+# This is deliberately a line parser rather than a regex over the entire model
+# response. The response is untrusted and can be large; bounded line scans make
+# both the accepted grammar and the runtime obvious.
+def _fenced_repros(text):
+    lines = text.splitlines(keepends=True)
+    found = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if not stripped.startswith("```"):
+            i += 1
+            continue
+
+        label = stripped[3:].strip()
+        meta_line = None
+        body_start = i + 1
+        if label == "repro" or label.startswith(("repro ", "repro\t")):
+            meta_line = label[5:].strip()
+        elif label in ("", "python", "py") and body_start < len(lines):
+            first = lines[body_start].strip()
+            if first == "repro" or first.startswith(("repro ", "repro\t")):
+                meta_line = first[5:].strip()
+                body_start += 1
+
+        if meta_line is None:
+            i += 1
+            continue
+
+        end = body_start
+        while end < len(lines) and lines[end].strip() != "```":
+            end += 1
+        if end == len(lines):
+            break
+        found.append((meta_line, "".join(lines[body_start:end])))
+        i = end + 1
+    return found
+
+
+def _pop_meta_attr(text, key, rest_of_line=False):
+    """Return (value, text-with-attribute-removed), without regex backtracking."""
+    start = 0
+    while True:
+        at = text.find(key, start)
+        if at < 0:
+            return None, text
+        before = text[at - 1] if at else " "
+        after_key = at + len(key)
+        after = text[after_key] if after_key < len(text) else " "
+        if (before.isalnum() or before == "_" or
+                not (after.isspace() or after == "=")):
+            start = at + len(key)
+            continue
+        pos = after_key
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if pos >= len(text) or text[pos] != "=":
+            start = at + len(key)
+            continue
+        pos += 1
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if pos >= len(text):
+            return "", text[:at]
+        if text[pos] in ("\"", "'"):
+            quote = text[pos]
+            value_start = pos + 1
+            end = text.find(quote, value_start)
+            if end < 0:
+                end = len(text)
+                remove_end = end
+            else:
+                remove_end = end + 1
+            # `title="prefix" remaining words` is an unquoted title that happens
+            # to begin with quotes, not a quoted attribute followed by garbage.
+            # Preserve the established parser contract for existing reviews.
+            if rest_of_line and text[remove_end:].strip():
+                value = text[pos:].strip()
+                remove_end = len(text)
+            else:
+                value = text[value_start:end]
+        elif rest_of_line:
+            value = text[pos:].strip()
+            remove_end = len(text)
+        else:
+            end = pos
+            while end < len(text) and not text[end].isspace():
+                end += 1
+            value = text[pos:end]
+            remove_end = end
+        return value, text[:at] + text[remove_end:]
 
 
 def parse_repros(text):
@@ -389,22 +476,17 @@ def parse_repros(text):
     everything after the first word would mislabel the finding in the review.
     """
     out = []
-    found = REPRO_RE.findall(text) + REPRO_INLINE_RE.findall(text)
-    for meta_line, code in found:
+    for meta_line, code in _fenced_repros(text):
         if not code.strip() or "..." == code.strip():
             continue                       # a sketch of a block, not a block
         meta = {}
         rest = meta_line
         for k in ("id", "severity", "clause", "closes"):
-            m = re.search(rf"\b{k}\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|(\S+))", rest)
-            if m:
-                meta[k] = m.group(1) or m.group(2) or m.group(3) or ""
-                rest = rest[:m.start()] + rest[m.end():]
-        m = re.search(r"\btitle\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|(.*))$", rest.strip())
-        if m:
-            meta["title"] = (m.group(1) or m.group(2) or m.group(3) or "").strip()
-        else:
-            meta["title"] = rest.strip()
+            value, rest = _pop_meta_attr(rest, k)
+            if value is not None:
+                meta[k] = value
+        title, rest = _pop_meta_attr(rest, "title", rest_of_line=True)
+        meta["title"] = (title if title is not None else rest).strip()
         out.append((meta, code))
     # de-duplicate by id, keeping the last (a repaired block supersedes its
     # earlier draft when a reviewer re-emits the same id in one message)
@@ -436,12 +518,21 @@ def run_repro(workdir, code, nonce):
             stdout, stderr, rc = p.stdout, p.stderr, p.returncode
         except subprocess.TimeoutExpired:
             stdout, stderr, rc = "", f"TIMEOUT after {EXEC_TIMEOUT}s", 124
+        demonstrated, why = _demonstrates(stdout, nonce)
+        if rc == 0 and demonstrated:
+            outcome = "violation"
+        elif f"REFUTED[{nonce}]:" in stdout or "NO VIOLATION:" in stderr:
+            outcome = "refuted"
+        elif rc != 0:
+            outcome = "unrunnable"
+        else:
+            outcome = "inconclusive"
         return {
             "exit": rc,
             "stdout": stdout[-MAX_OUTPUT:],
             "stderr": stderr[-MAX_OUTPUT:],
-            "violation": rc == 0 and _demonstrates(stdout, nonce)[0],
-            "why": _demonstrates(stdout, nonce)[1],
+            "violation": rc == 0 and demonstrated,
+            "why": why,
             # Three outcomes, not two. A block that CRASHED refutes nothing, and
             # calling it "did not reproduce" is how a claim closes because the
             # interface moved under it rather than because the defect went away.
@@ -456,11 +547,7 @@ def run_repro(workdir, code, nonce):
             # the defects they had just shown, and could have closed those very
             # claims. Anything that ran without saying which is `inconclusive`,
             # and inconclusive closes nothing.
-            "outcome": ("violation" if rc == 0 and _demonstrates(stdout, nonce)[0]
-                        else "refuted" if f"REFUTED[{nonce}]:" in stdout
-                                          or "NO VIOLATION:" in stderr
-                        else "unrunnable" if rc != 0
-                        else "inconclusive"),
+            "outcome": outcome,
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -493,11 +580,12 @@ def _demonstrates(stdout, nonce):
 
 
 def transcript_block(meta, res):
-    verdict = ("REPRODUCED — exited 0 and demonstrated a disagreement"
-               if res["violation"] else
-               "NOT REPRODUCED — " + (
-                   f"exit {res['exit']}" if res["exit"]
-                   else res.get("why", "no VIOLATION line")))
+    if res["violation"]:
+        verdict = "REPRODUCED — exited 0 and demonstrated a disagreement"
+    elif res["exit"]:
+        verdict = f"NOT REPRODUCED — exit {res['exit']}"
+    else:
+        verdict = "NOT REPRODUCED — " + res.get("why", "no VIOLATION line")
     return (f"### repro {meta.get('id', '?')} "
             f"[{meta.get('severity', '?')}] {meta.get('title', '')}\n"
             f"HARNESS VERDICT: {verdict}\n"

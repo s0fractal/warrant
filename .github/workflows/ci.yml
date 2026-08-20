@@ -48,7 +48,9 @@ jobs:
         with: { python-version: '3.12' }
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with: { go-version: '1.22' }
-      - run: python3 -m pip install 'cryptography>=42,<46'
+      - run: >-
+          python3 -m pip install --only-binary=:all:
+          'cryptography==45.0.7'
       # CI has no sibling checkout, so it cannot re-resolve cross-repo citations.
       # It demands instead that every citation be ACCOUNTED FOR in the committed
       # MAP.md: cite a document nobody has located and the row is missing and
@@ -68,7 +70,7 @@ jobs:
         run: python3 impl/warrant.py selftest
       - name: Package smoke test (pip install . -> `warrant` CLI, bundled oracle, offline, any cwd)
         run: |
-          python3 -m pip install .
+          python3 -m pip install --no-deps .
           ( cd /tmp && warrant selftest )
           ( cd /tmp && warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
       - name: Evidence-pack guard (demo packs verify; ski re-executes; no private keys shipped)
@@ -115,7 +117,7 @@ jobs:
       - name: Go verifies warrant store layout
         run: ./impl-go/warrant-go verify .warrants
       - name: Build Rust implementation (third impl)
-        run: cd impl-rs && cargo build --release
+        run: cd impl-rs && cargo build --release --locked
       - name: Rust conformance (§8 WarrantIDs + signatures + §8.3 negatives; from-scratch SHA-256/Ed25519)
         run: ./impl-rs/target/release/warrant-rs conformance examples
       - name: Rust Ed25519 selftest (RFC 8032 TV1 + field/SHA-512)

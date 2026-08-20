@@ -55,7 +55,7 @@ RUN THE TESTS
 """
 import json
 import os
-import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -68,14 +68,73 @@ human sanction. A refusal must name the pattern that matched.
 """
 
 # Deliberately small and legible: the point is the recording boundary, not a
-# clever rule engine. A real deployment puts its own policy here -- or better,
-# calls one and records what it answered.
-DENY = [
-    (re.compile(r"\brm\s+(-[a-zA-Z]*\s+)*-?[a-zA-Z]*[rf]", re.I), "recursive/forced delete"),
-    (re.compile(r":\s*\(\s*\)\s*\{.*\}\s*;\s*:", re.S), "fork bomb"),
-    (re.compile(r"\bmkfs\b|\bdd\s+.*of=/dev/", re.I), "raw device write"),
-    (re.compile(r"\bcurl\b.*\|\s*(ba)?sh\b", re.I), "pipe-to-shell"),
-]
+# clever rule engine. The first version used several `.*` regular expressions
+# over agent-controlled text. Besides being easy to evade, those expressions
+# could backtrack super-linearly on a huge command and turn a permission hook
+# into an agent outage. Tokenize once, bound the input, and inspect only the
+# small command shapes this example claims to recognize.
+MAX_COMMAND_CHARS = 65536
+SHELL_SEPARATORS = {"|", "||", ";", "&", "&&"}
+
+
+def _command_name(token):
+    return token.rsplit("/", 1)[-1].lower()
+
+
+def _tokens(command):
+    lexer = shlex.shlex(command, posix=True, punctuation_chars="|;&")
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    return list(lexer)
+
+
+def _danger(tokens, command):
+    compact = "".join(command.split())
+    if compact.startswith(":(){") and "};:" in compact:
+        return "fork bomb"
+
+    for i, token in enumerate(tokens):
+        name = _command_name(token)
+        tail = []
+        for value in tokens[i + 1:]:
+            if value in SHELL_SEPARATORS:
+                break
+            tail.append(value)
+
+        if name == "rm":
+            for option in tail:
+                if option == "--":
+                    break
+                if option in {"--recursive", "--force"}:
+                    return "recursive/forced delete"
+                if option.startswith("-") and not option.startswith("--"):
+                    flags = option.lstrip("-").lower()
+                    if "r" in flags or "f" in flags:
+                        return "recursive/forced delete"
+
+        if name == "mkfs" or name.startswith("mkfs."):
+            return "raw device write"
+        if name == "dd" and any(value.startswith("of=/dev/") for value in tail):
+            return "raw device write"
+
+        if name == "curl":
+            pipe = None
+            for j, value in enumerate(tokens[i + 1:], start=i + 1):
+                if value in SHELL_SEPARATORS:
+                    pipe = j if value == "|" else None
+                    break
+            if pipe is None:
+                continue
+            after = []
+            for value in tokens[pipe + 1:]:
+                if value in SHELL_SEPARATORS:
+                    break
+                after.append(_command_name(value))
+            if after and (after[0] in {"sh", "bash"}
+                          or (after[0] == "sudo" and len(after) > 1
+                              and after[1] in {"sh", "bash"})):
+                return "pipe-to-shell"
+    return None
 
 
 def classify(tool_name, tool_input):
@@ -83,9 +142,16 @@ def classify(tool_name, tool_input):
     if tool_name != "Bash":
         return "defer", "not a shell command"
     command = (tool_input or {}).get("command", "")
-    for pattern, why in DENY:
-        if pattern.search(command):
-            return "deny", f"blocked: {why}"
+    if not isinstance(command, str):
+        return "deny", "blocked: malformed shell command"
+    if len(command) > MAX_COMMAND_CHARS:
+        return "deny", "blocked: command exceeds review limit"
+    try:
+        why = _danger(_tokens(command), command)
+    except ValueError:
+        return "deny", "blocked: malformed shell command"
+    if why:
+        return "deny", f"blocked: {why}"
     return "defer", "no rule matched"
 
 
@@ -128,7 +194,7 @@ def main():
         event = json.load(sys.stdin)
     except ValueError:
         emit("defer", "hook received unparseable input")
-        return 0
+        return
 
     decision, reason = classify(event.get("tool_name"),
                                 event.get("tool_input"))
@@ -142,7 +208,6 @@ def main():
             reason += f" [warrant {filed['decision'][:12]}]"
 
     emit(decision, reason)
-    return 0
 
 
 if __name__ == "__main__":

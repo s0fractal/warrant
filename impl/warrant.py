@@ -219,7 +219,7 @@ def _canon_eq(doc, raw):
     a bounded "not canonical" outcome instead of a Python-only crash."""
     try:
         return canon(doc) == raw
-    except (UnicodeEncodeError, ValueError):
+    except ValueError:
         return False
 
 
@@ -873,7 +873,7 @@ def _trust_roots(store, trust, explicit_roots):
             # lets a swapped value inject an attacker root (Codex item-0 recheck).
             try:
                 doc = loads_ijson(raw.decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
+            except ValueError:
                 doc = {}
             # Total genesis schema: `roots` may be absent, null, or a scalar in a
             # hostile pinned file — iterate ONLY a list (matching Go's
@@ -1279,7 +1279,7 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
             out("ERR", wid, f"schema: {m}")
         try:
             got = warrant_id(body)
-        except (UnicodeEncodeError, ValueError):
+        except ValueError:
             # A body that cannot be canonicalized (e.g. a lone surrogate in a
             # string, which Python's json accepts but UTF-8 cannot encode) has no
             # computable WarrantID — a bounded ERR, never a traceback (Kimi K3 gate).
@@ -1564,7 +1564,7 @@ def verify_report(store, settlement=None):
 WHY_MAX_DEPTH = 4096
 
 
-def why(store, wid, depth=0, seen=None):
+def why(store, wid):
     # Iterative pre-order DAG walk. Was recursive: a deep *linear* prior-chain
     # (no cycle, so `seen` did not help) exhausted Python's call stack and
     # raised RecursionError — a `why` on hostile input crashed instead of
@@ -1578,7 +1578,7 @@ def why(store, wid, depth=0, seen=None):
     # problem -- the exit status was.
     missing = failed = 0
     seen = set()
-    stack = [(wid, depth)]
+    stack = [(wid, 0)]
     while stack:
         cur, d = stack.pop()
         env = store.get_record(cur)
@@ -1948,7 +1948,7 @@ def probe_answer(req):
     if cls == "canon":
         try:
             raw = canon(inp["body"])
-        except (ValueError, TypeError, UnicodeEncodeError) as e:
+        except (ValueError, TypeError) as e:
             return {"error": str(e)[:200]}, None
         return {"canon_hex": raw.hex(),
                 "warrant_id": hashlib.sha256(raw).hexdigest()}, None
@@ -1977,7 +1977,7 @@ def probe_answer(req):
         raw = _probe_b64(inp["bytes_base64"])
         try:
             loads_ijson(raw.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError) as e:
+        except ValueError as e:
             return {"ok": False, "error": str(e)[:200]}, None
         return {"ok": True}, None
 
@@ -2064,7 +2064,7 @@ def selftest():
         a2.reason, a2.check, a2.verdict, a2.transcript = [], check, "pass", None
         a2.actor, a2.key, a2.ts = "tester@self", str(key), 1751700001
         w2 = file_warrant(st, "accept", subject, a2)
-        errs, warns = verify_store(st, quiet=True)
+        errs, _ = verify_store(st, quiet=True)
         assert errs == 0, f"selftest: verify errors {errs}"
         assert st.get_record(w2)["body"]["prior"] == [w1]
         # tamper: one byte in the stored body must break identity

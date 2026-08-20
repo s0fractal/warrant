@@ -119,6 +119,8 @@ CHECKS = [
      ["python3", "tests/settlement_gate.py"], None),
     ("gate settlement fuzzer (randomised, 2000 draws)",
      ["python3", "tests/settlement_fuzz.py", "2000"], None),
+    ("adversarial gate parser (bounded untrusted-output grammar)",
+     ["python3", "tests/adversarial_gate_parser.py"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),
     ("go: selftest", [str(GO), "selftest", "examples"], "go"),
     ("go: verify own store (settlement grade)",

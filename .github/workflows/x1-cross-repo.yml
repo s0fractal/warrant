@@ -46,7 +46,9 @@ jobs:
           go-version: '1.24'
 
       - name: Install python deps
-        run: pip install --quiet cryptography
+        run: >-
+          pip install --quiet --only-binary=:all:
+          'cryptography==45.0.7'
 
       - name: Clone sibling at HEAD (deliberately UNPINNED — that is the point)
         run: |

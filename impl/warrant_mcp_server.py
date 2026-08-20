@@ -335,7 +335,7 @@ def tool_show_reason(cfg, a):
     # through the CLI.
     try:
         body = json.loads(record_path.read_text(encoding="utf-8"))["body"]
-    except (ValueError, KeyError, TypeError, UnicodeError, OSError) as ex:
+    except (ValueError, KeyError, TypeError, OSError) as ex:
         raise ToolError(f"unreadable record {wid}: {ex}")
 
     out = {"warrant_id": wid,
