@@ -421,17 +421,22 @@ def _fenced_repros(text):
     return found
 
 
+def _attribute_boundary(text, at, key):
+    before = text[at - 1] if at else " "
+    after_key = at + len(key)
+    after = text[after_key] if after_key < len(text) else " "
+    return (not before.isalnum() and before != "_" and
+            (after.isspace() or after == "="))
+
+
 def _assignment(text, key):
     start = 0
     while True:
         at = text.find(key, start)
         if at < 0:
             return None
-        before = text[at - 1] if at else " "
         after_key = at + len(key)
-        after = text[after_key] if after_key < len(text) else " "
-        if (before.isalnum() or before == "_" or
-                not (after.isspace() or after == "=")):
+        if not _attribute_boundary(text, at, key):
             start = at + len(key)
             continue
         pos = after_key

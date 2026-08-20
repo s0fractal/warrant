@@ -50,7 +50,8 @@ jobs:
         with: { go-version: '1.22' }
       - run: >-
           python3 -m pip install --only-binary=:all:
-          'cryptography==45.0.7'
+          'cryptography==45.0.7' 'build==1.5.0'
+          'setuptools==84.0.0' 'wheel==0.48.0'
       # CI has no sibling checkout, so it cannot re-resolve cross-repo citations.
       # It demands instead that every citation be ACCOUNTED FOR in the committed
       # MAP.md: cite a document nobody has located and the row is missing and
@@ -68,9 +69,10 @@ jobs:
         run: python3 impl/warrant.py conformance examples
       - name: Selftest (live round-trip + tamper detection)
         run: python3 impl/warrant.py selftest
-      - name: Package smoke test (pip install . -> `warrant` CLI, bundled oracle, offline, any cwd)
+      - name: Package smoke test (built wheel -> `warrant` CLI, bundled oracle, offline, any cwd)
         run: |
-          python3 -m pip install --no-deps .  # NOSONAR: exact PR checkout, not a registry dependency
+          python3 -m build --wheel --no-isolation --outdir /tmp/warrant-wheel
+          python3 -m pip install --no-deps /tmp/warrant-wheel/warrant_verify-0.9.0-py3-none-any.whl
           ( cd /tmp && warrant selftest )
           ( cd /tmp && warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
       - name: Evidence-pack guard (demo packs verify; ski re-executes; no private keys shipped)
