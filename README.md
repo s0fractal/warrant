@@ -298,7 +298,7 @@ pass/fail — `impl-rs` claims and reaches SPEC §6 base grade, which is a compl
 result, not a shortfall. The pack ships as a release tarball pinned by hash in
 SPEC §8.6, and `TRADEMARK.md` conditions the name on it.
 
-The only thing consuming the format so far is a sibling repository by the same author: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks. That is a working integration and it is worth reading; it is not an outside user, and there are none.
+The only thing consuming the format so far is a sibling repository by the same author: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks. That is a working integration and it is worth reading; it is not an outside user, and there are none. The full picture of who consumes what across the sibling protocols — gated, proposed, or absent — is indexed in the [ecosystem relationship map](https://github.com/s0fractal/protocol-ecosystem).
 
 ### Signatures are domain-separated (v0.4, BREAKING)
 
