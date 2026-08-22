@@ -213,15 +213,30 @@ def envelope(store, wid: str, key_path: str) -> dict:
                                 sk.sign(pae(PAYLOAD_TYPE, payload))).decode()}]}
 
 
+def strict_json(raw, label: str):
+    """I-JSON, as SPEC §4 already requires of every record: duplicate member
+    names, NaN/Infinity and lone surrogates are refused.
+
+    This matters more on a signed boundary than anywhere else. `json.loads`
+    resolves a duplicate key last-wins, so a payload carrying `"actor"` twice
+    verifies under one signature and reads as two different statements to two
+    consumers. A signature over an ambiguous document signs the ambiguity.
+    """
+    value = W.loads_ijson(raw)
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return value
+
+
 def verify_envelope(store, env: dict, expect_key: str | None = None) -> list:
     """Signature, then binding. Two different questions, answered separately."""
     errs = []
     if env.get("payloadType") != PAYLOAD_TYPE:
         errs.append(f"payloadType is {env.get('payloadType')!r}, not {PAYLOAD_TYPE!r}")
     try:
-        payload = base64.standard_b64decode(env["payload"])
+        payload = base64.b64decode(env["payload"], validate=True)
     except Exception:
-        return errs + ["payload is not valid base64"]
+        return errs + ["payload is not strict base64"]
     signatures = env.get("signatures") or []
     if not signatures:
         errs.append("envelope carries no signature")
@@ -237,9 +252,11 @@ def verify_envelope(store, env: dict, expect_key: str | None = None) -> list:
     if expect_key and expect_key not in verified:
         errs.append(f"no signature from the expected key {expect_key[:12]}")
     try:
-        statement = json.loads(payload)
+        statement = strict_json(payload, "the signed payload")
+    except ValueError as bad:
+        return errs + [f"signed payload is not I-JSON: {bad}"]
     except Exception:
-        return errs + ["payload is not JSON"]
+        return errs + ["signed payload is not JSON"]
     return errs + check(store, statement)
 
 
@@ -327,7 +344,7 @@ def selftest(store):
         (lambda e: e.update(payload=base64.standard_b64encode(
             canonical({**wrap(store, wid), "predicate": {
                 **wrap(store, wid)["predicate"], "actor": "mallory@evil"}})).decode()),
-         "predicate inside the envelope"),
+         "predicate, with the signature left over the original payload"),
         (lambda e: e.update(signatures=[]), "envelope with no signature at all"),
     ):
         bad = json.loads(json.dumps(env))
@@ -336,68 +353,117 @@ def selftest(store):
              if "no signature" not in label else f"verify-envelope rejects an {label}",
              verify_envelope(store, bad) != [])
 
+    # The control above proves the signature notices. It does NOT prove the
+    # binding does, because the signature fails first. So: rewrite the
+    # predicate, sign the rewritten bytes correctly with the same key, and
+    # require the refusal to come from check() rather than from the crypto.
+    forged = json.loads(json.dumps(wrap(store, wid)))
+    forged["predicate"]["actor"] = "mallory@evil"
+    forged_payload = canonical(forged)
+    with tempfile.TemporaryDirectory() as tmp:
+        key_path = Path(tmp) / "resign.key"
+        key_path.write_text(hashlib.sha256(b"intoto-selftest-key").digest().hex())
+        sk = W.load_key(str(key_path))
+    resigned = {"payloadType": PAYLOAD_TYPE,
+                "payload": base64.standard_b64encode(forged_payload).decode(),
+                "signatures": [{"keyid": W.pubkey_hex(sk),
+                                "sig": base64.standard_b64encode(
+                                    sk.sign(pae(PAYLOAD_TYPE, forged_payload))).decode()}]}
+    errs = verify_envelope(store, resigned)
+    case("a validly re-signed envelope is still refused, by the binding",
+         errs and not any("signature" in e for e in errs))
+
+    # And the ambiguity a signature cannot resolve: duplicate member names.
+    duplicated = forged_payload.replace(b'{"_type"', b'{"_type":"x","_type"', 1)
+    ambiguous = {"payloadType": PAYLOAD_TYPE,
+                 "payload": base64.standard_b64encode(duplicated).decode(),
+                 "signatures": [{"keyid": W.pubkey_hex(sk),
+                                 "sig": base64.standard_b64encode(
+                                     sk.sign(pae(PAYLOAD_TYPE, duplicated))).decode()}]}
+    case("a correctly signed payload with a duplicate member name is refused",
+         any("I-JSON" in e for e in verify_envelope(store, ambiguous)))
+    case("the same duplicate is what a lenient reader would have accepted",
+         json.loads(duplicated.decode())["_type"] == STATEMENT_TYPE)
+
     print("\nINTOTO-BRIDGE: " + ("ALL PASS" if ok else "FAILURES"))
     return 0 if ok else 1
 
 
+def _cmd_wrap(store, a):
+    if not a.arg:
+        sys.exit("wrap needs a WarrantID")
+    print(json.dumps(wrap(store, a.arg), indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_check(store, a):
+    if not a.arg:
+        sys.exit("check needs a statement file")
+    errs = check(store, strict_json(Path(a.arg).read_bytes(), "the Statement"))
+    for e in errs:
+        print("ERR ", e)
+    print("INTOTO: " + ("BOUND — the Statement describes this record"
+                        if not errs else f"{len(errs)} binding error(s)"))
+    return 1 if errs else 0
+
+
+def _cmd_envelope(store, a):
+    if not a.arg or not a.key:
+        sys.exit("envelope needs a WarrantID and --key")
+    print(json.dumps(envelope(store, a.arg, a.key), indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_verify_envelope(store, a):
+    if not a.arg:
+        sys.exit("verify-envelope needs an envelope file")
+    # The path comes from the operator's own command line. This CLI reads the
+    # file it was pointed at and claims no sandbox root, exactly like `cat`;
+    # inventing a path restriction here would assert a boundary the tool does
+    # not have. NOSONAR pythonsecurity:S8707
+    envelope_bytes = Path(a.arg).read_bytes()  # NOSONAR
+    errs = verify_envelope(store, strict_json(envelope_bytes, "the envelope"), a.expect_key)
+    for e in errs:
+        print("ERR ", e)
+    if errs:
+        print(f"DSSE: {len(errs)} error(s)")
+        return 1
+    print("DSSE: signature verifies and the Statement binds to the record.")
+    print("      " + ("Authority: signed by the key you named." if a.expect_key else
+                      "Integrity only: the key is the one named inside the envelope, "
+                      "which whoever wrote it chose. Pass --expect-key to make a "
+                      "claim about authority."))
+    return 0
+
+
+def _cmd_roundtrip(store, a):
+    if not a.arg or not a.key:
+        sys.exit("roundtrip needs a WarrantID and --key")
+    env = envelope(store, a.arg, a.key)
+    exact = base64.b64decode(env["payload"], validate=True) == canonical(wrap(store, a.arg))
+    errs = verify_envelope(store, env)
+    print(f"envelope -> Statement: {'byte-identical' if exact else 'DIVERGED'}")
+    print(f"signature and binding: {'ok' if not errs else errs}")
+    print("\nrecord -> Statement is lossy, by design. Not carried:")
+    for item in loss_report(store, a.arg):
+        print(f"  - {item}")
+    return 0 if exact and not errs else 1
+
+
+COMMANDS = {"wrap": _cmd_wrap, "check": _cmd_check, "envelope": _cmd_envelope,
+            "verify-envelope": _cmd_verify_envelope, "roundtrip": _cmd_roundtrip,
+            "selftest": lambda store, a: selftest(store)}
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["wrap", "check", "envelope", "verify-envelope",
-                                    "roundtrip", "selftest"])
+    ap.add_argument("cmd", choices=sorted(COMMANDS))
     ap.add_argument("arg", nargs="?")
     ap.add_argument("--store", default=str(ROOT / ".warrants"))
     ap.add_argument("--key", help="Ed25519 seed file, as produced by `warrant keygen`")
     ap.add_argument("--expect-key", help="public key hex a signature must come from")
     a = ap.parse_args()
-    store = W.Store(Path(a.store))
-    if a.cmd == "wrap":
-        if not a.arg:
-            sys.exit("wrap needs a WarrantID")
-        print(json.dumps(wrap(store, a.arg), indent=2, sort_keys=True))
-        return 0
-    if a.cmd == "check":
-        if not a.arg:
-            sys.exit("check needs a statement file")
-        errs = check(store, json.loads(Path(a.arg).read_text()))
-        for e in errs:
-            print("ERR ", e)
-        print("INTOTO: " + ("BOUND — the Statement describes this record"
-                            if not errs else f"{len(errs)} binding error(s)"))
-        return 1 if errs else 0
-    if a.cmd == "envelope":
-        if not a.arg or not a.key:
-            sys.exit("envelope needs a WarrantID and --key")
-        print(json.dumps(envelope(store, a.arg, a.key), indent=2, sort_keys=True))
-        return 0
-    if a.cmd == "verify-envelope":
-        if not a.arg:
-            sys.exit("verify-envelope needs an envelope file")
-        errs = verify_envelope(store, json.loads(Path(a.arg).read_text()), a.expect_key)
-        for e in errs:
-            print("ERR ", e)
-        if errs:
-            print(f"DSSE: {len(errs)} error(s)")
-            return 1
-        print("DSSE: signature verifies and the Statement binds to the record.")
-        print("      " + ("Authority: signed by the key you named."
-                          if a.expect_key else
-                          "Integrity only: the key is the one named inside the "
-                          "envelope, which whoever wrote it chose. Pass "
-                          "--expect-key to make a claim about authority."))
-        return 0
-    if a.cmd == "roundtrip":
-        if not a.arg or not a.key:
-            sys.exit("roundtrip needs a WarrantID and --key")
-        env = envelope(store, a.arg, a.key)
-        exact = base64.standard_b64decode(env["payload"]) == canonical(wrap(store, a.arg))
-        errs = verify_envelope(store, env)
-        print(f"envelope -> Statement: {'byte-identical' if exact else 'DIVERGED'}")
-        print(f"signature and binding: {'ok' if not errs else errs}")
-        print("\nrecord -> Statement is lossy, by design. Not carried:")
-        for item in loss_report(store, a.arg):
-            print(f"  - {item}")
-        return 0 if exact and not errs else 1
-    return selftest(store)
+    return COMMANDS[a.cmd](W.Store(Path(a.store)), a)
 
 
 if __name__ == "__main__":
