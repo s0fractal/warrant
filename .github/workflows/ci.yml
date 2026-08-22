@@ -83,6 +83,9 @@ jobs:
         run: python3 tests/ski_policy.py
       - name: Merkle anchoring (RFC 6962 structure, inclusion proofs, store integration)
         run: python3 tests/anchor.py
+
+      - name: in-toto / DSSE projection (binding, PAE signature, tamper controls)
+        run: python3 tools/intoto.py selftest
       # Pin semantics and the refresh rule are at the top of this file.
       - name: ski@v1 runtime conformance (SPEC s8.2, oracle = sigma-glyph pinned)
         run: |
