@@ -64,7 +64,7 @@ describes the old community list; it is out of date.
 | **Manifest** | [`integrations/mcp-server/server.json`](integrations/mcp-server/server.json) |
 | **Required fields** | `name`, `description`, `version` — that is all the schema demands |
 | **Namespace** | `io.github.s0fractal/*`, proven by GitHub OAuth device flow |
-| **Status** | **PUBLISHED 2026-07-31 at manifest version `0.1.0`**, no `packages` block. The `0.8.0` manifest in the tree is a re-publish waiting on the PyPI release |
+| **Status** | **PUBLISHED 2026-07-31 at manifest version `0.1.0`**, no `packages` block. The manifest in the tree is now `0.9.0` **with** a `packages` block, and `warrant-verify 0.9.0` is on PyPI — so the re-publish is no longer blocked on a release; it is pending a decision to publish. Re-checked 2026-08-22 |
 
 `description` is capped at **100 characters** — the single most common rejection.
 Ours is 96.
@@ -95,7 +95,9 @@ that validates can still be a manifest naming nothing.
 data resets are on the table. Listing there is cheap and reversible, but it is
 not a stable address yet.
 
-#### The blocker that was published around, and how 0.8.0 removes it
+#### The blocker that was published around, and how it was removed
+
+> **Resolved as of `warrant-verify 0.9.0` (on PyPI 2026-08-01).** The account below is kept as the record of the state at 0.7.1 and of the reasoning that applied then; the package it says does not exist now does. What remains is a publication act, not an engineering blocker.
 
 The manifest that went live carried **no `packages` block**, because at 0.7.1
 there was no honest one to write: `pyproject.toml` ships flat modules out of

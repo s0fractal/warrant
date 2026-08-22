@@ -56,29 +56,42 @@ the `warrant-mcp-server` MCP server, and the `warrant-anchor` Merkle batcher.
 inside the package, so no separate clone is needed. (From a checkout:
 `git clone … && pip install .`.)
 
-The latest release **on PyPI is 0.7.1** (2026-07-31, tag `v0.7.1`), which is what
-that line installs today; six versions are published. **This checkout is 0.8.0
-and is not released** — so `warrant-mcp-server`, which 0.8.0 adds, is not
-installable from PyPI until that release is cut. `CHANGELOG.md` is written
-through 0.6.0. That each release installs and runs has been checked in a clean
-venv by the maintainer — it is not a claim that anyone else has installed it.
+The latest release **on PyPI is 0.9.0**, which is what that line installs and
+what this checkout is; six versions are published (`0.5.0` … `0.9.0`), and
+`CHANGELOG.md` covers them through `0.9.0`. All four commands above, including
+`warrant-mcp-server`, come from the published wheel — no checkout required.
+
+Checked on 2026-08-22 in an empty virtualenv: `pip install warrant-verify` gives
+`0.9.0` and those four commands, and the walkthrough below runs from that
+install alone. That is a maintainer's clean-room check, not a claim that anyone
+else has installed it.
 
 ```bash
 warrant init                          # .warrants/ store in your repo
 warrant keygen --out me.key           # Ed25519; prints your pubkey
 printf 'demo diff\n' > diff.patch     # the thing being decided about
-POL=$(warrant policy add examples/policy.txt)   # pin the rules in force -> hash
+printf 'clause 1: no coverage drop\n' > policy.txt      # your rules, as bytes
+printf '#!/bin/sh\nexit 1\n' > check.sh && chmod +x check.sh   # a check that fails
+
+POL=$(warrant policy add policy.txt)  # pin the rules in force -> hash
 
 P=$(warrant propose --subject diff.patch --under $POL \
       --reason "utility fns needed" --actor me@host --key me.key)
-R=$(warrant reject $P --check examples/check.sh --verdict fail \
+R=$(warrant reject $P --check check.sh --verdict fail \
       --reason "clause 1: coverage drop" --actor me@host --key me.key)
-A=$(warrant accept $R --check examples/check.sh --verdict pass \
+printf '#!/bin/sh\nexit 0\n' > check.sh                 # fix the thing, check passes
+A=$(warrant accept $R --check check.sh --verdict pass \
       --actor me@host --key me.key)
 
 warrant why $A                        # decision -> reasons -> checks -> policy, verified
 warrant verify                        # every hash, signature, and link in the store
 ```
+
+Every file the walkthrough needs is created above, so it runs from a `pip
+install` with no checkout. `verify` ends with `3 records, 0 errors, 3 warnings`:
+the warnings say `binding unverified (no keyring)`, because nothing yet vouches
+that the key belongs to `me@host` — that is what a trust config supplies, and
+until you write one an unbound signature is reported rather than believed.
 
 The store is plain files, content-addressed, git-friendly. No server, no vendor, no account.
 
