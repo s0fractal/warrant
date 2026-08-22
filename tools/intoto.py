@@ -16,10 +16,14 @@ relationship.
 
 WHAT IT DOES NOT DO
 -------------------
-It does not make a warrant an SLSA provenance, and it does not claim the
-attestation is signed -- wrapping in DSSE and pushing to Rekor is a separate step
-with separate trust. This produces the Statement; signing it is the caller's
-business and is deliberately not hidden inside a converter.
+It does not make a warrant an SLSA provenance. `envelope` now wraps a Statement
+in DSSE and signs it, but that is still not adoption: pushing to a transparency
+log is a separate act with separate trust, and nothing here does it.
+
+A DSSE signature verified against the key named inside the same envelope proves
+integrity and nothing else -- whoever wrote the envelope chose that key. Pass
+`--expect-key` to make a statement about authority; without it, `verify-envelope`
+says integrity only, in those words.
 
 Conversion is not verification. `check` exists because a converter whose output
 nobody can test is a claim: it recomputes every digest from the store rather than
@@ -35,17 +39,25 @@ a false claim about who defines the type.
 USAGE
     python3 tools/intoto.py wrap <WarrantID>            # Statement on stdout
     python3 tools/intoto.py check <statement.json>      # binding verified?
+    python3 tools/intoto.py envelope <WarrantID> --key me.key    # signed DSSE
+    python3 tools/intoto.py verify-envelope <env.json> [--expect-key HEX]
+    python3 tools/intoto.py roundtrip <WarrantID> --key me.key   # + loss report
     python3 tools/intoto.py selftest
 """
 import argparse
+import base64
 import hashlib
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "impl"))
 import warrant as W                                          # noqa: E402
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: E402
+    Ed25519PublicKey,
+)
 
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 PREDICATE_TYPE = "https://github.com/s0fractal/warrant/decision/v0"
@@ -175,6 +187,87 @@ def check(store, statement):
     return errs
 
 
+# ---------- DSSE (a projection of a projection; still not adoption) ----------
+PAYLOAD_TYPE = "application/vnd.in-toto+json"
+
+
+def pae(payload_type: str, payload: bytes) -> bytes:
+    """DSSE Pre-Authentication Encoding: length-prefixed, so a signature cannot
+    be replayed under a different payload type."""
+    return (b"DSSEv1 " + str(len(payload_type)).encode() + b" "
+            + payload_type.encode() + b" "
+            + str(len(payload)).encode() + b" " + payload)
+
+
+def canonical(statement: dict) -> bytes:
+    return json.dumps(statement, sort_keys=True, separators=(",", ":")).encode()
+
+
+def envelope(store, wid: str, key_path: str) -> dict:
+    payload = canonical(wrap(store, wid))
+    sk = W.load_key(key_path)
+    return {"payloadType": PAYLOAD_TYPE,
+            "payload": base64.standard_b64encode(payload).decode(),
+            "signatures": [{"keyid": W.pubkey_hex(sk),
+                            "sig": base64.standard_b64encode(
+                                sk.sign(pae(PAYLOAD_TYPE, payload))).decode()}]}
+
+
+def verify_envelope(store, env: dict, expect_key: str | None = None) -> list:
+    """Signature, then binding. Two different questions, answered separately."""
+    errs = []
+    if env.get("payloadType") != PAYLOAD_TYPE:
+        errs.append(f"payloadType is {env.get('payloadType')!r}, not {PAYLOAD_TYPE!r}")
+    try:
+        payload = base64.standard_b64decode(env["payload"])
+    except Exception:
+        return errs + ["payload is not valid base64"]
+    signatures = env.get("signatures") or []
+    if not signatures:
+        errs.append("envelope carries no signature")
+    verified = []
+    for index, signature in enumerate(signatures):
+        try:
+            pk = Ed25519PublicKey.from_public_bytes(bytes.fromhex(signature["keyid"]))
+            pk.verify(base64.standard_b64decode(signature["sig"]),
+                      pae(env.get("payloadType", ""), payload))
+            verified.append(signature["keyid"])
+        except Exception:
+            errs.append(f"signature[{index}] does not verify over the DSSE PAE")
+    if expect_key and expect_key not in verified:
+        errs.append(f"no signature from the expected key {expect_key[:12]}")
+    try:
+        statement = json.loads(payload)
+    except Exception:
+        return errs + ["payload is not JSON"]
+    return errs + check(store, statement)
+
+
+def loss_report(store, wid: str) -> list:
+    """What the record has and the Statement cannot give back.
+
+    A round trip through DSSE is exact -- the payload is the bytes that were
+    signed. A round trip back to a warrant record is not, and pretending
+    otherwise is how a projection gets mistaken for the artefact.
+    """
+    env = store.get_record(wid)
+    body = env["body"]
+    lost = ["the record's own Ed25519 signatures: only actor and keyid are "
+            "projected, so a Statement cannot establish who signed the warrant",
+            "the canonical body bytes, and therefore the ability to recompute "
+            "the WarrantID from the Statement alone",
+            "the store's blobs: policy, evidence and check bodies are named by "
+            "digest, so `because` reasons cannot be re-executed from the "
+            "Statement without the store"]
+    if any(r["kind"] != "prose" for r in body["because"]):
+        lost.append("a check reason's transcript, where one exists: the digest "
+                    "travels, the bytes do not")
+    if body.get("prior"):
+        lost.append("the prior chain's contents: prior WarrantIDs travel as "
+                    "digests, their bodies do not")
+    return lost
+
+
 def selftest(store):
     recs = store.all_records()
     if not recs:
@@ -211,15 +304,50 @@ def selftest(store):
         mutate(bad)
         case(f"check rejects a tampered {label}", check(store, bad) != [])
 
+    # DSSE: the envelope must bind the payload type and the bytes, and a
+    # verified signature must not be read as a verified authority.
+    with tempfile.TemporaryDirectory() as tmp:                # never in the store
+        key_path = Path(tmp) / "selftest-dsse.key"
+        key_path.write_text(hashlib.sha256(b"intoto-selftest-key").digest().hex())
+        env = envelope(store, wid, str(key_path))
+    keyid = env["signatures"][0]["keyid"]
+    case("envelope verifies over the DSSE PAE and binds to the record",
+         verify_envelope(store, env) == [])
+    case("envelope round-trips to a byte-identical Statement",
+         base64.standard_b64decode(env["payload"]) == canonical(wrap(store, wid)))
+    case("verify accepts the key it was told to expect",
+         verify_envelope(store, env, expect_key=keyid) == [])
+    case("verify rejects a key it was not signed by",
+         verify_envelope(store, env, expect_key="0" * 64) != [])
+
+    for mutate, label in (
+        (lambda e: e.update(payloadType="application/json"), "payloadType"),
+        (lambda e: e["signatures"][0].update(sig=base64.standard_b64encode(
+            b"\x00" * 64).decode()), "signature"),
+        (lambda e: e.update(payload=base64.standard_b64encode(
+            canonical({**wrap(store, wid), "predicate": {
+                **wrap(store, wid)["predicate"], "actor": "mallory@evil"}})).decode()),
+         "predicate inside the envelope"),
+        (lambda e: e.update(signatures=[]), "envelope with no signature at all"),
+    ):
+        bad = json.loads(json.dumps(env))
+        mutate(bad)
+        case(f"verify-envelope rejects a tampered {label}"
+             if "no signature" not in label else f"verify-envelope rejects an {label}",
+             verify_envelope(store, bad) != [])
+
     print("\nINTOTO-BRIDGE: " + ("ALL PASS" if ok else "FAILURES"))
     return 0 if ok else 1
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["wrap", "check", "selftest"])
+    ap.add_argument("cmd", choices=["wrap", "check", "envelope", "verify-envelope",
+                                    "roundtrip", "selftest"])
     ap.add_argument("arg", nargs="?")
     ap.add_argument("--store", default=str(ROOT / ".warrants"))
+    ap.add_argument("--key", help="Ed25519 seed file, as produced by `warrant keygen`")
+    ap.add_argument("--expect-key", help="public key hex a signature must come from")
     a = ap.parse_args()
     store = W.Store(Path(a.store))
     if a.cmd == "wrap":
@@ -236,6 +364,39 @@ def main():
         print("INTOTO: " + ("BOUND — the Statement describes this record"
                             if not errs else f"{len(errs)} binding error(s)"))
         return 1 if errs else 0
+    if a.cmd == "envelope":
+        if not a.arg or not a.key:
+            sys.exit("envelope needs a WarrantID and --key")
+        print(json.dumps(envelope(store, a.arg, a.key), indent=2, sort_keys=True))
+        return 0
+    if a.cmd == "verify-envelope":
+        if not a.arg:
+            sys.exit("verify-envelope needs an envelope file")
+        errs = verify_envelope(store, json.loads(Path(a.arg).read_text()), a.expect_key)
+        for e in errs:
+            print("ERR ", e)
+        if errs:
+            print(f"DSSE: {len(errs)} error(s)")
+            return 1
+        print("DSSE: signature verifies and the Statement binds to the record.")
+        print("      " + ("Authority: signed by the key you named."
+                          if a.expect_key else
+                          "Integrity only: the key is the one named inside the "
+                          "envelope, which whoever wrote it chose. Pass "
+                          "--expect-key to make a claim about authority."))
+        return 0
+    if a.cmd == "roundtrip":
+        if not a.arg or not a.key:
+            sys.exit("roundtrip needs a WarrantID and --key")
+        env = envelope(store, a.arg, a.key)
+        exact = base64.standard_b64decode(env["payload"]) == canonical(wrap(store, a.arg))
+        errs = verify_envelope(store, env)
+        print(f"envelope -> Statement: {'byte-identical' if exact else 'DIVERGED'}")
+        print(f"signature and binding: {'ok' if not errs else errs}")
+        print("\nrecord -> Statement is lossy, by design. Not carried:")
+        for item in loss_report(store, a.arg):
+            print(f"  - {item}")
+        return 0 if exact and not errs else 1
     return selftest(store)
 
 
