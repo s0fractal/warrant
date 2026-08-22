@@ -111,7 +111,7 @@ The wheel installs four console commands, plus the bundled Σ-GLYPH oracle:
 |---|---|---|
 | `warrant` | `warrant.py` | the verifier / record CLI |
 | `warrant-mcp` | `warrant_mcp.py` | the sealing **proxy**: wraps another MCP server and seals its tool-calls |
-| `warrant-mcp-server` | `warrant_mcp_server.py` | the MCP **server**: the agent files its own decisions (0.8.0) |
+| `warrant-mcp-server` | `warrant_mcp_server.py` | the MCP **server**: the agent files its own decisions (added in 0.8.0; first published on PyPI in 0.9.0) |
 | `warrant-anchor` | `warrant_anchor.py` | RFC 6962 Merkle batching / anchoring |
 
 Every module ships from `impl/`, because `package-dir = {"" = "impl"}` gives the

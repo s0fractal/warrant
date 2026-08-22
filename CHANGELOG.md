@@ -71,7 +71,12 @@ Also in this release:
   published unaltered, because two people holding one filename must not have
   two different files.
 
-## [Unreleased] — 0.8.0, not published
+## [0.8.0] — 2026-07-31
+
+> Recorded here as unreleased while it was; it was published to PyPI on 2026-07-31 and
+> superseded by 0.9.0 on 2026-08-01. The section below is the text written before that,
+> corrected only in this heading — a changelog that keeps saying "not published" about a
+> published version is the same defect the release-surface gate exists to catch.
 
 Tooling number only; **no protocol surface moves**. 0.7.0 and 0.7.1 are on PyPI
 and are not written up below — this file is still narrated through 0.6.0, and
