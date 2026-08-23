@@ -20,8 +20,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install the verifier the same way a stranger would
-        run: pip install warrant-verify==0.9.0
+        run: pip install --only-binary :all: warrant-verify==0.9.0
 
+      # The gate reports; it does not block. A verdict of reject is posted and
+      # the merge is left to people — a gate that hijacks merges on its first day
+      # is switched off on its second.
       - name: Gate the change
         id: gate
         run: |

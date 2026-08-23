@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """One command a reviewer can run on an agent's change, and one artifact to read.
 
-The parts already exist — a policy language that compiles to a re-executable
+The parts already existed — a policy language that compiles to a re-executable
 `ski@v1` term, a record format that pins the policy bytes, a verifier that
-re-runs the reason. What did not exist is the thing a reviewer actually wants:
+re-runs the reason. What did not exist is the thing a reviewer actually opens:
 
     what changed, who proposed it, which policy was in force, what was checked,
     which reason can be re-run, and what exactly would flip the verdict.
@@ -11,7 +11,12 @@ re-runs the reason. What did not exist is the thing a reviewer actually wants:
 The last one is the point. A gate that says "rejected" and stops is a wall; a
 gate that says which fact is one step from the boundary is a review.
 
-    python3 tools/gate.py --base origin/master --policy .warrant/gate.wpl
+    python3 tools/gate.py --base origin/master
+
+Exit status is 0 for accept and 1 for reject. Whether that blocks a merge is a
+policy decision for whoever installs it, and this repository deliberately does
+not: the report is posted and the merge is left to people. A gate that hijacks
+merges on its first day gets switched off on its second.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +38,9 @@ import warrant as W                 # noqa: E402
 AGENT_TRAILERS = ("Co-Authored-By: Claude", "Co-Authored-By: Codex",
                   "Co-Authored-By: GPT", "Co-Authored-By: Gemini",
                   "Generated with", "Claude-Session:")
+LOCKFILES = ("Cargo.lock", "uv.lock", "poetry.lock", "package-lock.json",
+             "requirements.txt")
+SAFE_REV = re.compile(r"^[A-Za-z0-9_./\-~^@{}]+$")
 
 
 def git(*arguments: str) -> str:
@@ -39,13 +48,38 @@ def git(*arguments: str) -> str:
                           capture_output=True, text=True, check=True).stdout
 
 
-def facts_from_change(base: str, head: str) -> dict:
-    """Measured where the facts are: WPL refuses arithmetic on purpose, so the
-    counting happens here and the results are pinned into the policy."""
-    numstat = git("diff", "--numstat", f"{base}...{head}").strip().splitlines()
+def resolve(rev: str) -> str:
+    """Turn a caller-supplied revision into a commit id, or refuse it.
+
+    The revision arrives from a command line and is then handed to git, so it is
+    checked before it can be read as an option: a value starting with `-` is an
+    option, not a revision, whatever it was meant to be."""
+    if rev.startswith("-") or not SAFE_REV.match(rev):
+        raise SystemExit(f"refusing {rev!r} as a revision")
+    try:
+        return git("rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}").strip()
+    except subprocess.CalledProcessError:
+        raise SystemExit(f"{rev!r} does not name a commit in this repository")
+
+
+def literal(value) -> str:
+    """A fact value as WPL source."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    return json.dumps(value)
+
+
+def measure(base: str, head: str) -> tuple[dict, list[str]]:
+    """Facts, measured where the facts are.
+
+    WPL refuses arithmetic on purpose — every operand must be a literal or a
+    pinned fact, so the verifier re-executes each step instead of trusting a
+    number a compiler worked out. The counting therefore happens here."""
     added = removed = 0
-    paths = []
-    for line in numstat:
+    paths: list[str] = []
+    for line in git("diff", "--numstat", f"{base}...{head}").splitlines():
         parts = line.split("\t")
         if len(parts) != 3:
             continue
@@ -55,129 +89,140 @@ def facts_from_change(base: str, head: str) -> dict:
         paths.append(path)
 
     log = git("log", "--format=%B", f"{base}..{head}")
-    return {
+    facts = {
         "files_changed": len(paths),
         "lines_added": added,
         "lines_removed": removed,
         "touches_ci": any(p.startswith(".github/workflows/") for p in paths),
-        "touches_deps": any(p.endswith(("Cargo.lock", "uv.lock", "poetry.lock",
-                                        "package-lock.json", "requirements.txt"))
-                            for p in paths),
+        "touches_deps": any(p.endswith(LOCKFILES) for p in paths),
         "touches_tests": any("test" in p for p in paths),
         "proposed_by_agent": any(marker in log for marker in AGENT_TRAILERS),
-    }, paths
+    }
+    return facts, paths
 
 
-def render_policy(template: Path, facts: dict) -> str:
-    """The template declares the rule; the measured facts are substituted in.
-
-    A fact the template does not declare is refused rather than ignored — a
-    policy silently evaluated against facts it never mentioned is the shape of
-    check this project exists to distrust."""
-    source = template.read_text()
-    rendered, seen = [], set()
+def substitute(source: str, facts: dict, placeholders_only: bool) -> tuple[str, set]:
+    """Replace fact values in WPL source, returning the source and what was set."""
+    out, seen = [], set()
     for line in source.splitlines():
-        if line.startswith("fact ") and "= {{" in line:
-            name = line.split()[1].rstrip(":")
-            if name not in facts:
-                raise SystemExit(f"{template}: declares fact {name!r}, which this "
-                                 "gate does not measure")
-            value = facts[name]
-            literal = ("true" if value else "false") if isinstance(value, bool) else (
-                str(value) if isinstance(value, int) else json.dumps(value))
-            rendered.append(line.split("= {{")[0] + "= " + literal)
+        name = line.split()[1].rstrip(":") if line.startswith("fact ") else None
+        wanted = name in facts and (not placeholders_only or "= {{" in line)
+        if name and wanted:
+            out.append(line.split("=")[0] + "= " + literal(facts[name]))
             seen.add(name)
         else:
-            rendered.append(line)
-    unused = sorted(set(facts) - seen)
-    return "\n".join(rendered) + "\n", unused
+            out.append(line)
+    return "\n".join(out) + "\n", seen
 
 
-def _verdict_with(source: str, facts: dict, name: str, value) -> bool | None:
+def render_policy(template: Path, facts: dict) -> tuple[str, list[str]]:
+    """The template declares the rule; measured facts are substituted into it.
+
+    A placeholder the gate does not measure is refused rather than left standing:
+    a policy evaluated against facts it never received is the shape of check this
+    project exists to distrust."""
+    source = template.read_text()
+    declared = {line.split()[1].rstrip(":") for line in source.splitlines()
+                if line.startswith("fact ") and "= {{" in line}
+    missing = sorted(declared - set(facts))
+    if missing:
+        raise SystemExit(f"{template}: needs {', '.join(missing)}, which this gate "
+                         "does not measure")
+    rendered, seen = substitute(source, facts, placeholders_only=True)
+    return rendered, sorted(set(facts) - seen)
+
+
+def verdict_with(source: str, facts: dict, name: str, value) -> bool | None:
     probe = dict(facts)
     probe[name] = value
-    rendered, _ = render_policy_from_facts(source, probe)
+    rendered, _ = substitute(source, probe, placeholders_only=False)
     try:
         return WPL.evaluate(WPL.parse(rendered))
     except Exception:
         return None
 
 
+def _bisect(source: str, facts: dict, name: str, low: int, high: int) -> int | None:
+    """The nearest value between low and high at which the answer changes."""
+    if verdict_with(source, facts, name, low) is verdict_with(source, facts, name, high):
+        return None
+    a, b = low, high
+    while b - a > 1:
+        mid = (a + b) // 2
+        if verdict_with(source, facts, name, mid) is verdict_with(source, facts, name, a):
+            a = mid
+        else:
+            b = mid
+    return b if verdict_with(source, facts, name, a) is verdict_with(source, facts, name, low) else a
+
+
 def flip_analysis(source: str, facts: dict, verdict: bool) -> list[str]:
     """What would change the answer, fact by fact — and for a number, by how much.
 
-    Recomputed with the reference interpreter rather than reasoned about. For an
-    integer the boundary is found by bisection instead of by probing a few
-    deltas, because "somewhere under 510" is not review information and "at 300"
-    is. This is the part a reviewer reads first: it says how close the change is
-    to the line, and which line.
-    """
+    Found by bisection with the reference interpreter rather than reasoned about,
+    because "somewhere under 510" is not review information and "at 300" is."""
     findings = []
     for name, value in sorted(facts.items()):
         if isinstance(value, bool):
-            if _verdict_with(source, facts, name, not value) is (not verdict):
+            if verdict_with(source, facts, name, not value) is (not verdict):
                 findings.append(f"`{name}`: {value} → {not value} flips it")
             continue
         if not isinstance(value, int):
             continue
-        low, high = 0, max(value * 4, value + 1000)
-        if _verdict_with(source, facts, name, low) is verdict and \
-           _verdict_with(source, facts, name, high) is verdict:
-            continue                       # no boundary in reach either way
-        # bisect towards the nearest value that changes the answer
-        for lo, hi in ((low, value), (value, high)):
-            if _verdict_with(source, facts, name, lo) is _verdict_with(source, facts, name, hi):
-                continue
-            a, b = lo, hi
-            while b - a > 1:
-                mid = (a + b) // 2
-                if _verdict_with(source, facts, name, mid) is _verdict_with(source, facts, name, a):
-                    a = mid
-                else:
-                    b = mid
-            edge = a if _verdict_with(source, facts, name, a) is (not verdict) else b
-            direction = "down to" if edge < value else "up to"
-            findings.append(f"`{name}`: {value} → {direction} {edge} flips it")
+        for low, high in ((0, value), (value, max(value * 4, value + 1000))):
+            edge = _bisect(source, facts, name, low, high)
+            if edge is not None:
+                where = "down to" if edge < value else "up to"
+                findings.append(f"`{name}`: {value} → {where} {edge} flips it")
+                break
     return findings
 
 
-def render_policy_from_facts(rendered_source: str, facts: dict) -> tuple[str, list]:
-    """Re-render an already-rendered policy with different fact values."""
-    out = []
-    for line in rendered_source.splitlines():
+def conjuncts(rule: str) -> list[str]:
+    """Split a top-level `&&` chain, ignoring the ones inside brackets."""
+    parts, depth, current = [], 0, ""
+    index = 0
+    while index < len(rule):
+        char = rule[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if depth == 0 and rule[index:index + 2] == "&&":
+            parts.append(current.strip())
+            current, index = "", index + 2
+            continue
+        current += char
+        index += 1
+    parts.append(current.strip())
+    return [part for part in parts if part]
+
+
+def failing_clauses(source: str, rule: str) -> list[str]:
+    """Which parts of the rule are false, evaluated one at a time.
+
+    When two constraints fail at once, no single fact flips the verdict and a
+    report that only says "nothing flips it" has told the reviewer nothing. Each
+    clause is re-evaluated on its own — carrying only the facts it mentions,
+    because WPL refuses a program that declares a fact it never uses."""
+    declarations = {}
+    for line in source.splitlines():
         if line.startswith("fact "):
-            name = line.split()[1].rstrip(":")
-            if name in facts:
-                value = facts[name]
-                literal = ("true" if value else "false") if isinstance(value, bool) else (
-                    str(value) if isinstance(value, int) else json.dumps(value))
-                out.append(line.split("=")[0] + "= " + literal)
-                continue
-        out.append(line)
-    return "\n".join(out) + "\n", []
+            declarations[line.split()[1].rstrip(":")] = line
+    failing = []
+    for clause in conjuncts(rule):
+        needed = [line for name, line in declarations.items()
+                  if re.search(rf"\b{re.escape(name)}\b", clause)]
+        program = "\n".join(needed) + f"\ncheck {clause}\n"
+        try:
+            if WPL.evaluate(WPL.parse(program)) is False:
+                failing.append(clause)
+        except Exception:
+            continue
+    return failing
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--base", default="origin/master")
-    parser.add_argument("--head", default="HEAD")
-    parser.add_argument("--policy", default=".warrant/gate.wpl")
-    parser.add_argument("--store", default=".warrant/store",
-                        help="where the gate writes its own check blobs; not the repository's record store, which belongs to the repository")
-    parser.add_argument("--actor", default="gate@local")
-    parser.add_argument("--key", help="Ed25519 seed; omit to check without filing")
-    parser.add_argument("--out", default="gate-report.md")
-    arguments = parser.parse_args()
-
-    template = ROOT / arguments.policy
-    if not template.is_file():
-        raise SystemExit(f"no policy at {arguments.policy}; this gate has no opinion "
-                         "of its own and refuses to invent one")
-
-    facts, paths = facts_from_change(arguments.base, arguments.head)
-    source, unused = render_policy(template, facts)
-    program = WPL.parse(source)
-    verdict = WPL.evaluate(program)
+def rule_of(source: str) -> str:
     collected, collecting = [], False
     for line in source.splitlines():
         if line.startswith("check"):
@@ -187,57 +232,93 @@ def main() -> int:
             collected.append(line.strip())
         elif collecting:
             break
-    formula = " ".join(collected) or "see the policy"
+    return " ".join(collected) or "see the policy"
 
-    store_path = ROOT / arguments.store
-    if not (store_path / "blobs").is_dir():
-        # The gate keeps its own store so a check it compiles never lands in the
-        # repository's record store, which belongs to the repository.
-        (store_path / "blobs").mkdir(parents=True, exist_ok=True)
-        (store_path / "records").mkdir(parents=True, exist_ok=True)
-    store = W.Store(store_path)
-    compiled = WPL.compile_source(source, put=store.put_blob, name=template.name)
-    doc, check_hash = compiled.doc, compiled.blob
-    if compiled.result != verdict:
-        raise SystemExit("the compiled term disagrees with the reference "
-                         "interpreter — refusing to report either")
 
-    diff_bytes = git("diff", f"{arguments.base}...{arguments.head}").encode()
-    subject = hashlib.sha256(diff_bytes).hexdigest()
-    policy_hash = store.put_blob(source.encode())
-    flips = flip_analysis(source, facts, verdict)
+def open_store(path: Path) -> "W.Store":
+    """The gate keeps its own store: a tool's scratch output has no business in
+    the store that holds the repository's records."""
+    for directory in ("blobs", "records"):
+        (path / directory).mkdir(parents=True, exist_ok=True)
+    return W.Store(path)
 
-    report = [
+
+def report_lines(*, verdict, base, head, paths, facts, subject, policy_hash,
+                 rule, check_hash, doc, flips, failing, unused, store) -> list[str]:
+    lines = [
         f"# Gate report — {'ACCEPT' if verdict else 'REJECT'}",
         "",
-        f"Change `{arguments.base}...{arguments.head}`, {len(paths)} file(s), "
+        f"Change `{base}...{head}`, {len(paths)} file(s), "
         f"+{facts['lines_added']}/-{facts['lines_removed']}.",
         "",
         "| | |", "| --- | --- |",
         f"| what changed | `{subject[:16]}…` — sha256 of the diff |",
-        f"| who proposed it | {'an agent (commit trailers)' if facts['proposed_by_agent'] else 'a human, by the same evidence'} |",
-        f"| policy in force | `{policy_hash[:16]}…` — the bytes of `{arguments.policy}`, pinned |",
-        f"| what was checked | `{formula}` |",
-        f"| reason you can re-run | `warrant --store {arguments.store} check {check_hash[:16]}…` |",
+        f"| who proposed it | {'an agent, by its commit trailers' if facts['proposed_by_agent'] else 'a human, by the same evidence'} |",
+        f"| policy in force | `{policy_hash[:16]}…` — the pinned bytes of the rule |",
+        f"| what was checked | `{rule}` |",
+        f"| reason you can re-run | `warrant --store {store} check {check_hash[:16]}…` |",
         f"| cost of re-running it | {doc['atp']:,} ATP, fixed in the check |",
-        "",
-        "## The facts it was decided on",
-        "", "| fact | value |", "| --- | --- |",
+        "", "## The facts it was decided on", "",
+        "| fact | value |", "| --- | --- |",
     ]
-    for name, value in sorted(facts.items()):
-        report.append(f"| `{name}` | `{value}` |")
-    report += ["", "## What would flip this verdict", ""]
-    report += [f"- {line}" for line in flips] or ["- nothing within the probed range"]
+    lines += [f"| `{name}` | `{value}` |" for name, value in sorted(facts.items())]
+    if failing:
+        lines += ["", "## Why it says that", "",
+                  "These parts of the rule are false:", ""]
+        lines += [f"- `{clause}`" for clause in failing]
+    lines += ["", "## What would flip this verdict", ""]
+    lines += ([f"- {line}" for line in flips] or
+              ["- no single fact flips it" + (" — more than one clause is failing"
+                                              if len(failing) > 1 else "")])
     if unused:
-        report += ["", f"Measured but not used by this policy: {', '.join(unused)}."]
-    report += [
+        lines += ["", f"Measured but unused by this policy: {', '.join(unused)}."]
+    lines += [
         "", "## What this does not say", "",
-        "It does not say the change is correct, safe, or wanted. It says a stated "
-        "rule was applied to measured facts, that the rule's bytes are pinned, and "
-        "that anyone can re-run the reason and get the same answer.", ""]
+        "It does not say the change is correct, safe, or wanted, and it does not "
+        "replace a reviewer. It says a stated rule was applied to measured facts, "
+        "that the rule's bytes are pinned by hash, and that anyone can re-execute "
+        "the reason and get the same verdict — including someone who does not "
+        "trust the machine that produced it.", ""]
+    return lines
 
-    Path(ROOT / arguments.out).write_text("\n".join(report))
-    print("\n".join(report[:14]))
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base", default="origin/master")
+    parser.add_argument("--head", default="HEAD")
+    parser.add_argument("--policy", default=".warrant/gate.wpl")
+    parser.add_argument("--store", default=".warrant/store",
+                        help="where the gate writes its own check blobs")
+    parser.add_argument("--out", default="gate-report.md")
+    arguments = parser.parse_args()
+
+    template = ROOT / arguments.policy
+    if not template.is_file():
+        raise SystemExit(f"no policy at {arguments.policy}; this gate has no opinion "
+                         "of its own and refuses to invent one")
+
+    base, head = resolve(arguments.base), resolve(arguments.head)
+    facts, paths = measure(base, head)
+    source, unused = render_policy(template, facts)
+    verdict = WPL.evaluate(WPL.parse(source))
+
+    store = open_store(ROOT / arguments.store)
+    compiled = WPL.compile_source(source, put=store.put_blob, name=template.name)
+    if compiled.result != verdict:
+        raise SystemExit("the compiled term disagrees with the reference "
+                         "interpreter — refusing to report either")
+
+    subject = hashlib.sha256(git("diff", f"{base}...{head}").encode()).hexdigest()
+    lines = report_lines(
+        verdict=verdict, base=arguments.base, head=arguments.head, paths=paths,
+        facts=facts, subject=subject, policy_hash=store.put_blob(source.encode()),
+        rule=rule_of(source), check_hash=compiled.blob, doc=compiled.doc,
+        flips=flip_analysis(source, facts, verdict), unused=unused,
+        failing=[] if verdict else failing_clauses(source, rule_of(source)),
+        store=arguments.store)
+
+    Path(ROOT / arguments.out).write_text("\n".join(lines))
+    print("\n".join(lines[:14]))
     print(f"\nwritten: {arguments.out}")
     return 0 if verdict else 1
 
