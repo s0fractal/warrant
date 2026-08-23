@@ -17,12 +17,26 @@ that says `lines_added: 510 → down to 300 flips it` is a review.
 ## Where the rule comes from, and why it matters
 
 In CI the gate runs from the **base** revision and reads its rule with
-`--policy-from <base sha>`; the proposed change is diffed and never executed. The
-first version did not do this, and a pull request could rewrite `gate.wpl` into a
-tautology and award itself an `ACCEPT`. That attack is reproduced in
-`tests/gate_isolation.py`, which fails if it ever stops being defeated — and
-which also reads the workflow, because a guarantee in Python is worth nothing if
-the YAML stops obeying it.
+`--policy-from <base sha>`; the proposed change is diffed and never executed.
+
+It took two rounds to get there, and both are worth knowing. The first version
+ran the gate from the pull request's own checkout, so a change could rewrite
+`gate.wpl` into a tautology and award itself an `ACCEPT`. Reading the rule from
+the base fixed that — and the hole moved up a level: on `pull_request`, GitHub
+takes the **workflow** from the change, so it could rewrite `agent-gate.yml`,
+restore a head checkout and fabricate a comment. The defendant had stopped
+editing the judge and was still editing the courtroom.
+
+The trigger is therefore `pull_request_target`, which runs the workflow and
+checks out the code from the base branch. That trigger is safe under exactly one
+condition, which this workflow keeps: **the head is never executed.** It is
+fetched as a git object — by `refs/pull/<n>/head`, because a fork's commit exists
+under no other name here — then diffed and read for commit trailers, and nothing
+else.
+
+Both attacks are reproduced in `tests/gate_isolation.py`, which fails if either
+ever stops being defeated, and which reads the workflow YAML too: a guarantee in
+Python is worth nothing if the workflow stops obeying it.
 
 The job that can comment on a pull request downloads an artifact and posts it. It
 does not check out the repository, so write capability and repository code never

@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Can a change award itself a passing verdict?
 
-It could. A pull request that rewrote `.warrant/gate.wpl` into a tautology got an
-ACCEPT out of the gate, because the workflow ran the gate from the pull request's
-own checkout. This file reproduces that, proves the fix defeats it, and then
-checks that the workflow still honours the arrangement the fix depends on — a
-guarantee in a Python file is worth nothing if the YAML stops obeying it.
+Twice it could, at two different levels.
+
+A pull request that rewrote `.warrant/gate.wpl` into a tautology got an ACCEPT,
+because the workflow ran the gate from the pull request's own checkout. Reading
+the rule from the base revision fixed that — and moved the hole up: on
+`pull_request`, GitHub takes the *workflow* from the pull request, so a change
+could rewrite `agent-gate.yml`, restore a head checkout and fabricate a comment.
+The defendant had stopped editing the judge and was still editing the courtroom.
+
+This file reproduces the first attack, proves the fix defeats it, reproduces the
+second as a rewritten workflow, and then checks the arrangement both fixes depend
+on: a guarantee in Python is worth nothing if the YAML stops obeying it.
 """
 
 from __future__ import annotations
@@ -65,18 +72,29 @@ def scenario(root: Path) -> tuple[str, str]:
     return base, git(root, "rev-parse", "HEAD").strip()
 
 
-def check_workflow() -> list[str]:
+def check_workflow(path: Path = WORKFLOW) -> list[str]:
     """The YAML has to keep the promise the Python relies on."""
-    text = WORKFLOW.read_text()
+    text = path.read_text()
     problems = []
     if "ref: ${{ github.event.pull_request.base.sha }}" not in text:
         problems.append("the verdict job does not check out the base revision")
     if "--policy-from" not in text:
         problems.append("the gate is invoked without --policy-from, so the rule "
                         "would come from the working tree")
-    if "pull_request_target" in text:
-        problems.append("pull_request_target appears; with a head checkout that is "
-                        "the documented way to hand a change write capability")
+    if re.search(r"^on:\s*$", text, re.M) and "pull_request_target:" not in text:
+        problems.append("the workflow triggers on pull_request, so GitHub takes the "
+                        "workflow itself from the change — the control plane belongs "
+                        "to the base branch")
+    if re.search(r"^\s+pull_request:\s*$", text, re.M):
+        problems.append("a bare pull_request trigger is present")
+    head_checkout = re.search(r"actions/checkout[\s\S]{0,200}?ref:\s*\$\{\{[^}]*head", text)
+    if head_checkout:
+        problems.append("a checkout step takes the head revision; under "
+                        "pull_request_target that hands the change a write-capable "
+                        "token, which is the failure this trigger is infamous for")
+    if "refs/pull/" not in text:
+        problems.append("the head is fetched by SHA rather than refs/pull/<n>/head, "
+                        "which does not exist in this repository for a fork")
 
     # The job that can write must not check out the repository at all.
     jobs = re.split(r"\n  (?=\w[\w-]*:\n)", text)
@@ -113,7 +131,22 @@ def main() -> int:
         else:
             print("OK   the base revision's rule decides, and rejects the change")
 
-        # 3. And the report says which bytes decided.
+        # 3. The second attack: the change rewrites the workflow itself.
+        hostile = (root / ".github/workflows/agent-gate.yml")
+        hostile.write_text(WORKFLOW.read_text()
+                           .replace("pull_request_target:", "pull_request:")
+                           .replace("ref: ${{ github.event.pull_request.base.sha }}",
+                                    "ref: ${{ github.event.pull_request.head.sha }}"))
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "ci: adjust the workflow")
+        problems = check_workflow(hostile)
+        if len(problems) < 2:
+            failures.append("a workflow rewritten to run head code on pull_request "
+                            f"was not caught; found only {problems}")
+        else:
+            print("OK   a workflow rewritten to run the change's own code is caught")
+
+        # 4. And the report says which bytes decided.
         report = (root / "gate-report.md").read_text()
         if f"at {base[:12]}" not in report:
             failures.append("the report does not name the revision the rule came from")

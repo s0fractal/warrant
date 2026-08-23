@@ -1,16 +1,23 @@
 name: agent-gate
 
-# The change under review is data, never code.
+# The change under review is data, never code — including this file.
 #
-# The first version of this workflow checked out the pull request and ran the
-# gate from it. A pull request could therefore rewrite `.warrant/gate.wpl` into a
-# tautology and award itself an ACCEPT — reproduced, and guarded now by
-# `tests/gate_isolation.py`. So the verdict is computed from the base revision,
-# the head is only ever diffed, and the job that can write to the pull request
-# never checks out the repository at all.
+# Two rounds of the same defect. First the workflow checked out the pull request
+# and ran the gate from it, so a change could rewrite `.warrant/gate.wpl` into a
+# tautology and award itself an ACCEPT. That was fixed by reading the rule from
+# the base revision — and the hole moved up a level: on `pull_request`, GitHub
+# takes the workflow itself from the pull request, so a change could still
+# rewrite *this file*, restore a head checkout, and fabricate a comment. The
+# defendant had stopped editing the judge and was still editing the courtroom.
+#
+# `pull_request_target` runs the workflow, and checks out the code, from the base
+# branch. That is only safe under one condition, which this file keeps: the head
+# is never executed. It is fetched as a git object, diffed, and read for commit
+# trailers, and nothing more. See GitHub's own guidance on securely using
+# pull_request_target.
 
 on:
-  pull_request:
+  pull_request_target:
 
 permissions: {}
 
@@ -26,8 +33,13 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
-      - name: Fetch the head commit as data
-        run: git fetch --no-tags origin ${{ github.event.pull_request.head.sha }}
+      # refs/pull/<n>/head rather than the head SHA: for a pull request from a
+      # fork the commit does not exist in this repository under any other name.
+      - name: Fetch the proposed commit as data, never as code
+        run: |
+          git fetch --no-tags origin \
+            "+refs/pull/${{ github.event.pull_request.number }}/head:refs/remotes/pr/head"
+          git rev-parse refs/remotes/pr/head
 
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
         with:
@@ -40,7 +52,7 @@ jobs:
         run: |
           python3 tools/gate.py \
             --base "${{ github.event.pull_request.base.sha }}" \
-            --head "${{ github.event.pull_request.head.sha }}" \
+            --head refs/remotes/pr/head \
             --policy-from "${{ github.event.pull_request.base.sha }}" \
             --pack gate-store.zip \
             --out gate-report.md || true
