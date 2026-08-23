@@ -21,3 +21,4 @@ scratchpad/
 # The gate's own scratch store and its report are build outputs.
 .warrant/store/
 gate-report.md
+gate-store.zip

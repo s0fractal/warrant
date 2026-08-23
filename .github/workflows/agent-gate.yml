@@ -1,44 +1,76 @@
 name: agent-gate
 
+# The change under review is data, never code.
+#
+# The first version of this workflow checked out the pull request and ran the
+# gate from it. A pull request could therefore rewrite `.warrant/gate.wpl` into a
+# tautology and award itself an ACCEPT — reproduced, and guarded now by
+# `tests/gate_isolation.py`. So the verdict is computed from the base revision,
+# the head is only ever diffed, and the job that can write to the pull request
+# never checks out the repository at all.
+
 on:
   pull_request:
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions: {}
 
 jobs:
-  gate:
+  verdict:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read          # no write capability anywhere near the computation
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check out the BASE revision — the gate's own code and rule
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          fetch-depth: 0        # the gate compares against the base branch
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Fetch the head commit as data
+        run: git fetch --no-tags origin ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
         with:
           python-version: "3.12"
 
-      - name: Install the verifier the same way a stranger would
+      - name: Install the verifier the way a stranger would
         run: pip install --only-binary :all: warrant-verify==0.9.0
 
-      # The gate reports; it does not block. A verdict of reject is posted and
-      # the merge is left to people — a gate that hijacks merges on its first day
-      # is switched off on its second.
-      - name: Gate the change
-        id: gate
+      - name: Decide, from the base revision's rule
         run: |
           python3 tools/gate.py \
-            --base "origin/${{ github.base_ref }}" --head HEAD \
-            --out gate-report.md || echo "verdict=reject" >> "$GITHUB_OUTPUT"
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}" \
+            --policy-from "${{ github.event.pull_request.base.sha }}" \
+            --pack gate-store.zip \
+            --out gate-report.md || true
           cat gate-report.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Say so on the pull request
-        if: always()
+      - name: Publish the report and the blobs that decided
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gate-store
+          path: |
+            gate-report.md
+            gate-store.zip
+
+  comment:
+    needs: verdict
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write    # this job downloads an artifact and posts it, nothing else
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gate-store
+
+      - name: Post the report, updating the previous one
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
           script: |
             const fs = require('fs');
+            if (!fs.existsSync('gate-report.md')) return;
             const body = fs.readFileSync('gate-report.md', 'utf8');
             const { data: comments } = await github.rest.issues.listComments(
               { owner: context.repo.owner, repo: context.repo.repo,

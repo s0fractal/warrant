@@ -14,6 +14,20 @@ checked, which reason you can re-run, and **what exactly would flip the verdict*
 The last one is why this exists. A gate that says "rejected" is a wall. A gate
 that says `lines_added: 510 → down to 300 flips it` is a review.
 
+## Where the rule comes from, and why it matters
+
+In CI the gate runs from the **base** revision and reads its rule with
+`--policy-from <base sha>`; the proposed change is diffed and never executed. The
+first version did not do this, and a pull request could rewrite `gate.wpl` into a
+tautology and award itself an `ACCEPT`. That attack is reproduced in
+`tests/gate_isolation.py`, which fails if it ever stops being defeated — and
+which also reads the workflow, because a guarantee in Python is worth nothing if
+the YAML stops obeying it.
+
+The job that can comment on a pull request downloads an artifact and posts it. It
+does not check out the repository, so write capability and repository code never
+share a runner.
+
 ## What it is not
 
 It does not judge whether a change is correct, safe or wanted, and it is not a
