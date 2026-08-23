@@ -52,7 +52,9 @@ def scenario(root: Path) -> tuple[str, str]:
     for path in ("tools/gate.py", ".warrant/gate.wpl"):
         (root / path).write_text((ROOT / path).read_text())
     git(root, "add", "-A")
-    git(root, "commit", "-q", "-m", "base: the gate under test")
+    # In CI the copies are identical to HEAD and there is nothing to commit; the
+    # point is to have a base revision, not to have a change in it.
+    git(root, "commit", "-q", "--allow-empty", "-m", "base: the gate under test")
     base = git(root, "rev-parse", "HEAD").strip()
 
     (root / "big-change.txt").write_text(OVERSIZE)

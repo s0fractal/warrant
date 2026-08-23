@@ -53,6 +53,7 @@ LOCKFILES = ("Cargo.lock", "uv.lock", "poetry.lock", "package-lock.json",
              "requirements.txt")
 SAFE_REV = re.compile(r"^[A-Za-z0-9_./\-~^@{}]+$")
 FACT = "fact "
+SAFE_PATH = re.compile(r"^[A-Za-z0-9_./-]+$")
 
 
 def git(*arguments: str) -> str:
@@ -286,9 +287,8 @@ class Decision:
 
 def report_lines(d: "Decision") -> list[str]:
     verdict, facts, flips, failing = d.verdict, d.facts, d.flips, d.failing
-    base, head, paths, store = d.base, d.head, d.paths, d.store
-    subject, policy_hash, rule, check_hash, doc = (d.subject, d.policy_hash, d.rule,
-                                                   d.check_hash, d.doc)
+    base, head, paths = d.base, d.head, d.paths
+    subject, policy_hash, rule, doc = d.subject, d.policy_hash, d.rule, d.doc
     unused = d.unused
     lines = [
         f"# Gate report — {'ACCEPT' if verdict else 'REJECT'}",
@@ -349,6 +349,8 @@ def main() -> int:
     base, head = resolve(arguments.base), resolve(arguments.head)
     if arguments.policy_from:
         origin = resolve(arguments.policy_from)
+        if not SAFE_PATH.match(arguments.policy):
+            raise SystemExit(f"refusing {arguments.policy!r} as a policy path")
         try:
             template_text = git("show", "--end-of-options",
                                 f"{origin}:{arguments.policy}")
