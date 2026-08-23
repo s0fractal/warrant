@@ -17,6 +17,16 @@ Exit status is 0 for accept and 1 for reject. Whether that blocks a merge is a
 policy decision for whoever installs it, and this repository deliberately does
 not: the report is posted and the merge is left to people. A gate that hijacks
 merges on its first day gets switched off on its second.
+
+TRUST BOUNDARY, which is not optional
+-------------------------------------
+This program, the policy it reads and the implementation it imports must come
+from a revision the change under review cannot edit. Run it from the proposed
+change and the change can rewrite its own rule into a tautology and award itself
+an ACCEPT — reproduced, and now guarded by `tests/gate_isolation.py`. The head
+revision is *data*: it is diffed, never executed, and never consulted for the
+rule. `--policy-from` names the revision the rule is read from and appears in the
+report, so a reader can see which bytes decided.
 """
 
 from __future__ import annotations
@@ -27,6 +37,7 @@ import json
 import re
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -117,12 +128,16 @@ def substitute(source: str, facts: dict, placeholders_only: bool) -> tuple[str, 
 
 
 def render_policy(template: Path, facts: dict) -> tuple[str, list[str]]:
+    return render_policy_text(template.read_text(), str(template), facts)
+
+
+def render_policy_text(source: str, name: str, facts: dict) -> tuple[str, list[str]]:
     """The template declares the rule; measured facts are substituted into it.
 
     A placeholder the gate does not measure is refused rather than left standing:
     a policy evaluated against facts it never received is the shape of check this
     project exists to distrust."""
-    source = template.read_text()
+    template = name
     declared = {line.split()[1].rstrip(":") for line in source.splitlines()
                 if line.startswith(FACT) and "= {{" in line}
     missing = sorted(declared - set(facts))
@@ -278,15 +293,17 @@ def report_lines(d: "Decision") -> list[str]:
     lines = [
         f"# Gate report — {'ACCEPT' if verdict else 'REJECT'}",
         "",
-        f"Change `{base}...{head}`, {len(paths)} file(s), "
+        f"Change `{d.base_sha[:12]}...{d.head_sha[:12]}`"
+        + (f" (`{base}...{head}`)" if base != d.base_sha else "")
+        + f", {len(paths)} file(s), "
         f"+{facts['lines_added']}/-{facts['lines_removed']}.",
         "",
         "| | |", "| --- | --- |",
         f"| what changed | `{subject[:16]}…` — sha256 of the diff |",
-        f"| who proposed it | {'an agent, by its commit trailers' if facts['proposed_by_agent'] else 'a human, by the same evidence'} |",
-        f"| policy in force | `{policy_hash[:16]}…` — the pinned bytes of the rule |",
+        f"| who proposed it | {'an agent, by its commit trailers' if facts['proposed_by_agent'] else 'no recognized agent marker — which is not evidence of a human'} |",
+        f"| policy in force | `{policy_hash[:16]}…` — the pinned bytes of the rule, read from `{d.policy_source}` |",
         f"| what was checked | `{rule}` |",
-        f"| reason you can re-run | `warrant --store {store} check {check_hash[:16]}…` |",
+        f"| reason you can re-run | {d.rerun} |",
         f"| cost of re-running it | {doc['atp']:,} ATP, fixed in the check |",
         "", "## The facts it was decided on", "",
         "| fact | value |", "| --- | --- |",
@@ -317,31 +334,57 @@ def main() -> int:
     parser.add_argument("--base", default="origin/master")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--policy", default=".warrant/gate.wpl")
+    parser.add_argument("--policy-from", default=None,
+                        help="revision to read the policy from; defaults to the "
+                             "working tree, and CI must pass the base revision so "
+                             "the change under review cannot edit its own rule")
     parser.add_argument("--store", default=".warrant/store",
                         help="where the gate writes its own check blobs")
     parser.add_argument("--out", default="gate-report.md")
+    parser.add_argument("--pack", default=None,
+                        help="write the check blobs to this zip so a reader can "
+                             "re-run the reason from the artifact alone")
     arguments = parser.parse_args()
 
-    template = inside_repo(arguments.policy)
-    if not template.is_file():
-        raise SystemExit(f"no policy at {arguments.policy}; this gate has no opinion "
-                         "of its own and refuses to invent one")
-
     base, head = resolve(arguments.base), resolve(arguments.head)
+    if arguments.policy_from:
+        origin = resolve(arguments.policy_from)
+        try:
+            template_text = git("show", "--end-of-options",
+                                f"{origin}:{arguments.policy}")
+        except subprocess.CalledProcessError:
+            raise SystemExit(f"{arguments.policy} does not exist at "
+                             f"{arguments.policy_from}")
+        policy_source = f"{arguments.policy} at {origin[:12]}"
+    else:
+        template = inside_repo(arguments.policy)
+        if not template.is_file():
+            raise SystemExit(f"no policy at {arguments.policy}; this gate has no "
+                             "opinion of its own and refuses to invent one")
+        template_text = template.read_text()
+        policy_source = f"{arguments.policy} in the working tree"
+
     facts, paths = measure(base, head)
-    source, unused = render_policy(template, facts)
+    source, unused = render_policy_text(template_text, arguments.policy, facts)
     verdict = WPL.evaluate(WPL.parse(source))
 
     store = open_store(inside_repo(arguments.store))
-    compiled = WPL.compile_source(source, put=store.put_blob, name=template.name)
+    compiled = WPL.compile_source(source, put=store.put_blob,
+                                  name=Path(arguments.policy).name)
     if compiled.result != verdict:
         raise SystemExit("the compiled term disagrees with the reference "
                          "interpreter — refusing to report either")
 
     subject = hashlib.sha256(git("diff", f"{base}...{head}").encode()).hexdigest()
     rule = rule_of(source)
+    rerun = (f"`warrant --store {arguments.store} check {compiled.blob[:16]}…` — "
+             "the blobs are in this run's `gate-store` artifact"
+             if arguments.pack else
+             f"regenerate the report and re-run `warrant --store {arguments.store} "
+             f"check {compiled.blob[:16]}…`; the blobs are not published with it")
     lines = report_lines(Decision(
         verdict=verdict, base=arguments.base, head=arguments.head, paths=paths,
+        base_sha=base, head_sha=head, policy_source=policy_source, rerun=rerun,
         facts=facts, subject=subject, policy_hash=store.put_blob(source.encode()),
         rule=rule, check_hash=compiled.blob, doc=compiled.doc,
         flips=flip_analysis(source, facts, verdict), unused=unused,
@@ -349,6 +392,17 @@ def main() -> int:
         store=arguments.store))
 
     inside_repo(arguments.out).write_text("\n".join(lines))
+    if arguments.pack:
+        pack = inside_repo(arguments.pack)
+        with zipfile.ZipFile(pack, "w", zipfile.ZIP_DEFLATED) as archive:
+            for blob in sorted((ROOT / arguments.store / "blobs").iterdir()):
+                archive.write(blob, f"gate-store/blobs/{blob.name}")
+            archive.writestr("gate-store/records/.keep", "")
+            archive.writestr("README.txt",
+                             "Unzip, then:\n"
+                             f"  warrant --store gate-store check {compiled.blob}\n"
+                             "Expect the verdict the report claims, for the ATP it "
+                             "states. The blobs here are exactly what decided.\n")
     print("\n".join(lines[:14]))
     print(f"\nwritten: {arguments.out}")
     return 0 if verdict else 1
