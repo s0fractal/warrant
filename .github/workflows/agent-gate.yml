@@ -1,0 +1,52 @@
+name: agent-gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0        # the gate compares against the base branch
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the verifier the same way a stranger would
+        run: pip install warrant-verify==0.9.0
+
+      - name: Gate the change
+        id: gate
+        run: |
+          python3 tools/gate.py \
+            --base "origin/${{ github.base_ref }}" --head HEAD \
+            --out gate-report.md || echo "verdict=reject" >> "$GITHUB_OUTPUT"
+          cat gate-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Say so on the pull request
+        if: always()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('gate-report.md', 'utf8');
+            const { data: comments } = await github.rest.issues.listComments(
+              { owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number });
+            const mine = comments.find(c => c.body.startsWith('# Gate report'));
+            if (mine) {
+              await github.rest.issues.updateComment(
+                { owner: context.repo.owner, repo: context.repo.repo,
+                  comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment(
+                { owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: context.issue.number, body });
+            }

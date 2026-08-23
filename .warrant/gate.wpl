@@ -1,0 +1,21 @@
+# The rule this repository applies to a change proposed by an agent.
+#
+# Facts are measured by tools/gate.py and pinned here before the check is
+# compiled: WPL has no arithmetic on purpose, so every operand is a literal or a
+# pinned fact and the verifier re-executes each step rather than trusting a
+# number a compiler worked out.
+
+fact files_changed:     int  = {{files_changed}}
+fact lines_added:       int  = {{lines_added}}
+fact review_ceiling:    int  = 600
+fact agent_ceiling:     int  = 300
+fact file_ceiling:      int  = 30
+fact touches_ci:        bool = {{touches_ci}}
+fact touches_deps:      bool = {{touches_deps}}
+fact proposed_by_agent: bool = {{proposed_by_agent}}
+
+check lines_added <= review_ceiling
+      && files_changed <= file_ceiling
+      && !touches_ci
+      && !touches_deps
+      && (!proposed_by_agent || lines_added <= agent_ceiling)
