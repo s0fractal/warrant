@@ -163,8 +163,10 @@ airline never had. **No clone, no build, no account.** Download the pack, check
 it, and re-run the reason yourself:
 
 ```bash
-pipx install warrant-verify
-curl -LO https://github.com/s0fractal/warrant/releases/latest/download/air-canada-pack.zip
+pipx install warrant-verify==0.9.0
+curl -LO https://github.com/s0fractal/warrant/releases/download/v0.8.0/air-canada-pack.zip
+shasum -a 256 air-canada-pack.zip
+# 74b36f1d5c7777ea9a3ee240e32f992483a3cd2c0dda0c7d065229c49f1a8249  air-canada-pack.zip
 unzip air-canada-pack.zip
 
 warrant --store air-canada-pack/.warrants verify        # every hash, signature, link
@@ -176,6 +178,14 @@ That last line is the part nothing else does: it **re-executes the reason** on
 your machine — a content-addressed, budget-bounded Σ-GLYPH term — and prints
 `pass result=65cd957fee7e… atp_spent=17`. The same bytes give the same verdict
 for anyone, forever. You are not trusting a log; you are recomputing the argument.
+
+The pack is pinned to the `v0.8.0` release because that is the release that
+carries it: `releases/latest/download/…` returned **404** once `v0.9.0` shipped
+without the asset, so the first command a stranger ran failed. Checked again on
+2026-08-23: the pinned URL serves the digest above, and the current
+`warrant-verify 0.9.0` verifies that pack and re-executes its reason unchanged.
+A step-by-step version with the negative controls is in
+[`docs/try-this-in-fifteen-minutes.md`](docs/try-this-in-fifteen-minutes.md).
 
 The walkthrough is in **[`demos/air-canada/`](demos/air-canada/)**; the packs are
 built by `tools/build_release_packs.sh`, which refuses to ship a pack containing
