@@ -41,6 +41,7 @@ AGENT_TRAILERS = ("Co-Authored-By: Claude", "Co-Authored-By: Codex",
 LOCKFILES = ("Cargo.lock", "uv.lock", "poetry.lock", "package-lock.json",
              "requirements.txt")
 SAFE_REV = re.compile(r"^[A-Za-z0-9_./\-~^@{}]+$")
+FACT = "fact "
 
 
 def git(*arguments: str) -> str:
@@ -105,7 +106,7 @@ def substitute(source: str, facts: dict, placeholders_only: bool) -> tuple[str, 
     """Replace fact values in WPL source, returning the source and what was set."""
     out, seen = [], set()
     for line in source.splitlines():
-        name = line.split()[1].rstrip(":") if line.startswith("fact ") else None
+        name = line.split()[1].rstrip(":") if line.startswith(FACT) else None
         wanted = name in facts and (not placeholders_only or "= {{" in line)
         if name and wanted:
             out.append(line.split("=")[0] + "= " + literal(facts[name]))
@@ -123,7 +124,7 @@ def render_policy(template: Path, facts: dict) -> tuple[str, list[str]]:
     project exists to distrust."""
     source = template.read_text()
     declared = {line.split()[1].rstrip(":") for line in source.splitlines()
-                if line.startswith("fact ") and "= {{" in line}
+                if line.startswith(FACT) and "= {{" in line}
     missing = sorted(declared - set(facts))
     if missing:
         raise SystemExit(f"{template}: needs {', '.join(missing)}, which this gate "
@@ -167,15 +168,20 @@ def flip_analysis(source: str, facts: dict, verdict: bool) -> list[str]:
             if verdict_with(source, facts, name, not value) is (not verdict):
                 findings.append(f"`{name}`: {value} → {not value} flips it")
             continue
-        if not isinstance(value, int):
-            continue
-        for low, high in ((0, value), (value, max(value * 4, value + 1000))):
-            edge = _bisect(source, facts, name, low, high)
+        if isinstance(value, int):
+            edge = _nearest_edge(source, facts, name, value)
             if edge is not None:
                 where = "down to" if edge < value else "up to"
                 findings.append(f"`{name}`: {value} → {where} {edge} flips it")
-                break
     return findings
+
+
+def _nearest_edge(source: str, facts: dict, name: str, value: int) -> int | None:
+    for low, high in ((0, value), (value, max(value * 4, value + 1000))):
+        edge = _bisect(source, facts, name, low, high)
+        if edge is not None:
+            return edge
+    return None
 
 
 def conjuncts(rule: str) -> list[str]:
@@ -207,7 +213,7 @@ def failing_clauses(source: str, rule: str) -> list[str]:
     because WPL refuses a program that declares a fact it never uses."""
     declarations = {}
     for line in source.splitlines():
-        if line.startswith("fact "):
+        if line.startswith(FACT):
             declarations[line.split()[1].rstrip(":")] = line
     failing = []
     for clause in conjuncts(rule):
@@ -235,6 +241,18 @@ def rule_of(source: str) -> str:
     return " ".join(collected) or "see the policy"
 
 
+def inside_repo(candidate: str) -> Path:
+    """A path from the command line, resolved and required to stay in the repo.
+
+    This tool writes files, so unlike a reader it does have a root: `--out` and
+    `--store` name places inside the repository being gated, and a value that
+    resolves outside it is refused rather than followed."""
+    resolved = (ROOT / candidate).resolve()
+    if not resolved.is_relative_to(ROOT.resolve()):
+        raise SystemExit(f"refusing {candidate!r}: it resolves outside the repository")
+    return resolved
+
+
 def open_store(path: Path) -> "W.Store":
     """The gate keeps its own store: a tool's scratch output has no business in
     the store that holds the repository's records."""
@@ -243,8 +261,20 @@ def open_store(path: Path) -> "W.Store":
     return W.Store(path)
 
 
-def report_lines(*, verdict, base, head, paths, facts, subject, policy_hash,
-                 rule, check_hash, doc, flips, failing, unused, store) -> list[str]:
+class Decision:
+    """Everything the report is written from, in one place rather than in a
+    fourteen-argument signature."""
+
+    def __init__(self, **fields):
+        self.__dict__.update(fields)
+
+
+def report_lines(d: "Decision") -> list[str]:
+    verdict, facts, flips, failing = d.verdict, d.facts, d.flips, d.failing
+    base, head, paths, store = d.base, d.head, d.paths, d.store
+    subject, policy_hash, rule, check_hash, doc = (d.subject, d.policy_hash, d.rule,
+                                                   d.check_hash, d.doc)
+    unused = d.unused
     lines = [
         f"# Gate report — {'ACCEPT' if verdict else 'REJECT'}",
         "",
@@ -292,7 +322,7 @@ def main() -> int:
     parser.add_argument("--out", default="gate-report.md")
     arguments = parser.parse_args()
 
-    template = ROOT / arguments.policy
+    template = inside_repo(arguments.policy)
     if not template.is_file():
         raise SystemExit(f"no policy at {arguments.policy}; this gate has no opinion "
                          "of its own and refuses to invent one")
@@ -302,22 +332,23 @@ def main() -> int:
     source, unused = render_policy(template, facts)
     verdict = WPL.evaluate(WPL.parse(source))
 
-    store = open_store(ROOT / arguments.store)
+    store = open_store(inside_repo(arguments.store))
     compiled = WPL.compile_source(source, put=store.put_blob, name=template.name)
     if compiled.result != verdict:
         raise SystemExit("the compiled term disagrees with the reference "
                          "interpreter — refusing to report either")
 
     subject = hashlib.sha256(git("diff", f"{base}...{head}").encode()).hexdigest()
-    lines = report_lines(
+    rule = rule_of(source)
+    lines = report_lines(Decision(
         verdict=verdict, base=arguments.base, head=arguments.head, paths=paths,
         facts=facts, subject=subject, policy_hash=store.put_blob(source.encode()),
-        rule=rule_of(source), check_hash=compiled.blob, doc=compiled.doc,
+        rule=rule, check_hash=compiled.blob, doc=compiled.doc,
         flips=flip_analysis(source, facts, verdict), unused=unused,
-        failing=[] if verdict else failing_clauses(source, rule_of(source)),
-        store=arguments.store)
+        failing=[] if verdict else failing_clauses(source, rule),
+        store=arguments.store))
 
-    Path(ROOT / arguments.out).write_text("\n".join(lines))
+    inside_repo(arguments.out).write_text("\n".join(lines))
     print("\n".join(lines[:14]))
     print(f"\nwritten: {arguments.out}")
     return 0 if verdict else 1
