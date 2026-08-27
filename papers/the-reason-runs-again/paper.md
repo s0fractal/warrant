@@ -42,7 +42,9 @@ governance derived from the DAG rather than from wall-clock time, a
 closed-schema machine-readable verification report that fails closed, and an
 *experimental* settlement layer whose current honest result is partly negative
 (§5.2): mechanically checkable *semantic* novelty for adversarial
-re-litigation is hard, and a repair is drafted but unadopted.
+re-litigation is hard, and a repair is drafted but unadopted — though the
+narrow rule that survives four adversarial rounds has its invariants
+mechanized in Lean 4.
 
 The format is specified to a design rule that anything two independent
 implementations cannot agree on byte-exactly stays out of the document. Three
@@ -560,6 +562,21 @@ is not that it is finished but that the same adversarial loop that found the
 defect is the one deciding when it is closed — and that the loop has now told
 us its own next reviewer should be a human logician, not a fifth model.
 
+One thing the loop did produce that a model round could not: the narrow rule
+that survived is now *mechanized*. Its two acceptance invariants — a
+fingerprint is a function of the eligible result value and nothing a filer
+writes, and a settled matter cannot be re-opened without a new demonstrated
+value — are proved theorems in Lean 4 (`proofs/Settlement.lean`, a sound
+axiom cone, no `sorry`), so the four attack families fail *for all inputs*
+rather than on the harness's concrete ones, and a genuinely new result is
+proved admissible so the guarantee is not vacuous. This does not make the rule
+*right* — whether "consequence = result value" is the correct semantics is the
+question left for the human logician — but it makes it *exactly what it says*,
+which is the most a machine proof can offer and more than the earlier drafts
+had. It is also why the repair could be mechanized at all: the coarse
+result-only identity the gates forced is a pure function of one value, with no
+filer-steerable trace to model.
+
 ## 5.3 Keys and jurisdictions as records in the same DAG
 
 Key management does not get a side channel. A rotation is an `accept`
@@ -910,8 +927,10 @@ which three rounds of model gates have told us they cannot substitute for.
 # Availability
 
 The specification, all three implementations, the conformance pack, the
-review ledger, the threat model, and every vector cited here are at
-<https://github.com/s0fractal/warrant> (MIT). The `ski@v1` runtime and its
+review ledger, the threat model, the settlement-rule Lean mechanization
+(`proofs/Settlement.lean`), the drafted proposals (WRT-003, WRT-004) with
+their prototypes and counter-vector fixtures, and every vector cited here are
+at <https://github.com/s0fractal/warrant> (MIT). The `ski@v1` runtime and its
 Lean 4 mechanization are at <https://github.com/s0fractal/sigma-glyph>.
 Full git histories of both repositories are archived by Software Heritage;
 disclosure manifests are timestamped via OpenTimestamps. A claims checker

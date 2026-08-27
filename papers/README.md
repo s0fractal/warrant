@@ -8,7 +8,7 @@ every build, red on any drift.
 
 | | words | subject |
 |---|---|---|
-| [`the-reason-runs-again/`](the-reason-runs-again/) | 8 646 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
+| [`the-reason-runs-again/`](the-reason-runs-again/) | 8 856 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
 
 None is deposited yet. A DOI, when one exists, buys a permanent address and a
 frozen artifact — no venue, no peer review, no endorsement — and each
