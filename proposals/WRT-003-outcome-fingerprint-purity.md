@@ -435,20 +435,26 @@ Adoption gate MUST include, in order of strength:
    Runs in `tools/check.py`.
 4. **The `cmd@v1` control:** no-new-evidence + flipped verdict/transcript
    stays inadmissible; adding new evidence re-admits via §7(a).
-5. **Lean mechanization of the fingerprint rule — DONE for the algebra layer**
-   (`proofs/Settlement.lean`, guarded by `proofs/check_settlement.py`, axiom
-   cone `{propext}`). T1 (purity) and T2 (eligibility) are now proved theorems
-   rather than property tests: `fp_ignores_claims` (expect-flip),
-   `fp_factors_through_result` (`I·T` / REF-padding), `dissonance_ineligible`
-   + `fp_none_of_dissonance` (ATP-starvation), `nested_dissonance_ineligible`
-   (the nested-DISSONANCE re-opener), and `atp_cannot_steer` (conditional on
-   Book I budget-stability, cited from sigma-glyph not re-derived). What
-   remains for a fuller mechanization: the tunnel / prior-DAG / admissibility
-   layer, and a proof that the running Python/Go code implements this rule —
-   the standing implementation-independence gap. The mechanization models the
-   *rev-4* rule, so it tracks the proposal rather than pre-empting the gate;
-   rev 3's identity choice made this feasible (both identity and eligibility
-   are pure functions of one result value, no read-set to model).
+5. **Lean mechanization — DONE for the fingerprint AND admissibility layers**
+   (`proofs/Settlement.lean`, guarded by `proofs/check_settlement.py`). Eleven
+   theorems, sound axiom cone (`{propext}` for the fingerprint algebra,
+   `{propext, Quot.sound}` for admissibility; sorry / axiom / native_decide
+   denylisted). T1 (purity) and T2 (eligibility) are proved:
+   `fp_ignores_claims` (expect-flip), `fp_factors_through_result` (`I·T` /
+   REF-padding), `dissonance_ineligible` + `fp_none_of_dissonance`
+   (ATP-starvation), `nested_dissonance_ineligible` (nested-DISSONANCE),
+   `atp_cannot_steer` (conditional on Book I budget-stability, cited not
+   re-derived). And the **money theorems** at the §7 admissibility level:
+   `restatement_inadmissible` — a candidate with no new evidence and no new
+   eligible fingerprint cannot re-open a settled matter (every attack family is
+   an instance); `dissonance_candidate_inadmissible`; and
+   `novel_result_admissible` — a genuinely new eligible result *is* admissible,
+   so §7(b) is not empty. What remains: the transitive-closure computation of
+   the tunnel from the prior-DAG (a standard graph closure, orthogonal to the
+   admissibility algebra and taken as input here), and a proof that the running
+   Python/Go code implements this rule — the standing
+   implementation-independence gap. The mechanization models the *rev-4* rule,
+   so it tracks the proposal rather than pre-empting the gate.
 
 ## 6. Mirror check (SYMMETRY)
 

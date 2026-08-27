@@ -63,7 +63,13 @@ flagship-paper review cycle (PR #30):
   denylists sorry/axiom/native_decide and fails on a theorem proved but not
   guarded. Run in `tools/check.py` (UNRUN without a Lean toolchain). The
   evaluator's determinism is cited from `sigma-glyph/proofs/EvalMachine.lean`,
-  not re-proved; `proofs/README.md` states the layering.
+  not re-proved; `proofs/README.md` states the layering. The mechanization
+  reaches the **§7 admissibility** layer, not just the fingerprint algebra:
+  `restatement_inadmissible` proves a candidate with no new evidence and no new
+  eligible fingerprint cannot re-open a settled matter (every attack family is
+  an instance), and `novel_result_admissible` proves §7(b) is not empty. Eleven
+  theorems; cone `{propext}` for the algebra, `{propext, Quot.sound}` for
+  admissibility.
 - `proposals/WRT-003-outcome-fingerprint-purity.md` — DRAFT repair for the
   reproduced §7 expect-flip (a settled question re-opens unboundedly via
   filer-chosen `expect`; confirmed in both implementations). Design only;

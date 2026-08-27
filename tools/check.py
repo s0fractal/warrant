@@ -102,7 +102,7 @@ CHECKS = [
     # and denylists sorry/axiom/native_decide -- the property-tests in the
     # fixture become proved theorems about the rule's algebra. UNRUN without a
     # Lean toolchain, so a machine with no Lean does not report a failure.
-    ("wrt-003 settlement rule mechanized (Lean; axiom cone ⊆ propext)",
+    ("wrt-003 settlement + admissibility mechanized (Lean; sound axiom cone)",
      ["python3", "proofs/check_settlement.py"], "lean"),
     ("merkle anchoring (RFC 6962 structure + inclusion proofs)",
      ["python3", "tests/anchor.py"], None),

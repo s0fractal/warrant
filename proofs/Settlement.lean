@@ -175,4 +175,98 @@ example (t₁ t₂ : Term) (a₁ a₂ : Nat) :
     fingerprint (fun _ _ => S) ⟨t₁, a₁, S, true⟩
       = fingerprint (fun _ _ => S) ⟨t₂, a₂, D, false⟩ := rfl
 
+/- ================= §7 admissibility (the money theorem) =================
+
+   The fingerprint theorems above are about ONE reason. This layer is about the
+   actual question a settled matter faces: can it be re-opened? SPEC §7 admits a
+   re-litigation iff (a) it cites an evidence blob absent from the settling
+   tunnel, or (b) it has a reason whose eligible fingerprint is absent from the
+   tunnel. We model the tunnel's fingerprint set and blob set as INPUTS: computing
+   them from the prior-DAG is a standard transitive closure, orthogonal to the
+   admissibility rule and not modeled here. What is proved: no attack family
+   re-opens a matter whose computation the tunnel already holds, and a genuinely
+   new eligible result does. -/
+
+abbrev Blob := List UInt8
+
+/-- what a reason's result contributes to the §7(b) novelty set. -/
+def contributes (r : Term) : Option FP :=
+  if eligible r then some (.ski r) else none
+
+/-- a re-litigation candidate, reduced to what §7 actually reads: the evidence
+    hashes it cites, and the evaluated results of its ski reasons. -/
+structure Candidate where
+  evidence : List Blob
+  results  : List Term
+
+/-- §7 admissibility: (a) new evidence, OR (b) a new eligible fingerprint. -/
+def admissible (tunFP : List FP) (tunBlobs : List Blob) (c : Candidate) : Bool :=
+  c.evidence.any (fun b => ! tunBlobs.contains b)
+  || c.results.any (fun r => match contributes r with
+                              | some fp => ! tunFP.contains fp
+                              | none    => false)
+
+/-- **Restatement is inadmissible.** A candidate that cites no evidence outside
+    the tunnel and whose every eligible result's fingerprint is already in the
+    tunnel cannot re-open the matter. This is the one theorem the whole
+    settlement layer exists to guarantee, and every attack family is an instance
+    of it. -/
+theorem restatement_inadmissible
+    (tunFP : List FP) (tunBlobs : List Blob) (c : Candidate)
+    (hev : ∀ b ∈ c.evidence, tunBlobs.contains b = true)
+    (hfp : ∀ r ∈ c.results, ∀ fp, contributes r = some fp → tunFP.contains fp = true) :
+    admissible tunFP tunBlobs c = false := by
+  unfold admissible
+  simp only [Bool.or_eq_false_iff, List.any_eq_false]
+  refine ⟨?_, ?_⟩
+  · intro b hb
+    simp only [Bool.not_eq_true', Bool.not_eq_false]
+    exact hev b hb
+  · intro r hr
+    cases hc : contributes r with
+    | none => simp
+    | some fp =>
+        simp only [Bool.not_eq_true', Bool.not_eq_false]
+        exact hfp r hr fp hc
+
+/-- **A genuinely new eligible result IS admissible** — §7(b) is not a dead
+    letter (the objection the third gate raised and this declines). -/
+theorem novel_result_admissible
+    (tunFP : List FP) (tunBlobs : List Blob) (c : Candidate) (r : Term)
+    (hmem : r ∈ c.results) (helig : eligible r = true)
+    (hnew : tunFP.contains (.ski r) = false) :
+    admissible tunFP tunBlobs c = true := by
+  unfold admissible
+  simp only [Bool.or_eq_true, List.any_eq_true]
+  right
+  refine ⟨r, hmem, ?_⟩
+  simp only [contributes, helig, if_true, hnew, Bool.not_false]
+
+/-- **Any candidate whose reasons all reduce to DISSONANCE, citing no new
+    evidence, is inadmissible.** This is ATP-starvation and nested-DISSONANCE at
+    the admissibility level: a bottom result contributes no fingerprint, so §7(b)
+    has nothing to offer and §7(a) is closed by the no-new-evidence hypothesis. -/
+theorem dissonance_candidate_inadmissible
+    (tunFP : List FP) (tunBlobs : List Blob) (c : Candidate)
+    (hev : ∀ b ∈ c.evidence, tunBlobs.contains b = true)
+    (hdis : ∀ r ∈ c.results, containsDis r = true) :
+    admissible tunFP tunBlobs c = false := by
+  apply restatement_inadmissible tunFP tunBlobs c hev
+  intro r hr fp hc
+  -- a DISSONANCE-bearing result is ineligible, so `contributes r = none`
+  simp [contributes, eligible, hdis r hr] at hc
+
+/-- Concrete: a matter settled by computing `S` (tunnel holds fingerprint
+    `ski S`). The expect-flip / wrapper / REF-pad candidate re-reaches `S` with
+    no new evidence — inadmissible. -/
+example : admissible [FP.ski S] [] ⟨[], [S]⟩ = false := rfl
+
+/-- Concrete: the ATP-starvation / nested-DISSONANCE candidate reduces to a
+    bottom, no new evidence — inadmissible. -/
+example : admissible [FP.ski S] [] ⟨[], [D]⟩ = false := rfl
+example : admissible [FP.ski S] [] ⟨[], [.app D K]⟩ = false := rfl
+
+/-- Concrete positive: a candidate reaching a NEW clean value `K` — admissible. -/
+example : admissible [FP.ski S] [] ⟨[], [K]⟩ = true := rfl
+
 end Warrant.Settlement

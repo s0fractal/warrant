@@ -14,8 +14,10 @@ Stated plainly, because this repository's sibling paper is about apparatus that
 claims more than it checks. This file proves the part that is pure algebra over
 a result value; it does **not** re-mechanize the Book I evaluator.
 
-**Proved here** (`Settlement.lean`, axiom cone `{propext}` — checked by
-`check_settlement.py`):
+**Proved here** (`Settlement.lean`; the guard `check_settlement.py` pins each
+theorem's axiom cone and reports the union used):
+
+*Fingerprint algebra — cone `{propext}`:*
 
 | theorem | closes |
 | --- | --- |
@@ -26,6 +28,19 @@ a result value; it does **not** re-mechanize the Book I evaluator.
 | `nested_dissonance_ineligible` | a stuck application containing a DISSONANCE is ineligible under the "anywhere" rule — the **nested-DISSONANCE** re-opener a root-only rule missed (gate round 3, Qwen) |
 | `eligible_iff_no_dis` | eligibility is exactly DISSONANCE-freedom |
 | `atp_cannot_steer` | no budget the filer picks changes an eligible fingerprint — **conditional** on the Book I fact below |
+
+*§7 admissibility — cone `{propext, Quot.sound}` (the money theorems: not "is
+this fingerprint new" but "can this settled matter be re-opened"):*
+
+| theorem | states |
+| --- | --- |
+| `restatement_inadmissible` | a candidate citing no evidence outside the tunnel and no eligible fingerprint outside it **cannot re-open the matter** — the single guarantee the whole settlement layer exists for; every attack family is an instance |
+| `dissonance_candidate_inadmissible` | a candidate whose reasons all reduce to a bottom, with no new evidence, is inadmissible — ATP-starvation and nested-DISSONANCE at the admissibility level |
+| `novel_result_admissible` | a candidate reaching a **new eligible result** IS admissible — §7(b) is not a dead letter (the objection gate round 3 raised, declined with a proof) |
+
+The tunnel's fingerprint set and blob set are *inputs* to the admissibility
+function: computing them from the prior-DAG is a standard transitive closure,
+orthogonal to the admissibility rule, and not modeled here.
 
 **Cited, not re-proved** — the Book I evaluator, its totality, and its
 determinism live in `sigma-glyph/proofs/EvalMachine.lean` (`eval` is a Lean

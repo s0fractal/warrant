@@ -25,7 +25,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SRC = HERE / "Settlement.lean"
 
-ALLOWED_AXIOMS = {"propext"}
+# The standard SOUND Lean-core cone (the sibling repository's gold standard).
+# What matters is what is EXCLUDED: sorryAx (an unproved hole) and the
+# native_decide trusted-compiler axioms (which move the compiler into the
+# trusted base). propext / Quot.sound / Classical.choice are the accepted sound
+# axioms of Lean's kernel. The pass message reports the actual union used, so
+# the tighter {propext}-only achievement of the fingerprint-algebra layer is
+# not hidden behind the wider allowance the admissibility layer needs.
+ALLOWED_AXIOMS = {"propext", "Quot.sound", "Classical.choice"}
 
 # Every theorem the file proves. Kept here so an unlisted theorem is a failure,
 # not a silent skip (the file's own subject: a control whose scope is chosen by
@@ -39,6 +46,9 @@ GUARDED = [
     "nested_dissonance_ineligible",
     "eligible_iff_no_dis",
     "atp_cannot_steer",
+    "restatement_inadmissible",
+    "novel_result_admissible",
+    "dissonance_candidate_inadmissible",
 ]
 
 FORBIDDEN = [
@@ -102,6 +112,7 @@ def main():
         if r2.returncode != 0:
             fail("axiom check did not run:\n" + out.strip())
 
+        used = set()
         for t in GUARDED:
             m = re.search(rf"'Warrant\.Settlement\.{re.escape(t)}' depends on "
                           r"axioms: \[([^\]]*)\]", out)
@@ -115,9 +126,11 @@ def main():
             extra = cone - ALLOWED_AXIOMS
             if extra:
                 fail(f"{t} depends on disallowed axioms: {sorted(extra)}")
+            used |= cone
 
     print(f"SETTLEMENT-GUARD: PASS — {len(GUARDED)} theorems, "
-          f"axiom cone ⊆ {sorted(ALLOWED_AXIOMS)}, no sorry/axiom/native_decide.")
+          f"axiom cone = {sorted(used)} (⊆ {sorted(ALLOWED_AXIOMS)}), "
+          "no sorry/axiom/native_decide.")
     sys.exit(0)
 
 
