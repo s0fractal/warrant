@@ -168,11 +168,12 @@ semantic thread connects `P`, `E`, and `accept`. We call this the
 format (NG-7, Section 8). Today the gap is narrowed only as an *authoring
 convention* — the policy-language toolchain pins its source as evidence and
 recompiles deterministically — not as a verifier-checkable invariant. Closing
-it normatively is a proposed reason-binding profile that commits the
-policy-source hash, a fact manifest, the evidence hashes, and an explicit
-result→decision mapping into the computation's own input; that profile is
-future work, drafted nowhere in this paper, and named here so the reader does
-not mistake replay for entailment. The honest one-line claim is therefore:
+it normatively is a reason-binding profile that commits the policy-source
+hash, a fact manifest, the evidence hashes, and an explicit result→decision
+mapping alongside the check; it is drafted as proposal WRT-004 with a working
+prototype that reports a reason *bound* or *unbound* and whose negative
+controls show a constant-equivalent term failing the binding — unadopted, and
+named here so the reader does not mistake replay for entailment. The honest one-line claim is therefore:
 **Warrant provides tamper-evident decision records with replayable
 justification computations; the semantic relevance of a justification to the
 governing policy and the decision is, for now, an external property.**
@@ -793,11 +794,11 @@ verifier confirms every fact while no semantic thread connects policy,
 evidence, and `accept` (Section 1.2). Today the gap is narrowed only by an
 authoring convention (the policy toolchain pins its source as evidence and
 recompiles deterministically), not by a verifier-checkable invariant. Closing
-it is a proposed reason-binding profile — commit the policy-source hash, a
-fact manifest, the evidence hashes, and a result→decision mapping into the
-computation's input — which is drafted nowhere in this paper and named as the
-recommended next normative step. Until then, **"reason" is in part a promise
-the filer makes**, and cryptography does not detect promises.
+it is a reason-binding profile — commit the policy-source hash, a fact
+manifest, the evidence hashes, and a result→decision mapping alongside the
+check — drafted as proposal WRT-004 with a running prototype and negative
+controls, unadopted. Until a verifier enforces it, **"reason" is in part a
+promise the filer makes**, and cryptography does not detect promises.
 
 **Key identity is not actor identity.** Anyone
 with a keypair can file a record claiming any actor id; at base grade the
@@ -897,8 +898,8 @@ written where a reader meets it, and the settlement layer is presented as the
 experiment it is rather than the feature it is not. Around that core sit two
 compositions we now state plainly instead of understating: a transparency
 service (SCITT) for the historicity a self-contained store cannot supply, and
-a future reason-binding profile for the policy-to-decision entailment the core
-format leaves open.
+a drafted-and-prototyped reason-binding profile (WRT-004) for the
+policy-to-decision entailment the core format leaves open.
 
 The format's next test is not one we can run on ourselves, and it is now two
 tests, not one: an implementation by someone who has only the text — the

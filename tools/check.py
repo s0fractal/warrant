@@ -90,6 +90,13 @@ CHECKS = [
     # that cannot go red is decoration.
     ("wpl policy language (differential vs the oracle, docs executed)",
      ["python3", "tests/policy_lang.py"], "sigma"),
+    # WRT-004 is a DRAFT proposal, not a shipped surface -- but its central
+    # claim (the justification-binding gap is checkable) is a prose claim, and
+    # this repository does not let a prose claim stand without a vector that can
+    # go red. The fixture files the gap attack and one negative per binding
+    # layer, each turning red for its own layer.
+    ("wrt-004 reason-binding prototype (gap attack + per-layer negatives)",
+     ["python3", "tests/fixtures/wrt004_reason_binding.py"], "sigma"),
     ("merkle anchoring (RFC 6962 structure + inclusion proofs)",
      ["python3", "tests/anchor.py"], None),
     ("mcp sealing proxy (stdio round-trip -> verifiable pack)",

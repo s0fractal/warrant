@@ -335,9 +335,10 @@ is out of scope rather than merely absent:
   as evidence; recompile deterministically), not by a verifier-checkable
   invariant. A normative reason-binding profile — committing the policy-source
   hash, a fact manifest, the evidence hashes, and a result→decision mapping
-  into the computation's own input — is the proposed repair (a candidate
-  successor proposal, unwritten), and until it exists a "reason" is in part an
-  assertion by the filer. The reproducibility of a computation is not the
+  alongside the check — is the proposed repair
+  (`proposals/WRT-004-reason-binding-profile.md`, drafted with a running
+  prototype `tools/reason_binding_check.py`, unadopted), and until a verifier
+  enforces it a "reason" is in part an assertion by the filer. The reproducibility of a computation is not the
   entailment of a decision, and this document does not let the word "reason"
   blur the two. Related to but distinct from NG-4 (Warrant takes no position on
   whether a decision was *correct*): NG-7 is that it takes no position on

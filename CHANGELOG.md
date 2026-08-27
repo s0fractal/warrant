@@ -42,6 +42,18 @@ flagship-paper review cycle (PR #30):
   ("safe by construction" → a semantic bound plus local fences;
   `(term, atp, store)`; key identity ≠ actor identity; pass/fail ≠ true/false).
   Stated NG totals in `SECURITY.md`/`llms.txt` follow (NG=7).
+- `proposals/WRT-004-reason-binding-profile.md` — DRAFT proposal closing NG-7
+  (the justification-binding gap Monday found). A `warrant.reason-binding@v0`
+  profile blob, cited in `evidence`, that a profile-aware verifier checks in
+  three layers: term↔policy (recompile the WPL source), facts↔evidence (each
+  baked-in fact committed as a named evidence blob), result↔decision (a
+  committed map). Design only; additive (no body-schema or base-verification
+  change). Ships with a running prototype (`tools/reason_binding_check.py`) and
+  a fixture (`tests/fixtures/wrt004_reason_binding.py`, wired into
+  `tools/check.py`) demonstrating the gap attack and one negative per layer
+  turning red. Honest limits stated: it binds fact→evidence-item not
+  fact→truth (SA-11 stands), proves nothing about policy merit (NG-4), and
+  leaves subject-semantic binding open.
 - `proposals/WRT-003-outcome-fingerprint-purity.md` — DRAFT repair for the
   reproduced §7 expect-flip (a settled question re-opens unboundedly via
   filer-chosen `expect`; confirmed in both implementations). Design only;
