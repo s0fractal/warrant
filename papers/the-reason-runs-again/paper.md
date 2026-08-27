@@ -49,7 +49,7 @@ produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 78 documents spanning six model
+measured events from a review ledger of 81 documents spanning six model
 vendors: a census under this repository's own naming convention, not a claim
 of reviewer independence. We state with equal precision what the
 format does not provide: key–actor binding is local configuration, not a
@@ -549,12 +549,12 @@ shown capable of turning red, for the stated reason, is not evidence.
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 78 documents — 62 inbound reviews and gates plus 16 written
+holds 81 documents — 64 inbound reviews and gates plus 17 written
 responses — under eleven reviewer labels drawn from six model vendors
 (OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
 specification audits, cryptographic attacks, release-surface gates,
-governance-proposal adversarial rounds, and, as of this revision, a review
-of this paper itself. A label census is exactly what this is: the labels
+governance-proposal adversarial rounds, untyped publication-strategy
+surveys, and, as of this revision, a review of this paper itself. A label census is exactly what this is: the labels
 are a filename convention this repository controls, the vendor mapping is a
 table in the claims checker where it can be disputed, and none of it
 measures reviewer *independence* — every reviewing family was operated by
