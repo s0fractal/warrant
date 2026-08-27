@@ -42,10 +42,18 @@ flagship-paper review cycle (PR #30):
   second gate (`reviews/2026-08-gpt56sol-wrt-003-rev2-design-gate.md`, AMEND):
   rejects rev 2's recommended identity (B) (REF-padding re-opener), adopts
   result-only identity `(runtime, result_node_hash)`, and settles eligibility
-  as the node-class rule (result opcode == DISSONANCE ⇒ ineligible). All four
-  re-openers — expect-flip, ATP-starvation, `I T`, REF-padding — now collapse
-  to one rule; four counter-vectors reproduced in
-  `tests/fixtures/wrt003_gate_countervectors.py`.
+  as a node-class rule. **rev 4** closes the third gate — first from a
+  different vendor (`reviews/2026-08-qwen-wrt-003-rev3-design-gate.md`, Qwen /
+  Alibaba, AMEND): eligibility becomes "no DISSONANCE node **anywhere** in the
+  normal form" (root-only left a nested-DISSONANCE re-opener, reproduced);
+  adds an evaluator-determinism precondition + registry gate (§3.6); states
+  SA-1 is closed by scope reduction, a transition section (retroactive,
+  strictly-stronger foreclosure), and the honest tradeoff (false-negative
+  novelty is intended). Declined one over-strong objection ("§7(b) empty")
+  with a positive control. Five counter-vectors + a positive §7(b) control in
+  `tests/fixtures/wrt003_gate_countervectors.py`. The checker no longer prints
+  "all verified" (Qodo/Qwen finding); the census is now classified by
+  independence class (zero human-expert gates).
 - `THREAT-MODEL.md` gains SA-12 (signature-creation time does not exist;
   external checkpointing is part of the security argument); stated totals in
   `SECURITY.md`/`llms.txt` follow.

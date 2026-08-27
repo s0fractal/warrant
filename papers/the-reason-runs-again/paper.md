@@ -49,9 +49,11 @@ produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 85 documents spanning six model
-vendors: a census under this repository's own naming convention, not a claim
-of reviewer independence. We state with equal precision what the
+measured events from a review ledger of 87 documents spanning six model
+vendors: a census under this repository's own naming convention, and — a
+distinction a third-round reviewer forced us to make — not a claim of reviewer
+independence, since every gate to date is LLM-authored and none is
+cross-paradigm. We state with equal precision what the
 format does not provide: key–actor binding is local configuration, not a
 protocol fact; one of the two check runtimes is trusted by specification and
 that trust reaches settlement; and no independent party has yet implemented
@@ -419,18 +421,23 @@ settlement harness pins the `expect`-flip as *admissible*, because that is
 what the specification says — and the repair, a fingerprint constrained to
 be a pure function of the computation the verifier performed, is drafted as
 proposal WRT-003 and sent through its own adversarial gate rather than
-adopted here. That gate has already earned its place across two rounds: the
-first found two further re-openers the first draft of the repair missed — a
-budget the filer starves until the honest computation exhausts, and a
-semantic no-op that wraps the settled term into a fresh identity, one of
-which the draft had certified as its *positive* novelty control — and the
-second broke the identity the second draft had *recommended*, then out-argued
-its case, driving the repair to the one rule that survives: a fingerprint
-that is the hash of the result value alone, eligible only when that value is
-not a computation's failure. The repair is at its third revision; the point
-of recording this here is not that the repair is finished but that the same
-adversarial loop that found the defect is the one
-deciding when it is closed.
+adopted here. That gate has already earned its place across three rounds: the
+first found two further re-openers the first draft missed — a budget the filer
+starves until the honest computation exhausts, and a semantic no-op that wraps
+the settled term into a fresh identity, one of which the draft had certified
+as its *positive* novelty control; the second broke the identity the second
+draft had *recommended*, then out-argued its case; and the third — the first
+from a different vendor — broke the eligibility rule at its root/nested seam,
+declined one over-strong objection with a reproduction, and forced the repair
+to state what it had quietly given up. The rule that survives is a fingerprint
+that is the hash of the result value alone, admitted only when that value
+carries no trace of a computation's failure — and the honest theorem beside
+it: false-positive novelty is now impossible, and false-negative novelty (two
+routes to one value are one consequence) is guaranteed and intended. The
+repair is at its fourth revision, still unadopted; the point of recording this
+is not that it is finished but that the same adversarial loop that found the
+defect is the one deciding when it is closed — and that the loop has now told
+us its own next reviewer should be a human logician, not a fifth model.
 
 ## 5.3 Keys and jurisdictions as records in the same DAG
 
@@ -561,13 +568,25 @@ shown capable of turning red, for the stated reason, is not evidence.
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 85 documents — 66 inbound reviews and gates plus 19 written
+holds 87 documents — 67 inbound reviews and gates plus 20 written
 responses — under thirteen reviewer labels drawn from six model vendors
 (OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
 specification audits, cryptographic attacks, release-surface gates,
 governance-proposal adversarial rounds, untyped publication-strategy
-surveys, a review of this paper itself, and two adversarial design-gate
-rounds on the repair that review prompted. A label census is exactly what this is: the labels
+surveys, a review of this paper itself, and three adversarial design-gate
+rounds on the repair that review prompted.
+
+The honest classification, forced by the third of those gate rounds: a
+vendor label is not an independence class. All eighty-seven documents are
+LLM-authored; the three design-gate rounds run OpenAI, OpenAI, Alibaba, so
+even the one cross-vendor round shares training lineage and prompting
+context with the rounds it built on. **Zero gates have been authored by a
+human domain expert**, and none is cross-paradigm. The census measures
+activity and label-diversity; it does not measure the independence that
+would let one gate's silence vouch for another's. The same distinction the
+format draws between distinct signatures and distinct custody (Section 8)
+applies to its own review process, and this paper states it rather than
+letting the document count imply otherwise. A label census is exactly what this is: the labels
 are a filename convention this repository controls, the vendor mapping is a
 table in the claims checker where it can be disputed, and none of it
 measures reviewer *independence* — every reviewing family was operated by
@@ -632,8 +651,14 @@ path (no DID, no X.509, no OIDC-bound ephemeral keys) and no design for
 one.
 
 **`cmd@v1` verdicts are trusted by specification, and that trust reaches
-settlement** (Section 5.2). The two candidate repairs are recorded,
-neither adopted.
+settlement** (Section 5.2). The drafted repair (WRT-003) resolves this for
+`cmd@v1` by *scope reduction*, not by fixing it: a container-executed check
+the verifier cannot re-run is made unable to contribute settlement novelty at
+all, so `cmd@v1` re-litigation becomes evidence-gated only. Since `cmd@v1` is
+the reason kind most deployments actually use, the honest statement is that
+the most common reason class would gain evidence-only settlement novelty —
+the room with the hole is closed, the hole itself is not repairable without a
+runtime the verifier can re-execute.
 
 **A threshold assumes independent custody, and here it has not had it.**
 In this repository no threshold has ever been exercised: the trust

@@ -149,22 +149,34 @@ else:
 # --- report
 for line in checked:
     print(f"  ok  {line}")
-print("""
-NOT checked here, with reasons:
-  - "43/43" three-way canon differential and "472 cases including 20
-    mixed-torsion": measurements of harness RUNS, recorded in ARCHITECT.md's
-    progress log; recomputing them means running the harnesses, which
-    tools/test-all.sh does and this script must not half-do.
-  - the five SPEC section-8 hashes: the paper cites their existence, not their
-    values; the conformance suites pin the values.
-  - prose claims (flag-day rationale, threat-model rows): not countable.
-  - external citation status (e.g. the VAC draft's title and its 2026-08-29
-    expiry): needs the network; this build must stay reproducible offline.
-    Follow-up: a check_sources.py run in CI, per the 2026-08 chatgpt-web
-    review response.""")
+
+# The claims this script deliberately does NOT recompute. Named as data, not
+# prose, and COUNTED — because a checker that says "all verified" while quietly
+# excluding a list is the very defect the sibling guard paper is about (a
+# control whose scope is chosen by the thing it controls). Qwen round-3 gate,
+# 2026-08-27: the old final line "all countable claims verified" overstated,
+# so the summary now reports verified AND unchecked, and never claims "all".
+UNCHECKED = [
+    '"43/43" canon differential and "472 cases incl. 20 mixed-torsion": '
+    "measurements of harness RUNS (ARCHITECT.md progress log). Recomputing "
+    "means running the harnesses — python3 tools/check.py does; this script "
+    "must not half-do it.",
+    "the five SPEC §8 hashes: the paper cites their existence, not values; "
+    "the conformance suites pin the values.",
+    "prose claims (flag-day rationale, threat-model rows): not countable.",
+    "external citation status (e.g. the VAC draft title / 2026-08-29 expiry): "
+    "needs the network; this build stays reproducible offline. Follow-up: a "
+    "check_sources.py in CI (chatgpt-web review response).",
+]
+print("\nNOT checked here (excluded by design, counted, never called verified):")
+for u in UNCHECKED:
+    print(f"  --  {u}")
+
 if failures:
     print("\nFAILED:", file=sys.stderr)
     for f in failures:
         print(f"  {f}", file=sys.stderr)
     sys.exit(1)
-print(f"\nall countable claims verified against {REPO}")
+print(f"\n{len(checked)} countable claims verified against {REPO}; "
+      f"{len(UNCHECKED)} claim classes UNCHECKED (listed above). "
+      "This is not a statement that every number in the paper was recomputed.")

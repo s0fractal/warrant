@@ -10,10 +10,17 @@ Round 2 (gpt56sol, rev-2 gate):
     result with different forced read-sets; defeats identity (B).
   Attack 4 (MAJOR): a direct DISSONANCE node has the same result hash as a
     genuine exhaustion; pins node-class vs execution-origin eligibility.
+Round 3 (Qwen, rev-3 gate):
+  POSITIVE: settle S, file K -> different clean result IS admissible; §7(b)
+    is not a dead letter under identity (A).
+  Attack 5 (BLOCKER): nested DISSONANCE — (dis·K) normalizes to a stuck APPLY
+    (root != DIS) containing a dis; distinct such terms give distinct hashes,
+    a re-opener family under a ROOT-only rule. Fixed by "DISSONANCE anywhere".
 
 Tested against the CURRENT spec (both implementations): the attacks' mechanics
-are real, and the last block computes the rev-3 verdict (identity = result
-only; eligible iff result opcode != DISSONANCE), under which all four collapse.
+are real, and the last block computes the rev-4 verdict (identity = result
+only; eligible iff the result is DISSONANCE-free), under which all five
+re-openers collapse and the positive §7(b) control stays admissible.
 """
 import json
 import os
@@ -51,6 +58,20 @@ settled = T.add_record(store, T.body("accept", subject, [opaque], "a@x",
 
 v_full, r_full, spent = W.run_ski_check(W.Store(store), full)
 print(f"settled run: verdict={v_full} result={r_full[:12]}.. atp_spent={spent}")
+
+# --- POSITIVE control (rev-3 gate, Qwen): §7(b) is NOT empty under (A).
+#     A different term reaching a DIFFERENT clean result stays admissible.
+diff_check = T.put_json_blob(store, {"ski": 1, "term": sg.K_H.hex(), "atp": 5,
+                                     "expect": sg.K_H.hex()})
+_, r_diff, _ = W.run_ski_check(W.Store(store), diff_check)
+cand_pos = T.body("reject", subject, [opaque], "a@x", prior=[settled],
+                  because=[{"kind": "check", "runtime": "ski@v1",
+                            "check": diff_check, "verdict": "pass"}], ts=9)
+pp = os.path.join(tmp, "positive.json"); open(pp, "w").write(json.dumps(cand_pos, sort_keys=True))
+pyp, gop = T.settle_both(store, settled, pp)
+print(f"POSITIVE §7(b) (settled S, file K -> different result {r_diff[:12]}..): "
+      f"py={pyp.stdout.strip()!r}  go={gop.stdout.strip()!r}")
+print("  => a newly demonstrated value IS admissible; §7(b) is not a dead letter.")
 
 # --- Attack 1: same term, starved budget (legal, locally executable)
 starved = T.put_json_blob(store, {"ski": 1, "term": term, "atp": 1,
@@ -108,13 +129,54 @@ print(f"genuine exhaustion           -> result={r_st[:12]}.. "
 print("  => the node-class rule (result opcode == DISSONANCE) marks BOTH "
       "ineligible from the hash alone; no provenance channel needed.")
 
-# --- rev-3 verdict: identity=(runtime,result); eligible iff opcode != DIS
-def dis_opcode(h):
-    return sg.deser((sg.GENESIS.get(bytes.fromhex(h)) or
-                     open(os.path.join(store, "blobs", h), "rb").read()))["op"] == sg.DISSONANCE
+# --- Attack 5 (rev-3 gate, Qwen): nested DISSONANCE defeats a ROOT-only rule.
+#     (dis · K) normalizes to a stuck APPLY (root != DIS) containing a dis;
+#     distinct such terms give distinct hashes -> a re-opener family.
+DINV = sg.ser(sg.DISSONANCE, sg.F_ATOM, atom=sg.R_INVALID); dinv_h = node(DINV)
+nest1 = sg.ser(sg.APPLY, sg.F_LEFT | sg.F_RIGHT, left=dinv_h, right=sg.K_H); n1 = node(nest1)
+nest2 = sg.ser(sg.APPLY, sg.F_LEFT | sg.F_RIGHT, left=dinv_h, right=sg.I_H); n2 = node(nest2)
+res_n1 = W.run_ski_check(W.Store(store), T.put_json_blob(
+    store, {"ski": 1, "term": n1.hex(), "atp": 20, "expect": n1.hex()}))[1]
+res_n2 = W.run_ski_check(W.Store(store), T.put_json_blob(
+    store, {"ski": 1, "term": n2.hex(), "atp": 20, "expect": n2.hex()}))[1]
+
+
+def opcode(h):
+    b = sg.GENESIS.get(bytes.fromhex(h)) or open(os.path.join(store, "blobs", h), "rb").read()
+    return sg.deser(b)["op"]
+
+
+def has_dissonance(h, seen=None):
+    """Recursive: does the normal form contain a DISSONANCE node anywhere?"""
+    seen = seen if seen is not None else set()
+    if h in seen:
+        return False
+    seen.add(h)
+    b = sg.GENESIS.get(bytes.fromhex(h)) or open(os.path.join(store, "blobs", h), "rb").read()
+    n = sg.deser(b)
+    if n["op"] == sg.DISSONANCE:
+        return True
+    if n["op"] == sg.APPLY:
+        return has_dissonance(n["left"].hex(), seen) or has_dissonance(n["right"].hex(), seen)
+    return False
+
+
+print(f"\n(dis · K) -> result={res_n1[:12]}.. root_opcode={opcode(res_n1)} "
+      f"(APPLY={sg.APPLY}, not DIS)")
+print(f"(dis · I) -> result={res_n2[:12]}.. distinct from (dis·K): {res_n1 != res_n2}")
+print(f"  root-only rule: both eligible (root=APPLY) -> re-opener family.")
+print(f"  rev-4 'DISSONANCE anywhere' rule: (dis·K) has_dis={has_dissonance(res_n1)}, "
+      f"(dis·I) has_dis={has_dissonance(res_n2)} -> both INELIGIBLE.")
+
+# --- rev-4 verdict: identity=(runtime,result); eligible iff DISSONANCE-free
+def eligible(r):
+    return not has_dissonance(r)
 fp = lambda r: ("ski@v1", r)
-print("\nrev-3 (A + node-class):")
-print(f"  starved eligible: {not dis_opcode(r_st)} (expect False)")
-print(f"  wrapper fingerprint == settled: {fp(r_w) == fp(r_full)} (expect True)")
-print(f"  REF-pad fingerprint == settled: {fp(r_ref2) == fp(r_ref1)} (expect True)")
-print("=> under rev 3 all four re-openers collapse to the same rule.")
+print("\nrev-4 (A + DISSONANCE-free eligibility):")
+print(f"  starved eligible:        {eligible(r_st)} (expect False)")
+print(f"  nested-dis eligible:     {eligible(res_n1)} (expect False)")
+print(f"  clean result S eligible: {eligible(r_full)} (expect True)")
+print(f"  wrapper fp == settled:   {fp(r_w) == fp(r_full)} (expect True)")
+print(f"  REF-pad fp == settled:   {fp(r_ref2) == fp(r_ref1)} (expect True)")
+print("=> under rev 4 all five re-openers collapse to the same rule,")
+print("   and a genuinely different clean result (positive §7(b)) stays eligible.")
