@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Reproductions for the annaglova WRT-003 rev-1 gate (2026-08-27).
+"""Reproductions for the WRT-003 design gates (2026-08-27).
 
-Attack 1 (BLOCKER): ATP starvation — same term, filer-chosen low-but-legal
-budget; verifier honestly computes DISSONANCE(exhausted); fingerprint differs.
-Attack 2 (MAJOR): I-wrapper — I T re-runs to the same result under a fresh
-term hash.
+Round 1 (annaglova, rev-1 gate):
+  Attack 1 (BLOCKER): ATP starvation — same term, low-but-legal budget;
+    verifier honestly computes DISSONANCE(exhausted); fingerprint differs.
+  Attack 2 (MAJOR): I-wrapper — I T re-runs to the same result, fresh term.
+Round 2 (gpt56sol, rev-2 gate):
+  Attack 3 (BLOCKER): REF-padding — REF(S) vs REF(REF(S)) reach the same
+    result with different forced read-sets; defeats identity (B).
+  Attack 4 (MAJOR): a direct DISSONANCE node has the same result hash as a
+    genuine exhaustion; pins node-class vs execution-origin eligibility.
 
-Both are tested against the CURRENT spec (both implementations) — rev 1 of
-WRT-003 is design-only, so what we can demonstrate today is (a) the attacks'
-mechanics are real, and (b) starvation is admissible under the CURRENT rule
-too (the tuple differs in re-run verdict/result), i.e. the blocker names a
-hole rev 1 inherited and then blessed, not one it introduced.
+Tested against the CURRENT spec (both implementations): the attacks' mechanics
+are real, and the last block computes the rev-3 verdict (identity = result
+only; eligible iff result opcode != DISSONANCE), under which all four collapse.
 """
 import json
 import os
@@ -77,10 +80,41 @@ p2 = os.path.join(tmp, "wrapped.json"); open(p2, "w").write(json.dumps(cand2, so
 py2, go2 = T.settle_both(store, settled, p2)
 print(f"I-wrapper candidate:       py={py2.stdout.strip()!r}  go={go2.stdout.strip()!r}")
 
-# --- what the rev-1 tuple would say (computed here, since rev 1 is unimplemented)
-fp_settled = ("ski@v1", term, r_full)
-fp_starved = ("ski@v1", term, r_st)
-fp_wrapped = ("ski@v1", wrap_h.hex(), r_w)
-print(f"\nrev-1 tuples: starved differs from settled: {fp_starved != fp_settled}; "
-      f"wrapped differs: {fp_wrapped != fp_settled}")
-print("=> both attacks yield 'new' fingerprints under rev 1 as drafted.")
+# --- Attack 3 (rev-2 gate, gpt56sol): REF-padding defeats identity (B).
+#     REF(S) and REF(REF(S)) both -> S with different forced read-sets.
+R1 = sg.ser(sg.REF, sg.F_ATOM, atom=sg.S_H); r1_h = node(R1)
+R2 = sg.ser(sg.REF, sg.F_ATOM, atom=r1_h);   r2_h = node(R2)
+ref_settled = T.put_json_blob(store, {"ski": 1, "term": r1_h.hex(), "atp": 10,
+                                      "expect": sg.S_H.hex()})
+_, r_ref1, sp1 = W.run_ski_check(W.Store(store), ref_settled)
+ref_pad = T.put_json_blob(store, {"ski": 1, "term": r2_h.hex(), "atp": 10,
+                                  "expect": sg.S_H.hex()})
+_, r_ref2, sp2 = W.run_ski_check(W.Store(store), ref_pad)
+print(f"\nREF(S)     -> result={r_ref1[:12]}.. spent={sp1}")
+print(f"REF(REF(S))-> result={r_ref2[:12]}.. spent={sp2} "
+      f"(same result: {r_ref1 == r_ref2}, different read-set: {sp1 != sp2})")
+print("  => identity (B) {forced-read-set,...} would call REF(REF(S)) novel; "
+      "(A) result-only does not.")
+
+# --- Attack 4 (rev-2 gate, gpt56sol): a direct DISSONANCE node has the same
+#     result hash as a genuine exhaustion — node-class vs execution-origin.
+DIS = sg.ser(sg.DISSONANCE, sg.F_ATOM, atom=sg.R_ATP); dis_h = node(DIS)
+direct = T.put_json_blob(store, {"ski": 1, "term": dis_h.hex(), "atp": 10,
+                                 "expect": dis_h.hex()})
+_, r_direct, _ = W.run_ski_check(W.Store(store), direct)
+print(f"\ndirect DISSONANCE(R_ATP) node -> result={r_direct[:12]}..")
+print(f"genuine exhaustion           -> result={r_st[:12]}.. "
+      f"(same result hash: {r_direct == r_st})")
+print("  => the node-class rule (result opcode == DISSONANCE) marks BOTH "
+      "ineligible from the hash alone; no provenance channel needed.")
+
+# --- rev-3 verdict: identity=(runtime,result); eligible iff opcode != DIS
+def dis_opcode(h):
+    return sg.deser((sg.GENESIS.get(bytes.fromhex(h)) or
+                     open(os.path.join(store, "blobs", h), "rb").read()))["op"] == sg.DISSONANCE
+fp = lambda r: ("ski@v1", r)
+print("\nrev-3 (A + node-class):")
+print(f"  starved eligible: {not dis_opcode(r_st)} (expect False)")
+print(f"  wrapper fingerprint == settled: {fp(r_w) == fp(r_full)} (expect True)")
+print(f"  REF-pad fingerprint == settled: {fp(r_ref2) == fp(r_ref1)} (expect True)")
+print("=> under rev 3 all four re-openers collapse to the same rule.")

@@ -94,6 +94,7 @@ claim(r"review ledger of (\d+) documents", len(docs), "review ledger (abstract)"
 VENDOR = {
     "codex": "OpenAI", "gptoss120b": "OpenAI", "chatgpt": "OpenAI",
     "annaglova": "OpenAI",  # GitHub account; ChatGPT-authored gate (manifest)
+    "gpt56sol": "OpenAI",   # GPT-5.6 Sol via ChatGPT (manifest)
     "gemini": "Google", "gemini31pro": "Google", "antigravity": "Google",
     "deepseek": "DeepSeek",
     "kimi": "Moonshot",
@@ -106,7 +107,8 @@ for p in docs:
     if m and m.group(1) in VENDOR:
         labels.add(m.group(1))
 words = {3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
-         8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
+         8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve",
+         13: "thirteen", 14: "fourteen", 15: "fifteen", 16: "sixteen"}
 m = re.search(r"(\w+) reviewer labels", PAPER)
 if not m or m.group(1) != words.get(len(labels)):
     failures.append(f"reviewer labels: paper says "

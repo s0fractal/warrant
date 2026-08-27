@@ -36,12 +36,16 @@ flagship-paper review cycle (PR #30):
   reproduced §7 expect-flip (a settled question re-opens unboundedly via
   filer-chosen `expect`; confirmed in both implementations). Design only;
   adoption will be a **[protocol]** SPEC document-version bump because
-  admissibility verdicts move. **rev 2** closes the first design gate
-  (`reviews/2026-08-annaglova-wrt-003-design-gate.md`, AMEND): adds a
-  novelty-eligibility predicate (only normal-form outcomes count — closes
-  ATP-starvation) and escalates computation identity to the headline open
-  question (the `I T` semantic-no-op wrapper). Both counter-vectors
-  reproduced in `tests/fixtures/wrt003_gate_countervectors.py`.
+  admissibility verdicts move. **rev 2** closed the first design gate
+  (annaglova, AMEND): added novelty-eligibility (closes ATP-starvation) and
+  escalated computation identity (the `I T` wrapper). **rev 3** closes the
+  second gate (`reviews/2026-08-gpt56sol-wrt-003-rev2-design-gate.md`, AMEND):
+  rejects rev 2's recommended identity (B) (REF-padding re-opener), adopts
+  result-only identity `(runtime, result_node_hash)`, and settles eligibility
+  as the node-class rule (result opcode == DISSONANCE ⇒ ineligible). All four
+  re-openers — expect-flip, ATP-starvation, `I T`, REF-padding — now collapse
+  to one rule; four counter-vectors reproduced in
+  `tests/fixtures/wrt003_gate_countervectors.py`.
 - `THREAT-MODEL.md` gains SA-12 (signature-creation time does not exist;
   external checkpointing is part of the security argument); stated totals in
   `SECURITY.md`/`llms.txt` follow.
