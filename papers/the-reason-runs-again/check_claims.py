@@ -47,7 +47,21 @@ for f in sorted((REPO / "conformance" / "vectors").glob("*.json")):
         if isinstance(d, list):
             total += len(d)
 claim(r"(\d+)-vector conformance pack", total, "conformance pack vectors")
-claim(r"(\d+) vectors in a\s+runner-driven pack", total, "pack vectors (abstract)")
+claim(r"(\d+)\s+vectors in a runner-driven pack", total, "pack vectors (abstract)")
+
+# grade split: ski-run and verify-store-settlement are the settlement-only files
+settlement_only = 0
+for name in ("ski-run.json", "verify-store-settlement.json"):
+    d = json.loads((REPO / "conformance" / "vectors" / name).read_text(encoding="utf-8"))
+    settlement_only += len(d.get("vectors") or d.get("cases"))
+claim(r"(\d+)\s+base-grade", total - settlement_only, "base-grade vectors")
+claim(r"(\d+) settlement-grade", settlement_only, "settlement-grade vectors")
+
+# the pack's canon file = the examples battery + the spec-table record vectors
+pack_canon = json.loads(
+    (REPO / "conformance" / "vectors" / "canon.json").read_text(encoding="utf-8"))
+claim(r"its (\d+) canonicalization vectors", len(pack_canon["vectors"]),
+      "pack canon vectors")
 
 # --- canonicalization battery (examples/canon-vectors.json)
 canon = json.loads((REPO / "examples" / "canon-vectors.json").read_text(encoding="utf-8"))
@@ -78,7 +92,7 @@ claim(r"review ledger of (\d+) documents", len(docs), "review ledger (abstract)"
 # --- reviewer identities and vendors (mapping is a judgment; it lives here,
 #     visibly, rather than being asserted without a basis)
 VENDOR = {
-    "codex": "OpenAI", "gptoss120b": "OpenAI",
+    "codex": "OpenAI", "gptoss120b": "OpenAI", "chatgpt": "OpenAI",
     "gemini": "Google", "gemini31pro": "Google", "antigravity": "Google",
     "deepseek": "DeepSeek",
     "kimi": "Moonshot",
@@ -92,12 +106,13 @@ for p in docs:
         labels.add(m.group(1))
 words = {3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
          8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
-m = re.search(r"(\w+) reviewer identities", PAPER)
-if m and m.group(1) != words.get(len(labels)):
-    failures.append(f"reviewer identities: paper says {m.group(1)!r}, "
+m = re.search(r"(\w+) reviewer labels", PAPER)
+if not m or m.group(1) != words.get(len(labels)):
+    failures.append(f"reviewer labels: paper says "
+                    f"{m.group(1) if m else '<missing>'!r}, "
                     f"measured {len(labels)} ({sorted(labels)})")
 else:
-    checked.append(f"reviewer identities: {len(labels)}")
+    checked.append(f"reviewer labels: {len(labels)}")
 vendors = {VENDOR[l] for l in labels}
 m = re.search(r"(\w+) model\s+vendors", PAPER)
 if m and m.group(1) != words.get(len(vendors)):
@@ -139,7 +154,11 @@ NOT checked here, with reasons:
     tools/test-all.sh does and this script must not half-do.
   - the five SPEC section-8 hashes: the paper cites their existence, not their
     values; the conformance suites pin the values.
-  - prose claims (flag-day rationale, threat-model rows): not countable.""")
+  - prose claims (flag-day rationale, threat-model rows): not countable.
+  - external citation status (e.g. the VAC draft's title and its 2026-08-29
+    expiry): needs the network; this build must stay reproducible offline.
+    Follow-up: a check_sources.py run in CI, per the 2026-08 chatgpt-web
+    review response.""")
 if failures:
     print("\nFAILED:", file=sys.stderr)
     for f in failures:

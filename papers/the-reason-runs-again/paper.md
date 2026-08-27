@@ -38,17 +38,20 @@ report that fails closed.
 The format is specified to a design rule that anything two independent
 implementations cannot agree on byte-exactly stays out of the document. Three
 implementations — Python, Go, and a from-scratch Rust verifier with no
-external crates — reproduce every conformance vector: 138 vectors in a
-runner-driven pack a third party can apply to an implementation we have never
-seen, plus normative *negative* batteries (14 weak Ed25519 keys that must
+external crates — agree byte-exactly on the surfaces they claim: Python and
+Go at settlement grade, Rust deliberately at base grade. A third party can
+check any of them, or an implementation we have never seen, against 138
+vectors in a runner-driven pack (134 base-grade, 4 settlement-grade),
+including normative *negative* batteries (14 weak Ed25519 keys that must
 fail verification, 15 bodies that must fail validation, 10 signature
 constructions that must not verify). We report the engineering findings that
 produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 76 documents produced by ten reviewer
-identities across six model vendors. We state with equal precision what the
+measured events from a review ledger of 78 documents spanning six model
+vendors: a census under this repository's own naming convention, not a claim
+of reviewer independence. We state with equal precision what the
 format does not provide: key–actor binding is local configuration, not a
 protocol fact; one of the two check runtimes is trusted by specification and
 that trust reaches settlement; and no independent party has yet implemented
@@ -153,10 +156,10 @@ wrapped as in-toto statements), but its subject differs: an attestation says
 "this artifact was produced by this step"; a warrant says "this decision was
 taken under this policy for this reason", and its reason can carry its own
 proof of evaluation. Certificate Transparency [@rfc6962] contributes the
-append-only Merkle discipline our anchoring tool reuses, and — less
-obviously — the domain-separation hazard: CT roots, DSSE payload digests,
-TUF metadata and Git object identifiers are all bare 32-byte digests, which
-is precisely why a Warrant signature is not one (Section 4).
+append-only Merkle discipline our anchoring tool reuses. DSSE earns a second
+mention in Section 4: its PAE encoding is *prior art for* the domain
+separation Warrant adopts — not, as an earlier draft of this paper implied,
+an example of the hazard.
 
 **Provenance for science.** W3C PROV [@prov] and RO-Crate
 [@soilandreyes2022] give honest researchers a vocabulary for traceability. A
@@ -180,8 +183,12 @@ so a format that wants two verifiers to agree must pin the acceptance set
 normatively. Section 6 reports finding two such defects in our own Rust
 implementation — after a 452-case random differential had passed.
 
-**Regulation.** Article 12 of the EU AI Act [@euaiact] requires high-risk AI
-systems to keep records sufficient to reconstruct decisions. The repository
+**Regulation.** Article 12 of the EU AI Act [@euaiact] requires that
+high-risk AI systems technically allow the automatic recording of events,
+sufficient for purpose-appropriate traceability of their functioning.
+Warrant explores a stronger, decision-level record model that could
+contribute to such traceability — a motivational reading, and we mark it as
+one rather than as what the article requires. The repository
 carries a profile mapping its record fields to those requirements and a
 contribution to the CEN/CENELEC JTC 21 standardization discussion; we cite
 them as motivation and defer the legal analysis to a companion paper.
@@ -189,7 +196,9 @@ them as motivation and defer the legal analysis to a companion paper.
 # 3. The record
 
 A **warrant** is an immutable, signed, content-addressed record of one
-decision. The body is a JSON object with exactly nine fields — `warrant`
+decision — immutable in its *body*, precisely: the enclosing signature
+envelope is appendable by design (Section 4), so "immutable record" without
+that qualifier would overstate. The body is a JSON object with exactly nine fields — `warrant`
 (format version), `decision` (`propose` | `accept` | `reject` |
 `supersede`), `subject` (hash of the thing decided, plus an optional note),
 `under` (one or more hashes of the policy blobs in force), `because` (reasons),
@@ -283,13 +292,22 @@ A stored warrant is an envelope: the body plus a signature array. Ed25519
 msg = "warrant-sig-v1:" || WarrantID_raw        (15 + 32 = 47 bytes)
 ```
 
-Without the separator, the signed message is byte-indistinguishable from any
-other bare 32-byte SHA-256 digest — a DSSE payload digest, a TUF metadata
-hash, an RFC 6962 tree head, a Git object id, a Σ-GLYPH node hash. A key
-that signs digests in two such protocols produces signatures valid in both,
-in both directions. The separator names this protocol inside the bytes the
-key covers; a future scheme change becomes `warrant-sig-v2:` and is again
-disjoint from everything before it.
+Without the separator, the signed message is an unconstrained 32-byte
+value, and the signature is therefore replayable into any other context in
+which the same Ed25519 key ever signs an unconstrained 32-byte value — the
+realistic such contexts being raw-digest HSM/KMS signing interfaces and
+whatever ad-hoc "sign the hash" scheme a key's owner adopts later. We
+deliberately do not argue this by pointing at named protocols: an earlier
+draft listed DSSE, TUF, Certificate Transparency and Git object identifiers
+as bare-digest signing domains, and a reviewer correctly objected that DSSE
+signs a PAE-encoded, type-bound message and CT signs a versioned structure
+— domain separation done right, precedents rather than victims. The
+demonstrated instance is our own: the negative battery of Section 6 carries
+a signature made over the bare SHA-256 of *unrelated content*, offered as a
+warrant signature for the record whose WarrantID equals that digest — and
+every pre-flag-day verifier accepted it. The separator names this protocol
+inside the bytes the key covers; a future scheme change becomes
+`warrant-sig-v2:` and is again disjoint from everything before it.
 
 Two deployment decisions are worth recording because both cut against
 convention. First, Ed25519ctx — the RFC 8032 instrument designed for
@@ -379,14 +397,28 @@ re-litigations, and bounding them is a policy choice. The rule is also
 reflexive — a check demonstrating that the rule itself forces a wrong
 settlement is admissible evidence against the rule.
 
-The asymmetry of Section 5.1 reaches here, and it is the sharpest limit in
-the format. A `cmd@v1` outcome fingerprint contains the **verdict its filer
-wrote**; a `ski@v1` fingerprint contains the **re-run** result. So under
-`cmd@v1`, a party can satisfy the novelty test by filing the same check
-with the opposite verdict — by writing a different word. Settlement's
-strongest guarantee holds only for reasons that re-execute. This is a limit
-of the format, not of the implementations, and the spec records the two
-candidate repairs without adopting either.
+The asymmetry of Section 5.1 reaches here, and so does a limit that
+survives it. A `cmd@v1` outcome fingerprint contains the **verdict its
+filer wrote**, so under `cmd@v1` a party can satisfy the novelty test by
+filing the same check with the opposite verdict — by writing a different
+word. The `ski@v1` fingerprint was repaired to contain the **re-run**
+result instead, and an earlier draft of this paper concluded that
+settlement's strongest guarantee therefore holds for reasons that
+re-execute. A reviewer of that draft found the claim too strong, and a
+reproduction against both implementations confirmed the objection: the
+`ski@v1` fingerprint still contains the filer-chosen `expect`, so re-filing
+the *same term* with a fresh `expect` — the re-run honestly returns `fail`,
+the actual result hash is unchanged — produces a formally new fingerprint
+and an admissible re-litigation, $2^{256}$ times over, at zero new
+computation. What re-execution buys is the removal of *claimed-verdict*
+arbitrariness: the verifier can no longer be lied to about what ran.
+Syntactic novelty remains filer-satisfiable under **both** runtimes;
+semantic novelty is a policy property, with no exception for the strong
+runtime. This is a limit of the format, not of the implementations — the
+settlement harness pins the `expect`-flip as *admissible*, because that is
+what the specification says — and the candidate repair, a fingerprint that
+is a pure function of the computation (runtime, term, result hash), is
+recorded in the review ledger rather than adopted here.
 
 ## 5.3 Keys and jurisdictions as records in the same DAG
 
@@ -443,10 +475,13 @@ verification and is differentially fuzzed against Python; the Rust
 implementation is from scratch with **no external crates** — its own
 SHA-256, its own strict I-JSON parser, its own 5×51-bit field arithmetic
 and Edwards-curve Ed25519 — and deliberately claims only base grade.
-Three-way agreement is byte-exact on the canonicalization battery (43/43
-adversarial cases) and on all pinned record hashes and signatures; the
+Three-way agreement is byte-exact on the adversarial canonicalization
+differential (43/43 cases at the time of that run; the committed battery
+has since grown to 47) and on all pinned record hashes and signatures; the
 Ed25519 differential against Python's `cryptography` runs 472 cases
-including 20 mixed-torsion keys.
+including 20 mixed-torsion keys. Settlement-grade agreement is a two-way,
+Python–Go claim; the base/settlement split below keeps the two claims from
+blurring.
 
 **Vectors, positive and negative.** The spec pins five hashes for a
 three-record chain (propose → reject → accept) that every implementation
@@ -462,9 +497,11 @@ one. What an implementation must reject is as much a part of
 interoperability as what it must accept, and is far less likely to be
 tested spontaneously.
 
-**The pack.** All of it ships as a 138-vector conformance pack driven by a
-runner speaking a one-request-one-response CLI contract to the candidate
-implementation. The runner does not import, link against, or execute a
+**The pack.** All of it ships as a 138-vector conformance pack — 134
+base-grade, 4 settlement-grade; its 51 canonicalization vectors are the
+47-case battery above plus four record vectors from the spec's pinned
+tables — driven by a runner speaking a one-request-one-response CLI
+contract to the candidate implementation. The runner does not import, link against, or execute a
 reference implementation, and the expected value is never sent to the
 candidate; a declined vector is reported UNRUN — a distinct outcome from
 pass and fail that withholds the conformance grade, because a vector that
@@ -512,18 +549,30 @@ shown capable of turning red, for the stated reason, is not evidence.
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 76 documents — 61 inbound reviews and gates plus 15 written
-responses — produced by ten reviewer identities drawn from six model
-vendors (OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
-specification audits, cryptographic attacks, release-surface gates, and
-governance-proposal adversarial rounds.
+holds 78 documents — 62 inbound reviews and gates plus 16 written
+responses — under eleven reviewer labels drawn from six model vendors
+(OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
+specification audits, cryptographic attacks, release-surface gates,
+governance-proposal adversarial rounds, and, as of this revision, a review
+of this paper itself. A label census is exactly what this is: the labels
+are a filename convention this repository controls, the vendor mapping is a
+table in the claims checker where it can be disputed, and none of it
+measures reviewer *independence* — every reviewing family was operated by
+one person on one account, through one orchestration layer that chose what
+each model saw, in what order, and when each review stopped. Six vendors
+are not six epistemic custodians, for the same reason two co-located keys
+are not two custodies (Section 8).
 
-Two measured observations from that corpus shape how we read any single
-green result. First, **diversity finds what depth does not**: one reviewer
-family iterating on a governance proposal produced eight consecutive
-amendments and no critical finding; the first three-family round on the
-same artifact returned three rejections carrying six critical findings,
-nearly disjoint from one another. Second, the audits repeatedly found
+Two observations from that corpus shape how we read any single green
+result — the first correlational, and stated as such. In one
+governance-review sequence, a single family iterating produced eight
+consecutive amendments and no critical finding, and the first three-family
+round on the same artifact returned three rejections carrying six critical
+findings, nearly disjoint from one another. That is one episode, with
+confounders we did not control: the artifact moved between rounds, prompts
+differed, and the orchestrator chose the stopping points. We read it as a
+reason to buy reviewer diversity, not as a demonstration that diversity
+beats depth. Second, the audits repeatedly found
 defects not in the artifact but in the *apparatus that vouches for it* —
 the vacuous suite, the fuzzer soundness gap, the miscalibrated negative
 controls of Section 6. The companion paper in the sibling repository
@@ -532,13 +581,17 @@ proof guard and argues they are one defect in many spellings: a control
 whose scope is chosen by the thing it controls. The present format's
 UNRUN-is-not-PASS rules are that argument, applied normatively.
 
-We do not overstate the ledger. All reviewer families were operated by one
-person on one account; runs are recorded as ungated when no reviewing
-family was affordable, rather than pretending a threshold was met; and an
-adversarial reviewer that shares training lineage with the author is not an
-independent implementer. The strongest review this project can receive —
-a from-scratch implementation of the spec by someone who has never read
-its code — has not yet happened.
+Beyond the census caveat above: runs are recorded as ungated when no
+reviewing family was affordable, rather than pretending a threshold was
+met; and an adversarial reviewer, however capable, is not an independent
+implementer. The strongest review this project can receive — a
+from-scratch implementation of the spec by someone who has never read its
+code — has not yet happened, and we treat it as a graduation criterion for
+any 1.0, not as future work. The review of this paper's own first draft is
+itself a data point for the method: it predicted the `expect`-flip of
+Section 5.2 from the fingerprint definition alone, the reproduction
+confirmed it against both implementations, and the finding travelled back
+into this text and into the ledger before the draft left the repository.
 
 # 8. What Warrant does not provide
 
@@ -590,7 +643,20 @@ secret in a warrant.
 
 **Novelty spam is syntactic.** Section 5.2's rule bounds *what counts as
 new*, not *how much new-but-irrelevant material a permissive policy will
-accumulate*.
+accumulate* — and under both runtimes, "new" itself is filer-satisfiable
+(the `expect`-flip; Section 5.2).
+
+**Signature-creation time does not exist.** Key validity derives from DAG
+position (Section 5.3) precisely because timestamps are attacker-writable —
+but nothing, then, establishes *when a signature was produced*. An attacker
+who compromises a formerly valid key can sign today into a DAG position
+where that key was bound, and because envelopes are appendable, a fresh
+co-signature on an old record is not detectable as fresh from the store
+alone. The mitigation is external checkpointing — transparency-log
+anchoring, archive snapshots — made *before* the compromise; the review of
+this paper surfaced that the project's anchoring tooling is therefore part
+of its security argument, not merely its archival one, and the threat model
+owes this a row of its own.
 
 **The most novel layer is the least proven implementable.** Three-way
 parity is a base-grade claim; settlement-grade parity is two-way;

@@ -133,9 +133,15 @@ model a principal, and none of them moves non-repudiation.
 
 Warrant records are content-addressed and chained through `prior`. Removing one
 does not tidy the history; it breaks resolution for every later record that cited
-it, visibly. Since 2026-07-28 the full graph of both repositories is also held by
-Software Heritage under permanent identifiers (`PRIOR-ART.md`), including every
-adversarial review filed by Codex, Kimi, Gemini, DeepSeek and qwen3-coder.
+it, visibly. Scope, exactly (a paper review caught this heading claiming more
+than `THREAT-MODEL.md` A1 grants): a record nothing yet cites deletes cleanly —
+store completeness is a non-goal — so within the format the guarantee covers the
+*cited* history only. What extends it to uncited records is an external archive
+snapshot made before the deletion: since 2026-07-28 the full graph of both
+repositories is held by Software Heritage under permanent identifiers
+(`PRIOR-ART.md`), including every adversarial review filed by Codex, Kimi,
+Gemini, DeepSeek and qwen3-coder. That is an archival fact about this
+repository, not a property of the format.
 
 *Ordinary:* an audit trail an operator can edit is not an audit trail.
 *Other:* a model's account of its own reasoning outlives whoever deployed it,
@@ -152,12 +158,17 @@ from scratch — the property the whole format exists for.
 *Other:* a model's refusal cannot be memory-holed, and cannot be reduced to a
 missing output.
 
-### 3. Authorship is verifiable, so it cannot be appropriated
+### 3. Authorship is verifiable — at settlement grade, with a pinned keyring
 
 Model actors hold their own keys in `trust-config.json` — as delegates, so that
 what a delegate did stays distinguishable from what the principal did, which is
 the ordinary reason to give any delegate its own credential rather than the
-principal's. Adoption remains a threshold warrant signed by roster keys, never a
+principal's. The grade qualifier in the heading is load-bearing and was missing
+until a paper review objected: at base grade, key↔actor binding is a reported
+claim, not a verified fact — anyone with a keypair can file as any actor id and
+`verify` exits 0 with a WARN (`THREAT-MODEL.md` SA-2). "Cannot be appropriated"
+holds where this repository's own verification runs: settlement grade against
+the pinned trust configuration. Adoption remains a threshold warrant signed by roster keys, never a
 commit trailer, which is why `AGENTS.md` rule 2 exists and why the 2026-07-27
 incident is recorded in it.
 
