@@ -97,6 +97,13 @@ CHECKS = [
     # layer, each turning red for its own layer.
     ("wrt-004 reason-binding prototype (gap attack + per-layer negatives)",
      ["python3", "tests/fixtures/wrt004_reason_binding.py"], "sigma"),
+    # The WRT-003 rev-4 fingerprint rule, mechanized in Lean 4 core. The guard
+    # compiles Settlement.lean, pins every theorem's axiom cone to {propext},
+    # and denylists sorry/axiom/native_decide -- the property-tests in the
+    # fixture become proved theorems about the rule's algebra. UNRUN without a
+    # Lean toolchain, so a machine with no Lean does not report a failure.
+    ("wrt-003 settlement rule mechanized (Lean; axiom cone ⊆ propext)",
+     ["python3", "proofs/check_settlement.py"], "lean"),
     ("merkle anchoring (RFC 6962 structure + inclusion proofs)",
      ["python3", "tests/anchor.py"], None),
     ("mcp sealing proxy (stdio round-trip -> verifiable pack)",
@@ -195,6 +202,10 @@ NEEDS = {
               "Σ-GLYPH oracle not found  ->  set SIGMA_GLYPH=<sigma-glyph>/impl"),
     "sibling": (lambda: (ROOT.parent / "sigma-glyph").is_dir(),
                 "sibling repository sigma-glyph not beside this one"),
+    "lean": (lambda: shutil.which("lean") is not None,
+             "the Lean 4 toolchain is not on PATH  ->  install via elan "
+             "(https://leanprover.github.io); the mechanized proof is UNRUN "
+             "without it, never reported as passed"),
 }
 
 

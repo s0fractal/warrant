@@ -435,13 +435,20 @@ Adoption gate MUST include, in order of strength:
    Runs in `tools/check.py`.
 4. **The `cmd@v1` control:** no-new-evidence + flipped verdict/transcript
    stays inadmissible; adding new evidence re-admits via §7(a).
-5. **Lean mechanization of the settlement calculus later** — tunnels,
-   fingerprints (with §3.2 eligibility and §3.1 identity), admissibility as
-   functions; T1 and T2 as proved lemmas, following the sigma-glyph layering
-   discipline. Adoption does not wait for it, and it must model the *adopted*
-   rule, which is why this document comes first. rev 3's rule is far easier
-   to mechanize than (B) would have been: identity and eligibility are both
-   pure functions of a single node, with no read-set to model.
+5. **Lean mechanization of the fingerprint rule — DONE for the algebra layer**
+   (`proofs/Settlement.lean`, guarded by `proofs/check_settlement.py`, axiom
+   cone `{propext}`). T1 (purity) and T2 (eligibility) are now proved theorems
+   rather than property tests: `fp_ignores_claims` (expect-flip),
+   `fp_factors_through_result` (`I·T` / REF-padding), `dissonance_ineligible`
+   + `fp_none_of_dissonance` (ATP-starvation), `nested_dissonance_ineligible`
+   (the nested-DISSONANCE re-opener), and `atp_cannot_steer` (conditional on
+   Book I budget-stability, cited from sigma-glyph not re-derived). What
+   remains for a fuller mechanization: the tunnel / prior-DAG / admissibility
+   layer, and a proof that the running Python/Go code implements this rule —
+   the standing implementation-independence gap. The mechanization models the
+   *rev-4* rule, so it tracks the proposal rather than pre-empting the gate;
+   rev 3's identity choice made this feasible (both identity and eligibility
+   are pure functions of one result value, no read-set to model).
 
 ## 6. Mirror check (SYMMETRY)
 

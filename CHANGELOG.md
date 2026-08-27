@@ -54,6 +54,16 @@ flagship-paper review cycle (PR #30):
   turning red. Honest limits stated: it binds fact→evidence-item not
   fact→truth (SA-11 stands), proves nothing about policy merit (NG-4), and
   leaves subject-semantic binding open.
+- `proofs/Settlement.lean` — the WRT-003 rev-4 fingerprint rule mechanized in
+  Lean 4 core (no mathlib). T1 (purity) and T2 (eligibility) become proved
+  theorems: the expect-flip, `I·T`/REF-padding, ATP-starvation, and
+  nested-DISSONANCE families all fail *for all inputs*, not just the fixture's
+  concrete ones. Axiom cone `{propext}` — tighter than the sibling repo's
+  gold standard — enforced by `proofs/check_settlement.py`, which also
+  denylists sorry/axiom/native_decide and fails on a theorem proved but not
+  guarded. Run in `tools/check.py` (UNRUN without a Lean toolchain). The
+  evaluator's determinism is cited from `sigma-glyph/proofs/EvalMachine.lean`,
+  not re-proved; `proofs/README.md` states the layering.
 - `proposals/WRT-003-outcome-fingerprint-purity.md` — DRAFT repair for the
   reproduced §7 expect-flip (a settled question re-opens unboundedly via
   filer-chosen `expect`; confirmed in both implementations). Design only;
