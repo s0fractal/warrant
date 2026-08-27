@@ -30,8 +30,18 @@ right.
 flagship-paper review cycle (PR #30):
 
 - `papers/` — flagship draft *The Reason Runs Again* with a claims checker
-  that recounts the paper's numbers from the repository; review round 1
-  adjudicated in `reviews/2026-08-chatgpt-web-*`.
+  that recounts the paper's numbers from the repository; paper-review round 1
+  (chatgpt-web) and a full peer review (`reviews/2026-08-monday*`, 2026-08-28,
+  Major Revision) adjudicated. The Monday review added **NG-7** to
+  `THREAT-MODEL.md` (the justification-binding gap: a reason is not bound to
+  the policy/subject/evidence/decision it accompanies), a two-grade evidence
+  distinction (self-contained integrity/replay vs externally-witnessed
+  historicity, via SCITT/RFC 9943), related-work additions (Proof-Carrying
+  Authentication, OPA, in-toto SVR, SCITT — RFC and CCS citations verified),
+  a settlement reframing (experimental / mostly-negative), and precision fixes
+  ("safe by construction" → a semantic bound plus local fences;
+  `(term, atp, store)`; key identity ≠ actor identity; pass/fail ≠ true/false).
+  Stated NG totals in `SECURITY.md`/`llms.txt` follow (NG=7).
 - `proposals/WRT-003-outcome-fingerprint-purity.md` — DRAFT repair for the
   reproduced §7 expect-flip (a settled question re-opens unboundedly via
   filer-chosen `expect`; confirmed in both implementations). Design only;

@@ -95,6 +95,7 @@ VENDOR = {
     "codex": "OpenAI", "gptoss120b": "OpenAI", "chatgpt": "OpenAI",
     "annaglova": "OpenAI",  # GitHub account; ChatGPT-authored gate (manifest)
     "gpt56sol": "OpenAI",   # GPT-5.6 Sol via ChatGPT (manifest)
+    "monday": "OpenAI",     # "Monday" ChatGPT persona (manifest)
     "gemini": "Google", "gemini31pro": "Google", "antigravity": "Google",
     "deepseek": "DeepSeek",
     "kimi": "Moonshot",

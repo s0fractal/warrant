@@ -321,6 +321,27 @@ is out of scope rather than merely absent:
 - **NG-6. A finding that requires store write access to then claim the store is
   untrustworthy** — unless the point is that a *reader* cannot tell. That
   exception is the interesting half and is in scope.
+- **NG-7. Semantic binding of a reason to the policy, subject, evidence, or
+  decision it accompanies.** The core format pins each of those by hash into
+  one signed record and verifies that a `ski@v1` check re-executes, but it does
+  **not** require the check to *consume* `under`/`subject`/`evidence` or to
+  *entail* `body.decision`. A filer can attach a term equivalent to a constant
+  that reproduces its own declared result while no semantic thread connects the
+  pinned policy, the cited evidence, and the recorded decision; a verifier
+  confirms every cryptographic and computational fact and none of the binding.
+  This is the *justification-binding gap* named by the first whole-paper review
+  (`reviews/2026-08-monday.md`, 2026-08-28). It is a non-goal of the **core
+  format**, narrowed today only by a WPL authoring convention (pin the source
+  as evidence; recompile deterministically), not by a verifier-checkable
+  invariant. A normative reason-binding profile — committing the policy-source
+  hash, a fact manifest, the evidence hashes, and a result→decision mapping
+  into the computation's own input — is the proposed repair (a candidate
+  successor proposal, unwritten), and until it exists a "reason" is in part an
+  assertion by the filer. The reproducibility of a computation is not the
+  entailment of a decision, and this document does not let the word "reason"
+  blur the two. Related to but distinct from NG-4 (Warrant takes no position on
+  whether a decision was *correct*): NG-7 is that it takes no position on
+  whether the attached reason is a reason *for this decision* at all.
 
 ## Severity, and how to report
 

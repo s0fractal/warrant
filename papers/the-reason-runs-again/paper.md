@@ -29,11 +29,20 @@ domain-separated message so that a signing key cannot be replayed across
 protocols, and — the property we consider the actual contribution — whose
 justification can be a *deterministic, budget-bounded computation that any
 reader re-executes offline*, so the stated reason is checked rather than
-believed. Records form a DAG; on top of it the format defines settlement
-semantics with a mechanically checkable novelty rule for re-opening a settled
-question, key rotation and threshold governance derived from the DAG rather
-than from wall-clock time, and a closed-schema machine-readable verification
-report that fails closed.
+believed. We are precise, from the abstract onward, about the proposition a
+verified record establishes: **integrity** (these bytes hash to this
+identity), **authenticity** (this key signed them; bound to an actor only with
+a trust configuration), and **replay** (this computation re-executes to this
+result). It does **not** establish that the computation interprets the pinned
+policy, that its facts derive from the cited evidence, or that its result
+entails the decision — that semantic binding is an authoring convention today,
+not a format invariant, and closing it normatively is future work. Records
+form a DAG; on top of it the format defines key rotation and threshold
+governance derived from the DAG rather than from wall-clock time, a
+closed-schema machine-readable verification report that fails closed, and an
+*experimental* settlement layer whose current honest result is partly negative
+(§5.2): mechanically checkable *semantic* novelty for adversarial
+re-litigation is hard, and a repair is drafted but unadopted.
 
 The format is specified to a design rule that anything two independent
 implementations cannot agree on byte-exactly stays out of the document. Three
@@ -49,9 +58,9 @@ produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 87 documents spanning six model
+measured events from a review ledger of 89 documents spanning six model
 vendors: a census under this repository's own naming convention, and — a
-distinction a third-round reviewer forced us to make — not a claim of reviewer
+distinction its reviewers forced us to make — not a claim of reviewer
 independence, since every gate to date is LLM-authored and none is
 cross-paradigm. We state with equal precision what the
 format does not provide: key–actor binding is local configuration, not a
@@ -69,7 +78,11 @@ actions." The defence failed, but the evidentiary situation underneath it is
 the interesting part: neither party could produce a record establishing
 *which version of which policy* the system was operating under at the moment
 of the answer, because nothing in the system was built to make that question
-answerable. The operator's logs were the operator's logs.
+answerable. The operator's logs were the operator's logs. We flag at the
+outset a distinction we develop in Section 5.5: pinning *which policy a record
+claims governed a decision* is within a self-contained store's reach; proving
+which policy was in force *at a past instant* is not, and needs an external
+time witness. This paper is honest about which half each mechanism buys.
 
 That situation is the default. The observability stack that has grown around
 deployed language-model agents — transcript stores, tracing frameworks,
@@ -112,12 +125,14 @@ compatibility window.
 
 **Reasons can re-execute.** A record's justification may include a check: a
 deterministic combinator-calculus term evaluated under a single integer
-budget that bounds both the work performed and the peak memory materialized
-[@glova2026sigma]. A verifier re-runs the check against content-addressed
-blobs and compares result hashes. A false claim is detected, not litigated;
-and because the budget bounds memory as well as time, re-running a
-*stranger's* check is safe by construction — which cannot be said of
-re-running a stranger's shell script.
+budget that bounds both the work performed and the peak *materialized
+semantic state* [@glova2026sigma]. A verifier re-runs the check against
+content-addressed blobs and compares result hashes. A false claim is detected,
+not litigated; and because the budget meters work and materialized state,
+re-running a *stranger's* check is far safer than re-running a stranger's
+shell script. (We say "far safer", not "safe by construction": the bound is
+*semantic*, and a concrete binary must still enforce its own local resource
+fences — Section 5.1.)
 
 The format is deliberately narrow. It records decisions; it does not take
 them, order them across actors, transport blobs, keep secrets, or hold any
@@ -125,6 +140,42 @@ opinion about whether a decision was good. Section 8 states the residual
 trust assumptions as sharply as we can state them, because several are load-
 bearing and one — key–actor binding — was demonstrated to be exploitable
 for free by the format's own first external consumer.
+
+## 1.2 What a verified Warrant proves, and what it does not
+
+A first whole-paper review (Section 7) observed that the paragraphs above,
+and the title, can be read to promise more than the format delivers, so we
+state the proposition exactly and hold every later section to it. A verified
+record establishes three things and no more:
+
+- **Integrity** — these bytes hash to this identity; nothing pinned by hash
+  (the policy in `under`, the `subject`, the `evidence`, the `check`) has
+  changed relative to its identifier.
+- **Authenticity** — this signature verifies under this **key**; that the key
+  belongs to a named **actor** is a separate claim, true only relative to a
+  supplied trust configuration (Section 5.3, Section 8).
+- **Replay** — for a `ski@v1` reason, this deterministic computation, over
+  this store, re-executes to this result.
+
+It does **not** establish that the check *interprets* the policy in `under`,
+that the check's facts *derive from* the `evidence`, that the check *pertains
+to* the `subject`, or that its result *entails* the `decision`. A malicious
+filer can pin policy `P`, cite evidence `E`, record `accept`, and attach a
+term equivalent to a constant whose expected result it correctly reproduces;
+a verifier confirms every cryptographic and computational fact while no
+semantic thread connects `P`, `E`, and `accept`. We call this the
+**justification-binding gap**, and it is a first-class non-goal of the core
+format (NG-7, Section 8). Today the gap is narrowed only as an *authoring
+convention* — the policy-language toolchain pins its source as evidence and
+recompiles deterministically — not as a verifier-checkable invariant. Closing
+it normatively is a proposed reason-binding profile that commits the
+policy-source hash, a fact manifest, the evidence hashes, and an explicit
+result→decision mapping into the computation's own input; that profile is
+future work, drafted nowhere in this paper, and named here so the reader does
+not mistake replay for entailment. The honest one-line claim is therefore:
+**Warrant provides tamper-evident decision records with replayable
+justification computations; the semantic relevance of a justification to the
+governing policy and the decision is, for now, an external property.**
 
 ## 1.1 Provenance and standing
 
@@ -161,7 +212,45 @@ proof of evaluation. Certificate Transparency [@rfc6962] contributes the
 append-only Merkle discipline our anchoring tool reuses. DSSE earns a second
 mention in Section 4: its PAE encoding is *prior art for* the domain
 separation Warrant adopts — not, as an earlier draft of this paper implied,
-an example of the hazard.
+an example of the hazard. The in-toto attestation framework's Software
+Verification Result predicate — which identifies a verifier policy by digest
+and records verification properties — is the nearest attestation to a Warrant
+record, and narrows the "an attestation only says an artifact was built by a
+step" distance we would otherwise claim; the remaining difference is Warrant's
+replayable reason object and durable decision DAG, not the mere presence of a
+policy digest.
+
+**Proof-carrying authentication.** The clearest intellectual ancestor of the
+justification-binding gap (Section 1.2) is Proof-Carrying Authentication
+[@appel1999pca], where a requester supplies a proof that a verifier checks
+against an authorization logic. Warrant is not that: it emphasizes durable
+content-addressed decision records and a replayable *computation* rather than
+a proof object in higher-order logic, and — crucially — its core format does
+*not* check that the computation entails the decision, which is exactly the
+property PCA's proofs do carry. Stating the adjacency is what makes Warrant's
+current scope honest: a Warrant reason is a replayable attached computation,
+not yet a proof of authorization, and the proposed reason-binding profile
+(Section 1.2) is the step that would move it toward PCA's guarantee.
+
+**Policy engines.** Open Policy Agent decision logs [@opa] already record the
+policy query, inputs, result, a decision identifier, and the policy-bundle
+revision, and OPA bundles can be signed and content-checked. Warrant's
+distinct offerings are offline self-containment, immutable content identity,
+and a reason object a third party re-executes without the policy engine — but
+those are differences to *demonstrate on concrete requirements*, not to obtain
+by defining the comparison class as "logs". We name the comparison here and
+leave the requirement-by-requirement study as work the paper does not yet do.
+
+**Transparency and non-equivocation.** SCITT [@scitt2026] (RFC 9943) addresses
+signed statements, issuer identity, an externally maintained verifiable
+data structure, receipts, inclusion proofs, and non-equivocation — very nearly
+the properties Warrant discovers, in Section 8, that it needs *externally* to
+turn content integrity into historical evidence. Rather than treat SCITT as a
+competitor, we position Warrant as the decision/justification payload and its
+replay semantics, with SCITT (or an equivalent transparency service) supplying
+registration time and non-equivocation around those records (Section 5.4).
+That composition is the paper's honest answer to "which policy was in force at
+time T", which content addressing alone cannot give.
 
 **Provenance for science.** W3C PROV [@prov] and RO-Crate
 [@soilandreyes2022] give honest researchers a vocabulary for traceability. A
@@ -362,9 +451,22 @@ two registered runtimes have deliberately different trust models:
   re-runs the reduction against the store's blobs — the warrant blob store
   *is* the evaluation's content-addressed store — and compares node hashes.
   Determinism, termination, and the bound $\mathit{size} \le \mathit{atp}+1$
-  on peak materialized memory are mechanized in Lean 4 in the sibling
-  repository; the practical consequence is that re-running an untrusted
-  party's check is safe by construction, in both time and space.
+  on peak *materialized semantic state* are mechanized in Lean 4 in the
+  sibling repository. Two precisions a reviewer rightly required. First, that
+  bound is *semantic*: it bounds the work metered and the state materialized
+  by the model, not the resource behaviour of a concrete binary — the
+  from-scratch Rust evaluator needed an added fence after hostile input
+  overflowed its host stack, so an implementation must enforce its own local
+  resource limits and refusal behaviour separately, and this format requires
+  it (the over-budget refusal below is one such fence). Second, evaluation is
+  a function of $(\mathit{term}, \mathit{atp}, \mathit{store})$, not of
+  $(\mathit{term}, \mathit{atp})$ alone: a missing referenced blob yields a
+  distinct canonical *unresolved* result, which is why the store is part of
+  the identity of what was computed. With those two statements in hand,
+  re-running an untrusted party's `ski@v1` check is bounded in metered work
+  and materialized state by construction — which a stranger's shell script
+  never is — while remaining, like all software, subject to the host limits
+  the implementation must fence.
 
 A verifier must bound the work it will spend on strangers: a reason whose
 budget exceeds the local re-execution limit (default $10^8$ ATP) is
@@ -374,13 +476,31 @@ observationally equivalent; a suite that reports them identically is
 non-conformant, and Section 6 reports the day our own tooling violated
 exactly this rule.
 
-## 5.2 Settlement: foreclosure you can compute
+One distinction the format demands and a reader can easily miss: a check
+`verdict` of `pass`/`fail` means *the computation reproduced the expected
+result*, not *the policy permitted the action*. A policy expression may reduce
+to Boolean false while the enclosing check reports `pass`, because the check
+proved reproduction, not permission. `pass` is a statement about the
+computation; whether the computation's result *authorizes* the decision is the
+justification-binding gap of Section 1.2, which the core format does not
+close.
 
-An `accept` or `reject` over a question blob settles it. The format then
-has to answer the question every decision system eventually faces: when may
-a settled matter be re-opened? Warrant's answer is mechanical. A settling
-record's **tunnel** is itself plus the transitive closure of its `prior`
-edges, together with every blob those records cite. A blob **forecloses**
+## 5.2 Settlement: an experiment, and a mostly-negative result
+
+We present settlement as an **experimental extension, not a settled
+contribution** — and a reviewer was right to insist on the distinction,
+because the honest result here is largely *negative*. An `accept` or `reject`
+over a question blob settles it, and the format then faces the question every
+decision system eventually does: when may a settled matter be re-opened? A
+purely syntactic answer is easy to state and, we now know, easy to defeat; a
+*semantic* answer — "only a genuinely new consequence re-opens" — turns out to
+be hard to obtain from filer-controlled syntax at all. What this section
+actually establishes is that difficulty, demonstrated by attack, and the
+narrow rule that survives it. The mechanism, then the evidence that it is a
+mechanism and not yet a guarantee.
+
+A settling record's **tunnel** is itself plus the transitive closure of its
+`prior` edges, together with every blob those records cite. A blob **forecloses**
 only the claims some check in the tunnel actually evaluated over it — mere
 presence in an evidence list forecloses nothing, and an unresolvable blob
 forecloses nothing, because what cannot be read cannot have been reasoned
@@ -480,6 +600,37 @@ fails closed — is disclosed in the spec as an open defect rather than
 legislated away, because the design rule ("two implementations must agree
 on every verification outcome") does not carve out legacy modes.
 
+## 5.5 Two grades of evidence: integrity now, historicity only with a witness
+
+The motivating dispute — *which policy was in force when the bot answered?* —
+forces a distinction the earlier framing blurred, and a reviewer was right to
+make us name it as part of the system model rather than bury it in the limits.
+Content addressing proves *these bytes have not changed relative to this
+identifier*. It does **not** prove *these were the bytes that existed on date
+T*, nor *this is the complete history a party would have seen on date T*. A
+Warrant store establishes only its own internal DAG relationships; timestamps
+are attacker-writable, signature-creation time is unrepresented, a
+formerly-valid key can sign into an old DAG position after it is compromised,
+and deletion or withholding is not detected as a completeness failure
+(Section 8). So there are two grades of evidence, and only the first is
+self-contained:
+
+- **Self-contained integrity and replay** — provided by a Warrant store
+  alone: the records say what they say, the keys signed them, the `ski@v1`
+  reasons re-execute.
+- **Historical existence and non-equivocation** — provided *only* when records
+  or periodic checkpoints carry independently verifiable external receipts: a
+  transparency-log inclusion (SCITT [@scitt2026] is designed for exactly this),
+  an OpenTimestamps anchor, or an archive snapshot, made *before* the dispute.
+
+The composition is the honest answer to the Air Canada question. A bare
+Warrant store demonstrates a record that *would have been* useful if honestly
+created at the time; a Warrant store plus a pre-dispute transparency receipt
+demonstrates a record that can *prove it existed* at the time. Those are
+different evidentiary products, and only the second closes the motivating
+scenario — which is why anchoring belongs in the system model here, not only
+in the residuals.
+
 # 6. Conformance without trusting us
 
 The specification's design rule is stated on its fifth line: two
@@ -568,43 +719,42 @@ shown capable of turning red, for the stated reason, is not evidence.
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 87 documents — 67 inbound reviews and gates plus 20 written
-responses — under thirteen reviewer labels drawn from six model vendors
+holds 89 documents — 68 inbound reviews and gates plus 21 written
+responses — under fourteen reviewer labels drawn from six model vendors
 (OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
 specification audits, cryptographic attacks, release-surface gates,
-governance-proposal adversarial rounds, untyped publication-strategy
-surveys, a review of this paper itself, and three adversarial design-gate
-rounds on the repair that review prompted.
+governance-proposal adversarial rounds, three design-gate rounds on the
+settlement repair, and a full peer review of this paper.
 
-The honest classification, forced by the third of those gate rounds: a
-vendor label is not an independence class. All eighty-seven documents are
-LLM-authored; the three design-gate rounds run OpenAI, OpenAI, Alibaba, so
-even the one cross-vendor round shares training lineage and prompting
-context with the rounds it built on. **Zero gates have been authored by a
-human domain expert**, and none is cross-paradigm. The census measures
-activity and label-diversity; it does not measure the independence that
-would let one gate's silence vouch for another's. The same distinction the
-format draws between distinct signatures and distinct custody (Section 8)
-applies to its own review process, and this paper states it rather than
-letting the document count imply otherwise. A label census is exactly what this is: the labels
-are a filename convention this repository controls, the vendor mapping is a
-table in the claims checker where it can be disputed, and none of it
-measures reviewer *independence* — every reviewing family was operated by
-one person on one account, through one orchestration layer that chose what
-each model saw, in what order, and when each review stopped. Six vendors
-are not six epistemic custodians, for the same reason two co-located keys
-are not two custodies (Section 8).
+We are careful about what that number is and is not. It is a **label
+census**: the labels are a filename convention this repository controls, the
+vendor mapping is a table in the claims checker where it can be disputed, and
+none of it measures reviewer *independence*. Every reviewing family was
+operated by one person on one account, through one orchestration layer that
+chose what each model saw, in what order, and when each review stopped, so —
+in the format's own language — six vendors are not six epistemic custodians,
+for the same reason two co-located keys are not two custodies (Section 8).
+**Zero gates have been authored by a human domain expert; none is
+cross-paradigm.** The ledger therefore supports a claim of *sustained
+adversarial engineering that repeatedly found real defects*, and does **not**
+support a claim of *independent validation of the specification* — the
+clean-room implementation that would supply the latter has not happened, and
+we say so rather than let the document count imply otherwise.
 
-Two observations from that corpus shape how we read any single green
-result — the first correlational, and stated as such. In one
-governance-review sequence, a single family iterating produced eight
-consecutive amendments and no critical finding, and the first three-family
-round on the same artifact returned three rejections carrying six critical
-findings, nearly disjoint from one another. That is one episode, with
-confounders we did not control: the artifact moved between rounds, prompts
-differed, and the orchestrator chose the stopping points. We read it as a
-reason to buy reviewer diversity, not as a demonstration that diversity
-beats depth. Second, the audits repeatedly found
+Three observations from the corpus shape how we read any single green result.
+First, correlational and stated as such: in one governance-review sequence a
+single family iterating produced eight consecutive amendments and no critical
+finding, while the first three-family round on the same artifact returned six
+critical findings — one episode, with confounders (the artifact moved between
+rounds, prompts differed, the orchestrator chose the stopping points), read as
+a reason to buy diversity, not a proof that diversity beats depth. Second, and
+sharper because it points at *target* rather than vendor: three consecutive
+design-gate rounds attacked the settlement repair and got steadily narrower,
+each finding a padding one layer down; the *first review aimed at the whole
+paper* found a larger issue underneath all of them — that a re-executable
+reason is not, in the core format, bound to the policy or decision it
+accompanies (Section 1.2). Depth on one target is not breadth across targets.
+Third, the audits repeatedly found
 defects not in the artifact but in the *apparatus that vouches for it* —
 the vacuous suite, the fuzzer soundness gap, the miscalibrated negative
 controls of Section 6. The companion paper in the sibling repository
@@ -632,10 +782,30 @@ here because leaving any of them out would make Section 1's claim false.
 The repository's threat model states them as an attacker-capability matrix;
 we compress the load-bearing rows.
 
-**Key–actor binding is local configuration, not a protocol fact.** Anyone
+**A reason is not bound to the decision it accompanies (NG-7, the
+justification-binding gap).** This is the residual a whole-paper review put at
+the centre, and it belongs first. The core format pins the policy, subject,
+evidence, and check into one signed record, and verifies that the check
+re-executes — but it does not require the check to *consume* the policy, the
+subject, or the evidence, nor to *entail* the decision. A filer can attach a
+term equivalent to a constant that reproduces its own declared result, and a
+verifier confirms every fact while no semantic thread connects policy,
+evidence, and `accept` (Section 1.2). Today the gap is narrowed only by an
+authoring convention (the policy toolchain pins its source as evidence and
+recompiles deterministically), not by a verifier-checkable invariant. Closing
+it is a proposed reason-binding profile — commit the policy-source hash, a
+fact manifest, the evidence hashes, and a result→decision mapping into the
+computation's input — which is drafted nowhere in this paper and named as the
+recommended next normative step. Until then, **"reason" is in part a promise
+the filer makes**, and cryptography does not detect promises.
+
+**Key identity is not actor identity.** Anyone
 with a keypair can file a record claiming any actor id; at base grade the
 verifier reports the binding unverified and exits successfully with a
-warning. This is disclosed, and it was measured rather than theorized: the
+warning. A base Warrant establishes *this signature verifies under this public
+key*, never *this real-world or system actor made this decision*; actor
+identity emerges only relative to a supplied trust configuration, and we keep
+the two terms distinct throughout. This is disclosed, and it was measured rather than theorized: the
 format's first external consumer reproduced it on its own store — *"the
 protocol's central fact, forged for free"* — and built its own keyring and
 its own enforced signer gate rather than rely on ours. A format whose only
@@ -713,23 +883,28 @@ endorsement, and nothing in it should be cited as though it were.
 The gap this format addresses is narrow and, we think, real: between
 telemetry that records what an agent did on the operator's word, and a
 record of what was decided whose identity, governing policy, and — for one
-reason class — stated justification can be recomputed by a stranger from
-the bytes alone. The mechanisms are individually unglamorous: a hash over
-pinned canonical bytes, a 47-byte signed message that names its protocol, a
-check runtime whose budget bounds memory as well as work, a novelty rule a
-verifier can execute, negative conformance batteries, and a report schema
-in which nothing silently passes. What we would defend as the contribution
-is the discipline connecting them — anything two independent
-implementations cannot agree on byte-exactly stays out of the
-specification, an unexecuted check is never a passed check, and every
-residual trust assumption is written down where a reader will meet it —
-together with the measured record of what that discipline caught: in the
-implementations, in the specification, and, most often of all, in the
-apparatus that vouched for both.
+reason class — stated justification can be *re-executed* by a stranger from
+the bytes alone. We are precise about that verb, because it is the whole
+honesty of the paper: a verified Warrant proves integrity, authenticity, and
+replay (Section 1.2); it does not prove that the replayed computation is an
+interpretation of the policy or an entailment of the decision, and where an
+earlier draft let "reason" imply the latter, this one does not. The
+contribution is best named as **replayable decision-justification receipts**,
+not machine reasoning — and the discipline connecting the mechanisms: anything
+two independent implementations cannot agree on byte-exactly stays out of the
+specification, an unexecuted check is never a passed check, every residual is
+written where a reader meets it, and the settlement layer is presented as the
+experiment it is rather than the feature it is not. Around that core sit two
+compositions we now state plainly instead of understating: a transparency
+service (SCITT) for the historicity a self-contained store cannot supply, and
+a future reason-binding profile for the policy-to-decision entailment the core
+format leaves open.
 
-The format's next test is not one we can run on ourselves. It is an
-implementation by someone who has only the text — and the conformance pack
-is the standing invitation.
+The format's next test is not one we can run on ourselves, and it is now two
+tests, not one: an implementation by someone who has only the text — the
+conformance pack is the standing invitation — and a semantic review of the
+justification-binding gap and the settlement calculus by a human logician,
+which three rounds of model gates have told us they cannot substitute for.
 
 # Availability
 
