@@ -53,8 +53,8 @@ The things this project asks you to trust:
 
 Not because it does not matter, but because it is a **stated boundary of the
 threat model** rather than a defect. The boundary is defined in one place —
-`THREAT-MODEL.md` → "Security assumptions and non-goals" — as eleven scoped
-assumptions (`SA-1` … `SA-11`) and six explicit non-goals (`NG-1` … `NG-6`), each
+`THREAT-MODEL.md` → "Security assumptions and non-goals" — as twelve scoped
+assumptions (`SA-1` … `SA-12`) and six explicit non-goals (`NG-1` … `NG-6`), each
 with its reasoning. That document is the source of truth; this list is a pointer
 to the ones a reporter hits most often:
 

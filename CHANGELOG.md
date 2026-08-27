@@ -24,6 +24,28 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
+## Unreleased
+
+**No protocol-visible change.** Documents only, all downstream of the
+flagship-paper review cycle (PR #30):
+
+- `papers/` — flagship draft *The Reason Runs Again* with a claims checker
+  that recounts the paper's numbers from the repository; review round 1
+  adjudicated in `reviews/2026-08-chatgpt-web-*`.
+- `proposals/WRT-003-outcome-fingerprint-purity.md` — DRAFT repair for the
+  reproduced §7 expect-flip (a settled question re-opens unboundedly via
+  filer-chosen `expect`; confirmed in both implementations). Design only;
+  adoption will be a **[protocol]** SPEC document-version bump because
+  admissibility verdicts move.
+- `THREAT-MODEL.md` gains SA-12 (signature-creation time does not exist;
+  external checkpointing is part of the security argument); stated totals in
+  `SECURITY.md`/`llms.txt` follow.
+- SPEC §5 **Rationale** prose repaired: DSSE/TUF/CT/Git were named as
+  bare-digest signing contexts; DSSE and CT are domain separation done
+  right. Normative rule unchanged; the *because* under it was partly wrong.
+- `MODEL-ACTORS.md` §1/§3 tightened to stop claiming more than the threat
+  model grants.
+
 ## 0.9.0 — the published package disagreed with the published pack
 
 **BREAKING for records with implausible timestamps; no real record is affected.**

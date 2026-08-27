@@ -184,7 +184,7 @@ This section used to be "Where the honest gaps are" and carried its own copy of
 the list. The items have not changed and none has been softened; they now live in
 one place, in the form a standards reader expects:
 **[THREAT-MODEL.md](THREAT-MODEL.md) → "Security assumptions and non-goals"** —
-eleven scoped assumptions (`SA-1` … `SA-11`) and six explicit non-goals
+twelve scoped assumptions (`SA-1` … `SA-12`) and six explicit non-goals
 (`NG-1` … `NG-6`), each with its reasoning, alongside the attacker-capability
 matrix they bound.
 

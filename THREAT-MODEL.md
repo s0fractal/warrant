@@ -278,6 +278,29 @@ Also unchanged by the front end, and easy to mistake for a proof: a `fact` is an
 assertion by whoever compiled it. The check proves the rule's verdict *given*
 those facts, never the facts.
 
+#### SA-12. Warrant does not establish when a signature was created
+
+Key validity derives from DAG position, never from wall-clock `ts` (SPEC
+§5.1) — deliberately, because `ts` is attacker-writable. The consequence,
+named by an external paper review (2026-08-27,
+`reviews/2026-08-chatgpt-web-paper-flagship-review.md`): nothing establishes
+*when a signature was produced*. An attacker who compromises a formerly valid
+key — including one already rotated out — can sign **today** over a body that
+sits at a DAG position where that key was bound, and the envelope being
+appendable outside the hash (A3), a fresh co-signature on an old record is
+not detectable as fresh from the store alone. Revocation therefore gives no
+forward security for historical positions: it stops the key counting *from
+its revocation onward in the DAG*, not from the wall-clock moment of
+compromise.
+
+The mitigation is external and temporal where the format is internal and
+causal: a checkpoint of the store made **before** the compromise — an
+OpenTimestamps anchor, a transparency-log inclusion, an archive snapshot
+(`PRIOR-ART.md`) — bounds which signatures can have existed then. Those tools
+already run for this repository; this row records that they are part of the
+**security** argument, not merely the archival one, and that a deployment
+without them inherits this assumption in full.
+
 ### Explicit non-goals
 
 Properties Warrant deliberately does not provide. From SPEC §10 and

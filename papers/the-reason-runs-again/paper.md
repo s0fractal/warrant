@@ -416,9 +416,10 @@ Syntactic novelty remains filer-satisfiable under **both** runtimes;
 semantic novelty is a policy property, with no exception for the strong
 runtime. This is a limit of the format, not of the implementations — the
 settlement harness pins the `expect`-flip as *admissible*, because that is
-what the specification says — and the candidate repair, a fingerprint that
-is a pure function of the computation (runtime, term, result hash), is
-recorded in the review ledger rather than adopted here.
+what the specification says — and the repair, a fingerprint that is a pure
+function of the computation (runtime, term, result hash), is drafted as
+proposal WRT-003 with its own adversarial gate ahead of it, rather than
+adopted here.
 
 ## 5.3 Keys and jurisdictions as records in the same DAG
 
@@ -655,8 +656,8 @@ co-signature on an old record is not detectable as fresh from the store
 alone. The mitigation is external checkpointing — transparency-log
 anchoring, archive snapshots — made *before* the compromise; the review of
 this paper surfaced that the project's anchoring tooling is therefore part
-of its security argument, not merely its archival one, and the threat model
-owes this a row of its own.
+of its security argument, not merely its archival one — a row the threat
+model has since gained (SA-12).
 
 **The most novel layer is the least proven implementable.** Three-way
 parity is a base-grade claim; settlement-grade parity is two-way;
