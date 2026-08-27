@@ -93,6 +93,7 @@ claim(r"review ledger of (\d+) documents", len(docs), "review ledger (abstract)"
 #     visibly, rather than being asserted without a basis)
 VENDOR = {
     "codex": "OpenAI", "gptoss120b": "OpenAI", "chatgpt": "OpenAI",
+    "annaglova": "OpenAI",  # GitHub account; ChatGPT-authored gate (manifest)
     "gemini": "Google", "gemini31pro": "Google", "antigravity": "Google",
     "deepseek": "DeepSeek",
     "kimi": "Moonshot",

@@ -49,7 +49,7 @@ produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 81 documents spanning six model
+measured events from a review ledger of 83 documents spanning six model
 vendors: a census under this repository's own naming convention, not a claim
 of reviewer independence. We state with equal precision what the
 format does not provide: key–actor binding is local configuration, not a
@@ -416,10 +416,17 @@ Syntactic novelty remains filer-satisfiable under **both** runtimes;
 semantic novelty is a policy property, with no exception for the strong
 runtime. This is a limit of the format, not of the implementations — the
 settlement harness pins the `expect`-flip as *admissible*, because that is
-what the specification says — and the repair, a fingerprint that is a pure
-function of the computation (runtime, term, result hash), is drafted as
-proposal WRT-003 with its own adversarial gate ahead of it, rather than
-adopted here.
+what the specification says — and the repair, a fingerprint constrained to
+be a pure function of the computation the verifier performed, is drafted as
+proposal WRT-003 and sent through its own adversarial gate rather than
+adopted here. That gate has already earned its place: its first round found
+two further re-openers the first draft of the repair missed — a budget the
+filer starves until the honest computation exhausts, and a semantic no-op
+that wraps the settled term into a fresh identity — one of which the draft
+had certified as its *positive* novelty control. The repair is at its second
+revision; the point of recording this here is not that the repair is
+finished but that the same adversarial loop that found the defect is the one
+deciding when it is closed.
 
 ## 5.3 Keys and jurisdictions as records in the same DAG
 
@@ -550,12 +557,13 @@ shown capable of turning red, for the stated reason, is not evidence.
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 81 documents — 64 inbound reviews and gates plus 17 written
-responses — under eleven reviewer labels drawn from six model vendors
+holds 83 documents — 65 inbound reviews and gates plus 18 written
+responses — under twelve reviewer labels drawn from six model vendors
 (OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
 specification audits, cryptographic attacks, release-surface gates,
 governance-proposal adversarial rounds, untyped publication-strategy
-surveys, and, as of this revision, a review of this paper itself. A label census is exactly what this is: the labels
+surveys, a review of this paper itself, and an adversarial design gate on
+the repair that review prompted. A label census is exactly what this is: the labels
 are a filename convention this repository controls, the vendor mapping is a
 table in the claims checker where it can be disputed, and none of it
 measures reviewer *independence* — every reviewing family was operated by

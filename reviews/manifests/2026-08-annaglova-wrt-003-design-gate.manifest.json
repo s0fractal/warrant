@@ -1,0 +1,17 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "c93716b",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "manifest": "review-manifest@v0",
+ "notes": "Typed adversarial design gate against WRT-003 rev 1, posted as PR #30 review 5037405426. Verdict AMEND. Both counter-vectors (ATP starvation, I-wrapper) reproduced against both implementations -> tests/fixtures/wrt003_gate_countervectors.py. Label 'annaglova' is a GitHub account distinct from 'chatgpt-web'; vendor OpenAI.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": "unrecorded",
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-annaglova-wrt-003-design-gate.md",
+ "reviewer_model": "ChatGPT (posted under GitHub account 'annaglova'; exact model unrecorded)",
+ "reviewer_vendor": "OpenAI",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single GitHub PR review)",
+ "web_access": "unrecorded"
+}

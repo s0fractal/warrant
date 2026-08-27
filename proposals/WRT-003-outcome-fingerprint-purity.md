@@ -1,10 +1,37 @@
 # WRT-003: Outcome-fingerprint purity — the expect-flip repair
 
-**Status:** DRAFT rev 1 (2026-08-27) — **design only.** No SPEC edit, no code
+**Status:** DRAFT rev 2 (2026-08-27) — **design only.** No SPEC edit, no code
 change, no vector change is made by this document. Adoption requires an
 adversarial gate and, on adoption, a SPEC document-version bump (this is a
 consensus-behavior change: two verifiers at different revisions of §7 return
 different admissibility verdicts over the same store).
+
+**rev 2 (2026-08-27)** closes the first design gate
+(`reviews/2026-08-annaglova-wrt-003-design-gate.md`, verdict AMEND), which
+found two re-openers that survive rev 1 — both reproduced against both
+implementations (`tests/fixtures/wrt003_gate_countervectors.py`):
+
+- **ATP starvation (BLOCKER, accepted).** rev 1 excluded `atp` from the tuple
+  but let a resource-exhaustion outcome *be* a fingerprint — and §5 blessed
+  "same term under an exhausting budget" as its **positive** novelty case,
+  i.e. the acceptance criterion tested the attack. rev 2 adds a
+  **novelty-eligibility** predicate: only a canonical **normal-form** result
+  is novelty-eligible; every DISSONANCE / fault / unresolved outcome
+  demonstrates a fact about the *budget or the store*, not a consequence of
+  the evidence, and contributes no fingerprint (§3.2). Because Book I is
+  deterministic, once a term is not starved its normal form is a function of
+  the term alone, so no budget the filer picks steers an eligible outcome.
+- **Semantic-no-op wrapper (MAJOR, escalated).** `I T` re-runs to the same
+  result under a fresh term hash; raw-term identity admits it, and it is
+  *maximally* relevant, so relevance policy cannot catch it. rev 2 does not
+  silently keep raw-term identity: §3.3 lays out the identity choice as the
+  proposal's headline open question with a recommendation, because picking
+  computation identity unilaterally is exactly what the gate exists to
+  prevent.
+
+rev 1's core (drop `expect`/verdict; no `cmd@v1` fingerprint; symmetric
+tunnel; doc-version bump; registry constraint) survives the gate unchanged —
+the reviewer kept all of it.
 
 **Provenance.** The defect was predicted from §7's fingerprint definition by
 an external paper review
@@ -42,44 +69,122 @@ is a WRT and not a bug fix: the specification is the thing that is wrong.
 
 ## 2. The principle
 
-> **An outcome fingerprint MUST be a function of the computation the
-> verifier itself performed and the content-addressed inputs that
-> computation consumed — and of nothing else.** No field a filer writes and
-> the verifier does not recompute may enter the tuple.
+Two properties, not one — the gate showed that rev 1's single property was
+insufficient:
 
-Call this **fingerprint purity**. The current `ski@v1` tuple fails it in two
-members (`expect`, and `verdict`, which is derived from `expect`); the
-current `cmd@v1` tuple fails it in every member the verifier cannot check.
+> **P1 — Purity.** An outcome fingerprint MUST be a function of the
+> computation the verifier itself performed and the content-addressed inputs
+> that computation consumed — and of nothing else. No field a filer writes
+> and the verifier does not recompute may enter the tuple.
+>
+> **P2 — Novelty-eligibility.** Only an outcome that demonstrates a
+> *consequence of the evidence* may contribute a fingerprint. An outcome
+> that is a fact about the filer's chosen **budget** (resource exhaustion),
+> about a **missing blob** (unresolved reference), or about a **malformed
+> object** (invalid) is not novelty-eligible and contributes no fingerprint.
+
+Purity alone is not enough because "the verifier computed it" does not imply
+"the filer did not steer it": the filer steers *which* computation runs and
+*with what budget*, and a resource-exhaustion outcome is genuinely computed
+yet carries only the filer's budget choice. P2 is what rules that out. The
+current `ski@v1` tuple fails P1 in two members (`expect`, and the derived
+`verdict`) and fails P2 (exhaustion outcomes are admitted); the current
+`cmd@v1` tuple fails P1 in every member the verifier cannot check.
 
 ## 3. The repair
 
 ### 3.1 `ski@v1`
 
 ```
-fingerprint = (runtime="ski@v1", term, result_node_hash)
+fingerprint = (runtime="ski@v1", <computation identity>, result_node_hash)
+    — contributed ONLY when result_node_hash is a canonical normal form (§3.2)
 ```
 
-- `term` is the content-addressed computation; `result_node_hash` is what the
-  verifier's own re-execution produced. Both are outside the filer's reach.
+- `result_node_hash` is what the verifier's own re-execution produced; the
+  computation identity is discussed in §3.3 (rev 1 used the raw `term` hash;
+  the gate showed that is too weak, and the choice is now open).
 - `expect` and `verdict` are dropped. `verdict` is `result == expect`, so
-  keeping either keeps the flip.
-- `atp` is deliberately absent as a *member* but present in effect: a budget
-  change that changes the outcome changes `result_node_hash` (ATP-exhaustion
-  outcomes are DISSONANCE nodes with fixed hashes, SPEC §3.1), and a budget
-  change that does not change the outcome demonstrated nothing new.
+  keeping either keeps the expect-flip (rev 1's finding, unchanged).
+- `atp` is absent as a member **and** neutralized by §3.2: the only way a
+  filer-chosen budget changes an eligible outcome is by exhausting the run,
+  and an exhausted run is not eligible. Among non-exhausted runs of one term
+  the normal form is invariant (Book I determinism, `size ≤ atp+1`), so no
+  budget steers an eligible fingerprint.
 
-**The predicate-novelty question, answered.** The reviewer asked where "a
-genuinely new question about an old result" goes if `expect` leaves the
-tuple. Answer: into the computation. A predicate that is real computation is
-a new `term` (the predicate applied to its inputs), which re-runs to its own
-`result_node_hash` and fingerprints as new — legitimately, because the
-verifier ran it. A predicate expressed only as a different `expect` constant
-is not computation, demonstrates nothing, and is exactly what purity
-excludes. Novelty stays format; *which* new terms are relevant stays policy.
-This draws the "novelty is format; relevance is policy" boundary one notch
-more honestly than §7 currently does.
+### 3.2 Novelty-eligibility (rev 2; closes the ATP-starvation BLOCKER)
 
-### 3.2 `cmd@v1`
+Book I's canonical outcomes are: **normal form**, **DISSONANCE(ATP
+Exhausted)**, **DISSONANCE(Unresolved Reference)**, and the **INVALID**
+object (SPEC §3.1; `impl/sigma_glyph.py`). Of these, **only a normal-form
+result is novelty-eligible.** A non-normal-form outcome:
+
+- **Exhausted** — states "budget `atp` was insufficient for `term`", a fact
+  about the filer's budget choice, re-derivable for *any* terminating term by
+  lowering `atp`. Admitting it is the ATP-starvation re-opener.
+- **Unresolved** — states "a referenced blob is absent", a fact about store
+  completeness (a non-goal, NG-2), not a consequence of present evidence.
+- **Invalid** — states "an object is malformed", a fact about the blob, not
+  about the evidence.
+
+None of the three is a *demonstrable consequence of the evidence* in §7(b)'s
+sense, so none contributes a fingerprint, on either the tunnel side or the
+candidate side. A candidate whose every check re-runs to a non-eligible
+outcome cites nothing new and is inadmissible.
+
+**Predicate novelty, answered honestly.** A genuinely new question about the
+evidence is real computation — a term that reduces to a normal form the
+verifier can hash — and fingerprints as new because the verifier ran it. A
+"question" expressed only as a different `expect` constant, or as a smaller
+budget, is not computation and demonstrates nothing; P1 and P2 exclude them
+respectively. Novelty stays format; *which* eligible terms are relevant stays
+policy — the boundary §7 already names, now drawn where it belongs.
+
+### 3.3 Computation identity — the headline open question (MAJOR, escalated)
+
+rev 1's tuple used the raw `term` hash as computation identity. The gate's
+`I T -> R` counter-vector defeats it: `I T`, `I (I T)`, … each have a fresh
+term hash, re-run honestly to the same normal form `R`, and are all
+fingerprint-distinct — and *maximally relevant*, so no relevance policy can
+filter them without itself becoming a semantic-equivalence engine. Raw-term
+identity is therefore rejected. Three candidates remain; the proposal does
+**not** pick unilaterally, because computation identity is the load-bearing
+design decision and the gate is where it should be chosen. My analysis and
+recommendation:
+
+- **(A) result-only:** `(runtime, result_node_hash)`. Simplest, and it
+  directly matches §7(b)'s words — "a new demonstrable *consequence*" — since
+  the consequence *is* the result. Kills the wrapper attack completely.
+  **Cost:** over-foreclosure. Two genuinely independent derivations that
+  reach the same normal form collide, so a second, honestly-new argument that
+  happens to conclude the same value is blocked as "not new". For a closed
+  tautology (`(K S)K -> S`, consuming no evidence) this is arguably correct
+  — a math fact is not a consequence of *this question's* evidence at all —
+  but for a term that consumes evidence it is too strong.
+- **(B) consumed-evidence + result:** `(runtime, {evidence/REF blobs the
+  reduction actually forced}, result_node_hash)`. This is the honest reading
+  of "a new consequence *of the evidence*": identity is *what inputs produced
+  what result*, and the term is the filer's path, which drops out. `I T` and
+  `T` force the same evidence blobs and reach the same `R` → same identity →
+  not new. Two derivations from *different* already-present evidence reaching
+  the same result are correctly distinct. **Cost:** the evaluator must report
+  the set of REF blobs it forced — an instrumentation change to `eval_hash`
+  (it already resolves every REF through the CAS, so the set is observable;
+  it is not currently returned). This is my **recommended** direction: it is
+  the only candidate whose identity is *what §7(b) actually asks about*.
+- **(C) keep raw term, scope the guarantee down:** WRT-003 removes
+  unverified-field flips and budget starvation but explicitly does **not**
+  prevent semantic-no-op restatements, recorded as a new THREAT-MODEL row.
+  Honest and cheap; leaves a maximally-relevant re-opener in the format.
+  Acceptable only if (B)'s instrumentation is judged too costly for this
+  revision.
+
+The gate should decide between (B) and (C) — (A) is dominated by (B). If (B),
+the purity theorem's identity term is the consumed-evidence set and the
+property test must include the wrapper counter-vector on the *rejecting*
+side. If (C), the same counter-vector goes in on the *admissible* side with
+the residual documented, so the scope-down is deliberate and visible.
+
+### 3.4 `cmd@v1`
 
 **`cmd@v1` reasons contribute no outcome fingerprint.** At settlement grade,
 a `cmd@v1` reason can support §7(a) (new evidence) and nothing else; §7(b)
@@ -94,7 +199,7 @@ got here. This subsumes SA-1's open choice: of its two candidate repairs,
 this proposal takes "novelty requires re-execution", generalized to any
 future runtime via §5's registry rule.
 
-### 3.3 Tunnel side, symmetrically
+### 3.5 Tunnel side, symmetrically
 
 Tunnel fingerprints are computed by the same rule (they already are, in both
 implementations — one function serves both sides). Consequences:
@@ -117,10 +222,13 @@ implementations — one function serves both sides). Consequences:
   and never stored. No WarrantID, signature, blob, or vector hash changes.
   Nothing is re-signed. §8's five hashes are untouched.
 - **Admissibility verdicts move.** The expect-flip family: admissible →
-  inadmissible. Restatements under different `expect`/`atp`-with-same-result:
-  already inadmissible, remain so, now for a reason the tuple states
-  directly. `cmd@v1`-only re-litigations lacking new evidence: admissible
-  today (write a different word) → inadmissible.
+  inadmissible. The ATP-starvation family (same term, starved budget →
+  DISSONANCE): admissible today → inadmissible (§3.2). `cmd@v1`-only
+  re-litigations lacking new evidence: admissible today (write a different
+  word) → inadmissible. The semantic-no-op wrapper (`I T`): admissible today
+  → inadmissible **iff** identity (B) is adopted; still admissible (as a
+  documented residual) under (C) — the one verdict this proposal leaves to
+  the gate.
 - **Consensus versioning.** Verifiers at old-§7 and new-§7 disagree on
   `settle` verdicts by design; per the §5-line design rule this ships as a
   SPEC document-version bump with both reference implementations moving in
@@ -130,37 +238,56 @@ implementations — one function serves both sides). Consequences:
   to the settled subject. That bound stays where §7 already puts it — the
   active settlement policy — and this proposal does not touch it.
 
-## 5. Acceptance criterion — the invariant, stated to be checked
+## 5. Acceptance criteria — the invariants, stated to be checked
 
-**Theorem (fingerprint purity).** For a fixed store and a fixed check
-computation, the outcome fingerprint is invariant under every change of
-filer-chosen fields — `expect`, claimed `verdict`, and (for the tunnel side)
-the `because` packaging around the check.
+Two theorems now, matching the two properties of §2. The field taxonomy the
+gate asked for (MAJOR-3) is: **semantic** = the term / the computation
+identity of §3.3; **claim** = `expect`, claimed `verdict`, `transcript`,
+`because` packaging; **resource** = `atp`.
 
-- Current §7: **fails** (the reproduction is the counterexample).
-- §3.1 above: **holds by construction** — no filer-writable field appears in
-  the tuple.
+**T1 (Purity).** For a fixed store and fixed semantic inputs, the fingerprint
+is invariant under every mutation of a **claim** field. — Current §7: fails
+(the expect-flip is the counterexample). §3: holds by construction (no claim
+field is in the tuple).
 
-Adoption gate for this proposal MUST include, in order of strength:
+**T2 (Resource-neutrality / eligibility).** For a fixed store and fixed
+semantic inputs, mutating the **resource** field either leaves the fingerprint
+unchanged (non-exhausted → same normal form) or removes it (exhausted → not
+eligible); it never yields a *different* eligible fingerprint. — Current §7:
+fails (ATP starvation is the counterexample). §3.2: holds by construction.
 
-1. **The reproduction as negative control.** The expect-flip script (three
-   fresh-`expect` candidates against a settled ski question) flips from
-   3/3 admitted to 0/3 admitted in *both* implementations; removing the fix
-   restores 3/3. Wired into `tests/settlement.py` with the polarity of its
-   "new fingerprint" case corrected and a *new* positive case added (a
-   genuinely different term — e.g. the same term under a budget that
-   exhausts, whose DISSONANCE result hash differs) so that admissibility is
-   pinned from both sides and the rule cannot be "fixed" into rejecting
-   everything.
-2. **A property-based purity test now:** random `expect` mutations over
-   random settled stores; assert fingerprint equality. Runs in
-   `tools/check.py` like every other claim.
-3. **Lean mechanization of the settlement calculus later** — tunnels,
-   fingerprints, admissibility as functions; purity as a proved lemma —
-   following the sigma-glyph layering discipline. That is tracked as its own
-   work item; this proposal's adoption does not wait for it, and the
-   mechanization must model the *adopted* rule, which is why this document
-   comes first.
+Adoption gate MUST include, in order of strength:
+
+1. **Both reproductions as negative controls**, from
+   `tests/fixtures/wrt003_gate_countervectors.py`, wired into
+   `tests/settlement.py`:
+   - expect-flip: 3/3 admitted (current) → 0/3 (adopted); removing the fix
+     restores 3/3.
+   - ATP-starvation: 1/1 admitted (current) → 0/1 (adopted).
+   The existing `case_relitigation` "new fingerprint" case has its polarity
+   **corrected** — it is an expect-flip and today expects *admissible*; under
+   the adopted rule it MUST expect *inadmissible*.
+2. **A genuinely-new positive case** — and it must be a real one, because rev
+   1's proposed positive case *was the ATP-starvation attack* (a term under
+   an exhausting budget). The correct positive: a **different term reaching a
+   different normal form** over the tunnel's evidence — that MUST stay
+   admissible, so the rule is not "reject everything". (If identity choice
+   (B) is adopted, add a second positive: a different term reaching the same
+   result from *different* consumed evidence — admissible; and the wrapper
+   `I T` reaching the same result from the *same* evidence — inadmissible.)
+3. **A property-based test** over the field taxonomy: random claim-field and
+   resource-field mutations over random settled stores assert T1/T2; random
+   semantic-field mutations assert that *eligible* novelty is still reachable.
+   Runs in `tools/check.py`.
+4. **The `cmd@v1` control (MINOR-2):** no-new-evidence + flipped
+   verdict/transcript stays inadmissible; then add new evidence and confirm
+   §7(a) still admits — pinning the SA-1 resolution independently of the ski
+   repair.
+5. **Lean mechanization of the settlement calculus later** — tunnels,
+   fingerprints (with the §3.2 eligibility predicate and the §3.3 identity),
+   admissibility as functions; T1 and T2 as proved lemmas — following the
+   sigma-glyph layering discipline. Adoption does not wait for it, and it must
+   model the *adopted* rule, which is why this document comes first.
 
 ## 6. Mirror check (SYMMETRY)
 
@@ -175,19 +302,30 @@ must be added under the adopted rule, not the current one.
 
 ## 7. Open questions for the gate
 
-1. Should a `ski@v1` reason whose re-execution was *refused* (over-budget,
-   §3.1) contribute a fingerprint? Draft answer: no — purity requires the
-   verifier to have run it; an unverified reason demonstrates nothing, and
-   §6(7) already escalates it at settlement grade. The gate should try to
-   break this.
-2. Does dropping tunnel-side `cmd@v1` fingerprints re-open any *presently
+1. **Computation identity (B) vs (C)** — §3.3. The load-bearing decision.
+   Recommendation: (B), consumed-evidence + result, accepting the `eval_hash`
+   instrumentation cost, because it is the only identity that *is* what §7(b)
+   asks about. Fallback: (C), scope down and add a THREAT-MODEL residual row.
+   Second gate round should attack whichever is chosen.
+2. Is normal-form-only eligibility (§3.2) too strong — is there a legitimate
+   settlement whose *consequence* genuinely is a DISSONANCE? Draft answer:
+   no — a resource/unresolved/invalid outcome is a fact about budget, store
+   or blob, never about the evidence; a claim like "term T does not terminate
+   within budget B" is filer-steerable for any T and belongs to policy, not
+   format novelty. The gate should try to exhibit a counterexample.
+3. A `ski@v1` reason whose re-execution was *refused* (over local budget,
+   §3.1): no fingerprint (it is not even eligible under §3.2, and §6(7)
+   already escalates it at settlement grade). Distinct from a run that
+   executed and exhausted — that one *ran*, and is excluded by eligibility,
+   not by refusal.
+4. Does dropping tunnel-side `cmd@v1` fingerprints re-open any *presently
    settled* question in the wild? Draft answer: the only stores known to use
-   settlement are this repository's and sigma-glyph's, and neither settles
-   on `cmd@v1` reasons; a migration scan (grep stored reasons by runtime)
-   is a one-liner the gate should demand be run and recorded.
-3. Is `(runtime, term, result)` the right arity for future runtimes, or
-   should §13.1's registration template make the fingerprint tuple a
-   required, per-runtime declaration constrained by the purity rule? Draft
-   answer: the latter — purity becomes a registry-level MUST, so `ski@v2`
-   or a wasm runtime cannot re-introduce a filer field without failing
-   registration.
+   settlement are this repository's and sigma-glyph's, and neither settles on
+   `cmd@v1` reasons; a migration scan (grep stored reasons by runtime) is a
+   one-liner the gate should demand be run and recorded.
+5. §13.1 already requires each runtime registration to declare its
+   fingerprint tuple (MINOR-1, correct). The normative addition is therefore
+   the **purity + eligibility constraint** on that declaration, not the
+   requirement to declare one: a registration MUST show its tuple contains no
+   claim field and its eligibility predicate excludes resource/unresolved/
+   invalid outcomes, or it is refused.
