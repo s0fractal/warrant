@@ -88,3 +88,38 @@ perverse-map negative vectors). Keep #30 paper-only (fix terminology,
 numbering, claims checker, stale counts, PR description). Before deposit,
 require two external gates: a clean-room implementation from the SPEC and a
 human review of logic/authorization/governance.
+
+---
+
+## Round 2 (after 58ae36c) — two P1s the fix still left
+
+Codex re-reviewed the fix commit, independently confirmed `45 passed, 0 failed,
+0 unrun` locally, and found two defects still outside that green result:
+
+1. **The workflow linter is not a real CI gate.** GitHub CI has no PyYAML, and
+   `tools/check.py --allow-unrun` permits the skip, so the real run was
+   `26 passed, 0 failed, 19 unrun` with the parser among the unrun. Install
+   pinned PyYAML and run `tools/lint_workflows.py` as its own mandatory step;
+   add a malformed-YAML negative control.
+2. **WRT-004 never recomputes `sha256(profile_bytes) == profile_hash`.**
+   Resolving by hash trusts the store; a canonical profile stored under a lying
+   digest returned `BOUND`. Recompute the digest and add a swapped-profile
+   negative vector.
+
+## Round 2 decision (Codex, acting as delegated decider)
+
+Chose **option 1 — split #30**; do not merge the monolith. Work order:
+(1) agent-gate hotfix PR from `master` (YAML fix, pinned PyYAML, mandatory
+workflow lint, malformed-YAML control) — merge first; (2) WRT-003 PR as a
+clearly-labelled DRAFT research artifact; (3) WRT-004 PR only after the
+digest check and swapped-profile vector — declaration coherence, not
+authorization; (4) paper PR last. Convert #30 to Draft, keep as frozen
+history, close without merge once changes are moved. Branch protection after
+the hotfix (PR required, no force-push/delete, conformance checks required).
+**Do NOT make the agent gate blocking yet** (settlement/authorization rules
+§6–§7 are unadopted draft); do NOT make SonarCloud required until its
+`pull_request_target` finding is resolved. External clean-room implementation
+and human logic/governance review block the **deposit**, not the merge of
+honestly-labelled drafts. Codex did not change GitHub state: per
+`AGENTS.md` §5 (rule 5, in force), push/merge/admin need separate explicit
+human authorization.

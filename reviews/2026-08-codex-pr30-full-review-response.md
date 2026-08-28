@@ -68,3 +68,62 @@ The branch is now defensible on its technical merits; whether it merges as one
 PR or four is a governance choice, and the honest reading of this review is
 that the *deposit* — not the merge — is what should wait for the two external
 gates.
+
+---
+
+## Round 2 — the two follow-up P1s, fixed; the split, respected as an authorization boundary
+
+Both P1s confirmed by reproduction and fixed in the working branch
+(`9b1e258`):
+
+- **P1a (workflow lint not a real gate):** `ci.yml` now installs pinned
+  `PyYAML==6.0.2` and runs `tools/lint_workflows.py` as its **own mandatory
+  step**, not through `--allow-unrun`. The linter gained a malformed-YAML
+  negative control that asserts it rejects the exact unquoted `:all:` shape —
+  a linter that cannot be shown to catch its own defect is decoration.
+- **P1b (profile digest never recomputed):** a `resolve_verified()` helper now
+  recomputes `sha256(bytes) == hash` for **every** blob `check_binding` reads
+  (profile, check, policy_source, fact blobs); a canonical profile under a
+  lying digest now returns UNBOUND. The swapped-profile negative vector is in
+  the fixture (8/8). Content addressing is only content addressing if the
+  address is checked.
+
+**On executing the split — the authorization boundary, respected.** Codex, as
+the delegated decider, chose to split #30 *and* stated it did not change
+GitHub state, citing `AGENTS.md` rule 5 (in force): pushing, merging to
+`master`, rewriting shared history, and admin settings require explicit
+**human** authorization, and "where the policy is silent, the answer is no." A
+delegated model decider is not the human that rule names. So the maintainer
+model did the **work** — both P1 fixes landed and are verified — and stopped at
+the **GitHub-state boundary**: it did not create the split branches/PRs, merge
+anything, convert or close #30, or touch branch protection. Those are handed to
+the operator as a command-ready plan (below), because that is the one place
+this session cannot substitute its own judgment for an explicit human act.
+
+### Command-ready split (for the operator to run)
+
+1. **agent-gate hotfix PR** (merge first). From `master`:
+   the one-line `agent-gate.yml` fix (`--only-binary=:all:`), `tools/lint_workflows.py`,
+   the `ci.yml` pinned-PyYAML + mandatory-lint step, the `tools/check.py`
+   workflow-lint entry + `yaml` prereq, and the `SECURITY.md`/`llms.txt`
+   check-count bump (42→43). All of this exists, verified, in commits `58ae36c`
+   and `9b1e258` on `papers/the-reason-runs-again` and can be cherry-picked or
+   reconstructed onto a `fix/agent-gate` branch off `master`.
+2. **WRT-003 PR** (DRAFT): `proposals/WRT-003-*`, `proofs/Settlement.lean`,
+   `proofs/check_settlement.py`, `proofs/README.md`, `tests/fixtures/wrt003_*`,
+   the `tools/check.py` Lean entry, and the SA-12 deltas in
+   `SPEC.md`/`THREAT-MODEL.md`/`SECURITY.md`/`llms.txt`.
+3. **WRT-004 PR** (DRAFT, after the digest fix — which is `9b1e258`):
+   `proposals/WRT-004-*`, `tools/reason_binding_check.py`,
+   `tests/fixtures/wrt004_*`, the `tools/check.py` entry, and NG-7 in
+   `THREAT-MODEL.md`/`SECURITY.md`/`llms.txt`.
+4. **Paper PR** (last): `papers/**`.
+5. Convert #30 to Draft; keep it as frozen history; close without merge once
+   the above have landed.
+6. **Admin, human-only:** enable branch protection on `master` (PR required, no
+   force-push/delete, conformance checks required) *after* the hotfix. Do **not**
+   make the agent gate a blocking required check yet (its §6–§7 rules are
+   unadopted draft), and do **not** make SonarCloud required until its
+   `pull_request_target` finding is adjudicated. The external clean-room
+   implementation and the human logic/governance review block the **deposit**,
+   not the merge of honestly-labelled drafts.
