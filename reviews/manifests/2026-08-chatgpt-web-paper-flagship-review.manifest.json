@@ -1,0 +1,17 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "b098d0c",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "manifest": "review-manifest@v0",
+ "notes": "Prompt was informal per the operator; reviewer used live web sources (datatracker, EUR-Lex, DSSE/TUF/Git docs). Input was the PR #30 summary text, not a frozen packet — artifact_commit is inferred from what the summary described.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": "unrecorded",
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-chatgpt-web-paper-flagship-review.md",
+ "reviewer_model": "ChatGPT (web; exact model unrecorded)",
+ "reviewer_vendor": "OpenAI",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single response; operator relayed)",
+ "web_access": true
+}

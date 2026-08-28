@@ -24,6 +24,8 @@ present on a ref the reviewer was not looking at.
 | `GOV-001` | this repo, `master` | `proposals/GOV-001-settlement-at-scale.md` | `SPEC.md` |
 | `WRT-001` | this repo, `master` | `proposals/WRT-001-wave-v1-runtime.md` | `briefs/WRT-002-rev7-adversarial-gate.md` |
 | `WRT-002` | this repo, `master` | `proposals/wrt-002-model/model.py` | `briefs/WRT-002-rev7-adversarial-gate.md` |
+| `WRT-003` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | the design now filed as `proposals/WRT-005-outcome-fingerprint-purity.md` (historical name kept by its reviews) | `proposals/WRT-005-outcome-fingerprint-purity.md` |
+| `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 
 ## Refs that exist
 
