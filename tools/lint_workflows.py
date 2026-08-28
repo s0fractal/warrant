@@ -33,6 +33,19 @@ def main():
         print("LINT-WORKFLOWS: UNRUN — no workflow files found")
         sys.exit(3)
 
+    # Negative control (Codex round): the exact defect that motivated this
+    # check — an unquoted `--only-binary :all:` — MUST be caught. A linter that
+    # cannot be shown to reject the thing it exists to reject is decoration.
+    malformed = "jobs:\n  x:\n    steps:\n      - run: pip install :all: foo\n"
+    try:
+        yaml.safe_load(malformed)
+        print("LINT-WORKFLOWS: FAIL — the negative control (a malformed "
+              "workflow) PARSED; this linter cannot detect the defect it "
+              "exists for.", file=sys.stderr)
+        sys.exit(1)
+    except yaml.YAMLError:
+        pass  # good: the parser rejects the known-bad shape
+
     bad = []
     for f in files:
         try:

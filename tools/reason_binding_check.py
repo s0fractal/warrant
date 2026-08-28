@@ -45,6 +45,22 @@ def sha256_hex(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def resolve_verified(h, resolve):
+    """Resolve a blob by hash AND verify the bytes actually hash to `h`.
+
+    Content addressing is only content addressing if the address is checked: a
+    resolver can return canonical bytes stored under a lying key (Codex round,
+    2026-08-28 — the swapped-profile vector). Every blob this checker reads goes
+    through here, so a byte that does not match its claimed digest resolves to
+    None rather than being trusted."""
+    if not h:
+        return None
+    b = resolve(h)
+    if b is None:
+        return None
+    return b if sha256_hex(b) == h else None
+
+
 def fact_evidence_blob(name, ftype, value):
     """Canonical bytes committing one WPL fact as a named evidence item.
     JCS-canonical, integers-only — the same domain as every other trust blob."""
@@ -78,7 +94,7 @@ def check_binding(profile_hash, reason, body, resolve):
     # not cite in evidence, or whose bytes are not JCS-canonical, binds nothing
     # — it is post-hoc paper the filer waved, exactly the hole a base verifier
     # never sees. These are hard failures, not soft findings.
-    prof_bytes = resolve(profile_hash) if profile_hash else None
+    prof_bytes = resolve_verified(profile_hash, resolve)
     if prof_bytes is None:
         return False, ["reason-binding profile does not resolve — it is not a "
                        "committed blob"]
@@ -99,7 +115,7 @@ def check_binding(profile_hash, reason, body, resolve):
         return False, ["profile.check does not match the reason's check hash"]
 
     # Resolve the ski check blob the reason cites, to read its term/expect.
-    check_bytes = resolve(reason["check"])
+    check_bytes = resolve_verified(reason["check"], resolve)
     if check_bytes is None:
         return False, ["ski check blob does not resolve"]
     try:
@@ -109,7 +125,7 @@ def check_binding(profile_hash, reason, body, resolve):
 
     # Resolve the WPL policy source.
     src_hex = profile.get("policy_source")
-    src_bytes = resolve(src_hex) if src_hex else None
+    src_bytes = resolve_verified(src_hex, resolve)
     if src_bytes is None:
         return False, ["policy_source blob does not resolve"]
     if src_hex not in ev:
@@ -145,7 +161,7 @@ def check_binding(profile_hash, reason, body, resolve):
             findings.append(f"L2: fact '{name}' has no manifest entry")
             continue
         want = fact_evidence_blob(name, f.type, f.value)
-        got = resolve(h)
+        got = resolve_verified(h, resolve)
         if got is None:
             findings.append(f"L2: fact '{name}' evidence blob {h[:12]} "
                             "does not resolve")

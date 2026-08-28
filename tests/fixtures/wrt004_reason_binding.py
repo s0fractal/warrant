@@ -88,6 +88,14 @@ noncanon_body = {**body, "evidence": [noncanon, src_h, *manifest.values()]}
 case("L0 negative: profile bytes are not JCS-canonical", False,
      ph=noncanon, bod=noncanon_body, must_mention="canonical")
 
+# --- L0 (Codex round 2): canonical profile bytes stored under a LYING digest.
+#     Content addressing is only content addressing if the address is checked.
+FAKE = "deadbeef" * 8
+store[FAKE] = jcs(profile)                                       # right bytes, wrong key
+swapped_body = {**body, "evidence": [FAKE, src_h, *manifest.values()]}
+case("L0 negative: profile bytes do not hash to the claimed digest", False,
+     ph=FAKE, bod=swapped_body, must_mention="does not resolve")
+
 # --- The GAP ATTACK: a term that is just the expected result (a constant),
 #     reproducing expect while encoding nothing of the policy. Base grade is
 #     happy; Layer 1 must reject it.
