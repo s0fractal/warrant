@@ -1,0 +1,17 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "unrecorded",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "manifest": "review-manifest@v0",
+ "notes": "Untyped scouting survey, not a gate. Contains an invented expansion of ATP (see the joint response) - a fact a context_sha256 would have let us localize.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": "unrecorded",
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-qwen-publication-strategy-survey.md",
+ "reviewer_model": "Qwen (surface unrecorded)",
+ "reviewer_vendor": "Alibaba",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single report; operator relayed)",
+ "web_access": "unrecorded"
+}

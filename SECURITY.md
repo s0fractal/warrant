@@ -53,8 +53,8 @@ The things this project asks you to trust:
 
 Not because it does not matter, but because it is a **stated boundary of the
 threat model** rather than a defect. The boundary is defined in one place —
-`THREAT-MODEL.md` → "Security assumptions and non-goals" — as eleven scoped
-assumptions (`SA-1` … `SA-11`) and six explicit non-goals (`NG-1` … `NG-6`), each
+`THREAT-MODEL.md` → "Security assumptions and non-goals" — as twelve scoped
+assumptions (`SA-1` … `SA-12`) and seven explicit non-goals (`NG-1` … `NG-7`), each
 with its reasoning. That document is the source of truth; this list is a pointer
 to the ones a reporter hits most often:
 
@@ -107,7 +107,7 @@ process is built to consume.
 ## Verify anything first
 
 ```bash
-python3 tools/check.py     # 42 checks, one verdict; UNRUN is not a pass
+python3 tools/check.py     # 45 checks, one verdict; UNRUN is not a pass
 ```
 
 If a document and a command disagree, the command is right. Several reports

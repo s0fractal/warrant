@@ -24,6 +24,99 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
+## Unreleased
+
+**No protocol-visible change.** Documents and non-shipping tooling only, all
+downstream of the flagship-paper review cycle (PR #30):
+
+- **Codex whole-PR review** (`reviews/2026-08-codex-pr30-*`, 2026-08-28) — the
+  first review of PR hygiene and the CI/governance plane, found live defects
+  the suite did not: `agent-gate.yml` was unparseable YAML (unquoted
+  `--only-binary :all:`) so the governance workflow silently ran no job — fixed,
+  with a new `tools/lint_workflows.py` suite check so a workflow that stops
+  parsing fails here instead of invisibly on GitHub. WRT-004 → **rev 2**: the
+  prototype now hash-binds the profile (must resolve, be JCS-canonical, and be
+  cited in `body.evidence` — a new Layer 0) after a repro reported `BOUND` for
+  an uncommitted perverse profile; the guarantee is renamed *declaration
+  coherence*, not authorization. Paper fixes: §1.1/§1.2 reordered (TOC),
+  "full peer review" → "whole-paper adversarial model review", the Lean claim
+  scoped (unconditional four-family closure vs the conditional budget-steering
+  guarantee vs the abstract-rule-not-code caveat), stale "76-document" and
+  `tools/test-all.sh` references corrected, and a claims-checker false-success
+  path (`if m … else checked`) fixed.
+
+- `papers/` — flagship draft *The Reason Runs Again* with a claims checker
+  that recounts the paper's numbers from the repository; paper-review round 1
+  (chatgpt-web) and a full peer review (`reviews/2026-08-monday*`, 2026-08-28,
+  Major Revision) adjudicated. The Monday review added **NG-7** to
+  `THREAT-MODEL.md` (the justification-binding gap: a reason is not bound to
+  the policy/subject/evidence/decision it accompanies), a two-grade evidence
+  distinction (self-contained integrity/replay vs externally-witnessed
+  historicity, via SCITT/RFC 9943), related-work additions (Proof-Carrying
+  Authentication, OPA, in-toto SVR, SCITT — RFC and CCS citations verified),
+  a settlement reframing (experimental / mostly-negative), and precision fixes
+  ("safe by construction" → a semantic bound plus local fences;
+  `(term, atp, store)`; key identity ≠ actor identity; pass/fail ≠ true/false).
+  Stated NG totals in `SECURITY.md`/`llms.txt` follow (NG=7).
+- `proposals/WRT-004-reason-binding-profile.md` — DRAFT proposal closing NG-7
+  (the justification-binding gap Monday found). A `warrant.reason-binding@v0`
+  profile blob, cited in `evidence`, that a profile-aware verifier checks in
+  three layers: term↔policy (recompile the WPL source), facts↔evidence (each
+  baked-in fact committed as a named evidence blob), result↔decision (a
+  committed map). Design only; additive (no body-schema or base-verification
+  change). Ships with a running prototype (`tools/reason_binding_check.py`) and
+  a fixture (`tests/fixtures/wrt004_reason_binding.py`, wired into
+  `tools/check.py`) demonstrating the gap attack and one negative per layer
+  turning red. Honest limits stated: it binds fact→evidence-item not
+  fact→truth (SA-11 stands), proves nothing about policy merit (NG-4), and
+  leaves subject-semantic binding open.
+- `proofs/Settlement.lean` — the WRT-003 rev-4 fingerprint rule mechanized in
+  Lean 4 core (no mathlib). T1 (purity) and T2 (eligibility) become proved
+  theorems: the expect-flip, `I·T`/REF-padding, ATP-starvation, and
+  nested-DISSONANCE families all fail *for all inputs*, not just the fixture's
+  concrete ones. Axiom cone `{propext}` — tighter than the sibling repo's
+  gold standard — enforced by `proofs/check_settlement.py`, which also
+  denylists sorry/axiom/native_decide and fails on a theorem proved but not
+  guarded. Run in `tools/check.py` (UNRUN without a Lean toolchain). The
+  evaluator's determinism is cited from `sigma-glyph/proofs/EvalMachine.lean`,
+  not re-proved; `proofs/README.md` states the layering. The mechanization
+  reaches the **§7 admissibility** layer, not just the fingerprint algebra:
+  `restatement_inadmissible` proves a candidate with no new evidence and no new
+  eligible fingerprint cannot re-open a settled matter (every attack family is
+  an instance), and `novel_result_admissible` proves §7(b) is not empty. Eleven
+  theorems; cone `{propext}` for the algebra, `{propext, Quot.sound}` for
+  admissibility.
+- `proposals/WRT-003-outcome-fingerprint-purity.md` — DRAFT repair for the
+  reproduced §7 expect-flip (a settled question re-opens unboundedly via
+  filer-chosen `expect`; confirmed in both implementations). Design only;
+  adoption will be a **[protocol]** SPEC document-version bump because
+  admissibility verdicts move. **rev 2** closed the first design gate
+  (annaglova, AMEND): added novelty-eligibility (closes ATP-starvation) and
+  escalated computation identity (the `I T` wrapper). **rev 3** closes the
+  second gate (`reviews/2026-08-gpt56sol-wrt-003-rev2-design-gate.md`, AMEND):
+  rejects rev 2's recommended identity (B) (REF-padding re-opener), adopts
+  result-only identity `(runtime, result_node_hash)`, and settles eligibility
+  as a node-class rule. **rev 4** closes the third gate — first from a
+  different vendor (`reviews/2026-08-qwen-wrt-003-rev3-design-gate.md`, Qwen /
+  Alibaba, AMEND): eligibility becomes "no DISSONANCE node **anywhere** in the
+  normal form" (root-only left a nested-DISSONANCE re-opener, reproduced);
+  adds an evaluator-determinism precondition + registry gate (§3.6); states
+  SA-1 is closed by scope reduction, a transition section (retroactive,
+  strictly-stronger foreclosure), and the honest tradeoff (false-negative
+  novelty is intended). Declined one over-strong objection ("§7(b) empty")
+  with a positive control. Five counter-vectors + a positive §7(b) control in
+  `tests/fixtures/wrt003_gate_countervectors.py`. The checker no longer prints
+  "all verified" (Qodo/Qwen finding); the census is now classified by
+  independence class (zero human-expert gates).
+- `THREAT-MODEL.md` gains SA-12 (signature-creation time does not exist;
+  external checkpointing is part of the security argument); stated totals in
+  `SECURITY.md`/`llms.txt` follow.
+- SPEC §5 **Rationale** prose repaired: DSSE/TUF/CT/Git were named as
+  bare-digest signing contexts; DSSE and CT are domain separation done
+  right. Normative rule unchanged; the *because* under it was partly wrong.
+- `MODEL-ACTORS.md` §1/§3 tightened to stop claiming more than the threat
+  model grants.
+
 ## 0.9.0 — the published package disagreed with the published pack
 
 **BREAKING for records with implausible timestamps; no real record is affected.**

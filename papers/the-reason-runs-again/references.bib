@@ -1,0 +1,230 @@
+% references.bib — Warrant flagship paper
+% Entries whose only stable identifier is a URL are typed @misc and carry an
+% access note. Post-2025 entries record what the repository's prior-art file
+% records about them; verify before any venue submission.
+
+% ------------------------------------------------------------- RFCs / standards
+
+@misc{rfc8785,
+  author = {Rundgren, Anders and Jordan, Bret and Erdtman, Samuel},
+  title  = {{JSON} Canonicalization Scheme ({JCS})},
+  howpublished = {RFC 8785, IETF},
+  year   = {2020},
+  doi    = {10.17487/RFC8785}
+}
+
+@misc{rfc7493,
+  author = {Bray, Tim},
+  title  = {The {I-JSON} Message Format},
+  howpublished = {RFC 7493, IETF},
+  year   = {2015},
+  doi    = {10.17487/RFC7493}
+}
+
+@misc{rfc8032,
+  author = {Josefsson, Simon and Liusvaara, Ilari},
+  title  = {Edwards-Curve Digital Signature Algorithm ({EdDSA})},
+  howpublished = {RFC 8032, IETF},
+  year   = {2017},
+  doi    = {10.17487/RFC8032}
+}
+
+@misc{rfc6962,
+  author = {Laurie, Ben and Langley, Adam and Kasper, Emilia},
+  title  = {Certificate Transparency},
+  howpublished = {RFC 6962, IETF},
+  year   = {2013},
+  doi    = {10.17487/RFC6962}
+}
+
+@misc{euaiact,
+  author = {{European Parliament and Council}},
+  title  = {Regulation ({EU}) 2024/1689 laying down harmonised rules on
+            artificial intelligence ({AI} Act)},
+  howpublished = {Official Journal of the European Union, L series},
+  year   = {2024},
+  note   = {Article 12: record-keeping}
+}
+
+@misc{prov,
+  author = {Moreau, Luc and Missier, Paolo},
+  title  = {{PROV-DM}: The {PROV} Data Model},
+  howpublished = {W3C Recommendation},
+  year   = {2013},
+  url    = {https://www.w3.org/TR/prov-dm/}
+}
+
+% ---------------------------------------------------------------- supply chain
+
+@inproceedings{torresarias2019,
+  author    = {Torres-Arias, Santiago and Afzali, Hammad and Kuppusamy,
+               Trishank Karthik and Curtmola, Reza and Cappos, Justin},
+  title     = {in-toto: Providing farm-to-table guarantees for bits and bytes},
+  booktitle = {28th USENIX Security Symposium},
+  pages     = {1393--1410},
+  year      = {2019}
+}
+
+@inproceedings{samuel2010,
+  author    = {Samuel, Justin and Mathewson, Nick and Cappos, Justin and
+               Dingledine, Roger},
+  title     = {Survivable key compromise in software update systems},
+  booktitle = {Proceedings of the 17th ACM Conference on Computer and
+               Communications Security (CCS)},
+  pages     = {61--72},
+  year      = {2010},
+  doi       = {10.1145/1866307.1866315}
+}
+
+@misc{slsa,
+  author = {{The SLSA community / OpenSSF}},
+  title  = {{SLSA}: Supply-chain Levels for Software Artifacts},
+  howpublished = {Specification},
+  url    = {https://slsa.dev},
+  note   = {Accessed 2026-08-27}
+}
+
+@misc{dsse,
+  author = {{The DSSE authors}},
+  title  = {{DSSE}: Dead Simple Signing Envelope},
+  howpublished = {Specification},
+  url    = {https://github.com/secure-systems-lab/dsse},
+  note   = {Accessed 2026-08-27}
+}
+
+@misc{sigstore,
+  author = {{The Sigstore community / OpenSSF}},
+  title  = {Sigstore: Rekor transparency log and Fulcio {CA}},
+  url    = {https://www.sigstore.dev},
+  note   = {Accessed 2026-08-27}
+}
+
+@misc{opentelemetry,
+  author = {{The OpenTelemetry authors / CNCF}},
+  title  = {OpenTelemetry},
+  url    = {https://opentelemetry.io},
+  note   = {Accessed 2026-08-27}
+}
+
+% ---------------------------------------------------------------- cryptography
+
+@inproceedings{chalkias2020,
+  author    = {Chalkias, Konstantinos and Garillot, Fran\c{c}ois and
+               Nikolaenko, Valeria},
+  title     = {Taming the many {EdDSAs}},
+  booktitle = {Security Standardisation Research (SSR)},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {12529},
+  pages     = {67--90},
+  publisher = {Springer},
+  year      = {2020},
+  doi       = {10.1007/978-3-030-64357-7_4}
+}
+
+% ------------------------------------------------------- authorization / policy
+
+@inproceedings{appel1999pca,
+  author    = {Appel, Andrew W. and Felten, Edward W.},
+  title     = {Proof-Carrying Authentication},
+  booktitle = {Proceedings of the 6th ACM Conference on Computer and
+               Communications Security (CCS)},
+  pages     = {52--62},
+  year      = {1999},
+  doi       = {10.1145/319709.319718}
+}
+
+@misc{opa,
+  author = {{The Open Policy Agent authors / CNCF}},
+  title  = {Open Policy Agent: Decision Logs},
+  url    = {https://www.openpolicyagent.org/docs/latest/management-decision-logs/},
+  note   = {Accessed 2026-08-28}
+}
+
+@misc{scitt2026,
+  author = {Birkholz, Henk and Delignat-Lavaud, Antoine and Fournet, C{\'e}dric
+            and Deshpande, Yogesh and Lasker, Steve},
+  title  = {An Architecture for Trustworthy and Transparent Digital Supply
+            Chains},
+  howpublished = {RFC 9943, IETF},
+  year   = {2026},
+  doi    = {10.17487/RFC9943},
+  note   = {SCITT: Supply Chain Integrity, Transparency and Trust. Standards
+            Track; title/status verified against the datatracker 2026-08-28}
+}
+
+% ------------------------------------------------------- agents and provenance
+
+@misc{vac2026,
+  author = {Birkholz, Henk and others},
+  title  = {Verifiable Agent Conversation Records},
+  howpublished = {Internet-Draft draft-birkholz-verifiable-agent-conversations-00,
+                  IETF},
+  year   = {2026},
+  note   = {Individual submission, work in progress; -00 of 2026-02-25 expires
+            2026-08-29 (title and status re-verified against the datatracker
+            2026-08-27 — re-verify before any venue submission). A nine-finding
+            implementation review is in the Warrant repository,
+            reviews-outbound/}
+}
+
+@misc{pham2026,
+  author = {Pham, T. and Hy, T.},
+  title  = {Evaluating Agentic Bioinformatics through
+            Function--Evidence--Validation},
+  howpublished = {arXiv:2607.27556},
+  year   = {2026},
+  note   = {Read in full; discussed in the Warrant repository's PRIOR-ART.md}
+}
+
+@article{soilandreyes2022,
+  author  = {Soiland-Reyes, Stian and Sefton, Peter and Crosas, Merc\`e and
+             others},
+  title   = {Packaging research artefacts with {RO-Crate}},
+  journal = {Data Science},
+  volume  = {5},
+  number  = {2},
+  pages   = {97--138},
+  year    = {2022},
+  doi     = {10.3233/DS-210053}
+}
+
+% -------------------------------------------------------------- legal
+
+@misc{moffatt2024,
+  author = {{Civil Resolution Tribunal of British Columbia}},
+  title  = {Moffatt v. Air Canada},
+  howpublished = {2024 BCCRT 149},
+  year   = {2024}
+}
+
+% -------------------------------------------------------------- this stack
+
+@misc{glova2026sigma,
+  author = {Glova, Serhii},
+  title  = {One Integer for Work and Memory: A Mechanized, Content-Addressed
+            Combinator Machine, and the Engineering of Trustworthy Proof
+            Artifacts},
+  howpublished = {Zenodo},
+  year   = {2026},
+  doi    = {10.5281/zenodo.22069651}
+}
+
+@misc{glova2026guard,
+  author = {Glova, Serhii},
+  title  = {Twenty-One Ways Past a Proof Guard: The {CI} Apparatus Around a
+            Theorem Prover Is the Attack Surface},
+  howpublished = {sigma-glyph repository, papers/},
+  year   = {2026},
+  url    = {https://github.com/s0fractal/sigma-glyph},
+  note   = {Not deposited at a DOI at the time of writing}
+}
+
+@misc{warrant2026,
+  author = {Glova, Serhii},
+  title  = {Warrant: signed, hash-addressed decision records for {AI} agents},
+  howpublished = {Repository},
+  year   = {2026},
+  url    = {https://github.com/s0fractal/warrant},
+  note   = {SPEC.md, THREAT-MODEL.md, MODEL-ACTORS.md; Software Heritage
+            snapshot swh:1:snp:c7ba55837844b5ed7259780c63e7b332cf6d1089}
+}

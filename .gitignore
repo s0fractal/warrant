@@ -22,3 +22,6 @@ scratchpad/
 .warrant/store/
 gate-report.md
 gate-store.zip
+
+# Draft paper PDFs are build outputs until a paper is deposited (papers/README.md).
+papers/*/paper.pdf

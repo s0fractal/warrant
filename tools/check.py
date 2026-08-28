@@ -30,6 +30,7 @@ USAGE
     python3 tools/check.py --list          # what would run, and what it needs
 """
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -45,6 +46,13 @@ RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 # (name, argv, needs) -- `needs` is checked BEFORE running so a missing
 # prerequisite is reported as UNRUN rather than as a confusing failure.
 CHECKS = [
+    # The governance workflow was unparseable YAML for an unknown span (Codex
+    # review): every run failed with no job and the gate did nothing. A control
+    # plane that cannot be parsed is the purest control-that-does-not-control,
+    # so a workflow that stops parsing now fails here instead of failing
+    # invisibly on GitHub.
+    ("workflows parse (the governance gate cannot silently break)",
+     ["python3", "tools/lint_workflows.py"], "yaml"),
     ("map: every cited document is located",
      ["python3", "tools/repo_map.py", "--check-map"], None),
     # repo_map checks that a cited document exists; this checks that a document
@@ -90,6 +98,20 @@ CHECKS = [
     # that cannot go red is decoration.
     ("wpl policy language (differential vs the oracle, docs executed)",
      ["python3", "tests/policy_lang.py"], "sigma"),
+    # WRT-004 is a DRAFT proposal, not a shipped surface -- but its central
+    # claim (the justification-binding gap is checkable) is a prose claim, and
+    # this repository does not let a prose claim stand without a vector that can
+    # go red. The fixture files the gap attack and one negative per binding
+    # layer, each turning red for its own layer.
+    ("wrt-004 reason-binding prototype (gap attack + per-layer negatives)",
+     ["python3", "tests/fixtures/wrt004_reason_binding.py"], "sigma"),
+    # The WRT-003 rev-4 fingerprint rule, mechanized in Lean 4 core. The guard
+    # compiles Settlement.lean, pins every theorem's axiom cone to {propext},
+    # and denylists sorry/axiom/native_decide -- the property-tests in the
+    # fixture become proved theorems about the rule's algebra. UNRUN without a
+    # Lean toolchain, so a machine with no Lean does not report a failure.
+    ("wrt-003 settlement + admissibility mechanized (Lean; sound axiom cone)",
+     ["python3", "proofs/check_settlement.py"], "lean"),
     ("merkle anchoring (RFC 6962 structure + inclusion proofs)",
      ["python3", "tests/anchor.py"], None),
     ("mcp sealing proxy (stdio round-trip -> verifiable pack)",
@@ -188,6 +210,12 @@ NEEDS = {
               "Σ-GLYPH oracle not found  ->  set SIGMA_GLYPH=<sigma-glyph>/impl"),
     "sibling": (lambda: (ROOT.parent / "sigma-glyph").is_dir(),
                 "sibling repository sigma-glyph not beside this one"),
+    "yaml": (lambda: importlib.util.find_spec("yaml") is not None,
+             "PyYAML not installed  ->  pip install pyyaml"),
+    "lean": (lambda: shutil.which("lean") is not None,
+             "the Lean 4 toolchain is not on PATH  ->  install via elan "
+             "(https://leanprover.github.io); the mechanized proof is UNRUN "
+             "without it, never reported as passed"),
 }
 
 

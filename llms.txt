@@ -40,7 +40,7 @@ no account:
 python3 tools/check.py                  # everything, one verdict
 ```
 
-That runs all 42 checks the repository's claims rest on and prints one line. A
+That runs all 45 checks the repository's claims rest on and prints one line. A
 check that could not run — Go not built, oracle missing — is reported UNRUN with
 its own exit status, never as passed: a harness printing ALL PASS while silently
 skipping the Go suites would be claiming two implementations agreed on the
@@ -184,8 +184,8 @@ This section used to be "Where the honest gaps are" and carried its own copy of
 the list. The items have not changed and none has been softened; they now live in
 one place, in the form a standards reader expects:
 **[THREAT-MODEL.md](THREAT-MODEL.md) → "Security assumptions and non-goals"** —
-eleven scoped assumptions (`SA-1` … `SA-11`) and six explicit non-goals
-(`NG-1` … `NG-6`), each with its reasoning, alongside the attacker-capability
+twelve scoped assumptions (`SA-1` … `SA-12`) and seven explicit non-goals
+(`NG-1` … `NG-7`), each with its reasoning, alongside the attacker-capability
 matrix they bound.
 
 Not duplicated here on purpose. This file has been caught overstating four times;
