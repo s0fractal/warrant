@@ -3,12 +3,14 @@
 Write-ups about this repository, following the discipline of
 `sigma-glyph/papers/`: source in `paper.md`, bibliography in
 `references.bib`, a recorded `build.sh`, and a claims checker that recounts
-every countable number in the paper from the repository itself — run before
-every build, red on any drift.
+the countable numbers it lists from the repository itself — run before every
+build, red on any drift, and printing the claim classes it does *not* check
+(harness-run measurements, external citation status) rather than implying it
+covers everything.
 
 | | words | subject |
 |---|---|---|
-| [`the-reason-runs-again/`](the-reason-runs-again/) | 8 856 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
+| [`the-reason-runs-again/`](the-reason-runs-again/) | 9 013 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
 
 None is deposited yet. A DOI, when one exists, buys a permanent address and a
 frozen artifact — no venue, no peer review, no endorsement — and each
@@ -17,10 +19,10 @@ paper's README will say which commit it froze.
 Candidate companions, mined from material already in this repository (each
 listed here so the flagship paper does not silently absorb their scope):
 
-- **the audit experience report** — the 76-document review ledger, the
-  taxonomy of what six vendors' models found and missed, negative-control
-  calibration; companion to sigma-glyph's *Twenty-One Ways Past a Proof
-  Guard*.
+- **the audit experience report** — the full review ledger (89 documents at
+  this writing, and growing), the taxonomy of what six vendors' models found
+  and missed, negative-control calibration; companion to sigma-glyph's
+  *Twenty-One Ways Past a Proof Guard*.
 - **settlement semantics** — tunnels, foreclosure, novelty fingerprints,
   multi-root adoption (`SPEC.md` §7/§9, `proposals/GOV-001`).
 - **the expiring delegate** — key state, thresholds, and model actors with

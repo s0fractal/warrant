@@ -119,8 +119,9 @@ else:
     checked.append(f"reviewer labels: {len(labels)}")
 vendors = {VENDOR[l] for l in labels}
 m = re.search(r"(\w+) model\s+vendors", PAPER)
-if m and m.group(1) != words.get(len(vendors)):
-    failures.append(f"vendors: paper says {m.group(1)!r}, "
+if not m or m.group(1) != words.get(len(vendors)):
+    failures.append(f"vendors: paper says "
+                    f"{m.group(1) if m else '<missing>'!r}, "
                     f"measured {len(vendors)} ({sorted(vendors)})")
 else:
     checked.append(f"model vendors: {len(vendors)}")

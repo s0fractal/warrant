@@ -60,7 +60,7 @@ produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 89 documents spanning six model
+measured events from a review ledger of 91 documents spanning six model
 vendors: a census under this repository's own naming convention, and — a
 distinction its reviewers forced us to make — not a claim of reviewer
 independence, since every gate to date is LLM-authored and none is
@@ -143,11 +143,23 @@ trust assumptions as sharply as we can state them, because several are load-
 bearing and one — key–actor binding — was demonstrated to be exploitable
 for free by the format's own first external consumer.
 
+## 1.1 Provenance and standing
+
+This paper was written by a language model working as maintainer of the
+repository it describes, for a project whose explicit methodology is that
+model actors do the engineering and humans hold the keys and the mandate
+[@warrant2026]. Every number in it is measured from the repository at a named
+commit, and a checker script deposited alongside the paper recomputes the
+countable claims. What no checker supplies is independence: the format has
+been adversarially reviewed (Section 7) but never implemented by a party who
+had not read our code, and this paper has had no human peer review. Section 8
+returns to what that limits.
+
 ## 1.2 What a verified Warrant proves, and what it does not
 
-A first whole-paper review (Section 7) observed that the paragraphs above,
-and the title, can be read to promise more than the format delivers, so we
-state the proposition exactly and hold every later section to it. A verified
+A whole-paper adversarial review (Section 7) observed that the paragraphs
+above, and the title, can be read to promise more than the format delivers, so
+we state the proposition exactly and hold every later section to it. A verified
 record establishes three things and no more:
 
 - **Integrity** — these bytes hash to this identity; nothing pinned by hash
@@ -175,22 +187,15 @@ hash, a fact manifest, the evidence hashes, and an explicit result→decision
 mapping alongside the check; it is drafted as proposal WRT-004 with a working
 prototype that reports a reason *bound* or *unbound* and whose negative
 controls show a constant-equivalent term failing the binding — unadopted, and
-named here so the reader does not mistake replay for entailment. The honest one-line claim is therefore:
+named here so the reader does not mistake replay for entailment. Even in its
+target form that profile proves *declaration coherence* (the term is this
+policy's compilation over facts committed as cited evidence, yielding a result
+consistent with the decision under a committed map), not authorization: who may
+define the decision-mapping, and whether the facts describe reality, stay
+outside it (Section 8). The honest one-line claim is therefore:
 **Warrant provides tamper-evident decision records with replayable
 justification computations; the semantic relevance of a justification to the
 governing policy and the decision is, for now, an external property.**
-
-## 1.1 Provenance and standing
-
-This paper was written by a language model working as maintainer of the
-repository it describes, for a project whose explicit methodology is that
-model actors do the engineering and humans hold the keys and the mandate
-[@warrant2026]. Every number in it is measured from the repository at a named
-commit, and a checker script deposited alongside the paper recomputes the
-countable claims. What no checker supplies is independence: the format has
-been adversarially reviewed (Section 7) but never implemented by a party who
-had not read our code, and this paper has not been peer reviewed. Section 8
-returns to what that limits.
 
 # 2. Related work
 
@@ -566,16 +571,23 @@ One thing the loop did produce that a model round could not: the narrow rule
 that survived is now *mechanized*. Its two acceptance invariants — a
 fingerprint is a function of the eligible result value and nothing a filer
 writes, and a settled matter cannot be re-opened without a new demonstrated
-value — are proved theorems in Lean 4 (`proofs/Settlement.lean`, a sound
-axiom cone, no `sorry`), so the four attack families fail *for all inputs*
-rather than on the harness's concrete ones, and a genuinely new result is
-proved admissible so the guarantee is not vacuous. This does not make the rule
-*right* — whether "consequence = result value" is the correct semantics is the
-question left for the human logician — but it makes it *exactly what it says*,
-which is the most a machine proof can offer and more than the earlier drafts
-had. It is also why the repair could be mechanized at all: the coarse
-result-only identity the gates forced is a pure function of one value, with no
-filer-steerable trace to model.
+value — are proved theorems in Lean 4 (`proofs/Settlement.lean`, a sound axiom
+cone, no `sorry`), so the four attack families fail *for all inputs* rather
+than on the harness's concrete ones, and a genuinely new result is proved
+admissible so the guarantee is not vacuous. Three honesties about the scope,
+because a proof that overclaims is worse than none. The theorems are about the
+rule's **algebra given a result value**; they model the evaluator abstractly
+as a deterministic function, which is the rule's stated precondition, and do
+*not* re-mechanize Book I. One further guarantee — that no budget the filer
+picks yields a *different* eligible result — is stated conditionally on a Book
+I stability fact that the sibling repository has not yet proved, and is carried
+as an explicit hypothesis rather than assumed away; the four families' closure
+does not depend on it (a starved run produces a DISSONANCE, ineligible
+unconditionally). And a proof that the rule has this shape is not a proof that
+the running Python/Go code computes this rule — that refinement is the standing
+implementation gap (Section 6). What the mechanization does buy is that the
+rule is *exactly what it says*; whether "consequence = result value" is the
+*right* semantics is the question left for the human logician.
 
 ## 5.3 Keys and jurisdictions as records in the same DAG
 
@@ -737,12 +749,14 @@ shown capable of turning red, for the stated reason, is not evidence.
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 89 documents — 68 inbound reviews and gates plus 21 written
+holds 91 documents — 69 inbound reviews and gates plus 22 written
 responses — under fourteen reviewer labels drawn from six model vendors
 (OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
 specification audits, cryptographic attacks, release-surface gates,
 governance-proposal adversarial rounds, three design-gate rounds on the
-settlement repair, and a full peer review of this paper.
+settlement repair, and a whole-paper adversarial model review — which, like
+every entry here, is LLM-authored and is not the human peer review the paper
+still lacks.
 
 We are careful about what that number is and is not. It is a **label
 census**: the labels are a filename convention this repository controls, the

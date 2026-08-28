@@ -26,8 +26,24 @@ right.
 
 ## Unreleased
 
-**No protocol-visible change.** Documents only, all downstream of the
-flagship-paper review cycle (PR #30):
+**No protocol-visible change.** Documents and non-shipping tooling only, all
+downstream of the flagship-paper review cycle (PR #30):
+
+- **Codex whole-PR review** (`reviews/2026-08-codex-pr30-*`, 2026-08-28) — the
+  first review of PR hygiene and the CI/governance plane, found live defects
+  the suite did not: `agent-gate.yml` was unparseable YAML (unquoted
+  `--only-binary :all:`) so the governance workflow silently ran no job — fixed,
+  with a new `tools/lint_workflows.py` suite check so a workflow that stops
+  parsing fails here instead of invisibly on GitHub. WRT-004 → **rev 2**: the
+  prototype now hash-binds the profile (must resolve, be JCS-canonical, and be
+  cited in `body.evidence` — a new Layer 0) after a repro reported `BOUND` for
+  an uncommitted perverse profile; the guarantee is renamed *declaration
+  coherence*, not authorization. Paper fixes: §1.1/§1.2 reordered (TOC),
+  "full peer review" → "whole-paper adversarial model review", the Lean claim
+  scoped (unconditional four-family closure vs the conditional budget-steering
+  guarantee vs the abstract-rule-not-code caveat), stale "76-document" and
+  `tools/test-all.sh` references corrected, and a claims-checker false-success
+  path (`if m … else checked`) fixed.
 
 - `papers/` — flagship draft *The Reason Runs Again* with a claims checker
   that recounts the paper's numbers from the repository; paper-review round 1

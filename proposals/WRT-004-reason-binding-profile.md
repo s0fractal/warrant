@@ -1,6 +1,6 @@
 # WRT-004: Reason-binding profile — closing the justification-binding gap
 
-**Status:** DRAFT rev 1 (2026-08-28) — **design only.** No SPEC edit, no body
+**Status:** DRAFT rev 2 (2026-08-28) — **design only.** No SPEC edit, no body
 schema change, no code change to `warrant verify` is made by this document.
 The profile is an *additive blob* cited in `evidence`; base and settlement
 verification are untouched until a future SPEC revision adopts a
@@ -46,10 +46,18 @@ A blob, cited in the record's `evidence` like any other, addressed by
 ```
 
 A profile-aware verifier, for a `ski@v1` reason whose `check` equals
-`profile.check`, checks three layers and reports the reason **bound** or
+`profile.check`, checks four layers and reports the reason **bound** or
 **unbound** (a report, like §5.1 key binding — not a base-grade error unless a
 future SPEC grade makes bound reasons required):
 
+- **L0 — the profile is committed (rev 2, Codex round).** The profile blob
+  MUST resolve, MUST be JCS-canonical, and its own hash MUST appear in the
+  record's `evidence`. A profile a verifier is handed out of band, or one the
+  record does not cite, binds nothing — it is post-hoc paper the base verifier
+  never sees. rev 1 checked the profile's *contents* while trusting that the
+  profile itself was part of the record; a reviewer's repro filed a perverse,
+  uncommitted profile and got `BOUND`. L0 closes that: nothing is bound unless
+  the binding is itself content-addressed into the record.
 - **L1 — term ↔ policy.** Recompile the WPL `policy_source` deterministically;
   the compiled term and result must equal the check's `term` and `expect`. This
   is what proves *the term encodes this exact policy* (Monday Q1: yes, under
@@ -109,12 +117,19 @@ format proved; this profile must not repeat that at one remove. It closes the
   different reason language would need its own `@vN` binding profile under the
   §13.1 registry rule.
 
-The honest one-line claim WRT-004 supports: **with a satisfied
-`reason-binding@v0` profile, a verifier can confirm that a reason's computation
-is the compilation of the pinned policy over facts committed as cited evidence,
-and that its result is consistent with the recorded decision — while the truth
-of those facts and the merit of that policy remain, by design, outside the
-proof.**
+**Name the guarantee honestly (rev 2, Codex round): this is a
+*declaration-coherence* profile, not a reason-binding *proof*.** With a
+satisfied, committed `reason-binding@v0` profile, a verifier can confirm that a
+reason's computation is the compilation of the pinned policy over facts
+committed as cited evidence, and that its result is consistent with the
+recorded decision under a committed map. It does *not* prove that the map is
+the right map (a self-consistent but perverse map, `false → accept`, is
+coherent under itself — the profile makes it committed and disputable, not
+correct), that the facts are true (SA-11), or that the policy is sound (NG-4).
+The philosophically correct next boundary — who may define decision semantics,
+how facts relate to the subject and to reality, and what "this policy permits
+this decision" means — is authorization, not coherence, and is exactly the
+question WRT-004 leaves for a human logician (§6.1, §6.4).
 
 ## 5. Acceptance criteria (for the gate)
 
@@ -123,7 +138,10 @@ proof.**
    is reported **unbound** by L1; removing L1 makes it bind.
 2. **One negative per layer** (already in the fixture), each turning red *for
    its own layer* — an L2 mutation must not fail at L1, etc.
-3. **A positive** that binds fully, so the profile is not "reject everything".
+3. **L0 negatives (rev 2):** a profile the record does not cite in `evidence`,
+   and a profile whose bytes are not JCS-canonical, each report **unbound** —
+   so a post-hoc or malformed profile binds nothing. Both are in the fixture.
+4. **A positive** that binds fully, so the profile is not "reject everything".
 4. **Determinism / cross-implementation:** L1 depends on the WPL compiler being
    a deterministic function of the source (as `ski@v1` identity depends on
    evaluator determinism, WRT-003 §3.6). Two implementations of the profile

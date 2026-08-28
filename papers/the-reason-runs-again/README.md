@@ -23,7 +23,7 @@ holding its own copy of the answer only proves its two copies agree) and
 recomputes it: conformance-pack vector totals, the canonicalization and
 negative batteries, signature-vector counts, the review-ledger census and its
 vendor mapping, the default re-execution budget. It also prints what it does
-*not* check and why — harness-run measurements belong to `tools/test-all.sh`,
+*not* check and why — harness-run measurements belong to `tools/check.py`,
 and prose is not countable. The vendor mapping (which reviewer label belongs
 to which model vendor) is a judgment; it lives in the checker where it can be
 disputed, not in the paper as a bare assertion.
