@@ -1,10 +1,10 @@
 # proofs/ — the settlement fingerprint rule, mechanized
 
 One Lean 4 file, `Settlement.lean`, mechanizes the acceptance invariants of
-`proposals/WRT-003-outcome-fingerprint-purity.md` rev 4 — the settlement
+`proposals/WRT-005-outcome-fingerprint-purity.md` (rev 4) — the settlement
 outcome-fingerprint rule that four adversarial gate rounds drove to its
 current shape. It turns the property tests in
-`tests/fixtures/wrt003_gate_countervectors.py` (which show the *attacks* fail
+`tests/fixtures/wrt005_gate_countervectors.py` (which show the *attacks* fail
 on concrete inputs) into **theorems about the rule's algebra** (which show the
 attacks fail *for all* inputs).
 
@@ -46,7 +46,7 @@ orthogonal to the admissibility rule, and not modeled here.
 determinism live in `sigma-glyph/proofs/EvalMachine.lean` (`eval` is a Lean
 function, so determinism is definitional; `eval_settles` is proved there). This
 file models the evaluator abstractly as `Eval := Term → Nat → Term`, which is
-exactly WRT-003 §3.6's precondition — *the runtime is a deterministic
+exactly WRT-005 §3.6's precondition — *the runtime is a deterministic
 function* — and any Lean function satisfies it. `atp_cannot_steer` takes the
 one genuinely evaluator-level fact it needs (a non-exhausting run's result is
 budget-independent) as an explicit hypothesis `stable` rather than smuggling it
@@ -56,7 +56,7 @@ returned result is fully materialized.
 
 This is the same layering sigma-glyph uses (a mechanized bound plus an
 empirical bridge to the running oracle). The bridge from *this* rule to the
-running Python/Go settlement code is `tests/fixtures/wrt003_gate_countervectors.py`
+running Python/Go settlement code is `tests/fixtures/wrt005_gate_countervectors.py`
 and `tests/settlement.py`; the Lean file is the "for all inputs" companion to
 their "on these inputs".
 
@@ -64,10 +64,12 @@ their "on these inputs".
 
 ```
 lean proofs/Settlement.lean          # kernel-check the proofs (needs Lean 4, no mathlib)
-python3 proofs/check_settlement.py    # the guard: compiles clean, pins the axiom
-                                      # cone to {propext}, denylists sorry/axiom/
-                                      # native_decide, and fails if a theorem is
-                                      # proved but not listed
+python3 proofs/check_settlement.py    # the guard: compiles clean, holds every
+                                      # theorem's axiom cone within the sound set
+                                      # {propext, Quot.sound, Classical.choice}
+                                      # (actual union used: {propext, Quot.sound}),
+                                      # denylists sorry/axiom/native_decide, and
+                                      # fails if a theorem is proved but not listed
 ```
 
 `tools/check.py` runs the guard as one of its checks; it reports **UNRUN**
@@ -78,9 +80,9 @@ python3 proofs/check_settlement.py    # the guard: compiles clean, pins the axio
 - It does not prove the Python/Go implementations match this rule — that is the
   fixtures' job, and the standing gap is a second implementation of the rule by
   someone who has not read this one.
-- It does not adopt WRT-003. The proposal is design-only; mechanizing its
+- It does not adopt WRT-005. The proposal is design-only; mechanizing its
   *acceptance criteria* is evidence for the gate, not the gate's verdict.
 - It does not settle the open semantic questions (is result-value the right
   notion of consequence?). Those are for the human-logician review both the
-  WRT-003 gates and the Monday paper review named; a proof that the rule has
+  WRT-005 (formerly WRT-003) gates and the Monday paper review named; a proof that the rule has
   the shape it claims is not a proof that the shape is the right one.

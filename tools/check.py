@@ -43,6 +43,10 @@ SIGMA = ROOT.parent / "sigma-glyph" / "impl"
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 
+# Prerequisite tags used more than once, named so the string is defined in one
+# place (a repeated literal is a silent way for two checks to drift apart).
+SIGMA_GO = "sigma+go"
+
 # (name, argv, needs) -- `needs` is checked BEFORE running so a missing
 # prerequisite is reported as UNRUN rather than as a confusing failure.
 CHECKS = [
@@ -76,7 +80,7 @@ CHECKS = [
     # traceback instead of UNRUN -- a gap wearing the costume of a failure, which
     # is the same confusion this file exists to prevent, in the safer direction.
     ("settlement semantics (§7 tunnels, novelty, key state)",
-     ["python3", "tests/settlement.py"], "sigma+go"),
+     ["python3", "tests/settlement.py"], SIGMA_GO),
     ("hostile stores (cycles, malformed JSON, unsigned links)",
      ["python3", "tests/hostile.py"], "go"),
     ("evidence packs (demo packs verify; no private keys shipped)",
@@ -103,8 +107,11 @@ CHECKS = [
     # return code is asserted; the five re-openers are demonstrated on the
     # current spec and shown to collapse under the proposed rule. Needs the
     # Σ-GLYPH oracle and the Go settlement CLI (both implementations settle).
+    # (The countervector's mutation self-test — proving it can go red — runs as
+    # its own mandatory step in .github/workflows/wrt-005.yml, not here, so the
+    # stated check count stays 45.)
     ("wrt-005 fingerprint gate countervectors (fail-closed)",
-     ["python3", "tests/fixtures/wrt003_gate_countervectors.py"], "sigma+go"),
+     ["python3", "tests/fixtures/wrt005_gate_countervectors.py"], SIGMA_GO),
     # WRT-005 (design only): the rev-4 rule mechanized in Lean 4 core. The guard
     # compiles Settlement.lean, pins each theorem's axiom cone to a sound set,
     # and denylists sorry/axiom/native_decide. UNRUN without a Lean toolchain,

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fail-closed countervectors for the WRT-005 outcome-fingerprint design gates.
 
-(The proposal is filed as WRT-005; this file and the reviews keep the original
-WRT-003 name under which they were authored — see the identifier note in
-`proposals/WRT-005-outcome-fingerprint-purity.md`. WRT-003 here names *this same
-design*.)
+(This is a LIVE artifact of WRT-005. WRT-003 was this design's old working
+name; it survives only in the preserved historical reviews/manifests, never in
+live code — see the identifier note in
+`proposals/WRT-005-outcome-fingerprint-purity.md`.)
 
 Round 1 (annaglova, rev-1 gate):
   Attack 1 (BLOCKER): ATP starvation — same term, low-but-legal budget;

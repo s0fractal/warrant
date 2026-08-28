@@ -1,13 +1,15 @@
 # WRT-005: Outcome-fingerprint purity — the expect-flip repair
 
-**Identifier note.** This proposal is filed as **WRT-005**. The review
-artifacts, the countervector, the Lean proof, and their manifests were all
-authored while it was called **WRT-003**, and they still say so — deliberately
-left unrewritten, because they are the historical record of what was reviewed
-and when. The number WRT-003 is not reused here: it already belongs to a
-closed, unrelated proposal (PR #20). So "WRT-003" throughout the transferred
-review/source artifacts names *this same design*; only the proposal document
-carries the live identifier WRT-005. Nothing else was renumbered.
+**Identifier note.** This proposal is filed as **WRT-005**. **WRT-003 was this
+design's earlier working name.** The number WRT-003 is not reused: it already
+belongs to a closed, unrelated proposal (the verification-receipt work, PR
+#20; WRT-004 is the closed verify-report work, PR #21). The live artifacts of
+this design carry **only** WRT-005 — the proposal, the countervector
+(`tests/fixtures/wrt005_gate_countervectors.py`), the Lean proof and its guard.
+The name WRT-003 survives in exactly one place: the **preserved historical
+reviews and their manifests**, left unrewritten because they are the record of
+what was reviewed and when. Where those reviews say "WRT-003", they name this
+same design under its old number.
 
 **Status:** DRAFT rev 4 (2026-08-27) — **design only.** No SPEC edit, no code
 change, no vector change is made by this document. Adoption requires an
@@ -69,7 +71,7 @@ fingerprint; symmetric tunnel; doc-version bump; registry constraint.
 **rev 3 (2026-08-27)** closes the second design gate
 (`reviews/2026-08-gpt56sol-wrt-003-rev2-design-gate.md`, AMEND), which broke
 rev 2's *recommended* identity (B) and out-argued its case against (A). Both
-findings reproduced in `tests/fixtures/wrt003_gate_countervectors.py`:
+findings reproduced in `tests/fixtures/wrt005_gate_countervectors.py`:
 
 - **(B) is paddable via REF aliases (BLOCKER, accepted).** `ski@v1` executes
   against the whole CAS, not `body.evidence`, so `REF(S)`, `REF(REF(S))`, …
@@ -105,7 +107,7 @@ kept all of it.
 **rev 2 (2026-08-27)** closes the first design gate
 (`reviews/2026-08-annaglova-wrt-003-design-gate.md`, verdict AMEND), which
 found two re-openers that survive rev 1 — both reproduced against both
-implementations (`tests/fixtures/wrt003_gate_countervectors.py`):
+implementations (`tests/fixtures/wrt005_gate_countervectors.py`):
 
 - **ATP starvation (BLOCKER, accepted).** rev 1 excluded `atp` from the tuple
   but let a resource-exhaustion outcome *be* a fingerprint — and §5 blessed
@@ -234,7 +236,7 @@ third gate argued (A) empties §7(b) for a deterministic runtime. It does not.
 result-value not already demonstrated in the tunnel.* Settle a question with
 `T → S`; a re-litigant files `T' → K` (a different computation over the same
 present evidence, reaching a different value) — admissible, reproduced in
-both implementations (`tests/fixtures/wrt003_gate_countervectors.py`, the
+both implementations (`tests/fixtures/wrt005_gate_countervectors.py`, the
 positive control). What is foreclosed is *restating a value already shown*;
 what is admitted is *showing a value not yet shown*. §7(b) is not empty; it
 is now exactly "a new demonstrated consequence" with the emphasis on
@@ -424,7 +426,7 @@ is a function of the eligible, DISSONANCE-free result value and nothing else.**
 Adoption gate MUST include, in order of strength:
 
 1. **All negative controls**, from
-   `tests/fixtures/wrt003_gate_countervectors.py`, wired into
+   `tests/fixtures/wrt005_gate_countervectors.py`, wired into
    `tests/settlement.py` — each flips admitted (current) → inadmissible
    (adopted), and restores when the fix is removed:
    - expect-flip (claim field);

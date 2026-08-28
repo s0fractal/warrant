@@ -11,11 +11,22 @@ on:
     branches: [proposals/wrt-005-outcome-fingerprint-purity]
   pull_request:
 
+# Least privilege: these jobs read the checkout, build, and run — they never
+# write to the repo, comment, or touch releases.
+permissions:
+  contents: read
+
 # Pin of the sibling repo whose Book I oracle the countervectors evaluate
 # against. Same meaning as ci.yml's SIGMA_PIN: a verified-compatible baseline.
 env:
   SIGMA_PIN: c5ab2ab218bbeaaf4d80d2e49be2cc7b48fb7f37
   LEAN_TOOLCHAIN: leanprover/lean4:v4.31.0
+  # elan installer pinned by COMMIT and verified by SHA-256 (the Sigma-GLYPH
+  # pattern): the pin alone still trusts raw.githubusercontent to serve that
+  # commit honestly; the digest is what makes the fetch checkable. No
+  # `curl … | sh` of a mutable ref.
+  ELAN_INIT_COMMIT: 55dc2814ca42ace25f05ba4dd7a43a8c701a0549
+  ELAN_INIT_SHA256: a620ff1641616222c8d37c54845492004bb84d6877cdbc944dd65c1aa685bf53
 
 jobs:
   countervectors:
@@ -35,13 +46,21 @@ jobs:
       - name: Build the Go settlement verifier
         run: cd impl-go && go build -o warrant-go .
       # MANDATORY. The countervector is fail-closed: any deviating relation,
-      # settlement verdict or subprocess return code exits 1.
+      # settlement verdict or subprocess return code exits 1. The self-test
+      # first proves it CAN go red (a controlled mutant exits nonzero) and
+      # that the Go prerequisite is enforced, then runs the real suite green.
+      - name: WRT-005 countervector self-test (mutant goes red, Go prereq enforced)
+        env:
+          SIGMA_GLYPH: /tmp/sigma-glyph/impl
+          WARRANT_GO: ${{ github.workspace }}/impl-go/warrant-go
+          WARRANT_REQUIRE_SIGMA: "1"
+        run: python3 tests/fixtures/wrt005_countervector_selftest.py
       - name: WRT-005 fingerprint countervectors (fail-closed, PY+GO settle)
         env:
           SIGMA_GLYPH: /tmp/sigma-glyph/impl
           WARRANT_GO: ${{ github.workspace }}/impl-go/warrant-go
           WARRANT_REQUIRE_SIGMA: "1"
-        run: python3 tests/fixtures/wrt003_gate_countervectors.py
+        run: python3 tests/fixtures/wrt005_gate_countervectors.py
 
   lean-proof:
     runs-on: ubuntu-latest
@@ -49,10 +68,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
-      - name: Install the pinned Lean 4 toolchain (no mathlib)
+      - name: Install elan (pinned installer, digest-verified, then the toolchain)
         run: |
-          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-            | sh -s -- -y --default-toolchain "$LEAN_TOOLCHAIN"
+          # Download to a file over enforced HTTPS, verify its SHA-256, and only
+          # then execute it — never a mutable ref piped into a shell.
+          curl --proto '=https' --tlsv1.2 -sSf \
+            "https://raw.githubusercontent.com/leanprover/elan/${ELAN_INIT_COMMIT}/elan-init.sh" \
+            -o elan-init.sh
+          echo "${ELAN_INIT_SHA256}  elan-init.sh" | sha256sum -c -
+          sh elan-init.sh -y --default-toolchain "$LEAN_TOOLCHAIN"
+          rm -f elan-init.sh
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Show the Lean version (pin is reproducible)
         run: lean --version

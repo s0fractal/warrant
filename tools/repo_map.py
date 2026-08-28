@@ -92,6 +92,34 @@ ALIASES = {"Book I": "book-1", "Book II": "book-2", "Book III": "book-3"}
 SCAN = ("SPEC.md", "README.md", "ARCHITECT.md", "ROADMAP.md")
 SCAN_DIRS = ("proposals", "briefs", "spec", "profiles")
 
+# Canonical resolution for identifiers whose live location is NOT "the newest
+# committed file whose path contains the string". A proposal number can outlive
+# the pull request that closed it, and a number can collide with a workline
+# filename (a workflow, a fixture). Left to the substring search, WRT-005 would
+# resolve to `.github/workflows/wrt-005.yml` and WRT-003 to a stale copy on a
+# feature branch. These entries are authoritative and fail-closed: a
+# document-path entry MUST exist in the working tree, or the generator errors
+# (`_canonical_self_check`). A closed-PR entry has no live file by design.
+#   value = (lives_in_text, path_or_None)   — path None => "closed", "—" column
+CANONICAL = {
+    "WRT-003": ("closed PR #20 (verification receipts)", None),
+    "WRT-004": ("closed PR #21 (verify-report)", None),
+    "WRT-005": ("this repo, `proposals/wrt-005-outcome-fingerprint-purity`",
+                "proposals/WRT-005-outcome-fingerprint-purity.md"),
+}
+
+
+def _canonical_self_check():
+    """Fail-closed: every CANONICAL document-path must exist in the working
+    tree (a closed-PR entry, path None, is exempt). A dangling canonical entry
+    would silently point MAP.md at nothing."""
+    bad = [(i, p) for i, (_txt, p) in CANONICAL.items()
+           if p is not None and not (ROOT / p).exists()]
+    for ident, path in bad:
+        print(f"CANONICAL: {ident} maps to {path}, which does not exist",
+              file=sys.stderr)
+    return not bad
+
 
 def git(repo, *args, ok_fail=False):
     r = subprocess.run(["git", "-C", str(repo), *args],
@@ -176,18 +204,25 @@ def main():
     origin = git(ROOT, "remote", "get-url", "origin").strip()
     ids = cited(ROOT)
 
+    if not _canonical_self_check():
+        return 1
+
     rows, unresolved = [], []
     for ident in sorted(ids):
-        here, there = resolve(ident)
-        if here:
-            ref, path = here[0]
-            where = f"this repo, `{ref}`", f"`{path}`"
-        elif there:
-            ref, path = there[0]
-            where = f"**{SIBLING.name}**, `{ref}`", f"`{path}`"
+        if ident in CANONICAL:
+            lives_in, path = CANONICAL[ident]
+            where = (lives_in, f"`{path}`" if path else "—")
         else:
-            where = ("**resolves nowhere**", "—")
-            unresolved.append(ident)
+            here, there = resolve(ident)
+            if here:
+                ref, path = here[0]
+                where = f"this repo, `{ref}`", f"`{path}`"
+            elif there:
+                ref, path = there[0]
+                where = f"**{SIBLING.name}**, `{ref}`", f"`{path}`"
+            else:
+                where = ("**resolves nowhere**", "—")
+                unresolved.append(ident)
         rows.append((ident, where[0], where[1], sorted(ids[ident])[0]))
 
     if args.check_map:
