@@ -4,9 +4,10 @@ One Lean 4 file, `Settlement.lean`, mechanizes the acceptance invariants of
 `proposals/WRT-005-outcome-fingerprint-purity.md` (rev 4) — the settlement
 outcome-fingerprint rule that four adversarial gate rounds drove to its
 current shape. It turns the property tests in
-`tests/fixtures/wrt005_gate_countervectors.py` (which show the *attacks* fail
-on concrete inputs) into **theorems about the rule's algebra** (which show the
-attacks fail *for all* inputs).
+`tests/fixtures/wrt005_gate_countervectors.py` (which show that the CURRENT
+spec ADMITS all five attacks on concrete inputs, and that the proposed rev-4
+arithmetic collapses them) into **theorems about the rule's algebra** (which
+show the collapse holds *for all* inputs).
 
 ## What is proved, and what is cited
 

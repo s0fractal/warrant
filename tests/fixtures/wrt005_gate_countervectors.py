@@ -47,8 +47,19 @@ import settlement as T  # noqa: E402
 W = T.W
 sg = W.load_sigma()
 if sg is None:
-    print("wrt003-countervectors: UNRUN — the Σ-GLYPH oracle was not found "
+    print("wrt005-countervectors: UNRUN — the Σ-GLYPH oracle was not found "
           "(set SIGMA_GLYPH)", file=sys.stderr)
+    sys.exit(2)
+
+# The Go settlement CLI is a prerequisite too: this suite settles with BOTH
+# implementations and compares them, so a missing Go binary must be an explicit
+# UNRUN (exit 2) here — not a FileNotFoundError traceback from the first
+# settle_both (which would exit 1 and read as a real failure). Codex round 2.
+_go = os.environ.get("WARRANT_GO") or os.path.join(
+    os.path.dirname(__file__), "..", "..", "impl-go", "warrant-go")
+if not os.path.isfile(_go):
+    print("wrt005-countervectors: UNRUN — the Go settlement CLI was not found "
+          "(build impl-go/warrant-go, or set WARRANT_GO)", file=sys.stderr)
     sys.exit(2)
 
 ADMISSIBLE = "admissible: (b) new outcome fingerprint"
@@ -87,7 +98,7 @@ def settle_verdict(store, settled, cand, label):
     return verdict
 
 
-tmp = tempfile.mkdtemp(prefix="wrt003-gate-")
+tmp = tempfile.mkdtemp(prefix="wrt005-gate-")
 store, keys, opaque = T.setup(tmp)
 subject = T.put_blob(store, b"question")
 

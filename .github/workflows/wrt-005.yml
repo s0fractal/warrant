@@ -61,6 +61,14 @@ jobs:
           WARRANT_GO: ${{ github.workspace }}/impl-go/warrant-go
           WARRANT_REQUIRE_SIGMA: "1"
         run: python3 tests/fixtures/wrt005_gate_countervectors.py
+      # The named LIMIT of the rule: K and S(K K) I are extensionally equal but
+      # get different fingerprints — the rule is structural, not semantic. This
+      # is a fail-closed countervector, mandatory here so the limit stays true.
+      - name: WRT-005 extensional-equivalence limit (K vs S(K K) I)
+        env:
+          SIGMA_GLYPH: /tmp/sigma-glyph/impl
+          WARRANT_REQUIRE_SIGMA: "1"
+        run: python3 tests/fixtures/wrt005_extensional_limit.py
 
   lean-proof:
     runs-on: ubuntu-latest

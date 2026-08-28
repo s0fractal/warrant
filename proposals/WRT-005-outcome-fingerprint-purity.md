@@ -55,10 +55,17 @@ honesty requirements the proposal was hiding. Changes:
   is retroactive by construction (fingerprints are computed, never stored)
   and strictly strengthens foreclosure, so it can only *keep more settled*,
   never mass-re-open.
-- **The honest tradeoff (PROCESS, accepted).** New §9 states what (A) gave up:
-  false-positive novelty is now impossible; false-negative novelty (two
-  derivations of one value are indistinguishable) is guaranteed and
-  deliberate.
+- **The honest tradeoff (PROCESS, accepted).** New §9 states what (A) gave up.
+  It guarantees **structural result-node novelty** — a filer-steerable field,
+  path, or budget cannot manufacture a new fingerprint — but it is **not**
+  semantic: the result node is *finer* than extensional equivalence, so an
+  extensional reformulation reaching a different node (`K` vs `S(KK)I`) can
+  still re-open a matter (a false positive no format rule can close without
+  deciding an undecidable property). False-negative novelty — two computations
+  reaching the *same* result node are one consequence — is guaranteed and
+  deliberate. (This bullet corrected after a later review that supplied the
+  `K` / `S(KK)I` counterexample; an earlier draft wrongly called the identity
+  "coarser than semantic equivalence".)
 - **check_claims overstated (MINOR, Qodo/Qwen, accepted)** — fixed in the
   paper's checker (reports verified AND unchecked, never "all verified").
 - **Independence-class census (MAJOR meta, accepted)** — the paper now records
@@ -552,24 +559,46 @@ implicit, and it belongs in the open where the next reader meets it. Every
 fingerprint defined *syntactically or operationally* loses a race against a
 notion of novelty that is *semantic*: each round found a padding one layer
 down (expect → atp → `I T` → REF → nested DISSONANCE). rev 3–4 stop the
-regress by choosing the **coarsest defensible identity — the result value
-itself** — and the honest theorem is not "we removed filer-writable fields"
-but:
+regress by choosing the identity that is neither filer-steerable nor
+path-dependent — **the result value itself**.
 
-> We deliberately chose an identity coarser than semantic equivalence.
-> **False-positive novelty is now impossible** — no filer-steerable field,
-> path, or budget can manufacture a new fingerprint. **False-negative novelty
-> is guaranteed and intended** — any two computations reaching the same
-> eligible value are one consequence, so a genuinely independent
-> re-derivation of an already-demonstrated result is not settlement novelty.
+**A correction (rev 4, a later review): the result value is NOT "coarser than
+semantic equivalence".** An earlier draft of this section claimed the
+result-hash identity is coarser than semantic equivalence and therefore makes
+false-positive novelty impossible. That is wrong, and the counterexample is in
+Book I itself. `K` and `S(KK)I` are *extensionally equal* — both are the K
+combinator, returning the first of two arguments — yet they normalize to
+**different result nodes** (`K` is a literal; `S(KK)I` is a distinct stuck
+application), both DISSONANCE-free, hence both eligible with **different
+fingerprints**. Verified in the evaluator:
+`K → bc0c2fe2…`, `S(KK)I → bed95fbc…`, and `K I S` = `S(KK)I I S` = `I`. So the
+result value is **finer** than extensional equivalence: a filer *can* re-open a
+matter settled by `K` by re-filing the extensionally-equal `S(KK)I` as a "new"
+result. The honest theorem is therefore narrow:
 
-The second half is a real loss, not a rounding error: a system that wants
-"independently re-proven" to carry weight cannot get it from §7(b) under this
-rule. The escape hatch is deliberate and stated once more here: make the
-proof a **verified part of the result object** (so its NodeHash differs for a
-semantic reason), or handle re-proof significance in settlement policy, which
-is where relevance already lives. The format layer measures *what was
-concluded*, not *how many ways it was reached* — and now says so.
+> The fingerprint is a function of the eligible result **node**, and of
+> nothing a filer can steer — no field, path, or budget. What this guarantees
+> is exactly **structural result-node novelty**: *a variation that preserves
+> the exact result node creates no novelty.* It is **not** semantic novelty.
+> Two computations that reach the **same result node** are one consequence
+> (false-negative novelty, guaranteed and intended); two that reach
+> **different result nodes** are treated as distinct **even when they are
+> extensionally equal** (`K` vs `S(KK)I` — a false-positive the rule does not
+> and cannot exclude, because deciding extensional equality of combinators is
+> undecidable, Rice's theorem).
+
+Both halves are real. The false-negative is the deliberate anti-spam design:
+independently re-derived *identical* results do not re-open. The false-positive
+is a genuine limit named here rather than buried: an extensional reformulation
+reaching a different node **can** re-open, and no format-level rule closes that
+without deciding an undecidable property. The escape hatches are the same as
+before — make a proof a **verified part of the result object** (so a
+semantically-meaningful difference changes the node deliberately), or handle
+reformulation significance in settlement policy, which is where relevance
+already lives. The format layer measures *which result node was reached*, not
+*whether two nodes mean the same function* — and now says exactly that. The
+`K` / `S(KK)I` limit is pinned as a countervector
+(`tests/fixtures/wrt005_extensional_limit.py`).
 
 This is also why the next gate should not be another LLM. The regress is
 closed against syntactic and operational padding; what remains is a question

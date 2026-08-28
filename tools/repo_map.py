@@ -97,28 +97,64 @@ SCAN_DIRS = ("proposals", "briefs", "spec", "profiles")
 # the pull request that closed it, and a number can collide with a workline
 # filename (a workflow, a fixture). Left to the substring search, WRT-005 would
 # resolve to `.github/workflows/wrt-005.yml` and WRT-003 to a stale copy on a
-# feature branch. These entries are authoritative and fail-closed: a
-# document-path entry MUST exist in the working tree, or the generator errors
-# (`_canonical_self_check`). A closed-PR entry has no live file by design.
-#   value = (lives_in_text, path_or_None)   — path None => "closed", "—" column
+# feature branch.
+#
+# Every entry is fail-closed and pinned to a checkable object (Codex round 2 —
+# the earlier form left closed-PR entries with no verifiable target, so swapping
+# a PR number still passed `--check-map`):
+#   commit set  -> the exact `commit:path` MUST resolve (`git cat-file -e`);
+#   commit None -> the path MUST exist in the working tree.
+# The MAP row's Path column carries that exact target, and `--check-map`
+# verifies the whole row, not just that the token appears somewhere.
 CANONICAL = {
-    "WRT-003": ("closed PR #20 (verification receipts)", None),
-    "WRT-004": ("closed PR #21 (verify-report)", None),
-    "WRT-005": ("this repo, `proposals/wrt-005-outcome-fingerprint-purity`",
-                "proposals/WRT-005-outcome-fingerprint-purity.md"),
+    "WRT-003": {"lives_in": "closed PR #20 (verification receipts)",
+                "commit": "25bd44c",
+                "path": "proposals/WRT-003-verification-receipt.md"},
+    "WRT-004": {"lives_in": "closed PR #21 (verify-report)",
+                "commit": "7f40932",
+                "path": "proposals/WRT-004-verify-report-v1.md"},
+    "WRT-005": {"lives_in": "this repo, `proposals/wrt-005-outcome-fingerprint-purity`",
+                "commit": None,
+                "path": "proposals/WRT-005-outcome-fingerprint-purity.md"},
 }
 
 
+def _canonical_target(entry):
+    """The Path-column text for a canonical entry: `commit:path` for a pinned
+    closed-PR entry, or `path` for a live working-tree entry."""
+    if entry["commit"]:
+        return f"`{entry['commit']}:{entry['path']}`"
+    return f"`{entry['path']}`"
+
+
+def _canonical_ok(entry):
+    """Fail-closed check that a canonical entry points at something real."""
+    if entry["commit"]:
+        r = subprocess.run(
+            ["git", "-C", str(ROOT), "cat-file", "-e",
+             f"{entry['commit']}:{entry['path']}"], capture_output=True)
+        return r.returncode == 0
+    return (ROOT / entry["path"]).exists()
+
+
 def _canonical_self_check():
-    """Fail-closed: every CANONICAL document-path must exist in the working
-    tree (a closed-PR entry, path None, is exempt). A dangling canonical entry
-    would silently point MAP.md at nothing."""
-    bad = [(i, p) for i, (_txt, p) in CANONICAL.items()
-           if p is not None and not (ROOT / p).exists()]
-    for ident, path in bad:
-        print(f"CANONICAL: {ident} maps to {path}, which does not exist",
-              file=sys.stderr)
+    """Fail-closed: every CANONICAL entry must resolve to a real object — a
+    pinned `commit:path` (closed PR) or an existing working-tree path (live).
+    A dangling or wrong-commit entry would silently point MAP.md at nothing."""
+    bad = [i for i, e in CANONICAL.items() if not _canonical_ok(e)]
+    for ident in bad:
+        e = CANONICAL[ident]
+        tgt = f"{e['commit']}:{e['path']}" if e["commit"] else e["path"]
+        print(f"CANONICAL: {ident} -> {tgt} does not resolve", file=sys.stderr)
     return not bad
+
+
+def _canonical_prefix(ident):
+    """The leading columns of the MAP.md row a canonical identifier must carry
+    — `| `WRT-00x` | <lives in> | <target> |` — used to verify the map holds
+    the exact canonical mapping, not merely the token somewhere in the file."""
+    e = CANONICAL[ident]
+    return f"| `{ident}` | {e['lives_in']} | {_canonical_target(e)} |"
 
 
 def git(repo, *args, ok_fail=False):
@@ -210,8 +246,8 @@ def main():
     rows, unresolved = [], []
     for ident in sorted(ids):
         if ident in CANONICAL:
-            lives_in, path = CANONICAL[ident]
-            where = (lives_in, f"`{path}`" if path else "—")
+            e = CANONICAL[ident]
+            where = (e["lives_in"], _canonical_target(e))
         else:
             here, there = resolve(ident)
             if here:
@@ -244,12 +280,22 @@ def main():
         for i in missing:
             print(f"UNMAPPED: {i} is cited but has no row in MAP.md -- "
                   f"regenerate with tools/repo_map.py", file=sys.stderr)
+        # A canonical identifier must carry its EXACT pinned row, not merely the
+        # token. Without this, swapping a closed PR's number (or its commit)
+        # passed unnoticed (Codex round 2).
+        wrong = [i for i in sorted(ids)
+                 if i in CANONICAL and i not in missing
+                 and _canonical_prefix(i) not in text]
+        for i in wrong:
+            print(f"CANONICAL DRIFT: {i}'s row in MAP.md is not the pinned "
+                  f"canonical mapping; expected to contain:\n  "
+                  f"{_canonical_prefix(i)}", file=sys.stderr)
         stale = [ln for ln in text.splitlines() if "resolves nowhere" in ln]
         for ln in stale:
             print(f"UNRESOLVED in MAP.md: {ln.strip()}", file=sys.stderr)
         print(f"REPO-MAP: {len(ids) - len(missing)}/{len(ids)} citations mapped, "
-              f"{len(stale)} unresolved")
-        return 1 if missing or stale else 0
+              f"{len(stale)} unresolved, {len(wrong)} canonical drift")
+        return 1 if missing or stale or wrong else 0
 
     if args.check:
         for ident in unresolved:
