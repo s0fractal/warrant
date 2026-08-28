@@ -108,10 +108,10 @@ SCAN_DIRS = ("proposals", "briefs", "spec", "profiles")
 # verifies the whole row, not just that the token appears somewhere.
 CANONICAL = {
     "WRT-003": {"lives_in": "closed PR #20 (verification receipts)",
-                "commit": "25bd44c",
+                "commit": "25bd44c829cb015a836e08642022412c568de16a",
                 "path": "proposals/WRT-003-verification-receipt.md"},
     "WRT-004": {"lives_in": "closed PR #21 (verify-report)",
-                "commit": "7f40932",
+                "commit": "7f40932060ded9a1fde7e6b74e91334e73b8080e",
                 "path": "proposals/WRT-004-verify-report-v1.md"},
     "WRT-005": {"lives_in": "this repo, `proposals/wrt-005-outcome-fingerprint-purity`",
                 "commit": None,
@@ -127,14 +127,30 @@ def _canonical_target(entry):
     return f"`{entry['path']}`"
 
 
+def _has_commit(commit):
+    return subprocess.run(
+        ["git", "-C", str(ROOT), "cat-file", "-e", f"{commit}^{{commit}}"],
+        capture_output=True).returncode == 0
+
+
 def _canonical_ok(entry):
-    """Fail-closed check that a canonical entry points at something real."""
-    if entry["commit"]:
-        r = subprocess.run(
-            ["git", "-C", str(ROOT), "cat-file", "-e",
-             f"{entry['commit']}:{entry['path']}"], capture_output=True)
-        return r.returncode == 0
-    return (ROOT / entry["path"]).exists()
+    """Fail-closed check that a canonical entry points at something real: a
+    pinned closed-PR `commit:path`, or an existing working-tree path.
+
+    In a shallow CI checkout the pinned commit is not present; because these
+    are full SHAs and the commits are reachable on origin, a targeted
+    `git fetch` retrieves the one object needed, and the verification then runs
+    for real. If the fetch cannot bring it in (no network), the check fails
+    closed rather than silently passing."""
+    if not entry["commit"]:
+        return (ROOT / entry["path"]).exists()
+    if not _has_commit(entry["commit"]):
+        subprocess.run(["git", "-C", str(ROOT), "fetch", "--quiet", "--depth",
+                        "1", "origin", entry["commit"]], capture_output=True)
+    r = subprocess.run(
+        ["git", "-C", str(ROOT), "cat-file", "-e",
+         f"{entry['commit']}:{entry['path']}"], capture_output=True)
+    return r.returncode == 0
 
 
 def _canonical_self_check():
