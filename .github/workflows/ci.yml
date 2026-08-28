@@ -51,7 +51,13 @@ jobs:
       - run: >-
           python3 -m pip install --only-binary=:all:
           'cryptography==45.0.7' 'build==1.5.0'
-          'setuptools==84.0.0' 'wheel==0.48.0'
+          'setuptools==84.0.0' 'wheel==0.48.0' 'PyYAML==6.0.2'
+      # The governance workflow (agent-gate.yml) was once unparseable YAML and
+      # every run failed with no job. This step is MANDATORY — not run through
+      # tools/check.py --allow-unrun, where a missing PyYAML would let it pass
+      # as UNRUN — so a workflow that stops parsing fails CI here, loudly.
+      - name: Workflows parse (mandatory — the governance gate cannot silently break)
+        run: python3 tools/lint_workflows.py
       # CI has no sibling checkout, so it cannot re-resolve cross-repo citations.
       # It demands instead that every citation be ACCOUNTED FOR in the committed
       # MAP.md: cite a document nobody has located and the row is missing and

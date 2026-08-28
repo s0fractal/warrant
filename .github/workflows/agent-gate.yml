@@ -46,7 +46,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install the verifier the way a stranger would
-        run: pip install --only-binary :all: warrant-verify==0.9.0
+        run: pip install "--only-binary=:all:" warrant-verify==0.9.0
 
       - name: Decide, from the base revision's rule
         run: |

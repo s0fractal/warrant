@@ -30,6 +30,7 @@ USAGE
     python3 tools/check.py --list          # what would run, and what it needs
 """
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -45,6 +46,13 @@ RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 # (name, argv, needs) -- `needs` is checked BEFORE running so a missing
 # prerequisite is reported as UNRUN rather than as a confusing failure.
 CHECKS = [
+    # The governance workflow was unparseable YAML for an unknown span (Codex
+    # review): every run failed with no job and the gate did nothing. A control
+    # plane that cannot be parsed is the purest control-that-does-not-control,
+    # so a workflow that stops parsing now fails here instead of failing
+    # invisibly on GitHub.
+    ("workflows parse (the governance gate cannot silently break)",
+     ["python3", "tools/lint_workflows.py"], "yaml"),
     ("map: every cited document is located",
      ["python3", "tools/repo_map.py", "--check-map"], None),
     # repo_map checks that a cited document exists; this checks that a document
@@ -188,6 +196,8 @@ NEEDS = {
               "Σ-GLYPH oracle not found  ->  set SIGMA_GLYPH=<sigma-glyph>/impl"),
     "sibling": (lambda: (ROOT.parent / "sigma-glyph").is_dir(),
                 "sibling repository sigma-glyph not beside this one"),
+    "yaml": (lambda: importlib.util.find_spec("yaml") is not None,
+             "PyYAML not installed  ->  pip install pyyaml"),
 }
 
 
