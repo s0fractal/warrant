@@ -43,6 +43,34 @@ REQUIRED_PROTECTED = {
     "conformance/", "conformance-skeletons/",
 }
 
+TOP_KEYS = {
+    "agent_autonomy_policy", "status", "repository", "base_branch",
+    "purpose", "actions", "bounds", "autonomous_path_prefixes",
+    "protected_paths", "required_checks", "checks_required_for",
+    "provenance", "authorization", "notes",
+}
+NUMERIC_BOUNDS = ("max_commits", "max_files_changed", "max_lines_added",
+                  "max_lines_removed")
+BOUND_KEYS = set(NUMERIC_BOUNDS) | {
+    "allow_deletions", "allow_binary", "allow_symlinks", "allow_submodules",
+    "allow_merge_commits",
+}
+BOUND_CEILINGS = {"max_commits": 12, "max_files_changed": 20,
+                  "max_lines_added": 2000, "max_lines_removed": 1000}
+LIST_FIELDS = ("autonomous_path_prefixes", "protected_paths",
+               "required_checks", "checks_required_for")
+PROVENANCE_KEYS = {
+    "require_agent_trailer", "agent_markers", "forbidden_authority_markers",
+}
+AUTH_KEYS = {
+    "required_for_all_actions", "format", "policy_sha256_required",
+    "detached_signature_required", "authorization_path", "trusted_key_path",
+}
+AUTH_MESSAGE_KEYS = {
+    "authorization_format", "repository", "base_branch", "policy_sha256",
+    "actions", "not_before", "not_after", "signature",
+}
+
 
 def canonical(obj) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"),
@@ -90,122 +118,142 @@ def exact_keys(value, required: set[str], where: str) -> list[str]:
     return out
 
 
-def policy_problems(policy) -> list[str]:
-    top = {
-        "agent_autonomy_policy", "status", "repository", "base_branch",
-        "purpose", "actions", "bounds", "autonomous_path_prefixes",
-        "protected_paths", "required_checks", "checks_required_for",
-        "provenance", "authorization", "notes",
-    }
-    problems = exact_keys(policy, top, "policy")
-    if problems:
-        return problems
+# -- policy validation ------------------------------------------------------
+# Each helper validates one region of the policy and returns its own problems.
+# Splitting keeps every branch shallow: a fail-closed validator is only as
+# trustworthy as it is readable.
+
+def _problems_scalars(policy) -> list[str]:
+    out = []
     if policy["agent_autonomy_policy"] != "0.1":
-        problems.append("unsupported agent_autonomy_policy")
+        out.append("unsupported agent_autonomy_policy")
     if policy["status"] not in {"draft", "active", "revoked"}:
-        problems.append("status must be draft, active, or revoked")
+        out.append("status must be draft, active, or revoked")
     if policy["repository"] != "s0fractal/warrant":
-        problems.append("v0.1 is scoped exactly to s0fractal/warrant")
+        out.append("v0.1 is scoped exactly to s0fractal/warrant")
     if policy["base_branch"] != "master":
-        problems.append("v0.1 only supports the master base branch")
+        out.append("v0.1 only supports the master base branch")
+    return out
 
-    problems += exact_keys(policy["actions"], ACTIONS, "actions")
-    if isinstance(policy["actions"], dict):
-        for name, value in policy["actions"].items():
-            if type(value) is not bool:
-                problems.append(f"actions.{name} must be boolean")
-        enabled_danger = sorted(name for name in NEVER_AUTONOMOUS_V01
-                                if policy["actions"].get(name))
-        if enabled_danger:
-            problems.append("v0.1 can never grant: " + ", ".join(enabled_danger))
 
-    bound_keys = {
-        "max_commits", "max_files_changed", "max_lines_added",
-        "max_lines_removed", "allow_deletions", "allow_binary",
-        "allow_symlinks", "allow_submodules", "allow_merge_commits",
-    }
-    problems += exact_keys(policy["bounds"], bound_keys, "bounds")
-    if isinstance(policy["bounds"], dict):
-        for name in ("max_commits", "max_files_changed", "max_lines_added",
-                     "max_lines_removed"):
-            value = policy["bounds"].get(name)
-            if type(value) is not int or value < 1:
-                problems.append(f"bounds.{name} must be an integer >= 1")
-        ceilings = {"max_commits": 12, "max_files_changed": 20,
-                    "max_lines_added": 2000, "max_lines_removed": 1000}
-        for name, ceiling in ceilings.items():
-            value = policy["bounds"].get(name)
-            if type(value) is int and value > ceiling:
-                problems.append(f"bounds.{name} exceeds v0.1 ceiling {ceiling}")
-        for name in bound_keys - {"max_commits", "max_files_changed",
-                                 "max_lines_added", "max_lines_removed"}:
-            if type(policy["bounds"].get(name)) is not bool:
-                problems.append(f"bounds.{name} must be boolean")
+def _problems_actions(policy) -> list[str]:
+    out = exact_keys(policy["actions"], ACTIONS, "actions")
+    if not isinstance(policy["actions"], dict):
+        return out
+    for name, value in policy["actions"].items():
+        if type(value) is not bool:
+            out.append(f"actions.{name} must be boolean")
+    enabled_danger = sorted(name for name in NEVER_AUTONOMOUS_V01
+                            if policy["actions"].get(name))
+    if enabled_danger:
+        out.append("v0.1 can never grant: " + ", ".join(enabled_danger))
+    return out
 
-    for name in ("autonomous_path_prefixes", "protected_paths",
-                 "required_checks", "checks_required_for"):
+
+def _problems_bounds(policy) -> list[str]:
+    out = exact_keys(policy["bounds"], BOUND_KEYS, "bounds")
+    bounds = policy["bounds"]
+    if not isinstance(bounds, dict):
+        return out
+    for name in NUMERIC_BOUNDS:
+        value = bounds.get(name)
+        if type(value) is not int or value < 1:
+            out.append(f"bounds.{name} must be an integer >= 1")
+    for name, ceiling in BOUND_CEILINGS.items():
+        value = bounds.get(name)
+        if type(value) is int and value > ceiling:
+            out.append(f"bounds.{name} exceeds v0.1 ceiling {ceiling}")
+    for name in BOUND_KEYS - set(NUMERIC_BOUNDS):
+        if type(bounds.get(name)) is not bool:
+            out.append(f"bounds.{name} must be boolean")
+    return out
+
+
+def _problems_lists(policy) -> list[str]:
+    out = []
+    for name in LIST_FIELDS:
         values = policy[name]
         if not isinstance(values, list) or not values:
-            problems.append(f"{name} must be a non-empty list")
+            out.append(f"{name} must be a non-empty list")
         elif any(not isinstance(v, str) or not v.strip() for v in values):
-            problems.append(f"{name} contains a blank or non-string value")
+            out.append(f"{name} contains a blank or non-string value")
         elif len(values) != len(set(values)):
-            problems.append(f"{name} contains duplicates")
+            out.append(f"{name} contains duplicates")
     if isinstance(policy["checks_required_for"], list):
         unknown = sorted(set(policy["checks_required_for"]) - ACTIONS)
         if unknown:
-            problems.append(f"checks_required_for has unknown actions: {unknown}")
+            out.append(f"checks_required_for has unknown actions: {unknown}")
+    return out
+
+
+def _problems_paths(policy) -> list[str]:
+    out = []
     prefixes = policy.get("autonomous_path_prefixes", [])
     if isinstance(prefixes, list) and any(
             not p.endswith("/") or p.startswith("/") or ".." in Path(p).parts
             for p in prefixes if isinstance(p, str)):
-        problems.append("autonomous_path_prefixes must be safe directory prefixes")
+        out.append("autonomous_path_prefixes must be safe directory prefixes")
     protected = policy.get("protected_paths", [])
     if isinstance(protected, list):
         missing_protected = sorted(REQUIRED_PROTECTED - set(protected))
         if missing_protected:
-            problems.append("protected_paths omits mandatory anchors: " +
-                            ", ".join(missing_protected))
+            out.append("protected_paths omits mandatory anchors: " +
+                       ", ".join(missing_protected))
         overlaps = sorted(p for p in prefixes if any(
             p.startswith(rule) if rule.endswith("/") else p == rule
             for rule in protected))
         if overlaps:
-            problems.append("autonomous path overlaps protected path: " +
-                            ", ".join(overlaps))
+            out.append("autonomous path overlaps protected path: " +
+                       ", ".join(overlaps))
     if not {"test", "cross-repo"} <= set(policy.get("required_checks", [])):
-        problems.append("required_checks must include test and cross-repo")
+        out.append("required_checks must include test and cross-repo")
     if not {"ready_for_review", "merge"} <= set(
             policy.get("checks_required_for", [])):
-        problems.append("ready_for_review and merge must require checks")
+        out.append("ready_for_review and merge must require checks")
+    return out
 
-    provenance_keys = {
-        "require_agent_trailer", "agent_markers", "forbidden_authority_markers"
-    }
-    problems += exact_keys(policy["provenance"], provenance_keys, "provenance")
-    if isinstance(policy["provenance"], dict):
-        if type(policy["provenance"].get("require_agent_trailer")) is not bool:
-            problems.append("provenance.require_agent_trailer must be boolean")
-        for name in ("agent_markers", "forbidden_authority_markers"):
-            values = policy["provenance"].get(name)
-            if not isinstance(values, list) or not values or any(
-                    not isinstance(v, str) or not v for v in values):
-                problems.append(f"provenance.{name} must be a non-empty string list")
 
-    auth_keys = {
-        "required_for_all_actions", "format", "policy_sha256_required",
-        "detached_signature_required", "authorization_path", "trusted_key_path"
-    }
-    problems += exact_keys(policy["authorization"], auth_keys, "authorization")
-    if isinstance(policy["authorization"], dict):
+def _problems_provenance(policy) -> list[str]:
+    out = exact_keys(policy["provenance"], PROVENANCE_KEYS, "provenance")
+    provenance = policy["provenance"]
+    if not isinstance(provenance, dict):
+        return out
+    if type(provenance.get("require_agent_trailer")) is not bool:
+        out.append("provenance.require_agent_trailer must be boolean")
+    for name in ("agent_markers", "forbidden_authority_markers"):
+        values = provenance.get(name)
+        if not isinstance(values, list) or not values or any(
+                not isinstance(v, str) or not v for v in values):
+            out.append(f"provenance.{name} must be a non-empty string list")
+    return out
+
+
+def _problems_authorization(policy) -> list[str]:
+    out = exact_keys(policy["authorization"], AUTH_KEYS, "authorization")
+    auth = policy["authorization"]
+    if isinstance(auth, dict):
         for name in ("required_for_all_actions", "policy_sha256_required",
                      "detached_signature_required"):
-            if policy["authorization"].get(name) is not True:
-                problems.append(f"authorization.{name} must be true in v0.1")
-        if policy["authorization"].get("format") != \
-                "agent-autonomy-authorization@v0.1":
-            problems.append("unsupported authorization format")
+            if auth.get(name) is not True:
+                out.append(f"authorization.{name} must be true in v0.1")
+        if auth.get("format") != "agent-autonomy-authorization@v0.1":
+            out.append("unsupported authorization format")
     if policy.get("status") != "active" and policy.get("actions", {}).get("merge"):
-        problems.append("merge cannot be true unless policy status is active")
+        out.append("merge cannot be true unless policy status is active")
+    return out
+
+
+def policy_problems(policy) -> list[str]:
+    problems = exact_keys(policy, TOP_KEYS, "policy")
+    if problems:
+        return problems
+    problems += _problems_scalars(policy)
+    problems += _problems_actions(policy)
+    problems += _problems_bounds(policy)
+    problems += _problems_lists(policy)
+    problems += _problems_paths(policy)
+    problems += _problems_provenance(policy)
+    problems += _problems_authorization(policy)
     return problems
 
 
@@ -247,18 +295,16 @@ class DiffFacts:
         }
 
 
-def diff_facts(base: str, head: str, policy: dict) -> DiffFacts:
-    if git("merge-base", "--is-ancestor", base, head, check=False).returncode:
-        raise ValueError("head is not a descendant of base")
-
+def _name_statuses(base: str, head: str) -> dict[str, str]:
     raw = git("diff", "--name-status", "--no-renames", "-z",
               f"{base}...{head}").stdout.split(b"\0")
     entries = [part.decode("utf-8", "strict") for part in raw if part]
     if len(entries) % 2:
         raise ValueError("unreadable git name-status output")
-    statuses = {entries[i + 1]: entries[i] for i in range(0, len(entries), 2)}
-    paths = sorted(statuses)
+    return {entries[i + 1]: entries[i] for i in range(0, len(entries), 2)}
 
+
+def _numstat(base: str, head: str) -> tuple[int, int, list[str]]:
     added = removed = 0
     binary = []
     for entry in git("diff", "--numstat", "--no-renames", "-z",
@@ -268,13 +314,17 @@ def diff_facts(base: str, head: str, policy: dict) -> DiffFacts:
         fields = entry.decode("utf-8", "strict").split("\t", 2)
         if len(fields) != 3:
             raise ValueError("unreadable git numstat output")
-        plus, minus, path = fields
+        plus, minus, _ = fields
         if plus == "-" or minus == "-":
-            binary.append(path)
+            binary.append(fields[2])
         else:
             added += int(plus)
             removed += int(minus)
+    return added, removed, binary
 
+
+def _mode_facts(head: str, paths: list[str],
+                statuses: dict[str, str]) -> tuple[list[str], list[str], list[str]]:
     symlinks, submodules, unsupported_modes = [], [], []
     for path in paths:
         if statuses[path] == "D":
@@ -289,14 +339,30 @@ def diff_facts(base: str, head: str, policy: dict) -> DiffFacts:
             submodules.append(path)
         elif mode != "100644":
             unsupported_modes.append(path)
+    return symlinks, submodules, unsupported_modes
 
+
+def _provenance_markers(base: str, head: str,
+                        provenance: dict) -> tuple[bool, list[str]]:
     messages = git("log", "--format=%B%x00", f"{base}..{head}").stdout.decode(
         "utf-8", "replace")
-    provenance = policy["provenance"]
-    agent = any(marker.lower() in messages.lower()
+    lowered = messages.lower()
+    agent = any(marker.lower() in lowered
                 for marker in provenance["agent_markers"])
     false_markers = sorted(marker for marker in provenance["forbidden_authority_markers"]
-                           if marker.lower() in messages.lower())
+                           if marker.lower() in lowered)
+    return agent, false_markers
+
+
+def diff_facts(base: str, head: str, policy: dict) -> DiffFacts:
+    if git("merge-base", "--is-ancestor", base, head, check=False).returncode:
+        raise ValueError("head is not a descendant of base")
+
+    statuses = _name_statuses(base, head)
+    paths = sorted(statuses)
+    added, removed, binary = _numstat(base, head)
+    symlinks, submodules, unsupported_modes = _mode_facts(head, paths, statuses)
+    agent, false_markers = _provenance_markers(base, head, policy["provenance"])
     commits = int(git("rev-list", "--count", f"{base}..{head}").stdout)
     merges = int(git("rev-list", "--count", "--merges",
                      f"{base}..{head}").stdout)
@@ -331,21 +397,10 @@ def parse_time(value: str) -> dt.datetime:
     return parsed.astimezone(dt.timezone.utc)
 
 
-def verify_authorization(policy: dict, policy_bytes: bytes, revision: str,
-                         action: str, now: dt.datetime) -> list[str]:
-    auth_cfg = policy["authorization"]
-    try:
-        raw = blob_at(revision, auth_cfg["authorization_path"])
-        key_raw = blob_at(revision, auth_cfg["trusted_key_path"]).strip()
-        auth = json.loads(raw)
-    except (ValueError, json.JSONDecodeError) as exc:
-        return [f"standing authorization unavailable: {exc}"]
-
-    keys = {
-        "authorization_format", "repository", "base_branch", "policy_sha256",
-        "actions", "not_before", "not_after", "signature",
-    }
-    problems = exact_keys(auth, keys, "standing authorization")
+def _auth_field_problems(auth: dict, auth_cfg: dict, policy: dict,
+                         policy_bytes: bytes, action: str,
+                         now: dt.datetime) -> list[str]:
+    problems = exact_keys(auth, AUTH_MESSAGE_KEYS, "standing authorization")
     if problems:
         return problems
     if auth["authorization_format"] != auth_cfg["format"]:
@@ -368,9 +423,10 @@ def verify_authorization(policy: dict, policy_bytes: bytes, revision: str,
             problems.append("standing authorization validity must be 1..366 days")
     except (TypeError, ValueError):
         problems.append("standing authorization timestamps are invalid")
-    if problems:
-        return problems
+    return problems
 
+
+def _auth_signature_problems(auth: dict, key_raw: bytes) -> list[str]:
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         prefix = b"ed25519:"
@@ -391,12 +447,32 @@ def verify_authorization(policy: dict, policy_bytes: bytes, revision: str,
     return []
 
 
-def decide(policy: dict, facts: DiffFacts, action: str, checks: dict[str, str],
-           check_errors: list[str], authorization_errors: list[str]) -> tuple[str, list[str]]:
-    deny, hold = [], []
+def verify_authorization(policy: dict, policy_bytes: bytes, revision: str,
+                         action: str, now: dt.datetime) -> list[str]:
+    auth_cfg = policy["authorization"]
+    try:
+        raw = blob_at(revision, auth_cfg["authorization_path"])
+        key_raw = blob_at(revision, auth_cfg["trusted_key_path"]).strip()
+        auth = json.loads(raw)
+    except ValueError as exc:
+        return [f"standing authorization unavailable: {exc}"]
+
+    problems = _auth_field_problems(auth, auth_cfg, policy, policy_bytes,
+                                    action, now)
+    if problems:
+        return problems
+    return _auth_signature_problems(auth, key_raw)
+
+
+# -- decision ---------------------------------------------------------------
+# Each helper appends into the shared deny/hold accumulators.  A single deny is
+# terminal; a hold defers to standing authority; only an empty union is
+# ELIGIBLE.
+
+def _decide_action_and_paths(policy: dict, facts: DiffFacts, action: str,
+                             deny: list[str]) -> None:
     if not policy["actions"].get(action, False):
         deny.append(f"action {action} is disabled")
-
     protected = [p for p in facts.paths if matches(p, policy["protected_paths"])]
     outside = [p for p in facts.paths
                if not matches(p, policy["autonomous_path_prefixes"])]
@@ -407,6 +483,8 @@ def decide(policy: dict, facts: DiffFacts, action: str, checks: dict[str, str],
     if not facts.paths:
         deny.append("empty change")
 
+
+def _decide_bounds(policy: dict, facts: DiffFacts, deny: list[str]) -> None:
     bounds = policy["bounds"]
     for actual, name in ((facts.commits, "max_commits"),
                          (len(facts.paths), "max_files_changed"),
@@ -424,6 +502,11 @@ def decide(policy: dict, facts: DiffFacts, action: str, checks: dict[str, str],
         deny.append("symlinks are disabled: " + ", ".join(facts.symlink_paths))
     if facts.submodule_paths and not bounds["allow_submodules"]:
         deny.append("submodules are disabled: " + ", ".join(facts.submodule_paths))
+    if facts.merge_commits and not bounds["allow_merge_commits"]:
+        deny.append(f"merge commits are disabled: {facts.merge_commits}")
+
+
+def _decide_shape(facts: DiffFacts, deny: list[str]) -> None:
     if facts.unsupported_mode_paths:
         deny.append("only ordinary non-executable files are allowed: " +
                     ", ".join(facts.unsupported_mode_paths))
@@ -431,22 +514,37 @@ def decide(policy: dict, facts: DiffFacts, action: str, checks: dict[str, str],
         path for path, status in facts.statuses.items() if status not in {"A", "M", "D"})
     if unsupported_status:
         deny.append("unsupported Git status: " + ", ".join(unsupported_status))
-    if facts.merge_commits and not bounds["allow_merge_commits"]:
-        deny.append(f"merge commits are disabled: {facts.merge_commits}")
+
+
+def _decide_provenance(policy: dict, facts: DiffFacts, deny: list[str]) -> None:
     if policy["provenance"]["require_agent_trailer"] and not facts.agent_provenance:
         deny.append("no declared agent provenance marker in candidate commits")
     if facts.authority_markers:
         deny.append("commit asserts forbidden authority: " +
                     ", ".join(facts.authority_markers))
 
-    if action in policy["checks_required_for"]:
-        hold.extend(check_errors)
-        for name in policy["required_checks"]:
-            status = checks.get(name)
-            if status is None:
-                hold.append(f"required check absent: {name}")
-            elif status != "success":
-                hold.append(f"required check {name} is {status}")
+
+def _decide_checks(policy: dict, action: str, checks: dict[str, str],
+                   check_errors: list[str], hold: list[str]) -> None:
+    if action not in policy["checks_required_for"]:
+        return
+    hold.extend(check_errors)
+    for name in policy["required_checks"]:
+        status = checks.get(name)
+        if status is None:
+            hold.append(f"required check absent: {name}")
+        elif status != "success":
+            hold.append(f"required check {name} is {status}")
+
+
+def decide(policy: dict, facts: DiffFacts, action: str, checks: dict[str, str],
+           check_errors: list[str], authorization_errors: list[str]) -> tuple[str, list[str]]:
+    deny, hold = [], []
+    _decide_action_and_paths(policy, facts, action, deny)
+    _decide_bounds(policy, facts, deny)
+    _decide_shape(facts, deny)
+    _decide_provenance(policy, facts, deny)
+    _decide_checks(policy, action, checks, check_errors, hold)
 
     if policy["status"] != "active":
         hold.append(f"policy status is {policy['status']}; standing authority is inactive")
@@ -457,6 +555,30 @@ def decide(policy: dict, facts: DiffFacts, action: str, checks: dict[str, str],
     if hold:
         return "HOLD", sorted(set(hold))
     return "ELIGIBLE", []
+
+
+def _decision_packet(args, base: str, head: str, policy_rev: str,
+                     policy: dict, policy_bytes: bytes) -> dict:
+    facts = diff_facts(base, head, policy)
+    checks, check_errors = load_checks(args.checks_file, head)
+    auth_errors = verify_authorization(
+        policy, policy_bytes, policy_rev, args.action,
+        dt.datetime.now(dt.timezone.utc))
+    decision, reasons = decide(policy, facts, args.action, checks,
+                               check_errors, auth_errors)
+    return {
+        "autonomy_decision": "0.1",
+        "decision": decision,
+        "action": args.action,
+        "repository": policy["repository"],
+        "base_sha": base,
+        "head_sha": head,
+        "policy_from": policy_rev,
+        "policy_sha256": sha256(policy_bytes),
+        "facts": facts.packet(),
+        "checks": checks,
+        "reasons": reasons,
+    }
 
 
 def main() -> int:
@@ -479,28 +601,10 @@ def main() -> int:
         problems = policy_problems(policy)
         if problems:
             raise ValueError("invalid policy: " + "; ".join(problems))
-        facts = diff_facts(base, head, policy)
-        checks, check_errors = load_checks(args.checks_file, head)
-        auth_errors = verify_authorization(
-            policy, policy_bytes, policy_rev, args.action,
-            dt.datetime.now(dt.timezone.utc))
-        decision, reasons = decide(policy, facts, args.action, checks,
-                                   check_errors, auth_errors)
-        packet = {
-            "autonomy_decision": "0.1",
-            "decision": decision,
-            "action": args.action,
-            "repository": policy["repository"],
-            "base_sha": base,
-            "head_sha": head,
-            "policy_from": policy_rev,
-            "policy_sha256": sha256(policy_bytes),
-            "facts": facts.packet(),
-            "checks": checks,
-            "reasons": reasons,
-        }
-    except (ValueError, TypeError, KeyError, OSError, json.JSONDecodeError,
-            UnicodeDecodeError, subprocess.CalledProcessError) as exc:
+        packet = _decision_packet(args, base, head, policy_rev, policy,
+                                  policy_bytes)
+    except (ValueError, TypeError, KeyError, OSError,
+            subprocess.CalledProcessError) as exc:
         packet = {
             "autonomy_decision": "0.1",
             "decision": "DENY",

@@ -13,6 +13,7 @@ import copy
 import datetime as dt
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -267,8 +268,83 @@ def main():
         check("non-object check packet is rejected without crashing",
               checks == {} and errors)
 
+    real_git_diff_countervectors(pol)
+
     print(f"AUTONOMY GATE: ALL PASS ({passed}/{passed})")
     return 0
+
+
+def real_git_diff_countervectors(pol):
+    """Drive diff_facts through actual git plumbing, not synthetic DiffFacts.
+
+    The other cases build DiffFacts by hand, so they never exercise the mode,
+    symlink, status and ancestry parsing where a real regression would hide. A
+    stranger who edited diff_facts and broke executable-mode detection would see
+    every synthetic case still pass; this one would go red.
+    """
+    active = copy.deepcopy(pol)
+    active["status"] = "active"
+
+    def init(tmp):
+        run("git", "init", "-q", cwd=tmp)
+        run("git", "config", "user.email", "test@example.invalid", cwd=tmp)
+        run("git", "config", "user.name", "Autonomy Test", cwd=tmp)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        init(tmp)
+        (tmp / "README.md").write_text("base\n")
+        base = commit(tmp, "base")
+        docs = tmp / "docs"
+        docs.mkdir()
+        (docs / "normal.md").write_text("hi\n")
+        (docs / "with space.md").write_text("sp\n")
+        script = docs / "run.sh"
+        script.write_text("#!/bin/sh\n")
+        os.chmod(script, 0o755)
+        head = commit(tmp, "candidate Co-Authored-By: Claude")
+        old_root = gate.ROOT
+        gate.ROOT = tmp
+        try:
+            facts = gate.diff_facts(base, head, pol)
+            check("real git: an executable-mode file in the lane is detected",
+                  facts.unsupported_mode_paths == ["docs/run.sh"])
+            check("real git: a path containing a space is parsed intact",
+                  "docs/with space.md" in facts.paths)
+            state, reasons = decision(active, facts)
+            check("real git: an executable mode forces DENY", state == "DENY"
+                  and any("ordinary non-executable" in r for r in reasons))
+
+            os.symlink("normal.md", docs / "link.md")
+            head2 = commit(tmp, "symlink Co-Authored-By: Claude")
+            facts2 = gate.diff_facts(base, head2, pol)
+            check("real git: a symlink is detected from its git mode",
+                  "docs/link.md" in facts2.symlink_paths)
+            state2, _ = decision(active, facts2)
+            check("real git: a symlink forces DENY", state2 == "DENY")
+        finally:
+            gate.ROOT = old_root
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        init(tmp)
+        (tmp / "a").write_text("1\n")
+        unrelated_base = commit(tmp, "base")
+        run("git", "checkout", "-q", "--orphan", "detached", cwd=tmp)
+        (tmp / "b").write_text("2\n")
+        unrelated_head = commit(tmp, "orphan Co-Authored-By: Claude")
+        old_root = gate.ROOT
+        gate.ROOT = tmp
+        try:
+            rejected = False
+            try:
+                gate.diff_facts(unrelated_base, unrelated_head, pol)
+            except ValueError:
+                rejected = True
+            check("real git: a head that does not descend base is rejected",
+                  rejected)
+        finally:
+            gate.ROOT = old_root
 
 
 if __name__ == "__main__":
