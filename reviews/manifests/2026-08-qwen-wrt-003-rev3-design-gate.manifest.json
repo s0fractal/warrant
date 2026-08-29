@@ -1,0 +1,18 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "a12c386",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "independence_class": "distinct model family (Alibaba); NOT distinct prompting context (built on the two prior OpenAI gates it read); NOT human-expert",
+ "manifest": "review-manifest@v0",
+ "notes": "Round-3 WRT-003 gate, first from a vendor other than OpenAI (the round-3 rev-3's response asked for). Verdict AMEND. Confirmed BLOCKER #2 (nested DISSONANCE) reproduced as attack 5; declined BLOCKER #1 (7(b) empty) with the positive control. GitHub transport account s0fractal is the operator's own -> 'distinct vendor, not distinct custody', the reviewer's own phrase. prior_reviews_visible=true: explicitly builds on rounds 1-2.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": true,
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-qwen-wrt-003-rev3-design-gate.md",
+ "reviewer_model": "Qwen (self-identified) under operator coordination",
+ "reviewer_vendor": "Alibaba",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single relayed review)",
+ "web_access": "unrecorded"
+}

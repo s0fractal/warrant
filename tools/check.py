@@ -43,6 +43,10 @@ SIGMA = ROOT.parent / "sigma-glyph" / "impl"
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 
+# Prerequisite tags used more than once, named so the string is defined in one
+# place (a repeated literal is a silent way for two checks to drift apart).
+SIGMA_GO = "sigma+go"
+
 # (name, argv, needs) -- `needs` is checked BEFORE running so a missing
 # prerequisite is reported as UNRUN rather than as a confusing failure.
 CHECKS = [
@@ -76,7 +80,7 @@ CHECKS = [
     # traceback instead of UNRUN -- a gap wearing the costume of a failure, which
     # is the same confusion this file exists to prevent, in the safer direction.
     ("settlement semantics (§7 tunnels, novelty, key state)",
-     ["python3", "tests/settlement.py"], "sigma+go"),
+     ["python3", "tests/settlement.py"], SIGMA_GO),
     ("hostile stores (cycles, malformed JSON, unsigned links)",
      ["python3", "tests/hostile.py"], "go"),
     ("evidence packs (demo packs verify; no private keys shipped)",
@@ -98,6 +102,22 @@ CHECKS = [
     # that cannot go red is decoration.
     ("wpl policy language (differential vs the oracle, docs executed)",
      ["python3", "tests/policy_lang.py"], "sigma"),
+    # WRT-005 (design only): the outcome-fingerprint gate countervectors,
+    # fail-closed. Every claimed relation, settlement verdict and subprocess
+    # return code is asserted; the five re-openers are demonstrated on the
+    # current spec and shown to collapse under the proposed rule. Needs the
+    # Σ-GLYPH oracle and the Go settlement CLI (both implementations settle).
+    # (The countervector's mutation self-test — proving it can go red — runs as
+    # its own mandatory step in .github/workflows/wrt-005.yml, not here, so the
+    # stated check count stays 45.)
+    ("wrt-005 fingerprint gate countervectors (fail-closed)",
+     ["python3", "tests/fixtures/wrt005_gate_countervectors.py"], SIGMA_GO),
+    # WRT-005 (design only): the rev-4 rule mechanized in Lean 4 core. The guard
+    # compiles Settlement.lean, pins each theorem's axiom cone to a sound set,
+    # and denylists sorry/axiom/native_decide. UNRUN without a Lean toolchain,
+    # so a machine with no Lean does not report a failure.
+    ("wrt-005 fingerprint + admissibility mechanized (Lean; sound axiom cone)",
+     ["python3", "proofs/check_settlement.py"], "lean"),
     ("merkle anchoring (RFC 6962 structure + inclusion proofs)",
      ["python3", "tests/anchor.py"], None),
     ("mcp sealing proxy (stdio round-trip -> verifiable pack)",
@@ -198,6 +218,10 @@ NEEDS = {
                 "sibling repository sigma-glyph not beside this one"),
     "yaml": (lambda: importlib.util.find_spec("yaml") is not None,
              "PyYAML not installed  ->  pip install pyyaml"),
+    "lean": (lambda: shutil.which("lean") is not None,
+             "the Lean 4 toolchain is not on PATH  ->  install via elan "
+             "(https://leanprover.github.io); the mechanized proof is UNRUN "
+             "without it, never reported as passed"),
 }
 
 

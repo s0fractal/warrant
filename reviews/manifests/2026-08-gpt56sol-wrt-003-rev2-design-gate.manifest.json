@@ -1,0 +1,17 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "a3f0214",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "manifest": "review-manifest@v0",
+ "notes": "Typed adversarial gate against WRT-003 rev 2, posted as PR #30 review 5037590934, GitHub transport account 's0fractal' (the operator's own account; authorship is the model, account is transport). Verdict AMEND. Broke recommended identity (B) via REF-padding and won the case for (A); reproduced as attacks 3-4 in tests/fixtures/wrt003_gate_countervectors.py. prior_reviews_visible=true: this round explicitly builds on the annaglova rev-1 gate. Same vendor (OpenAI) as annaglova and chatgpt-web -> gate rounds 1-2 are depth within one family, not diversity.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": true,
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-gpt56sol-wrt-003-rev2-design-gate.md",
+ "reviewer_model": "GPT-5.6 Sol (self-identified) via ChatGPT",
+ "reviewer_vendor": "OpenAI",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single GitHub PR review)",
+ "web_access": "unrecorded"
+}

@@ -24,6 +24,28 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
+## Unreleased
+
+**No protocol-visible change; design-only research artifact.**
+
+- `proposals/WRT-005-outcome-fingerprint-purity.md` — DRAFT, design only. The
+  outcome-fingerprint rule for settlement §7 (identity = the eligible result
+  value; a result is eligible iff it carries no DISSONANCE node anywhere), with
+  its full adversarial history: an initial paper review that predicted the
+  expect-flip, three design-gate rounds (annaglova, gpt56sol, Qwen) with
+  responses and manifests, a fail-closed Python countervector proving the five
+  re-opener families on the current spec and their collapse under the rule, and
+  a Lean 4 mechanization of the rule's algebra and §7 admissibility (sound
+  axiom cone; `sorry`/`axiom`/`native_decide` denylisted). **Carries no claim
+  of adoption, implementation, or a refinement proof** — the Lean work proves
+  the rule's algebra, not that any verifier computes it. Filed as WRT-005
+  because WRT-003 (the number its historical artifacts still use) already
+  belongs to a closed, unrelated proposal; see the proposal's identifier note.
+  Two new checks in `tools/check.py` (the fail-closed countervector; the Lean
+  guard) and a dedicated mandatory CI (`.github/workflows/wrt-005.yml`, pinned
+  Σ-GLYPH + built Go + pinned Lean, no `--allow-unrun`); stated check count
+  43 → 45.
+
 ## 0.9.0 — the published package disagreed with the published pack
 
 **BREAKING for records with implausible timestamps; no real record is affected.**
