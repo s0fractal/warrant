@@ -152,8 +152,15 @@ CHECKS = [
     # head bindings, unsupported file modes, false authority trailers and
     # signature/policy drift all fail closed. The shipped policy remains DRAFT:
     # this check validates the mechanism, not standing authorization.
-    ("agent autonomy envelope (33 fail-closed countervectors; policy still draft)",
+    ("agent autonomy envelope (39 fail-closed countervectors; policy still draft)",
      ["python3", "tests/autonomy_gate.py"], None),
+    # The advisory workflow's trust binding (base-ref, head-snapshot, check
+    # provenance) lives in tools/autonomy_advisory.py so it is testable Python,
+    # not unreviewable YAML. These countervectors prove a same-repo non-default
+    # base, a drifted head/base, and a foreign-app or untrusted-suite check all
+    # fail closed before any base byte is trusted.
+    ("autonomy advisory trust binding (P1a/P1b/P1c countervectors)",
+     ["python3", "tests/autonomy_advisory.py"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),

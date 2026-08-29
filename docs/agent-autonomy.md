@@ -13,14 +13,29 @@ to enlarge from inside the action being judged.
 
 For a pull request from base commit `B` to candidate commit `H`:
 
-1. The evaluator, policy, and trust roots are read from `B`, never `H`.
-2. `H` is fetched and inspected as Git data. No executable from `H` runs in the
-   authorization job.
-3. A protected-path hit is a denial, not a request for the model to explain why
+1. The advisory job checks out only the **default branch** — the same trusted
+   source `workflow_run` loads the workflow itself from — and runs the evaluator
+   and its trust-binding pre-processor from there. It never checks out a
+   PR-chosen ref. The policy and trust roots are then read from `B` by that
+   evaluator, and `B` is accepted only after it is proven to be on the default
+   branch (its base ref is the API's default branch, and it is a git ancestor of
+   the checked-out default tip). A same-repo *feature* branch used as a base is
+   refused before any of its bytes are read.
+2. `H` is the immutable `workflow_run.head_sha` — the exact commit the required
+   checks ran on. It is fetched and inspected as Git data; no executable from
+   `H` runs in the authorization job. If the live pull request has since drifted
+   (a force-push, or the base advancing), the check evidence is withheld and the
+   decision is `HOLD`, so a green packet can never describe a different revision
+   pair than the one the checks observed.
+3. Required-check evidence is bound to trusted workflow identity — the
+   default-branch workflow file, the github-actions app, this head, this pull
+   request, a `pull_request` event — never to a bare check-run name another app
+   or a candidate workflow could mint.
+4. A protected-path hit is a denial, not a request for the model to explain why
    its own exception is safe.
-4. Missing or failing checks, a stale head binding, malformed policy, unsupported
+5. Missing or failing checks, a stale head binding, malformed policy, unsupported
    file mode, or absent authorization cannot be interpreted as permission.
-5. The decision packet binds the base SHA, head SHA, exact policy hash, measured
+6. The decision packet binds the base SHA, head SHA, exact policy hash, measured
    diff, check evidence, reasons, and decision.
 
 This creates three distinct outcomes:

@@ -2,14 +2,27 @@ name: autonomy-advisory
 
 # Read-only bootstrap for unattended authority.
 #
-# This is intentionally triggered by workflow_run. GitHub loads workflow_run
-# workflows from the default branch, so a pull request cannot rewrite the
-# evaluator that judges that same pull request. The candidate head is fetched as
-# an object and inspected; it is never checked out or executed here.
+# Triggered by workflow_run, so GitHub loads this workflow and the tools it runs
+# from the DEFAULT BRANCH -- a pull request cannot rewrite the evaluator that
+# judges it. The job checks out only the default branch (never a PR-chosen ref),
+# runs the trust-binding pre-processor tools/autonomy_advisory.py, and only then
+# reads the policy and trust roots from the base SHA that pre-processor proved to
+# be the default branch. The candidate head is fetched as a Git object and
+# inspected; it is never checked out or executed.
+#
+# Trust binding (each has a countervector in tests/autonomy_advisory.py):
+#   * the base must BE the default branch, not merely same-repo (P1a);
+#   * the evaluated head is the immutable workflow_run.head_sha the required
+#     checks ran on, and live drift withholds the evidence (P1b);
+#   * required-check evidence is bound to trusted workflow identity, not to a
+#     bare check-run name any app could mint (P1c).
 #
 # A successful job means the evaluator ran and uploaded a packet. It does NOT
 # mean the packet says ELIGIBLE. Until the base policy is separately ratified,
 # the expected packet decision is HOLD.
+#
+# All pull-request-controlled event fields are passed through env, never
+# interpolated into a shell script, so a crafted branch name cannot inject.
 
 on:
   workflow_run:
@@ -28,41 +41,10 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - name: Resolve the exact PR base and head
-        id: refs
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          test "$PR_NUMBER" -eq "$PR_NUMBER"
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > /tmp/pr.json
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os
-          p = json.load(open('/tmp/pr.json'))
-          if p['base']['repo']['full_name'] != os.environ['REPOSITORY']:
-              raise SystemExit('PR base repository mismatch')
-          print('base=' + p['base']['sha'])
-          print('head=' + p['head']['sha'])
-          print('number=' + str(p['number']))
-          PY
-
-      - name: Check out only the protected base revision
+      - name: Check out only the default branch (the trusted evaluator source)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.refs.outputs.base }}
           fetch-depth: 0
-
-      - name: Fetch candidate as Git data and bind its exact SHA
-        env:
-          PR_NUMBER: ${{ steps.refs.outputs.number }}
-          EXPECTED_HEAD: ${{ steps.refs.outputs.head }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin \
-            "+refs/pull/$PR_NUMBER/head:refs/remotes/pr/head"
-          test "$(git rev-parse refs/remotes/pr/head)" = "$EXPECTED_HEAD"
 
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
         with:
@@ -73,43 +55,68 @@ jobs:
           python3 -m pip install --only-binary=:all:
           'cryptography==45.0.7'
 
-      - name: Bind check evidence to this head
+      - name: Gather the raw event and API payloads
+        id: gather
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ steps.refs.outputs.head }}
+          WORKFLOW_RUN_JSON: ${{ toJSON(github.event.workflow_run) }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/check-runs?per_page=100" \
-            > /tmp/check-runs.json
-          python3 - <<'PY'
-          import json, os
-          runs = json.load(open('/tmp/check-runs.json'))['check_runs']
-          out = {}
-          for wanted in ('test', 'cross-repo'):
-              matched = [r for r in runs if r['name'] == wanted]
-              if not matched:
-                  continue
-              if any(r['status'] != 'completed' for r in matched):
-                  out[wanted] = 'pending'
-              elif all(r['conclusion'] == 'success' for r in matched):
-                  out[wanted] = 'success'
-              else:
-                  out[wanted] = 'failure'
-          with open('autonomy-checks.json', 'w') as f:
-              json.dump({'head_sha': os.environ['HEAD_SHA'], 'checks': out}, f,
-                        sort_keys=True, separators=(',', ':'))
-              f.write('\n')
-          PY
+          # PR-controlled values validated as shape before any use.
+          printf '%s' "$WORKFLOW_RUN_JSON" > wr.json
+          test "$PR_NUMBER" -eq "$PR_NUMBER"
+          case "$HEAD_SHA" in
+            *[!0-9a-f]* | "" ) echo "head sha is not hex"; exit 1 ;;
+          esac
+          test "${#HEAD_SHA}" -eq 40
+          DEFAULT_BRANCH="$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > pr.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100" > runs.json
+          gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/check-runs?per_page=100" > check-runs.json
+          echo "default_branch=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Bind base, head and check evidence (fail-closed) from base-owned tool
+        id: bind
+        env:
+          DEFAULT_BRANCH: ${{ steps.gather.outputs.default_branch }}
+        run: |
+          set -euo pipefail
+          python3 tools/autonomy_advisory.py \
+            --workflow-run wr.json \
+            --live-pr pr.json \
+            --runs runs.json \
+            --check-runs check-runs.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --out-refs refs.env \
+            --out-checks autonomy-checks.json
+          cat refs.env >> "$GITHUB_OUTPUT"
+
+      - name: Prove the base is on the default branch, then fetch the candidate
+        env:
+          BASE_SHA: ${{ steps.bind.outputs.base }}
+          HEAD_SHA: ${{ steps.bind.outputs.head }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          # HEAD is the checked-out default branch tip; the base must descend
+          # into it, i.e. it is genuinely on the trusted default branch.
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          git fetch --no-tags origin \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/pr/head"
+          test "$(git rev-parse refs/remotes/pr/head)" = "$HEAD_SHA"
 
       - name: Evaluate merge capability from base-owned bytes
         env:
-          BASE_SHA: ${{ steps.refs.outputs.base }}
-          HEAD_SHA: ${{ steps.refs.outputs.head }}
+          BASE_SHA: ${{ steps.bind.outputs.base }}
+          HEAD_SHA: ${{ steps.bind.outputs.head }}
         run: |
           set -euo pipefail
           python3 tools/autonomy_gate.py \
             --base "$BASE_SHA" \
-            --head refs/remotes/pr/head \
+            --head "$HEAD_SHA" \
             --policy-from "$BASE_SHA" \
             --action merge \
             --checks-file autonomy-checks.json \
@@ -134,7 +141,7 @@ jobs:
       - name: Publish the immutable decision packet
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: autonomy-decision-${{ steps.refs.outputs.head }}
+          name: autonomy-decision-${{ steps.bind.outputs.head }}
           path: |
             autonomy-checks.json
             autonomy-decision.json

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Fail-closed capability gate for agent-operated repository actions.
 
-The candidate revision is data.  The evaluator, policy and trust root are read
-from a caller-selected base revision, so a pull request cannot enlarge the
-authority under which that same pull request is judged.
+The candidate revision is data.  The policy and trust root are read from a
+caller-selected base revision (the advisory workflow runs this evaluator from
+the default branch and passes a base it has proven to be on that branch), so a
+pull request cannot enlarge the authority under which that same pull request is
+judged.
 
 This tool does not merge, push, publish or change repository settings.  It emits
 one content-addressable decision packet.  A separate workflow may act on an

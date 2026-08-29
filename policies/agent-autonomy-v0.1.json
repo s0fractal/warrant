@@ -98,7 +98,7 @@
   },
   "notes": {
     "bootstrap": "This policy is intentionally draft and merge=false. Merging its implementation does not activate standing authority.",
-    "base_only": "A candidate is evaluated by the evaluator and policy from the pull request base SHA; candidate bytes are data and never execute.",
+    "base_only": "The evaluator runs from the default branch; the policy and trust roots are read from the base SHA, which is accepted only after it is proven to be on the default branch. Candidate bytes are data and never execute.",
     "self_change": "Any change to the evaluator, policy, workflow, tests, trust roots, governance, protocol, release, dependency, proof, or conformance surface is outside autonomous merge authority.",
     "not_adoption": "Merge eligibility is not Warrant governance adoption, independent custody, scientific validity, or normative authority.",
     "silence": "Missing policy fields, checks, authorization, signature support, paths, or evidence deny or hold; absence is never success."
