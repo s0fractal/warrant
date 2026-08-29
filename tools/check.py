@@ -150,9 +150,9 @@ CHECKS = [
     # The autonomy evaluator is itself governance-critical. Its countervectors
     # prove that policy/evaluator/workflow self-change, missing evidence, stale
     # head bindings, unsupported file modes, false authority trailers and
-    # signature/policy drift all fail closed. The shipped policy remains DRAFT:
-    # this check validates the mechanism, not standing authorization.
-    ("agent autonomy envelope (39 fail-closed countervectors; policy still draft)",
+    # signature/policy drift all fail closed. An active policy still grants
+    # nothing when the detached authorization is absent or invalid.
+    ("agent autonomy envelope (41 fail-closed countervectors)",
      ["python3", "tests/autonomy_gate.py"], None),
     # The advisory workflow's trust binding (base-ref, head-snapshot, check
     # provenance) lives in tools/autonomy_advisory.py so it is testable Python,
@@ -161,6 +161,12 @@ CHECKS = [
     # fail closed before any base byte is trusted.
     ("autonomy advisory trust binding (P1a/P1b/P1c countervectors)",
      ["python3", "tests/autonomy_advisory.py"], None),
+    # The write-capable actor has a second, immediately-before-merge boundary.
+    # It binds the ELIGIBLE packet to live PR/base/head state and the exact
+    # branch-protection app identities; GitHub's expected-head merge API is the
+    # final transactional guard.
+    ("autonomy merge actor (21 live-state/protection countervectors)",
+     ["python3", "tests/autonomy_merge.py"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),

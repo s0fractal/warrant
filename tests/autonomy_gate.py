@@ -103,15 +103,15 @@ def signature_fixture(tmp: Path, pol: dict):
 
 def main():
     pol = policy()
-    check("shipped bootstrap policy has a valid closed shape",
+    check("shipped activation policy has a valid closed shape",
           gate.policy_problems(pol) == [])
 
-    state, reasons = decision(pol, facts())
-    check("draft policy grants no standing action", state == "HOLD" and
-          any("inactive" in r for r in reasons))
+    state, reasons = decision(
+        pol, facts(), auth_errors=["standing authorization unavailable"])
+    check("active policy without its detached authorization grants nothing",
+          state == "HOLD" and any("unavailable" in r for r in reasons))
 
     active = copy.deepcopy(pol)
-    active["status"] = "active"
     state, reasons = decision(active, facts(), auth_errors=[])
     check("active bounded draft-PR action can become eligible", state == "ELIGIBLE")
 
@@ -246,6 +246,28 @@ def main():
             check("tampered signature is rejected", errors != [])
         finally:
             gate.ROOT = old_root
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    p256_private = ec.generate_private_key(ec.SECP256R1())
+    p256_public = p256_private.public_key().public_bytes(
+        serialization.Encoding.X962,
+        serialization.PublicFormat.UncompressedPoint)
+    p256_auth = {
+        "authorization_format": pol["authorization"]["format"],
+        "repository": pol["repository"], "base_branch": pol["base_branch"],
+        "policy_sha256": "a" * 64, "actions": ["merge"],
+        "not_before": "2026-01-01T00:00:00Z",
+        "not_after": "2026-12-31T00:00:00Z",
+    }
+    p256_auth["signature"] = base64.b64encode(p256_private.sign(
+        gate.canonical(p256_auth).encode(), ec.ECDSA(hashes.SHA256()))).decode()
+    p256_key = b"p256-x963:" + base64.b64encode(p256_public)
+    check("Secure Enclave compatible P-256 authorization verifies",
+          gate._auth_signature_problems(p256_auth, p256_key) == [])
+    p256_auth["repository"] = "attacker/warrant"
+    check("P-256 authorization tampering is rejected",
+          gate._auth_signature_problems(p256_auth, p256_key) != [])
 
     checks, errors = gate.load_checks(None, "a" * 40)
     check("missing check packet is named, not treated as green",

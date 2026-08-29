@@ -1,0 +1,16 @@
+{
+  "actions" : [
+    "branch_push",
+    "draft_pull_request",
+    "pull_request_update",
+    "ready_for_review",
+    "merge"
+  ],
+  "authorization_format" : "agent-autonomy-authorization@v0.1",
+  "base_branch" : "master",
+  "not_after" : "2027-08-29T07:49:31Z",
+  "not_before" : "2026-08-29T07:44:31Z",
+  "policy_sha256" : "f910a116f0b90fa3647d3fdb1af553855ae82f188fa3ae10faa6cd0b6795dc72",
+  "repository" : "s0fractal/warrant",
+  "signature" : "MEYCIQCvKdzrVF0tgt8BCuMXqH2BNgYJI8Oa2bjdiM+BaDxtawIhAIu1Fbzk5HPnB2FhddOcJDAAAFH8o5cKpOv6SYnX+FST"
+}

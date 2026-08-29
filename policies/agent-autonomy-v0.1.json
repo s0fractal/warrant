@@ -1,15 +1,15 @@
 {
   "agent_autonomy_policy": "0.1",
-  "status": "draft",
+  "status": "active",
   "repository": "s0fractal/warrant",
   "base_branch": "master",
-  "purpose": "Bound reversible agent work now; permit unattended merges only after a separately signed, hash-bound standing authorization exists.",
+  "purpose": "Permit bounded unattended agent work and merges inside a non-normative path lane under a detached, hash-bound maintainer authorization.",
   "actions": {
     "branch_push": true,
     "draft_pull_request": true,
     "pull_request_update": true,
     "ready_for_review": true,
-    "merge": false,
+    "merge": true,
     "release": false,
     "governance_adoption": false,
     "branch_protection_admin": false,
@@ -94,10 +94,10 @@
     "policy_sha256_required": true,
     "detached_signature_required": true,
     "authorization_path": "trust/agent-autonomy-authorization.json",
-    "trusted_key_path": "trust/maintainer-autonomy-ed25519.pub"
+    "trusted_key_path": "trust/maintainer-autonomy-p256.pub"
   },
   "notes": {
-    "bootstrap": "This policy is intentionally draft and merge=false. Merging its implementation does not activate standing authority.",
+    "bootstrap": "Standing authority becomes active only when this exact policy, its Secure Enclave public key, detached authorization, evaluator, merge actor, and branch protection land together on master.",
     "base_only": "The evaluator runs from the default branch; the policy and trust roots are read from the base SHA, which is accepted only after it is proven to be on the default branch. Candidate bytes are data and never execute.",
     "self_change": "Any change to the evaluator, policy, workflow, tests, trust roots, governance, protocol, release, dependency, proof, or conformance surface is outside autonomous merge authority.",
     "not_adoption": "Merge eligibility is not Warrant governance adoption, independent custody, scientific validity, or normative authority.",

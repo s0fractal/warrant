@@ -430,18 +430,28 @@ def _auth_field_problems(auth: dict, auth_cfg: dict, policy: dict,
 
 def _auth_signature_problems(auth: dict, key_raw: bytes) -> list[str]:
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        prefix = b"ed25519:"
-        if not key_raw.startswith(prefix):
-            raise ValueError("trusted key must be ed25519:<base64 raw 32-byte key>")
-        key = base64.b64decode(key_raw[len(prefix):], validate=True)
         signature = base64.b64decode(auth["signature"], validate=True)
-        if len(key) != 32 or len(signature) != 64:
-            raise ValueError("wrong Ed25519 key or signature length")
         signed = dict(auth)
         del signed["signature"]
-        Ed25519PublicKey.from_public_bytes(key).verify(
-            signature, canonical(signed).encode("utf-8"))
+        message = canonical(signed).encode("utf-8")
+        if key_raw.startswith(b"ed25519:"):
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            key = base64.b64decode(key_raw[len(b"ed25519:"):], validate=True)
+            if len(key) != 32 or len(signature) != 64:
+                raise ValueError("wrong Ed25519 key or signature length")
+            Ed25519PublicKey.from_public_bytes(key).verify(signature, message)
+        elif key_raw.startswith(b"p256-x963:"):
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.asymmetric import ec
+            key = base64.b64decode(key_raw[len(b"p256-x963:"):], validate=True)
+            if len(key) != 65 or key[0] != 4:
+                raise ValueError("wrong P-256 X9.63 public-key encoding")
+            public = ec.EllipticCurvePublicKey.from_encoded_point(
+                ec.SECP256R1(), key)
+            public.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+        else:
+            raise ValueError(
+                "trusted key must be ed25519:<raw-base64> or p256-x963:<base64>")
     except (ImportError, ValueError, TypeError) as exc:
         return [f"standing authorization signature unavailable or invalid: {exc}"]
     except Exception:
