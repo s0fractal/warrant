@@ -193,8 +193,22 @@ def select_checks(runs, check_runs, head_sha: str,
     return out
 
 
+def _confined(path_str: str) -> Path:
+    """Resolve a CLI-supplied path and refuse anything outside the working dir.
+
+    Every file this tool reads or writes is named on the command line. Validate
+    the constructed path before touching the file system so a caller (an LLM
+    among them) cannot make it read or overwrite an arbitrary file.
+    """
+    base = Path.cwd().resolve()
+    target = (base / path_str).resolve()
+    if not target.is_relative_to(base):
+        _refuse(f"refusing path outside the working directory: {path_str!r}")
+    return target
+
+
 def _load(path: str):
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return json.loads(_confined(path).read_text(encoding="utf-8"))
 
 
 def build(args) -> int:
@@ -204,6 +218,11 @@ def build(args) -> int:
     check_doc = _load(args.check_runs)
     runs = runs_doc.get("workflow_runs") if isinstance(runs_doc, dict) else None
     check_runs = check_doc.get("check_runs") if isinstance(check_doc, dict) else None
+
+    # Validate both output paths before doing any work, so a bad --out path
+    # fails closed rather than after a partial write.
+    out_refs = _confined(args.out_refs)
+    out_checks = _confined(args.out_checks)
 
     base_sha, head_sha, drift = resolve_refs(
         workflow_run, live_pr, args.repo, args.default_branch)
@@ -216,9 +235,9 @@ def build(args) -> int:
         for reason in drift:
             print(f"drift: {reason}", file=sys.stderr)
 
-    Path(args.out_refs).write_text(
+    out_refs.write_text(
         f"base={base_sha}\nhead={head_sha}\n", encoding="utf-8")
-    Path(args.out_checks).write_text(
+    out_checks.write_text(
         json.dumps({"head_sha": head_sha, "checks": checks},
                    sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8")

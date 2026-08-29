@@ -193,6 +193,15 @@ def main():
         check("build: a non-default base ref exits non-zero (fail-closed)",
               rc == 3 and not (tmp / "refs.env").exists())
 
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        _dump(tmp, workflow_run(), live_pr(), trusted_runs(),
+              trusted_check_runs())
+        rc = _run_build(tmp, None, out_refs="../escape.env")
+        escaped = (Path(td).parent / "escape.env")
+        check("build: an --out path outside the working dir is refused",
+              rc == 3 and not escaped.exists())
+
     print(f"AUTONOMY ADVISORY: ALL PASS ({passed}/{passed})")
     return 0
 
@@ -205,19 +214,22 @@ def _dump(tmp, wr, pr, runs, check_runs):
     return tmp
 
 
-def _run_build(tmp, _files):
+def _run_build(tmp, _files, out_refs="refs.env", out_checks="checks.json"):
     import subprocess
+    # Run with cwd=tmp and repo-relative filenames: the tool confines every
+    # path it touches to the working directory, so the temp dir IS that root.
     argv = [sys.executable,
             str(Path(__file__).resolve().parents[1] / "tools" /
                 "autonomy_advisory.py"),
-            "--workflow-run", str(tmp / "wr.json"),
-            "--live-pr", str(tmp / "pr.json"),
-            "--runs", str(tmp / "runs.json"),
-            "--check-runs", str(tmp / "checkruns.json"),
+            "--workflow-run", "wr.json",
+            "--live-pr", "pr.json",
+            "--runs", "runs.json",
+            "--check-runs", "checkruns.json",
             "--repo", REPO, "--default-branch", DEFAULT,
-            "--out-refs", str(tmp / "refs.env"),
-            "--out-checks", str(tmp / "checks.json")]
-    return subprocess.run(argv, capture_output=True, text=True).returncode
+            "--out-refs", out_refs,
+            "--out-checks", out_checks]
+    return subprocess.run(argv, cwd=tmp, capture_output=True,
+                          text=True).returncode
 
 
 if __name__ == "__main__":
