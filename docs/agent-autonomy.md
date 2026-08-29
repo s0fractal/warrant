@@ -1,8 +1,11 @@
 # Agent autonomy: a capability envelope, not a blank cheque
 
-**Status: BOOTSTRAP DRAFT.** The evaluator is useful immediately as a read-only
-control, but unattended merge authority is disabled. This document and the
-policy do not ratify themselves.
+**Status: HASH-ACTIVATED ENVELOPE.** This mechanism grants standing authority
+only on a protected `master` revision that contains all four of: an active
+policy, the public key named by that exact policy, a valid detached signature
+over the exact policy bytes, and the base-owned merge actor. Removing or
+invalidating any one makes the decision `HOLD`; this prose does not authorize
+anything by itself.
 
 The maintainer's intended direction is AI-reviewed, progressively autonomous
 operation. The engineering consequence is not “trust the model more.” It is to
@@ -40,20 +43,27 @@ For a pull request from base commit `B` to candidate commit `H`:
    only from a workflow run whose own snapshot observed that exact base and head
    — checks that passed against an older base are never stitched onto a newer one.
 
-### The packet proves a pair, not a merge
+### The packet proves a pair; the actor closes the merge boundary
 
 The advisory packet is evidence about **one exact `(base, head)` pair** the
 required checks were observed against. It does not perform a merge and it cannot
 speak for the state of the repository at some later instant. Between the packet
 and any merge, the base branch can advance and the head can be force-pushed.
 
-So the packet is necessary, not sufficient: a future write-capable merge actor
-(which does not exist yet — `merge` is `false` and no such actor is installed)
-must, immediately before it merges, re-read the live base and head, confirm they
-still equal the packet's pair, and confirm branch protection still names the
-required checks — then merge under its own standing authorization or refuse.
-This residual race belongs to the merge actor, by construction; the advisory job
-deliberately holds no write capability with which to close it itself.
+So the packet is necessary, not sufficient. The write-capable
+`autonomy-merge` actor independently re-reads the live PR, default-branch tip,
+mergeability, and branch-protection response. It requires the same exact
+`(base, head)` pair and the exact two required check/app identities, then runs
+the signed policy gate from `base` again. Immediately before mutation it reads
+the live state a second time and calls GitHub's protected merge endpoint with
+the expected head SHA. GitHub atomically refuses a changed head; strict required
+checks on a protection rule enforced for administrators refuse a candidate
+whose base is no longer current.
+
+The actor token has `contents:write` and `pull-requests:write`, but no repository
+administration permission. It therefore cannot weaken the protection response
+that its own preflight requires. Candidate bytes are never checked out or
+executed by either autonomy workflow.
 
 This creates three distinct outcomes:
 
@@ -67,26 +77,49 @@ This creates three distinct outcomes:
 It does not mean governance adoption, independent custody, correctness,
 scientific validity, or normative authority.
 
-## Bootstrap phase
+## Active capability
 
 The v0.1 policy grants agents the reversible working actions needed to make
-progress: push a non-default branch, open or update a Draft PR, and mark it ready
-after evidence is recorded. It explicitly withholds merge, release, branch-admin,
-history-rewrite, and governance-adoption authority.
+progress and permits unattended merge only inside `briefs/`, `demos/`, `docs/`,
+`examples/`, and `prior-art/`, within the numeric and file-shape ceilings in the
+signed policy. It explicitly withholds release, branch-admin, history-rewrite,
+and governance-adoption authority.
 
-The first unattended merge can occur only after all of the following are true:
+An unattended merge can occur only while all of the following remain true:
 
-1. branch protection on `master` is active and names the load-bearing required
-   checks;
+1. branch protection on `master` requires a PR, is strict and enforced for
+   administrators, forbids force-push/deletion, and names only `test` and
+   `cross-repo` from GitHub Actions app id `15368`;
 2. a maintainer public key is pinned on `master`;
 3. a detached maintainer signature authorizes the exact SHA-256 of a policy,
    repository, branch, validity window, and permitted action set;
 4. the policy's `merge` capability is explicitly true;
 5. the authorization workflow still comes from the protected base revision.
 
-The private key is never created, held, or used by an agent. A GitHub login, PR
-comment, model statement, co-located roster key, or green suite is not silently
-upgraded into that signature.
+The maintainer key uses P-256 in this Mac's Secure Enclave. The repository's
+signer stores only an opaque, device-bound handle under the maintainer's
+`Library/Application Support/Warrant` directory and requires user presence
+(Touch ID or device password) for the signing operation. The repository receives
+only the X9.63 public key and detached ECDSA signature. No raw private scalar is
+exported to a file or supplied to an agent.
+
+This is a user-presence boundary, not an independent human review and not a
+second machine. A malicious process on the same host may request a signature or
+misdescribe what the prompt means; the maintainer must still inspect the policy
+digest printed by the signer before authenticating. A GitHub login, PR comment,
+model statement, co-located roster key, or green suite is never upgraded into
+that signature.
+
+From the repository root, the maintainer creates or reuses the Secure Enclave
+key and signs the current exact policy with one command:
+
+```sh
+swift tools/autonomy_sign.swift authorize --days 365
+```
+
+The command prints the policy digest, action set, and validity window before the
+macOS authentication prompt. It refuses to fall back to a software key when the
+Secure Enclave is unavailable.
 
 ## Why self-change is excluded
 
@@ -116,3 +149,15 @@ Expansion happens by replacing a hash-pinned policy through the protected path,
 not by adding an exception to a candidate PR. Revocation is simpler: disable the
 workflow or replace the authorization on `master`; absence immediately fails
 closed.
+
+## Operational stop and recovery
+
+The fastest stop is disabling `.github/workflows/autonomy-merge.yml` in GitHub
+Actions. The durable stop is a protected PR that sets the policy to `revoked` or
+removes the authorization. The actor cannot merge either its own expansion or
+its own repair because `.github/`, `policies/`, `trust/`, `tools/`, and `tests/`
+are protected paths. Those changes remain explicit maintainer merges.
+
+If the Mac or Secure Enclave handle is lost, existing authorization remains
+verifiable but no new authorization can be issued with that key. Recovery is a
+protected, explicit key-rotation PR; there is no agent-side recovery secret.
