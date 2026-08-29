@@ -69,11 +69,20 @@ def _suite_id(check):
     return _get(_get(check, "check_suite") or {}, "id")
 
 
-def _run_pr_numbers(run) -> set:
+def _run_pr_snapshot(run, pr_number):
+    """The run's own pull_requests entry for pr_number, or None.
+
+    This snapshot is the immutable base/head the run actually observed. Binding
+    to it -- not merely to the PR number -- is what stops a run whose base was a
+    different commit from being credited to the base under evaluation.
+    """
     prs = _get(run, "pull_requests")
     if not isinstance(prs, list):
-        return set()
-    return {p.get("number") for p in prs if isinstance(p, dict)}
+        return None
+    for p in prs:
+        if isinstance(p, dict) and p.get("number") == pr_number:
+            return p
+    return None
 
 
 def _refuse(msg: str):
@@ -152,32 +161,54 @@ def resolve_refs(workflow_run, live_pr, repo: str,
     return base_sha, head_sha, drift
 
 
-def _trusted_suites(runs, path: str, head_sha: str, pr_number: int) -> set:
-    return {
-        _get(r, "check_suite_id")
-        for r in runs
-        if _get(r, "path") == path
-        and _get(r, "head_sha") == head_sha
-        and _get(r, "event") == "pull_request"
-        and pr_number in _run_pr_numbers(r)
-        and _get(r, "check_suite_id") is not None
-    }
+def _run_matches(run, path: str, base_sha: str, head_sha: str,
+                 pr_number: int, default_branch: str) -> bool:
+    """True only if this workflow run observed the EXACT base/head pair.
+
+    Binds workflow identity (path, event) AND the run's own PR snapshot
+    (number, base sha, base ref, head sha).  A run whose snapshot base differs
+    from the evaluated base -- the mixed-base attack, where checks that passed
+    against B0 and against B1 are stitched into one green packet for B1 -- does
+    not match, so its check suite is never trusted.
+    """
+    if _get(run, "path") != path or _get(run, "event") != "pull_request":
+        return False
+    if _get(run, "check_suite_id") is None:
+        return False
+    snap = _run_pr_snapshot(run, pr_number)
+    if snap is None:
+        return False
+    base = _get(snap, "base") or {}
+    head = _get(snap, "head") or {}
+    return (_get(base, "sha") == base_sha
+            and _get(base, "ref") == default_branch
+            and _get(head, "sha") == head_sha)
 
 
-def select_checks(runs, check_runs, head_sha: str,
-                  pr_number: int) -> dict[str, str]:
+def _trusted_suites(runs, path: str, base_sha: str, head_sha: str,
+                    pr_number: int, default_branch: str) -> set:
+    return {_get(r, "check_suite_id") for r in runs
+            if _run_matches(r, path, base_sha, head_sha, pr_number,
+                            default_branch)}
+
+
+def select_checks(runs, check_runs, base_sha: str, head_sha: str,
+                  pr_number: int, default_branch: str) -> dict[str, str]:
     """Map each required check to success/failure/pending from TRUSTED evidence.
 
     A check counts only if it is produced by the github-actions app and belongs
-    to a check suite owned by the required workflow file, on this head and pull
-    request.  Anything else -- a same-named check from another app, another
-    workflow, another head -- is simply absent, which the gate treats as a HOLD.
+    to a check suite owned by the required workflow file whose run observed the
+    exact base/head pair under evaluation, on this pull request.  Anything else
+    -- a same-named check from another app, another workflow, another head, or a
+    run that observed a different base (the mixed-base attack) -- is simply
+    absent, which the gate treats as a HOLD.
     """
     out: dict[str, str] = {}
     if not isinstance(runs, list) or not isinstance(check_runs, list):
         return out
     for name, path in REQUIRED_CHECK_WORKFLOW.items():
-        suites = _trusted_suites(runs, path, head_sha, pr_number)
+        suites = _trusted_suites(runs, path, base_sha, head_sha, pr_number,
+                                 default_branch)
         matched = [c for c in check_runs
                    if _get(c, "name") == name
                    and _app_slug(c) == TRUSTED_APP
@@ -226,8 +257,8 @@ def build(args) -> int:
 
     base_sha, head_sha, drift = resolve_refs(
         workflow_run, live_pr, args.repo, args.default_branch)
-    checks = select_checks(runs or [], check_runs or [], head_sha,
-                           _get(live_pr, "number"))
+    checks = select_checks(runs or [], check_runs or [], base_sha, head_sha,
+                           _get(live_pr, "number"), args.default_branch)
     if drift:
         # The evidence no longer describes the current pull request: withhold it
         # so the gate HOLDs.  The evaluated pair stays the immutable one.

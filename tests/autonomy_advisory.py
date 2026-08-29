@@ -63,13 +63,19 @@ def live_pr(number=38, base_ref=DEFAULT, base_sha=BASE, head_sha=HEAD,
     }
 
 
-def trusted_runs(head=HEAD, number=38):
-    return [
-        {"path": CI, "head_sha": head, "event": "pull_request",
-         "check_suite_id": 111, "pull_requests": [{"number": number}]},
-        {"path": X1, "head_sha": head, "event": "pull_request",
-         "check_suite_id": 222, "pull_requests": [{"number": number}]},
-    ]
+def run_for(path, suite, base=BASE, head=HEAD, number=38, base_ref=DEFAULT):
+    return {"path": path, "head_sha": head, "event": "pull_request",
+            "check_suite_id": suite,
+            "pull_requests": [{"number": number,
+                               "base": {"ref": base_ref, "sha": base},
+                               "head": {"sha": head}}]}
+
+
+def trusted_runs(head=HEAD, number=38, base=BASE, base_ref=DEFAULT):
+    return [run_for(CI, 111, base=base, head=head, number=number,
+                    base_ref=base_ref),
+            run_for(X1, 222, base=base, head=head, number=number,
+                    base_ref=base_ref)]
 
 
 def check_run(name, suite, app="github-actions", status="completed",
@@ -96,7 +102,8 @@ def main():
     base, head, drift = adv.resolve_refs(workflow_run(), live_pr(), REPO, DEFAULT)
     check("consistent same-default-branch PR resolves to the run's pair",
           base == BASE and head == HEAD and drift == [])
-    checks = adv.select_checks(trusted_runs(), trusted_check_runs(), HEAD, 38)
+    checks = adv.select_checks(trusted_runs(), trusted_check_runs(),
+                               BASE, HEAD, 38, DEFAULT)
     check("trusted evidence yields both required checks green",
           checks == {"test": "success", "cross-repo": "success"})
 
@@ -134,27 +141,53 @@ def main():
     foreign_app = [check_run("test", 111, app="attacker-app"),
                    check_run("cross-repo", 222, app="attacker-app")]
     check("P1c: same-named checks from a foreign app do not count",
-          adv.select_checks(trusted_runs(), foreign_app, HEAD, 38) == {})
+          adv.select_checks(trusted_runs(), foreign_app,
+                            BASE, HEAD, 38, DEFAULT) == {})
     # A github-actions check whose suite is NOT one of the required workflows.
     untrusted_suite = [check_run("test", 999), check_run("cross-repo", 999)]
     check("P1c: a github-actions check from an untrusted suite does not count",
-          adv.select_checks(trusted_runs(), untrusted_suite, HEAD, 38) == {})
+          adv.select_checks(trusted_runs(), untrusted_suite,
+                            BASE, HEAD, 38, DEFAULT) == {})
     # A run of an untrusted workflow file, even if it mints suite 111.
-    untrusted_workflow = [
-        {"path": ".github/workflows/attacker.yml", "head_sha": HEAD,
-         "event": "pull_request", "check_suite_id": 111,
-         "pull_requests": [{"number": 38}]}]
+    untrusted_workflow = [run_for(".github/workflows/attacker.yml", 111)]
     check("P1c: a suite owned by an untrusted workflow file does not count",
-          adv.select_checks(untrusted_workflow,
-                            [check_run("test", 111)], HEAD, 38) == {})
+          adv.select_checks(untrusted_workflow, [check_run("test", 111)],
+                            BASE, HEAD, 38, DEFAULT) == {})
     # A trusted suite but for a DIFFERENT head is not credited to this head.
     check("P1c: trusted evidence bound to another head does not count",
-          adv.select_checks(trusted_runs(head=OTHER),
-                            trusted_check_runs(), HEAD, 38) == {})
+          adv.select_checks(trusted_runs(head=OTHER), trusted_check_runs(),
+                            BASE, HEAD, 38, DEFAULT) == {})
     # A trusted suite but for a DIFFERENT pull request number.
     check("P1c: trusted evidence bound to another PR does not count",
-          adv.select_checks(trusted_runs(number=999),
-                            trusted_check_runs(), HEAD, 38) == {})
+          adv.select_checks(trusted_runs(number=999), trusted_check_runs(),
+                            BASE, HEAD, 38, DEFAULT) == {})
+
+    # -- P1b': check evidence is bound to the EXACT base, not just head ------
+    # The mixed-base attack: test passed against base B0, cross-repo against B1
+    # (master advanced in between), both on head H, PR 38. A packet for either
+    # base must never carry both.
+    B0, B1 = BASE, OTHER
+    mixed_runs = [run_for(CI, 111, base=B0), run_for(X1, 222, base=B1)]
+    mixed_checks = [check_run("test", 111), check_run("cross-repo", 222)]
+    at_b1 = adv.select_checks(mixed_runs, mixed_checks, B1, HEAD, 38, DEFAULT)
+    at_b0 = adv.select_checks(mixed_runs, mixed_checks, B0, HEAD, 38, DEFAULT)
+    check("P1b': test@B0 + cross-repo@B1 evaluated at B1 yields only cross-repo",
+          at_b1 == {"cross-repo": "success"})
+    check("P1b': test@B0 + cross-repo@B1 evaluated at B0 yields only test",
+          at_b0 == {"test": "success"})
+    check("P1b': the mixed-base pair is never both-green for either base",
+          not ({"test", "cross-repo"} <= set(at_b1))
+          and not ({"test", "cross-repo"} <= set(at_b0)))
+    check("P1b': a run whose snapshot base sha differs does not count",
+          adv.select_checks(trusted_runs(base=OTHER), trusted_check_runs(),
+                            BASE, HEAD, 38, DEFAULT) == {})
+    check("P1b': a run whose snapshot base ref differs does not count",
+          adv.select_checks(trusted_runs(base_ref="release-x"),
+                            trusted_check_runs(), BASE, HEAD, 38, DEFAULT) == {})
+    check("P1b': the correct exact base/head for both checks is green",
+          adv.select_checks(trusted_runs(base=BASE, head=HEAD),
+                            trusted_check_runs(), BASE, HEAD, 38, DEFAULT)
+          == {"test": "success", "cross-repo": "success"})
     # contrast: name-only matching (the retired logic) would have accepted the
     # foreign-app forgery.
     name_only = {c["name"] for c in foreign_app} >= {"test", "cross-repo"}

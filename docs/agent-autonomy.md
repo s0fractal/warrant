@@ -36,7 +36,24 @@ For a pull request from base commit `B` to candidate commit `H`:
 5. Missing or failing checks, a stale head binding, malformed policy, unsupported
    file mode, or absent authorization cannot be interpreted as permission.
 6. The decision packet binds the base SHA, head SHA, exact policy hash, measured
-   diff, check evidence, reasons, and decision.
+   diff, check evidence, reasons, and decision. Each required check is credited
+   only from a workflow run whose own snapshot observed that exact base and head
+   — checks that passed against an older base are never stitched onto a newer one.
+
+### The packet proves a pair, not a merge
+
+The advisory packet is evidence about **one exact `(base, head)` pair** the
+required checks were observed against. It does not perform a merge and it cannot
+speak for the state of the repository at some later instant. Between the packet
+and any merge, the base branch can advance and the head can be force-pushed.
+
+So the packet is necessary, not sufficient: a future write-capable merge actor
+(which does not exist yet — `merge` is `false` and no such actor is installed)
+must, immediately before it merges, re-read the live base and head, confirm they
+still equal the packet's pair, and confirm branch protection still names the
+required checks — then merge under its own standing authorization or refuse.
+This residual race belongs to the merge actor, by construction; the advisory job
+deliberately holds no write capability with which to close it itself.
 
 This creates three distinct outcomes:
 
