@@ -108,8 +108,8 @@ CHECKS = [
     # current spec and shown to collapse under the proposed rule. Needs the
     # Σ-GLYPH oracle and the Go settlement CLI (both implementations settle).
     # (The countervector's mutation self-test — proving it can go red — runs as
-    # its own mandatory step in .github/workflows/wrt-005.yml, not here, so the
-    # stated check count stays 45.)
+    # its own mandatory step in .github/workflows/wrt-005.yml, not here, so it
+    # does not create a second WRT-005 entry in this list.)
     ("wrt-005 fingerprint gate countervectors (fail-closed)",
      ["python3", "tests/fixtures/wrt005_gate_countervectors.py"], SIGMA_GO),
     # WRT-005 (design only): the rev-4 rule mechanized in Lean 4 core. The guard
@@ -147,6 +147,20 @@ CHECKS = [
      ["python3", "tests/settlement_gate.py"], None),
     ("gate settlement fuzzer (randomised, 2000 draws)",
      ["python3", "tests/settlement_fuzz.py", "2000"], None),
+    # The autonomy evaluator is itself governance-critical. Its countervectors
+    # prove that policy/evaluator/workflow self-change, missing evidence, stale
+    # head bindings, unsupported file modes, false authority trailers and
+    # signature/policy drift all fail closed. The shipped policy remains DRAFT:
+    # this check validates the mechanism, not standing authorization.
+    ("agent autonomy envelope (39 fail-closed countervectors; policy still draft)",
+     ["python3", "tests/autonomy_gate.py"], None),
+    # The advisory workflow's trust binding (base-ref, head-snapshot, check
+    # provenance) lives in tools/autonomy_advisory.py so it is testable Python,
+    # not unreviewable YAML. These countervectors prove a same-repo non-default
+    # base, a drifted head/base, and a foreign-app or untrusted-suite check all
+    # fail closed before any base byte is trusted.
+    ("autonomy advisory trust binding (P1a/P1b/P1c countervectors)",
+     ["python3", "tests/autonomy_advisory.py"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),

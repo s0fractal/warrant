@@ -40,7 +40,7 @@ no account:
 python3 tools/check.py                  # everything, one verdict
 ```
 
-That runs all 45 checks the repository's claims rest on and prints one line. A
+That runs all 47 checks the repository's claims rest on and prints one line. A
 check that could not run — Go not built, oracle missing — is reported UNRUN with
 its own exit status, never as passed: a harness printing ALL PASS while silently
 skipping the Go suites would be claiming two implementations agreed on the
