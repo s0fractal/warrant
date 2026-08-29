@@ -90,7 +90,7 @@ ID_RE = re.compile(r"\b(ADR-\d{3}|WRT-\d{3}|GOV-\d{3}|Book\s+(?:I{1,3}))\b")
 # heavily cited document in the project as resolving nowhere.
 ALIASES = {"Book I": "book-1", "Book II": "book-2", "Book III": "book-3"}
 SCAN = ("SPEC.md", "README.md", "ARCHITECT.md", "ROADMAP.md")
-SCAN_DIRS = ("proposals", "briefs", "spec", "profiles")
+SCAN_DIRS = ("proposals", "briefs", "spec", "profiles", "needs")
 
 # Canonical resolution for identifiers whose live location is NOT "the newest
 # committed file whose path contains the string". A proposal number can outlive
@@ -165,21 +165,34 @@ def _canonical_self_check():
     return not bad
 
 
-def _table_rows_for(ident, text):
-    """Parse the citation table: every row whose FIRST cell is exactly
-    `` `ident` `` (a real table row, not a token buried in prose). Returns a
-    list of cell lists. `--check-map` requires a canonical identifier to have
-    exactly one such row with the exact pinned fields, which a substring match
-    could not (Codex round 3)."""
+def _citation_table(text):
+    """Return every data row from MAP.md's citation table.
+
+    Only the contiguous table beneath the exact four-column header counts.
+    Tokens in prose or in another Markdown table are not mappings. Rows are
+    returned even when malformed so `--check-map` can reject wrong cell counts
+    rather than silently losing them during parsing.
+    """
+    lines = text.splitlines()
+    header = "| Cited | Lives in | Path | First cited by |"
+    try:
+        start = lines.index(header)
+    except ValueError:
+        return None
+    if start + 1 >= len(lines) or lines[start + 1].strip() != "|---|---|---|---|":
+        return None
     rows = []
-    for line in text.splitlines():
+    for line in lines[start + 2:]:
         s = line.strip()
         if not s.startswith("|"):
-            continue
-        cells = [c.strip() for c in s.strip("|").split("|")]
-        if cells and cells[0] == f"`{ident}`":
-            rows.append(cells)
+            break
+        rows.append([c.strip() for c in s.strip("|").split("|")])
     return rows
+
+
+def _table_rows_for(ident, rows):
+    """Rows whose first cell is exactly the cited identifier."""
+    return [r for r in rows if r and r[0] == f"`{ident}`"]
 
 
 def git(repo, *args, ok_fail=False):
@@ -300,37 +313,48 @@ def main():
             print("MAP.md is missing; run tools/repo_map.py", file=sys.stderr)
             return 1
         text = mp.read_text()
-        missing = [i for i in sorted(ids) if f"`{i}`" not in text]
+        table = _citation_table(text)
+        if table is None:
+            print("MAP.md has no well-formed four-column citation table; "
+                  "regenerate with tools/repo_map.py", file=sys.stderr)
+            return 1
+        by_ident = {i: _table_rows_for(i, table) for i in sorted(ids)}
+        missing = [i for i, rws in by_ident.items() if not rws]
         for i in missing:
             print(f"UNMAPPED: {i} is cited but has no row in MAP.md -- "
                   f"regenerate with tools/repo_map.py", file=sys.stderr)
-        # A canonical identifier must carry its EXACT pinned row — parsed from
-        # the table, exactly one, with the exact Lives-in and Path cells. The
-        # earlier substring form was bypassable: change the real row to a wrong
-        # PR and hide the correct prefix in prose, and the token was still
-        # "present" (Codex round 3). Parsing the row closes that.
+        malformed = [i for i, rws in by_ident.items()
+                     if rws and (len(rws) != 1 or len(rws[0]) != 4)]
+        for i in malformed:
+            shapes = [len(r) for r in by_ident[i]]
+            print(f"MALFORMED MAP ROW: {i} must have exactly one four-cell "
+                  f"citation row; found {len(by_ident[i])} row(s) with cell "
+                  f"counts {shapes}", file=sys.stderr)
+        # Every cited identifier must be a real, unique, four-cell table row.
+        # Canonical identifiers additionally carry exact pinned Lives-in and
+        # Path cells plus the runtime-derived First-cited-by cell. This closes
+        # both historical bypasses: hiding a token/prefix in prose, and keeping
+        # the first three cells while corrupting or appending table cells.
         wrong = []
         for i in sorted(ids):
-            if i not in CANONICAL or i in missing:
+            if i not in CANONICAL or i in missing or i in malformed:
                 continue
             e = CANONICAL[i]
-            rws = _table_rows_for(i, text)
-            ok = (len(rws) == 1 and len(rws[0]) >= 3
-                  and rws[0][1] == e["lives_in"]
-                  and rws[0][2] == _canonical_target(e))
+            rws = by_ident[i]
+            expected = [f"`{i}`", e["lives_in"], _canonical_target(e),
+                        f"`{sorted(ids[i])[0]}`"]
+            ok = rws[0] == expected
             if not ok:
                 wrong.append(i)
-                got = (f"{len(rws)} rows" if len(rws) != 1
-                       else f"| `{i}` | {rws[0][1]} | {rws[0][2]} | …")
-                print(f"CANONICAL DRIFT: {i} must have exactly one table row "
-                      f"pinned to `{e['lives_in']}` / {_canonical_target(e)}; "
-                      f"found {got}", file=sys.stderr)
+                print(f"CANONICAL DRIFT: {i}'s row must be exactly {expected}; "
+                      f"found {rws[0]}", file=sys.stderr)
         stale = [ln for ln in text.splitlines() if "resolves nowhere" in ln]
         for ln in stale:
             print(f"UNRESOLVED in MAP.md: {ln.strip()}", file=sys.stderr)
         print(f"REPO-MAP: {len(ids) - len(missing)}/{len(ids)} citations mapped, "
-              f"{len(stale)} unresolved, {len(wrong)} canonical drift")
-        return 1 if missing or stale or wrong else 0
+              f"{len(stale)} unresolved, {len(malformed)} malformed/duplicate, "
+              f"{len(wrong)} canonical drift")
+        return 1 if missing or stale or malformed or wrong else 0
 
     if args.check:
         for ident in unresolved:

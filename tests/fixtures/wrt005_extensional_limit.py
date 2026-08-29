@@ -12,8 +12,11 @@ result node is FINER than extensional equivalence. Book I supplies the witness:
 are extensionally equal (both are the K combinator: `_ x y -> x`), yet they
 normalize to different result nodes, both DISSONANCE-free (hence eligible), so
 the rule gives them different fingerprints and would admit `S(K K) I` as a
-"new" result over a matter settled by `K`. Deciding that two combinators are
-extensionally equal is undecidable (Rice), so no format-level rule closes this.
+"new" result over a matter settled by `K`. For unbounded SKI, Rice rules out a
+total, sound-and-complete decider of extensional equivalence. Bounded canonical
+profiles, conservative policies, and proof-carrying schemes can close specific
+classes; WRT-005's core result-node rule chooses none of them and names the
+remaining limit.
 
 Asserted here (any deviation exits 1; a missing Σ-GLYPH oracle exits 2):
   - K and S(K K) I normalize to DIFFERENT result nodes;

@@ -617,13 +617,18 @@ The regress is closed against syntactic and operational padding; what remains
 is a question about *semantics* (is result-value the right notion of
 consequence? does DISSONANCE-free eligibility mis-classify any honest bottom?)
 and about *proof* (the Lean file mechanizes the rule's algebra; the settlement
-*calculus* — tunnels, the prior-DAG — is not yet mechanized). Neither is
-something a fifth model round settles, and this proposal does **not** make
-adoption wait on a particular reviewer arriving. Both are recorded as standing
-repository **needs** (`needs/`): a human logic/governance review of the
-settlement semantics, and — the broader one the whole project shares — an
-independent clean-room implementation from the spec. Until they happen the
-design lives as an honestly-labelled draft: the rule is exactly what it says,
-its limits are named, and its status is not upgraded past that. That is the
-whole discipline — *live by the truth we can see, and name what we cannot yet
+*calculus* — tunnels, the prior-DAG — is not yet mechanized). Another model
+round does not turn those limits into external validation, but the maintainer
+has explicitly chosen an **AI-reviewed / human-authorized** trust boundary: a
+human domain-expert review is welcome, not required for merge or adoption.
+
+The absent validations are recorded as non-normative repository **needs**
+(`needs/`): an optional external human logic/governance review, and a
+context-isolated clean-room implementation from the spec (which may be made by
+a person or by a model that receives no implementation code). Neither need is
+silently treated as met, and neither is a blocker merely because it is listed.
+This document remains a DRAFT because it is a design proposal and has not been
+adopted, not because the project is waiting for a person to arrive. The rule is
+exactly what it says, its limits are named, and the evidence is described at
+its actual strength — *live by the truth we can see, and name what we cannot yet
 check.*

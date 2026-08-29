@@ -1,18 +1,26 @@
-# Needs — what this repository requires but does not yet have
+# Needs — useful validation this repository does not yet have
 
-A **need** is something the project has honestly concluded it requires for a
-particular status (adoption of a proposal, deposit of a paper, a 1.0), which is
-**not yet available** — and which no amount of the work already here can
-substitute for. Recording a need here is the opposite of pretending it is met:
-it keeps the requirement visible and keeps honestly-labelled *drafts* moving
-without either blocking on the need indefinitely or quietly claiming it away.
+A **need** records validation that would materially improve the project but is
+**not yet available**. Recording it is the opposite of pretending it is met.
+It does not become a release, merge, adoption, or status gate merely by being
+listed here; only a separately adopted policy can give it that force.
 
-A need is not a defect and not a blocker on draft work. It is a boundary on
-*status*: a draft with an open need stays a draft, and says why.
+**Status of this surface (2026-08-29): maintainer-accepted, non-normative
+planning.** It was initially added by an agent outside the enumerated scope of
+a correction pass and was therefore not accepted by that commit alone. The
+maintainer has since explicitly accepted the AI-reviewed / human-authorized
+operating model reflected here. That acceptance does not manufacture evidence:
+the human review and clean-room implementation below still have not happened.
+
+A need is not a defect and is not a blocker unless an adopted policy says so.
+Its absence limits only the claims that depend on it. In particular, these
+needs do not block review or merge of an honestly-labelled design draft, and
+NEED-001 is not required for WRT-005 adoption under the maintainer's chosen
+AI-review trust boundary.
 
 ## Standing needs
 
-### NEED-001 — independent, human logic / governance review of settlement semantics
+### NEED-001 — optional external human logic / governance review
 
 The settlement outcome-fingerprint design
 (`proposals/WRT-005-outcome-fingerprint-purity.md`) survived four adversarial
@@ -27,34 +35,38 @@ questions a proof of the rule's shape cannot answer:
   can re-open a settled matter. Is that acceptable, and for which deployments?
 - Does DISSONANCE-free eligibility mis-classify any honest bottom?
 
-**Why it cannot be met from inside:** every gate so far was an LLM under one
-orchestrator — cross-vendor but not cross-paradigm, and never a human domain
-expert. A model reviewing its own family's output is depth, not independence.
+**Current decision basis:** every gate so far was an LLM under one orchestrator
+— cross-vendor but not cross-paradigm, and never a human domain expert. The
+maintainer knowingly accepts that AI-only review basis. It is substantial
+adversarial depth, not evidence of an independent human review.
 
 **What meeting it looks like:** a written review by such a person, filed in
-`reviews/`, adjudicated like any gate. Until then WRT-005 stays DRAFT; the
-Lean guarantees are stated for exactly what they cover and no further.
+`reviews/`, adjudicated like any gate. If nobody volunteers, the need may remain
+open indefinitely without blocking WRT-005. The Lean guarantees remain stated
+for exactly what they cover and no further either way.
 
-### NEED-002 — an independent clean-room implementation from the spec alone
+### NEED-002 — a context-isolated clean-room implementation from the spec alone
 
-The format's whole design rule is that two independent implementations agree
-byte-exactly. Three implementations exist (Python, Go, Rust), but all were
-written inside this project by parties who read each other's code. The
-standing graduation criterion for any 1.0, and the strongest possible check on
-the specification, is an implementation written by someone who has **only the
-`SPEC.md` text and the conformance pack** — never this repository's code.
+The format's design rule is that implementations agree byte-exactly. Three
+implementations exist (Python, Go, Rust), but all were written inside this
+project with access to each other's code. A stronger check on the specification
+is an implementation produced with **only `SPEC.md` and the conformance pack**
+— never this repository's implementation code.
 
-**Why it cannot be met from inside:** independence is the property being
-tested; a fourth implementation by the same authors does not supply it.
+The implementer may be a person or a context-isolated model. A model on the
+same host is not an independent party, custody, or external adoption; the
+narrow evidence would be clean-room-from-code implementability, and nothing
+more. That boundary must remain explicit.
 
-**What meeting it looks like:** a stranger runs the conformance pack against
-their own implementation and either reproduces every vector (evidence the spec
-is implementable from its text) or finds a divergence (a real defect). Either
-outcome is worth more than another internal pass. The conformance pack
-(`conformance/`) is the standing invitation.
+**What meeting it looks like:** an isolated implementer runs the conformance
+pack against its own implementation and either reproduces every vector
+(evidence the spec is implementable from its published text) or finds a
+divergence (a real defect). Until then the repository must not claim clean-room
+implementability has been demonstrated. This is an evidence boundary, not an
+automatic blocker on merge, adoption, release, or version number.
 
 ---
 
-*These are the two needs the project keeps naming across its documents; they
-live here so the naming is in one place and a draft's dependence on them is a
-recorded fact rather than an implied promise.*
+*These needs remain visible so absent validation is named rather than silently
+claimed. They describe possible evidence, not authorities the project must wait
+for before acting.*

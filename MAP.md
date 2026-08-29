@@ -33,4 +33,4 @@ present on a ref the reviewer was not looking at.
 | `WRT-002` | this repo, `master` | `proposals/wrt-002-model/model.py` | `briefs/WRT-002-rev7-adversarial-gate.md` |
 | `WRT-003` | closed PR #20 (verification receipts) | `25bd44c829cb015a836e08642022412c568de16a:proposals/WRT-003-verification-receipt.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-004` | closed PR #21 (verify-report) | `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
-| `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
+| `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |
