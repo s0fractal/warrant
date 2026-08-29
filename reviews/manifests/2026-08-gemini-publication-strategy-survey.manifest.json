@@ -1,0 +1,17 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "unrecorded (pre-papers/ working tree, 2026-08-27)",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "manifest": "review-manifest@v0",
+ "notes": "Had repository read access and read reviews/ (so prior reviews were visible). Untyped scouting survey, not a gate; filed retroactively.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": true,
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-gemini-publication-strategy-survey.md",
+ "reviewer_model": "Gemini (agentic IDE session; exact model unrecorded)",
+ "reviewer_vendor": "Google",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single report; ended by asking the operator a question)",
+ "web_access": "unrecorded"
+}
