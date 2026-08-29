@@ -57,9 +57,10 @@ if sg is None:
 # settle_both (which would exit 1 and read as a real failure). Codex round 2.
 _go = os.environ.get("WARRANT_GO") or os.path.join(
     os.path.dirname(__file__), "..", "..", "impl-go", "warrant-go")
-if not os.path.isfile(_go):
+if not (os.path.isfile(_go) and os.access(_go, os.X_OK)):
     print("wrt005-countervectors: UNRUN — the Go settlement CLI was not found "
-          "(build impl-go/warrant-go, or set WARRANT_GO)", file=sys.stderr)
+          "or is not executable (build impl-go/warrant-go, or set WARRANT_GO)",
+          file=sys.stderr)
     sys.exit(2)
 
 ADMISSIBLE = "admissible: (b) new outcome fingerprint"

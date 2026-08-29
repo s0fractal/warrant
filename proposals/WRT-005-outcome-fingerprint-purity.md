@@ -60,8 +60,10 @@ honesty requirements the proposal was hiding. Changes:
   path, or budget cannot manufacture a new fingerprint — but it is **not**
   semantic: the result node is *finer* than extensional equivalence, so an
   extensional reformulation reaching a different node (`K` vs `S(KK)I`) can
-  still re-open a matter (a false positive no format rule can close without
-  deciding an undecidable property). False-negative novelty — two computations
+  still re-open a matter (a false positive that no *total, sound-and-complete*
+  rule can exclude for unbounded SKI, Rice — though bounded/conservative/
+  proof-carrying schemes can close specific classes; §9). False-negative
+  novelty — two computations
   reaching the *same* result node are one consequence — is guaranteed and
   deliberate. (This bullet corrected after a later review that supplied the
   `K` / `S(KK)I` counterexample; an earlier draft wrongly called the identity
@@ -583,27 +585,45 @@ result. The honest theorem is therefore narrow:
 > Two computations that reach the **same result node** are one consequence
 > (false-negative novelty, guaranteed and intended); two that reach
 > **different result nodes** are treated as distinct **even when they are
-> extensionally equal** (`K` vs `S(KK)I` — a false-positive the rule does not
-> and cannot exclude, because deciding extensional equality of combinators is
-> undecidable, Rice's theorem).
+> extensionally equal** (`K` vs `S(KK)I`) — a false positive the *general*
+> case cannot exclude, because there is no total, sound-and-complete decider
+> of extensional equivalence for unbounded SKI (Rice's theorem).
 
 Both halves are real. The false-negative is the deliberate anti-spam design:
 independently re-derived *identical* results do not re-open. The false-positive
 is a genuine limit named here rather than buried: an extensional reformulation
-reaching a different node **can** re-open, and no format-level rule closes that
-without deciding an undecidable property. The escape hatches are the same as
-before — make a proof a **verified part of the result object** (so a
+reaching a different node **can** re-open. The precise statement of what is
+impossible matters, so state it precisely (a later review corrected an earlier
+over-broad claim): Rice's theorem rules out a **total, sound-and-complete**
+decider of extensional equivalence over *unbounded* SKI — it does **not** say
+"no format-level rule can help." A *bounded* canonical result profile (a
+normalizer that maps a restricted, decidable class of terms to a canonical
+representative before hashing), a *conservative* foreclosure policy (one that
+may over- or under-foreclose but is sound in one direction), or a
+*proof-carrying* scheme (the filer supplies a checkable equivalence proof) can
+each close specific classes of this false positive. What no rule can do is
+decide the general case totally and completely. WRT-005 chooses none of these
+in the core (they are runtime- or policy-level extensions); it names the
+limit and pins it as a countervector
+(`tests/fixtures/wrt005_extensional_limit.py`). The escape hatches are the same
+as before — make a proof a **verified part of the result object** (so a
 semantically-meaningful difference changes the node deliberately), or handle
 reformulation significance in settlement policy, which is where relevance
 already lives. The format layer measures *which result node was reached*, not
-*whether two nodes mean the same function* — and now says exactly that. The
-`K` / `S(KK)I` limit is pinned as a countervector
-(`tests/fixtures/wrt005_extensional_limit.py`).
+*whether two nodes mean the same function* — and now says exactly that, and
+exactly how far the impossibility reaches.
 
-This is also why the next gate should not be another LLM. The regress is
-closed against syntactic and operational padding; what remains is a question
-about *semantics* (is result-value the right notion of consequence? does
-DISSONANCE-free eligibility mis-classify any honest bottom?) and about
-*proof* (are T1/T2 theorems or only property tests?). Those want a human
-logician and a Lean mechanization of the settlement calculus, not a fourth
-model round — see the response's recommendation.
+The regress is closed against syntactic and operational padding; what remains
+is a question about *semantics* (is result-value the right notion of
+consequence? does DISSONANCE-free eligibility mis-classify any honest bottom?)
+and about *proof* (the Lean file mechanizes the rule's algebra; the settlement
+*calculus* — tunnels, the prior-DAG — is not yet mechanized). Neither is
+something a fifth model round settles, and this proposal does **not** make
+adoption wait on a particular reviewer arriving. Both are recorded as standing
+repository **needs** (`needs/`): a human logic/governance review of the
+settlement semantics, and — the broader one the whole project shares — an
+independent clean-room implementation from the spec. Until they happen the
+design lives as an honestly-labelled draft: the rule is exactly what it says,
+its limits are named, and its status is not upgraded past that. That is the
+whole discipline — *live by the truth we can see, and name what we cannot yet
+check.*

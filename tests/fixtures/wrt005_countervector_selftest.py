@@ -77,20 +77,30 @@ def main():
         finally:
             mutant.unlink(missing_ok=True)
 
-    # (3) the countervector's OWN Go prerequisite must fire: run it with a Go
-    # path that does not exist and require EXACTLY exit 2 (UNRUN), not a
-    # FileNotFoundError exit 1. This is the scenario that once regressed
-    # silently, because the check lived only here and not in the countervector.
-    env = dict(os.environ, WARRANT_GO=str(HERE / "_no_such_warrant_go"))
-    missing_go = subprocess.run([sys.executable, str(COUNTERVECTOR)],
-                                capture_output=True, text=True, env=env)
-    if missing_go.returncode != 2:
-        print("wrt005-selftest: FAIL — with the Go binary absent the "
-              f"countervector exited {missing_go.returncode}, not 2 (UNRUN). "
-              "Its Go prerequisite is not enforced at the source.",
-              file=sys.stderr)
-        print((missing_go.stdout + missing_go.stderr)[-800:], file=sys.stderr)
-        sys.exit(1)
+    # (3) the countervector's OWN Go prerequisite must fire on BOTH a missing
+    # binary and a present-but-non-executable one, each with EXACTLY exit 2
+    # (UNRUN) — not a FileNotFoundError/PermissionError exit 1. Existence is not
+    # executability (Codex round 3): a data file at the Go path once passed the
+    # isfile() check and then failed with PermissionError exit 1.
+    with tempfile.TemporaryDirectory() as td:
+        noexec = Path(td) / "not-executable"
+        noexec.write_text("#!/bin/sh\nexit 0\n")     # a file, but chmod-less
+        noexec.chmod(0o600)                          # readable, NOT executable
+        scenarios = {
+            "missing Go binary": HERE / "_no_such_warrant_go",
+            "non-executable Go binary": noexec,
+        }
+        for label, path in scenarios.items():
+            env = dict(os.environ, WARRANT_GO=str(path))
+            r = subprocess.run([sys.executable, str(COUNTERVECTOR)],
+                               capture_output=True, text=True, env=env)
+            if r.returncode != 2:
+                print(f"wrt005-selftest: FAIL — with a {label} the countervector "
+                      f"exited {r.returncode}, not 2 (UNRUN). Its Go "
+                      "prerequisite is not enforced at the source.",
+                      file=sys.stderr)
+                print((r.stdout + r.stderr)[-800:], file=sys.stderr)
+                sys.exit(1)
 
     # (4) the unmodified countervector must be green.
     clean = run(COUNTERVECTOR)
@@ -100,9 +110,9 @@ def main():
         print(clean.stdout[-800:] + clean.stderr[-800:], file=sys.stderr)
         sys.exit(clean.returncode or 1)
 
-    print("wrt005-selftest: PASS — the mutant exits nonzero; a missing Go "
-          "binary makes the countervector exit exactly 2; the clean "
-          "countervector exits zero.")
+    print("wrt005-selftest: PASS — the mutant exits nonzero; a missing OR "
+          "non-executable Go binary makes the countervector exit exactly 2; "
+          "the clean countervector exits zero.")
     sys.exit(0)
 
 

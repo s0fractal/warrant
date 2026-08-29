@@ -1,7 +1,7 @@
-/- WRT-003 rev 4 settlement fingerprint rule, mechanized (Lean 4 core).
+/- WRT-005 (rev 4) settlement fingerprint rule, mechanized (Lean 4 core).
 
-   This turns WRT-003's acceptance invariants T1 (purity) and T2 (eligibility)
-   from property tests (`tests/fixtures/wrt003_gate_countervectors.py`) into
+   This turns WRT-005's acceptance invariants T1 (purity) and T2 (eligibility)
+   from property tests (`tests/fixtures/wrt005_gate_countervectors.py`) into
    proved theorems about the RULE'S ALGEBRA — the layer that is independent of
    SHA-256 and of the Book I evaluator's internals.
 
@@ -12,7 +12,7 @@
    sigma-glyph/proofs/EvalMachine.lean (`eval` is a Lean function, so
    determinism is definitional; `eval_settles` is proved there). We model the
    evaluator abstractly as a function `Eval := Term → Nat → Term`, which is
-   exactly the WRT-003 §3.6 precondition ("the runtime is a deterministic
+   exactly the WRT-005 §3.6 precondition ("the runtime is a deterministic
    function"): any Lean function satisfies it. The result `Term` mirrors
    EvalMachine.Term with `thunk` dropped, because a RESULT is fully
    materialized (a thunk is an eval-internal state, never a returned result).
@@ -38,7 +38,7 @@ inductive Term where
 deriving DecidableEq, Repr, Inhabited
 
 /-- A result contributes a fingerprint iff it carries NO DISSONANCE node
-    ANYWHERE (WRT-003 rev 4, §3.2 — "anywhere", not "root", after the nested
+    ANYWHERE (WRT-005 (rev 4), §3.2 — "anywhere", not "root", after the nested
     counter-vector). Recursive, and a pure function of the result value. -/
 def containsDis : Term → Bool
   | .dis _   => true
@@ -48,7 +48,7 @@ def containsDis : Term → Bool
 def eligible (r : Term) : Bool := ! containsDis r
 
 /-- A ski@v1 check as the filer presents it. Only `term` and `atp` are eval
-    inputs; `expect` and `verdict` are the filer's CLAIMS — the fields WRT-003
+    inputs; `expect` and `verdict` are the filer's CLAIMS — the fields WRT-005
     proves the fingerprint must not read. -/
 structure Check where
   term    : Term
@@ -60,7 +60,7 @@ structure Check where
     (Book I; §3.6 precondition. Determinism is definitional for a Lean fn.) -/
 abbrev Eval := Term → Nat → Term
 
-/-- The outcome fingerprint (WRT-003 rev 4, §3.1): the runtime tag and the
+/-- The outcome fingerprint (WRT-005 (rev 4), §3.1): the runtime tag and the
     result value, contributed ONLY when the result is eligible. `ski` is the
     single runtime here; the tuple carries the result and nothing else. -/
 inductive FP where
@@ -131,7 +131,7 @@ theorem eligible_iff_no_dis (r : Term) : eligible r = true ↔ containsDis r = f
 /-- ATP cannot steer an eligible fingerprint. This is the ONE statement that
     needs a Book I fact rather than pure algebra: that a non-exhausting run's
     result is budget-independent. We take that fact as the hypothesis `stable`
-    (WRT-003 §3.6 — Book I determinism + the size ≤ atp+1 bound; mechanized in
+    (WRT-005 §3.6 — Book I determinism + the size ≤ atp+1 bound; mechanized in
     sigma-glyph as the eval machine, cited not re-derived), and conclude that
     no budget the filer picks changes an eligible fingerprint. Where the run
     is NOT eligible (it exhausted), the fingerprint is `none` by
