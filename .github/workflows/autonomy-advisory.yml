@@ -1,0 +1,140 @@
+name: autonomy-advisory
+
+# Read-only bootstrap for unattended authority.
+#
+# This is intentionally triggered by workflow_run. GitHub loads workflow_run
+# workflows from the default branch, so a pull request cannot rewrite the
+# evaluator that judges that same pull request. The candidate head is fetched as
+# an object and inspected; it is never checked out or executed here.
+#
+# A successful job means the evaluator ran and uploaded a packet. It does NOT
+# mean the packet says ELIGIBLE. Until the base policy is separately ratified,
+# the expected packet decision is HOLD.
+
+on:
+  workflow_run:
+    workflows: [conformance, x1-cross-repo]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  evaluate:
+    if: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0] }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Resolve the exact PR base and head
+        id: refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "$PR_NUMBER" -eq "$PR_NUMBER"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > /tmp/pr.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          p = json.load(open('/tmp/pr.json'))
+          if p['base']['repo']['full_name'] != os.environ['REPOSITORY']:
+              raise SystemExit('PR base repository mismatch')
+          print('base=' + p['base']['sha'])
+          print('head=' + p['head']['sha'])
+          print('number=' + str(p['number']))
+          PY
+
+      - name: Check out only the protected base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.refs.outputs.base }}
+          fetch-depth: 0
+
+      - name: Fetch candidate as Git data and bind its exact SHA
+        env:
+          PR_NUMBER: ${{ steps.refs.outputs.number }}
+          EXPECTED_HEAD: ${{ steps.refs.outputs.head }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/pr/head"
+          test "$(git rev-parse refs/remotes/pr/head)" = "$EXPECTED_HEAD"
+
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned signature verifier
+        run: >-
+          python3 -m pip install --only-binary=:all:
+          'cryptography==45.0.7'
+
+      - name: Bind check evidence to this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.refs.outputs.head }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/check-runs?per_page=100" \
+            > /tmp/check-runs.json
+          python3 - <<'PY'
+          import json, os
+          runs = json.load(open('/tmp/check-runs.json'))['check_runs']
+          out = {}
+          for wanted in ('test', 'cross-repo'):
+              matched = [r for r in runs if r['name'] == wanted]
+              if not matched:
+                  continue
+              if any(r['status'] != 'completed' for r in matched):
+                  out[wanted] = 'pending'
+              elif all(r['conclusion'] == 'success' for r in matched):
+                  out[wanted] = 'success'
+              else:
+                  out[wanted] = 'failure'
+          with open('autonomy-checks.json', 'w') as f:
+              json.dump({'head_sha': os.environ['HEAD_SHA'], 'checks': out}, f,
+                        sort_keys=True, separators=(',', ':'))
+              f.write('\n')
+          PY
+
+      - name: Evaluate merge capability from base-owned bytes
+        env:
+          BASE_SHA: ${{ steps.refs.outputs.base }}
+          HEAD_SHA: ${{ steps.refs.outputs.head }}
+        run: |
+          set -euo pipefail
+          python3 tools/autonomy_gate.py \
+            --base "$BASE_SHA" \
+            --head refs/remotes/pr/head \
+            --policy-from "$BASE_SHA" \
+            --action merge \
+            --checks-file autonomy-checks.json \
+            --out autonomy-decision.json || true
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open('autonomy-decision.json'))
+          print('# Autonomy advisory')
+          print()
+          print('**Decision:', d['decision'] + '**')
+          print()
+          print('A green workflow means this packet was produced, not that the action was authorized.')
+          print()
+          for reason in d['reasons']:
+              print('- ' + reason)
+          print()
+          print('```json')
+          print(json.dumps(d, indent=2, sort_keys=True))
+          print('```')
+          PY
+
+      - name: Publish the immutable decision packet
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: autonomy-decision-${{ steps.refs.outputs.head }}
+          path: |
+            autonomy-checks.json
+            autonomy-decision.json
