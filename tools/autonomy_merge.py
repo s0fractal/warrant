@@ -111,17 +111,20 @@ def packet_reasons(packet, base_sha: str, head_sha: str) -> list[str]:
     return reasons
 
 
-def live_reasons(repo, branch, pr, protection, pr_number: int,
-                 base_sha: str, head_sha: str) -> list[str]:
+def _repository_reasons(repo, branch, base_sha: str) -> list[str]:
     reasons: list[str] = []
-    if not SHA_RE.fullmatch(base_sha) or not SHA_RE.fullmatch(head_sha):
-        return ["expected base/head is not a full lowercase commit SHA"]
     if _get(repo, "full_name") != REPOSITORY or \
             _get(repo, "default_branch") != DEFAULT_BRANCH:
         reasons.append("repository identity or default branch drifted")
     if _get(_get(branch, "commit") or {}, "sha") != base_sha or \
             _get(branch, "name") != DEFAULT_BRANCH:
         reasons.append("live default-branch tip differs from the evaluated base")
+    return reasons
+
+
+def _pull_request_reasons(pr, pr_number: int, base_sha: str,
+                          head_sha: str) -> list[str]:
+    reasons: list[str] = []
     if _get(pr, "number") != pr_number or _get(pr, "state") != "open":
         reasons.append("pull request is not the expected open pull request")
     if _get(pr, "draft") is not False:
@@ -137,6 +140,15 @@ def live_reasons(repo, branch, pr, protection, pr_number: int,
         reasons.append("pull request is not same-repository on both sides")
     if _get(pr, "mergeable") is not True:
         reasons.append("GitHub does not currently report the pull request mergeable")
+    return reasons
+
+
+def live_reasons(repo, branch, pr, protection, pr_number: int,
+                 base_sha: str, head_sha: str) -> list[str]:
+    if not SHA_RE.fullmatch(base_sha) or not SHA_RE.fullmatch(head_sha):
+        return ["expected base/head is not a full lowercase commit SHA"]
+    reasons = _repository_reasons(repo, branch, base_sha)
+    reasons.extend(_pull_request_reasons(pr, pr_number, base_sha, head_sha))
     reasons.extend(protection_reasons(protection))
     return reasons
 
@@ -171,13 +183,17 @@ def main() -> int:
     parser.add_argument("--out")
     args = parser.parse_args()
     try:
+        # Validate every CLI-constructed path before reading or writing any of
+        # them. Keeping the resolved output object separate also makes it
+        # impossible for a later refactor to bypass the confinement check.
+        output = _confined(args.out) if args.out else None
         packet = evaluate(
             _load(args.repo), _load(args.branch), _load(args.pull_request),
             _load(args.protection), _load(args.decision_packet),
             args.pr_number, args.base, args.head)
         rendered = json.dumps(packet, sort_keys=True, separators=(",", ":")) + "\n"
-        if args.out:
-            _confined(args.out).write_text(rendered, encoding="utf-8")
+        if output:
+            output.write_text(rendered, encoding="utf-8")
         print(rendered, end="")
         return 0 if packet["decision"] == "READY" else 1
     except (PreflightError, TypeError, KeyError) as exc:

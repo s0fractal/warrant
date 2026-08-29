@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location(
@@ -116,6 +118,19 @@ def main():
           verdict(*values)["decision"] == "HOLD")
     check("unsafe expected SHA holds",
           merge.evaluate(*fixtures(), 38, "master", HEAD)["decision"] == "HOLD")
+
+    with tempfile.TemporaryDirectory() as td:
+        previous = Path.cwd()
+        os.chdir(td)
+        try:
+            refused = False
+            try:
+                merge._confined("../escape.json")
+            except merge.PreflightError:
+                refused = True
+            check("CLI output cannot escape its working directory", refused)
+        finally:
+            os.chdir(previous)
 
     print(f"AUTONOMY MERGE PREFLIGHT: ALL PASS ({passed}/{passed})")
     return 0

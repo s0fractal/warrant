@@ -165,7 +165,7 @@ CHECKS = [
     # It binds the ELIGIBLE packet to live PR/base/head state and the exact
     # branch-protection app identities; GitHub's expected-head merge API is the
     # final transactional guard.
-    ("autonomy merge actor (20 live-state/protection countervectors)",
+    ("autonomy merge actor (21 live-state/protection countervectors)",
      ["python3", "tests/autonomy_merge.py"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
