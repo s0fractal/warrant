@@ -207,8 +207,10 @@ governing policy and the decision is, for now, an external property.**
 
 # 2. Related work
 
-**Signed transcripts.** The closest active work is the IETF draft on
-verifiable agent conversations [@vac2026], which normalizes and signs the
+**Signed transcripts.** The closest related work is the IETF draft on
+verifiable agent conversations [@vac2026] (an individual submission, now an
+expired and archived Internet-Draft rather than an active one), which
+normalizes and signs the
 session logs coding agents already write — messages, tool calls, tool
 results — so a transcript offered later can be shown to be the transcript
 that happened. Warrant sits one layer below: not the conversation but the
