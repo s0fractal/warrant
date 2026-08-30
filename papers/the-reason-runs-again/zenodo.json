@@ -1,0 +1,39 @@
+{
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "title": "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run",
+  "version": "1.0.0",
+  "creators": [
+    {
+      "name": "Glova, Serhii",
+      "affiliation": "Independent",
+      "orcid": "0009-0001-8010-420X"
+    }
+  ],
+  "description": "Warrant is a record format in which one decision is one immutable, content-addressed, signed record. Its identity is the SHA-256 of its canonical JSON bytes; its governing policy is pinned by hash; its signature covers a domain-separated message; and one class of justification is a deterministic, budget-bounded computation any reader re-executes offline. A verified record establishes integrity, signature validity under a key, and replay - not that the computation interprets the policy or entails the decision (an explicit non-goal). The paper reports a conformance regime in which independent implementations must agree byte-exactly: Python and Go agree at settlement grade, and a from-scratch Rust verifier agrees at base grade. It includes a 138-vector conformance pack with normative negative batteries, an experimental settlement layer with a partly-negative result, and a model-generated review ledger. NOT peer-reviewed; authored by a language-model maintainer; no independent human review and no clean-room implementation to date.",
+  "keywords": [
+    "AI agents",
+    "accountability",
+    "provenance",
+    "content-addressed storage",
+    "canonicalization",
+    "Ed25519",
+    "domain separation",
+    "verifiable computation",
+    "EU AI Act"
+  ],
+  "license": "cc-by-4.0",
+  "notes": "Paper licensed CC BY 4.0; the code and repository it documents remain MIT (see papers/the-reason-runs-again/LICENSE.md). Built byte-reproducibly with pandoc 3.10.2 + tectonic 0.17.0, SOURCE_DATE_EPOCH=1788048000. Frozen at git tag paper-the-reason-runs-again-v1.0.0. A frozen artifact, not a venue, peer review, or endorsement.",
+  "related_identifiers": [
+    {
+      "relation": "documents",
+      "identifier": "https://github.com/s0fractal/warrant",
+      "scheme": "url"
+    },
+    {
+      "relation": "references",
+      "identifier": "https://github.com/s0fractal/sigma-glyph",
+      "scheme": "url"
+    }
+  ]
+}

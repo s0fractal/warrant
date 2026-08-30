@@ -1007,7 +1007,12 @@ pull request #30, not in the master tree — and is named here as a direction,
 not an available file; `MAP.md` records the historical WRT-003 (verification
 receipts) and WRT-004 (verify-report) as closed, unrelated work. The `ski@v1` runtime and its
 Lean 4 mechanization are at <https://github.com/s0fractal/sigma-glyph>.
-Full git histories of both repositories are archived by Software Heritage;
-disclosure manifests are timestamped via OpenTimestamps. A claims checker
+Software Heritage holds snapshots of both repositories from 2026-07-28;
+archival of the exact deposited commit is requested at deposit time and is
+stated here only once confirmed, not implied in advance. Disclosure manifests
+are timestamped via OpenTimestamps. This paper is deposited on Zenodo at DOI
+[`10.5281/zenodo.RESERVED`](https://doi.org/10.5281/zenodo.RESERVED) — reserved
+before the final build so the identifier appears in this artifact — and is
+frozen at the git tag `paper-the-reason-runs-again-v1.0.0`. A claims checker
 deposited beside this paper recomputes its countable numbers from the
-repository at the archived commit.
+repository at that tagged commit.

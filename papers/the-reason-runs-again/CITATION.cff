@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite the preprint below."
+title: "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run"
+authors:
+  - family-names: Glova
+    given-names: Serhii
+    orcid: "https://orcid.org/0009-0001-8010-420X"
+version: 1.0.0
+date-released: "2026-08-30"
+license: CC-BY-4.0
+url: "https://github.com/s0fractal/warrant"
+# DOI is reserved on Zenodo before the final build and replaces the placeholder
+# below; until reserved it reads RESERVED.
+doi: "10.5281/zenodo.RESERVED"
+preferred-citation:
+  type: article
+  title: "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run"
+  authors:
+    - family-names: Glova
+      given-names: Serhii
+      orcid: "https://orcid.org/0009-0001-8010-420X"
+  year: 2026
+  doi: "10.5281/zenodo.RESERVED"
+  url: "https://github.com/s0fractal/warrant"
