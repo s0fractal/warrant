@@ -113,7 +113,7 @@ Three design commitments follow.
 
 **Identity is the hash of the content.** A record's identity — its WarrantID
 — is the SHA-256 of its canonical JSON bytes. Everything a record cites —
-the policy the record claims governed the decision, the evidence relied on,
+the policy the record claims governed the decision, the evidence the record cites,
 the check offered as its reason — is cited by the SHA-256 of the exact bytes. Nothing
 can be edited after the fact without changing its address, and therefore
 without breaking every reference to it. This moves the trust question from
@@ -964,9 +964,9 @@ endorsement, and nothing in it should be cited as though it were.
 
 The gap this format addresses is narrow and, we think, real: between
 telemetry that records what an agent did on the operator's word, and a
-record asserting what was decided whose identity, governing policy, and — for one
-reason class — stated justification can be *re-executed* by a stranger from
-the bytes alone. We are precise about that verb, because it is the whole
+record asserting a decision whose content identity and governing-policy
+reference can be recomputed and whose stated justification — for one
+reason class — can be re-executed by a stranger from the bytes alone. We are precise about that verb, because it is the whole
 honesty of the paper: a verified Warrant proves integrity, signature validity
 under a key, and replay (Section 1.2); it does not prove that the replayed
 computation is an interpretation of the policy or an entailment of the decision,
