@@ -23,7 +23,7 @@
     "EU AI Act"
   ],
   "license": "cc-by-4.0",
-  "notes": "Paper licensed CC BY 4.0; the code and repository it documents remain MIT (see papers/the-reason-runs-again/LICENSE.md). Built byte-reproducibly with pandoc 3.10.2 + tectonic 0.17.0, SOURCE_DATE_EPOCH=1788048000. Release 1.0.0 of the Warrant repository. A frozen artifact once published, not a venue, peer review, or endorsement.",
+  "notes": "Paper licensed CC BY 4.0; the code and repository it documents remain MIT (see papers/the-reason-runs-again/LICENSE.md). Built byte-reproducibly with pandoc 3.10.2 + tectonic 0.17.0, SOURCE_DATE_EPOCH=1788048000. This is paper version 1.0.0 (a deposit version, not a Warrant software or protocol release and not a v1.0 adoption of the format). A frozen artifact once published, not a venue, peer review, or endorsement.",
   "related_identifiers": [
     {
       "relation": "documents",

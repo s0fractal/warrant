@@ -6,10 +6,12 @@ reasons, settlement, and the conformance apparatus — together with what
 building it broke and what it still does not provide.
 
 **Deposit status.** This paper has been assigned Zenodo DOI
-[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) (version
-1.0.0, CC BY 4.0); the DOI resolves to the deposited version once that version
-is published. It has had no peer review. Nothing here should be cited as
-carrying more than that.
+[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) (**paper
+version 1.0.0**, CC BY 4.0); the DOI resolves to the deposited version once that
+version is published. This paper version is the paper's own, distinct from any
+Warrant software or protocol version — the deposit is **not** a v1.0 software
+release or a governance adoption of the format. It has had no peer review, and
+nothing here should be cited as carrying more than that.
 
 | | |
 | --- | --- |
@@ -35,8 +37,9 @@ disputed, not in the paper as a bare assertion.
 1. Pick a commit; verify `tools/check.py` and `python3 check_claims.py` are
    green on it.
 2. `./build.sh`; attach `paper.pdf` plus a repository snapshot at that commit.
-3. Deposit on Zenodo (CC BY 4.0), record concept DOI + version DOI and the
-   archived commit here and in `CITATION.cff`.
+3. Deposit on Zenodo (CC BY 4.0); the final deposit `MANIFEST.md` binds the
+   DOI, paper version, source commit/tag, and file hashes, and the DOI is
+   recorded in `CITATION.cff`.
 4. After that, `paper.pdf` as committed **is** the deposited artifact; a
    post-deposit edit to `paper.md` makes rebuild-and-commit-the-PDF the one
    forbidden move (see the sibling repository's deposited paper for the

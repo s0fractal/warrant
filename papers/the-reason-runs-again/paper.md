@@ -1013,7 +1013,8 @@ stated here only once confirmed, not implied in advance. Disclosure manifests
 are timestamped via OpenTimestamps. This paper's Zenodo DOI is
 [`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) — reserved
 before the final build so the identifier appears in this artifact, and
-resolving to the deposited version once that version is published. The deposited
-version is release 1.0.0 of the Warrant repository; a claims checker deposited
-beside this paper recomputes its countable numbers from the repository commit
-this version was built from.
+resolving to the deposited version once that version is published. This is
+**version 1.0.0 of the paper** — a deposit version, not a Warrant software or
+protocol release and not a v1.0 adoption of the format; a claims checker
+deposited beside this paper recomputes its countable numbers from the repository
+commit this version was built from.

@@ -5,6 +5,8 @@ authors:
   - family-names: Glova
     given-names: Serhii
     orcid: "https://orcid.org/0009-0001-8010-420X"
+# Paper version (the paper's own), distinct from any Warrant software/protocol
+# version; this deposit is not a v1.0 software release or governance adoption.
 version: 1.0.0
 date-released: "2026-08-30"
 license: CC-BY-4.0

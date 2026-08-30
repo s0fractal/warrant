@@ -10,13 +10,15 @@ covers everything.
 
 | | words | subject |
 |---|---|---|
-| [`the-reason-runs-again/`](the-reason-runs-again/) | 9 723 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
+| [`the-reason-runs-again/`](the-reason-runs-again/) | 9 739 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
 
 The flagship paper has been assigned Zenodo DOI
 [`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098)
-(version 1.0.0). A DOI buys a permanent address and a frozen artifact — no
-venue, no peer review, no endorsement — and each paper's README records the
-commit it was built from.
+(**paper version 1.0.0** — the paper's own version, distinct from any Warrant
+software or protocol version; the deposit is not a v1.0 software release or a
+governance adoption of the format). A DOI buys a permanent address and a frozen
+artifact — no venue, no peer review, no endorsement — and the final deposit
+`MANIFEST.md` binds the DOI, paper version, source commit/tag, and file hashes.
 
 Candidate companions, mined from material already in this repository (each
 listed here so the flagship paper does not silently absorb their scope):
