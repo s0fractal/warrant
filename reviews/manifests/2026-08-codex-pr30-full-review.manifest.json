@@ -1,0 +1,18 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "4751844",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "independence_class": "same vendor family (OpenAI) as several prior gates; LLM-authored; NOT human. FIRST review of PR hygiene + CI/governance plane rather than artifact content.",
+ "manifest": "review-manifest@v0",
+ "notes": "Whole-PR merge-readiness review at HEAD 4751844. Verdict: do not merge, Draft+freeze+split. Found live defects outside the suite's scope: unparseable agent-gate.yml (governance plane) and a WRT-004 hole (uncommitted profile -> BOUND), both reproduced and fixed. Technical findings fixed in-branch; PR-structure/governance recommendations surfaced to the operator, not executed. Used web (verified RFC 9943 / VAC expiry).",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": true,
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-codex-pr30-full-review.md",
+ "reviewer_model": "Codex (OpenAI; exact model unrecorded)",
+ "reviewer_vendor": "OpenAI",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single relayed whole-PR review)",
+ "web_access": true
+}

@@ -1,0 +1,17 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "unrecorded",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "manifest": "review-manifest@v0",
+ "notes": "Unattributed academic-style 'Strong Reject' review of papers/the-reason-runs-again supplied to the operator and relayed verbatim. Author, model, and vendor are unrecorded: the review carries no attribution and none was provided, so none is invented. No claim of independence or human authorship can be made from the recorded provenance. It is counted in the ledger total and inbound count but claims no reviewer label or vendor. Adjudicated 2026-08-30 in the academic-positioning pass: findings on justification-binding (title/positioning), cmd@v1 replay scope, key-actor binding, settlement/WRT nomenclature, review-ledger framing, and hand-rolled Ed25519 were independently checked against the current tree; confirmed academic overclaims were corrected in paper.md.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": "unrecorded",
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-unattributed-paper-strong-reject-review.md",
+ "reviewer_model": "unrecorded",
+ "reviewer_vendor": "unrecorded",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single report; operator relayed)",
+ "web_access": "unrecorded"
+}

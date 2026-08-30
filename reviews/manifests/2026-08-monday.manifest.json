@@ -1,0 +1,18 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "deedf20",
+ "backfilled": true,
+ "context_sha256": "unrecorded",
+ "independence_class": "distinct model persona; same vendor family (OpenAI) as the three WRT gates; LLM-authored; NOT human domain expert. First WHOLE-PAPER adversary.",
+ "manifest": "review-manifest@v0",
+ "notes": "First full paper-level peer review (Major Revision / Weak Reject, 4/10). Found the justification-binding gap (term not normatively bound to policy/subject/evidence/decision) that three settlement-focused gates never reached, plus related-work gaps (PCA/OPA/in-toto SVR/SCITT), the two-grade anchoring point, and 'safe by construction' overstatement. Nothing declined; substantially accepted. RFC 9943 (SCITT) and PCA CCS 1999 citations verified by the maintainer before adding.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": true,
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-08-monday.md",
+ "reviewer_model": "Monday (ChatGPT persona; exact model unrecorded)",
+ "reviewer_vendor": "OpenAI",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single relayed peer review)",
+ "web_access": "unrecorded"
+}
