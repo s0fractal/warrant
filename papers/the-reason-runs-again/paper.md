@@ -207,8 +207,10 @@ governing policy and the decision is, for now, an external property.**
 
 # 2. Related work
 
-**Signed transcripts.** The closest active work is the IETF draft on
-verifiable agent conversations [@vac2026], which normalizes and signs the
+**Signed transcripts.** The closest related work is the IETF draft on
+verifiable agent conversations [@vac2026] (an individual submission, now an
+expired and archived Internet-Draft rather than an active one), which
+normalizes and signs the
 session logs coding agents already write — messages, tool calls, tool
 results — so a transcript offered later can be shown to be the transcript
 that happened. Warrant sits one layer below: not the conversation but the
@@ -956,8 +958,8 @@ of Section 4). Part of the mechanized proof chain in the sibling repository
 rests on `native_decide`, which places the Lean compiler in the trusted base,
 and that condition is not discharged.
 
-**Deposited is not reviewed.** This paper, at a DOI, is a frozen artifact
-at a permanent address. It is not a venue, a peer review, or an
+**Deposited is not reviewed.** Once deposited at a DOI, this paper is a frozen
+artifact at a permanent address. It is not a venue, a peer review, or an
 endorsement, and nothing in it should be cited as though it were.
 
 # 9. Conclusion
@@ -1005,7 +1007,14 @@ pull request #30, not in the master tree — and is named here as a direction,
 not an available file; `MAP.md` records the historical WRT-003 (verification
 receipts) and WRT-004 (verify-report) as closed, unrelated work. The `ski@v1` runtime and its
 Lean 4 mechanization are at <https://github.com/s0fractal/sigma-glyph>.
-Full git histories of both repositories are archived by Software Heritage;
-disclosure manifests are timestamped via OpenTimestamps. A claims checker
-deposited beside this paper recomputes its countable numbers from the
-repository at the archived commit.
+Software Heritage holds snapshots of both repositories from 2026-07-28;
+archival of the exact deposited commit is requested at deposit time and is
+stated here only once confirmed, not implied in advance. Disclosure manifests
+are timestamped via OpenTimestamps. This paper's Zenodo DOI is
+[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) — reserved
+before the final build so the identifier appears in this artifact, and
+resolving to the deposited version once that version is published. This is
+**version 1.0.0 of the paper** — a deposit version, not a Warrant software or
+protocol release and not a v1.0 adoption of the format; a claims checker
+deposited beside this paper recomputes its countable numbers from the repository
+commit this version was built from.
