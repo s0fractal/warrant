@@ -9,9 +9,8 @@ version: 1.0.0
 date-released: "2026-08-30"
 license: CC-BY-4.0
 url: "https://github.com/s0fractal/warrant"
-# DOI is reserved on Zenodo before the final build and replaces the placeholder
-# below; until reserved it reads RESERVED.
-doi: "10.5281/zenodo.RESERVED"
+# Reserved Zenodo DOI (draft 22172098, unpublished until the deposit is published).
+doi: "10.5281/zenodo.22172098"
 preferred-citation:
   type: article
   title: "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run"
@@ -20,5 +19,5 @@ preferred-citation:
       given-names: Serhii
       orcid: "https://orcid.org/0009-0001-8010-420X"
   year: 2026
-  doi: "10.5281/zenodo.RESERVED"
+  doi: "10.5281/zenodo.22172098"
   url: "https://github.com/s0fractal/warrant"

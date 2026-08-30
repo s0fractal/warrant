@@ -1011,7 +1011,7 @@ Software Heritage holds snapshots of both repositories from 2026-07-28;
 archival of the exact deposited commit is requested at deposit time and is
 stated here only once confirmed, not implied in advance. Disclosure manifests
 are timestamped via OpenTimestamps. This paper is deposited on Zenodo at DOI
-[`10.5281/zenodo.RESERVED`](https://doi.org/10.5281/zenodo.RESERVED) — reserved
+[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) — reserved
 before the final build so the identifier appears in this artifact — and is
 frozen at the git tag `paper-the-reason-runs-again-v1.0.0`. A claims checker
 deposited beside this paper recomputes its countable numbers from the
