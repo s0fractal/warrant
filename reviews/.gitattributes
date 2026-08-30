@@ -1,0 +1,5 @@
+# Preserved source artifact: an unattributed review kept byte-identical to what
+# was supplied. Its trailing whitespace is part of the original bytes, so the
+# blank-at-eol check is disabled for THIS ONE FILE only. No other file's
+# whitespace policy is affected.
+2026-08-unattributed-paper-strong-reject-review.md whitespace=-blank-at-eol

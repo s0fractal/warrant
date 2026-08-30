@@ -1,7 +1,7 @@
 ---
 title: "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run"
 author: "Serhii Glova (independent) — sergey.glova@gmail.com"
-date: 2026-08-27
+date: 2026-08-30
 keywords:
   - AI agents
   - accountability
@@ -113,8 +113,8 @@ Three design commitments follow.
 
 **Identity is the hash of the content.** A record's identity — its WarrantID
 — is the SHA-256 of its canonical JSON bytes. Everything a record cites —
-the policy under which the decision was taken, the evidence relied on, the
-check offered as its reason — is cited by the SHA-256 of the exact bytes. Nothing
+the policy the record claims governed the decision, the evidence relied on,
+the check offered as its reason — is cited by the SHA-256 of the exact bytes. Nothing
 can be edited after the fact without changing its address, and therefore
 without breaking every reference to it. This moves the trust question from
 "do I trust the host that served me this log?" to "do these bytes hash to
@@ -214,7 +214,7 @@ results — so a transcript offered later can be shown to be the transcript
 that happened. Warrant sits one layer below: not the conversation but the
 decision, with a justification that re-executes. The two compose rather than
 compete — a signed transcript establishes what was said; a warrant
-establishes what was decided and lets a stranger re-execute the stated
+records and asserts what was decided and lets a stranger re-execute the stated
 reason's computation and compare its result, without establishing that the
 result is relevant to, or entails, the decision.
 
@@ -893,10 +893,11 @@ design for one in this format.
 
 **`cmd@v1` verdicts are trusted by specification, and that trust reaches
 settlement** (Section 5.2). The drafted repair (**WRT-005**,
-`proposals/WRT-005-outcome-fingerprint-purity.md`) resolves this for
-`cmd@v1` by *scope reduction*, not by fixing it: a container-executed check
-the verifier cannot re-run is made unable to contribute settlement novelty at
-all, so `cmd@v1` re-litigation becomes evidence-gated only. We make no claim
+`proposals/WRT-005-outcome-fingerprint-purity.md`, DRAFT / not adopted) **would
+close this if adopted, by *scope reduction***, not by fixing it: a
+container-executed check the verifier cannot re-run would be made unable to
+contribute settlement novelty at all, so `cmd@v1` re-litigation would become
+evidence-gated only. We make no claim
 about how common `cmd@v1` is across deployments — this repository has no basis
 to measure that — so the honest statement is bounded: for any decision whose
 reason is a `cmd@v1` check, that reason is not stranger-replayable and gains at
@@ -963,7 +964,7 @@ endorsement, and nothing in it should be cited as though it were.
 
 The gap this format addresses is narrow and, we think, real: between
 telemetry that records what an agent did on the operator's word, and a
-record of what was decided whose identity, governing policy, and — for one
+record asserting what was decided whose identity, governing policy, and — for one
 reason class — stated justification can be *re-executed* by a stranger from
 the bytes alone. We are precise about that verb, because it is the whole
 honesty of the paper: a verified Warrant proves integrity, signature validity
