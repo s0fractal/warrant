@@ -958,8 +958,8 @@ of Section 4). Part of the mechanized proof chain in the sibling repository
 rests on `native_decide`, which places the Lean compiler in the trusted base,
 and that condition is not discharged.
 
-**Deposited is not reviewed.** This paper, at a DOI, is a frozen artifact
-at a permanent address. It is not a venue, a peer review, or an
+**Deposited is not reviewed.** Once deposited at a DOI, this paper is a frozen
+artifact at a permanent address. It is not a venue, a peer review, or an
 endorsement, and nothing in it should be cited as though it were.
 
 # 9. Conclusion
@@ -1010,9 +1010,10 @@ Lean 4 mechanization are at <https://github.com/s0fractal/sigma-glyph>.
 Software Heritage holds snapshots of both repositories from 2026-07-28;
 archival of the exact deposited commit is requested at deposit time and is
 stated here only once confirmed, not implied in advance. Disclosure manifests
-are timestamped via OpenTimestamps. This paper is deposited on Zenodo at DOI
+are timestamped via OpenTimestamps. This paper's Zenodo DOI is
 [`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) — reserved
-before the final build so the identifier appears in this artifact — and is
-frozen at the git tag `paper-the-reason-runs-again-v1.0.0`. A claims checker
-deposited beside this paper recomputes its countable numbers from the
-repository at that tagged commit.
+before the final build so the identifier appears in this artifact, and
+resolving to the deposited version once that version is published. The deposited
+version is release 1.0.0 of the Warrant repository; a claims checker deposited
+beside this paper recomputes its countable numbers from the repository commit
+this version was built from.

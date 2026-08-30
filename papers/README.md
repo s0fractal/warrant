@@ -10,11 +10,13 @@ covers everything.
 
 | | words | subject |
 |---|---|---|
-| [`the-reason-runs-again/`](the-reason-runs-again/) | 9 710 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
+| [`the-reason-runs-again/`](the-reason-runs-again/) | 9 723 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
 
-None is deposited yet. A DOI, when one exists, buys a permanent address and a
-frozen artifact — no venue, no peer review, no endorsement — and each
-paper's README will say which commit it froze.
+The flagship paper has been assigned Zenodo DOI
+[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098)
+(version 1.0.0). A DOI buys a permanent address and a frozen artifact — no
+venue, no peer review, no endorsement — and each paper's README records the
+commit it was built from.
 
 Candidate companions, mined from material already in this repository (each
 listed here so the flagship paper does not silently absorb their scope):

@@ -5,16 +5,18 @@ content-addressed identity, domain-separated signatures, re-executable
 reasons, settlement, and the conformance apparatus — together with what
 building it broke and what it still does not provide.
 
-**Not deposited.** No DOI, no archived commit, no peer review. Until a Zenodo
-deposit exists, this directory is a draft beside the thing it describes, and
-nothing here should be cited as though it carried more.
+**Deposit status.** This paper has been assigned Zenodo DOI
+[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) (version
+1.0.0, CC BY 4.0); the DOI resolves to the deposited version once that version
+is published. It has had no peer review. Nothing here should be cited as
+carrying more than that.
 
 | | |
 | --- | --- |
 | source | [`paper.md`](paper.md), bibliography in [`references.bib`](references.bib) |
 | build | [`build.sh`](build.sh) — pandoc 3.10.2 with `--citeproc`, tectonic 0.17.0 |
 | claims | [`check_claims.py`](check_claims.py) — recounts every countable number in the paper from the repository; `build.sh` runs it first and refuses to build on a mismatch |
-| intended licence | CC BY 4.0 on deposit |
+| licence | CC BY 4.0 for the paper (see [`LICENSE.md`](LICENSE.md)); the code it documents stays MIT |
 
 ## The numbers are enforced, with a boundary
 
