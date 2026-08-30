@@ -107,10 +107,29 @@ for p in docs:
     m = re.match(r"20\d\d-\d\d-([a-z0-9]+)", p.name)
     if m and m.group(1) in VENDOR:
         labels.add(m.group(1))
-words = {3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
-         8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve",
-         13: "thirteen", 14: "fourteen", 15: "fifteen", 16: "sixteen"}
-m = re.search(r"(\w+) reviewer labels", PAPER)
+words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six",
+         7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven",
+         12: "twelve", 13: "thirteen", 14: "fourteen", 15: "fifteen",
+         16: "sixteen"}
+
+# Unattributed reviews: inbound documents whose filename prefix is not a known
+# vendor label. They are counted in the ledger total but claim no label/vendor,
+# so the census must state them explicitly rather than let the total and the
+# label count silently disagree. (An unknown label must not vanish.)
+inbound_docs = [p for p in docs if "response" not in p.name]
+unattributed = [p for p in inbound_docs
+                if not (re.match(r"20\d\d-\d\d-([a-z0-9]+)", p.name)
+                        and re.match(r"20\d\d-\d\d-([a-z0-9]+)",
+                                     p.name).group(1) in VENDOR)]
+m = re.search(r"(\w+)\s+unattributed review", PAPER)
+if not m or m.group(1) != words.get(len(unattributed)):
+    failures.append(f"unattributed reviews: paper says "
+                    f"{m.group(1) if m else '<missing>'!r}, "
+                    f"measured {len(unattributed)} "
+                    f"({sorted(p.name for p in unattributed)})")
+else:
+    checked.append(f"unattributed reviews: {len(unattributed)}")
+m = re.search(r"(\w+)\s+reviewer\s+labels", PAPER)
 if not m or m.group(1) != words.get(len(labels)):
     failures.append(f"reviewer labels: paper says "
                     f"{m.group(1) if m else '<missing>'!r}, "

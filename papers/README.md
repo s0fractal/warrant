@@ -10,7 +10,7 @@ covers everything.
 
 | | words | subject |
 |---|---|---|
-| [`the-reason-runs-again/`](the-reason-runs-again/) | 9 013 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
+| [`the-reason-runs-again/`](the-reason-runs-again/) | 9 630 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
 
 None is deposited yet. A DOI, when one exists, buys a permanent address and a
 frozen artifact — no venue, no peer review, no endorsement — and each
@@ -19,10 +19,11 @@ paper's README will say which commit it froze.
 Candidate companions, mined from material already in this repository (each
 listed here so the flagship paper does not silently absorb their scope):
 
-- **the audit experience report** — the full review ledger (89 documents at
-  this writing, and growing), the taxonomy of what six vendors' models found
-  and missed, negative-control calibration; companion to sigma-glyph's
-  *Twenty-One Ways Past a Proof Guard*.
+- **the audit experience report** — the full review ledger (92 documents at
+  this writing — 70 inbound and 22 responses, of which one inbound review is
+  unattributed and carries no vendor label — and growing), the taxonomy of what
+  six vendors' models found and missed, negative-control calibration; companion
+  to sigma-glyph's *Twenty-One Ways Past a Proof Guard*.
 - **settlement semantics** — tunnels, foreclosure, novelty fingerprints,
   multi-root adoption (`SPEC.md` §7/§9, `proposals/GOV-001`).
 - **the expiring delegate** — key state, thresholds, and model actors with

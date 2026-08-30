@@ -1,5 +1,5 @@
 ---
-title: "The Reason Runs Again: Decision Records for Machine Actors, Addressed by Their Own Hash and Justified by Checks a Stranger Can Re-Run"
+title: "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run"
 author: "Serhii Glova (independent) — sergey.glova@gmail.com"
 date: 2026-08-27
 keywords:
@@ -28,15 +28,16 @@ the hash of the exact policy text in force, whose signature covers a
 domain-separated message so that a signing key cannot be replayed across
 protocols, and — the property we consider the actual contribution — whose
 justification can be a *deterministic, budget-bounded computation that any
-reader re-executes offline*, so the stated reason is checked rather than
-believed. We are precise, from the abstract onward, about the proposition a
-verified record establishes: **integrity** (these bytes hash to this
-identity), **authenticity** (this key signed them; bound to an actor only with
-a trust configuration), and **replay** (this computation re-executes to this
-result). It does **not** establish that the computation interprets the pinned
-policy, that its facts derive from the cited evidence, or that its result
-entails the decision — that semantic binding is an authoring convention today,
-not a format invariant, and closing it normatively is future work. Records
+reader re-executes offline*, so the stated reason's computation is
+*re-executed* rather than believed. We are precise, from the abstract onward,
+about the proposition a verified record establishes: **integrity** (these bytes
+hash to this identity), **signature validity** (this signature is valid under
+this key; binding that key to an actor needs a trust configuration), and
+**replay** (this computation re-executes to this result). It does **not**
+establish that the computation interprets the pinned policy, that its facts
+derive from the cited evidence, or that its result entails the decision — that
+semantic binding is an authoring convention today, not a format invariant, and
+closing it normatively is future work. Records
 form a DAG; on top of it the format defines key rotation and threshold
 governance derived from the DAG rather than from wall-clock time, a
 closed-schema machine-readable verification report that fails closed, and an
@@ -48,9 +49,10 @@ mechanized in Lean 4.
 
 The format is specified to a design rule that anything two independent
 implementations cannot agree on byte-exactly stays out of the document. Three
-implementations — Python, Go, and a from-scratch Rust verifier with no
-external crates — agree byte-exactly on the surfaces they claim: Python and
-Go at settlement grade, Rust deliberately at base grade. A third party can
+implementations — Python, Go, and a from-scratch Rust verifier written without
+external crates as a trusted-base-diversification experiment, not as a
+production-hardening claim (§6) — agree byte-exactly on the surfaces they claim:
+Python and Go at settlement grade, Rust deliberately at base grade. A third party can
 check any of them, or an implementation we have never seen, against 138
 vectors in a runner-driven pack (134 base-grade, 4 settlement-grade),
 including normative *negative* batteries (14 weak Ed25519 keys that must
@@ -60,11 +62,12 @@ produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 91 documents spanning six model
-vendors: a census under this repository's own naming convention, and — a
-distinction its reviewers forced us to make — not a claim of reviewer
-independence, since every gate to date is LLM-authored and none is
-cross-paradigm. We state with equal precision what the
+measured events from a review ledger of 92 documents spanning six model
+vendors, of which one is unattributed, carrying no reviewer label: a
+label census under this repository's own naming convention, not a validation
+score, and — a distinction its reviewers forced us to make — not a claim of
+reviewer independence, since every attributed gate to date is LLM-authored and
+none is cross-paradigm. We state with equal precision what the
 format does not provide: key–actor binding is local configuration, not a
 protocol fact; one of the two check runtimes is trusted by specification and
 that trust reaches settlement; and no independent party has yet implemented
@@ -111,7 +114,7 @@ Three design commitments follow.
 **Identity is the hash of the content.** A record's identity — its WarrantID
 — is the SHA-256 of its canonical JSON bytes. Everything a record cites —
 the policy under which the decision was taken, the evidence relied on, the
-check that justifies it — is cited by the SHA-256 of the exact bytes. Nothing
+check offered as its reason — is cited by the SHA-256 of the exact bytes. Nothing
 can be edited after the fact without changing its address, and therefore
 without breaking every reference to it. This moves the trust question from
 "do I trust the host that served me this log?" to "do these bytes hash to
@@ -165,9 +168,12 @@ record establishes three things and no more:
 - **Integrity** — these bytes hash to this identity; nothing pinned by hash
   (the policy in `under`, the `subject`, the `evidence`, the `check`) has
   changed relative to its identifier.
-- **Authenticity** — this signature verifies under this **key**; that the key
-  belongs to a named **actor** is a separate claim, true only relative to a
-  supplied trust configuration (Section 5.3, Section 8).
+- **Signature validity under a key** — this signature is valid under this
+  **key** (key-relative cryptographic authorship); that the key belongs to a
+  named **actor** is a separate claim, true only relative to a supplied trust
+  configuration (Section 5.3, Section 8). We do not call this "authenticity"
+  unqualified, because that word invites the actor-binding the format does not
+  supply.
 - **Replay** — for a `ski@v1` reason, this deterministic computation, over
   this store, re-executes to this result.
 
@@ -184,10 +190,12 @@ convention* — the policy-language toolchain pins its source as evidence and
 recompiles deterministically — not as a verifier-checkable invariant. Closing
 it normatively is a reason-binding profile that commits the policy-source
 hash, a fact manifest, the evidence hashes, and an explicit result→decision
-mapping alongside the check; it is drafted as proposal WRT-004 with a working
-prototype that reports a reason *bound* or *unbound* and whose negative
-controls show a constant-equivalent term failing the binding — unadopted, and
-named here so the reader does not mistake replay for entailment. Even in its
+mapping alongside the check; it is drafted as an **unmerged reason-binding
+(declaration-coherence) candidate, carried in the frozen pull request #30 and
+not present in the master tree**, with a working prototype that reports a reason
+*bound* or *unbound* and whose negative controls show a constant-equivalent term
+failing the binding — unadopted, and named here so the reader does not mistake
+replay for entailment. Even in its
 target form that profile proves *declaration coherence* (the term is this
 policy's compilation over facts committed as cited evidence, yielding a result
 consistent with the decision under a committed map), not authorization: who may
@@ -206,8 +214,9 @@ results — so a transcript offered later can be shown to be the transcript
 that happened. Warrant sits one layer below: not the conversation but the
 decision, with a justification that re-executes. The two compose rather than
 compete — a signed transcript establishes what was said; a warrant
-establishes what was decided and lets a stranger recompute whether the
-stated reason holds.
+establishes what was decided and lets a stranger re-execute the stated
+reason's computation and compare its result, without establishing that the
+result is relevant to, or entails, the decision.
 
 **Software supply chain.** in-toto [@torresarias2019], SLSA [@slsa], DSSE
 [@dsse], Sigstore's Rekor transparency log [@sigstore], and TUF
@@ -216,7 +225,8 @@ borrows the layering discipline and interoperates with it (records can be
 wrapped as in-toto statements), but its subject differs: an attestation says
 "this artifact was produced by this step"; a warrant says "this decision was
 taken under this policy for this reason", and its reason can carry its own
-proof of evaluation. Certificate Transparency [@rfc6962] contributes the
+re-executable evaluation (a replayable computation, not a proof of
+entailment). Certificate Transparency [@rfc6962] contributes the
 append-only Merkle discipline our anchoring tool reuses. DSSE earns a second
 mention in Section 4: its PAE encoding is *prior art for* the domain
 separation Warrant adopts — not, as an earlier draft of this paper implied,
@@ -450,9 +460,17 @@ A reason is either prose, or a check. Checks carry a runtime tag, and the
 two registered runtimes have deliberately different trust models:
 
 - **`cmd@v1`** — the check blob is a command executed in a container; exit
-  status is the verdict. The verifier does *not* re-execute it. It proves a
-  claim to whoever trusts the container, which is an honest engineering
-  trade and a bounded one: the spec says so rather than implying otherwise.
+  status is the verdict. The chain is explicit: the **filer** ran the command
+  and **recorded** the exit status into the record; a later **verifier** checks
+  only that the record is intact, canonical, and signed, and re-computes nothing
+  of the command — it must **trust** the filer's recorded verdict and the
+  container that produced it. A `cmd@v1` reason is therefore **not
+  stranger-replayable**: a reader who does not trust that filer has no way to
+  reproduce the verdict from the bytes. This is an honest engineering trade and
+  a bounded one — the spec says so rather than implying otherwise — but it means
+  `cmd@v1` re-introduces exactly the "believe the operator's log" property the
+  introduction sets out to remove, for that reason class. Only `ski@v1` below is
+  re-executed by the verifier.
 - **`ski@v1`** — the check blob is a canonical JSON object
   `{ski: 1, term, atp, expect}` naming a combinator term in Σ-GLYPH Book I
   [@glova2026sigma], a budget, and an expected result hash. Verification
@@ -548,7 +566,8 @@ runtime. This is a limit of the format, not of the implementations — the
 settlement harness pins the `expect`-flip as *admissible*, because that is
 what the specification says — and the repair, a fingerprint constrained to
 be a pure function of the computation the verifier performed, is drafted as
-proposal WRT-003 and sent through its own adversarial gate rather than
+proposal **WRT-005** (`proposals/WRT-005-outcome-fingerprint-purity.md` in the
+master tree) and sent through its own adversarial gate rather than
 adopted here. That gate has already earned its place across three rounds: the
 first found two further re-openers the first draft missed — a budget the filer
 starves until the honest computation exhausts, and a semantic no-op that wraps
@@ -564,8 +583,12 @@ it: false-positive novelty is now impossible, and false-negative novelty (two
 routes to one value are one consequence) is guaranteed and intended. The
 repair is at its fourth revision, still unadopted; the point of recording this
 is not that it is finished but that the same adversarial loop that found the
-defect is the one deciding when it is closed — and that the loop has now told
-us its own next reviewer should be a human logician, not a fifth model.
+defect is the one deciding when it is closed — and that the loop has now
+recorded, as an open need (NEED-001), the evidence class it cannot itself
+supply: a *semantic* review by an independent human logician **or** a
+context-isolated agent. That review is useful but optional — not a blocker on
+adoption — and the project does not wait on human participation that may never
+arrive.
 
 One thing the loop did produce that a model round could not: the narrow rule
 that survived is now *mechanized*. Its two acceptance invariants — a
@@ -586,8 +609,10 @@ does not depend on it (a starved run produces a DISSONANCE, ineligible
 unconditionally). And a proof that the rule has this shape is not a proof that
 the running Python/Go code computes this rule — that refinement is the standing
 implementation gap (Section 6). What the mechanization does buy is that the
-rule is *exactly what it says*; whether "consequence = result value" is the
-*right* semantics is the question left for the human logician.
+rule is *exactly what it says* — its structural algebra over a result value, and
+no claim about semantic relevance, settlement-policy correctness, the
+Python/Go refinement, evaluator correctness, or authorization; whether
+"consequence = result value" is the *right* semantics is left open (NEED-001).
 
 ## 5.3 Keys and jurisdictions as records in the same DAG
 
@@ -749,14 +774,18 @@ shown capable of turning red, for the stated reason, is not evidence.
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 91 documents — 69 inbound reviews and gates plus 22 written
-responses — under fourteen reviewer labels drawn from six model vendors
-(OpenAI, Google, Anthropic, DeepSeek, Moonshot, Alibaba), spanning
-specification audits, cryptographic attacks, release-surface gates,
-governance-proposal adversarial rounds, three design-gate rounds on the
-settlement repair, and a whole-paper adversarial model review — which, like
-every entry here, is LLM-authored and is not the human peer review the paper
-still lacks.
+holds 92 documents — 70 inbound reviews and gates plus 22 written
+responses. Of the inbound reviews, all but one fall under fourteen reviewer
+labels drawn from six model vendors (OpenAI, Google, Anthropic, DeepSeek,
+Moonshot, Alibaba); the remaining review is unattributed. That **one
+unattributed review** has its author, model, and vendor recorded literally as
+*unrecorded* in its manifest — counted in the total, claimed for no label or
+vendor, so it cannot silently drop out of the census. The corpus spans specification audits,
+cryptographic attacks, release-surface gates, governance-proposal adversarial
+rounds, three design-gate rounds on the settlement repair, and whole-paper
+adversarial model reviews — each of which, like every entry here, is
+LLM-authored or unattributed, and none of which is the human peer review the
+paper still lacks.
 
 We are careful about what that number is and is not. It is a **label
 census**: the labels are a filename convention this repository controls, the
@@ -798,10 +827,12 @@ UNRUN-is-not-PASS rules are that argument, applied normatively.
 Beyond the census caveat above: runs are recorded as ungated when no
 reviewing family was affordable, rather than pretending a threshold was
 met; and an adversarial reviewer, however capable, is not an independent
-implementer. The strongest review this project can receive — a
-from-scratch implementation of the spec by someone who has never read its
-code — has not yet happened, and we treat it as a graduation criterion for
-any 1.0, not as future work. The review of this paper's own first draft is
+implementer. A distinct and stronger evidence class the ledger cannot supply
+is a from-scratch implementation of the spec by a party — a person **or** a
+context-isolated agent — that has never read this code (recorded as the open
+need NEED-002). It has not happened; it would strengthen a 1.0 claim, but it is
+an evidence boundary, not a blocker on merge, adoption, release, or version
+number, and the project does not wait on it. The review of this paper's own first draft is
 itself a data point for the method: it predicted the `expect`-flip of
 Section 5.2 from the fingerprint definition alone, the reproduction
 confirmed it against both implementations, and the finding travelled back
@@ -827,9 +858,12 @@ authoring convention (the policy toolchain pins its source as evidence and
 recompiles deterministically), not by a verifier-checkable invariant. Closing
 it is a reason-binding profile — commit the policy-source hash, a fact
 manifest, the evidence hashes, and a result→decision mapping alongside the
-check — drafted as proposal WRT-004 with a running prototype and negative
-controls, unadopted. Until a verifier enforces it, **"reason" is in part a
-promise the filer makes**, and cryptography does not detect promises.
+check — drafted as an **unmerged reason-binding (declaration-coherence)
+candidate carried in the frozen pull request #30, not present in the master
+tree**, with a running prototype and negative controls, unadopted. (It must not
+be confused with WRT-004, which is the closed verify-report work; see `MAP.md`.)
+Until a verifier enforces it, **"reason" is in part a promise the filer makes**,
+and cryptography does not detect promises.
 
 **Key identity is not actor identity.** Anyone
 with a keypair can file a record claiming any actor id; at base grade the
@@ -848,19 +882,27 @@ at the identity layer even where they are byte-identical at the record
 layer. Settlement grade with a pinned trust configuration closes the
 threshold-relevant half; a related defect — the unbound-signature warning
 appearing in text output but omitted from the machine-readable report —
-was found by that same consumer and fixed. There is no identity-federation
-path (no DID, no X.509, no OIDC-bound ephemeral keys) and no design for
-one.
+was found by that same consumer and fixed. To state the boundary without
+euphemism: Warrant establishes **signature validity under a key**
+(key-relative cryptographic authorship), **not** that an `actor.id` belongs to
+a real person or organization. It is **not an identity-federation protocol**,
+requires a local/pinned trust configuration for any actor attribution, and is
+**not proposed as a replacement for DID, X.509, or OIDC**. There is no
+identity-federation path (no DID, no X.509, no OIDC-bound ephemeral keys) and no
+design for one in this format.
 
 **`cmd@v1` verdicts are trusted by specification, and that trust reaches
-settlement** (Section 5.2). The drafted repair (WRT-003) resolves this for
+settlement** (Section 5.2). The drafted repair (**WRT-005**,
+`proposals/WRT-005-outcome-fingerprint-purity.md`) resolves this for
 `cmd@v1` by *scope reduction*, not by fixing it: a container-executed check
 the verifier cannot re-run is made unable to contribute settlement novelty at
-all, so `cmd@v1` re-litigation becomes evidence-gated only. Since `cmd@v1` is
-the reason kind most deployments actually use, the honest statement is that
-the most common reason class would gain evidence-only settlement novelty —
-the room with the hole is closed, the hole itself is not repairable without a
-runtime the verifier can re-execute.
+all, so `cmd@v1` re-litigation becomes evidence-gated only. We make no claim
+about how common `cmd@v1` is across deployments — this repository has no basis
+to measure that — so the honest statement is bounded: for any decision whose
+reason is a `cmd@v1` check, that reason is not stranger-replayable and gains at
+most evidence-only settlement novelty. The room with the hole is closed off;
+the hole itself is not repairable without a runtime the verifier can
+re-execute.
 
 **A threshold assumes independent custody, and here it has not had it.**
 In this repository no threshold has ever been exercised: the trust
@@ -901,10 +943,17 @@ model has since gained (SA-12).
 **The most novel layer is the least proven implementable.** Three-way
 parity is a base-grade claim; settlement-grade parity is two-way;
 multi-root behaviour is vectored only as far as root admission. The
-from-scratch Rust cryptography is differentially tested, not audited. Part
-of the mechanized proof chain in the sibling repository rests on
-`native_decide`, which places the Lean compiler in the trusted base, and
-that condition is not discharged.
+from-scratch Rust cryptography — written without external crates as a
+deliberate trusted-base-diversification experiment, **not** as a security
+virtue — is differentially and conformance tested, which finds divergences but
+does **not** prove the absence of cryptographic defects; two were in fact found
+after a 452-case random differential had passed (Section 6). A hand-rolled
+Ed25519 is **not a production recommendation**: a production deployment should
+use a maintained, audited cryptographic implementation while preserving the
+normative reject behaviour this format pins (the torsion/scalar acceptance set
+of Section 4). Part of the mechanized proof chain in the sibling repository
+rests on `native_decide`, which places the Lean compiler in the trusted base,
+and that condition is not discharged.
 
 **Deposited is not reviewed.** This paper, at a DOI, is a frozen artifact
 at a permanent address. It is not a venue, a peer review, or an
@@ -917,10 +966,10 @@ telemetry that records what an agent did on the operator's word, and a
 record of what was decided whose identity, governing policy, and — for one
 reason class — stated justification can be *re-executed* by a stranger from
 the bytes alone. We are precise about that verb, because it is the whole
-honesty of the paper: a verified Warrant proves integrity, authenticity, and
-replay (Section 1.2); it does not prove that the replayed computation is an
-interpretation of the policy or an entailment of the decision, and where an
-earlier draft let "reason" imply the latter, this one does not. The
+honesty of the paper: a verified Warrant proves integrity, signature validity
+under a key, and replay (Section 1.2); it does not prove that the replayed
+computation is an interpretation of the policy or an entailment of the decision,
+and where an earlier draft let "reason" imply the latter, this one does not. The
 contribution is best named as **replayable decision-justification receipts**,
 not machine reasoning — and the discipline connecting the mechanisms: anything
 two independent implementations cannot agree on byte-exactly stays out of the
@@ -929,22 +978,31 @@ written where a reader meets it, and the settlement layer is presented as the
 experiment it is rather than the feature it is not. Around that core sit two
 compositions we now state plainly instead of understating: a transparency
 service (SCITT) for the historicity a self-contained store cannot supply, and
-a drafted-and-prototyped reason-binding profile (WRT-004) for the
-policy-to-decision entailment the core format leaves open.
+a drafted-and-prototyped reason-binding (declaration-coherence) candidate —
+unmerged, carried in the frozen pull request #30, not a canonical WRT in the
+master tree — for the policy-to-decision entailment the core format leaves open.
 
-The format's next test is not one we can run on ourselves, and it is now two
-tests, not one: an implementation by someone who has only the text — the
-conformance pack is the standing invitation — and a semantic review of the
-justification-binding gap and the settlement calculus by a human logician,
-which three rounds of model gates have told us they cannot substitute for.
+Two further evidence classes would strengthen the format, and the project
+treats both as useful-but-optional open needs rather than gates it waits on: an
+implementation by a party — a person **or** a context-isolated agent — who has
+only the text (the conformance pack is the standing invitation, NEED-002), and
+a semantic review of the justification-binding gap and the settlement calculus
+by an independent human logician or context-isolated agent (NEED-001), which
+the model-gate loop has said it cannot itself substitute for. Neither is a
+blocker on merge, adoption, or deposit.
 
 # Availability
 
 The specification, all three implementations, the conformance pack, the
 review ledger, the threat model, the settlement-rule Lean mechanization
-(`proofs/Settlement.lean`), the drafted proposals (WRT-003, WRT-004) with
-their prototypes and counter-vector fixtures, and every vector cited here are
-at <https://github.com/s0fractal/warrant> (MIT). The `ski@v1` runtime and its
+(`proofs/Settlement.lean`), and the settlement outcome-fingerprint proposal
+(**WRT-005**, `proposals/WRT-005-outcome-fingerprint-purity.md`) with its
+counter-vector fixtures, plus every vector cited here, are at
+<https://github.com/s0fractal/warrant> (MIT). The reason-binding
+(declaration-coherence) candidate is **unmerged** — it is carried in the frozen
+pull request #30, not in the master tree — and is named here as a direction,
+not an available file; `MAP.md` records the historical WRT-003 (verification
+receipts) and WRT-004 (verify-report) as closed, unrelated work. The `ski@v1` runtime and its
 Lean 4 mechanization are at <https://github.com/s0fractal/sigma-glyph>.
 Full git histories of both repositories are archived by Software Heritage;
 disclosure manifests are timestamped via OpenTimestamps. A claims checker
