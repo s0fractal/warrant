@@ -1,12 +1,3 @@
-# VENDORED — verbatim copy of Σ-GLYPH Book I reference oracle.
-#   source:  https://github.com/s0fractal/sigma-glyph  impl/sigma_glyph.py
-#   version: v0.6.6 (commit 41a1586)
-#   license: MIT (© s0fractal) — same as this repository
-# Bundled so `warrant verify` can re-run ski@v1 reasons OFFLINE, with no
-# separate clone. The three independent Σ-GLYPH implementations (Python here,
-# Go, Rust) agree on every Book I conformance vector; re-verifying against any
-# of them yields the same NodeHash. To refresh: re-copy from the source repo
-# at a pinned, conformance-green commit and update the version line above.
 """Sigma-GLYPH Book I reference implementation (oracle semantics v0.5.x, current release bundle v0.6.1), Book I.
 
 Scope: SigmaNodeV2 canonical serialization/deserialization, validation,
@@ -85,6 +76,7 @@ class ResourceFault(Exception):
 #       | ("lit", atom) | ("ref", h) | ("dis", reason)
 #       | ("app", t, t)                       children may be thunks
 GENESIS = {I_H: I_BYTES, K_H: K_BYTES, S_H: S_BYTES}   # intrinsic axioms (Book I §5.1)
+UINT32_MAX = 2**32 - 1
 
 def term_bytes(t):
     if t[0] == "lit": return ser(LITERAL, F_ATOM, atom=t[1])
@@ -122,15 +114,31 @@ def glyph_eq(t, gh):
 class Unresolved(Exception): pass
 class BudgetExhausted(Exception): pass
 
-def force(h, store, stats, limits):
+def force(h, store, stats, limits):  # NOSONAR python:S8495
     """Materialize ONE node from hash h; children stay thunks. Genesis axioms
     are intrinsic — synthesized without the store (Book I §5.1). Bytes failing
-    §4.1 materialize the Canonical Invalid Object (§3.5b)."""
+    §4.1 materialize the Canonical Invalid Object (§3.5b).
+
+    Returns a Term, which is a tagged union: ``("lit", atom)`` and ``("app", l, r)``
+    have different arities on purpose (see the Term grammar above). A rule that
+    wants every return of a function to be the same length is reading a sum type
+    as a record, so S8495 is suppressed here by name rather than by silence."""
     stats["fetches"] += 1
     if stats["fetches"] > limits["max_store_fetches"]: raise ResourceFault("fetches")
     b = GENESIS.get(h)
     if b is None: b = store.get(h)
     if b is None: raise Unresolved()
+    # A mapping lookup is not, by itself, a content-addressed store.  The
+    # public evaluator accepts any object with ``get`` (tests and downstream
+    # callers use plain dicts), so verify the CAS relation at the boundary
+    # instead of assuming only Store.put() can reach this function.  Treat a
+    # wrong key as a local storage fault: the bytes may be a perfectly valid
+    # SigmaNodeV2, but evaluating them as the requested hash would violate
+    # Identity by Hash and could make two conforming engines disagree.
+    if not isinstance(b, bytes):
+        raise ResourceFault("store returned non-bytes")
+    if node_hash(b) != h:
+        raise ResourceFault("CAS key mismatch")
     n = deser(b)
     if n is None: return ("dis", R_INVALID)
     op = n["op"]
@@ -138,6 +146,46 @@ def force(h, store, stats, limits):
     if op == REF:        return ("ref", n["atom"])
     if op == DISSONANCE: return ("dis", n["atom"])
     return ("app", ("thunk", n["left"]), ("thunk", n["right"]))
+
+_NO_REDUCTION = object()
+
+
+def _require_budget(cost, remaining):
+    if cost > remaining:
+        raise BudgetExhausted()
+
+
+def _head_reduction(function, argument, remaining):
+    """Return an I/K/S head contraction, or the private no-redex sentinel."""
+    if glyph_eq(function, I_H):
+        _require_budget(1, remaining)
+        return argument, 1
+    if function[0] != "app":
+        return _NO_REDUCTION
+    if glyph_eq(function[1], K_H):
+        _require_budget(1, remaining)
+        return function[2], 1
+    if function[1][0] != "app" or not glyph_eq(function[1][1], S_H):
+        return _NO_REDUCTION
+    x, y, z = function[1][2], function[2], argument
+    cost = 1 + size(z)
+    _require_budget(cost, remaining)
+    return ("app", ("app", x, z), ("app", y, z)), cost
+
+
+def _step_application(t, remaining, store, stats, limits):
+    function, argument = t[1], t[2]
+    reduced = _head_reduction(function, argument, remaining)
+    if reduced is not _NO_REDUCTION:
+        return reduced
+    result = step5(function, remaining, store, stats, limits)
+    if result is not None:
+        return ("app", result[0], argument), result[1]
+    result = step5(argument, remaining, store, stats, limits)
+    if result is not None:
+        return ("app", function, result[0]), result[1]
+    return None
+
 
 def step5(t, remaining, store, stats, limits):
     """One priced action, leftmost-outermost with lazy spine resolution.
@@ -149,37 +197,61 @@ def step5(t, remaining, store, stats, limits):
     kind = t[0]
     if kind == "thunk":
         if t[1] in GENESIS: return None                      # NF leaf by hash
-        if remaining < 1: raise BudgetExhausted()
+        _require_budget(1, remaining)
         v = force(t[1], store, stats, limits)                # may raise Unresolved
         c = size(v)                                          # 1 (lit/dis) / 2 (ref) / 3 (app)
-        if c > remaining: raise BudgetExhausted()            # fetched bytes discarded
+        _require_budget(c, remaining)                         # fetched bytes discarded
         return v, c
     if kind == "ref":                                        # R-R: unwrap one level
-        if remaining < 1: raise BudgetExhausted()
+        _require_budget(1, remaining)
         return ("thunk", t[1]), 1
     if kind == "app":
-        f, a = t[1], t[2]
-        if glyph_eq(f, I_H):                                 # R-I (O(1) hash comparison)
-            if remaining < 1: raise BudgetExhausted()
-            return a, 1
-        if f[0] == "app":
-            if glyph_eq(f[1], K_H):                          # R-K: argument NEVER forced
-                if remaining < 1: raise BudgetExhausted()
-                return f[2], 1
-            if f[1][0] == "app" and glyph_eq(f[1][1], S_H):  # R-S: size-priced
-                x, y, z = f[1][2], f[2], a
-                c = 1 + size(z)                              # hash leaves in z count 1, never forced
-                if c > remaining: raise BudgetExhausted()
-                return ("app", ("app", x, z), ("app", y, z)), c
-        r = step5(f, remaining, store, stats, limits)        # descend left spine (demand)
-        if r is not None: return ("app", r[0], a), r[1]
-        r = step5(a, remaining, store, stats, limits)        # f normal: demand argument
-        if r is not None: return ("app", f, r[0]), r[1]
-        return None
+        return _step_application(t, remaining, store, stats, limits)
     return None                                              # lit / dis are normal forms
 
-DEFAULT_LIMITS = dict(max_node_depth=4096, max_materialized_nodes=1_000_000,
-                      max_store_fetches=1_000_000)
+DEFAULT_LIMITS = {"max_node_depth": 4096,
+                  "max_materialized_nodes": 1_000_000,
+                  "max_store_fetches": 1_000_000,
+                  # No admission cap: this module is the conformance oracle and
+                  # must be able to answer for any budget the Book permits.
+                  "max_atp": None}
+
+# What a *verifier* should use instead. `eval` is total, so a stranger's term
+# always terminates -- and `size <= atp + 1` means the budget they choose is also
+# their licence over the verifier's memory. A 32-bit ATP is up to 4,294,967,295
+# priced actions, so "finite" and "affordable" are different words. This cap is a
+# local admission decision, made BEFORE any allocation or any store access, and
+# it is NOT a canonical Sigma-GLYPH outcome (Book I s3.6): it says the verifier
+# declined to run the computation, not what the computation evaluates to.
+VERIFIER_LIMITS = dict(DEFAULT_LIMITS, max_atp=10_000_000)
+
+
+class AdmissionRefused(Exception):
+    """The verifier declined to begin. Distinct from ResourceFault, which is
+    breached during evaluation, and from every DISSONANCE, which is a result.
+
+    Kept a separate type on purpose: a caller that confuses "I would not run
+    this" with "this is what it evaluates to" has let the party supplying the
+    term decide what the verifier reports."""
+
+    def __init__(self, claimed, allowed):
+        super().__init__(f"claimed ATP {claimed} exceeds this verifier's "
+                         f"admission limit {allowed}; refused before execution")
+        self.claimed, self.allowed = claimed, allowed
+
+
+def admit(atp, limits=None):
+    """Decide whether to begin at all. Raises before anything is touched.
+
+    Book I's consensus domain is ``uint32``.  Python's ``bool`` is an ``int``
+    subclass and floats participate in numeric comparisons, so an ordinary
+    range check is not enough to keep the API on that domain.
+    """
+    if type(atp) is not int or not 0 <= atp <= UINT32_MAX:
+        raise ValueError("atp must be a uint32 integer")
+    allowed = (limits or DEFAULT_LIMITS).get("max_atp")
+    if allowed is not None and atp > allowed:
+        raise AdmissionRefused(atp, allowed)
 
 
 def resource_check(t, limits):
@@ -193,16 +265,79 @@ def resource_check(t, limits):
         raise ResourceFault("term depth")
 
 
+EXITS = ("normal_form", "atp_exhausted", "unresolved_reference")
+
+
+class Receipt(tuple):
+    """What `eval` returns: {exit, result_hash, atp_spent} (Book I §3.4).
+
+    `result_hash` alone does not identify the exit and never did:
+    ``DISSONANCE(ATP Exhausted)`` is an ordinary term that can sit in a content
+    environment and evaluate to a normal form, so one hash means "finished" or
+    "ran out" depending on how it was reached. A caller that must tell them apart
+    reads `exit`.
+
+    A tuple subclass so that a receipt still unpacks as a pair for the
+    compatibility profile below, which is why nothing that used the two-value
+    form has to change at once."""
+
+    def __new__(cls, term, spent, exit_kind):
+        if exit_kind not in EXITS:
+            raise ValueError(f"exit must be one of {EXITS}, not {exit_kind!r}")
+        return super().__new__(cls, (term, spent))
+
+    def __init__(self, term, spent, exit_kind):
+        super().__init__()
+        self.term, self.atp_spent, self.exit = term, spent, exit_kind
+
+    def __repr__(self):
+        return (f"Receipt(exit={self.exit!r}, "
+                f"result_hash={self.result_hash.hex()[:12]}…, "
+                f"atp_spent={self.atp_spent})")
+
+    @property
+    def result_hash(self):
+        return term_hash(self.term)
+
+    def as_dict(self):
+        return {"exit": self.exit, "result_hash": self.result_hash.hex(),
+                "atp_spent": self.atp_spent}
+
+
+def eval_receipt(h, atp, env, limits=None):
+    """eval(term_hash, uint32 atp, content environment) -> Receipt (Book I §3.4).
+
+    The three inputs the Book states. `env` is a partial map from NodeHash to
+    bytes whose entries hash to their own key (§3.5); bytes under a foreign key
+    are refused locally rather than executed."""
+    term, spent, exit_kind = _eval_hash_raw(h, atp, env, limits)
+    return Receipt(term, spent, exit_kind)
+
+
 def eval_hash(h, atp, store, limits=None):
-    """eval(term_hash, atp) -> (result_term, atp_spent).
+    """Compatibility profile (Book I §3.4): -> (result_term, atp_spent).
+
+    Loses no guarantee and is not deprecated; the one question it cannot answer
+    is which exit occurred. `eval_receipt` answers it.
     Canonical outcomes: normal form | DISSONANCE(ATP Exhausted) | DISSONANCE(Unresolved Reference).
     v0.5 discipline (Book I §3.4): every action — rule firing OR thunk
     materialization — is priced; an unaffordable action yields ATP Exhausted
     BEFORE it happens; spent never exceeds atp; a failed action (resolve
     failure) is not charged; eval is total over canonical outcomes.
     The memory bound is semantic: materialized size - initial size < spent.
-    Resource limit breach -> ResourceFault (local, non-canonical)."""
+    Resource limit breach -> ResourceFault (local, non-canonical).
+    Claimed ATP above `limits["max_atp"]` -> AdmissionRefused, raised before any
+    allocation or store access (local, non-canonical)."""
+    term, spent, _ = _eval_hash_raw(h, atp, store, limits)
+    return term, spent
+
+
+def _eval_hash_raw(h, atp, store, limits=None):
+    """The machine. Returns (term, spent, exit); the two public forms wrap it."""
     limits = limits or DEFAULT_LIMITS
+    admit(atp, limits)
+    if not isinstance(h, bytes) or len(h) != 32:
+        raise ValueError("term_hash must be exactly 32 bytes")
     stats = {"fetches": 0}
     old_rl = sys.getrecursionlimit()
     sys.setrecursionlimit(max(old_rl, 3 * limits["max_node_depth"] + 2000))
@@ -225,9 +360,9 @@ def eval_hash(h, atp, store, limits=None):
             try:
                 r = step5(t, atp - spent, store, stats, limits)
             except BudgetExhausted:
-                return ("dis", R_ATP), spent
+                return ("dis", R_ATP), spent, "atp_exhausted"
             except Unresolved:
-                return ("dis", R_UNRES), spent
+                return ("dis", R_UNRES), spent, "unresolved_reference"
             if r is None:
                 # normal form: a `max_*` limit MUST hold on the returned term,
                 # even for evaluations that finish before the 256-step sample
@@ -235,7 +370,7 @@ def eval_hash(h, atp, store, limits=None):
                 # never exceed the configured maximum). DISSONANCE returns
                 # above are size-1 leaves and cannot breach.
                 resource_check(t, limits)
-                return t, spent
+                return t, spent, "normal_form"
             t = r[0]
             spent += r[1]
     except RecursionError:
@@ -271,12 +406,16 @@ def _abstract(x, m):
     raise ValueError("free variable escapes abstraction")
 
 # ---------- Test suite ----------
-def run_tests():
+# Linear self-test orchestration shares one store and intentionally keeps each
+# conformance assertion visible in execution order; runtime logic lives above.
+def run_tests():  # NOSONAR python:S3776
     st = Store()
     for b in (I_BYTES, K_BYTES, S_BYTES, FALSE_BYTES): st.put(b)
 
     A = lambda l, r: ("app", l, r)
-    Ig, Kg, Sg = ("lit", sha(b"I")), ("lit", sha(b"K")), ("lit", sha(b"S"))
+    i_glyph, k_glyph, s_glyph = (("lit", sha(b"I")),
+                                 ("lit", sha(b"K")),
+                                 ("lit", sha(b"S")))
 
     def put_tree(t):
         if t[0] == "app": put_tree(t[1]); put_tree(t[2])
@@ -309,41 +448,43 @@ def run_tests():
     chk("genesis intrinsic: REF(K_H), empty store -> K (3 ATP)", term_hash(r) == K_H and sp == 3)
 
     # TV-4: APPLY(I,K) -> K: force root (3) + R-I (1) = 4 ATP
-    h = put_tree(A(Ig, Kg))
+    h = put_tree(A(i_glyph, k_glyph))
     r, sp = eval_hash(h, 4, st);  chk("I·K -> K (4 ATP)", term_hash(r) == K_H and sp == 4)
     r, sp = eval_hash(h, 0, st);  chk("I·K budget 0 -> ATP, 0 spent (no fetch)", r == ("dis", R_ATP) and sp == 0)
     r, sp = eval_hash(h, 3, st);  chk("I·K budget 3 -> ATP after root force", r == ("dis", R_ATP) and sp == 3)
     r, sp = eval_hash(h, 2, st);  chk("I·K budget 2 -> ATP, fetch discarded", r == ("dis", R_ATP) and sp == 0)
 
     # TV-5: SKK·I -> I: 3 forces (9) + R-S (1+size(z)=2) + R-K (1) = 12 ATP
-    h = put_tree(A(A(A(Sg, Kg), Kg), Ig))
+    h = put_tree(A(A(A(s_glyph, k_glyph), k_glyph), i_glyph))
     r, sp = eval_hash(h, 100, st); chk("SKK·I -> I (12 ATP)", term_hash(r) == I_H and sp == 12)
     r, sp = eval_hash(h, 11, st);  chk("SKK·I budget 11 -> ATP", r == ("dis", R_ATP))
 
     # TV-6: duplication — S I I (I K); hash-leaf pricing; NF unchanged from v0.4
-    T = A(A(A(Sg, Ig), Ig), A(Ig, Kg))
-    hT = put_tree(T)
-    r, sp = eval_hash(hT, 100, st)
+    term_t = A(A(A(s_glyph, i_glyph), i_glyph), A(i_glyph, k_glyph))
+    term_t_hash = put_tree(term_t)
+    r, sp = eval_hash(term_t_hash, 100, st)
     nf = term_hash(r)
     print("      SII(IK): normal form =", "APPLY(K,K)" if nf == node_hash(
         ser(APPLY, 0x06, left=K_H, right=K_H)) else nf.hex(), "| ATP =", sp,
-        "| T hash =", hT.hex())
+        "| T hash =", term_t_hash.hex())
     chk("SII(IK) normal form APPLY(K,K)", nf == node_hash(ser(APPLY, 0x06, left=K_H, right=K_H)))
     chk("SII(IK) size-priced cost = 21", sp == 21)
 
     # TV-7: Omega — non-terminating, deterministic exhaustion at any budget
-    W = A(A(Sg, Ig), Ig)
-    Om = A(W, W)
-    hO = put_tree(Om)
-    r, sp = eval_hash(hO, 500, st)
-    print("      Omega hash =", hO.hex(), "| result:", "ATP Exhausted" if r == ("dis", R_ATP) else r)
+    omega_half = A(A(s_glyph, i_glyph), i_glyph)
+    omega = A(omega_half, omega_half)
+    omega_hash = put_tree(omega)
+    r, sp = eval_hash(omega_hash, 500, st)
+    print("      Omega hash =", omega_hash.hex(), "| result:",
+          "ATP Exhausted" if r == ("dis", R_ATP) else r)
     chk("Omega -> ATP Exhausted", r == ("dis", R_ATP) and sp <= 500)
     # TV-7 "for all n": Omega's materialized size stays tiny, so even a budget
     # far past max_materialized_nodes MUST still yield canonical ATP Exhausted,
     # NOT a size ResourceFault. (Regression guard: the memory fence must key on
     # actual size, never on `spent` — see eval_hash. Opus 4.8 review 2026-07, M1.)
-    tiny_mem = dict(max_node_depth=4096, max_materialized_nodes=1000, max_store_fetches=10**6)
-    r2, sp2 = eval_hash(hO, 5000, st, limits=tiny_mem)
+    tiny_mem = {"max_node_depth": 4096, "max_materialized_nodes": 1000,
+                "max_store_fetches": 10**6}
+    r2, sp2 = eval_hash(omega_hash, 5000, st, limits=tiny_mem)
     chk("Omega, budget >> mem-limit -> ATP Exhausted (not size fault)",
         r2 == ("dis", R_ATP) and sp2 <= 5000)
 
@@ -366,7 +507,8 @@ def run_tests():
     hkd = st.put(ser(APPLY, 0x06, left=FALSE_H, right=ghost))       # (K I) ghost
     r, sp = eval_hash(hkd, 100, st)
     chk("K-dead-missing -> I (lazy; was Unresolved in v0.4)", term_hash(r) == I_H and sp == 7)
-    inner = put_tree(A(A(Sg, A(Kg, Ig)), A(Kg, Kg)))
+    inner = put_tree(A(A(s_glyph, A(k_glyph, i_glyph)),
+                       A(k_glyph, k_glyph)))
     hsd = st.put(ser(APPLY, 0x06, left=inner, right=ghost))         # S (K I) (K K) ghost
     r, sp = eval_hash(hsd, 100, st)
     chk("S(KI)(KK)-dead-missing -> K (divergence class)", term_hash(r) == K_H and sp == 20)
@@ -374,7 +516,7 @@ def run_tests():
     # Memory bound (ADR-001): materialized size - 1 < spent along any evaluation
     limits = dict(DEFAULT_LIMITS)
     stats = {"fetches": 0}
-    t, spent, smax = ("thunk", hT), 0, 1
+    t, spent, smax = ("thunk", term_t_hash), 0, 1
     while True:
         rr = step5(t, 10_000, st, stats, limits)
         if rr is None: break
@@ -387,18 +529,19 @@ def run_tests():
     chk("C1[lx.x] = I", term_hash(c1(lam_id)) == I_H)
     lam_k = ("lam", "x", ("lam", "y", ("var", "x")))
     ck = c1(lam_k)   # expected S (K K) I
-    exp = A(A(Sg, A(Kg, Kg)), Ig)
+    exp = A(A(s_glyph, A(k_glyph, k_glyph)), i_glyph)
     chk("C1[lxy.x] = S(KK)I", term_hash(ck) == term_hash(exp))
     print("      C1[lxy.x] hash =", term_hash(ck).hex())
     # behaves as K: (C1[lxy.x] S) K -> S
-    ht = put_tree(A(A(ck, Sg), Kg))
+    ht = put_tree(A(A(ck, s_glyph), k_glyph))
     r, sp = eval_hash(ht, 64, st)
     chk("C1[lxy.x] S K -> S (20 ATP)", term_hash(r) == S_H and sp == 20)
 
     # Resource guard: tiny depth limit trips as FAULT, not dissonance
     try:
-        eval_hash(hO, 10_000, st, limits=dict(max_node_depth=8,
-                  max_materialized_nodes=10**6, max_store_fetches=10**6))
+        eval_hash(omega_hash, 10_000, st, limits={"max_node_depth": 8,
+                  "max_materialized_nodes": 10**6,
+                  "max_store_fetches": 10**6})
         chk("resource fault raised", False)
     except ResourceFault:
         chk("resource fault raised (non-canonical)", True)
@@ -417,8 +560,8 @@ def run_tests():
     # Deep spine BEYOND max_node_depth with a big budget -> ResourceFault,
     # never RecursionError (s3.6 guard still the second fence; tight custom
     # limits keep the O(depth^2) spine walk fast)
-    tight = dict(max_node_depth=512, max_materialized_nodes=10**6,
-                 max_store_fetches=10**6)
+    tight = {"max_node_depth": 512, "max_materialized_nodes": 10**6,
+             "max_store_fetches": 10**6}
     try:
         eval_hash(hd, 100_000, st, limits=tight)
         chk("depth-1500 spine, depth limit 512 -> resource fault", False)
@@ -431,8 +574,9 @@ def run_tests():
     # COMPLETED normal-form return, even for evaluations that finish before
     # the 256-step in-flight sample. FALSE = APPLY(K,I): size 3, depth 2.
     stf = Store(); hf = stf.put(FALSE_BYTES)
-    def _lim(d, m): return dict(max_node_depth=d, max_materialized_nodes=m,
-                                max_store_fetches=100)
+    def _lim(d, m):
+        return {"max_node_depth": d, "max_materialized_nodes": m,
+                "max_store_fetches": 100}
     try:
         eval_hash(hf, 10, stf, _lim(1, 100))
         chk("early-NF over depth limit -> ResourceFault", False)
@@ -453,5 +597,22 @@ def run_tests():
     print("\nALL PASS" if all(ok) else "\nFAILURES PRESENT")
     return all(ok)
 
+# This module declares no verbs beyond the default self-test. The constant is
+# what tools/check_release_surface.py reads to build its RUNNABLE /
+# NOT_RUNNABLE table, so a verb added below without being classified there
+# fails the release gate instead of shipping unexercised.
+VERBS = ()
+
 if __name__ == "__main__":
-    run_tests()
+    # `run_tests()` used to be called for its printing only: the process exited
+    # 0 while stdout said FAILURES PRESENT, so `python -m sigma_glyph && echo ok`
+    # — what CI does by default — reported success on a failing Book I oracle.
+    # The two sibling modules always propagated their verdict; this one did not.
+    if sys.argv[1:]:
+        print(f"usage: {sys.argv[0]} (no arguments; runs the Book I self-test)\n"
+              f"  unknown verb {sys.argv[1]!r} — this module declares no verbs. "
+              f"Refusing rather than silently running the self-test and "
+              f"reporting success for a command that does not exist.",
+              file=sys.stderr)
+        sys.exit(2)
+    sys.exit(0 if run_tests() else 1)

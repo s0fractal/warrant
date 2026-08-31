@@ -927,7 +927,10 @@ func runSkiCheck(checkBytes []byte, store sigmaStore) (string, string, uint32, e
 	if check.atp > skiReexecMaxATP { // SPEC §3.1: local re-execution budget
 		return "", "", 0, errors.New("atp exceeds re-execution budget")
 	}
-	result, spent := sigmaEval(check.term, check.atp, store)
+	result, spent, fault := sigmaEval(check.term, check.atp, store)
+	if fault == "cas-mismatch" {
+		return "", "", 0, errors.New("content does not match its address")
+	}
 	resultHash := sigmaTermHash(result)
 	verdict := "fail"
 	if resultHash == check.expect {
@@ -936,18 +939,22 @@ func runSkiCheck(checkBytes []byte, store sigmaStore) (string, string, uint32, e
 	return verdict, hash32Hex(resultHash), spent, nil
 }
 
-func sigmaEval(term [32]byte, atp uint32, store sigmaStore) (*sigmaTerm, uint32) {
+func sigmaEval(term [32]byte, atp uint32, store sigmaStore) (*sigmaTerm, uint32, string) {
 	t := &sigmaTerm{kind: "thunk", h: term}
 	spent := uint32(0)
 	for {
 		next, cost, outcome := sigmaStep(t, atp-spent, store)
 		switch outcome {
 		case "normal":
-			return t, spent
+			return t, spent, ""
 		case "atp":
-			return &sigmaTerm{kind: "dis", h: sigmaATP}, spent
+			return &sigmaTerm{kind: "dis", h: sigmaATP}, spent, ""
 		case "unresolved":
-			return &sigmaTerm{kind: "dis", h: sigmaUnresolved}, spent
+			return &sigmaTerm{kind: "dis", h: sigmaUnresolved}, spent, ""
+		case "cas-mismatch":
+			// Not a canonical result: a store that lied about an address makes
+			// this ski@v1 check inadmissible, surfaced by runSkiCheck.
+			return nil, spent, "cas-mismatch"
 		}
 		t = next
 		spent += cost
@@ -970,9 +977,9 @@ func sigmaStep(t *sigmaTerm, remaining uint32, store sigmaStore) (*sigmaTerm, ui
 		if remaining < 1 {
 			return nil, 0, "atp"
 		}
-		v, ok := sigmaForce(t.h, store)
-		if !ok {
-			return nil, 0, "unresolved"
+		v, fault := sigmaForce(t.h, store)
+		if fault != "" {
+			return nil, 0, fault // "unresolved" or "cas-mismatch"
 		}
 		cost := uint32(sigmaSize(v))
 		if cost > remaining {
@@ -1046,33 +1053,44 @@ func sigmaStep(t *sigmaTerm, remaining uint32, store sigmaStore) (*sigmaTerm, ui
 	}
 }
 
-func sigmaForce(h [32]byte, store sigmaStore) (*sigmaTerm, bool) {
+// sigmaForce materializes one node. The second return is a fault channel: ""
+// on success, "unresolved" when the hash is absent, "cas-mismatch" when the
+// store returned bytes that do not hash to the requested key. The last is
+// Identity by Hash enforced at the fetch boundary, mirroring the Python
+// evaluator's force(): evaluating misaddressed bytes would let two conforming
+// engines disagree, so it is an inadmissible check, not an "unresolved" result.
+func sigmaForce(h [32]byte, store sigmaStore) (*sigmaTerm, string) {
 	data, ok := sigmaGenesis[h]
+	fromStore := false
 	if !ok {
 		data, ok = store[h]
+		fromStore = true
 	}
 	if !ok {
-		return nil, false
+		return nil, "unresolved"
+	}
+	if fromStore && blobHash(data) != hash32Hex(h) {
+		return nil, "cas-mismatch"
 	}
 	node, valid := sigmaDeserialize(data)
 	if !valid {
-		return &sigmaTerm{kind: "dis", h: sigmaInvalid}, true
+		return &sigmaTerm{kind: "dis", h: sigmaInvalid}, ""
 	}
 	switch node.op {
 	case 0x00:
-		return &sigmaTerm{kind: "lit", h: node.atom}, true
+		return &sigmaTerm{kind: "lit", h: node.atom}, ""
 	case 0x01:
-		return &sigmaTerm{kind: "ref", h: node.atom}, true
+		return &sigmaTerm{kind: "ref", h: node.atom}, ""
 	case 0x02:
 		return &sigmaTerm{
 			kind:  "app",
 			left:  &sigmaTerm{kind: "thunk", h: node.left},
 			right: &sigmaTerm{kind: "thunk", h: node.right},
-		}, true
+		}, ""
 	case 0xff:
-		return &sigmaTerm{kind: "dis", h: node.atom}, true
+		return &sigmaTerm{kind: "dis", h: node.atom}, ""
 	default:
-		return &sigmaTerm{kind: "dis", h: sigmaInvalid}, true
+		return &sigmaTerm{kind: "dis", h: sigmaInvalid}, ""
 	}
 }
 
@@ -1625,7 +1643,11 @@ func sigmaConformance(path string) bool {
 			fmt.Println("FAIL", id, "malformed vector")
 			continue
 		}
-		result, spent := sigmaEval(term, uint32(atp64), store)
+		result, spent, fault := sigmaEval(term, uint32(atp64), store)
+		if fault != "" {
+			fmt.Printf("FAIL %s evaluator fault=%s\n", id, fault)
+			continue
+		}
 		gotHash := hash32Hex(sigmaTermHash(result))
 		matched := gotHash == wantHash && uint32(wantSpent64) == spent
 		if matched {

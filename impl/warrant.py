@@ -390,27 +390,56 @@ def is_unverifiable(body):
 
 
 # ---------- ski@v1 runtime (SPEC §3.1, v0.2) ----------
-def load_sigma():
-    """Load the Σ-GLYPH Book I oracle. Search order (first hit wins):
-      1. $SIGMA_GLYPH/sigma_glyph.py   — explicit override (e.g. a dev checkout)
-      2. sigma_glyph.py next to this file — the BUNDLED oracle, so an installed
-         `warrant` re-runs ski@v1 reasons offline with no separate clone
-      3. ~/sigma-glyph/impl/sigma_glyph.py — a conventional local checkout
-    Returns the module or None (None -> ski@v1 reasons report as unverified)."""
+BUNDLED_SIGMA = Path(__file__).resolve().parent / "sigma_glyph.py"
+
+
+def _import_sigma(path, unpinned):
     import importlib.util
-    candidates = []
-    if os.environ.get("SIGMA_GLYPH"):
-        candidates.append(Path(os.environ["SIGMA_GLYPH"]) / "sigma_glyph.py")
-    candidates.append(Path(__file__).resolve().parent / "sigma_glyph.py")
-    candidates.append(Path.home() / "sigma-glyph/impl" / "sigma_glyph.py")
-    for path in candidates:
-        if not path.exists():
-            continue
-        spec = importlib.util.spec_from_file_location("sigma_glyph", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
-    return None
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("sigma_glyph", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # A settlement-grade re-execution must be able to say WHICH evaluator ran.
+    # The bundled module is the one this package shipped, pinned by
+    # trust/sigma-evaluator-provenance.json; anything else is unpinned.
+    mod.WARRANT_SIGMA_UNPINNED = unpinned
+    return mod
+
+
+def load_sigma():
+    """Load the Σ-GLYPH Book I evaluator this package SHIPPED.
+
+    The BUNDLED module next to this file is authoritative for settlement/replay:
+    it is the exact evaluator bound by `trust/sigma-evaluator-provenance.json`,
+    so an installed `warrant verify`/`check`/`why` re-runs ski@v1 reasons offline
+    against the engine it was released with — not whatever a home directory holds.
+    The former implicit `~/sigma-glyph/...` fallback is REMOVED: a settlement
+    verdict must never silently depend on an unpinned local checkout.
+
+    `$SIGMA_GLYPH` remains a DEV / cross-repo-differential override. When it is
+    set to bytes that differ from the bundled evaluator, the loaded module is
+    flagged `WARRANT_SIGMA_UNPINNED` and a diagnostic is printed, so an override
+    can never be silently taken as bounded, settlement-grade execution. An
+    override byte-identical to the bundled module is, by definition, still the
+    pinned engine and is treated as such.
+
+    Returns the module or None (None -> ski@v1 reasons report as unverified)."""
+    override = os.environ.get("SIGMA_GLYPH")
+    if override:
+        op = Path(override) / "sigma_glyph.py"
+        if op.exists():
+            same = (BUNDLED_SIGMA.exists()
+                    and op.read_bytes() == BUNDLED_SIGMA.read_bytes())
+            mod = _import_sigma(op, unpinned=not same)
+            if mod is not None:
+                if not same and not getattr(load_sigma, "_warned", False):
+                    print("warning: SIGMA_GLYPH override active — the evaluator "
+                          "is unpinned and its ski@v1 re-execution is "
+                          "non-settlement-grade", file=sys.stderr)
+                    load_sigma._warned = True
+                return mod
+    return _import_sigma(BUNDLED_SIGMA, unpinned=False)
 
 
 def validate_ski_blob(doc):
@@ -424,6 +453,16 @@ def validate_ski_blob(doc):
     if not isinstance(a, int) or isinstance(a, bool) or not (0 <= a < 2**32):
         return "atp must be a uint32"
     return None
+
+
+class _CASAddressMismatch(Exception):
+    """A blob store returned bytes that do not hash to the requested address.
+
+    Warrant claims its blob store IS a Σ-GLYPH content-addressed store, i.e. the
+    file named `<h>` contains bytes whose SHA-256 is `<h>` (Identity by Hash).
+    A store that breaks this has lied about an address; evaluating the bytes it
+    returned as the requested node would let two conforming engines disagree, so
+    it is an INADMISSIBLE check, not a computation that produced a `fail`."""
 
 
 def run_ski_check(store, check_hex, sg=None):
@@ -452,9 +491,29 @@ def run_ski_check(store, check_hex, sg=None):
     class BlobCAS:                       # adapter: warrant blobs -> Σ-GLYPH store
         def get(self, h):
             q = store.blobs / h.hex()
-            return q.read_bytes() if q.exists() else None
+            if not q.exists():
+                return None              # legitimately unresolved (SPEC §7)
+            b = q.read_bytes()
+            # Defense in depth at the ADAPTER boundary, independent of the
+            # evaluator version: the claim "this store is a Σ-GLYPH CAS" must
+            # hold here, not only inside whatever evaluator happens to run.
+            if hashlib.sha256(b).digest() != h:
+                raise _CASAddressMismatch()
+            return b
 
-    r, spent = sg.eval_hash(bytes.fromhex(doc["term"]), doc["atp"], BlobCAS())
+    try:
+        r, spent = sg.eval_hash(bytes.fromhex(doc["term"]), doc["atp"], BlobCAS())
+    except _CASAddressMismatch:
+        raise RuntimeError("content does not match its address")
+    except getattr(sg, "ResourceFault", ()) as rf:
+        # The bundled evaluator also enforces Identity by Hash internally
+        # (force(): "CAS key mismatch" / "store returned non-bytes"). Normalise
+        # both boundaries to ONE stable, path-free reason class; other local
+        # resource faults are reported unverified, never as a pass/fail verdict.
+        msg = str(rf)
+        if "CAS key mismatch" in msg or "non-bytes" in msg:
+            raise RuntimeError("content does not match its address")
+        raise RuntimeError(f"resource fault: {msg}")
     rh = sg.term_hash(r).hex()
     return ("pass" if rh == doc["expect"] else "fail"), rh, spent
 
