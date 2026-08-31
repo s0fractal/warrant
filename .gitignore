@@ -22,3 +22,7 @@ scratchpad/
 .warrant/store/
 gate-report.md
 gate-store.zip
+
+# Local secrets (never commit) — e.g. SONAR_TOKEN
+.env
+.env.*
