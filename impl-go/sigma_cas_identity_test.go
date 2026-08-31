@@ -61,6 +61,29 @@ func TestSigmaCASIdentity_ValidCheckStillPasses(t *testing.T) {
 	}
 }
 
+func TestSigmaCASIdentity_CheckBlobForeignName(t *testing.T) {
+	// The check blob is itself a CAS entry: the root fetch must verify its
+	// address too. A valid check filed under a FOREIGN name is refused with the
+	// same path-free reason, mirroring the Python adapter.
+	iH := hash32Hex(sigmaIHash)
+	blob := mkCheck(t, iH, iH, 64) // a valid check: I -> I
+	foreign := blobHash([]byte("not-the-check-content"))
+	if foreign == blobHash(blob) {
+		t.Fatal("test setup: foreign name collided with content hash")
+	}
+	_, _, _, err := runSkiCheckFromStore(map[string][]byte{foreign: blob}, foreign)
+	if err == nil || err.Error() != "content does not match its address" {
+		t.Fatalf("check blob under a foreign name: err=%v, want the path-free "+
+			"Identity-by-Hash reason", err)
+	}
+	// Control: filed under its TRUE address, the identical check verifies.
+	good := blobHash(blob)
+	verdict, _, _, err := runSkiCheckFromStore(map[string][]byte{good: blob}, good)
+	if err != nil || verdict != "pass" {
+		t.Fatalf("correctly-addressed check: verdict=%q err=%v (want pass)", verdict, err)
+	}
+}
+
 func TestSigmaCASIdentity_ForceRefusesMisaddressedBytes(t *testing.T) {
 	// Unit-level: sigmaForce itself refuses store bytes that do not hash to the
 	// requested key, and reports "unresolved" for a genuinely absent key — the

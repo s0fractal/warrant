@@ -909,6 +909,13 @@ func runSkiCheckFromStore(blobs map[string][]byte, checkHex string) (string, str
 		}
 		return "", "", 0, fmt.Errorf("check blob %s not in store", short)
 	}
+	// The check blob is itself a CAS entry: its file name MUST be its content
+	// address. Verify the ROOT fetch, mirroring the Python adapter, so a check
+	// filed under a foreign name is refused with the same path-free reason class
+	// rather than executed as the addressed one.
+	if blobHash(data) != checkHex {
+		return "", "", 0, errors.New("content does not match its address")
+	}
 	store := sigmaStore{}
 	for h, b := range blobs {
 		parsed, err := parseHash32(h)

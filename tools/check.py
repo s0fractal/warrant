@@ -43,6 +43,11 @@ SIGMA = ROOT.parent / "sigma-glyph" / "impl"
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 
+# Reserved exit code a check may return to say "I ran but could not COMPLETE" —
+# a partial execution that must render as UNRUN, not PASS and not FAIL. Kept in
+# sync with tools/sigma_provenance_check.py's EXIT_UNRUN.
+EXIT_UNRUN = 3
+
 # Prerequisite tags used more than once, named so the string is defined in one
 # place (a repeated literal is a silent way for two checks to drift apart).
 SIGMA_GO = "sigma+go"
@@ -283,7 +288,14 @@ def main():
     env = dict(os.environ)
     env.setdefault("WARRANT_REQUIRE_SIGMA", "1")
     if SIGMA.exists():
+        # Point the suite at the sibling checkout as its Σ-GLYPH oracle. That
+        # sibling is a DIFFERENT commit than the bundled, provenance-bound module,
+        # so it is an unpinned override: this aggregate is a cross-repo
+        # differential and must say so, or the ski@v1 re-executor rightly refuses
+        # an unpinned evaluator. (Production settlement sets no such flag and is
+        # refused; see impl/warrant.py run_ski_check / verify_store.)
         env.setdefault("SIGMA_GLYPH", str(SIGMA))
+        env.setdefault("WARRANT_SIGMA_DIFFERENTIAL", "1")
 
     failed, unrun, passed = [], [], 0
     for name, argv, needs in CHECKS:
@@ -297,6 +309,14 @@ def main():
         if r.returncode == 0:
             print(f"ok     {name}  ({dt:.1f}s)")
             passed += 1
+        elif r.returncode == EXIT_UNRUN:
+            # The check ran but could not COMPLETE (it self-reports partial
+            # execution with this reserved code). UNRUN≠PASS: name it, do not
+            # count it as passed. The trailing lines carry which binding was UNRUN.
+            print(f"UNRUN  {name}  ({dt:.1f}s)")
+            for line in (r.stdout + r.stderr).strip().splitlines()[-2:]:
+                print(f"         {line[:110]}")
+            unrun.append(name)
         else:
             tail = (r.stdout + r.stderr).strip().splitlines()
             print(f"FAIL   {name}  ({dt:.1f}s)")

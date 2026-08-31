@@ -58,6 +58,18 @@ RECEIPT_MAP = {
     "build_pins": "build_pins",
     "source_date_epoch": "source_date_epoch",
 }
+# api_version is a CLAIM about the evaluator's callable surface. Bind it to what
+# the vendored module actually exposes, so the field is not free text: an unknown
+# value, or a value whose promised surface the module does not provide, is a
+# refusal. Book I's hash-thunk evaluator IS this set of names.
+API_SURFACES = {
+    "book1-eval-hash/1": ("eval_hash", "node_hash", "term_hash",
+                          "ser", "deser", "force", "GENESIS", "ResourceFault"),
+}
+# EXIT_UNRUN: the check ran but could not COMPLETE (a binding was UNRUN and this
+# is not required CI). Distinct from PASS(0) and FAIL(1) so tools/check.py can
+# render it as UNRUN, honouring its own UNRUN≠PASS contract.
+EXIT_UNRUN = 3
 
 
 def sha256_bytes(b):
@@ -131,6 +143,55 @@ def check_receipt(m, repo):
             out.append(f"receipt.{rf} != manifest.{mf} "
                        f"({receipt.get(rf)!r} vs {m.get(mf)!r})")
     return out, True
+
+
+def check_api_version(m, module_path=VENDORED):
+    """api_version must name a known Σ-GLYPH API surface, and the vendored module
+    must actually expose it. Always runnable (no toolchain, no checkout)."""
+    av = m.get("api_version")
+    names = API_SURFACES.get(av)
+    if names is None:
+        return [f"api_version {av!r} is not a recognised Σ-GLYPH API surface "
+                f"(known: {', '.join(sorted(API_SURFACES))})"]
+    if not module_path.exists():
+        return [f"vendored module absent: {module_path}"]
+    ns = {}
+    try:
+        exec(compile(module_path.read_text(), "sigma_glyph", "exec"), ns)  # noqa: S102
+    except Exception as ex:                       # pragma: no cover - defensive
+        return [f"vendored module did not import: {ex}"]
+    missing = [n for n in names if n not in ns]
+    if missing:
+        return [f"api_version {av} but the vendored module omits {missing}"]
+    return []
+
+
+def _norm_remote(u):
+    """Reduce a git remote URL to host/owner/repo for comparison across the
+    https / ssh / scp-style forms git accepts for the same repository."""
+    u = u.strip().removesuffix(".git")
+    for p in ("ssh://git@", "git+ssh://git@", "https://", "http://", "git://"):
+        if u.startswith(p):
+            u = u[len(p):]
+            break
+    u = u.replace("git@github.com:", "github.com/")
+    return u.rstrip("/").lower()
+
+
+def check_source_repository(m, repo):
+    """The clone the receipt/source are read FROM must be source_repository.
+    Returns (problems, ran); ran=False (UNRUN) when there is no clone with an
+    origin to compare against."""
+    if repo is None:
+        return [], False
+    r = subprocess.run(["git", "-C", str(repo), "remote", "get-url", "origin"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return [], False
+    got, want = r.stdout.strip(), m.get("source_repository", "")
+    if _norm_remote(got) != _norm_remote(want):
+        return [f"clone origin {got!r} != manifest.source_repository {want!r}"], True
+    return [], True
 
 
 def check_source_module(m, repo):
@@ -233,6 +294,18 @@ def mutation_controls(m, repo):
     bad = copy.deepcopy(m); del bad["wheel_sha256"]
     want_reject("missing required field rejected", check_schema(bad))
 
+    bad = copy.deepcopy(m); bad["api_version"] = "book1-eval-hash/9"
+    want_reject("unknown api_version rejected", check_api_version(bad))
+
+    if repo is not None:
+        bad = copy.deepcopy(m)
+        bad["source_repository"] = "https://github.com/attacker/not-sigma"
+        probs, _ = check_source_repository(bad, repo)
+        # Only assert the rejection where an origin exists to compare against;
+        # without one the binding is UNRUN, not silently satisfied.
+        if check_source_repository(m, repo)[1]:
+            want_reject("wrong source_repository rejected", probs)
+
     if repo is not None and has_commit(repo, m["candidate_receipt_commit"]):
         for field, val in (("wheel_sha256", "ff" * 32),
                            ("source_commit", "0" * 40),
@@ -259,10 +332,15 @@ def main():
     problems, unrun = [], []
     problems += [("schema", p) for p in check_schema(m)]
     problems += [("module-digest", p) for p in check_module_digest(m)]
+    problems += [("api-version", p) for p in check_api_version(m)]
     rp, ran = check_receipt(m, repo)
     problems += [("receipt", p) for p in rp]
     if not ran:
         unrun.append("receipt agreement (no Sigma checkout with the receipt commit)")
+    srp, ran = check_source_repository(m, repo)
+    problems += [("source-repository", p) for p in srp]
+    if not ran:
+        unrun.append("source-repository binding (no clone with an origin remote)")
     sp, ran = check_source_module(m, repo)
     problems += [("source-module", p) for p in sp]
     if not ran:
@@ -294,9 +372,17 @@ def main():
               "(the frozen artifact must be re-derived in required CI)",
               file=sys.stderr)
         return 1
-    tail = " (some checks UNRUN; not required here)" if unrun else ""
+    if unrun:
+        # Every executed binding held, but some could not run. This is NOT a pass:
+        # a distinct exit so tools/check.py renders it UNRUN, never `ok`. The
+        # mandatory rebuild in required CI (`--require-rebuild`) is where these
+        # UNRUN bindings are forced to execute.
+        print(f"SIGMA-PROVENANCE: INCOMPLETE — {len(unrun)} check(s) UNRUN "
+              f"(executed bindings held; not settlement-grade until re-derived)",
+              file=sys.stderr)
+        return EXIT_UNRUN
     print(f"SIGMA-PROVENANCE: ALL PASS — vendored evaluator bound to "
-          f"{m['module_sha256'][:16]}…{tail}")
+          f"{m['module_sha256'][:16]}… (every binding executed)")
     return 0
 
 

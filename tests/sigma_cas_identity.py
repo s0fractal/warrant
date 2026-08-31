@@ -17,6 +17,7 @@ Failure class asserted here is Identity-by-Hash, distinguished from a merely
 absent blob and from a JSON error.
 """
 import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -60,7 +61,6 @@ def _store():
 
 
 def _put_check(st, term_hex, expect_hex, atp=64):
-    import json
     blob = json.dumps({"ski": 1, "term": term_hex, "atp": atp,
                        "expect": expect_hex},
                       separators=(",", ":"), sort_keys=True).encode()
@@ -132,6 +132,58 @@ bad = st.put_blob(b"{not json")
 out = _reason(st, bad)
 check("malformed check blob reason is JSON, not Identity-by-Hash",
       out[0] == "unverified" and "JSON" in out[1], detail=str(out))
+
+# ---- P1: the check blob's OWN address is verified (the ROOT fetch) ----------
+# Term thunks are checked inside BlobCAS; the root check blob must be too, or a
+# valid check filed under a FOREIGN name is executed as if it were addressed.
+st = _store()
+good_blob = json.dumps({"ski": 1, "term": I_H.hex(), "atp": 64,
+                        "expect": EXPECT_I},
+                       separators=(",", ":"), sort_keys=True).encode()
+foreign_name = hashlib.sha256(b"not-the-check-content").digest()
+assert foreign_name != hashlib.sha256(good_blob).digest()
+_write_blob_under(st, foreign_name, good_blob)   # valid check, foreign address
+out = _reason(st, foreign_name.hex())
+check("check blob filed under a foreign name -> unverified Identity-by-Hash",
+      out[0] == "unverified" and out[1] == "content does not match its address",
+      detail=str(out))
+# control: filed under its TRUE address, the identical check verifies
+st = _store()
+true_name = st.put_blob(good_blob)
+out = _reason(st, true_name)
+check("the same check at its true address is admissible (pass)",
+      out[0] == "verdict" and out[1] == "pass", detail=str(out))
+
+# ---- P0: an UNPINNED evaluator never yields a settlement-grade verdict ------
+# A byte-divergent $SIGMA_GLYPH override is flagged WARRANT_SIGMA_UNPINNED. Its
+# ski@v1 result must be refused at the choke point (run_ski_check), so it cannot
+# reach filing / fingerprint / settlement — UNLESS an operator EXPLICITLY enters
+# differential mode, which is never settlement-grade (verify --settlement bars it).
+st = _store()
+valid = st.put_blob(good_blob)                    # the same valid I -> I check
+
+
+class _Unpinned:                                  # behaves exactly like the real
+    WARRANT_SIGMA_UNPINNED = True                 # engine, but is flagged unpinned
+
+    def __getattr__(self, n):
+        return getattr(sg, n)
+
+
+os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
+try:
+    W.run_ski_check(st, valid, sg=_Unpinned())
+    check("unpinned evaluator is REFUSED (no verdict)", False)
+except RuntimeError as ex:
+    check("unpinned evaluator refused with a non-settlement-grade reason",
+          "unpinned" in str(ex), detail=str(ex))
+os.environ["WARRANT_SIGMA_DIFFERENTIAL"] = "1"    # deliberate differential opt-in
+try:
+    v = W.run_ski_check(st, valid, sg=_Unpinned())
+    check("explicit WARRANT_SIGMA_DIFFERENTIAL=1 runs the unpinned engine",
+          v[0] == "pass", detail=str(v))
+finally:
+    os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
 
 # ---- NEGATIVE CONTROL: the guard is what refuses the forged bytes ----------
 # Non-vacuity must not depend on git history: once the fix is committed, HEAD

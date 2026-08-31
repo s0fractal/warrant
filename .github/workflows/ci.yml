@@ -100,7 +100,13 @@ jobs:
         run: |
           git clone -q https://github.com/s0fractal/sigma-glyph /tmp/sigma-glyph
           git -C /tmp/sigma-glyph checkout -q "$SIGMA_PIN"
-          SIGMA_GLYPH=/tmp/sigma-glyph/impl python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
+          # Running warrant's ski@v1 against the PINNED SIBLING (an evaluator that
+          # differs byte-wise from the bundled, provenance-bound one) is a
+          # cross-repo DIFFERENTIAL — an unpinned oracle. It must be requested
+          # explicitly: without WARRANT_SIGMA_DIFFERENTIAL=1 the re-executor
+          # refuses an unpinned evaluator, and settlement refuses it regardless.
+          SIGMA_GLYPH=/tmp/sigma-glyph/impl WARRANT_SIGMA_DIFFERENTIAL=1 \
+            python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
       # W1: the bundled Σ-GLYPH evaluator MUST be the exact frozen candidate
       # wheel's module. Under the official CI Python (3.12) the wheel is rebuilt
       # from source_commit with the pinned toolchain and must reproduce the
@@ -150,8 +156,13 @@ jobs:
         run: ./impl-rs/target/release/warrant-rs edtest
       - name: Ed25519 differential (Rust vs Python cryptography, multi-key)
         run: python3 tests/ed25519_differential.py --n 200
+      # SIGMA_GLYPH here points at the pinned sibling (unpinned vs the bundled
+      # evaluator), so this cross-repo/cross-impl differential — settlement math
+      # included — is requested explicitly with WARRANT_SIGMA_DIFFERENTIAL=1. In
+      # production (no such flag) an unpinned override is refused, and settlement
+      # refuses it outright.
       - name: "Cross-implementation agreement: differential (PY/GO/RS) + negative + settlement (strict)"
-        run: WARRANT_REQUIRE_SIGMA=1 SIGMA_GLYPH=/tmp/sigma-glyph/impl ./tests/agree_check.sh
+        run: WARRANT_REQUIRE_SIGMA=1 SIGMA_GLYPH=/tmp/sigma-glyph/impl WARRANT_SIGMA_DIFFERENTIAL=1 ./tests/agree_check.sh
       - name: Hostile-store hardening (cycles, malformed JSON, unverified ski; Python/Go agree)
         run: python3 tests/hostile.py
       - name: "Differential fuzzer (randomized PY/GO agreement over canon/verify, multi-seed)"

@@ -124,6 +124,11 @@ WARN_KEY_CONFLICT = "key-state conflict"
 # invalid is one global ERR with this exact string in BOTH Python and Go — never
 # a silent fail-open (Go previously ignored the read error and returned 0 errors).
 ERR_SETTLEMENT_TRUST = "settlement trust config unavailable"
+# Settlement is the grade a stranger relies on, so it must re-execute ski@v1
+# reasons on the PINNED evaluator this package shipped. A byte-divergent
+# $SIGMA_GLYPH override is not settlement-grade; verify --settlement refuses it
+# (unless an operator has EXPLICITLY entered cross-repo differential mode).
+ERR_SETTLEMENT_UNPINNED = "settlement requires the pinned Σ-GLYPH evaluator"
 
 
 # ---------- canonicalization & identity (SPEC §4) ----------
@@ -472,10 +477,28 @@ def run_ski_check(store, check_hex, sg=None):
     sg = sg or load_sigma()
     if sg is None:
         raise RuntimeError("runtime unavailable")   # reason class; the CLI hint
+    # A byte-divergent $SIGMA_GLYPH override is UNPINNED — not the evaluator this
+    # package was released and provenance-bound to. Its ski@v1 verdict must never
+    # SILENTLY flow into filing, an outcome fingerprint, or settlement. Refuse it
+    # here, the one choke point every caller shares (each maps RuntimeError to an
+    # "unverified" reason, never a pass/fail). A cross-repo/dev differential is a
+    # DELIBERATE, separate mode: it must opt in with WARRANT_SIGMA_DIFFERENTIAL=1,
+    # and even then verify --settlement refuses it (see verify_store), so a
+    # differential result can never be presented as settlement-grade.
+    if getattr(sg, "WARRANT_SIGMA_UNPINNED", False) and \
+            os.environ.get("WARRANT_SIGMA_DIFFERENTIAL") != "1":
+        raise RuntimeError("unpinned Σ-GLYPH evaluator (non-settlement-grade)")
     p = store.blobs / check_hex                       # is printed by cmd_check, not here
     if not (isinstance(check_hex, str) and HEX64.match(check_hex) and p.is_file()):
         raise RuntimeError("check blob missing")      # absent / dir / non-hex: bounded
     raw = p.read_bytes()
+    # The check blob is ITSELF a CAS entry: file `<check_hex>` must contain bytes
+    # whose SHA-256 is `<check_hex>`. Verify the ROOT fetch too — not only the term
+    # thunks the evaluator pulls through BlobCAS — or a check filed under a foreign
+    # name would be executed as if it were the addressed one. Same stable,
+    # path-free reason as every other address lie.
+    if hashlib.sha256(raw).digest() != bytes.fromhex(check_hex):
+        raise RuntimeError("content does not match its address")
     try:
         doc = json.loads(raw)                # was leaking JSONDecodeError past the
     except ValueError:                       # caller's `except RuntimeError` (crash)
@@ -1272,6 +1295,19 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
     # trust failure). Parse (I-JSON, dup-key/trailing-rejecting) AND closed-schema-
     # validate the trust config ONCE, then pass the value into context construction.
     if settlement is not None:
+        # Settlement-grade re-execution must run on the PINNED evaluator. If the
+        # loaded Σ-GLYPH is an unpinned override, refuse settlement outright — one
+        # global ERR, no per-record verdicts — so a byte-divergent evaluator can
+        # never produce a settlement result a stranger would trust. An explicit
+        # cross-repo differential (WARRANT_SIGMA_DIFFERENTIAL=1) is the only way
+        # past this, and it is a deliberate test mode, not a settlement claim.
+        _sg = load_sigma()
+        if getattr(_sg, "WARRANT_SIGMA_UNPINNED", False) and \
+                os.environ.get("WARRANT_SIGMA_DIFFERENTIAL") != "1":
+            out("ERR", "settlement", ERR_SETTLEMENT_UNPINNED)
+            if not quiet:
+                print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
+            return _finish()
         trust_path = settlement.get("trust_config")
         trust_ok = True
         if trust_path:
