@@ -129,6 +129,10 @@ ERR_SETTLEMENT_TRUST = "settlement trust config unavailable"
 # $SIGMA_GLYPH override is not settlement-grade; verify --settlement refuses it
 # (unless an operator has EXPLICITLY entered cross-repo differential mode).
 ERR_SETTLEMENT_UNPINNED = "settlement requires the pinned Σ-GLYPH evaluator"
+# ONE stable, path-free reason for every Identity-by-Hash violation — the root
+# check blob, a term thunk, or the evaluator's own internal fault all normalise
+# to this string, in Python and (verbatim) in Go.
+REASON_CAS_MISMATCH = "content does not match its address"
 
 
 # ---------- canonicalization & identity (SPEC §4) ----------
@@ -470,6 +474,35 @@ class _CASAddressMismatch(Exception):
     it is an INADMISSIBLE check, not a computation that produced a `fail`."""
 
 
+def _load_ski_doc(store, check_hex):
+    """Resolve and validate the ski@v1 check blob AT ITS CONTENT ADDRESS.
+
+    The check blob is itself a CAS entry: file `<check_hex>` must contain bytes
+    whose SHA-256 is `<check_hex>`. Verifying this ROOT fetch — not only the term
+    thunks the evaluator pulls through BlobCAS — stops a check filed under a
+    foreign name being executed as if it were the addressed one, with the same
+    stable, path-free reason as every other address lie. Raises RuntimeError with
+    a bounded reason class on any malformed / mis-addressed blob."""
+    p = store.blobs / check_hex
+    if not (isinstance(check_hex, str) and HEX64.match(check_hex) and p.is_file()):
+        raise RuntimeError("check blob missing")      # absent / dir / non-hex: bounded
+    raw = p.read_bytes()
+    if hashlib.sha256(raw).digest() != bytes.fromhex(check_hex):
+        raise RuntimeError(REASON_CAS_MISMATCH)
+    try:
+        doc = json.loads(raw)                # was leaking JSONDecodeError past the
+    except ValueError:                       # caller's `except RuntimeError` (crash)
+        raise RuntimeError("malformed check blob (not JSON)")
+    if not _canon_eq(doc, raw):
+        raise RuntimeError("malformed check blob (not JCS-canonical)")
+    err = validate_ski_blob(doc)
+    if err:
+        raise RuntimeError(f"invalid ski check blob: {err}")
+    if doc["atp"] > SKI_REEXEC_MAX_ATP:   # SPEC §3.1: local re-execution budget
+        raise RuntimeError("atp exceeds re-execution budget")
+    return doc
+
+
 def run_ski_check(store, check_hex, sg=None):
     """Execute a ski@v1 check against the warrant blob store (which IS a
     Σ-GLYPH CAS). Returns (verdict, result_hash_hex, atp_spent).
@@ -488,28 +521,7 @@ def run_ski_check(store, check_hex, sg=None):
     if getattr(sg, "WARRANT_SIGMA_UNPINNED", False) and \
             os.environ.get("WARRANT_SIGMA_DIFFERENTIAL") != "1":
         raise RuntimeError("unpinned Σ-GLYPH evaluator (non-settlement-grade)")
-    p = store.blobs / check_hex                       # is printed by cmd_check, not here
-    if not (isinstance(check_hex, str) and HEX64.match(check_hex) and p.is_file()):
-        raise RuntimeError("check blob missing")      # absent / dir / non-hex: bounded
-    raw = p.read_bytes()
-    # The check blob is ITSELF a CAS entry: file `<check_hex>` must contain bytes
-    # whose SHA-256 is `<check_hex>`. Verify the ROOT fetch too — not only the term
-    # thunks the evaluator pulls through BlobCAS — or a check filed under a foreign
-    # name would be executed as if it were the addressed one. Same stable,
-    # path-free reason as every other address lie.
-    if hashlib.sha256(raw).digest() != bytes.fromhex(check_hex):
-        raise RuntimeError("content does not match its address")
-    try:
-        doc = json.loads(raw)                # was leaking JSONDecodeError past the
-    except ValueError:                       # caller's `except RuntimeError` (crash)
-        raise RuntimeError("malformed check blob (not JSON)")
-    if not _canon_eq(doc, raw):
-        raise RuntimeError("malformed check blob (not JCS-canonical)")
-    err = validate_ski_blob(doc)
-    if err:
-        raise RuntimeError(f"invalid ski check blob: {err}")
-    if doc["atp"] > SKI_REEXEC_MAX_ATP:   # SPEC §3.1: local re-execution budget
-        raise RuntimeError("atp exceeds re-execution budget")
+    doc = _load_ski_doc(store, check_hex)
 
     class BlobCAS:                       # adapter: warrant blobs -> Σ-GLYPH store
         def get(self, h):
@@ -527,7 +539,7 @@ def run_ski_check(store, check_hex, sg=None):
     try:
         r, spent = sg.eval_hash(bytes.fromhex(doc["term"]), doc["atp"], BlobCAS())
     except _CASAddressMismatch:
-        raise RuntimeError("content does not match its address")
+        raise RuntimeError(REASON_CAS_MISMATCH)
     except getattr(sg, "ResourceFault", ()) as rf:
         # The bundled evaluator also enforces Identity by Hash internally
         # (force(): "CAS key mismatch" / "store returned non-bytes"). Normalise
@@ -535,7 +547,7 @@ def run_ski_check(store, check_hex, sg=None):
         # resource faults are reported unverified, never as a pass/fail verdict.
         msg = str(rf)
         if "CAS key mismatch" in msg or "non-bytes" in msg:
-            raise RuntimeError("content does not match its address")
+            raise RuntimeError(REASON_CAS_MISMATCH)
         raise RuntimeError(f"resource fault: {msg}")
     rh = sg.term_hash(r).hex()
     return ("pass" if rh == doc["expect"] else "fail"), rh, spent

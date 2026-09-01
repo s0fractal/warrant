@@ -44,6 +44,11 @@ func skiATPBudget() uint32 {
 // WarrantIDs. See impl/warrant.py JCS_SAFE_INT_MAX for the full note.
 const jcsSafeIntMax = 9007199254740991 // 2^53 - 1
 
+// faultCASMismatch is sigmaForce/sigmaEval's fault string for an Identity-by-Hash
+// violation: store bytes whose SHA-256 is not the requested key. runSkiCheck maps
+// it to the same path-free reason Python uses ("content does not match its address").
+const faultCASMismatch = "cas-mismatch"
+
 var (
 	hex64Re   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	intJSONRe = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
@@ -935,7 +940,7 @@ func runSkiCheck(checkBytes []byte, store sigmaStore) (string, string, uint32, e
 		return "", "", 0, errors.New("atp exceeds re-execution budget")
 	}
 	result, spent, fault := sigmaEval(check.term, check.atp, store)
-	if fault == "cas-mismatch" {
+	if fault == faultCASMismatch {
 		return "", "", 0, errors.New("content does not match its address")
 	}
 	resultHash := sigmaTermHash(result)
@@ -958,10 +963,10 @@ func sigmaEval(term [32]byte, atp uint32, store sigmaStore) (*sigmaTerm, uint32,
 			return &sigmaTerm{kind: "dis", h: sigmaATP}, spent, ""
 		case "unresolved":
 			return &sigmaTerm{kind: "dis", h: sigmaUnresolved}, spent, ""
-		case "cas-mismatch":
+		case faultCASMismatch:
 			// Not a canonical result: a store that lied about an address makes
 			// this ski@v1 check inadmissible, surfaced by runSkiCheck.
-			return nil, spent, "cas-mismatch"
+			return nil, spent, faultCASMismatch
 		}
 		t = next
 		spent += cost
@@ -1077,7 +1082,7 @@ func sigmaForce(h [32]byte, store sigmaStore) (*sigmaTerm, string) {
 		return nil, "unresolved"
 	}
 	if fromStore && blobHash(data) != hash32Hex(h) {
-		return nil, "cas-mismatch"
+		return nil, faultCASMismatch
 	}
 	node, valid := sigmaDeserialize(data)
 	if !valid {

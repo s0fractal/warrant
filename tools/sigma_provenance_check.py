@@ -29,6 +29,7 @@ import argparse
 import hashlib
 import json
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -168,13 +169,12 @@ def check_api_version(m, module_path=VENDORED):
 
 def _norm_remote(u):
     """Reduce a git remote URL to host/owner/repo for comparison across the
-    https / ssh / scp-style forms git accepts for the same repository."""
+    https / ssh / scp-style forms git accepts for the same repository. The scheme
+    (whatever it is) is stripped, so this compares identity, not transport."""
     u = u.strip().removesuffix(".git")
-    for p in ("ssh://git@", "git+ssh://git@", "https://", "http://", "git://"):
-        if u.startswith(p):
-            u = u[len(p):]
-            break
-    u = u.replace("git@github.com:", "github.com/")
+    u = re.sub(r"^[a-z+]+://", "", u)             # drop any scheme://
+    u = re.sub(r"^git@([^:/]+):", r"\1/", u)      # scp-style host:owner/repo
+    u = re.sub(r"^[^@/]+@", "", u)                # drop any leading user@
     return u.rstrip("/").lower()
 
 
@@ -317,6 +317,38 @@ def mutation_controls(m, repo):
     return out
 
 
+def _collect(m, repo):
+    """Run every binding + mutation control. Returns (problems, unrun): problems
+    are (kind, message) refusals; unrun names a binding that could not execute."""
+    problems, unrun = [], []
+    problems += [("schema", p) for p in check_schema(m)]
+    problems += [("module-digest", p) for p in check_module_digest(m)]
+    problems += [("api-version", p) for p in check_api_version(m)]
+    for kind, label, (probs, ran) in (
+            ("receipt", "receipt agreement (no Sigma checkout with the receipt "
+             "commit)", check_receipt(m, repo)),
+            ("source-repository", "source-repository binding (no clone with an "
+             "origin remote)", check_source_repository(m, repo)),
+            ("source-module", "source-module equality (no Sigma checkout at "
+             "source_commit)", check_source_module(m, repo))):
+        problems += [(kind, p) for p in probs]
+        if not ran:
+            unrun.append(label)
+
+    status, detail = check_wheel_rebuild(m, repo)
+    print(f"  wheel rebuild: {status} — {detail}")
+    if status == "FAIL":
+        problems.append(("wheel-rebuild", detail))
+    elif status == "UNRUN":
+        unrun.append(f"wheel rebuild ({detail})")
+
+    for name, ok in mutation_controls(m, repo):
+        print(f"  control: {'ok ' if ok else 'BAD'} {name}")
+        if not ok:
+            problems.append(("mutation-control", f"did not reject: {name}"))
+    return problems, unrun
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--require-rebuild", action="store_true",
@@ -328,36 +360,7 @@ def main():
         return 1
     m = json.loads(MANIFEST.read_text())
     repo = sigma_repo()
-
-    problems, unrun = [], []
-    problems += [("schema", p) for p in check_schema(m)]
-    problems += [("module-digest", p) for p in check_module_digest(m)]
-    problems += [("api-version", p) for p in check_api_version(m)]
-    rp, ran = check_receipt(m, repo)
-    problems += [("receipt", p) for p in rp]
-    if not ran:
-        unrun.append("receipt agreement (no Sigma checkout with the receipt commit)")
-    srp, ran = check_source_repository(m, repo)
-    problems += [("source-repository", p) for p in srp]
-    if not ran:
-        unrun.append("source-repository binding (no clone with an origin remote)")
-    sp, ran = check_source_module(m, repo)
-    problems += [("source-module", p) for p in sp]
-    if not ran:
-        unrun.append("source-module equality (no Sigma checkout at source_commit)")
-
-    status, detail = check_wheel_rebuild(m, repo)
-    print(f"  wheel rebuild: {status} — {detail}")
-    if status == "FAIL":
-        problems.append(("wheel-rebuild", detail))
-    elif status == "UNRUN":
-        unrun.append(f"wheel rebuild ({detail})")
-
-    controls = mutation_controls(m, repo)
-    for name, ok in controls:
-        print(f"  control: {'ok ' if ok else 'BAD'} {name}")
-        if not ok:
-            problems.append(("mutation-control", f"did not reject: {name}"))
+    problems, unrun = _collect(m, repo)
 
     for kind, p in problems:
         print(f"  FAIL [{kind}] {p}", file=sys.stderr)
