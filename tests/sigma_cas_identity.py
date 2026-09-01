@@ -217,33 +217,70 @@ else:
     check("settlement-unpinned control could run (repo store present)", False,
           detail="repo .warrants/trust-config.json absent; the control did not run")
 
-# ---- P1 control: an explicit-but-BROKEN $SIGMA_GLYPH never falls back to bundled
-# The operator asked for a specific evaluator; if it is absent, testing bundled
-# against itself would be a vacuous green. Both the direct re-executor and the
-# conformance CLI must refuse, even with the differential flag set.
-_stb = _store()
-_validb = _put_check(_stb, I_H.hex(), EXPECT_I)
-os.environ["SIGMA_GLYPH"] = "/definitely-not-sigma-" + "x" * 8
-os.environ["WARRANT_SIGMA_DIFFERENTIAL"] = "1"
-try:
+# ---- P1 control: a broken EXPLICIT $SIGMA_GLYPH refuses on ALL THREE surfaces --
+# "Broken" = the operator named an evaluator that cannot be loaded: the path is
+# ABSENT, or sigma_glyph.py EXISTS but raises during import. Either must be a
+# bounded refusal on the direct re-executor, conformance, and settlement — never a
+# bundled fallback (a vacuous green) and never a traceback. The differential flag
+# changes none of this.
+def _broken_override_refuses(label, override_dir):
+    env = dict(os.environ, SIGMA_GLYPH=str(override_dir),
+               WARRANT_SIGMA_DIFFERENTIAL="1")
+    # (a) direct re-executor -> bounded RuntimeError, never a bundled verdict
+    st = _store()
+    v = _put_check(st, I_H.hex(), EXPECT_I)
+    _save = (os.environ.get("SIGMA_GLYPH"),
+             os.environ.get("WARRANT_SIGMA_DIFFERENTIAL"))
+    os.environ["SIGMA_GLYPH"] = str(override_dir)
+    os.environ["WARRANT_SIGMA_DIFFERENTIAL"] = "1"
     try:
-        _vb = W.run_ski_check(_stb, _validb)          # default sg=load_sigma()
-        check("broken explicit override does NOT execute bundled (refused)",
-              False, detail=f"got a verdict: {_vb}")
-    except RuntimeError as ex:
-        check("broken explicit override -> bounded refusal (no bundled fallback)",
-              "runtime unavailable" in str(ex), detail=str(ex))
-    _rc = subprocess.run(
+        try:
+            r = W.run_ski_check(st, v)
+            check(f"{label}: direct re-exec refused (no bundled)", False,
+                  detail=f"got {r}")
+        except RuntimeError as ex:
+            check(f"{label}: direct re-exec -> bounded refusal",
+                  "runtime unavailable" in str(ex), detail=str(ex))
+    finally:
+        for _k, _val in zip(("SIGMA_GLYPH", "WARRANT_SIGMA_DIFFERENTIAL"), _save):
+            if _val is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _val
+    # (b) conformance CLI -> not ALL PASS, nonzero exit, NO traceback
+    rc = subprocess.run(
         [sys.executable, str(REPO / "impl" / "warrant.py"), "conformance",
-         str(REPO / "examples")],
-        capture_output=True, text=True, env=dict(os.environ))
-    check("conformance with a broken explicit override is NOT ALL PASS",
-          "ALL PASS" not in _rc.stdout and _rc.returncode != 0,
-          detail=next((ln for ln in (_rc.stdout + _rc.stderr).splitlines()
-                       if "SIGMA_GLYPH" in ln or "CONFORMANCE" in ln), f"rc={_rc.returncode}"))
-finally:
-    os.environ.pop("SIGMA_GLYPH", None)
-    os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
+         str(REPO / "examples")], capture_output=True, text=True, env=env)
+    out = rc.stdout + rc.stderr
+    check(f"{label}: conformance not ALL PASS + nonzero, no traceback",
+          "ALL PASS" not in rc.stdout and rc.returncode != 0
+          and "Traceback" not in out,
+          detail=next((ln for ln in out.splitlines()
+                       if "CONFORMANCE" in ln or "Traceback" in ln), f"rc={rc.returncode}"))
+    # (c) settlement CLI -> exactly one global ERR, nonzero exit, NO traceback
+    if _warrants.is_dir() and _tcfg.is_file():
+        rs = subprocess.run(
+            [sys.executable, str(REPO / "impl" / "warrant.py"), "--store",
+             str(_warrants), "verify", "--settlement", "--trust-config", str(_tcfg)],
+            capture_output=True, text=True, env=env)
+        sb = rs.stdout + rs.stderr
+        check(f"{label}: settlement one global ERR + nonzero, no traceback",
+              rs.returncode != 0
+              and sb.count("settlement requires the pinned") == 1
+              and "Traceback" not in sb,
+              detail=next((ln for ln in sb.splitlines()
+                           if "ERR" in ln or "Traceback" in ln), f"rc={rs.returncode}"))
+    else:
+        check(f"{label}: settlement control could run (repo store present)", False,
+              detail="repo .warrants/trust-config.json absent")
+
+
+_broken_override_refuses("absent override",
+                         Path("/definitely-not-sigma-" + "x" * 8))
+# an EXISTING sigma_glyph.py that raises during import (exec_module lets it out)
+_boom = Path(tempfile.mkdtemp(prefix="cas-boom-"))
+(_boom / "sigma_glyph.py").write_text('raise RuntimeError("import-boom")\n')
+_broken_override_refuses("import-failing override", _boom)
 
 # ---- NEGATIVE CONTROL: the guard is what refuses the forged bytes ----------
 # Non-vacuity must not depend on git history: once the fix is committed, HEAD

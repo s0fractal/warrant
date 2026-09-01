@@ -447,9 +447,21 @@ def load_sigma():
         op = Path(override) / "sigma_glyph.py"
         if not op.exists():
             return None                       # explicit override absent: no fallback
-        same = (BUNDLED_SIGMA.exists()
-                and op.read_bytes() == BUNDLED_SIGMA.read_bytes())
-        mod = _import_sigma(op, unpinned=not same)
+        try:
+            same = (BUNDLED_SIGMA.exists()
+                    and op.read_bytes() == BUNDLED_SIGMA.read_bytes())
+            mod = _import_sigma(op, unpinned=not same)
+        except Exception as ex:
+            # An explicit override whose sigma_glyph.py EXISTS but is unreadable or
+            # raises during import is still a bounded refusal — never a traceback,
+            # and never a silent bundled fallback. exec_module() lets the module's
+            # own exception through, so catch it HERE, at the override boundary.
+            if not getattr(load_sigma, "_warned_broken", False):
+                print(f"warning: SIGMA_GLYPH override could not be loaded "
+                      f"({type(ex).__name__}); ski@v1 re-execution is unavailable",
+                      file=sys.stderr)
+                load_sigma._warned_broken = True
+            return None
         if mod is None:
             return None                       # explicit override unimportable: no fallback
         if not same and not getattr(load_sigma, "_warned", False):
