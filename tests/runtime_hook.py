@@ -24,6 +24,13 @@ _spec = importlib.util.spec_from_file_location(
 W = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(W)
 
+# This harness drives the SETTLEMENT path, which is pinned-only: verify_store
+# refuses an unpinned evaluator unconditionally. Run on the bundled, provenance-
+# bound engine (drop any $SIGMA_GLYPH override and its differential flag), so the
+# settlement-mode handler assertions exercise a real settlement, not a refusal.
+os.environ.pop("SIGMA_GLYPH", None)
+os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
+
 TEST_RT = "test@v1"
 if TEST_RT not in W.RUNTIMES["0.2"]:
     W.RUNTIMES["0.2"] = W.RUNTIMES["0.2"] + (TEST_RT,)

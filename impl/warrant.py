@@ -127,7 +127,8 @@ ERR_SETTLEMENT_TRUST = "settlement trust config unavailable"
 # Settlement is the grade a stranger relies on, so it must re-execute ski@v1
 # reasons on the PINNED evaluator this package shipped. A byte-divergent
 # $SIGMA_GLYPH override is not settlement-grade; verify --settlement refuses it
-# (unless an operator has EXPLICITLY entered cross-repo differential mode).
+# UNCONDITIONALLY — the differential flag unlocks only a direct run_ski_check,
+# never a settlement verdict.
 ERR_SETTLEMENT_UNPINNED = "settlement requires the pinned Σ-GLYPH evaluator"
 # ONE stable, path-free reason for every Identity-by-Hash violation — the root
 # check blob, a term thunk, or the evaluator's own internal fault all normalise
@@ -515,9 +516,10 @@ def run_ski_check(store, check_hex, sg=None):
     # SILENTLY flow into filing, an outcome fingerprint, or settlement. Refuse it
     # here, the one choke point every caller shares (each maps RuntimeError to an
     # "unverified" reason, never a pass/fail). A cross-repo/dev differential is a
-    # DELIBERATE, separate mode: it must opt in with WARRANT_SIGMA_DIFFERENTIAL=1,
-    # and even then verify --settlement refuses it (see verify_store), so a
-    # differential result can never be presented as settlement-grade.
+    # DELIBERATE, separate mode: it opts in with WARRANT_SIGMA_DIFFERENTIAL=1 to
+    # unlock THIS direct re-execution (conformance, fingerprint arithmetic) only.
+    # It never reaches settlement grade: verify_store(settlement=...) refuses an
+    # unpinned evaluator UNCONDITIONALLY, flag or no flag.
     if getattr(sg, "WARRANT_SIGMA_UNPINNED", False) and \
             os.environ.get("WARRANT_SIGMA_DIFFERENTIAL") != "1":
         raise RuntimeError("unpinned Σ-GLYPH evaluator (non-settlement-grade)")
@@ -1310,12 +1312,12 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
         # Settlement-grade re-execution must run on the PINNED evaluator. If the
         # loaded Σ-GLYPH is an unpinned override, refuse settlement outright — one
         # global ERR, no per-record verdicts — so a byte-divergent evaluator can
-        # never produce a settlement result a stranger would trust. An explicit
-        # cross-repo differential (WARRANT_SIGMA_DIFFERENTIAL=1) is the only way
-        # past this, and it is a deliberate test mode, not a settlement claim.
-        _sg = load_sigma()
-        if getattr(_sg, "WARRANT_SIGMA_UNPINNED", False) and \
-                os.environ.get("WARRANT_SIGMA_DIFFERENTIAL") != "1":
+        # never produce a settlement result a stranger would trust. This is
+        # UNCONDITIONAL: WARRANT_SIGMA_DIFFERENTIAL only unlocks a DIRECT
+        # run_ski_check (conformance / fingerprint arithmetic), never a settlement
+        # verdict. A differential is a test posture, not a settlement claim, so it
+        # must never masquerade as a clean settlement here.
+        if getattr(load_sigma(), "WARRANT_SIGMA_UNPINNED", False):
             out("ERR", "settlement", ERR_SETTLEMENT_UNPINNED)
             if not quiet:
                 print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")

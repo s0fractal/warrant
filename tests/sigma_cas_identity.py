@@ -19,6 +19,7 @@ absent blob and from a JSON error.
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -184,6 +185,34 @@ try:
           v[0] == "pass", detail=str(v))
 finally:
     os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
+
+# ---- P0 control: settlement is PINNED-ONLY, even WITH the differential flag ---
+# The flag unlocks a direct run_ski_check; it must NEVER buy a settlement verdict.
+# Point $SIGMA_GLYPH at a byte-divergent evaluator, set the flag, and run the real
+# CLI settlement verification of this repo's own store: it must emit exactly one
+# settlement ERR and exit nonzero — no masquerading clean settlement.
+REPO = Path(__file__).resolve().parents[1]
+_warrants, _tcfg = REPO / ".warrants", REPO / "trust-config.json"
+if _warrants.is_dir() and _tcfg.is_file():
+    _div = Path(tempfile.mkdtemp(prefix="cas-div-"))
+    (_div / "sigma_glyph.py").write_text(
+        (REPO / "impl" / "sigma_glyph.py").read_text() + "\n# divergent\n")
+    _env = dict(os.environ, SIGMA_GLYPH=str(_div), WARRANT_SIGMA_DIFFERENTIAL="1")
+    _r = subprocess.run(
+        [sys.executable, str(REPO / "impl" / "warrant.py"), "--store",
+         str(_warrants), "verify", "--settlement", "--trust-config", str(_tcfg)],
+        capture_output=True, text=True, env=_env)
+    _blob = _r.stdout + _r.stderr
+    check("verify --settlement + unpinned + FLAG exits nonzero",
+          _r.returncode != 0, detail=f"rc={_r.returncode}")
+    check("verify --settlement + unpinned refuses (settlement ERR, flag ignored)",
+          "settlement requires the pinned" in _blob,
+          detail=next((ln for ln in _blob.splitlines() if "ERR" in ln), _blob[:80]))
+    check("exactly ONE settlement ERR (a global refusal, not per-record noise)",
+          _blob.count("settlement requires the pinned") == 1)
+else:
+    check("settlement-unpinned control (repo store present)", True,
+          detail="repo .warrants/trust-config.json absent; control skipped")
 
 # ---- NEGATIVE CONTROL: the guard is what refuses the forged bytes ----------
 # Non-vacuity must not depend on git history: once the fix is committed, HEAD

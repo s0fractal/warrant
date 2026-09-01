@@ -35,6 +35,13 @@ spec = importlib.util.spec_from_file_location(
 W = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(W)
 
+# The settlement-grade report is pinned-only: verify_store refuses an unpinned
+# evaluator unconditionally. Run on the bundled engine (drop any $SIGMA_GLYPH
+# override and its differential flag) so a settlement report is produced, not a
+# refusal.
+os.environ.pop("SIGMA_GLYPH", None)
+os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
+
 TEST_RT = "test@v1"
 if TEST_RT not in W.RUNTIMES["0.2"]:
     W.RUNTIMES["0.2"] = W.RUNTIMES["0.2"] + (TEST_RT,)
