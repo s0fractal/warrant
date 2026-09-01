@@ -43,6 +43,11 @@ SIGMA = ROOT.parent / "sigma-glyph" / "impl"
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 
+# Reserved exit code a check may return to say "I ran but could not COMPLETE" —
+# a partial execution that must render as UNRUN, not PASS and not FAIL. Kept in
+# sync with tools/sigma_provenance_check.py's EXIT_UNRUN.
+EXIT_UNRUN = 3
+
 # Prerequisite tags used more than once, named so the string is defined in one
 # place (a repeated literal is a silent way for two checks to drift apart).
 SIGMA_GO = "sigma+go"
@@ -213,6 +218,25 @@ CHECKS = [
     ("conformance diagnosis: an incomplete candidate is told why, and "
      "--self-check can still fail",
      ["python3", "tests/conformance_diagnosis.py"], "go+node"),
+    # W1 (implementation/security): the ski@v1 re-executor enforces Identity by
+    # Hash. A blob store returning bytes under a FOREIGN address is an
+    # inadmissible check with a stable, path-free reason ("content does not
+    # match its address"), never an executed verdict; the negative control shows
+    # the pre-refresh evaluator DID execute it, so the guard is non-vacuous.
+    ("ski@v1 CAS identity (foreign key inadmissible; non-vacuous control)",
+     ["python3", "tests/sigma_cas_identity.py"], "sigma"),
+    # The Go evaluator mirrors the Python one: the same foreign-key fetch is
+    # refused with the same reason class (a differential control, not decoration).
+    ("go: ski@v1 CAS identity mirrors Python (foreign key refused)",
+     ["go", "-C", "impl-go", "test", "./...", "-run", "TestSigmaCASIdentity", "-count=1"],
+     "go-toolchain"),
+    # The bundled Σ-GLYPH evaluator is bound to the exact frozen candidate wheel
+    # and its authoritative build receipt (trust/sigma-evaluator-provenance.json).
+    # Schema, module digest and mutation controls always run; the wheel REBUILD
+    # is UNRUN off the official CI Python or without a Sigma checkout, and is
+    # made mandatory in the dedicated CI job (`--require-rebuild`).
+    ("sigma evaluator provenance (vendored module bound to the frozen wheel)",
+     ["python3", "tools/sigma_provenance_check.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),
 ]
@@ -230,6 +254,9 @@ NEEDS = {
                 "run, not compiled)"),
     "go": (lambda: GO.is_file(),
            "impl-go/warrant-go not built  ->  (cd impl-go && go build -o warrant-go .)"),
+    "go-toolchain": (lambda: shutil.which("go") is not None,
+                     "the Go toolchain is not on PATH  ->  install Go (the "
+                     "in-repo Go test is UNRUN without it, never passed)"),
     "rs": (lambda: RS.is_file(),
            "impl-rs not built  ->  (cd impl-rs && cargo build --release)"),
     "sigma": (lambda: (ROOT / "impl" / "sigma_glyph.py").exists() or SIGMA.exists(),
@@ -261,7 +288,14 @@ def main():
     env = dict(os.environ)
     env.setdefault("WARRANT_REQUIRE_SIGMA", "1")
     if SIGMA.exists():
+        # Point the suite at the sibling checkout as its Σ-GLYPH oracle. That
+        # sibling is a DIFFERENT commit than the bundled, provenance-bound module,
+        # so it is an unpinned override: this aggregate is a cross-repo
+        # differential and must say so, or the ski@v1 re-executor rightly refuses
+        # an unpinned evaluator. (Production settlement sets no such flag and is
+        # refused; see impl/warrant.py run_ski_check / verify_store.)
         env.setdefault("SIGMA_GLYPH", str(SIGMA))
+        env.setdefault("WARRANT_SIGMA_DIFFERENTIAL", "1")
 
     failed, unrun, passed = [], [], 0
     for name, argv, needs in CHECKS:
@@ -275,6 +309,14 @@ def main():
         if r.returncode == 0:
             print(f"ok     {name}  ({dt:.1f}s)")
             passed += 1
+        elif r.returncode == EXIT_UNRUN:
+            # The check ran but could not COMPLETE (it self-reports partial
+            # execution with this reserved code). UNRUN≠PASS: name it, do not
+            # count it as passed. The trailing lines carry which binding was UNRUN.
+            print(f"UNRUN  {name}  ({dt:.1f}s)")
+            for line in (r.stdout + r.stderr).strip().splitlines()[-2:]:
+                print(f"         {line[:110]}")
+            unrun.append(name)
         else:
             tail = (r.stdout + r.stderr).strip().splitlines()
             print(f"FAIL   {name}  ({dt:.1f}s)")

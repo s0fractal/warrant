@@ -24,6 +24,18 @@ spec = importlib.util.spec_from_file_location(
 W = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(W)
 
+# Settlement is a PINNED grade: verify_store refuses an unpinned evaluator
+# UNCONDITIONALLY. This harness exercises the settlement VERIFIER LOGIC (§5.1/§7/
+# §9), so it must run on the bundled, provenance-bound engine — never a
+# $SIGMA_GLYPH override, which a settlement path is required to reject. The
+# cross-repo evaluator differential lives in conformance and the ski verdict-lie
+# negatives, not here. Drop the override (and its differential flag) for the whole
+# run, so this process's load_sigma() AND every `verify --settlement` subprocess
+# use the pinned engine. The ski@v1 re-litigation case still executes — bundled is
+# a conformant evaluator — so PY and GO agree exactly as before.
+os.environ.pop("SIGMA_GLYPH", None)
+os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
+
 
 def sh(args, **kw):
     return subprocess.run(args, capture_output=True, text=True, **kw)

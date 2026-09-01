@@ -124,6 +124,16 @@ WARN_KEY_CONFLICT = "key-state conflict"
 # invalid is one global ERR with this exact string in BOTH Python and Go — never
 # a silent fail-open (Go previously ignored the read error and returned 0 errors).
 ERR_SETTLEMENT_TRUST = "settlement trust config unavailable"
+# Settlement is the grade a stranger relies on, so it must re-execute ski@v1
+# reasons on the PINNED evaluator this package shipped. A byte-divergent
+# $SIGMA_GLYPH override is not settlement-grade; verify --settlement refuses it
+# UNCONDITIONALLY — the differential flag unlocks only a direct run_ski_check,
+# never a settlement verdict.
+ERR_SETTLEMENT_UNPINNED = "settlement requires the pinned Σ-GLYPH evaluator"
+# ONE stable, path-free reason for every Identity-by-Hash violation — the root
+# check blob, a term thunk, or the evaluator's own internal fault all normalise
+# to this string, in Python and (verbatim) in Go.
+REASON_CAS_MISMATCH = "content does not match its address"
 
 
 # ---------- canonicalization & identity (SPEC §4) ----------
@@ -390,27 +400,77 @@ def is_unverifiable(body):
 
 
 # ---------- ski@v1 runtime (SPEC §3.1, v0.2) ----------
-def load_sigma():
-    """Load the Σ-GLYPH Book I oracle. Search order (first hit wins):
-      1. $SIGMA_GLYPH/sigma_glyph.py   — explicit override (e.g. a dev checkout)
-      2. sigma_glyph.py next to this file — the BUNDLED oracle, so an installed
-         `warrant` re-runs ski@v1 reasons offline with no separate clone
-      3. ~/sigma-glyph/impl/sigma_glyph.py — a conventional local checkout
-    Returns the module or None (None -> ski@v1 reasons report as unverified)."""
+BUNDLED_SIGMA = Path(__file__).resolve().parent / "sigma_glyph.py"
+
+
+def _import_sigma(path, unpinned):
     import importlib.util
-    candidates = []
-    if os.environ.get("SIGMA_GLYPH"):
-        candidates.append(Path(os.environ["SIGMA_GLYPH"]) / "sigma_glyph.py")
-    candidates.append(Path(__file__).resolve().parent / "sigma_glyph.py")
-    candidates.append(Path.home() / "sigma-glyph/impl" / "sigma_glyph.py")
-    for path in candidates:
-        if not path.exists():
-            continue
-        spec = importlib.util.spec_from_file_location("sigma_glyph", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("sigma_glyph", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    # A settlement-grade re-execution must be able to say WHICH evaluator ran.
+    # The bundled module is the one this package shipped, pinned by
+    # trust/sigma-evaluator-provenance.json; anything else is unpinned.
+    mod.WARRANT_SIGMA_UNPINNED = unpinned
+    return mod
+
+
+def load_sigma():
+    """Load the Σ-GLYPH Book I evaluator this package SHIPPED.
+
+    The BUNDLED module next to this file is authoritative for settlement/replay:
+    it is the exact evaluator bound by `trust/sigma-evaluator-provenance.json`,
+    so an installed `warrant verify`/`check`/`why` re-runs ski@v1 reasons offline
+    against the engine it was released with — not whatever a home directory holds.
+    The former implicit `~/sigma-glyph/...` fallback is REMOVED: a settlement
+    verdict must never silently depend on an unpinned local checkout.
+
+    `$SIGMA_GLYPH` remains a DEV / cross-repo-differential override. When it is
+    set to bytes that differ from the bundled evaluator, the loaded module is
+    flagged `WARRANT_SIGMA_UNPINNED` and a diagnostic is printed, so an override
+    can never be silently taken as bounded, settlement-grade execution. An
+    override byte-identical to the bundled module is, by definition, still the
+    pinned engine and is treated as such.
+
+    An EXPLICIT `$SIGMA_GLYPH` that is missing or cannot be imported is an
+    operator error, NOT a licence to fall back to the bundled engine and test it
+    against itself: that would let a differential the operator ASKED for silently
+    become bundled-vs-bundled (a vacuous green). So a broken explicit override
+    returns None (a bounded refusal), never bundled. The bundled fallback is used
+    ONLY when no override was requested at all.
+
+    Returns the module or None (None -> ski@v1 reasons report as unverified)."""
+    override = os.environ.get("SIGMA_GLYPH")
+    if override:
+        op = Path(override) / "sigma_glyph.py"
+        if not op.exists():
+            return None                       # explicit override absent: no fallback
+        try:
+            same = (BUNDLED_SIGMA.exists()
+                    and op.read_bytes() == BUNDLED_SIGMA.read_bytes())
+            mod = _import_sigma(op, unpinned=not same)
+        except Exception as ex:
+            # An explicit override whose sigma_glyph.py EXISTS but is unreadable or
+            # raises during import is still a bounded refusal — never a traceback,
+            # and never a silent bundled fallback. exec_module() lets the module's
+            # own exception through, so catch it HERE, at the override boundary.
+            if not getattr(load_sigma, "_warned_broken", False):
+                print(f"warning: SIGMA_GLYPH override could not be loaded "
+                      f"({type(ex).__name__}); ski@v1 re-execution is unavailable",
+                      file=sys.stderr)
+                load_sigma._warned_broken = True
+            return None
+        if mod is None:
+            return None                       # explicit override unimportable: no fallback
+        if not same and not getattr(load_sigma, "_warned", False):
+            print("warning: SIGMA_GLYPH override active — the evaluator "
+                  "is unpinned and its ski@v1 re-execution is "
+                  "non-settlement-grade", file=sys.stderr)
+            load_sigma._warned = True
         return mod
-    return None
+    return _import_sigma(BUNDLED_SIGMA, unpinned=False)
 
 
 def validate_ski_blob(doc):
@@ -426,17 +486,31 @@ def validate_ski_blob(doc):
     return None
 
 
-def run_ski_check(store, check_hex, sg=None):
-    """Execute a ski@v1 check against the warrant blob store (which IS a
-    Σ-GLYPH CAS). Returns (verdict, result_hash_hex, atp_spent).
-    Raises RuntimeError if the check blob is malformed or the oracle missing."""
-    sg = sg or load_sigma()
-    if sg is None:
-        raise RuntimeError("runtime unavailable")   # reason class; the CLI hint
-    p = store.blobs / check_hex                       # is printed by cmd_check, not here
+class _CASAddressMismatch(Exception):
+    """A blob store returned bytes that do not hash to the requested address.
+
+    Warrant claims its blob store IS a Σ-GLYPH content-addressed store, i.e. the
+    file named `<h>` contains bytes whose SHA-256 is `<h>` (Identity by Hash).
+    A store that breaks this has lied about an address; evaluating the bytes it
+    returned as the requested node would let two conforming engines disagree, so
+    it is an INADMISSIBLE check, not a computation that produced a `fail`."""
+
+
+def _load_ski_doc(store, check_hex):
+    """Resolve and validate the ski@v1 check blob AT ITS CONTENT ADDRESS.
+
+    The check blob is itself a CAS entry: file `<check_hex>` must contain bytes
+    whose SHA-256 is `<check_hex>`. Verifying this ROOT fetch — not only the term
+    thunks the evaluator pulls through BlobCAS — stops a check filed under a
+    foreign name being executed as if it were the addressed one, with the same
+    stable, path-free reason as every other address lie. Raises RuntimeError with
+    a bounded reason class on any malformed / mis-addressed blob."""
+    p = store.blobs / check_hex
     if not (isinstance(check_hex, str) and HEX64.match(check_hex) and p.is_file()):
         raise RuntimeError("check blob missing")      # absent / dir / non-hex: bounded
     raw = p.read_bytes()
+    if hashlib.sha256(raw).digest() != bytes.fromhex(check_hex):
+        raise RuntimeError(REASON_CAS_MISMATCH)
     try:
         doc = json.loads(raw)                # was leaking JSONDecodeError past the
     except ValueError:                       # caller's `except RuntimeError` (crash)
@@ -448,13 +522,56 @@ def run_ski_check(store, check_hex, sg=None):
         raise RuntimeError(f"invalid ski check blob: {err}")
     if doc["atp"] > SKI_REEXEC_MAX_ATP:   # SPEC §3.1: local re-execution budget
         raise RuntimeError("atp exceeds re-execution budget")
+    return doc
+
+
+def run_ski_check(store, check_hex, sg=None):
+    """Execute a ski@v1 check against the warrant blob store (which IS a
+    Σ-GLYPH CAS). Returns (verdict, result_hash_hex, atp_spent).
+    Raises RuntimeError if the check blob is malformed or the oracle missing."""
+    sg = sg or load_sigma()
+    if sg is None:
+        raise RuntimeError("runtime unavailable")   # reason class; the CLI hint
+    # A byte-divergent $SIGMA_GLYPH override is UNPINNED — not the evaluator this
+    # package was released and provenance-bound to. Its ski@v1 verdict must never
+    # SILENTLY flow into filing, an outcome fingerprint, or settlement. Refuse it
+    # here, the one choke point every caller shares (each maps RuntimeError to an
+    # "unverified" reason, never a pass/fail). A cross-repo/dev differential is a
+    # DELIBERATE, separate mode: it opts in with WARRANT_SIGMA_DIFFERENTIAL=1 to
+    # unlock THIS direct re-execution (conformance, fingerprint arithmetic) only.
+    # It never reaches settlement grade: verify_store(settlement=...) refuses an
+    # unpinned evaluator UNCONDITIONALLY, flag or no flag.
+    if getattr(sg, "WARRANT_SIGMA_UNPINNED", False) and \
+            os.environ.get("WARRANT_SIGMA_DIFFERENTIAL") != "1":
+        raise RuntimeError("unpinned Σ-GLYPH evaluator (non-settlement-grade)")
+    doc = _load_ski_doc(store, check_hex)
 
     class BlobCAS:                       # adapter: warrant blobs -> Σ-GLYPH store
         def get(self, h):
             q = store.blobs / h.hex()
-            return q.read_bytes() if q.exists() else None
+            if not q.exists():
+                return None              # legitimately unresolved (SPEC §7)
+            b = q.read_bytes()
+            # Defense in depth at the ADAPTER boundary, independent of the
+            # evaluator version: the claim "this store is a Σ-GLYPH CAS" must
+            # hold here, not only inside whatever evaluator happens to run.
+            if hashlib.sha256(b).digest() != h:
+                raise _CASAddressMismatch()
+            return b
 
-    r, spent = sg.eval_hash(bytes.fromhex(doc["term"]), doc["atp"], BlobCAS())
+    try:
+        r, spent = sg.eval_hash(bytes.fromhex(doc["term"]), doc["atp"], BlobCAS())
+    except _CASAddressMismatch:
+        raise RuntimeError(REASON_CAS_MISMATCH)
+    except getattr(sg, "ResourceFault", ()) as rf:
+        # The bundled evaluator also enforces Identity by Hash internally
+        # (force(): "CAS key mismatch" / "store returned non-bytes"). Normalise
+        # both boundaries to ONE stable, path-free reason class; other local
+        # resource faults are reported unverified, never as a pass/fail verdict.
+        msg = str(rf)
+        if "CAS key mismatch" in msg or "non-bytes" in msg:
+            raise RuntimeError(REASON_CAS_MISMATCH)
+        raise RuntimeError(f"resource fault: {msg}")
     rh = sg.term_hash(r).hex()
     return ("pass" if rh == doc["expect"] else "fail"), rh, spent
 
@@ -1213,6 +1330,23 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
     # trust failure). Parse (I-JSON, dup-key/trailing-rejecting) AND closed-schema-
     # validate the trust config ONCE, then pass the value into context construction.
     if settlement is not None:
+        # Settlement-grade re-execution must run on the PINNED evaluator. If the
+        # loaded Σ-GLYPH is an unpinned override, refuse settlement outright — one
+        # global ERR, no per-record verdicts — so a byte-divergent evaluator can
+        # never produce a settlement result a stranger would trust. This is
+        # UNCONDITIONAL: WARRANT_SIGMA_DIFFERENTIAL only unlocks a DIRECT
+        # run_ski_check (conformance / fingerprint arithmetic), never a settlement
+        # verdict. A differential is a test posture, not a settlement claim, so it
+        # must never masquerade as a clean settlement here. An explicit $SIGMA_GLYPH
+        # that could not be loaded (load_sigma -> None) is refused too, so a broken
+        # override cannot silently let settlement proceed on no evaluator.
+        _sg = load_sigma()
+        if getattr(_sg, "WARRANT_SIGMA_UNPINNED", False) or \
+                (_sg is None and os.environ.get("SIGMA_GLYPH")):
+            out("ERR", "settlement", ERR_SETTLEMENT_UNPINNED)
+            if not quiet:
+                print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
+            return _finish()
         trust_path = settlement.get("trust_config")
         trust_ok = True
         if trust_path:
@@ -1853,7 +1987,13 @@ def conformance(examples_dir):
         chk("ski: 0.1 body MUST reject ski@v1",
             any("reserved" in m for m in validate_body(v01)))
         sg = load_sigma()
-        if sg is None:
+        if sg is None and os.environ.get("SIGMA_GLYPH"):
+            # An explicit override was requested but could not be loaded. That is
+            # NOT a skip-as-pass — it must go red, or a broken differential prints
+            # ALL PASS while nothing ran (and bundled was never silently used).
+            chk("ski: explicit SIGMA_GLYPH override could not be loaded (no fallback)",
+                False, "set SIGMA_GLYPH to a directory containing sigma_glyph.py")
+        elif sg is None:
             chk("ski: runtime re-run SKIPPED (no sigma_glyph; set SIGMA_GLYPH)", True)
         else:
             import tempfile

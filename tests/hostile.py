@@ -12,6 +12,12 @@ import hashlib, json, os, re, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The settlement cases here are pinned-only: verify_store refuses an unpinned
+# evaluator unconditionally. Run on the bundled engine (drop any $SIGMA_GLYPH
+# override and its differential flag) so the CLI settlement subprocesses verify,
+# rather than refusing as unpinned.
+os.environ.pop("SIGMA_GLYPH", None)
+os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
 PY = [sys.executable, str(ROOT / "impl" / "warrant.py")]
 GO = ROOT / "impl-go" / "warrant-go"
 Z = "0" * 64

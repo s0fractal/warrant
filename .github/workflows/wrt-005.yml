@@ -51,13 +51,20 @@ jobs:
       # that the Go prerequisite is enforced, then runs the real suite green.
       - name: WRT-005 countervector self-test (mutant goes red, Go prereq enforced)
         env:
+          # The oracle is the PINNED SIBLING, which differs byte-wise from the
+          # bundled evaluator — an unpinned override. These fixtures re-execute
+          # ski@v1, so this is a deliberate cross-repo differential and must say
+          # so, or run_ski_check rightly refuses an unpinned evaluator.
           SIGMA_GLYPH: /tmp/sigma-glyph/impl
+          WARRANT_SIGMA_DIFFERENTIAL: "1"
           WARRANT_GO: ${{ github.workspace }}/impl-go/warrant-go
           WARRANT_REQUIRE_SIGMA: "1"
         run: python3 tests/fixtures/wrt005_countervector_selftest.py
       - name: WRT-005 fingerprint countervectors (fail-closed, PY+GO settle)
         env:
+          # Pinned-sibling oracle (unpinned vs bundled): explicit differential.
           SIGMA_GLYPH: /tmp/sigma-glyph/impl
+          WARRANT_SIGMA_DIFFERENTIAL: "1"
           WARRANT_GO: ${{ github.workspace }}/impl-go/warrant-go
           WARRANT_REQUIRE_SIGMA: "1"
         run: python3 tests/fixtures/wrt005_gate_countervectors.py
@@ -66,7 +73,9 @@ jobs:
       # is a fail-closed countervector, mandatory here so the limit stays true.
       - name: WRT-005 extensional-equivalence limit (K vs S(K K) I)
         env:
+          # Pinned-sibling oracle (unpinned vs bundled): explicit differential.
           SIGMA_GLYPH: /tmp/sigma-glyph/impl
+          WARRANT_SIGMA_DIFFERENTIAL: "1"
           WARRANT_REQUIRE_SIGMA: "1"
         run: python3 tests/fixtures/wrt005_extensional_limit.py
 
