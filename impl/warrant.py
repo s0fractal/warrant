@@ -434,21 +434,30 @@ def load_sigma():
     override byte-identical to the bundled module is, by definition, still the
     pinned engine and is treated as such.
 
+    An EXPLICIT `$SIGMA_GLYPH` that is missing or cannot be imported is an
+    operator error, NOT a licence to fall back to the bundled engine and test it
+    against itself: that would let a differential the operator ASKED for silently
+    become bundled-vs-bundled (a vacuous green). So a broken explicit override
+    returns None (a bounded refusal), never bundled. The bundled fallback is used
+    ONLY when no override was requested at all.
+
     Returns the module or None (None -> ski@v1 reasons report as unverified)."""
     override = os.environ.get("SIGMA_GLYPH")
     if override:
         op = Path(override) / "sigma_glyph.py"
-        if op.exists():
-            same = (BUNDLED_SIGMA.exists()
-                    and op.read_bytes() == BUNDLED_SIGMA.read_bytes())
-            mod = _import_sigma(op, unpinned=not same)
-            if mod is not None:
-                if not same and not getattr(load_sigma, "_warned", False):
-                    print("warning: SIGMA_GLYPH override active — the evaluator "
-                          "is unpinned and its ski@v1 re-execution is "
-                          "non-settlement-grade", file=sys.stderr)
-                    load_sigma._warned = True
-                return mod
+        if not op.exists():
+            return None                       # explicit override absent: no fallback
+        same = (BUNDLED_SIGMA.exists()
+                and op.read_bytes() == BUNDLED_SIGMA.read_bytes())
+        mod = _import_sigma(op, unpinned=not same)
+        if mod is None:
+            return None                       # explicit override unimportable: no fallback
+        if not same and not getattr(load_sigma, "_warned", False):
+            print("warning: SIGMA_GLYPH override active — the evaluator "
+                  "is unpinned and its ski@v1 re-execution is "
+                  "non-settlement-grade", file=sys.stderr)
+            load_sigma._warned = True
+        return mod
     return _import_sigma(BUNDLED_SIGMA, unpinned=False)
 
 
@@ -1316,8 +1325,12 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
         # UNCONDITIONAL: WARRANT_SIGMA_DIFFERENTIAL only unlocks a DIRECT
         # run_ski_check (conformance / fingerprint arithmetic), never a settlement
         # verdict. A differential is a test posture, not a settlement claim, so it
-        # must never masquerade as a clean settlement here.
-        if getattr(load_sigma(), "WARRANT_SIGMA_UNPINNED", False):
+        # must never masquerade as a clean settlement here. An explicit $SIGMA_GLYPH
+        # that could not be loaded (load_sigma -> None) is refused too, so a broken
+        # override cannot silently let settlement proceed on no evaluator.
+        _sg = load_sigma()
+        if getattr(_sg, "WARRANT_SIGMA_UNPINNED", False) or \
+                (_sg is None and os.environ.get("SIGMA_GLYPH")):
             out("ERR", "settlement", ERR_SETTLEMENT_UNPINNED)
             if not quiet:
                 print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
@@ -1962,7 +1975,13 @@ def conformance(examples_dir):
         chk("ski: 0.1 body MUST reject ski@v1",
             any("reserved" in m for m in validate_body(v01)))
         sg = load_sigma()
-        if sg is None:
+        if sg is None and os.environ.get("SIGMA_GLYPH"):
+            # An explicit override was requested but could not be loaded. That is
+            # NOT a skip-as-pass — it must go red, or a broken differential prints
+            # ALL PASS while nothing ran (and bundled was never silently used).
+            chk("ski: explicit SIGMA_GLYPH override could not be loaded (no fallback)",
+                False, "set SIGMA_GLYPH to a directory containing sigma_glyph.py")
+        elif sg is None:
             chk("ski: runtime re-run SKIPPED (no sigma_glyph; set SIGMA_GLYPH)", True)
         else:
             import tempfile

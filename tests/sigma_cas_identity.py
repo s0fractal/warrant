@@ -211,8 +211,39 @@ if _warrants.is_dir() and _tcfg.is_file():
     check("exactly ONE settlement ERR (a global refusal, not per-record noise)",
           _blob.count("settlement requires the pinned") == 1)
 else:
-    check("settlement-unpinned control (repo store present)", True,
-          detail="repo .warrants/trust-config.json absent; control skipped")
+    # A control that cannot run is NOT a control that passed. The reproducer
+    # ships in the repo, so its own store must be present; a missing store is a
+    # red result here, never a green skip.
+    check("settlement-unpinned control could run (repo store present)", False,
+          detail="repo .warrants/trust-config.json absent; the control did not run")
+
+# ---- P1 control: an explicit-but-BROKEN $SIGMA_GLYPH never falls back to bundled
+# The operator asked for a specific evaluator; if it is absent, testing bundled
+# against itself would be a vacuous green. Both the direct re-executor and the
+# conformance CLI must refuse, even with the differential flag set.
+_stb = _store()
+_validb = _put_check(_stb, I_H.hex(), EXPECT_I)
+os.environ["SIGMA_GLYPH"] = "/definitely-not-sigma-" + "x" * 8
+os.environ["WARRANT_SIGMA_DIFFERENTIAL"] = "1"
+try:
+    try:
+        _vb = W.run_ski_check(_stb, _validb)          # default sg=load_sigma()
+        check("broken explicit override does NOT execute bundled (refused)",
+              False, detail=f"got a verdict: {_vb}")
+    except RuntimeError as ex:
+        check("broken explicit override -> bounded refusal (no bundled fallback)",
+              "runtime unavailable" in str(ex), detail=str(ex))
+    _rc = subprocess.run(
+        [sys.executable, str(REPO / "impl" / "warrant.py"), "conformance",
+         str(REPO / "examples")],
+        capture_output=True, text=True, env=dict(os.environ))
+    check("conformance with a broken explicit override is NOT ALL PASS",
+          "ALL PASS" not in _rc.stdout and _rc.returncode != 0,
+          detail=next((ln for ln in (_rc.stdout + _rc.stderr).splitlines()
+                       if "SIGMA_GLYPH" in ln or "CONFORMANCE" in ln), f"rc={_rc.returncode}"))
+finally:
+    os.environ.pop("SIGMA_GLYPH", None)
+    os.environ.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
 
 # ---- NEGATIVE CONTROL: the guard is what refuses the forged bytes ----------
 # Non-vacuity must not depend on git history: once the fix is committed, HEAD
