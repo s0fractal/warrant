@@ -1,0 +1,36 @@
+{
+  "schema": "warrant/release-evaluator-manifest@draft-0",
+  "note": "DRAFT for WRT-007 \u00a73.2. OPERATIONAL selection: which evaluator THIS Warrant release ships for each registered tag. One evaluator per (release, tag). The tag's identity lives in the runtime registry, not here. Read by nothing on master.",
+  "warrant_release": "unreleased \u2014 branch proposals/wrt-006-ski-v1-equivalence-gate",
+  "registry_ref": "runtime-registry.json",
+  "evaluators": {
+    "ski@v1": {
+      "form": "vendored-file (delivery-agnostic; a published distribution with the same module sha is an equivalent form)",
+      "module": "impl/sigma_glyph_v05.py (proposed path)",
+      "module_sha256": "80299d6869e7c93ece3455db32c0a6a1346a8b7162e6ef0954a4bd425497bab5",
+      "artifact": {
+        "distribution": "sigma-glyph",
+        "version": "0.6.7",
+        "wheel_filename": "sigma_glyph-0.6.7-py3-none-any.whl",
+        "wheel_sha256": "c3b7bc32a7a3b71e037ca367fb2fbfdb45437146185c2e1336ac1c866b571bca",
+        "note": "the same module bytes as the v0.6.7 git tag; recorded as provenance of the bytes, not as a runtime dependency"
+      },
+      "conformance_receipt_sha256": null,
+      "conformance_note": "filled by installed_engine_check.py (WRT-006 receipt digest) when the manifest is adopted"
+    },
+    "ski@v2": {
+      "form": "vendored-file",
+      "module": "impl/sigma_glyph_v06.py (proposed path)",
+      "module_sha256": "55072bc02e63987898fd60125e8bb5b14a6233b081ba158e0253755652323825",
+      "artifact": {
+        "distribution": "sigma-glyph",
+        "version": "0.6.7+phase4a.5050ab7 (candidate; unpublishable local version)",
+        "wheel_filename": "sigma_glyph-0.6.7+phase4a.5050ab7-py3-none-any.whl",
+        "wheel_sha256": "cfee921858378493e692f052b8fe253e1a85603b3a93d0df1dde1aba7ba70a6a",
+        "note": "from trust/sigma-evaluator-provenance.json (W1)"
+      },
+      "conformance_receipt_sha256": null,
+      "conformance_note": "cannot be filled until ski@v2 is registered"
+    }
+  }
+}

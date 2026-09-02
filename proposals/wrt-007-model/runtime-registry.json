@@ -1,0 +1,57 @@
+{
+  "schema": "warrant/runtime-registry@draft-0",
+  "note": "DRAFT for WRT-007 \u00a73.1. NORMATIVE identity of each runtime tag: what the tag MEANS and which vector manifests any evaluator must satisfy. Says nothing about which implementation a release ships. Read by nothing on master.",
+  "tags": {
+    "ski@v1": {
+      "status": "registered",
+      "semantics": "Sigma-GLYPH Book I v0.5 (SPEC \u00a73.1, \u00a713.1)",
+      "body_versions": [
+        "0.2"
+      ],
+      "vector_manifest": {
+        "sigma_book1_suite": {
+          "ref": "sigma-glyph v0.6.7 tests/spec_conformance/vectors.json",
+          "format_version": 2,
+          "sha256": "322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85",
+          "required_fields": [
+            "result_hash",
+            "atp_spent",
+            "outcome"
+          ]
+        },
+        "warrant_ski_specimen": {
+          "path": "examples/ski/",
+          "files_sha256": {
+            "89bf5669baa47176938fd5d514c097c4dcdd710da8f4f62e2e0d1748bc2d2798.bin": "89bf5669baa47176938fd5d514c097c4dcdd710da8f4f62e2e0d1748bc2d2798",
+            "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad.bin": "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad",
+            "accept-ski.warrant.json": "fd4d243b3fcc33b8dd27c7a3875b4673e1011e63fe3692c5290f247675deadda",
+            "bed95fbc7ccd2cf53d3562138a69a90a9c38de9f7a23d9015eef1b6638d4eb1d.bin": "bed95fbc7ccd2cf53d3562138a69a90a9c38de9f7a23d9015eef1b6638d4eb1d",
+            "c004c81972ff1f9b517157a44bb7ee266ae74de5ea94088ce17037072896c9c1.bin": "c004c81972ff1f9b517157a44bb7ee266ae74de5ea94088ce17037072896c9c1",
+            "check.json": "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad",
+            "d1b6a6982b4a8c4b04c83d3adbf7aba04f587891f67b5ddb81d95bcd83cb6843.bin": "d1b6a6982b4a8c4b04c83d3adbf7aba04f587891f67b5ddb81d95bcd83cb6843"
+          }
+        }
+      },
+      "store_contract": "SPEC \u00a73.1 rule 2 \u2014 every demanded object resolves among the store's blobs; bytes under a key they do not hash to are refused by Warrant's fetch layer before any evaluator sees them"
+    },
+    "ski@v2": {
+      "status": "NOT REGISTERED (placeholder; WRT-006 disposition B)",
+      "semantics": "Sigma-GLYPH Book I 0.6.0 (adopted bundle v0.7.0) \u2014 pending SPEC \u00a713.1 registration and a new body version",
+      "body_versions": [],
+      "vector_manifest": {
+        "sigma_book1_suite": {
+          "ref": "sigma-glyph tests/spec_conformance/vectors.json at the adopted v0.7.0 anchor",
+          "format_version": 3,
+          "sha256": null,
+          "required_fields": [
+            "result_hash",
+            "atp_spent",
+            "outcome",
+            "exit"
+          ]
+        }
+      },
+      "store_contract": "as ski@v1"
+    }
+  }
+}

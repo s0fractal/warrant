@@ -1,161 +1,158 @@
-# WRT-007: One published artifact per runtime tag — Warrant stops vendoring the Σ-GLYPH evaluator
+# WRT-007: A Warrant release addressably selects one evaluator per immutable runtime tag
 
-**Status:** DRAFT rev 1 (2026-09-02) — design proposal plus one reproducer and one draft pin table.
+**Status:** DRAFT **rev 2** (2026-09-02) — design proposal plus one reproducer and two draft records.
 No SPEC, `impl/`, `pyproject`, vector or registry change is made by this document; nothing is
-adopted. Written by Claude Fable 5.1 at the owner's request ("prepare a counter-proposal about
-warrant depending on sigma-glyph"), after WRT-006 closed with disposition B. A gate verdict is
-evidence, not adoption (AGENTS.md rules 3–4).
+adopted. Written by Claude Fable 5.1 at the owner's request. rev 1 (`677632e`) was gated by Codex
+(AMEND). A gate verdict is evidence, not adoption (AGENTS.md rules 3–4).
+
+**rev 2 — what the gate changed.** (1) **Semantics and supply separated.** rev 1's "one published
+artifact per runtime tag" conflated the tag's normative identity with one Python implementation and
+would have weakened `ski@v1`'s promise of independent implementations. rev 2 keeps two records: a
+*runtime registry* (what a tag means; which vector manifest any evaluator must satisfy) and a
+*release evaluator manifest* (which evaluator this Warrant release ships for that tag). (2) The
+delivery channel is no longer part of the claim: a vendored file with a pinned digest is an
+equivalent operational form to a published wheel — the owner's simplification, and the correct one
+while there are no external consumers. (3) Reproducer: refusal **before import** on a pin mismatch
+(an import-side-effect module is never executed); closed-schema registry and manifest with their
+digests and the selected records' commitments in the receipt; caller-supplied records yield
+`TEST_PROFILE_RESULT`, never a credit-bearing verdict; three separately reported axes
+(`artifact_identity`, `module_identity`, `semantic_conformance`); conformance judged against the
+**tag's registry vector manifest**, with the full WRT-006 receipt embedded and digested;
+`E0_conformance` required.
 
 **Thesis in one sentence:**
 
-> A runtime tag is immutable (SPEC §13.1); therefore the evaluator that implements it should be an
-> immutable, published, digest-pinned artifact that Warrant *depends on* — not a file Warrant
-> copies and later replaces in place.
+> A runtime tag names an immutable semantics and a vector manifest (SPEC §13.1); a Warrant release
+> names, by digest, the one evaluator it ships for that tag; the two must never be the same record,
+> and a mismatch between what a release ships and what it declares must refuse before any byte runs.
 
 ---
 
 ## 1. Why now
 
-WRT-006 found that W1 replaced the bundled `impl/sigma_glyph.py` under the immutable `ski@v1` tag
-and closed with B (`ski@v2` for Book I 0.6.0). That closes the *naming* question and leaves the
-*supply* question open: today the tag's evaluator is whatever bytes sit in `impl/sigma_glyph.py`
-at release time. Vendoring made the substitution possible and invisible. ADR-012's own success
-metric #2 for the internal-substrate campaign is "neither consumer vendors or reimplements the
-evaluator", and its kill criterion is "consumers still vendor evaluator logic or require a Sigma
-checkout". manifesto met it (Phase 4A, PR #2). Warrant has not.
+WRT-006 found that W1 replaced the bundled evaluator under the immutable `ski@v1` tag and closed
+with disposition B (`ski@v2` for Book I 0.6.0). That settles the *name*. It leaves the *supply*
+question: today the tag's evaluator is whatever bytes sit in `impl/sigma_glyph.py` at release time,
+bound by a provenance record that names the bytes but not the tag. Vendoring is not the defect —
+the missing per-tag selection record is. ADR-012 (sigma-glyph) measures its campaign by "no consumer
+vendors or reimplements the evaluator"; this proposal meets the *intent* of that metric (no hidden
+copy whose identity is unrecorded) without adopting a delivery channel.
 
 ## 2. What was measured (2026-09-02)
 
-The published PyPI artifact was downloaded (`pip download sigma-glyph==0.6.7 --no-deps`) and
-opened in a scratch directory:
-
 | Fact | Value |
 |---|---|
-| wheel | `sigma_glyph-0.6.7-py3-none-any.whl`, sha256 `c3b7bc32…` (full value in `wrt-007-model/runtime-pins.json`) |
-| its `sigma_glyph.py` | sha256 `80299d68…` — **byte-identical to the `v0.6.7` git tag module**; docstring "oracle semantics v0.5.x" |
-| vs Σ-GLYPH `v0.6.7` suite normative values | `ALL PASS (49/49)` |
-| vs warrant `conformance examples` | `ALL PASS (67/67)` — under pre-W1 warrant (`9816937`, `SIGMA_GLYPH` override) and under W1 (`4915494`, `WARRANT_SIGMA_DIFFERENTIAL=1`) |
-| WRT-006 differential, this module as E1 vs E0 (pre-W1 bundled) | `suite_shape MATCH`, `E1_conformance PASS`, `differential_agreement MATCH` (33/33), `ski_specimen MATCH`; boundary: executes foreign-key bytes exactly as E0 does |
-| W1's module (`55072bc0…`) against the `ski@v1` pin | `NOT_THE_PINNED_EVALUATOR` (negative control of the pin check) |
+| PyPI `sigma-glyph==0.6.7` wheel (downloaded, not installed) | sha256 `c3b7bc32…`; its `sigma_glyph.py` sha256 `80299d68…`, **byte-identical to the `v0.6.7` git tag module**; docstring "oracle semantics v0.5.x" |
+| that module vs Σ-GLYPH `v0.6.7` suite (format 2: `result_hash`, `atp_spent`, `outcome`) | `PASS` 33/33/33 |
+| that module vs Σ-GLYPH HEAD suite (format 3, adds `exit`) | `PARTIAL_UNREPORTABLE:exit` — 33/33/33 on the three fields; `exit` has no observable in a two-value engine |
+| that module vs warrant `conformance examples` | 67/67 (pre-W1 override; W1 differential mode) |
+| WRT-006 differential, that module as E1 vs E0 (pre-W1 bundled) | `suite_shape MATCH`, agreement 33/33, specimen MATCH; boundary: executes foreign-key bytes exactly as E0 |
+| `installed_engine_check.py` on that module + wheel, repository-default records | `ARTIFACT_AND_MODULE_PINNED_AND_CONFORMING`, `credit_bearing: true` |
+| W1's module (`55072bc0…`) vs the `ski@v1` selection | `NOT_THE_PINNED_EVALUATOR`; differential **not run**, module **not imported** |
+| a module with an import side effect, wrong sha | refused before import; side-effect marker absent |
+| caller-supplied manifest naming W1's module as `ski@v1` | `TEST_PROFILE_RESULT`, `authority: caller-supplied`, `credit_bearing: false` |
+| manifest with an extra field (`equivalence: witnessed`) | `REGISTRY_OR_MANIFEST_INVALID` (closed schema) |
+| registry with an altered suite digest | `semantic_conformance: FAIL` (registry binding) |
 
-Reproducers: `proposals/wrt-007-model/installed_engine_check.py` (pin + conformance),
-`proposals/wrt-006-model/differential.py` (six axes). Draft pin table:
-`proposals/wrt-007-model/runtime-pins.json`.
-
-So an artifact already exists, published through sigma-glyph's own OIDC release path on
-2026-07-31, that is a `ski@v1` evaluator by SPEC §3.1's definition, that Warrant did not write, and
-that Warrant does not need to copy.
+Reproducers: `proposals/wrt-007-model/installed_engine_check.py`; `proposals/wrt-006-model/differential.py`.
+Draft records: `proposals/wrt-007-model/runtime-registry.json`, `…/release-evaluator-manifest.json`.
 
 ## 3. The proposal
 
-### 3.1 Dependency, not copy
+### 3.1 Runtime registry — normative, per tag, owned by SPEC §13.1
 
-`pyproject.toml`: `dependencies = ["cryptography>=41", "sigma-glyph==0.6.7"]`; remove
-`sigma_glyph` from `py-modules`; delete `impl/sigma_glyph.py`. `pip install warrant-verify` then
-installs the evaluator as a dependency, so the README's offline promise ("`ski@v1` reasons re-run
-offline … no separate clone") holds unchanged: offline *after install*, exactly as today.
+```text
+ski@v1 → semantics: Book I v0.5 (SPEC §3.1)
+         body versions: 0.2
+         vector manifest: sigma-glyph v0.6.7 vectors.json (format 2) sha256 322fd290…, required
+                          {result_hash, atp_spent, outcome}; warrant examples/ski/* by sha256
+         store contract: §3.1 rule 2, enforced by Warrant's fetch layer
+ski@v2 → NOT REGISTERED (placeholder from WRT-006 B): Book I 0.6.0; format-3 manifest; new body version
+```
 
-### 3.2 Per-tag pin table, enforced at load
+The registry says what a tag *means* and what any evaluator — this repository's, a stranger's, a Go
+or Rust one — must satisfy. It names no implementation. It is the §13.1 registration table made
+machine-readable; a new tag is a new row, never an edit.
 
-A tracked file (proposed home `trust/runtime-evaluator-pins.json`, shape in
-`wrt-007-model/runtime-pins.json`) maps each registered runtime tag to **one** published artifact:
-distribution, version, wheel sha256, module sha256, and the conformance evidence that qualified it.
-`load_sigma()` resolves `sigma_glyph` from the installed environment, hashes the module file, and
-compares it to the tag's pin. Mismatch → the module is **not** used and every reason under that tag
-reports *unverified* with reason `evaluator-not-pinned` (§6 severity), never `pass`/`fail`. This
-replaces W1's "is the override byte-identical to the bundled file" test with "is the installed
-module the tag's pinned artifact" — the same fail-closed shape, with the copy removed.
+### 3.2 Release evaluator manifest — operational, per (release, tag), owned by the release
 
-### 3.3 `ski@v2` gets its own row, when registered
+```text
+(warrant-verify <release>, ski@v1) → form: vendored-file | distribution
+                                     module sha256 80299d68…
+                                     artifact provenance (distribution, version, wheel sha256)
+                                     conformance receipt sha256 (WRT-006 receipt at that module)
+(warrant-verify <release>, ski@v2) → null until ski@v2 is registered and a conforming module exists
+```
 
-WRT-006's B: Book I 0.6.0 is `ski@v2`. Its row in the pin table points at a **future published**
-sigma-glyph release whose module digest equals the registered pin; until such a release exists the
-row carries `null` digests and `ski@v2` reasons are unverified by construction. The phase-4a
-candidate wheel (`0.6.7+phase4a.5050ab7`) is deliberately unpublishable (PEP 440 local version,
-rejected by PyPI) and therefore cannot be a pin target — which is the correct outcome: a tag pins a
-published artifact or nothing.
+Exactly one evaluator per (release, tag). `load_sigma(tag)` locates the module file, hashes it
+**before import**, and compares it to the manifest; mismatch → the module is not imported and every
+reason under that tag reports *unverified* with reason `evaluator-not-pinned`. This replaces W1's
+"is the override byte-identical to the bundled file" with "is the file the release declared for this
+tag" — the same fail-closed shape, now addressable per tag and per release.
+
+### 3.3 Operational form — delivery-agnostic
+
+The manifest's `form` may be:
+
+- **vendored files, one per tag** — `impl/sigma_glyph_v05.py` (sha `80299d68…`, the v0.6.7 module)
+  for `ski@v1`; `impl/sigma_glyph_v06.py` (sha `55072bc0…`, W1's module) for `ski@v2` once
+  registered. No packaging change, no PyPI dependency, no one-version-per-environment problem, and
+  the README's offline promise holds trivially. **Recommended now**: the owner's "simplify without
+  losing integrity" is exactly this — integrity is the digest in the manifest, not the channel.
+- **a published distribution** — `sigma-glyph==0.6.7` by wheel digest, or a future frozen
+  distribution per frozen tag (`sigma-glyph-book1-v05`). Same manifest, different `form`. This is
+  what an IPFS/torrent/registry delivery layer would later fill in; the manifest does not change.
+
+Whichever form, `installed_engine_check.py` verifies the module against the manifest and the tag
+against the registry; `artifact_identity` is `VERIFIED` only when a wheel is presented and both the
+wheel digest and the module inside it match.
 
 ### 3.4 Identity-by-Hash stays in Warrant
 
-W1's fetch-layer refusal (`run_ski_check`, `tests/sigma_cas_identity.py`) is kept. A v0.5 evaluator
-executes foreign-key bytes (measured); Warrant's store contract (§3.1 rule 2: the store IS the CAS)
-is enforced *before* any bytes reach the evaluator. This is Warrant's rule about Warrant's store,
-independent of which Book I edition the tag names — so WRT-006's boundary divergence never becomes
-observable through Warrant under either tag.
+W1's fetch-layer refusal (`run_ski_check`, `tests/sigma_cas_identity.py`) is kept and is now the
+registry's `store_contract`. A v0.5 evaluator executes foreign-key bytes (measured); Warrant's store
+contract refuses them *before* any evaluator sees them, under either tag.
 
-### 3.5 The hard constraint, stated rather than hidden
+### 3.5 What this changes in the dependency graph
 
-Python installs **one** version of a distribution. Once `ski@v2` pins a `sigma-glyph` 0.7.x
-release, one environment cannot hold both `sigma-glyph==0.6.7` (for `ski@v1`) and 0.7.x (for
-`ski@v2`) under the same distribution name. Three ways out, in order of preference:
-
-1. **A frozen distribution per frozen tag.** sigma-glyph publishes the v0.5-era Book I module
-   under a distinct distribution name (e.g. `sigma-glyph-book1-v05`, importable as
-   `sigma_glyph_v05`), byte-identical to the 0.6.7 module, and never releases it again. A frozen
-   tag gets a frozen package. This is the cleanest expression of §13.1 and of Σ-GLYPH's own
-   "hashes remain valid artifacts of their era". Cost: one publishing act by the sigma-glyph
-   roster; a one-line import map in the pin table.
-2. **One installed edition; the other tag reports unverified.** Warrant pins whichever edition
-   the release targets; reasons under the other tag are reported *unverified* with a named reason.
-   Honest, cheap, and it degrades old records' verifiability — B's own fallback.
-3. **Extras.** `warrant-verify[ski-v1]` / `[ski-v2]` selecting the distribution. Only works if (1)
-   exists; otherwise it is (2) with a nicer spelling.
-
-The proposal recommends **(1)**, and until it exists, **(2)** with `ski@v1` installed — because
-every existing record is `ski@v1`.
-
-### 3.6 The knot, and what cutting it changes
-
-Today the dependency picture is a copy in one direction and a CLI call in the other:
-
-```text
-warrant ──copies──▶ sigma-glyph impl/sigma_glyph.py       (runtime, hidden in a file)
-sigma-glyph CI ──clones + runs──▶ warrant CLI              (governance tooling, WARRANT_PIN)
-sigma-glyph Book III ──is a profile of──▶ Warrant v0.3     (normative text)
-```
-
-After WRT-007 the runtime edge is an explicit package dependency, digest-pinned, resolvable by
-`pip` and auditable by `installed_engine_check.py`; the reverse edges are unchanged and named for
-what they are — governance tooling and a normative profile relation — not runtime. At the
-artifact level the graph is acyclic: `sigma-glyph` (the wheel) imports nothing from Warrant. The
-bootstrap *practice* (each repo needs the other's tool to run its gates) remains, and remains
-credit-free; what is removed is the one place where the cycle could silently change semantics.
+The runtime edge warrant → Σ-GLYPH Book I becomes a per-tag, per-release, digest-addressed
+selection record instead of an anonymous file. The reverse edges (sigma-glyph CI running the
+warrant CLI for governance; Book III as a Warrant v0.3 profile) are unchanged and remain what they
+are — tooling and a normative profile relation. The bootstrap practice stays and stays credit-free;
+what is removed is the one place where the cycle could silently change semantics under a frozen name.
 
 ## 4. What this proposal does not claim
 
-- That `sigma-glyph==0.6.7` is *proven* equivalent to the pre-W1 bundled module on the admitted
-  domain. It is measured equal on 33 + 1 inputs, both pass the normative suites, and both behave
-  alike on the boundary. Equivalence on D is not claimed by WRT-006 and not by this.
-- That a PyPI dependency is more available than a file. It is less: PyPI can be down, a version can
-  be yanked. The pin table records the wheel digest so a mirrored or vendored *wheel* (not a loose
-  file) can satisfy it; `--require-hashes` in CI is the enforcement.
-- That sigma-glyph will publish anything. §3.5(1) is a request to its roster, not an assumption.
+- Equivalence of the v0.6.7 module and the pre-W1 bundled module on the admitted domain — measured
+  equal on 33 + 1 inputs and both conforming to the tag's manifest; not proven equal.
+- That a vendored file is "published" — `artifact_identity` is `NOT_VERIFIED` for a loose file, and
+  the manifest records artifact provenance as provenance, not as a runtime dependency.
+- That the registry is adopted: it is a draft machine form of §13.1's table; adopting it is a SPEC
+  document-version bump.
 - Any change to what `warrant-verify` 0.9.0 does today.
 
 ## 5. Falsifiers
 
-1. The published 0.6.7 module fails any warrant `ski@v1` vector or the specimen → the pin is wrong;
-   the proposal is withdrawn until an artifact that passes exists.
-2. `load_sigma()` cannot locate the installed module's file to hash it in some supported
-   environment (zipimport, frozen apps) → the pin check needs a second witness (distribution
-   `RECORD` hash) and the proposal says so.
-3. The sigma-glyph roster declines §3.5(1) → the proposal falls back to §3.5(2) and says so at
-   the top; it does not silently re-vendor.
-4. A consumer exists that imports `warrant.sigma_glyph` by that path → migration note required.
+1. The v0.6.7 module fails any vector of the `ski@v1` registry manifest or the specimen → the
+   selection is wrong; withdraw until a conforming module exists.
+2. A supported environment in which the module file cannot be located and hashed before import
+   (zipimport, frozen apps) → `load_sigma` needs a second witness (distribution `RECORD`) and the
+   proposal says so.
+3. A consumer imports `warrant.sigma_glyph` by path → migration note required.
+4. The owner declines per-tag selection as over-engineering for a repository with no external
+   consumers → the minimum that survives is one line: the module sha per tag in the provenance
+   record, checked before import. Everything else in this document is optional above that line.
 
 ## 6. Stopping rule
 
-rev 1 → one adversarial gate plus the owner's disposition. Findings against §3.1–§3.4 are
-amended once; a second AMEND on the same layer closes the proposal as *deferred* with the
-measurements of §2 retained. §3.5 is a request to another repository's governance and is not
-argued past the owner's answer.
+rev 2 → one adversarial gate plus the owner's disposition. Findings against §3.1–§3.4 amended
+once; a second AMEND on the same layer closes the proposal as *deferred* with §2 retained.
 
 ## 7. Relation to other documents
 
-- WRT-006 (closed, B): this proposal supplies the evaluator per tag that B presupposes.
-- ADR-012 (sigma-glyph, DRAFT) and the internal-substrate brief: metric #2 and the vendoring kill
-  criterion are what §3.1 meets for Warrant.
-- W1 (`trust/sigma-evaluator-provenance.json`, `tools/sigma_provenance_check.py`): superseded in
-  role by the pin table if adopted; kept as the provenance of the `ski@v2` candidate.
-- `manifesto/drafts/KELVIN-LAYERS-0.1.md` (non-normative): "a frozen name gets a frozen package";
-  vocabulary only.
+- WRT-006 (closed, B): this supplies the per-tag evaluator that B presupposes.
+- W1 (`trust/sigma-evaluator-provenance.json`, `tools/sigma_provenance_check.py`): its record
+  becomes the `ski@v2` row's artifact provenance; its pin check becomes `load_sigma(tag)`.
+- ADR-012 / internal-substrate brief (sigma-glyph): metric #2's intent met without a channel choice.
+- `manifesto/drafts/KELVIN-LAYERS-0.1.md` (non-normative): frozen name, frozen bytes, moved
+  implementation → new name; vocabulary only.
