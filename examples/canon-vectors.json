@@ -1,6 +1,6 @@
 {
   "canon_vectors": "warrant.canon-vectors@v0",
-  "note": "SPEC \u00a74 escaping/width battery, \u00a78.4. For each case, canonical_json(body) MUST equal the bytes in canon_hex and SHA-256 of those bytes MUST equal warrant_id. Bodies are given with ensure_ascii escaping so this file is pure ASCII; the escapes are JSON transport, not canonical output. schema_valid says whether the body is also \u00a72-schema-valid: canonicalization is independent of schema validity, and one case (a 201-code-point note) is canonical-and-invalid on purpose. Every control code point U+0000..U+001F appears, plus the JCS reimplementation traps: the \\b/\\f short forms, U+2028/29 and <>& raw-emission, NFC vs NFD (never normalized), astral planes, and the 200-code-point note boundary.",
+  "note": "SPEC \u00a74 escaping/width battery, \u00a78.4. For each case, canonical_json(body) MUST equal the bytes in canon_hex and SHA-256 of those bytes MUST equal warrant_id. Bodies are given with ensure_ascii escaping so this file is pure ASCII; the escapes are JSON transport, not canonical output. schema_valid says whether the body is also \u00a72-schema-valid: canonicalization is independent of schema validity. Two cases are canonical-and-invalid on purpose: a 201-code-point note and a free-key object that distinguishes UTF-16 order from locale and Unicode-scalar ordering. Every control code point U+0000..U+001F appears, plus the JCS reimplementation traps: the \\b/\\f short forms, U+2028/29 and <>& raw-emission, NFC vs NFD (never normalized), astral planes, and the 200-code-point note boundary.",
   "cases": [
     {
       "name": "ctrl-U+0000",
@@ -1131,6 +1131,18 @@
       "canon_hex": "7b226163746f72223a7b226964223a226167656e742d784076656e646f72227d2c2262656361757365223a5b5d2c226465636973696f6e223a2270726f706f7365222c2265766964656e6365223a5b5d2c227072696f72223a5b5d2c227375626a656374223a7b2268617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226e6f7465223a226f72646572227d2c227473223a313735313730303030302c22756e646572223a5b2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262225d2c2277617272616e74223a22302e31227d",
       "warrant_id": "0f55d094f083db455533399c18a1faabeb7d213708c69aaef72fa819c591140b",
       "schema_valid": true
+    },
+    {
+      "name": "key-order-utf16",
+      "body": {
+        "a": 1,
+        "Z": 2,
+        "\ud800\udc00": 3,
+        "\ue000": 4
+      },
+      "canon_hex": "7b225a223a322c2261223a312c22f0908080223a332c22ee8080223a347d",
+      "warrant_id": "ad96cc3e612384fe0d0069af6964d7f3682ee2f52b372f6bc8186e8ef6d3c912",
+      "schema_valid": false
     }
   ]
 }

@@ -1418,6 +1418,24 @@
       }
     },
     {
+      "id": "canon/key-order-utf16",
+      "polarity": "positive",
+      "spec": "\u00a78.4",
+      "why": "canonicalization battery case key-order-utf16",
+      "input": {
+        "body": {
+          "a": 1,
+          "Z": 2,
+          "\ud800\udc00": 3,
+          "\ue000": 4
+        }
+      },
+      "expect": {
+        "canon_hex": "7b225a223a322c2261223a312c22f0908080223a332c22ee8080223a347d",
+        "warrant_id": "ad96cc3e612384fe0d0069af6964d7f3682ee2f52b372f6bc8186e8ef6d3c912"
+      }
+    },
+    {
       "id": "canon/spec8-propose",
       "polarity": "positive",
       "spec": "\u00a78",

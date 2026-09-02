@@ -1,6 +1,6 @@
 {
   "tag": "warrant.conformance-pack@v1",
-  "pack_version": "1.1.0",
+  "pack_version": "1.2.0",
   "protocol": "warrant-conformance/1",
   "contract": "CONTRACT.md",
   "spec": "SPEC.md \u2014 Warrant 0.6.0 (sections \u00a72 \u00a73 \u00a74 \u00a75 \u00a76 \u00a78)",
@@ -64,7 +64,7 @@
       "class": "canon",
       "grade": "base",
       "file": "canon.json",
-      "vectors": 51
+      "vectors": 52
     },
     {
       "class": "blob-hash",
@@ -115,5 +115,5 @@
       "vectors": 1
     }
   ],
-  "total_vectors": 138
+  "total_vectors": 139
 }

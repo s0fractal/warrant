@@ -308,13 +308,13 @@ and what is and is not true about it so far, is one page:
 ours:
 
 ```bash
-python3 conformance/run.py --candidate "./your-verifier probe"   # 138 vectors
+python3 conformance/run.py --candidate "./your-verifier probe"   # 139 vectors
 python3 conformance/run.py --candidate "./your-verifier probe" --self-check
 ```
 
 Your side of it is one page (`conformance/CONTRACT.md`): read one JSON request
 from stdin, print one JSON response, exit 0 whenever you produced an answer. 62
-of the 138 vectors are MUST-REJECT, so an implementation that accepts everything
+of the 139 vectors are MUST-REJECT, so an implementation that accepts everything
 fails loudly rather than scoring well; `--self-check` breaks *your* program on
 purpose and fails if the runner does not notice — and reports a break that had
 nothing to corrupt as `INAPPLICABLE` rather than as its own failure, because on

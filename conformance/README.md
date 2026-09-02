@@ -1,4 +1,4 @@
-# Warrant conformance pack 1.0.0
+# Warrant conformance pack 1.2.0
 
 **Does your Warrant implementation agree with the specification?** Run this
 against it and find out. You do not need to clone the Warrant repository, and
@@ -6,9 +6,9 @@ this runner never executes a Warrant reference implementation — it only knows 
 to talk to yours.
 
 ```
-curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.1.0.tar.gz
-tar xzf warrant-conformance-1.1.0.tar.gz
-cd warrant-conformance-1.1.0
+curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.2.0.tar.gz
+tar xzf warrant-conformance-1.2.0.tar.gz
+cd warrant-conformance-1.2.0
 python3 run.py --candidate "./my-verifier probe"
 ```
 
@@ -84,7 +84,7 @@ Four outcomes per vector, never three:
 Vectors above your claimed grade are reported as `NOT CLAIMED`, which is an
 honest result rather than a gap.
 
-**Negative vectors carry equal weight.** 62 of the 138 vectors are MUST-REJECT:
+**Negative vectors carry equal weight.** 62 of the 139 vectors are MUST-REJECT:
 bodies that must not validate, signatures that must not verify, bytes that must
 not parse, broken stores whose defects must be reported. An implementation whose
 `validate()` returns `true` unconditionally passes *every positive vector here*,
@@ -203,7 +203,7 @@ already had; it is also why that figure grew from the ~35 s an earlier revision
 of this file measured.
 
 Those seconds are your program's start-up cost, paid once per vector: the runner
-spawns the candidate 138 times rather than holding a session open, because a
+spawns the candidate 139 times rather than holding a session open, because a
 stateless contract is one you can satisfy with a shell script. A compiled
 candidate is substantially faster. An earlier draft of this file claimed "904 ms
 from extraction to verdict" — that measured extraction plus a trivial candidate,

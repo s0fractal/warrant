@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -392,10 +393,8 @@ func scanDupKeys(dec *json.Decoder) (bool, error) {
 	return false, nil
 }
 
-// canonicalJSON implements the exact v0.1 JCS subset used by SPEC §4:
-// UTF-8, compact separators, sorted object keys, and integers only. The
-// bytewise sort is equivalent to JCS UTF-16 ordering for v0.1 schema-fixed
-// ASCII keys; future free-form keys must revisit this shortcut.
+// canonicalJSON implements the integer-only JCS domain used by SPEC §4:
+// UTF-8, compact separators, UTF-16-ordered object keys, and integers only.
 func canonicalJSON(v any) ([]byte, error) {
 	var b bytes.Buffer
 	if err := writeCanonical(&b, v); err != nil {
@@ -448,7 +447,7 @@ func writeCanonical(b *bytes.Buffer, v any) error {
 		for k := range x {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		sort.Slice(keys, func(i, j int) bool { return utf16Less(keys[i], keys[j]) })
 		b.WriteByte('{')
 		for i, k := range keys {
 			if i > 0 {
@@ -466,6 +465,20 @@ func writeCanonical(b *bytes.Buffer, v any) error {
 		return fmt.Errorf("unsupported JSON value %T", v)
 	}
 	return nil
+}
+
+// utf16Less implements RFC 8785 / ECMAScript object-member ordering. Go's
+// ordinary string order compares UTF-8 bytes; that agrees for ASCII but not
+// when an astral key is compared with a BMP key at or above U+E000.
+func utf16Less(a, b string) bool {
+	au := utf16.Encode([]rune(a))
+	bu := utf16.Encode([]rune(b))
+	for i := 0; i < len(au) && i < len(bu); i++ {
+		if au[i] != bu[i] {
+			return au[i] < bu[i]
+		}
+	}
+	return len(au) < len(bu)
 }
 
 // quoteJSONString serializes a string per RFC 8785 (JCS). We deliberately do

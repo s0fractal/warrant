@@ -222,7 +222,7 @@ Both reference implementations' `conformance` command loads and checks this file
 
 The §8/§8.2 vectors pin *records*; §8.3 pins what MUST be rejected. `examples/canon-vectors.json` pins the **§4 canonicalization surface** those never reach: a `warrant.canon-vectors@v0` document whose `cases` array carries, for each case, an input `body`, the canonical bytes as `canon_hex`, and the resulting `warrant_id`.
 
-For every case, an implementation MUST produce `canonical_json(body)` equal byte-for-byte to `canon_hex` and a WarrantID equal to `warrant_id`. The battery covers every control code point U+0000–U+001F (the `\b`/`\f` short-form trap that split Go's `encoding/json`), `<` `>` `&` `/` and U+2028/U+2029 emitted **raw** (§4), NFC vs NFD as distinct content, astral-plane code points, C1/DEL, control characters in `actor.id` and in a prose reason, a 9007199254740991 `ts`, the 200/201-code-point `note` boundary (the byte-vs-code-point split), and key-order insensitivity.
+For every case, an implementation MUST produce `canonical_json(body)` equal byte-for-byte to `canon_hex` and a WarrantID equal to `warrant_id`. The battery covers every control code point U+0000–U+001F (the `\b`/`\f` short-form trap that split Go's `encoding/json`), `<` `>` `&` `/` and U+2028/U+2029 emitted **raw** (§4), NFC vs NFD as distinct content, astral-plane code points, C1/DEL, control characters in `actor.id` and in a prose reason, a 9007199254740991 `ts`, the 200/201-code-point `note` boundary (the byte-vs-code-point split), key-order insensitivity, and a free-key object whose `Z`, `a`, U+10000 and U+E000 members distinguish UTF-16 code-unit order from both locale collation and Unicode scalar-value order. The free-key object is outside the Warrant body schema but inside the independently specified canonicalization class: `schema_valid: false` records that boundary rather than borrowing body-validity credit.
 
 The bodies are stored with `\uXXXX` transport escaping so the file is pure ASCII; that escaping is a property of *this file*, not of canonical output — canonical output is what `canon_hex` says.
 
@@ -277,7 +277,7 @@ digest is SHA-256 of that manifest:
 
 | artifact | SHA-256 |
 | --- | --- |
-| conformance pack 1.1.0 (`MANIFEST.sha256`) | `ddd825a86bd0bfe6bb15971bf32bc74dfa1aa10351a60c0001cbc81adee0c78f` |
+| conformance pack 1.2.0 candidate (`MANIFEST.sha256`) | `5a7360ba655aae7652b47c4b5882beed7eb9ce17403aaf0b35da628c22c3bd58` |
 
 Verify with `python3 run.py --verify-pack` and compare against the line above at
 the spec revision you are implementing. Because this document is versioned and

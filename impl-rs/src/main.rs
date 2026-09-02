@@ -127,7 +127,7 @@ enum Json {
     Float(String), // a non-integer number: parseable but never canonical (SPEC §2)
     Str(String),
     Array(Vec<Json>),
-    Object(BTreeMap<String, Json>), // sorted (JCS order for ASCII keys) + dup-detecting
+    Object(BTreeMap<String, Json>), // dup-detecting; canon applies UTF-16 order
 }
 
 struct Parser<'a> {
@@ -358,7 +358,9 @@ fn canon(v: &Json, out: &mut Vec<u8>) -> Result<(), String> {
         }
         Json::Object(m) => {
             out.push(b'{');
-            for (i, (k, val)) in m.iter().enumerate() {
+            let mut entries: Vec<_> = m.iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.encode_utf16().cmp(b.encode_utf16()));
+            for (i, (k, val)) in entries.into_iter().enumerate() {
                 if i > 0 {
                     out.push(b',');
                 }

@@ -116,6 +116,11 @@ def cases():
     # Key-order insensitivity (canon sorts): same body, keys shuffled.
     b = body(note="order")
     yield ("shuffled-keys", dict(reversed(list(b.items()))))
+    # One ordering vector catches two common non-JCS substitutes at once:
+    # locale collation puts "a" before "Z", while Unicode scalar/UTF-8 order
+    # puts U+E000 before U+10000. RFC 8785 UTF-16 order is exactly the sequence
+    # below: Z, a, U+10000 (D800 DC00), U+E000.
+    yield ("key-order-utf16", {"a": 1, "Z": 2, "\U00010000": 3, "\uE000": 4})
 
 
 def run(cmd, path):
@@ -162,9 +167,10 @@ def emit():
                  "given with ensure_ascii escaping so this file is pure ASCII; "
                  "the escapes are JSON transport, not canonical output. "
                  "schema_valid says whether the body is also §2-schema-valid: "
-                 "canonicalization is independent of schema validity, and one "
-                 "case (a 201-code-point note) is canonical-and-invalid on "
-                 "purpose. Every "
+                 "canonicalization is independent of schema validity. Two "
+                 "cases are canonical-and-invalid on purpose: a 201-code-point "
+                 "note and a free-key object that distinguishes UTF-16 order "
+                 "from locale and Unicode-scalar ordering. Every "
                  "control code point U+0000..U+001F appears, plus the JCS "
                  "reimplementation traps: the \\b/\\f short forms, U+2028/29 "
                  "and <>& raw-emission, NFC vs NFD (never normalized), astral "

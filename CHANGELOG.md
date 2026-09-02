@@ -26,6 +26,18 @@ right.
 
 ## Unreleased
 
+**Conformance pack 1.2.0 candidate — UTF-16 member ordering is now exercised, not only stated.**
+
+- Added one schema-invalid-but-canonical §8.4 vector whose keys sort differently
+  under locale collation, Unicode scalar-value order, and RFC 8785 UTF-16
+  code-unit order. This exposed the same latent ASCII-key shortcut in the
+  Python, Go and Rust reference canonicalizers; all three now implement UTF-16
+  ordering over the full canonicalization-class input domain.
+- The vector corpus grows from 138 to 139 (base 134 to 135); the 62
+  MUST-REJECT vectors are unchanged. Published pack 1.1.0 remains immutable;
+  the new corpus is versioned 1.2.0 and is not a release merely because these
+  source bytes exist.
+
 **SPEC document change, no body-schema change: `ski@v2` reserved as a candidate, registered/admitted nowhere; one bundled evaluator per runtime tag.**
 
 - SPEC §3.2 reserves candidate **`ski@v2`** = Σ-GLYPH Book I 0.6.0 (adopted bundle v0.7.0); §13.1 gains
