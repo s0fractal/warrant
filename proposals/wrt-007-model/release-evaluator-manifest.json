@@ -1,0 +1,52 @@
+{
+  "schema": "warrant/release-evaluator-manifest@draft-1",
+  "note": "DRAFT for WRT-007 §3.2. One ACTIVE evaluator per (release, tag); candidates are inert. Read by nothing on master.",
+  "warrant_release": {
+    "commit": "49154941e075715da5e8705a1fe4b94d4b0e4e2d",
+    "tag": null,
+    "status": "unreleased (branch proposals/wrt-006-ski-v1-equivalence-gate, base origin/master)"
+  },
+  "registry_ref": "runtime-registry.json",
+  "registry_sha256": "6fd8248d197eb4edb22be33413de7d4af211dea4931de3b2e413f737d7f93ab9",
+  "activation": {
+    "status": "draft",
+    "act": null,
+    "note": "never-activatable-in-this-form (WRT-007 §8): activation is a separate externally-bound governance record; this manifest is design evidence"
+  },
+  "evaluators": {
+    "ski@v1": {
+      "selection_status": "active",
+      "form": "vendored-file",
+      "module": "impl/sigma_glyph_v05.py (proposed path)",
+      "module_sha256": "80299d6869e7c93ece3455db32c0a6a1346a8b7162e6ef0954a4bd425497bab5",
+      "artifact": {
+        "distribution": "sigma-glyph",
+        "version": "0.6.7",
+        "wheel_filename": "sigma_glyph-0.6.7-py3-none-any.whl",
+        "wheel_sha256": "c3b7bc32a7a3b71e037ca367fb2fbfdb45437146185c2e1336ac1c866b571bca",
+        "note": "same bytes as the v0.6.7 git tag module; provenance of the bytes, not a runtime dependency"
+      },
+      "selected_runtime_record_commitment": "7289ec9bde2b89a70a3c36871221994cc6bdd8dee9fc478be98d9b683f52c271",
+      "conformance_receipt_sha256": "5906c2440885563346a8e029692f58718e7c5aab7aea348d3cd51796c44abe0e",
+      "conformance_note": "core_sha256 of the WRT-006 receipt (differential.py, this module as E1) — host paths excluded"
+    }
+  },
+  "candidates": {
+    "ski@v2": {
+      "selection_status": "candidate",
+      "form": "vendored-file",
+      "module": "impl/sigma_glyph_v06.py (proposed path)",
+      "module_sha256": "55072bc02e63987898fd60125e8bb5b14a6233b081ba158e0253755652323825",
+      "artifact": {
+        "distribution": "sigma-glyph",
+        "version": "0.6.7+phase4a.5050ab7 (unpublishable local version)",
+        "wheel_filename": "sigma_glyph-0.6.7+phase4a.5050ab7-py3-none-any.whl",
+        "wheel_sha256": "cfee921858378493e692f052b8fe253e1a85603b3a93d0df1dde1aba7ba70a6a",
+        "note": "from trust/sigma-evaluator-provenance.json (W1)"
+      },
+      "selected_runtime_record_commitment": "95c94a253500dcb3f6a74e41de863022931b0687e8bd597f7b698fdab81b28a3",
+      "conformance_receipt_sha256": null,
+      "conformance_note": "inert until ski@v2 is registered; a candidate is never used by load_sigma"
+    }
+  }
+}

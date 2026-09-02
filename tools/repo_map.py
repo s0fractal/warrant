@@ -116,6 +116,28 @@ CANONICAL = {
     "WRT-005": {"lives_in": "this repo, `proposals/wrt-005-outcome-fingerprint-purity`",
                 "commit": None,
                 "path": "proposals/WRT-005-outcome-fingerprint-purity.md"},
+    "WRT-006": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: B)",
+                "commit": None,
+                "path": "proposals/WRT-006-ski-v1-implementation-substitution.md"},
+    "WRT-007": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED)",
+                "commit": None,
+                "path": "proposals/WRT-007-per-tag-evaluator-dependency.md"},
+}
+
+
+# Identifier collisions: one number carried by more than one document. A map
+# that silently picks one target turns a collision into a wrong answer. Every
+# entry is pinned `commit:path` and fail-closed like CANONICAL; MAP.md gets a
+# dedicated section and `--check-map` requires both targets to be listed.
+COLLISIONS = {
+    "WRT-004": [
+        {"lives_in": "closed PR #21 (verify-report) — the CANONICAL target",
+         "commit": "7f40932060ded9a1fde7e6b74e91334e73b8080e",
+         "path": "proposals/WRT-004-verify-report-v1.md"},
+        {"lives_in": "branch `papers/the-reason-runs-again` (draft PR #30), reason-binding profile — NOT on master",
+         "commit": "23ef8103606ecadfa650886fa412720ccd49980a",
+         "path": "proposals/WRT-004-reason-binding-profile.md"},
+    ],
 }
 
 
@@ -162,6 +184,12 @@ def _canonical_self_check():
         e = CANONICAL[ident]
         tgt = f"{e['commit']}:{e['path']}" if e["commit"] else e["path"]
         print(f"CANONICAL: {ident} -> {tgt} does not resolve", file=sys.stderr)
+    for ident, entries in COLLISIONS.items():
+        for e in entries:
+            if not _canonical_ok(e):
+                bad.append(ident)
+                print(f"COLLISION: {ident} -> {e['commit']}:{e['path']} does not resolve",
+                      file=sys.stderr)
     return not bad
 
 
@@ -188,6 +216,22 @@ def _citation_table(text):
             break
         rows.append([c.strip() for c in s.strip("|").split("|")])
     return rows
+
+
+def _collision_section(text):
+    """Lines of the '## Known identifier collisions' section only (up to the
+    next H2), so a target quoted elsewhere in the file does not count."""
+    lines = text.splitlines()
+    try:
+        start = lines.index("## Known identifier collisions")
+    except ValueError:
+        return []
+    out = []
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        out.append(line.rstrip())
+    return out
 
 
 def _table_rows_for(ident, rows):
@@ -348,6 +392,18 @@ def main():
                 wrong.append(i)
                 print(f"CANONICAL DRIFT: {i}'s row must be exactly {expected}; "
                       f"found {rws[0]}", file=sys.stderr)
+        # Every declared collision must appear as an EXACT bullet inside the
+        # "Known identifier collisions" section -- not as a substring anywhere
+        # (Codex, WRT-006 rev 2 gate: a target moved into prose kept the check green).
+        section = _collision_section(text)
+        for ident, entries in COLLISIONS.items():
+            for e in entries:
+                bullet = f"- `{ident}` — {e['lives_in']}: `{e['commit']}:{e['path']}`"
+                if bullet not in section:
+                    wrong.append(ident)
+                    print(f"COLLISION MISSING: exact bullet for {ident} -> "
+                          f"{e['commit']}:{e['path']} is not in the collisions "
+                          f"section of MAP.md -- regenerate", file=sys.stderr)
         stale = [ln for ln in text.splitlines() if "resolves nowhere" in ln]
         for ln in stale:
             print(f"UNRESOLVED in MAP.md: {ln.strip()}", file=sys.stderr)
@@ -392,6 +448,17 @@ def main():
     ]
     for ident, where, path, by in rows:
         out.append(f"| `{ident}` | {where} | {path} | `{by}` |")
+
+    if COLLISIONS:
+        out += ["", "## Known identifier collisions", "",
+                "One number, more than one document. The citation table above",
+                "carries the canonical target; every other bearer of the number is",
+                "listed here, pinned, so that a reader who finds the other file does",
+                "not take it for the canonical one. A collision is a defect to",
+                "resolve by renumbering; until then it is recorded, not hidden.", ""]
+        for ident, entries in COLLISIONS.items():
+            for e in entries:
+                out.append(f"- `{ident}` — {e['lives_in']}: `{e['commit']}:{e['path']}`")
 
     if unresolved:
         out += ["", "## Cited and resolving nowhere", "",

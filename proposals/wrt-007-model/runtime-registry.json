@@ -1,0 +1,90 @@
+{
+  "schema": "warrant/runtime-registry@draft-1",
+  "note": "DRAFT for WRT-007 §3.1. NORMATIVE identity of each runtime tag, bound to exact SPEC bytes and a vector manifest commitment. Names no implementation. Read by nothing on master.",
+  "tags": {
+    "ski@v1": {
+      "status": "registered",
+      "semantics": {
+        "text": "Sigma-GLYPH Book I v0.5",
+        "spec_path": "SPEC.md",
+        "spec_sections": [
+          "§3.1",
+          "§13.1"
+        ],
+        "spec_commit": "49154941e075715da5e8705a1fe4b94d4b0e4e2d",
+        "spec_sha256": "764a3ac044accc7330bfc6af0cfb19ea76acb45e6e4d1683de94ca6b5748f8a5"
+      },
+      "body_versions": [
+        "0.2"
+      ],
+      "vector_manifest": {
+        "sigma_book1_suite": {
+          "ref": "sigma-glyph v0.6.7 tests/spec_conformance/vectors.json",
+          "format_version": 2,
+          "sha256": "322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85",
+          "required_fields": [
+            "result_hash",
+            "atp_spent",
+            "outcome"
+          ]
+        },
+        "warrant_ski_specimen": {
+          "path": "examples/ski/",
+          "files_sha256": {
+            "89bf5669baa47176938fd5d514c097c4dcdd710da8f4f62e2e0d1748bc2d2798.bin": "89bf5669baa47176938fd5d514c097c4dcdd710da8f4f62e2e0d1748bc2d2798",
+            "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad.bin": "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad",
+            "accept-ski.warrant.json": "fd4d243b3fcc33b8dd27c7a3875b4673e1011e63fe3692c5290f247675deadda",
+            "bed95fbc7ccd2cf53d3562138a69a90a9c38de9f7a23d9015eef1b6638d4eb1d.bin": "bed95fbc7ccd2cf53d3562138a69a90a9c38de9f7a23d9015eef1b6638d4eb1d",
+            "c004c81972ff1f9b517157a44bb7ee266ae74de5ea94088ce17037072896c9c1.bin": "c004c81972ff1f9b517157a44bb7ee266ae74de5ea94088ce17037072896c9c1",
+            "check.json": "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad",
+            "d1b6a6982b4a8c4b04c83d3adbf7aba04f587891f67b5ddb81d95bcd83cb6843.bin": "d1b6a6982b4a8c4b04c83d3adbf7aba04f587891f67b5ddb81d95bcd83cb6843"
+          }
+        }
+      },
+      "vector_manifest_commitment": "9dfb56241b77b49016b5d16bdba7f78ea0718577fb0ec402d543dcb4d57528da",
+      "store_contract": {
+        "rule": "SPEC §3.1 rule 2 — every demanded object resolves among the store's blobs; bytes under a key they do not hash to are refused before any evaluator sees them",
+        "spec_sha256": "764a3ac044accc7330bfc6af0cfb19ea76acb45e6e4d1683de94ca6b5748f8a5",
+        "enforced_by": "impl/warrant.py run_ski_check",
+        "test_path": "tests/sigma_cas_identity.py",
+        "test_sha256": "5dfcec0da02a54c9fa15ac0cfcb2437a019737b105177d1df3023e12aa41de58"
+      }
+    },
+    "ski@v2": {
+      "status": "unregistered",
+      "semantics": {
+        "text": "Sigma-GLYPH Book I 0.6.0 (adopted bundle v0.7.0) — pending SPEC §13.1 registration and a new body version",
+        "spec_path": "SPEC.md",
+        "spec_sections": [],
+        "spec_commit": null,
+        "spec_sha256": null
+      },
+      "body_versions": [],
+      "vector_manifest": {
+        "sigma_book1_suite": {
+          "ref": "sigma-glyph tests/spec_conformance/vectors.json at the adopted v0.7.0 anchor",
+          "format_version": 3,
+          "sha256": null,
+          "required_fields": [
+            "result_hash",
+            "atp_spent",
+            "outcome",
+            "exit"
+          ]
+        },
+        "warrant_ski_specimen": {
+          "path": "examples/ski/",
+          "files_sha256": {}
+        }
+      },
+      "vector_manifest_commitment": "c338caca5da59775f6a27a4366e8395f7130fc53da4331cf0005b3d652a6a437",
+      "store_contract": {
+        "rule": "as ski@v1",
+        "spec_sha256": "764a3ac044accc7330bfc6af0cfb19ea76acb45e6e4d1683de94ca6b5748f8a5",
+        "enforced_by": "impl/warrant.py run_ski_check",
+        "test_path": "tests/sigma_cas_identity.py",
+        "test_sha256": "5dfcec0da02a54c9fa15ac0cfcb2437a019737b105177d1df3023e12aa41de58"
+      }
+    }
+  }
+}
