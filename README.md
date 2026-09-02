@@ -53,7 +53,11 @@ pipx install warrant-verify   # or: pip install warrant-verify
 Installs four commands: the `warrant` verifier, the `warrant-mcp` sealing proxy,
 the `warrant-mcp-server` MCP server, and the `warrant-anchor` Merkle batcher.
 `ski@v1` reasons re-run **offline** — the Σ-GLYPH Book I check engine ships
-inside the package, so no separate clone is needed. (From a checkout:
+inside the package, so no separate clone is needed. One evaluator per runtime
+tag, pinned by digest and checked before it is loaded (`ski@v1` = Book I v0.5,
+`sigma_glyph_v05`; reserved candidate `ski@v2` = Book I 0.6.0,
+`sigma_glyph_v06`, not registered or admitted in any body version — SPEC §3.2,
+§13.2). (From a checkout:
 `git clone … && pip install .`.)
 
 The latest release **on PyPI is 0.9.0**, which is what that line installs and

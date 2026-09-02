@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Bind the bundled Sigma evaluator to the candidate wheel it came from.
 
-This checks ONE dependency boundary — `impl/sigma_glyph.py` — against
+This checks ONE dependency boundary — the vendored module named by the manifest
+(`vendored_path`, today `impl/sigma_glyph_v06.py`, the ski@v2 evaluator) — against
 `trust/sigma-evaluator-provenance.json` and the authoritative Sigma build
 receipt it names. It is not a general vendoring framework.
 
@@ -39,14 +40,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "trust/sigma-evaluator-provenance.json"
-VENDORED = ROOT / "impl/sigma_glyph.py"
+MAP = ROOT / "trust/ski-runtime-evaluators.json"
+DEFAULT_VENDORED_PATH = "impl/sigma_glyph_v06.py"
 
 REQUIRED = {
     "kind", "source_repository", "source_commit", "candidate_receipt_commit",
     "candidate_receipt_path", "candidate_receipt_sha256", "wheel_filename",
     "wheel_sha256", "module_path_in_wheel", "module_sha256", "software_version",
     "api_version", "adopted_bundle", "adopted_anchor_set_sha256", "build_pins",
-    "source_date_epoch", "official_ci_python",
+    "source_date_epoch", "official_ci_python", "vendored_path", "runtime_tag",
 }
 OPTIONAL = {"note"}
 # Which manifest fields must appear, and match, in the Sigma receipt.
@@ -116,7 +118,8 @@ def check_schema(m):
     return out
 
 
-def check_module_digest(m, module_path=VENDORED):
+def check_module_digest(m, module_path=None):
+    module_path = module_path or (ROOT / m.get("vendored_path", DEFAULT_VENDORED_PATH))
     if not module_path.exists():
         return [f"vendored module absent: {module_path}"]
     got = sha256_bytes(module_path.read_bytes())
@@ -146,7 +149,8 @@ def check_receipt(m, repo):
     return out, True
 
 
-def check_api_version(m, module_path=VENDORED):
+def check_api_version(m, module_path=None):
+    module_path = module_path or (ROOT / m.get("vendored_path", DEFAULT_VENDORED_PATH))
     """api_version must name a known Σ-GLYPH API surface, and the vendored module
     must actually expose it. Always runnable (no toolchain, no checkout)."""
     av = m.get("api_version")
@@ -205,7 +209,7 @@ def check_source_module(m, repo):
     if sha256_bytes(b) != m["module_sha256"]:
         return ["Sigma source module at source_commit does not match "
                 "module_sha256"], True
-    if b != VENDORED.read_bytes():
+    if b != (ROOT / m.get("vendored_path", DEFAULT_VENDORED_PATH)).read_bytes():
         return ["vendored module bytes differ from Sigma source at "
                 "source_commit"], True
     return [], True
@@ -264,7 +268,7 @@ def check_wheel_rebuild(m, repo):
             extracted = z.read(names[0])
         if sha256_bytes(extracted) != m["module_sha256"]:
             return "FAIL", "module extracted from the wheel != module_sha256"
-        if extracted != VENDORED.read_bytes():
+        if extracted != (ROOT / m.get("vendored_path", DEFAULT_VENDORED_PATH)).read_bytes():
             return "FAIL", "module extracted from the wheel != vendored bytes"
         return "PASS", (f"rebuild reproduces {m['wheel_sha256'][:16]}… and its "
                         f"{m['module_path_in_wheel']} equals the vendored module")
@@ -274,6 +278,63 @@ def check_wheel_rebuild(m, repo):
         subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force",
                         str(work / "src")], capture_output=True)
         shutil.rmtree(work, ignore_errors=True)
+
+
+# ---- per-tag evaluator map (trust/ski-runtime-evaluators.json) -------------
+
+def _warrant_constant():
+    """SKI_EVALUATORS as impl/warrant.py defines it (the code is the enforcer)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("warrant_pc", ROOT / "impl/warrant.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.SKI_EVALUATORS
+
+
+def _check_runtime_entry(tag, ent, const, repo):
+    """Validate one closed runtime-map entry."""
+    if not isinstance(ent, dict):
+        return [f"{tag}: runtime-map entry is not an object"], []
+    out, unrun = [], []
+    path = ROOT / ent.get("module", "")
+    if not path.exists():
+        return [f"{tag}: module absent: {ent.get('module')}"], unrun
+    got = sha256_bytes(path.read_bytes())
+    if got != ent.get("sha256"):
+        out.append(f"{tag}: module {path.name} hashes {got[:16]}… != record "
+                   f"{str(ent.get('sha256'))[:16]}…")
+    if tag in const and (const[tag][0] != path.name or
+                         const[tag][1] != ent.get("sha256")):
+        out.append(f"{tag}: record ({path.name}, {str(ent.get('sha256'))[:16]}…) "
+                   f"!= code constant ({const[tag][0]}, {const[tag][1][:16]}…)")
+    src = ent.get("source", {})
+    if not isinstance(src, dict) or not (src.get("commit") and src.get("path")):
+        return out, unrun
+    if repo is None or not has_commit(repo, src["commit"]):
+        unrun.append(f"{tag}: source-module equality (no Sigma checkout at "
+                     f"{src['commit'][:12]})")
+        return out, unrun
+    source_bytes = git_show(repo, src["commit"], src["path"])
+    if source_bytes is None or sha256_bytes(source_bytes) != ent.get("sha256"):
+        out.append(f"{tag}: {src['path']} at {src['commit'][:12]} != module digest")
+    return out, unrun
+
+
+def check_runtime_map(repo, map_path=MAP):
+    """Bind each recorded tag to code, bytes, and available source history."""
+    if not map_path.exists():
+        return [f"runtime map missing: {map_path}"], []
+    rec = json.loads(map_path.read_text())
+    if rec.get("kind") != "warrant/ski-runtime-evaluators@v0" or not isinstance(rec.get("tags"), dict):
+        return ["runtime map: unknown kind or shape"], []
+    const, out, unrun = _warrant_constant(), [], []
+    if set(const) != set(rec["tags"]):
+        out.append(f"runtime map tags {sorted(rec['tags'])} != code tags {sorted(const)}")
+    for tag, ent in rec["tags"].items():
+        entry_out, entry_unrun = _check_runtime_entry(tag, ent, const, repo)
+        out.extend(entry_out)
+        unrun.extend(entry_unrun)
+    return out, unrun
 
 
 # ---- mutation controls: each load-bearing pin must reject ------------------
@@ -296,6 +357,21 @@ def mutation_controls(m, repo):
 
     bad = copy.deepcopy(m); bad["api_version"] = "book1-eval-hash/9"
     want_reject("unknown api_version rejected", check_api_version(bad))
+
+    # the per-tag map: a wrong pin, and a tag the code does not know, must reject
+    if MAP.exists():
+        import tempfile
+        rec = json.loads(MAP.read_text())
+        for label, mutate in (("runtime map: wrong module sha256 rejected",
+                               lambda r: r["tags"]["ski@v1"].__setitem__("sha256", "00" * 32)),
+                              ("runtime map: tag unknown to the code rejected",
+                               lambda r: r["tags"].__setitem__("ski@v9", dict(r["tags"]["ski@v1"])))):
+            bad = copy.deepcopy(rec); mutate(bad)
+            tmp = Path(tempfile.mkdtemp(prefix="skimap-")) / "map.json"
+            tmp.write_text(json.dumps(bad))
+            probs, _ = check_runtime_map(repo, tmp)
+            want_reject(label, probs)
+            shutil.rmtree(tmp.parent, ignore_errors=True)
 
     if repo is not None:
         bad = copy.deepcopy(m)
@@ -324,6 +400,9 @@ def _collect(m, repo):
     problems += [("schema", p) for p in check_schema(m)]
     problems += [("module-digest", p) for p in check_module_digest(m)]
     problems += [("api-version", p) for p in check_api_version(m)]
+    rm_probs, rm_unrun = check_runtime_map(repo)
+    problems += [("runtime-map", p) for p in rm_probs]
+    unrun += rm_unrun
     for kind, label, (probs, ran) in (
             ("receipt", "receipt agreement (no Sigma checkout with the receipt "
              "commit)", check_receipt(m, repo)),
@@ -385,7 +464,7 @@ def main():
               file=sys.stderr)
         return EXIT_UNRUN
     print(f"SIGMA-PROVENANCE: ALL PASS — vendored evaluator bound to "
-          f"{m['module_sha256'][:16]}… (every binding executed)")
+          f"{m['module_sha256'][:16]}…; per-tag map bound (every binding executed)")
     return 0
 
 

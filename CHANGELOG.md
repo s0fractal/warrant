@@ -26,7 +26,29 @@ right.
 
 ## Unreleased
 
-**No protocol-visible change; design-only research artifact.**
+**SPEC document change, no body-schema change: `ski@v2` reserved as a candidate, registered/admitted nowhere; one bundled evaluator per runtime tag.**
+
+- SPEC §3.2 reserves candidate **`ski@v2`** = Σ-GLYPH Book I 0.6.0 (adopted bundle v0.7.0); §13.1 gains
+  its row; §13.2 reserves body version `0.3` for it and leaves `0.3` unspecified, so every
+  implementation (Python, Go, Rust) still rejects `ski@v2` as an unregistered runtime and no
+  record, WarrantID or verdict changes. `ski@v1` remains Book I v0.5 (WRT-006, disposition B).
+- The bundled evaluator is now **one module per tag**, pinned by digest and hashed *before*
+  import (SPEC §3.1 "One evaluator per tag"): `impl/sigma_glyph_v05.py` (sha `80299d68…`, the
+  `v0.6.7` tag module, byte-identical to the published PyPI `sigma-glyph==0.6.7`) serves
+  `ski@v1`; `impl/sigma_glyph_v06.py` (sha `55072bc0…`, the W1 module) is the `ski@v2`
+  evaluator, loadable by internal tooling but unreachable by any admitted record. `impl/sigma_glyph.py` is gone.
+  Record: `trust/ski-runtime-evaluators.json`; enforcement: `SKI_EVALUATORS` in
+  `impl/warrant.py`; a moved module is refused without executing a line of it
+  (`tests/ski_runtime_evaluators.py`). **This closes the compatibility debt W1 exposed**: the
+  v0.6.0 evaluator no longer runs under the immutable `ski@v1` name.
+- `ski_policy` / `policy_lang` compile against the `ski@v1` engine by path and no longer
+  `import sigma_glyph` from whatever is installed. `tools/sigma_provenance_check.py` reads the
+  vendored path from the manifest and additionally binds the per-tag record to the code
+  constant and to the `v0.6.7` source module. The `tests/sigma_cas_identity.py` in-module
+  guard controls target the Book I 0.6.0 module; the adapter (`BlobCAS`) remains the guard for
+  `ski@v1`, and the test now shows the v0.5 module alone would execute foreign bytes.
+
+**Also unreleased — design-only research artifact (WRT-005):**
 
 - `proposals/WRT-005-outcome-fingerprint-purity.md` — DRAFT, design only. The
   outcome-fingerprint rule for settlement §7 (identity = the eligible result

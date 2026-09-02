@@ -63,7 +63,7 @@ def _load(name, rel):
 
 
 pl = _load("policy_lang", "impl/policy_lang.py")
-sg = _load("sigma_glyph_t", "impl/sigma_glyph.py")
+sg = _load("sigma_glyph_t", "impl/sigma_glyph_v05.py")   # the ski@v1 engine
 W = _load("warrant_impl", "impl/warrant.py")
 sp = _load("ski_policy", "impl/ski_policy.py")
 

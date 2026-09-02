@@ -28,13 +28,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "impl"))
 os.environ.pop("SIGMA_GLYPH", None)          # exercise the BUNDLED, pinned engine
 import warrant as W                          # noqa: E402
 
-sg = W.load_sigma()
-if sg is None:
+sg = W.load_sigma()                           # ski@v1 evaluator (Book I v0.5): the
+if sg is None:                                #   adapter (BlobCAS) is its guard
     print("sigma-cas-identity: UNRUN — bundled Σ-GLYPH evaluator not found",
           file=sys.stderr)
     raise SystemExit(2)
 assert getattr(sg, "WARRANT_SIGMA_UNPINNED", None) is False, \
     "bundled evaluator must be pinned"
+sg2 = W.load_sigma("ski@v2")                  # Book I 0.6.0 module: carries the
+assert sg2 is not None and sg2.WARRANT_SIGMA_UNPINNED is False, \
+    "ski@v2 evaluator must be bundled and pinned"   # in-module §3.5 guard
 
 _fail = []
 
@@ -107,16 +110,29 @@ check("foreign key on nested thunk -> unverified Identity-by-Hash",
       out[0] == "unverified" and out[1] == "content does not match its address",
       detail=str(out))
 
-# ---- Case 3: store returns a NON-bytes object -----------------------------
+# ---- Case 3: store returns a NON-bytes object (in-MODULE guard, Book I 0.6.0) --
+# The ski@v1 evaluator (v0.5) has no in-module guard: through Warrant it never
+# sees a store that is not BlobCAS, which raises before any bytes reach it (the
+# cases above). The ski@v2 module carries Book I 0.6.0 §3.5 itself.
 class _NonBytesStore:
     def get(self, h):
         return 12345                            # not bytes
 try:
-    sg.eval_hash(FOREIGN, 8, _NonBytesStore())
+    sg2.eval_hash(FOREIGN, 8, _NonBytesStore())
     check("non-bytes store value -> ResourceFault", False)
-except sg.ResourceFault as rf:
+except sg2.ResourceFault as rf:
     check("non-bytes store value -> ResourceFault (non-bytes)",
           "non-bytes" in str(rf), detail=str(rf))
+# and the ski@v1 module, given the same forged store DIRECTLY (bypassing the
+# adapter), EXECUTES the foreign bytes — which is exactly why the adapter, not
+# the evaluator, is the guard for ski@v1 (WRT-006 §2 boundary observation).
+class _ForgedStore(dict):
+    def get(self, h, default=None):
+        return dict.get(self, h, default)
+_r, _spent = sg.eval_hash(FOREIGN, 8, _ForgedStore({FOREIGN: I_BYTES}))
+check("ski@v1 module alone would execute foreign bytes (adapter is the guard)",
+      sg.term_hash(_r).hex() == EXPECT_I and _spent >= 1,
+      detail=f"rh={sg.term_hash(_r).hex()[:12]} spent={_spent}")
 
 # ---- distinguish from a genuinely ABSENT blob (not Identity-by-Hash) -------
 st = _store()
@@ -196,7 +212,7 @@ _warrants, _tcfg = REPO / ".warrants", REPO / "trust-config.json"
 if _warrants.is_dir() and _tcfg.is_file():
     _div = Path(tempfile.mkdtemp(prefix="cas-div-"))
     (_div / "sigma_glyph.py").write_text(
-        (REPO / "impl" / "sigma_glyph.py").read_text() + "\n# divergent\n")
+        (REPO / "impl" / "sigma_glyph_v05.py").read_text() + "\n# divergent\n")
     _env = dict(os.environ, SIGMA_GLYPH=str(_div), WARRANT_SIGMA_DIFFERENTIAL="1")
     _r = subprocess.run(
         [sys.executable, str(REPO / "impl" / "warrant.py"), "--store",
@@ -289,7 +305,8 @@ _broken_override_refuses("import-failing override", _boom)
 # deleting EXACTLY the two-line CAS check from force(), then show that identical
 # evaluator runs `foreign NodeHash -> bytes of I` to a result (spent>=1). That
 # it now executes proves those two lines — nothing else — are load-bearing.
-BUNDLED_SRC = (Path(__file__).resolve().parents[1] / "impl" / "sigma_glyph.py").read_text()
+# The guard lives in the Book I 0.6.0 module (ski@v2); the v0.5 module has none.
+BUNDLED_SRC = (Path(__file__).resolve().parents[1] / "impl" / "sigma_glyph_v06.py").read_text()
 GUARD = ('    if not isinstance(b, bytes):\n'
          '        raise ResourceFault("store returned non-bytes")\n'
          '    if node_hash(b) != h:\n'

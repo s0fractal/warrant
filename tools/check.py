@@ -237,6 +237,10 @@ CHECKS = [
     # made mandatory in the dedicated CI job (`--require-rebuild`).
     ("sigma evaluator provenance (vendored module bound to the frozen wheel)",
      ["python3", "tools/sigma_provenance_check.py"], None),
+    # One bundled evaluator per ski runtime tag (SPEC §13.1: a tag is immutable, so
+    # its evaluator is a fixed module pinned by digest, checked BEFORE import).
+    ("ski runtimes: per-tag evaluators pinned, distinct, refused-before-import on drift",
+     ["python3", "tests/ski_runtime_evaluators.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),
 ]
@@ -259,7 +263,7 @@ NEEDS = {
                      "in-repo Go test is UNRUN without it, never passed)"),
     "rs": (lambda: RS.is_file(),
            "impl-rs not built  ->  (cd impl-rs && cargo build --release)"),
-    "sigma": (lambda: (ROOT / "impl" / "sigma_glyph.py").exists() or SIGMA.exists(),
+    "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists() or SIGMA.exists(),
               "Σ-GLYPH oracle not found  ->  set SIGMA_GLYPH=<sigma-glyph>/impl"),
     "sibling": (lambda: (ROOT.parent / "sigma-glyph").is_dir(),
                 "sibling repository sigma-glyph not beside this one"),

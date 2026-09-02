@@ -115,6 +115,16 @@ run_grep() { local label="$1" needle="$2"; shift 2; local out
         else c_bad "$label (expected: $needle)"; printf '%s\n' "$out" | tail -15 | indent; fi
         return 0; }
 
+# run_refusal <label> <needle> <command...> : pass iff the command refuses
+# (non-zero) AND names the expected reason.  A zero exit carrying refusal prose
+# is not a refusal, and an unrelated crash is not the boundary we meant to test.
+run_refusal() { local label="$1" needle="$2"; shift 2; local out rc
+        out=$("$@" 2>&1); rc=$?
+        if [[ $rc -ne 0 ]] && [[ "$out" != *"Traceback (most recent call last):"* ]] \
+             && printf '%s' "$out" | grep -qF -- "$needle"; then c_ok "$label"
+        else c_bad "$label (expected non-zero +: $needle)"; printf '%s\n' "$out" | tail -15 | indent; fi
+        return 0; }
+
 # run_coverage <label> <vectors.json> <producer...> : pass iff the producer
 # exits 0 AND tools/book1_coverage.py accepts its transcript.
 #
@@ -217,7 +227,7 @@ hdr "B. Machine boundary — sigma's store through warrant's verifier"
 
 # ok:true AND grade/counts must be internally consistent: errors==0 <=> ok
 run_grep "B1 warrant HEAD verifies sigma HEAD .warrants (verify-report@v0)" '"ok": true' \
-  env SIGMA_GLYPH="$SIGMA/impl" python3 - "$WARRANT/impl/warrant.py" "$SIGMA/.warrants" <<'PY'
+  python3 - "$WARRANT/impl/warrant.py" "$SIGMA/.warrants" <<'PY'
 import json, subprocess, sys
 wp, store = sys.argv[1], sys.argv[2]
 p = subprocess.run([sys.executable, wp, "--store", store, "verify", "--store-mode", "--json"],
@@ -255,7 +265,7 @@ PY
 
 if [[ -f "$SIGMA/tools/warrant_gate.py" ]]; then
   run_grep "B2 sigma's warrant_gate.py connector against warrant HEAD" "VERIFIED" \
-    env SIGMA_GLYPH="$SIGMA/impl" WARRANT="python3 $WARRANT/impl/warrant.py" \
+    env WARRANT="python3 $WARRANT/impl/warrant.py" \
         WARRANT_PY="$WARRANT/impl/warrant.py" \
     python3 "$SIGMA/tools/warrant_gate.py" "$SIGMA/.warrants" --settlement \
         --trust-config "$SIGMA/trust-config.json"
@@ -263,16 +273,21 @@ else
   c_skip "B2 warrant_gate.py connector"
 fi
 
-hdr "C. Reverse direction — warrant's ski@v1 against sigma's HEAD oracle"
+hdr "C. Reverse direction — sigma HEAD is an explicit, non-crediting differential"
 
-run_grep "C1 warrant conformance with SIGMA_GLYPH=sigma HEAD" "ALL PASS" \
+run_refusal "C1 sigma HEAD cannot silently substitute for pinned ski@v1" \
+  "unpinned Σ-GLYPH evaluator (non-settlement-grade)" \
   env SIGMA_GLYPH="$SIGMA/impl" python3 "$WARRANT/impl/warrant.py" conformance "$WARRANT/examples"
 
+run_grep "C2 explicit differential runs warrant vectors against sigma HEAD" "ALL PASS" \
+  env SIGMA_GLYPH="$SIGMA/impl" WARRANT_SIGMA_DIFFERENTIAL=1 \
+  python3 "$WARRANT/impl/warrant.py" conformance "$WARRANT/examples"
+
 if [[ -n "$WGO" ]]; then
-  run_grep "C2 warrant-go conformance (own vectors, sibling-built binary)" "ALL PASS" \
+  run_grep "C3 warrant-go conformance (own vectors, sibling-built binary)" "ALL PASS" \
     "$WGO" conformance "$WARRANT/examples"
 else
-  c_skip "C2 warrant-go conformance"
+  c_skip "C3 warrant-go conformance"
 fi
 
 hdr "D. Governance coupling — the out-of-band anchor trust"

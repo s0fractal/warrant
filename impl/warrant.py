@@ -399,57 +399,106 @@ def is_unverifiable(body):
             and all(isinstance(r, dict) and r.get("kind") == "prose" for r in because))
 
 
-# ---------- ski@v1 runtime (SPEC §3.1, v0.2) ----------
-BUNDLED_SIGMA = Path(__file__).resolve().parent / "sigma_glyph.py"
+# ---------- ski runtimes (SPEC §3.1, §13.1): one bundled evaluator per tag ----------
+# A runtime tag is immutable (SPEC §13.1); the evaluator that implements it is
+# therefore a FIXED module, pinned by digest, one per tag. `ski@v1` = Book I v0.5
+# (the v0.6.7 oracle, byte-identical to the published sigma-glyph 0.6.7 module);
+# `ski@v2` = Book I 0.6.0 (the v0.7.0 bundle's module) — reserved as a candidate,
+# and admitted in no body version until §13.2 defines 0.3. The human-readable record is
+# trust/ski-runtime-evaluators.json; tests/ski_runtime_evaluators.py fails if it
+# and this constant disagree. The digest is checked BEFORE import: a module whose
+# bytes moved is never executed (WRT-006/WRT-007 finding).
+SKI_EVALUATORS = {
+    "ski@v1": ("sigma_glyph_v05.py",
+               "80299d6869e7c93ece3455db32c0a6a1346a8b7162e6ef0954a4bd425497bab5"),
+    "ski@v2": ("sigma_glyph_v06.py",
+               "55072bc02e63987898fd60125e8bb5b14a6233b081ba158e0253755652323825"),
+}
+DEFAULT_SKI_TAG = "ski@v1"
 
 
-def _import_sigma(path, unpinned):
+def bundled_sigma_path(tag=DEFAULT_SKI_TAG):
+    """Path of the evaluator this package ships for `tag`, or None if unregistered."""
+    ent = SKI_EVALUATORS.get(tag)
+    return (Path(__file__).resolve().parent / ent[0]) if ent else None
+
+
+def _import_sigma(path, unpinned, expected_sha=None):
+    """Import an evaluator module from `path`. When `expected_sha` is given the
+    file's bytes are hashed FIRST and a mismatch returns None without executing
+    a single line of it (a moved module must never run under a frozen tag)."""
     import importlib.util
     if not path.exists():
         return None
-    spec = importlib.util.spec_from_file_location("sigma_glyph", path)
+    if expected_sha is not None:
+        got = hashlib.sha256(path.read_bytes()).hexdigest()
+        if got != expected_sha:
+            if not getattr(_import_sigma, "_warned_moved", False):
+                print(f"warning: bundled evaluator {path.name} does not match its "
+                      f"pinned digest ({got[:16]}… != {expected_sha[:16]}…); it was "
+                      f"NOT imported and its runtime reports as unverified",
+                      file=sys.stderr)
+                _import_sigma._warned_moved = True
+            return None
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     # A settlement-grade re-execution must be able to say WHICH evaluator ran.
-    # The bundled module is the one this package shipped, pinned by
-    # trust/sigma-evaluator-provenance.json; anything else is unpinned.
+    # The bundled module is the one this package shipped, pinned above (and, for
+    # ski@v2, by trust/sigma-evaluator-provenance.json); anything else is unpinned.
     mod.WARRANT_SIGMA_UNPINNED = unpinned
     return mod
 
 
-def load_sigma():
-    """Load the Σ-GLYPH Book I evaluator this package SHIPPED.
+def load_bundled_sigma(tag=DEFAULT_SKI_TAG):
+    """Load the package's pinned evaluator for ``tag``, ignoring dev overrides.
 
-    The BUNDLED module next to this file is authoritative for settlement/replay:
-    it is the exact evaluator bound by `trust/sigma-evaluator-provenance.json`,
-    so an installed `warrant verify`/`check`/`why` re-runs ski@v1 reasons offline
-    against the engine it was released with — not whatever a home directory holds.
-    The former implicit `~/sigma-glyph/...` fallback is REMOVED: a settlement
-    verdict must never silently depend on an unpinned local checkout.
+    This is the shared import boundary for both verification and authoring.  A
+    missing tag or digest mismatch refuses before executing evaluator bytes.
+    """
+    ent = SKI_EVALUATORS.get(tag)
+    if ent is None:
+        return None
+    return _import_sigma(bundled_sigma_path(tag), unpinned=False,
+                         expected_sha=ent[1])
+
+
+def load_sigma(tag=DEFAULT_SKI_TAG):
+    """Load the Σ-GLYPH Book I evaluator this package SHIPPED for `tag`.
+
+    The BUNDLED module for the tag is authoritative for settlement/replay: it is
+    the exact evaluator pinned in SKI_EVALUATORS, so an installed `warrant
+    verify`/`check`/`why` re-runs reasons offline against the engine the tag was
+    released with — not whatever a home directory holds, and not a module whose
+    bytes moved under the tag's name. Unknown tag → None; digest mismatch → None
+    (nothing imported). There is no fallback from one tag's module to another's.
 
     `$SIGMA_GLYPH` remains a DEV / cross-repo-differential override. When it is
-    set to bytes that differ from the bundled evaluator, the loaded module is
-    flagged `WARRANT_SIGMA_UNPINNED` and a diagnostic is printed, so an override
-    can never be silently taken as bounded, settlement-grade execution. An
-    override byte-identical to the bundled module is, by definition, still the
-    pinned engine and is treated as such.
+    set to bytes that differ from the tag's bundled evaluator, the loaded module
+    is flagged `WARRANT_SIGMA_UNPINNED` and a diagnostic is printed, so an
+    override can never be silently taken as bounded, settlement-grade execution.
+    An override byte-identical to the bundled module is, by definition, still
+    the pinned engine and is treated as such.
 
     An EXPLICIT `$SIGMA_GLYPH` that is missing or cannot be imported is an
     operator error, NOT a licence to fall back to the bundled engine and test it
-    against itself: that would let a differential the operator ASKED for silently
-    become bundled-vs-bundled (a vacuous green). So a broken explicit override
-    returns None (a bounded refusal), never bundled. The bundled fallback is used
-    ONLY when no override was requested at all.
+    against itself: a broken explicit override returns None (a bounded refusal),
+    never bundled. The bundled fallback is used ONLY when no override was
+    requested at all.
 
-    Returns the module or None (None -> ski@v1 reasons report as unverified)."""
+    Returns the module or None (None -> the tag's reasons report as unverified)."""
+    ent = SKI_EVALUATORS.get(tag)
+    if ent is None:
+        return None                           # unregistered tag: no evaluator
+    bundled = bundled_sigma_path(tag)
     override = os.environ.get("SIGMA_GLYPH")
     if override:
         op = Path(override) / "sigma_glyph.py"
         if not op.exists():
             return None                       # explicit override absent: no fallback
         try:
-            same = (BUNDLED_SIGMA.exists()
-                    and op.read_bytes() == BUNDLED_SIGMA.read_bytes())
+            same = (bundled.exists()
+                    and op.read_bytes() == bundled.read_bytes())
             mod = _import_sigma(op, unpinned=not same)
         except Exception as ex:
             # An explicit override whose sigma_glyph.py EXISTS but is unreadable or
@@ -458,19 +507,19 @@ def load_sigma():
             # own exception through, so catch it HERE, at the override boundary.
             if not getattr(load_sigma, "_warned_broken", False):
                 print(f"warning: SIGMA_GLYPH override could not be loaded "
-                      f"({type(ex).__name__}); ski@v1 re-execution is unavailable",
+                      f"({type(ex).__name__}); {tag} re-execution is unavailable",
                       file=sys.stderr)
                 load_sigma._warned_broken = True
             return None
         if mod is None:
             return None                       # explicit override unimportable: no fallback
         if not same and not getattr(load_sigma, "_warned", False):
-            print("warning: SIGMA_GLYPH override active — the evaluator "
-                  "is unpinned and its ski@v1 re-execution is "
-                  "non-settlement-grade", file=sys.stderr)
+            print(f"warning: SIGMA_GLYPH override active — the evaluator "
+                  f"is unpinned and its {tag} re-execution is "
+                  f"non-settlement-grade", file=sys.stderr)
             load_sigma._warned = True
         return mod
-    return _import_sigma(BUNDLED_SIGMA, unpinned=False)
+    return load_bundled_sigma(tag)
 
 
 def validate_ski_blob(doc):
@@ -2003,11 +2052,19 @@ def conformance(examples_dir):
                 for f in ski_dir.glob("*.bin"):
                     st.put_blob(f.read_bytes())
                 st.put_blob(cb)
-                verdict, rh, spent = run_ski_check(st, ch, sg)
-                chk("ski: re-run -> pass, H(S), 20 ATP",
-                    verdict == "pass" and spent == 20
-                    and rh == "887045bc22935aec5cba2dc11400d4e4357bc34d06681a6e92f06e7795b1f8a6",
-                    f"{verdict} {rh} {spent}")
+                try:
+                    verdict, rh, spent = run_ski_check(st, ch, sg)
+                except RuntimeError as ex:
+                    # A deliberately unpinned differential without the explicit
+                    # opt-in is a typed conformance failure, not a traceback.
+                    # X1 exercises both this refusal and the separate,
+                    # non-crediting differential mode.
+                    chk("ski: runtime re-run refused", False, str(ex))
+                else:
+                    chk("ski: re-run -> pass, H(S), 20 ATP",
+                        verdict == "pass" and spent == 20
+                        and rh == "887045bc22935aec5cba2dc11400d4e4357bc34d06681a6e92f06e7795b1f8a6",
+                        f"{verdict} {rh} {spent}")
 
     neg = d / "conformance-negatives.json"        # SPEC §8.3 (MUST reject each)
     if neg.exists():

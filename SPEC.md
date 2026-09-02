@@ -86,6 +86,14 @@ Why this runtime exists: `cmd@v1` proves a claim to whoever trusts the container
 
 **Protocol rule (MUST):** a `reject` whose every reason is `prose` is valid but MUST be marked by tools as *unverifiable*; tools SHOULD prefer at least one `check` reason. Rhetoric is legal; it just doesn't count as proof.
 
+**One evaluator per tag (MUST).** Because a runtime tag is immutable (§13.1), an implementation that ships an evaluator for a `ski@vN` tag MUST bind that tag to exactly one evaluator, identified by the digest of its bytes, and MUST verify that digest **before** loading it; a tag with no bound evaluator, or a bound module whose bytes do not match, MUST make the tag's reasons *unverified* (§6) — never a fallback to another tag's evaluator. The reference implementation records its bindings in `trust/ski-runtime-evaluators.json` and enforces them in `impl/warrant.py` (`SKI_EVALUATORS`).
+
+### 3.2. `ski@v2` — Σ-GLYPH Book I 0.6.0 (reserved candidate; not registered or admitted)
+
+`ski@v2` names evaluation per **Σ-GLYPH Book I 0.6.0** (the anchored `v0.7.0` bundle, adoption warrant `0e634c17…`): the same check-blob shape as §3.1 with `"ski": 2`, evaluated over `(term_hash, atp: uint32, env)` with a `Receipt = { exit, result_hash, atp_spent }` whose `exit` is one of the three canonical exits, and with Book I 0.6.0 §3.5 (bytes stored under a key they do not hash to are refused, never evaluated). `ski@v1` is unchanged by this registration and remains Book I v0.5.
+
+`ski@v2` is **reserved as a candidate and admitted in no body version**: §13.2 reserves body version `0.3` for it and `0.3` is not yet specified, so every conforming verifier — Python, Go, Rust — rejects a record carrying `ski@v2` today exactly as it rejects any unregistered runtime. Its outcome-fingerprint tuple (§7), negative vector set (§8.3) and the `0.3` body rules are the content of the future registration-and-admission change, not of this reservation.
+
 ## 4. Canonicalization and identity (MUST)
 
 ```
@@ -402,8 +410,11 @@ Policy: **Specification Required** in the IETF sense — a registration MUST cit
 | --- | --- | --- | --- |
 | `cmd@v1` | `0.1`, `0.2` | current | §3 |
 | `ski@v1` | `0.2` | current | §3.1 (Σ-GLYPH Book I **v0.5**) |
+| `ski@v2` | *none yet* (`0.3` reserved, §13.2) | reserved candidate; not registered or admitted | §3.2 (Σ-GLYPH Book I **0.6.0**, bundle v0.7.0) |
 
 A registration MUST supply: the tag, the body versions it is valid in, whether a verifier is expected to re-execute it (§6(7)) and with what budget unit, the exact outcome-fingerprint tuple for §7 novelty, the pinning rule for whatever ruleset it evaluates (as §3.1 requires of `ski@v1`), and a normative negative vector set (§8.3).
+
+A **reserved candidate row is not a registration** and carries no compatibility credit. It MAY pin candidate semantics and evaluator bytes so implementations can prepare without redefining an immutable tag, but verifiers MUST treat it as unregistered until one change supplies every item above and admits it only through a new body version.
 
 Rules that hold regardless of registration:
 
@@ -418,6 +429,7 @@ Rules that hold regardless of registration:
 | --- | --- | --- |
 | `0.1` | current | base schema (§2, §3) |
 | `0.2` | current | `ski@v1` runtime (§3.1) |
+| `0.3` | **reserved — not specified** | `ski@v2` runtime (§3.2). No implementation accepts a `0.3` body until this row is completed with its §8 vectors; until then `ski@v2` is reserved-and-rejected in `0.1` and `0.2` like any unregistered runtime |
 
 Policy: maintainer action recorded in `CHANGELOG.md` (§14.3), with the §8 vectors extended in the same change. A new body version MUST NOT invalidate any record valid under an earlier one (§4 of the version preamble), and MUST state, for every runtime tag in §13.1, whether it is admitted or reserved-and-rejected. Document-level versions that add no body schema (as v0.3 did) do NOT consume a `warrant` value.
 

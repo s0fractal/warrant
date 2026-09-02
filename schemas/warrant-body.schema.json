@@ -76,7 +76,7 @@
         "check": {"$ref": "#/$defs/hex64"},
         "runtime": {
           "enum": ["cmd@v1", "ski@v1"],
-          "description": "§13.1 registry. An unregistered runtime makes the record INVALID (§3) — this enum is the registry as of SPEC §13.1 and must be updated with it."
+          "description": "§13.1 registry, ADMITTED tags only. An unregistered runtime makes the record INVALID (§3). ski@v2 is only a reserved candidate (§3.2), and is not registered or admitted until §13.2 defines 0.3, so it is deliberately absent here; this enum must be updated with §13.2."
         },
         "verdict": {"enum": ["pass", "fail"]},
         "transcript": {"$ref": "#/$defs/hex64"}
