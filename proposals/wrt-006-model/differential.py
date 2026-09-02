@@ -1,49 +1,74 @@
 #!/usr/bin/env python3
-"""WRT-006 reproducer: are two Book I engines observationally equal under `ski@v1`?
+"""WRT-006 reproducer — three typed observations about two Book I engines under `ski@v1`.
 
-Compares E0 (the evaluator bundled before W1, pinned by commit) with E1 (the
-evaluator bundled now) on every `kind=eval` vector of two Σ-GLYPH conformance
-suites, plus a store-identity control. It writes nothing; it prints a receipt
-(JSON, one object) and exits non-zero on any disagreement inside the admitted
-domain.
+  corpus_equivalence   MATCH | MISMATCH | INCOMPLETE
+      E0 vs E1 on every unique `kind=eval` input of the Σ-GLYPH conformance suites
+      (two suite documents; the inputs are deduplicated and counted once each),
+      compared on the canonical NodeHash of the result and on atp_spent.
+  ski_specimen         MATCH | MISMATCH | INCOMPLETE
+      the one `ski@v1` check this repository ships (examples/ski/check.json),
+      re-executed by both engines and compared to its `expect`.
+  boundary_observation EXPECTED_DIVERGENCE | CHANGED | INCOMPLETE
+      bytes stored under a key they do not hash to: the expectation stated in
+      WRT-006 §2 is that E0 executes them as the requested node (a canonical
+      outcome) and E1 refuses with a local fault. This axis is checked, not narrated; it never substitutes for
+      the corpus axis and the corpus axis never substitutes for it.
 
-What a green run establishes: equality of (result_hash, atp_spent) on the
-CORPUS named in the receipt, under the engines named by sha256 in the receipt.
-What it does not establish: equality on the closed admitted domain of ski@v1
-(infinite); that is WRT-006 §3's remaining obligation, not this script's claim.
+Exit 0 only if all three are at their expected value. Writes nothing outside a
+TemporaryDirectory. All paths in the receipt are relative to the repository root.
 
-Usage (from the warrant checkout root):
-  python3 proposals/wrt-006-model/differential.py \
-      [--old <path-or-git:<commit>:impl/sigma_glyph.py>] [--new impl/sigma_glyph.py] \
-      [--sigma-repo ../sigma-glyph] [--old-suite v0.6.7] [--new-suite HEAD]
+What a green run establishes: agreement on the named finite corpora at named
+digests, and one located divergence outside them. It is profile-conformance /
+regression evidence. It is NOT a proof of equivalence on the admitted domain.
+
+Usage (any checkout root or worktree):
+  python3 proposals/wrt-006-model/differential.py [--old git:<commit>:impl/sigma_glyph.py | <path>]
+      [--new impl/sigma_glyph.py] [--sigma-repo <path>] [--old-suite v0.6.7] [--new-suite HEAD]
 """
-import argparse, hashlib, importlib.util, json, os, subprocess, sys
+import argparse, hashlib, importlib.util, json, os, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-E0_DEFAULT = "git:98169375b3690151ca30891e2bda5046bd80a870:impl/sigma_glyph.py"  # warrant master pre-W1
+E0_DEFAULT = "git:98169375b3690151ca30891e2bda5046bd80a870:impl/sigma_glyph.py"  # pre-W1 bundled module
 
 
-def read_src(spec, repo):
+def rel(p):
+    try:
+        return os.path.relpath(os.path.abspath(p), ROOT)
+    except ValueError:
+        return os.path.basename(p)
+
+
+def read_src(spec):
     if spec.startswith("git:"):
         _, rev, path = spec.split(":", 2)
-        return subprocess.check_output(["git", "--no-optional-locks", "-C", repo, "show", f"{rev}:{path}"])
+        return subprocess.check_output(["git", "--no-optional-locks", "-C", ROOT, "show", f"{rev}:{path}"])
     with open(spec, "rb") as f:
         return f.read()
 
 
-def load_module(src, name):
-    tmp = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"wrt006_{name}_{hashlib.sha256(src).hexdigest()[:12]}.py")
-    with open(tmp, "wb") as f:
+def load_module(src, name, tmpdir):
+    path = os.path.join(tmpdir, f"{name}.py")
+    with open(path, "wb") as f:
         f.write(src)
-    spec = importlib.util.spec_from_file_location(name, tmp)
+    spec = importlib.util.spec_from_file_location(name, path)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
 
 
+def find_sigma(explicit):
+    cands = [explicit, os.environ.get("SIGMA_GLYPH_REPO"),
+             os.path.join(ROOT, "..", "sigma-glyph"), os.path.join(ROOT, "..", "..", "sigma-glyph"),
+             os.path.expanduser("~/Projects/sigma-glyph")]
+    for c in cands:
+        if c and os.path.isfile(os.path.join(c, "tests", "spec_conformance", "vectors.json")):
+            return os.path.abspath(c)
+    return None
+
+
 def suite(repo, rev):
     path = "tests/spec_conformance/vectors.json"
-    if rev == "HEAD" or rev is None:
+    if rev in ("HEAD", None, ""):
         with open(os.path.join(repo, path), "rb") as f:
             raw = f.read()
     else:
@@ -51,92 +76,121 @@ def suite(repo, rev):
     return json.loads(raw), hashlib.sha256(raw).hexdigest()
 
 
-def run(m, v, objs):
+def evaluate(m, term_hex, atp, objs, keys):
+    """Return (result_node_hash_hex, atp_spent, exit_or_None) using the engine's own canonical hash."""
     st = m.Store()
-    for k in (v.get("store_subset") or list(objs.keys())):
+    for k in keys:
         st.put(bytes.fromhex(objs[k]))
-    r = m.eval_hash(bytes.fromhex(v["term"]), v["atp"], st)
-    h = r[0].hex() if isinstance(r[0], (bytes, bytearray)) else str(r[0])
-    return h, int(r[1])
+    r = m.eval_hash(bytes.fromhex(term_hex), atp, st)
+    t, spent = r[0], int(r[1])
+    exit_kind = r[2] if len(r) > 2 else None
+    return m.term_hash(t).hex(), spent, exit_kind
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--old", default=E0_DEFAULT)
     ap.add_argument("--new", default=os.path.join(ROOT, "impl", "sigma_glyph.py"))
-    ap.add_argument("--sigma-repo", default=os.environ.get("SIGMA_GLYPH_REPO", os.path.join(ROOT, "..", "sigma-glyph")))
+    ap.add_argument("--sigma-repo", default=None)
     ap.add_argument("--old-suite", default="v0.6.7")
     ap.add_argument("--new-suite", default="HEAD")
     a = ap.parse_args()
 
-    src0, src1 = read_src(a.old, ROOT), read_src(a.new, ROOT)
-    E0, E1 = load_module(src0, "e0"), load_module(src1, "e1")
-    receipt = {
-        "kind": "wrt-006-differential-receipt/0",
-        "engines": {"E0": {"source": a.old, "sha256": hashlib.sha256(src0).hexdigest()},
-                    "E1": {"source": a.new, "sha256": hashlib.sha256(src1).hexdigest()}},
-        "corpora": {}, "compared": 0, "agree": 0, "disagree": [], "errors": [],
-        "domain_boundary_control": None,
-    }
-    for label, rev in (("old-suite", a.old_suite), ("new-suite", a.new_suite)):
-        d, dig = suite(a.sigma_repo, rev)
-        receipt["corpora"][label] = {"rev": rev, "sha256": dig, "eval_vectors": 0}
-        objs = d["objects"]
-        for v in d["vectors"]:
-            if v.get("kind") != "eval":
-                continue
-            receipt["corpora"][label]["eval_vectors"] += 1
-            try:
-                r0, r1 = run(E0, v, objs), run(E1, v, objs)
-            except Exception as e:  # an engine that cannot run a vector is a disagreement, not a skip
-                receipt["errors"].append({"suite": label, "id": v.get("id"), "error": repr(e)[:160]})
-                continue
-            receipt["compared"] += 1
-            if r0 == r1:
-                receipt["agree"] += 1
-            else:
-                receipt["disagree"].append({"suite": label, "id": v.get("id"), "E0": r0, "E1": r1})
+    receipt = {"kind": "wrt-006-differential-receipt/1", "root": "warrant checkout root (paths relative)",
+               "engines": {}, "corpus": {}, "ski_specimen": {}, "boundary": {},
+               "verdicts": {"corpus_equivalence": "INCOMPLETE", "ski_specimen": "INCOMPLETE",
+                            "boundary_observation": "INCOMPLETE"}}
+    with tempfile.TemporaryDirectory(prefix="wrt006-") as tmp:
+        src0, src1 = read_src(a.old), read_src(a.new)
+        E0, E1 = load_module(src0, "e0", tmp), load_module(src1, "e1", tmp)
+        receipt["engines"] = {
+            "E0": {"source": a.old if a.old.startswith("git:") else rel(a.old), "sha256": hashlib.sha256(src0).hexdigest()},
+            "E1": {"source": a.new if a.new.startswith("git:") else rel(a.new), "sha256": hashlib.sha256(src1).hexdigest()}}
 
-    # Domain-boundary control: bytes stored under a key they do not hash to.
-    # Measured 2026-09-02: the MODULES differ here. E0 evaluates the foreign
-    # bytes and returns a canonical DISSONANCE (spent 3); E1 raises
-    # ResourceFault('CAS key mismatch') — a local fault, not a canonical outcome
-    # (Book I 0.6.0 §3.5). warrant.run_ski_check additionally refuses such a
-    # fetch after W1 (tests/sigma_cas_identity.py). The control records both
-    # levels so the boundary is located exactly, not assumed.
-    try:
-        I_bytes = None
-        for m in (E0,):
-            g = getattr(m, "GENESIS", None) or getattr(m, "genesis", None)
-        # derive genesis I bytes via the engine's own serializer if exposed
-        for cand in ("serialize_genesis", "genesis_bytes", "GENESIS_I"):
-            if hasattr(E0, cand):
-                obj = getattr(E0, cand)
-                I_bytes = obj("I") if callable(obj) else obj
-                break
-        if I_bytes is None:
-            # fall back: first object of the new suite is a valid node; use it as "foreign bytes"
-            d, _ = suite(a.sigma_repo, a.new_suite)
-            I_bytes = bytes.fromhex(next(iter(d["objects"].values())))
-        foreign = hashlib.sha256(b"WRT-006 foreign key").digest()
-        out = {}
-        for name, m in (("E0", E0), ("E1", E1)):
-            st = m.Store(); st.m[foreign] = I_bytes
-            try:
-                r = m.eval_hash(foreign, 8, st)
-                out[name] = {"executed": True, "result": (r[0].hex() if isinstance(r[0], (bytes, bytearray)) else str(r[0])), "spent": int(r[1])}
-            except Exception as e:
-                out[name] = {"executed": False, "error": repr(e)[:120]}
-        receipt["domain_boundary_control"] = {"input": "bytes stored under a key they do not hash to", "module_level": out,
-                                              "expected": "E0 executes to a canonical DISSONANCE; E1 refuses with a local fault (Book I 0.6.0 §3.5)",
-                                              "fetch_layer": "warrant.run_ski_check refuses this after W1 (tests/sigma_cas_identity.py); before W1 it executed"}
-    except Exception as e:
-        receipt["domain_boundary_control"] = {"error": repr(e)[:160]}
+        # ---- axis 1: corpus equivalence on unique inputs
+        sigma = find_sigma(a.sigma_repo)
+        if sigma is None:
+            receipt["corpus"] = {"error": "no sigma-glyph checkout found (--sigma-repo / SIGMA_GLYPH_REPO)"}
+        else:
+            docs, unique, disagree, errors, replays = {}, {}, [], [], 0
+            for label, rev in (("old-suite", a.old_suite), ("new-suite", a.new_suite)):
+                d, dig = suite(sigma, rev)
+                n = 0
+                for v in d["vectors"]:
+                    if v.get("kind") != "eval":
+                        continue
+                    n += 1
+                    keys = tuple(v.get("store_subset") or sorted(d["objects"].keys()))
+                    key = (v["term"], int(v["atp"]), keys)
+                    unique.setdefault(key, []).append(f"{label}:{v.get('id')}")
+                    try:
+                        r0 = evaluate(E0, v["term"], v["atp"], d["objects"], keys)
+                        r1 = evaluate(E1, v["term"], v["atp"], d["objects"], keys)
+                    except Exception as e:
+                        errors.append({"suite": label, "id": v.get("id"), "error": repr(e)[:160]})
+                        continue
+                    replays += 1
+                    if (r0[0], r0[1]) != (r1[0], r1[1]):
+                        disagree.append({"suite": label, "id": v.get("id"), "E0": r0[:2], "E1": r1[:2]})
+                docs[label] = {"rev": rev, "sha256": dig, "eval_vectors": n}
+            receipt["corpus"] = {"sigma_repo": rel(sigma) if sigma.startswith(ROOT) else "<external checkout>",
+                                 "suite_documents": docs, "unique_inputs": len(unique),
+                                 "replays": replays, "disagreements": disagree, "errors": errors}
+            receipt["verdicts"]["corpus_equivalence"] = (
+                "INCOMPLETE" if errors or replays == 0 else ("MISMATCH" if disagree else "MATCH"))
 
-    ok = receipt["compared"] > 0 and not receipt["disagree"] and not receipt["errors"]
-    receipt["verdict"] = "EQUAL_ON_CORPUS" if ok else "NOT_EQUAL_OR_INCOMPLETE"
-    print(json.dumps(receipt, indent=1, sort_keys=True))
-    sys.exit(0 if ok else 1)
+        # ---- axis 2: the repository's own ski@v1 specimen
+        try:
+            skidir = os.path.join(ROOT, "examples", "ski")
+            chk = json.load(open(os.path.join(skidir, "check.json")))
+            objs = {}
+            for fn in os.listdir(skidir):
+                if fn.endswith(".bin"):
+                    objs[fn[:-4]] = open(os.path.join(skidir, fn), "rb").read().hex()
+            keys = sorted(objs.keys())
+            r0 = evaluate(E0, chk["term"], int(chk["atp"]), objs, keys)
+            r1 = evaluate(E1, chk["term"], int(chk["atp"]), objs, keys)
+            receipt["ski_specimen"] = {"check": "examples/ski/check.json", "expect": chk["expect"],
+                                       "E0": r0[:2], "E1": r1[:2], "blobs": len(objs)}
+            ok = r0[0] == r1[0] == chk["expect"] and r0[1] == r1[1]
+            receipt["verdicts"]["ski_specimen"] = "MATCH" if ok else "MISMATCH"
+        except Exception as e:
+            receipt["ski_specimen"] = {"error": repr(e)[:160]}
+
+        # ---- axis 3: domain boundary (bytes under a key they do not hash to)
+        try:
+            node_I = E0.ser(E0.LITERAL, E0.F_ATOM, atom=E0.sha(b"I"))   # a valid node's bytes
+            foreign = hashlib.sha256(b"WRT-006 foreign key").digest()
+            obs = {}
+            for name, m in (("E0", E0), ("E1", E1)):
+                st = m.Store(); st.m[foreign] = node_I
+                try:
+                    r = m.eval_hash(foreign, 8, st)
+                    t = r[0]
+                    obs[name] = {"class": "canonical_outcome",
+                                 "kind": (t[0] if isinstance(t, tuple) else "?"),
+                                 "result_hash": m.term_hash(t).hex(), "atp_spent": int(r[1])}
+                except Exception as e:
+                    rf = getattr(m, "ResourceFault", ())
+                    obs[name] = {"class": "refusal" if isinstance(e, rf) else "other_exception",
+                                 "error": repr(e)[:120]}
+            # Expected divergence (WRT-006 §2): E0 EXECUTES the foreign bytes as the
+            # requested node (a canonical outcome — normal form or DISSONANCE
+            # depending on the bytes); E1 REFUSES with a local fault.
+            expected = obs["E0"]["class"] == "canonical_outcome" and obs["E1"]["class"] == "refusal"
+            receipt["boundary"] = {"input": "valid node bytes stored under a foreign key; eval of that key with atp=8",
+                                   "observed": obs,
+                                   "expected_per_WRT-006_§2": "E0 executes the foreign bytes (canonical outcome); E1 refuses (local fault)",
+                                   "fetch_layer_note": "warrant.run_ski_check additionally refuses such a fetch after W1 (tests/sigma_cas_identity.py)"}
+            receipt["verdicts"]["boundary_observation"] = "EXPECTED_DIVERGENCE" if expected else "CHANGED"
+        except Exception as e:
+            receipt["boundary"] = {"error": repr(e)[:160]}
+
+    v = receipt["verdicts"]
+    ok = v["corpus_equivalence"] == "MATCH" and v["ski_specimen"] == "MATCH" and v["boundary_observation"] == "EXPECTED_DIVERGENCE"
+    receipt["exit"] = 0 if ok else 1
+    print(json.dumps(receipt, indent=1, sort_keys=True, default=str))
+    sys.exit(receipt["exit"])
 
 
 if __name__ == "__main__":
