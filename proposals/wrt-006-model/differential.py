@@ -28,7 +28,7 @@ import argparse, hashlib, importlib.util, json, os, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SELF = os.path.abspath(__file__)
-SCHEMA = "wrt-006-differential-receipt/2"
+SCHEMA = "wrt-006-differential-receipt/3"
 E0_DEFAULT = "git:98169375b3690151ca30891e2bda5046bd80a870:impl/sigma_glyph.py"  # pre-W1 bundled module
 FOREIGN_KEY = hashlib.sha256(b"WRT-006 foreign key").digest()
 # Pinned boundary expectations, measured 2026-09-02 against E0 sha 0d2b898b… (see WRT-006 §2).
@@ -127,29 +127,75 @@ def run_engine(m, term_hex, atp, objs, keys):
     return {"result_hash": result_hash, "atp_spent": spent, "exit": exit_kind, "outcome": outcome}
 
 
+# Exact coverage profile per suite document, keyed by the suite's own format_version. A suite whose
+# expected records lack a required field is a coverage failure, not "not_checkable" (Codex, rev 3 gate:
+# stripping atp_spent/outcome/exit from every expected left conformance green).
+PROFILES = {2: ("result_hash", "atp_spent", "outcome"), 3: ("result_hash", "atp_spent", "outcome", "exit")}
+
+
+def typed_eq(field, got, exp):
+    if field == "atp_spent":
+        return isinstance(got, int) and isinstance(exp, int) and got == exp
+    if field == "result_hash":
+        return isinstance(got, str) and isinstance(exp, str) and got.lower() == exp.lower() and len(exp) == 64
+    return isinstance(got, str) and isinstance(exp, str) and got == exp
+
+
 def conformance(m, docs):
-    """Engine vs normative expected values across suite documents."""
-    out = {"checked": {f: 0 for f in FIELDS}, "failed": [], "not_checkable": {f: 0 for f in FIELDS}, "errors": []}
+    """Engine vs the suites' NORMATIVE expected values, per suite, under that suite's exact coverage profile.
+
+    Per-suite verdict: PASS (every required field present, checked on every eval vector, all equal);
+    FAIL (a required field missing from an expected record, a value unequal, or an engine error);
+    PARTIAL_UNREPORTABLE:<fields> (the engine has no observable for a required field — e.g. a two-value
+    engine cannot report `exit`; every other required field passed). Engine verdict: PASS if all suites
+    PASS; PARTIAL if none FAIL and some PARTIAL; else FAIL."""
+    per = {}
     for label, (d, dig) in docs.items():
+        fv = int(d.get("format_version", 0))
+        req = PROFILES.get(fv)
+        rec = {"format_version": fv, "required_fields": list(req) if req else None,
+               "checked": {}, "failed": [], "coverage_failures": [], "unreportable": {}, "errors": [], "eval_vectors": 0}
+        if req is None:
+            rec["verdict"] = "FAIL"; rec["coverage_failures"].append(f"unknown format_version {fv}: no coverage profile")
+            per[label] = rec; continue
+        rec["checked"] = {f: 0 for f in req}; rec["unreportable"] = {f: 0 for f in req}
         objs = d["objects"]
         for v in d["vectors"]:
             if v.get("kind") != "eval":
                 continue
+            rec["eval_vectors"] += 1
             exp = v.get("expected", {})
+            missing = [f for f in req if f not in exp]
+            if missing:
+                rec["coverage_failures"].append({"id": v.get("id"), "missing_expected_fields": missing})
             keys = tuple(v.get("store_subset") or sorted(objs.keys()))
             try:
                 got = run_engine(m, v["term"], v["atp"], objs, keys)
             except Exception as e:
-                out["errors"].append({"suite": label, "id": v.get("id"), "error": repr(e)[:160]}); continue
-            for f in FIELDS:
-                if f not in exp or got.get(f) is None:
-                    out["not_checkable"][f] += 1
+                rec["errors"].append({"id": v.get("id"), "error": repr(e)[:160]}); continue
+            for f in req:
+                if f not in exp:
                     continue
-                out["checked"][f] += 1
-                if str(got[f]) != str(exp[f]):
-                    out["failed"].append({"suite": label, "id": v.get("id"), "field": f, "expected": exp[f], "got": got[f]})
-    out["verdict"] = "INCOMPLETE" if out["errors"] or sum(out["checked"].values()) == 0 else ("FAIL" if out["failed"] else "PASS")
-    return out
+                if got.get(f) is None:
+                    rec["unreportable"][f] += 1; continue
+                rec["checked"][f] += 1
+                if not typed_eq(f, got[f], exp[f]):
+                    rec["failed"].append({"id": v.get("id"), "field": f, "expected": exp[f], "got": got[f]})
+        n = rec["eval_vectors"]
+        full = [f for f in req if rec["checked"][f] == n]
+        unrep = [f for f in req if rec["unreportable"][f] == n]
+        if rec["errors"] or rec["failed"] or rec["coverage_failures"] or n == 0:
+            rec["verdict"] = "FAIL"
+        elif set(full) | set(unrep) == set(req) and unrep:
+            rec["verdict"] = "PARTIAL_UNREPORTABLE:" + ",".join(unrep)
+        elif set(full) == set(req):
+            rec["verdict"] = "PASS"
+        else:
+            rec["verdict"] = "FAIL"; rec["coverage_failures"].append("a required field was checked on some vectors and not others")
+        per[label] = rec
+    vs = [r["verdict"] for r in per.values()]
+    overall = "FAIL" if any(v == "FAIL" for v in vs) or not vs else ("PASS" if all(v == "PASS" for v in vs) else "PARTIAL")
+    return {"per_suite": per, "verdict": overall}
 
 
 def main():
@@ -265,9 +311,17 @@ def main():
         except Exception as e:
             R["axes"]["boundary_observation"] = {"error": repr(e)[:160]}; R["verdicts"]["boundary_observation"] = "INCOMPLETE"
 
-    good = {"suite_shape": "MATCH", "E0_conformance": "PASS", "E1_conformance": "PASS", "differential_agreement": "MATCH",
+    # Gate. E1 must PASS every suite under its full profile. E0 (the historical two-value engine) must PASS
+    # its native profile (format_version 2) and may be PARTIAL_UNREPORTABLE:exit on a format-3 suite — that
+    # limitation is printed in the receipt, never counted as a pass on `exit`.
+    e0 = R["axes"].get("E0_conformance", {}).get("per_suite", {})
+    e0_ok = bool(e0) and all(
+        (r["verdict"] == "PASS") if r["format_version"] == 2 else (r["verdict"] in ("PASS", "PARTIAL_UNREPORTABLE:exit"))
+        for r in e0.values())
+    good = {"suite_shape": "MATCH", "E1_conformance": "PASS", "differential_agreement": "MATCH",
             "ski_specimen": "MATCH", "boundary_observation": "EXPECTED_DIVERGENCE"}
-    R["exit"] = 0 if all(R["verdicts"].get(k) == v for k, v in good.items()) else 1
+    R["gate"] = {"E0_conformance_rule": "PASS on format_version 2; PASS or PARTIAL_UNREPORTABLE:exit on format_version 3", "E0_ok": e0_ok}
+    R["exit"] = 0 if (e0_ok and all(R["verdicts"].get(k) == v for k, v in good.items())) else 1
     print(json.dumps(R, indent=1, sort_keys=True, default=str))
     sys.exit(R["exit"])
 

@@ -21,12 +21,12 @@ gated by Codex (AMEND, AMEND-with-disposition-B). A gate verdict is evidence, no
    Book I v0.6 would be `ski@v2`") already fix the tag's meaning. Re-describing `ski@v1` as a
    Warrant-owned profile would redefine an immutable tag; the authority is the published SPEC
    text, not anyone's memory of intent. A′ survives as the right *shape for a new tag*.
-2. **Evidence axes made independent.** rev 2's `corpus_equivalence` measured only mutual agreement:
+2. **Evidence axes made independent, with exact coverage profiles.** rev 2's `corpus_equivalence` measured only mutual agreement:
    two engines returning the same wrong hash on every vector stayed green (reproduced by the gate).
    rev 3 checks each engine against the suites' **normative expected values** separately, checks
    the two suite documents carry the **same closed input set** (identity includes object-content
    digests; duplicates refuse; missing lists printed; count pinned at 33), and keeps agreement as
-   its own axis. Dropping one HEAD vector now yields `suite_shape: MISMATCH`, exit 1.
+   its own axis. Dropping one HEAD vector now yields `suite_shape: MISMATCH`, exit 1; stripping `atp_spent`/`outcome`/`exit` from every expected record yields a coverage FAIL, exit 1 (the third gate's counter-vector); equality is typed, not `str()`.
 3. **Boundary fixtures pinned exactly** (node `I` and `APPLY(I,I)` under a foreign key): E0's exact
    result hash and spend, E1's exact exception type and message. rev 2's sentence about "an APPLY
    node → DISSONANCE, spent 3" came from an unpinned object and is superseded by the pinned fixture
@@ -56,8 +56,8 @@ E0 = `98169375…:impl/sigma_glyph.py` (pre-W1, sha256 `0d2b898b…`); E1 = the 
 | Axis | Result | Meaning |
 |---|---|---|
 | `suite_shape` | MATCH — 33 unique inputs in each document, identical sets (object bytes included), no duplicates | the two documents test one closed input set |
-| `E0_conformance` | PASS — `result_hash` 66/66, `atp_spent` 66/66, `outcome` 66/66; `exit` not checkable (two-value API, no `eval_receipt`) | E0 satisfies both suites' normative values on every observable it can report |
-| `E1_conformance` | PASS — `result_hash` 66/66, `atp_spent` 66/66, `outcome` 66/66, `exit` 33/33 (HEAD suite; v0.6.7 carries no `exit`) | E1 satisfies both suites, including the v0.7.0 exit observable |
+| `E0_conformance` | PARTIAL — v0.6.7 suite (format 2, required `result_hash`/`atp_spent`/`outcome`): **PASS 33/33/33**; HEAD suite (format 3, adds `exit`): `PARTIAL_UNREPORTABLE:exit` — `result_hash`/`atp_spent`/`outcome` 33/33/33, `exit` unreportable by a two-value engine | E0 satisfies every normative value of its own profile; it cannot report the v0.7.0 exit observable, and the receipt says so instead of counting it |
+| `E1_conformance` | PASS — v0.6.7 suite 33/33/33; HEAD suite 33/33/33/33 including `exit` (via `eval_receipt`) | E1 satisfies both suites under their exact coverage profiles |
 | `differential_agreement` | MATCH — 66 replays over 33 unique inputs, 0 disagreements | on conforming inputs the engines agree |
 | `ski_specimen` | MATCH — `examples/ski/check.json` → `887045bc…`, spent 20, both engines = `expect` | the one shipped `ski@v1` check re-executes identically |
 | `boundary_observation` | EXPECTED_DIVERGENCE — fixture `I`: E0 `2f33694d…`, spent 1; fixture `APPLY(I,I)`: E0 `2f33694d…`, spent 4; E1 raises `ResourceFault('CAS key mismatch')` on both | on a non-conforming store E0 executes foreign bytes as the requested node; E1 refuses with a local fault (Book I 0.6.0 §3.5) |
