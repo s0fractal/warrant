@@ -116,6 +116,9 @@ CANONICAL = {
     "WRT-005": {"lives_in": "this repo, `proposals/wrt-005-outcome-fingerprint-purity`",
                 "commit": None,
                 "path": "proposals/WRT-005-outcome-fingerprint-purity.md"},
+    "WRT-006": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (DRAFT)",
+                "commit": None,
+                "path": "proposals/WRT-006-ski-v1-implementation-substitution.md"},
 }
 
 
