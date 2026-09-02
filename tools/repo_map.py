@@ -215,6 +215,22 @@ def _citation_table(text):
     return rows
 
 
+def _collision_section(text):
+    """Lines of the '## Known identifier collisions' section only (up to the
+    next H2), so a target quoted elsewhere in the file does not count."""
+    lines = text.splitlines()
+    try:
+        start = lines.index("## Known identifier collisions")
+    except ValueError:
+        return []
+    out = []
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        out.append(line.rstrip())
+    return out
+
+
 def _table_rows_for(ident, rows):
     """Rows whose first cell is exactly the cited identifier."""
     return [r for r in rows if r and r[0] == f"`{ident}`"]
@@ -373,14 +389,18 @@ def main():
                 wrong.append(i)
                 print(f"CANONICAL DRIFT: {i}'s row must be exactly {expected}; "
                       f"found {rws[0]}", file=sys.stderr)
-        # Every declared collision must be listed with BOTH pinned targets.
+        # Every declared collision must appear as an EXACT bullet inside the
+        # "Known identifier collisions" section -- not as a substring anywhere
+        # (Codex, WRT-006 rev 2 gate: a target moved into prose kept the check green).
+        section = _collision_section(text)
         for ident, entries in COLLISIONS.items():
             for e in entries:
-                tgt = f"`{e['commit']}:{e['path']}`"
-                if tgt not in text:
+                bullet = f"- `{ident}` — {e['lives_in']}: `{e['commit']}:{e['path']}`"
+                if bullet not in section:
                     wrong.append(ident)
-                    print(f"COLLISION MISSING: {ident} target {tgt} is not listed "
-                          f"in MAP.md -- regenerate", file=sys.stderr)
+                    print(f"COLLISION MISSING: exact bullet for {ident} -> "
+                          f"{e['commit']}:{e['path']} is not in the collisions "
+                          f"section of MAP.md -- regenerate", file=sys.stderr)
         stale = [ln for ln in text.splitlines() if "resolves nowhere" in ln]
         for ln in stale:
             print(f"UNRESOLVED in MAP.md: {ln.strip()}", file=sys.stderr)

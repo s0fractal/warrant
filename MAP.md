@@ -35,6 +35,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-004` | closed PR #21 (verify-report) | `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |
 | `WRT-006` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (DRAFT) | `proposals/WRT-006-ski-v1-implementation-substitution.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
+| `WRT-007` | **resolves nowhere** | — | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
 
 ## Known identifier collisions
 
@@ -46,3 +47,12 @@ resolve by renumbering; until then it is recorded, not hidden.
 
 - `WRT-004` — closed PR #21 (verify-report) — the CANONICAL target: `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md`
 - `WRT-004` — branch `papers/the-reason-runs-again` (draft PR #30), reason-binding profile — NOT on master: `23ef8103606ecadfa650886fa412720ccd49980a:proposals/WRT-004-reason-binding-profile.md`
+
+## Cited and resolving nowhere
+
+These are named by this repository and exist in neither repository
+on any ref known here. Either the document is unpublished, or the
+citation is wrong; both are defects and neither is the reader's to
+guess about.
+
+- `WRT-007`
