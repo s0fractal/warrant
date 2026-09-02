@@ -25,6 +25,7 @@ present on a ref the reviewer was not looking at.
 |---|---|---|---|
 | `ADR-004` | **sigma-glyph**, `master` | `proposals/ADR-004-literal-blob-scope.md` | `proposals/GOV-001-settlement-at-scale.md` |
 | `ADR-008` | **sigma-glyph**, `master` | `proposals/ADR-008-specification-is-the-arbiter.md` | `briefs/WRT-002-rev7-adversarial-gate.md` |
+| `ADR-012` | **sigma-glyph**, `origin/master` | `proposals/ADR-012-checkout-independent-consumer-surface.md` | `proposals/WRT-007-per-tag-evaluator-dependency.md` |
 | `Book I` | **sigma-glyph**, `master` | `spec/book-1-truth.md` | `ARCHITECT.md` |
 | `Book II` | **sigma-glyph**, `master` | `spec/book-2-navigation.md` | `proposals/WRT-001-wave-v1-runtime.md` |
 | `Book III` | **sigma-glyph**, `master` | `spec/book-3-federation.md` | `ARCHITECT.md` |
@@ -34,8 +35,8 @@ present on a ref the reviewer was not looking at.
 | `WRT-003` | closed PR #20 (verification receipts) | `25bd44c829cb015a836e08642022412c568de16a:proposals/WRT-003-verification-receipt.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-004` | closed PR #21 (verify-report) | `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |
-| `WRT-006` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (DRAFT) | `proposals/WRT-006-ski-v1-implementation-substitution.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
-| `WRT-007` | **resolves nowhere** | — | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
+| `WRT-006` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: B) | `proposals/WRT-006-ski-v1-implementation-substitution.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
+| `WRT-007` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (DRAFT) | `proposals/WRT-007-per-tag-evaluator-dependency.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
 
 ## Known identifier collisions
 
@@ -47,12 +48,3 @@ resolve by renumbering; until then it is recorded, not hidden.
 
 - `WRT-004` — closed PR #21 (verify-report) — the CANONICAL target: `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md`
 - `WRT-004` — branch `papers/the-reason-runs-again` (draft PR #30), reason-binding profile — NOT on master: `23ef8103606ecadfa650886fa412720ccd49980a:proposals/WRT-004-reason-binding-profile.md`
-
-## Cited and resolving nowhere
-
-These are named by this repository and exist in neither repository
-on any ref known here. Either the document is unpublished, or the
-citation is wrong; both are defects and neither is the reader's to
-guess about.
-
-- `WRT-007`

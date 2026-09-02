@@ -1,0 +1,30 @@
+{
+  "schema": "warrant/runtime-evaluator-pins@draft-0",
+  "note": "DRAFT for WRT-007. Not read by any code on master. One entry per runtime tag: the published artifact that supplies the tag's evaluator, pinned by distribution digest AND module digest. A tag with no entry has no evaluator and its reasons report as unverified.",
+  "tags": {
+    "ski@v1": {
+      "semantics": "Sigma-GLYPH Book I v0.5 (SPEC §3.1)",
+      "distribution": "sigma-glyph",
+      "version": "0.6.7",
+      "wheel_filename": "sigma_glyph-0.6.7-py3-none-any.whl",
+      "wheel_sha256": "c3b7bc32a7a3b71e037ca367fb2fbfdb45437146185c2e1336ac1c866b571bca",
+      "module": "sigma_glyph.py",
+      "module_sha256": "80299d6869e7c93ece3455db32c0a6a1346a8b7162e6ef0954a4bd425497bab5",
+      "conformance": {
+        "sigma_suite": "v0.6.7 tests/spec_conformance/vectors.json sha256 322fd2904e2bf1192a2bfae7ea76390cdf465dd77cfd19da17ef88d61fb74a85 -> 49/49",
+        "warrant_suite": "impl/warrant.py conformance examples -> 67/67 (measured under 9816937 with SIGMA_GLYPH override; under 4915494 with WARRANT_SIGMA_DIFFERENTIAL=1)",
+        "wrt006_differential_vs_E0": "suite_shape MATCH, E0/E1 conformance PASS, agreement MATCH 33/33, specimen MATCH; boundary: both execute foreign bytes (Book I 0.5.x has no §3.5 refusal) — the refusal is warrant's fetch layer"
+      },
+      "source_of_truth": "the published artifact on PyPI; the git tag v0.6.7 module is byte-identical (verified 2026-09-02)"
+    },
+    "ski@v2": {
+      "semantics": "Sigma-GLYPH Book I 0.6.0 (adopted bundle v0.7.0) — NOT REGISTERED; placeholder pending SPEC §13.1 registration",
+      "distribution": "sigma-glyph",
+      "version": "<0.7.x — not yet published; the phase-4a candidate wheel is deliberately unpublishable (local version identifier)>",
+      "wheel_sha256": null,
+      "module_sha256": "55072bc02e63987898fd60125e8bb5b14a6233b081ba158e0253755652323825 (candidate; from trust/sigma-evaluator-provenance.json)",
+      "conformance": null,
+      "source_of_truth": "a future published sigma-glyph release whose module digest equals the registered pin"
+    }
+  }
+}

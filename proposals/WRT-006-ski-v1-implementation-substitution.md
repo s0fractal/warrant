@@ -56,7 +56,7 @@ E0 = `98169375…:impl/sigma_glyph.py` (pre-W1, sha256 `0d2b898b…`); E1 = the 
 | Axis | Result | Meaning |
 |---|---|---|
 | `suite_shape` | MATCH — 33 unique inputs in each document, identical sets (object bytes included), no duplicates | the two documents test one closed input set |
-| `E0_conformance` | PASS — `result_hash` 66/66, `atp_spent` 66/66, `outcome` 64/64 checkable; `exit` not checkable (two-value API); 2 `outcome` rows not checkable | E0 satisfies both suites' normative values on every observable it can report |
+| `E0_conformance` | PASS — `result_hash` 66/66, `atp_spent` 66/66, `outcome` 66/66; `exit` not checkable (two-value API, no `eval_receipt`) | E0 satisfies both suites' normative values on every observable it can report |
 | `E1_conformance` | PASS — `result_hash` 66/66, `atp_spent` 66/66, `outcome` 66/66, `exit` 33/33 (HEAD suite; v0.6.7 carries no `exit`) | E1 satisfies both suites, including the v0.7.0 exit observable |
 | `differential_agreement` | MATCH — 66 replays over 33 unique inputs, 0 disagreements | on conforming inputs the engines agree |
 | `ski_specimen` | MATCH — `examples/ski/check.json` → `887045bc…`, spent 20, both engines = `expect` | the one shipped `ski@v1` check re-executes identically |
