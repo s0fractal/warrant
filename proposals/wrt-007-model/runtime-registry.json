@@ -1,10 +1,19 @@
 {
-  "schema": "warrant/runtime-registry@draft-0",
-  "note": "DRAFT for WRT-007 \u00a73.1. NORMATIVE identity of each runtime tag: what the tag MEANS and which vector manifests any evaluator must satisfy. Says nothing about which implementation a release ships. Read by nothing on master.",
+  "schema": "warrant/runtime-registry@draft-1",
+  "note": "DRAFT for WRT-007 §3.1. NORMATIVE identity of each runtime tag, bound to exact SPEC bytes and a vector manifest commitment. Names no implementation. Read by nothing on master.",
   "tags": {
     "ski@v1": {
       "status": "registered",
-      "semantics": "Sigma-GLYPH Book I v0.5 (SPEC \u00a73.1, \u00a713.1)",
+      "semantics": {
+        "text": "Sigma-GLYPH Book I v0.5",
+        "spec_path": "SPEC.md",
+        "spec_sections": [
+          "§3.1",
+          "§13.1"
+        ],
+        "spec_commit": "49154941e075715da5e8705a1fe4b94d4b0e4e2d",
+        "spec_sha256": "764a3ac044accc7330bfc6af0cfb19ea76acb45e6e4d1683de94ca6b5748f8a5"
+      },
       "body_versions": [
         "0.2"
       ],
@@ -32,11 +41,24 @@
           }
         }
       },
-      "store_contract": "SPEC \u00a73.1 rule 2 \u2014 every demanded object resolves among the store's blobs; bytes under a key they do not hash to are refused by Warrant's fetch layer before any evaluator sees them"
+      "vector_manifest_commitment": "9dfb56241b77b49016b5d16bdba7f78ea0718577fb0ec402d543dcb4d57528da",
+      "store_contract": {
+        "rule": "SPEC §3.1 rule 2 — every demanded object resolves among the store's blobs; bytes under a key they do not hash to are refused before any evaluator sees them",
+        "spec_sha256": "764a3ac044accc7330bfc6af0cfb19ea76acb45e6e4d1683de94ca6b5748f8a5",
+        "enforced_by": "impl/warrant.py run_ski_check",
+        "test_path": "tests/sigma_cas_identity.py",
+        "test_sha256": "5dfcec0da02a54c9fa15ac0cfcb2437a019737b105177d1df3023e12aa41de58"
+      }
     },
     "ski@v2": {
-      "status": "NOT REGISTERED (placeholder; WRT-006 disposition B)",
-      "semantics": "Sigma-GLYPH Book I 0.6.0 (adopted bundle v0.7.0) \u2014 pending SPEC \u00a713.1 registration and a new body version",
+      "status": "unregistered",
+      "semantics": {
+        "text": "Sigma-GLYPH Book I 0.6.0 (adopted bundle v0.7.0) — pending SPEC §13.1 registration and a new body version",
+        "spec_path": "SPEC.md",
+        "spec_sections": [],
+        "spec_commit": null,
+        "spec_sha256": null
+      },
       "body_versions": [],
       "vector_manifest": {
         "sigma_book1_suite": {
@@ -49,9 +71,20 @@
             "outcome",
             "exit"
           ]
+        },
+        "warrant_ski_specimen": {
+          "path": "examples/ski/",
+          "files_sha256": {}
         }
       },
-      "store_contract": "as ski@v1"
+      "vector_manifest_commitment": "c338caca5da59775f6a27a4366e8395f7130fc53da4331cf0005b3d652a6a437",
+      "store_contract": {
+        "rule": "as ski@v1",
+        "spec_sha256": "764a3ac044accc7330bfc6af0cfb19ea76acb45e6e4d1683de94ca6b5748f8a5",
+        "enforced_by": "impl/warrant.py run_ski_check",
+        "test_path": "tests/sigma_cas_identity.py",
+        "test_sha256": "5dfcec0da02a54c9fa15ac0cfcb2437a019737b105177d1df3023e12aa41de58"
+      }
     }
   }
 }

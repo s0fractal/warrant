@@ -1,9 +1,8 @@
 # WRT-007: A Warrant release addressably selects one evaluator per immutable runtime tag
 
-**Status:** DRAFT **rev 2** (2026-09-02) — design proposal plus one reproducer and two draft records.
+**Status:** DRAFT **rev 3** (2026-09-02) — design proposal plus one reproducer and two draft records.
 No SPEC, `impl/`, `pyproject`, vector or registry change is made by this document; nothing is
-adopted. Written by Claude Fable 5.1 at the owner's request. rev 1 (`677632e`) was gated by Codex
-(AMEND). A gate verdict is evidence, not adoption (AGENTS.md rules 3–4).
+adopted. Written by Claude Fable 5.1 at the owner's request. rev 1 (`677632e`) and rev 2 (`342f57e`) were gated by Codex (AMEND, AMEND). A gate verdict is evidence, not adoption (AGENTS.md rules 3–4).
 
 **rev 2 — what the gate changed.** (1) **Semantics and supply separated.** rev 1's "one published
 artifact per runtime tag" conflated the tag's normative identity with one Python implementation and
@@ -19,6 +18,19 @@ digests and the selected records' commitments in the receipt; caller-supplied re
 (`artifact_identity`, `module_identity`, `semantic_conformance`); conformance judged against the
 **tag's registry vector manifest**, with the full WRT-006 receipt embedded and digested;
 `E0_conformance` required.
+
+**rev 3 — what the second gate changed.** (1) **The registry binds bytes, not prose.** Each registered
+tag carries `semantics.spec_commit` + `spec_sha256` (exact `SPEC.md` bytes), a
+`vector_manifest_commitment`, and a structured `store_contract` (rule, SPEC digest, enforcing code
+path, test path + digest); the checker re-derives the SPEC digest from git at run time. (2) **The
+manifest binds the registry**: `registry_sha256` and, per selection, `selected_runtime_record_commitment`
+and `conformance_receipt_sha256` (the WRT-006 receipt's host-independent `core_sha256`), plus the
+exact `warrant_release.commit`. A one-sided edit of SPEC, registry, specimen files or the manifest
+now fails a named binding before anything runs. (3) **`active` vs `candidate`**: `ski@v2` moved to
+`candidates`, inert, never loadable; `credit_bearing` is **false** until `activation.status` is
+`active` with a named act — the repository-default path is a mechanism result, not adoption.
+(4) The `examples/ski/*` closed filename→digest map is verified before any run. (5) Closed schemas are
+recursive and typed (enums, hex64-or-null, ints); nested extra fields refuse.
 
 **Thesis in one sentence:**
 
@@ -47,12 +59,15 @@ copy whose identity is unrecorded) without adopting a delivery channel.
 | that module vs Σ-GLYPH HEAD suite (format 3, adds `exit`) | `PARTIAL_UNREPORTABLE:exit` — 33/33/33 on the three fields; `exit` has no observable in a two-value engine |
 | that module vs warrant `conformance examples` | 67/67 (pre-W1 override; W1 differential mode) |
 | WRT-006 differential, that module as E1 vs E0 (pre-W1 bundled) | `suite_shape MATCH`, agreement 33/33, specimen MATCH; boundary: executes foreign-key bytes exactly as E0 |
-| `installed_engine_check.py` on that module + wheel, repository-default records | `ARTIFACT_AND_MODULE_PINNED_AND_CONFORMING`, `credit_bearing: true` |
+| `installed_engine_check.py` on that module + wheel, repository-default records, `activation: draft` | `ARTIFACT_AND_MODULE_PINNED_AND_CONFORMING`; all five bindings BOUND (registry sha, runtime-record commitment, SPEC bytes at `spec_commit`, specimen map, conformance receipt); **`credit_bearing: false`** (no activation act) |
 | W1's module (`55072bc0…`) vs the `ski@v1` selection | `NOT_THE_PINNED_EVALUATOR`; differential **not run**, module **not imported** |
 | a module with an import side effect, wrong sha | refused before import; side-effect marker absent |
 | caller-supplied manifest naming W1's module as `ski@v1` | `TEST_PROFILE_RESULT`, `authority: caller-supplied`, `credit_bearing: false` |
 | manifest with an extra field (`equivalence: witnessed`) | `REGISTRY_OR_MANIFEST_INVALID` (closed schema) |
-| registry with an altered suite digest | `semantic_conformance: FAIL` (registry binding) |
+| registry with an altered specimen digest, manifest untouched | `BINDING_FAILURE` on `manifest_registry_sha256`, `selected_runtime_record`, `ski_specimen_map` |
+| nested extra field (`vector_manifest.sigma_book1_suite.equivalence`, `artifact.equivalence`) | `REGISTRY_OR_MANIFEST_INVALID` (recursive closed schema) |
+| `--tag ski@v2` (candidate) | `TAG_NOT_REGISTERED`; a candidate is never loaded |
+| manifest `conformance_receipt_sha256` altered | `conformance_receipt: MISMATCH`, credit false |
 
 Reproducers: `proposals/wrt-007-model/installed_engine_check.py`; `proposals/wrt-006-model/differential.py`.
 Draft records: `proposals/wrt-007-model/runtime-registry.json`, `…/release-evaluator-manifest.json`.
@@ -70,8 +85,9 @@ ski@v1 → semantics: Book I v0.5 (SPEC §3.1)
 ski@v2 → NOT REGISTERED (placeholder from WRT-006 B): Book I 0.6.0; format-3 manifest; new body version
 ```
 
-The registry says what a tag *means* and what any evaluator — this repository's, a stranger's, a Go
-or Rust one — must satisfy. It names no implementation. It is the §13.1 registration table made
+The registry says what a tag *means* — bound to exact `SPEC.md` bytes at a named commit, a vector manifest
+commitment, and a structured store contract — and what any evaluator (this repository's, a stranger's, a Go
+or Rust one) must satisfy. It names no implementation. It is the §13.1 registration table made
 machine-readable; a new tag is a new row, never an edit.
 
 ### 3.2 Release evaluator manifest — operational, per (release, tag), owned by the release
@@ -84,8 +100,10 @@ machine-readable; a new tag is a new row, never an edit.
 (warrant-verify <release>, ski@v2) → null until ski@v2 is registered and a conforming module exists
 ```
 
-Exactly one evaluator per (release, tag). `load_sigma(tag)` locates the module file, hashes it
-**before import**, and compares it to the manifest; mismatch → the module is not imported and every
+Exactly one **active** evaluator per (release, tag); `candidates` are inert. The manifest pins the registry
+(`registry_sha256`), the selected runtime record (commitment), the conformance receipt (`core_sha256`) and the
+release commit. `load_sigma(tag)` locates the module file, hashes it **before import**, and compares it to the
+active selection; mismatch → the module is not imported and every
 reason under that tag reports *unverified* with reason `evaluator-not-pinned`. This replaces W1's
 "is the override byte-identical to the bundled file" with "is the file the release declared for this
 tag" — the same fail-closed shape, now addressable per tag and per release.

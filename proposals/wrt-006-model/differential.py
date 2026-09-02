@@ -28,7 +28,7 @@ import argparse, hashlib, importlib.util, json, os, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SELF = os.path.abspath(__file__)
-SCHEMA = "wrt-006-differential-receipt/3"
+SCHEMA = "wrt-006-differential-receipt/4"
 E0_DEFAULT = "git:98169375b3690151ca30891e2bda5046bd80a870:impl/sigma_glyph.py"  # pre-W1 bundled module
 FOREIGN_KEY = hashlib.sha256(b"WRT-006 foreign key").digest()
 # Pinned boundary expectations, measured 2026-09-02 against E0 sha 0d2b898b… (see WRT-006 §2).
@@ -322,6 +322,16 @@ def main():
             "ski_specimen": "MATCH", "boundary_observation": "EXPECTED_DIVERGENCE"}
     R["gate"] = {"E0_conformance_rule": "PASS on format_version 2; PASS or PARTIAL_UNREPORTABLE:exit on format_version 3", "E0_ok": e0_ok}
     R["exit"] = 0 if (e0_ok and all(R["verdicts"].get(k) == v for k, v in good.items())) else 1
+    # A machine-independent digest over the evidence: engines by sha, suites by sha, every axis and verdict —
+    # with host-specific locators (checkout paths, sigma_repo location) removed. A release manifest binds THIS.
+    core = json.loads(json.dumps(R, sort_keys=True, default=str))
+    core.pop("root", None)
+    if isinstance(core.get("suites"), dict):
+        core["suites"].pop("sigma_repo", None)
+    for e in core.get("engines", {}).values():
+        if not str(e.get("source", "")).startswith("git:"):
+            e["source"] = "<path>"
+    R["core_sha256"] = hashlib.sha256(json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
     print(json.dumps(R, indent=1, sort_keys=True, default=str))
     sys.exit(R["exit"])
 
