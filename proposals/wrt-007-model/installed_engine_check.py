@@ -154,7 +154,11 @@ def main():
         out["verdict"] = "TEST_PROFILE_RESULT"
     else:
         out["verdict"] = ("ARTIFACT_AND_MODULE_PINNED_AND_CONFORMING" if (all_ok and out["axes"]["artifact_identity"]["verdict"] == "VERIFIED") else "MODULE_PIN_MATCH_AND_CONFORMING" if all_ok else "PINNED_BUT_NOT_CONFORMING")
-        out["credit_bearing"] = bool(all_ok and man["activation"]["status"] == "active" and man["activation"]["act"])
+        # WRT-007 is CLOSED/DEFERRED (proposal §8): this reproducer is design evidence and is unconditionally
+        # non-crediting. Activation (externally bound manifest/registry/release/authority) is a separate act;
+        # a string in `activation.act` must never mint credit (third-gate P0).
+        out["credit_bearing"] = False
+        out["credit_note"] = "non-crediting by construction (WRT-007 §8); activation is a separate governance act"
     print(json.dumps(out, indent=1, sort_keys=True, default=str)); sys.exit(0 if all_ok else 1)
 
 

@@ -36,7 +36,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-004` | closed PR #21 (verify-report) | `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |
 | `WRT-006` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: B) | `proposals/WRT-006-ski-v1-implementation-substitution.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
-| `WRT-007` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (DRAFT) | `proposals/WRT-007-per-tag-evaluator-dependency.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
+| `WRT-007` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED) | `proposals/WRT-007-per-tag-evaluator-dependency.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
 
 ## Known identifier collisions
 

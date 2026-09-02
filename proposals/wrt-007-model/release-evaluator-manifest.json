@@ -11,7 +11,7 @@
   "activation": {
     "status": "draft",
     "act": null,
-    "note": "credit_bearing is false until an activation act (a governance record) names this manifest's sha256"
+    "note": "never-activatable-in-this-form (WRT-007 §8): activation is a separate externally-bound governance record; this manifest is design evidence"
   },
   "evaluators": {
     "ski@v1": {

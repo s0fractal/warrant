@@ -119,7 +119,7 @@ CANONICAL = {
     "WRT-006": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: B)",
                 "commit": None,
                 "path": "proposals/WRT-006-ski-v1-implementation-substitution.md"},
-    "WRT-007": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (DRAFT)",
+    "WRT-007": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED)",
                 "commit": None,
                 "path": "proposals/WRT-007-per-tag-evaluator-dependency.md"},
 }

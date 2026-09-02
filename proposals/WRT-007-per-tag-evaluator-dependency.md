@@ -1,23 +1,17 @@
 # WRT-007: A Warrant release addressably selects one evaluator per immutable runtime tag
 
-**Status:** DRAFT **rev 3** (2026-09-02) — design proposal plus one reproducer and two draft records.
-No SPEC, `impl/`, `pyproject`, vector or registry change is made by this document; nothing is
-adopted. Written by Claude Fable 5.1 at the owner's request. rev 1 (`677632e`) and rev 2 (`342f57e`) were gated by Codex (AMEND, AMEND). A gate verdict is evidence, not adoption (AGENTS.md rules 3–4).
+**Status: CLOSED — DEFERRED by its own stopping rule (§6), 2026-09-02.** Three gates (rev 1
+`677632e`, rev 2 `342f57e`, rev 3 `a2b3976`), each AMEND on the positive-credit boundary. §6 says a
+second AMEND on the same layer closes the proposal as *deferred* with §2's measurements retained,
+and it does. **Retained as design evidence:** per-tag module digest checked **before import**;
+the separation of runtime semantics (registry, bound to SPEC bytes) from release selection
+(manifest, bound to registry/record/receipt commitments); `active` vs inert `candidate`; the
+measured fact that the published `sigma-glyph==0.6.7` module is a `ski@v1` evaluator by SPEC §3.1.
+**Not retained:** any path to `credit_bearing: true` — the reproducer is now unconditionally
+non-crediting (§8). Activation and release-binding are a separate, smaller act (§8).
 
-**rev 2 — what the gate changed.** (1) **Semantics and supply separated.** rev 1's "one published
-artifact per runtime tag" conflated the tag's normative identity with one Python implementation and
-would have weakened `ski@v1`'s promise of independent implementations. rev 2 keeps two records: a
-*runtime registry* (what a tag means; which vector manifest any evaluator must satisfy) and a
-*release evaluator manifest* (which evaluator this Warrant release ships for that tag). (2) The
-delivery channel is no longer part of the claim: a vendored file with a pinned digest is an
-equivalent operational form to a published wheel — the owner's simplification, and the correct one
-while there are no external consumers. (3) Reproducer: refusal **before import** on a pin mismatch
-(an import-side-effect module is never executed); closed-schema registry and manifest with their
-digests and the selected records' commitments in the receipt; caller-supplied records yield
-`TEST_PROFILE_RESULT`, never a credit-bearing verdict; three separately reported axes
-(`artifact_identity`, `module_identity`, `semantic_conformance`); conformance judged against the
-**tag's registry vector manifest**, with the full WRT-006 receipt embedded and digested;
-`E0_conformance` required.
+Written by Claude Fable 5.1 at the owner's request. A gate verdict is evidence, not adoption
+(AGENTS.md rules 3–4).
 
 **rev 3 — what the second gate changed.** (1) **The registry binds bytes, not prose.** Each registered
 tag carries `semantics.spec_commit` + `spec_sha256` (exact `SPEC.md` bytes), a
@@ -164,7 +158,8 @@ what is removed is the one place where the cycle could silently change semantics
 ## 6. Stopping rule
 
 rev 2 → one adversarial gate plus the owner's disposition. Findings against §3.1–§3.4 amended
-once; a second AMEND on the same layer closes the proposal as *deferred* with §2 retained.
+once; a second AMEND on the same layer closes the proposal as *deferred* with §2 retained. **Applied
+2026-09-02 after the rev 3 gate — see §8.**
 
 ## 7. Relation to other documents
 
@@ -174,3 +169,24 @@ once; a second AMEND on the same layer closes the proposal as *deferred* with §
 - ADR-012 / internal-substrate brief (sigma-glyph): metric #2's intent met without a channel choice.
 - `manifesto/drafts/KELVIN-LAYERS-0.1.md` (non-normative): frozen name, frozen bytes, moved
   implementation → new name; vocabulary only.
+
+## 8. Closure record — the third gate's findings, left open
+
+Recorded as received (Codex, 2026-09-02); none is repaired here, because repairing them is the
+successor act, not another revision of this design.
+
+| # | Finding | Why it is real | What the successor act must do |
+|---|---|---|---|
+| P0 | **Self-issued activation minted credit.** `activation.act` was checked only as a non-empty string and `warrant_release.commit` as any string; `act="self-issued:anything"`, `commit="not-a-git-commit"` gave all bindings BOUND and `credit_bearing: true`. | The one boundary this proposal claimed to close — "credit only on activation" — was a string test. | Activation is a **separate governance record** that externally binds manifest sha256, registry sha256, an exact release commit/ref (verified with `git cat-file`), and the signing authority; the checker only *reads* it. |
+| P0 | **"The release ships this evaluator" was never checked.** `form: vendored-file`, `impl/sigma_glyph_v05.py` — no such file exists on the branch; an external `site-packages/sigma_glyph.py` with matching bytes passed. | Byte identity was proven; presence of those bytes in the named release tree was not. | For `vendored-file`: `git show <release_commit>:<module_path>` must equal the pin; for `distribution`: the wheel digest, separately. |
+| P1 | **The release receipt depended on a moving Σ-GLYPH HEAD.** The WRT-006 differential loaded the HEAD suite by default; one added newline in a HEAD vector (same JSON) kept the semantic verdict PASS but changed `core_sha256`, so `receipt_bound: false`. | An immutable `ski@v1` release must not depend on a sibling's future surface. | Compute the release receipt only over the **registry's** suite revisions; keep HEAD as a non-crediting canary. |
+| P1 | **`store_contract` was described, not executed.** `test_sha256` / `enforced_by` were schema-validated only; mutating `tests/sigma_cas_identity.py` changed nothing in the verdict. | The fetch-layer refusal is what compensates for a v0.5 evaluator executing foreign bytes; its closure must be part of the release binding. | Verify the enforcing code path and its test exist in the release tree at the pinned digests, and run the test. |
+| P1 | **JSON was not strict.** `json.load` accepted duplicate keys last-value-wins, invisible to the closed schema. | The same bytes could have two protocol readings. | Reject duplicate keys (`object_pairs_hook`) and require canonical bytes for both records. |
+
+What this closure changes in the artifact: `installed_engine_check.py` sets `credit_bearing: false`
+unconditionally and says why in its receipt; the manifest's `activation` block is marked
+`never-activatable-in-this-form`. Everything else stays as the record of what was measured.
+
+Minimum successor act (not this document): one activation record type; `git show`-based presence
+check per `form`; registry-suite-only receipt; store-contract closure executed; strict JSON. It is
+smaller than this proposal and should be filed as its own WRT with its own gate.
