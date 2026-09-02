@@ -59,6 +59,9 @@ warrant-anchor = "warrant_anchor:main"
 # `package-dir = {"" = "impl"}` is why `warrant_mcp_server.py` lives in `impl/`
 # and not in `integrations/mcp-server/` where it was written: setuptools has one
 # root for the flat namespace, so a module outside `impl/` cannot ship at all.
-py-modules = ["warrant", "sigma_glyph", "warrant_mcp", "warrant_mcp_server",
-              "ski_policy", "policy_lang", "warrant_anchor"]
+# One bundled Σ-GLYPH evaluator PER RUNTIME TAG (SPEC §13.1): sigma_glyph_v05 is
+# ski@v1 (Book I v0.5), sigma_glyph_v06 is the reserved ski@v2 candidate (Book I
+# 0.6.0; not registered or admitted). impl/warrant.py pins each by digest.
+py-modules = ["warrant", "sigma_glyph_v05", "sigma_glyph_v06", "warrant_mcp",
+              "warrant_mcp_server", "ski_policy", "policy_lang", "warrant_anchor"]
 package-dir = { "" = "impl" }

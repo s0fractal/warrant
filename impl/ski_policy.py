@@ -29,15 +29,19 @@ Depends only on the bundled Σ-GLYPH Book I oracle (`sigma_glyph`) + stdlib.
 """
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
-try:
-    import sigma_glyph as sg
-except ModuleNotFoundError:                                   # in-repo fallback
-    _p = Path(__file__).resolve().parent / "sigma_glyph.py"
-    _spec = importlib.util.spec_from_file_location("sigma_glyph", _p)
-    sg = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(sg)
+_impl = Path(__file__).resolve().parent
+if str(_impl) not in sys.path:                 # direct file-load in tests/tools
+    sys.path.insert(0, str(_impl))
+import warrant as _warrant                    # noqa: E402
+
+# Use the same digest-before-import boundary as verification.  Authoring with
+# moved evaluator bytes is a refusal, never execution under the frozen tag.
+sg = _warrant.load_bundled_sigma("ski@v1")
+if sg is None:
+    raise RuntimeError("pinned ski@v1 evaluator unavailable")
 
 
 # ---------- expression DSL ----------

@@ -215,12 +215,25 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Control 5 — reverse direction (C1). warrant's ski@v1 conformance pins the
-# check blob by hash; corrupting it makes `warrant conformance` refuse. warrant
-# holds examples/, so this applies only when the sibling is warrant.
+# Controls 5-6 — reverse direction.  C1 proves sigma HEAD cannot silently be
+# substituted for pinned ski@v1; C2 is the explicit, non-crediting differential
+# that actually runs warrant's vectors against sigma HEAD.  warrant holds the
+# implementation and examples/, so these apply only when the sibling is warrant.
 # --------------------------------------------------------------------------
 if [[ -f "$SIBLING/examples/ski/check.json" ]]; then
-  control "corrupted ski check-blob must break C1" "C1" '
+  control "removing the unpinned boundary must break C1" "C1" '
+import sys, pathlib
+p = pathlib.Path(sys.argv[1]) / "impl/warrant.py"
+s = p.read_text()
+old = "os.environ.get(\"WARRANT_SIGMA_DIFFERENTIAL\") != \"1\":"
+new = "os.environ.get(\"WARRANT_SIGMA_DIFFERENTIAL\") == \"1\":"
+if s.count(old) != 1:
+    sys.exit(1)
+p.write_text(s.replace(old, new))
+sys.exit(0)
+'
+
+  control "corrupted ski check-blob must break C2" "C2" '
 import json, sys, pathlib
 p = pathlib.Path(sys.argv[1]) / "examples/ski/check.json"
 d = json.loads(p.read_text())
@@ -232,11 +245,11 @@ sys.exit(0)
 '
 else
   echo "  n/a   ski check-blob corruption — the sibling holds no examples/ski"
-  echo "        (we are warrant; C1 reads OUR examples, and CI must not corrupt those)"
+  echo "        (we are warrant; C2 reads OUR examples, and CI must not corrupt those)"
 fi
 
 # --------------------------------------------------------------------------
-# Control 6 — gate REMOVAL must go red (E). Divergence was already detected;
+# Control 7 — gate REMOVAL must go red (E). Divergence was already detected;
 # deletion was not, and deletion is the cheaper attack: drop X1 from one repo
 # and its workflow simply stops running, while the other side used to skip and
 # stay green (Codex X1 gate, P1). Runs from both directions.
@@ -254,7 +267,7 @@ sys.exit(1)
 '
 
 # --------------------------------------------------------------------------
-# Control 7 — an unbuildable sibling must NOT be green (A1). warrant-go is
+# Control 8 — an unbuildable sibling must NOT be green (A1). warrant-go is
 # built from the warrant tree, so this control exists exactly when the sibling
 # is warrant. It is the direct countervector for "required Go crossings can
 # silently SKIP and the job still passes".

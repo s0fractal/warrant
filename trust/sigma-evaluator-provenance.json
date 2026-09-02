@@ -1,6 +1,6 @@
 {
   "kind": "warrant/sigma-evaluator-provenance@v0",
-  "note": "Binds the bundled impl/sigma_glyph.py to the exact Sigma candidate wheel it was extracted from, and to that wheel's authoritative build receipt. Verified by tools/sigma_provenance_check.py. This is the ONE dependency boundary this manifest describes; it is not a general vendoring framework.",
+  "note": "Binds the bundled impl/sigma_glyph_v06.py (the ski@v2 evaluator, Book I 0.6.0) to the exact Sigma candidate wheel it was extracted from, and to that wheel's authoritative build receipt. Verified by tools/sigma_provenance_check.py, which also binds trust/ski-runtime-evaluators.json (one module per tag). This is ONE dependency boundary; it is not a general vendoring framework.",
   "source_repository": "https://github.com/s0fractal/sigma-glyph",
   "source_commit": "5050ab7354224e586456b26fbd0fffe04301b3b2",
   "candidate_receipt_commit": "b4c231ae7a3e8c7c36c6987a9a8e0dcd344a4451",
@@ -20,5 +20,7 @@
     "wheel==0.48.0"
   ],
   "source_date_epoch": "1788134400",
-  "official_ci_python": "3.12"
+  "official_ci_python": "3.12",
+  "vendored_path": "impl/sigma_glyph_v06.py",
+  "runtime_tag": "ski@v2 \u2014 reserved candidate in SPEC \u00a713.1, not registered or admitted until \u00a713.2 defines 0.3 with the required vectors"
 }
