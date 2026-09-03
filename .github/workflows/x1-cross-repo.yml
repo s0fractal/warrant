@@ -58,7 +58,20 @@ jobs:
             */sigma-glyph) SIB=warrant ;;
             *) echo "X1: unexpected repository ${{ github.repository }}" >&2; exit 2 ;;
           esac
-          git clone -q --depth 50 "https://github.com/s0fractal/$SIB.git" /tmp/$SIB
+          URL="https://github.com/s0fractal/$SIB.git"
+          # A paired same-owner PR may carry the sibling half under the same
+          # branch name. Test candidate against candidate there; push/schedule
+          # events still test master against master. If the paired branch is
+          # absent, fall back to sibling master and let the seam fail normally.
+          if [[ "${{ github.event_name }}" = "pull_request" \
+             && "${{ github.event.pull_request.head.repo.owner.login }}" = "s0fractal" \
+             && -n "${{ github.head_ref }}" \
+             && $(git ls-remote --heads "$URL" "refs/heads/${{ github.head_ref }}" | wc -l) -eq 1 ]]; then
+            git clone -q --depth 50 --branch "${{ github.head_ref }}" "$URL" /tmp/$SIB
+            echo "X1 sibling candidate: $SIB/${{ github.head_ref }}"
+          else
+            git clone -q --depth 50 "$URL" /tmp/$SIB
+          fi
           echo "SIBLING=/tmp/$SIB" >> "$GITHUB_ENV"
           echo "X1 sibling: $SIB @ $(git -C /tmp/$SIB rev-parse --short HEAD)"
 
