@@ -257,7 +257,7 @@ requires a downstream server command after `--`; the server refuses one.
 
 ## What it is not
 
-Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three independent implementations agree on every hash, and the conformance contract's wire format plus one real class is an afternoon and full base grade is a few days — measured by writing two skeletons, not estimated, and still never measured against anyone who did not already know the format.
+Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three in-project implementations agree on every hash. A fourth JavaScript candidate was produced from the public specification and conformance material without Warrant implementation source by an iterative local multi-model process and reached the complete base grade (135/135); its settlement grade remains unimplemented. This demonstrates one frozen public surface's clean-room-from-code implementability, not independent custody, external adoption, or correctness outside the corpus ([NEED-002](needs/README.md)).
 
 ## Spec and status
 

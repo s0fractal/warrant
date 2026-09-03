@@ -1,0 +1,85 @@
+You are the sole clean-room implementer in experiment NEED-002-A2c-QWEN38-JS.
+Implement only the Warrant conformance class module for: blob-hash, sig-message.
+Use Node.js built-ins only. Do not use network access, child processes, external packages, repository source code, skeletons, or hidden guidance.
+No expected vector answers are supplied. Implement the rules in the frozen normative text.
+Your module must export handle(className, input), synchronously or asynchronously. It must return exactly {output: <class output>} when it answers, or {unsupported: <nonempty reason>} when it genuinely cannot answer. It must not read stdin or write stdout.
+Return exactly one fenced JavaScript block containing the complete hashing.mjs and no other fenced blocks.
+
+===== VERBATIM FROZEN CONTRACT CLASS TEXT =====
+**Encodings.** A field whose name ends in `_base64` carries standard base64 with
+padding; a field whose name ends in `_hex`, and every hash, key and signature,
+carries **lowercase** hex with no prefix and no separators. Comparison is exact
+string equality, so uppercase hex is a wrong answer, not a formatting choice.
+
+#### `blob-hash` — SPEC §1, §8
+
+* input: `{"bytes_base64": "<base64>"}`
+* output: `{"hash": "<hex>"}` — plain `SHA-256` over the raw bytes, no framing.
+
+#### `sig-message` — SPEC §5, §8.5
+
+* input: `{"warrant_id": "<64 lowercase hex characters>"}`
+* output: `{"message_hex": "<hex of the exact bytes a key signs>"}`
+* on a malformed WarrantID: `{"error": "<why>"}`
+
+47 bytes: the 15 ASCII bytes of the separator `warrant-sig-v1:` — including the
+trailing colon — followed by the WarrantID's 32 **raw** bytes, obtained by
+hex-decoding the input, never its 64 bytes of hex text. Nothing is appended, and
+nothing is hashed afterwards: the message is those 47 bytes.
+
+    message = b"warrant-sig-v1:" || unhex(warrant_id)      # 15 + 32 = 47
+
+Every way of building this wrong still reproduces all five SPEC §8 WarrantIDs
+correctly, which is why it is vectored separately.
+
+===== VERBATIM FROZEN SPEC SECTIONS §1, §5 =====
+## 1. Model
+
+A **warrant** is an immutable, signed, content-addressed record of one decision. Records form a DAG via `prior`. All referenced artifacts (policies, checks, evidence, subjects) are blobs addressed by `SHA-256(bytes)`, stored in any content-addressed store (files, git objects, S3 — out of scope).
+
+## 5. Envelope and signatures (MUST)
+
+A stored warrant is an envelope:
+
+```json
+{ "body": { ... }, "sigs": [ { "actor": "<id>", "key": "<hex64 Ed25519 pubkey>", "sig": "<hex128>" } ] }
+```
+
+- **`sig` = Ed25519 signature over a domain-separated message (MUST).** The message is **not** the WarrantID. It is the 15-byte ASCII separator `warrant-sig-v1:` immediately followed by the **32 raw bytes** of the WarrantID:
+
+  ```
+  msg = "warrant-sig-v1:" || WarrantID_raw        15 + 32 = 47 bytes
+  separator bytes (hex) = 77617272616e742d7369672d76313a
+  ```
+
+  Precisely: the separator is the 15 ASCII characters `w a r r a n t - s i g - v 1 :`, with no NUL terminator, no length prefix and no separator between the two parts; the WarrantID is appended as the 32 bytes obtained by hex-decoding it, **not** as its 64 ASCII hex characters. The total is always exactly 47 bytes. Both parts are fixed-length, so the encoding is unambiguous without a length field. Signing and verification are **pure RFC 8032 Ed25519 over that byte string** — **not** Ed25519ctx, **not** Ed25519ph, no pre-hash, no context parameter passed to the primitive. Nothing else is signed: the envelope is not signed, `sigs` is not signed, and the body is signed only through its hash.
+
+  **The pre-0.6.0 construction — the bare 32-byte WarrantID with no separator — MUST NOT verify (MUST NOT).** A verifier MUST NOT accept both messages, under any flag, during any transition: a verifier that accepts the old one has no domain separation, because an attacker simply uses the old one. The two constructions are cleanly disjoint in both directions (`examples/signature-vectors.json`), so there is no dual-accept window and the change is a flag day. A verifier that *recognises* an old signature SHOULD say so rather than reporting only that verification failed (see the report string below); recognising is not accepting.
+
+  **Rationale.** Without a separator the signed message is byte-indistinguishable from any other bare 32-byte SHA-256 digest, so a key that also signs digests in another protocol — DSSE/in-toto payload digests, TUF metadata, Σ-GLYPH NodeHashes, RFC 6962 roots, Git object ids — produces signatures valid in both, in both directions. `warrant-sig-v1` names this protocol inside the bytes the key covers. Ed25519ctx is the orthodox instrument and is deliberately not used: Python's `cryptography` does not expose it, Go reaches it only through `ed25519.Options`, and a from-scratch verifier must implement RFC 8032's `dom2` prefix, so the orthodox choice is the one more likely to split verifiers — the failure this document's design rule ranks highest. `v1` versions the *signature scheme*, not the body: a future change becomes `warrant-sig-v2:` and is again disjoint from everything before it. (This clause implements option A of `proposals/DEC-001-domain-separation.md`; the vectors are §8.5.)
+
+  **Report string (MUST, §7 convention).** A verifier that recognises a signature valid over the bare WarrantID MUST report it with these exact bytes: `signature does not verify (excluded): LEGACY pre-v1 signature construction (signed the bare 32-byte WarrantID; SPEC 5 requires "warrant-sig-v1:" || WarrantID). Re-sign with: warrant resign --key <keyfile>` — an ASCII string, so three implementations and three JSON encoders emit one diagnosis. The signature is still excluded and §6's ERR still applies: this is a diagnosis, not an acceptance.
+
+  **Migration.** The WarrantID is SHA-256 of the canonical *body* and the envelope is not hashed, so re-signing a record rewrites `sig` and nothing else: no WarrantID moves, no `prior` edge breaks, no `under`/`evidence`/`subject` hash stops resolving, no settlement tunnel and no pinned genesis root changes. A record whose signing key is no longer available **cannot** be migrated and MUST be reported as such rather than left to fail as an ordinary bad signature.
+- **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`), MUST reject a malformed (non-canonical) public-key or signature-point encoding, and **MUST reject a small-order or non-canonically-encoded public key** before verifying. A small-order public key (the 8 torsion points, e.g. all-zero) lets an all-zero signature verify for a large fraction of messages, and libraries disagree on which such keys they accept — so a crafted envelope would verify under one library and not another ("Taming the many EdDSAs"). The rejection set is a byte-exact blocklist of the 8 canonical torsion encodings plus a non-canonical check (`y ≥ p` after clearing the sign bit), so every implementation agrees by construction; it is a normative negative-conformance vector (§8.3), not a library-dependent heuristic. Implementations SHOULD additionally prefer a strict RFC 8032 cofactorless verifier.
+- ≥1 signature MUST be present and MUST include one whose `actor` equals `body.actor.id` and which verifies. If no *valid* signature by `body.actor.id` is present, the record is invalid (§6 ERR).
+- Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is). **A co-signature that fails to verify is reported and EXCLUDED, not fatal (MUST):** because anyone with store write access can append envelope signatures, a single junk co-signature MUST NOT be able to invalidate a record that still carries a valid signature by `body.actor.id`. An invalid signature is a §6 WARN; only the *absence* of a valid actor signature is an ERR. (For settlement thresholds, §5.1, an invalid signature simply does not count.)
+- Key↔actor binding is out of scope for v0.1 (use your existing PKI/keyring); implementations MUST verify signatures against the stated key and report the binding as unverified if no keyring is configured.
+
+### 5.1. Key state: binding, rotation, thresholds (v0.3)
+
+Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification.
+
+**Rotation is a warrant:** an `accept` whose subject is the new key blob. A rotation MUST include a valid signature by the incoming key as proof of possession and MUST be authorized under the actor/store's current key policy. If that policy has a threshold, the rotation MUST satisfy it using keys already bound before the rotation; the incoming key's proof-of-possession signature does not count toward the threshold. The outgoing key's signature MAY be required by policy for ordinary rotation, but MUST NOT be sufficient authorization when the store has a multi-actor threshold policy. Emergency replacement of a suspected-compromised outgoing key SHOULD be authorized by quorum without requiring the outgoing key. **Revocation is a warrant:** a `supersede` of the rotation warrant that introduced the key, authorized under the same current-policy rule.
+
+**Ordering:** key validity derives from accepted rotation/revocation warrants in **DAG order**, never from wall-clock trust in `ts` alone; a `ts` outside non-decreasing prior order remains a §6 warning and MUST NOT extend or resurrect a key. Only *authorized* key-state warrants can conflict — a record failing current-policy authorization is an invalid record, not a conflict. A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendant: warrants ordered by the DAG are never a conflict; only maximal, mutually unordered warrants trigger this rule. On conflict, verifiers MUST report `WARN: key-state conflict`, and the conflicted actor's key MUST NOT count toward any quorum until a later warrant — authorized by the unconflicted remainder of the quorum — resolves it; if the threshold would become unsatisfiable, it is reduced to exclude the conflicted actor strictly for conflict resolution.
+
+**Threshold policy grammar.** A v0.3 threshold policy blob MUST be JCS-canonical JSON:
+
+```json
+{ "warrant_policy": "0.3", "threshold": { "min_sigs": 2, "actors": ["a@x", "b@y", "c@z"] } }
+```
+
+`min_sigs` MUST be a positive integer ≤ `len(actors)`; `actors` MUST be nonempty and unique; unknown fields inside `threshold` make the policy invalid. **For settlement-grade threshold evaluation (including root adoption, §9), a signature counts for an actor only if it is cryptographically valid AND made by a key currently bound to that actor at that warrant's DAG position (§5.1). An actor with no configured key state contributes nothing: unbound claims MUST NOT satisfy a v0.3 threshold.** Records filed under an invalid threshold policy are settlement-inactive and MUST produce `ERR: invalid threshold policy` for settlement-grade verification. Opaque v0.1/v0.2 policy blobs MUST NOT be interpreted as threshold policies.
+
+Now perform the task. Return the complete hashing.mjs in exactly one fenced JavaScript block.

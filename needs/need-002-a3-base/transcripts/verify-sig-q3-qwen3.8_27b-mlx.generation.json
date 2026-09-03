@@ -1,0 +1,30 @@
+{
+  "experiment": "NEED-002-A3-COLLAB-JS",
+  "stage": "verify-sig",
+  "attempt": "q3",
+  "model": "qwen3.8:27b-mlx",
+  "parent_commit": "b06f64885d13d0a2ea751c79799ce3622d1ad97c",
+  "report": "reports/q2-verify-sig.json",
+  "vector_mode": "focused",
+  "runtime_options": {
+    "temperature": 0.2,
+    "repeat_penalty": 1,
+    "seed": 20260903,
+    "num_ctx": 32768,
+    "num_predict": 16384,
+    "draft_num_predict": 0,
+    "thinking": false,
+    "transport": "streaming"
+  },
+  "prompt_sha256": "2393f34f42901afa451469f19e2786f2d74172558b95389cdf63edbc305bdedd",
+  "source_before_sha256": "7795c7fc7083e9d2d2aa4604d413ed315f49fb09c11247650cef6d0f4580cc0c",
+  "response_sha256": "1d5a59db9320e8a69f7421234055bc580ab1b4164a86cab21be61da27f454e1a",
+  "source_after_sha256": "92bf39435a50b003e7eab5d69b6f363de1928e069fa7c2eaa8514a3b73083ccb",
+  "thinking_sha256": null,
+  "done": true,
+  "done_reason": "stop",
+  "total_duration_ns": 217354698208,
+  "prompt_eval_count": 15660,
+  "eval_count": 2120,
+  "extraction": "ACCEPTED"
+}

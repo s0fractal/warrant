@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "fixture@warrant.example"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "a fixture store that verifies clean"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [
+      "95eeda2269a4edeb30acb59b12f4bb4614ee67b3bcff08abcb33a3d9a12dad93"
+    ],
+    "prior": [],
+    "subject": {
+      "hash": "95eeda2269a4edeb30acb59b12f4bb4614ee67b3bcff08abcb33a3d9a12dad93",
+      "note": "conformance fixture"
+    },
+    "ts": 1751673600,
+    "under": [
+      "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+    ],
+    "warrant": "0.1"
+  },
+  "sigs": [
+    {
+      "actor": "fixture@warrant.example",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "sig": "0487003898543c719fa4f3e0ead2df87831409e10c0e90d3a38e8bb8ecc14dd45f30913df59873bf8db1414def41e57339f1cdb9df6f59eb4d03027021a53d0f"
+    }
+  ]
+}

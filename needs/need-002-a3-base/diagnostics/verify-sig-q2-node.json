@@ -1,0 +1,22 @@
+{
+  "candidate_source_sha256": "7795c7fc7083e9d2d2aa4604d413ed315f49fb09c11247650cef6d0f4580cc0c",
+  "node": "v26.8.1",
+  "public_vector": "verify-sig/accept-00",
+  "observations": [
+    {
+      "operation": "createVerify('ed25519').update(message).verify(key, signature)",
+      "outcome": "threw",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_CRYPTO_INVALID_DIGEST",
+        "message": "Invalid digest"
+      }
+    },
+    {
+      "operation": "verify(null, message, key, signature)",
+      "outcome": "returned",
+      "value": true
+    }
+  ],
+  "scope": "Both observations use the candidate-generated SPKI wrapper and the public accept-00 vector. They execute Node crypto directly and do not execute or disclose a Warrant implementation."
+}

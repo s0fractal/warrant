@@ -1,0 +1,57 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "sig-message",
+  "grade": "base",
+  "source": "examples/signature-vectors.json (SPEC \u00a78.5)",
+  "note": "Every way of building this message wrong still reproduces all five \u00a78 WarrantIDs correctly, so nothing else in the pack catches it.",
+  "vectors": [
+    {
+      "id": "sig-message/00f79fca5c9c",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "the 47 bytes a key signs for examples/propose.warrant.json",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1"
+      },
+      "expect": {
+        "message_hex": "77617272616e742d7369672d76313a00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1"
+      }
+    },
+    {
+      "id": "sig-message/5f5d4035a4ae",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "the 47 bytes a key signs for examples/reject.warrant.json",
+      "input": {
+        "warrant_id": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8"
+      },
+      "expect": {
+        "message_hex": "77617272616e742d7369672d76313a5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8"
+      }
+    },
+    {
+      "id": "sig-message/bc602a70a116",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "the 47 bytes a key signs for examples/accept.warrant.json",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78"
+      },
+      "expect": {
+        "message_hex": "77617272616e742d7369672d76313abc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78"
+      }
+    },
+    {
+      "id": "sig-message/8c9267bccbc2",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "the 47 bytes a key signs for examples/ski/accept-ski.warrant.json",
+      "input": {
+        "warrant_id": "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0"
+      },
+      "expect": {
+        "message_hex": "77617272616e742d7369672d76313a8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0"
+      }
+    }
+  ]
+}

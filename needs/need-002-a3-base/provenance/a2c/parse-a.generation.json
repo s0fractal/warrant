@@ -1,0 +1,17 @@
+{
+  "stage": "parse",
+  "attempt": "a",
+  "repair_report": null,
+  "prompt_sha256": "5eed97c834d363f702fb9e622f32f0b29128a09619f9deab7ac6c989e14cb3d6",
+  "response_sha256": "a5ca1097dc9ec17b15f02d45004bfa8ea4eba9e7085ec5d7f331a80a89089dc6",
+  "thinking_sha256": null,
+  "model": "qwen3.8:27b-mlx",
+  "thinking_mode": "disabled",
+  "done": true,
+  "done_reason": "stop",
+  "total_duration_ns": 109276447542,
+  "prompt_eval_count": 1475,
+  "eval_count": 3015,
+  "output_sha256": "7d6450558f138fe92765ab9464282c0c5ca7086aba5f698ac6319c9d7d914b2c",
+  "extraction": "ACCEPTED"
+}

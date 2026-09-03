@@ -1,0 +1,249 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "parse",
+  "grade": "base",
+  "source": "authored for this pack (see note)",
+  "note": "SPEC \u00a78.3 names these behaviours normatively but vectors them nowhere; before this pack they were only exercised by in-repo harnesses a third party cannot run. Each case was executed against all three reference implementations before being pinned. DELIBERATELY NOT VECTORED: whether the parse layer itself rejects a document whose top level is not an object. The three reference implementations enforce that rule at three different layers (the decoder, the envelope-shape check, the body validator) and agree on the observable outcome \u2014 one error \u2014 so pinning the layer would test an implementation's internal structure rather than the format. `validate/reject-non-object` covers the part the spec does fix.",
+  "vectors": [
+    {
+      "id": "parse/canonical",
+      "polarity": "positive",
+      "spec": "\u00a74",
+      "why": "a canonical object parses",
+      "input": {
+        "bytes_base64": "eyJhIjoxLCJiIjoieCJ9"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "id": "parse/whitespace",
+      "polarity": "positive",
+      "spec": "\u00a74",
+      "why": "insignificant whitespace is legal input (canonical FORM is a separate question from parse acceptance)",
+      "input": {
+        "bytes_base64": "ewogICJhIiA6IDEsCiAgImIiOiAieCIKfQo="
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "id": "parse/unicode-escape",
+      "polarity": "positive",
+      "spec": "\u00a74",
+      "why": "a \\u escape for a BMP code point parses",
+      "input": {
+        "bytes_base64": "eyJhIjoiXHUwMGU5In0="
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "id": "parse/surrogate-pair",
+      "polarity": "positive",
+      "spec": "\u00a74",
+      "why": "a valid surrogate PAIR is one astral code point, not two errors",
+      "input": {
+        "bytes_base64": "eyJhIjoiXHVkODNkXHVkZTgwIn0="
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "id": "parse/nested",
+      "polarity": "positive",
+      "spec": "\u00a74",
+      "why": "nested containers, null and booleans parse",
+      "input": {
+        "bytes_base64": "eyJhIjp7ImIiOlsxLDIseyJjIjpudWxsfV19LCJkIjp0cnVlfQ=="
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "id": "parse/dup-keys",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: duplicate member name (RFC 7493). Stock parsers silently keep the last, which is a canonicalization attack",
+      "input": {
+        "bytes_base64": "eyJhIjoxLCJhIjoyfQ=="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/dup-keys-nested",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: duplicate member name in a NESTED object",
+      "input": {
+        "bytes_base64": "eyJ4Ijp7ImEiOjEsImEiOjJ9fQ=="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/trailing-value",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: a second JSON value after the first",
+      "input": {
+        "bytes_base64": "eyJhIjoxfSB7ImIiOjJ9"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/trailing-garbage",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: trailing content after the JSON value",
+      "input": {
+        "bytes_base64": "eyJhIjoxfXg="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/bom",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: a leading byte order mark. RFC 8259 says a receiver MAY ignore one \u2014 which is exactly the problem for a content-addressed format",
+      "input": {
+        "bytes_base64": "77u/eyJhIjoxfQ=="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/lone-high-surrogate",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: unpaired high surrogate (invalid I-JSON). Python keeps the surrogate code point, Go substitutes U+FFFD: same bytes, different strings, different WarrantID",
+      "input": {
+        "bytes_base64": "eyJhIjoiXHVkODAwIn0="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/lone-low-surrogate",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: unpaired low surrogate",
+      "input": {
+        "bytes_base64": "eyJhIjoiXHVkYzAwIn0="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/nan",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: NaN is not JSON (Python's stock parser accepts it)",
+      "input": {
+        "bytes_base64": "eyJhIjpOYU59"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/infinity",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: Infinity is not JSON",
+      "input": {
+        "bytes_base64": "eyJhIjpJbmZpbml0eX0="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/invalid-utf8",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: invalid UTF-8 in a string",
+      "input": {
+        "bytes_base64": "eyJhIjoi//4ifQ=="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/raw-control",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: an unescaped control character inside a string",
+      "input": {
+        "bytes_base64": "eyJhIjoieAF5In0="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/unterminated",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: truncated input",
+      "input": {
+        "bytes_base64": "eyJhIjo="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/leading-zero",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: a number with a leading zero",
+      "input": {
+        "bytes_base64": "eyJhIjowMX0="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/single-quotes",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: single-quoted keys are not JSON",
+      "input": {
+        "bytes_base64": "eydhJzoxfQ=="
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "id": "parse/trailing-comma",
+      "polarity": "negative",
+      "spec": "\u00a74",
+      "why": "MUST reject: a trailing comma",
+      "input": {
+        "bytes_base64": "eyJhIjoxLH0="
+      },
+      "expect": {
+        "ok": false
+      }
+    }
+  ]
+}

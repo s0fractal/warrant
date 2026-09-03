@@ -69,6 +69,10 @@ CHECKS = [
     # each moved this list without moving the sentence describing it.
     ("doc counts: stated totals equal what they count",
      ["python3", "tools/doc_counts.py"], None),
+    ("need-002 base evidence (closed provenance bundle + replay + self-check)",
+     ["python3", "tools/verify_need002_a3.py"], "node"),
+    ("need-002 base evidence mutation controls",
+     ["python3", "tests/need002_a3_evidence.py"], None),
     ("python: conformance (SPEC §8 vectors, byte-exact)",
      ["python3", "impl/warrant.py", "conformance", "examples"], None),
     ("python: selftest (round-trip + tamper detection)",
@@ -256,6 +260,8 @@ NEEDS = {
     "go+node": (lambda: shutil.which("go") and shutil.which("node"),
                 "needs the go and node toolchains on PATH (the skeletons are "
                 "run, not compiled)"),
+    "node": (lambda: shutil.which("node") is not None,
+             "Node.js is required to replay the JavaScript NEED-002 candidate"),
     "go": (lambda: GO.is_file(),
            "impl-go/warrant-go not built  ->  (cd impl-go && go build -o warrant-go .)"),
     "go-toolchain": (lambda: shutil.which("go") is not None,

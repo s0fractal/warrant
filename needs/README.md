@@ -10,7 +10,9 @@ planning.** It was initially added by an agent outside the enumerated scope of
 a correction pass and was therefore not accepted by that commit alone. The
 maintainer has since explicitly accepted the AI-reviewed / human-authorized
 operating model reflected here. That acceptance does not manufacture evidence:
-the human review and clean-room implementation below still have not happened.
+the optional human review below has not happened. The clean-room need has since
+split: its base-grade half is met by a bounded model-generated implementation;
+its settlement-grade half remains open.
 
 A need is not a defect and is not a blocker unless an adopted policy says so.
 Its absence limits only the claims that depend on it. In particular, these
@@ -45,7 +47,7 @@ adversarial depth, not evidence of an independent human review.
 open indefinitely without blocking WRT-005. The Lean guarantees remain stated
 for exactly what they cover and no further either way.
 
-### NEED-002 — a context-isolated clean-room implementation from the spec alone
+### NEED-002 — clean-room-from-code implementation from the public surface
 
 The format's design rule is that implementations agree byte-exactly. Three
 implementations exist (Python, Go, Rust), but all were written inside this
@@ -58,12 +60,42 @@ same host is not an independent party, custody, or external adoption; the
 narrow evidence would be clean-room-from-code implementability, and nothing
 more. That boundary must remain explicit.
 
-**What meeting it looks like:** an isolated implementer runs the conformance
-pack against its own implementation and either reproduces every vector
-(evidence the spec is implementable from its published text) or finds a
-divergence (a real defect). Until then the repository must not claim clean-room
-implementability has been demonstrated. This is an evidence boundary, not an
-automatic blocker on merge, adoption, release, or version number.
+The need is now split by the grades the conformance contract already separates.
+An implementation can honestly complete the base format without implementing
+the settlement runtime.
+
+#### NEED-002-BASE — MET at one frozen operand
+
+Experiment `NEED-002-A3-COLLAB-JS` used an iterative local multi-model process:
+Qwen3.8 and Gemma4 authored semantic JavaScript modules; the orchestrator
+provided the frozen SPEC, conformance material, prior model outputs, public
+machine reports, and two runtime diagnostics, but no Warrant implementation
+source. The resulting candidate achieved the complete **base** grade of the
+candidate conformance pack 1.2.0: 135 PASS, 0 FAIL, 0 UNRUN, 0 ERROR, with all
+60 base-grade negative vectors answered and none accepted. The runner detected
+all four deliberate mutations.
+
+The compact evidence bundle, prompt-input provenance audit, candidate, frozen
+operands, accepted generation streams, and replay command live in
+[`need-002-a3-base/`](need-002-a3-base/). The claim and exact commitments are in
+[`NEED-002-A3-BASE.json`](NEED-002-A3-BASE.json); `tools/verify_need002_a3.py`
+checks the closed bundle and replays it.
+
+`MET` is deliberately narrow: implementability from the public base surface was
+demonstrated for one frozen corpus. It is not one-shot or single-model
+reproduction, proof outside the vectors, independent custody, human review,
+external adoption, a release, or governance adoption.
+
+#### NEED-002-SETTLEMENT — OPEN
+
+The A3 candidate claims base grade. Two positive and two negative settlement
+vectors are `NOT-CLAIMED`; it implements neither `ski-run` nor settlement-grade
+store verification. Meeting this half requires a separately bounded clean-room
+implementation to replay the settlement corpus. Base evidence cannot be
+composed into settlement credit.
+
+This remains an evidence boundary, not an automatic blocker on merge, adoption,
+release, or version number.
 
 ---
 

@@ -1,0 +1,165 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { handle as canonHandle } from './canon.mjs';
+import { handle as validateHandle } from './validate.mjs';
+import { handle as verifySigHandle } from './verify-sig.mjs';
+import { createHash } from 'node:crypto';
+
+/**
+ * verify-store — SPEC §6
+ * input: {"store_path": "<absolute path>", "grade": "base"}
+ * output: {"errors": <int>, "warnings": <int>}
+ */
+export async function handle(className, input) {
+  if (className !== 'verify-store') {
+    return { unsupported: `Unknown class: ${className}` };
+  }
+
+  const storePath = input.store_path;
+  if (!storePath || typeof storePath !== 'string') {
+    return { error: 'Missing or invalid store_path' };
+  }
+
+  if (!fs.existsSync(storePath) || !fs.lstatSync(storePath).isDirectory()) {
+    return { error: 'Path is not a directory' };
+  }
+
+  const recordsDir = path.join(storePath, 'records');
+  const blobsDir = path.join(storePath, 'blobs');
+
+  if (!fs.existsSync(recordsDir) || !fs.lstatSync(recordsDir).isDirectory()) {
+    return { error: 'Store is missing records directory' };
+  }
+
+  let errors = 0;
+  let warnings = 0;
+
+  const recordFiles = fs.readdirSync(recordsDir);
+  const recordMap = new Map(); // WarrantID -> body
+
+  // First pass: Load and basic validation
+  for (const filename of recordFiles) {
+    if (!filename.endsWith('.json')) continue;
+    
+    const warrantId = filename.slice(0, -5); // remove .json
+    const filePath = path.join(recordsDir, filename);
+    
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const envelope = JSON.parse(content);
+      
+      if (!envelope || typeof envelope !== 'object' || !envelope.body) {
+        errors++;
+        continue;
+      }
+
+      // §6(1): Schema-valid
+      const valResult = validateHandle('validate', { body: envelope.body });
+      if (valResult.output && !valResult.output.valid) {
+        errors++;
+      }
+
+      // §6(2): WarrantID recomputes
+      const canonResult = canonHandle('canon', { body: envelope.body });
+      if (canonResult.output && canonResult.output.warrant_id !== warrantId) {
+        errors++;
+      }
+
+      // §6(3): Valid signature by actor.id
+      const actorId = envelope.body?.actor?.id;
+      let hasValidActorSig = false;
+      let hasAnySig = false;
+
+      if (Array.isArray(envelope.sigs)) {
+        for (const sigObj of envelope.sigs) {
+          const sigRes = verifySigHandle('verify-sig', {
+            warrant_id: warrantId,
+            key: sigObj.key,
+            sig: sigObj.sig
+          });
+          
+          if (sigRes.output && sigRes.output.valid) {
+            hasAnySig = true;
+            if (sigObj.actor === actorId) {
+              hasValidActorSig = true;
+            }
+          } else {
+            warnings++; // Invalid signature is a WARN
+          }
+        }
+      }
+
+      if (!hasValidActorSig) {
+        errors++;
+      }
+
+      recordMap.set(warrantId, envelope.body);
+    } catch (e) {
+      errors++; // Record will not load
+    }
+  }
+
+  // Second pass: Reference resolution and logic
+  for (const [warrantId, body] of recordMap.entries()) {
+    // §6(4): prior edges MUST resolve to stored warrants
+    if (Array.isArray(body.prior)) {
+      for (const priorId of body.prior) {
+        if (!recordMap.has(priorId)) {
+          errors++;
+        } else {
+          // §6(6): ts non-decreasing along prior edge
+          const priorBody = recordMap.get(priorId);
+          if (typeof body.ts === 'number' && typeof priorBody.ts === 'number') {
+            if (body.ts < priorBody.ts) {
+              warnings++;
+            }
+          }
+        }
+      }
+    }
+
+    // §6(5): Blobs resolution (WARN)
+    const blobRefs = [];
+    if (Array.isArray(body.under)) blobRefs.push(...body.under);
+    if (Array.isArray(body.evidence)) blobRefs.push(...body.evidence);
+    if (Array.isArray(body.because)) {
+      for (const r of body.because) {
+        if (r.check) blobRefs.push(r.check);
+        if (r.transcript) blobRefs.push(r.transcript);
+      }
+    }
+    if (body.subject?.hash) blobRefs.push(body.subject.hash);
+
+    for (const hash of blobRefs) {
+      const blobPath = path.join(blobsDir, hash);
+      if (!fs.existsSync(blobPath)) {
+        warnings++;
+      } else {
+        // §1: Blob bytes must hash to filename
+        const bytes = fs.readFileSync(blobPath);
+        const actualHash = createHash('sha256').update(bytes).digest('hex');
+        if (actualHash !== hash) {
+          errors++;
+        }
+      }
+    }
+
+    // §6(7): ski@v1 re-execution (WARN)
+    if (Array.isArray(body.because)) {
+      for (const r of body.because) {
+        if (r.kind === 'check' && r.runtime === 'ski@v1') {
+          // In base grade, failure to re-execute or mismatch is a WARN
+          // We don't have the Σ-GLYPH evaluator here, so we report as unverified
+          warnings++; 
+        }
+      }
+    }
+  }
+
+  return {
+    output: {
+      errors,
+      warnings
+    }
+  };
+}

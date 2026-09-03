@@ -1,0 +1,39 @@
+{
+  "body": {
+    "actor": {
+      "id": "fixture@warrant.example"
+    },
+    "because": [
+      {
+        "check": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c",
+        "kind": "check",
+        "runtime": "cmd@v1",
+        "transcript": "3f7792b6ecbb38c8d56256ab617dd6db85ce888473204b036fc5b2cddfb559af",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "3f7792b6ecbb38c8d56256ab617dd6db85ce888473204b036fc5b2cddfb559af"
+    ],
+    "prior": [
+      "ffb72b1c61abd201cef83ea272c8d8f46742d6dde8bee5e47a365c5098ef4f03"
+    ],
+    "subject": {
+      "hash": "95eeda2269a4edeb30acb59b12f4bb4614ee67b3bcff08abcb33a3d9a12dad93",
+      "note": "conformance fixture"
+    },
+    "ts": 1751677200,
+    "under": [
+      "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+    ],
+    "warrant": "0.1"
+  },
+  "sigs": [
+    {
+      "actor": "fixture@warrant.example",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "sig": "bf02dc9b0165b19f51ef515c465850a2d9102aaf8f3de1cdd1f7c2fe29115d380d04bf92da7e8a9e4425a6867782a5cec9ce4a5b357fffeadd69bf65a41b0a05"
+    }
+  ]
+}

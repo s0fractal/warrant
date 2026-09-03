@@ -1,0 +1,17 @@
+{
+  "stage": "canon",
+  "attempt": "e",
+  "repair_report": null,
+  "prompt_sha256": "1faec443423352c0a2281ce86eaddfd1f3cad8dab9546c8bd05c01d4eee7cda1",
+  "response_sha256": "0295824c3c5563015a825fb93a46aa253720ee289d34dbac187a49c7aab47883",
+  "thinking_sha256": null,
+  "model": "qwen3.8:27b-mlx",
+  "thinking_mode": "disabled",
+  "done": true,
+  "done_reason": "stop",
+  "total_duration_ns": 86764646458,
+  "prompt_eval_count": 1637,
+  "eval_count": 2693,
+  "output_sha256": "a4214d87e30a592a43f6edbb3f064edd7497d4f457ef8817826cb9c1278325cf",
+  "extraction": "ACCEPTED"
+}
