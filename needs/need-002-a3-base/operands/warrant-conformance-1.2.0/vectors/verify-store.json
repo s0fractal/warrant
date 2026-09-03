@@ -1,0 +1,97 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "verify-store",
+  "grade": "base",
+  "source": "fixtures generated for this pack",
+  "note": "AUTHORED for this pack, deterministically, from the SPEC \u00a78 demo seed. Only the ERROR count is pinned: SPEC \u00a76 fixes which conditions are errors, but not how many warnings an implementation chooses to emit, and pinning a number the spec does not fix would test our taste rather than the format. The mutations are the defects this repository actually shipped.",
+  "vectors": [
+    {
+      "id": "verify-store/clean",
+      "polarity": "positive",
+      "spec": "\u00a76",
+      "why": "a store with nothing wrong: every reference resolves, both signatures verify, both WarrantIDs recompute",
+      "input": {
+        "store_dir": "stores/clean",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": 0
+      }
+    },
+    {
+      "id": "verify-store/tampered-ts",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: one byte of the body changed, so the record no longer hashes to the WarrantID it is filed under (\u00a76(2))",
+      "input": {
+        "store_dir": "stores/tampered-ts",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/tampered-sig",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: the only signature by body.actor.id is invalid (\u00a76(3))",
+      "input": {
+        "store_dir": "stores/tampered-sig",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/swapped-blob",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: the POLICY blob cited by `under` was replaced wholesale and still sits at the original address. Both shipped implementations once reported this store clean (2026-07-29)",
+      "input": {
+        "store_dir": "stores/swapped-blob",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/missing-prior",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: a `prior` edge points at a record the store does not hold (\u00a76(4))",
+      "input": {
+        "store_dir": "stores/missing-prior",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/malformed-record",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: a record file that is not JSON at all",
+      "input": {
+        "store_dir": "stores/malformed-record",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    }
+  ]
+}

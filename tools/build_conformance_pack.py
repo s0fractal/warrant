@@ -47,13 +47,11 @@ VECTORS = PACK / "vectors"
 
 PACK_TAG = "warrant.conformance-pack@v1"
 VECTOR_TAG = "warrant.conformance-vectors@v1"
-# Bumped 1.0.0 -> 1.1.0 on 2026-08-01. The five integer-domain vectors changed
-# the corpus, and a conformance pack whose CONTENTS change under a fixed version
-# string is the defect this pack exists to detect: two people holding
-# "warrant-conformance-1.0.0.tar.gz" would have had different files, and the
-# digest SPEC §8.6 pins would have matched neither reliably. The published 1.0.0
-# asset stays exactly as it is; it is a different corpus and keeps its own name.
-PACK_VERSION = "1.1.0"
+# Bumped 1.0.0 -> 1.1.0 on 2026-08-01 for the integer-domain vectors, then
+# 1.1.0 -> 1.2.0 for the UTF-16 member-ordering vector. A conformance pack whose
+# CONTENTS change under a fixed version string is the defect this pack exists to
+# detect: published older assets stay exactly as they are and keep their names.
+PACK_VERSION = "1.2.0"
 
 # Store verification is SPEC §6 — BASE grade. What settlement grade adds is
 # §7/§5.1/§12: ski@v1 re-execution and a trust configuration that must fail

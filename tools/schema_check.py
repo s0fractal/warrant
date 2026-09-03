@@ -280,8 +280,9 @@ def main():
     #    the schema and the canon vectors cannot disagree about what is legal.
     #    Both directions: `schema_valid` in the vector file is the reference
     #    implementation's verdict, so this compares the PUBLISHED SCHEMA against
-    #    the REFERENCE VALIDATOR on 47 adversarial bodies. One of them (a
-    #    201-code-point note) is canonical-and-schema-invalid on purpose, which is
+    #    the REFERENCE VALIDATOR on 48 adversarial bodies. Two of them (a
+    #    201-code-point note and a free-key UTF-16 ordering probe) are
+    #    canonical-and-schema-invalid on purpose, which is
     #    what makes this a two-directional check rather than a formality.
     cv = load(ROOT / "examples" / "canon-vectors.json")
     check("canon vectors present", len(cv["cases"]) >= 45, str(len(cv["cases"])))

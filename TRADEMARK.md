@@ -25,8 +25,8 @@ vectors it claims to implement.**
 - **the conformance pack, for the Warrant format** (SPEC §8.6):
 
   ```
-  curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.1.0.tar.gz
-  tar xzf warrant-conformance-1.1.0.tar.gz && cd warrant-conformance-1.1.0
+  curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.2.0.tar.gz
+  tar xzf warrant-conformance-1.2.0.tar.gz && cd warrant-conformance-1.2.0
   python3 run.py --candidate "./your-verifier probe"
   ```
 

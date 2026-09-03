@@ -1,0 +1,17 @@
+{
+  "stage": "hashing",
+  "attempt": "a",
+  "repair_report": null,
+  "prompt_sha256": "e2167e143dd0e79ad1acc9f6edf42defc5f99702f27d6b67a1b29e377775193c",
+  "response_sha256": "c4f9f727e463758c47ae3c9cbdb9f586541253ef6a4f0d4d3a4593c739959ce1",
+  "thinking_sha256": null,
+  "model": "qwen3.8:27b-mlx",
+  "thinking_mode": "disabled",
+  "done": true,
+  "done_reason": "stop",
+  "total_duration_ns": 51015999875,
+  "prompt_eval_count": 2873,
+  "eval_count": 869,
+  "output_sha256": "8524728e935bfe85271ea6fb648b66a2f5392218f2b9143c387f58af35bc0ee6",
+  "extraction": "ACCEPTED"
+}

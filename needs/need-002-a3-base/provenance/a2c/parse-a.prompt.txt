@@ -1,0 +1,59 @@
+You are the sole clean-room implementer in experiment NEED-002-A2c-QWEN38-JS.
+Implement only the Warrant conformance class module for: parse.
+Use Node.js built-ins only. Do not use network access, child processes, external packages, repository source code, skeletons, or hidden guidance.
+No expected vector answers are supplied. Implement the rules in the frozen normative text.
+Your module must export handle(className, input), synchronously or asynchronously. It must return exactly {output: <class output>} when it answers, or {unsupported: <nonempty reason>} when it genuinely cannot answer. It must not read stdin or write stdout.
+Return exactly one fenced JavaScript block containing the complete parse.mjs and no other fenced blocks.
+
+===== VERBATIM FROZEN CONTRACT CLASS TEXT =====
+**Encodings.** A field whose name ends in `_base64` carries standard base64 with
+padding; a field whose name ends in `_hex`, and every hash, key and signature,
+carries **lowercase** hex with no prefix and no separators. Comparison is exact
+string equality, so uppercase hex is a wrong answer, not a formatting choice.
+
+#### `parse` — SPEC §4 / RFC 7493 I-JSON
+
+* input: `{"bytes_base64": "<base64>"}`
+* output: `{"ok": <bool>}`, optionally with `"error"`
+
+Would your record loader **accept** these raw bytes? This is a question about
+acceptance, not about canonical form: insignificant whitespace and `\uXXXX`
+escapes are legal *input* and MUST parse, even though canonical *output* has
+neither. `ok` is about the bytes as a whole; where in your stack the rejection
+happens is your business.
+
+MUST-REJECT, and each is vectored:
+
+* duplicate member names, at the top level and nested (RFC 7493; stock parsers
+  silently keep the last, which is a canonicalization attack);
+* a second JSON value, or any non-whitespace content, after the first value;
+* a leading UTF-8 byte order mark (RFC 8259 says a receiver MAY ignore one —
+  "MAY" is what a content-addressed format cannot afford);
+* an unpaired surrogate escape, high or low (a valid surrogate **pair** is one
+  astral code point and MUST parse);
+* `NaN`, `Infinity`, `-Infinity` (Python's stock parser accepts all three);
+* invalid UTF-8 anywhere;
+* an unescaped control character inside a string;
+* and the plain JSON-grammar violations: a number with a leading zero, a
+  trailing comma, single-quoted names, truncated input.
+
+Stock JSON parsers accept several of these, which is why the class exists.
+
+===== VERBATIM FROZEN SPEC SECTIONS §4 =====
+## 4. Canonicalization and identity (MUST)
+
+```
+WarrantID = SHA-256( canonical_json(body) )
+```
+
+`canonical_json` is RFC 8785 (JCS). Because bodies are I-JSON with integers only, this is exactly: UTF-8, object keys sorted, no insignificant whitespace, no float formatting questions. Reference (Python): `json.dumps(body, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')`.
+
+**String escaping is normative (MUST), not left to a library default.** Emit the two-character short escapes `\"` `\\` `\b` `\t` `\n` `\f` `\r`; escape every other code point below U+0020 as `\u00xx` with **lowercase** hex; emit every other character — including `<` `>` `&`, `/`, and all non-ASCII — as raw UTF-8. Do **not** escape `<` `>` `&` (Go's `encoding/json` does this by default: it MUST be disabled), do **not** `\u`-escape U+2028/U+2029, and do **not** use uppercase hex or the `\uXXXX` long form where a short escape applies. These are the classic JCS reimplementation splits; the §8 example vectors don't exercise them, so a conformant implementation MUST also reproduce the escaping battery in **`examples/canon-vectors.json` (§8.4)** — machine-readable vectors, not a test script. (Before 2026-07-30 this clause pointed at `tests/differential.py`, which made a Python file normative and required a third-party implementer to read it; the harness is now the runner and the vectors are the artifact.)
+
+**Key ordering:** JCS sorts object member names by UTF-16 code unit. Every key this schema admits is fixed ASCII, for which UTF-16-unit order, Unicode-code-point order, and UTF-8 byte order coincide — so `sort_keys` (code point) and a bytewise sort are both correct here. Any future version that admits free-form object keys MUST sort by UTF-16 code unit per RFC 8785, not by code point.
+
+**Duplicate member names are invalid (MUST).** Bodies and all schema blobs are I-JSON (RFC 7493): an object with a repeated member name is malformed and MUST be rejected, not silently resolved last-wins. Stock JSON parsers (Python's `json`, Go's `encoding/json`) keep the last occurrence silently; an implementation MUST detect and reject duplicates so a dup-key object cannot mean "malformed" to a strict reimplementation and "last-wins" to a lenient one.
+
+**Unicode normalization is NOT applied (MUST NOT).** Strings are canonicalized and hashed as their exact sequence of Unicode code points; a verifier MUST NOT apply NFC/NFD (or any) normalization, and MUST NOT reject a string for not being normalized. Two strings that differ only by normalization form (e.g. `й` as U+0439 vs. `и`+U+0306) are different content and hash to different WarrantIDs — as a content-addressed system requires. The reference implementations agree byte-exact on both forms (they never normalize). Requiring NFC would force a full Unicode normalization database into every implementation (including the from-scratch ones) and would reject legitimate content; the deliberate choice is to hash exactly what was written. PRODUCERS SHOULD emit NFC so that a string mangled by an *external* system (an editor, a database, a filesystem that silently normalizes) does not later fail to resolve — but that is a producer discipline, not a verifier rule, because such external mangling would break any hash-addressed format and is outside this spec's boundary.
+
+Now perform the task. Return the complete parse.mjs in exactly one fenced JavaScript block.

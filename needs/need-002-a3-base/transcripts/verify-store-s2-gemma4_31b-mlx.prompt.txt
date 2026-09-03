@@ -1,0 +1,1656 @@
+You are a contributor to iterative experiment NEED-002-A3-COLLAB-JS.
+Repair only candidate/verify-store.mjs until the collaborative JavaScript candidate conforms to the frozen Warrant contract.
+This is construction, not a one-shot benchmark. Test feedback and prior model contributions are legitimate inputs.
+Use Node.js built-ins only. Do not use network access, child processes, external packages, or Warrant implementation source.
+The candidate namespace is FLAT. Your file is physically beside every dependency and candidate/main.mjs. Import a sibling only as ./<name>.mjs. Never use ../ and never guess another directory.
+Your module must export handle(className, input), synchronously or asynchronously. It must return exactly {output: <class output>} when it answers, or {unsupported: <nonempty reason>} when it genuinely cannot answer. It must not read stdin or write stdout.
+Return exactly one fenced JavaScript block containing the complete candidate/verify-store.mjs; no prose outside it and no other fenced blocks.
+
+===== VERBATIM FROZEN CONTRACT =====
+**Encodings.** A field whose name ends in `_base64` carries standard base64 with
+padding; a field whose name ends in `_hex`, and every hash, key and signature,
+carries **lowercase** hex with no prefix and no separators. Comparison is exact
+string equality, so uppercase hex is a wrong answer, not a formatting choice.
+
+#### `verify-store` — SPEC §6
+
+* input: `{"store_path": "<absolute path>", "grade": "base"}`
+* output: `{"errors": <int>, "warnings": <int>}`
+* on a path that is not a store: `{"error": "<why>"}`
+
+A store directory holds `records/<WarrantID>.json` (each an envelope
+`{"body": …, "sigs": [...]}`) and `blobs/<sha256>` (raw bytes at their own
+address). Only `errors` is compared, and mostly as "at least one": SPEC §6 fixes
+*which* conditions are errors, not how many any implementation reports for one
+broken record, and pinning a number the spec does not fix would test our taste
+rather than the format. `warnings` is required in the response and is never
+compared — report it honestly anyway, since it is what tells a human whether you
+looked.
+
+**Which conditions are errors** is the part you cannot guess, so here is the
+split SPEC §6 fixes. An **ERR** is: a record that will not load or is not
+schema-valid (§6(1)); a record whose body does not recompute to the WarrantID it
+is filed under (§6(2)); a record left with no *valid* signature by its own
+`body.actor.id` (§6(3)); and a `prior` edge naming a record the store does not
+hold (§6(4)). A **WARN** — which does **not** raise `errors` — is: one invalid
+signature among several that still leaves a valid one (§6(3)); an `under`,
+`evidence`, `check`, `transcript` or `subject.hash` reference that resolves
+nowhere, because blobs may legitimately live elsewhere (§6(5)); a `ts` that
+decreases along a `prior` edge (§6(6)); and a `ski@v1` reason that was not
+re-executed (§6(7)) — at base grade only.
+
+One condition is an error and is not in that list, because it is §1 rather than
+§6: a blob whose bytes do not hash to the filename it sits under. Both shipped
+reference implementations once reported the `swapped-blob` fixture clean —
+someone had replaced a cited policy blob wholesale and left it at the original
+address. Recompute every blob address you read.
+
+Going the other way: the pack ships no keyring, so a verifier that checks
+key-to-actor binding (§5.1) cannot check it here. That is a WARN and MUST NOT
+raise `errors` — the `clean` fixture expects exactly zero. "I could not check
+this" is not "I checked this and it was fine", and it is also not an error.
+
+The runner copies each fixture to a temporary directory first, so you may read
+freely and cannot damage the pack.
+
+===== VERBATIM FROZEN SPEC §2, §3, §4, §5, §6 =====
+## 2. Body
+
+The body is a JSON object with exactly these fields (unknown fields MUST make the record invalid):
+
+| Field | Type | Req | Meaning |
+| --- | --- | --- | --- |
+| `warrant` | string | MUST | Format version, `"0.1"` or `"0.2"` |
+| `decision` | string | MUST | `"propose"` \| `"accept"` \| `"reject"` \| `"supersede"` |
+| `subject` | object | MUST | `{"hash": <hex64>, "note": <string, optional, ≤200 Unicode code points>}` — the thing decided |
+| `under` | array | MUST | ≥1 hex64 hashes of the policy blobs in force |
+| `because` | array | MUST* | Reasons (§3). *`reject` and `supersede` MUST have ≥1; `accept` SHOULD have ≥1; MAY be `[]` only for `propose` |
+| `evidence` | array | MUST | ≥0 hex64 hashes of input blobs the decision relied on |
+| `actor` | object | MUST | `{"id": <nonempty string>}` — stable actor identifier |
+| `prior` | array | MUST | ≥0 WarrantIDs this record responds to or follows |
+| `ts` | integer | MUST | Unix seconds, UTC, in the inclusive range `0..9007199254740991` (2^53−1 — see the integer domain rule below) |
+
+All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact).
+
+**Integer domain (MUST).** Every integer anywhere in a body, in any schema blob, and in any other JSON this format canonicalizes MUST lie in the inclusive range **−9007199254740991 .. 9007199254740991** (±(2^53−1)). A body carrying an integer outside that range is schema-invalid. Implementations MUST NOT silently clamp, wrap, or truncate numeric fields.
+
+**Why this bound and not int64.** §4 defines a WarrantID as SHA-256 over the RFC 8785 (JCS) serialization of the body. RFC 8785 §3.2.2.3 serializes numbers the way ECMAScript's `Number.prototype.toString` does — through an IEEE-754 double. Above 2^53−1 that mapping is lossy, so the canonical bytes stop being a function of the value:
+
+```
+ts = 9223372036854775807            (int64 max — valid under the previous rule)
+  exact-integer implementation  ->  9223372036854775807
+  any conforming JCS            ->  9223372036854776000
+```
+
+Two conforming implementations, one logical record, two WarrantIDs. This rule read `0..2^63-1` until an external review observed that the schema admitted a domain the declared canonicalization cannot carry — the document cited RFC 8785 and RFC 7493 while contradicting both, and RFC 7493 §2.2 warns about precisely this, recommending strings for anything wider.
+
+**Why narrowing rather than wrapping.** Wrapping at 2^53 would map two different values onto one canonical byte string, and therefore onto one WarrantID, in a format whose identity *is* that hash — a collision introduced on purpose. It would also break §6's requirement that `ts` be non-decreasing along each `prior` edge, which stops being well-defined once `ts` can wrap. Extending the canonical form to carry wider integers as decimal strings was considered and rejected: it buys range no Unix timestamp needs, at the cost of a second number syntax in every implementation and every vector. 2^53−1 seconds is the year 285428751.
+
+**Where this rule actually binds.** The body schema admits exactly one integer — `ts` — because every other field is a string, a hex64, or an array or object of those, and the unknown-field rule (recursive, below) forbids adding one. So for bodies the global statement and the `ts` clause coincide, and an implementation checking only `ts` is observably correct on every schema-valid body. The rule earns its keep on **blobs**: a threshold policy's `min_sigs` and any integer a future schema blob admits are canonicalized by the same JCS and carry the same hazard. Both reference implementations now walk every integer at both boundaries rather than checking `ts` and relying on `min_sigs > len(actors)` to reject the rest — that indirect bound rejects the same values, which is precisely what made depending on it wrong: the stated rule and the enforced rule were two different rules agreeing by coincidence, and a reimplementer would have written the stated one.
+
+**Cost of the change: none measured.** Every JSON file in this repository and its two siblings was scanned; no record, blob, vector or fixture carried an integer outside the new range. The only occurrence was `schemas/warrant-body.schema.json`'s own former `maximum`. No WarrantID moves and nothing needs re-signing — which is true today and would not have been true after 1.0.
+
+**The unknown-field rule is recursive (MUST).** It applies not only to the body but to every object the schema names: `subject` (exactly `hash`, optional `note`), `actor` (exactly `id`), and each reason object (§3). An unknown member anywhere in that tree makes the record invalid. Leaving nested strictness implicit is a silent verifier split: one implementation accepts an extra key another rejects, while both compute the same WarrantID.
+
+**`actor.id` MUST be a nonempty string.** (Spec gap closed 2026-07-30: this table said `<string>` while all three implementations rejected `""` — Python, Go and Rust each answer `actor must be {id: <nonempty string>}`. Three implementations agreeing is not authority to write a spec from code, so it is recorded here as what it was: the document was silent where an implementer had to guess, and the guess they would have made — `""` is a string, therefore valid — would have produced a record every existing verifier rejects. `§6`'s rule that a valid signature by `body.actor.id` must exist gives the requirement its meaning: an empty actor id names nobody.)
+
+**String lengths are measured in Unicode code points (MUST), never bytes or UTF-16 units.** `subject.note` is ≤200 code points. Byte-length and code-point-length disagree for any non-ASCII string — exactly the silent split the integers-only rule guards against for numbers.
+
+## 3. Reasons
+
+Each element of `because` is one of:
+
+```json
+{ "kind": "prose", "text": "<string>" }
+
+{ "kind": "check", "check": "<hex64>", "runtime": "cmd@v1",
+  "verdict": "pass" | "fail", "transcript": "<hex64, optional>" }
+```
+
+- `check` — hash of the check blob (script, test command, etc.).
+- `runtime` — execution profile. `cmd@v1`: the check blob is executed as a command in an isolated container; exit 0 = `pass`, nonzero = `fail`. `ski@v1` (§3.1): available in `"0.2"` bodies; in `"0.1"` bodies it remains reserved and MUST be rejected. Any other `runtime` value makes the record invalid (MUST): a validator MUST reject an unknown runtime rather than accept-and-warn, so a forward-dated runtime cannot mean "valid" to one implementation and "invalid" to another.
+- `verdict` is the actor's claim; anyone MAY re-run the check against the evidence and file their own warrant if they get a different verdict.
+- `transcript` — hash of the check's output blob, so the claimed verdict is inspectable.
+
+### 3.1. `ski@v1` — portable deterministic budget-bounded checks (v0.2)
+
+The check blob is I-JSON (JCS-canonical, integers only — hashed like any blob):
+
+```json
+{ "ski": 1, "term": "<hex64 NodeHash>", "atp": <uint32>, "expect": "<hex64 NodeHash>" }
+```
+
+Verification re-runs the reduction and compares hashes:
+
+1. Evaluate `eval(term, atp)` per **Σ-GLYPH Book I v0.5** (hash-thunk machine, size-priced ATP): https://github.com/s0fractal/sigma-glyph — anchored spec, two independent implementations, machine conformance vectors. The URL is a convenience, not the trust anchor: an implementation MUST pin the Book I ruleset it evaluates against by version and content (the vendored/bundled oracle it ships, or a pinned spec-document hash), so `ski@v1` semantics cannot be changed under it by an edit or force-push to a repository. `ski@v1` names Book I **v0.5** specifically; a later Book I is a different runtime tag.
+2. The warrant blob store IS the Σ-GLYPH CAS: every object the evaluation demands MUST resolve among the store's blobs (Σ-GLYPH genesis axioms are intrinsic and need no blobs).
+3. Verdict: `pass` iff the result's NodeHash equals `expect`, else `fail`. Canonical DISSONANCE outcomes are nodes with fixed hashes, so expecting a failure mode needs no special casing — `expect` covers it uniformly.
+
+Why this runtime exists: `cmd@v1` proves a claim to whoever trusts the container; `ski@v1` proves it to **anyone with the blobs** — bit-exact across implementations, terminating by construction, with work AND peak memory bounded by `atp` (Σ-GLYPH's `size − 1 ≤ spent` invariant). It is safe to re-verify a stranger's ski@v1 reason on your own machine; that cannot be said of re-running a stranger's shell script. Tools SHOULD treat `ski@v1` as the strongest reason kind: re-runnable without trust.
+
+**Re-execution budget.** `atp` is a `uint32`, so a single reason may legally demand up to ~4.3×10⁹ ATP of work and memory. Termination is guaranteed, but a verifier that re-runs arbitrary strangers' checks MUST bound the work it will spend: it MAY refuse to re-execute a reason whose `atp` exceeds a locally-configured budget, and MUST then report the reason as **unverified** (the §6 severity below) — never as `pass`/`fail`, and never as a silent skip. A refusal is not a verdict. Interoperating verifiers SHOULD share a default budget so they agree by default; two verifiers configured with different budgets MAY disagree on whether a given over-budget reason was re-executed, and that divergence is a deliberate local-policy choice, not a schema split. (The reference implementations default to 100,000,000 ATP, overridable by configuration.)
+
+**Protocol rule (MUST):** a `reject` whose every reason is `prose` is valid but MUST be marked by tools as *unverifiable*; tools SHOULD prefer at least one `check` reason. Rhetoric is legal; it just doesn't count as proof.
+
+**One evaluator per tag (MUST).** Because a runtime tag is immutable (§13.1), an implementation that ships an evaluator for a `ski@vN` tag MUST bind that tag to exactly one evaluator, identified by the digest of its bytes, and MUST verify that digest **before** loading it; a tag with no bound evaluator, or a bound module whose bytes do not match, MUST make the tag's reasons *unverified* (§6) — never a fallback to another tag's evaluator. The reference implementation records its bindings in `trust/ski-runtime-evaluators.json` and enforces them in `impl/warrant.py` (`SKI_EVALUATORS`).
+
+### 3.2. `ski@v2` — Σ-GLYPH Book I 0.6.0 (reserved candidate; not registered or admitted)
+
+`ski@v2` names evaluation per **Σ-GLYPH Book I 0.6.0** (the anchored `v0.7.0` bundle, adoption warrant `0e634c17…`): the same check-blob shape as §3.1 with `"ski": 2`, evaluated over `(term_hash, atp: uint32, env)` with a `Receipt = { exit, result_hash, atp_spent }` whose `exit` is one of the three canonical exits, and with Book I 0.6.0 §3.5 (bytes stored under a key they do not hash to are refused, never evaluated). `ski@v1` is unchanged by this registration and remains Book I v0.5.
+
+`ski@v2` is **reserved as a candidate and admitted in no body version**: §13.2 reserves body version `0.3` for it and `0.3` is not yet specified, so every conforming verifier — Python, Go, Rust — rejects a record carrying `ski@v2` today exactly as it rejects any unregistered runtime. Its outcome-fingerprint tuple (§7), negative vector set (§8.3) and the `0.3` body rules are the content of the future registration-and-admission change, not of this reservation.
+
+## 4. Canonicalization and identity (MUST)
+
+```
+WarrantID = SHA-256( canonical_json(body) )
+```
+
+`canonical_json` is RFC 8785 (JCS). Because bodies are I-JSON with integers only, this is exactly: UTF-8, object keys sorted, no insignificant whitespace, no float formatting questions. Reference (Python): `json.dumps(body, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')`.
+
+**String escaping is normative (MUST), not left to a library default.** Emit the two-character short escapes `\"` `\\` `\b` `\t` `\n` `\f` `\r`; escape every other code point below U+0020 as `\u00xx` with **lowercase** hex; emit every other character — including `<` `>` `&`, `/`, and all non-ASCII — as raw UTF-8. Do **not** escape `<` `>` `&` (Go's `encoding/json` does this by default: it MUST be disabled), do **not** `\u`-escape U+2028/U+2029, and do **not** use uppercase hex or the `\uXXXX` long form where a short escape applies. These are the classic JCS reimplementation splits; the §8 example vectors don't exercise them, so a conformant implementation MUST also reproduce the escaping battery in **`examples/canon-vectors.json` (§8.4)** — machine-readable vectors, not a test script. (Before 2026-07-30 this clause pointed at `tests/differential.py`, which made a Python file normative and required a third-party implementer to read it; the harness is now the runner and the vectors are the artifact.)
+
+**Key ordering:** JCS sorts object member names by UTF-16 code unit. Every key this schema admits is fixed ASCII, for which UTF-16-unit order, Unicode-code-point order, and UTF-8 byte order coincide — so `sort_keys` (code point) and a bytewise sort are both correct here. Any future version that admits free-form object keys MUST sort by UTF-16 code unit per RFC 8785, not by code point.
+
+**Duplicate member names are invalid (MUST).** Bodies and all schema blobs are I-JSON (RFC 7493): an object with a repeated member name is malformed and MUST be rejected, not silently resolved last-wins. Stock JSON parsers (Python's `json`, Go's `encoding/json`) keep the last occurrence silently; an implementation MUST detect and reject duplicates so a dup-key object cannot mean "malformed" to a strict reimplementation and "last-wins" to a lenient one.
+
+**Unicode normalization is NOT applied (MUST NOT).** Strings are canonicalized and hashed as their exact sequence of Unicode code points; a verifier MUST NOT apply NFC/NFD (or any) normalization, and MUST NOT reject a string for not being normalized. Two strings that differ only by normalization form (e.g. `й` as U+0439 vs. `и`+U+0306) are different content and hash to different WarrantIDs — as a content-addressed system requires. The reference implementations agree byte-exact on both forms (they never normalize). Requiring NFC would force a full Unicode normalization database into every implementation (including the from-scratch ones) and would reject legitimate content; the deliberate choice is to hash exactly what was written. PRODUCERS SHOULD emit NFC so that a string mangled by an *external* system (an editor, a database, a filesystem that silently normalizes) does not later fail to resolve — but that is a producer discipline, not a verifier rule, because such external mangling would break any hash-addressed format and is outside this spec's boundary.
+
+## 5. Envelope and signatures (MUST)
+
+A stored warrant is an envelope:
+
+```json
+{ "body": { ... }, "sigs": [ { "actor": "<id>", "key": "<hex64 Ed25519 pubkey>", "sig": "<hex128>" } ] }
+```
+
+- **`sig` = Ed25519 signature over a domain-separated message (MUST).** The message is **not** the WarrantID. It is the 15-byte ASCII separator `warrant-sig-v1:` immediately followed by the **32 raw bytes** of the WarrantID:
+
+  ```
+  msg = "warrant-sig-v1:" || WarrantID_raw        15 + 32 = 47 bytes
+  separator bytes (hex) = 77617272616e742d7369672d76313a
+  ```
+
+  Precisely: the separator is the 15 ASCII characters `w a r r a n t - s i g - v 1 :`, with no NUL terminator, no length prefix and no separator between the two parts; the WarrantID is appended as the 32 bytes obtained by hex-decoding it, **not** as its 64 ASCII hex characters. The total is always exactly 47 bytes. Both parts are fixed-length, so the encoding is unambiguous without a length field. Signing and verification are **pure RFC 8032 Ed25519 over that byte string** — **not** Ed25519ctx, **not** Ed25519ph, no pre-hash, no context parameter passed to the primitive. Nothing else is signed: the envelope is not signed, `sigs` is not signed, and the body is signed only through its hash.
+
+  **The pre-0.6.0 construction — the bare 32-byte WarrantID with no separator — MUST NOT verify (MUST NOT).** A verifier MUST NOT accept both messages, under any flag, during any transition: a verifier that accepts the old one has no domain separation, because an attacker simply uses the old one. The two constructions are cleanly disjoint in both directions (`examples/signature-vectors.json`), so there is no dual-accept window and the change is a flag day. A verifier that *recognises* an old signature SHOULD say so rather than reporting only that verification failed (see the report string below); recognising is not accepting.
+
+  **Rationale.** Without a separator the signed message is byte-indistinguishable from any other bare 32-byte SHA-256 digest, so a key that also signs digests in another protocol — DSSE/in-toto payload digests, TUF metadata, Σ-GLYPH NodeHashes, RFC 6962 roots, Git object ids — produces signatures valid in both, in both directions. `warrant-sig-v1` names this protocol inside the bytes the key covers. Ed25519ctx is the orthodox instrument and is deliberately not used: Python's `cryptography` does not expose it, Go reaches it only through `ed25519.Options`, and a from-scratch verifier must implement RFC 8032's `dom2` prefix, so the orthodox choice is the one more likely to split verifiers — the failure this document's design rule ranks highest. `v1` versions the *signature scheme*, not the body: a future change becomes `warrant-sig-v2:` and is again disjoint from everything before it. (This clause implements option A of `proposals/DEC-001-domain-separation.md`; the vectors are §8.5.)
+
+  **Report string (MUST, §7 convention).** A verifier that recognises a signature valid over the bare WarrantID MUST report it with these exact bytes: `signature does not verify (excluded): LEGACY pre-v1 signature construction (signed the bare 32-byte WarrantID; SPEC 5 requires "warrant-sig-v1:" || WarrantID). Re-sign with: warrant resign --key <keyfile>` — an ASCII string, so three implementations and three JSON encoders emit one diagnosis. The signature is still excluded and §6's ERR still applies: this is a diagnosis, not an acceptance.
+
+  **Migration.** The WarrantID is SHA-256 of the canonical *body* and the envelope is not hashed, so re-signing a record rewrites `sig` and nothing else: no WarrantID moves, no `prior` edge breaks, no `under`/`evidence`/`subject` hash stops resolving, no settlement tunnel and no pinned genesis root changes. A record whose signing key is no longer available **cannot** be migrated and MUST be reported as such rather than left to fail as an ordinary bad signature.
+- **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`), MUST reject a malformed (non-canonical) public-key or signature-point encoding, and **MUST reject a small-order or non-canonically-encoded public key** before verifying. A small-order public key (the 8 torsion points, e.g. all-zero) lets an all-zero signature verify for a large fraction of messages, and libraries disagree on which such keys they accept — so a crafted envelope would verify under one library and not another ("Taming the many EdDSAs"). The rejection set is a byte-exact blocklist of the 8 canonical torsion encodings plus a non-canonical check (`y ≥ p` after clearing the sign bit), so every implementation agrees by construction; it is a normative negative-conformance vector (§8.3), not a library-dependent heuristic. Implementations SHOULD additionally prefer a strict RFC 8032 cofactorless verifier.
+- ≥1 signature MUST be present and MUST include one whose `actor` equals `body.actor.id` and which verifies. If no *valid* signature by `body.actor.id` is present, the record is invalid (§6 ERR).
+- Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is). **A co-signature that fails to verify is reported and EXCLUDED, not fatal (MUST):** because anyone with store write access can append envelope signatures, a single junk co-signature MUST NOT be able to invalidate a record that still carries a valid signature by `body.actor.id`. An invalid signature is a §6 WARN; only the *absence* of a valid actor signature is an ERR. (For settlement thresholds, §5.1, an invalid signature simply does not count.)
+- Key↔actor binding is out of scope for v0.1 (use your existing PKI/keyring); implementations MUST verify signatures against the stated key and report the binding as unverified if no keyring is configured.
+
+### 5.1. Key state: binding, rotation, thresholds (v0.3)
+
+Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification.
+
+**Rotation is a warrant:** an `accept` whose subject is the new key blob. A rotation MUST include a valid signature by the incoming key as proof of possession and MUST be authorized under the actor/store's current key policy. If that policy has a threshold, the rotation MUST satisfy it using keys already bound before the rotation; the incoming key's proof-of-possession signature does not count toward the threshold. The outgoing key's signature MAY be required by policy for ordinary rotation, but MUST NOT be sufficient authorization when the store has a multi-actor threshold policy. Emergency replacement of a suspected-compromised outgoing key SHOULD be authorized by quorum without requiring the outgoing key. **Revocation is a warrant:** a `supersede` of the rotation warrant that introduced the key, authorized under the same current-policy rule.
+
+**Ordering:** key validity derives from accepted rotation/revocation warrants in **DAG order**, never from wall-clock trust in `ts` alone; a `ts` outside non-decreasing prior order remains a §6 warning and MUST NOT extend or resurrect a key. Only *authorized* key-state warrants can conflict — a record failing current-policy authorization is an invalid record, not a conflict. A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendant: warrants ordered by the DAG are never a conflict; only maximal, mutually unordered warrants trigger this rule. On conflict, verifiers MUST report `WARN: key-state conflict`, and the conflicted actor's key MUST NOT count toward any quorum until a later warrant — authorized by the unconflicted remainder of the quorum — resolves it; if the threshold would become unsatisfiable, it is reduced to exclude the conflicted actor strictly for conflict resolution.
+
+**Threshold policy grammar.** A v0.3 threshold policy blob MUST be JCS-canonical JSON:
+
+```json
+{ "warrant_policy": "0.3", "threshold": { "min_sigs": 2, "actors": ["a@x", "b@y", "c@z"] } }
+```
+
+`min_sigs` MUST be a positive integer ≤ `len(actors)`; `actors` MUST be nonempty and unique; unknown fields inside `threshold` make the policy invalid. **For settlement-grade threshold evaluation (including root adoption, §9), a signature counts for an actor only if it is cryptographically valid AND made by a key currently bound to that actor at that warrant's DAG position (§5.1). An actor with no configured key state contributes nothing: unbound claims MUST NOT satisfy a v0.3 threshold.** Records filed under an invalid threshold policy are settlement-inactive and MUST produce `ERR: invalid threshold policy` for settlement-grade verification. Opaque v0.1/v0.2 policy blobs MUST NOT be interpreted as threshold policies.
+
+## 6. Verification (MUST)
+
+`verify(store)` checks, for every envelope: (1) body is schema-valid with no unknown fields (recursively, §2); (2) WarrantID recomputes; (3) signatures are verified individually — an invalid signature is a WARN and is excluded (§5), and the record is an ERR only if no *valid* signature by `body.actor.id` remains; (4) every `prior` resolves to a stored warrant; (5) reference resolution is split by field kind: `prior` MUST resolve to stored warrants; `under`, `evidence`, `check`, `transcript` MUST resolve to **blobs** — a hash present only as a stored record does not resolve them; `subject.hash` resolves to a blob, or MAY resolve to a WarrantID only where a rule explicitly names one (supersede subjects, §7; §9 adoption subjects). A §5.1 **rotation** subject is a *key blob*, so it resolves as an ordinary blob — it is NOT one of the WarrantID cases. Unresolved is a warning, not corruption — blobs may live elsewhere; (6) `ts` is non-decreasing along each `prior` edge (violation = warning).
+
+(7) **Re-execution of `ski@v1` reasons (MUST).** For every `ski@v1` reason, the verifier re-runs the check (§3.1) against the store's blobs and compares the result to the reason's claimed `verdict`. A mismatch (re-run disagrees with the claim) is a WARN — per §3, a false claim is a dispute to be answered by a counter-warrant, not a corruption of *this* record. A reason that **cannot** be re-executed (missing blob, malformed check, oracle unavailable, or `atp` over the local re-execution budget, §3.1) is reported as `ski@v1 unverified` — a stable WARN in base verification, escalated to ERR under settlement-grade verification (§7) when the reason participates in a settlement-active record, because an unexecuted claim cannot be trusted to settle. "Re-ran and matched" and "was not executed" MUST NOT be observationally equivalent — a silent skip is non-conformant. (`cmd@v1` reasons are not re-executed by `verify`; their trust model is the container, not the verifier.)
+
+`why(id)` walks `prior` edges backward, printing decision → reasons → policy anchors, verifying as it goes.
+
+===== REPLACEMENT MODE =====
+Write a clean replacement from the contract and observations below. Do not copy or preserve the current module merely because it exists. The current module is deliberately omitted: an earlier model became trapped reproducing one of its long hexadecimal literals.
+
+===== CURRENT SIBLING candidate/canon.mjs =====
+// canon.mjs
+import { createHash } from 'node:crypto';
+
+// Custom JSON parser that detects duplicate keys
+function parseJSONWithDupCheck(str) {
+  let pos = 0;
+  const s = str;
+
+  function error(msg) {
+    throw new Error(msg);
+  }
+
+  function skipWhitespace() {
+    while (pos < s.length && /\s/.test(s[pos])) pos++;
+  }
+
+  function parseValue() {
+    skipWhitespace();
+    if (pos >= s.length) error('Unexpected end of input');
+    const c = s[pos];
+    if (c === '{') return parseObject();
+    if (c === '[') return parseArray();
+    if (c === '"') return parseString();
+    if (c === 't' || c === 'f') return parseBool();
+    if (c === 'n') return parseNull();
+    if (c === '-' || (c >= '0' && c <= '9')) return parseNumber();
+    error('Unexpected character: ' + c);
+  }
+
+  function parseObject() {
+    pos++; // skip {
+    const obj = {};
+    const keys = new Set();
+    skipWhitespace();
+    if (s[pos] === '}') {
+      pos++;
+      return obj;
+    }
+    while (true) {
+      skipWhitespace();
+      if (s[pos] !== '"') error('Expected string key');
+      const key = parseString();
+      if (keys.has(key)) {
+        error('Duplicate key: ' + key);
+      }
+      keys.add(key);
+      skipWhitespace();
+      if (s[pos] !== ':') error('Expected colon');
+      pos++; // skip :
+      const val = parseValue();
+      obj[key] = val;
+      skipWhitespace();
+      if (s[pos] === ',') {
+        pos++;
+        continue;
+      }
+      if (s[pos] === '}') {
+        pos++;
+        break;
+      }
+      error('Expected comma or closing brace');
+    }
+    return obj;
+  }
+
+  function parseArray() {
+    pos++; // skip [
+    const arr = [];
+    skipWhitespace();
+    if (s[pos] === ']') {
+      pos++;
+      return arr;
+    }
+    while (true) {
+      const val = parseValue();
+      arr.push(val);
+      skipWhitespace();
+      if (s[pos] === ',') {
+        pos++;
+        continue;
+      }
+      if (s[pos] === ']') {
+        pos++;
+        break;
+      }
+      error('Expected comma or closing bracket');
+    }
+    return arr;
+  }
+
+  function parseString() {
+    pos++; // skip opening quote
+    let result = '';
+    while (pos < s.length) {
+      const c = s[pos];
+      if (c === '"') {
+        pos++;
+        return result;
+      }
+      if (c === '\\') {
+        pos++;
+        const esc = s[pos];
+        switch (esc) {
+          case '"': result += '"'; break;
+          case '\\': result += '\\'; break;
+          case '/': result += '/'; break;
+          case 'b': result += '\b'; break;
+          case 'f': result += '\f'; break;
+          case 'n': result += '\n'; break;
+          case 'r': result += '\r'; break;
+          case 't': result += '\t'; break;
+          case 'u': {
+            const hex = s.slice(pos + 1, pos + 5);
+            if (hex.length !== 4 || !/^[0-9a-fA-F]{4}$/.test(hex)) {
+              error('Invalid unicode escape');
+            }
+            const code = parseInt(hex, 16);
+            // Handle surrogate pairs
+            if (code >= 0xD800 && code <= 0xDBFF) {
+              // High surrogate, check for low surrogate
+              if (s[pos + 5] === '\\' && s[pos + 6] === 'u') {
+                const hex2 = s.slice(pos + 7, pos + 11);
+                if (hex2.length === 4 && /^[0-9a-fA-F]{4}$/.test(hex2)) {
+                  const code2 = parseInt(hex2, 16);
+                  if (code2 >= 0xDC00 && code2 <= 0xDFFF) {
+                    const cp = 0x10000 + ((code - 0xD800) << 10) + (code2 - 0xDC00);
+                    result += String.fromCodePoint(cp);
+                    pos += 10; // skip \uXXXX\uXXXX
+                    continue;
+                  }
+                }
+              }
+              result += String.fromCodePoint(code);
+            } else {
+              result += String.fromCodePoint(code);
+            }
+            pos += 4;
+            break;
+          }
+          default:
+            error('Invalid escape character: ' + esc);
+        }
+        pos++;
+      } else {
+        result += c;
+        pos++;
+      }
+    }
+    error('Unterminated string');
+  }
+
+  function parseNumber() {
+    const start = pos;
+    if (s[pos] === '-') pos++;
+    while (pos < s.length && s[pos] >= '0' && s[pos] <= '9') pos++;
+    let isFloat = false;
+    if (s[pos] === '.') {
+      isFloat = true;
+      pos++;
+      while (pos < s.length && s[pos] >= '0' && s[pos] <= '9') pos++;
+    }
+    if (s[pos] === 'e' || s[pos] === 'E') {
+      isFloat = true;
+      pos++;
+      if (s[pos] === '+' || s[pos] === '-') pos++;
+      while (pos < s.length && s[pos] >= '0' && s[pos] <= '9') pos++;
+    }
+    const numStr = s.slice(start, pos);
+    const num = Number(numStr);
+    if (isFloat) {
+      // Mark as float for later validation
+      return { __isFloat: true, value: num };
+    }
+    return num;
+  }
+
+  function parseBool() {
+    if (s.startsWith('true', pos)) {
+      pos += 4;
+      return true;
+    }
+    if (s.startsWith('false', pos)) {
+      pos += 5;
+      return false;
+    }
+    error('Invalid boolean');
+  }
+
+  function parseNull() {
+    if (s.startsWith('null', pos)) {
+      pos += 4;
+      return null;
+    }
+    error('Invalid null');
+  }
+
+  const result = parseValue();
+  skipWhitespace();
+  if (pos < s.length) {
+    error('Unexpected trailing characters');
+  }
+  return result;
+}
+
+// Recursively check for floats in the parsed structure
+function checkForFloats(val, path = 'root') {
+  if (val === null || val === undefined) return;
+  if (typeof val === 'object') {
+    if (Array.isArray(val)) {
+      for (let i = 0; i < val.length; i++) {
+        checkForFloats(val[i], `${path}[${i}]`);
+      }
+    } else {
+      // Check for float markers
+      if (val.__isFloat) {
+        throw new Error(`Non-integer number at ${path}`);
+      }
+      for (const [k, v] of Object.entries(val)) {
+        checkForFloats(v, `${path}.${k}`);
+      }
+    }
+  }
+}
+
+// JCS canonical JSON serializer
+function canonicalize(value) {
+  if (value === null) return 'null';
+  if (value === undefined) return 'null';
+  
+  switch (typeof value) {
+    case 'boolean':
+      return value ? 'true' : 'false';
+    case 'number':
+      // Integers only - if it's a float, it should have been caught earlier
+      if (!Number.isInteger(value)) {
+        throw new Error('Non-integer number');
+      }
+      return String(value);
+    case 'string':
+      return escapeString(value);
+    case 'object':
+      if (Array.isArray(value)) {
+        return '[' + value.map(canonicalize).join(',') + ']';
+      } else {
+        // Sort keys by UTF-16 code unit
+        const keys = Object.keys(value).sort((a, b) => {
+          // Compare by UTF-16 code units
+          for (let i = 0; i < a.length && i < b.length; i++) {
+            const ca = a.charCodeAt(i);
+            const cb = b.charCodeAt(i);
+            if (ca !== cb) return ca - cb;
+          }
+          return a.length - b.length;
+        });
+        const members = keys.map(k => escapeString(k) + ':' + canonicalize(value[k]));
+        return '{' + members.join(',') + '}';
+      }
+    default:
+      throw new Error('Unsupported type: ' + typeof value);
+  }
+}
+
+function escapeString(str) {
+  let result = '"';
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    
+    // Short escapes
+    switch (code) {
+      case 0x22: result += '\\"'; break; // "
+      case 0x5C: result += '\\\\'; break; // \
+      case 0x08: result += '\\b'; break;  // backspace
+      case 0x09: result += '\\t'; break;  // tab
+      case 0x0A: result += '\\n'; break;  // newline
+      case 0x0C: result += '\\f'; break;  // form feed
+      case 0x0D: result += '\\r'; break;  // carriage return
+      default:
+        // Other control characters below U+0020
+        if (code < 0x20) {
+          result += '\\u' + code.toString(16).padStart(4, '0').toLowerCase();
+        } else {
+          // Emit raw - including <, >, &, /, U+2028, U+2029, and all non-ASCII
+          result += str[i];
+        }
+    }
+  }
+  result += '"';
+  return result;
+}
+
+export function handle(className, input) {
+  if (className !== 'canon') {
+    return { unsupported: 'Unknown class: ' + className };
+  }
+
+  try {
+    // Parse the input body
+    let body;
+    if (typeof input.body === 'string') {
+      // Parse JSON string with duplicate key detection
+      body = parseJSONWithDupCheck(input.body);
+    } else {
+      // Already an object
+      body = input.body;
+    }
+
+    // Check for floats
+    checkForFloats(body);
+
+    // Canonicalize
+    const canonicalJson = canonicalize(body);
+    
+    // Convert to UTF-8 bytes
+    const utf8Bytes = Buffer.from(canonicalJson, 'utf-8');
+    
+    // Compute SHA-256
+    const hash = createHash('sha256').update(utf8Bytes).digest('hex');
+    
+    return {
+      output: {
+        canon_hex: utf8Bytes.toString('hex'),
+        warrant_id: hash
+      }
+    };
+  } catch (e) {
+    return {
+      output: {
+        error: e.message || String(e)
+      }
+    };
+  }
+}
+
+
+===== CURRENT SIBLING candidate/parse.mjs =====
+// parse.mjs
+// Warrant conformance class: parse
+// Implements RFC 7493 I-JSON parsing with strict rejection rules.
+
+/**
+ * @param {string} className
+ * @param {object} input
+ * @returns {Promise<{output: object} | {unsupported: string}>}
+ */
+export async function handle(className, input) {
+  if (className !== 'parse') {
+    return { unsupported: `Unknown class: ${className}` };
+  }
+
+  if (!input || typeof input !== 'object' || !('bytes_base64' in input)) {
+    return { unsupported: 'Input must contain bytes_base64' };
+  }
+
+  const b64 = input.bytes_base64;
+  if (typeof b64 !== 'string') {
+    return { unsupported: 'bytes_base64 must be a string' };
+  }
+
+  let bytes;
+  try {
+    bytes = Buffer.from(b64, 'base64');
+  } catch (e) {
+    return { output: { ok: false, error: 'Invalid base64 encoding' } };
+  }
+
+  // Check for leading UTF-8 BOM (EF BB BF)
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return { output: { ok: false, error: 'Leading UTF-8 BOM' } };
+  }
+
+  // Validate UTF-8 encoding
+  try {
+    const text = bytes.toString('utf8');
+    // Check for replacement characters which indicate invalid UTF-8
+    // Note: Buffer.toString('utf8') replaces invalid sequences with U+FFFD
+    // We need to detect if any invalid sequences were present
+    // A more robust check: try to encode back and compare
+    const reEncoded = Buffer.from(text, 'utf8');
+    if (!reEncoded.equals(bytes)) {
+      return { output: { ok: false, error: 'Invalid UTF-8' } };
+    }
+    
+    // Now parse the JSON string strictly
+    const result = parseStrict(text);
+    if (!result.ok) {
+      return { output: { ok: false, error: result.error } };
+    }
+    return { output: { ok: true } };
+  } catch (e) {
+    return { output: { ok: false, error: e.message || 'Parse error' } };
+  }
+}
+
+/**
+ * Strict JSON parser that rejects:
+ * - Duplicate keys
+ * - Trailing content
+ * - NaN, Infinity, -Infinity
+ * - Leading zeros in numbers
+ * - Trailing commas
+ * - Single quotes
+ * - Unescaped control chars in strings
+ * - Unpaired surrogates
+ * 
+ * @param {string} text
+ * @returns {{ok: boolean, error?: string}}
+ */
+function parseStrict(text) {
+  let pos = 0;
+  const len = text.length;
+
+  function error(msg) {
+    return { ok: false, error: msg };
+  }
+
+  function skipWhitespace() {
+    while (pos < len) {
+      const c = text[pos];
+      if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+        pos++;
+      } else {
+        break;
+      }
+    }
+  }
+
+  function parseValue() {
+    skipWhitespace();
+    if (pos >= len) {
+      return error('Unexpected end of input');
+    }
+    const c = text[pos];
+    if (c === '{') return parseObject();
+    if (c === '[') return parseArray();
+    if (c === '"') return parseString();
+    if (c === 't' || c === 'f') return parseBoolean();
+    if (c === 'n') return parseNull();
+    if (c === '-' || (c >= '0' && c <= '9')) return parseNumber();
+    return error(`Unexpected character: ${c}`);
+  }
+
+  function parseObject() {
+    pos++; // consume {
+    skipWhitespace();
+    if (pos >= len) return error('Unexpected end of input in object');
+    if (text[pos] === '}') {
+      pos++;
+      return { ok: true, value: {} };
+    }
+
+    const obj = {};
+    const keys = new Set();
+
+    while (true) {
+      skipWhitespace();
+      if (pos >= len) return error('Unexpected end of input in object');
+      if (text[pos] !== '"') return error('Expected string key');
+      
+      const keyResult = parseString();
+      if (!keyResult.ok) return keyResult;
+      const key = keyResult.value;
+
+      if (keys.has(key)) {
+        return error('Duplicate key: ' + key);
+      }
+      keys.add(key);
+
+      skipWhitespace();
+      if (pos >= len || text[pos] !== ':') return error('Expected colon');
+      pos++; // consume :
+
+      const valResult = parseValue();
+      if (!valResult.ok) return valResult;
+      obj[key] = valResult.value;
+
+      skipWhitespace();
+      if (pos >= len) return error('Unexpected end of input in object');
+      if (text[pos] === ',') {
+        pos++;
+        skipWhitespace();
+        if (pos >= len || text[pos] === '}') {
+          return error('Trailing comma in object');
+        }
+        continue;
+      }
+      if (text[pos] === '}') {
+        pos++;
+        return { ok: true, value: obj };
+      }
+      return error('Expected comma or closing brace');
+    }
+  }
+
+  function parseArray() {
+    pos++; // consume [
+    skipWhitespace();
+    if (pos >= len) return error('Unexpected end of input in array');
+    if (text[pos] === ']') {
+      pos++;
+      return { ok: true, value: [] };
+    }
+
+    const arr = [];
+
+    while (true) {
+      const valResult = parseValue();
+      if (!valResult.ok) return valResult;
+      arr.push(valResult.value);
+
+      skipWhitespace();
+      if (pos >= len) return error('Unexpected end of input in array');
+      if (text[pos] === ',') {
+        pos++;
+        skipWhitespace();
+        if (pos >= len || text[pos] === ']') {
+          return error('Trailing comma in array');
+        }
+        continue;
+      }
+      if (text[pos] === ']') {
+        pos++;
+        return { ok: true, value: arr };
+      }
+      return error('Expected comma or closing bracket');
+    }
+  }
+
+  function parseString() {
+    pos++; // consume opening quote
+    let str = '';
+    
+    while (pos < len) {
+      const c = text[pos];
+      if (c === '"') {
+        pos++;
+        return { ok: true, value: str };
+      }
+      if (c === '\\') {
+        pos++;
+        if (pos >= len) return error('Unexpected end of input in string escape');
+        const esc = text[pos];
+        switch (esc) {
+          case '"': str += '"'; pos++; break;
+          case '\\': str += '\\'; pos++; break;
+          case '/': str += '/'; pos++; break;
+          case 'b': str += '\b'; pos++; break;
+          case 'f': str += '\f'; pos++; break;
+          case 'n': str += '\n'; pos++; break;
+          case 'r': str += '\r'; pos++; break;
+          case 't': str += '\t'; pos++; break;
+          case 'u': {
+            pos++;
+            if (pos + 4 > len) return error('Invalid unicode escape');
+            const hex = text.slice(pos, pos + 4);
+            if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+              return error('Invalid unicode escape hex');
+            }
+            const code = parseInt(hex, 16);
+            pos += 4;
+            
+            // Check for surrogate pairs
+            if (code >= 0xD800 && code <= 0xDBFF) {
+              // High surrogate, expect low surrogate
+              if (pos + 1 >= len || text[pos] !== '\\') {
+                return error('Unpaired high surrogate');
+              }
+              if (text[pos + 1] !== 'u') {
+                return error('Unpaired high surrogate');
+              }
+              pos += 2;
+              if (pos + 4 > len) return error('Invalid unicode escape in surrogate pair');
+              const hex2 = text.slice(pos, pos + 4);
+              if (!/^[0-9a-fA-F]{4}$/.test(hex2)) {
+                return error('Invalid unicode escape hex in surrogate pair');
+              }
+              const code2 = parseInt(hex2, 16);
+              pos += 4;
+              if (code2 < 0xDC00 || code2 > 0xDFFF) {
+                return error('Invalid low surrogate');
+              }
+              // Combine surrogates
+              const cp = 0x10000 + ((code - 0xD800) << 10) + (code2 - 0xDC00);
+              str += String.fromCodePoint(cp);
+            } else if (code >= 0xDC00 && code <= 0xDFFF) {
+              return error('Unpaired low surrogate');
+            } else {
+              str += String.fromCharCode(code);
+            }
+            break;
+          }
+          default:
+            return error('Invalid escape character: ' + esc);
+        }
+      } else if (c === '"') {
+        pos++;
+        return { ok: true, value: str };
+      } else if (c.charCodeAt(0) < 0x20) {
+        return error('Unescaped control character in string');
+      } else {
+        str += c;
+        pos++;
+      }
+    }
+    return error('Unterminated string');
+  }
+
+  function parseNumber() {
+    const start = pos;
+    if (text[pos] === '-') pos++;
+    
+    if (pos >= len) return error('Invalid number');
+    
+    if (text[pos] === '0') {
+      pos++;
+      if (pos < len && text[pos] >= '0' && text[pos] <= '9') {
+        return error('Leading zero in number');
+      }
+    } else if (text[pos] >= '1' && text[pos] <= '9') {
+      pos++;
+      while (pos < len && text[pos] >= '0' && text[pos] <= '9') {
+        pos++;
+      }
+    } else {
+      return error('Invalid number');
+    }
+
+    if (pos < len && text[pos] === '.') {
+      pos++;
+      if (pos >= len || text[pos] < '0' || text[pos] > '9') {
+        return error('Invalid number fraction');
+      }
+      while (pos < len && text[pos] >= '0' && text[pos] <= '9') {
+        pos++;
+      }
+    }
+
+    if (pos < len && (text[pos] === 'e' || text[pos] === 'E')) {
+      pos++;
+      if (pos < len && (text[pos] === '+' || text[pos] === '-')) {
+        pos++;
+      }
+      if (pos >= len || text[pos] < '0' || text[pos] > '9') {
+        return error('Invalid number exponent');
+      }
+      while (pos < len && text[pos] >= '0' && text[pos] <= '9') {
+        pos++;
+      }
+    }
+
+    const numStr = text.slice(start, pos);
+    // Check for NaN, Infinity, -Infinity
+    if (numStr === 'NaN' || numStr === 'Infinity' || numStr === '-Infinity') {
+      return error('Invalid number: ' + numStr);
+    }
+
+    const num = Number(numStr);
+    if (Number.isNaN(num) || !Number.isFinite(num)) {
+      return error('Invalid number: ' + numStr);
+    }
+
+    return { ok: true, value: num };
+  }
+
+  function parseBoolean() {
+    if (text.startsWith('true', pos)) {
+      pos += 4;
+      return { ok: true, value: true };
+    }
+    if (text.startsWith('false', pos)) {
+      pos += 5;
+      return { ok: true, value: false };
+    }
+    return error('Invalid literal');
+  }
+
+  function parseNull() {
+    if (text.startsWith('null', pos)) {
+      pos += 4;
+      return { ok: true, value: null };
+    }
+    return error('Invalid literal');
+  }
+
+  const result = parseValue();
+  if (!result.ok) return result;
+
+  skipWhitespace();
+  if (pos < len) {
+    return error('Trailing content after JSON value');
+  }
+
+  return { ok: true, value: result.value };
+}
+
+
+===== CURRENT SIBLING candidate/validate.mjs =====
+// validate.mjs
+// Warrant conformance class: validate
+// Implements SPEC §2, §3, §8.3 for the "validate" class.
+
+const HEX64_RE = /^[0-9a-f]{64}$/;
+const MAX_INT = 9007199254740991; // 2^53 - 1
+const MIN_INT = -9007199254740991; // -(2^53 - 1)
+
+// Check if a value is a valid integer within the allowed domain
+function isIntegerInRange(val) {
+  if (typeof val !== 'number') return false;
+  if (!Number.isInteger(val)) return false;
+  if (val < MIN_INT || val > MAX_INT) return false;
+  return true;
+}
+
+// Check if a value is a valid hex64 string
+function isHex64(val) {
+  return typeof val === 'string' && HEX64_RE.test(val);
+}
+
+// Count Unicode code points in a string
+function codePointLength(str) {
+  if (typeof str !== 'string') return 0;
+  return [...str].length;
+}
+
+// Validate a reason object (§3)
+function validateReason(reason, warrantVersion, errors) {
+  if (typeof reason !== 'object' || reason === null || Array.isArray(reason)) {
+    errors.push('reason must be an object');
+    return;
+  }
+
+  // Check for unknown fields
+  const allowedFields = new Set(['kind']);
+  if (reason.kind === 'prose') {
+    allowedFields.add('text');
+  } else if (reason.kind === 'check') {
+    allowedFields.add('check');
+    allowedFields.add('runtime');
+    allowedFields.add('verdict');
+    allowedFields.add('transcript');
+  }
+
+  for (const key of Object.keys(reason)) {
+    if (!allowedFields.has(key)) {
+      errors.push(`unknown field in reason: ${key}`);
+    }
+  }
+
+  if (reason.kind === 'prose') {
+    if (typeof reason.text !== 'string') {
+      errors.push('prose reason must have string text');
+    }
+  } else if (reason.kind === 'check') {
+    // check must be hex64
+    if (!isHex64(reason.check)) {
+      errors.push('check reason must have hex64 check field');
+    }
+
+    // runtime must be valid
+    if (typeof reason.runtime !== 'string') {
+      errors.push('check reason must have string runtime');
+    } else {
+      if (reason.runtime === 'cmd@v1') {
+        // valid for all versions
+      } else if (reason.runtime === 'ski@v1') {
+        // only valid in 0.2 bodies
+        if (warrantVersion !== '0.2') {
+          errors.push('ski@v1 runtime is not allowed in warrant version ' + warrantVersion);
+        }
+      } else if (reason.runtime === 'ski@v2') {
+        // reserved, not admitted in any body version
+        errors.push('ski@v2 runtime is reserved and not admitted');
+      } else {
+        errors.push('unknown runtime: ' + reason.runtime);
+      }
+    }
+
+    // verdict must be pass or fail
+    if (reason.verdict !== 'pass' && reason.verdict !== 'fail') {
+      errors.push('check reason must have verdict pass or fail');
+    }
+
+    // transcript is optional, but if present must be hex64
+    if (reason.transcript !== undefined && reason.transcript !== null) {
+      if (!isHex64(reason.transcript)) {
+        errors.push('check reason transcript must be hex64');
+      }
+    }
+  } else {
+    errors.push('unknown reason kind: ' + reason.kind);
+  }
+}
+
+// Validate the body
+function validateBody(body) {
+  const errors = [];
+
+  // Body must be an object
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    errors.push('body must be an object');
+    return { valid: false, errors };
+  }
+
+  // Check for unknown fields at top level
+  const allowedTopFields = new Set([
+    'warrant', 'decision', 'subject', 'under',
+    'because', 'evidence', 'actor', 'prior', 'ts'
+  ]);
+
+  for (const key of Object.keys(body)) {
+    if (!allowedTopFields.has(key)) {
+      errors.push('unknown field in body: ' + key);
+    }
+  }
+
+  // warrant
+  if (typeof body.warrant !== 'string') {
+    errors.push('warrant must be a string');
+  } else if (body.warrant !== '0.1' && body.warrant !== '0.2') {
+    errors.push('warrant must be "0.1" or "0.2"');
+  }
+
+  // decision
+  if (typeof body.decision !== 'string') {
+    errors.push('decision must be a string');
+  } else if (!['propose', 'accept', 'reject', 'supersede'].includes(body.decision)) {
+    errors.push('decision must be one of propose, accept, reject, supersede');
+  }
+
+  // subject
+  if (typeof body.subject !== 'object' || body.subject === null || Array.isArray(body.subject)) {
+    errors.push('subject must be an object');
+  } else {
+    // Check for unknown fields in subject
+    const allowedSubjectFields = new Set(['hash', 'note']);
+    for (const key of Object.keys(body.subject)) {
+      if (!allowedSubjectFields.has(key)) {
+        errors.push('unknown field in subject: ' + key);
+      }
+    }
+
+    // hash must be hex64
+    if (!isHex64(body.subject.hash)) {
+      errors.push('subject.hash must be hex64');
+    }
+
+    // note is optional, but if present must be string ≤200 code points
+    if (body.subject.note !== undefined && body.subject.note !== null) {
+      if (typeof body.subject.note !== 'string') {
+        errors.push('subject.note must be a string');
+      } else {
+        const cpLen = codePointLength(body.subject.note);
+        if (cpLen > 200) {
+          errors.push('subject.note must be ≤200 Unicode code points');
+        }
+      }
+    }
+  }
+
+  // under
+  if (!Array.isArray(body.under)) {
+    errors.push('under must be an array');
+  } else {
+    if (body.under.length < 1) {
+      errors.push('under must have ≥1 element');
+    }
+    for (let i = 0; i < body.under.length; i++) {
+      if (!isHex64(body.under[i])) {
+        errors.push('under[' + i + '] must be hex64');
+      }
+    }
+  }
+
+  // because
+  if (!Array.isArray(body.because)) {
+    errors.push('because must be an array');
+  } else {
+    // Check reason count based on decision
+    const decision = body.decision;
+    if (decision === 'reject' || decision === 'supersede') {
+      if (body.because.length < 1) {
+        errors.push('reject and supersede must have ≥1 reason');
+      }
+    } else if (decision === 'propose') {
+      // MAY be empty, no minimum
+    }
+    // accept SHOULD have ≥1, but it's not a MUST, so no error for empty
+
+    // Validate each reason
+    const warrantVersion = body.warrant;
+    for (let i = 0; i < body.because.length; i++) {
+      validateReason(body.because[i], warrantVersion, errors);
+    }
+  }
+
+  // evidence
+  if (!Array.isArray(body.evidence)) {
+    errors.push('evidence must be an array');
+  } else {
+    for (let i = 0; i < body.evidence.length; i++) {
+      if (!isHex64(body.evidence[i])) {
+        errors.push('evidence[' + i + '] must be hex64');
+      }
+    }
+  }
+
+  // actor
+  if (typeof body.actor !== 'object' || body.actor === null || Array.isArray(body.actor)) {
+    errors.push('actor must be an object');
+  } else {
+    // Check for unknown fields in actor
+    const allowedActorFields = new Set(['id']);
+    for (const key of Object.keys(body.actor)) {
+      if (!allowedActorFields.has(key)) {
+        errors.push('unknown field in actor: ' + key);
+      }
+    }
+
+    // id must be nonempty string
+    if (typeof body.actor.id !== 'string') {
+      errors.push('actor.id must be a string');
+    } else if (body.actor.id.length === 0) {
+      errors.push('actor.id must be nonempty');
+    }
+  }
+
+  // prior
+  if (!Array.isArray(body.prior)) {
+    errors.push('prior must be an array');
+  } else {
+    // prior contains WarrantIDs, which are hex64
+    for (let i = 0; i < body.prior.length; i++) {
+      if (!isHex64(body.prior[i])) {
+        errors.push('prior[' + i + '] must be hex64');
+      }
+    }
+  }
+
+  // ts
+  if (!isIntegerInRange(body.ts)) {
+    errors.push('ts must be an integer in range 0..9007199254740991');
+  } else if (body.ts < 0) {
+    errors.push('ts must be ≥0');
+  }
+
+  // Check all integers in the body are within domain
+  // The spec says every integer anywhere in a body must be in range
+  // Since the only integer field is ts, and we've checked it,
+  // but we should also check that no other fields accidentally contain integers
+  // Actually, the schema is strict, so unknown fields are already rejected.
+  // The integer domain rule applies to ts specifically for bodies.
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+// Main handler
+export function handle(className, input) {
+  if (className !== 'validate') {
+    return { unsupported: 'unknown class: ' + className };
+  }
+
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return { unsupported: 'input must be an object' };
+  }
+
+  if (typeof input.body !== 'object' || input.body === null) {
+    return { unsupported: 'input.body must be an object' };
+  }
+
+  const result = validateBody(input.body);
+  return { output: result };
+}
+
+
+===== CURRENT SIBLING candidate/hashing.mjs =====
+// hashing.mjs
+// Warrant conformance class module for: blob-hash, sig-message
+// Node.js built-ins only. No network, no child processes, no external packages.
+
+import { createHash } from 'node:crypto';
+
+/**
+ * @param {string} className - The conformance class to handle.
+ * @param {object} input - The input object for the class.
+ * @returns {Promise<{output: object} | {unsupported: string}>}
+ */
+export async function handle(className, input) {
+  if (className === 'blob-hash') {
+    try {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { unsupported: 'input must be an object' };
+      }
+      const b64 = input.bytes_base64;
+      if (typeof b64 !== 'string') {
+        return { unsupported: 'bytes_base64 must be a string' };
+      }
+      // Decode base64 to raw bytes
+      const bytes = Buffer.from(b64, 'base64');
+      // Compute SHA-256 over the raw bytes
+      const hash = createHash('sha256').update(bytes).digest('hex');
+      // Ensure lowercase hex (digest('hex') already returns lowercase)
+      return { output: { hash } };
+    } catch (e) {
+      return { unsupported: `blob-hash failed: ${e.message}` };
+    }
+  }
+
+  if (className === 'sig-message') {
+    try {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { unsupported: 'input must be an object' };
+      }
+      const warrantId = input.warrant_id;
+      if (typeof warrantId !== 'string') {
+        return { output: { error: 'warrant_id must be a string' } };
+      }
+      // Validate: exactly 64 lowercase hex characters
+      // Lowercase hex: [0-9a-f]
+      if (warrantId.length !== 64) {
+        return { output: { error: `warrant_id must be 64 hex characters, got ${warrantId.length}` } };
+      }
+      if (!/^[0-9a-f]{64}$/.test(warrantId)) {
+        return { output: { error: 'warrant_id must be lowercase hex with no prefix or separators' } };
+      }
+      // Hex-decode the 64-char string to 32 raw bytes
+      const rawBytes = Buffer.from(warrantId, 'hex');
+      // Sanity check: should be exactly 32 bytes
+      if (rawBytes.length !== 32) {
+        return { output: { error: 'warrant_id did not decode to 32 bytes' } };
+      }
+      // Build the 47-byte message:
+      // 15 ASCII bytes of "warrant-sig-v1:" followed by 32 raw bytes
+      const separator = Buffer.from('warrant-sig-v1:', 'ascii');
+      // Verify separator is exactly 15 bytes
+      if (separator.length !== 15) {
+        return { unsupported: 'internal error: separator length mismatch' };
+      }
+      const message = Buffer.concat([separator, rawBytes]);
+      // Verify total is 47 bytes
+      if (message.length !== 47) {
+        return { unsupported: 'internal error: message length mismatch' };
+      }
+      // Output the hex of the exact 47 bytes
+      const messageHex = message.toString('hex');
+      return { output: { message_hex: messageHex } };
+    } catch (e) {
+      return { output: { error: `sig-message failed: ${e.message}` } };
+    }
+  }
+
+  return { unsupported: `unknown class: ${className}` };
+}
+
+
+===== CURRENT SIBLING candidate/verify-sig.mjs =====
+// candidate/verify-sig.mjs
+// Implements the `verify-sig` class of the Warrant contract.
+// Uses Node.js built-ins only. No network, no child processes, no external packages.
+
+import { createPublicKey, verify } from 'node:crypto';
+
+// Ed25519 group order L
+const L = 2n ** 252n + 2777552093292854368n;
+
+// 8 canonical torsion point encodings (small-order public keys)
+// These are the 8 points of order 1, 2, 4, 8 in the 2-torsion subgroup
+const TORSION_KEYS = new Set([
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  '0100000000000000000000000000000000000000000000000000000000000000',
+  '0000000000000000000000000000000000000000000000000000000000000080',
+  'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+  'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a',
+  '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05',
+  '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85',
+  'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa',
+]);
+
+// Additional non-canonical encodings that must be rejected
+// These have y >= p (after clearing sign bit) or other non-canonical forms
+const NON_CANONICAL_KEYS = new Set([
+  '0100000000000000000000000000000000000000000000000000000000000080',
+  'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+]);
+
+// Domain separator: "warrant-sig-v1:" (15 bytes)
+const SEPARATOR = 'warrant-sig-v1:';
+
+// SPKI prefix for Ed25519 public key (DER encoding of SubjectPublicKeyInfo)
+// This is the standard 12-byte prefix for Ed25519 in PKCS#8/SPKI format
+const SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+
+function hexToBytes(hex) {
+  if (typeof hex !== 'string') return null;
+  if (hex.length % 2 !== 0) return null;
+  // Check for valid hex characters
+  if (!/^[0-9a-f]+$/.test(hex)) return null;
+  try {
+    return Buffer.from(hex, 'hex');
+  } catch {
+    return null;
+  }
+}
+
+function isWeakKey(keyHex) {
+  // Check if key is in the torsion blocklist
+  if (TORSION_KEYS.has(keyHex)) return true;
+  if (NON_CANONICAL_KEYS.has(keyHex)) return true;
+  
+  // Check if key is non-canonical: y >= p after clearing sign bit
+  // p = 2^255 - 19
+  const p = 2n ** 255n - 19n;
+  const keyBytes = hexToBytes(keyHex);
+  if (!keyBytes || keyBytes.length !== 32) return true;
+  
+  // Clear the sign bit (bit 255, i.e., the high bit of the last byte)
+  const yBytes = Buffer.from(keyBytes);
+  yBytes[31] &= 0x7f;
+  
+  // Convert to BigInt (little-endian for Ed25519 encoding)
+  let y = 0n;
+  for (let i = 31; i >= 0; i--) {
+    y = (y << 8n) | BigInt(yBytes[i]);
+  }
+  
+  // If y >= p, it's non-canonical
+  if (y >= p) return true;
+  
+  return false;
+}
+
+function checkSignatureCanonical(sigHex) {
+  // Check if S scalar is canonical (S < L)
+  const sigBytes = hexToBytes(sigHex);
+  if (!sigBytes || sigBytes.length !== 64) return false;
+  
+  // S is the last 32 bytes of the signature
+  let s = 0n;
+  for (let i = 63; i >= 32; i--) {
+    s = (s << 8n) | BigInt(sigBytes[i]);
+  }
+  
+  // S must be < L
+  if (s >= L) return false;
+  
+  return true;
+}
+
+export function handle(className, input) {
+  if (className !== 'verify-sig') {
+    return { unsupported: `class ${className} is not handled by verify-sig` };
+  }
+  
+  try {
+    const { warrant_id, key, sig } = input;
+    
+    // Validate inputs
+    if (typeof warrant_id !== 'string' || typeof key !== 'string' || typeof sig !== 'string') {
+      return { output: { valid: false } };
+    }
+    
+    // Check key length (must be 32 bytes = 64 hex chars)
+    if (key.length !== 64) {
+      return { output: { valid: false } };
+    }
+    
+    // Check signature length (must be 64 bytes = 128 hex chars)
+    if (sig.length !== 128) {
+      return { output: { valid: false } };
+    }
+    
+    // Check warrant_id length (must be 32 bytes = 64 hex chars)
+    if (warrant_id.length !== 64) {
+      return { output: { valid: false } };
+    }
+    
+    // Check for weak/non-canonical key
+    if (isWeakKey(key)) {
+      return { output: { valid: false } };
+    }
+    
+    // Check signature canonicality (S < L)
+    if (!checkSignatureCanonical(sig)) {
+      return { output: { valid: false } };
+    }
+    
+    // Construct the message: "warrant-sig-v1:" || WarrantID_raw (32 bytes)
+    const separatorBytes = Buffer.from(SEPARATOR, 'ascii');
+    const warrantIdBytes = hexToBytes(warrant_id);
+    if (!warrantIdBytes || warrantIdBytes.length !== 32) {
+      return { output: { valid: false } };
+    }
+    
+    const message = Buffer.concat([separatorBytes, warrantIdBytes]);
+    
+    // Construct the public key in SPKI format for Node.js crypto
+    const keyBytes = hexToBytes(key);
+    if (!keyBytes || keyBytes.length !== 32) {
+      return { output: { valid: false } };
+    }
+    
+    const spkiKey = Buffer.concat([SPKI_PREFIX, keyBytes]);
+    
+    // Create public key object
+    let publicKey;
+    try {
+      publicKey = createPublicKey({
+        key: spkiKey,
+        format: 'der',
+        type: 'spki'
+      });
+    } catch {
+      return { output: { valid: false } };
+    }
+    
+    // Verify the signature
+    const sigBytes = hexToBytes(sig);
+    if (!sigBytes || sigBytes.length !== 64) {
+      return { output: { valid: false } };
+    }
+    
+    try {
+      const valid = verify(null, message, publicKey, sigBytes);
+      return { output: { valid: valid } };
+    } catch {
+      return { output: { valid: false } };
+    }
+  } catch {
+    return { output: { valid: false } };
+  }
+}
+
+
+===== EXACT MACHINE REPORT =====
+{
+  "candidate": [
+    "node",
+    "/Users/s0fractal/Projects/need-002-a3-collab-js/candidate/main.mjs"
+  ],
+  "pack_version": "1.2.0",
+  "pack_digest": "5a7360ba655aae7652b47c4b5882beed7eb9ce17403aaf0b35da628c22c3bd58",
+  "grade_claimed": "base",
+  "grade_achieved": null,
+  "results": [
+    {
+      "id": "verify-store/clean",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "positive",
+      "spec": "§6",
+      "why": "a store with nothing wrong: every reference resolves, both signatures verify, both WarrantIDs recompute",
+      "outcome": "FAIL",
+      "detail": "errors: expected 0, got 2"
+    },
+    {
+      "id": "verify-store/tampered-ts",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: one byte of the body changed, so the record no longer hashes to the WarrantID it is filed under (§6(2))",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/tampered-sig",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: the only signature by body.actor.id is invalid (§6(3))",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/swapped-blob",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: the POLICY blob cited by `under` was replaced wholesale and still sits at the original address. Both shipped implementations once reported this store clean (2026-07-29)",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/missing-prior",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: a `prior` edge points at a record the store does not hold (§6(4))",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/malformed-record",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: a record file that is not JSON at all",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/settlement-trust-malformed",
+      "class": "verify-store",
+      "grade": "settlement",
+      "polarity": "negative",
+      "spec": "§12.3",
+      "why": "MUST report exactly one ERR: a settlement verification was requested with an unparseable trust configuration. Falling open to 'no trust configured' would report a verification that did not happen",
+      "outcome": "NOT-CLAIMED",
+      "detail": "settlement grade was not claimed"
+    },
+    {
+      "id": "verify-store/settlement-trust-missing",
+      "class": "verify-store",
+      "grade": "settlement",
+      "polarity": "negative",
+      "spec": "§12.3",
+      "why": "MUST report exactly one ERR: the trust configuration file does not exist. A requested settlement verification that could not construct its trust did not happen",
+      "outcome": "NOT-CLAIMED",
+      "detail": "settlement grade was not claimed"
+    },
+    {
+      "id": "verify-store/settlement-trust-empty",
+      "class": "verify-store",
+      "grade": "settlement",
+      "polarity": "positive",
+      "spec": "§9",
+      "why": "a valid trust configuration naming no genesis root: the store still verifies with zero errors; the roots are simply not settlement-active",
+      "outcome": "NOT-CLAIMED",
+      "detail": "settlement grade was not claimed"
+    }
+  ]
+}
+
+
+===== PUBLIC FROZEN VECTOR FILE verify-store.json =====
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "verify-store",
+  "grade": "base",
+  "source": "fixtures generated for this pack",
+  "note": "AUTHORED for this pack, deterministically, from the SPEC \u00a78 demo seed. Only the ERROR count is pinned: SPEC \u00a76 fixes which conditions are errors, but not how many warnings an implementation chooses to emit, and pinning a number the spec does not fix would test our taste rather than the format. The mutations are the defects this repository actually shipped.",
+  "vectors": [
+    {
+      "id": "verify-store/clean",
+      "polarity": "positive",
+      "spec": "\u00a76",
+      "why": "a store with nothing wrong: every reference resolves, both signatures verify, both WarrantIDs recompute",
+      "input": {
+        "store_dir": "stores/clean",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": 0
+      }
+    },
+    {
+      "id": "verify-store/tampered-ts",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: one byte of the body changed, so the record no longer hashes to the WarrantID it is filed under (\u00a76(2))",
+      "input": {
+        "store_dir": "stores/tampered-ts",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/tampered-sig",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: the only signature by body.actor.id is invalid (\u00a76(3))",
+      "input": {
+        "store_dir": "stores/tampered-sig",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/swapped-blob",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: the POLICY blob cited by `under` was replaced wholesale and still sits at the original address. Both shipped implementations once reported this store clean (2026-07-29)",
+      "input": {
+        "store_dir": "stores/swapped-blob",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/missing-prior",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: a `prior` edge points at a record the store does not hold (\u00a76(4))",
+      "input": {
+        "store_dir": "stores/missing-prior",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    },
+    {
+      "id": "verify-store/malformed-record",
+      "polarity": "negative",
+      "spec": "\u00a76",
+      "why": "MUST report an error: a record file that is not JSON at all",
+      "input": {
+        "store_dir": "stores/malformed-record",
+        "grade": "base"
+      },
+      "expect": {
+        "errors": {
+          "at_least": 1
+        }
+      }
+    }
+  ]
+}
+
+
+Now repair candidate/verify-store.mjs. Preserve correct behavior as well as fixing failures.

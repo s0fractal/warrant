@@ -1,0 +1,16 @@
+{
+  "candidate_source_sha256": "4607447f20535f31922d5f2d6a01d48c6f0d82dbeb4a1a2d17e9008810fc76e7",
+  "node": "v26.8.1",
+  "operation": "createPublicKey(raw-32-as-der-spki)",
+  "outcome": "threw",
+  "error": {
+    "name": "Error",
+    "code": "ERR_OSSL_ASN1_WRONG_TAG",
+    "message": "Failed to read asymmetric key",
+    "openssl_error_stack": [
+      "error:0688010A:asn1 encoding routines::nested asn1 error",
+      "error:068000A8:asn1 encoding routines::wrong tag"
+    ]
+  },
+  "scope": "A direct reproduction of the failing candidate's Node crypto call using the public key from verify-sig/accept-00. It does not execute or disclose a Warrant implementation."
+}

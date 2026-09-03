@@ -1,0 +1,119 @@
+You are the sole clean-room implementer in experiment NEED-002-A2c-QWEN38-JS.
+Implement only the Warrant conformance class module for: validate.
+Use Node.js built-ins only. Do not use network access, child processes, external packages, repository source code, skeletons, or hidden guidance.
+No expected vector answers are supplied. Implement the rules in the frozen normative text.
+Your module must export handle(className, input), synchronously or asynchronously. It must return exactly {output: <class output>} when it answers, or {unsupported: <nonempty reason>} when it genuinely cannot answer. It must not read stdin or write stdout.
+Return exactly one fenced JavaScript block containing the complete validate.mjs and no other fenced blocks.
+
+===== VERBATIM FROZEN CONTRACT CLASS TEXT =====
+**Encodings.** A field whose name ends in `_base64` carries standard base64 with
+padding; a field whose name ends in `_hex`, and every hash, key and signature,
+carries **lowercase** hex with no prefix and no separators. Comparison is exact
+string equality, so uppercase hex is a wrong answer, not a formatting choice.
+
+#### `validate` — SPEC §2, §3, §8.3
+
+* input: `{"body": <JSON value>}`
+* output: `{"valid": <bool>, "errors": ["<message>", …]}`
+
+Only `valid` is compared; `errors` is for humans reading the report. Unknown
+fields are invalid **recursively**, and `note` is bounded in code points, not
+bytes.
+
+**This class is not implementable from this document.** The schema — required
+members, permitted `decision` values, reason `kind`s and runtime tags, the hex64
+fields, the `note` bound — is SPEC §2 and §3. Read those, then work through the
+sixteen vectors in `vectors/validate.json`: each MUST-REJECT case names the rule
+it violates in its `why`, so they double as a checklist. Write the twelve
+negatives first. An implementation whose `validate` returns `true`
+unconditionally passes all four positives here, and the runner gives that its own
+headline for exactly that reason.
+
+===== VERBATIM FROZEN SPEC SECTIONS §2, §3 =====
+## 2. Body
+
+The body is a JSON object with exactly these fields (unknown fields MUST make the record invalid):
+
+| Field | Type | Req | Meaning |
+| --- | --- | --- | --- |
+| `warrant` | string | MUST | Format version, `"0.1"` or `"0.2"` |
+| `decision` | string | MUST | `"propose"` \| `"accept"` \| `"reject"` \| `"supersede"` |
+| `subject` | object | MUST | `{"hash": <hex64>, "note": <string, optional, ≤200 Unicode code points>}` — the thing decided |
+| `under` | array | MUST | ≥1 hex64 hashes of the policy blobs in force |
+| `because` | array | MUST* | Reasons (§3). *`reject` and `supersede` MUST have ≥1; `accept` SHOULD have ≥1; MAY be `[]` only for `propose` |
+| `evidence` | array | MUST | ≥0 hex64 hashes of input blobs the decision relied on |
+| `actor` | object | MUST | `{"id": <nonempty string>}` — stable actor identifier |
+| `prior` | array | MUST | ≥0 WarrantIDs this record responds to or follows |
+| `ts` | integer | MUST | Unix seconds, UTC, in the inclusive range `0..9007199254740991` (2^53−1 — see the integer domain rule below) |
+
+All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact).
+
+**Integer domain (MUST).** Every integer anywhere in a body, in any schema blob, and in any other JSON this format canonicalizes MUST lie in the inclusive range **−9007199254740991 .. 9007199254740991** (±(2^53−1)). A body carrying an integer outside that range is schema-invalid. Implementations MUST NOT silently clamp, wrap, or truncate numeric fields.
+
+**Why this bound and not int64.** §4 defines a WarrantID as SHA-256 over the RFC 8785 (JCS) serialization of the body. RFC 8785 §3.2.2.3 serializes numbers the way ECMAScript's `Number.prototype.toString` does — through an IEEE-754 double. Above 2^53−1 that mapping is lossy, so the canonical bytes stop being a function of the value:
+
+```
+ts = 9223372036854775807            (int64 max — valid under the previous rule)
+  exact-integer implementation  ->  9223372036854775807
+  any conforming JCS            ->  9223372036854776000
+```
+
+Two conforming implementations, one logical record, two WarrantIDs. This rule read `0..2^63-1` until an external review observed that the schema admitted a domain the declared canonicalization cannot carry — the document cited RFC 8785 and RFC 7493 while contradicting both, and RFC 7493 §2.2 warns about precisely this, recommending strings for anything wider.
+
+**Why narrowing rather than wrapping.** Wrapping at 2^53 would map two different values onto one canonical byte string, and therefore onto one WarrantID, in a format whose identity *is* that hash — a collision introduced on purpose. It would also break §6's requirement that `ts` be non-decreasing along each `prior` edge, which stops being well-defined once `ts` can wrap. Extending the canonical form to carry wider integers as decimal strings was considered and rejected: it buys range no Unix timestamp needs, at the cost of a second number syntax in every implementation and every vector. 2^53−1 seconds is the year 285428751.
+
+**Where this rule actually binds.** The body schema admits exactly one integer — `ts` — because every other field is a string, a hex64, or an array or object of those, and the unknown-field rule (recursive, below) forbids adding one. So for bodies the global statement and the `ts` clause coincide, and an implementation checking only `ts` is observably correct on every schema-valid body. The rule earns its keep on **blobs**: a threshold policy's `min_sigs` and any integer a future schema blob admits are canonicalized by the same JCS and carry the same hazard. Both reference implementations now walk every integer at both boundaries rather than checking `ts` and relying on `min_sigs > len(actors)` to reject the rest — that indirect bound rejects the same values, which is precisely what made depending on it wrong: the stated rule and the enforced rule were two different rules agreeing by coincidence, and a reimplementer would have written the stated one.
+
+**Cost of the change: none measured.** Every JSON file in this repository and its two siblings was scanned; no record, blob, vector or fixture carried an integer outside the new range. The only occurrence was `schemas/warrant-body.schema.json`'s own former `maximum`. No WarrantID moves and nothing needs re-signing — which is true today and would not have been true after 1.0.
+
+**The unknown-field rule is recursive (MUST).** It applies not only to the body but to every object the schema names: `subject` (exactly `hash`, optional `note`), `actor` (exactly `id`), and each reason object (§3). An unknown member anywhere in that tree makes the record invalid. Leaving nested strictness implicit is a silent verifier split: one implementation accepts an extra key another rejects, while both compute the same WarrantID.
+
+**`actor.id` MUST be a nonempty string.** (Spec gap closed 2026-07-30: this table said `<string>` while all three implementations rejected `""` — Python, Go and Rust each answer `actor must be {id: <nonempty string>}`. Three implementations agreeing is not authority to write a spec from code, so it is recorded here as what it was: the document was silent where an implementer had to guess, and the guess they would have made — `""` is a string, therefore valid — would have produced a record every existing verifier rejects. `§6`'s rule that a valid signature by `body.actor.id` must exist gives the requirement its meaning: an empty actor id names nobody.)
+
+**String lengths are measured in Unicode code points (MUST), never bytes or UTF-16 units.** `subject.note` is ≤200 code points. Byte-length and code-point-length disagree for any non-ASCII string — exactly the silent split the integers-only rule guards against for numbers.
+
+## 3. Reasons
+
+Each element of `because` is one of:
+
+```json
+{ "kind": "prose", "text": "<string>" }
+
+{ "kind": "check", "check": "<hex64>", "runtime": "cmd@v1",
+  "verdict": "pass" | "fail", "transcript": "<hex64, optional>" }
+```
+
+- `check` — hash of the check blob (script, test command, etc.).
+- `runtime` — execution profile. `cmd@v1`: the check blob is executed as a command in an isolated container; exit 0 = `pass`, nonzero = `fail`. `ski@v1` (§3.1): available in `"0.2"` bodies; in `"0.1"` bodies it remains reserved and MUST be rejected. Any other `runtime` value makes the record invalid (MUST): a validator MUST reject an unknown runtime rather than accept-and-warn, so a forward-dated runtime cannot mean "valid" to one implementation and "invalid" to another.
+- `verdict` is the actor's claim; anyone MAY re-run the check against the evidence and file their own warrant if they get a different verdict.
+- `transcript` — hash of the check's output blob, so the claimed verdict is inspectable.
+
+### 3.1. `ski@v1` — portable deterministic budget-bounded checks (v0.2)
+
+The check blob is I-JSON (JCS-canonical, integers only — hashed like any blob):
+
+```json
+{ "ski": 1, "term": "<hex64 NodeHash>", "atp": <uint32>, "expect": "<hex64 NodeHash>" }
+```
+
+Verification re-runs the reduction and compares hashes:
+
+1. Evaluate `eval(term, atp)` per **Σ-GLYPH Book I v0.5** (hash-thunk machine, size-priced ATP): https://github.com/s0fractal/sigma-glyph — anchored spec, two independent implementations, machine conformance vectors. The URL is a convenience, not the trust anchor: an implementation MUST pin the Book I ruleset it evaluates against by version and content (the vendored/bundled oracle it ships, or a pinned spec-document hash), so `ski@v1` semantics cannot be changed under it by an edit or force-push to a repository. `ski@v1` names Book I **v0.5** specifically; a later Book I is a different runtime tag.
+2. The warrant blob store IS the Σ-GLYPH CAS: every object the evaluation demands MUST resolve among the store's blobs (Σ-GLYPH genesis axioms are intrinsic and need no blobs).
+3. Verdict: `pass` iff the result's NodeHash equals `expect`, else `fail`. Canonical DISSONANCE outcomes are nodes with fixed hashes, so expecting a failure mode needs no special casing — `expect` covers it uniformly.
+
+Why this runtime exists: `cmd@v1` proves a claim to whoever trusts the container; `ski@v1` proves it to **anyone with the blobs** — bit-exact across implementations, terminating by construction, with work AND peak memory bounded by `atp` (Σ-GLYPH's `size − 1 ≤ spent` invariant). It is safe to re-verify a stranger's ski@v1 reason on your own machine; that cannot be said of re-running a stranger's shell script. Tools SHOULD treat `ski@v1` as the strongest reason kind: re-runnable without trust.
+
+**Re-execution budget.** `atp` is a `uint32`, so a single reason may legally demand up to ~4.3×10⁹ ATP of work and memory. Termination is guaranteed, but a verifier that re-runs arbitrary strangers' checks MUST bound the work it will spend: it MAY refuse to re-execute a reason whose `atp` exceeds a locally-configured budget, and MUST then report the reason as **unverified** (the §6 severity below) — never as `pass`/`fail`, and never as a silent skip. A refusal is not a verdict. Interoperating verifiers SHOULD share a default budget so they agree by default; two verifiers configured with different budgets MAY disagree on whether a given over-budget reason was re-executed, and that divergence is a deliberate local-policy choice, not a schema split. (The reference implementations default to 100,000,000 ATP, overridable by configuration.)
+
+**Protocol rule (MUST):** a `reject` whose every reason is `prose` is valid but MUST be marked by tools as *unverifiable*; tools SHOULD prefer at least one `check` reason. Rhetoric is legal; it just doesn't count as proof.
+
+**One evaluator per tag (MUST).** Because a runtime tag is immutable (§13.1), an implementation that ships an evaluator for a `ski@vN` tag MUST bind that tag to exactly one evaluator, identified by the digest of its bytes, and MUST verify that digest **before** loading it; a tag with no bound evaluator, or a bound module whose bytes do not match, MUST make the tag's reasons *unverified* (§6) — never a fallback to another tag's evaluator. The reference implementation records its bindings in `trust/ski-runtime-evaluators.json` and enforces them in `impl/warrant.py` (`SKI_EVALUATORS`).
+
+### 3.2. `ski@v2` — Σ-GLYPH Book I 0.6.0 (reserved candidate; not registered or admitted)
+
+`ski@v2` names evaluation per **Σ-GLYPH Book I 0.6.0** (the anchored `v0.7.0` bundle, adoption warrant `0e634c17…`): the same check-blob shape as §3.1 with `"ski": 2`, evaluated over `(term_hash, atp: uint32, env)` with a `Receipt = { exit, result_hash, atp_spent }` whose `exit` is one of the three canonical exits, and with Book I 0.6.0 §3.5 (bytes stored under a key they do not hash to are refused, never evaluated). `ski@v1` is unchanged by this registration and remains Book I v0.5.
+
+`ski@v2` is **reserved as a candidate and admitted in no body version**: §13.2 reserves body version `0.3` for it and `0.3` is not yet specified, so every conforming verifier — Python, Go, Rust — rejects a record carrying `ski@v2` today exactly as it rejects any unregistered runtime. Its outcome-fingerprint tuple (§7), negative vector set (§8.3) and the `0.3` body rules are the content of the future registration-and-admission change, not of this reservation.
+
+Now perform the task. Return the complete validate.mjs in exactly one fenced JavaScript block.

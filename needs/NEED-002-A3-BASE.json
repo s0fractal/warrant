@@ -1,0 +1,63 @@
+{
+  "tag": "warrant.need-evidence@v1",
+  "need": "NEED-002-BASE",
+  "status": "MET_BASE_ONLY",
+  "claim": "An iterative local multi-model process, given the frozen Warrant specification, conformance material, prior model outputs, runner output, and orchestrator-authored runtime probes but not Warrant implementation source, produced a JavaScript candidate that achieved the complete base grade of conformance pack 1.2.0.",
+  "source_experiment": {
+    "id": "NEED-002-A3-COLLAB-JS",
+    "commit": "ea99bddf90d3b27f6fe20dc289fe3b1f5ec456eb",
+    "evidence_manifest_sha256": "5e9f57d2e245de18d4a36501a8b90be4691e9242400dea2c50f54010e8788e4a"
+  },
+  "operands": {
+    "warrant_revision": "d7e2ca3eefc285f21630bd71acdfacf7599f7ef3",
+    "spec_sha256": "3fc90963cb353d649bf5c7097a0c2e2b26a78bd86be2bc08abf7655d2f0c38ba",
+    "pack_version": "1.2.0",
+    "pack_manifest_digest": "5a7360ba655aae7652b47c4b5882beed7eb9ce17403aaf0b35da628c22c3bd58",
+    "pack_tarball_sha256": "3226f8b4c9641247b1bf80cd781d11d082d0efef0428c71e129daef030251468"
+  },
+  "result": {
+    "report_sha256": "9cbe47202f99566d2662cf5e6c39a2b05fb6b9556d460f78fa5098bf2719f3e0",
+    "grade_claimed": "base",
+    "grade_achieved": "base",
+    "counts": {
+      "PASS": 135,
+      "FAIL": 0,
+      "UNRUN": 0,
+      "ERROR": 0,
+      "NOT-CLAIMED": 4
+    },
+    "base_negative_vectors_answered": 60,
+    "base_negative_vectors_accepted": 0,
+    "runner_mutations_detected": [
+      "accept-all",
+      "legacy-sig",
+      "false-unsupported",
+      "crash"
+    ]
+  },
+  "final_semantic_modules": {
+    "candidate/canon.mjs": "a4214d87e30a592a43f6edbb3f064edd7497d4f457ef8817826cb9c1278325cf",
+    "candidate/hashing.mjs": "8524728e935bfe85271ea6fb648b66a2f5392218f2b9143c387f58af35bc0ee6",
+    "candidate/parse.mjs": "7d6450558f138fe92765ab9464282c0c5ca7086aba5f698ac6319c9d7d914b2c",
+    "candidate/validate.mjs": "fd7a37218e44f795b4a32758c36d3a97895dbdd40f061cc1c09804e66da0276c",
+    "candidate/verify-sig.mjs": "92bf39435a50b003e7eab5d69b6f363de1928e069fa7c2eaa8514a3b73083ccb",
+    "candidate/verify-store.mjs": "f80f3abb9991c1b3287973ed98d3434c03812e901787145c355109e59662a7ff"
+  },
+  "transport_module": {
+    "path": "candidate/main.mjs",
+    "sha256": "7f738264fa9054dcb3d650e246b2ed960f2e6d580b30e04023b0d9d8ee0c4bf8",
+    "semantic_credit": false
+  },
+  "adjudication": {
+    "status": "SELF_CERTIFIED",
+    "by": "repository-maintainer",
+    "independent": false
+  },
+  "exclusions": [
+    "settlement-grade implementation or conformance",
+    "single-model or single-pass reproduction",
+    "correctness outside the frozen corpus",
+    "independent custody or external adoption",
+    "normative authority, release, or governance adoption"
+  ]
+}

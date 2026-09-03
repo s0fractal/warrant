@@ -1,0 +1,63 @@
+You are the sole clean-room implementer in experiment NEED-002-A2c-QWEN38-JS.
+Implement only the Warrant conformance class module for: canon.
+Use Node.js built-ins only. Do not use network access, child processes, external packages, repository source code, skeletons, or hidden guidance.
+No expected vector answers are supplied. Implement the rules in the frozen normative text.
+Your module must export handle(className, input), synchronously or asynchronously. It must return exactly {output: <class output>} when it answers, or {unsupported: <nonempty reason>} when it genuinely cannot answer. It must not read stdin or write stdout.
+Return exactly one fenced JavaScript block containing the complete canon.mjs and no other fenced blocks.
+
+===== VERBATIM FROZEN CONTRACT CLASS TEXT =====
+**Encodings.** A field whose name ends in `_base64` carries standard base64 with
+padding; a field whose name ends in `_hex`, and every hash, key and signature,
+carries **lowercase** hex with no prefix and no separators. Comparison is exact
+string equality, so uppercase hex is a wrong answer, not a formatting choice.
+
+#### `canon` — SPEC §4, §8, §8.4
+
+* input: `{"body": <JSON value>}`
+* output: `{"canon_hex": "<lowercase hex of the canonical UTF-8 bytes>", "warrant_id": "<hex>"}`
+* on a body that cannot be canonicalized (e.g. a non-integer number): `{"error": "<why>"}`
+
+The WarrantID is `SHA-256(canonical_json(body))` — the hash is over the canonical
+**bytes**, never over their hex text. Canonicalization is the RFC 8785 (JCS)
+subset SPEC §4 admits: UTF-8 output, object member names sorted by **UTF-16 code
+unit**, no insignificant whitespace, integers only (a non-integer number is an
+`error`, not a rounded value).
+
+String escaping is normative and is where reimplementations actually split, so it
+is spelled out rather than delegated to a library:
+
+* emit the seven two-character short escapes `\"` `\\` `\b` `\t` `\n` `\f` `\r`
+  — **all seven**. A serializer that writes `\u0009` `\u000a` `\u000d`
+  for tab, newline and carriage return is wrong here, and three §8.4 vectors
+  say so;
+* escape every **other** code point below U+0020 as `\u00xx` with **lowercase**
+  hex — and only those: U+007F (DEL) and the C1 block U+0080–U+009F are emitted
+  raw;
+* emit everything else raw as UTF-8, specifically including `<` `>` `&` `/`
+  (Go's `encoding/json` escapes the first three unless you disable it) and
+  U+2028 / U+2029 (JavaScript-oriented serializers escape these by habit);
+* apply **no** Unicode normalization. NFC and NFD forms of the same text are
+  different content and MUST hash differently; the pack vectors both.
+
+Three of these — the short-escape set, the raw `<` `>` `&`, and the NFC/NFD pair
+— are invisible to the SPEC §8 record vectors and are the reason the §8.4
+battery exists.
+
+===== VERBATIM FROZEN SPEC SECTIONS §4 =====
+## 4. Canonicalization and identity (MUST)
+
+```
+WarrantID = SHA-256( canonical_json(body) )
+```
+
+`canonical_json` is RFC 8785 (JCS). Because bodies are I-JSON with integers only, this is exactly: UTF-8, object keys sorted, no insignificant whitespace, no float formatting questions. Reference (Python): `json.dumps(body, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')`.
+
+**String escaping is normative (MUST), not left to a library default.** Emit the two-character short escapes `\"` `\\` `\b` `\t` `\n` `\f` `\r`; escape every other code point below U+0020 as `\u00xx` with **lowercase** hex; emit every other character — including `<` `>` `&`, `/`, and all non-ASCII — as raw UTF-8. Do **not** escape `<` `>` `&` (Go's `encoding/json` does this by default: it MUST be disabled), do **not** `\u`-escape U+2028/U+2029, and do **not** use uppercase hex or the `\uXXXX` long form where a short escape applies. These are the classic JCS reimplementation splits; the §8 example vectors don't exercise them, so a conformant implementation MUST also reproduce the escaping battery in **`examples/canon-vectors.json` (§8.4)** — machine-readable vectors, not a test script. (Before 2026-07-30 this clause pointed at `tests/differential.py`, which made a Python file normative and required a third-party implementer to read it; the harness is now the runner and the vectors are the artifact.)
+
+**Key ordering:** JCS sorts object member names by UTF-16 code unit. Every key this schema admits is fixed ASCII, for which UTF-16-unit order, Unicode-code-point order, and UTF-8 byte order coincide — so `sort_keys` (code point) and a bytewise sort are both correct here. Any future version that admits free-form object keys MUST sort by UTF-16 code unit per RFC 8785, not by code point.
+
+**Duplicate member names are invalid (MUST).** Bodies and all schema blobs are I-JSON (RFC 7493): an object with a repeated member name is malformed and MUST be rejected, not silently resolved last-wins. Stock JSON parsers (Python's `json`, Go's `encoding/json`) keep the last occurrence silently; an implementation MUST detect and reject duplicates so a dup-key object cannot mean "malformed" to a strict reimplementation and "last-wins" to a lenient one.
+
+**Unicode normalization is NOT applied (MUST NOT).** Strings are canonicalized and hashed as their exact sequence of Unicode code points; a verifier MUST NOT apply NFC/NFD (or any) normalization, and MUST NOT reject a string for not being normalized. Two strings that differ only by normalization form (e.g. `й` as U+0439 vs. `и`+U+0306) are different content and hash to different WarrantIDs — as a content-addressed system requires. The reference implementations agree byte-exact on both forms (they never normalize). Requiring NFC would force a full Unicode normalization database into every implementation (including the from-scratch ones) and would reject legitimate content; the deliberate choice is to hash exactly what was written. PRODUCERS SHOULD emit NFC so that a string mangled by an *external* system (an editor, a database, a filesystem that silently normalizes) does not later fail to resolve — but that is a producer discipline, not a verifier rule, because such external mangling would break any hash-addressed format and is outside this spec's boundary.
+
+Now perform the task. Return the complete canon.mjs in exactly one fenced JavaScript block.

@@ -1,0 +1,652 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "validate",
+  "grade": "base",
+  "source": "examples/*.warrant.json + examples/conformance-negatives.json (SPEC \u00a78.3)",
+  "note": "The negatives carry the weight: an implementation whose validate() returns true unconditionally passes every positive here.",
+  "vectors": [
+    {
+      "id": "validate/spec8-propose",
+      "polarity": "positive",
+      "spec": "\u00a72",
+      "why": "examples/propose.warrant.json is schema-valid",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-a@vendor1"
+          },
+          "because": [
+            {
+              "kind": "prose",
+              "text": "utility functions needed in three modules"
+            }
+          ],
+          "decision": "propose",
+          "evidence": [
+            "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01"
+          ],
+          "prior": [],
+          "subject": {
+            "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+            "note": "PR-42: add lodash"
+          },
+          "ts": 1751673600,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "validate/spec8-reject",
+      "polarity": "positive",
+      "spec": "\u00a72",
+      "why": "examples/reject.warrant.json is schema-valid",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-b@vendor2"
+          },
+          "because": [
+            {
+              "check": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c",
+              "kind": "check",
+              "runtime": "cmd@v1",
+              "transcript": "ca3e94e735d9232f3a2621d9a79813de520bc792b5e011d4662967de867fdb56",
+              "verdict": "fail"
+            },
+            {
+              "kind": "prose",
+              "text": "policy clause 1: coverage drops 87.0 -> 84.2"
+            }
+          ],
+          "decision": "reject",
+          "evidence": [
+            "ca3e94e735d9232f3a2621d9a79813de520bc792b5e011d4662967de867fdb56"
+          ],
+          "prior": [
+            "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1"
+          ],
+          "subject": {
+            "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+            "note": "PR-42"
+          },
+          "ts": 1751677200,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "validate/spec8-accept",
+      "polarity": "positive",
+      "spec": "\u00a72",
+      "why": "examples/accept.warrant.json is schema-valid",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-b@vendor2"
+          },
+          "because": [
+            {
+              "check": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c",
+              "kind": "check",
+              "runtime": "cmd@v1",
+              "transcript": "4ff30ace915e2241fb788138a8493a61b28542146cb467462734ee6357a4fd70",
+              "verdict": "pass"
+            }
+          ],
+          "decision": "accept",
+          "evidence": [
+            "ee9bc45c7d8e6042d9174a7b3375750c15b15b63cdc6548dcdbd6eece5b29738",
+            "4ff30ace915e2241fb788138a8493a61b28542146cb467462734ee6357a4fd70"
+          ],
+          "prior": [
+            "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8"
+          ],
+          "subject": {
+            "hash": "ee9bc45c7d8e6042d9174a7b3375750c15b15b63cdc6548dcdbd6eece5b29738",
+            "note": "PR-42 rev2"
+          },
+          "ts": 1751680800,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "validate/spec8.2-ski-accept",
+      "polarity": "positive",
+      "spec": "\u00a73.1",
+      "why": "the 0.2 ski@v1 body is schema-valid",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-a@vendor1"
+          },
+          "because": [
+            {
+              "check": "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad",
+              "kind": "check",
+              "runtime": "ski@v1",
+              "verdict": "pass"
+            }
+          ],
+          "decision": "accept",
+          "evidence": [],
+          "prior": [],
+          "subject": {
+            "hash": "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad",
+            "note": "C1[\u03bbxy.x] S K behaves as K (TV-10)"
+          },
+          "ts": 1751684400,
+          "under": [
+            "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad"
+          ],
+          "warrant": "0.2"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "validate/reject-00-float-ts",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: float ts (no floats, \u00a72)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1.5
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-01-missing-field",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: missing field (actor)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-02-unknown-body-field",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: unknown body field (\u00a72)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1,
+          "_extra": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-03-non-hex-subject-hash",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: non-hex subject hash",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "zz"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-04-reject-with-zero-reasons",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: reject with zero reasons (\u00a72)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "reject",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-05-ski@v1-in-a-0.1-body",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ski@v1 in a 0.1 body (\u00a73.1 reserved)",
+      "input": {
+        "body": {
+          "warrant": "0.1",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [
+            {
+              "kind": "check",
+              "check": "0000000000000000000000000000000000000000000000000000000000000000",
+              "runtime": "ski@v1",
+              "verdict": "pass"
+            }
+          ],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-06-note->-200-code-points",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: note > 200 code points (\u00a72)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "note": "\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b\u044b"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-07-unknown-runtime",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: unknown runtime (\u00a73)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [
+            {
+              "kind": "check",
+              "check": "0000000000000000000000000000000000000000000000000000000000000000",
+              "runtime": "wasm@v1",
+              "verdict": "pass"
+            }
+          ],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-08-nested-unknown-field-in-subject",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: nested unknown field in subject (\u00a72 recursive)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "x": 1
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-09-missing-field",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: missing field (warrant)",
+      "input": {
+        "body": {
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-10-missing-field",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: missing field (decision)",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 1
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-11-ts-=-2^53",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = 2^53 (integer domain, \u00a72): the first value a conforming RFC 8785 serializer cannot round-trip, so accepting it lets two implementations derive two WarrantIDs from one record",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 9007199254740992
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-12-ts-=-int64-max",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = int64 max (integer domain, \u00a72): valid under the pre-2026-08 rule; an ECMAScript JCS canonicalizes it as 9223372036854776000",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 9223372036854775807
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-13-ts-=-uint64-max",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = uint64 max (integer domain, \u00a72): rejection must not depend on the implementation's native integer width",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": 18446744073709551615
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-14-ts-=--",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST reject: ts = -(2^53) (integer domain, \u00a72): the bound is symmetric, and ts has its own lower bound of 0 besides",
+      "input": {
+        "body": {
+          "warrant": "0.2",
+          "decision": "propose",
+          "subject": {
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "under": [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ],
+          "because": [],
+          "evidence": [],
+          "actor": {
+            "id": "x"
+          },
+          "prior": [],
+          "ts": -9007199254740992
+        }
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/reject-non-object",
+      "polarity": "negative",
+      "spec": "\u00a72",
+      "why": "MUST reject: a body that is not a JSON object",
+      "input": {
+        "body": [
+          "not",
+          "an",
+          "object"
+        ]
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "validate/int-domain-2^53-1-is-inside",
+      "polarity": "positive",
+      "spec": "\u00a72",
+      "why": "ts = 2^53-1 is the largest integer RFC 8785 round-trips, and is therefore valid, not the first invalid one",
+      "input": {
+        "body": {
+          "actor": {
+            "id": "agent-a@vendor1"
+          },
+          "because": [
+            {
+              "kind": "prose",
+              "text": "utility functions needed in three modules"
+            }
+          ],
+          "decision": "propose",
+          "evidence": [
+            "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01"
+          ],
+          "prior": [],
+          "subject": {
+            "hash": "a29ad251d35c43514f53932217935025a7f4b23bbbbb0f979d48a9c2bf53ae01",
+            "note": "PR-42: add lodash"
+          },
+          "ts": 9007199254740991,
+          "under": [
+            "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+          ],
+          "warrant": "0.1"
+        }
+      },
+      "expect": {
+        "valid": true
+      }
+    }
+  ]
+}

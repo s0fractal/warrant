@@ -1,0 +1,30 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "ski-run",
+  "grade": "settlement",
+  "source": "examples/ski/ (SPEC \u00a78.2)",
+  "note": "Settlement grade only: SPEC \u00a77 escalates an unexecuted ski@v1 reason to an ERR, so an implementation that cannot re-execute cannot settle. Base grade candidates report this UNRUN.",
+  "vectors": [
+    {
+      "id": "ski-run/spec8.2",
+      "polarity": "positive",
+      "spec": "\u00a78.2",
+      "why": "TV-10: C1[\u03bbxy.x] S K reduces to S within 20 ATP. A verifier that reports a verdict without executing the term is the defect SPEC \u00a76(7) forbids",
+      "input": {
+        "check_base64": "eyJhdHAiOjIwLCJleHBlY3QiOiI4ODcwNDViYzIyOTM1YWVjNWNiYTJkYzExNDAwZDRlNDM1N2JjMzRkMDY2ODFhNmU5MmYwNmU3Nzk1YjFmOGE2Iiwic2tpIjoxLCJ0ZXJtIjoiOTdhMmVlZGVhOGQ4YjM0MTlkYWM3M2YxNjg1ODE0ZTdhN2NjZDg1ZjIzMmYzZDFlMDg1ZmIxZjE5MTc2MTFhZCJ9",
+        "blobs_base64": {
+          "89bf5669baa47176938fd5d514c097c4dcdd710da8f4f62e2e0d1748bc2d2798.bin": "Aga8DC/ibkTirtjOUAp0ljvCcP1KSewMLkg3znpkuwpIbLwML+JuROKu2M5QCnSWO8Jw/UpJ7AwuSDfOemS7Ckhs",
+          "97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad.bin": "AgbABMgZcv8fm1FxV6RLt+4maudN5eqUCIzhcDcHKJbJwbwML+JuROKu2M5QCnSWO8Jw/UpJ7AwuSDfOemS7Ckhs",
+          "bed95fbc7ccd2cf53d3562138a69a90a9c38de9f7a23d9015eef1b6638d4eb1d.bin": "AgbRtqaYK0qMSwTIPTrb96ugT1h4kfZ7XduB2VvNg8toQy8zaU0JgQZB+luMR6fA3ELhuZ64yXhKAKrummYzD0Fi",
+          "c004c81972ff1f9b517157a44bb7ee266ae74de5ea94088ce17037072896c9c1.bin": "Aga+2V+8fM0s9T01YhOKaakKnDjen3oj2QFe7xtmONTrHYhwRbwik1rsXLotwRQA1OQ1e8NNBmgabpLwbneVsfim",
+          "d1b6a6982b4a8c4b04c83d3adbf7aba04f587891f67b5ddb81d95bcd83cb6843.bin": "AgaIcEW8IpNa7Fy6LcEUANTkNXvDTQZoGm6S8G53lbH4pom/Vmm6pHF2k4/V1RTAl8Tc3XENqPT2Li4NF0i8LSeY"
+        }
+      },
+      "expect": {
+        "verdict": "pass",
+        "result_node_hash": "887045bc22935aec5cba2dc11400d4e4357bc34d06681a6e92f06e7795b1f8a6",
+        "atp_spent": 20
+      }
+    }
+  ]
+}

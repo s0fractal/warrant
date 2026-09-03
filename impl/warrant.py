@@ -5,12 +5,10 @@ One file, standard library + `cryptography` (Ed25519). The spec (SPEC.md) is
 the contract; the vectors in examples/ are law: `conformance` MUST reproduce
 all five hashes byte-exactly and verify all three signatures.
 
-Canonicalization note: WarrantID = SHA-256 over RFC 8785 (JCS) bytes. For v0.1
-bodies this equals Python's `json.dumps(body, sort_keys=True,
-separators=(',',':'), ensure_ascii=False)` because (a) every number is an
-integer and (b) every object key is schema-fixed ASCII. JCS sorts keys by
-UTF-16 code units while Python sorts by code point — identical for ASCII.
-Any future version that admits free-form keys MUST revisit this shortcut.
+Canonicalization note: WarrantID = SHA-256 over RFC 8785 (JCS) bytes within
+the integer-only domain admitted by SPEC §2. Object member names are ordered
+by UTF-16 code units, including for the schema-invalid-but-canonical values in
+the §8.4 canonicalization battery.
 """
 import argparse
 import hashlib
@@ -138,8 +136,37 @@ REASON_CAS_MISMATCH = "content does not match its address"
 
 # ---------- canonicalization & identity (SPEC §4) ----------
 def canon(body):
-    return json.dumps(body, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False).encode("utf-8")
+    """Return integer-domain JCS bytes, including UTF-16 member ordering.
+
+    Python orders strings by Unicode scalar value; RFC 8785 orders object
+    member names by their UTF-16 code units. Those differ when an astral key
+    is compared with a BMP key at or above U+E000, so `sort_keys=True` is not
+    a general implementation of the format even though it is sufficient for
+    Warrant's fixed ASCII schema keys.
+    """
+    def render(value):
+        if value is None:
+            return "null"
+        if value is True:
+            return "true"
+        if value is False:
+            return "false"
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, str):
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        if isinstance(value, list):
+            return "[" + ",".join(render(item) for item in value) + "]"
+        if isinstance(value, dict):
+            if not all(isinstance(key, str) for key in value):
+                raise TypeError("JSON object member names must be strings")
+            keys = sorted(value, key=lambda key: key.encode("utf-16-be"))
+            return "{" + ",".join(
+                render(key) + ":" + render(value[key]) for key in keys
+            ) + "}"
+        raise TypeError(f"unsupported JSON value {type(value).__name__}")
+
+    return render(body).encode("utf-8")
 
 
 def _reject_dup_keys(pairs):
@@ -1462,9 +1489,9 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
             out("ERR", wid, f"schema: {m}")
         try:
             got = warrant_id(body)
-        except ValueError:
-            # A body that cannot be canonicalized (e.g. a lone surrogate in a
-            # string, which Python's json accepts but UTF-8 cannot encode) has no
+        except (TypeError, ValueError):
+            # A body that cannot be canonicalized (e.g. a lone surrogate or a
+            # non-integer number accepted by Python's JSON parser) has no
             # computable WarrantID — a bounded ERR, never a traceback (Kimi K3 gate).
             out("ERR", wid, "WarrantID uncomputable (record contains invalid characters)")
             continue

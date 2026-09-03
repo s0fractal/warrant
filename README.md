@@ -257,7 +257,7 @@ requires a downstream server command after `--`; the server refuses one.
 
 ## What it is not
 
-Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three independent implementations agree on every hash, and the conformance contract's wire format plus one real class is an afternoon and full base grade is a few days — measured by writing two skeletons, not estimated, and still never measured against anyone who did not already know the format.
+Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three in-project implementations agree on every hash. A fourth JavaScript candidate was produced without Warrant implementation source by an iterative local multi-model process using the frozen public specification and conformance material, prior model outputs, runner output, and orchestrator-authored runtime probes. It reached the complete base grade (135/135); its settlement grade remains unimplemented. This self-certified result demonstrates one frozen public surface's clean-room-from-code implementability, not independent custody, external adoption, or correctness outside the corpus ([NEED-002](needs/README.md)).
 
 ## Spec and status
 
@@ -308,13 +308,13 @@ and what is and is not true about it so far, is one page:
 ours:
 
 ```bash
-python3 conformance/run.py --candidate "./your-verifier probe"   # 138 vectors
+python3 conformance/run.py --candidate "./your-verifier probe"   # 139 vectors
 python3 conformance/run.py --candidate "./your-verifier probe" --self-check
 ```
 
 Your side of it is one page (`conformance/CONTRACT.md`): read one JSON request
 from stdin, print one JSON response, exit 0 whenever you produced an answer. 62
-of the 138 vectors are MUST-REJECT, so an implementation that accepts everything
+of the 139 vectors are MUST-REJECT, so an implementation that accepts everything
 fails loudly rather than scoring well; `--self-check` breaks *your* program on
 purpose and fails if the runner does not notice — and reports a break that had
 nothing to corrupt as `INAPPLICABLE` rather than as its own failure, because on

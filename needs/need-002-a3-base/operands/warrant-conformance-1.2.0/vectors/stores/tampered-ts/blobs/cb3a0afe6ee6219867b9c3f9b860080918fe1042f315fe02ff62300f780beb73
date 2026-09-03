@@ -1,0 +1,4 @@
+POLICY: repo-guard v1
+1. No commit may reduce test coverage.
+2. Any dependency addition requires a stated reason.
+3. Rejections must cite a failing check or a policy clause.

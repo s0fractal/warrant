@@ -1,0 +1,280 @@
+```javascript
+// validate.mjs
+// Warrant conformance class: validate
+// Implements SPEC §2, §3, §8.3 for the "validate" class.
+
+const HEX64_RE = /^[0-9a-f]{64}$/;
+const MAX_INT = 9007199254740991; // 2^53 - 1
+const MIN_INT = -9007199254740991; // -(2^53 - 1)
+
+// Check if a value is a valid integer within the allowed domain
+function isIntegerInRange(val) {
+  if (typeof val !== 'number') return false;
+  if (!Number.isInteger(val)) return false;
+  if (val < MIN_INT || val > MAX_INT) return false;
+  return true;
+}
+
+// Check if a value is a valid hex64 string
+function isHex64(val) {
+  return typeof val === 'string' && HEX64_RE.test(val);
+}
+
+// Count Unicode code points in a string
+function codePointLength(str) {
+  if (typeof str !== 'string') return 0;
+  return [...str].length;
+}
+
+// Validate a reason object (§3)
+function validateReason(reason, warrantVersion, errors) {
+  if (typeof reason !== 'object' || reason === null || Array.isArray(reason)) {
+    errors.push('reason must be an object');
+    return;
+  }
+
+  // Check for unknown fields
+  const allowedFields = new Set(['kind']);
+  if (reason.kind === 'prose') {
+    allowedFields.add('text');
+  } else if (reason.kind === 'check') {
+    allowedFields.add('check');
+    allowedFields.add('runtime');
+    allowedFields.add('verdict');
+    allowedFields.add('transcript');
+  }
+
+  for (const key of Object.keys(reason)) {
+    if (!allowedFields.has(key)) {
+      errors.push(`unknown field in reason: ${key}`);
+    }
+  }
+
+  if (reason.kind === 'prose') {
+    if (typeof reason.text !== 'string') {
+      errors.push('prose reason must have string text');
+    }
+  } else if (reason.kind === 'check') {
+    // check must be hex64
+    if (!isHex64(reason.check)) {
+      errors.push('check reason must have hex64 check field');
+    }
+
+    // runtime must be valid
+    if (typeof reason.runtime !== 'string') {
+      errors.push('check reason must have string runtime');
+    } else {
+      if (reason.runtime === 'cmd@v1') {
+        // valid for all versions
+      } else if (reason.runtime === 'ski@v1') {
+        // only valid in 0.2 bodies
+        if (warrantVersion !== '0.2') {
+          errors.push('ski@v1 runtime is not allowed in warrant version ' + warrantVersion);
+        }
+      } else if (reason.runtime === 'ski@v2') {
+        // reserved, not admitted in any body version
+        errors.push('ski@v2 runtime is reserved and not admitted');
+      } else {
+        errors.push('unknown runtime: ' + reason.runtime);
+      }
+    }
+
+    // verdict must be pass or fail
+    if (reason.verdict !== 'pass' && reason.verdict !== 'fail') {
+      errors.push('check reason must have verdict pass or fail');
+    }
+
+    // transcript is optional, but if present must be hex64
+    if (reason.transcript !== undefined && reason.transcript !== null) {
+      if (!isHex64(reason.transcript)) {
+        errors.push('check reason transcript must be hex64');
+      }
+    }
+  } else {
+    errors.push('unknown reason kind: ' + reason.kind);
+  }
+}
+
+// Validate the body
+function validateBody(body) {
+  const errors = [];
+
+  // Body must be an object
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    errors.push('body must be an object');
+    return { valid: false, errors };
+  }
+
+  // Check for unknown fields at top level
+  const allowedTopFields = new Set([
+    'warrant', 'decision', 'subject', 'under',
+    'because', 'evidence', 'actor', 'prior', 'ts'
+  ]);
+
+  for (const key of Object.keys(body)) {
+    if (!allowedTopFields.has(key)) {
+      errors.push('unknown field in body: ' + key);
+    }
+  }
+
+  // warrant
+  if (typeof body.warrant !== 'string') {
+    errors.push('warrant must be a string');
+  } else if (body.warrant !== '0.1' && body.warrant !== '0.2') {
+    errors.push('warrant must be "0.1" or "0.2"');
+  }
+
+  // decision
+  if (typeof body.decision !== 'string') {
+    errors.push('decision must be a string');
+  } else if (!['propose', 'accept', 'reject', 'supersede'].includes(body.decision)) {
+    errors.push('decision must be one of propose, accept, reject, supersede');
+  }
+
+  // subject
+  if (typeof body.subject !== 'object' || body.subject === null || Array.isArray(body.subject)) {
+    errors.push('subject must be an object');
+  } else {
+    // Check for unknown fields in subject
+    const allowedSubjectFields = new Set(['hash', 'note']);
+    for (const key of Object.keys(body.subject)) {
+      if (!allowedSubjectFields.has(key)) {
+        errors.push('unknown field in subject: ' + key);
+      }
+    }
+
+    // hash must be hex64
+    if (!isHex64(body.subject.hash)) {
+      errors.push('subject.hash must be hex64');
+    }
+
+    // note is optional, but if present must be string ≤200 code points
+    if (body.subject.note !== undefined && body.subject.note !== null) {
+      if (typeof body.subject.note !== 'string') {
+        errors.push('subject.note must be a string');
+      } else {
+        const cpLen = codePointLength(body.subject.note);
+        if (cpLen > 200) {
+          errors.push('subject.note must be ≤200 Unicode code points');
+        }
+      }
+    }
+  }
+
+  // under
+  if (!Array.isArray(body.under)) {
+    errors.push('under must be an array');
+  } else {
+    if (body.under.length < 1) {
+      errors.push('under must have ≥1 element');
+    }
+    for (let i = 0; i < body.under.length; i++) {
+      if (!isHex64(body.under[i])) {
+        errors.push('under[' + i + '] must be hex64');
+      }
+    }
+  }
+
+  // because
+  if (!Array.isArray(body.because)) {
+    errors.push('because must be an array');
+  } else {
+    // Check reason count based on decision
+    const decision = body.decision;
+    if (decision === 'reject' || decision === 'supersede') {
+      if (body.because.length < 1) {
+        errors.push('reject and supersede must have ≥1 reason');
+      }
+    } else if (decision === 'propose') {
+      // MAY be empty, no minimum
+    }
+    // accept SHOULD have ≥1, but it's not a MUST, so no error for empty
+
+    // Validate each reason
+    const warrantVersion = body.warrant;
+    for (let i = 0; i < body.because.length; i++) {
+      validateReason(body.because[i], warrantVersion, errors);
+    }
+  }
+
+  // evidence
+  if (!Array.isArray(body.evidence)) {
+    errors.push('evidence must be an array');
+  } else {
+    for (let i = 0; i < body.evidence.length; i++) {
+      if (!isHex64(body.evidence[i])) {
+        errors.push('evidence[' + i + '] must be hex64');
+      }
+    }
+  }
+
+  // actor
+  if (typeof body.actor !== 'object' || body.actor === null || Array.isArray(body.actor)) {
+    errors.push('actor must be an object');
+  } else {
+    // Check for unknown fields in actor
+    const allowedActorFields = new Set(['id']);
+    for (const key of Object.keys(body.actor)) {
+      if (!allowedActorFields.has(key)) {
+        errors.push('unknown field in actor: ' + key);
+      }
+    }
+
+    // id must be nonempty string
+    if (typeof body.actor.id !== 'string') {
+      errors.push('actor.id must be a string');
+    } else if (body.actor.id.length === 0) {
+      errors.push('actor.id must be nonempty');
+    }
+  }
+
+  // prior
+  if (!Array.isArray(body.prior)) {
+    errors.push('prior must be an array');
+  } else {
+    // prior contains WarrantIDs, which are hex64
+    for (let i = 0; i < body.prior.length; i++) {
+      if (!isHex64(body.prior[i])) {
+        errors.push('prior[' + i + '] must be hex64');
+      }
+    }
+  }
+
+  // ts
+  if (!isIntegerInRange(body.ts)) {
+    errors.push('ts must be an integer in range 0..9007199254740991');
+  } else if (body.ts < 0) {
+    errors.push('ts must be ≥0');
+  }
+
+  // Check all integers in the body are within domain
+  // The spec says every integer anywhere in a body must be in range
+  // Since the only integer field is ts, and we've checked it,
+  // but we should also check that no other fields accidentally contain integers
+  // Actually, the schema is strict, so unknown fields are already rejected.
+  // The integer domain rule applies to ts specifically for bodies.
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+// Main handler
+export function handle(className, input) {
+  if (className !== 'validate') {
+    return { unsupported: 'unknown class: ' + className };
+  }
+
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return { unsupported: 'input must be an object' };
+  }
+
+  if (typeof input.body !== 'object' || input.body === null) {
+    return { unsupported: 'input.body must be an object' };
+  }
+
+  const result = validateBody(input.body);
+  return { output: result };
+}
+```

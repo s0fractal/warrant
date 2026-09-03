@@ -1,0 +1,30 @@
+{
+  "experiment": "NEED-002-A3-COLLAB-JS",
+  "stage": "verify-store",
+  "attempt": "s2",
+  "model": "gemma4:31b-mlx",
+  "parent_commit": "945c438eb5003f8f5b74c56499ba1dff332f845e",
+  "report": "reports/q1-verify-store.json",
+  "vector_mode": "focused",
+  "runtime_options": {
+    "temperature": 0.2,
+    "repeat_penalty": 1,
+    "seed": 20260903,
+    "num_ctx": 32768,
+    "num_predict": 16384,
+    "draft_num_predict": 0,
+    "thinking": false,
+    "transport": "streaming"
+  },
+  "prompt_sha256": "17d8fc0874c942034a99f9c5a8bcd0de4c6fa6c95df94f7be4d7eadf9acfa966",
+  "source_before_sha256": "36b6fb5e3326a9aec165fa3d74e4c77865c41a6c4c2ad261944a9206cd3d9c58",
+  "response_sha256": "bb086fd7d71ce96c3e20e66a994a08fa06852328f3ae45fc85e9a2e6442a8302",
+  "source_after_sha256": "f80f3abb9991c1b3287973ed98d3434c03812e901787145c355109e59662a7ff",
+  "thinking_sha256": null,
+  "done": true,
+  "done_reason": "stop",
+  "total_duration_ns": 344660305584,
+  "prompt_eval_count": 21640,
+  "eval_count": 1464,
+  "extraction": "ACCEPTED"
+}

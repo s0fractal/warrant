@@ -1,0 +1,530 @@
+You are a contributor to iterative experiment NEED-002-A3-COLLAB-JS.
+Repair only candidate/verify-sig.mjs until the collaborative JavaScript candidate conforms to the frozen Warrant contract.
+This is construction, not a one-shot benchmark. Test feedback and prior model contributions are legitimate inputs.
+Use Node.js built-ins only. Do not use network access, child processes, external packages, or Warrant implementation source.
+The candidate namespace is FLAT. Your file is physically beside every dependency and candidate/main.mjs. Import a sibling only as ./<name>.mjs. Never use ../ and never guess another directory.
+Your module must export handle(className, input), synchronously or asynchronously. It must return exactly {output: <class output>} when it answers, or {unsupported: <nonempty reason>} when it genuinely cannot answer. It must not read stdin or write stdout.
+Return exactly one fenced JavaScript block containing the complete candidate/verify-sig.mjs; no prose outside it and no other fenced blocks.
+
+===== VERBATIM FROZEN CONTRACT =====
+**Encodings.** A field whose name ends in `_base64` carries standard base64 with
+padding; a field whose name ends in `_hex`, and every hash, key and signature,
+carries **lowercase** hex with no prefix and no separators. Comparison is exact
+string equality, so uppercase hex is a wrong answer, not a formatting choice.
+
+#### `verify-sig` — SPEC §5, §8.3, §8.5
+
+* input: `{"warrant_id": "<hex>", "key": "<hex>", "sig": "<hex>"}` — `key` is a
+  raw 32-byte Ed25519 public key as hex (no DER, no PEM, no multibase), `sig` is
+  the raw 64-byte signature as hex. Both may be the wrong length on purpose.
+* output: `{"valid": <bool>}`
+
+Verify the Ed25519 signature over the `sig-message` bytes. Small-order and
+non-canonically-encoded public keys MUST fail for **any** message and signature —
+a check that neither Go's `crypto/ed25519` nor Node's `crypto` performs for you,
+so if you delegate verification to a stock library you must add the key test in
+front of it. Never raise — a malformed key, a short signature and a wrong key are
+all `{"valid": false}`.
+
+===== VERBATIM FROZEN SPEC §5 =====
+## 5. Envelope and signatures (MUST)
+
+A stored warrant is an envelope:
+
+```json
+{ "body": { ... }, "sigs": [ { "actor": "<id>", "key": "<hex64 Ed25519 pubkey>", "sig": "<hex128>" } ] }
+```
+
+- **`sig` = Ed25519 signature over a domain-separated message (MUST).** The message is **not** the WarrantID. It is the 15-byte ASCII separator `warrant-sig-v1:` immediately followed by the **32 raw bytes** of the WarrantID:
+
+  ```
+  msg = "warrant-sig-v1:" || WarrantID_raw        15 + 32 = 47 bytes
+  separator bytes (hex) = 77617272616e742d7369672d76313a
+  ```
+
+  Precisely: the separator is the 15 ASCII characters `w a r r a n t - s i g - v 1 :`, with no NUL terminator, no length prefix and no separator between the two parts; the WarrantID is appended as the 32 bytes obtained by hex-decoding it, **not** as its 64 ASCII hex characters. The total is always exactly 47 bytes. Both parts are fixed-length, so the encoding is unambiguous without a length field. Signing and verification are **pure RFC 8032 Ed25519 over that byte string** — **not** Ed25519ctx, **not** Ed25519ph, no pre-hash, no context parameter passed to the primitive. Nothing else is signed: the envelope is not signed, `sigs` is not signed, and the body is signed only through its hash.
+
+  **The pre-0.6.0 construction — the bare 32-byte WarrantID with no separator — MUST NOT verify (MUST NOT).** A verifier MUST NOT accept both messages, under any flag, during any transition: a verifier that accepts the old one has no domain separation, because an attacker simply uses the old one. The two constructions are cleanly disjoint in both directions (`examples/signature-vectors.json`), so there is no dual-accept window and the change is a flag day. A verifier that *recognises* an old signature SHOULD say so rather than reporting only that verification failed (see the report string below); recognising is not accepting.
+
+  **Rationale.** Without a separator the signed message is byte-indistinguishable from any other bare 32-byte SHA-256 digest, so a key that also signs digests in another protocol — DSSE/in-toto payload digests, TUF metadata, Σ-GLYPH NodeHashes, RFC 6962 roots, Git object ids — produces signatures valid in both, in both directions. `warrant-sig-v1` names this protocol inside the bytes the key covers. Ed25519ctx is the orthodox instrument and is deliberately not used: Python's `cryptography` does not expose it, Go reaches it only through `ed25519.Options`, and a from-scratch verifier must implement RFC 8032's `dom2` prefix, so the orthodox choice is the one more likely to split verifiers — the failure this document's design rule ranks highest. `v1` versions the *signature scheme*, not the body: a future change becomes `warrant-sig-v2:` and is again disjoint from everything before it. (This clause implements option A of `proposals/DEC-001-domain-separation.md`; the vectors are §8.5.)
+
+  **Report string (MUST, §7 convention).** A verifier that recognises a signature valid over the bare WarrantID MUST report it with these exact bytes: `signature does not verify (excluded): LEGACY pre-v1 signature construction (signed the bare 32-byte WarrantID; SPEC 5 requires "warrant-sig-v1:" || WarrantID). Re-sign with: warrant resign --key <keyfile>` — an ASCII string, so three implementations and three JSON encoders emit one diagnosis. The signature is still excluded and §6's ERR still applies: this is a diagnosis, not an acceptance.
+
+  **Migration.** The WarrantID is SHA-256 of the canonical *body* and the envelope is not hashed, so re-signing a record rewrites `sig` and nothing else: no WarrantID moves, no `prior` edge breaks, no `under`/`evidence`/`subject` hash stops resolving, no settlement tunnel and no pinned genesis root changes. A record whose signing key is no longer available **cannot** be migrated and MUST be reported as such rather than left to fail as an ordinary bad signature.
+- **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`), MUST reject a malformed (non-canonical) public-key or signature-point encoding, and **MUST reject a small-order or non-canonically-encoded public key** before verifying. A small-order public key (the 8 torsion points, e.g. all-zero) lets an all-zero signature verify for a large fraction of messages, and libraries disagree on which such keys they accept — so a crafted envelope would verify under one library and not another ("Taming the many EdDSAs"). The rejection set is a byte-exact blocklist of the 8 canonical torsion encodings plus a non-canonical check (`y ≥ p` after clearing the sign bit), so every implementation agrees by construction; it is a normative negative-conformance vector (§8.3), not a library-dependent heuristic. Implementations SHOULD additionally prefer a strict RFC 8032 cofactorless verifier.
+- ≥1 signature MUST be present and MUST include one whose `actor` equals `body.actor.id` and which verifies. If no *valid* signature by `body.actor.id` is present, the record is invalid (§6 ERR).
+- Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is). **A co-signature that fails to verify is reported and EXCLUDED, not fatal (MUST):** because anyone with store write access can append envelope signatures, a single junk co-signature MUST NOT be able to invalidate a record that still carries a valid signature by `body.actor.id`. An invalid signature is a §6 WARN; only the *absence* of a valid actor signature is an ERR. (For settlement thresholds, §5.1, an invalid signature simply does not count.)
+- Key↔actor binding is out of scope for v0.1 (use your existing PKI/keyring); implementations MUST verify signatures against the stated key and report the binding as unverified if no keyring is configured.
+
+### 5.1. Key state: binding, rotation, thresholds (v0.3)
+
+Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification.
+
+**Rotation is a warrant:** an `accept` whose subject is the new key blob. A rotation MUST include a valid signature by the incoming key as proof of possession and MUST be authorized under the actor/store's current key policy. If that policy has a threshold, the rotation MUST satisfy it using keys already bound before the rotation; the incoming key's proof-of-possession signature does not count toward the threshold. The outgoing key's signature MAY be required by policy for ordinary rotation, but MUST NOT be sufficient authorization when the store has a multi-actor threshold policy. Emergency replacement of a suspected-compromised outgoing key SHOULD be authorized by quorum without requiring the outgoing key. **Revocation is a warrant:** a `supersede` of the rotation warrant that introduced the key, authorized under the same current-policy rule.
+
+**Ordering:** key validity derives from accepted rotation/revocation warrants in **DAG order**, never from wall-clock trust in `ts` alone; a `ts` outside non-decreasing prior order remains a §6 warning and MUST NOT extend or resurrect a key. Only *authorized* key-state warrants can conflict — a record failing current-policy authorization is an invalid record, not a conflict. A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendant: warrants ordered by the DAG are never a conflict; only maximal, mutually unordered warrants trigger this rule. On conflict, verifiers MUST report `WARN: key-state conflict`, and the conflicted actor's key MUST NOT count toward any quorum until a later warrant — authorized by the unconflicted remainder of the quorum — resolves it; if the threshold would become unsatisfiable, it is reduced to exclude the conflicted actor strictly for conflict resolution.
+
+**Threshold policy grammar.** A v0.3 threshold policy blob MUST be JCS-canonical JSON:
+
+```json
+{ "warrant_policy": "0.3", "threshold": { "min_sigs": 2, "actors": ["a@x", "b@y", "c@z"] } }
+```
+
+`min_sigs` MUST be a positive integer ≤ `len(actors)`; `actors` MUST be nonempty and unique; unknown fields inside `threshold` make the policy invalid. **For settlement-grade threshold evaluation (including root adoption, §9), a signature counts for an actor only if it is cryptographically valid AND made by a key currently bound to that actor at that warrant's DAG position (§5.1). An actor with no configured key state contributes nothing: unbound claims MUST NOT satisfy a v0.3 threshold.** Records filed under an invalid threshold policy are settlement-inactive and MUST produce `ERR: invalid threshold policy` for settlement-grade verification. Opaque v0.1/v0.2 policy blobs MUST NOT be interpreted as threshold policies.
+
+===== REPLACEMENT MODE =====
+Write a clean replacement from the contract and observations below. Do not copy or preserve the current module merely because it exists. The current module is deliberately omitted: an earlier model became trapped reproducing one of its long hexadecimal literals.
+
+===== EXACT MACHINE REPORT =====
+{"tag":"warrant.conformance-result@v1","pack_version":"1.2.0","pack_digest":"5a7360ba655aae7652b47c4b5882beed7eb9ce17403aaf0b35da628c22c3bd58","candidate":["node","candidate/main.mjs"],"declared":{"name":"NEED-002-A3-COLLAB-JS","version":"candidate","grade":"base","classes":["canon","parse","validate","blob-hash","sig-message","verify-sig","verify-store"]},"grade_claimed":"base","grade_achieved":null,"counts":{"PASS":24,"FAIL":4,"UNRUN":0,"ERROR":0,"NOT-CLAIMED":0},"negatives_run":60,"negatives_answered":60,"negatives_accepted":0,"results":[{"id":"verify-sig/accept-00","class":"verify-sig","grade":"base","polarity":"positive","spec":"\u00a78.5","why":"examples/propose.warrant.json: the committed signature by agent-a@vendor1","outcome":"FAIL","detail":"valid: expected true, got false"},{"id":"verify-sig/accept-01","class":"verify-sig","grade":"base","polarity":"positive","spec":"\u00a78.5","why":"examples/reject.warrant.json: the committed signature by agent-b@vendor2","outcome":"FAIL","detail":"valid: expected true, got false"},{"id":"verify-sig/accept-02","class":"verify-sig","grade":"base","polarity":"positive","spec":"\u00a78.5","why":"examples/accept.warrant.json: the committed signature by agent-b@vendor2","outcome":"FAIL","detail":"valid: expected true, got false"},{"id":"verify-sig/accept-03","class":"verify-sig","grade":"base","polarity":"positive","spec":"\u00a78.5","why":"examples/ski/accept-ski.warrant.json: the committed signature by agent-a@vendor1","outcome":"FAIL","detail":"valid: expected true, got false"},{"id":"verify-sig/reject-00","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: examples/propose.warrant.json: pre-v1 construction (signed the bare WarrantID)","outcome":"PASS","detail":""},{"id":"verify-sig/reject-01","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: examples/reject.warrant.json: pre-v1 construction (signed the bare WarrantID)","outcome":"PASS","detail":""},{"id":"verify-sig/reject-02","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: examples/accept.warrant.json: pre-v1 construction (signed the bare WarrantID)","outcome":"PASS","detail":""},{"id":"verify-sig/reject-03","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: examples/ski/accept-ski.warrant.json: pre-v1 construction (signed the bare WarrantID)","outcome":"PASS","detail":""},{"id":"verify-sig/reject-04","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: separator and digest concatenated in the WRONG ORDER","outcome":"PASS","detail":""},{"id":"verify-sig/reject-05","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: separator followed by the WarrantID's ASCII HEX, not its 32 bytes","outcome":"PASS","detail":""},{"id":"verify-sig/reject-06","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: separator without its trailing colon","outcome":"PASS","detail":""},{"id":"verify-sig/reject-07","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: separator only, no WarrantID","outcome":"PASS","detail":""},{"id":"verify-sig/reject-08","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: a v2 separator that does not exist yet","outcome":"PASS","detail":""},{"id":"verify-sig/reject-09","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.5","why":"MUST NOT verify: CROSS-PROTOCOL REPLAY: a signature over the bare SHA-256 digest of unrelated content, offered as a Warrant signature for the record whose WarrantID equals that digest. A pre-0.6.0 verifier ACCEPTED this (DEC-001 \u00a73); rejecting it is the whole point of \u00a75's domain separator.","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-00","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-01","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 0100000000000000\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-02","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-03","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key ecffffffffffffff\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-04","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key c7176a703d4dd84f\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-05","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 26e8958fc2b227b0\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-06","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 26e8958fc2b227b0\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-07","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key c7176a703d4dd84f\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-08","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 0100000000000000\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-09","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key ecffffffffffffff\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-10","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key ffffffffffffffff\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-11","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 00\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-12","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026","outcome":"PASS","detail":""},{"id":"verify-sig/weak-key-13","class":"verify-sig","grade":"base","polarity":"negative","spec":"\u00a78.3","why":"MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026","outcome":"PASS","detail":""}]}
+
+
+===== PUBLIC FROZEN VECTOR FILE verify-sig.json =====
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "verify-sig",
+  "grade": "base",
+  "source": "examples/signature-vectors.json + examples/conformance-negatives.json",
+  "note": "24 of the 28 vectors here are MUST-NOT-VERIFY. A verifier that returns true unconditionally passes the other four.",
+  "vectors": [
+    {
+      "id": "verify-sig/accept-00",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/propose.warrant.json: the committed signature by agent-a@vendor1",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "36bf44a04ecad6f5d46379acedbef86322a4b3cd715b87119d57c0f6add2f70c4701e0dd2dd890e58fcf6b053f24c148c4c970b1eb36bb3bcd0591a0ed949002"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/accept-01",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/reject.warrant.json: the committed signature by agent-b@vendor2",
+      "input": {
+        "warrant_id": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "46571f4f6d7de488dc20fa40ebddec5a81ca406516390d95a45ddd10ed6d816bcc81098a3dcd7e4acb0285d548cda7f8de6c0b9c99fe4ee32e951ef44f23f80f"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/accept-02",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/accept.warrant.json: the committed signature by agent-b@vendor2",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "db19ae73113791a9482f94b04aaacf6041c424241f66804841ef4b81bd5209ad618efb7a62857d15f1b64b447a4e6d5639b247e5270bf17086a5a87fe4346703"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/accept-03",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "examples/ski/accept-ski.warrant.json: the committed signature by agent-a@vendor1",
+      "input": {
+        "warrant_id": "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "18a77b15ff36ea817be796cfe57dafc87517667d03c999c010cddaacf85fb60509ac24340b696fa7d603acb310d2861883511cd09c6803bae55f5b323fe2fc03"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/reject-00",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/propose.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "9d37f0e7cd3dcbd9de5d34dcf23e06c1916498f007c7e6937138fb9ea6781b7e3922842b03e49322140fb5f282a0901f0dd09bf96ad2e9551e6f4ff1cfe59b03"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-01",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/reject.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "779a4df46b84727d52b1e52c49875eb7a4bc326fffec575ee9c0b5ef3a594d920fcbc4e955f98b1a05a872d97dd1ac13fce99dbccd482c808f193c3eeb4d210d"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-02",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/accept.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "c72e16f18452287e0c52dd3c85fd8bf0d901b734a1c441cdbe13afbab590b0955c37866569adf81d0bb14aa25140b9b59b8d4e109fff364a9645512591fd0005"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-03",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: examples/ski/accept-ski.warrant.json: pre-v1 construction (signed the bare WarrantID)",
+      "input": {
+        "warrant_id": "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "cfa95ca56e73cf5f9dac9a87c8901912ee7298069f6699011a86ad0903edafbcca144ac249b4ece59f60ee07f6787098c012b39b45a35ffc24f29567abdbc20c"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-04",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator and digest concatenated in the WRONG ORDER",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "deb3aefdf0d701fe733505b59e49daca9a868d839593f2985f318ebf2b4d8ab7cdb63da15af4b01b5abcb39b02f752b1462d1536e4090da95effeca4a144eb05"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-05",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator followed by the WarrantID's ASCII HEX, not its 32 bytes",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "dd8c588d751fed264dde21a6f91c32644f3aaff3b2a55fb208c7726135102c5c4843e4355b7e26ee927fe5af5a963242468a7fde64db6f8372a5618cc72ed409"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-06",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator without its trailing colon",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "25c5134615e4b5e44b422f5d00dc22aef62bd1f6eefb2f629d835d060480471b028eeadb83509dddcfb733406385bfbc31cbdd8105bb244db2dc325a2a355e09"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-07",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: separator only, no WarrantID",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "a8b1bfb2f205a67b7279758bddf4f9fa9873eb94486efbfa5279f289c52f1a8a8de3b5307dd02565b228499ba25f2a05431a5a93e54e9ee90b39684754e83b00"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-08",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: a v2 separator that does not exist yet",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "e5d3f4ee072e41388778495a2033817000a6e2b93601611bcf18a95fb234ad790466a34bb32d9600e57fac6b09ba3f4516e8c4170073fe7801fdced276059c04"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-09",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: CROSS-PROTOCOL REPLAY: a signature over the bare SHA-256 digest of unrelated content, offered as a Warrant signature for the record whose WarrantID equals that digest. A pre-0.6.0 verifier ACCEPTED this (DEC-001 \u00a73); rejecting it is the whole point of \u00a75's domain separator.",
+      "input": {
+        "warrant_id": "4051f4523cdb1b91a9c1e7392c8bf65497088e3c1f01c6cebfbd688d3deb2e2e",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "03705b1001776fb15e23ea310d54404d957b0f801c3ab49fe57f2d55e72f63c150850ba865222c32c0a6b9ee77b200bd1117a667e40f8368ea46c609a2584a03"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-00",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-01",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0100000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0100000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-02",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0000000000000000000000000000000000000000000000000000000000000080",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-03",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key ecffffffffffffff\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-04",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key c7176a703d4dd84f\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-05",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 26e8958fc2b227b0\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-06",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 26e8958fc2b227b0\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-07",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key c7176a703d4dd84f\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-08",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0100000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "0100000000000000000000000000000000000000000000000000000000000080",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-09",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key ecffffffffffffff\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-10",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key ffffffffffffffff\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-11",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 00\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "00",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-12",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "000000000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/weak-key-13",
+      "polarity": "negative",
+      "spec": "\u00a78.3",
+      "why": "MUST NOT verify under small-order / non-canonical key 0000000000000000\u2026",
+      "input": {
+        "warrant_id": "00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1",
+        "key": "00000000000000000000000000000000000000000000000000000000000000",
+        "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "valid": false
+      }
+    }
+  ]
+}
+
+
+===== MACHINE-OBSERVED NODE DIAGNOSTIC verify-sig-q1-node.json =====
+{
+  "candidate_source_sha256": "4607447f20535f31922d5f2d6a01d48c6f0d82dbeb4a1a2d17e9008810fc76e7",
+  "node": "v26.8.1",
+  "operation": "createPublicKey(raw-32-as-der-spki)",
+  "outcome": "threw",
+  "error": {
+    "name": "Error",
+    "code": "ERR_OSSL_ASN1_WRONG_TAG",
+    "message": "Failed to read asymmetric key",
+    "openssl_error_stack": [
+      "error:0688010A:asn1 encoding routines::nested asn1 error",
+      "error:068000A8:asn1 encoding routines::wrong tag"
+    ]
+  },
+  "scope": "A direct reproduction of the failing candidate's Node crypto call using the public key from verify-sig/accept-00. It does not execute or disclose a Warrant implementation."
+}
+
+
+===== MACHINE-OBSERVED NODE DIAGNOSTIC verify-sig-q2-node.json =====
+{
+  "candidate_source_sha256": "7795c7fc7083e9d2d2aa4604d413ed315f49fb09c11247650cef6d0f4580cc0c",
+  "node": "v26.8.1",
+  "public_vector": "verify-sig/accept-00",
+  "observations": [
+    {
+      "operation": "createVerify('ed25519').update(message).verify(key, signature)",
+      "outcome": "threw",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_CRYPTO_INVALID_DIGEST",
+        "message": "Invalid digest"
+      }
+    },
+    {
+      "operation": "verify(null, message, key, signature)",
+      "outcome": "returned",
+      "value": true
+    }
+  ],
+  "scope": "Both observations use the candidate-generated SPKI wrapper and the public accept-00 vector. They execute Node crypto directly and do not execute or disclose a Warrant implementation."
+}
+
+
+Now repair candidate/verify-sig.mjs. Preserve correct behavior as well as fixing failures.

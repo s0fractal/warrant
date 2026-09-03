@@ -1,0 +1,102 @@
+{
+  "candidate": [
+    "node",
+    "/Users/s0fractal/Projects/need-002-a3-collab-js/candidate/main.mjs"
+  ],
+  "pack_version": "1.2.0",
+  "pack_digest": "5a7360ba655aae7652b47c4b5882beed7eb9ce17403aaf0b35da628c22c3bd58",
+  "grade_claimed": "base",
+  "grade_achieved": null,
+  "results": [
+    {
+      "id": "verify-store/clean",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "positive",
+      "spec": "§6",
+      "why": "a store with nothing wrong: every reference resolves, both signatures verify, both WarrantIDs recompute",
+      "outcome": "FAIL",
+      "detail": "errors: expected 0, got 2"
+    },
+    {
+      "id": "verify-store/tampered-ts",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: one byte of the body changed, so the record no longer hashes to the WarrantID it is filed under (§6(2))",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/tampered-sig",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: the only signature by body.actor.id is invalid (§6(3))",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/swapped-blob",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: the POLICY blob cited by `under` was replaced wholesale and still sits at the original address. Both shipped implementations once reported this store clean (2026-07-29)",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/missing-prior",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: a `prior` edge points at a record the store does not hold (§6(4))",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/malformed-record",
+      "class": "verify-store",
+      "grade": "base",
+      "polarity": "negative",
+      "spec": "§6",
+      "why": "MUST report an error: a record file that is not JSON at all",
+      "outcome": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "verify-store/settlement-trust-malformed",
+      "class": "verify-store",
+      "grade": "settlement",
+      "polarity": "negative",
+      "spec": "§12.3",
+      "why": "MUST report exactly one ERR: a settlement verification was requested with an unparseable trust configuration. Falling open to 'no trust configured' would report a verification that did not happen",
+      "outcome": "NOT-CLAIMED",
+      "detail": "settlement grade was not claimed"
+    },
+    {
+      "id": "verify-store/settlement-trust-missing",
+      "class": "verify-store",
+      "grade": "settlement",
+      "polarity": "negative",
+      "spec": "§12.3",
+      "why": "MUST report exactly one ERR: the trust configuration file does not exist. A requested settlement verification that could not construct its trust did not happen",
+      "outcome": "NOT-CLAIMED",
+      "detail": "settlement grade was not claimed"
+    },
+    {
+      "id": "verify-store/settlement-trust-empty",
+      "class": "verify-store",
+      "grade": "settlement",
+      "polarity": "positive",
+      "spec": "§9",
+      "why": "a valid trust configuration naming no genesis root: the store still verifies with zero errors; the roots are simply not settlement-active",
+      "outcome": "NOT-CLAIMED",
+      "detail": "settlement grade was not claimed"
+    }
+  ]
+}

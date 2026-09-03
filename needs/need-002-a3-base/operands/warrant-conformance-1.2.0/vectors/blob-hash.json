@@ -1,0 +1,57 @@
+{
+  "tag": "warrant.conformance-vectors@v1",
+  "class": "blob-hash",
+  "grade": "base",
+  "source": "examples/ + the SPEC \u00a78/\u00a78.2 tables",
+  "note": "Content addressing is SHA-256 over the raw bytes, no framing.",
+  "vectors": [
+    {
+      "id": "blob-hash/policy.txt",
+      "polarity": "positive",
+      "spec": "\u00a78",
+      "why": "SHA-256 of examples/policy.txt, pinned in the SPEC \u00a78 table",
+      "input": {
+        "bytes_base64": "UE9MSUNZOiByZXBvLWd1YXJkIHYxCjEuIE5vIGNvbW1pdCBtYXkgcmVkdWNlIHRlc3QgY292ZXJhZ2UuCjIuIEFueSBkZXBlbmRlbmN5IGFkZGl0aW9uIHJlcXVpcmVzIGEgc3RhdGVkIHJlYXNvbi4KMy4gUmVqZWN0aW9ucyBtdXN0IGNpdGUgYSBmYWlsaW5nIGNoZWNrIG9yIGEgcG9saWN5IGNsYXVzZS4K"
+      },
+      "expect": {
+        "hash": "cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73"
+      }
+    },
+    {
+      "id": "blob-hash/check.sh",
+      "polarity": "positive",
+      "spec": "\u00a78",
+      "why": "SHA-256 of examples/check.sh, pinned in the SPEC \u00a78 table",
+      "input": {
+        "bytes_base64": "IyEvYmluL3NoCiMgZmFsc2lmaWVyOiBjb3ZlcmFnZSBtdXN0IG5vdCBkcm9wIGJlbG93IGJhc2VsaW5lCnB5dGVzdCAtLWNvdiAtLWNvdi1mYWlsLXVuZGVyPTg3Cg=="
+      },
+      "expect": {
+        "hash": "05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c"
+      }
+    },
+    {
+      "id": "blob-hash/ski-check.json",
+      "polarity": "positive",
+      "spec": "\u00a78.2",
+      "why": "SHA-256 of the ski@v1 check blob (JCS bytes)",
+      "input": {
+        "bytes_base64": "eyJhdHAiOjIwLCJleHBlY3QiOiI4ODcwNDViYzIyOTM1YWVjNWNiYTJkYzExNDAwZDRlNDM1N2JjMzRkMDY2ODFhNmU5MmYwNmU3Nzk1YjFmOGE2Iiwic2tpIjoxLCJ0ZXJtIjoiOTdhMmVlZGVhOGQ4YjM0MTlkYWM3M2YxNjg1ODE0ZTdhN2NjZDg1ZjIzMmYzZDFlMDg1ZmIxZjE5MTc2MTFhZCJ9"
+      },
+      "expect": {
+        "hash": "0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad"
+      }
+    },
+    {
+      "id": "blob-hash/empty",
+      "polarity": "positive",
+      "spec": "\u00a71",
+      "why": "the empty blob \u2014 SHA-256 of zero bytes is a real address",
+      "input": {
+        "bytes_base64": ""
+      },
+      "expect": {
+        "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

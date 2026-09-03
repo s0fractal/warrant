@@ -1,0 +1,104 @@
+{
+  "tag": "need-002.collaborative-contributions@v1",
+  "namespace": "candidate files are flat; every module imports siblings with ./<name>.mjs",
+  "transport": {
+    "path": "candidate/main.mjs",
+    "sha256": "7f738264fa9054dcb3d650e246b2ed960f2e6d580b30e04023b0d9d8ee0c4bf8",
+    "author": "experiment-harness",
+    "semantic_credit": false
+  },
+  "initial_modules": [
+    {
+      "path": "candidate/canon.mjs",
+      "source_experiment": "NEED-002-A2c-QWEN38-JS",
+      "source_commit": "aad8977e9284b0dc13ecdfc0d37502dabedfc39d",
+      "model": "qwen3.8:27b-mlx",
+      "sha256": "a4214d87e30a592a43f6edbb3f064edd7497d4f457ef8817826cb9c1278325cf"
+    },
+    {
+      "path": "candidate/parse.mjs",
+      "source_experiment": "NEED-002-A2c-QWEN38-JS",
+      "source_commit": "aad8977e9284b0dc13ecdfc0d37502dabedfc39d",
+      "model": "qwen3.8:27b-mlx",
+      "sha256": "7d6450558f138fe92765ab9464282c0c5ca7086aba5f698ac6319c9d7d914b2c"
+    },
+    {
+      "path": "candidate/validate.mjs",
+      "source_experiment": "NEED-002-A2c-QWEN38-JS",
+      "source_commit": "aad8977e9284b0dc13ecdfc0d37502dabedfc39d",
+      "model": "qwen3.8:27b-mlx",
+      "sha256": "fd7a37218e44f795b4a32758c36d3a97895dbdd40f061cc1c09804e66da0276c"
+    },
+    {
+      "path": "candidate/hashing.mjs",
+      "source_experiment": "NEED-002-A2c-QWEN38-JS",
+      "source_commit": "aad8977e9284b0dc13ecdfc0d37502dabedfc39d",
+      "model": "qwen3.8:27b-mlx",
+      "sha256": "8524728e935bfe85271ea6fb648b66a2f5392218f2b9143c387f58af35bc0ee6"
+    },
+    {
+      "path": "candidate/verify-sig.mjs",
+      "source_experiment": "NEED-002-A2c-QWEN38-JS",
+      "source_commit": "aad8977e9284b0dc13ecdfc0d37502dabedfc39d",
+      "model": "qwen3.8:27b-mlx",
+      "sha256": "6321f5769d08c1982ed911c34546f111b8359026ae86384f0cd0ef39e6195e7e"
+    },
+    {
+      "path": "candidate/verify-store.mjs",
+      "source_experiment": "NEED-002-A2d-GEMMA4-JS",
+      "source_commit": "a9bc7bd0515451c3cf35ce6f232ff7e35fe31a21",
+      "model": "gemma4:31b-mlx",
+      "sha256": "36b6fb5e3326a9aec165fa3d74e4c77865c41a6c4c2ad261944a9206cd3d9c58"
+    }
+  ],
+  "final_semantic_modules": [
+    {
+      "path": "candidate/canon.mjs",
+      "sha256": "a4214d87e30a592a43f6edbb3f064edd7497d4f457ef8817826cb9c1278325cf",
+      "final_author": "qwen3.8:27b-mlx",
+      "provenance": "unchanged from NEED-002-A2c-QWEN38-JS"
+    },
+    {
+      "path": "candidate/parse.mjs",
+      "sha256": "7d6450558f138fe92765ab9464282c0c5ca7086aba5f698ac6319c9d7d914b2c",
+      "final_author": "qwen3.8:27b-mlx",
+      "provenance": "unchanged from NEED-002-A2c-QWEN38-JS"
+    },
+    {
+      "path": "candidate/validate.mjs",
+      "sha256": "fd7a37218e44f795b4a32758c36d3a97895dbdd40f061cc1c09804e66da0276c",
+      "final_author": "qwen3.8:27b-mlx",
+      "provenance": "unchanged from NEED-002-A2c-QWEN38-JS"
+    },
+    {
+      "path": "candidate/hashing.mjs",
+      "sha256": "8524728e935bfe85271ea6fb648b66a2f5392218f2b9143c387f58af35bc0ee6",
+      "final_author": "qwen3.8:27b-mlx",
+      "provenance": "unchanged from NEED-002-A2c-QWEN38-JS"
+    },
+    {
+      "path": "candidate/verify-sig.mjs",
+      "sha256": "92bf39435a50b003e7eab5d69b6f363de1928e069fa7c2eaa8514a3b73083ccb",
+      "final_author": "qwen3.8:27b-mlx",
+      "accepted_attempt": "verify-sig-q3",
+      "generation_record_sha256": "71b01bfa78b265836ea73fe7ef21a7ae128bf337313437f24f867e8598fce8c1"
+    },
+    {
+      "path": "candidate/verify-store.mjs",
+      "sha256": "f80f3abb9991c1b3287973ed98d3434c03812e901787145c355109e59662a7ff",
+      "final_author": "gemma4:31b-mlx",
+      "accepted_attempt": "verify-store-s2",
+      "generation_record_sha256": "5d2e3c9e24ed64c1e9646ec05903c7822c3a83086e84f2255933334bdcaa4fb0"
+    }
+  ],
+  "credit_boundary": {
+    "experiment_harness": [
+      "candidate/main.mjs",
+      "collaborate.mjs",
+      "diagnostics/verify-sig-q1-node.json",
+      "diagnostics/verify-sig-q2-node.json"
+    ],
+    "semantic_credit": "Only complete model-emitted candidate modules that survived the frozen runner are credited as implementation contributions.",
+    "refused_or_non_improving_attempts": "Retained under transcripts/ with generation records; none silently inherits semantic credit."
+  }
+}
