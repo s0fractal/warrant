@@ -315,6 +315,29 @@ else
   echo "        (we are warrant; B1 runs OUR verifier, and CI must not corrupt that)"
 fi
 
+# --------------------------------------------------------------------------
+# Control 9 — caller development overrides are not X1 operands. Before this
+# control, exporting SIGMA_GLYPH=sigma-HEAD made B2 reject settlement while the
+# same two repository HEADs passed in a clean shell. X1 must erase ambient mode
+# knobs and then opt into each differential explicitly.
+# --------------------------------------------------------------------------
+RAN=$((RAN+1))
+_ambient_out="$({
+  SIGMA_GLYPH="$SELF/definitely-not-the-pinned-evaluator" \
+  WARRANT_SIGMA_DIFFERENTIAL=1 \
+  WARRANT_POSITIONAL=1 \
+  WARRANT_SKI_MAX_ATP=0 \
+  SIBLING="$SIBLING" X1_SEEDS=1 bash "$X1"
+} 2>&1)"
+_ambient_rc=$?
+if [[ $_ambient_rc -eq 0 ]] && grep -q "X1-CROSS-REPO: ALL PASS" <<<"$_ambient_out"; then
+  echo "  OK    hostile ambient evaluator/mode overrides do not alter X1"
+else
+  echo "  FAIL  hostile ambient evaluator/mode overrides changed X1"
+  printf '%s\n' "$_ambient_out" | grep -E 'FAIL|pass=|X1-CROSS-REPO' | sed 's/^/        | /'
+  BAD=$((BAD+1))
+fi
+
 echo
 if [[ "$RAN" -eq 0 ]]; then
   echo "X1-NEGATIVE-CONTROL: FAIL — no control ran at all. That is precisely the"

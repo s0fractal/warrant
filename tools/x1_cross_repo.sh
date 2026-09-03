@@ -170,6 +170,13 @@ fi
 WARRANT=$([[ "$OWN" = warrant ]] && echo "$SELF" || echo "$SIB")
 SIGMA=$(  [[ "$OWN" = warrant ]] && echo "$SIB"  || echo "$SELF")
 
+# X1 owns every semantic mode it exercises. Ambient development overrides are
+# not operands of this gate: inheriting one can make the same two HEADs report a
+# different result (observed with SIGMA_GLYPH pointing at sigma HEAD, which made
+# the settlement boundary reject an otherwise pinned replay). Each step below
+# opts into its intended mode explicitly, so erase caller state before running.
+unset SIGMA_GLYPH WARRANT_SIGMA_DIFFERENTIAL WARRANT_POSITIONAL WARRANT_SKI_MAX_ATP
+
 hdr "X1 cross-repo coupling gate — HEAD vs HEAD"
 echo "  own      : $OWN      $(git -C "$SELF" log -1 --format='%h %ad' --date=short 2>/dev/null)"
 echo "  sibling  : $SIB_NAME $(git -C "$SIB"  log -1 --format='%h %ad' --date=short 2>/dev/null)"
