@@ -44,8 +44,7 @@ GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 
 # Reserved exit code a check may return to say "I ran but could not COMPLETE" —
-# a partial execution that must render as UNRUN, not PASS and not FAIL. Kept in
-# sync with tools/sigma_provenance_check.py's EXIT_UNRUN.
+# a partial execution that must render as UNRUN, not PASS and not FAIL.
 EXIT_UNRUN = 3
 
 # Prerequisite tags used more than once, named so the string is defined in one
@@ -214,16 +213,9 @@ CHECKS = [
     ("go: ski@v1 CAS identity mirrors Python (foreign key refused)",
      ["go", "-C", "impl-go", "test", "./...", "-run", "TestSigmaCASIdentity", "-count=1"],
      "go-toolchain"),
-    # The bundled Σ-GLYPH evaluator is bound to the exact frozen candidate wheel
-    # and its authoritative build receipt (trust/sigma-evaluator-provenance.json).
-    # Schema, module digest and mutation controls always run; the wheel REBUILD
-    # is UNRUN off the official CI Python or without a Sigma checkout, and is
-    # made mandatory in the dedicated CI job (`--require-rebuild`).
-    ("sigma evaluator provenance (vendored module bound to the frozen wheel)",
-     ["python3", "tools/sigma_provenance_check.py"], None),
-    # One bundled evaluator per ski runtime tag (SPEC §13.1: a tag is immutable, so
-    # its evaluator is a fixed module pinned by digest, checked BEFORE import).
-    ("ski runtimes: per-tag evaluators pinned, distinct, refused-before-import on drift",
+    # One bundled evaluator per admitted ski runtime tag (SPEC §13.1: a tag is
+    # immutable, so its evaluator is fixed and checked BEFORE import).
+    ("ski runtimes: admitted evaluator pinned and refused-before-import on drift",
      ["python3", "tests/ski_runtime_evaluators.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], "sibling"),

@@ -92,7 +92,7 @@ Why this runtime exists: `cmd@v1` proves a claim to whoever trusts the container
 
 `ski@v2` names evaluation per **Σ-GLYPH Book I 0.6.0** (the anchored `v0.7.0` bundle, adoption warrant `0e634c17…`): the same check-blob shape as §3.1 with `"ski": 2`, evaluated over `(term_hash, atp: uint32, env)` with a `Receipt = { exit, result_hash, atp_spent }` whose `exit` is one of the three canonical exits, and with Book I 0.6.0 §3.5 (bytes stored under a key they do not hash to are refused, never evaluated). `ski@v1` is unchanged by this registration and remains Book I v0.5.
 
-`ski@v2` is **reserved as a candidate and admitted in no body version**: §13.2 reserves body version `0.3` for it and `0.3` is not yet specified, so every conforming verifier — Python, Go, Rust — rejects a record carrying `ski@v2` today exactly as it rejects any unregistered runtime. Its outcome-fingerprint tuple (§7), negative vector set (§8.3) and the `0.3` body rules are the content of the future registration-and-admission change, not of this reservation.
+`ski@v2` is **reserved as a candidate and admitted in no body version**: §13.2 reserves body version `0.3` for it and `0.3` is not yet specified, so every conforming verifier — Python, Go, Rust — rejects a record carrying `ski@v2` today exactly as it rejects any unregistered runtime. The reference wheel therefore ships no `ski@v2` evaluator. Its evaluator bytes, outcome-fingerprint tuple (§7), negative vector set (§8.3) and the `0.3` body rules belong to the future registration-and-admission change, not to this reservation.
 
 ## 4. Canonicalization and identity (MUST)
 

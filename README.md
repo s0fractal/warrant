@@ -53,11 +53,10 @@ pipx install warrant-verify   # or: pip install warrant-verify
 Installs four commands: the `warrant` verifier, the `warrant-mcp` sealing proxy,
 the `warrant-mcp-server` MCP server, and the `warrant-anchor` Merkle batcher.
 `ski@v1` reasons re-run **offline** — the Σ-GLYPH Book I check engine ships
-inside the package, so no separate clone is needed. One evaluator per runtime
-tag, pinned by digest and checked before it is loaded (`ski@v1` = Book I v0.5,
-`sigma_glyph_v05`; reserved candidate `ski@v2` = Book I 0.6.0,
-`sigma_glyph_v06`, not registered or admitted in any body version — SPEC §3.2,
-§13.2). (From a checkout:
+inside the package, pinned by digest and checked before it is loaded (`ski@v1`
+= Book I v0.5, `sigma_glyph_v05`), so no separate clone is needed. Reserved
+candidate `ski@v2` is not registered or admitted in any body version and does
+not ship executable bytes in the wheel (SPEC §3.2, §13.2). (From a checkout:
 `git clone … && pip install .`.)
 
 The latest release **on PyPI is 0.9.0**, which is what that line installs and
@@ -325,7 +324,7 @@ pass/fail — `impl-rs` claims and reaches SPEC §6 base grade, which is a compl
 result, not a shortfall. The pack ships as a release tarball pinned by hash in
 SPEC §8.6, and `TRADEMARK.md` conditions the name on it.
 
-The only thing consuming the format so far is a sibling repository by the same author: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks. That is a working integration and it is worth reading; it is not an outside user, and there are none. The full picture of who consumes what across the sibling protocols — gated, proposed, or absent — is indexed in the [ecosystem relationship map](https://github.com/s0fractal/protocol-ecosystem).
+The only thing consuming the format so far is a sibling repository by the same author: [sigma-glyph](https://github.com/s0fractal/sigma-glyph) files its review adjudications as warrants (`.warrants/` in that repo) — the maintainer's accept/reject decisions are signed, hash-addressed, and cite CI gates as `cmd@v1` checks. That is a working integration and it is worth reading; it is not an outside user, and there are none.
 
 ### Signatures are domain-separated (v0.4, BREAKING)
 

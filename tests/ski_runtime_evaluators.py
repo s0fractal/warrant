@@ -5,7 +5,8 @@ Regression surface for SKI_EVALUATORS (impl/warrant.py) and its human record
 trust/ski-runtime-evaluators.json:
   - record and code name the same tags, files and digests (no drift);
   - each bundled module hashes to its pin;
-  - load_sigma("ski@v1") and load_sigma("ski@v2") load DIFFERENT, pinned modules;
+  - load_sigma("ski@v1") loads its pinned module;
+  - the reserved but unadmitted ski@v2 tag has no executable module;
   - an unregistered tag yields None (no fallback to another tag's module);
   - a module whose bytes moved is NOT imported: a side-effect marker proves no
     line of it ran, and the loader returns None;
@@ -48,14 +49,11 @@ for tag, (fname, sha) in W.SKI_EVALUATORS.items():
     got = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
     check(f"{tag}: bundled {fname} hashes to its pin", got == sha, detail=f"{str(got)[:16]}…")
 
-# ---- loading: two tags, two modules, both pinned ---------------------------
-v1, v2 = W.load_sigma("ski@v1"), W.load_sigma("ski@v2")
+# ---- loading: admitted tag present, reserved candidate inert ---------------
+v1 = W.load_sigma("ski@v1")
 check("ski@v1 loads", v1 is not None and v1.WARRANT_SIGMA_UNPINNED is False)
-check("ski@v2 loads", v2 is not None and v2.WARRANT_SIGMA_UNPINNED is False)
-check("the two tags load DIFFERENT modules", v1 is not None and v2 is not None and v1.__file__ != v2.__file__,
-      detail=f"{Path(v1.__file__).name if v1 else '-'} / {Path(v2.__file__).name if v2 else '-'}")
 check("ski@v1 module is the v0.5-era API (no eval_receipt)", v1 is not None and not hasattr(v1, "eval_receipt"))
-check("ski@v2 module is the Book I 0.6.0 API (eval_receipt)", v2 is not None and hasattr(v2, "eval_receipt"))
+check("reserved ski@v2 has no shipped evaluator", W.load_sigma("ski@v2") is None)
 check("default tag is ski@v1", W.load_sigma().__file__ == v1.__file__ if v1 else False)
 check("unregistered tag -> None (no fallback)", W.load_sigma("ski@v9") is None)
 
@@ -103,5 +101,5 @@ got = v1.term_hash(r[0]).hex()
 check("ski@v1 specimen re-executes to expect", got == chk["expect"] and int(r[1]) == 20,
       detail=f"{got[:12]} spent={r[1]}")
 
-print(f"\n{'FAIL' if _fail else 'PASS'} — per-tag evaluators: pinned, distinct, refused-before-import on drift.")
+print(f"\n{'FAIL' if _fail else 'PASS'} — admitted evaluator pinned; reserved candidate inert; drift refused before import.")
 raise SystemExit(1 if _fail else 0)

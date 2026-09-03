@@ -26,6 +26,12 @@ right.
 
 ## Unreleased
 
+- Removed the executable `ski@v2` candidate and its candidate-wheel provenance
+  machinery from the shipped distribution. No admitted body version can name
+  `ski@v2`; its tag remains reserved in SPEC §3.2/§13, while executable bytes
+  return only with a future registration, vectors and body-version admission.
+  `ski@v1` bytes, pin, offline replay and every current WarrantID are unchanged.
+
 **NEED-002 base evidence — clean-room-from-code implementability demonstrated for one frozen corpus; settlement remains open.**
 
 - An iterative local multi-model process produced a JavaScript candidate from

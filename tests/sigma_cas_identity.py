@@ -35,9 +35,6 @@ if sg is None:                                #   adapter (BlobCAS) is its guard
     raise SystemExit(2)
 assert getattr(sg, "WARRANT_SIGMA_UNPINNED", None) is False, \
     "bundled evaluator must be pinned"
-sg2 = W.load_sigma("ski@v2")                  # Book I 0.6.0 module: carries the
-assert sg2 is not None and sg2.WARRANT_SIGMA_UNPINNED is False, \
-    "ski@v2 evaluator must be bundled and pinned"   # in-module §3.5 guard
 
 _fail = []
 
@@ -110,20 +107,7 @@ check("foreign key on nested thunk -> unverified Identity-by-Hash",
       out[0] == "unverified" and out[1] == "content does not match its address",
       detail=str(out))
 
-# ---- Case 3: store returns a NON-bytes object (in-MODULE guard, Book I 0.6.0) --
-# The ski@v1 evaluator (v0.5) has no in-module guard: through Warrant it never
-# sees a store that is not BlobCAS, which raises before any bytes reach it (the
-# cases above). The ski@v2 module carries Book I 0.6.0 §3.5 itself.
-class _NonBytesStore:
-    def get(self, h):
-        return 12345                            # not bytes
-try:
-    sg2.eval_hash(FOREIGN, 8, _NonBytesStore())
-    check("non-bytes store value -> ResourceFault", False)
-except sg2.ResourceFault as rf:
-    check("non-bytes store value -> ResourceFault (non-bytes)",
-          "non-bytes" in str(rf), detail=str(rf))
-# and the ski@v1 module, given the same forged store DIRECTLY (bypassing the
+# The ski@v1 module, given the same forged store DIRECTLY (bypassing the
 # adapter), EXECUTES the foreign bytes — which is exactly why the adapter, not
 # the evaluator, is the guard for ski@v1 (WRT-006 §2 boundary observation).
 class _ForgedStore(dict):
@@ -297,43 +281,6 @@ _broken_override_refuses("absent override",
 _boom = Path(tempfile.mkdtemp(prefix="cas-boom-"))
 (_boom / "sigma_glyph.py").write_text('raise RuntimeError("import-boom")\n')
 _broken_override_refuses("import-failing override", _boom)
-
-# ---- NEGATIVE CONTROL: the guard is what refuses the forged bytes ----------
-# Non-vacuity must not depend on git history: once the fix is committed, HEAD
-# carries the guard, and a `git show HEAD` control would silently go vacuous.
-# Instead, derive the UNGUARDED evaluator from the CURRENT vendored module by
-# deleting EXACTLY the two-line CAS check from force(), then show that identical
-# evaluator runs `foreign NodeHash -> bytes of I` to a result (spent>=1). That
-# it now executes proves those two lines — nothing else — are load-bearing.
-# The guard lives in the Book I 0.6.0 module (ski@v2); the v0.5 module has none.
-BUNDLED_SRC = (Path(__file__).resolve().parents[1] / "impl" / "sigma_glyph_v06.py").read_text()
-GUARD = ('    if not isinstance(b, bytes):\n'
-         '        raise ResourceFault("store returned non-bytes")\n'
-         '    if node_hash(b) != h:\n'
-         '        raise ResourceFault("CAS key mismatch")\n')
-guard_present = BUNDLED_SRC.count(GUARD)
-check("negative control: the Identity-by-Hash guard is present exactly once",
-      guard_present == 1, detail=f"found {guard_present} occurrence(s)")
-
-
-class _DictCAS(dict):
-    def get(self, h, default=None):            # a plain mapping: no address check
-        return dict.get(self, h, default)
-
-
-if guard_present == 1:
-    unguarded = {}
-    exec(compile(BUNDLED_SRC.replace(GUARD, "", 1),   # noqa: S102
-                 "sigma_glyph@unguarded", "exec"), unguarded)
-    cas = _DictCAS({FOREIGN: I_BYTES})         # bytes of I under a foreign key
-    r, spent = unguarded["eval_hash"](FOREIGN, 64, cas)
-    unguarded_rh = unguarded["term_hash"](r).hex()
-    check("negative control: WITHOUT the guard the forged bytes EXECUTE",
-          unguarded_rh == EXPECT_I and spent >= 1,
-          detail=f"rh={unguarded_rh[:12]} spent={spent}")
-else:
-    check("negative control: WITHOUT the guard the forged bytes EXECUTE",
-          False, detail="guard block not found verbatim; cannot form the control")
 
 print(f"\n{'FAIL' if _fail else 'PASS'} — ski@v1 CAS Identity-by-Hash: a foreign "
       f"key is an inadmissible check, and the guard is demonstrably non-vacuous.")

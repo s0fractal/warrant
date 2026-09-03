@@ -1,6 +1,6 @@
 {
   "kind": "warrant/ski-runtime-evaluators@v0",
-  "note": "One bundled evaluator per current or reserved ski runtime tag (SPEC §3.1, §13.1). This map does not register or admit a tag. The same map is a constant in impl/warrant.py (SKI_EVALUATORS); tests/ski_runtime_evaluators.py fails if the two disagree. load_sigma(tag) hashes the file BEFORE import and refuses on mismatch — a tag with no bound evaluator, or a module whose bytes moved, reports its reasons as unverified. This is a per-tag pin, not a registry framework.",
+  "note": "One bundled evaluator per admitted ski runtime tag (SPEC §3.1, §13.1). Reserved but unadmitted tags ship no executable bytes. The same map is a constant in impl/warrant.py (SKI_EVALUATORS); tests/ski_runtime_evaluators.py fails if the two disagree. load_sigma(tag) hashes the file BEFORE import and refuses on mismatch — a tag with no bound evaluator, or a module whose bytes moved, reports its reasons as unverified. This is a per-tag pin, not a registry framework.",
   "tags": {
     "ski@v1": {
       "module": "impl/sigma_glyph_v05.py",
@@ -18,15 +18,6 @@
           "wheel_sha256": "c3b7bc32a7a3b71e037ca367fb2fbfdb45437146185c2e1336ac1c866b571bca"
         },
         "note": "byte-identical to the published PyPI 0.6.7 wheel's sigma_glyph.py and to the v0.6.7 git tag module (verified 2026-09-02; WRT-007 §2). Recorded as provenance of the bytes, not as a runtime dependency."
-      }
-    },
-    "ski@v2": {
-      "module": "impl/sigma_glyph_v06.py",
-      "sha256": "55072bc02e63987898fd60125e8bb5b14a6233b081ba158e0253755652323825",
-      "semantics": "Sigma-GLYPH Book I 0.6.0 (adopted bundle v0.7.0) — RESERVED CANDIDATE in SPEC §13.1, not registered or admitted until body version 0.3 is specified with the required vectors (§13.2)",
-      "source": {
-        "provenance": "trust/sigma-evaluator-provenance.json",
-        "note": "the W1 module (PR #44); its wheel provenance and rebuild check are unchanged"
       }
     }
   }

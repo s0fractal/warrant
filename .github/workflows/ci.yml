@@ -107,16 +107,6 @@ jobs:
           # refuses an unpinned evaluator, and settlement refuses it regardless.
           SIGMA_GLYPH=/tmp/sigma-glyph/impl WARRANT_SIGMA_DIFFERENTIAL=1 \
             python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
-      # W1: the bundled Σ-GLYPH evaluator MUST be the exact frozen candidate
-      # wheel's module. Under the official CI Python (3.12) the wheel is rebuilt
-      # from source_commit with the pinned toolchain and must reproduce the
-      # frozen digest; --require-rebuild makes an UNRUN here a failure, so the
-      # freeze is re-derived, not trusted.
-      - name: Sigma evaluator provenance (rebuild the frozen wheel — mandatory)
-        run: |
-          git clone -q https://github.com/s0fractal/sigma-glyph /tmp/sigma-provenance
-          git -C /tmp/sigma-provenance checkout -q b4c231ae7a3e8c7c36c6987a9a8e0dcd344a4451
-          WARRANT_SIGMA_REPO=/tmp/sigma-provenance python3 tools/sigma_provenance_check.py --require-rebuild
       - name: Build Go implementation
         run: cd impl-go && go build -o warrant-go .
       - name: Go conformance (second implementation)
