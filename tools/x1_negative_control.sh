@@ -59,7 +59,9 @@ control() {
 
   if ! python3 -c "$script" "$work"; then
     echo "  FAIL  $name — nothing to tamper (a control that tampers nothing is vacuous)"
-    BAD=$((BAD+1)); rm -rf "$tmp"; return
+    # Counted as attempted: it is already counted in BAD, and leaving it out of
+    # RAN made the summary denominator disagree with itself (see below).
+    RAN=$((RAN+1)); BAD=$((BAD+1)); rm -rf "$tmp"; return
   fi
 
   local out rc
@@ -289,7 +291,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Control 8 — a polluted machine boundary must go red (B1). The report is
+# Control 9 — a polluted machine boundary must go red (B1). The report is
 # specified as exactly one JSON object on stdout, and B1's stream assertion
 # used to normalise the stream before checking it, which made the check
 # vacuous (Codex X1 re-gate, P2). An assertion with no control behind it is a
@@ -315,6 +317,29 @@ else
   echo "        (we are warrant; B1 runs OUR verifier, and CI must not corrupt that)"
 fi
 
+# --------------------------------------------------------------------------
+# Control 10 — caller development overrides are not X1 operands. Before this
+# control, exporting SIGMA_GLYPH=sigma-HEAD made B2 reject settlement while the
+# same two repository HEADs passed in a clean shell. X1 must erase ambient mode
+# knobs and then opt into each differential explicitly.
+# --------------------------------------------------------------------------
+RAN=$((RAN+1))
+_ambient_out="$({
+  SIGMA_GLYPH="$SELF/definitely-not-the-pinned-evaluator" \
+  WARRANT_SIGMA_DIFFERENTIAL=1 \
+  WARRANT_POSITIONAL=1 \
+  WARRANT_SKI_MAX_ATP=0 \
+  SIBLING="$SIBLING" X1_SEEDS=1 bash "$X1"
+} 2>&1)"
+_ambient_rc=$?
+if [[ $_ambient_rc -eq 0 ]] && grep -q "X1-CROSS-REPO: ALL PASS" <<<"$_ambient_out"; then
+  echo "  OK    hostile ambient evaluator/mode overrides do not alter X1"
+else
+  echo "  FAIL  hostile ambient evaluator/mode overrides changed X1"
+  printf '%s\n' "$_ambient_out" | grep -E 'FAIL|pass=|X1-CROSS-REPO' | sed 's/^/        | /'
+  BAD=$((BAD+1))
+fi
+
 echo
 if [[ "$RAN" -eq 0 ]]; then
   echo "X1-NEGATIVE-CONTROL: FAIL — no control ran at all. That is precisely the"
@@ -322,7 +347,10 @@ if [[ "$RAN" -eq 0 ]]; then
   exit 1
 fi
 if [[ "$BAD" -ne 0 ]]; then
-  echo "X1-NEGATIVE-CONTROL: FAIL ($BAD of $((RAN+BAD)) controls did not behave)"
+  # RAN counts controls ATTEMPTED and BAD is a subset of it. The old
+  # denominator, RAN+BAD, counted every failure twice: one control failing out
+  # of seven reported "1 of 8".
+  echo "X1-NEGATIVE-CONTROL: FAIL ($BAD of $RAN controls did not behave)"
   exit 1
 fi
 echo "X1-NEGATIVE-CONTROL: ALL PASS ($RAN controls; X1 goes red on demand)"
