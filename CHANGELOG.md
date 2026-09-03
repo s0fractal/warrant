@@ -29,17 +29,19 @@ right.
 **NEED-002 base evidence — clean-room-from-code implementability demonstrated for one frozen corpus; settlement remains open.**
 
 - An iterative local multi-model process produced a JavaScript candidate from
-  the frozen public SPEC, conformance material, prior model outputs, and
-  addressed machine feedback without receiving Warrant implementation source.
+  the frozen public SPEC, conformance material, prior model outputs, runner
+  output, and orchestrator-authored runtime probes without receiving Warrant
+  implementation source.
   It reaches conformance pack 1.2.0's complete base grade: 135 PASS, 0 FAIL,
   0 UNRUN, 0 ERROR; all 60 base-grade negative vectors are answered and none
   accepted. The runner detects all four deliberate mutations.
 - `needs/need-002-a3-base/` is a 97-operand closed evidence bundle containing
   the candidate, frozen operands, accepted generation streams, prompt-input
-  provenance, and replay report. `needs/NEED-002-A3-BASE.json` pins the bundle
-  and the narrow claim; `tools/verify_need002_a3.py` replays it, while mutation
-  controls prove missing, extra, changed, and locally rehashed operands fail
-  closed.
+  provenance, and replay report. `needs/NEED-002-A3-BASE.json` pins the bundle,
+  transport module, exact claim and exclusions, and its self-certified
+  adjudication; `tools/verify_need002_a3.py` replays it, while mutation controls
+  prove missing, extra, changed, locally rehashed, or semantically widened
+  operands fail closed.
 - The status is split rather than amplified: `NEED-002-BASE` is met at this
   operand; `NEED-002-SETTLEMENT` remains open because the four settlement-grade
   vectors are explicitly `NOT-CLAIMED`. This is not independent custody,

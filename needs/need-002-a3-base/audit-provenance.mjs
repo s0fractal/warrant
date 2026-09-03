@@ -181,6 +181,11 @@ for (const item of repairs) {
 }
 
 const contributions = json("CONTRIBUTIONS.json");
+check(
+  `${contributions.transport.path} matches transport ledger`,
+  contributions.transport.semantic_credit === false &&
+    sha256(bytes(contributions.transport.path)) === contributions.transport.sha256,
+);
 for (const entry of contributions.final_semantic_modules) {
   check(`${entry.path} matches contribution ledger`, sha256(bytes(entry.path)) === entry.sha256);
 }
@@ -190,9 +195,12 @@ check("final report reaches base", report.grade_claimed === "base" && report.gra
 check("final report exact vector", JSON.stringify(report.counts) === JSON.stringify({ PASS: 135, FAIL: 0, UNRUN: 0, ERROR: 0, "NOT-CLAIMED": 4 }));
 check("all base negatives answered and rejected", report.negatives_run === 60 && report.negatives_answered === 60 && report.negatives_accepted === 0);
 
-const allModelSource = contributions.final_semantic_modules.map((entry) => text(entry.path)).join("\n");
-check("flat semantic namespace", !/(?:from\s+|import\s*)["']\.\.\//.test(allModelSource));
-check("no model network or child-process imports", !/(?:node:)?(?:https?|net|tls|child_process)["']/.test(allModelSource));
+const boundarySource = [
+  contributions.transport.path,
+  ...contributions.final_semantic_modules.map((entry) => entry.path),
+].map((rel) => text(rel)).join("\n");
+check("flat candidate namespace", !/(?:from\s+|import\s*)["']\.\.\//.test(boundarySource));
+check("no candidate network or child-process imports", !/(?:node:)?(?:https?|net|tls|child_process)["']/.test(boundarySource));
 
 process.stdout.write(`\n${failures ? "FAIL" : "PASS"} — A2→A3 provenance and prompt-input closure ${failures ? "has inconsistencies" : "is internally reproducible"}.\n`);
 process.exit(failures ? 1 : 0);

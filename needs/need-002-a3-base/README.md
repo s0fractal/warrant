@@ -16,8 +16,11 @@ recorded.
 - `candidate/main.mjs` is experiment-owned transport. It receives no semantic
   implementation credit.
 - The models do not receive Warrant implementation source or earlier hidden
-  answers. They may see the frozen specification, conformance contract, their
-  collaborators' current modules, and exact machine reports.
+  answers. They may see the frozen specification, conformance contract, public
+  vectors, their collaborators' current modules, runner output, and
+  orchestrator-authored runtime probes. One retained store report is a curated
+  extract rather than canonical runner output; the provenance audit types that
+  loss explicitly.
 
 ## Success claim
 

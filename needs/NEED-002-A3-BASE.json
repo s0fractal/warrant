@@ -2,11 +2,11 @@
   "tag": "warrant.need-evidence@v1",
   "need": "NEED-002-BASE",
   "status": "MET_BASE_ONLY",
-  "claim": "An iterative local multi-model process, given the frozen Warrant specification, conformance material, prior model outputs, and addressed machine feedback but not Warrant implementation source, produced a JavaScript candidate that achieved the complete base grade of conformance pack 1.2.0.",
+  "claim": "An iterative local multi-model process, given the frozen Warrant specification, conformance material, prior model outputs, runner output, and orchestrator-authored runtime probes but not Warrant implementation source, produced a JavaScript candidate that achieved the complete base grade of conformance pack 1.2.0.",
   "source_experiment": {
     "id": "NEED-002-A3-COLLAB-JS",
-    "commit": "3923166c07ebdc1549facfc5467412baa35aaeb3",
-    "evidence_manifest_sha256": "b4a96d452c0198be2034c9b797411108e530bd2b31a910774949d7aaeb2df145"
+    "commit": "ea99bddf90d3b27f6fe20dc289fe3b1f5ec456eb",
+    "evidence_manifest_sha256": "5e9f57d2e245de18d4a36501a8b90be4691e9242400dea2c50f54010e8788e4a"
   },
   "operands": {
     "warrant_revision": "d7e2ca3eefc285f21630bd71acdfacf7599f7ef3",
@@ -42,6 +42,16 @@
     "candidate/validate.mjs": "fd7a37218e44f795b4a32758c36d3a97895dbdd40f061cc1c09804e66da0276c",
     "candidate/verify-sig.mjs": "92bf39435a50b003e7eab5d69b6f363de1928e069fa7c2eaa8514a3b73083ccb",
     "candidate/verify-store.mjs": "f80f3abb9991c1b3287973ed98d3434c03812e901787145c355109e59662a7ff"
+  },
+  "transport_module": {
+    "path": "candidate/main.mjs",
+    "sha256": "7f738264fa9054dcb3d650e246b2ed960f2e6d580b30e04023b0d9d8ee0c4bf8",
+    "semantic_credit": false
+  },
+  "adjudication": {
+    "status": "SELF_CERTIFIED",
+    "by": "repository-maintainer",
+    "independent": false
   },
   "exclusions": [
     "settlement-grade implementation or conformance",

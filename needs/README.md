@@ -52,8 +52,12 @@ for exactly what they cover and no further either way.
 The format's design rule is that implementations agree byte-exactly. Three
 implementations exist (Python, Go, Rust), but all were written inside this
 project with access to each other's code. A stronger check on the specification
-is an implementation produced with **only `SPEC.md` and the conformance pack**
-— never this repository's implementation code.
+is an implementation produced without this repository's implementation code.
+The allowed construction inputs are explicit: the frozen `SPEC.md`, frozen
+conformance contract and public vectors, prior model-emitted candidate modules,
+runner output, and orchestrator-authored public-runtime probes. The last class
+may contain a proposed API call or other repair hypothesis; it is not neutral
+machine authorship and must be named as such.
 
 The implementer may be a person or a context-isolated model. A model on the
 same host is not an independent party, custody, or external adoption; the
@@ -68,9 +72,11 @@ the settlement runtime.
 
 Experiment `NEED-002-A3-COLLAB-JS` used an iterative local multi-model process:
 Qwen3.8 and Gemma4 authored semantic JavaScript modules; the orchestrator
-provided the frozen SPEC, conformance material, prior model outputs, public
-machine reports, and two runtime diagnostics, but no Warrant implementation
-source. The resulting candidate achieved the complete **base** grade of the
+provided the frozen SPEC, conformance material, prior model outputs, runner
+output, and two orchestrator-authored runtime probes, but no Warrant
+implementation source. One retained store handoff is a curated result extract,
+not canonical runner output, and the diagnostic-generator bytes were not
+preserved. The resulting candidate achieved the complete **base** grade of the
 candidate conformance pack 1.2.0: 135 PASS, 0 FAIL, 0 UNRUN, 0 ERROR, with all
 60 base-grade negative vectors answered and none accepted. The runner detected
 all four deliberate mutations.
@@ -80,6 +86,12 @@ operands, accepted generation streams, and replay command live in
 [`need-002-a3-base/`](need-002-a3-base/). The claim and exact commitments are in
 [`NEED-002-A3-BASE.json`](NEED-002-A3-BASE.json); `tools/verify_need002_a3.py`
 checks the closed bundle and replays it.
+
+`MET_BASE_ONLY` is **self-certified by this repository's maintainer**. The
+record says so in a closed `adjudication` object; the verifier enforces that it
+cannot be relabelled independent. Adversarial review of the mechanism narrows
+the claim but does not turn the experiment into independent custody or external
+validation.
 
 `MET` is deliberately narrow: implementability from the public base surface was
 demonstrated for one frozen corpus. It is not one-shot or single-model

@@ -257,7 +257,7 @@ requires a downstream server command after `--`; the server refuses one.
 
 ## What it is not
 
-Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three in-project implementations agree on every hash. A fourth JavaScript candidate was produced from the public specification and conformance material without Warrant implementation source by an iterative local multi-model process and reached the complete base grade (135/135); its settlement grade remains unimplemented. This demonstrates one frozen public surface's clean-room-from-code implementability, not independent custody, external adoption, or correctness outside the corpus ([NEED-002](needs/README.md)).
+Not an agent framework. Not a blockchain. Not observability. It is one file format and five verbs, designed to be boring: three in-project implementations agree on every hash. A fourth JavaScript candidate was produced without Warrant implementation source by an iterative local multi-model process using the frozen public specification and conformance material, prior model outputs, runner output, and orchestrator-authored runtime probes. It reached the complete base grade (135/135); its settlement grade remains unimplemented. This self-certified result demonstrates one frozen public surface's clean-room-from-code implementability, not independent custody, external adoption, or correctness outside the corpus ([NEED-002](needs/README.md)).
 
 ## Spec and status
 

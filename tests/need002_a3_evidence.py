@@ -47,6 +47,42 @@ with tempfile.TemporaryDirectory(prefix="need002-a3-mutations-") as td:
     observed = record_errors(SOURCE, widened_record)
     check("widened status is not inherited from base evidence", any(item.startswith("RECORD_STATUS") for item in observed), str(observed))
 
+    widened_claim_record = base / "widened-claim-record.json"
+    widened_claim = json.loads(json.dumps(original_record))
+    widened_claim["claim"] = "A collaborative process produced a conforming JavaScript implementation."
+    widened_claim_record.write_text(json.dumps(widened_claim), encoding="utf-8")
+    observed = record_errors(SOURCE, widened_claim_record)
+    check("claim cannot drop its base-grade boundary", any(item.startswith("RECORD_CLAIM") for item in observed), str(observed))
+
+    weakened_exclusions_record = base / "weakened-exclusions-record.json"
+    weakened_exclusions = json.loads(json.dumps(original_record))
+    weakened_exclusions["exclusions"].remove("settlement-grade implementation or conformance")
+    weakened_exclusions_record.write_text(json.dumps(weakened_exclusions), encoding="utf-8")
+    observed = record_errors(SOURCE, weakened_exclusions_record)
+    check("settlement exclusion cannot be removed", any(item.startswith("RECORD_EXCLUSIONS") for item in observed), str(observed))
+
+    credited_transport_record = base / "credited-transport-record.json"
+    credited_transport = json.loads(json.dumps(original_record))
+    credited_transport["transport_module"]["semantic_credit"] = True
+    credited_transport_record.write_text(json.dumps(credited_transport), encoding="utf-8")
+    observed = record_errors(SOURCE, credited_transport_record)
+    check("experiment transport cannot inherit semantic credit", any(item.startswith("RECORD_TRANSPORT") for item in observed), str(observed))
+
+    malformed_transport_record = base / "malformed-transport-record.json"
+    malformed_transport = json.loads(json.dumps(original_record))
+    malformed_transport["transport_module"] = None
+    malformed_transport_record.write_text(json.dumps(malformed_transport), encoding="utf-8")
+    observed = record_errors(SOURCE, malformed_transport_record)
+    check("malformed transport refuses without crashing", any(item.startswith("RECORD_SCHEMA") for item in observed), str(observed))
+
+    independent_record = base / "independent-record.json"
+    independent = json.loads(json.dumps(original_record))
+    independent["adjudication"]["status"] = "INDEPENDENTLY_VALIDATED"
+    independent["adjudication"]["independent"] = True
+    independent_record.write_text(json.dumps(independent), encoding="utf-8")
+    observed = record_errors(SOURCE, independent_record)
+    check("self-certified evidence cannot relabel itself independent", any(item.startswith("RECORD_ADJUDICATION") for item in observed), str(observed))
+
     open_record = base / "open-record.json"
     opened = json.loads(json.dumps(original_record))
     opened["operands"]["implementation_sha256"] = "0" * 64
@@ -101,6 +137,13 @@ with tempfile.TemporaryDirectory(prefix="need002-a3-mutations-") as td:
     observed = errors(changed)
     check("changed semantic module fails its operand digest", "OPERAND_DIGEST_MISMATCH:candidate/canon.mjs" in observed, str(observed))
     check("changed semantic module fails its claim binding", "FINAL_MODULE_MISMATCH:candidate/canon.mjs" in observed, str(observed))
+
+    changed_transport = base / "changed-transport"
+    shutil.copytree(SOURCE, changed_transport)
+    transport_target = changed_transport / "candidate" / "main.mjs"
+    transport_target.write_bytes(transport_target.read_bytes() + b"\n")
+    observed = errors(changed_transport)
+    check("changed transport fails its direct claim binding", "TRANSPORT_MODULE_MISMATCH:candidate/main.mjs" in observed, str(observed))
 
     reforged = base / "reforged"
     shutil.copytree(SOURCE, reforged)

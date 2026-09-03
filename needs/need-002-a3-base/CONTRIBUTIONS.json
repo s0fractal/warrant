@@ -3,6 +3,7 @@
   "namespace": "candidate files are flat; every module imports siblings with ./<name>.mjs",
   "transport": {
     "path": "candidate/main.mjs",
+    "sha256": "7f738264fa9054dcb3d650e246b2ed960f2e6d580b30e04023b0d9d8ee0c4bf8",
     "author": "experiment-harness",
     "semantic_credit": false
   },

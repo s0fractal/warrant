@@ -19,6 +19,25 @@ RECORD = ROOT / "needs" / "NEED-002-A3-BASE.json"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 MANIFEST_LINE = re.compile(r"^([0-9a-f]{64})  ([^\0\r\n]+)$")
 EXIT_UNRUN = 3
+EXPECTED_CLAIM = (
+    "An iterative local multi-model process, given the frozen Warrant "
+    "specification, conformance material, prior model outputs, runner output, "
+    "and orchestrator-authored runtime probes but not Warrant implementation "
+    "source, produced a JavaScript candidate that achieved the complete base "
+    "grade of conformance pack 1.2.0."
+)
+EXPECTED_EXCLUSIONS = [
+    "settlement-grade implementation or conformance",
+    "single-model or single-pass reproduction",
+    "correctness outside the frozen corpus",
+    "independent custody or external adoption",
+    "normative authority, release, or governance adoption",
+]
+EXPECTED_ADJUDICATION = {
+    "status": "SELF_CERTIFIED",
+    "by": "repository-maintainer",
+    "independent": False,
+}
 
 
 def sha256(path: Path) -> str:
@@ -44,7 +63,8 @@ def load_record(path: Path = RECORD) -> dict:
     record = loads_strict(path.read_text(encoding="utf-8"))
     required = {
         "tag", "need", "status", "claim", "source_experiment", "operands",
-        "result", "final_semantic_modules", "exclusions",
+        "result", "final_semantic_modules", "transport_module", "adjudication",
+        "exclusions",
     }
     if set(record) != required:
         raise ValueError("RECORD_SCHEMA: top-level fields are not closed")
@@ -100,12 +120,22 @@ def load_record(path: Path = RECORD) -> dict:
     }
     if set(modules) != expected_modules or not all(HEX64.fullmatch(v) for v in modules.values()):
         raise ValueError("RECORD_MODULES: final module set or digest is invalid")
-    if not isinstance(record["claim"], str) or not record["claim"]:
-        raise ValueError("RECORD_CLAIM: missing claim text")
-    if not isinstance(record["exclusions"], list) or not record["exclusions"] or not all(
-        isinstance(item, str) and item for item in record["exclusions"]
+    transport = record["transport_module"]
+    if not isinstance(transport, dict) or set(transport) != {"path", "sha256", "semantic_credit"}:
+        raise ValueError("RECORD_SCHEMA: transport_module fields are not closed")
+    if (
+        transport["path"] != "candidate/main.mjs"
+        or not isinstance(transport["sha256"], str)
+        or not HEX64.fullmatch(transport["sha256"])
+        or transport["semantic_credit"] is not False
     ):
-        raise ValueError("RECORD_EXCLUSIONS: exclusions must be a nonempty string list")
+        raise ValueError("RECORD_TRANSPORT: transport module is not narrowly bound")
+    if not isinstance(record["adjudication"], dict) or record["adjudication"] != EXPECTED_ADJUDICATION:
+        raise ValueError("RECORD_ADJUDICATION: status must remain self-certified and non-independent")
+    if record["claim"] != EXPECTED_CLAIM:
+        raise ValueError("RECORD_CLAIM: claim text is not the pinned base-grade claim")
+    if record["exclusions"] != EXPECTED_EXCLUSIONS:
+        raise ValueError("RECORD_EXCLUSIONS: exclusions are not the pinned base-only boundary")
     return record
 
 
@@ -154,6 +184,10 @@ def verify_integrity(bundle: Path, record: dict) -> list[str]:
         operand = bundle / rel
         if not operand.is_file() or sha256(operand) != expected:
             errors.append(f"FINAL_MODULE_MISMATCH:{rel}")
+    transport = record["transport_module"]
+    transport_operand = bundle / transport["path"]
+    if not transport_operand.is_file() or sha256(transport_operand) != transport["sha256"]:
+        errors.append(f"TRANSPORT_MODULE_MISMATCH:{transport['path']}")
     direct_bindings = {
         "operands/SPEC.md": record["operands"]["spec_sha256"],
         "operands/warrant-conformance-1.2.0.tar.gz": record["operands"]["pack_tarball_sha256"],

@@ -42,11 +42,14 @@ the earlier path failures had hidden an almost complete semantic implementation.
 
 The remaining work proceeded as ordinary iterative debugging:
 
-1. Gemma4 and Qwen3.8 attempted the signature module against exact reports.
+1. Gemma4 and Qwen3.8 attempted the signature module against runner reports;
+   one later store handoff used a curated nine-result extract.
 2. Qwen3.8's second complete replacement correctly introduced an Ed25519 SPKI
    wrapper but used Node's streaming digest API, leaving four positive vectors
    false.
-3. Two machine observations recorded the candidate's actual Node failures. No
+3. Two orchestrator-authored probes recorded Node runtime observations and
+   supplied repair hypotheses. Their generator was not preserved, so the
+   compact bundle hashes those inputs but cannot replay their construction. No
    Warrant implementation source was consulted or disclosed.
 4. Qwen3.8 attempt `verify-sig-q3` emitted the complete final signature module.
    It passed 28/28 signature vectors: four positives and twenty-four negative
