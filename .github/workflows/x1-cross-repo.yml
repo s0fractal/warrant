@@ -51,6 +51,9 @@ jobs:
           'cryptography==45.0.7'
 
       - name: Clone sibling at HEAD (deliberately UNPINNED — that is the point)
+        env:
+          PR_HEAD_OWNER: ${{ github.event.pull_request.head.repo.owner.login }}
+          PR_HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           case "${{ github.repository }}" in
@@ -64,11 +67,11 @@ jobs:
           # events still test master against master. If the paired branch is
           # absent, fall back to sibling master and let the seam fail normally.
           if [[ "${{ github.event_name }}" = "pull_request" \
-             && "${{ github.event.pull_request.head.repo.owner.login }}" = "s0fractal" \
-             && -n "${{ github.head_ref }}" \
-             && $(git ls-remote --heads "$URL" "refs/heads/${{ github.head_ref }}" | wc -l) -eq 1 ]]; then
-            git clone -q --depth 50 --branch "${{ github.head_ref }}" "$URL" /tmp/$SIB
-            echo "X1 sibling candidate: $SIB/${{ github.head_ref }}"
+             && "$PR_HEAD_OWNER" = "s0fractal" \
+             && -n "$PR_HEAD_REF" \
+             && $(git ls-remote --heads "$URL" "refs/heads/$PR_HEAD_REF" | wc -l) -eq 1 ]]; then
+            git clone -q --depth 50 --branch "$PR_HEAD_REF" "$URL" /tmp/$SIB
+            echo "X1 sibling candidate: $SIB/$PR_HEAD_REF"
           else
             git clone -q --depth 50 "$URL" /tmp/$SIB
           fi
