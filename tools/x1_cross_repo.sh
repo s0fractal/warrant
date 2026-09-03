@@ -53,6 +53,7 @@
 # USAGE
 #   tools/x1_cross_repo.sh                 # clone sibling at HEAD, strict
 #   SIBLING=/path/to/sibling tools/x1_cross_repo.sh   # use a local checkout
+#   X1_SIBLING_REF=branch tools/x1_cross_repo.sh      # paired candidate branch
 #   X1_SEEDS="1 2 3" tools/x1_cross_repo.sh           # more fuzzer seeds
 #   X1_DEGRADED=1 tools/x1_cross_repo.sh              # allow skips (NOT for CI)
 #   X1_BOOTSTRAP=1 tools/x1_cross_repo.sh             # sibling has no X1 yet
@@ -162,8 +163,17 @@ if [[ -n "${SIBLING:-}" ]]; then
   [[ -d "$SIB" ]] || { echo "X1: SIBLING=$SIB does not exist" >&2; exit 2; }
 else
   SIB="$(mktemp -d)/$SIB_NAME"
-  echo "X1: cloning $SIB_NAME at HEAD (no pin) ..."
-  git clone -q --depth 50 "https://github.com/s0fractal/$SIB_NAME.git" "$SIB" \
+  SIB_REF="${X1_SIBLING_REF:-}"
+  CLONE_ARGS=(--depth 50)
+  if [[ -n "$SIB_REF" ]]; then
+    git check-ref-format --branch "$SIB_REF" >/dev/null 2>&1 \
+      || { echo "X1: invalid X1_SIBLING_REF=$SIB_REF" >&2; exit 2; }
+    CLONE_ARGS+=(--branch "$SIB_REF")
+    echo "X1: cloning paired candidate $SIB_NAME/$SIB_REF (no pin) ..."
+  else
+    echo "X1: cloning $SIB_NAME at HEAD (no pin) ..."
+  fi
+  git clone -q "${CLONE_ARGS[@]}" "https://github.com/s0fractal/$SIB_NAME.git" "$SIB" \
     || { echo "X1: clone failed" >&2; exit 2; }
 fi
 
