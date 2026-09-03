@@ -57,6 +57,11 @@ right.
   MUST-REJECT vectors are unchanged. Published pack 1.1.0 remains immutable;
   the new corpus is versioned 1.2.0 and is not a release merely because these
   source bytes exist.
+- The stricter Python renderer initially let a schema-invalid float escape as
+  an unbounded `TypeError` during store verification. The existing three-seed
+  Python/Go differential fuzzer caught it in CI; uncomputable IDs from either
+  invalid characters or non-integer values now become the same bounded record
+  error rather than a traceback.
 
 **SPEC document change, no body-schema change: `ski@v2` reserved as a candidate, registered/admitted nowhere; one bundled evaluator per runtime tag.**
 

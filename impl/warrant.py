@@ -1489,9 +1489,9 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
             out("ERR", wid, f"schema: {m}")
         try:
             got = warrant_id(body)
-        except ValueError:
-            # A body that cannot be canonicalized (e.g. a lone surrogate in a
-            # string, which Python's json accepts but UTF-8 cannot encode) has no
+        except (TypeError, ValueError):
+            # A body that cannot be canonicalized (e.g. a lone surrogate or a
+            # non-integer number accepted by Python's JSON parser) has no
             # computable WarrantID — a bounded ERR, never a traceback (Kimi K3 gate).
             out("ERR", wid, "WarrantID uncomputable (record contains invalid characters)")
             continue
