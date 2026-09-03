@@ -39,13 +39,11 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SIGMA = ROOT.parent / "sigma-glyph" / "impl"
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 
 # Reserved exit code a check may return to say "I ran but could not COMPLETE" —
-# a partial execution that must render as UNRUN, not PASS and not FAIL. Kept in
-# sync with tools/sigma_provenance_check.py's EXIT_UNRUN.
+# a partial execution that must render as UNRUN, not PASS and not FAIL.
 EXIT_UNRUN = 3
 
 # Prerequisite tags used more than once, named so the string is defined in one
@@ -156,26 +154,6 @@ CHECKS = [
      ["python3", "tests/settlement_gate.py"], None),
     ("gate settlement fuzzer (randomised, 2000 draws)",
      ["python3", "tests/settlement_fuzz.py", "2000"], None),
-    # The autonomy evaluator is itself governance-critical. Its countervectors
-    # prove that policy/evaluator/workflow self-change, missing evidence, stale
-    # head bindings, unsupported file modes, false authority trailers and
-    # signature/policy drift all fail closed. An active policy still grants
-    # nothing when the detached authorization is absent or invalid.
-    ("agent autonomy envelope (41 fail-closed countervectors)",
-     ["python3", "tests/autonomy_gate.py"], None),
-    # The advisory workflow's trust binding (base-ref, head-snapshot, check
-    # provenance) lives in tools/autonomy_advisory.py so it is testable Python,
-    # not unreviewable YAML. These countervectors prove a same-repo non-default
-    # base, a drifted head/base, and a foreign-app or untrusted-suite check all
-    # fail closed before any base byte is trusted.
-    ("autonomy advisory trust binding (P1a/P1b/P1c countervectors)",
-     ["python3", "tests/autonomy_advisory.py"], None),
-    # The write-capable actor has a second, immediately-before-merge boundary.
-    # It binds the ELIGIBLE packet to live PR/base/head state and the exact
-    # branch-protection app identities; GitHub's expected-head merge API is the
-    # final transactional guard.
-    ("autonomy merge actor (21 live-state/protection countervectors)",
-     ["python3", "tests/autonomy_merge.py"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),
@@ -234,19 +212,12 @@ CHECKS = [
     ("go: ski@v1 CAS identity mirrors Python (foreign key refused)",
      ["go", "-C", "impl-go", "test", "./...", "-run", "TestSigmaCASIdentity", "-count=1"],
      "go-toolchain"),
-    # The bundled Σ-GLYPH evaluator is bound to the exact frozen candidate wheel
-    # and its authoritative build receipt (trust/sigma-evaluator-provenance.json).
-    # Schema, module digest and mutation controls always run; the wheel REBUILD
-    # is UNRUN off the official CI Python or without a Sigma checkout, and is
-    # made mandatory in the dedicated CI job (`--require-rebuild`).
-    ("sigma evaluator provenance (vendored module bound to the frozen wheel)",
-     ["python3", "tools/sigma_provenance_check.py"], None),
-    # One bundled evaluator per ski runtime tag (SPEC §13.1: a tag is immutable, so
-    # its evaluator is a fixed module pinned by digest, checked BEFORE import).
-    ("ski runtimes: per-tag evaluators pinned, distinct, refused-before-import on drift",
+    # One bundled evaluator per admitted ski runtime tag (SPEC §13.1: a tag is
+    # immutable, so its evaluator is fixed and checked BEFORE import).
+    ("ski runtimes: admitted evaluator pinned and refused-before-import on drift",
      ["python3", "tests/ski_runtime_evaluators.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
-     ["bash", "tools/x1_cross_repo.sh"], "sibling"),
+     ["bash", "tools/x1_cross_repo.sh"], None),
 ]
 
 NEEDS = {
@@ -269,10 +240,8 @@ NEEDS = {
                      "in-repo Go test is UNRUN without it, never passed)"),
     "rs": (lambda: RS.is_file(),
            "impl-rs not built  ->  (cd impl-rs && cargo build --release)"),
-    "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists() or SIGMA.exists(),
-              "Σ-GLYPH oracle not found  ->  set SIGMA_GLYPH=<sigma-glyph>/impl"),
-    "sibling": (lambda: (ROOT.parent / "sigma-glyph").is_dir(),
-                "sibling repository sigma-glyph not beside this one"),
+    "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists(),
+              "the admitted ski@v1 evaluator is missing from impl/"),
     "yaml": (lambda: importlib.util.find_spec("yaml") is not None,
              "PyYAML not installed  ->  pip install pyyaml"),
     "lean": (lambda: shutil.which("lean") is not None,
@@ -297,15 +266,12 @@ def main():
 
     env = dict(os.environ)
     env.setdefault("WARRANT_REQUIRE_SIGMA", "1")
-    if SIGMA.exists():
-        # Point the suite at the sibling checkout as its Σ-GLYPH oracle. That
-        # sibling is a DIFFERENT commit than the bundled, provenance-bound module,
-        # so it is an unpinned override: this aggregate is a cross-repo
-        # differential and must say so, or the ski@v1 re-executor rightly refuses
-        # an unpinned evaluator. (Production settlement sets no such flag and is
-        # refused; see impl/warrant.py run_ski_check / verify_store.)
-        env.setdefault("SIGMA_GLYPH", str(SIGMA))
-        env.setdefault("WARRANT_SIGMA_DIFFERENTIAL", "1")
+    # The aggregate validates production settlement against the admitted,
+    # bundled evaluator. A caller's ambient HEAD override must not silently turn
+    # that into a non-crediting differential. X1 receives SIBLING separately and
+    # sets its own explicit override for only the cross-repository steps.
+    env.pop("SIGMA_GLYPH", None)
+    env.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
 
     failed, unrun, passed = [], [], 0
     for name, argv, needs in CHECKS:

@@ -44,8 +44,8 @@ EXIT_OK, EXIT_FAIL, EXIT_GRADE_NOT_MET = 0, 1, 2
 
 def env():
     e = dict(os.environ)
-    # Exercise the pinned per-tag evaluator shipped by Warrant. Since the
-    # ski@v1/ski@v2 split there is deliberately no generic impl/sigma_glyph.py;
+    # Exercise the pinned admitted-tag evaluator shipped by Warrant. Since the
+    # frozen evaluator has a tag-specific name there is no generic impl/sigma_glyph.py;
     # setting SIGMA_GLYPH=impl would request a missing development override and
     # correctly force settlement to refuse. Ignore any caller override here so
     # this reference-grade test cannot silently test unrelated local bytes.

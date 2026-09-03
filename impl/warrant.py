@@ -426,20 +426,18 @@ def is_unverifiable(body):
             and all(isinstance(r, dict) and r.get("kind") == "prose" for r in because))
 
 
-# ---------- ski runtimes (SPEC §3.1, §13.1): one bundled evaluator per tag ----------
+# ---------- ski runtimes (SPEC §3.1, §13.1): one evaluator per admitted tag ----------
 # A runtime tag is immutable (SPEC §13.1); the evaluator that implements it is
-# therefore a FIXED module, pinned by digest, one per tag. `ski@v1` = Book I v0.5
-# (the v0.6.7 oracle, byte-identical to the published sigma-glyph 0.6.7 module);
-# `ski@v2` = Book I 0.6.0 (the v0.7.0 bundle's module) — reserved as a candidate,
-# and admitted in no body version until §13.2 defines 0.3. The human-readable record is
+# therefore a FIXED module, pinned by digest, one per admitted tag. `ski@v1` =
+# Book I v0.5 (the v0.6.7 oracle, byte-identical to the published sigma-glyph
+# 0.6.7 module). `ski@v2` is reserved by the specification but admitted in no
+# body version, so it has no shipped evaluator. The human-readable record is
 # trust/ski-runtime-evaluators.json; tests/ski_runtime_evaluators.py fails if it
-# and this constant disagree. The digest is checked BEFORE import: a module whose
-# bytes moved is never executed (WRT-006/WRT-007 finding).
+# and this constant disagree. The digest is checked BEFORE import: a module
+# whose bytes moved is never executed (WRT-006/WRT-007 finding).
 SKI_EVALUATORS = {
     "ski@v1": ("sigma_glyph_v05.py",
                "80299d6869e7c93ece3455db32c0a6a1346a8b7162e6ef0954a4bd425497bab5"),
-    "ski@v2": ("sigma_glyph_v06.py",
-               "55072bc02e63987898fd60125e8bb5b14a6233b081ba158e0253755652323825"),
 }
 DEFAULT_SKI_TAG = "ski@v1"
 
@@ -471,8 +469,8 @@ def _import_sigma(path, unpinned, expected_sha=None):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     # A settlement-grade re-execution must be able to say WHICH evaluator ran.
-    # The bundled module is the one this package shipped, pinned above (and, for
-    # ski@v2, by trust/sigma-evaluator-provenance.json); anything else is unpinned.
+    # The bundled module is the one this package shipped and pinned above;
+    # anything else is unpinned.
     mod.WARRANT_SIGMA_UNPINNED = unpinned
     return mod
 
