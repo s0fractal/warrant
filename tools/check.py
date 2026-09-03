@@ -39,7 +39,6 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SIGMA = ROOT.parent / "sigma-glyph" / "impl"
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 
@@ -218,7 +217,7 @@ CHECKS = [
     ("ski runtimes: admitted evaluator pinned and refused-before-import on drift",
      ["python3", "tests/ski_runtime_evaluators.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
-     ["bash", "tools/x1_cross_repo.sh"], "sibling"),
+     ["bash", "tools/x1_cross_repo.sh"], None),
 ]
 
 NEEDS = {
@@ -241,10 +240,8 @@ NEEDS = {
                      "in-repo Go test is UNRUN without it, never passed)"),
     "rs": (lambda: RS.is_file(),
            "impl-rs not built  ->  (cd impl-rs && cargo build --release)"),
-    "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists() or SIGMA.exists(),
-              "Σ-GLYPH oracle not found  ->  set SIGMA_GLYPH=<sigma-glyph>/impl"),
-    "sibling": (lambda: (ROOT.parent / "sigma-glyph").is_dir(),
-                "sibling repository sigma-glyph not beside this one"),
+    "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists(),
+              "the admitted ski@v1 evaluator is missing from impl/"),
     "yaml": (lambda: importlib.util.find_spec("yaml") is not None,
              "PyYAML not installed  ->  pip install pyyaml"),
     "lean": (lambda: shutil.which("lean") is not None,
@@ -269,15 +266,12 @@ def main():
 
     env = dict(os.environ)
     env.setdefault("WARRANT_REQUIRE_SIGMA", "1")
-    if SIGMA.exists():
-        # Point the suite at the sibling checkout as its Σ-GLYPH oracle. That
-        # sibling is a DIFFERENT commit than the bundled, provenance-bound module,
-        # so it is an unpinned override: this aggregate is a cross-repo
-        # differential and must say so, or the ski@v1 re-executor rightly refuses
-        # an unpinned evaluator. (Production settlement sets no such flag and is
-        # refused; see impl/warrant.py run_ski_check / verify_store.)
-        env.setdefault("SIGMA_GLYPH", str(SIGMA))
-        env.setdefault("WARRANT_SIGMA_DIFFERENTIAL", "1")
+    # The aggregate validates production settlement against the admitted,
+    # bundled evaluator. A caller's ambient HEAD override must not silently turn
+    # that into a non-crediting differential. X1 receives SIBLING separately and
+    # sets its own explicit override for only the cross-repository steps.
+    env.pop("SIGMA_GLYPH", None)
+    env.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
 
     failed, unrun, passed = [], [], 0
     for name, argv, needs in CHECKS:

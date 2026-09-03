@@ -26,6 +26,15 @@ right.
 
 ## Unreleased
 
+- Reduced the active surface without changing admitted protocol behavior:
+  retired the never-completed autonomy actor, stopped shipping executable bytes
+  for the unadmitted `ski@v2` candidate, and kept both histories as explicit
+  controlled-forgetting records.
+- `tools/check.py` no longer guesses a sibling checkout from its directory name
+  or lets an ambient `SIGMA_GLYPH` turn production settlement into a differential.
+  `SIBLING` is explicit for local X1; X1 otherwise performs its documented fresh
+  clone and scopes its own non-crediting HEAD override.
+
 - Removed the executable `ski@v2` candidate and its candidate-wheel provenance
   machinery from the shipped distribution. No admitted body version can name
   `ski@v2`; its tag remains reserved in SPEC §3.2/§13, while executable bytes
