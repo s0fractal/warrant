@@ -59,7 +59,9 @@ control() {
 
   if ! python3 -c "$script" "$work"; then
     echo "  FAIL  $name — nothing to tamper (a control that tampers nothing is vacuous)"
-    BAD=$((BAD+1)); rm -rf "$tmp"; return
+    # Counted as attempted: it is already counted in BAD, and leaving it out of
+    # RAN made the summary denominator disagree with itself (see below).
+    RAN=$((RAN+1)); BAD=$((BAD+1)); rm -rf "$tmp"; return
   fi
 
   local out rc
@@ -289,7 +291,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Control 8 — a polluted machine boundary must go red (B1). The report is
+# Control 9 — a polluted machine boundary must go red (B1). The report is
 # specified as exactly one JSON object on stdout, and B1's stream assertion
 # used to normalise the stream before checking it, which made the check
 # vacuous (Codex X1 re-gate, P2). An assertion with no control behind it is a
@@ -316,7 +318,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Control 9 — caller development overrides are not X1 operands. Before this
+# Control 10 — caller development overrides are not X1 operands. Before this
 # control, exporting SIGMA_GLYPH=sigma-HEAD made B2 reject settlement while the
 # same two repository HEADs passed in a clean shell. X1 must erase ambient mode
 # knobs and then opt into each differential explicitly.
@@ -345,7 +347,10 @@ if [[ "$RAN" -eq 0 ]]; then
   exit 1
 fi
 if [[ "$BAD" -ne 0 ]]; then
-  echo "X1-NEGATIVE-CONTROL: FAIL ($BAD of $((RAN+BAD)) controls did not behave)"
+  # RAN counts controls ATTEMPTED and BAD is a subset of it. The old
+  # denominator, RAN+BAD, counted every failure twice: one control failing out
+  # of seven reported "1 of 8".
+  echo "X1-NEGATIVE-CONTROL: FAIL ($BAD of $RAN controls did not behave)"
   exit 1
 fi
 echo "X1-NEGATIVE-CONTROL: ALL PASS ($RAN controls; X1 goes red on demand)"
