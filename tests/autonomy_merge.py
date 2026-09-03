@@ -33,24 +33,26 @@ def check(name, condition):
 def fixtures():
     repo = {"full_name": merge.REPOSITORY,
             "default_branch": merge.DEFAULT_BRANCH}
-    branch = {"name": merge.DEFAULT_BRANCH, "commit": {"sha": BASE}}
+    branch = {
+        "name": merge.DEFAULT_BRANCH,
+        "commit": {"sha": BASE},
+        "protected": True,
+        "protection": {
+            "enabled": True,
+            "required_status_checks": {
+                "enforcement_level": "everyone",
+                "contexts": ["test", "cross-repo"],
+                "checks": [{"context": "test", "app_id": 15368},
+                           {"context": "cross-repo", "app_id": 15368}],
+            },
+        },
+    }
     pr = {
         "number": 38, "state": "open", "draft": False, "mergeable": True,
         "base": {"ref": merge.DEFAULT_BRANCH, "sha": BASE,
                  "repo": {"full_name": merge.REPOSITORY}},
         "head": {"ref": "feat/docs", "sha": HEAD,
                  "repo": {"full_name": merge.REPOSITORY}},
-    }
-    protection = {
-        "required_status_checks": {
-            "strict": True,
-            "checks": [{"context": "test", "app_id": 15368},
-                       {"context": "cross-repo", "app_id": 15368}],
-        },
-        "required_pull_request_reviews": {"required_approving_review_count": 0},
-        "enforce_admins": {"enabled": True},
-        "allow_force_pushes": {"enabled": False},
-        "allow_deletions": {"enabled": False},
     }
     packet = {
         "autonomy_decision": "0.1", "decision": "ELIGIBLE",
@@ -60,7 +62,7 @@ def fixtures():
         "checks": {"test": "success", "cross-repo": "success"},
         "reasons": [],
     }
-    return repo, branch, pr, protection, packet
+    return repo, branch, pr, packet
 
 
 def verdict(*items):
@@ -77,6 +79,11 @@ def mutation(index, path, value):
 
 
 def main():
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" /
+                "autonomy-merge.yml").read_text(encoding="utf-8")
+    check("workflow uses the accessible branch summary, not the admin endpoint",
+          'branches/$DEFAULT_BRANCH" > branch.json' in workflow and
+          'branches/$DEFAULT_BRANCH/protection' not in workflow)
     check("exact live pair, active protection and ELIGIBLE packet are READY",
           verdict(*fixtures())["decision"] == "READY")
     cases = [
@@ -86,34 +93,35 @@ def main():
         (2, ("draft",), True, "draft pull request holds"),
         (2, ("mergeable",), None, "unknown mergeability holds"),
         (2, ("mergeable",), False, "conflicting pull request holds"),
-        (3, ("required_status_checks", "strict"), False,
-         "non-strict status checks hold"),
-        (3, ("enforce_admins", "enabled"), False,
-         "admin bypass holds"),
-        (3, ("allow_force_pushes", "enabled"), True,
-         "force-push permission holds"),
-        (3, ("allow_deletions", "enabled"), True,
-         "deletion permission holds"),
-        (4, ("decision",), "HOLD", "non-ELIGIBLE packet holds"),
-        (4, ("head_sha",), "d" * 40, "stale packet head holds"),
-        (4, ("policy_from",), "d" * 40, "policy revision drift holds"),
-        (4, ("policy_sha256",), "short", "malformed policy digest holds"),
-        (4, ("checks",), {"test": "success"},
+        (1, ("protected",), False, "unprotected branch holds"),
+        (1, ("protection", "enabled"), False,
+         "disabled protection summary holds"),
+        (1, ("protection", "required_status_checks", "enforcement_level"),
+         "non_admins", "checks not enforced for everyone hold"),
+        (3, ("decision",), "HOLD", "non-ELIGIBLE packet holds"),
+        (3, ("head_sha",), "d" * 40, "stale packet head holds"),
+        (3, ("policy_from",), "d" * 40, "policy revision drift holds"),
+        (3, ("policy_sha256",), "short", "malformed policy digest holds"),
+        (3, ("checks",), {"test": "success"},
          "missing required check in packet holds"),
     ]
     for index, path, value, name in cases:
         check(name, mutation(index, path, value)["decision"] == "HOLD")
 
     values = list(fixtures())
-    values[3]["required_status_checks"]["checks"][0]["app_id"] = 999
+    values[1]["protection"]["required_status_checks"]["checks"][0]["app_id"] = 999
     check("same-named check from another app holds",
           verdict(*values)["decision"] == "HOLD")
     values = list(fixtures())
-    values[3]["required_pull_request_reviews"] = None
-    check("removing the pull-request requirement holds",
+    values[1]["protection"] = "enabled"
+    check("malformed protection summary holds without crashing",
           verdict(*values)["decision"] == "HOLD")
     values = list(fixtures())
-    values[4]["surprise"] = True
+    values[1]["protection"]["required_status_checks"] = ["test"]
+    check("malformed required-check summary holds without crashing",
+          verdict(*values)["decision"] == "HOLD")
+    values = list(fixtures())
+    values[3]["surprise"] = True
     check("a non-canonical packet shape holds",
           verdict(*values)["decision"] == "HOLD")
     check("unsafe expected SHA holds",

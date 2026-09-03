@@ -39,7 +39,7 @@ jobs:
           python3 -m pip install --only-binary=:all:
           'cryptography==45.0.7'
 
-      - name: Gather exact run, PR, check and protection evidence
+      - name: Gather exact run, PR, check and branch evidence
         id: gather
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,7 +58,6 @@ jobs:
           DEFAULT_BRANCH="$(python3 -c 'import json; print(json.load(open("repo.json"))["default_branch"])')"
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > pr.json
           gh api "repos/$GITHUB_REPOSITORY/branches/$DEFAULT_BRANCH" > branch.json
-          gh api "repos/$GITHUB_REPOSITORY/branches/$DEFAULT_BRANCH/protection" > protection.json
           gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100" > runs.json
           gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/check-runs?per_page=100" > check-runs.json
           echo "default_branch=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
@@ -108,7 +107,6 @@ jobs:
           set -euo pipefail
           if python3 tools/autonomy_merge.py \
               --repo repo.json --branch branch.json --pull-request pr.json \
-              --protection protection.json \
               --decision-packet autonomy-decision.json \
               --pr-number "$PR_NUMBER" --base "$BASE_SHA" --head "$HEAD_SHA" \
               --out autonomy-merge-preflight.json; then
@@ -132,10 +130,9 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY" > repo-fresh.json
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > pr-fresh.json
           gh api "repos/$GITHUB_REPOSITORY/branches/$DEFAULT_BRANCH" > branch-fresh.json
-          gh api "repos/$GITHUB_REPOSITORY/branches/$DEFAULT_BRANCH/protection" > protection-fresh.json
           python3 tools/autonomy_merge.py \
             --repo repo-fresh.json --branch branch-fresh.json \
-            --pull-request pr-fresh.json --protection protection-fresh.json \
+            --pull-request pr-fresh.json \
             --decision-packet autonomy-decision.json \
             --pr-number "$PR_NUMBER" --base "$BASE_SHA" --head "$HEAD_SHA"
           gh api --method PUT \

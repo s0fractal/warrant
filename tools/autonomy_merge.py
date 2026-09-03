@@ -4,9 +4,18 @@
 This module never calls GitHub and never writes to the repository.  It consumes
 fresh GitHub API responses plus an ELIGIBLE packet from ``autonomy_gate.py`` and
 returns READY only when the live pull request still names the exact base/head
-pair, branch protection still enforces the signed policy's two trusted checks,
-and GitHub reports the candidate mergeable.  The workflow performs the actual
-merge with GitHub's expected-head parameter after re-running this preflight.
+pair, the public branch payload says protection enforces the signed policy's
+two trusted checks for everyone, and GitHub reports the candidate mergeable.
+The workflow performs the actual merge with GitHub's expected-head parameter
+after re-running this preflight.
+
+The actor deliberately consumes the ordinary ``Get a branch`` response.  The
+full branch-protection endpoint requires repository-administration permission,
+which the workflow ``GITHUB_TOKEN`` does not have.  Fields available only from
+that endpoint (for example force-push and deletion policy) are not part of this
+merge predicate.  The actor proves a narrower fact: a same-repository, exact-
+head pull request is mergeable at the live base while the two named checks from
+the GitHub Actions app are enforced for everyone.
 """
 
 from __future__ import annotations
@@ -50,36 +59,29 @@ def _load(path_str: str):
         raise PreflightError(f"unreadable JSON {path_str!r}: {exc}") from exc
 
 
-def _enabled(obj, key) -> bool:
-    value = _get(obj, key)
-    return value is True or (isinstance(value, dict) and value.get("enabled") is True)
-
-
-def protection_reasons(protection) -> list[str]:
+def branch_protection_reasons(branch) -> list[str]:
     reasons: list[str] = []
-    status = _get(protection, "required_status_checks") or {}
-    if status.get("strict") is not True:
-        reasons.append("branch protection does not require an up-to-date base")
+    if _get(branch, "protected") is not True:
+        reasons.append("default branch is not protected")
+    protection = _get(branch, "protection") or {}
+    if not isinstance(protection, dict):
+        return reasons + ["default-branch protection summary is malformed"]
+    if protection.get("enabled") is not True:
+        reasons.append("default-branch protection summary is not enabled")
+    status = protection.get("required_status_checks") or {}
+    if not isinstance(status, dict):
+        return reasons + ["required-status-check summary is malformed"]
+    if status.get("enforcement_level") != "everyone":
+        reasons.append("required checks are not enforced for everyone")
     checks = status.get("checks")
-    observed = set()
+    observed = []
     if isinstance(checks, list):
         for item in checks:
             if isinstance(item, dict) and isinstance(item.get("context"), str) \
                     and type(item.get("app_id")) is int:
-                observed.add((item["context"], item["app_id"]))
-    if observed != REQUIRED_CHECKS:
+                observed.append((item["context"], item["app_id"]))
+    if len(observed) != len(REQUIRED_CHECKS) or set(observed) != REQUIRED_CHECKS:
         reasons.append("branch protection required checks/app identities drifted")
-    reviews = _get(protection, "required_pull_request_reviews")
-    if not isinstance(reviews, dict):
-        reasons.append("branch protection no longer requires a pull request")
-    elif reviews.get("required_approving_review_count") != 0:
-        reasons.append("branch protection human-review count drifted from zero")
-    if not _enabled(protection, "enforce_admins"):
-        reasons.append("branch protection is not enforced for administrators")
-    if _enabled(protection, "allow_force_pushes"):
-        reasons.append("branch protection permits force pushes")
-    if _enabled(protection, "allow_deletions"):
-        reasons.append("branch protection permits deletion")
     return reasons
 
 
@@ -143,20 +145,19 @@ def _pull_request_reasons(pr, pr_number: int, base_sha: str,
     return reasons
 
 
-def live_reasons(repo, branch, pr, protection, pr_number: int,
-                 base_sha: str, head_sha: str) -> list[str]:
+def live_reasons(repo, branch, pr, pr_number: int, base_sha: str,
+                 head_sha: str) -> list[str]:
     if not SHA_RE.fullmatch(base_sha) or not SHA_RE.fullmatch(head_sha):
         return ["expected base/head is not a full lowercase commit SHA"]
     reasons = _repository_reasons(repo, branch, base_sha)
     reasons.extend(_pull_request_reasons(pr, pr_number, base_sha, head_sha))
-    reasons.extend(protection_reasons(protection))
+    reasons.extend(branch_protection_reasons(branch))
     return reasons
 
 
-def evaluate(repo, branch, pr, protection, packet, pr_number: int,
-             base_sha: str, head_sha: str) -> dict:
-    reasons = live_reasons(repo, branch, pr, protection, pr_number,
-                           base_sha, head_sha)
+def evaluate(repo, branch, pr, packet, pr_number: int, base_sha: str,
+             head_sha: str) -> dict:
+    reasons = live_reasons(repo, branch, pr, pr_number, base_sha, head_sha)
     reasons.extend(packet_reasons(packet, base_sha, head_sha))
     reasons = sorted(set(reasons))
     return {
@@ -175,7 +176,6 @@ def main() -> int:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--branch", required=True)
     parser.add_argument("--pull-request", required=True)
-    parser.add_argument("--protection", required=True)
     parser.add_argument("--decision-packet", required=True)
     parser.add_argument("--pr-number", required=True, type=int)
     parser.add_argument("--base", required=True)
@@ -189,8 +189,7 @@ def main() -> int:
         output = _confined(args.out) if args.out else None
         packet = evaluate(
             _load(args.repo), _load(args.branch), _load(args.pull_request),
-            _load(args.protection), _load(args.decision_packet),
-            args.pr_number, args.base, args.head)
+            _load(args.decision_packet), args.pr_number, args.base, args.head)
         rendered = json.dumps(packet, sort_keys=True, separators=(",", ":")) + "\n"
         if output:
             output.write_text(rendered, encoding="utf-8")

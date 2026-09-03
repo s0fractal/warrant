@@ -172,9 +172,9 @@ CHECKS = [
      ["python3", "tests/autonomy_advisory.py"], None),
     # The write-capable actor has a second, immediately-before-merge boundary.
     # It binds the ELIGIBLE packet to live PR/base/head state and the exact
-    # branch-protection app identities; GitHub's expected-head merge API is the
-    # final transactional guard.
-    ("autonomy merge actor (21 live-state/protection countervectors)",
+    # public branch-protection summary and app identities; GitHub's expected-
+    # head merge API is the final transactional guard.
+    ("autonomy merge actor (22 live-state/protection countervectors)",
      ["python3", "tests/autonomy_merge.py"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
