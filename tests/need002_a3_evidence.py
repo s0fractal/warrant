@@ -54,6 +54,18 @@ with tempfile.TemporaryDirectory(prefix="need002-a3-mutations-") as td:
     observed = record_errors(SOURCE, open_record)
     check("unknown nested record field fails closed", any(item.startswith("RECORD_SCHEMA") for item in observed), str(observed))
 
+    duplicate_record = base / "duplicate-record.json"
+    duplicate_record.write_text(
+        VERIFY.RECORD.read_text(encoding="utf-8").replace(
+            '  "status": "MET_BASE_ONLY",',
+            '  "status": "MET_ALL",\n  "status": "MET_BASE_ONLY",',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    observed = record_errors(SOURCE, duplicate_record)
+    check("duplicate record key fails before last-key-wins", "DUPLICATE_JSON_KEY:status" in observed, str(observed))
+
     missing = base / "missing"
     shutil.copytree(SOURCE, missing)
     (missing / "candidate" / "canon.mjs").unlink()
@@ -73,6 +85,14 @@ with tempfile.TemporaryDirectory(prefix="need002-a3-mutations-") as td:
     target.symlink_to(SOURCE / "candidate" / "canon.mjs")
     observed = errors(linked)
     check("external symlink cannot masquerade as a bundled operand", "SYMLINK_NOT_ALLOWED:candidate/canon.mjs" in observed, str(observed))
+
+    linked_manifest = base / "linked-manifest"
+    shutil.copytree(SOURCE, linked_manifest)
+    manifest_link = linked_manifest / "EVIDENCE-MANIFEST.sha256"
+    manifest_link.unlink()
+    manifest_link.symlink_to(SOURCE / "EVIDENCE-MANIFEST.sha256")
+    observed = errors(linked_manifest)
+    check("manifest itself cannot escape the bundle through a symlink", "MANIFEST_SYMLINK_NOT_ALLOWED" in observed, str(observed))
 
     changed = base / "changed"
     shutil.copytree(SOURCE, changed)
@@ -95,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix="need002-a3-mutations-") as td:
         lines.append(f"{digest}  {rel}")
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
     observed = errors(reforged)
-    check("coherent local reforge fails external manifest pin", "MANIFEST_DIGEST_MISMATCH" in observed, str(observed))
+    check("coherent local reforge fails the out-of-bundle claim-record pin", "MANIFEST_DIGEST_MISMATCH" in observed, str(observed))
 
 print(f"\n{'FAIL' if failures else 'PASS'} — NEED-002-A3 evidence mutation controls")
 raise SystemExit(1 if failures else 0)

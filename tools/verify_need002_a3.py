@@ -25,8 +25,23 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def loads_strict(source: str) -> dict:
+    def closed_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"DUPLICATE_JSON_KEY:{key}")
+            result[key] = value
+        return result
+
+    value = json.loads(source, object_pairs_hook=closed_object)
+    if not isinstance(value, dict):
+        raise ValueError("RECORD_SCHEMA: record must be an object")
+    return value
+
+
 def load_record(path: Path = RECORD) -> dict:
-    record = json.loads(path.read_text(encoding="utf-8"))
+    record = loads_strict(path.read_text(encoding="utf-8"))
     required = {
         "tag", "need", "status", "claim", "source_experiment", "operands",
         "result", "final_semantic_modules", "exclusions",
@@ -97,6 +112,8 @@ def load_record(path: Path = RECORD) -> dict:
 def verify_integrity(bundle: Path, record: dict) -> list[str]:
     errors: list[str] = []
     manifest_path = bundle / "EVIDENCE-MANIFEST.sha256"
+    if manifest_path.is_symlink():
+        return ["MANIFEST_SYMLINK_NOT_ALLOWED"]
     if not manifest_path.is_file():
         return ["MANIFEST_MISSING"]
     actual_manifest_digest = sha256(manifest_path)
