@@ -26,6 +26,16 @@ right.
 
 ## Unreleased
 
+- The air-canada evidence pack is now a frozen, replayable specimen:
+  `demos/air-canada/replay.json` pins the exact input bytes, the `ski@v1`
+  evaluator digest, the run profile and the per-record `verify --json` /
+  `check` vector; `replay-clean.sh` replays it through the public CLI installed
+  from a wheel built at the same commit, in a fresh venv, from outside the
+  checkout, with fail-closed controls (verdict `fail`, configured evaluator
+  failure with no fallback, root and nested CAS identity). Base-grade WARN on
+  an unexecutable reason is frozen as a named limitation, not changed.
+  `tests/evidence_pack.py` holds the freeze to the tree offline. No protocol
+  surface moved.
 - Reduced the active surface without changing admitted protocol behavior:
   retired the never-completed autonomy actor, stopped shipping executable bytes
   for the unadmitted `ski@v2` candidate, and kept both histories as explicit

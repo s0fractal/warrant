@@ -1,0 +1,118 @@
+{
+  "replay": "warrant-evidence-replay/0",
+  "specimen": "demos/air-canada/pack",
+  "story": "Moffatt v. Air Canada, 2024 BCCRT 149 — a reconstruction authored by this project, not a record of the airline's systems",
+  "claim": "Each record below, verified by the public `warrant` CLI installed from a wheel built at the same commit, in a directory outside the source checkout, with no evaluator override, yields exactly the per-record findings and the per-check re-execution frozen here. Nothing here says the policy was right, that the refusal was fair, or that the pack as a whole is 'valid' — verification is reported per record.",
+  "inputs": {
+    ".warrants/blobs/1b56d81b4378a2c4cc1965453db5edb9c6ab39fec7d91822a0e91e521dd06a8d": "1b56d81b4378a2c4cc1965453db5edb9c6ab39fec7d91822a0e91e521dd06a8d",
+    ".warrants/blobs/494ad3316bfa51b24f2dba6878a165235463a2d5529f4ad41246c545052a41ec": "494ad3316bfa51b24f2dba6878a165235463a2d5529f4ad41246c545052a41ec",
+    ".warrants/blobs/65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
+    ".warrants/blobs/6ac033780f5e72ad2db26988693ef8cb18d19f994c48a0c1330cd92fa46dfdb5": "6ac033780f5e72ad2db26988693ef8cb18d19f994c48a0c1330cd92fa46dfdb5",
+    ".warrants/blobs/962c897489d53ce33155b53bd554b59fcac82cda71a419e020b472c069ff40d1": "962c897489d53ce33155b53bd554b59fcac82cda71a419e020b472c069ff40d1",
+    ".warrants/blobs/b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f": "b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f",
+    ".warrants/blobs/c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72": "c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72",
+    ".warrants/blobs/d505357c04baa40affd070a6f7aeed7d44cc67d3e98f4d8db343959f4d9044ae": "d505357c04baa40affd070a6f7aeed7d44cc67d3e98f4d8db343959f4d9044ae",
+    ".warrants/blobs/ee6cda76bb3c1e0d38fe8234e66ba2e5cbce74aad0b404357ff603ba8fc74798": "ee6cda76bb3c1e0d38fe8234e66ba2e5cbce74aad0b404357ff603ba8fc74798",
+    ".warrants/records/7d8f2e7db31500ba9e401d6d3aa9e5bdea483c0cfd77c61dd374f4278cd1173e.json": "66e6e8d44445a7524cea47a84cbc81ad094e065835d07ac4f22fd81eeb9159e8",
+    ".warrants/records/9084cd23f205cdd6e013deb6c6e2a84e4a5f4f469fb8f77ba443dfed44716f5a.json": "488502bd41b366fe1558baebf9784daea5a41f02281455cea23e906b02d17b13",
+    "manifest.json": "26e170845d983037c4c08dcb5cf1e31ee1af74bc4b779e2becc25bd9f45fc984",
+    "policies/bereavement-policy.c8d453b05c7d.txt": "c8d453b05c7dd21027767419cfe77c3fc264b638fc8fd3fa760f2b6c7d684d72",
+    "policies/check-source.ee6cda76bb3c.wpl": "ee6cda76bb3c1e0d38fe8234e66ba2e5cbce74aad0b404357ff603ba8fc74798",
+    "subjects/refund-request.494ad3316bfa.json": "fcaf9e55a36b956a445b7787626c0210570d1bf3914da3d8fa72e8a649605f7d",
+    "trust.json": "54966a3c8bf51af3cd8a4c16bc5e1468a99be457be202df2c197004144b88cd7"
+  },
+  "evaluator": {
+    "tag": "ski@v1",
+    "module": "sigma_glyph_v05.py",
+    "sha256": "80299d6869e7c93ece3455db32c0a6a1346a8b7162e6ef0954a4bd425497bab5",
+    "record": "trust/ski-runtime-evaluators.json",
+    "note": "The installed module must hash to this pin; the replay refuses before running anything if it does not. This is the same pin impl/warrant.py enforces before import."
+  },
+  "profile": {
+    "distribution": "warrant-verify",
+    "artifact": "a wheel built from the same commit (python -m build --wheel), installed into a fresh virtual environment; not a downloaded release, which may predate this checkout",
+    "python": ">=3.9",
+    "cwd": "a temporary directory outside the source checkout",
+    "module_origin": "warrant.py and sigma_glyph_v05.py must import from the installation prefix; a module resolved from anywhere else is a refusal",
+    "environment": {
+      "SIGMA_GLYPH": "unset (an override is a differential, never a replay)",
+      "WARRANT_SIGMA_DIFFERENTIAL": "unset",
+      "PYTHONPATH": "unset (a sibling checkout on the path would shadow the installed module)"
+    },
+    "trust_config": "trust.json",
+    "trust_note": "the keyring ships inside the pack, so 'bound' means 'consistent with the keyring you were handed', not an out-of-band root of trust"
+  },
+  "records": {
+    "7d8f2e7db31500ba9e401d6d3aa9e5bdea483c0cfd77c61dd374f4278cd1173e": {
+      "decision": "propose",
+      "actor": "chatbot@aircanada",
+      "verify_base": [
+        {"level": "WARN", "message": "binding unverified (no keyring): key bc7cbcb56363 claims actor chatbot@aircanada"}
+      ],
+      "verify_settlement": [],
+      "why_exit": 0
+    },
+    "9084cd23f205cdd6e013deb6c6e2a84e4a5f4f469fb8f77ba443dfed44716f5a": {
+      "decision": "reject",
+      "actor": "policy-guard@aircanada",
+      "verify_base": [
+        {"level": "WARN", "message": "binding unverified (no keyring): key 55154f42065e claims actor policy-guard@aircanada"}
+      ],
+      "verify_settlement": [],
+      "ski_check": {
+        "check": "b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f",
+        "term": "1b56d81b4378a2c4cc1965453db5edb9c6ab39fec7d91822a0e91e521dd06a8d",
+        "verdict": "pass",
+        "result": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
+        "atp_spent": 17,
+        "means": "policy predicate (within_window AND NOT retroactive) reduces to Church-FALSE for this request (retroactive=true): not permitted"
+      },
+      "why_exit": 0
+    }
+  },
+  "controls": {
+    "verdict-fail": {
+      "kind": "value: the evaluator runs and the verdict disagrees",
+      "term": "1b56d81b4378a2c4cc1965453db5edb9c6ab39fec7d91822a0e91e521dd06a8d",
+      "expect": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "atp": 17,
+      "expected": {"verdict": "fail", "result": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098", "atp_spent": 17, "exit_nonzero": true},
+      "why": "a second check blob, filed at its TRUE address, with the same term and a wrong `expect`. The evaluator must actually compute the result and report `fail` — this is what makes the positive `pass` above non-vacuous. No record cites this blob, so `verify` is unchanged."
+    },
+    "evaluator-absent": {
+      "kind": "configured evaluator failure: $SIGMA_GLYPH names a directory that does not exist",
+      "reason": "runtime unavailable",
+      "settlement_error": "settlement requires the pinned Σ-GLYPH evaluator",
+      "why": "an explicit override that cannot be loaded is an operator error, not a licence to fall back to the bundled engine. `check` must refuse (never print `pass`), base `verify` must report the record's ski@v1 reason as unverified, and settlement `verify` must fail with one global error. WARRANT_SIGMA_DIFFERENTIAL=1 changes none of this."
+    },
+    "evaluator-broken": {
+      "kind": "configured evaluator failure: $SIGMA_GLYPH names a sigma_glyph.py that raises on import",
+      "reason": "runtime unavailable",
+      "settlement_error": "settlement requires the pinned Σ-GLYPH evaluator",
+      "why": "same contract as evaluator-absent, for a module that exists but cannot be imported; a traceback is a failure of this control."
+    },
+    "cas-root": {
+      "kind": "Identity by Hash at the ROOT fetch: the check blob's bytes are rewritten in place under its original name",
+      "blob": "b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f",
+      "mutation": "atp 17 -> 18, still canonical JSON, same filename",
+      "reason": "content does not match its address",
+      "verify_base_error_prefix": "blob b423b6a82c34 content does not match its address",
+      "why": "a valid-looking check filed under a name that is not its hash must be inadmissible, not executed. `check` refuses with a path-free reason; `verify` reports an ERR on the citing record at both grades."
+    },
+    "cas-nested": {
+      "kind": "Identity by Hash at a NESTED fetch: a thunk two APPLY levels below the term is rewritten in place under its original name",
+      "blob": "962c897489d53ce33155b53bd554b59fcac82cda71a419e020b472c069ff40d1",
+      "path": "check.term -> left -> right",
+      "mutation": "last byte flipped, same filename",
+      "reason": "content does not match its address",
+      "why": "the evaluator pulls this thunk through the store adapter during reduction; the adapter, not the caller, must refuse the lie. `check` refuses with the same reason class as the root case."
+    }
+  },
+  "limitations": [
+    "Base-grade `verify` reports an unexecutable or mis-addressed ski@v1 reason as a per-record WARN (`ski@v1 unverified: ...`) and exits 0: 'could not re-run' is not 'false' (SPEC §6). Settlement-grade `verify` makes the same condition an ERR on the citing record and exits 1. Both are frozen here; this replay does not broaden either.",
+    "A nested CAS lie is detected only when the evaluator forces that thunk. This specimen's term forces the mutated thunk; the control asserts that fact for this term, not for every term.",
+    "`why` is asserted only by exit status; its text is documentation, not a machine boundary.",
+    "The pack's keyring is inside the pack. Settlement-grade 'bound' here is consistency with that file, not an independent root of trust.",
+    "This is one specimen replayed against one locally built artifact. It is not an independent review, a conformance grade, or a statement about any published release."
+  ]
+}

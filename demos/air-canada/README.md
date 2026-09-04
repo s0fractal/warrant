@@ -189,4 +189,6 @@ depend on the party that produced it. Air Canada lost because they had a chatbot
 and no such record. This is the record.
 
 → Format details: [`../../EVIDENCE-PACK.md`](../../EVIDENCE-PACK.md) ·
-Rebuild this pack from scratch: `python3 ../build.py`
+Rebuild this pack from scratch: `python3 ../build.py` ·
+Replay it cold, per record, with fail-closed controls, against a wheel built
+from this checkout: [`REPLAY.md`](REPLAY.md)

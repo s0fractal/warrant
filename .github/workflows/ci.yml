@@ -99,6 +99,13 @@ jobs:
           ( cd /tmp && warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
       - name: Evidence-pack guard (demo packs verify; ski re-executes; no private keys shipped)
         run: python3 tests/evidence_pack.py
+      # The same wheel the smoke test installed, replayed the way a stranger
+      # would: fresh venv, cwd outside the checkout, nothing importable from
+      # impl/, evaluator digest checked before anything runs. Per-record vector
+      # plus the fail-closed controls (evaluator failure without fallback, root
+      # and nested CAS identity). Exit 3 is a typed refusal, not a pass.
+      - name: Evidence-pack replay (built wheel, clean venv, per-record vector + fail-closed controls)
+        run: WARRANT_REPLAY_WHEEL=/tmp/warrant-wheel/warrant_verify-0.9.0-py3-none-any.whl bash demos/air-canada/replay-clean.sh
       - name: MCP sealing proxy (classifier, sealer, stdio round-trip -> verifiable pack)
         run: python3 tests/mcp_seal.py
       - name: ski@v1 policy predicates (truth table, real re-execution, warrant integration)
