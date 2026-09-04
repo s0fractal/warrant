@@ -50,6 +50,26 @@
 #
 # X1_BOOTSTRAP=1 exists for step 2 alone and CI never sets it.
 #
+# SELECTING ONE STEP (--only=<step>)
+# The negative controls hand X1 a tampered sibling and ask whether ONE named
+# step goes red. Measured 2026-09-04 (Apple M4 Pro, local checkouts): the whole
+# matrix is ~42 s and ~15 s of every run is one A2 fuzzer seed, while each of
+# the other crossings is under a second -- so a control that only needs D1 was
+# paying for the fuzzer it never reads, once per control. `--only=<step>` runs
+# exactly one step of the same matrix below (the same code, not a copy) plus
+# the preparation that step needs (the Go build only for A1/A2/C3).
+#
+# What selection is NOT:
+#   * not a pass of the matrix. A selected run prints SELECTED PASS naming its
+#     step and never the ALL PASS line, so a transcript cannot be read as
+#     full coverage;
+#   * not execution. A selected step that produces no outcome (skipped under
+#     strict, or a loop with zero iterations) is a FAIL, not a pass;
+#   * not open-ended. The selector set is closed; empty, missing, unknown,
+#     repeated or list-valued selectors refuse (exit 2) before the sibling is
+#     located, cloned or built.
+# Strict/degraded/bootstrap and the ambient-variable erasure apply unchanged.
+#
 # USAGE
 #   tools/x1_cross_repo.sh                 # clone sibling at HEAD, strict
 #   SIBLING=/path/to/sibling tools/x1_cross_repo.sh   # use a local checkout
@@ -57,13 +77,60 @@
 #   X1_SEEDS="1 2 3" tools/x1_cross_repo.sh           # more fuzzer seeds
 #   X1_DEGRADED=1 tools/x1_cross_repo.sh              # allow skips (NOT for CI)
 #   X1_BOOTSTRAP=1 tools/x1_cross_repo.sh             # sibling has no X1 yet
+#   tools/x1_cross_repo.sh --only=D1       # ONE step; never reports ALL PASS
 set -uo pipefail
+
+# ------------------------------------------------------------- step selection
+# Parsed first, before any repository is located, cloned or built: a refused
+# selector must cost nothing. The set is closed and matched exactly.
+STEPS="A1 A2 B1 B2 C1 C2 C3 D1 D2 E"
+ONLY=""
+refuse_only() {
+  echo "X1: refused: $1 (closed set: $STEPS; usage: --only=<step>)" >&2
+  exit 2
+}
+for arg in "$@"; do
+  case "$arg" in
+    --only=*)
+      [[ -z "$ONLY" ]] || refuse_only "--only given more than once"
+      ONLY="${arg#--only=}"
+      [[ -n "$ONLY" ]] || refuse_only "--only= is empty";;
+    --only) refuse_only "--only needs =<step>";;
+    *) refuse_only "unknown argument '$arg'";;
+  esac
+done
+# Membership is one exact token, compared whole. The first version tested
+# `" $STEPS " == *" $ONLY "*`, which is a SUBSTRING test: a selector of
+# "A1 A2" (or the entire STEPS line) is a substring of the padded set, so it
+# passed as "known", matched no `want` guard, and the run reached the sibling
+# lookup -- or a clone -- before anything refused it (Codex review, P2). No
+# normalisation either: a padded or list-valued selector is refused, never
+# trimmed or split into something accepted.
+if [[ -n "$ONLY" ]]; then
+  ONLY_KNOWN=0
+  for step in $STEPS; do
+    [[ "$ONLY" = "$step" ]] && ONLY_KNOWN=1
+  done
+  [[ "$ONLY_KNOWN" = 1 ]] || refuse_only "unknown step '$ONLY'"
+fi
+# want <step>: does this run include <step>? Guards each block of the matrix,
+# so a selected run executes the same block the full run does.
+want() { [[ -z "$ONLY" ]] || [[ "$ONLY" = "$1" ]]; }
 
 FAIL=0
 PASS=0
 SKIP=0
 DEGRADED="${X1_DEGRADED:-0}"
 declare -a FAILED_STEPS=()
+# Steps that produced at least one outcome (OK/FAIL/SKIP). Selection is not
+# execution: a step in the run that never reaches a counter is a failure at
+# the end, whether selected or part of the full matrix.
+EXECUTED=""
+mark_executed() {
+  local step="${1%% *}"; step="${step%%:*}"
+  [[ " $EXECUTED " = *" $step "* ]] || EXECUTED="$EXECUTED $step"
+  return 0
+}
 
 indent() {
   sed 's/^/        | /'
@@ -74,6 +141,7 @@ c_ok() {
   local label="$1"
   printf '  \033[32mOK\033[0m    %s\n' "$label"
   PASS=$((PASS+1))
+  mark_executed "$label"
   return 0
 }
 c_bad() {
@@ -81,11 +149,13 @@ c_bad() {
   printf '  \033[31mFAIL\033[0m  %s\n' "$label"
   FAIL=$((FAIL+1))
   FAILED_STEPS+=("$label")
+  mark_executed "$label"
   return 0
 }
 # A required crossing that did not run. Fatal unless explicitly degraded.
 c_skip() {
   local label="$1"
+  mark_executed "$label"
   if [[ "$DEGRADED" = "1" ]]; then
     printf '  \033[33mSKIP\033[0m  %s  (X1_DEGRADED=1)\n' "$label"
     SKIP=$((SKIP+1))
@@ -194,6 +264,7 @@ echo "  sibling  : $SIB_NAME $(git -C "$SIB"  log -1 --format='%h %ad' --date=sh
 # a bare "N/N" is ambiguous between runs. Print it, so a transcript says which
 # configuration produced its numbers.
 echo "  seeds    : ${X1_SEEDS:-1 2}"
+echo "  only     : ${ONLY:-<none: full matrix>}"
 
 # ------------------------------------------------------------------- toolchain
 have() {
@@ -204,14 +275,26 @@ have() {
 have python3 || { echo "X1: python3 required" >&2; exit 2; }
 python3 -c 'import cryptography' 2>/dev/null || echo "  note: python 'cryptography' missing -> signature steps may skip"
 
+# warrant-go is the operand of A1, A2 and C3 only. Preparation follows the
+# selection: a run that reads none of those three does not build it.
 WGO=""
-if have go && (cd "$WARRANT/impl-go" && go build -o warrant-go . >/dev/null 2>&1); then
-  WGO="$WARRANT/impl-go/warrant-go"
+if want A1 || want A2 || want C3; then
+  if have go && (cd "$WARRANT/impl-go" && go build -o warrant-go . >/dev/null 2>&1); then
+    WGO="$WARRANT/impl-go/warrant-go"
+    echo "  go       : built $WGO"
+  else
+    echo "  go       : toolchain or build unavailable"
+  fi
+else
+  echo "  go       : not built (no selected step reads warrant-go)"
 fi
 
 # ================================================================= the crossings
+if want A1 || want A2; then
 hdr "A. Book I consensus — warrant's Go evaluator vs sigma's vectors"
+fi
 
+if want A1; then
 if [[ -n "$WGO" ]]; then
   # Bind ALL PASS to the ACTUAL coverage, and to the summary's POSITION.
   # tools/book1_coverage.py owns the counting, the producer's prefix, and the
@@ -230,8 +313,12 @@ if [[ -n "$WGO" ]]; then
 else
   c_skip "A1 warrant-go sigma-conformance (go toolchain or build unavailable)"
 fi
+fi
 
+if want A2; then
 if [[ -n "$WGO" ]] && [[ -f "$SIGMA/tests/book1_fuzz.py" ]]; then
+  # The loop body is the execution. Seeds that split into zero words run
+  # nothing here; the end-of-run execution check turns that into a failure.
   for seed in ${X1_SEEDS:-1 2}; do
     run_grep "A2 three-way book1 differential fuzzer (seed=$seed)" "ALL AGREE" \
       env WARRANT_GO="$WGO" python3 "$SIGMA/tests/book1_fuzz.py" --seed "$seed"
@@ -239,9 +326,13 @@ if [[ -n "$WGO" ]] && [[ -f "$SIGMA/tests/book1_fuzz.py" ]]; then
 else
   c_skip "A2 book1 differential fuzzer"
 fi
+fi
 
+if want B1 || want B2; then
 hdr "B. Machine boundary — sigma's store through warrant's verifier"
+fi
 
+if want B1; then
 # ok:true AND grade/counts must be internally consistent: errors==0 <=> ok
 run_grep "B1 warrant HEAD verifies sigma HEAD .warrants (verify-report@v0)" '"ok": true' \
   python3 - "$WARRANT/impl/warrant.py" "$SIGMA/.warrants" <<'PY'
@@ -279,7 +370,9 @@ assert set(r) == {"report","grade","ok","records","errors","warnings","findings"
 print(json.dumps({k: r[k] for k in ("grade","ok","records","errors","warnings")}, indent=None))
 print("ok: true" if r["ok"] else "ok: false")
 PY
+fi
 
+if want B2; then
 if [[ -f "$SIGMA/tools/warrant_gate.py" ]]; then
   run_grep "B2 sigma's warrant_gate.py connector against warrant HEAD" "VERIFIED" \
     env WARRANT="python3 $WARRANT/impl/warrant.py" \
@@ -289,26 +382,38 @@ if [[ -f "$SIGMA/tools/warrant_gate.py" ]]; then
 else
   c_skip "B2 warrant_gate.py connector"
 fi
+fi
 
+if want C1 || want C2 || want C3; then
 hdr "C. Reverse direction — sigma HEAD is an explicit, non-crediting differential"
+fi
 
+if want C1; then
 run_refusal "C1 sigma HEAD cannot silently substitute for pinned ski@v1" \
   "unpinned Σ-GLYPH evaluator (non-settlement-grade)" \
   env SIGMA_GLYPH="$SIGMA/impl" python3 "$WARRANT/impl/warrant.py" conformance "$WARRANT/examples"
+fi
 
+if want C2; then
 run_grep "C2 explicit differential runs warrant vectors against sigma HEAD" "ALL PASS" \
   env SIGMA_GLYPH="$SIGMA/impl" WARRANT_SIGMA_DIFFERENTIAL=1 \
   python3 "$WARRANT/impl/warrant.py" conformance "$WARRANT/examples"
+fi
 
+if want C3; then
 if [[ -n "$WGO" ]]; then
   run_grep "C3 warrant-go conformance (own vectors, sibling-built binary)" "ALL PASS" \
     "$WGO" conformance "$WARRANT/examples"
 else
   c_skip "C3 warrant-go conformance"
 fi
+fi
 
+if want D1 || want D2; then
 hdr "D. Governance coupling — the out-of-band anchor trust"
+fi
 
+if want D1; then
 run "D1 warrant's sigma anchor-trust parses and names sigma's roster" \
   python3 - "$WARRANT/trust/sigma-glyph-anchor-trust.json" "$SIGMA/trust-config.json" <<'PY'
 import json, sys
@@ -325,14 +430,18 @@ for a, keys in trust["actors"].items():
     assert trust["actors"][a] == sigma["actors"][a], f"key drift for {a}"
 print(f"roster agrees: {sorted(ta)}")
 PY
+fi
 
+if want D2; then
 if [[ -f "$SIGMA/tools/verify_anchors.py" ]]; then
   run_grep "D2 sigma anchors verify at HEAD" "anchors verified" \
     bash -c "cd '$SIGMA' && python3 tools/verify_anchors.py"
 else
   c_skip "D2 anchor verification"
 fi
+fi
 
+if want E; then
 hdr "E. Mirror integrity — the gate itself is the same gate on both sides"
 
 # X1 only means anything if both repos run the SAME X1. Nothing else checks
@@ -356,6 +465,7 @@ for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh \
     if [[ "$BOOTSTRAP" = "1" ]]; then
       printf '  \033[33mSKIP\033[0m  E:%s absent in %s (X1_BOOTSTRAP=1)\n' "$f" "$SIB_NAME"
       SKIP=$((SKIP+1))
+      mark_executed "E:$f"
     else
       c_bad "E:$f is MISSING from $SIB_NAME — the gate was removed from one side"
     fi
@@ -366,8 +476,12 @@ for f in tools/x1_cross_repo.sh tools/x1_negative_control.sh \
     diff -u "$SIB/$f" "$SELF/$f" | head -20 | indent
   fi
 done
+fi
 
 # ================================================================== pin drift
+# Informational and not a step: it cannot fail, so it is not selectable, and a
+# selected run has no use for it.
+if [[ -z "$ONLY" ]]; then
 hdr "F. Pin drift report (informational — never fails the gate)"
 
 python3 - "$WARRANT" "$SIGMA" <<'PY'
@@ -406,14 +520,35 @@ for own, sib, sib_name in ((warrant, sigma, "sigma-glyph"), (sigma, warrant, "wa
     if len(set(dates)) > 1:
         print(f"    ^ {len(set(dates))} DIFFERENT sibling commits pinned at once: {min(dates)} .. {max(dates)}")
 PY
+fi
 
 # ===================================================================== verdict
 hdr "X1 RESULT"
+# Every step in this run must have produced an outcome. A step that reached no
+# counter -- a selector matched, a loop ran zero times -- was not executed, and
+# an unexecuted step is a failure in a selected run and in the full matrix
+# alike. Selection is not execution.
+for step in ${ONLY:-$STEPS}; do
+  if [[ " $EXECUTED " != *" $step "* ]]; then
+    c_bad "$step did not execute (no outcome recorded; listing or selecting a step is not running it)"
+  fi
+done
 MODE="$([[ "$DEGRADED" = 1 ]] && echo DEGRADED || echo strict)"
 [[ "${X1_BOOTSTRAP:-0}" = 1 ]] && MODE="$MODE+bootstrap"
+if [[ -n "$ONLY" ]]; then
+  MODE="$MODE, only=$ONLY"
+fi
 printf '  pass=%d fail=%d skip=%d  (mode: %s)\n' "$PASS" "$FAIL" "$SKIP" "$MODE"
 if [[ "$FAIL" -eq 0 ]] && [[ "$SKIP" -eq 0 ]]; then
-  echo "  X1-CROSS-REPO: ALL PASS  (regression gate only — NOT an independent gate)"
+  if [[ -n "$ONLY" ]]; then
+    # One step of the matrix, not the matrix. The ALL PASS line is reserved
+    # for the full run so that no transcript of a selected run can be read as
+    # whole-matrix coverage.
+    printf '  X1-CROSS-REPO: SELECTED PASS  --only=%s (%d check(s) of step %s; NOT the full matrix, NOT an independent gate)\n' \
+      "$ONLY" "$PASS" "$ONLY"
+  else
+    echo "  X1-CROSS-REPO: ALL PASS  (regression gate only — NOT an independent gate)"
+  fi
   exit 0
 elif [[ "$FAIL" -eq 0 ]]; then
   # Only reachable under X1_DEGRADED / X1_BOOTSTRAP. Never call this a pass: the
@@ -423,7 +558,7 @@ elif [[ "$FAIL" -eq 0 ]]; then
   echo "  Not a pass. CI runs strict, with zero skips."
   exit 1
 else
-  printf '  X1-CROSS-REPO: FAIL\n'
+  printf '  X1-CROSS-REPO: FAIL%s\n' "${ONLY:+  (--only=$ONLY)}"
   for s in "${FAILED_STEPS[@]}"; do printf '    - %s\n' "$s"; done
   exit 1
 fi
