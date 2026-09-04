@@ -216,6 +216,13 @@ CHECKS = [
     # immutable, so its evaluator is fixed and checked BEFORE import).
     ("ski runtimes: admitted evaluator pinned and refused-before-import on drift",
      ["python3", "tests/ski_runtime_evaluators.py"], None),
+    # The air-canada replay driver must read the installed CLI's own refusal
+    # (grade/ok/errors/exit of every consumed report) and count controls it
+    # executed, not manifest entries (exact-head review of 29aecf8). Runs the
+    # complete CLI path through a venv assembled from impl/ without network;
+    # exit 3 (UNRUN) when the host cannot provide that venv.
+    ("evidence replay driver: reads the CLI's refusal; closed, counted controls",
+     ["python3", "tests/replay_driver.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], None),
     # The aggregate CI path hands X1 a paired sibling branch only when that

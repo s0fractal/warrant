@@ -5,14 +5,19 @@ For every pack under demos/*/pack:
   * `verify` reports 0 errors (recomputes IDs, checks sigs/links, re-runs ski),
   * each manifest ski_check re-executes to its stated `expect`,
   * the manifest's `expected_verification.errors` matches reality,
-  * no private key material (*.key) is shipped in the pack.
+  * no private key material (*.key) is shipped in the pack,
+  * if a frozen replay vector (demos/<name>/replay.json) sits beside the pack:
+    its input digests, evaluator pin and per-record vector match this tree,
+    and its controls target blobs that exist and a check that really runs.
 
 Run: python3 tests/evidence_pack.py   (nonzero exit on any failure)
 """
 import importlib.util
 import json
 import os
+import shutil
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEMOS = os.path.join(ROOT, "demos")
@@ -64,7 +69,84 @@ def check_pack(pack):
 
     leaked = [f for _, _, fs in os.walk(pack) for f in fs if f.endswith(".key")]
     chk(not leaked, "  no private keys shipped", ", ".join(leaked))
+
+    # A frozen replay vector beside the pack (demos/<name>/replay.json) is a
+    # claim about THESE bytes under THIS evaluator. Hold it to the tree offline,
+    # so the clean-environment replay (replay-clean.sh, which needs a wheel and a
+    # venv) can never be the first place a stale freeze is noticed.
+    replay = os.path.join(os.path.dirname(pack), "replay.json")
+    if os.path.isfile(replay):
+        check_replay_freeze(pack, store, replay, chk)
     return all(ok)
+
+
+def check_replay_freeze(pack, store, replay_path, chk):
+    rp = json.load(open(replay_path))
+    chk(rp.get("replay") == "warrant-evidence-replay/0", "  replay.json is warrant-evidence-replay/0")
+
+    # exact input bytes: every frozen file present and unchanged, nothing extra
+    present = sorted(os.path.relpath(os.path.join(d, f), pack).replace(os.sep, "/")
+                     for d, _, fs in os.walk(pack) for f in fs)
+    frozen = rp["inputs"]
+    chk(present == sorted(frozen), "  replay: frozen input set equals the pack's files",
+        f"extra={sorted(set(present) - set(frozen))} missing={sorted(set(frozen) - set(present))}")
+    drift = [rel for rel, want in frozen.items()
+             if os.path.isfile(os.path.join(pack, rel)) and W.blob_hash(
+                 open(os.path.join(pack, rel), "rb").read()) != want]
+    chk(not drift, "  replay: every frozen input hashes to its digest", ", ".join(drift))
+
+    # the evaluator the replay pins is the one this tree admits for the tag
+    ev = rp["evaluator"]
+    ent = W.SKI_EVALUATORS.get(ev["tag"])
+    chk(ent is not None and ent == (ev["module"], ev["sha256"]),
+        f"  replay: {ev['tag']} evaluator pin equals SKI_EVALUATORS", f"{ent} vs {ev}")
+
+    # the frozen per-record vector is what THIS implementation produces
+    trust = os.path.join(pack, rp["profile"]["trust_config"])
+    base = W.verify_report(store)
+    settle = W.verify_report(store, settlement={"genesis_roots": [], "trust_config": trust})
+    chk(base["records"] == settle["records"] == len(rp["records"]),
+        "  replay: record count as frozen", f"{base['records']}/{settle['records']}")
+    for wid, spec in rp["records"].items():
+        for grade, report in (("base", base), ("settlement", settle)):
+            got = [{"level": f["level"], "message": f["message"]}
+                   for f in report["findings"] if f["subject"] == wid]
+            chk(got == spec[f"verify_{grade}"],
+                f"  replay: {wid[:12]} verify ({grade}) findings as frozen",
+                f"got {got} want {spec[f'verify_{grade}']}")
+        sk = spec.get("ski_check")
+        if sk:
+            try:
+                verdict, rh, spent = W.run_ski_check(store, sk["check"])
+                got = (verdict, rh, spent)
+            except RuntimeError as ex:
+                got = ("unverified", str(ex))
+            chk(got == (sk["verdict"], sk["result"], sk["atp_spent"]),
+                f"  replay: {wid[:12]} check {sk['check'][:12]} as frozen", str(got))
+    # the controls name blobs that exist in the pack (a control on an absent
+    # blob would be testing "missing", not "mis-addressed")
+    for name in ("cas-root", "cas-nested"):
+        blob = rp["controls"][name]["blob"]
+        chk(store.has_blob(blob), f"  replay: control {name} targets a blob the pack ships", blob[:12])
+    # the verdict-fail control must be a check the evaluator RUNS to `fail` —
+    # a malformed blob would be refused before evaluation and the control would
+    # test the validator, not the verdict (the first freeze had a 66-char expect).
+    vf = rp["controls"]["verdict-fail"]
+    scratch = tempfile.mkdtemp(prefix="replay-freeze-")
+    try:
+        shutil.copytree(store.root, os.path.join(scratch, ".warrants"))
+        st2 = W.Store(os.path.join(scratch, ".warrants"))
+        doc = json.dumps({"atp": vf["atp"], "expect": vf["expect"], "ski": 1, "term": vf["term"]},
+                         sort_keys=True, separators=(",", ":")).encode()
+        try:
+            got = W.run_ski_check(st2, st2.put_blob(doc))
+        except RuntimeError as ex:
+            got = ("unverified", str(ex))
+        e = vf["expected"]
+        chk(got == (e["verdict"], e["result"], e["atp_spent"]),
+            "  replay: control verdict-fail evaluates to `fail` (not a refusal)", str(got))
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def main():

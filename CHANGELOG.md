@@ -26,6 +26,26 @@ right.
 
 ## Unreleased
 
+- The air-canada evidence pack is now a frozen, replayable specimen:
+  `demos/air-canada/replay.json` pins the exact input bytes, the `ski@v1`
+  evaluator digest, the run profile and the per-record `verify --json` /
+  `check` vector; `replay-clean.sh` replays it through the public CLI installed
+  from a wheel built at the same commit, in a fresh venv, from outside the
+  checkout, with fail-closed controls (verdict `fail`, configured evaluator
+  failure with no fallback, root and nested CAS identity). Base-grade WARN on
+  an unexecutable reason is frozen as a named limitation, not changed.
+  `tests/evidence_pack.py` holds the freeze to the tree offline. No protocol
+  surface moved.
+  - Exact-head review (Codex, 29aecf8) found two false-green paths in the
+    driver, both closed: every consumed `verify --json` report is now held to
+    its own grade, `ok`, counts and exit status and to the exit the frozen
+    vector implies (an installed CLI returning 1 with `ok:false` for the clean
+    records is a `FAIL`, not a reproduced vector); and the control set is
+    closed — a manifest naming an unknown control, or omitting a required one,
+    is `REFUSED manifest`, and the closing count is of controls that executed.
+    `tests/replay_driver.py` regresses both through the real `warrant`
+    console script (venv assembled from `impl/`, no network) and is wired into
+    `tools/check.py`.
 - Reduced the active surface without changing admitted protocol behavior:
   retired the never-completed autonomy actor, stopped shipping executable bytes
   for the unadmitted `ski@v2` candidate, and kept both histories as explicit
