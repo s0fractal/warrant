@@ -12,7 +12,7 @@ All notable changes to this project are recorded here. The format follows
 | `warrant` body member | the record schema (SPEC §13.2) | `0.1`, `0.2` |
 | SPEC document version | the document, including rules that add no body schema | v0.4 (DRAFT) |
 | report tag | the machine boundary (SPEC §13.3) | `warrant.verify-report@v0` |
-| release tag / PyPI | the tooling | 0.6.0 (tag `v0.6.0`, live on PyPI) |
+| release tag / PyPI | the tooling | `version` in `pyproject.toml`, released as tag `v<version>` and on PyPI (`publish.yml` refuses a tag that disagrees) |
 
 A release moving only the tooling number changes **no** protocol surface. Each
 entry below says which of the four moved, and any entry that changes a
@@ -550,7 +550,8 @@ body schema (§2), reasons (§3), JCS canonicalization and WarrantID (§4), the
 envelope and Ed25519 signatures (§5), verification (§6). Python reference
 implementation, five verbs, plain-file store, conformance vectors.
 
-[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.9.0...HEAD
+[0.8.0]: https://github.com/s0fractal/warrant/compare/v0.7.1...v0.8.0
 [0.6.0]: https://github.com/s0fractal/warrant/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/s0fractal/warrant/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/s0fractal/warrant/compare/v0.3.0...v0.4.0

@@ -262,6 +262,9 @@ def check_mcp_ownership_marker(server_name):
 def check_release_versions():
     """The distribution version, written in four places, must be one number.
 
+    The two documents that say which release is current are held to it too
+    (`check_current_release_prose`).
+
     Shipping the MCP server created three new copies of it: the module's
     `__version__` (which the server reports to its host as `serverInfo`), and
     both version fields of the registry manifest — the server version and the
@@ -317,6 +320,42 @@ def check_release_versions():
                             f"version is {p.get('version')!r}, pyproject.toml "
                             f"version is {dist} — the registry would resolve a "
                             f"different release, or none")
+    failures += check_current_release_prose(dist)
+    return failures
+
+
+# Where the documents say which release is current. Each is a prose twin of
+# `pyproject.toml`: CHANGELOG.md's version table row for the tooling number, and
+# PUBLISHING.md's "current release(d) version" sentence. Both still said 0.6.0
+# after 0.9.0 had shipped, because nothing compared them to anything.
+CURRENT_RELEASE_PROSE = (
+    ("CHANGELOG.md", "release tag / PyPI table row",
+     r"(?m)^\| release tag / PyPI \|.*$"),
+    ("PUBLISHING.md", "current release sentence",
+     r"(?im)^.*\bcurrent releas.*$"),
+)
+
+
+def check_current_release_prose(dist):
+    """A document that names the current release must name pyproject's number.
+
+    The sentence is allowed to point at `pyproject.toml` / PyPI instead of
+    quoting a number (that is the preferred form: nothing to go stale). What it
+    must not do is quote a different number, and it must still exist -- a
+    phrasing that disappears is reported, not passed.
+    """
+    failures = []
+    for fname, desc, pattern in CURRENT_RELEASE_PROSE:
+        lines = re.findall(pattern, read(fname))
+        if not lines:
+            failures.append(f"{fname}: MISSING claim ({desc}) -- pattern no "
+                            f"longer matches, so nothing is checking it")
+            continue
+        for line in lines:
+            for num in re.findall(r"\b\d+\.\d+\.\d+\b", line):
+                if num != dist:
+                    failures.append(f"{fname}: {desc} names {num}, pyproject.toml "
+                                    f"version is {dist}")
     return failures
 
 
@@ -393,8 +432,10 @@ def main():
 
     # +5 for the listing identities: the release-version identities (module
     # __version__, manifest version, manifest pypi identifier, manifest pypi
-    # version) against pyproject.toml, plus README.md's MCP ownership marker.
-    n = len(CLAIMS) + len(WORD_CLAIMS) + len(pack_rows) + 3 + 5
+    # version) against pyproject.toml, plus README.md's MCP ownership marker;
+    # then one per document whose current-release prose is held to pyproject.
+    n = (len(CLAIMS) + len(WORD_CLAIMS) + len(pack_rows) + 3 + 5
+         + len(CURRENT_RELEASE_PROSE))
     if failures:
         for f in failures:
             print(f"FAIL  {f}")
