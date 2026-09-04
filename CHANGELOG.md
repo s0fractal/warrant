@@ -12,7 +12,7 @@ All notable changes to this project are recorded here. The format follows
 | `warrant` body member | the record schema (SPEC §13.2) | `0.1`, `0.2` |
 | SPEC document version | the document, including rules that add no body schema | v0.4 (DRAFT) |
 | report tag | the machine boundary (SPEC §13.3) | `warrant.verify-report@v0` |
-| release tag / PyPI | the tooling | `version` in `pyproject.toml`, released as tag `v<version>` and on PyPI (`publish.yml` refuses a tag that disagrees) |
+| release tag / PyPI | the tooling | declared by `version` in `pyproject.toml`; what actually shipped is the latest tag `v<version>` on GitHub Releases and the latest release on PyPI (`publish.yml` refuses a tag that disagrees) |
 
 A release moving only the tooling number changes **no** protocol surface. Each
 entry below says which of the four moved, and any entry that changes a

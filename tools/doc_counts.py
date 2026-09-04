@@ -325,34 +325,78 @@ def check_release_versions():
 
 
 # Where the documents say which release is current. Each is a prose twin of
-# `pyproject.toml`: CHANGELOG.md's version table row for the tooling number, and
-# PUBLISHING.md's "current release(d) version" sentence. Both still said 0.6.0
-# after 0.9.0 had shipped, because nothing compared them to anything.
+# `pyproject.toml`: CHANGELOG.md's version-table row for the tooling number,
+# PUBLISHING.md's "current release" sentence, and CHANGELOG.md's `[Unreleased]`
+# compare link, whose base is `v<current>`. The first two said 0.6.0 after
+# 0.9.0 had shipped, and the link still compared from v0.6.0, because nothing
+# compared them to anything.
+#
+# `span` captures (group 1) the exact text of the claim -- a table cell, one
+# sentence, one link line -- and only that text is judged. `pointers` are
+# regexes that must all appear inside the span: the claim has to say where the
+# current number lives, so `current release is unknown` (no pointer) fails
+# even though it quotes no stale number, and a pointer that has drifted into
+# a following sentence does not count. `literal` means the span must carry a
+# version literal (there is no way to write a compare link without one).
+# Either way, every version literal inside the span must equal pyproject's.
 CURRENT_RELEASE_PROSE = (
-    ("CHANGELOG.md", "release tag / PyPI table row",
-     r"(?m)^\| release tag / PyPI \|.*$"),
-    ("PUBLISHING.md", "current release sentence",
-     r"(?im)^.*\bcurrent releas.*$"),
+    {
+        "file": "CHANGELOG.md",
+        "desc": "release tag / PyPI table cell",
+        # the third cell of the row; the row label itself says "PyPI", so the
+        # pointer test must not be allowed to see it
+        "span": r"(?m)^\| release tag / PyPI \|[^|\n]*\|([^|\n]*)\|",
+        "pointers": (r"`pyproject\.toml`", r"\bPyPI\b"),
+        "literal": False,
+    },
+    {
+        "file": "PUBLISHING.md",
+        "desc": "current release sentence",
+        # from the phrase to the first sentence-ending period (one followed by
+        # whitespace: `pyproject.toml` and `publish.yml` are not), across the
+        # blockquote's line breaks
+        "span": r"(?is)(\bcurrent releas\w*\b.*?\.)(?=\s|$)",
+        "pointers": (r"`pyproject\.toml`", r"pypi\.org/project/warrant-verify"),
+        "literal": False,
+    },
+    {
+        "file": "CHANGELOG.md",
+        "desc": "[Unreleased] compare-link base",
+        "span": r"(?m)^\[Unreleased\]: \S*/compare/v(\d+\.\d+\.\d+)\.\.\.HEAD\s*$",
+        "pointers": (),
+        "literal": True,
+    },
 )
 
 
 def check_current_release_prose(dist):
-    """A document that names the current release must name pyproject's number.
+    """A document that names the current release must bind it to pyproject.
 
-    The sentence is allowed to point at `pyproject.toml` / PyPI instead of
-    quoting a number (that is the preferred form: nothing to go stale). What it
-    must not do is quote a different number, and it must still exist -- a
-    phrasing that disappears is reported, not passed.
+    Each claim span (see CURRENT_RELEASE_PROSE) must exist -- a phrasing that
+    disappears is reported as MISSING, not passed -- must contain every
+    required pointer to the authoritative metadata, and any version literal it
+    quotes must be pyproject's number. Pointing instead of quoting is the
+    preferred form (nothing to go stale), but the pointer has to be in the
+    claim itself.
     """
     failures = []
-    for fname, desc, pattern in CURRENT_RELEASE_PROSE:
-        lines = re.findall(pattern, read(fname))
-        if not lines:
+    for claim in CURRENT_RELEASE_PROSE:
+        fname, desc = claim["file"], claim["desc"]
+        spans = re.findall(claim["span"], read(fname))
+        if not spans:
             failures.append(f"{fname}: MISSING claim ({desc}) -- pattern no "
                             f"longer matches, so nothing is checking it")
             continue
-        for line in lines:
-            for num in re.findall(r"\b\d+\.\d+\.\d+\b", line):
+        for span in spans:
+            for pointer in claim["pointers"]:
+                if not re.search(pointer, span):
+                    failures.append(f"{fname}: {desc} does not point at "
+                                    f"{pointer!r}; the claim must say where the "
+                                    f"current release number lives")
+            nums = re.findall(r"\b\d+\.\d+\.\d+\b", span)
+            if claim["literal"] and not nums:
+                failures.append(f"{fname}: {desc} carries no version literal")
+            for num in nums:
                 if num != dist:
                     failures.append(f"{fname}: {desc} names {num}, pyproject.toml "
                                     f"version is {dist}")

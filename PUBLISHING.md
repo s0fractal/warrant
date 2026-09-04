@@ -15,11 +15,13 @@ then every release publishes itself.
 > **Already done.** `warrant-verify` is live on PyPI, and every release since
 > **0.3.0** (2026-07-16) has gone out through Trusted Publishing. This section
 > is kept for the next project and for re-establishing the publisher if it is
-> ever lost; skip it unless one of those applies. The current released version
-> is `version` in `pyproject.toml` on `master`, tagged `v<version>`; the
-> release history is `gh release list` and
-> <https://pypi.org/project/warrant-verify/#history> — and if this file and
-> PyPI ever disagree, PyPI is right.
+> ever lost; skip it unless one of those applies. The current release is
+> whatever PyPI (<https://pypi.org/project/warrant-verify/#history>) and
+> GitHub Releases (`gh release list`) say was actually published, each
+> under its tag `v<version>`; `version` in `pyproject.toml` is only the
+> tooling version this checkout declares, which `publish.yml` refuses to
+> publish under a disagreeing tag — and if this file and PyPI ever
+> disagree, PyPI is right.
 
 ### 1. Add a "pending publisher" on PyPI
 
