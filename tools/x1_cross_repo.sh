@@ -99,8 +99,19 @@ for arg in "$@"; do
     *) refuse_only "unknown argument '$arg'";;
   esac
 done
-if [[ -n "$ONLY" ]] && [[ " $STEPS " != *" $ONLY "* ]]; then
-  refuse_only "unknown step '$ONLY'"
+# Membership is one exact token, compared whole. The first version tested
+# `" $STEPS " == *" $ONLY "*`, which is a SUBSTRING test: a selector of
+# "A1 A2" (or the entire STEPS line) is a substring of the padded set, so it
+# passed as "known", matched no `want` guard, and the run reached the sibling
+# lookup -- or a clone -- before anything refused it (Codex review, P2). No
+# normalisation either: a padded or list-valued selector is refused, never
+# trimmed or split into something accepted.
+if [[ -n "$ONLY" ]]; then
+  ONLY_KNOWN=0
+  for step in $STEPS; do
+    [[ "$ONLY" = "$step" ]] && ONLY_KNOWN=1
+  done
+  [[ "$ONLY_KNOWN" = 1 ]] || refuse_only "unknown step '$ONLY'"
 fi
 # want <step>: does this run include <step>? Guards each block of the matrix,
 # so a selected run executes the same block the full run does.
