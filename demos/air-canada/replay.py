@@ -20,12 +20,21 @@ What one run does, in order:
      with `warrant check` and compare verdict, result and ATP; run `why` and
      compare the exit status. Results are printed per record. There is no
      document-level verdict line, because the CLI does not make one.
+     Every consumed report is first held to its own contract (grade requested,
+     `ok == (errors == 0)`, counts equal to the findings listed, exit 1 iff
+     errors) and to the exit status the frozen vector implies: a report that
+     refuses, or contradicts itself, is a FAIL even when each record's
+     findings match — per-record comparison alone cannot see the command's
+     own refusal.
   4. Run the fail-closed controls on fresh copies of the pack: a check whose
      verdict must be `fail`; a configured evaluator that cannot load (absent,
      and present-but-broken), which must refuse rather than fall back to the
      bundled engine; a rewritten root blob and a rewritten nested thunk, which
      must be refused as Identity-by-Hash violations. Every control exercises
-     the actual CLI path (`warrant check`, `warrant verify --json`).
+     the actual CLI path (`warrant check`, `warrant verify --json`). The set
+     of controls is closed (CONTROLS): a manifest naming a control this driver
+     cannot run, or omitting one it must, is refused before anything runs, and
+     the count printed at the end is of controls that executed and asserted.
 
 Exit status: 0 every record and control matched; 1 a record or control did
 not; 3 REFUSED (the run could not be performed as frozen — this is not a pass
@@ -46,6 +55,13 @@ from pathlib import Path
 
 EXIT_FAIL, EXIT_REFUSED = 1, 3
 CHECK_LINE = re.compile(r"^(pass|fail)  result=([0-9a-f]{64})  atp_spent=(\d+)$")
+REPORT_TAG = "warrant.verify-report@v0"
+LEVELS = ("ERR", "WARN")
+
+# The closed set of controls this driver knows how to execute, in run order.
+# A manifest is held to exactly this set: an entry outside it would be counted
+# but never run; a missing one would silently shrink coverage.
+CONTROLS = ("verdict-fail", "evaluator-absent", "evaluator-broken", "cas-root", "cas-nested")
 
 # Run with `-I` (isolated: no PYTHONPATH, no user site) by the installation's
 # own interpreter. find_spec locates modules WITHOUT importing them, so this
@@ -119,7 +135,7 @@ class CLI:
             rep = json.loads(lines[0])
         except ValueError:
             return r, None
-        if not isinstance(rep, dict) or rep.get("report") != "warrant.verify-report@v0":
+        if not isinstance(rep, dict) or rep.get("report") != REPORT_TAG:
             return r, None
         return r, rep
 
@@ -133,13 +149,57 @@ class CLI:
 class Report:
     def __init__(self):
         self.fails = []
+        self.asserted = 0
 
     def line(self, ok, label, detail=""):
         tag = "ok  " if ok else "BAD "
         print(f"    {tag} {label}" + (f"  [{detail}]" if (detail and not ok) else ""))
+        self.asserted += 1
         if not ok:
             self.fails.append(label)
         return ok
+
+
+def _count(v):
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+def report_problems(r, report, grade):
+    """Ways a `verify --json` report can fail to be a consistent statement about
+    itself. The contract (SPEC §11, impl `verify_report`): `grade` is the grade
+    that was requested; `ok == (errors == 0)`; `errors`/`warnings` count the
+    ERR/WARN findings listed; the exit status is 1 iff there are errors. An
+    inconsistent report is never normalized into a usable one — the problems
+    are returned so the caller prints them as a FAIL."""
+    if report is None:
+        return [f"did not print exactly one {REPORT_TAG} object"]
+    p = []
+    if report.get("grade") != grade:
+        p.append(f"grade={report.get('grade')!r}, requested `{grade}`")
+    fs = report.get("findings")
+    if not isinstance(fs, list) or not all(
+            isinstance(f, dict) and f.get("level") in LEVELS and isinstance(f.get("subject"), str)
+            and isinstance(f.get("message"), str) for f in fs):
+        return p + ["findings is not a list of {level: ERR|WARN, subject, message}"]
+    n_err = sum(1 for f in fs if f["level"] == "ERR")
+    for key, want in (("errors", n_err), ("warnings", len(fs) - n_err)):
+        if not _count(report.get(key)) or report[key] != want:
+            p.append(f"{key}={report.get(key)!r}, the findings list {want}")
+    if report.get("ok") is not (n_err == 0):
+        p.append(f"ok={report.get('ok')!r} with {n_err} ERR finding(s)")
+    if not _count(report.get("records")):
+        p.append(f"records={report.get('records')!r}")
+    if r.returncode != (1 if n_err else 0):
+        p.append(f"exit {r.returncode} with {n_err} ERR finding(s)")
+    return p
+
+
+def consume(rep, r, report, grade, label=""):
+    """Hold one consumed report to its own contract before anything in it is
+    compared per record. Returns True when the report can be read further."""
+    problems = report_problems(r, report, grade)
+    return rep.line(not problems, f"verify ({grade}){label}: grade, ok, counts and exit agree with its findings",
+                    "; ".join(problems))
 
 
 # ---------------------------------------------------------------- preflight --
@@ -227,10 +287,24 @@ def replay_records(cli, pack, manifest, rep):
 
     rb, base = cli.verify_json(store)
     rs, settle = cli.verify_json(store, settlement=trust)
-    for label, r, x in (("base", rb, base), ("settlement", rs, settle)):
-        if x is None:
-            raise Refused("environment", f"`verify --json` ({label}) did not print one "
-                                         f"warrant.verify-report@v0 object: {r.stderr.strip()[:160]}")
+    readable = True
+    for grade, r, report in (("base", rb, base), ("settlement", rs, settle)):
+        # The report's own refusal is part of the vector: the frozen per-record
+        # findings imply a store-level error count, hence `ok` and the exit
+        # status. A CLI that returns 1 with ok=false for these records has not
+        # reproduced the vector, however the per-record lists compare.
+        readable &= consume(rep, r, report, grade)
+        want_errs = sum(1 for spec in records.values() for f in spec[f"verify_{grade}"] if f["level"] == "ERR")
+        want_exit = 1 if want_errs else 0
+        rep.line(report is not None and report.get("errors") == want_errs
+                 and report.get("ok") is (want_errs == 0) and r.returncode == want_exit,
+                 f"verify ({grade}): errors={want_errs}, ok={str(want_errs == 0).lower()}, "
+                 f"exit {want_exit}, as the frozen vector implies",
+                 f"errors={report.get('errors') if report else None!r} "
+                 f"ok={report.get('ok') if report else None!r} rc={r.returncode} "
+                 f"stdout={r.stdout.strip()[:120]!r} stderr={r.stderr.strip()[:120]!r}")
+    if not readable:
+        return 0
     print(f"  verify --json: base records={base['records']} grade={base['grade']}; "
           f"settlement records={settle['records']} grade={settle['grade']}")
     rep.line(base["records"] == len(records) and settle["records"] == len(records),
@@ -238,7 +312,9 @@ def replay_records(cli, pack, manifest, rep):
     foreign = sorted({f["subject"] for f in base["findings"] + settle["findings"]} - set(records))
     rep.line(not foreign, "no finding names a subject outside the frozen records", ", ".join(foreign))
 
+    replayed = 0
     for wid, spec in records.items():
+        replayed += 1
         print(f"  record {wid[:16]}…  {spec['decision']} by {spec['actor']}")
         for grade, report in (("base", base), ("settlement", settle)):
             got = findings_for(report, wid)
@@ -256,6 +332,7 @@ def replay_records(cli, pack, manifest, rep):
         r = cli.run(["--store", store, "why", wid])
         rep.line(r.returncode == spec["why_exit"], f"why: exit {spec['why_exit']}",
                  f"rc={r.returncode} {r.stderr.strip()[:120]}")
+    return replayed
 
 
 # ----------------------------------------------------------------- controls --
@@ -305,16 +382,16 @@ def control_evaluator(cli, pack, scratch, manifest, rep, name, override_dir):
                  f"rc={r.returncode} stdout={r.stdout.strip()!r} stderr={r.stderr.strip()[:160]!r}")
     env = {"SIGMA_GLYPH": str(override_dir)}
     r, base = cli.verify_json(store, env=env)
-    got = findings_for(base, reject) if base else None
-    rep.line(base is not None and {"level": "WARN", "message": f"ski@v1 unverified: {c['reason']}"} in got
+    got = findings_for(base, reject) if consume(rep, r, base, "base", f" [{name}]") else None
+    rep.line(got is not None and {"level": "WARN", "message": f"ski@v1 unverified: {c['reason']}"} in got
              and "Traceback" not in r.stderr,
              f"verify (base): the citing record reports `ski@v1 unverified: {c['reason']}`",
              f"findings={got} stderr={r.stderr.strip()[:120]!r}")
     r, settle = cli.verify_json(store, settlement=trust, env=env)
-    rep.line(settle is not None and settle["ok"] is False and r.returncode != 0
+    rep.line(consume(rep, r, settle, "settlement", f" [{name}]") and settle["ok"] is False and r.returncode == 1
              and settle["findings"] == [{"level": "ERR", "subject": "settlement",
                                          "message": c["settlement_error"]}],
-             f"verify (settlement): ok=false, one global ERR `{c['settlement_error']}`",
+             f"verify (settlement): ok=false, exit 1, one global ERR `{c['settlement_error']}`",
              f"rc={r.returncode} report={settle}")
 
 
@@ -336,28 +413,28 @@ def control_cas(cli, pack, scratch, manifest, rep, name, mutate):
              f"check refuses `{c['reason']}` (path-free), prints no verdict",
              f"rc={r.returncode} stdout={r.stdout.strip()!r} stderr={r.stderr.strip()[:160]!r}")
     r, base = cli.verify_json(store)
-    got = findings_for(base, reject) if base else None
+    got = findings_for(base, reject) if consume(rep, r, base, "base", f" [{name}]") else None
     unverified = {"level": "WARN", "message": f"ski@v1 unverified: {c['reason']}"}
     if name == "cas-root":
         # a blob a record cites directly is checked by verify itself: ERR at both grades
         pref = c["verify_base_error_prefix"]
-        rep.line(base is not None and base["ok"] is False and r.returncode != 0
+        rep.line(got is not None and base["ok"] is False and r.returncode == 1
                  and any(f["level"] == "ERR" and f["message"].startswith(pref) for f in got)
                  and unverified in got,
-                 "verify (base): ok=false, ERR on the citing record + `ski@v1 unverified`",
+                 "verify (base): ok=false, exit 1, ERR on the citing record + `ski@v1 unverified`",
                  f"rc={r.returncode} findings={got}")
     else:
         # a thunk only the evaluator reaches: base grade reports 'unverified' (WARN,
         # exit 0) — the named limitation; settlement grade makes it an ERR below.
-        rep.line(base is not None and unverified in got and base["ok"] is True and r.returncode == 0
+        rep.line(got is not None and unverified in got and base["ok"] is True and r.returncode == 0
                  and not any(f["level"] == "ERR" for f in got),
                  "verify (base): WARN `ski@v1 unverified` on the citing record, exit 0 (limitation, as frozen)",
                  f"rc={r.returncode} findings={got}")
     r, settle = cli.verify_json(store, settlement=trust)
-    got = findings_for(settle, reject) if settle else None
-    rep.line(settle is not None and settle["ok"] is False and r.returncode != 0
+    got = findings_for(settle, reject) if consume(rep, r, settle, "settlement", f" [{name}]") else None
+    rep.line(got is not None and settle["ok"] is False and r.returncode == 1
              and {"level": "ERR", "message": f"ski@v1 unverified: {c['reason']}"} in got,
-             "verify (settlement): ok=false, ERR `ski@v1 unverified` on the citing record",
+             "verify (settlement): ok=false, exit 1, ERR `ski@v1 unverified` on the citing record",
              f"rc={r.returncode} findings={got}")
 
 
@@ -371,6 +448,40 @@ def mutate_nested(raw):
     b = bytearray(raw)
     b[-1] ^= 0x01
     return bytes(b)
+
+
+def check_control_set(manifest):
+    """The manifest must name exactly the controls this driver runs (CONTROLS).
+    Anything else would be counted in the closing line without ever executing;
+    anything absent would shrink coverage without a word."""
+    names = manifest.get("controls")
+    if not isinstance(names, dict):
+        raise Refused("manifest", "`controls` is not an object")
+    unknown = sorted(set(names) - set(CONTROLS))
+    missing = [c for c in CONTROLS if c not in names]
+    if unknown:
+        raise Refused("manifest", f"control(s) this driver cannot execute: {', '.join(unknown)} "
+                                  f"(supported: {', '.join(CONTROLS)})")
+    if missing:
+        raise Refused("manifest", f"required control(s) absent: {', '.join(missing)}")
+
+
+def run_control(name, cli, pack, scratch, manifest, rep):
+    if name == "verdict-fail":
+        control_verdict_fail(cli, pack, scratch, manifest, rep)
+    elif name == "evaluator-absent":
+        control_evaluator(cli, pack, scratch, manifest, rep, name, scratch / "no-such-sigma-dir")
+    elif name == "evaluator-broken":
+        boom = scratch / "broken-sigma"
+        boom.mkdir()
+        (boom / "sigma_glyph.py").write_text('raise RuntimeError("import-boom")\n')
+        control_evaluator(cli, pack, scratch, manifest, rep, name, boom)
+    elif name == "cas-root":
+        control_cas(cli, pack, scratch, manifest, rep, name, mutate_root)
+    elif name == "cas-nested":
+        control_cas(cli, pack, scratch, manifest, rep, name, mutate_nested)
+    else:
+        raise Refused("manifest", f"no runner for control `{name}`")
 
 
 # --------------------------------------------------------------------- main --
@@ -389,7 +500,9 @@ def main():
         return EXIT_REFUSED
     rep = Report()
     scratch = Path(tempfile.mkdtemp(prefix="warrant-replay-"))
+    n_rec, ran = 0, []
     try:
+        check_control_set(manifest)
         if not args.warrant:
             raise Refused("environment", "no `warrant` command given or on PATH")
         pack = Path(args.pack).resolve()
@@ -405,26 +518,27 @@ def main():
         cli = CLI(args.warrant, os.getcwd())
 
         print("\nrecords")
-        replay_records(cli, pack, manifest, rep)
+        n_rec = replay_records(cli, pack, manifest, rep)
+        rep.line(n_rec == len(manifest["records"]) and n_rec > 0,
+                 f"{n_rec} record(s) replayed, the whole frozen set", f"{n_rec} of {len(manifest['records'])}")
 
         print("\ncontrols (fresh copies; the frozen pack is not modified)")
-        control_verdict_fail(cli, pack, scratch, manifest, rep)
-        control_evaluator(cli, pack, scratch, manifest, rep, "evaluator-absent",
-                          scratch / "no-such-sigma-dir")
-        boom = scratch / "broken-sigma"
-        boom.mkdir()
-        (boom / "sigma_glyph.py").write_text('raise RuntimeError("import-boom")\n')
-        control_evaluator(cli, pack, scratch, manifest, rep, "evaluator-broken", boom)
-        control_cas(cli, pack, scratch, manifest, rep, "cas-root", mutate_root)
-        control_cas(cli, pack, scratch, manifest, rep, "cas-nested", mutate_nested)
+        for name in CONTROLS:
+            before = rep.asserted
+            run_control(name, cli, pack, scratch, manifest, rep)
+            # counted only if it executed AND asserted something: a control that
+            # ran no comparison is not a control that was refused as frozen
+            if rep.line(rep.asserted > before, f"control {name}: executed ({rep.asserted - before} assertion(s))"):
+                ran.append(name)
     except Refused as ex:
         print(f"\nREPLAY: REFUSED {ex.kind}: {ex.detail}")
         return EXIT_REFUSED
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
-    n_rec = len(manifest["records"])
-    n_ctl = len(manifest["controls"])
+    n_ctl = len(ran)
+    if ran != list(CONTROLS):
+        rep.fails.append(f"controls executed: {ran} (required: {list(CONTROLS)})")
     if rep.fails:
         print(f"\nREPLAY: FAIL — {len(rep.fails)} assertion(s) did not match the frozen vector:")
         for f in rep.fails:

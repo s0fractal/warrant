@@ -48,9 +48,18 @@ The expected result, per record:
 | `7d8f2e7d…` | propose by `chatbot@aircanada` | 1 WARN: binding unverified (no keyring) | no findings | — |
 | `9084cd23…` | reject by `policy-guard@aircanada` | 1 WARN: binding unverified (no keyring) | no findings | `pass  result=65cd957f…  atp_spent=17` |
 
+Before any record is compared, each `verify --json` report the driver consumes
+is held to its own contract: the grade requested, `ok == (errors == 0)`,
+`errors`/`warnings` equal to the findings it lists, and exit 1 iff there are
+errors — and to the exit status the frozen vector implies (here: errors 0,
+exit 0 at both grades). A CLI that refuses, or contradicts itself, is a `FAIL`
+even when every per-record list matches; the driver does not normalize such a
+report into a usable one.
+
 There is deliberately no row for "the pack". The CLI reports per record and
 so does the replay; its last line is a count of records and controls, not a
-verdict.
+verdict. The control count is of controls that executed and asserted, and the
+set is closed: `replay.json` must name exactly the five below.
 
 ## The controls, and what each one is for
 
@@ -90,10 +99,14 @@ frozen. It is not a pass and not a finding against the pack:
 - `artifact` — the modules would import from outside the installation (a
   sibling checkout on the path), `warrant-verify` is not installed there, or
   the evaluator's bytes do not hash to the frozen pin;
-- `inputs` — a pack file is missing, changed, or something extra is present.
+- `inputs` — a pack file is missing, changed, or something extra is present;
+- `manifest` — `replay.json` is not a replay document, or names a control the
+  driver cannot execute, or omits one it must (nothing is counted that did
+  not run, and coverage does not shrink silently).
 
 `REPLAY: FAIL` with exit 1 means the installed CLI did run and printed something
-other than the frozen vector. That is the result worth reporting.
+other than the frozen vector — including a report whose grade, `ok`, counts or
+exit status contradict its own findings. That is the result worth reporting.
 
 ## Keeping the freeze honest without a network
 
@@ -102,3 +115,12 @@ other than the frozen vector. That is the result worth reporting.
 evaluator pin against `SKI_EVALUATORS`, and the per-record vector against what
 this implementation produces. A pack rebuilt with different bytes, or an
 evaluator pin that moved, fails there first.
+
+`python3 tests/replay_driver.py` (also in `tools/check.py`) holds the driver
+itself: it assembles a venv from `impl/` without network, replays through the
+real `warrant` console script, then patches the installed `warrant.py` so
+clean reports come back with a wrong grade, `ok:false`, `errors:99` and exit 1
+— the replay must `FAIL` — and feeds the driver a manifest with an extra and
+with a missing control — both must be `REFUSED manifest`. That venv is
+assembled, not built from the wheel; it establishes that the driver reads the
+CLI's refusal, not the packaging path (`replay-clean.sh` does that).
