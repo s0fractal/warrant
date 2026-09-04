@@ -12,13 +12,15 @@ then every release publishes itself.
 
 ## One-time setup (you, on the web — I can't do this part)
 
-> **Already done.** `warrant-verify` is live on PyPI. Four releases have gone
-> out through Trusted Publishing: **0.3.0** and **0.4.0** (2026-07-16),
-> **0.5.0** (2026-07-30) and **0.6.0** (2026-07-31, the current release, tag
-> `v0.6.0`). This section is kept for the next project and for re-establishing
-> the publisher if it is ever lost; skip it unless one of those applies. The
-> current released version is checkable at
-> <https://pypi.org/project/warrant-verify/> — and if this note and PyPI ever
+> **Already done.** `warrant-verify` is live on PyPI, and every release since
+> **0.3.0** (2026-07-16) has gone out through Trusted Publishing. This section
+> is kept for the next project and for re-establishing the publisher if it is
+> ever lost; skip it unless one of those applies. The current release is
+> whatever PyPI (<https://pypi.org/project/warrant-verify/#history>) and
+> GitHub Releases (`gh release list`) say was actually published, each
+> under its tag `v<version>`; `version` in `pyproject.toml` is only the
+> tooling version this checkout declares, which `publish.yml` refuses to
+> publish under a disagreeing tag — and if this file and PyPI ever
 > disagree, PyPI is right.
 
 ### 1. Add a "pending publisher" on PyPI
@@ -84,7 +86,7 @@ Add protection to `pypi` if you want a manual approval gate before each publish
 
 ## Dry run on TestPyPI (optional)
 
-**Never actually performed.** All four real releases went straight to PyPI; the
+**Never actually performed.** Every real release has gone straight to PyPI; the
 `testpypi` job has never run, so this path is documented and unexercised — read
 it as a plan, not as a tested procedure. After the TestPyPI pending publisher +
 `testpypi` environment exist, trigger the workflow manually to publish to

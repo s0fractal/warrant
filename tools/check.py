@@ -218,6 +218,12 @@ CHECKS = [
      ["python3", "tests/ski_runtime_evaluators.py"], None),
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
      ["bash", "tools/x1_cross_repo.sh"], None),
+    # The aggregate CI path hands X1 a paired sibling branch only when that
+    # branch exists in the sibling; an ordinary one-sided PR must resolve to
+    # sibling master (PR #55 asked X1 to clone a branch that was never there).
+    # Runs against a local bare repo, and holds ci.yml to the resolver.
+    ("x1: sibling-ref resolver (one-sided PR -> sibling master; ci.yml wired)",
+     ["bash", "tests/x1_sibling_ref.sh"], None),
 ]
 
 NEEDS = {
