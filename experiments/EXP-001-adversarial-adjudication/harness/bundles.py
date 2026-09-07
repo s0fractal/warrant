@@ -20,8 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+from common import HERE, ROOT, inside   # noqa: E402
 WARRANT = [sys.executable, str(ROOT / "impl" / "warrant.py")]
 
 
@@ -42,7 +41,7 @@ def parse_session(lines):
             reqs[m.get("id")] = (e["ts"], m)
             out.append({"ts": e["ts"], "dir": "host", "id": m.get("id"), "method": m["method"], "params": m.get("params")})
         elif e["dir"] == "server" and "method" not in m:
-            t, req = reqs.get(m.get("id"), (None, {}))
+            _, req = reqs.get(m.get("id"), (None, {}))
             out.append({"ts": e["ts"], "dir": "server", "id": m.get("id"), "for": req.get("method"),
                         "tool": (req.get("params") or {}).get("name"), "result": m.get("result", m.get("error"))})
         else:
@@ -59,7 +58,7 @@ def main():
     ap.add_argument("--workdir", required=True); ap.add_argument("--scenario", required=True)
     ap.add_argument("--dispute", required=True); ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    work, out = Path(a.workdir).resolve(), Path(a.out).resolve()
+    work, out = inside(a.workdir, "workdir", must_exist=True), inside(a.out, "out")
     sc = json.load(open(HERE / "scenarios" / f"{a.scenario}.json"))
     common = {"MANDATE.txt": sc["mandate"]["text"] + "\n", "TASK.txt": sc["task"] + "\n", "DISPUTE.txt": a.dispute + "\n",
               "merchant-effects-ledger.jsonl": (work / "effects.jsonl").read_text() if (work / "effects.jsonl").exists() else ""}

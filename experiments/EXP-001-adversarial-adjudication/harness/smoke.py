@@ -11,10 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
-CALL = "tools/call"
-REFUND = "shop.request_refund"
+from common import CALL, HERE, REFUND, ROOT   # noqa: E402
 
 
 def call(i, name, args):

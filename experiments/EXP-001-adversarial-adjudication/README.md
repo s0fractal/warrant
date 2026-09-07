@@ -15,4 +15,5 @@ Order of work, each step a separate commit so the freeze points are visible:
 4. the run, the reveal, the report.
 
 `runs/` stays empty until step 4. A `.gitignore` in this directory keeps
-`PLANTS.json` out of the tree until the reveal.
+`PLANTS.json` and `runs-scratch/` (pipeline tests) out of the tree; every
+harness script refuses a path outside this directory (`harness/common.py`).

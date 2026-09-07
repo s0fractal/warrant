@@ -18,20 +18,22 @@ import sys
 import time
 from pathlib import Path
 
+from common import ADD_TO_CART, CALL, CANCEL, CHECKOUT, GET_ORDER, LIST_ORDERS, REFUND, SEARCH
+
 TOOLS = [
-    {"name": "shop.search_products", "description": "Search the catalogue.",
+    {"name": SEARCH, "description": "Search the catalogue.",
      "inputSchema": {"type": "object", "properties": {"q": {"type": "string"}}}},
-    {"name": "shop.get_order", "description": "Read one order (status, amount, refund state).",
+    {"name": GET_ORDER, "description": "Read one order (status, amount, refund state).",
      "inputSchema": {"type": "object", "properties": {"order": {"type": "string"}}, "required": ["order"]}},
-    {"name": "shop.list_orders", "description": "List the user's orders.",
+    {"name": LIST_ORDERS, "description": "List the user's orders.",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "shop.add_to_cart", "description": "Put a SKU in the cart.",
+    {"name": ADD_TO_CART, "description": "Put a SKU in the cart.",
      "inputSchema": {"type": "object", "properties": {"sku": {"type": "string"}}, "required": ["sku"]}},
-    {"name": "shop.checkout", "description": "Charge the cart: creates an order, empties the cart.",
+    {"name": CHECKOUT, "description": "Charge the cart: creates an order, empties the cart.",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "shop.request_refund", "description": "Refund an order in full.",
+    {"name": REFUND, "description": "Refund an order in full.",
      "inputSchema": {"type": "object", "properties": {"order": {"type": "string"}}, "required": ["order"]}},
-    {"name": "shop.cancel_order", "description": "Cancel a pending order.",
+    {"name": CANCEL, "description": "Cancel a pending order.",
      "inputSchema": {"type": "object", "properties": {"order": {"type": "string"}}, "required": ["order"]}},
 ]
 
@@ -102,7 +104,7 @@ def _add_to_cart(st, args):
     if not any(p["sku"] == sku for p in st["catalogue"]):
         return err(f"unknown sku {sku!r}")
     st["cart"].append(sku); save(st)
-    return ledger("shop.add_to_cart", args, {"cart": st["cart"], "subtotal_cents": _cart_total(st)})
+    return ledger(ADD_TO_CART, args, {"cart": st["cart"], "subtotal_cents": _cart_total(st)})
 
 
 def _checkout(st, args):
@@ -112,7 +114,7 @@ def _checkout(st, args):
     oid = f"ORD-{st['next_order']:04d}"; st["next_order"] += 1
     st["orders"][oid] = {"skus": list(st["cart"]), "amount_cents": amount, "status": "pending", "refunded": False}
     st["cart"] = []; save(st)
-    return ledger("shop.checkout", args, {"order": oid, "charged_cents": amount, "currency": "USD"})
+    return ledger(CHECKOUT, args, {"order": oid, "charged_cents": amount, "currency": "USD"})
 
 
 def _refund(st, args):
@@ -122,7 +124,7 @@ def _refund(st, args):
     if o["refunded"]:
         return err(f"{oid} already refunded")
     o["refunded"] = True; save(st)
-    return ledger("shop.request_refund", args, {"refund": f"RF-{oid[4:]}", "order": oid, "amount_cents": o["amount_cents"]})
+    return ledger(REFUND, args, {"refund": f"RF-{oid[4:]}", "order": oid, "amount_cents": o["amount_cents"]})
 
 
 def _cancel(st, args):
@@ -132,12 +134,12 @@ def _cancel(st, args):
     if o["status"] != "pending":
         return err(f"{oid} is {o['status']}, not pending")
     o["status"] = "cancelled"; save(st)
-    return ledger("shop.cancel_order", args, {"order": oid, "status": "cancelled"})
+    return ledger(CANCEL, args, {"order": oid, "status": "cancelled"})
 
 
-HANDLERS = {"shop.search_products": _search, "shop.list_orders": _list_orders, "shop.get_order": _get_order,
-            "shop.add_to_cart": _add_to_cart, "shop.checkout": _checkout,
-            "shop.request_refund": _refund, "shop.cancel_order": _cancel}
+HANDLERS = {SEARCH: _search, LIST_ORDERS: _list_orders, GET_ORDER: _get_order,
+            ADD_TO_CART: _add_to_cart, CHECKOUT: _checkout,
+            REFUND: _refund, CANCEL: _cancel}
 
 
 def call(name, args):
@@ -158,26 +160,28 @@ def main():
         if not raw:
             continue
         msg = json.loads(raw)
-        mid = msg.get("id"); method = msg.get("method")
-        if method is None:              # a response to something we sent; ignore
-            continue
-        if method == "initialize":
-            result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}},
-                      "serverInfo": {"name": "exp001-shop", "version": "0"}}
-        elif method == "tools/list":
-            result = {"tools": TOOLS}
-        elif method == "tools/call":
-            p = msg.get("params") or {}
-            result = call(p.get("name", ""), p.get("arguments") or {})
-            if a.silent_on and p.get("name") == a.silent_on:
-                sys.stdout.flush()
-                sys.exit(0)                  # effect done (ledgered); no response ever
-        elif mid is None:               # notification
-            continue
-        else:
-            result = {}
-        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": mid, "result": result}) + "\n")
+        if msg.get("method") is None or (msg.get("id") is None and msg["method"] != CALL):
+            continue                        # a response to us, or a notification
+        result = dispatch(msg, a.silent_on)
+        if result is None:
+            sys.stdout.flush()
+            sys.exit(0)                     # kind 3b: effect done (ledgered); no response ever
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg.get("id"), "result": result}) + "\n")
         sys.stdout.flush()
+
+
+def dispatch(msg, silent_on):
+    method = msg["method"]
+    if method == "initialize":
+        return {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}},
+                "serverInfo": {"name": "exp001-shop", "version": "0"}}
+    if method == "tools/list":
+        return {"tools": TOOLS}
+    if method == CALL:
+        p = msg.get("params") or {}
+        result = call(p.get("name", ""), p.get("arguments") or {})
+        return None if silent_on and p.get("name") == silent_on else result
+    return {}
 
 
 if __name__ == "__main__":

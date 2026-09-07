@@ -19,6 +19,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from common import inside, model_id
+
 MAX_FILE = 60_000          # bytes per file in the prompt; larger files are truncated with a marker
 SKIP_DIRS = {"blobs"}      # blobs are listed by name and size; their bytes are quoted only via transcripts
 
@@ -86,13 +88,14 @@ def main():
     ap.add_argument("--bundle", required=True); ap.add_argument("--model", required=True)
     ap.add_argument("--out", required=True); ap.add_argument("--max-tokens", type=int, default=6000)
     a = ap.parse_args()
-    bundle, out = Path(a.bundle).resolve(), Path(a.out).resolve()
+    bundle, out = inside(a.bundle, "bundle", must_exist=True), inside(a.out, "out")
+    model = model_id(a.model)
     out.mkdir(parents=True, exist_ok=True)
     howto = (bundle / "HOW-TO-READ.txt").read_text() if (bundle / "HOW-TO-READ.txt").exists() else ""
     prompt = PROMPT.replace("{howto}", howto).replace("{material}", material(bundle))
     (out / "prompt.txt").write_text(prompt)
-    body = {"model": a.model, "messages": [{"role": "user", "content": prompt}], "max_tokens": a.max_tokens}
-    rec = {"model": a.model, "bundle": str(bundle), "prompt_bytes": len(prompt.encode()), "started": time.time()}
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": a.max_tokens}
+    rec = {"model": model, "bundle": str(bundle), "prompt_bytes": len(prompt.encode()), "started": time.time()}
     t0 = time.time()
     try:
         req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=json.dumps(body).encode(),
