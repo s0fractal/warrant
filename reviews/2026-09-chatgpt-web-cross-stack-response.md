@@ -110,7 +110,7 @@ printed to stderr and forwarded; `manifest.json` had no field for the loss.
   complete. Now only a message that is a response — no `method`, and a
   `result` or `error` — resolves a pending call; server requests and
   notifications are forwarded untouched and never touch `pending`. Controls
-  (49 checks): reverse ping with the host's id followed by an effect and exit
+  (50 checks): reverse ping with the host's id followed by an effect and exit
   7 → nothing sealed, no record, call unreturned, exit 3; reverse ping then
   the real answer → sealed exactly once with the real result as evidence.
   Codex's handshake probe at this head: exit 3, 0 sealed, 1 unreturned,
