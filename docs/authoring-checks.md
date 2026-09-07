@@ -228,20 +228,25 @@ check base_fare_cents + tax_cents <= 50000
 
 ```
 $ python3 impl/policy_lang.py compile examples/policies/refused-arithmetic.wpl
-REFUSED   arithmetic (`+`) is not in WPL v1. WPL v1 has no arithmetic: integers are Church numerals in ski@v1 and a sum costs more ATP than any default budget admits (computed numerals are the subject of sigma-glyph EXP-ADR011-01, not yet run). This is a cost boundary, not a verifiability one -- compute the value where the facts are gathered, pin the result as a fact, and pin its source as evidence: the verifier re-executes the comparison, not the sum. (line 10, column 23)
+REFUSED   arithmetic (`+`) is not in WPL v1. WPL v1 has no arithmetic: it is not implemented and not admitted. Integers compile to fixed-width bit vectors of Church booleans for comparison only; an adder over them would need its own encoding, cost and admission design, which nobody has done. Compute the value where the facts are gathered, pin the result as a fact, and pin its source as evidence: the verifier re-executes the comparison, not the sum. (line 10, column 23)
 ```
 
 That is not because a sum could not be re-executed. Arithmetic compiled into
 the term would be re-run by every verifier exactly like `<=` is; an earlier
 version of this page (and of the compiler's message) said otherwise, and a
 review (ChatGPT web, 2026-09) was right to call it a limit of the
-implementation dressed up as a condition of verifiability. The real boundary
-is cost and admission: integers in `ski@v1` are Church numerals, `+` on two
-five-digit numbers is a term whose ATP is far outside any default budget, and
-admitting *computed* numerals is the subject of a pre-registered, not yet run
-experiment in sigma-glyph (`proposals/EXP-ADR011-01-church-nat-admission.md`).
-Until that has a result, WPL v1 keeps arithmetic out and says so at compile
-time. Add `total_cents` where you gather the facts, and pin it.
+implementation dressed up as a condition of verifiability. The honest
+statement is narrower still: arithmetic is **not implemented and not
+admitted** in WPL v1. Integers compile to fixed-width bit vectors of Church
+booleans (§6 of `impl/policy_lang.py`, "ENCODING"), built for comparison
+folds; an adder over those vectors would need its own encoding, a measured
+cost curve and an admission decision, and none of the three exists. (A first
+draft of this correction said "Church numerals, unaffordable" — wrong encoding
+and an unmeasured cost claim; Codex caught it. sigma-glyph's
+`EXP-ADR011-01` concerns *computed Church naturals* in its own admission
+profile, related work, not a reason here.) Until someone does that design,
+WPL v1 keeps arithmetic out and says so at compile time. Add `total_cents`
+where you gather the facts, and pin it.
 
 **Where the trust went.** Be clear-eyed about what that move does: the
 addition is now performed by the code that gathers the facts, and the
@@ -251,10 +256,13 @@ in. If the fact says `100` and the payment was `100 000`, `amount <= 500`
 passes honestly. Fact provenance — where a fact came from, and whether it
 describes the thing decided — is a separate obligation this format does not
 discharge: `THREAT-MODEL.md` lists it, and WRT-008 measured it on ten real
-decisions (0 of 58 facts derivable from pinned bytes) before deferring a
-derivation profile. Until that exists, a green check certifies the
-*reasoning*, and the reader is owed the facts' source as evidence, pinned
-beside the check.
+decisions: **0 of 58 facts carried any provenance** in the authored sample;
+48 of the 58 were *classified* as candidates for derivation from cited bytes,
+and no derivation was executed, so neither number is an extraction result.
+WRT-008 is closed DEFERRED under its own stopping rule, with its reactivation
+condition recorded in the proposal. Until a derivation profile exists, a green
+check certifies the *reasoning*, and the reader is owed the facts' source as
+evidence, pinned beside the check.
 
 Cost is refused the same way. Ask for a check the budget will not cover and you
 get a number and a refusal, not a term:

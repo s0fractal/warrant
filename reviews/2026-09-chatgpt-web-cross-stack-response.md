@@ -21,13 +21,16 @@ printed to stderr and forwarded; `manifest.json` had no field for the loss.
   rationale wrong — ACCEPTED, two parts.** (a) The tutorial and the compiler's
   refusal message said arithmetic is absent *so that the verifier re-executes
   every step instead of trusting the compiler's sum*. That is false: a sum
-  compiled into the term would be re-executed like any operator. The real
-  boundary is cost and admission (Church numerals; computed numerals are the
-  subject of sigma-glyph `EXP-ADR011-01`, pre-registered and not run). Fixed in
+  compiled into the term would be re-executed like any operator. The honest
+  statement: arithmetic is not implemented and not admitted in WPL v1 —
+  integers compile to fixed-width bit vectors of Church booleans for
+  comparison folds, and an adder over them would need an encoding, a measured
+  cost curve and an admission decision that nobody has produced. Fixed in
   `docs/authoring-checks.md` and `_ARITH_HINT` in `impl/policy_lang.py`; the
   page now also says where the trust went ("a signed answer to a questionnaire
-  the decider filled in") and cites WRT-008's measurement (0 of 58 facts in ten
-  real decisions derivable from pinned bytes). (b) The end-to-end case with
+  the decider filled in") and cites WRT-008's measurement with its own scope:
+  0 of 58 facts in ten real decisions *carried provenance*; 48 were classified
+  as candidate-derivable; no derivation was executed. (b) The end-to-end case with
   fact provenance, transformation and binding to the executed action does not
   exist. **OPEN**: it is the reviewer's own §7 experiment, and WRT-008 is
   deferred until a case like it exists rather than the other way round.
@@ -75,6 +78,30 @@ printed to stderr and forwarded; `manifest.json` had no field for the loss.
   family, without the authors, resolves the dispute from the pack alone versus
   from a plain log plus an ordinary policy check; measured: time to
   adjudicate, defects missed, integration cost. Not started in this PR.
+
+## Amended after Codex's review of PR #63 (2026-09-07)
+
+- **R1 (P1).** A server that performed an effect and exited without
+  responding left the proxy at exit 0 with `observation_complete: true` and
+  zero records — the new completeness field meant only "no caught seal
+  exception". Now: at server EOF every request the host sent and never got
+  answered is listed in the manifest as `unreturned_calls` (tool, class,
+  effects, source, consequential), the downstream exit code is recorded,
+  `observation_complete` is false with `incomplete_because` stated, and the
+  proxy exits 3. Nothing is invented about the outcome. Controls: Codex's own
+  probes (clean EOF without response, crash exit 7 after the effect, and the
+  answered control) reproduced in `tests/mcp_seal.py` with an effect marker
+  proving the operation ran; 44 checks.
+- **R2 (P2).** My first correction of the arithmetic rationale named the wrong
+  encoding (Church numerals) and asserted an unmeasured cost. WPL integers are
+  fixed-width bit vectors of Church booleans; arithmetic is simply not
+  implemented and not admitted. Hint, tutorial and this file corrected
+  together; `EXP-ADR011-01` demoted to related work.
+- **R3 (P2).** "0 of 58 derivable" reversed the distinction PR #60's R5 had
+  already repaired. WRT-008's statement is "0 of 58 carry provenance"; 48 were
+  classified candidate-derivable and no extraction was executed. Corrected in
+  the tutorial and above; WRT-008's deferred status and reactivation condition
+  are cited as recorded.
 
 ## What this review changed
 

@@ -32,11 +32,16 @@ right.
   and never sealed under the default ceiling); an empty effect list in the
   config is refused at startup (exit 2); a failed seal is counted in the
   manifest (`seal_failures`, `seal_failure_log`, `observation_complete`) and
-  in the exit status (3) instead of only on stderr. Review: ChatGPT (web),
-  2026-09, `reviews/2026-09-chatgpt-web-cross-stack.md`. The compiler's
-  no-arithmetic message and `docs/authoring-checks.md` now give the real
-  reason (cost and admission, not verifiability) and say where the trust
-  moved when a value is computed upstream and pinned as a fact.
+  in the exit status (3) instead of only on stderr; a call sent downstream
+  and never answered before the server exited is listed as `unreturned_calls`
+  with its class, the downstream exit code is recorded, and the pack is
+  marked incomplete (exit 3) rather than reported complete and empty. Review:
+  ChatGPT (web), 2026-09, `reviews/2026-09-chatgpt-web-cross-stack.md`; the
+  unanswered-call path from Codex's review of PR #63. The compiler's
+  no-arithmetic message and `docs/authoring-checks.md` now say what is true:
+  arithmetic is not implemented and not admitted in WPL v1 (integers are
+  fixed-width bit vectors of Church booleans, comparison only), and where the
+  trust moved when a value is computed upstream and pinned as a fact.
 - The air-canada evidence pack is now a frozen, replayable specimen:
   `demos/air-canada/replay.json` pins the exact input bytes, the `ski@v1`
   evaluator digest, the run profile and the per-record `verify --json` /

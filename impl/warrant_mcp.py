@@ -143,6 +143,8 @@ class Sealer:
         self.sealed = 0
         self.records = []
         self.seal_failures = []                  # calls observed but NOT sealed
+        self.unreturned = []                     # calls sent, never answered
+        self.downstream_returncode = None
         # Pin the effect policy itself (bytes) so a verifier sees exactly which
         # table classified these actions.
         policy_bytes = json.dumps(
@@ -207,6 +209,27 @@ class Sealer:
                 "tool": tool, "ts": int(time.time()),
                 "error": f"{type(error).__name__}: {error}"[:300]})
 
+    def record_unreturned(self, tool, tool_input, ts):
+        """A tools/call went downstream and the session ended before a response
+        came back. The effect may have happened; nobody observed the outcome.
+        It is listed, classified, and counts against completeness if it is a
+        consequential call -- an unanswered request is not a non-event."""
+        cls, effects, source = classify(tool, self.effects_map)
+        with self._lock:
+            self.unreturned.append({"tool": tool, "class": cls, "effects": effects,
+                                    "source": source, "ts": ts,
+                                    "consequential": ORDER[cls] >= ORDER[self.ceiling]})
+
+    def incomplete(self):
+        """Why the pack must not be read as a complete observation, or []."""
+        why = []
+        if self.seal_failures:
+            why.append(f"{len(self.seal_failures)} seal failure(s)")
+        n = sum(1 for u in self.unreturned if u["consequential"])
+        if n:
+            why.append(f"{n} consequential call(s) sent downstream and never answered")
+        return why
+
     def write_manifest(self, title=None):
         manifest = {
             "evidence_pack": "0",
@@ -219,7 +242,10 @@ class Sealer:
             "sealed_calls": self.sealed,
             "seal_failures": len(self.seal_failures),
             "seal_failure_log": list(self.seal_failures),
-            "observation_complete": not self.seal_failures,
+            "unreturned_calls": list(self.unreturned),
+            "downstream_returncode": self.downstream_returncode,
+            "observation_complete": not self.incomplete(),
+            "incomplete_because": self.incomplete(),
             "expected_verification": {"errors": 0},
             "how_to_verify": "warrant --store .warrants verify",
         }
@@ -239,8 +265,12 @@ def _pump_and_forward(src, dst, on_line, on_error=None):
             print(f"warrant-mcp: seal error: {ex}", file=sys.stderr)
             if on_error is not None:
                 on_error(raw, ex)
-        dst.write(raw)
-        dst.flush()
+        try:
+            dst.write(raw)
+            dst.flush()
+        except (OSError, ValueError) as ex:      # the other side is gone
+            print(f"warrant-mcp: forward failed, peer closed: {ex}", file=sys.stderr)
+            return
 
 
 def run_proxy(server_cmd, sealer):
@@ -297,13 +327,22 @@ def run_proxy(server_cmd, sealer):
     t_up = threading.Thread(target=upstream, daemon=True)
     t_up.start()
     _pump_and_forward(proc.stdout, sys.stdout, on_server_line, on_error)   # blocks until server EOF
-    proc.wait()
+    sealer.downstream_returncode = proc.wait()
+    # Server EOF: whatever the host sent and never got answered is not a
+    # non-event. The effect may have run (review probe: marker written, server
+    # exited without a response) -- list it, classify it, refuse to call the
+    # pack complete. Nothing is invented about its outcome.
+    with plock:
+        for mid, (tool, tinput, ts) in list(pending.items()):
+            sealer.record_unreturned(tool, tinput, ts)
+        pending.clear()
     sealer.write_manifest()
-    lost = len(sealer.seal_failures)
-    print(f"warrant-mcp: session sealed {sealer.sealed} calls into "
-          f"{sealer.store.root}" + (f"; {lost} call(s) NOT sealed (see manifest "
-          "seal_failure_log) -- the pack is incomplete" if lost else ""), file=sys.stderr)
-    return lost
+    why = sealer.incomplete()
+    print(f"warrant-mcp: session sealed {sealer.sealed} calls into {sealer.store.root}"
+          f" (downstream exit {sealer.downstream_returncode})"
+          + (f"; INCOMPLETE: {'; '.join(why)} -- see manifest" if why else ""),
+          file=sys.stderr)
+    return len(why)
 
 
 def build_parser():
@@ -355,10 +394,11 @@ def main(argv=None):
         return 2
     store_dir = Path(args.store) / ".warrants"
     sealer = Sealer(store_dir, args.actor, args.key, effects_map, args.ceiling)
-    lost = run_proxy(server_cmd, sealer)
-    # 0: every observed consequential call is in the pack. 3: the stream was
-    # kept but the pack is incomplete -- a consumer must not read it as whole.
-    return 3 if lost else 0
+    incomplete = run_proxy(server_cmd, sealer)
+    # 0: every consequential call the host sent was answered and sealed. 3: the
+    # stream was kept but the pack is incomplete (a seal failed, or a call went
+    # downstream and was never answered) -- a consumer must not read it as whole.
+    return 3 if incomplete else 0
 
 
 if __name__ == "__main__":

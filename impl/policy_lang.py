@@ -180,14 +180,14 @@ _REFUSED_CHARS = {
     "{": "maps are not in WPL v1",
     "}": "maps are not in WPL v1",
 }
-_ARITH_HINT = ("WPL v1 has no arithmetic: integers are Church numerals in "
-               "ski@v1 and a sum costs more ATP than any default budget "
-               "admits (computed numerals are the subject of sigma-glyph "
-               "EXP-ADR011-01, not yet run). This is a cost boundary, not a "
-               "verifiability one -- compute the value where the facts are "
-               "gathered, pin the result as a fact, and pin its source as "
-               "evidence: the verifier re-executes the comparison, not the "
-               "sum.")
+_ARITH_HINT = ("WPL v1 has no arithmetic: it is not implemented and not "
+               "admitted. Integers compile to fixed-width bit vectors of "
+               "Church booleans for comparison only; an adder over them "
+               "would need its own encoding, cost and admission design, "
+               "which nobody has done. Compute the value where the facts "
+               "are gathered, pin the result as a fact, and pin its source "
+               "as evidence: the verifier re-executes the comparison, not "
+               "the sum.")
 
 
 def tokenize(src):

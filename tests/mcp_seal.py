@@ -11,6 +11,11 @@
   D. seal failure: the stream is still forwarded, and the loss is in the
      manifest (seal_failures, observation_complete=false) and in the exit
      status (3), not only on stderr.
+  E. unanswered call: the server performs an effect and exits (cleanly, or
+     crashing) without responding. The call is listed as unreturned, the
+     pack is marked incomplete, the downstream exit code is recorded, and the
+     proxy exits 3 (Codex R1 on PR #63: this path used to report a complete,
+     empty pack with exit 0).
 
 Run: python3 tests/mcp_seal.py   (nonzero exit on any failure)
 """
@@ -201,11 +206,60 @@ def test_seal_failure():
         "empty effect list refused at startup (exit 2)", f"rc={proc.returncode}")
 
 
+def test_unanswered_call():
+    mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
+    for code in (0, 7):
+        d = tempfile.mkdtemp()
+        marker = os.path.join(d, "effect.marker")
+        env = dict(os.environ, MOCK_MCP_SILENT_EXIT=str(code), MOCK_MCP_MARKER=marker)
+        cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+               "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+               "--", sys.executable, mock]
+        calls = [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+             "params": {"name": "get_and_execute_silent", "arguments": {"sql": "DROP TABLE t"}}},
+        ]
+        stdin = "".join(json.dumps(c) + "\n" for c in calls)
+        proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
+                              timeout=30, env=env)
+        tag = f"server exit {code} without a response"
+        chk(os.path.exists(marker), f"[{tag}] the effect really happened (marker written)")
+        chk(proc.returncode == 3, f"[{tag}] proxy exits 3", f"rc={proc.returncode}")
+        m = json.load(open(os.path.join(d, "manifest.json")))
+        chk(m["sealed_calls"] == 0 and m["observation_complete"] is False,
+            f"[{tag}] manifest: nothing sealed, observation NOT complete", json.dumps(m)[:200])
+        u = m["unreturned_calls"]
+        chk(len(u) == 1 and u[0]["tool"] == "get_and_execute_silent" and u[0]["class"] == "A4"
+            and u[0]["consequential"] is True,
+            f"[{tag}] the unanswered call is listed, classified A4 (undeclared), consequential",
+            json.dumps(u))
+        chk(m["downstream_returncode"] == code and m["incomplete_because"],
+            f"[{tag}] downstream exit code recorded and the reason stated",
+            f"{m['downstream_returncode']} {m['incomplete_because']}")
+        chk("INCOMPLETE" in proc.stderr, f"[{tag}] stderr says INCOMPLETE")
+    # control: the same tool name answered normally is sealed and the pack is complete
+    d = tempfile.mkdtemp()
+    env = dict(os.environ); env.pop("MOCK_MCP_SILENT_EXIT", None)
+    cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+           "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+           "--", sys.executable, mock]
+    stdin = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                        "params": {"name": "get_and_execute_silent", "arguments": {}}}) + "\n"
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30, env=env)
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    chk(proc.returncode == 0 and m["sealed_calls"] == 1 and m["observation_complete"] is True
+        and m["unreturned_calls"] == [] and m["downstream_returncode"] == 0,
+        "control: answered call -> sealed, complete, exit 0",
+        f"rc={proc.returncode} {json.dumps(m)[:200]}")
+
+
 def main():
     test_classifier()
     test_sealer_core()
     test_stdio_proxy()
     test_seal_failure()
+    test_unanswered_call()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 
