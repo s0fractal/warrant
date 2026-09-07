@@ -26,6 +26,16 @@ keywords:
   - EU AI Act
   - verifiable computation
 references:
+  - type: article
+    title: "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run"
+    authors:
+      - given-names: Serhii
+        family-names: Glova
+    year: 2026
+    doi: "10.5281/zenodo.22172098"
+    notes: >-
+      The write-up of this format (paper version 1.0.0, deposited 2026-08-30
+      from commit d83984f; preprint, not peer reviewed).
   - type: software
     title: "Sigma-GLYPH: a portable deterministic check engine"
     repository-code: "https://github.com/s0fractal/sigma-glyph"

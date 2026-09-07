@@ -11,7 +11,8 @@ version: 1.0.0
 date-released: "2026-08-30"
 license: CC-BY-4.0
 url: "https://github.com/s0fractal/warrant"
-# Reserved Zenodo DOI (draft 22172098, unpublished until the deposit is published).
+# Zenodo DOI, published 2026-08-30 (record 22172098; concept DOI 10.5281/zenodo.22172097).
+# The copy deposited beside the paper carries the pre-publication wording; this one is current.
 doi: "10.5281/zenodo.22172098"
 preferred-citation:
   type: article

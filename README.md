@@ -34,6 +34,11 @@ record, not an absence.
 Warrant is not an agent framework, blockchain or observability system. It is one
 file format and five filing verbs, designed to be boring.
 
+The format is written up in *The Reason Runs Again*
+([10.5281/zenodo.22172098](https://doi.org/10.5281/zenodo.22172098), paper
+v1.0.0, 2026-08-30 — deposited, not peer reviewed; see
+[`papers/`](papers/README.md)).
+
 ## Try it
 
 ```bash

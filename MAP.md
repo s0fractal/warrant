@@ -47,4 +47,4 @@ not take it for the canonical one. A collision is a defect to
 resolve by renumbering; until then it is recorded, not hidden.
 
 - `WRT-004` — closed PR #21 (verify-report) — the CANONICAL target: `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md`
-- `WRT-004` — branch `papers/the-reason-runs-again` (draft PR #30), reason-binding profile — NOT on master: `23ef8103606ecadfa650886fa412720ccd49980a:proposals/WRT-004-reason-binding-profile.md`
+- `WRT-004` — branch `papers/the-reason-runs-again` (PR #30, closed 2026-09-07 unmerged; branch retained), reason-binding profile — NOT on master: `23ef8103606ecadfa650886fa412720ccd49980a:proposals/WRT-004-reason-binding-profile.md`

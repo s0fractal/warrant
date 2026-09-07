@@ -6,15 +6,54 @@ read OUT OF THE PAPER, never carried here — a checker holding its own copy of
 the answer only proves its two copies agree. Exit nonzero on any mismatch.
 
 Run from anywhere; paths resolve relative to this file.
+
+`--ref COMMIT` measures the repository AT THAT COMMIT (a `git archive` of it,
+extracted to a temporary directory) instead of the working tree, while the
+paper is still read from this directory. That is the binding a deposited paper
+needs: paper v1.0.0 was measured at `d83984f` and its numbers were true there;
+later commits move the counts (the review census dropped from 92 to 22 files
+when the July corpus was retired) without making the frozen paper wrong. CI
+runs this mode against the deposited commit, so an edit to `paper.md` that
+breaks the binding fails closed, and a rebuild for a new deposit points `--ref`
+at its own candidate commit. A commit missing from a shallow clone is fetched
+once from `origin` by SHA; if it still is not there, that is a failure, not a
+skip.
 """
+import argparse
+import io
 import json
 import re
+import subprocess
 import sys
+import tarfile
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 PAPER = (HERE / "paper.md").read_text(encoding="utf-8")
+
+_ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+_ap.add_argument("--ref", metavar="COMMIT",
+                 help="measure the repository at this git commit, not the working tree")
+ARGS = _ap.parse_args()
+MEASURED_AT = "the working tree"
+if ARGS.ref:
+    def _git(*a, **k):
+        return subprocess.run(["git", "-C", str(REPO), *a], capture_output=True, **k)
+    if _git("cat-file", "-e", f"{ARGS.ref}^{{commit}}").returncode != 0:
+        _git("fetch", "--depth=1", "origin", ARGS.ref)
+        if _git("cat-file", "-e", f"{ARGS.ref}^{{commit}}").returncode != 0:
+            sys.exit(f"check_claims: commit {ARGS.ref} is not in this clone and "
+                     "could not be fetched from origin -- refusing to measure something else")
+    _tmp = tempfile.TemporaryDirectory(prefix="check_claims-")
+    _tar = tarfile.open(fileobj=io.BytesIO(_git("archive", "--format=tar", ARGS.ref, check=True).stdout))
+    try:
+        _tar.extractall(_tmp.name, filter="data")
+    except TypeError:  # python < 3.12
+        _tar.extractall(_tmp.name)
+    REPO = Path(_tmp.name)
+    MEASURED_AT = f"commit {ARGS.ref}"
 
 failures = []
 checked = []
@@ -198,6 +237,6 @@ if failures:
     for f in failures:
         print(f"  {f}", file=sys.stderr)
     sys.exit(1)
-print(f"\n{len(checked)} countable claims verified against {REPO}; "
+print(f"\n{len(checked)} countable claims verified against {MEASURED_AT}; "
       f"{len(UNCHECKED)} claim classes UNCHECKED (listed above). "
       "This is not a statement that every number in the paper was recomputed.")
