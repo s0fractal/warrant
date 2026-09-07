@@ -2,6 +2,14 @@
 """Check a `warrant.fact-derivation@v0` profile: are a WPL check's facts
 DERIVED from cited evidence, or merely ASSERTED?
 
+STATUS: design evidence of WRT-008, which is CLOSED -- DEFERRED (2026-09-07,
+second AMEND on the record-binding layer; see the proposal's closure block).
+This file is retained so the profile, the extractors and the verdicts stay
+executable; it is NOT a CI gate and `--record` is refused with
+RECORD_BINDING_DEFERRED rather than reporting a relation two reviews found
+unverified (a null/missing body skipped every citation check and still read
+`record=cited`; the body hash was never compared to the WarrantID).
+
 A compiled WPL check bakes every `fact` into the term as a constant. The core
 format proves the term re-executes; nothing says where the constants came
 from (docs/authoring-checks.md §8: "nothing about the facts is proven"). This
@@ -13,10 +21,9 @@ that read it. A profile-aware tool then
   1. recompiles `policy_source` and REQUIRES the result to be exactly the
      cited check (`term` and `expect`), so "the value baked into the term" is
      a checked relation, not a claim about a source file;
-  2. optionally (`--record`) reads a warrant record and REQUIRES the record to
-     cite that check as a ski@v1 reason and to list the profile, the source
-     and every evidence blob the profile reads; signatures are NOT verified
-     here -- that is `warrant verify`'s job;
+  2. (withdrawn) would read a warrant record and require it to cite the
+     check, the profile, the source and every evidence blob; `bind_record`
+     stays as design evidence, the CLI refuses `--record`;
   3. re-derives each fact and reports, PER FACT:
 
     DERIVED     re-derived value == the value baked into the term
@@ -61,8 +68,8 @@ present):
         isolation is the caller's responsibility, and the program hash pins the
         program, not the interpreter or its environment.
 
-    python3 tools/fact_derivation_check.py --store .warrants --profile <hex64> [--record <wid>]
-    python3 tools/fact_derivation_check.py --selftest
+    python3 proposals/wrt-008-model/fact_derivation_check.py --store .warrants --profile <hex64>
+    python3 proposals/wrt-008-model/fact_derivation_check.py --selftest
 
 Nothing here touches `warrant verify`, the ski@v1 check blob, WPL syntax or the
 SPEC. WRT-004 (reason-binding, on the paper branch) binds a fact to an
@@ -78,7 +85,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "impl"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "impl"))
 import policy_lang as PL  # noqa: E402
 
 PROFILE = "warrant.fact-derivation@v0"
@@ -560,6 +567,13 @@ def selftest() -> int:
     with contextlib.redirect_stdout(io.StringIO()):
         assert report("x" * 64, res, summ, "unverified") == 1
     controls.append("exit 1 only on DIVERGED/MALFORMED")
+    with tempfile.TemporaryDirectory() as td:
+        blobs = Path(td) / "blobs"; blobs.mkdir()
+        h = put(canon(profile)); (blobs / h).write_bytes(canon(profile))
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            code = main(["--store", td, "--profile", h, "--record", "0" * 64])
+        assert code == 1 and "RECORD_BINDING_DEFERRED" in out.getvalue()
+    controls.append("--record is a typed refusal, never a `cited` claim")
 
     print(f"FACT-DERIVATION-SELFTEST: ALL PASS ({len(controls)} controls)")
     return 0
@@ -570,8 +584,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--store", help="a .warrants store (blobs/ and records/ under it)")
     ap.add_argument("--profile", help="hex64 of the profile blob in that store")
-    ap.add_argument("--record", help="WarrantID whose record must cite the check, the profile, "
-                                     "the source and every evidence blob (signatures are not checked here)")
+    ap.add_argument("--record", help="refused: record binding is deferred with WRT-008 (see the proposal)")
     ap.add_argument("--execute-cmd", action="store_true",
                     help="run `cmd` derivations on the host python3 (no container is provided; never the default)")
     ap.add_argument("--selftest", action="store_true")
@@ -592,22 +605,14 @@ def main(argv=None) -> int:
             profile = strict_loads(raw)
         except (ValueError, UnicodeDecodeError) as exc:
             raise Refusal(f"PROFILE_JSON:{exc}") from exc
-        body = None
-        record_state = "unverified"
         if a.record:
-            if not is_hex64(a.record):
-                raise Refusal("RECORD_ADDRESS_INVALID")
-            rp = store / "records" / f"{a.record}.json"
-            if not rp.is_file() or rp.is_symlink():
-                raise Refusal("RECORD_UNRESOLVED")
-            try:
-                rec = strict_loads(rp.read_bytes())
-            except (ValueError, UnicodeDecodeError) as exc:
-                raise Refusal(f"RECORD_JSON:{exc}") from exc
-            body = rec.get("body") if isinstance(rec, dict) else None
-            record_state = "cited (signatures not checked here; run warrant verify)"
-        results, summary = check_profile(profile, resolve, a.execute_cmd, profile_hex=a.profile, record_body=body)
-        return report(a.profile, results, summary, record_state)
+            # Two reviews reproduced holes in this layer (null body skipped
+            # binding yet read `cited`; body hash never compared to the
+            # WarrantID). WRT-008 stopped there; the claim is withdrawn, not
+            # patched into a rev 3.
+            raise Refusal("RECORD_BINDING_DEFERRED:see proposals/WRT-008-fact-derivation-profile.md")
+        results, summary = check_profile(profile, resolve, a.execute_cmd, profile_hex=a.profile)
+        return report(a.profile, results, summary, "unverified")
     except (Refusal, AssertionError) as exc:
         print(f"REFUSED  {exc}")
         return 1

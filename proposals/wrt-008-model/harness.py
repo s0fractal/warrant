@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Fail-closed harness for tools/fact_derivation_check.py (WRT-008 rev 2).
+"""Fail-closed harness for proposals/wrt-008-model/fact_derivation_check.py
+(design evidence of WRT-008, CLOSED -- DEFERRED; not a CI gate).
 
   A. the tool's own selftest passes;
   B. five mutants of the TOOL must make that selftest fail -- a harness that
      cannot go red is the defect one level up;
   C. end to end on a real .warrants layout: a WPL policy compiled with
-     --store, its check cited by a synthetic (unsigned) record, evidence and
-     profile blobs put beside it; the CLI reports per fact, exit 0 on a clean
-     profile, 1 once the evidence contradicts the term; a blob wearing the
-     wrong name is UNRESOLVED; the record path refuses uncited blobs;
+     --store, evidence and profile blobs put beside it; the CLI reports per
+     fact, exit 0 on a clean profile, 1 once the evidence contradicts the
+     term; a blob wearing the wrong name is UNRESOLVED; --record is refused
+     in every form (the layer WRT-008 stopped on);
   D. the five counterexamples of the PR #60 review, with exact verdicts and
      exit codes: unknown extractor with missing evidence, `~2` pointer, NaN,
      newline addresses, and a profile whose source is not the cited check.
@@ -23,8 +24,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-TOOL = ROOT / "tools" / "fact_derivation_check.py"
+ROOT = Path(__file__).resolve().parents[2]
+TOOL = Path(__file__).resolve().parent / "fact_derivation_check.py"
 PY = sys.executable
 ok = []
 
@@ -63,7 +64,7 @@ def section_b():
     for name, (old, new) in mutants.items():
         assert src.count(old) == 1, (name, src.count(old))
         with tempfile.TemporaryDirectory() as td:
-            tools = Path(td) / "tools"; tools.mkdir()
+            tools = Path(td) / "proposals" / "wrt-008-model"; tools.mkdir(parents=True)
             (tools / "fact_derivation_check.py").write_text(src.replace(old, new))
             os.symlink(ROOT / "impl", Path(td) / "impl")
             r = run([str(tools / "fact_derivation_check.py"), "--selftest"], cwd=td)
@@ -110,12 +111,10 @@ def section_c():
                 "because": [{"kind": "check", "runtime": "ski@v1", "check": compiled["check"], "verdict": "pass"}],
                 "evidence": [src_hex, evidence, prof_hex], "actor": {"id": "t@test"}, "prior": [], "ts": 1}
         wid = store.record(body)
-        r = run([str(TOOL), "--store", str(store.root), "--profile", prof_hex, "--record", wid])
-        chk(r.returncode == 0 and "record=cited (signatures not checked here" in r.stdout, "C. --record: cited record passes and says signatures are not checked", r.stdout)
-        # A record that does not cite the evidence blob.
-        wid2 = store.record(dict(body, evidence=[src_hex, prof_hex]))
-        r = run([str(TOOL), "--store", str(store.root), "--profile", prof_hex, "--record", wid2])
-        chk(r.returncode == 1 and "REFUSED  RECORD_EVIDENCE_NOT_CITED:files_changed" in r.stdout, "C. --record: uncited evidence is a typed refusal", r.stdout)
+        for label, arg in (("correct WarrantID", wid), ("missing body", store.record({})), ("foreign WarrantID", "e" * 64)):
+            r = run([str(TOOL), "--store", str(store.root), "--profile", prof_hex, "--record", arg])
+            chk(r.returncode == 1 and "REFUSED  RECORD_BINDING_DEFERRED" in r.stdout and "record=cited" not in r.stdout,
+                f"C. --record ({label}) is refused; no `cited` claim is ever printed", r.stdout)
         # Evidence that contradicts the term -> DIVERGED, exit 1.
         tampered = store.put(b'{"lines_added": 601, "paths": ["a.md", "b.md"], "label": "docs"}')
         bad = json.loads(json.dumps(profile)); bad["facts"]["lines_added"]["from"] = tampered

@@ -156,11 +156,6 @@ CHECKS = [
      ["python3", "tests/settlement_fuzz.py", "2000"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
-    # WRT-008 (draft): a fact-derivation profile is read as data; the harness
-    # runs the tool's selftest, then three mutants of the tool that must make
-    # it fail, then the CLI on a real store where evidence contradicts a term.
-    ("fact derivation profile: verdicts can fire, mutants are caught (WRT-008 draft)",
-     ["python3", "tests/fact_derivation.py"], None),
     # Controlled forgetting: what left the default tree is a record read as
     # data. Subjects are re-digested from the before revision and checked
     # absent from the apply tree and the working tree; the (path, digest, mode)

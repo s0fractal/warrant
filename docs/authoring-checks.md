@@ -427,12 +427,12 @@ Honest boundaries, so you find them here rather than three days in:
 - **Nothing about the facts is proven.** `fact retroactive: bool = true` is an
   assertion by whoever compiled it. Its trustworthiness comes from the signature
   on the record and the evidence blobs cited beside it, not from the check.
-  A record MAY add a `warrant.fact-derivation@v0` blob naming the check, its
-  source, and per fact the evidence blob and the extractor the value was read
-  with; a profile-aware tool recompiles the source to that exact check and
-  then reports each fact `DERIVED`, `DIVERGED` or `ASSERTED`
-  (`proposals/WRT-008-fact-derivation-profile.md`, draft). That binds the
-  constant to bytes, not to truth.
+  WRT-008 explored a `fact-derivation@v0` sidecar that would name, per fact,
+  the evidence blob and the extractor the value was read with; it is closed as
+  deferred after two gate rounds on its record-binding layer, and its
+  measurement and design evidence live in
+  `proposals/WRT-008-fact-derivation-profile.md`. Nothing about facts is
+  proven today.
 
 If your rule needs something in this list, the honest answers are: compute it
 upstream and pin the result; split it into several checks; or use `cmd@v1`,

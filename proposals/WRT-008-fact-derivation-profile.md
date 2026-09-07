@@ -1,6 +1,61 @@
 # WRT-008: Fact derivation profile — where a WPL constant came from
 
-**Status:** DRAFT rev 2 (2026-09-07) — **design plus a running demonstration**, after the Codex AMEND of rev 1 (`.triad/reviews/warrant-pr60/REVIEW.md`: R1 the profile bound a source, not the cited check; R2 extractor shape was validated after I/O; R3 the JSON and pointer grammars admitted `NaN` and `~2`; R4 addresses admitted a trailing newline; R5 the coverage number was a manual classification presented as a measurement). Each is closed below and burned in `tests/fact_derivation.py` §D.
+**Status: CLOSED — DEFERRED by its own stopping rule (§7), 2026-09-07.** Two
+gates (rev 1 `e446596`, rev 2 `b7ed117`), each AMEND on the binding layer:
+rev 1 bound a *source file* rather than the cited check (R1); rev 2 bound the
+check but its `--record` path reported `record=cited` for a null or missing
+body without running a single citation check, and never compared the body's
+hash to the WarrantID it was given (`.triad/reviews/warrant-pr60-rev2/`,
+R1a/R1b, reproduced by CLI probes). A second AMEND on the same layer closes
+this as *deferred*; that is what §7 said would happen, and it does.
+
+**Retained as design evidence,** executable but not a CI gate,
+in `proposals/wrt-008-model/`: the §1 measurement as what it is (ten authored
+policies compiled, zero facts with provenance, a *classification* of 48/58 as
+candidate derivable coverage); the profile shape; the closed extractor set
+(`json`, `json-len`, `digest-eq`, `cmd`) with shape validated before I/O and
+the RFC 6901 / RFC 8259 grammars enforced; the per-fact verdicts; the
+source-to-check recompilation (R1 of rev 1 is closed by that); 55 selftest
+controls and a harness with five tool mutants and the rev-1 review's five
+counterexamples at exact verdicts.
+
+**Not retained:** any claim that a record binds the profile. The CLI refuses
+`--record` with `RECORD_BINDING_DEFERRED`; `bind_record` stays in the file as
+the shape of the attempt, with its two holes named above. Also not retained:
+the check.py entry (removed; counts recounted) and the tutorial pointer as a
+live feature.
+
+**Left open, exactly:** (P1) a record envelope of `{}`, `{"body":null}` or
+`[]` yields `body=None`, which the checker reads as "no record given" while
+the CLI had already labelled the run `cited`; (P2) `records/<wid>.json` is
+trusted by filename, the canonical body hash is never compared to `<wid>`.
+Both need the repository's own canonicalization path and typed refusals;
+neither needs a settlement engine. Two bounded notes from the same review:
+`digest-eq` facts are exempt from evidence membership (two addresses compared,
+no bytes read) and §2 said "every `from` blob" without that exception; and
+"validated before any blob is read" means before *evidence* is read (the
+profile and the source are read first).
+
+**Reactivation condition:** a successor that starts from the retained model,
+closes P1 and P2 with the probes in `warrant-pr60-rev2/probes.py` turned into
+exact typed-refusal assertions, and is gated by a reviewer who did not write
+it. Or, the smaller sibling this measurement pointed at first: `count` /
+`all` / `any` over a pinned list and a digest fact kind in WPL, which change
+the compiler and are a separate proposal.
+
+**Lesson kept on purpose.** Twice the label was wider than the predicate: rev
+1 said "baked into the term" while checking a source file; rev 2 said
+`record=cited` before binding had run. Both were caught by a reviewer with a
+seven-line probe. A tool must consume the address of the artifact it names,
+and must set a state only after the check that state names has passed.
+
+Closed by Claude Fable 5.1 at the owner's decision to follow the stopping
+rule, 2026-09-07. A closure is a governance act, not a gate verdict, and it
+adopts nothing (AGENTS.md rules 3–4). The rev-2 text follows as history.
+
+---
+
+**Status (historical):** DRAFT rev 2 (2026-09-07) — **design plus a running demonstration**, after the Codex AMEND of rev 1 (`.triad/reviews/warrant-pr60/REVIEW.md`: R1 the profile bound a source, not the cited check; R2 extractor shape was validated after I/O; R3 the JSON and pointer grammars admitted `NaN` and `~2`; R4 addresses admitted a trailing newline; R5 the coverage number was a manual classification presented as a measurement). Each is closed below and burned in `tests/fact_derivation.py` §D.
 No SPEC edit, no body schema change, no change to `warrant verify`, to the
 `ski@v1` check blob or to WPL syntax. The profile is an additive blob cited in
 `evidence`; `tools/fact_derivation_check.py` reads it, and

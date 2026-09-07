@@ -117,7 +117,7 @@ CANONICAL = {
     "WRT-002": {"lives_in": "this repo, `master` (CLOSED: DEFERRED)",
                 "commit": None,
                 "path": "proposals/WRT-002-keystate-effective-lifecycle-r1.md"},
-    "WRT-008": {"lives_in": "this repo, `wrt-008/fact-derivation` (DRAFT rev 1)",
+    "WRT-008": {"lives_in": "this repo, `master` (CLOSED: DEFERRED)",
                 "commit": None,
                 "path": "proposals/WRT-008-fact-derivation-profile.md"},
     "WRT-003": {"lives_in": "closed PR #20 (verification receipts)",

@@ -37,7 +37,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |
 | `WRT-006` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: B) | `proposals/WRT-006-ski-v1-implementation-substitution.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
 | `WRT-007` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED) | `proposals/WRT-007-per-tag-evaluator-dependency.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
-| `WRT-008` | this repo, `wrt-008/fact-derivation` (DRAFT rev 1) | `proposals/WRT-008-fact-derivation-profile.md` | `proposals/WRT-008-fact-derivation-profile.md` |
+| `WRT-008` | this repo, `master` (CLOSED: DEFERRED) | `proposals/WRT-008-fact-derivation-profile.md` | `proposals/WRT-008-fact-derivation-profile.md` |
 
 ## Known identifier collisions
 
