@@ -77,7 +77,9 @@ printed to stderr and forwarded; `manifest.json` had no field for the loss.
   dropped event, an action after a refusal); an adjudicator from another model
   family, without the authors, resolves the dispute from the pack alone versus
   from a plain log plus an ordinary policy check; measured: time to
-  adjudicate, defects missed, integration cost. Not started in this PR.
+  adjudicate, defects missed, integration cost. Pre-registered as
+  `experiments/EXP-001-adversarial-adjudication/PREREGISTRATION.md`
+  (NEED-003); not run.
 
 ## Amended after Codex's review of PR #63 (2026-09-07)
 

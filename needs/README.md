@@ -114,3 +114,24 @@ release, or version number.
 *These needs remain visible so absent validation is named rather than silently
 claimed. They describe possible evidence, not authorities the project must wait
 for before acting.*
+
+### NEED-003 — an independent adjudication of an agent session from the pack alone
+
+The format's dispute-resolution claim ("two parties who share no trusted
+server settle what the agent did from the bytes") has never been exercised by
+a reader outside this project against a session with known defects. The 2026-09
+cross-stack review asked for exactly that and named the shape: a third-party
+agent does a real task, planted defects (a substituted fact, an irrelevant
+check, a missed event, an action after a refusal), an adjudicator from another
+family resolves the dispute from the evidence pack alone versus from a plain
+log plus the written policy, with time, missed defects and integration cost
+measured.
+
+Pre-registered as
+[`experiments/EXP-001-adversarial-adjudication/`](../experiments/EXP-001-adversarial-adjudication/PREREGISTRATION.md)
+with the Planter's placement committed by hash before the run and the
+falsifiers written before measuring. **Not run.** Until it has a result line,
+the dispute-resolution framing in README and the demos is a design intent,
+not an observed property; and a model adjudicator on this host is defect-
+hunting, not external adoption — the same boundary NEED-002 states.
+

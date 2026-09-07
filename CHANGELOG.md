@@ -26,6 +26,11 @@ right.
 
 ## Unreleased
 
+- `experiments/EXP-001-adversarial-adjudication/`: pre-registration of the
+  adjudication experiment the 2026-09 cross-stack review asked for (evidence
+  pack versus plain log, four planted defect kinds placed by a second party
+  under a hash commitment, two adjudicator families, falsifiers fixed before
+  measuring). Registered as NEED-003. Not run; no result may be cited.
 - `warrant-mcp`: a tool the effects config does not declare is sealed as
   undeclared (A4) whatever its name — name hints annotate the record and can
   no longer lower the class (`query`, `get_and_execute` were A0 by substring
