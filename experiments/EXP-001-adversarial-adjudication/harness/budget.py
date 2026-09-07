@@ -40,7 +40,11 @@ class Budget:
         with open(self.path.with_suffix(".lock"), "w") as lk:
             fcntl.flock(lk, fcntl.LOCK_EX)
             d = self._read()
-            out = fn(d)
+            try:
+                out = fn(d)
+            except BudgetStopped:
+                self._write(d)               # the refusal is part of the ledger, not lost to the exception
+                raise
             self._write(d)
             return out
 

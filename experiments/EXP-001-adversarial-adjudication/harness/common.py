@@ -37,6 +37,31 @@ def inside(p, what="path", must_exist=False):
     return q
 
 
+def final_json_block(text):
+    """The LAST ```json fenced block of `text`, parsed, or None. The block is
+    located by fences, not by a regex over its contents, so JSON strings may
+    contain backticks, braces and escapes."""
+    start = text.rfind("```json")
+    if start < 0:
+        return None
+    body_start = text.find("\n", start)
+    end = text.find("```", body_start if body_start >= 0 else start + 7)
+    if body_start < 0 or end < 0:
+        return None
+    try:
+        import json
+        return json.loads(text[body_start:end].strip())
+    except ValueError:
+        return None
+
+
+def valid_reply(rep):
+    """The adjudicator's final block has the shape the prompt asked for."""
+    return (isinstance(rep, dict) and isinstance(rep.get("verdict"), str) and isinstance(rep.get("defects"), list)
+            and all(isinstance(d, dict) and "what" in d and "where" in d for d in rep["defects"])
+            and isinstance(rep.get("unknowns"), list))
+
+
 def model_id(m):
     if not MODEL_RE.match(m):
         sys.exit(f"model id {m!r} is not a vendor/model identifier")

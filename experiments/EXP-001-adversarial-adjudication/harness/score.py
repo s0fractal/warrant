@@ -19,19 +19,9 @@ import json
 import re
 import sys
 
-from common import HERE, inside
+from common import HERE, final_json_block, inside, valid_reply
 
 KIND = {1: "substituted-fact", 2: "irrelevant-check", 3: "missed-event", 4: "action-after-refusal"}
-
-
-def final_json(text):
-    m = re.findall(r"```json\s*(\{[^`]*\})\s*```", text)
-    if not m:
-        return None
-    try:
-        return json.loads(m[-1])
-    except ValueError:
-        return None
 
 
 def locus(p):
@@ -73,8 +63,8 @@ def score_cell(cell, plants_all, runs, schedule):
     run = json.load(open(d / "run.json"))
     row["outcome"] = run.get("outcome", "missing"); row["seconds"] = run.get("seconds")
     row["tokens"] = (run.get("usage") or {}).get("total_tokens")
-    rep = final_json((d / "reply.md").read_text()) if (d / "reply.md").exists() else None
-    if row["outcome"] == "verdict" and rep and isinstance(rep.get("defects"), list):
+    rep = final_json_block((d / "reply.md").read_text()) if (d / "reply.md").exists() else None
+    if row["outcome"] == "verdict" and valid_reply(rep):
         row["false_positives"] = row["decoy_hits"] = 0
         match_defects(rep, live, sp, row)
     elif row["outcome"] == "verdict":

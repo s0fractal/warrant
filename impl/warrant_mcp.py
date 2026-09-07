@@ -216,7 +216,7 @@ class Sealer:
         consequential call -- an unanswered request is not a non-event."""
         cls, effects, source = classify(tool, self.effects_map)
         with self._lock:
-            self.unreturned.append({"tool": tool, "class": cls, "effects": effects,
+            self.unreturned.append({"tool": tool, "arguments": tool_input, "class": cls, "effects": effects,
                                     "source": source, "ts": ts,
                                     "consequential": ORDER[cls] >= ORDER[self.ceiling]})
 

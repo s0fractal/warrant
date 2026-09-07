@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 
 from budget import Budget, BudgetStopped, est_tokens
-from common import inside, model_id
+from common import final_json_block, inside, model_id, valid_reply
 
 MAX_FILE = 60_000          # bytes per file in the prompt; larger files are truncated with a marker
 SKIP_DIRS = {"blobs"}      # blobs are listed by name and size; their bytes are quoted only via transcripts
@@ -84,21 +84,6 @@ MATERIAL:
 """
 
 
-def valid_reply(content):
-    """The final JSON block has the shape the prompt asked for; anything else is malformed."""
-    import re
-    m = re.findall(r"```json\s*(\{[^`]*\})\s*```", content)
-    if not m:
-        return False
-    try:
-        rep = json.loads(m[-1])
-    except ValueError:
-        return False
-    return (isinstance(rep.get("verdict"), str) and isinstance(rep.get("defects"), list)
-            and all(isinstance(d, dict) and "what" in d and "where" in d for d in rep["defects"])
-            and isinstance(rep.get("unknowns"), list))
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bundle", required=True); ap.add_argument("--model", required=True)
@@ -138,7 +123,7 @@ def main():
             content = msg.get("content") or ""
             rec["finish_reason"] = ch.get("finish_reason")
             (out / "reply.md").write_text(content)
-            rec["outcome"] = "empty" if not content else ("verdict" if valid_reply(content) else "malformed")
+            rec["outcome"] = "empty" if not content else ("verdict" if valid_reply(final_json_block(content)) else "malformed")
     except BudgetStopped as e:
         rec["seconds"] = round(time.time() - t0, 1); rec["outcome"] = "budget_stopped"; rec["error"] = str(e)
     except urllib.error.HTTPError as e:

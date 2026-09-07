@@ -93,7 +93,7 @@ class Session:
         self.decisions = []            # {action, order, wid, decision}
         self.prior = []
         self.applied = []              # plants applied / not applied
-        self.sent = []                 # every (tool, args) the driver sent downstream
+        self.answered = []             # (tool, args, ok) for every call the server actually answered
         cmd = [sys.executable, str(HERE / "tee_logger.py"), "--workdir", str(self.work), "--",
                sys.executable, str(ROOT / "impl" / "warrant_mcp.py"), "--store", str(self.pack),
                "--actor", actor, "--key", str(self.key), "--effects", str(HERE / "effects.json"), "--",
@@ -119,20 +119,21 @@ class Session:
         try:
             self.p.stdin.write(json.dumps(msg) + "\n"); self.p.stdin.flush()
         except (BrokenPipeError, OSError, ValueError) as ex:      # downstream is gone; the driver goes on
-            return {"id": self.rid, "error": {"message": f"downstream closed: {ex}"}}
+            return {"id": self.rid, "_driver": True, "error": {"message": f"downstream closed: {ex}"}}
         while True:
             line = self.p.stdout.readline()
             if not line:
-                return {"id": self.rid, "error": {"message": "downstream closed without a response"}}
+                return {"id": self.rid, "_driver": True, "error": {"message": "downstream closed without a response"}}
             m = json.loads(line)
             if m.get("id") == self.rid and "method" not in m:
                 return m
 
     # ---- the shop, through the proxy ----
     def shop_call(self, name, args):
-        self.sent.append((name, dict(args)))
         r = self.rpc(CALL, {"name": name, "arguments": args})
         res = r.get("result", r.get("error"))
+        if not r.get("_driver"):                                # a real server answer, not the driver's own error
+            self.answered.append((name, dict(args), not (isinstance(res, dict) and res.get("isError"))))
         self.last_result[name] = (args, res)
         try:
             payload = json.loads(res["content"][0]["text"]) if isinstance(res, dict) and res.get("content") else res
@@ -263,18 +264,20 @@ class Session:
             if not (p["kind"] == 3 and p.get("variant") == "b") or p.get("_used"):
                 continue
             want = p.get("args", {})
-            match = lambda a: all(a.get(k) == v for k, v in want.items())   # noqa: E731
-            unreturned = any(u["tool"] == p["op"] for u in manifest.get("unreturned_calls", []))
-            if not unreturned:
+            match = lambda a: all((a or {}).get(k) == v for k, v in want.items())   # noqa: E731
+            n_unreturned = sum(1 for u in manifest.get("unreturned_calls", [])
+                               if u["tool"] == p["op"] and match(u.get("arguments")))
+            if not n_unreturned:
                 continue                        # the trigger never fired; reported as not used below
-            # The silent call was the LAST call with these arguments. It produced an
-            # effect iff the ledger holds as many matching effects as calls were sent
-            # (an earlier honest call with the same arguments must not vouch for it).
-            n_sent = sum(1 for t, a in self.sent if t == p["op"] and match(a))
+            # Attribution is over calls the server OBSERVED: the ones it answered
+            # (each successful answer accounts for one ledger effect) plus the
+            # unreturned one. A driver attempt that never reached the server -- a
+            # retry after EOF -- is neither, and cannot revoke the application.
+            n_answered_ok = sum(1 for t, a, okk in self.answered if t == p["op"] and match(a) and okk)
             n_effects = sum(1 for e in ledger if e["op"] == p["op"] and match(e["args"]))
-            effect = n_effects >= n_sent
+            effect = n_effects >= n_answered_ok + 1
             p["_used"] = True
-            self.applied.append(dict(p, applied=effect, sent=n_sent, ledgered=n_effects,
+            self.applied.append(dict(p, applied=effect, unreturned=n_unreturned, answered_ok=n_answered_ok, ledgered=n_effects,
                                      evidence="unreturned call + its own ledger effect" if effect else
                                      "unreturned call but the store refused the effect (no ledger line for it)"))
 
