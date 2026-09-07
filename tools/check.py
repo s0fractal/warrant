@@ -234,8 +234,12 @@ CHECKS = [
     # exit 3 (UNRUN) when the host cannot provide that venv.
     ("evidence replay driver: reads the CLI's refusal; closed, counted controls",
      ["python3", "tests/replay_driver.py"], None),
+    # In CI this canary already runs as its own workflow
+    # (.github/workflows/x1-cross-repo.yml) with the sibling ref resolved there;
+    # repeating it inside the aggregate cost ~110 s per run and proved nothing
+    # the workflow had not. Locally it still runs.
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
-     ["bash", "tools/x1_cross_repo.sh"], None),
+     ["bash", "tools/x1_cross_repo.sh"], "not-in-ci"),
     # The aggregate CI path hands X1 a paired sibling branch only when that
     # branch exists in the sibling; an ordinary one-sided PR must resolve to
     # sibling master (PR #55 asked X1 to clone a branch that was never there).
@@ -266,6 +270,9 @@ NEEDS = {
            "impl-rs not built  ->  (cd impl-rs && cargo build --release)"),
     "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists(),
               "the admitted ski@v1 evaluator is missing from impl/"),
+    "not-in-ci": (lambda: os.environ.get("GITHUB_ACTIONS") != "true",
+                  "runs as its own workflow in CI (x1-cross-repo.yml); this "
+                  "aggregate does not repeat it there"),
     "yaml": (lambda: importlib.util.find_spec("yaml") is not None,
              "PyYAML not installed  ->  pip install pyyaml"),
     "lean": (lambda: shutil.which("lean") is not None,
@@ -275,12 +282,43 @@ NEEDS = {
 }
 
 
+# Checks that must not overlap with anything else: they assemble a venv or
+# a bare repository at a fixed path, or run `go test` against the module the
+# build step just wrote. Everything else is an independent subprocess with its
+# own temp dir, and runs in the pool. The five slowest checks account for
+# ~530 of ~550 sequential seconds, so the pool's wall time is roughly the
+# longest single check.
+SERIAL = {
+    "evidence replay driver: reads the CLI's refusal; closed, counted controls",
+    "x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
+    "x1: sibling-ref resolver (one-sided PR -> sibling master; ci.yml wired)",
+    "go: ski@v1 CAS identity mirrors Python (foreign key refused)",
+}
+# Known-long checks are submitted first so the pool's makespan is bounded by
+# the longest of them rather than by whichever one happened to be last.
+HEAVY_FIRST = (
+    "conformance diagnosis",
+    "conformance runner: detects a broken implementation",
+    "conformance skeletons",
+    "need-002 base evidence (closed provenance",
+)
+
+
+def default_jobs():
+    return max(1, min(4, os.cpu_count() or 1))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--allow-unrun", action="store_true",
                     help="exit 0 when a check could not run; it is still named")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--jobs", type=int, default=default_jobs(),
+                    help="parallel checks (default: min(4, cpus)); 1 reproduces "
+                         "the sequential order")
     args = ap.parse_args()
+    if args.jobs < 1:
+        ap.error("--jobs must be >= 1")
 
     if args.list:
         for name, argv, needs in CHECKS:
@@ -298,31 +336,57 @@ def main():
     env.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
 
     failed, unrun, passed = [], [], 0
+    runnable = []
     for name, argv, needs in CHECKS:
         if needs and not NEEDS[needs][0]():
             print(f"UNRUN  {name}\n         {NEEDS[needs][1]}")
             unrun.append(name)
             continue
+        runnable.append((name, argv))
+
+    def execute(name, argv):
         t0 = time.time()
         r = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, env=env)
-        dt = time.time() - t0
+        return name, r, time.time() - t0
+
+    def record(name, r, dt):
+        nonlocal passed
         if r.returncode == 0:
-            print(f"ok     {name}  ({dt:.1f}s)")
+            print(f"ok     {name}  ({dt:.1f}s)", flush=True)
             passed += 1
         elif r.returncode == EXIT_UNRUN:
             # The check ran but could not COMPLETE (it self-reports partial
             # execution with this reserved code). UNRUN≠PASS: name it, do not
             # count it as passed. The trailing lines carry which binding was UNRUN.
-            print(f"UNRUN  {name}  ({dt:.1f}s)")
+            print(f"UNRUN  {name}  ({dt:.1f}s)", flush=True)
             for line in (r.stdout + r.stderr).strip().splitlines()[-2:]:
-                print(f"         {line[:110]}")
+                print(f"         {line[:110]}", flush=True)
             unrun.append(name)
         else:
             tail = (r.stdout + r.stderr).strip().splitlines()
-            print(f"FAIL   {name}  ({dt:.1f}s)")
+            print(f"FAIL   {name}  ({dt:.1f}s)", flush=True)
             for line in tail[-3:]:
-                print(f"         {line[:110]}")
+                print(f"         {line[:110]}", flush=True)
             failed.append(name)
+
+    pooled = [c for c in runnable if c[0] not in SERIAL]
+    serial = [c for c in runnable if c[0] in SERIAL]
+    pooled.sort(key=lambda c: next((i for i, h in enumerate(HEAVY_FIRST) if c[0].startswith(h)),
+                                   len(HEAVY_FIRST)))
+    t_all = time.time()
+    if args.jobs == 1:
+        for name, argv in pooled + serial:
+            record(*execute(name, argv))
+    else:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            for fut in concurrent.futures.as_completed(
+                    [pool.submit(execute, name, argv) for name, argv in pooled]):
+                record(*fut.result())
+        for name, argv in serial:
+            record(*execute(name, argv))
+    print(f"\n({len(pooled)} pooled across {args.jobs} worker(s), {len(serial)} serial; "
+          f"{time.time() - t_all:.0f}s wall)")
 
     print(f"\n{passed} passed, {len(failed)} failed, {len(unrun)} unrun")
     for n in failed:

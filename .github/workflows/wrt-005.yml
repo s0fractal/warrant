@@ -85,7 +85,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
+      # The toolchain is ~100 s of downloads per run and the only network
+      # dependency of this job (one run failed on a 504 from the elan
+      # installer). Cache it by exact toolchain + installer commit; the pinned,
+      # digest-verified install below runs only on a miss.
+      - name: Cache the Lean toolchain
+        id: elan-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ env.LEAN_TOOLCHAIN }}-${{ env.ELAN_INIT_COMMIT }}
       - name: Install elan (pinned installer, digest-verified, then the toolchain)
+        if: steps.elan-cache.outputs.cache-hit != 'true'
         run: |
           # Download to a file over enforced HTTPS, verify its SHA-256, and only
           # then execute it — never a mutable ref piped into a shell.
@@ -95,7 +106,8 @@ jobs:
           echo "${ELAN_INIT_SHA256}  elan-init.sh" | sha256sum -c -
           sh elan-init.sh -y --default-toolchain "$LEAN_TOOLCHAIN"
           rm -f elan-init.sh
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Put the toolchain on PATH (cached or freshly installed)
+        run: echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Show the Lean version (pin is reproducible)
         run: lean --version
       # MANDATORY. The guard compiles Settlement.lean, pins every theorem's
