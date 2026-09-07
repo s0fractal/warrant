@@ -134,4 +134,3 @@ falsifiers written before measuring. **Not run.** Until it has a result line,
 the dispute-resolution framing in README and the demos is a design intent,
 not an observed property; and a model adjudicator on this host is defect-
 hunting, not external adoption — the same boundary NEED-002 states.
-
