@@ -156,6 +156,17 @@ CHECKS = [
      ["python3", "tests/settlement_fuzz.py", "2000"], None),
     ("adversarial gate parser (bounded untrusted-output grammar)",
      ["python3", "tests/adversarial_gate_parser.py"], None),
+    # Controlled forgetting: what left the default tree is a record read as
+    # data. Subjects are re-digested from the before revision and checked
+    # absent from the apply tree and the working tree; the (path, digest, mode)
+    # inventory is pinned in the checker so a dropped row cannot hide a
+    # resurrection; loss must be non-empty; no tracked file outside history/,
+    # .warrants/ and CHANGELOG.md may cite a retired path. Selftest first: each
+    # refusal is burned with a mutation before the records are trusted.
+    ("retirement records: every refusal can fire (mutation controls)",
+     ["python3", "tools/retirement_check.py", "--selftest"], None),
+    ("retirement records: retired subjects stay retired, records bind",
+     ["python3", "tools/retirement_check.py"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),
     ("go: selftest", [str(GO), "selftest", "examples"], "go"),
     ("go: verify own store (settlement grade)",

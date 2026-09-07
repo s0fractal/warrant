@@ -177,7 +177,8 @@ doing so; it does not rewrite this one.
 ## Applied transition
 
 - before revision: `97f024fe253122b67e90cf426d767cc73baf1d8d`
-- apply commit: recorded in `history/retirement-records/*.json` (`applied`)
+- apply commit: `c71404b9cb772c239d8d2e606299dbd836bf468e`
+- apply tree: `08779fe238add50a046872aade1460e580ef007a`
 - authority: repository owner instruction in the working session of
   2026-09-07, after the closures in PR #58; Codex reviews the act as it did the
   sigma-glyph one; the record addresses the act, it does not prove it was

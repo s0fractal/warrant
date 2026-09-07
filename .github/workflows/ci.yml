@@ -85,6 +85,11 @@ jobs:
         run: |
           REF="$(bash tools/x1_sibling_ref.sh)"
           echo "X1_SIBLING_REF=$REF" >> "$GITHUB_ENV"
+      # The retirement records re-digest each retired subject from the git
+      # object at the before revision; a shallow checkout cannot resolve it,
+      # and the checker refuses rather than skipping. Give it the history.
+      - name: Full history for the retirement records (before revisions must resolve)
+        run: git fetch --no-tags --unshallow || git fetch --no-tags
       - name: One command (tools/check.py, UNRUN is not a pass)
         run: python3 tools/check.py --allow-unrun
       - name: Conformance (SPEC s8 vectors, byte-exact)

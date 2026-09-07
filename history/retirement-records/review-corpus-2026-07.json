@@ -1,0 +1,510 @@
+{
+  "profile": "warrant.retirement-record@v0.1",
+  "id": "review-corpus-2026-07",
+  "status": "APPLIED",
+  "subject_scope": "in-repo",
+  "before_revision": "97f024fe253122b67e90cf426d767cc73baf1d8d",
+  "subjects": [
+    {
+      "path": "reviews/2026-07-codex-gov001-gate-response.md",
+      "sha256": "a5bca8598cad089f934e7f6e0332c2edb0c7dfc70ed15b4aeb4281b68648e49f",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; GOV-001 gate review of a revision that rev 4 integrated; GOV-001 is REVIEW GATE CLOSED and adopted into SPEC v0.3"
+    },
+    {
+      "path": "reviews/2026-07-codex-gov001-gate.md",
+      "sha256": "08bdbe52f2ea1403fd189a1aab2d091922bed8c4ded9016cd4b936ad22068349",
+      "mode": "ARCHIVED",
+      "reason": "GOV-001 gate review of a revision that rev 4 integrated; GOV-001 is REVIEW GATE CLOSED and adopted into SPEC v0.3"
+    },
+    {
+      "path": "reviews/2026-07-deepseek-gov001-gate-response.md",
+      "sha256": "00eee1eda831f1f10b5646aa53327ba75209c2719d674fff6395d7c0d441b924",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; GOV-001 gate review of a revision that rev 4 integrated; GOV-001 is REVIEW GATE CLOSED and adopted into SPEC v0.3"
+    },
+    {
+      "path": "reviews/2026-07-deepseek-gov001-gate.md",
+      "sha256": "08ca1bcc9d4e74e3f385f9ead998c1e462b0415f6c7f8f5c186602bfbe8d16ae",
+      "mode": "ARCHIVED",
+      "reason": "GOV-001 gate review of a revision that rev 4 integrated; GOV-001 is REVIEW GATE CLOSED and adopted into SPEC v0.3"
+    },
+    {
+      "path": "reviews/2026-07-deepseek-gov001-gate.md.pass1",
+      "sha256": "d5df931037fc735bb9044f4fb7fa3494f7479913e6eadab25662a274bd540fdc",
+      "mode": "ARCHIVED",
+      "reason": "blind first pass of a two-pass review; the delivered second pass is retired in the same act"
+    },
+    {
+      "path": "reviews/2026-07-gemini-gov001-gate-response.md",
+      "sha256": "f8819d526653199f8be623c0d9a04e35f2465333560cd424b541a3db582c2130",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; GOV-001 gate review of a revision that rev 4 integrated; GOV-001 is REVIEW GATE CLOSED and adopted into SPEC v0.3"
+    },
+    {
+      "path": "reviews/2026-07-gemini-gov001-gate.md",
+      "sha256": "af7e34e04f38b8d089735a70b128a383e9656a02e2a9463d15826d25c7c775ae",
+      "mode": "ARCHIVED",
+      "reason": "GOV-001 gate review of a revision that rev 4 integrated; GOV-001 is REVIEW GATE CLOSED and adopted into SPEC v0.3"
+    },
+    {
+      "path": "reviews/2026-07-antigravity-deep-review-response.md",
+      "sha256": "af8deddd2d8c38492d52e62b5514406270eb3a58517670bc2e84798d7cdb57f0",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-antigravity-deep-review.md",
+      "sha256": "66aa90fca92bd6fd198194256bf32fb72561377549d485b4ff810615b7fa4071",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-codex-v0.3-pedantic-audit-response.md",
+      "sha256": "27df1dc9ebc31d6932dac8d828dda992329fc73350f1b50f8434914a826048d9",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-codex-v0.3-pedantic-audit.md",
+      "sha256": "1d363fc2b5630a5e5b517a19ab71b01fa43f9e4c661402a9af807ebedd150200",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-codex-v0.3-runtime-hardening-audit-response.md",
+      "sha256": "ad5381e7f64d70aec61f1d9c073ec99a87fe21d127a5f697a130a306f55deef5",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-codex-v0.3-runtime-hardening-audit.md",
+      "sha256": "158ec717f10e40e9e9140ad9054ac8077e3d9079c3968fe68efb66b9cfb2b1d3",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-gemini31pro-agy-audit-response.md",
+      "sha256": "a92ffffd3ed755ae6337c56a1933602fd2275f330831840e8b0a2c6d5932310b",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-gemini31pro-agy-audit.md",
+      "sha256": "09fad7f2e4c1cef645084d4d4ca6ad3c51302d5ba4d95564bde52718e57874a5",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-gemini31pro-ed25519-audit-response.md",
+      "sha256": "1eadaa361804d2c86dc7443dad7002dcb727d8ef5d005d627dc44054f912a126",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-gemini31pro-ed25519-audit.md",
+      "sha256": "5e8249b3e2ca717e600a3b7f42694b870f57111da34aef0a4a6d1d5874c2bbc0",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-gptoss120b-agy-audit-response.md",
+      "sha256": "303ec48308e85a6e124dae5a6666f4cf29f0520a600660eed641935e11758fcd",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-gptoss120b-agy-audit.md",
+      "sha256": "ced2a29e67118406a65a441f7fa5d825aad62c9674d0eaf6b6115b44569e676d",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-kimi-full-audit-response.md",
+      "sha256": "dc85cbce103e349b2d98a155b5fdbd5b12f27f3198820ec73c3d96d9d322bce2",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-kimi-full-audit.md",
+      "sha256": "f33e9ddbe9d186302c5f60a20e42390aed3038e34cdc9dba9177bd88ed724e80",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-kimi-k3-spec-review-response.md",
+      "sha256": "1626abac6eae4e64591eb6f038e95b14252f6d7e1adeddc05dd85720e26ea8db",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-kimi-k3-spec-review.md",
+      "sha256": "27ea0cc4b31d3f3d1f2744972087d5ad13ced422e7b99aa64fa2dfb80db255bf",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-opus48-v0.2-response.md",
+      "sha256": "a4bb633386884585e868b2c3cabc9158a3805bb032c0e5319e35f9b5a1794f99",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-opus48-v0.2-review.md",
+      "sha256": "a7c3d4c26cd39c0b88afa841ab5c947fa05c643ca575e6c00573a79e32247517",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-qwen-web-holistic-response.md",
+      "sha256": "1508c5a7862e4677e7ec5badbc3e444918781da0b673593747855f820474e60e",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-qwen-web-holistic.md",
+      "sha256": "d368b67192bb49196bed1d28256cc7086e22cd9f7c0c4d4d01b0302c30a63428",
+      "mode": "ARCHIVED",
+      "reason": "July 2026 external audit of v0.2/v0.3 with its adjudication; every accepted finding landed and is credited in CHANGELOG/ARCHITECT"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-final-bounded-regate.md",
+      "sha256": "1a0e1503c1b4cf2ff9e2936e42e54fdf7510839a744954fdc36807c5702b701c",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-gate.md",
+      "sha256": "4f322633b738ae7a9af81dd8d8c0acf84fe9d8bfd5ea29bcce470804f31e5850",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-regate-2.md",
+      "sha256": "31f28ce8cc201c6aade07f170524850c89c7feeb5e6c15b73ad1a1c528e9de9d",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-regate-3.md",
+      "sha256": "71e990ce3aa513c2c70fd9019755edf4db48ba25e141e3640a3faeeefb756672",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-regate-4.md",
+      "sha256": "b3c9685e627e2b05fc8baa3d37ed1edd6d7225ef789094f1b440d2ce81314bda",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-regate-5.md",
+      "sha256": "9ae59c6327aa6d0b559ad5b1bd9b6949a2b2a7209f526222b500f3b8882c340d",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-regate-6.md",
+      "sha256": "955e26efad78d1ddd3f2c1990d06662d263312c105146dbf7c87855941ee7809",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-release-surface-regate.md",
+      "sha256": "ab0393ed8156db3d460b2f742d30528bc624dc74a7da6b4d6067db33afc1154f",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-sibling-pin-gate.md",
+      "sha256": "bfb0680df269dc61eb773aa1f5ff9caecd4530ff1804be514b25d094d391e0b9",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-sibling-pin-regate-2.md",
+      "sha256": "03bc9b419d63893029f3ce8868b176c5a58d22e9d384e1511ae2f6b8bce00b28",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-sibling-pin-regate-3.md",
+      "sha256": "872049445d98dcfb79ff3818c1e391db993ee2e087bbfde5828b209561082f14",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-sibling-pin-regate.md",
+      "sha256": "216b624d44240cb3258cd1cb9843ef6018ed9f09649f67e997d48c2f5662d4bd",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-structured-verification-report-gate.md",
+      "sha256": "54cafa5f65a402dfa95a7f10ec26d70320e444f038163cc70a4e6d38e4107a7c",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-structured-verification-report-regate-2.md",
+      "sha256": "4f47239b07c278af6ac91dcebace15cd27366d70d6bd96cde0016e6bb8e8630e",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-structured-verification-report-regate-3.md",
+      "sha256": "127578ce0222f14755b2fc04997edff2523a146d224e49b2793b98ecfdbc3cf9",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-structured-verification-report-regate.md",
+      "sha256": "5eb53ea38ca2deecaa09068d74850398c73a9e770ce8152e42d34edcdcc71559",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-surrogate-premerge-gate.md",
+      "sha256": "d1303d73f667de4f70a26835cc54ab752c1c2adef029c14edac45ed500359d61",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-verify-report-contract-gate.md",
+      "sha256": "46f75526f21cef5c105f44716fe79b06f53d2186665966f5a3b35f7b8d6dbad5",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-verify-report-contract-regate.md",
+      "sha256": "7b5bc68d88a1b6771f327d0241f3653ef4be5fa9f3c5859dcf8bc7bd0da467a2",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-x1-cross-repo-final-regate.md",
+      "sha256": "75b05a7a4dd19e69f954172051806bd33453b7f93fa08db16b30f555521efafd",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-x1-cross-repo-gate.md",
+      "sha256": "a17780dc0557736206ea95612b1a9efa166014e1c74bc4d30abba365490e9199",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-x1-cross-repo-regate.md",
+      "sha256": "07b6689b198e79805e58d88c65f00233e55077133ec76cdb647a16cdd72995d4",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-kimi-k3-surrogate-regate.md",
+      "sha256": "656494ff4dd9ad013c8a6d5ad3e4897a91253433d711ce9ba19e5197d5afd7cf",
+      "mode": "ARCHIVED",
+      "reason": "pre-merge gate of a branch that has since merged; the gated tool or contract lives in the tree and CI"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-budget-spec-gate-response.md",
+      "sha256": "d59f44e0cb5cfb427eac7fa40e87192de5a84572cae55cdfc145a1d1520b1644",
+      "mode": "ARCHIVED",
+      "reason": "maintainer disposition paired with a retired review; gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-budget-spec-gate.md",
+      "sha256": "acbb734a07afcabb39035f3e9b8e827283084bbaaa5be819a68eb3ccd9b85715",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-gate.md",
+      "sha256": "d9229aaa830b70229fb5f3b5405bb2a966d9c4fe25b805adfb4a106e258a9e7b",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-item0-done-candidate-gate.md",
+      "sha256": "a6896c5ef794118d37097db90e6e41761b37bb7cfe2afbb95e011496cace8983",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-item0-final-gate.md",
+      "sha256": "2d17188a19e9e9619a93ecda17ad72a4a9ec7a4cb5cd6b7d5fd8ac3df74f6e52",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-item0-recheck-2.md",
+      "sha256": "267d70672654b20b90da5c22915ddfad41a0a0a77b661b6088810ad98dc1efeb",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-refactor-gate.md",
+      "sha256": "2aeb87d7f542c73b80cc1fe25cde02d1a183477b26ff119f5ad2696c1c734e9c",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-refactor-recheck.md",
+      "sha256": "faca69b5f9c62d7f7ffb10c83a1ab38909818c9178b2f89917752310a6b06425",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt001-rev2-gate.md",
+      "sha256": "665d4d21869be75b6593b27c51b6ae539110e5813dc63516d6c7719d97c948f9",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-kimi-k3-item0-adversarial-gate.md",
+      "sha256": "7873235fbffaa275bfe0b3e3dbe66580ea76082e05613fe3708193e86c8f50e0",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-kimi-k3-item0-regate.md",
+      "sha256": "2024c79d8f4aaa910a0afd6ee5d40b33fdd39554b1185ec68684f68765f27e91",
+      "mode": "ARCHIVED",
+      "reason": "gate on WRT-001 or its item 0; WRT-001 is CLOSED DEFERRED (2026-09-07), item 0 is on master"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt-002-design-gate.md",
+      "sha256": "edb3a5caf62c7506285aec76a81c1b03728ffb5b7ff3b7e9e12d2911c8dc6f6d",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt-002-rev2-design-regate.md",
+      "sha256": "085f74a8b22d12b441c70977d3a0374ace650362d04862a32fb5c59d736a781d",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt-002-rev3-design-regate.md",
+      "sha256": "8bd934bdee6c92f8dcaecdf9f000c371173ada20abe71501d412ff9ceba9769b",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt-002-rev4-design-regate.md",
+      "sha256": "9e7088ce9df16a3b91435f3502a09e60acec7359cacda879b925e2e56b5e87bc",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt-002-rev5-design-regate.md",
+      "sha256": "a40511ddcbdf430dda4ab0ceec42426f60dfdae892231061f5d3656e64e644c5",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-codex-wrt-002-rev6-design-regate.md",
+      "sha256": "8b387c98b6311146b20155d1eaf374f166bb21c8c2e05d6b5c389cf954c23ab9",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-deepseek-v4-wrt-002-rev7-adversarial-gate.md",
+      "sha256": "5ab8d470c186e6670d9a46b4b7c137aaa5156fed8fd10f6a49a0e043630f3a70",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-gemini31pro-wrt-002-rev7-adversarial-gate.md",
+      "sha256": "e9c16ec09fb900ad74e3469f26e8d42b4e2413ac07c70cba3acfad190662964c",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md",
+      "sha256": "681e0c1c5aaf8a274146674861e76b3ef137f3619246c5fc393464f72e85fae2",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    },
+    {
+      "path": "reviews/2026-07-qwen-web-wrt-002-rev7-gate.md",
+      "sha256": "d7709674afd1e69ee8b68acbe8cb1843d664bf2c2993100839a842edfada5260",
+      "mode": "ARCHIVED",
+      "reason": "gate on a WRT-002 revision; WRT-002 is CLOSED DEFERRED (2026-09-07) with F3 open, indexed in ARCHITECT W5"
+    }
+  ],
+  "replacement": {
+    "relation": "extracted-from",
+    "operands": [
+      {
+        "path": "history/RETIREMENT-2026-09-REVIEW-CORPUS.md",
+        "sha256": "b2c51d344a74a87d311a953941c8d2f5d158d11634f20adb28577786581311ad"
+      },
+      {
+        "path": "proposals/GOV-001-settlement-at-scale.md",
+        "sha256": "52fcb0b6d67d579ab3eb050834e1eca6d2042a5514a6ecca13b8711bf71aa35a"
+      },
+      {
+        "path": "proposals/WRT-001-wave-v1-runtime.md",
+        "sha256": "f791607475e10ce2dbc2c521184ff422b9d39791d07bf13b6fd3b500148fe698"
+      },
+      {
+        "path": "proposals/WRT-002-keystate-effective-lifecycle-r1.md",
+        "sha256": "77497755204fed024e67afabda882858e2e2ce8b47066ba286ede4dda61e726f"
+      },
+      {
+        "path": "reviews/2026-07-wrt-002-rev7-multifamily-gate-response.md",
+        "sha256": "ca0def8472c73181832acb571ff27f249e80bc656cebca582686fcf87828890b"
+      }
+    ]
+  },
+  "loss": [
+    "the full text of every finding, refutation and reproduction; the ledger index keeps outcomes, not arguments",
+    "the executable countervectors of Kimi K3's rev-7 appendix (F3/F4/F5/F7) at HEAD; a successor to ARCHITECT W5 retrieves them from the before revision with status",
+    "the revision-by-revision design conversation of WRT-001 and WRT-002 (six Codex regates each) readable without git",
+    "the blind-pass (.pass1) provenance of the DeepSeek GOV-001 gate",
+    "the second target of tools/adversarial_gate.py; only the settle target remains configured"
+  ],
+  "preservation": {
+    "policy": "git-history-best-effort; 76 of 78 subjects are byte-identical in release tag v0.9.0 (GitHub release 2026-08-01, source archives attached by GitHub), the two wrt-002-model files only at the before revision; this record promises neither permanent storage nor that a shallow clone resolves the before revision",
+    "locator": "git show 97f024fe253122b67e90cf426d767cc73baf1d8d:<historical-path>, carried with the HISTORICAL WARRANT ARTIFACT envelope in history/RETIREMENT-2026-09-REVIEW-CORPUS.md"
+  },
+  "admission": {
+    "default": "EXCLUDED",
+    "historical_review": "ALLOWED_WITH_STATUS",
+    "normative_use": "FORBIDDEN_WITHOUT_READOPTION"
+  },
+  "authority": {
+    "owner": "s0fractal (repository owner)",
+    "act": "owner instruction in the working session of 2026-09-07 ('давай тепер другий акт забуття у warrant'), after the WRT-001/WRT-002 closures merged in PR #58; recorded in history/RETIREMENT-2026-09-REVIEW-CORPUS.md under 'Applied transition'; the address of the act, not a proof it was within anyone's power"
+  },
+  "applied": {
+    "apply_commit": "c71404b9cb772c239d8d2e606299dbd836bf468e",
+    "apply_tree": "08779fe238add50a046872aade1460e580ef007a",
+    "receipt": "the child commit of c71404b carrying this record, tools/retirement_check.py and its tools/check.py entries; the record addresses the completed parent transition rather than containing its own commit identity"
+  },
+  "postconditions": [
+    {
+      "runner": "python3",
+      "entrypoint": {
+        "path": "tools/retirement_check.py",
+        "sha256": "4dd3eeca4f7c1e3372f7685349cc325e95d62172124e536dc1a5b230d62a0ce2"
+      },
+      "args": [
+        "--surface",
+        "review-corpus-2026-07"
+      ],
+      "falsifier": "a retired subject back in the tree, or a tracked file outside the tombstone class citing one as current, while this record still reads VALID"
+    },
+    {
+      "runner": "python3",
+      "entrypoint": {
+        "path": "tools/retirement_check.py",
+        "sha256": "4dd3eeca4f7c1e3372f7685349cc325e95d62172124e536dc1a5b230d62a0ce2"
+      },
+      "args": [
+        "--selftest"
+      ],
+      "falsifier": "the checker passing with its inventory, resurrection, zombie-reference, empty-loss or red-postcondition control removed"
+    }
+  ]
+}

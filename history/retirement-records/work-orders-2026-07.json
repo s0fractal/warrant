@@ -1,0 +1,78 @@
+{
+  "profile": "warrant.retirement-record@v0.1",
+  "id": "work-orders-2026-07",
+  "status": "APPLIED",
+  "subject_scope": "in-repo",
+  "before_revision": "97f024fe253122b67e90cf426d767cc73baf1d8d",
+  "subjects": [
+    {
+      "path": "HANDOFF.md",
+      "sha256": "be1a684d8ebbe40e23534c8ae33ec5c549a93a934f04ca8ebef4ab6252880df7",
+      "mode": "ARCHIVED",
+      "reason": "dated 2026-07-29 hand-off for the SPEC v0.3 implementation gate; it flags its own counts as stale and CI re-runs every command it lists"
+    },
+    {
+      "path": "briefs/BRIEF-v03-implementation.md",
+      "sha256": "3664a16f7ad32867ceccdf668ecceb36c2639bba443fe19bd9c1339fd8f772a3",
+      "mode": "ARCHIVED",
+      "reason": "completed work order for the v0.3 implementation; delivered, gated and in the tree"
+    },
+    {
+      "path": "briefs/WRT-002-rev7-adversarial-gate.md",
+      "sha256": "664e5cb59c52dbb422deb7675f666267f72b5fe986381b7803fe432e248e049f",
+      "mode": "ARCHIVED",
+      "reason": "brief for the WRT-002 rev 7 three-family gate; WRT-002 is CLOSED DEFERRED and the gate's adjudication stays live"
+    }
+  ],
+  "replacement": {
+    "relation": "none",
+    "operands": []
+  },
+  "loss": [
+    "the exact task framing given to the v0.3 implementer and to the WRT-002 rev-7 reviewers, including what each was allowed to read",
+    "the 2026-07-29 acceptance transcript of the v0.3 gate as text rather than as live CI"
+  ],
+  "preservation": {
+    "policy": "git-history-best-effort; 76 of 78 subjects are byte-identical in release tag v0.9.0 (GitHub release 2026-08-01, source archives attached by GitHub), the two wrt-002-model files only at the before revision; this record promises neither permanent storage nor that a shallow clone resolves the before revision",
+    "locator": "git show 97f024fe253122b67e90cf426d767cc73baf1d8d:<historical-path>, carried with the HISTORICAL WARRANT ARTIFACT envelope in history/RETIREMENT-2026-09-REVIEW-CORPUS.md"
+  },
+  "admission": {
+    "default": "EXCLUDED",
+    "historical_review": "ALLOWED_WITH_STATUS",
+    "normative_use": "FORBIDDEN_WITHOUT_READOPTION"
+  },
+  "authority": {
+    "owner": "s0fractal (repository owner)",
+    "act": "owner instruction in the working session of 2026-09-07 ('давай тепер другий акт забуття у warrant'), after the WRT-001/WRT-002 closures merged in PR #58; recorded in history/RETIREMENT-2026-09-REVIEW-CORPUS.md under 'Applied transition'; the address of the act, not a proof it was within anyone's power"
+  },
+  "applied": {
+    "apply_commit": "c71404b9cb772c239d8d2e606299dbd836bf468e",
+    "apply_tree": "08779fe238add50a046872aade1460e580ef007a",
+    "receipt": "the child commit of c71404b carrying this record, tools/retirement_check.py and its tools/check.py entries; the record addresses the completed parent transition rather than containing its own commit identity"
+  },
+  "postconditions": [
+    {
+      "runner": "python3",
+      "entrypoint": {
+        "path": "tools/retirement_check.py",
+        "sha256": "4dd3eeca4f7c1e3372f7685349cc325e95d62172124e536dc1a5b230d62a0ce2"
+      },
+      "args": [
+        "--surface",
+        "work-orders-2026-07"
+      ],
+      "falsifier": "a retired subject back in the tree, or a tracked file outside the tombstone class citing one as current, while this record still reads VALID"
+    },
+    {
+      "runner": "python3",
+      "entrypoint": {
+        "path": "tools/retirement_check.py",
+        "sha256": "4dd3eeca4f7c1e3372f7685349cc325e95d62172124e536dc1a5b230d62a0ce2"
+      },
+      "args": [
+        "--selftest"
+      ],
+      "falsifier": "the checker passing with its inventory, resurrection, zombie-reference, empty-loss or red-postcondition control removed"
+    }
+  ]
+}

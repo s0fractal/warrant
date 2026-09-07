@@ -55,7 +55,7 @@ EXPECTED = {
 # Independent subject inventory: omission, reassignment or mode drift requires
 # an explicit checker change, not just an edited receipt. Not a trust anchor
 # against an author who also edits this checker.
-SUBJECT_INVENTORIES = {}  # filled by the receipt commit
+SUBJECT_INVENTORIES = {"review-corpus-2026-07": "45bc6f8e629c506082097d89154a02ed80e17729de4cc134b5e193cfbc1a5122", "work-orders-2026-07": "7a4591075141e82830070e0c5b256bc71d49fad93b505d1cd30f9ede128ec24e", "wrt-002-model": "538d410b580a613186705f9f99c388474566243e63be1f719286f4eff6282f6d"}
 
 # Tombstone and immutable-history class, excluded from the zombie scan: the
 # ledger and records name retired paths on purpose; `.warrants/` is a signed,
