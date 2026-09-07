@@ -18,6 +18,14 @@ breaks the binding fails closed, and a rebuild for a new deposit points `--ref`
 at its own candidate commit. A commit missing from a shallow clone is fetched
 once from `origin` by SHA; if it still is not there, that is a failure, not a
 skip.
+
+In `--ref` mode the paper's SOURCE IDENTITY is checked too: `paper.md`,
+`references.bib` and `build.sh` in this directory must be byte-identical to
+the same files at the commit. The count check alone is a census of selected
+numbers -- a retitled paper passes it (Codex, PR #62 review) -- so the
+identity check is what makes "edited past its deposited commit" a failure
+rather than a hope. `--selftest` proves both refusals fire: a retitled copy
+and a miscounted copy each go red against the real deposit commit.
 """
 import argparse
 import io
@@ -29,15 +37,65 @@ import tarfile
 import tempfile
 from pathlib import Path
 
+import os
+import shutil
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-PAPER = (HERE / "paper.md").read_text(encoding="utf-8")
+# The selftest points this at a mutated COPY of the paper directory; nothing
+# else should ever set it, and the repository tree is never the thing mutated.
+PAPER_DIR = Path(os.environ.get("CHECK_CLAIMS_PAPER_DIR", str(HERE)))
+SOURCE_FILES = ("paper.md", "references.bib", "build.sh")
+PAPER = (PAPER_DIR / "paper.md").read_text(encoding="utf-8")
 
 _ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 _ap.add_argument("--ref", metavar="COMMIT",
-                 help="measure the repository at this git commit, not the working tree")
+                 help="measure the repository at this git commit, not the working tree; "
+                      "also require paper.md/references.bib/build.sh to equal that commit's")
+_ap.add_argument("--selftest", metavar="COMMIT",
+                 help="prove the --ref refusals fire against this commit, on mutated copies")
 ARGS = _ap.parse_args()
+
+
+def _selftest(ref):
+    me = Path(__file__).resolve()
+    def run(paper_dir=None):
+        env = dict(os.environ)
+        if paper_dir:
+            env["CHECK_CLAIMS_PAPER_DIR"] = str(paper_dir)
+        return subprocess.run([sys.executable, str(me), "--ref", ref],
+                              capture_output=True, text=True, env=env)
+    base = run()
+    ok = [("baseline: the real paper passes at the deposit commit", base.returncode == 0)]
+    with tempfile.TemporaryDirectory(prefix="check_claims-selftest-") as tmp:
+        rel = Path(tmp) / "papers" / "x"
+        rel.mkdir(parents=True)
+        for f in SOURCE_FILES:
+            shutil.copy(HERE / f, rel / f)
+        text = (rel / "paper.md").read_text(encoding="utf-8")
+        (rel / "paper.md").write_text(text.replace("The Reason Runs Again",
+                                                    "The Fiction Runs Again", 1), encoding="utf-8")
+        r = run(rel)
+        ok.append(("retitled copy: refused for source identity",
+                   r.returncode != 0 and "SOURCE_IDENTITY" in r.stderr))
+        m = re.search(r"holds (\d+) documents", text)
+        mutated = text.replace(m.group(0), f"holds {int(m.group(1)) + 1} documents", 1)
+        (rel / "paper.md").write_text(mutated, encoding="utf-8")
+        r = run(rel)
+        ok.append(("miscounted copy: refused for the count AND for identity",
+                   r.returncode != 0 and "paper says" in r.stderr and "SOURCE_IDENTITY" in r.stderr))
+    for label, good in ok:
+        print(("ok    " if good else "FAIL  ") + label)
+    verdict = all(g for _, g in ok)
+    print("CHECK-CLAIMS-SELFTEST: " + ("ALL PASS" if verdict else "FAILURES PRESENT"))
+    return 0 if verdict else 1
+
+
+if ARGS.selftest:
+    sys.exit(_selftest(ARGS.selftest))
+
 MEASURED_AT = "the working tree"
+_identity_failures = []
 if ARGS.ref:
     def _git(*a, **k):
         return subprocess.run(["git", "-C", str(REPO), *a], capture_output=True, **k)
@@ -55,8 +113,18 @@ if ARGS.ref:
     _tar.extractall(_tmp.name, **_kw)
     REPO = Path(_tmp.name)
     MEASURED_AT = f"commit {ARGS.ref}"
+    # Source identity: the paper being checked must BE the paper at the commit.
+    _rel = HERE.relative_to(HERE.parent.parent)
+    for _f in SOURCE_FILES:
+        _mine = (PAPER_DIR / _f).read_bytes()
+        _theirs_path = REPO / _rel / _f
+        _theirs = _theirs_path.read_bytes() if _theirs_path.exists() else None
+        if _mine != _theirs:
+            _identity_failures.append(
+                f"SOURCE_IDENTITY: {_f} differs from {ARGS.ref} -- a paper edited past "
+                "its deposited commit needs a new deposit candidate and its own --ref")
 
-failures = []
+failures = list(_identity_failures)
 checked = []
 
 
@@ -238,6 +306,8 @@ if failures:
     for f in failures:
         print(f"  {f}", file=sys.stderr)
     sys.exit(1)
+if ARGS.ref:
+    print(f"\nsource identity: {', '.join(SOURCE_FILES)} equal their copies at {ARGS.ref}")
 print(f"\n{len(checked)} countable claims verified against {MEASURED_AT}; "
       f"{len(UNCHECKED)} claim classes UNCHECKED (listed above). "
       "This is not a statement that every number in the paper was recomputed.")

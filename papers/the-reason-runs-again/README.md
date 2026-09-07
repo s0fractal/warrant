@@ -60,15 +60,20 @@ binary is tracked here; the tracked artifacts are the source, the manifest and
 the sums.
 
 **The numbers are frozen with the commit, not with the tree.**
-`check_claims.py --ref d83984f…` recounts every countable claim against the
-deposited commit and runs in `tools/check.py`; against the working tree the
-same checker is red, correctly — the review census the paper reports (92
-documents) became 22 when the July corpus was retired on 2026-09-07, and the
-conformance pack has grown by one vector. A frozen paper describing a named
-commit is not wrong when the tree moves on; it would be wrong if `paper.md`
-were edited past the commit it names, which is exactly what the `--ref` check
-refuses. A future version is a new deposit under the same concept DOI, with its
-own commit, tag and manifest.
+`check_claims.py --ref d83984f…` runs in `tools/check.py` and holds two things,
+no more: (1) the countable claims it lists — 19 numbers, four classes stated
+as unchecked — recounted against the deposited commit's tree, and (2) the
+**source identity** of `paper.md`, `references.bib` and `build.sh`, which must
+be byte-identical to their copies at that commit. It does not judge prose.
+The identity check is what makes "edited past the deposited commit" a
+failure: without it a retitled paper passed the census (Codex, PR #62
+review), and the `--selftest` in CI proves both refusals fire on mutated
+copies. Against the working tree the count check is red, correctly — the
+review census the paper reports (92 documents) became 22 when the July corpus
+was retired on 2026-09-07, and the conformance pack has grown by one vector. A
+frozen paper describing a named commit is not wrong when the tree moves on. A
+future version is a new deposit under the same concept DOI, with its own
+commit, tag, manifest and `--ref`.
 
 ## Standing
 
