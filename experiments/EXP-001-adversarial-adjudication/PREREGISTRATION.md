@@ -99,7 +99,7 @@ a different experiment.
    named commit before step 2.
 2. Planter writes `PLANTS.json` (4 placements, 2 decoys, the two dispute
    statements), computes `sha256`, commits **only** `PLANTS.sha256` with a
-   timestamp (`python3 commit_plants.py seal PLANTS.json`), keeps `PLANTS.json`
+   timestamp (`python3 commit_plants.py seal`), keeps `PLANTS.json`
    out of the tree.
 3. Runner executes S1 and S2 once each: agent session through the sealing
    proxy with the tee logger; plants applied per `PLANTS.json` handed over
