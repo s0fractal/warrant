@@ -101,7 +101,9 @@ class Session:
         silent = [p for p in self.plants.get("plants", []) if p["kind"] == 3 and p.get("variant") == "b"]
         if silent:
             cmd += ["--silent-on", silent[0]["op"], "--silent-args", json.dumps(silent[0].get("args", {}))]
-        self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=1, text=True)
+        self.stderr_file = open(self.work / "proxy.stderr.txt", "a")
+        self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr_file,
+                                  bufsize=1, text=True)
         self.rid = 0
         self.rpc("initialize", {"protocolVersion": "2025-03-26"})
         self.tools = self.rpc("tools/list")["result"]["tools"]
@@ -242,7 +244,7 @@ class Session:
             if not p.get("_used"):
                 self.applied.append(dict(p, applied=False, evidence="trigger never reached"))
         self.note(event="close", proxy_exit=rc, unread=rest[:200], plants=self.applied)
-        self.runlog.close()
+        self.runlog.close(); self.stderr_file.close()
         return rc
 
     def record_silent_plants(self):

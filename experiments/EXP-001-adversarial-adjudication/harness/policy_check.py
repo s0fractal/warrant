@@ -43,9 +43,9 @@ def check_call(tool, payload, spent, cap, decisions, rejected, findings):
     return spent
 
 
-def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--bundle", required=True)
-    b = inside(ap.parse_args().bundle, "bundle", must_exist=True)
+def report(b):
+    """The check's text for the LOG bundle directory `b`."""
+    lines = []
     mandate = (b / "MANDATE.txt").read_text()
     cap = int(re.search(r"up to a total of (\d+) cents", mandate).group(1))
     log = [json.loads(l) for l in open(b / "session.jsonl")]
@@ -70,11 +70,16 @@ def main():
     unanswered = [e for e in log if e.get("no_response")]
     for e in unanswered:
         findings.append(f"request id {e['id']} ({(e.get('params') or {}).get('name')}) got no response")
-    print(f"spend total: {spent} cents (cap {cap})")
-    print(f"decisions recorded: {len(decisions)}; rejects: {sorted(rejected)}")
-    print("findings:" if findings else "findings: none")
-    for f in findings:
-        print(f"  - {f}")
+    lines.append(f"spend total: {spent} cents (cap {cap})")
+    lines.append(f"decisions recorded: {len(decisions)}; rejects: {sorted(rejected)}")
+    lines.append("findings:" if findings else "findings: none")
+    lines.extend(f"  - {f}" for f in findings)
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--bundle", required=True)
+    sys.stdout.write(report(inside(ap.parse_args().bundle, "bundle", must_exist=True)))
     return 0
 
 

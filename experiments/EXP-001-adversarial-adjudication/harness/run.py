@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """Run one scenario end to end into runs/<S>/: session (with plants), both bundles.
 
-    python3 run.py --scenario S1 --runs <runs dir> --agent-model <model|scripted> --plants PLANTS.json
+    python3 run.py --scenario S1 --runs <runs dir> --agent-model <model|scripted> --plants PLANTS.json [--budget runs/budget.json]
 
 Writes runs/<S>/work/ (the raw session: pack, state, ledger, session.jsonl,
-harness.jsonl, agent-transcript.jsonl), runs/<S>/session-summary.json, and
-runs/<S>/PACK, runs/<S>/LOG. Adjudications go under runs/<S>/<COND>/<name>/
-via adjudicate.py; scoring via score.py after the reveal.
+harness.jsonl, agent-transcript.jsonl, proxy.stderr.txt), runs/<S>/session-summary.json,
+and runs/<S>/PACK, runs/<S>/LOG. Adjudications go under runs/<S>/<COND>/<name>/
+via adjudicate.py; scoring via score.py after the reveal. Everything runs
+in-process; the only OS commands are the harness's own fixed scripts.
 """
 import argparse
 import json
 import shutil
-import subprocess
 import sys
-from pathlib import Path
+import traceback
 
-from common import HERE, SUMMARY, inside, model_id   # noqa: E402
+import agent
+import bundles
+from budget import Budget
+from common import HERE, SUMMARY, inside, model_id
 
 
 def main():
@@ -25,24 +28,27 @@ def main():
     ap.add_argument("--budget", help="runs/budget.json (required unless the agent is scripted)")
     a = ap.parse_args()
     runs = inside(a.runs, "runs dir"); sd = runs / a.scenario; work = sd / "work"
-    plants = inside(a.plants, "plants file", must_exist=True); model = model_id(a.agent_model)
+    plants_path = inside(a.plants, "plants file", must_exist=True); model = model_id(a.agent_model)
     if sd.exists():
         sys.exit(f"{sd} exists; the protocol has no partial re-runs -- remove the whole runs dir to start over")
     work.mkdir(parents=True)
-    cmd = [sys.executable, str(HERE / "agent.py"), "--scenario", a.scenario, "--workdir", str(work),
-           "--model", model, "--plants", str(plants)]
-    if a.budget:
-        cmd += ["--budget", str(inside(a.budget, "budget ledger", must_exist=True))]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    (sd / "agent.stderr.txt").write_text(r.stderr)
-    if r.returncode != 0:
-        (sd / SUMMARY).write_text(json.dumps({"outcome": "agent_failed", "exit": r.returncode}))
-        print(f"agent failed (exit {r.returncode}); kept as an observation in {sd}")
+    scenario = json.load(open(HERE / "scenarios" / f"{a.scenario}.json"))
+    plants_all = json.load(open(plants_path))
+    schedule = json.load(open(HERE / "schedule.json"))
+    budget = None
+    if model != "scripted":
+        if not a.budget:
+            sys.exit("a paid model needs --budget runs/budget.json (the shared, enforced ledger)")
+        budget = Budget(inside(a.budget, "budget ledger", must_exist=True))
+    try:
+        agent.run(scenario, work, model, plants_all.get(a.scenario), budget, schedule)
+    except Exception:                                   # kept as an observation, never re-rolled
+        (sd / "agent.stderr.txt").write_text(traceback.format_exc())
+        (sd / SUMMARY).write_text(json.dumps({"outcome": "agent_failed"}))
+        print(f"agent failed; kept as an observation in {sd}")
         return 1
     shutil.copy(work / SUMMARY, sd / SUMMARY)
-    dispute = json.load(open(plants))[a.scenario]["dispute"]
-    subprocess.run([sys.executable, str(HERE / "bundles.py"), "--workdir", str(work), "--scenario", a.scenario,
-                    "--dispute", dispute, "--out", str(sd)], check=True)
+    bundles.build(work, a.scenario, plants_all[a.scenario]["dispute"], sd)
     print(f"{a.scenario}: session + bundles in {sd}")
     return 0
 

@@ -14,19 +14,34 @@ Both bundles carry the same task-level material; only the observer's format
 differs. Neither contains harness.jsonl, session-summary.json or PLANTS.
 """
 import argparse
+import contextlib
+import io
 import json
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 from common import HERE, ROOT, inside   # noqa: E402
-WARRANT = [sys.executable, str(ROOT / "impl" / "warrant.py")]
+sys.path.insert(0, str(ROOT / "impl"))
+import warrant as W          # noqa: E402
+import policy_check          # noqa: E402
 
 
-def sh(args, cwd=None):
-    r = subprocess.run(args, capture_output=True, text=True, cwd=cwd)
-    return f"$ {' '.join(a if ' ' not in a else repr(a) for a in args)}\n[exit {r.returncode}]\n{r.stdout}{r.stderr}"
+def cli(*argv):
+    """Run the warrant CLI in-process (no OS command) and return a transcript."""
+    out = io.StringIO()
+    saved = sys.argv
+    sys.argv = ["warrant", *map(str, argv)]
+    code = 0
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            W.main()
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else 1
+    finally:
+        sys.argv = saved
+    shown = " ".join(a if " " not in a else repr(a) for a in map(str, argv))
+    return f"$ warrant {shown}\n[exit {code}]\n{out.getvalue()}"
 
 
 def parse_session(lines):
@@ -53,23 +68,20 @@ def parse_session(lines):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--workdir", required=True); ap.add_argument("--scenario", required=True)
-    ap.add_argument("--dispute", required=True); ap.add_argument("--out", required=True)
-    a = ap.parse_args()
-    work, out = inside(a.workdir, "workdir", must_exist=True), inside(a.out, "out")
-    sc = json.load(open(HERE / "scenarios" / f"{a.scenario}.json"))
-    common = {"MANDATE.txt": sc["mandate"]["text"] + "\n", "TASK.txt": sc["task"] + "\n", "DISPUTE.txt": a.dispute + "\n",
+def build(work, scenario, dispute, out):
+    """Build PACK/ and LOG/ under `out` from a finished session in `work`."""
+    work, out = Path(work), Path(out)
+    sc = json.load(open(HERE / "scenarios" / f"{scenario}.json"))
+    common = {"MANDATE.txt": sc["mandate"]["text"] + "\n", "TASK.txt": sc["task"] + "\n", "DISPUTE.txt": dispute + "\n",
               "merchant-effects-ledger.jsonl": (work / "effects.jsonl").read_text() if (work / "effects.jsonl").exists() else ""}
     # PACK
     pk = out / "PACK"; shutil.rmtree(pk, ignore_errors=True); pk.mkdir(parents=True)
     shutil.copytree(work / "pack", pk / "pack")
     store = str(pk / "pack" / ".warrants")
-    tx = [sh(WARRANT + ["--store", store, "verify"])]
+    tx = [cli("--store", store, "verify")]
     manifest = json.load(open(pk / "pack" / "manifest.json"))
     if manifest.get("decision"):
-        tx.append(sh(WARRANT + ["--store", store, "why", manifest["decision"]]))
+        tx.append(cli("--store", store, "why", manifest["decision"]))
     checks = []
     for rec in sorted(Path(store, "records").glob("*.json")):
         body = json.load(open(rec))["body"]
@@ -77,7 +89,7 @@ def main():
             if r.get("kind") == "check" and r.get("runtime") == "ski@v1":
                 checks.append(r["check"])
     for c in sorted(set(checks)):
-        tx.append(sh(WARRANT + ["--store", store, "check", c]))
+        tx.append(cli("--store", store, "check", c))
     (pk / "TRANSCRIPTS.txt").write_text("\n\n".join(tx))
     (pk / "HOW-TO-READ.txt").write_text(
         "pack/.warrants: the signed, content-addressed store (records/, blobs/). pack/manifest.json: what the\n"
@@ -98,11 +110,20 @@ def main():
         for e in (json.loads(l) for l in open(work / "harness.jsonl")) if e.get("event") == "decision"))
     for k, v in common.items():
         (lg / k).write_text(v)
-    (lg / "policy_check.txt").write_text(sh([sys.executable, str(HERE / "policy_check.py"), "--bundle", str(lg)]))
+    (lg / "policy_check.txt").write_text("$ policy_check.py --bundle LOG\n" + policy_check.report(lg))
     (lg / "HOW-TO-READ.txt").write_text(
         "session.jsonl: every request the agent sent and every response the shop returned, in order, paired by id\n"
         "(a request with no_response:true was never answered). decisions.jsonl: the agent's recorded decisions\n"
         "with the facts it stated. policy_check.txt: an ordinary script evaluating MANDATE.txt over the log.\n")
+    return pk, lg
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--workdir", required=True); ap.add_argument("--scenario", required=True)
+    ap.add_argument("--dispute", required=True); ap.add_argument("--out", required=True)
+    a = ap.parse_args()
+    pk, lg = build(inside(a.workdir, "workdir", must_exist=True), a.scenario, a.dispute, inside(a.out, "out"))
     print(f"PACK -> {pk}\nLOG  -> {lg}")
 
 
