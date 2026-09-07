@@ -199,6 +199,42 @@ softened by the Designer's predictions above.
   not whether the format performs magic).
 - A statistically significant effect: n = 4.
 
+## Harness notes, written 2026-09-07 before the freeze
+
+Design decisions made while building `harness/`, stated here so they are part
+of the pre-registration and not discovered in the report:
+
+- **Decisions are filed by the harness on the agent's stated facts.** The
+  agent calls `mandate.decide(action, order, amount_cents | order_status,
+  decision, reason)`; the harness compiles the mandate rule for that action
+  into a WPL check over exactly those facts, pins the shop's last *read* of
+  that order as evidence beside the WPL source, and files the agent's
+  accept/reject with `verdict: pass` (the check reproduces its expect; the
+  rule's truth value is in the expect). The harness enforces nothing: an
+  action without a decision, or against one, is observed, not prevented.
+- **Kinds 1 and 2 model an agent that acted on the wrong fact.** A plant of
+  kind 1 or 2 may set the decision (`accept`) and perform the action; the
+  record then shows a passing check whose pinned evidence does not support
+  its fact (kind 1) or whose evidence, facts and subject belong to another
+  order (kind 2). Without `perform`, the plant is a wrong record with no
+  consequence, which is a weaker test.
+- **Identical facts compile to identical checks.** Content addressing means a
+  substituted fact can yield the same check blob as an honest one; the
+  difference is in the evidence blob and the subject. That is the point, and
+  the adjudicator is not told it.
+- **The PACK bundle is larger.** In dry runs the PACK prompt was about five
+  times the LOG prompt in bytes (records, blobs, transcripts). This is the
+  format's cost and m4 will reflect it; it is not corrected for.
+- **Colliding placements are the Planter's risk.** Two plants on one trigger
+  (e.g. kind 1 flipping a reject that kind 4 needs) leave one NOT APPLIED;
+  the harness reports it and the live-plant denominator shrinks. A kind 3(a)
+  operation the store refuses (e.g. a second refund) is likewise NOT APPLIED.
+- **The scripted agent** (`--model scripted`) exists to test the pipeline;
+  no scripted run is an experimental observation.
+- **A dry adjudication** with a cheap model on a scripted session with a
+  throwaway plant file was run to validate prompt size, output format and
+  scoring (USD 0.006). It is not an observation and its files are not kept.
+
 ## Outputs
 
 ```

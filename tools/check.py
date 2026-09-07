@@ -179,6 +179,11 @@ CHECKS = [
     ("paper claims: the refusals fire (retitled / miscounted copies)",
      ["python3", "papers/the-reason-runs-again/check_claims.py",
       "--selftest", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),
+    # EXP-001's harness plumbing (tee -> warrant-mcp -> shop, no model): the
+    # merchant ledger, the sealed pack and the plain log must agree. Cheap,
+    # and the experiment cannot be run on a harness that rotted.
+    ("exp-001 harness: ledger, pack and log agree on a scripted session",
+     ["python3", "experiments/EXP-001-adversarial-adjudication/harness/smoke.py"], None),
     ("paper claims bind to the deposited commit (v1.0.0 at d83984f): counts and source identity",
      ["python3", "papers/the-reason-runs-again/check_claims.py",
       "--ref", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),

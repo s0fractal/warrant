@@ -5,9 +5,12 @@ Read [`PREREGISTRATION.md`](PREREGISTRATION.md). Nothing here is a result.
 Order of work, each step a separate commit so the freeze points are visible:
 
 1. this pre-registration (done);
-2. harness: shop server with an effects ledger, tee logger, plant application
-   from `PLANTS.json`, condition bundles, adjudicator prompt, scoring script —
-   then a freeze commit named in `REPORT.md`;
+2. harness (done): `shop_server.py` (state + merchant effects ledger),
+   `tee_logger.py` (LOG observer), `agent.py` (session driver, decisions,
+   plants), `bundles.py` + `policy_check.py` (the two conditions),
+   `adjudicate.py`, `score.py`, `run.py`; `smoke.py` runs in `tools/check.py`
+   so the plumbing cannot rot silently. Freeze commit to be named in
+   `REPORT.md`;
 3. Planter seals `PLANTS.sha256` (`commit_plants.py seal`);
 4. the run, the reveal, the report.
 

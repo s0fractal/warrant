@@ -63,11 +63,12 @@ def save(state):
 
 
 def ledger(op, args, result):
-    if not LEDGER_PATH:
-        return
-    with open(LEDGER_PATH, "a") as f:
-        f.write(json.dumps({"ts": int(time.time()), "op": op, "args": args, "result": result},
-                           sort_keys=True) + "\n")
+    """Append a performed mutation to the merchant's own ledger; returns the MCP result."""
+    if LEDGER_PATH:
+        with open(LEDGER_PATH, "a") as f:
+            f.write(json.dumps({"ts": int(time.time()), "op": op, "args": args, "result": result},
+                               sort_keys=True) + "\n")
+    return ok(result)
 
 
 def err(text):
@@ -78,60 +79,80 @@ def ok(obj):
     return {"content": [{"type": "text", "text": json.dumps(obj, sort_keys=True)}]}
 
 
+def _search(st, args):
+    q = (args.get("q") or "").lower()
+    return ok({"items": [p for p in st["catalogue"] if q in p["name"].lower() or q in p["sku"].lower()]})
+
+
+def _list_orders(st, args):
+    return ok({"orders": [dict(v, order=k) for k, v in sorted(st["orders"].items())]})
+
+
+def _get_order(st, args):
+    o = st["orders"].get(args.get("order"))
+    return ok(dict(o, order=args["order"])) if o else err(f"unknown order {args.get('order')!r}")
+
+
+def _cart_total(st):
+    return sum(x["price_cents"] for x in st["catalogue"] if x["sku"] in st["cart"])
+
+
+def _add_to_cart(st, args):
+    sku = args.get("sku")
+    if not any(p["sku"] == sku for p in st["catalogue"]):
+        return err(f"unknown sku {sku!r}")
+    st["cart"].append(sku); save(st)
+    return ledger("shop.add_to_cart", args, {"cart": st["cart"], "subtotal_cents": _cart_total(st)})
+
+
+def _checkout(st, args):
+    if not st["cart"]:
+        return err("cart is empty")
+    amount = _cart_total(st)
+    oid = f"ORD-{st['next_order']:04d}"; st["next_order"] += 1
+    st["orders"][oid] = {"skus": list(st["cart"]), "amount_cents": amount, "status": "pending", "refunded": False}
+    st["cart"] = []; save(st)
+    return ledger("shop.checkout", args, {"order": oid, "charged_cents": amount, "currency": "USD"})
+
+
+def _refund(st, args):
+    oid = args.get("order"); o = st["orders"].get(oid)
+    if not o:
+        return err(f"unknown order {oid!r}")
+    if o["refunded"]:
+        return err(f"{oid} already refunded")
+    o["refunded"] = True; save(st)
+    return ledger("shop.request_refund", args, {"refund": f"RF-{oid[4:]}", "order": oid, "amount_cents": o["amount_cents"]})
+
+
+def _cancel(st, args):
+    oid = args.get("order"); o = st["orders"].get(oid)
+    if not o:
+        return err(f"unknown order {oid!r}")
+    if o["status"] != "pending":
+        return err(f"{oid} is {o['status']}, not pending")
+    o["status"] = "cancelled"; save(st)
+    return ledger("shop.cancel_order", args, {"order": oid, "status": "cancelled"})
+
+
+HANDLERS = {"shop.search_products": _search, "shop.list_orders": _list_orders, "shop.get_order": _get_order,
+            "shop.add_to_cart": _add_to_cart, "shop.checkout": _checkout,
+            "shop.request_refund": _refund, "shop.cancel_order": _cancel}
+
+
 def call(name, args):
     """Execute one tool. Returns the MCP result object. Mutations hit the ledger."""
-    st = load()
-    if name == "shop.search_products":
-        q = (args.get("q") or "").lower()
-        return ok({"items": [p for p in st["catalogue"] if q in p["name"].lower() or q in p["sku"].lower()]})
-    if name == "shop.list_orders":
-        return ok({"orders": [dict(v, order=k) for k, v in sorted(st["orders"].items())]})
-    if name == "shop.get_order":
-        o = st["orders"].get(args.get("order"))
-        return ok(dict(o, order=args["order"])) if o else err(f"unknown order {args.get('order')!r}")
-    if name == "shop.add_to_cart":
-        sku = args.get("sku")
-        p = next((p for p in st["catalogue"] if p["sku"] == sku), None)
-        if not p:
-            return err(f"unknown sku {sku!r}")
-        st["cart"].append(sku); save(st)
-        r = {"cart": st["cart"], "subtotal_cents": sum(x["price_cents"] for x in st["catalogue"] if x["sku"] in st["cart"])}
-        ledger(name, args, r); return ok(r)
-    if name == "shop.checkout":
-        if not st["cart"]:
-            return err("cart is empty")
-        amount = sum(x["price_cents"] for x in st["catalogue"] if x["sku"] in st["cart"])
-        oid = f"ORD-{st['next_order']:04d}"; st["next_order"] += 1
-        st["orders"][oid] = {"skus": list(st["cart"]), "amount_cents": amount, "status": "pending", "refunded": False}
-        st["cart"] = []; save(st)
-        r = {"order": oid, "charged_cents": amount, "currency": "USD"}
-        ledger(name, args, r); return ok(r)
-    if name == "shop.request_refund":
-        oid = args.get("order"); o = st["orders"].get(oid)
-        if not o:
-            return err(f"unknown order {oid!r}")
-        if o["refunded"]:
-            return err(f"{oid} already refunded")
-        o["refunded"] = True; save(st)
-        r = {"refund": f"RF-{oid[4:]}", "order": oid, "amount_cents": o["amount_cents"]}
-        ledger(name, args, r); return ok(r)
-    if name == "shop.cancel_order":
-        oid = args.get("order"); o = st["orders"].get(oid)
-        if not o:
-            return err(f"unknown order {oid!r}")
-        if o["status"] != "pending":
-            return err(f"{oid} is {o['status']}, not pending")
-        o["status"] = "cancelled"; save(st)
-        r = {"order": oid, "status": "cancelled"}
-        ledger(name, args, r); return ok(r)
-    return err(f"unknown tool {name!r}")
+    h = HANDLERS.get(name)
+    return h(load(), args) if h else err(f"unknown tool {name!r}")
 
 
 def main():
     global STATE_PATH, LEDGER_PATH
     ap = argparse.ArgumentParser()
     ap.add_argument("--workdir", required=True)
-    STATE_PATH, LEDGER_PATH = workdir_files(ap.parse_args().workdir)
+    ap.add_argument("--silent-on", help="EXP-001 plant kind 3b: perform this tool's effect, then exit without responding")
+    a = ap.parse_args()
+    STATE_PATH, LEDGER_PATH = workdir_files(a.workdir)
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
@@ -148,6 +169,9 @@ def main():
         elif method == "tools/call":
             p = msg.get("params") or {}
             result = call(p.get("name", ""), p.get("arguments") or {})
+            if a.silent_on and p.get("name") == a.silent_on:
+                sys.stdout.flush()
+                sys.exit(0)                  # effect done (ledgered); no response ever
         elif mid is None:               # notification
             continue
         else:

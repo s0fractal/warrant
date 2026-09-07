@@ -20,14 +20,12 @@ import time
 
 def pump(src, dst, log, direction, close_dst=False):
     for raw in src:
+        log.write(json.dumps({"ts": time.time(), "dir": direction, "line": raw.rstrip("\n")}) + "\n")
+        log.flush()
         try:
-            log.write(json.dumps({"ts": time.time(), "dir": direction, "line": raw.rstrip("\n")}) + "\n")
-            log.flush()
-        finally:
-            try:
-                dst.write(raw); dst.flush()
-            except (OSError, ValueError):
-                return
+            dst.write(raw); dst.flush()
+        except (OSError, ValueError):
+            return
     if close_dst:                      # host EOF must reach the child, or it never exits
         try:
             dst.close()

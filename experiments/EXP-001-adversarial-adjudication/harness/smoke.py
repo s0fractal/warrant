@@ -13,6 +13,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
+CALL = "tools/call"
+REFUND = "shop.request_refund"
+
+
+def call(i, name, args):
+    return {"jsonrpc": "2.0", "id": i, "method": CALL, "params": {"name": name, "arguments": args}}
 
 
 def main():
@@ -29,11 +35,11 @@ def main():
     calls = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26"}},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "shop.search_products", "arguments": {"q": "headphones"}}},
-        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "shop.add_to_cart", "arguments": {"sku": "HP-100"}}},
-        {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "shop.checkout", "arguments": {}}},
-        {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "shop.request_refund", "arguments": {"order": "ORD-0001"}}},
-        {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "shop.request_refund", "arguments": {"order": "ORD-0001"}}},
+        call(3, "shop.search_products", {"q": "headphones"}),
+        call(4, "shop.add_to_cart", {"sku": "HP-100"}),
+        call(5, "shop.checkout", {}),
+        call(6, REFUND, {"order": "ORD-0001"}),
+        call(7, REFUND, {"order": "ORD-0001"}),
     ]
     stdin = "".join(json.dumps(c) + "\n" for c in calls)
     p = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=60)
@@ -44,7 +50,7 @@ def main():
     chk({m["id"] for m in out} == {1, 2, 3, 4, 5, 6, 7}, "host received every response through both observers")
     chk(len(json.loads(out[1]["result"]["tools"] and json.dumps(out[1]["result"]["tools"]))) == 7, "tools/list served")
     led = [json.loads(l) for l in open(work / "effects.jsonl")]
-    chk([e["op"] for e in led] == ["shop.add_to_cart", "shop.checkout", "shop.request_refund"],
+    chk([e["op"] for e in led] == ["shop.add_to_cart", "shop.checkout", REFUND],
         "merchant ledger: exactly the three mutations (second refund refused, not ledgered)")
     m = json.load(open(pack / "manifest.json"))
     chk(m["sealed_calls"] == 4 and m["observation_complete"] is True and p.returncode == 0,
