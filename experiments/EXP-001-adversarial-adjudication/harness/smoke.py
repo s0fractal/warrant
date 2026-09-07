@@ -4,6 +4,7 @@ shop_server. Asserts the three observers agree on what happened: the merchant
 ledger (ground truth), the sealed pack (PACK condition) and the plain log (LOG
 condition) -- and that the pack's manifest says the observation was complete."""
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -172,7 +173,7 @@ def fixtures():
     except budget.BudgetStopped:
         chk(True, "R4: after $6 charged against a $1 cap the next reservation is refused")
     st = budget.Budget(led).state()
-    chk([e["status"] for e in st["entries"]] == ["settled", "refused"] and st["spent_usd"] == 6.0,
+    chk([e["status"] for e in st["entries"]] == ["settled", "refused"] and math.isclose(st["spent_usd"], 6.0, rel_tol=0.0, abs_tol=0.0),
         "R3 (rev 2): the refusal is persisted in the ledger, spent unchanged", str(st["entries"]))
     b2 = budget.Budget(SCRATCH / "budget2.json", cap_usd=1.0)
     try:
