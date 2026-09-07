@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Tests for the warrant-mcp sealing proxy.
 
-  A. classifier: config wins, name heuristics, unknown -> A4 (fail-closed).
+  A. classifier: config wins; a tool absent from the config is A4 whatever
+     its name (hints annotate, never downgrade); an empty effect list is
+     refused (2026-09 chatgpt-web review: `query`/`get_and_execute` were A0
+     by name, `[]` was A0 by declaration, and neither was ever sealed).
   B. Sealer core: A2+ sealed, A0/A1 skipped, produced pack verifies clean.
   C. stdio proxy: wraps a mock MCP server end to end, forwards traffic
-     untouched, and the produced evidence pack verifies clean.
+     untouched, seals an undeclared tool, and the pack verifies clean.
+  D. seal failure: the stream is still forwarded, and the loss is in the
+     manifest (seal_failures, observation_complete=false) and in the exit
+     status (3), not only on stderr.
 
 Run: python3 tests/mcp_seal.py   (nonzero exit on any failure)
 """
@@ -49,9 +55,27 @@ def test_classifier():
     chk(M.classify("db.query", effects)[0] == "A0", "config read -> A0")
     chk(M.classify("db.execute", effects)[0] == "A2", "config source_change -> A2")
     chk(M.classify("bank.wire", effects)[0] == "A4", "config transfer -> A4")
-    chk(M.classify("github.delete_repo", {})[0] == "A4", "heuristic delete -> A4")
-    chk(M.classify("fs.read_file", {})[0] == "A0", "heuristic read -> A0")
+    chk(M.classify("github.delete_repo", {})[0] == "A4", "undeclared delete -> A4")
+    chk(M.classify("fs.read_file", {})[0] == "A4",
+        "undeclared read-looking tool -> A4 (a name is not a declaration)")
     chk(M.classify("weird.frobnicate", {})[0] == "A4", "unknown -> A4 (fail-closed)")
+    # the review's table, now fail-closed on every row it found open
+    for name in ("get_and_execute", "query", "execute_sql"):
+        cls, effs, src = M.classify(name, {})
+        chk(cls == "A4" and "mcp_tool_undeclared" in effs and src.startswith("undeclared"),
+            f"undeclared {name!r} -> A4 via {src}", f"{cls} {effs} {src}")
+    cls, effs, src = M.classify("query", {})
+    chk(effs == ["mcp_tool_undeclared", "read"], "name hint kept as annotation only", str(effs))
+    try:
+        M.validate_effects_map({"execute_sql": []})
+        chk(False, "empty effect list is refused")
+    except ValueError as ex:
+        chk("execute_sql" in str(ex), "empty effect list is refused, naming the tool")
+    try:
+        M.validate_effects_map({"execute_sql": ["write"], "ok": ["read"]})
+        chk(True, "non-empty declarations accepted")
+    except ValueError as ex:
+        chk(False, "non-empty declarations accepted", str(ex))
 
 
 def test_sealer_core():
@@ -77,7 +101,7 @@ def test_sealer_core():
 def test_stdio_proxy():
     d = tempfile.mkdtemp()
     effects = {"repo.write_file": ["source_change"], "repo.read_file": ["read"],
-               "repo.delete_file": ["delete"]}
+               "repo.delete_file": ["delete"]}     # db.query deliberately undeclared
     effects_path = os.path.join(d, "effects.json")
     open(effects_path, "w").write(json.dumps(effects))
     mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
@@ -92,28 +116,96 @@ def test_stdio_proxy():
          "params": {"name": "repo.write_file", "arguments": {"path": "x", "data": "1"}}},
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
          "params": {"name": "repo.delete_file", "arguments": {"path": "x"}}},
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+         "params": {"name": "db.query", "arguments": {"sql": "DROP TABLE t"}}},
     ]
     stdin = "".join(json.dumps(c) + "\n" for c in calls)
     proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30)
     # forwarding intact: host sees a response for every request id
     out_ids = {json.loads(l)["id"] for l in proc.stdout.splitlines() if l.strip()}
-    chk(out_ids == {1, 2, 3, 4}, "proxy forwards every server response untouched",
+    chk(out_ids == {1, 2, 3, 4, 5}, "proxy forwards every server response untouched",
         f"got ids {sorted(out_ids)}")
+    chk(proc.returncode == 0, "exit 0 when every consequential call was sealed",
+        f"rc={proc.returncode} stderr={proc.stderr[-300:]}")
     manifest = json.load(open(os.path.join(d, "manifest.json")))
-    chk(manifest["sealed_calls"] == 2, "sealed only A2+ (write, delete), not the read",
+    chk(manifest["sealed_calls"] == 3,
+        "sealed A2+ (write, delete) and the undeclared db.query; not the declared read",
         f"sealed {manifest['sealed_calls']}")
+    chk(manifest["seal_failures"] == 0 and manifest["observation_complete"] is True,
+        "manifest states the observation is complete")
     store = W.Store(os.path.join(d, ".warrants"))
     errs, _ = W.verify_store(store, quiet=True)
     chk(errs == 0, "proxy-produced evidence pack verifies clean", f"{errs} errors")
     decisions = [store.get_record(w)["body"]["decision"] for w in manifest["records"]]
-    chk(decisions == ["accept", "reject"], "write->accept, delete(error)->reject",
+    chk(decisions == ["accept", "reject", "accept"],
+        "write->accept, delete(error)->reject, undeclared query->accept (sealed A4)",
         str(decisions))
+    last = store.get_record(manifest["records"][-1])["body"]
+    chk("undeclared" in json.dumps(last), "the undeclared call's record says so")
+
+
+def test_seal_failure():
+    d = tempfile.mkdtemp()
+    effects = {"repo.write_file": ["source_change"], "repo.read_file": ["read"]}
+    s = M.Sealer(os.path.join(d, ".warrants"), "agent@test", keyfile(d), effects, "A2")
+    forwarded = []
+
+    class Dst:
+        def write(self, raw):
+            forwarded.append(raw)
+
+        def flush(self):
+            pass
+    def broken(raw):
+        raise OSError("disk full")
+    M._pump_and_forward(["{\"id\": 7}\n"], Dst(), broken,
+                        on_error=lambda raw, ex: s.record_failure("repo.write_file", ex))
+    chk(forwarded == ["{\"id\": 7}\n"], "stream forwarded despite the seal failure")
+    m = s.write_manifest()
+    chk(m["seal_failures"] == 1 and m["observation_complete"] is False
+        and m["seal_failure_log"][0]["tool"] == "repo.write_file"
+        and "disk full" in m["seal_failure_log"][0]["error"],
+        "manifest carries the loss: count, tool, error", json.dumps(m["seal_failure_log"]))
+    # end to end: a key that cannot sign makes every A2+ seal fail; the proxy
+    # must still forward everything and exit 3, with the loss in the manifest
+    d2 = tempfile.mkdtemp()
+    bad_key = os.path.join(d2, "agent.key")
+    open(bad_key, "w").write("not-a-seed\n")
+    effects_path = os.path.join(d2, "effects.json")
+    open(effects_path, "w").write(json.dumps(effects))
+    mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
+    cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+           "--store", d2, "--actor", "agent@test", "--key", bad_key,
+           "--effects", effects_path, "--", sys.executable, mock]
+    calls = [
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+         "params": {"name": "repo.read_file", "arguments": {"path": "README"}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "repo.write_file", "arguments": {"path": "x", "data": "1"}}},
+    ]
+    stdin = "".join(json.dumps(c) + "\n" for c in calls)
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30)
+    out_ids = {json.loads(l)["id"] for l in proc.stdout.splitlines() if l.strip()}
+    chk(out_ids == {1, 2}, "proxy still forwards every response when sealing fails",
+        f"got ids {sorted(out_ids)}")
+    chk(proc.returncode == 3, "exit 3: the pack is incomplete", f"rc={proc.returncode}")
+    m2 = json.load(open(os.path.join(d2, "manifest.json")))
+    chk(m2["sealed_calls"] == 0 and m2["seal_failures"] == 1
+        and m2["observation_complete"] is False
+        and m2["seal_failure_log"][0]["tool"] == "repo.write_file",
+        "manifest: 0 sealed, 1 failure attributed to the write", json.dumps(m2)[:300])
+    # an empty declaration is refused before any traffic
+    open(effects_path, "w").write(json.dumps({"repo.write_file": []}))
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30)
+    chk(proc.returncode == 2 and "declares no effects" in proc.stderr,
+        "empty effect list refused at startup (exit 2)", f"rc={proc.returncode}")
 
 
 def main():
     test_classifier()
     test_sealer_core()
     test_stdio_proxy()
+    test_seal_failure()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 

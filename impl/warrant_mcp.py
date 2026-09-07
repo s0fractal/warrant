@@ -10,7 +10,13 @@ pack: a stranger verifies the whole agent session offline with `warrant verify`.
 
 This is provenance, NOT gating — it observes and seals, it does not block. (Fail-
 closed *authorization* is trinity/autonomy-kernel's job.) Sealing is scoped to
-A2+ so read-only chatter (A0/A1) doesn't bloat the pack.
+A2+ so read-only chatter (A0/A1) doesn't bloat the pack — but only a tool the
+effects config *declares* can be read-only. A tool the config does not name is
+sealed as undeclared (A4) whatever its name suggests, an empty effect list is
+refused at startup, and a seal that fails is counted in the manifest and in
+the exit status rather than lost to stderr (review 2026-09, chatgpt-web:
+`get_and_execute` and `query` were A0 by name and never sealed, and a write
+failure left the pack looking complete).
 
     warrant-mcp --store ./session --actor agent@me --key agent.key \
                 --effects effects.json -- <downstream server command…>
@@ -59,7 +65,9 @@ EFFECT_CLASS = {
 }
 ORDER = {"A0": 0, "A1": 1, "A2": 2, "A3": 3, "A4": 4}
 
-# Heuristic verb -> effect, used only when a tool is not in the effects config.
+# Name hints: verb -> effect, consulted only for a tool absent from the effects
+# config, and only as an ANNOTATION on the undeclared sentinel. They can name
+# what a tool probably does; they can never lower its class below A4.
 _NAME_HINTS = [
     ("delete", "delete"), ("remove", "delete"), ("drop", "delete"), ("destroy", "destroy"),
     ("deploy", "deploy"), ("pay", "pay"), ("transfer", "transfer"), ("charge", "spend"),
@@ -73,15 +81,40 @@ _NAME_HINTS = [
 
 
 def effects_for(tool, effects_map):
-    """Return (effects list, source) for a tool name. Config wins; else heuristic;
-    else the fail-closed sentinel effect `mcp_tool_undeclared` (-> A4)."""
+    """Return (effects list, source) for a tool name.
+
+    Config wins. A tool absent from the config carries the fail-closed sentinel
+    `mcp_tool_undeclared` (-> A4) whatever its name says; when a name hint
+    matches it is appended so the record states what the name suggested, but
+    a hint never lowers the class. `query` used to be A0 by name, which is a
+    statement about a substring, not about what the tool does."""
     if tool in effects_map:
         return list(effects_map[tool]), "config"
     low = tool.lower()
     for needle, eff in _NAME_HINTS:
         if needle in low:
-            return [eff], "heuristic"
+            return ["mcp_tool_undeclared", eff], "undeclared+hint"
     return ["mcp_tool_undeclared"], "undeclared"
+
+
+def validate_effects_map(effects_map):
+    """Refuse an effects config that would silence a tool. Returns the map.
+
+    An empty list classified a tool A0 from a declaration that declared nothing;
+    under the default ceiling it was then never sealed. Declare what the tool
+    does, or leave it out and it is sealed as undeclared."""
+    if not isinstance(effects_map, dict):
+        raise ValueError("EFFECTS_CONFIG: must be a JSON object {tool: [effect, ...]}")
+    for tool, effs in effects_map.items():
+        if not isinstance(tool, str) or not tool:
+            raise ValueError("EFFECTS_CONFIG: tool names must be non-empty strings")
+        if (not isinstance(effs, list) or not effs
+                or not all(isinstance(e, str) and e for e in effs)):
+            raise ValueError(
+                f"EFFECTS_CONFIG: {tool!r} declares no effects -- an empty list would "
+                "classify it A0 and never seal it; declare what it does, or leave it "
+                "out and it is sealed as undeclared (A4)")
+    return effects_map
 
 
 def classify(tool, effects_map):
@@ -104,11 +137,12 @@ class Sealer:
         self.store.init()
         self.actor = actor
         self.key_path = str(key_path)
-        self.effects_map = effects_map
+        self.effects_map = validate_effects_map(effects_map)
         self.ceiling = ceiling
         self.prior = []                          # WarrantID chain of the session
         self.sealed = 0
         self.records = []
+        self.seal_failures = []                  # calls observed but NOT sealed
         # Pin the effect policy itself (bytes) so a verifier sees exactly which
         # table classified these actions.
         policy_bytes = json.dumps(
@@ -163,6 +197,16 @@ class Sealer:
             self.records.append(wid)
             return wid
 
+    def record_failure(self, tool, error):
+        """A tool-call passed through but its seal failed. The stream is kept
+        (the host must not lose the response) and the loss is kept too: in the
+        manifest, and in the proxy's exit status. A pack that silently omits
+        the call it failed to seal is the pack that looks complete."""
+        with self._lock:
+            self.seal_failures.append({
+                "tool": tool, "ts": int(time.time()),
+                "error": f"{type(error).__name__}: {error}"[:300]})
+
     def write_manifest(self, title=None):
         manifest = {
             "evidence_pack": "0",
@@ -173,6 +217,9 @@ class Sealer:
             "decision": self.records[-1] if self.records else None,
             "root": self.records[0] if self.records else None,
             "sealed_calls": self.sealed,
+            "seal_failures": len(self.seal_failures),
+            "seal_failure_log": list(self.seal_failures),
+            "observation_complete": not self.seal_failures,
             "expected_verification": {"errors": 0},
             "how_to_verify": "warrant --store .warrants verify",
         }
@@ -182,12 +229,16 @@ class Sealer:
 
 
 # ---------- stdio JSON-RPC proxy ----------
-def _pump_and_forward(src, dst, on_line):
+def _pump_and_forward(src, dst, on_line, on_error=None):
+    """Forward every line; call on_line first. A failure in on_line never breaks
+    the stream, and never disappears either: on_error(raw, ex) records it."""
     for raw in src:
         try:
             on_line(raw)
         except Exception as ex:                  # sealing must never break the stream
             print(f"warrant-mcp: seal error: {ex}", file=sys.stderr)
+            if on_error is not None:
+                on_error(raw, ex)
         dst.write(raw)
         dst.flush()
 
@@ -224,12 +275,20 @@ def run_proxy(server_cmd, sealer):
         tool, tinput, ts = call
         result = msg.get("result", msg.get("error"))
         is_error = "error" in msg or bool((msg.get("result") or {}).get("isError"))
-        wid = sealer.seal(tool, tinput, result, is_error, ts=ts)
+        try:
+            wid = sealer.seal(tool, tinput, result, is_error, ts=ts)
+        except Exception as ex:                  # attributed here; the pump still forwards
+            sealer.record_failure(tool, ex)
+            print(f"warrant-mcp: seal error on {tool!r}: {ex}", file=sys.stderr)
+            return
         if wid:
             print(f"warrant-mcp: sealed {tool} -> {wid[:12]}", file=sys.stderr)
 
+    def on_error(raw, ex):                         # anything on_*_line did not attribute
+        sealer.record_failure("<unattributed line>", ex)
+
     def upstream():
-        _pump_and_forward(sys.stdin, proc.stdin, on_host_line)
+        _pump_and_forward(sys.stdin, proc.stdin, on_host_line, on_error)
         try:
             proc.stdin.close()            # host EOF -> let the downstream server exit
         except Exception:
@@ -237,11 +296,14 @@ def run_proxy(server_cmd, sealer):
 
     t_up = threading.Thread(target=upstream, daemon=True)
     t_up.start()
-    _pump_and_forward(proc.stdout, sys.stdout, on_server_line)   # blocks until server EOF
+    _pump_and_forward(proc.stdout, sys.stdout, on_server_line, on_error)   # blocks until server EOF
     proc.wait()
     sealer.write_manifest()
+    lost = len(sealer.seal_failures)
     print(f"warrant-mcp: session sealed {sealer.sealed} calls into "
-          f"{sealer.store.root}", file=sys.stderr)
+          f"{sealer.store.root}" + (f"; {lost} call(s) NOT sealed (see manifest "
+          "seal_failure_log) -- the pack is incomplete" if lost else ""), file=sys.stderr)
+    return lost
 
 
 def build_parser():
@@ -286,10 +348,18 @@ def parse_cli(argv=None):
 def main(argv=None):
     args, server_cmd = parse_cli(argv)
     effects_map = json.loads(Path(args.effects).read_text()) if args.effects else {}
+    try:
+        validate_effects_map(effects_map)
+    except ValueError as ex:
+        print(f"warrant-mcp: {ex}", file=sys.stderr)
+        return 2
     store_dir = Path(args.store) / ".warrants"
     sealer = Sealer(store_dir, args.actor, args.key, effects_map, args.ceiling)
-    run_proxy(server_cmd, sealer)
+    lost = run_proxy(server_cmd, sealer)
+    # 0: every observed consequential call is in the pack. 3: the stream was
+    # kept but the pack is incomplete -- a consumer must not read it as whole.
+    return 3 if lost else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

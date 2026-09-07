@@ -26,6 +26,17 @@ right.
 
 ## Unreleased
 
+- `warrant-mcp`: a tool the effects config does not declare is sealed as
+  undeclared (A4) whatever its name — name hints annotate the record and can
+  no longer lower the class (`query`, `get_and_execute` were A0 by substring
+  and never sealed under the default ceiling); an empty effect list in the
+  config is refused at startup (exit 2); a failed seal is counted in the
+  manifest (`seal_failures`, `seal_failure_log`, `observation_complete`) and
+  in the exit status (3) instead of only on stderr. Review: ChatGPT (web),
+  2026-09, `reviews/2026-09-chatgpt-web-cross-stack.md`. The compiler's
+  no-arithmetic message and `docs/authoring-checks.md` now give the real
+  reason (cost and admission, not verifiability) and say where the trust
+  moved when a value is computed upstream and pinned as a fact.
 - The air-canada evidence pack is now a frozen, replayable specimen:
   `demos/air-canada/replay.json` pins the exact input bytes, the `ski@v1`
   evaluator digest, the run profile and the per-record `verify --json` /
