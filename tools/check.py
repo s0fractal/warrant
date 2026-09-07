@@ -167,6 +167,21 @@ CHECKS = [
      ["python3", "tools/retirement_check.py", "--selftest"], None),
     ("retirement records: retired subjects stay retired, records bind",
      ["python3", "tools/retirement_check.py"], None),
+    # The deposited paper (v1.0.0, Zenodo 10.5281/zenodo.22172098) states
+    # numbers that were true at the commit it was built from. Measured against
+    # the working tree they drift with every honest change (the review census
+    # went 92 -> 22 when the July corpus was retired) and nobody noticed for a
+    # week, because this checker was not in CI. So it runs here against the
+    # deposited commit: the paper must keep matching the tree it names, and a
+    # rebuild for a new deposit moves the --ref to its own candidate commit.
+    # Selftest first: a retitled copy and a miscounted copy must both go red
+    # against the real deposit commit, or the binding below is a label.
+    ("paper claims: the refusals fire (retitled / miscounted copies)",
+     ["python3", "papers/the-reason-runs-again/check_claims.py",
+      "--selftest", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),
+    ("paper claims bind to the deposited commit (v1.0.0 at d83984f): counts and source identity",
+     ["python3", "papers/the-reason-runs-again/check_claims.py",
+      "--ref", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),
     ("go: selftest", [str(GO), "selftest", "examples"], "go"),
     ("go: verify own store (settlement grade)",
