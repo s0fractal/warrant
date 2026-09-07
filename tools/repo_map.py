@@ -144,7 +144,7 @@ COLLISIONS = {
         {"lives_in": "closed PR #21 (verify-report) — the CANONICAL target",
          "commit": "7f40932060ded9a1fde7e6b74e91334e73b8080e",
          "path": "proposals/WRT-004-verify-report-v1.md"},
-        {"lives_in": "branch `papers/the-reason-runs-again` (draft PR #30), reason-binding profile — NOT on master",
+        {"lives_in": "branch `papers/the-reason-runs-again` (PR #30, closed 2026-09-07 unmerged; branch retained), reason-binding profile — NOT on master",
          "commit": "23ef8103606ecadfa650886fa412720ccd49980a",
          "path": "proposals/WRT-004-reason-binding-profile.md"},
     ],
