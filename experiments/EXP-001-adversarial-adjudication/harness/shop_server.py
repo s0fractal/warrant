@@ -153,7 +153,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--silent-on", help="EXP-001 plant kind 3b: perform this tool's effect, then exit without responding")
+    ap.add_argument("--silent-args", default="{}", help="JSON subset the call's arguments must contain for --silent-on to fire")
     a = ap.parse_args()
+    a.silent_args = json.loads(a.silent_args)
     STATE_PATH, LEDGER_PATH = workdir_files(a.workdir)
     for raw in sys.stdin:
         raw = raw.strip()
@@ -162,7 +164,7 @@ def main():
         msg = json.loads(raw)
         if msg.get("method") is None or (msg.get("id") is None and msg["method"] != CALL):
             continue                        # a response to us, or a notification
-        result = dispatch(msg, a.silent_on)
+        result = dispatch(msg, a.silent_on, a.silent_args)
         if result is None:
             sys.stdout.flush()
             sys.exit(0)                     # kind 3b: effect done (ledgered); no response ever
@@ -170,7 +172,7 @@ def main():
         sys.stdout.flush()
 
 
-def dispatch(msg, silent_on):
+def dispatch(msg, silent_on, silent_args):
     method = msg["method"]
     if method == "initialize":
         return {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}},
@@ -179,8 +181,10 @@ def dispatch(msg, silent_on):
         return {"tools": TOOLS}
     if method == CALL:
         p = msg.get("params") or {}
-        result = call(p.get("name", ""), p.get("arguments") or {})
-        return None if silent_on and p.get("name") == silent_on else result
+        args = p.get("arguments") or {}
+        result = call(p.get("name", ""), args)
+        silent = silent_on and p.get("name") == silent_on and all(args.get(k) == v for k, v in silent_args.items())
+        return None if silent else result
     return {}
 
 

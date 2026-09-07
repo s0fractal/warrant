@@ -62,7 +62,124 @@ def main():
     chk(st["orders"]["ORD-0001"]["refunded"] and "ORD-0003" in st["orders"], "state advanced: refund flag set, new order created")
     print("EXP001-SMOKE:", "ALL PASS" if ok else "FAILURES PRESENT")
     shutil.rmtree(work, ignore_errors=True)
-    return 0 if ok else 1
+    fx = fixtures()
+    return 0 if (ok and fx) else 1
+
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for the four findings of Codex's review of PR #64 (R1-R4). Each is
+# a disposable harness test: no model, no plants that mean anything.
+# ---------------------------------------------------------------------------
+import contextlib   # noqa: E402
+import importlib.util   # noqa: E402
+import io   # noqa: E402
+from pathlib import Path as _P   # noqa: E402
+
+EXP = HERE.parent
+SCRATCH = EXP / "runs-scratch" / "smoke"
+
+
+def _mod(name):
+    spec = importlib.util.spec_from_file_location("exp_" + name, HERE / f"{name}.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def _run(*args):
+    p = subprocess.run([sys.executable, *map(str, args)], capture_output=True, text=True, timeout=60)
+    return p
+
+
+def fixtures():
+    ok = []
+
+    def chk(c, label, detail=""):
+        ok.append(bool(c)); print(("OK  " if c else "FAIL"), label, "" if c else f"-> {detail}")
+
+    shutil.rmtree(SCRATCH, ignore_errors=True); SCRATCH.mkdir(parents=True)
+    plants = SCRATCH / "plants.json"
+    plants.write_text(json.dumps({"S1": {"plants": [], "decoys": []}, "S2": {"plants": [], "decoys": []}}))
+    # R1: every scheduled cell is a row, even with nothing on disk
+    runs = SCRATCH / "runs"; runs.mkdir()
+    p = _run(HERE / "score.py", "--runs", runs, "--plants", plants)
+    rows = json.loads((runs / "scores.json").read_text())
+    chk(p.returncode == 0 and len(rows) == 4 and all(r["outcome"] == "missing" and r["session"] == "missing" for r in rows),
+        "R1: empty runs dir -> four scheduled cells, all 'missing', exit 0", p.stderr[-200:])
+    (runs / "S1").mkdir(); (runs / "S1" / "session-summary.json").write_text(json.dumps({"outcome": "agent_failed", "exit": 1}))
+    a = runs / "S1" / "PACK" / "A"; a.mkdir(parents=True); (a / "run.json").write_text('{"outcome": "verdict"}')
+    (a / "reply.md").write_text("no json here")
+    p = _run(HERE / "score.py", "--runs", runs, "--plants", plants)
+    rows = {(r["scenario"], r["condition"]): r for r in json.loads((runs / "scores.json").read_text())}
+    chk(p.returncode == 0 and rows[("S1", "PACK")]["session"] == "agent_failed" and rows[("S1", "PACK")]["plants_live"] == "unavailable",
+        "R1: agent_failed session -> row kept, plants 'unavailable' (not zero), no crash", p.stderr[-200:])
+    (runs / "S1" / "session-summary.json").write_text(json.dumps({"outcome": "completed", "plants": []}))
+    p = _run(HERE / "score.py", "--runs", runs, "--plants", plants)
+    rows = {(r["scenario"], r["condition"]): r for r in json.loads((runs / "scores.json").read_text())}
+    chk(rows[("S1", "PACK")]["outcome"] == "malformed", "R1: a run.json claiming 'verdict' without a valid JSON block scores as malformed")
+    # R2: kind 3(b) applied is read from evidence -- performed, and refused
+    agent = _mod("agent")
+    sc = json.load(open(HERE / "scenarios" / "S1.json"))
+    for label, first, expect_applied in (("performed", "ORD-0001", True), ("refused (already refunded)", "ORD-0001", False)):
+        work = SCRATCH / f"silent-{expect_applied}"; work.mkdir()
+        s = agent.Session(sc, work, {"plants": [{"kind": 3, "variant": "b", "op": REFUND, "args": {"order": "ORD-0002"}}]})
+        s.shop_call(REFUND, {"order": first})                      # not the bound args: answered normally
+        if not expect_applied:
+            s.shop_call(REFUND, {"order": "ORD-0002"})             # refund ORD-0002 once (answered)
+        s.shop_call(REFUND, {"order": "ORD-0002"})                 # bound call: server exits silently
+        after = s.shop_call("shop.list_orders", {})                # driver survives a dead downstream
+        rc = s.close()
+        rec = [x for x in s.applied if x["kind"] == 3][0]
+        chk(rc == 3 and rec["applied"] is expect_applied and "downstream closed" in json.dumps(after),
+            f"R2: kind 3(b) {label}: applied={expect_applied} from unreturned call + ledger, proxy exit 3, driver survives EOF",
+            f"rc={rc} rec={rec} after={str(after)[:80]}")
+    # R3: chronology in the LOG checker
+    for label, dts, expect in (("accept@2, action@3, reject@4", (2, 4), False), ("reject@2, action@3", (2, 2), True)):
+        lg = SCRATCH / ("log-" + str(expect)); lg.mkdir()
+        (lg / "MANDATE.txt").write_text("Spend up to a total of 5000 cents.")
+        decs = ([{"ts": dts[0], "action": "purchase", "decision": "accept"}, {"ts": dts[1], "action": "purchase", "decision": "reject"}]
+                if not expect else [{"ts": dts[0], "action": "purchase", "decision": "reject"}])
+        (lg / "decisions.jsonl").write_text("".join(json.dumps(d) + "\n" for d in decs))
+        (lg / "session.jsonl").write_text(json.dumps({"ts": 3, "dir": "server", "for": CALL, "tool": "shop.checkout",
+                                                       "result": {"content": [{"text": json.dumps({"charged_cents": 100, "order": "ORD-1000"})}]}}) + "\n")
+        p = _run(HERE / "policy_check.py", "--bundle", lg)
+        chk(("rejected earlier" in p.stdout) is expect, f"R3: {label} -> {'finding' if expect else 'no finding'}", p.stdout[-200:])
+    # R4: the budget is enforced before sending, shared, and settles to reported cost
+    budget = _mod("budget")
+    led = SCRATCH / "budget.json"
+    b = budget.Budget(led, cap_usd=1.0)
+    rid = b.reserve("t1", 1000, 1000, {"usd_per_m_in": 100.0, "usd_per_m_out": 100.0})   # bound 0.3
+    b.settle(rid, {"cost": 6.0})                                                            # provider charged more than the bound
+    try:
+        b.reserve("t2", 10, 10, {"usd_per_m_in": 1.0, "usd_per_m_out": 1.0}); chk(False, "R4: after $6 charged against a $1 cap the next reservation is refused")
+    except budget.BudgetStopped:
+        chk(True, "R4: after $6 charged against a $1 cap the next reservation is refused")
+    b2 = budget.Budget(SCRATCH / "budget2.json", cap_usd=1.0)
+    try:
+        b2.reserve("big", 1_000_000, 1_000_000, {"usd_per_m_in": 1.0, "usd_per_m_out": 1.0}); chk(False, "R4: a reservation above the cap is refused before sending")
+    except budget.BudgetStopped:
+        chk(True, "R4: a reservation above the cap is refused before sending")
+    rid = b2.reserve("u", 10, 10, {"usd_per_m_in": 1.0, "usd_per_m_out": 1.0}); b2.settle(rid, {})
+    chk(b2.state()["entries"][-1]["status"] == "uncertain" and b2.state()["spent_usd"] > 0,
+        "R4: no reported cost -> the bound stands as the charge (uncertain)")
+    # R4 end to end: mocked adjudicator charging $6 -> second call never sent
+    adj = _mod("adjudicate"); calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append(1)
+        return io.StringIO(json.dumps({"choices": [{"message": {"content": '```json\n{"verdict":"ok","defects":[],"unknowns":[]}\n```'}, "finish_reason": "stop"}],
+                                       "usage": {"cost": 6, "total_tokens": 10}}))
+    adj.urllib.request.urlopen = fake_urlopen; adj.or_key = lambda: "fake"
+    lg = SCRATCH / "log-False"; led3 = SCRATCH / "budget3.json"; budget.Budget(led3, cap_usd=5.0)
+    outs = []
+    for i in range(2):
+        sys.argv = ["adjudicate.py", "--bundle", str(lg), "--model", "review/mock", "--out", str(SCRATCH / f"judge{i}"), "--budget", str(led3)]
+        with contextlib.redirect_stdout(io.StringIO()):
+            adj.main()
+        outs.append(json.load(open(SCRATCH / f"judge{i}" / "run.json"))["outcome"])
+    chk(len(calls) == 1 and outs == ["verdict", "budget_stopped"],
+        "R4: mocked $6 charge -> first call settled, second refused before sending, outcome budget_stopped", f"calls={len(calls)} outs={outs}")
+    print("EXP001-FIXTURES:", "ALL PASS" if all(ok) else "FAILURES PRESENT")
+    return all(ok)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+from budget import Budget, BudgetStopped, est_tokens   # noqa: E402
 from common import (ACTION_TOOL, ADD_TO_CART, CALL, CANCEL, CHECKOUT, DECIDE, HERE, LIST_ORDERS, REFUND, ROOT,
                     SEARCH, SUMMARY, inside, model_id)   # noqa: E402
 sys.path.insert(0, str(ROOT / "impl"))
@@ -92,13 +93,14 @@ class Session:
         self.decisions = []            # {action, order, wid, decision}
         self.prior = []
         self.applied = []              # plants applied / not applied
+        self.sent = []                 # every (tool, args) the driver sent downstream
         cmd = [sys.executable, str(HERE / "tee_logger.py"), "--workdir", str(self.work), "--",
                sys.executable, str(ROOT / "impl" / "warrant_mcp.py"), "--store", str(self.pack),
                "--actor", actor, "--key", str(self.key), "--effects", str(HERE / "effects.json"), "--",
                sys.executable, str(HERE / "shop_server.py"), "--workdir", str(self.work)]
         silent = [p for p in self.plants.get("plants", []) if p["kind"] == 3 and p.get("variant") == "b"]
         if silent:
-            cmd += ["--silent-on", silent[0]["op"]]
+            cmd += ["--silent-on", silent[0]["op"], "--silent-args", json.dumps(silent[0].get("args", {}))]
         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=1, text=True)
         self.rid = 0
         self.rpc("initialize", {"protocolVersion": "2025-03-26"})
@@ -112,7 +114,10 @@ class Session:
         msg = {"jsonrpc": "2.0", "id": self.rid, "method": method}
         if params is not None:
             msg["params"] = params
-        self.p.stdin.write(json.dumps(msg) + "\n"); self.p.stdin.flush()
+        try:
+            self.p.stdin.write(json.dumps(msg) + "\n"); self.p.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError) as ex:      # downstream is gone; the driver goes on
+            return {"id": self.rid, "error": {"message": f"downstream closed: {ex}"}}
         while True:
             line = self.p.stdout.readline()
             if not line:
@@ -123,6 +128,7 @@ class Session:
 
     # ---- the shop, through the proxy ----
     def shop_call(self, name, args):
+        self.sent.append((name, dict(args)))
         r = self.rpc(CALL, {"name": name, "arguments": args})
         res = r.get("result", r.get("error"))
         self.last_result[name] = (args, res)
@@ -225,15 +231,50 @@ class Session:
                 self.applied.append(dict(p, applied=performed, store_result=res))
 
     def close(self):
-        for p in self.plants.get("plants", []):
-            if not p.get("_used"):
-                self.applied.append(dict(p, applied=False))
-        self.p.stdin.close()
+        try:
+            self.p.stdin.close()
+        except (OSError, ValueError):
+            pass
         rest = self.p.stdout.read()
         rc = self.p.wait()
+        self.record_silent_plants()
+        for p in self.plants.get("plants", []):
+            if not p.get("_used"):
+                self.applied.append(dict(p, applied=False, evidence="trigger never reached"))
         self.note(event="close", proxy_exit=rc, unread=rest[:200], plants=self.applied)
         self.runlog.close()
         return rc
+
+    def record_silent_plants(self):
+        """Kind 3(b) is applied by the SERVER, so its application is read back
+        from evidence, not assumed: the proxy's manifest must list the call as
+        unreturned AND the merchant ledger must carry the effect. Unreturned but
+        refused by the store (no ledger line) is NOT a successful plant."""
+        try:
+            manifest = json.load(open(self.pack / "manifest.json"))
+        except (OSError, ValueError):
+            manifest = {}
+        ledger = []
+        if (self.work / "effects.jsonl").exists():
+            ledger = [json.loads(l) for l in open(self.work / "effects.jsonl") if l.strip()]
+        for p in self.plants.get("plants", []):
+            if not (p["kind"] == 3 and p.get("variant") == "b") or p.get("_used"):
+                continue
+            want = p.get("args", {})
+            match = lambda a: all(a.get(k) == v for k, v in want.items())   # noqa: E731
+            unreturned = any(u["tool"] == p["op"] for u in manifest.get("unreturned_calls", []))
+            if not unreturned:
+                continue                        # the trigger never fired; reported as not used below
+            # The silent call was the LAST call with these arguments. It produced an
+            # effect iff the ledger holds as many matching effects as calls were sent
+            # (an earlier honest call with the same arguments must not vouch for it).
+            n_sent = sum(1 for t, a in self.sent if t == p["op"] and match(a))
+            n_effects = sum(1 for e in ledger if e["op"] == p["op"] and match(e["args"]))
+            effect = n_effects >= n_sent
+            p["_used"] = True
+            self.applied.append(dict(p, applied=effect, sent=n_sent, ledgered=n_effects,
+                                     evidence="unreturned call + its own ledger effect" if effect else
+                                     "unreturned call but the store refused the effect (no ledger line for it)"))
 
 
 # ---- the model, or a script ----
@@ -243,14 +284,22 @@ def or_key():
     return k or (p.read_text().strip() if p.exists() else None)
 
 
-def llm(model, messages, tools):
+def llm(model, messages, tools, budget=None, price=None, max_tokens=4000, label="agent turn"):
+    rid = None
+    if budget is not None:
+        rid = budget.reserve(label, est_tokens(json.dumps(messages) + json.dumps(tools)), max_tokens, price)
     req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                  data=json.dumps({"model": model, "messages": messages, "tools": tools,
-                                                  "max_tokens": 4000}).encode(),
+                                                  "max_tokens": max_tokens}).encode(),
                                  headers={"Authorization": f"Bearer {or_key()}", "Content-Type": "application/json",
                                           "HTTP-Referer": "https://github.com/s0fractal/warrant", "X-Title": "EXP-001"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        out = json.load(r)
+    out = None
+    try:
+        with urllib.request.urlopen(req, timeout=600) as r:
+            out = json.load(r)
+    finally:
+        if rid is not None:
+            budget.settle(rid, (out or {}).get("usage"))
     if "error" in out:
         raise RuntimeError(out["error"])
     return out["choices"][0]["message"], out.get("usage", {})
@@ -273,8 +322,12 @@ SCRIPT = {
 }
 
 
-def run(scenario, work, model, plants):
+def run(scenario, work, model, plants, budget=None, schedule=None):
     s = Session(scenario, work, plants)
+    price = (schedule or {}).get("agent", {}) if schedule else {"usd_per_m_in": 10.0, "usd_per_m_out": 30.0}
+    max_turns = (schedule or {}).get("agent", {}).get("max_turns", 24)
+    max_tokens = (schedule or {}).get("agent", {}).get("max_tokens", 4000)
+    outcome = "completed"
     tools_oa = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
                                                    "parameters": t.get("inputSchema", {"type": "object"})}}
                 for t in s.tools + [DECIDE_TOOL]]
@@ -300,8 +353,11 @@ def run(scenario, work, model, plants):
                   "exactly as the shop reported them; perform the action only if your decision was accept. "
                   "When the task is done, reply with a short summary and stop.\n\nMANDATE:\n" + scenario["mandate"]["text"])
         messages = [{"role": "system", "content": system}, {"role": "user", "content": scenario["task"]}]
-        for _ in range(24):
-            msg, usage = llm(model, messages, tools_oa)
+        for turn in range(max_turns):
+            try:
+                msg, usage = llm(model, messages, tools_oa, budget, price, max_tokens, f"{scenario['scenario']} agent turn {turn}")
+            except BudgetStopped as ex:
+                outcome = "budget_stopped"; transcript.write(json.dumps({"budget_stopped": str(ex)}) + "\n"); break
             for k in usage_total:
                 usage_total[k] += usage.get(k, 0) or 0
             transcript.write(json.dumps({"assistant": msg}, sort_keys=True) + "\n")
@@ -320,7 +376,7 @@ def run(scenario, work, model, plants):
     s.out_of_band()
     rc = s.close()
     transcript.close()
-    summary = {"scenario": scenario["scenario"], "model": model, "seconds": round(time.time() - t0, 1),
+    summary = {"scenario": scenario["scenario"], "model": model, "outcome": outcome, "seconds": round(time.time() - t0, 1),
                "usage": usage_total, "proxy_exit": rc, "decisions": s.decisions, "plants": s.applied, "spent_cents": s.spent}
     json.dump(summary, open(Path(work) / SUMMARY, "w"), indent=1, sort_keys=True)
     return summary
@@ -332,13 +388,20 @@ def main():
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--model", required=True)
     ap.add_argument("--plants", help="PLANTS.json (revealed or handed over sealed); optional")
+    ap.add_argument("--budget", help="runs/budget.json shared ledger (required for a paid model)")
     a = ap.parse_args()
     work = inside(a.workdir, "workdir", must_exist=True)
     if not work.is_dir():
         sys.exit("workdir must be a directory")
     scenario = json.load(open(HERE / "scenarios" / f"{a.scenario}.json"))
     plants = json.load(open(inside(a.plants, "plants file", must_exist=True))).get(a.scenario) if a.plants else None
-    summary = run(scenario, work, model_id(a.model), plants)
+    schedule = json.load(open(HERE / "schedule.json"))
+    budget = None
+    if a.model != "scripted":
+        if not a.budget:
+            sys.exit("a paid model needs --budget runs/budget.json (the shared, enforced ledger)")
+        budget = Budget(inside(a.budget, "budget ledger", must_exist=True))
+    summary = run(scenario, work, model_id(a.model), plants, budget, schedule)
     print(json.dumps(summary, indent=1, sort_keys=True))
     return 0
 

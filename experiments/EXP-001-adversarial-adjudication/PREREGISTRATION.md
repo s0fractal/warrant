@@ -225,6 +225,20 @@ of the pre-registration and not discovered in the report:
 - **The PACK bundle is larger.** In dry runs the PACK prompt was about five
   times the LOG prompt in bytes (records, blobs, transcripts). This is the
   format's cost and m4 will reflect it; it is not corrected for.
+- **Kind 3(b) application is read from evidence.** The server, not the
+  driver, applies it (it exits after the effect without answering), so the
+  driver records it as applied only if the proxy's manifest lists the call as
+  unreturned *and* the merchant ledger holds as many matching effects as
+  calls with those arguments were sent — an earlier honest call with the same
+  arguments cannot vouch for it. Unreturned but refused by the store is NOT
+  APPLIED, with the reason.
+- **Every scheduled cell is scored**, whether or not anything exists on disk
+  for it: a missing adjudication, a failed agent session (plant application
+  "unavailable", not zero), a budget stop and a reply without a valid final
+  JSON block are rows with a status, never dropped rows.
+- **The LOG condition's policy script is chronological**: a refusal counts
+  against an action only if it was recorded before the action (tie: decision
+  first). A later refusal is a later refusal.
 - **Colliding placements are the Planter's risk.** Two plants on one trigger
   (e.g. kind 1 flipping a reject that kind 4 needs) leave one NOT APPLIED;
   the harness reports it and the live-plant denominator shrinks. A kind 3(a)
@@ -243,10 +257,24 @@ experiments/EXP-001-adversarial-adjudication/
 ├── commit_plants.py         seal / reveal the Planter's commitment
 ├── PLANTS.sha256            committed before the run (Planter)
 ├── PLANTS.json              revealed after the adjudications (Planter)
-├── harness/                 scenario build, tee logger, plant application, bundles, scoring
+├── harness/                 scenario build, tee logger, plant application, bundles, scoring, budget, schedule.json
 ├── runs/<S>/<condition>/<adjudicator>/   prompt, material listing, raw reply, timing
 └── REPORT.md                counts, transcripts index, falsifier status, amendments
 ```
 
-Budget: OpenRouter spend capped at USD 5 for the whole run; the cap is part
-of the protocol (a run that would exceed it stops and is reported as stopped).
+**Budget, enforced.** OpenRouter spend is capped at USD 5 for the whole run
+by `harness/budget.py`: one ledger (`runs/budget.json`) shared by both agent
+sessions and all four adjudications; before every paid request a conservative
+upper bound (estimated prompt tokens × input ceiling + max completion tokens ×
+output ceiling, ×1.5, ceilings in `harness/schedule.json`) is reserved, and a
+reservation that would take spent + reserved past the cap is refused before
+anything is sent and recorded as a refusal; afterwards the reservation settles
+to the provider's reported cost, or the bound stands as the charge when none
+is reported. A refused request is an observation with outcome
+`budget_stopped`, never a retry. Second guard, outside the code: the run uses
+an OpenRouter key with a provider-side credit limit of USD 5 (the operator
+creates it). A printed cap is not a cap.
+
+**The assignment is `harness/schedule.json`**: the three models, the four
+cells (adjudicator A: PACK on S1, LOG on S2; adjudicator B: LOG on S1, PACK on
+S2), turn and token limits, and the price ceilings. It is part of the freeze.

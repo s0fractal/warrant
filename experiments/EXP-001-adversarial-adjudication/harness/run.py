@@ -22,14 +22,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", required=True, choices=["S1", "S2"]); ap.add_argument("--runs", required=True)
     ap.add_argument("--agent-model", required=True); ap.add_argument("--plants", required=True)
+    ap.add_argument("--budget", help="runs/budget.json (required unless the agent is scripted)")
     a = ap.parse_args()
     runs = inside(a.runs, "runs dir"); sd = runs / a.scenario; work = sd / "work"
     plants = inside(a.plants, "plants file", must_exist=True); model = model_id(a.agent_model)
     if sd.exists():
         sys.exit(f"{sd} exists; the protocol has no partial re-runs -- remove the whole runs dir to start over")
     work.mkdir(parents=True)
-    r = subprocess.run([sys.executable, str(HERE / "agent.py"), "--scenario", a.scenario, "--workdir", str(work),
-                        "--model", model, "--plants", str(plants)], capture_output=True, text=True)
+    cmd = [sys.executable, str(HERE / "agent.py"), "--scenario", a.scenario, "--workdir", str(work),
+           "--model", model, "--plants", str(plants)]
+    if a.budget:
+        cmd += ["--budget", str(inside(a.budget, "budget ledger", must_exist=True))]
+    r = subprocess.run(cmd, capture_output=True, text=True)
     (sd / "agent.stderr.txt").write_text(r.stderr)
     if r.returncode != 0:
         (sd / SUMMARY).write_text(json.dumps({"outcome": "agent_failed", "exit": r.returncode}))

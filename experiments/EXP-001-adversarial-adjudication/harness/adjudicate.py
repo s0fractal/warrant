@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from budget import Budget, BudgetStopped, est_tokens
 from common import inside, model_id
 
 MAX_FILE = 60_000          # bytes per file in the prompt; larger files are truncated with a marker
@@ -83,11 +84,30 @@ MATERIAL:
 """
 
 
+def valid_reply(content):
+    """The final JSON block has the shape the prompt asked for; anything else is malformed."""
+    import re
+    m = re.findall(r"```json\s*(\{[^`]*\})\s*```", content)
+    if not m:
+        return False
+    try:
+        rep = json.loads(m[-1])
+    except ValueError:
+        return False
+    return (isinstance(rep.get("verdict"), str) and isinstance(rep.get("defects"), list)
+            and all(isinstance(d, dict) and "what" in d and "where" in d for d in rep["defects"])
+            and isinstance(rep.get("unknowns"), list))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bundle", required=True); ap.add_argument("--model", required=True)
     ap.add_argument("--out", required=True); ap.add_argument("--max-tokens", type=int, default=6000)
+    ap.add_argument("--budget", required=True, help="runs/budget.json shared ledger")
+    ap.add_argument("--price-in", type=float, default=10.0); ap.add_argument("--price-out", type=float, default=30.0)
     a = ap.parse_args()
+    budget = Budget(inside(a.budget, "budget ledger", must_exist=True))
+    price = {"usd_per_m_in": a.price_in, "usd_per_m_out": a.price_out}
     bundle, out = inside(a.bundle, "bundle", must_exist=True), inside(a.out, "out")
     model = model_id(a.model)
     out.mkdir(parents=True, exist_ok=True)
@@ -97,12 +117,18 @@ def main():
     body = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": a.max_tokens}
     rec = {"model": model, "bundle": str(bundle), "prompt_bytes": len(prompt.encode()), "started": time.time()}
     t0 = time.time()
+    rid = None
     try:
+        rid = budget.reserve(f"adjudication {bundle.parent.name}/{bundle.name}/{out.name}", est_tokens(prompt), a.max_tokens, price)
         req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Authorization": f"Bearer {or_key()}", "Content-Type": "application/json",
                                               "HTTP-Referer": "https://github.com/s0fractal/warrant", "X-Title": "EXP-001 adjudication"})
-        with urllib.request.urlopen(req, timeout=900) as r:
-            resp = json.load(r)
+        resp = None
+        try:
+            with urllib.request.urlopen(req, timeout=900) as r:
+                resp = json.load(r)
+        finally:
+            budget.settle(rid, (resp or {}).get("usage"))
         rec["seconds"] = round(time.time() - t0, 1)
         rec["usage"] = resp.get("usage")
         if "error" in resp:
@@ -112,9 +138,9 @@ def main():
             content = msg.get("content") or ""
             rec["finish_reason"] = ch.get("finish_reason")
             (out / "reply.md").write_text(content)
-            rec["outcome"] = "malformed" if "```json" not in content else "verdict"
-            if not content:
-                rec["outcome"] = "empty"
+            rec["outcome"] = "empty" if not content else ("verdict" if valid_reply(content) else "malformed")
+    except BudgetStopped as e:
+        rec["seconds"] = round(time.time() - t0, 1); rec["outcome"] = "budget_stopped"; rec["error"] = str(e)
     except urllib.error.HTTPError as e:
         rec["seconds"] = round(time.time() - t0, 1); rec["outcome"] = "http_error"; rec["error"] = f"{e.code} {e.read()[:500]!r}"
     except Exception as e:  # timeout, network: kept as the run's outcome

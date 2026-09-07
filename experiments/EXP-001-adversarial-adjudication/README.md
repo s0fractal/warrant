@@ -8,8 +8,9 @@ Order of work, each step a separate commit so the freeze points are visible:
 2. harness (done): `shop_server.py` (state + merchant effects ledger),
    `tee_logger.py` (LOG observer), `agent.py` (session driver, decisions,
    plants), `bundles.py` + `policy_check.py` (the two conditions),
-   `adjudicate.py`, `score.py`, `run.py`; `smoke.py` runs in `tools/check.py`
-   so the plumbing cannot rot silently. Freeze commit to be named in
+   `adjudicate.py`, `score.py`, `run.py`, `budget.py` (the enforced cap),
+   `schedule.json` (the assignment); `smoke.py` plus the R1–R4 fixtures from
+   Codex's review run in `tools/check.py` so the plumbing cannot rot silently. Freeze commit to be named in
    `REPORT.md`;
 3. Planter seals `PLANTS.sha256` (`commit_plants.py seal`);
 4. the run, the reveal, the report.
