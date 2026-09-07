@@ -1,6 +1,7 @@
 name: conformance
 on: [push, pull_request]
 
+
 # ONE pin of the sibling repo, for the whole workflow. Symmetric to sigma-glyph's
 # $WARRANT_PIN. A pin is what makes the conformance gate reproducible; it is not a
 # substitute for testing against the sibling's HEAD, which is what
@@ -21,6 +22,11 @@ on: [push, pull_request]
 # A refresh commit MUST cite the old and new sibling commits, name the consumed
 # surface that changed, and include the conformance outputs run at the new pin.
 env:
+  # tools/check.py skips its X1 canary only on the events where
+  # x1-cross-repo.yml runs it instead (its `on:` is push/pull_request to
+  # master). Any other event keeps X1 inside the aggregate, so no event loses
+  # coverage. tests/check_runner.py holds this expression to those triggers.
+  X1_COVERED_BY_WORKFLOW: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.base_ref == 'master') }}
   SIGMA_PIN: c5ab2ab218bbeaaf4d80d2e49be2cc7b48fb7f37
 
 jobs:
@@ -58,6 +64,12 @@ jobs:
       # as UNRUN — so a workflow that stops parsing fails CI here, loudly.
       - name: Workflows parse (mandatory — the governance gate cannot silently break)
         run: python3 tools/lint_workflows.py
+      # The aggregate's scheduler is itself a thing that can be wrong: --jobs 1
+      # must launch the original order, the pool must launch every check once
+      # with serial ones never overlapping, and the X1 skip must fire only on
+      # the events x1-cross-repo.yml covers. Instrumented children, no real work.
+      - name: The aggregate's scheduler launches what it says it launches
+        run: python3 tests/check_runner.py
       # CI has no sibling checkout, so it cannot re-resolve cross-repo citations.
       # It demands instead that every citation be ACCOUNTED FOR in the committed
       # MAP.md: cite a document nobody has located and the row is missing and

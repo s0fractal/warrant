@@ -234,12 +234,13 @@ CHECKS = [
     # exit 3 (UNRUN) when the host cannot provide that venv.
     ("evidence replay driver: reads the CLI's refusal; closed, counted controls",
      ["python3", "tests/replay_driver.py"], None),
-    # In CI this canary already runs as its own workflow
-    # (.github/workflows/x1-cross-repo.yml) with the sibling ref resolved there;
-    # repeating it inside the aggregate cost ~110 s per run and proved nothing
-    # the workflow had not. Locally it still runs.
+    # The canary also runs as its own workflow (x1-cross-repo.yml) on pushes
+    # to master and PRs against master; on exactly those events ci.yml sets
+    # X1_COVERED_BY_WORKFLOW=true and the aggregate does not repeat ~110 s of
+    # work. On every other event (a feature push before a PR, a PR to another
+    # base) the aggregate still runs it, so no event loses X1 coverage.
     ("x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
-     ["bash", "tools/x1_cross_repo.sh"], "not-in-ci"),
+     ["bash", "tools/x1_cross_repo.sh"], "x1-not-covered-elsewhere"),
     # The aggregate CI path hands X1 a paired sibling branch only when that
     # branch exists in the sibling; an ordinary one-sided PR must resolve to
     # sibling master (PR #55 asked X1 to clone a branch that was never there).
@@ -270,9 +271,10 @@ NEEDS = {
            "impl-rs not built  ->  (cd impl-rs && cargo build --release)"),
     "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists(),
               "the admitted ski@v1 evaluator is missing from impl/"),
-    "not-in-ci": (lambda: os.environ.get("GITHUB_ACTIONS") != "true",
-                  "runs as its own workflow in CI (x1-cross-repo.yml); this "
-                  "aggregate does not repeat it there"),
+    "x1-not-covered-elsewhere": (
+        lambda: os.environ.get("X1_COVERED_BY_WORKFLOW") != "true",
+        "x1-cross-repo.yml runs for this event (ci.yml set "
+        "X1_COVERED_BY_WORKFLOW=true); the aggregate does not repeat it"),
     "yaml": (lambda: importlib.util.find_spec("yaml") is not None,
              "PyYAML not installed  ->  pip install pyyaml"),
     "lean": (lambda: shutil.which("lean") is not None,
@@ -375,7 +377,9 @@ def main():
                                    len(HEAVY_FIRST)))
     t_all = time.time()
     if args.jobs == 1:
-        for name, argv in pooled + serial:
+        # The baseline mode: the original CHECKS order, nothing partitioned or
+        # re-sorted, so a concurrency regression can be isolated against it.
+        for name, argv in runnable:
             record(*execute(name, argv))
     else:
         import concurrent.futures
@@ -385,8 +389,11 @@ def main():
                 record(*fut.result())
         for name, argv in serial:
             record(*execute(name, argv))
-    print(f"\n({len(pooled)} pooled across {args.jobs} worker(s), {len(serial)} serial; "
-          f"{time.time() - t_all:.0f}s wall)")
+    if args.jobs == 1:
+        print(f"\n({len(runnable)} sequential, original order; {time.time() - t_all:.0f}s wall)")
+    else:
+        print(f"\n({len(pooled)} pooled across {args.jobs} worker(s), {len(serial)} serial; "
+              f"{time.time() - t_all:.0f}s wall)")
 
     print(f"\n{passed} passed, {len(failed)} failed, {len(unrun)} unrun")
     for n in failed:
