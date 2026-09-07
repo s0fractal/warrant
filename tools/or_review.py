@@ -31,10 +31,10 @@ PRIMARY_SOURCES = [
     "proposals/GOV-001-settlement-at-scale.md",
     "README.md",
 ]
-PRIOR_REVIEWS_GLOB = ["reviews/2026-07-codex-gov001-gate.md",
-                      "reviews/2026-07-codex-gov001-gate-response.md",
-                      "reviews/2026-07-gemini-gov001-gate.md",
-                      "reviews/2026-07-gemini-gov001-gate-response.md"]
+# Pass 2 sees the LIVE inbox, not a hard-coded list: the GOV-001 gates this
+# list used to name were retired on 2026-09-07 (history/RETIREMENT-2026-09-REVIEW-CORPUS.md).
+PRIOR_REVIEWS_GLOB = sorted(str(p.relative_to(ROOT)) for p in (ROOT / "reviews").glob("*.md")
+                            if p.name != "README.md")
 GATES = [
     ["python3", "impl/warrant.py", "selftest"],
     ["python3", "impl/warrant.py", "conformance"],

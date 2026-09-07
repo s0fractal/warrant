@@ -59,8 +59,8 @@ causal depth) — plus a closed `may_reverse` capability table with a fail-close
 default, and a finite consumer-independent checkpoint identity.
 
 **The four counterexamples that defeat it**, reproduced by the three-family gate
-of 2026-07-28 (`reviews/2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md`,
-Appendix A; adjudicated in
+of 2026-07-28 (Appendix A of the retired `kimi-k3-wrt-002-rev7-adversarial-gate`,
+retrievable with status through `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`; adjudicated in
 `reviews/2026-07-wrt-002-rev7-multifamily-gate-response.md`):
 
 - **F3 (P0).** A supersede authorized *solely* by a resolver-rejected policy
@@ -137,7 +137,7 @@ finding, which is the part of WRT-002 already in SPEC.
   from RFC on mixed-torsion keys (`A=A0+T8`) -> added `mod_l` and reduce k mod L.
   Plus a benign P2 (`fe_mul` r1 mask). Re-validated: `edtest` PASS, §8 sigs
   verify, Ed25519 differential now 472/472 incl. 20 mixed-torsion cases. See
-  `reviews/2026-07-gemini31pro-ed25519-audit{,-response}.md`. Lesson: a random
+  the retired `gemini31pro-ed25519-audit` pair, indexed in `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`. Lesson: a random
   differential can't reach the canonicality/cofactor edges; adversarial algebra
   can. **Three external models across three rounds now back the codebase.**
 - **2026-07-17 — W3 increment 2 (from-scratch Ed25519 in Rust) — W3 COMPLETE.**
@@ -171,7 +171,7 @@ finding, which is the part of WRT-002 already in SPEC.
   One real P2: wrong-length pubkeys weren't pinned — adding them **caught a panic
   in my own conformance harness** (`k[:12]` on a short key, Go), fixed with
   `sh12`. Battery now 45/45 both impls. See
-  `reviews/2026-07-gptoss120b-agy-audit{,-response}.md`.
+  the retired `gptoss120b-agy-audit` pair, indexed in `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`.
 - **2026-07-17 — W1 + W4 shipped (normative negatives).** `examples/conformance-negatives.json`
   is a machine-readable §8.3 battery every implementation MUST reject: 11 weak
   Ed25519 keys (signature verification must fail) + 9 schema-invalid bodies
@@ -191,7 +191,7 @@ finding, which is the part of WRT-002 already in SPEC.
   budgets; new hostile.py regressions. Three other findings (ATP `force` wrap,
   2 missing blocklist keys, scalar-record crash) were refuted empirically; the
   2 keys were blocklisted anyway as defense-in-depth. See
-  `reviews/2026-07-gemini31pro-agy-audit{,-response}.md`. Lesson recorded:
+  the retired `gemini31pro-agy-audit` pair, indexed in `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`. Lesson recorded:
   external audit is the gate, self-review is the substrate.
 - **2026-07-17 (Fable 5, architect):** shipped **W2**. The fuzzer immediately
   found three real defects, all fixed the same pass:

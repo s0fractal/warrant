@@ -47,7 +47,7 @@ governance act, not a gate verdict, and it adopts nothing (AGENTS.md rules 3–4
 **Origin:** ADR-008 needs to cite a prior decision as *precedent* with a machine-checkable claim "decision X's projected wave coheres with query Q, under jurisdiction J's effective wave." `ski@v1` cannot express this: it evaluates a Book I SigmaNode graph and cannot parse a Book III JCS assertion, call Book II `wave()`/`LUT_COS`, or bind body-level evidence to a fact inside the term. So ADR-008 requires a **new Warrant check runtime**. The rev-1..7 gate history (in `sigma-glyph/reviews/`) established that this is a Warrant-level contract — not a string added to `RUNTIMES` — because it changes validation, severity, tunnel expansion, novelty fingerprinting, and future budget.
 
 **§8 gate record (what it passed and what it does not claim).** §8 was gated by
-Codex on 2026-07-27 (`reviews/2026-07-codex-wrt001-budget-spec-gate.md`) —
+Codex on 2026-07-27 (retired `codex-wrt001-budget-spec-gate`, see `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`) —
 verdict **AMEND**, five P1 and one P2. Three P1s are answered in the text below
 (the circular bootstrap, the bounded-read arithmetic, unmetered Book III
 selection). One P1 was **accepted rather than answered**: §8 is labelled a DRAFT
@@ -57,7 +57,7 @@ stable. The P2 and one further seam found on re-reading (the size-source
 paragraph in §8) were closed on 2026-07-31 **without a second gate**. The
 remaining P1 was an implementation finding, not a §8 finding, and is fixed on
 `master` — reproduced, with a control, in
-`reviews/2026-07-codex-wrt001-budget-spec-gate-response.md`. **No independent
+the retired `codex-wrt001-budget-spec-gate-response`. **No independent
 gate has run on the post-AMEND text**; §8 has not been re-gated, nothing here is
 adopted, and `0.2+sigma-wave.1` remains unregistered.
 
@@ -434,7 +434,7 @@ Ordered close-out before adoption:
    verifier-hardening track (the Kimi full-audit line).
 
    **Independent gate:** Kimi K3 ran an adversarial gate
-   (`reviews/2026-07-kimi-k3-item0-adversarial-gate.md`), forbidden from
+   (retired `kimi-k3-item0-adversarial-gate`), forbidden from
    rubber-stamping. Verdict `AMEND` — 11 P1 counter-vectors. Triage: **all 11 are
    in verifier code byte-identical to `origin/master` (pre-existing latent bugs,
    NOT item-0 regressions)**; the gate refuted an over-broad contract claim (now
@@ -447,7 +447,7 @@ Ordered close-out before adoption:
    dir-as-blob / dir-as-genesis / lone-surrogate record; the `-0`
    canonicalization/WarrantID **consensus split**) plus the count-parity gaps were
    fixed and independently re-gated by Kimi K3 (all 11 confirmed FIXED, no new P1;
-   `reviews/2026-07-kimi-k3-item0-regate.md`). This generic verifier refactor +
+   retired `kimi-k3-item0-regate`). This generic verifier refactor +
    hardening is landed on `master`. **`wave@v1` itself is NOT adopted here:**
    `0.2+sigma-wave.1` is **not registered** in `ACCEPTED`/`RUNTIMES` and this doc
    is PROPOSED, not adopted. Adoption still requires the deferred items below

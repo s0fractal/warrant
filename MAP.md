@@ -24,14 +24,14 @@ present on a ref the reviewer was not looking at.
 | Cited | Lives in | Path | First cited by |
 |---|---|---|---|
 | `ADR-004` | **sigma-glyph**, `master` | `proposals/ADR-004-literal-blob-scope.md` | `proposals/GOV-001-settlement-at-scale.md` |
-| `ADR-008` | **sigma-glyph**, `master` | `proposals/ADR-008-specification-is-the-arbiter.md` | `briefs/WRT-002-rev7-adversarial-gate.md` |
-| `ADR-012` | **sigma-glyph**, `origin/master` | `proposals/ADR-012-checkout-independent-consumer-surface.md` | `proposals/WRT-007-per-tag-evaluator-dependency.md` |
+| `ADR-008` | **sigma-glyph**, `master` | `proposals/ADR-008-specification-is-the-arbiter.md` | `proposals/WRT-001-wave-v1-runtime.md` |
+| `ADR-012` | **sigma-glyph**, `master` | `proposals/ADR-012-checkout-independent-consumer-surface.md` | `proposals/WRT-007-per-tag-evaluator-dependency.md` |
 | `Book I` | **sigma-glyph**, `master` | `spec/book-1-truth.md` | `ARCHITECT.md` |
 | `Book II` | **sigma-glyph**, `master` | `spec/book-2-navigation.md` | `proposals/WRT-001-wave-v1-runtime.md` |
 | `Book III` | **sigma-glyph**, `master` | `spec/book-3-federation.md` | `ARCHITECT.md` |
 | `GOV-001` | this repo, `master` | `proposals/GOV-001-settlement-at-scale.md` | `SPEC.md` |
-| `WRT-001` | this repo, `master` | `proposals/WRT-001-wave-v1-runtime.md` | `briefs/WRT-002-rev7-adversarial-gate.md` |
-| `WRT-002` | this repo, `master` | `proposals/wrt-002-model/model.py` | `briefs/WRT-002-rev7-adversarial-gate.md` |
+| `WRT-001` | this repo, `master` (CLOSED: DEFERRED) | `proposals/WRT-001-wave-v1-runtime.md` | `proposals/WRT-001-wave-v1-runtime.md` |
+| `WRT-002` | this repo, `master` (CLOSED: DEFERRED) | `proposals/WRT-002-keystate-effective-lifecycle-r1.md` | `ARCHITECT.md` |
 | `WRT-003` | closed PR #20 (verification receipts) | `25bd44c829cb015a836e08642022412c568de16a:proposals/WRT-003-verification-receipt.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-004` | closed PR #21 (verify-report) | `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |

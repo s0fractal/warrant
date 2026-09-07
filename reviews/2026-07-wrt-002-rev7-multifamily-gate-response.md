@@ -257,7 +257,8 @@ should go to a fourth family that has not seen this round.
 
 ---
 
-*Reviews: `2026-07-gemini31pro-wrt-002-rev7-adversarial-gate.md`,
-`2026-07-deepseek-v4-wrt-002-rev7-adversarial-gate.md`,
-`2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md`. Each carries its machine-run
+*Reviews: `gemini31pro-wrt-002-rev7-adversarial-gate`,
+`deepseek-v4-wrt-002-rev7-adversarial-gate`,
+`kimi-k3-wrt-002-rev7-adversarial-gate` (retired 2026-09-07; retrieve with status
+through `../history/RETIREMENT-2026-09-REVIEW-CORPUS.md`). Each carries its machine-run
 transcripts as an appendix; every claim above can be re-run from them.*
