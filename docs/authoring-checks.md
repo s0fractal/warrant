@@ -427,9 +427,10 @@ Honest boundaries, so you find them here rather than three days in:
 - **Nothing about the facts is proven.** `fact retroactive: bool = true` is an
   assertion by whoever compiled it. Its trustworthiness comes from the signature
   on the record and the evidence blobs cited beside it, not from the check.
-  A record MAY add a `warrant.fact-derivation@v0` blob naming, per fact, the
-  evidence blob and the extractor the value was read with; a profile-aware
-  tool then reports each fact `DERIVED`, `DIVERGED` or `ASSERTED`
+  A record MAY add a `warrant.fact-derivation@v0` blob naming the check, its
+  source, and per fact the evidence blob and the extractor the value was read
+  with; a profile-aware tool recompiles the source to that exact check and
+  then reports each fact `DERIVED`, `DIVERGED` or `ASSERTED`
   (`proposals/WRT-008-fact-derivation-profile.md`, draft). That binds the
   constant to bytes, not to truth.
 

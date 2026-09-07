@@ -1,6 +1,6 @@
 # WRT-008: Fact derivation profile — where a WPL constant came from
 
-**Status:** DRAFT rev 1 (2026-09-07) — **design plus a running demonstration.**
+**Status:** DRAFT rev 2 (2026-09-07) — **design plus a running demonstration**, after the Codex AMEND of rev 1 (`.triad/reviews/warrant-pr60/REVIEW.md`: R1 the profile bound a source, not the cited check; R2 extractor shape was validated after I/O; R3 the JSON and pointer grammars admitted `NaN` and `~2`; R4 addresses admitted a trailing newline; R5 the coverage number was a manual classification presented as a measurement). Each is closed below and burned in `tests/fact_derivation.py` §D.
 No SPEC edit, no body schema change, no change to `warrant verify`, to the
 `ski@v1` check blob or to WPL syntax. The profile is an additive blob cited in
 `evidence`; `tools/fact_derivation_check.py` reads it, and
@@ -27,19 +27,24 @@ not a repository artifact; its numbers are reproduced here.
 
 | finding | number |
 | --- | --- |
-| rules that compile once derivation is pushed to an extractor | 10 of 10 |
+| rules that compile once derivation is pushed to an extractor (**measured**: compiled) | 10 of 10 |
 | facts that carry any provenance today | 0 of 58 |
-| facts deterministically derivable from cited evidence by a pinned extractor | 46 of 58 (80%) |
-| … of which the derivation is `count` / `all` / `any` over a finite list | 15 |
-| … of which the derivation is equality of two digests, which WPL refuses (>32 bytes) | 5 |
-| decisions whose WHY includes a judgment no rule reaches (severity, adequacy) | 5 of 10 |
+| facts **classified by the author** as derivable from cited evidence by a pinned extractor (candidate coverage, not executed derivations) | 48 of 58 (46 without the two date-arithmetic facts) |
+| … of which the classified derivation is `count` / `all` / `any` over a finite list | 15 |
+| … of which it is equality of two digests, which WPL refuses (>32 bytes) | 5 |
+| decisions whose WHY, as the author restated them, includes a judgment no rule reaches | 5 of 10 |
 
-So the deficit reviewers see is mostly **provenance of operands**, not
-expressiveness: every `fact` is an assertion baked into the term
-(`docs/authoring-checks.md` §8), while four in five could have been read from
-bytes the record already cites. Two constructs WPL lacks account for a third
-of the derivations; they are a separate, smaller proposal (§7). Judgment is
-outside any rule and stays there.
+The two measured facts are: every rule compiled, and no fact carried
+provenance. The coverage figures are the author's classification of what a
+pinned extractor *could* read, not extractions that were run; this profile is
+the tool that would turn that classification into a checked result, and its
+own verdicts are the measurement that is still missing. Read within this
+sample: the deficit reviewers see looks mostly like **provenance of
+operands** (every `fact` is an assertion baked into the term,
+`docs/authoring-checks.md` §8) and, for about a third of the classified
+derivations, two constructs WPL lacks (§7). That five of ten restated
+decisions left a judgment outside the rule says the author found no rule for
+it, not that none exists.
 
 ## 2. The profile
 
@@ -47,6 +52,7 @@ A blob, JCS-canonical, integers only, cited in the record's `evidence`:
 
 ```json
 { "profile": "warrant.fact-derivation@v0",
+  "check":         "<hex64 ski@v1 check blob>",
   "policy_source": "<hex64 WPL source blob>",
   "facts": {
     "<fact name>": { "from": "<hex64 evidence blob>",
@@ -54,21 +60,33 @@ A blob, JCS-canonical, integers only, cited in the record's `evidence`:
                      "value": <bool | int | string> } } }
 ```
 
-`policy_source` is the WPL text the check was compiled from. Each listed fact
-names the evidence blob its value was read from, the extractor that read it,
-and the value — which MUST equal the literal in the source (the profile cannot
-claim a derivation for a constant the term does not bake in; that is a
-refusal, `PROFILE_VALUE_NOT_IN_TERM`). A fact absent from the profile is
-simply **ASSERTED**, as every fact is today.
+`check` is the ski@v1 check blob the profile describes and `policy_source` the
+WPL text it was compiled from. A profile-aware tool **recompiles the source
+and requires the result to be exactly that check** (`term` and `expect`;
+`CHECK_TERM_MISMATCH` otherwise; compilation is deterministic, SA-11), so
+"the value baked into the term" is a checked relation and not a claim about a
+source file (rev-1 R1). Each listed fact names the evidence blob its value was
+read from, the extractor that read it, and the value — which MUST equal the
+literal in the source (`PROFILE_VALUE_NOT_IN_TERM`). A fact absent from the
+profile is simply **ASSERTED**, as every fact is today.
 
-Extractors are a closed set. v0 has four:
+Given a WarrantID (`--record`), the tool also requires the record to cite the
+check as a `ski@v1` reason and to list the profile, the source, every `from`
+blob and every `cmd` program in `evidence` (`RECORD_*_NOT_CITED`). It does
+not verify signatures; that remains `warrant verify`'s job, and the summary
+says so. Without `--record` the summary reads `record=unverified`.
+
+Extractors are a closed set, and the whole extractor shape — kind, fields,
+type compatibility with the fact, pointer syntax — is validated **before any
+blob is read** (rev-1 R2): a malformed extractor is the same refusal whether
+its evidence is present or missing. v0 has four:
 
 | `via` | derives | trust |
 | --- | --- | --- |
-| `{"kind":"json","pointer":"/a/b"}` | the RFC 6901 pointer's value in a strict-JSON evidence blob | the tool's own reader; no execution |
+| `{"kind":"json","pointer":"/a/b"}` | the RFC 6901 pointer's value (only `~0`/`~1` escapes; anything else is `POINTER_INVALID`) in a strict JSON evidence blob (RFC 8259 with RFC 7493 strictness: UTF-8, no duplicate keys, no `NaN`/`Infinity`, no lone surrogates; otherwise `MALFORMED`) | the tool's own reader; no execution |
 | `{"kind":"json-len","pointer":"/items"}` | the length of the array at the pointer (an `int`) | same |
 | `{"kind":"digest-eq","other":"<hex64>"}` | `from == other` (a `bool`); no bytes are read | none needed; identity of two addresses |
-| `{"kind":"cmd","program":"<hex64>","args":[…]}` | `python3 <program> <evidence path> <args…>`, stdout one JSON literal | **container trust** (SPEC §14): executed only under `--execute-cmd`, otherwise `UNRUN` |
+| `{"kind":"cmd","program":"<hex64>","args":[…]}` | `python3 <program> <evidence path> <args…>`, stdout one strict JSON literal | **container trust** (SPEC §14): executed only under `--execute-cmd`, otherwise `UNRUN`. The tool runs the **host** `python3` with the caller's environment in a temporary directory and provides no container; isolation is the caller's responsibility, and the program hash pins the program, not the interpreter or its environment |
 
 The first three cover D-field, the count part of D-quant, and D-hash from §1
 without running anything the filer wrote. `cmd` covers the rest at exactly the
@@ -80,17 +98,21 @@ arrived in a record is not thereby safe to run.
 | verdict | meaning |
 | --- | --- |
 | `DERIVED` | re-derived value equals the constant baked into the term |
-| `DIVERGED` | re-derived value differs: **the term contradicts its own cited evidence**; the only verdict that fails the run |
+| `DIVERGED` | re-derived value differs: **the term contradicts its own cited evidence**; fails the run |
 | `ASSERTED` | no derivation listed |
 | `UNRESOLVED` | evidence or program blob absent, or not hashing to its address, or the pointer names nothing |
 | `UNRUN` | a `cmd` derivation not executed |
-| `MALFORMED` | the evidence has the wrong shape for the fact's type (a float for an `int`, a string over 32 bytes, a duplicate JSON key) |
+| `MALFORMED` | the evidence has the wrong shape for the fact's type (a float for an `int`, a string over 32 bytes, a duplicate JSON key, a non-JSON constant); fails the run |
 
-The summary line counts facts and ends `semantic-credit=none`. `DERIVED` binds
-a constant to bytes and a pinned extractor; it does not make the bytes true.
-Shape problems in the profile itself (unknown extractor, a fact the source
-does not declare, a source that is not WPL) are typed refusals with no
-per-fact report at all.
+`DIVERGED` and `MALFORMED` exit 1; `ASSERTED`, `UNRESOLVED` and `UNRUN` are
+reports at exit 0, so a consumer must read the per-fact lines, not the exit
+code. The summary line counts facts, states `check=bound`, states whether a
+record was cited, and ends `semantic-credit=none`: `DERIVED` binds a constant
+to bytes and a pinned extractor; it does not make the bytes true. Shape
+problems in the profile itself (an address that is not exactly 64 lowercase
+hex characters, an unknown or malformed extractor, a fact the source does not
+declare, a source that is not WPL or does not compile to the cited check) are
+typed refusals with no per-fact report at all.
 
 ## 4. Relation to WRT-004 (reason-binding, on branch `papers/the-reason-runs-again`)
 
@@ -118,8 +140,11 @@ proposal takes a fresh number rather than adding to it.
 ## 6. Falsifiers
 
 1. A profile that reads `DERIVED` for a fact whose cited evidence does not
-   contain that value (the three tool mutants in `tests/fact_derivation.py`
-   §B each make the selftest fail; if one survives, this section is wrong).
+   contain that value, or whose source is not the cited check, or whose
+   pointer is not RFC 6901 syntax (the five tool mutants in
+   `tests/fact_derivation.py` §B each make the selftest fail, and §D replays
+   the rev-1 review's counterexamples with exact verdicts; if one survives,
+   this section is wrong).
 2. A profile whose `value` differs from the term's literal and is not refused.
 3. A `cmd` derivation executed without `--execute-cmd`.
 4. A blob whose bytes do not hash to the cited address being read as evidence.
