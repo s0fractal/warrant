@@ -288,7 +288,11 @@ is out of scope rather than merely absent:
   `subject.note` and prose reasons — is intended to be readable by anyone holding
   it. Do not put a secret in a warrant.
 - **NG-2. Availability / completeness of a store.** There is no consensus, no ordering
-  across actors, no anti-censorship property. A store is a directory.
+  across actors, no anti-censorship property. A store is a directory. One attempt to
+  add an authorized effective set (WRT-002, closed deferred 2026-09-07) reproduced that
+  an unauthorized `supersede` is itself a censorship primitive and left four
+  counterexamples open; it is recorded as an open problem in `ARCHITECT.md`, not as a
+  property.
 - **NG-3. Blob transport.** Out of scope precisely because content addressing makes it
   irrelevant to integrity.
 - **NG-4. Whether a decision was correct.** Warrant records decisions; it does not take

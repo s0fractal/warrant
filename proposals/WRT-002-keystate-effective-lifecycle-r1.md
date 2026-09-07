@@ -1,6 +1,48 @@
 # WRT-002: Key-state, authorized effective-lifecycle, and the R1 checkpoint
 
-**Status:** DRAFT **rev 7 — definition pass** (2026-07-27) — model design only. **No
+**Status: CLOSED — DEFERRED, 2026-09-07, with one P0 left open on purpose.** rev 8b
+(2026-07-28) is the last revision. Its consumer chain is gone: WRT-001 is closed today,
+and the sigma-glyph precedent ADR it served was archived on 2026-09-03. The design does
+not deliver its own headline property: the three-family gate of 2026-07-28 reproduced
+**F3 (P0) — a supersede authorized solely by a resolver-rejected governance branch
+permanently censors a root, and revoking the censor cannot restore admission** — and no
+revision since has attempted rev 9. Closing records that state; it does not resolve it,
+and it adopts nothing.
+
+**Retained in the protocol, already landed.** The losing-quorum root-adoption finding this
+design produced is closed in SPEC (`CHANGELOG.md`, marked [protocol]).
+
+**Retained as an open problem**, extracted to `ARCHITECT.md` ("Open problem: authorized
+effective lifecycle") and pointed to from `THREAT-MODEL.md` NG-2: the problem statement of
+§§0–1 (supersede is a bare marker with no authorization and no eviction; conflict
+resolution is dormant; no checkpoint or effective set exists), the three-layer shape of §D
+(`valid_cap` → `selected_lineage`/`admits` → `effective`) with a closed `may_reverse`
+table, and the four reproduced counterexamples F3/F4/F5/F7, whose reproductions are
+Appendix A of `reviews/2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md`. They share one
+root: Layer 2a consumes Layer 1's permanence without Layer 2b's gate, the trade that
+bought cycle-freedom. A successor must close F3 first, and must not reintroduce the rev-6
+non-monotone loop while doing so.
+
+**Not retained.** `proposals/wrt-002-model/` as evidence of anything current — it passes
+29 checks against a definition that F3 defeats, and nothing in `tools/check.py` runs it;
+the R1 checkpoint certificate identity; the byte-freeze ordering of §8. The rev history
+below stays readable as history.
+
+**Reactivation condition.** A rev 9 that closes F3 with an executable countervector,
+gated by three families before any byte is frozen.
+
+**Lesson kept on purpose.** Six single-family gates and 29 green model checks passed every
+one of the nine defects the first three-family gate reproduced. And Kimi's reproductions
+ran against a model already modified in the working tree; the adjudication records that
+rather than smoothing it over. The harness copies the model at execution time; the
+sequencing was the defect.
+
+Closed by Claude Fable 5.1 at the owner's decision of 2026-09-07. A closure is an owner's
+governance act, not a gate verdict, and it adopts nothing (AGENTS.md rules 3–4).
+
+---
+
+**Status (historical, 2026-07-27):** DRAFT **rev 7 — definition pass** — model design only. **No
 production signatures, no adoption, no code, no runtime registration, and NO frozen wire
 bytes.** Specifies the settlement substrate WRT-001's stored (R1) wave citation depends
 on — Deferred items **1 (authorized effective-lifecycle)** and **2 (key-state → R1
