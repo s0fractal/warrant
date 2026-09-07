@@ -1,7 +1,7 @@
 # WRT-008 model — design evidence, not a gate
 
 `fact_derivation_check.py` and `harness.py` are the executable part of
-WRT-008 (CLOSED — DEFERRED, 2026-09-07). They are kept so the profile, the
+WRT-008 (CLOSED — DEFERRED, 2026-09-07; warrant PR #60, closure `fe6b8a6`). They are kept so the profile, the
 extractors and the verdicts stay runnable; nothing in `tools/check.py` runs
 them, and `--record` is refused rather than claiming a binding two gates found
 unverified.

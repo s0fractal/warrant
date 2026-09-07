@@ -1,7 +1,11 @@
 # WRT-008: Fact derivation profile — where a WPL constant came from
 
-**Status: CLOSED — DEFERRED by its own stopping rule (§7), 2026-09-07.** Two
-gates (rev 1 `e446596`, rev 2 `b7ed117`), each AMEND on the binding layer:
+**Status: CLOSED — DEFERRED by its own stopping rule (§7), 2026-09-07.**
+Record of the act: warrant PR #60 (`wrt-008/fact-derivation`), closure commit
+`fe6b8a6` on top of the two gated revisions; the reviews are
+`.triad/reviews/warrant-pr60/` (rev 1) and `.triad/reviews/warrant-pr60-rev2/`
+(rev 2), Codex, each with executable probes. Two gates (rev 1 `e446596`,
+rev 2 `b7ed117`), each AMEND on the binding layer:
 rev 1 bound a *source file* rather than the cited check (R1); rev 2 bound the
 check but its `--record` path reported `record=cited` for a null or missing
 body without running a single citation check, and never compared the body's
