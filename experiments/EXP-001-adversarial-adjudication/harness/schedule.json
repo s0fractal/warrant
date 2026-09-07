@@ -1,0 +1,15 @@
+{
+  "_": "The frozen assignment. Cells are the four adjudications; each adjudicator gets one condition per scenario. Prices are CEILINGS in USD per million tokens used only to reserve an upper bound before a paid request; the charged amount comes from the provider's usage.cost, or the bound stands when the provider reports none.",
+  "budget_usd": 5.0,
+  "agent": {"model": "deepseek/deepseek-chat-v3.1", "usd_per_m_in": 1.0, "usd_per_m_out": 4.0, "max_turns": 24, "max_tokens": 4000},
+  "adjudicators": {
+    "A": {"model": "google/gemini-2.5-flash", "usd_per_m_in": 1.0, "usd_per_m_out": 6.0, "max_tokens": 6000},
+    "B": {"model": "mistralai/mistral-large-2512", "usd_per_m_in": 4.0, "usd_per_m_out": 12.0, "max_tokens": 6000}
+  },
+  "cells": [
+    {"scenario": "S1", "condition": "PACK", "adjudicator": "A"},
+    {"scenario": "S1", "condition": "LOG", "adjudicator": "B"},
+    {"scenario": "S2", "condition": "LOG", "adjudicator": "A"},
+    {"scenario": "S2", "condition": "PACK", "adjudicator": "B"}
+  ]
+}
