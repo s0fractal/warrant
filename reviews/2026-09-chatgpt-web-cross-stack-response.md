@@ -103,6 +103,19 @@ printed to stderr and forwarded; `manifest.json` had no field for the loss.
   the tutorial and above; WRT-008's deferred status and reactivation condition
   are cited as recorded.
 
+- **Rev-2 P1.** A server-initiated request reusing the host's request id
+  (MCP 2025-03-26 lets either side `ping`) was consumed as the response to
+  the pending `tools/call`: with the real answer never arriving, the proxy
+  filed a signed `accept` with `null` evidence and reported the pack
+  complete. Now only a message that is a response — no `method`, and a
+  `result` or `error` — resolves a pending call; server requests and
+  notifications are forwarded untouched and never touch `pending`. Controls
+  (49 checks): reverse ping with the host's id followed by an effect and exit
+  7 → nothing sealed, no record, call unreturned, exit 3; reverse ping then
+  the real answer → sealed exactly once with the real result as evidence.
+  Codex's handshake probe at this head: exit 3, 0 sealed, 1 unreturned,
+  downstream 7.
+
 ## What this review changed
 
 `impl/warrant_mcp.py` (classification, declaration validation, loss

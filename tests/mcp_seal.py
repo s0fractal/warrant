@@ -11,6 +11,11 @@
   D. seal failure: the stream is still forwarded, and the loss is in the
      manifest (seal_failures, observation_complete=false) and in the exit
      status (3), not only on stderr.
+  F. reverse request: the server sends its own `ping` request reusing the
+     host's request id before (never) answering the tools/call. A request is
+     not a response: it must not resolve the pending call, must not become a
+     sealed record with null evidence, and the call stays unreturned (Codex
+     rev-2 P1 on PR #63).
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -254,12 +259,59 @@ def test_unanswered_call():
         f"rc={proc.returncode} {json.dumps(m)[:200]}")
 
 
+def test_reverse_request():
+    mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
+    call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "get_and_execute_pingback_silent", "arguments": {"sql": "DROP"}}}
+    # the host answers the server's ping like a well-behaved MCP client would
+    host_pong = {"jsonrpc": "2.0", "id": 1, "result": {}}
+    # 1. server pings back with the host's id, runs the effect, exits 7 unanswered
+    d = tempfile.mkdtemp()
+    marker = os.path.join(d, "effect.marker")
+    env = dict(os.environ, MOCK_MCP_SILENT_EXIT="7", MOCK_MCP_MARKER=marker)
+    cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+           "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+           "--", sys.executable, mock]
+    stdin = json.dumps(call) + "\n" + json.dumps(host_pong) + "\n"
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30, env=env)
+    lines = [json.loads(l) for l in proc.stdout.splitlines() if l.strip()]
+    chk(any(m.get("method") == "ping" and m.get("id") == 1 for m in lines),
+        "reverse ping (same id as the tools/call) is forwarded to the host")
+    chk(os.path.exists(marker), "the effect really happened")
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    chk(proc.returncode == 3 and m["sealed_calls"] == 0 and m["observation_complete"] is False
+        and len(m["unreturned_calls"]) == 1 and m["unreturned_calls"][0]["consequential"],
+        "server request did NOT resolve the call: nothing sealed, call unreturned, exit 3",
+        f"rc={proc.returncode} {json.dumps(m)[:240]}")
+    chk(m["records"] == [], "no signed record with null evidence was created", str(m["records"]))
+    # 2. control: ping back with the same id, THEN answer -> sealed once, with the real result
+    d = tempfile.mkdtemp()
+    env = dict(os.environ); env.pop("MOCK_MCP_SILENT_EXIT", None)
+    call2 = dict(call, params={"name": "get_and_execute_pingback", "arguments": {}})
+    cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+           "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+           "--", sys.executable, mock]
+    stdin = json.dumps(call2) + "\n" + json.dumps(host_pong) + "\n"
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30, env=env)
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    chk(proc.returncode == 0 and m["sealed_calls"] == 1 and m["observation_complete"] is True
+        and m["unreturned_calls"] == [],
+        "control: ping then answer -> sealed exactly once, complete, exit 0",
+        f"rc={proc.returncode} {json.dumps(m)[:200]}")
+    store = W.Store(os.path.join(d, ".warrants"))
+    body = store.get_record(m["records"][0])["body"]
+    ev = json.loads(open(os.path.join(d, ".warrants", "blobs", body["evidence"][0])).read())
+    chk(isinstance(ev, dict) and "content" in ev,
+        "the sealed evidence is the real tool result, not the ping", str(ev)[:120])
+
+
 def main():
     test_classifier()
     test_sealer_core()
     test_stdio_proxy()
     test_seal_failure()
     test_unanswered_call()
+    test_reverse_request()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 

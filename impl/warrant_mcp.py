@@ -297,6 +297,15 @@ def run_proxy(server_cmd, sealer):
             msg = json.loads(raw)
         except ValueError:
             return
+        # Only a RESPONSE resolves a pending call. A server may send its own
+        # requests (MCP 2025-03-26: either side may `ping`) and notifications
+        # on this channel, and request ids belong to the requesting direction --
+        # a server ping with id 1 is not the answer to the host's tools/call 1.
+        # Both are forwarded untouched; neither touches `pending`.
+        if not isinstance(msg, dict) or "method" in msg:
+            return
+        if "result" not in msg and "error" not in msg:
+            return
         mid = msg.get("id")
         with plock:
             call = pending.pop(mid, None) if mid is not None else None

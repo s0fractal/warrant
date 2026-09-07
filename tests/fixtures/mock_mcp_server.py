@@ -20,6 +20,11 @@ def main():
         mid = msg.get("id")
         if msg.get("method") == "tools/call":
             name = (msg.get("params") or {}).get("name", "")
+            if "pingback" in name.lower():
+                # MCP lets the server initiate requests; its id space is its own.
+                # Reuse the host's id on purpose -- the collision is the probe.
+                sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": mid, "method": "ping"}) + "\n")
+                sys.stdout.flush()
             if "silent" in name.lower() and os.environ.get("MOCK_MCP_SILENT_EXIT"):
                 marker = os.environ.get("MOCK_MCP_MARKER")
                 if marker:

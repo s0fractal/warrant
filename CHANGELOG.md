@@ -35,7 +35,9 @@ right.
   in the exit status (3) instead of only on stderr; a call sent downstream
   and never answered before the server exited is listed as `unreturned_calls`
   with its class, the downstream exit code is recorded, and the pack is
-  marked incomplete (exit 3) rather than reported complete and empty. Review:
+  marked incomplete (exit 3) rather than reported complete and empty; a
+  server-initiated request (`ping`) reusing the host's request id no longer
+  resolves the pending call -- only a response does. Review:
   ChatGPT (web), 2026-09, `reviews/2026-09-chatgpt-web-cross-stack.md`; the
   unanswered-call path from Codex's review of PR #63. The compiler's
   no-arithmetic message and `docs/authoring-checks.md` now say what is true:
