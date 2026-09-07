@@ -48,10 +48,11 @@ if ARGS.ref:
                      "could not be fetched from origin -- refusing to measure something else")
     _tmp = tempfile.TemporaryDirectory(prefix="check_claims-")
     _tar = tarfile.open(fileobj=io.BytesIO(_git("archive", "--format=tar", ARGS.ref, check=True).stdout))
-    try:
-        _tar.extractall(_tmp.name, filter="data")
-    except TypeError:  # python < 3.12
-        _tar.extractall(_tmp.name)
+    # The "data" filter (3.12+) rejects links and absolute paths inside the
+    # archive; a git archive of our own commit has neither, so on older
+    # interpreters the unfiltered extraction is the same operation.
+    _kw = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+    _tar.extractall(_tmp.name, **_kw)
     REPO = Path(_tmp.name)
     MEASURED_AT = f"commit {ARGS.ref}"
 
