@@ -32,7 +32,6 @@ an external audit returns 0×P0/P1. Self-review is a substrate, never the gate.
 | W4 | §8.3 negative battery (weak-key + schema-invalid) checked by both `conformance` commands; parse-layer rejections (dup-key/trailing/canonicality) referenced to the cross-impl harnesses | `examples/conformance-negatives.json`, both impls 40/40 | **done** |
 | W3 | Third independent implementation (**Rust**) of the verifier, mirroring sigma's discipline | byte-exact on §8 + differential | **done** (canon/schema/WarrantID/weak-key **+ from-scratch Ed25519**; verifies all three §8 signatures; 3-way canon differential 43/43; Ed25519 differential vs Python 452/452; no external crates) |
 | X1 | Combined CI: Book III / sigma store verified by the live warrant CLI, so cross-repo coupling regressions surface | CI job across both repos | **done** (`tools/x1_cross_repo.sh` + `x1_negative_control.sh` + workflow, mirrored byte-identically in sigma; 11 crossings HEAD-vs-HEAD, 2 effective negative controls per direction) |
-
 | W5 | **Authorized effective lifecycle** — supersede is a bare marker, conflict resolution is dormant, no checkpoint or effective set exists (extracted from WRT-002, closed deferred 2026-09-07) | a design that closes F3 with an executable countervector, under a three-family gate, before any byte is frozen | **open problem**, not scheduled; see below |
 
 **Explicitly NOT doing** (anti-gold-plating): new features, marketing, elegance

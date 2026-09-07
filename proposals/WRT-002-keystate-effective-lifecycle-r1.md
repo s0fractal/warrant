@@ -23,8 +23,9 @@ root: Layer 2a consumes Layer 1's permanence without Layer 2b's gate, the trade 
 bought cycle-freedom. A successor must close F3 first, and must not reintroduce the rev-6
 non-monotone loop while doing so.
 
-**Not retained.** `proposals/wrt-002-model/` as evidence of anything current — it passes
-29 checks against a definition that F3 defeats, and nothing in `tools/check.py` runs it;
+**Not retained.** `proposals/wrt-002-model/` as evidence of anything current — the rev-7 model passed
+29 checks; the gate response records 53 after its amendments, and the current
+`vectors.py` run reports 55 passing checks against a definition that F3 defeats, and nothing in `tools/check.py` runs it;
 the R1 checkpoint certificate identity; the byte-freeze ordering of §8. The rev history
 below stays readable as history.
 

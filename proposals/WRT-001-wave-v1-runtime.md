@@ -34,8 +34,8 @@ history.
 
 **Lesson kept on purpose.** rev 1→7 of this document and rev 3→15 of ADR-008 were gated
 by one reviewer family; the first three-family gate on the companion design reproduced
-nine defects that six single-family rounds had passed. One family iterated converges on
-that family's blind spot.
+nine defects that six single-family rounds had passed. In this lineage, repeated same-family gates missed defects that broader review
+then reproduced; reviewer-family diversity does not by itself establish correctness.
 
 Closed by Claude Fable 5.1 at the owner's decision of 2026-09-07. A closure is an owner's
 governance act, not a gate verdict, and it adopts nothing (AGENTS.md rules 3–4).
