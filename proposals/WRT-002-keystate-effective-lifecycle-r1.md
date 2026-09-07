@@ -18,7 +18,7 @@ effective lifecycle") and pointed to from `THREAT-MODEL.md` NG-2: the problem st
 resolution is dormant; no checkpoint or effective set exists), the three-layer shape of §D
 (`valid_cap` → `selected_lineage`/`admits` → `effective`) with a closed `may_reverse`
 table, and the four reproduced counterexamples F3/F4/F5/F7, whose reproductions are
-Appendix A of `reviews/2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md`. They share one
+Appendix A of the retired `kimi-k3-wrt-002-rev7-adversarial-gate` (see `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`). They share one
 root: Layer 2a consumes Layer 1's permanence without Layer 2b's gate, the trade that
 bought cycle-freedom. A successor must close F3 first, and must not reintroduce the rev-6
 non-monotone loop while doing so.
@@ -67,7 +67,7 @@ after this model survives its own re-gate.
 signature predicates, ACI provenance merge, policy-state, causal binding, total manifest,
 target-role matrix, root-adoption, and the authorization ≠ effect split. rev 5 typed
 `lifecycle-supersede`, made governance reversal use current policy, and pinned emergency
-rotation. The rev-5 re-gate (`reviews/2026-07-codex-wrt-002-rev5-design-regate.md`)
+rotation. The rev-5 re-gate (retired `codex-wrt-002-rev5-design-regate`)
 confirmed **the cut, total manifest, ACI carrier, auth/effect split, and resolver shapes
 survive**, and exposed four *compositions*. **rev 6 closes them, still without freezing
 bytes:** (1) checkpoint authorization is a **two-stage proposal + separate authorization
@@ -454,7 +454,7 @@ valid succession** thereby seized the resolution of a *different* actor's key co
 dictated that actor's key. Every member of `resolves` must therefore be a transition of
 the same slot (and, for a key slot, of the same target actor) in the same jurisdiction,
 and the set must equal the maxima. Fail closed on any mismatch. Vectors:
-`[resolver-scope]` in `proposals/wrt-002-model/vectors.py`.
+`[resolver-scope]` in the retired model's `vectors.py` (see `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`).
 
 **Binding is not equality (rev 8).** A witness key is BOUND iff the actor's key-state
 holds *that key*: `None` (no key) and the `CONFLICT` sentinel are **refusals, not
@@ -498,7 +498,7 @@ The same gate reproduced four more, and they are **not closed**. They share one 
 trade that bought the cycle-freedom. Patching them individually risks reintroducing the
 rev-6 non-monotone loop, so they are recorded as the rev-9 design agenda rather than
 papered over. Reproductions are in
-`reviews/2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md`, Appendix A.
+the retired `kimi-k3-wrt-002-rev7-adversarial-gate`, Appendix A.
 
 | id | what reproduces |
 |---|---|

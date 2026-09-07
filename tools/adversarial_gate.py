@@ -34,8 +34,8 @@ PROTOCOL
 
 USAGE
     OPENROUTER_MODEL=moonshotai/kimi-k3 \
-    python3 tools/adversarial_gate.py --target wrt-002 \
-        --out reviews/2026-07-kimi-k3-wrt-002-rev7-adversarial-gate.md
+    python3 tools/adversarial_gate.py --target settle \
+        --out reviews/YYYY-MM-<model>-<target>-adversarial-gate.md
 
 Key: $OPENROUTER_API_KEY or ~/.config/openrouter/key.
 """
@@ -77,17 +77,9 @@ TARGETS = {
         "module": "settle",
         "subject": "settle.py gate-settlement rule (executed-repro blocking, per-clause novelty)",
     },
-    "wrt-002": {
-        "brief": "briefs/WRT-002-rev7-adversarial-gate.md",
-        "normative": ("proposals/WRT-002-keystate-effective-lifecycle-r1.md",
-                      "## D. Formal definitions", "## 7. Countervectors"),
-        "workdir": "proposals/wrt-002-model",
-        "sources": ["proposals/wrt-002-model/model.py",
-                    "proposals/wrt-002-model/vectors.py"],
-        "baseline": ["python3", "vectors.py"],
-        "baseline_expect": "WRT-002-MODEL: ALL PASS",
-        "subject": "WRT-002 rev 7 (key-state, authorized effective-lifecycle, R1 checkpoint)",
-    },
+    # The second target, WRT-002 rev 7 (brief + executable model), was retired
+    # with the proposal's closure on 2026-09-07; its shape is in git history at
+    # the before revision named in history/RETIREMENT-2026-09-REVIEW-CORPUS.md.
 }
 
 REPRO_RULES = """

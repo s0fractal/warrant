@@ -107,6 +107,16 @@ SCAN_DIRS = ("proposals", "briefs", "spec", "profiles", "needs")
 # The MAP row's Path column carries that exact target, and `--check-map`
 # verifies the whole row, not just that the token appears somewhere.
 CANONICAL = {
+    # WRT-001/002 are CLOSED (DEFERRED, 2026-09-07). Pinned here so the row
+    # does not follow the shortest path that happens to carry the token: the
+    # substring search resolved WRT-002 to the executable model, and that
+    # model was retired with the closure (history/RETIREMENT-2026-09-REVIEW-CORPUS.md).
+    "WRT-001": {"lives_in": "this repo, `master` (CLOSED: DEFERRED)",
+                "commit": None,
+                "path": "proposals/WRT-001-wave-v1-runtime.md"},
+    "WRT-002": {"lives_in": "this repo, `master` (CLOSED: DEFERRED)",
+                "commit": None,
+                "path": "proposals/WRT-002-keystate-effective-lifecycle-r1.md"},
     "WRT-003": {"lives_in": "closed PR #20 (verification receipts)",
                 "commit": "25bd44c829cb015a836e08642022412c568de16a",
                 "path": "proposals/WRT-003-verification-receipt.md"},
