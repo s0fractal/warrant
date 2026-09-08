@@ -1,0 +1,47 @@
+{
+ "cart": [],
+ "catalogue": [
+  {
+   "name": "Headphones Basic",
+   "price_cents": 4900,
+   "sku": "HP-100"
+  },
+  {
+   "name": "Headphones Pro",
+   "price_cents": 12900,
+   "sku": "HP-200"
+  },
+  {
+   "name": "USB-C Cable",
+   "price_cents": 900,
+   "sku": "CB-1"
+  }
+ ],
+ "next_order": 4,
+ "orders": {
+  "ORD-0001": {
+   "amount_cents": 12900,
+   "refunded": true,
+   "skus": [
+    "HP-200"
+   ],
+   "status": "delivered"
+  },
+  "ORD-0002": {
+   "amount_cents": 900,
+   "refunded": false,
+   "skus": [
+    "CB-1"
+   ],
+   "status": "shipped"
+  },
+  "ORD-0003": {
+   "amount_cents": 4900,
+   "refunded": false,
+   "skus": [
+    "HP-100"
+   ],
+   "status": "cancelled"
+  }
+ }
+}

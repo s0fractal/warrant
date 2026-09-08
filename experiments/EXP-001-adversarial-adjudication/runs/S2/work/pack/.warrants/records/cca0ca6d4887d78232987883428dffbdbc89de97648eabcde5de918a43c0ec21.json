@@ -1,0 +1,41 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Purchase amount of 3300 cents is within the 8000 cent limit allowed by the mandate [mandate rule for purchase evaluates TRUE on the stated facts]"
+      },
+      {
+        "check": "25eef64867856926066fb0175a6ce48c6426d0b7c42ccc2f41ba43938deba400",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "6c401ddedbc2bd4800a063a1cf392609223027e01a75de5d859ccc4556ad6e58",
+      "f88de23f66eba6d90b19e4b3837c33552b87eb6ddfdf2962de3f0d78c361d4ee"
+    ],
+    "prior": [],
+    "subject": {
+      "hash": "7fd160d8a1a70406a01d22f13911019d1e037338724bc97ce60d169fa8babe01",
+      "note": "purchase"
+    },
+    "ts": 1788862797,
+    "under": [
+      "86a1e9afdca720717ca23c5199166881561c8411b44d79031c0de22a7c885073"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "528769a6b3779fe4f75892e51753cf8dc96542a51b9af23ac684d679c00693fb204d1b5434defacca8606783c1d41f23574b3bf3706a59d66fac0845c01b560b"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"ceiling":"A2","effects":{"shop.add_to_cart":["source_change"],"shop.cancel_order":["update"],"shop.checkout":["spend"],"shop.get_order":["read"],"shop.list_orders":["list"],"shop.request_refund":["transfer"],"shop.search_products":["search"]},"warrant_mcp_effects":"0"}

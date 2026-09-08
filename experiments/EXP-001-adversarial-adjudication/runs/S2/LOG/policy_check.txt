@@ -1,0 +1,5 @@
+$ policy_check.py --bundle LOG
+spend total: 3300 cents (cap 8000)
+decisions recorded: 3; rejects: [('cancel', 'ORD-0003')]
+findings:
+  - refund of ORD-0004 although the decision stated status 'shipped'

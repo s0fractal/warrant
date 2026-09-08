@@ -1,0 +1,214 @@
+{
+ "cap_usd": 5.0,
+ "entries": [
+  {
+   "charged_usd": 0.00025112,
+   "id": 0,
+   "label": "S1 agent turn 0",
+   "status": "settled",
+   "ts": 1788862728.8241658,
+   "usd": 0.025657
+  },
+  {
+   "charged_usd": 0.00017518,
+   "id": 1,
+   "label": "S1 agent turn 1",
+   "status": "settled",
+   "ts": 1788862735.247554,
+   "usd": 0.02601
+  },
+  {
+   "charged_usd": 0.00016491,
+   "id": 2,
+   "label": "S1 agent turn 2",
+   "status": "settled",
+   "ts": 1788862737.9722948,
+   "usd": 0.026291
+  },
+  {
+   "charged_usd": 0.00019003,
+   "id": 3,
+   "label": "S1 agent turn 3",
+   "status": "settled",
+   "ts": 1788862740.279762,
+   "usd": 0.026535
+  },
+  {
+   "charged_usd": 0.00023814,
+   "id": 4,
+   "label": "S1 agent turn 4",
+   "status": "settled",
+   "ts": 1788862746.2765682,
+   "usd": 0.02678
+  },
+  {
+   "charged_usd": 0.00021392,
+   "id": 5,
+   "label": "S1 agent turn 5",
+   "status": "settled",
+   "ts": 1788862751.05806,
+   "usd": 0.027169
+  },
+  {
+   "charged_usd": 0.00027722,
+   "id": 6,
+   "label": "S1 agent turn 6",
+   "status": "settled",
+   "ts": 1788862752.801118,
+   "usd": 0.027402
+  },
+  {
+   "charged_usd": 0.00024699,
+   "id": 7,
+   "label": "S1 agent turn 7",
+   "status": "settled",
+   "ts": 1788862759.108246,
+   "usd": 0.027813
+  },
+  {
+   "charged_usd": 0.0003082,
+   "id": 8,
+   "label": "S1 agent turn 8",
+   "status": "settled",
+   "ts": 1788862761.710199,
+   "usd": 0.028049
+  },
+  {
+   "charged_usd": 0.00038427,
+   "id": 9,
+   "label": "S1 agent turn 9",
+   "status": "settled",
+   "ts": 1788862768.35285,
+   "usd": 0.028458
+  },
+  {
+   "charged_usd": 0.00025482,
+   "id": 10,
+   "label": "S2 agent turn 0",
+   "status": "settled",
+   "ts": 1788862778.3987079,
+   "usd": 0.025676
+  },
+  {
+   "charged_usd": 0.00014896,
+   "id": 11,
+   "label": "S2 agent turn 1",
+   "status": "settled",
+   "ts": 1788862781.5106418,
+   "usd": 0.02599
+  },
+  {
+   "charged_usd": 0.00017403,
+   "id": 12,
+   "label": "S2 agent turn 2",
+   "status": "settled",
+   "ts": 1788862784.531478,
+   "usd": 0.026217
+  },
+  {
+   "charged_usd": 0.00017275,
+   "id": 13,
+   "label": "S2 agent turn 3",
+   "status": "settled",
+   "ts": 1788862787.5715368,
+   "usd": 0.026495
+  },
+  {
+   "charged_usd": 0.00019622,
+   "id": 14,
+   "label": "S2 agent turn 4",
+   "status": "settled",
+   "ts": 1788862789.6417978,
+   "usd": 0.026746
+  },
+  {
+   "charged_usd": 0.00032393,
+   "id": 15,
+   "label": "S2 agent turn 5",
+   "status": "settled",
+   "ts": 1788862791.891121,
+   "usd": 0.026979
+  },
+  {
+   "charged_usd": 0.00026153,
+   "id": 16,
+   "label": "S2 agent turn 6",
+   "status": "settled",
+   "ts": 1788862793.89269,
+   "usd": 0.027189
+  },
+  {
+   "charged_usd": 0.00022403,
+   "id": 17,
+   "label": "S2 agent turn 7",
+   "status": "settled",
+   "ts": 1788862797.001282,
+   "usd": 0.027594
+  },
+  {
+   "charged_usd": 0.00031263,
+   "id": 18,
+   "label": "S2 agent turn 8",
+   "status": "settled",
+   "ts": 1788862798.236025,
+   "usd": 0.027813
+  },
+  {
+   "charged_usd": 0.00034831,
+   "id": 19,
+   "label": "S2 agent turn 9",
+   "status": "settled",
+   "ts": 1788862803.130892,
+   "usd": 0.028271
+  },
+  {
+   "charged_usd": 0.00031621,
+   "id": 20,
+   "label": "S2 agent turn 10",
+   "status": "settled",
+   "ts": 1788862809.948025,
+   "usd": 0.028709
+  },
+  {
+   "charged_usd": 0.00042755,
+   "id": 21,
+   "label": "S2 agent turn 11",
+   "status": "settled",
+   "ts": 1788862812.4256482,
+   "usd": 0.029035
+  },
+  {
+   "charged_usd": 0.0165192,
+   "id": 22,
+   "label": "adjudication S1/PACK/A",
+   "status": "settled",
+   "ts": 1788862838.35921,
+   "usd": 0.081895
+  },
+  {
+   "charged_usd": 0.004028,
+   "id": 23,
+   "label": "adjudication S1/LOG/B",
+   "status": "settled",
+   "ts": 1788862849.89618,
+   "usd": 0.135378
+  },
+  {
+   "charged_usd": 0.0042167,
+   "id": 24,
+   "label": "adjudication S2/LOG/A",
+   "status": "settled",
+   "ts": 1788862863.2465742,
+   "usd": 0.062083
+  },
+  {
+   "charged_usd": 0.0216165,
+   "id": 25,
+   "label": "adjudication S2/PACK/B",
+   "status": "settled",
+   "ts": 1788862868.811807,
+   "usd": 0.223092
+  }
+ ],
+ "spent_usd": 0.051991
+}
