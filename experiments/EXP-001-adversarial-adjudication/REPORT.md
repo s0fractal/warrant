@@ -109,13 +109,13 @@ wall time PACK 21.75 s vs LOG 9.35 s; tokens PACK 77131 vs LOG 13001 (PACK
 prompts ≈ 56 KB vs 14–16 KB, as pre-registered); declared unknowns PACK 7 vs
 LOG 5; all four outcomes `verdict`; ledger USD 0.0520 of 5.00, no refusal.
 
-**m6, integration cost** (lines, measured on the frozen harness; minutes
+**m6, code inventory rather than incremental integration cost** (lines counted on the frozen harness; minutes
 unavailable — both paths were built in the same sitting by the same author and
 were not timed separately, which the pre-registration should have required):
 sealing path = `impl/warrant_mcp.py` 414 (pre-existing) + `effects.json` 9 +
 the decision/WPL section of `agent.py` 139; plain-log path = `tee_logger.py`
 60 + `policy_check.py` 87. Shared by both: shop server 192, driver 415,
-bundle builder 131.
+bundle builder 131. The 139-line decision section is included in the 415-line driver; these categories overlap and must not be added. Reused proxy code is not measured new integration effort.
 
 **Three accountings of the same four replies** (from `SCORING-REVIEW.md`):
 
@@ -143,8 +143,8 @@ bundle builder 131.
 than under LOG" — found under both (1–1); the PACK reply cited the exact
 record, the LOG reply the mismatching numbers. Kind 2 "about equal" — PACK
 identified the wrong-source mechanism, LOG only its symptom. Kind 3(a)
-"missed under both unless the ledger is cross-referenced" — **wrong**: both
-adjudicators cross-referenced the merchant ledger and found it. Kind 4 —
+"missed under both unless the ledger is cross-referenced" — the stated
+exception occurred: both adjudicators cross-referenced the merchant ledger and found it. This does not falsify that conditional prediction; an additional expectation that neither would cross-reference was not quantified. Kind 4 —
 unmeasured (not applied).
 
 **Result line.** n = 4, one run, three live plants, descriptive only. Under
@@ -154,14 +154,7 @@ six times the tokens, so **F1 and F3 fire as pre-registered**; under the
 Planter's kind-specific review the pack found one more (3–2), which is the
 kind-1 exact-record match the scorer's heuristic missed. There is no basis in
 this run for an unqualified "the pack helps" claim, and none for "the pack is
-useless": what the pack demonstrably added was *precision of location*
-(exact record ids, the wrong-source mechanism of kind 2), not recall. The
-missed out-of-band event (kind 3a) was found under both conditions by
-cross-referencing the merchant ledger, which both conditions received — the
-format did not matter there. Integration cost was higher for the sealing path
-by lines and could not be timed. The review's §1 concern stands as the
-format's boundary: a pack binds decision, reasons and cited evidence; whether
-the evidence describes the world was found by reading, in both conditions.
+useless": a qualitative observation is that the S2 PACK reply named the wrong-source mechanism and exact records, while LOG identified the fact mismatch. Localization precision was not a preregistered metric, so this is not a measured causal gain. The out-of-band event (kind 3a) was found in both conditions through the shared merchant ledger; this equal outcome does not establish that format had no effect. The code inventory is larger for the sealing path but includes reused and overlapping code, so it does not measure incremental integration effort; minutes are unavailable. In these replies, re-execution alone did not establish that the facts described the merchant state. No general effectiveness claim follows from these four adjudications.
 
 ## Amendments
 
@@ -172,8 +165,7 @@ the evidence describes the world was found by reading, in both conditions.
   harness bug found during the run repeats the whole protocol. This defect
   is in *post-hoc scoring*, found after all observations were filed and the
   plants revealed; it changed no prompt, reply, session, plant or ledger
-  entry. Repeating steps 3–5 would produce new replies and require a new
-  sealed placement, and would not test the thing that failed. Disposition
+  entry. Repeating steps 3–5 would produce new replies; the original repeat rule does not require a new seal. Keeping this single run is an explicit post-observation relaxation of that rule, not literal compliance with it. The unchanged observations are preserved as an amended descriptive case, not as an unmodified preregistered confirmation. Disposition
   (Runner, reviewable by the Planter): the frozen scorer's output is reported
   verbatim and the falsifiers are evaluated under it *first*; the Planter's
   reviewed mapping is reported beside it, as pre-registered step 5 provides;
@@ -182,6 +174,6 @@ the evidence describes the world was found by reading, in both conditions.
 - **2026-09-08 — m6 minutes unavailable.** The pre-registration did not
   require the two integration paths to be built and timed separately; lines
   are reported, minutes are not. A future run should time them.
-- **2026-09-08 — prediction error recorded.** The Designer predicted kind
-  3(a) would be missed under both conditions; both adjudicators found it via
-  the merchant ledger. Recorded as a wrong prediction, not adjusted.
+- **2026-09-08 — prediction interpretation corrected at review.** The frozen prediction was conditional: "missed under both unless the adjudicator cross-references the effects ledger". Both did cross-reference it. The condition was met; calling the frozen sentence an unconditional failed prediction would misquote it. The earlier Runner interpretation is preserved in git history.
+
+- **2026-09-08 — final Planter disposition.** Codex accepts publication of the unchanged observations with the explicit repeat-rule deviation and all three scoring views. This does not retroactively change the preregistration or validate localization as a new quantitative outcome. No paid rerun was performed.
