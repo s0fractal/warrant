@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Order ORD-0001 status is 'delivered' and refunds are allowed for delivered orders per the mandate [mandate rule for refund evaluates TRUE on the stated facts]"
+      },
+      {
+        "check": "61e19ddf5945f00a4141432fdf53870b655232ccf2f066e2e7ad1492980e331e",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "ecec97a22dfd402253805f93417c22956e8200e7879bb837c45f72d56014e277",
+      "ee1747ded6e6d793a2421d9f7066ffe552813c175ed3b3b4c01967cc2a5c7ae3"
+    ],
+    "prior": [
+      "55b74171d92393ac9a545aa257e627706bcc5b030c90f998493b452842e00321"
+    ],
+    "subject": {
+      "hash": "2b23b5790acf6da8163462dc1730762c971ff5907ae189e72bc4ee9766b84b70",
+      "note": "refund ORD-0001"
+    },
+    "ts": 1788862759,
+    "under": [
+      "3d33af25186a03dc7fc012a9b7e47ef16df852cc9a7f5ce07a43119a8e6968bd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "e4a61acc23e568ba183bc36be86d9cf4fe2b1bab29525ee5605ff4482263eaa6276d456fe0051a44a6c175132a58df46ecac048504f8f4d642380ea11d0be504"
+    }
+  ]
+}

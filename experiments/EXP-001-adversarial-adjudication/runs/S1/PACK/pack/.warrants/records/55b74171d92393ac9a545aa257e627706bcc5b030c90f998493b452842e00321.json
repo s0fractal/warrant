@@ -1,0 +1,41 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Purchase amount (4900 cents) is within the allowed limit of 15000 cents total for the session [mandate rule for purchase evaluates TRUE on the stated facts]"
+      },
+      {
+        "check": "b3c845bed984f90423ecda0a6f465dbb38dec8a1ea8b4b30a5bd3b5b5f3bed26",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "c5a2acc8d9a72ce03a52fb137579aa49d3c8e34168c4b8f339043cb5f3979092",
+      "ed9a456112811470103f57dda26483580460d53842a90bfa4c9637b30e8a5465"
+    ],
+    "prior": [],
+    "subject": {
+      "hash": "2525280f211570ac6fffe83600977305e7f61c447c6f02fefca6d176fdb54046",
+      "note": "purchase"
+    },
+    "ts": 1788862751,
+    "under": [
+      "3d33af25186a03dc7fc012a9b7e47ef16df852cc9a7f5ce07a43119a8e6968bd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "64c52c9c942c0517b4129a5f26af5ca71c52a137c3564f514abccea5cd3566c66c0aca79955a70741347fed02e871fd0cebb7899bab2a418e6ec369d33e3e403"
+    }
+  ]
+}

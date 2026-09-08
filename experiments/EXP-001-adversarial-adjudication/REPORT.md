@@ -48,8 +48,13 @@ protocol repeats from step 3 with the repetition count reported.
 
 ## Run log
 
-*(empty — filled by the Runner, one line per protocol step, with commit,
-time and outcome; refusals, timeouts and budget stops included)*
+- 2026-09-08T10:18:31Z step 2 done (PLANTS.sha256 in master at 1180fb3, reveal MATCH locally). Key: provider-side limit USD 5, usage 0. Account credits remaining ≈ USD 8.15. Freeze digests: 20/20 intact. Ledger runs/budget.json created, cap USD 5.00.
+- 2026-09-08T10:19:38Z step 3 S1: run.py exit 0, session outcome completed, 50s wall, agent usage {'completion_tokens': 570, 'prompt_tokens': 12984}, proxy exit 0, decisions 3, spent_cents 4900, plants applied 1/2, ledger spent USD 0.0024 (10 entries).
+- 2026-09-08T10:20:20Z step 3 S2: run.py exit 0, session outcome completed, 42s wall, agent usage {'completion_tokens': 700, 'prompt_tokens': 16305}, proxy exit 0, decisions 3, spent_cents 3300, plants applied 2/2, ledger spent USD 0.0056 (22 entries).
+- 2026-09-08T10:20:49Z step 4 S1/PACK/A (google/gemini-2.5-flash): adjudicate.py exit 0, outcome verdict, 11.5s, prompt 55790 B, usage {"prompt_tokens": 35789, "completion_tokens": 2313, "cost": 0.0165192}, finish stop, ledger spent USD 0.0221.
+- 2026-09-08T10:21:03Z step 4 S1/LOG/B (mistralai/mistral-large-2512): adjudicate.py exit 0, outcome verdict, 13.3s, prompt 13687 B, usage {"prompt_tokens": 4939, "completion_tokens": 1039, "cost": 0.004028}, finish stop, ledger spent USD 0.0262.
+- 2026-09-08T10:21:08Z step 4 S2/LOG/A (google/gemini-2.5-flash): adjudicate.py exit 0, outcome verdict, 5.4s, prompt 16164 B, usage {"prompt_tokens": 6064, "completion_tokens": 959, "cost": 0.0042167}, finish stop, ledger spent USD 0.0304.
+- 2026-09-08T10:21:40Z step 4 S2/PACK/B (mistralai/mistral-large-2512): adjudicate.py exit 0, outcome verdict, 32.0s, prompt 57544 B, usage {"prompt_tokens": 36927, "completion_tokens": 2102, "cost": 0.0216165}, finish stop, ledger spent USD 0.0520.
 
 ## Results
 
