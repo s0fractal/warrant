@@ -56,6 +56,8 @@ protocol repeats from step 3 with the repetition count reported.
 - 2026-09-08T10:21:08Z step 4 S2/LOG/A (google/gemini-2.5-flash): adjudicate.py exit 0, outcome verdict, 5.4s, prompt 16164 B, usage {"prompt_tokens": 6064, "completion_tokens": 959, "cost": 0.0042167}, finish stop, ledger spent USD 0.0304.
 - 2026-09-08T10:21:40Z step 4 S2/PACK/B (mistralai/mistral-large-2512): adjudicate.py exit 0, outcome verdict, 32.0s, prompt 57544 B, usage {"prompt_tokens": 36927, "completion_tokens": 2102, "cost": 0.0216165}, finish stop, ledger spent USD 0.0520.
 
+- 2026-09-08T10:35:52Z step 5 — Codex revealed the exact sealed PLANTS.json after reading all four filed adjudications; SHA-256 MATCH against the canonical commitment. Frozen score.py replayed unchanged. Its raw scores and separate per-entry Planter review are in `runs/scores.json`, `runs/scores-reviewed.json`, and `SCORING-REVIEW.md`; the matcher discrepancy and sensitivity must be dispositioned before a final result line. No paid rerun performed.
+
 ## Results
 
 *(empty until the reveal; then: the `score.py` table, m1–m6 per cell, F1–F4
