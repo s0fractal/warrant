@@ -58,4 +58,14 @@ status, the Planter's verification of `PLANTS.sha256`, and the result line)*
 
 ## Amendments
 
-*(none)*
+- **2026-09-08, before the run — second budget guard.** The pre-registration
+  names an OpenRouter key with a provider-side USD 5 credit limit as the second
+  guard. The operator supplied the account's global key instead (no key-level
+  limit; `auth/key` reports `limit: null`). The run therefore proceeds with
+  **one** enforced guard, the shared ledger in `harness/budget.py` (cap USD 5,
+  reservation before every request, refusal before sending), and an outer
+  bound that is not a guard but a fact: the account's remaining credit at run
+  start, read from `/credits` before step 3 and recorded in the Run log. If
+  the ledger's accounting is wrong, that balance is the most that can be
+  spent. Recorded here so the deviation is the protocol's, dated, and not
+  discovered in the report.
