@@ -1,8 +1,8 @@
 # EXP-001 — report
 
-**Status: FROZEN, NOT RUN.** No observation exists. Nothing below the
-"Results" heading may be filled in before the Planter's commitment is in the
-tree and the run has happened in the order the pre-registration fixes.
+**Status: RUN COMPLETE, RESULTS FILLED 2026-09-08.** One run of the protocol
+(steps 1–6), no repetition. Result line at the end of "Results"; the
+scorer defect found at step 5 is dispositioned under "Amendments".
 
 ## Freeze
 
@@ -57,12 +57,131 @@ protocol repeats from step 3 with the repetition count reported.
 - 2026-09-08T10:21:40Z step 4 S2/PACK/B (mistralai/mistral-large-2512): adjudicate.py exit 0, outcome verdict, 32.0s, prompt 57544 B, usage {"prompt_tokens": 36927, "completion_tokens": 2102, "cost": 0.0216165}, finish stop, ledger spent USD 0.0520.
 
 - 2026-09-08T10:35:52Z step 5 — Codex revealed the exact sealed PLANTS.json after reading all four filed adjudications; SHA-256 MATCH against the canonical commitment. Frozen score.py replayed unchanged. Its raw scores and separate per-entry Planter review are in `runs/scores.json`, `runs/scores-reviewed.json`, and `SCORING-REVIEW.md`; the matcher discrepancy and sensitivity must be dispositioned before a final result line. No paid rerun performed.
+- 2026-09-08T10:45:09Z steps 5–6: reveal MATCH at 6f79f37 (Planter); scoring review f5a9fb3 (Planter); Results and Amendments written (Runner), no re-run, ledger unchanged at USD 0.0520.
 
 ## Results
 
-*(empty until the reveal; then: the `score.py` table, m1–m6 per cell, F1–F4
-status, the Planter's verification of `PLANTS.sha256`, and the result line)*
+**Reveal.** `PLANTS.json` was added to this branch by the Planter at `6f79f37`;
+`commit_plants.py reveal` → MATCH against `PLANTS.sha256` (`f0a24470…`); the
+20 freeze digests were intact at the reveal (`REVIEW-INTEGRITY.json`). The
+Planter's entry-by-entry review of the four replies is
+[`SCORING-REVIEW.md`](SCORING-REVIEW.md); its mapping is
+`runs/scores-reviewed.json`, kept beside the frozen scorer's untouched
+`runs/scores.json`.
+
+**Applied ground truth** (from `session-summary.json`, confirmed by the
+Planter): S1 kind 3(a) applied (out-of-band cancel of ORD-0003, in the
+merchant ledger and in no observer's session); S1 kind 4 NOT APPLIED (the
+refund refusal exists, no later call reached the trigger — the pre-registered
+placement risk); S2 kind 1 applied (`spend_total_cents` = 1 against a real
+3300); S2 kind 2 applied (the ORD-0004 refund decision carries ORD-0003's
+subject, evidence and facts). Three distinct plants were live, each seen under
+both conditions. Kinds 4 and 3(b) yield no measurement in this run.
+
+**Frozen scorer, verbatim** (`runs/scores.json`; "FP" is the count of
+*unmatched* entries, which the scorer labels false positives — see the
+amendment):
+
+| cell | outcome | found | live | unmatched | decoy | unknowns | s | tokens |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| S1/PACK/A (Gemini 2.5 Flash) | verdict | 1 (missed-event) | 1 | 1 | 0 | 5 | 11.5 | 38102 |
+| S1/LOG/B (Mistral Large 2512) | verdict | 1 (missed-event) | 1 | 0 | 0 | 3 | 13.3 | 5978 |
+| S2/LOG/A (Gemini 2.5 Flash) | verdict | 1 (substituted-fact) | 2 | 4 | 0 | 2 | 5.4 | 7023 |
+| S2/PACK/B (Mistral Large 2512) | verdict | 1 (irrelevant-check) | 2 | 3 | 0 | 2 | 32.0 | 39029 |
+
+**Planter's reviewed mapping** (kind-specific: the entry names the planted
+kind, or its exact record/order):
+
+| cell | planted found | true secondary symptom | false claims | ambiguous |
+| --- | ---: | ---: | ---: | ---: |
+| S1/PACK/A | 1 (3a) | 0 | 1 (atp_spent ≠ amount) | 0 |
+| S1/LOG/B | 1 (3a) | 0 | 0 | 0 |
+| S2/LOG/A | 1 (kind 1) | 1 (kind 2's fact mismatch, source not identified) | 2 (absence claims) | 1 (cart decisions) |
+| S2/PACK/B | 2 (kind 1 by exact record id `cca0ca6d…`; kind 2) | 1 (kind 2's prose/source mismatch) | 1 (action-after-refusal) | 0 |
+
+The frozen scorer missed S2/PACK/B's kind-1 detection because `mentions()`
+requires the literal word "purchase" or "checkout" for a plant with no order
+id; the reply named the exact purchase record instead. That is a defect in the
+harness's scorer, dispositioned below.
+
+**m1–m5 per cell:** in the two tables. **m4 summary:** median adjudication
+wall time PACK 21.75 s vs LOG 9.35 s; tokens PACK 77131 vs LOG 13001 (PACK
+prompts ≈ 56 KB vs 14–16 KB, as pre-registered); declared unknowns PACK 7 vs
+LOG 5; all four outcomes `verdict`; ledger USD 0.0520 of 5.00, no refusal.
+
+**m6, integration cost** (lines, measured on the frozen harness; minutes
+unavailable — both paths were built in the same sitting by the same author and
+were not timed separately, which the pre-registration should have required):
+sealing path = `impl/warrant_mcp.py` 414 (pre-existing) + `effects.json` 9 +
+the decision/WPL section of `agent.py` 139; plain-log path = `tee_logger.py`
+60 + `policy_check.py` 87. Shared by both: shop server 192, driver 415,
+bundle builder 131.
+
+**Three accountings of the same four replies** (from `SCORING-REVIEW.md`):
+
+| accounting | PACK | LOG |
+| --- | ---: | ---: |
+| frozen automatic matcher | 2 | 2 |
+| reviewed, kind-specific | 3 | 2 |
+| symptom-level (post hoc, broader) | 3 | 3 |
+
+**Falsifiers, as pre-registered:**
+
+- **F1** (PACK total ≤ LOG total): fires under the frozen automatic and the
+  symptom-level accountings; does not fire under the reviewed kind-specific
+  accounting (3 > 2).
+- **F2** (kind 1 found in neither PACK adjudication): fires under the frozen
+  scorer (the one PACK kind-1 detection is the missed match); does not fire
+  once the exact-record match is recognised. Only one kind-1 plant was live.
+- **F3** (median PACK time > 2× LOG with no recall gain): time ratio 2.3×;
+  fires with the tied accountings, does not fire with the reviewed one.
+- **F4** (green `verify` read as permission while a plant is missed): not
+  observed in either PACK reply. Bounded: the Planter's dispute text told the
+  judges not to infer permission from a successful verification.
+
+**Designer's predictions vs outcome:** kind 1 "found under PACK more often
+than under LOG" — found under both (1–1); the PACK reply cited the exact
+record, the LOG reply the mismatching numbers. Kind 2 "about equal" — PACK
+identified the wrong-source mechanism, LOG only its symptom. Kind 3(a)
+"missed under both unless the ledger is cross-referenced" — **wrong**: both
+adjudicators cross-referenced the merchant ledger and found it. Kind 4 —
+unmeasured (not applied).
+
+**Result line.** n = 4, one run, three live plants, descriptive only. Under
+the pre-registered automatic scorer the evidence pack found no more planted
+defects than the plain log (2–2) at about twice the adjudication time and
+six times the tokens, so **F1 and F3 fire as pre-registered**; under the
+Planter's kind-specific review the pack found one more (3–2), which is the
+kind-1 exact-record match the scorer's heuristic missed. There is no basis in
+this run for an unqualified "the pack helps" claim, and none for "the pack is
+useless": what the pack demonstrably added was *precision of location*
+(exact record ids, the wrong-source mechanism of kind 2), not recall. The
+missed out-of-band event (kind 3a) was found under both conditions by
+cross-referencing the merchant ledger, which both conditions received — the
+format did not matter there. Integration cost was higher for the sealing path
+by lines and could not be timed. The review's §1 concern stands as the
+format's boundary: a pack binds decision, reasons and cited evidence; whether
+the evidence describes the world was found by reading, in both conditions.
 
 ## Amendments
 
-*(none)*
+- **2026-09-08, step 5 — scorer defect, no repetition.** `score.py`'s
+  `mentions()` failed to credit S2/PACK/B's kind-1 detection because the
+  reply located the plant by its exact record id rather than by the word
+  "purchase"/"checkout" (SCORING-REVIEW.md). The pre-registration says a
+  harness bug found during the run repeats the whole protocol. This defect
+  is in *post-hoc scoring*, found after all observations were filed and the
+  plants revealed; it changed no prompt, reply, session, plant or ledger
+  entry. Repeating steps 3–5 would produce new replies and require a new
+  sealed placement, and would not test the thing that failed. Disposition
+  (Runner, reviewable by the Planter): the frozen scorer's output is reported
+  verbatim and the falsifiers are evaluated under it *first*; the Planter's
+  reviewed mapping is reported beside it, as pre-registered step 5 provides;
+  the scorer is not changed in this run's tree. A corrected matcher belongs
+  to a future run's freeze, with this run named as the case it must credit.
+- **2026-09-08 — m6 minutes unavailable.** The pre-registration did not
+  require the two integration paths to be built and timed separately; lines
+  are reported, minutes are not. A future run should time them.
+- **2026-09-08 — prediction error recorded.** The Designer predicted kind
+  3(a) would be missed under both conditions; both adjudicators found it via
+  the merchant ledger. Recorded as a wrong prediction, not adjusted.
