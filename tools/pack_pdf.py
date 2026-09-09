@@ -417,6 +417,8 @@ def main(argv=None):
     ap.add_argument("-s", "--subtitle", default="")
     ap.add_argument("--force", action="store_true",
                     help="overwrite the output file if it already exists")
+    ap.add_argument("--allow-outside", action="store_true",
+                    help="permit an output path outside the working directory")
     a = ap.parse_args(argv)
 
     pack_dir = Path(a.pack)
@@ -425,16 +427,22 @@ def main(argv=None):
         sys.exit(f"no warrant store at {store}")
 
     # Resolve and check the destination BEFORE producing or writing anything.
-    # A writer CLI must write where its operator asked, so this does not confine
-    # the path to a sandbox — that would break the tool. What it does refuse is
-    # the set of ways an unattended caller turns a bad argument into a
-    # surprising write: a directory, a missing parent, and silently replacing a
-    # file that is already there.
+    #
+    # This tool is meant to be run by agents, so `-o` is an argument a mistake
+    # reaches the filesystem through. The default is therefore CONFINED to the
+    # working directory tree, and leaving it is an explicit, named choice rather
+    # than a typo away: `../../../../etc/x.pdf` stops here, `--allow-outside`
+    # gets you out. The other three refusals cover the ways a bad argument turns
+    # into a surprising write without escaping anywhere.
     out = Path(a.out).expanduser()
     try:
         out = out.resolve(strict=False)
+        root = Path.cwd().resolve()
     except (OSError, RuntimeError) as e:
         sys.exit(f"cannot resolve output path {a.out!r}: {e}")
+    if not a.allow_outside and root not in out.parents:
+        sys.exit(f"refusing to write outside {root}: {out}\n"
+                 "  (pass --allow-outside if that is really what you meant)")
     if out.is_dir():
         sys.exit(f"refusing to write: {out} is a directory")
     if not out.parent.is_dir():
