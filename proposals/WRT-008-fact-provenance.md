@@ -514,3 +514,52 @@ rev 4 was meant to buy.
 
 Counts after rev 5: `fact_provenance` 145/145, `pack_pdf` 67/67, `policy_lang`
 147/147 (unchanged).
+
+## 16. Gate round 5 — disposition (Codex, 2026-09-09, ACCEPT in scope)
+
+L1 confirmed closed by the reviewer's own probe re-run, with four new controls
+on the honest transitive path: a deleted intermediate, an unparsable
+intermediate, `MAX_CITATION_RECORDS=1`, and a record whose derivation is
+directly cited while a *separate* prior branch is missing. The last is the one
+worth naming: the fact stays `derived` while the record is `incomplete` and
+`ok=False`. That is the local result and the completeness of the walk staying
+apart, which is what §5.2 is for.
+
+No finding returned. Every closed counterexample from rounds 1-4 was re-run and
+none came back.
+
+**What this ACCEPT is, stated narrowly so the label cannot widen later.** It is
+a technical conclusion about these bytes. It is **not**:
+
+- **adoption.** Nothing here is normative, no SPEC text changed, and the
+  reactivation conditions in §0 still require a gate by someone who did not
+  write the code. Four rounds by one reviewer on one host is not that.
+- **merge.** No merge or push was performed by the reviewer or by this branch.
+- **proof that the model is complete.** The reviewer is explicit that
+  `BINDING-EDGES.md` remains *navigation for review*, not an automatic proof of
+  coverage: this round established no formal or instrumented check that every
+  use site in the repository is enumerated. §14's own limit stands unchanged.
+- **a re-reading of the history.** Rounds 1-4 were AMEND and stay AMEND. This
+  document records them as they happened, and the fact that a fifth round found
+  nothing does not convert the earlier four into anything else.
+
+**The deferral condition of §0 was not triggered.** It said: if the enumeration
+itself returns AMEND *as a model*, the proposal defers without argument. This
+round found no ground to call the approach unfit, so the condition does not
+fire. It remains live for any future round.
+
+**What the method is now judged to be worth.** The reviewer keeps the use-site
+rule: a check must be shown to run at every place the data is used as evidence,
+not merely to exist somewhere in the code. That rule is the durable output of
+this whole sequence, and it generalizes past this profile.
+
+Counts at rev 5: `fact_provenance` 145/145, `pack_pdf` 67/67, `policy_lang`
+147/147 (unchanged throughout).
+
+### Where this leaves WRT-008
+
+Two live artifacts still share the number: PR
+[#60](https://github.com/s0fractal/warrant/pull/60) (`wrt-008/fact-derivation`,
+CLOSED — DEFERRED) and this branch. §0 records the relation and closes the two
+findings that disposition left open, but the duplication is an editorial state
+someone has to resolve, not a technical one this branch can settle by itself.
