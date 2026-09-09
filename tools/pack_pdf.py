@@ -415,6 +415,10 @@ def main(argv=None):
     ap.add_argument("-o", "--out", required=True, help="output .pdf path")
     ap.add_argument("-t", "--title", default="Warrant evidence pack")
     ap.add_argument("-s", "--subtitle", default="")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite the output file if it already exists")
+    ap.add_argument("--allow-outside", action="store_true",
+                    help="permit an output path outside the working directory")
     a = ap.parse_args(argv)
 
     pack_dir = Path(a.pack)
@@ -422,11 +426,60 @@ def main(argv=None):
     if not (store / "records").is_dir():
         sys.exit(f"no warrant store at {store}")
 
+    # Resolve and check the destination BEFORE producing or writing anything.
+    #
+    # This tool is meant to be run by agents, so `-o` is an argument a mistake
+    # reaches the filesystem through. The default is therefore CONFINED to the
+    # working directory tree, and leaving it is an explicit, named choice rather
+    # than a typo away: `../../../../etc/x.pdf` stops here, `--allow-outside`
+    # gets you out. The other three refusals cover the ways a bad argument turns
+    # into a surprising write without escaping anywhere.
+    out = Path(a.out).expanduser()
+    try:
+        out = out.resolve(strict=False)
+        root = Path.cwd().resolve()
+    except (OSError, RuntimeError) as e:
+        sys.exit(f"cannot resolve output path {a.out!r}: {e}")
+    if not a.allow_outside and root not in out.parents:
+        sys.exit(f"refusing to write outside {root}: {out}\n"
+                 "  (pass --allow-outside if that is really what you meant)")
+    if out.is_dir():
+        sys.exit(f"refusing to write: {out} is a directory")
+    if not out.parent.is_dir():
+        sys.exit(f"refusing to write: {out.parent} is not an existing directory")
+    if out.exists() and not a.force:
+        sys.exit(f"refusing to overwrite {out} (pass --force to replace it)")
+
     data = compose(store, a.title, a.subtitle, summarize_pack(pack_dir))
-    Path(a.out).write_bytes(data)
-    print(f"wrote {a.out}  ({len(data):,} bytes, sha256 "
+
+    # The refusal above is a courtesy, not the guarantee: composing the artifact
+    # takes time, and a file that appears in that window was silently truncated
+    # by a plain write. The promise is kept where the write happens — O_EXCL
+    # fails if anything is there, so "do not replace" is decided by the
+    # filesystem at the moment of creation rather than by a prior look.
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if a.force else os.O_EXCL)
+        fd = os.open(out, flags, 0o644)
+    except FileExistsError:
+        sys.exit(f"refusing to overwrite {out}: it appeared while the artifact "
+                 "was being composed (pass --force to replace it)")
+    except OSError as e:
+        sys.exit(f"cannot open {out} for writing: {e}")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+    except OSError as e:
+        # A partial file is worse than none: it looks like an artifact and is
+        # not one. Only remove what this call created.
+        if not a.force:
+            try:
+                out.unlink()
+            except OSError:
+                pass
+        sys.exit(f"failed writing {out}: {e}")
+    print(f"wrote {out}  ({len(data):,} bytes, sha256 "
           f"{hashlib.sha256(data).hexdigest()[:16]}…)")
-    print("  opens as a PDF; runs as: python3 " + a.out + " --extract DIR")
+    print(f"  opens as a PDF; runs as: python3 {out} --extract DIR")
     return 0
 
 

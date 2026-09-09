@@ -335,7 +335,7 @@ def _superseded_by(recs, wid):
     records whose own body recomputes to their name are counted."""
     out = []
     for other in recs:
-        env, why = _record_at(recs, other)
+        env, _why = _record_at(recs, other)
         if env is None:
             continue
         b = env["body"]
@@ -349,7 +349,7 @@ def _superseded_by(recs, wid):
 MAX_CITATION_RECORDS = 4096
 
 
-def _citation_closure(store, wid, recs):
+def _citation_closure(wid, recs):
     """WarrantIDs reachable from `wid` through `prior`, **checking the address
     of every record whose `prior` this walk reads**, plus `wid` itself.
 
@@ -662,7 +662,7 @@ def check_record(store, wid, recs=None, sg=None):
     actor = (env["body"].get("actor") or {}).get("id")
     docs, lost, rejected = _provenance_docs_of(store, env["body"])
     findings, refusals = [], list(lost) + list(rejected)
-    covered, broken = _citation_closure(store, wid, recs)
+    covered, broken = _citation_closure(wid, recs)
     kept = []
     for h, doc in docs:
         uncited = sorted({e["from"] for e in doc.get("facts", {}).values()
@@ -679,7 +679,7 @@ def check_record(store, wid, recs=None, sg=None):
                 # source may well be cited THROUGH the record this walk could
                 # not traverse, and saying "not cited" would be wider than what
                 # was established.
-                bad, reason = sorted(broken.items())[0]
+                bad, reason = min(broken.items())
                 why += (f". The walk also could not traverse {bad[:12]}…: "
                         f"{reason}; a path through it proves nothing")
             refusals.append(why)
@@ -689,7 +689,7 @@ def check_record(store, wid, recs=None, sg=None):
         # Coverage was established without needing the broken record, so the
         # documents stand — but the evidence path is not wholly walkable and
         # the report must not imply it was.
-        bad, reason = sorted(broken.items())[0]
+        bad, reason = min(broken.items())
         refusals.append(
             f"citation walk could not traverse {bad[:12]}…: {reason}")
     for h, doc in kept:
