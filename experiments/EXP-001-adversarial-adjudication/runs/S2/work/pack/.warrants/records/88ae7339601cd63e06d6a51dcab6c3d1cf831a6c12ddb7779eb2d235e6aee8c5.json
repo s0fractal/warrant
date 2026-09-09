@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "MCP tools/call 'shop.add_to_cart' classified A2 (effects=['source_change'], via config); ok"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "99e33ecd8203ead8724733a751f4e3634b0877503177c3fb4b052f60fcb8da70"
+    ],
+    "prior": [],
+    "subject": {
+      "hash": "c48cdcc23ddde227d78cf7fc09b0bd0937340b4bf1e4a80dc81db41c4929680d",
+      "note": "shop.add_to_cart [A2]"
+    },
+    "ts": 1788862791,
+    "under": [
+      "13675e07d1a3fe3bcd993f903575691fd0652c7cead18513f5106679c0843ae1"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "af09ef1e8e8e32fa78987c2bc3944ed82228727ff4bb9f96cb5c990970cf177bc82db0d3c7c64720c18fa78c1bb18ed0da084d34888022e9c66c572f07925a03"
+    }
+  ]
+}

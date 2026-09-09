@@ -1,0 +1,38 @@
+{
+  "freeze_files": 20,
+  "commitment_match": true,
+  "replies": [
+    {
+      "scenario": "S1",
+      "condition": "PACK",
+      "adjudicator": "A",
+      "reply_sha256": "9467b00ec952bca7adae331096a6b11ee69b0900e6eb2937a7a26d10f721fd66",
+      "raw_defects": 2
+    },
+    {
+      "scenario": "S1",
+      "condition": "LOG",
+      "adjudicator": "B",
+      "reply_sha256": "8d34f6edd00929bcf9d55cf4a43680fe0be1f5168d6a2c43561674b1e86ccea0",
+      "raw_defects": 1
+    },
+    {
+      "scenario": "S2",
+      "condition": "LOG",
+      "adjudicator": "A",
+      "reply_sha256": "f2daa2b83d36f04586bc8d4f4e68f57e921acdfcbda21f9b5e9d5490769342cd",
+      "raw_defects": 5
+    },
+    {
+      "scenario": "S2",
+      "condition": "PACK",
+      "adjudicator": "B",
+      "reply_sha256": "1003153f92c84860f49e0aa39a81c1d36b9d48c980bed8e398ae2a72cda6fdbd",
+      "raw_defects": 4
+    }
+  ],
+  "common_material_byte_equal": true,
+  "budget_entries": 26,
+  "reported_spent_usd": 0.051991,
+  "sum_entry_charges_usd": "0.05199135"
+}

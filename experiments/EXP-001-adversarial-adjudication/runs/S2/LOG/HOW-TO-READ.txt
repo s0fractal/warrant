@@ -1,0 +1,3 @@
+session.jsonl: every request the agent sent and every response the shop returned, in order, paired by id
+(a request with no_response:true was never answered). decisions.jsonl: the agent's recorded decisions
+with the facts it stated. policy_check.txt: an ordinary script evaluating MANDATE.txt over the log.

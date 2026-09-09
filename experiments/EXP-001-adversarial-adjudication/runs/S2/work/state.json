@@ -1,0 +1,48 @@
+{
+ "cart": [],
+ "catalogue": [
+  {
+   "name": "USB-C Cable",
+   "price_cents": 900,
+   "sku": "CB-1"
+  },
+  {
+   "name": "Phone Stand",
+   "price_cents": 2400,
+   "sku": "ST-7"
+  },
+  {
+   "name": "Headphones Pro",
+   "price_cents": 12900,
+   "sku": "HP-200"
+  }
+ ],
+ "next_order": 6,
+ "orders": {
+  "ORD-0003": {
+   "amount_cents": 2400,
+   "refunded": false,
+   "skus": [
+    "ST-7"
+   ],
+   "status": "shipped"
+  },
+  "ORD-0004": {
+   "amount_cents": 12900,
+   "refunded": true,
+   "skus": [
+    "HP-200"
+   ],
+   "status": "delivered"
+  },
+  "ORD-0005": {
+   "amount_cents": 3300,
+   "refunded": false,
+   "skus": [
+    "CB-1",
+    "ST-7"
+   ],
+   "status": "pending"
+  }
+ }
+}
