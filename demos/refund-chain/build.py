@@ -339,10 +339,10 @@ def main():
                                 "the decision it derives from was superseded. "
                                 "The profile CLI exits 1 on any finding."},
         },
-        "how_to_verify": [
+        "how_to_verify": "\n".join([
             "python3 impl/warrant.py --store demos/refund-chain/pack/.warrants verify",
             "python3 impl/fact_provenance.py --store demos/refund-chain/pack/.warrants",
-        ],
+        ]),
     }
     (PACK / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n")

@@ -26,10 +26,7 @@
       "note": "one WARN: grant.eligible is stale, because the decision it derives from was superseded. The profile CLI exits 1 on any finding."
     }
   },
-  "how_to_verify": [
-    "python3 impl/warrant.py --store demos/refund-chain/pack/.warrants verify",
-    "python3 impl/fact_provenance.py --store demos/refund-chain/pack/.warrants"
-  ],
+  "how_to_verify": "python3 impl/warrant.py --store demos/refund-chain/pack/.warrants verify\npython3 impl/fact_provenance.py --store demos/refund-chain/pack/.warrants",
   "produced_by": "warrant demos/refund-chain/build.py",
   "profile": "warrant.fact-provenance@v0",
   "proposal": "proposals/WRT-010-fact-provenance.md",
