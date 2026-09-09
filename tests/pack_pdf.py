@@ -238,6 +238,64 @@ def test_extraction_refusals():
         "embedded runner: the refusal leaves the pre-existing file untouched",
         f"became {(dest / 'existing').read_text()!r}")
 
+    # H2: `node` and `node/child` in one archive. The conflict is structural
+    # and order-independent; catching it only when mkdir raises meant the
+    # failure landed after earlier members had been written.
+    for order in (("existing", "node", "node/child"),
+                  ("existing", "node/child", "node")):
+        members = {"existing": b"REPLACED", "node": b"FILE",
+                   "node/child": b"CHILD"}
+        blob = _archive(*[(n, tarfile.REGTYPE, "", members[n]) for n in order])
+        dest = tmp()
+        (dest / "existing").write_text("ORIGINAL")
+        try:
+            pp.unpack_store(blob, dest)
+            chk(False, f"library: file/parent conflict {order} is refused",
+                "extracted")
+        except ValueError as e:
+            chk("as a directory" in str(e),
+                f"library: file/parent conflict {order} is refused", str(e)[:70])
+        chk((dest / "existing").read_text() == "ORIGINAL",
+            f"library: {order} leaves the pre-existing file untouched",
+            f"became {(dest / 'existing').read_text()!r}")
+
+        dest = tmp()
+        (dest / "existing").write_text("ORIGINAL")
+        ns = {"PACK": base64.b64encode(blob).decode(), "MANIFEST_TEXT": ""}
+        exec(compile(pp.RUNNER, "<embedded-runner>", "exec"), ns)
+        try:
+            ns["_extract"](str(dest))
+            chk(False, f"embedded runner: conflict {order} is refused",
+                "extracted")
+        except SystemExit as e:
+            chk("as a directory" in str(e),
+                f"embedded runner: conflict {order} is refused", str(e)[:70])
+        chk((dest / "existing").read_text() == "ORIGINAL",
+            f"embedded runner: {order} leaves the pre-existing file untouched",
+            f"became {(dest / 'existing').read_text()!r}")
+
+    # A member whose parent already exists as a FILE in the destination.
+    dest = tmp()
+    (dest / "node").write_text("PREEXISTING FILE")
+    try:
+        pp.unpack_store(_archive(("node/child", tarfile.REGTYPE, "", b"x")), dest)
+        chk(False, "refuses a member whose parent exists as a file", "extracted")
+    except ValueError as e:
+        chk("already exists there" in str(e),
+            "refuses a member whose parent exists as a file", str(e)[:70])
+    chk((dest / "node").read_text() == "PREEXISTING FILE",
+        "and leaves that file untouched")
+
+    # A member that would replace an existing directory.
+    dest = tmp()
+    (dest / "node").mkdir()
+    try:
+        pp.unpack_store(_archive(("node", tarfile.REGTYPE, "", b"x")), dest)
+        chk(False, "refuses a member that would replace a directory", "extracted")
+    except ValueError as e:
+        chk("existing directory" in str(e),
+            "refuses a member that would replace a directory", str(e)[:70])
+
     # Two members resolving to one target are refused up front too.
     dest = tmp()
     try:

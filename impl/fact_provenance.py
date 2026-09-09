@@ -338,8 +338,19 @@ def _superseded_by(recs, wid):
 
 def _provenance_docs_of(store, body):
     """Provenance documents cited in a record's `evidence`, plus whether any
-    cited evidence could not be resolved intact."""
-    docs, lost = [], []
+    cited evidence could not be resolved intact, plus any document that does
+    not belong to this record.
+
+    A sidecar is a document ABOUT one of this record's own `ski@v1` reasons
+    (§4). Recompiling its source proves the document is internally consistent;
+    it says nothing about whose reason it describes. Without this binding a
+    correct sidecar for an unrelated check was accepted and the record reported
+    `complete` — a result filed under one WarrantID that was about a different
+    question entirely (review H1).
+
+    Returns (docs, lost, foreign)."""
+    mine = {r.get("check") for r in _ski_reasons(body)}
+    docs, lost, foreign = [], [], []
     for h in body.get("evidence", []):
         if not store.has_blob(h):
             lost.append(f"cited evidence {h[:12]}… is not in the store")
@@ -352,9 +363,16 @@ def _provenance_docs_of(store, body):
             doc = json.loads(raw)
         except Exception:
             continue                     # a non-JSON evidence blob is normal
-        if isinstance(doc, dict) and doc.get("provenance") == PROFILE:
-            docs.append((h, doc))
-    return docs, lost
+        if not (isinstance(doc, dict) and doc.get("provenance") == PROFILE):
+            continue
+        if doc.get("check") not in mine:
+            foreign.append(
+                f"{h[:12]}…: provenance document describes check "
+                f"{str(doc.get('check'))[:12]}…, which is not a ski@v1 reason "
+                "of this record; a sidecar belongs to the reason it documents")
+            continue
+        docs.append((h, doc))
+    return docs, lost, foreign
 
 
 # ------------------------------------------------ transitive source health
@@ -394,9 +412,9 @@ def _source_health(store, recs, wid, sg, depth, seen, memo, budget):
         return result
 
     seen = seen | {wid}
-    docs, lost = _provenance_docs_of(store, env["body"])
-    if lost:
-        result = (UNDERIVED, f"upstream {wid[:12]}…: {lost[0]}")
+    docs, lost, foreign = _provenance_docs_of(store, env["body"])
+    if lost or foreign:
+        result = (UNDERIVED, f"upstream {wid[:12]}…: {(lost + foreign)[0]}")
         memo[wid] = result
         return result
 
@@ -570,14 +588,14 @@ def check_record(store, wid, recs=None, sg=None):
     if env is None:
         return RecordResult(wid, [], [why], INCOMPLETE)
     actor = (env["body"].get("actor") or {}).get("id")
-    docs, lost = _provenance_docs_of(store, env["body"])
-    findings, refusals = [], list(lost)
+    docs, lost, foreign = _provenance_docs_of(store, env["body"])
+    findings, refusals = [], list(lost) + list(foreign)
     for h, doc in docs:
         try:
             findings.extend(check_doc(store, doc, recs, sg, actor))
         except ProvenanceError as e:
             refusals.append(f"{h[:12]}…: {e}")
-    if lost:
+    if lost or foreign:
         status = INCOMPLETE
     elif docs:
         status = COMPLETE

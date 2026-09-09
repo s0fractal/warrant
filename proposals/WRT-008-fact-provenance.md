@@ -200,6 +200,46 @@ now returns one of three record-level statuses:
 
 `incomplete` is not a fact state and is never success.
 
+### 5.4. A sidecar belongs to the reason it documents
+
+A provenance document found in a record's `evidence` is credited only if its
+`check` is one of **that record's own `ski@v1` reasons**. Recompiling its source
+proves the document is internally consistent; it says nothing about whose reason
+it describes, and without the binding a correct sidecar for an unrelated check
+was accepted and the record reported `complete` — a result filed under one
+WarrantID that was about a different question (review H1).
+
+A profile document in `evidence` that names some other check is a **refusal**,
+not an attachment to be ignored: it is presented as this record's provenance and
+is not. If evidence ever needs to carry foreign sidecars as general
+attachments, that needs its own explicit distinction; refusing is the
+fail-closed choice and is the one that can be relaxed later.
+
+Whether *every* `ski@v1` reason of a record must have a sidecar is a separate
+question this revision does not decide (§9.6).
+
+### 5.5. `derived` is not whole-chain validity
+
+`stale` travels through a chain because supersession is a fact about a
+**record**. A `contradicted` upstream derivation is a fact about a **value**,
+and `derived` is defined in §3 against the *immediate* answer only. So:
+
+```text
+A answers false.  B pins true from A, and therefore computes true.
+C pins true from B.
+  ->  B.e = contradicted        C.f = derived
+```
+
+C is `derived` and that is the definition working, not failing: C's immediate
+source really does answer what C pinned. But a consumer must not read `derived`
+as validation of everything behind it. A whole-store report still surfaces the
+contradiction at B, which is where it belongs, and
+`test_derived_is_not_whole_chain_validity` pins this behaviour so it cannot
+drift silently in either direction.
+
+Whether the walk should also re-check upstream *values* — and if so, under
+which state, since neither `stale` nor `underived` describes it — is §9.7.
+
 ### 5.3. Address integrity is a precondition, not an inference
 
 Every byte this profile reads is read only after its address is checked:
@@ -310,7 +350,19 @@ it verified before.
    "superseded and changed" from "superseded and unchanged" needs the successor's
    outcome fingerprint compared to the predecessor's — cheap, but unspecified in
    rev 1.
-5. **Does `contradicted` belong at ERR?** It is a genuine defect of the citing
+5. **Sidecar coverage.** §5.4 binds a sidecar to a reason of its record but does
+   not require every `ski@v1` reason to have one. A record could document one
+   reason and leave another undocumented, and report `complete`. Requiring full
+   coverage is plausible; it would also make every existing record without
+   provenance `incomplete` rather than `not-applicable`, so it is a scope
+   decision, not a bug fix.
+6. **Upstream value re-checking.** §5.5: the walk checks structure and
+   supersession in ancestors, not whether each upstream derivation still holds.
+   Adding it needs a state that means "rests on a contradicted foundation",
+   which is neither `stale` (nothing was superseded) nor `underived` (the walk
+   succeeded). Adding a fifth state mid-gate was judged worse than naming the
+   boundary.
+7. **Does `contradicted` belong at ERR?** It is a genuine defect of the citing
    record, but §6's convention is that a false claim is a dispute answered by a
    counter-warrant, not a corruption of the record. rev 1 chooses ERR because the
    citing author pinned a value their own cited source refutes, which is a
@@ -357,4 +409,32 @@ wants no execution at all should treat the artifact as data and extract it with
 a trusted extractor, which is what the review's own probes did.
 
 Counts after rev 2: `fact_provenance` 97/97, `pack_pdf` 42/42, `policy_lang`
+147/147 (unchanged).
+
+## 12. Gate round 2 — disposition (Codex, 2026-09-09, AMEND)
+
+Round 1's F1–F5 confirmed closed by the reviewer, including the original F5
+counterexample. Two new P2 findings, both reproduced and both closed here.
+
+| Finding | What it showed | Closed by |
+|---|---|---|
+| **H1** P2 · sidecar not bound to the record's reason | a correct provenance document for an *unrelated* check, placed in a record's evidence, gave `status=complete`, `ok=True` and reported that other check's facts under this WarrantID | `_provenance_docs_of` now requires `doc.check` to be one of the record's own `ski@v1` reasons and refuses otherwise (§5.4); the same binding applies in the upstream walk, so an ancestor carrying a foreign sidecar is `underived` rather than credited |
+| **H2** P2 · file/parent conflict caught after a write | an archive holding both `node` and `node/child` passed preflight and failed at `mkdir` — after `existing` had already been replaced | `_plan` now scans ancestor/descendant conflicts order-independently, and refuses a target whose parent exists as a file or which would replace a directory; the embedded runner carries the same scan |
+
+**S1 is closed as a documented boundary, not a fix.** The reviewer's example
+(A false, B pins true from A, C pins true from B → B contradicted, C derived) is
+recorded in §5.5 and pinned by a test, and the open design question it raises is
+§9.6/§9.7. `derived` means the immediate answer matched; it has never meant the
+chain behind it was validated, and the profile now says so where a consumer
+will read it.
+
+One fixture defect of mine surfaced while writing the H1 regression and is worth
+recording, because it is the same family: my first "unrelated check" was
+`fact unrelated: bool = true / check unrelated`, which compiles to the **same
+check blob** as `fact base: bool = true / check base`. WPL pins facts as
+literals and fact names never enter the term, so a differently-named check is
+not a different check. The test now asserts the two blobs differ before relying
+on them differing.
+
+Counts after rev 3: `fact_provenance` 109/109, `pack_pdf` 53/53, `policy_lang`
 147/147 (unchanged).

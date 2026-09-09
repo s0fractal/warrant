@@ -526,6 +526,98 @@ def test_transitive_staleness():
         bounded[0].state)
 
 
+# ------------------------------------------- H1/S1. review round 2 vectors
+def test_sidecar_belongs_to_this_record():
+    """H1: a sidecar is a document ABOUT one of this record's own ski@v1
+    reasons. Recompiling its source proves it is internally consistent; it says
+    nothing about whose reason it describes."""
+    s = new_store()
+    actual = pl.compile_source("fact actual: bool = false\ncheck actual\n",
+                               s.put_blob)
+    other_src = "fact unrelated: bool = true\ncheck unrelated\n"
+    other = pl.compile_source(other_src, s.put_blob)
+    chk(actual.blob != other.blob, "control: the two checks really differ")
+    other_prov = fp.put_doc(s, other, other.blob, s.put_blob(other_src.encode()))
+
+    subj = s.put_blob(b'{"subject":"test"}')
+    pol = s.put_blob(b"POLICY")
+    wid = W.file_warrant(
+        s, "accept", subj,
+        Args(under=[pol], evidence=[other_prov], check=actual.blob,
+             runtime="ski@v1", verdict="pass", reason=["x"],
+             actor="desk@test", key=keyfile()))
+    r = fp.check_record(s, wid)
+    chk(r.status == fp.INCOMPLETE,
+        "a sidecar for a different check does not make a record COMPLETE",
+        r.status)
+    chk(not r.ok, "and the record is not ok")
+    chk(r.findings == [],
+        "its facts are not reported under this record's WarrantID",
+        states(r.findings))
+    chk(r.refusals and "not a ski@v1 reason of this record" in r.refusals[0],
+        "and the refusal names the missing binding", r.refusals)
+
+    # An upstream record with a foreign sidecar is not walked as if it were
+    # fine. The stray check must be structurally different, not merely
+    # differently named: WPL pins facts as literals and fact NAMES do not enter
+    # the term, so `fact a: bool = true; check a` and `fact b: bool = true;
+    # check b` compile to the same check blob.
+    s2 = new_store()
+    a, _, _ = file_check(s2, "fact base: bool = true\ncheck base\n")
+    env = json.loads((s2.records / f"{a}.json").read_text())
+    stray_src = "fact p: int = 7\nfact q: int = 9\ncheck p <= q\n"
+    stray = pl.compile_source(stray_src, s2.put_blob)
+    chk(stray.blob != [r for r in env["body"]["because"]
+                       if r.get("runtime") == "ski@v1"][0]["check"],
+        "control: the stray sidecar really describes a different check")
+    env["body"]["evidence"].append(
+        fp.put_doc(s2, stray, stray.blob, s2.put_blob(stray_src.encode())))
+    # refiling is required: the body changed, so its WarrantID changes
+    a2 = W.file_warrant(
+        s2, "accept", env["body"]["subject"]["hash"],
+        Args(under=env["body"]["under"], evidence=env["body"]["evidence"],
+             check=[r for r in env["body"]["because"]
+                    if r.get("runtime") == "ski@v1"][0]["check"],
+             runtime="ski@v1",
+             verdict="pass", reason=["x"], actor="desk@test", key=keyfile()))
+    _, _, pb = file_check(
+        s2, 'fact e: bool = true from "%s"\ncheck e\n' % a2, prior=[a2])
+    f = fp.check_doc(s2, load_doc(s2, pb))
+    chk(states(f) == {"e": fp.UNDERIVED},
+        "an upstream record carrying a foreign sidecar is not credited",
+        states(f))
+
+
+def test_derived_is_not_whole_chain_validity():
+    """S1: a boundary the review asked to be pinned, not a defect.
+
+    `stale` travels because supersession is a fact about the RECORD. A
+    `contradicted` upstream derivation is a fact about a VALUE, and `derived`
+    is defined against the immediate answer only. So a consumer must not read
+    `derived` as validation of the whole chain. This test exists so the
+    behaviour cannot drift silently either way."""
+    s = new_store()
+    a, ca, _ = file_check(s, "fact base: bool = false\ncheck base\n")
+    chk(ca.result is False, "control: A answers false")
+    b, cb, pbdoc = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[a])
+    chk(cb.result is True, "control: B pins true and therefore computes true")
+    _, _, pcdoc = file_check(
+        s, 'fact f: bool = true from "%s"\ncheck f\n' % b, prior=[b])
+
+    sb = states(fp.check_doc(s, load_doc(s, pbdoc)))
+    sc = states(fp.check_doc(s, load_doc(s, pcdoc)))
+    chk(sb == {"e": fp.CONTRADICTED}, "B is contradicted by its own source", sb)
+    chk(sc == {"f": fp.DERIVED},
+        "C is `derived`: the profile checks the immediate answer, not the "
+        "whole chain's validity", sc)
+    store_view = fp.check_store(s)
+    bad = [w for w, r in store_view.items() if not r.ok]
+    chk(b in bad,
+        "a whole-store report still surfaces the contradiction at B",
+        [x[:8] for x in bad])
+
+
 # -------------------------------------------------------- F. mutation controls
 def test_mutation_controls():
     """A harness that cannot fail is the same defect one level up."""
@@ -660,6 +752,8 @@ def main():
         test_address_integrity()
         test_missing_provenance_is_incomplete()
         test_transitive_staleness()
+        test_sidecar_belongs_to_this_record()
+        test_derived_is_not_whole_chain_validity()
         test_mutation_controls()
         test_store_level_and_cli()
         test_refund_chain_demo()

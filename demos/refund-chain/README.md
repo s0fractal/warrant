@@ -122,11 +122,14 @@ finding in its own reviews; keeping them apart is the whole point.
   retroactively and the tribunal held the airline liable. **Clause 4 and the
   45-day interval are invented for this demo.** They are not that case's facts.
 - The `warrant.fact-provenance@v0` profile is a **proposal**
-  ([WRT-008](../../proposals/WRT-008-fact-provenance.md) rev 2), not an adopted
-  part of the specification. It has had **one** adversarial gate (AMEND, five
-  findings, all closed), which is one round by one reviewer on one host, not
-  adoption. A base-grade verifier ignores the provenance blobs entirely and is
+  ([WRT-008](../../proposals/WRT-008-fact-provenance.md) rev 3), not an adopted
+  part of the specification. It has had **two** adversarial gates, both AMEND
+  (five findings, then two), all closed with negative fixtures. Two rounds by
+  one reviewer on one host is not adoption. A base-grade verifier ignores the provenance blobs entirely and is
   still conformant.
+- **`derived` is not whole-chain validity.** It means the immediate cited
+  answer matched what the policy pinned. If that decision itself rests on a
+  contradicted value, the whole-store report surfaces it there, not here.
 - **Staleness is transitive but bounded.** If the decision a fact came from
   itself rested on something since replaced, the staleness travels through the
   named link. The walk has a depth limit, a record budget and a cycle guard,

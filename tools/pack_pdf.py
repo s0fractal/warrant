@@ -111,6 +111,29 @@ def _plan(members, dest: Path):
                 "the same path")
         seen[target] = m.name
         plan.append((m, target))
+
+    # An archive holding both `node` and `node/child` is a structural conflict:
+    # one member needs a path the other needs as a plain file. Catching it only
+    # when mkdir raises meant the failure landed AFTER earlier members had been
+    # written, so a refusal still changed the destination (review H2). The scan
+    # is order-independent, and it also refuses a target whose parent already
+    # exists as a file, or which already exists as a directory.
+    for target, name in seen.items():
+        for parent in target.parents:
+            if parent == dest:
+                break
+            if parent in seen:
+                raise ValueError(
+                    f"refusing archive: {name!r} needs {parent.name!r} as a "
+                    f"directory, but {seen[parent]!r} is a file there")
+            if parent.exists() and not parent.is_dir():
+                raise ValueError(
+                    f"refusing archive: {name!r} needs {parent.name!r} as a "
+                    "directory, but a file already exists there")
+        if target.is_dir():
+            raise ValueError(
+                f"refusing archive: {name!r} would replace an existing "
+                "directory")
     return plan
 
 
@@ -235,6 +258,26 @@ def _extract(dest):
                                  "same path" % (m.name, seen[p]))
             seen[p] = m.name
             plan.append((m, p))
+        # `node` and `node/child` in one archive is a structural conflict: one
+        # member needs a path the other needs as a plain file. Catching it only
+        # when mkdir raises meant the failure landed after earlier members had
+        # been written, so a refusal still changed the destination.
+        for p, name in seen.items():
+            parent = os.path.dirname(p)
+            while parent and parent != dest and parent.startswith(dest + os.sep):
+                if parent in seen:
+                    raise SystemExit(
+                        "refusing archive: %s needs %s as a directory, but %s "
+                        "is a file there" % (name, parent, seen[parent]))
+                if os.path.exists(parent) and not os.path.isdir(parent):
+                    raise SystemExit(
+                        "refusing archive: %s needs %s as a directory, but a "
+                        "file already exists there" % (name, parent))
+                parent = os.path.dirname(parent)
+            if os.path.isdir(p):
+                raise SystemExit(
+                    "refusing archive: %s would replace an existing directory"
+                    % name)
         for m, p in plan:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "wb") as f:

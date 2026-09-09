@@ -247,6 +247,26 @@ def _extract(dest):
                                  "same path" % (m.name, seen[p]))
             seen[p] = m.name
             plan.append((m, p))
+        # `node` and `node/child` in one archive is a structural conflict: one
+        # member needs a path the other needs as a plain file. Catching it only
+        # when mkdir raises meant the failure landed after earlier members had
+        # been written, so a refusal still changed the destination.
+        for p, name in seen.items():
+            parent = os.path.dirname(p)
+            while parent and parent != dest and parent.startswith(dest + os.sep):
+                if parent in seen:
+                    raise SystemExit(
+                        "refusing archive: %s needs %s as a directory, but %s "
+                        "is a file there" % (name, parent, seen[parent]))
+                if os.path.exists(parent) and not os.path.isdir(parent):
+                    raise SystemExit(
+                        "refusing archive: %s needs %s as a directory, but a "
+                        "file already exists there" % (name, parent))
+                parent = os.path.dirname(parent)
+            if os.path.isdir(p):
+                raise SystemExit(
+                    "refusing archive: %s would replace an existing directory"
+                    % name)
         for m, p in plan:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "wb") as f:
