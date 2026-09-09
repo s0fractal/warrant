@@ -451,7 +451,32 @@ def main(argv=None):
         sys.exit(f"refusing to overwrite {out} (pass --force to replace it)")
 
     data = compose(store, a.title, a.subtitle, summarize_pack(pack_dir))
-    out.write_bytes(data)
+
+    # The refusal above is a courtesy, not the guarantee: composing the artifact
+    # takes time, and a file that appears in that window was silently truncated
+    # by a plain write. The promise is kept where the write happens — O_EXCL
+    # fails if anything is there, so "do not replace" is decided by the
+    # filesystem at the moment of creation rather than by a prior look.
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if a.force else os.O_EXCL)
+        fd = os.open(out, flags, 0o644)
+    except FileExistsError:
+        sys.exit(f"refusing to overwrite {out}: it appeared while the artifact "
+                 "was being composed (pass --force to replace it)")
+    except OSError as e:
+        sys.exit(f"cannot open {out} for writing: {e}")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+    except OSError as e:
+        # A partial file is worse than none: it looks like an artifact and is
+        # not one. Only remove what this call created.
+        if not a.force:
+            try:
+                out.unlink()
+            except OSError:
+                pass
+        sys.exit(f"failed writing {out}: {e}")
     print(f"wrote {out}  ({len(data):,} bytes, sha256 "
           f"{hashlib.sha256(data).hexdigest()[:16]}…)")
     print(f"  opens as a PDF; runs as: python3 {out} --extract DIR")

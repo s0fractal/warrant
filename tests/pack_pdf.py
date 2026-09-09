@@ -359,6 +359,58 @@ def test_extraction_refusals():
         "control: the hostile fixture really does contain a traversal", names)
 
 
+# ------------------------------------------- C2. the write, not the preflight
+def test_no_overwrite_is_decided_at_the_write():
+    """The `--force` promise must hold against a file that appears WHILE the
+    artifact is being composed.
+
+    The preflight `exists()` check is a courtesy; composing takes time, and a
+    plain `write_bytes` afterwards truncated whatever had arrived in the window.
+    O_EXCL moves the decision to the filesystem at creation."""
+    pack = ensure_demo()
+    out = tmp() / "out.pdf"
+
+    # Positive control: an existing file is refused before compose, untouched.
+    out.write_text("PRE-EXISTING")
+    r = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "pack_pdf.py"), str(pack),
+         "-o", str(out), "--allow-outside"],
+        capture_output=True, text=True, cwd=str(ROOT))
+    chk(r.returncode != 0, "an existing output is refused", r.stdout[-120:])
+    chk(out.read_text() == "PRE-EXISTING",
+        "and its bytes are untouched", out.read_text()[:40])
+
+    # The race: nothing there at preflight, a competing writer lands during
+    # compose. Simulated deterministically by having `compose` create it.
+    out.unlink()
+    real_compose = pp.compose
+
+    def racing(*a, **kw):
+        data = real_compose(*a, **kw)
+        out.write_text("COMPETING WRITER")     # appears after the exists() check
+        return data
+
+    argv = [str(pack), "-o", str(out), "--allow-outside"]
+    try:
+        pp.compose = racing
+        try:
+            rc = pp.main(argv)
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 1
+    finally:
+        pp.compose = real_compose
+    chk(rc != 0,
+        "a file that appears DURING compose is refused, not truncated", rc)
+    chk(out.read_text() == "COMPETING WRITER",
+        "and the competing writer's bytes survive",
+        out.read_text()[:40])
+
+    # --force still replaces, which is the whole point of having the flag.
+    rc = pp.main([str(pack), "-o", str(out), "--allow-outside", "--force"])
+    chk(rc == 0 and out.read_bytes()[:15] == b"# coding: utf-8",
+        "--force replaces it", out.read_bytes()[:20])
+
+
 # ------------------------------------------ D. it does NOT verify itself
 def test_does_not_adjudicate():
     """The envelope's most important property is an absence."""
@@ -393,6 +445,7 @@ def main():
         test_pdf_structure()
         test_round_trip_and_determinism()
         test_extraction_refusals()
+        test_no_overwrite_is_decided_at_the_write()
         test_does_not_adjudicate()
     finally:
         for d in _TMP:
