@@ -1,0 +1,13 @@
+# 1-eligibility.wpl — LINK 1 of the chain.
+#
+# Is this passenger inside the bereavement programme at all?
+#
+# Both facts are OBSERVED: a human at the desk read a form and a certificate
+# and wrote down what they saw. Nothing here is proven, and the provenance
+# document filed beside this check says so in as many words. Observations are
+# where trust enters the chain, and this is the only place it enters.
+
+fact relationship_qualifies: bool = true
+fact certificate_filed:      bool = true
+
+check relationship_qualifies && certificate_filed

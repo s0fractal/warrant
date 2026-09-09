@@ -1,0 +1,15 @@
+# 3-grant.wpl — LINK 3: where the chain actually closes.
+#
+# Neither fact below is an observation. Each is the ANSWER OF A PRIOR DECISION,
+# cited by that decision's WarrantID. Nobody retyped a verdict here: a verifier
+# re-runs the cited check and recovers the value, so a wrong number is not a
+# thing you have to notice — it is `contradicted`, mechanically (WRT-008).
+#
+# The WarrantIDs are substituted by build.py, exactly as .warrant/gate.wpl
+# substitutes its measured facts, so the source that gets pinned as a blob is
+# the source a reader recompiles.
+
+fact eligible: bool = true from "{{eligibility_wid}}"
+fact timely:   bool = true from "{{timeliness_wid}}"
+
+check eligible && timely

@@ -1,0 +1,81 @@
+{
+  "chain": {
+    "eligibility": "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
+    "grant": "74bd08b86df85a3f87165cdbf784e23524136aed4b77ed6a05e11b99fcab8c38",
+    "timeliness": "c11f646902b226f32ae7d395173235081d7f95ee126c7a7da119ad236e86aa08"
+  },
+  "derived_facts": {
+    "grant.eligible": {
+      "from": "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
+      "state_after_reopening": "stale"
+    },
+    "grant.timely": {
+      "from": "c11f646902b226f32ae7d395173235081d7f95ee126c7a7da119ad236e86aa08",
+      "state_after_reopening": "derived"
+    }
+  },
+  "evidence_pack": "0",
+  "expected_verification": {
+    "base": {
+      "errors": 0,
+      "note": "staleness is not a \u00a76 error; the records are well-formed, signed and their checks re-run",
+      "records": 5
+    },
+    "profile": {
+      "findings": 1,
+      "note": "one WARN: grant.eligible is stale, because the decision it derives from was superseded. The profile CLI exits 1 on any finding."
+    }
+  },
+  "how_to_verify": "python3 impl/warrant.py --store demos/refund-chain/pack/.warrants verify\npython3 impl/fact_provenance.py --store demos/refund-chain/pack/.warrants",
+  "produced_by": "warrant demos/refund-chain/build.py",
+  "profile": "warrant.fact-provenance@v0",
+  "proposal": "proposals/WRT-010-fact-provenance.md",
+  "records": [
+    "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
+    "c11f646902b226f32ae7d395173235081d7f95ee126c7a7da119ad236e86aa08",
+    "74bd08b86df85a3f87165cdbf784e23524136aed4b77ed6a05e11b99fcab8c38",
+    "d9f15d3e4532228cf9d25619be6463fe99cf1bbfdc8615e43724c9a5c517a935",
+    "861f3c6b5b546828b9c41d2ac7b66fa3fde3166e7f0326d8605d65ea1ea76eeb"
+  ],
+  "reopening": {
+    "relitigation": "d9f15d3e4532228cf9d25619be6463fe99cf1bbfdc8615e43724c9a5c517a935",
+    "supersede": "861f3c6b5b546828b9c41d2ac7b66fa3fde3166e7f0326d8605d65ea1ea76eeb"
+  },
+  "root": "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
+  "ski_checks": [
+    {
+      "answer": true,
+      "atp": 7,
+      "check": "10744bd5612c2adf113c3f795c29952ece923d6f9bf31925ddd137e692009237",
+      "expect": "bc0c2fe26e44e2aed8ce500a74963bc270fd4a49ec0c2e4837ce7a64bb0a486c",
+      "name": "eligibility",
+      "term": "0f6fa9611f5f5db0e2d431b2c37ab2a70f4951ff9708a67d42d5750b3ad6cc94"
+    },
+    {
+      "answer": true,
+      "atp": 18,
+      "check": "a0880299485b410211162f7ff5a5fcb7cb426f55d3d5ff177286e384b3c288cc",
+      "expect": "bc0c2fe26e44e2aed8ce500a74963bc270fd4a49ec0c2e4837ce7a64bb0a486c",
+      "name": "timeliness",
+      "term": "1d26bed7417126e4ceced29ce4c2b2dd5324576013da47d65157f09c6e29896f"
+    },
+    {
+      "answer": true,
+      "atp": 7,
+      "check": "10744bd5612c2adf113c3f795c29952ece923d6f9bf31925ddd137e692009237",
+      "expect": "bc0c2fe26e44e2aed8ce500a74963bc270fd4a49ec0c2e4837ce7a64bb0a486c",
+      "name": "grant",
+      "term": "0f6fa9611f5f5db0e2d431b2c37ab2a70f4951ff9708a67d42d5750b3ad6cc94"
+    },
+    {
+      "answer": false,
+      "atp": 255,
+      "check": "4334f2cb18eb5c254b6a4aab0d0ca23b15c971f9a2aca16270f7b3928bf4d80c",
+      "expect": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
+      "name": "clause-4-proximity",
+      "term": "c8bc257495585385c0d0c502b2992d482c5e46e5822c4bae528705e8afd62710"
+    }
+  ],
+  "story": "modelled on Moffatt v. Air Canada, 2024 BCCRT 149; clause 4 and the 45-day interval are invented for this demo",
+  "title": "Bereavement refund \u2014 granted on a chain, reopened by a consequence nobody had drawn"
+}

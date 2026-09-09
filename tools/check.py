@@ -109,6 +109,10 @@ CHECKS = [
     # that cannot go red is decoration.
     ("wpl policy language (differential vs the oracle, docs executed)",
      ["python3", "tests/policy_lang.py"], "sigma"),
+    ("WRT-010 fact provenance (binding, citation paths, mutations, demo)",
+     ["python3", "tests/fact_provenance.py"], "sigma"),
+    ("evidence PDF pack (portable extraction refusal controls)",
+     ["python3", "tests/pack_pdf.py"], None),
     # WRT-005 (design only): the outcome-fingerprint gate countervectors,
     # fail-closed. Every claimed relation, settlement verdict and subprocess
     # return code is asserted; the five re-openers are demonstrated on the

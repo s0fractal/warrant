@@ -1,0 +1,44 @@
+{
+  "body": {
+    "actor": {
+      "id": "desk@airline"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "refund granted: eligible and timely"
+      },
+      {
+        "check": "10744bd5612c2adf113c3f795c29952ece923d6f9bf31925ddd137e692009237",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "0232f1586e17de9291c7caf402153942391813d9643004e3b68215cab17d8f60",
+      "f386f054c6c183a04396159a2bc39bf0227d94d47ac810751c6176958b89a2e1"
+    ],
+    "prior": [
+      "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
+      "c11f646902b226f32ae7d395173235081d7f95ee126c7a7da119ad236e86aa08"
+    ],
+    "subject": {
+      "hash": "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8",
+      "note": "refund granted: eligible and timely"
+    },
+    "ts": 1708308000,
+    "under": [
+      "5b11b31d31886c265ed0ac0663f49cdbe894d8793fb7967f41f37ab1b68c9f8d"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "desk@airline",
+      "key": "6ee091fd280a9b68554fa73c588125d47d3425c68a26ba236b4dad90f90a8f92",
+      "sig": "42979500370284c9f894da4b8b40718e76d52e5d9162c5ebf449a9cc355c56842c8a7c8b4611a6a842dd31a3d40c3a4ed349dca26bcb03c67c8229a0470b9a01"
+    }
+  ]
+}

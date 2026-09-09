@@ -132,6 +132,15 @@ CANONICAL = {
     "WRT-007": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED)",
                 "commit": None,
                 "path": "proposals/WRT-007-per-tag-evaluator-dependency.md"},
+    "WRT-008": {"lives_in": "open PR #60 (document CLOSED: DEFERRED)",
+                "commit": "6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3",
+                "path": "proposals/WRT-008-fact-derivation-profile.md"},
+    "WRT-009": {"lives_in": "reserved deployment-predicate proposal (not yet written)",
+                "commit": None,
+                "path": "reviews/2026-09-chatgpt-web-cross-stack-response.md"},
+    "WRT-010": {"lives_in": "this workline (DRAFT; follows up WRT-008)",
+                "commit": None,
+                "path": "proposals/WRT-010-fact-provenance.md"},
 }
 
 
