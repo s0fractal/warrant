@@ -251,7 +251,12 @@ a policy author can afford rather than whether it compiles.
 - **It does not claim the syntax is right.** The model shows the semantics is
   expressible and what it costs. Whether `count(P for P in xs) >= k` is the
   shape WPL should grow is exactly what a gate should argue about.
-- **It has not been reviewed.** Rev 1 has had no adversarial gate.
+- **The document has not been gated; the model has, once.** Round 1 reviewed
+  `wrt-011-model` and returned AMEND on two P2, both closed in rev 2 and both
+  recorded in the status block above. This document's own argument — §3's
+  syntax, §5's narrowed case, §6's claim that no binding edge is added — has not
+  been through a gate at all. One round on the operand is not a round on the
+  proposal.
 
 ## 9. Open questions
 

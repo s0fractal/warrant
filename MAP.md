@@ -25,6 +25,7 @@ present on a ref the reviewer was not looking at.
 |---|---|---|---|
 | `ADR-004` | **sigma-glyph**, `master` | `proposals/ADR-004-literal-blob-scope.md` | `proposals/GOV-001-settlement-at-scale.md` |
 | `ADR-008` | **sigma-glyph**, `master` | `proposals/ADR-008-specification-is-the-arbiter.md` | `proposals/WRT-001-wave-v1-runtime.md` |
+| `ADR-011` | **sigma-glyph**, `master` (DRAFT, blocked on computed Church-natural admission) | `proposals/ADR-011-eq-by-normal-form-address.md` | `proposals/WRT-011-bounded-aggregation.md` |
 | `ADR-012` | **sigma-glyph**, `master` | `proposals/ADR-012-checkout-independent-consumer-surface.md` | `proposals/WRT-007-per-tag-evaluator-dependency.md` |
 | `Book I` | **sigma-glyph**, `master` | `spec/book-1-truth.md` | `ARCHITECT.md` |
 | `Book II` | **sigma-glyph**, `master` | `spec/book-2-navigation.md` | `proposals/WRT-001-wave-v1-runtime.md` |
@@ -40,7 +41,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-008` | open PR #60 (document CLOSED: DEFERRED) | `6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3:proposals/WRT-008-fact-derivation-profile.md` | `proposals/WRT-010-fact-provenance.md` |
 | `WRT-009` | reserved deployment-predicate proposal (not yet written) | `reviews/2026-09-chatgpt-web-cross-stack-response.md` | `proposals/WRT-010-fact-provenance.md` |
 | `WRT-010` | this workline (DRAFT; follows up WRT-008) | `proposals/WRT-010-fact-provenance.md` | `proposals/WRT-010-fact-provenance.md` |
-| `WRT-011` | `all` / `any` / `count` over a pinned list — DRAFT, no gate | `proposals/WRT-011-bounded-aggregation.md` | `proposals/wrt-011-model/aggregation.py` |
+| `WRT-011` | `all` / `any` / `count` over a pinned list — DRAFT rev 2; model gated once (AMEND, closed); document not gated; not adopted | `proposals/WRT-011-bounded-aggregation.md` | `proposals/wrt-011-model/aggregation.py` |
 
 ## Known identifier collisions
 
