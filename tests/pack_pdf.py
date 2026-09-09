@@ -183,8 +183,12 @@ def test_extraction_refusals():
         ("../escaped.txt", tarfile.REGTYPE, "", "parent-directory traversal"),
         ("a/../../escaped.txt", tarfile.REGTYPE, "", "traversal through a subdir"),
         ("/tmp/absolute.txt", tarfile.REGTYPE, "", "absolute path"),
-        ("link", tarfile.SYMTYPE, "/etc/passwd", "symlink"),
-        ("hard", tarfile.LNKTYPE, "/etc/passwd", "hard link"),
+        # The link target only has to be OUTSIDE the destination; it is never
+        # followed, created or read. The conventional system-file example trips
+        # secret scanners on the word alone, so the fixture points at a path
+        # that exists nowhere and carries no such association.
+        ("link", tarfile.SYMTYPE, "/nonexistent/outside-target", "symlink"),
+        ("hard", tarfile.LNKTYPE, "/nonexistent/outside-target", "hard link"),
         ("dev", tarfile.CHRTYPE, "", "character device"),
     ]
     for name, kind, link, label in cases:

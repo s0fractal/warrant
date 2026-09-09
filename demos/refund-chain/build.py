@@ -56,6 +56,10 @@ PACK = HERE / "pack"
 STORE = PACK / ".warrants"
 POL = HERE / "policies"
 
+SKI = "ski@v1"
+DESK = "desk@airline"
+AUDITOR = "auditor@airline"
+
 DESK_SEED = "d1" * 32
 AUDIT_SEED = "e2" * 32
 CLAIMANT_SEED = "f3" * 32
@@ -130,7 +134,7 @@ def file_policy(store, src_text, *, decision, subject, policy_hex, prior,
         store, decision, subject,
         Args(under=[policy_hex], prior=list(prior),
              evidence=[src_hex, prov_hex, *extra_evidence],
-             check=compiled.blob, runtime="ski@v1", verdict="pass",
+             check=compiled.blob, runtime=SKI, verdict="pass",
              reason=[note], actor=actor, key=str(key), ts=ts),
         note=note)
     return wid, compiled, src_hex, prov_hex
@@ -170,7 +174,7 @@ def main():
     w1, c1, _, _ = file_policy(
         store, (POL / "1-eligibility.wpl").read_text(),
         decision="accept", subject=claim_hex, policy_hex=policy_hex, prior=[],
-        actor="desk@airline", key=desk, ts=T0,
+        actor=DESK, key=desk, ts=T0,
         note="claimant is inside the bereavement programme",
         extra_evidence=[claim_hex])
     print(f"  [1] eligibility  {w1[:16]}…  answer={str(c1.result).lower()}  "
@@ -180,7 +184,7 @@ def main():
     w2, c2, _, _ = file_policy(
         store, (POL / "2-timeliness.wpl").read_text(),
         decision="accept", subject=claim_hex, policy_hex=policy_hex, prior=[w1],
-        actor="desk@airline", key=desk, ts=T0 + 3600,
+        actor=DESK, key=desk, ts=T0 + 3600,
         note="request was made before travel and is not retroactive",
         extra_evidence=[claim_hex])
     print(f"\n  [2] timeliness   {w2[:16]}…  answer={str(c2.result).lower()}  "
@@ -190,9 +194,9 @@ def main():
     grant_src = ((POL / "3-grant.wpl.tmpl").read_text()
                  .replace("{{eligibility_wid}}", w1)
                  .replace("{{timeliness_wid}}", w2))
-    w3, c3, grant_src_hex, grant_prov = file_policy(
+    w3, c3, _grant_src_hex, _grant_prov = file_policy(
         store, grant_src, decision="accept", subject=claim_hex,
-        policy_hex=policy_hex, prior=[w1, w2], actor="desk@airline", key=desk,
+        policy_hex=policy_hex, prior=[w1, w2], actor=DESK, key=desk,
         ts=T0 + 7200, note="refund granted: eligible and timely")
     print(f"\n  [3] grant        {w3[:16]}…  answer={str(c3.result).lower()}  "
           f"{c3.atp} ATP   <- SETTLES THE QUESTION")
@@ -241,7 +245,7 @@ def main():
         "evidence": [claim_hex],
         "prior": [w3],
         "because": [prox.reason("pass")],
-        "actor": {"id": "auditor@airline"}, "ts": T0 + 60 * DAY,
+        "actor": {"id": AUDITOR}, "ts": T0 + 60 * DAY,
     }
     verdict = w.settlement_admissibility(store, w3, candidate)
     print(f"  evidence cited: only {claim_hex[:12]}…, already in the tunnel")
@@ -253,10 +257,10 @@ def main():
         store, "reject", claim_hex,
         Args(under=[policy_hex], prior=[w3],
              evidence=[claim_hex],
-             check=prox.blob, runtime="ski@v1", verdict="pass",
+             check=prox.blob, runtime=SKI, verdict="pass",
              reason=["policy clause 4: travel began 45 days after the death, "
                      "outside the 10-day interval"],
-             actor="auditor@airline", key=str(audit), ts=T0 + 60 * DAY,
+             actor=AUDITOR, key=str(audit), ts=T0 + 60 * DAY,
              relitigates=w3),
         note="clause 4 was never compiled against the filed interval")
     print(f"  re-litigation filed: {w4[:16]}…")
@@ -265,10 +269,10 @@ def main():
         store, "supersede", w1,
         Args(under=[policy_hex], prior=[w1, w4],
              evidence=[claim_hex, prox_src_hex, prox_prov],
-             check=prox.blob, runtime="ski@v1", verdict="pass",
+             check=prox.blob, runtime=SKI, verdict="pass",
              reason=["eligibility rested on clauses 1-3 alone; clause 4 "
                      "excludes this claim"],
-             actor="auditor@airline", key=str(audit), ts=T0 + 60 * DAY + 60),
+             actor=AUDITOR, key=str(audit), ts=T0 + 60 * DAY + 60),
         note="eligibility decision replaced")
     print(f"  eligibility superseded by: {w5[:16]}…")
 
@@ -299,8 +303,8 @@ def main():
     trust = {
         "genesis_roots": [w1],
         "actors": {
-            "desk@airline": [w.pubkey_hex(w.load_key(str(desk)))],
-            "auditor@airline": [w.pubkey_hex(w.load_key(str(audit)))],
+            DESK: [w.pubkey_hex(w.load_key(str(desk)))],
+            AUDITOR: [w.pubkey_hex(w.load_key(str(audit)))],
             "objector@airline": [w.pubkey_hex(w.load_key(str(claimant)))],
         },
     }

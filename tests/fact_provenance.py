@@ -721,7 +721,7 @@ def test_derivation_must_also_be_cited():
     chk(res.refusals and "proves nothing" in res.refusals[0],
         "and the refusal names the record it could not traverse", res.refusals)
 
-    cov, broken = fp._citation_closure(s, r, s.all_records())
+    cov, broken = fp._citation_closure(r, s.all_records())
     chk(a not in cov, "the walk does not reach through an unverified record")
     chk(m in broken, "and reports which record it refused to traverse",
         sorted(broken))

@@ -415,6 +415,8 @@ def main(argv=None):
     ap.add_argument("-o", "--out", required=True, help="output .pdf path")
     ap.add_argument("-t", "--title", default="Warrant evidence pack")
     ap.add_argument("-s", "--subtitle", default="")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite the output file if it already exists")
     a = ap.parse_args(argv)
 
     pack_dir = Path(a.pack)
@@ -422,11 +424,29 @@ def main(argv=None):
     if not (store / "records").is_dir():
         sys.exit(f"no warrant store at {store}")
 
+    # Resolve and check the destination BEFORE producing or writing anything.
+    # A writer CLI must write where its operator asked, so this does not confine
+    # the path to a sandbox — that would break the tool. What it does refuse is
+    # the set of ways an unattended caller turns a bad argument into a
+    # surprising write: a directory, a missing parent, and silently replacing a
+    # file that is already there.
+    out = Path(a.out).expanduser()
+    try:
+        out = out.resolve(strict=False)
+    except (OSError, RuntimeError) as e:
+        sys.exit(f"cannot resolve output path {a.out!r}: {e}")
+    if out.is_dir():
+        sys.exit(f"refusing to write: {out} is a directory")
+    if not out.parent.is_dir():
+        sys.exit(f"refusing to write: {out.parent} is not an existing directory")
+    if out.exists() and not a.force:
+        sys.exit(f"refusing to overwrite {out} (pass --force to replace it)")
+
     data = compose(store, a.title, a.subtitle, summarize_pack(pack_dir))
-    Path(a.out).write_bytes(data)
-    print(f"wrote {a.out}  ({len(data):,} bytes, sha256 "
+    out.write_bytes(data)
+    print(f"wrote {out}  ({len(data):,} bytes, sha256 "
           f"{hashlib.sha256(data).hexdigest()[:16]}…)")
-    print("  opens as a PDF; runs as: python3 " + a.out + " --extract DIR")
+    print(f"  opens as a PDF; runs as: python3 {out} --extract DIR")
     return 0
 
 
