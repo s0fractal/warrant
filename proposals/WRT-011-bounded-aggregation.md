@@ -1,8 +1,27 @@
 # WRT-011: `all` / `any` / `count` over a pinned list
 
-**Status:** DRAFT rev 1 (2026-09-09) — **design plus a runnable model.** No SPEC
-edit, no change to `ski@v1`, no compiler change is made by this document. It has
-had no adversarial gate. Nothing here is adopted.
+**Status:** DRAFT rev 2 (2026-09-09) — **design plus a runnable model.** No SPEC
+edit, no change to `ski@v1`, no compiler change is made by this document.
+Nothing here is adopted.
+
+**Gate round 1 (Codex, AMEND) — two P2, both in the conclusions, both closed.**
+Neither touched the arithmetic: the threshold circuit was correct in every case
+checked. What was wrong was that a green experiment supported two claims its
+controls did not establish.
+
+- **M1** — the n=8 ceiling belonged to rev 1's naive generator, not to WPL. A
+  balanced spelling compiles the same semantics at n=8 in 556 characters. §5 is
+  rewritten: the necessity claim is **withdrawn**, ceilings are now reported per
+  spelling, and what remains is an authoring-and-review argument, not an
+  impossibility one.
+- **M2** — one check stood for three caps and accepted any of four words, so a
+  parser refusal counted as a budget refusal with zero evaluator calls. §7 is
+  corrected and the model now gates the three separately with the call count
+  instrumented.
+
+Both are the defect this repository keeps auditing elsewhere: a conclusion wider
+than its control. Finding it in my own experiment is the reason the model is
+filed as its own PR rather than folded into this document.
 
 **What it deliberately does not open.** The closed WRT-008 named *two*
 constructs as its sibling: bounded aggregation, and **a digest fact kind
@@ -136,33 +155,52 @@ count([1,5,9,2] > 4) >= 4  = False  2662 ATP, 67 nodes
 
 plus all 64 threshold cases over every subset of a four-element list.
 
-## 5. Why this is a construct and not a convenience
+## 5. Why a construct — narrowed after gate round 1
 
-The strongest argument for adding it is not that it is nicer to read. It is that
-the semantics is **reachable today and the source is not writable by hand**.
+**Rev 1 claimed too much here, and the claim is withdrawn.** It wrote the
+threshold recurrence out naively, watched it hit WPL's 512-part expression cap
+at n=8, and concluded that the source "is not writable by hand" and that a
+construct was therefore *necessary*. That measured one generator, not the
+language. The review answered with a balanced divide-and-conquer spelling that
+compiles the same semantics with no new syntax and no compiler change.
 
-The recurrence reuses `A[i-1][j]` twice, so the *term* is a DAG and the repeated
-subexpression has one address. Written out in *source* it is a tree, and WPL caps
-a check expression at 512 parts. Measured:
+Measured, both spellings, ceilings per spelling:
 
-| n | k | source chars | ATP | term nodes | status |
+| n | k | naive chars | balanced chars | balanced ATP | balanced nodes |
 |---|---|---|---|---|---|
-| 2 | 1 | 50 | 539 | 44 | ok |
-| 4 | 2 | 230 | 1898 | 61 | ok |
-| 6 | 3 | 929 | 4883 | 86 | ok |
-| 7 | 3 | 1420 | 4890 | 96 | ok |
-| 8 | 4 | 3662 | — | — | **refused: expression cap** |
+| 4 | 2 | 229 | 88 | 1308 | 46 |
+| 6 | 3 | 928 | 250 | 2104 | 70 |
+| 7 | 3 | 1419 | 354 | 2883 | 77 |
+| 8 | 4 | 3661 | **544** | **4540** | **74** |
+| 10 | 5 | 14404 | 1126 | 6099 | 134 |
+| 12 | 6 | 56791 | 2064 | — refused | — |
 
-At n=7 the term is 96 nodes and 4890 ATP — entirely affordable. The source is
-1420 characters of nested parentheses, and one more element makes it
-uncompilable. The gap between what the machine can run and what a person can
-write is the whole case.
+```text
+naive     refuses at n=8    (reaches n=7)
+balanced  refuses at n=11   (reaches n=10)
+```
 
-**A degenerate threshold is a refusal, not a constant.** `count(P) >= 0` and
-`>= n+1` collapse to `true`/`false`, and WPL then refuses the source because the
-declared facts are never read: *"an unused fact looks like it constrains the
-decision and does not."* That is the language being right, and the construct must
-not paper over it.
+Neither number is "the WPL limit". Each is that spelling's limit, and a third
+spelling may well beat both — a direct DAG construction shares what neither
+source form can, because WPL has no let-binding. That has not been measured.
+
+**What survives the narrowing, and it is weaker than rev 1 implied:**
+
+- **A ceiling still exists**, at n=10 for the best spelling measured. Whether
+  that is above or below the lists real policies aggregate over is not
+  established here; the ten-decision sample was never measured for list length.
+- **The balanced form must be derived correctly, per policy, by hand.** A
+  mis-derived threshold does not fail to compile — it computes a different
+  policy and settles on it. That is a reviewability cost, and it is the honest
+  remaining argument: the construct moves one proof obligation from every
+  author to one compiler.
+- **Source size is not the point; correctness of the encoding is.** 544
+  characters is writable. Writing it right, and a reviewer checking that it is
+  right, is the part that does not scale.
+
+**What is no longer claimed:** that WPL cannot express a hand-written threshold
+past n=7, that a construct is necessary rather than useful, or that the source
+blow-up is a property of the language.
 
 ## 6. Binding edges: none added
 
@@ -189,10 +227,16 @@ bounded and known before anything ships:
 - the node budget already refuses an over-large term;
 - the expression cap already refuses an over-large source.
 
-All three refusals are in place today and the model exercises them. What this
-proposal changes is the *ratio*: the same three ceilings now bound a construct
-whose cost grows with the list, so the useful question becomes what n a policy
-author can afford rather than whether it compiles.
+All three refusals are in place today. Rev 1 claimed the model exercised them;
+it did not — one check accepted any of four words, so a parser refusal counted
+as a budget refusal and the evaluator was never reached (review M2). Rev 2 gates
+them separately, with the evaluator call count instrumented: the expression cap
+must refuse with zero calls, the ATP cap must refuse having reached the
+evaluator, and a positive control compiles the same source uncapped.
+
+What this proposal changes is the *ratio*: the same three ceilings would bound a
+construct whose cost grows with the list, so the useful question becomes what n
+a policy author can afford rather than whether it compiles.
 
 ## 8. What this does not do
 
@@ -229,7 +273,7 @@ author can afford rather than whether it compiles.
 
 ## 10. The model
 
-[`proposals/wrt-011-model/aggregation.py`](wrt-011-model/aggregation.py), 19
+[`proposals/wrt-011-model/aggregation.py`](wrt-011-model/aggregation.py), 27
 checks. It extends nothing: every aggregate is written as ordinary WPL, compiled
 by the real `policy_lang`, and its verdict read from an actual reduction. A green
 run says the semantics is expressible today and costs what the tables above say.
