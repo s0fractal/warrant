@@ -40,6 +40,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-008` | open PR #60 (document CLOSED: DEFERRED) | `6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3:proposals/WRT-008-fact-derivation-profile.md` | `proposals/WRT-010-fact-provenance.md` |
 | `WRT-009` | reserved deployment-predicate proposal (not yet written) | `reviews/2026-09-chatgpt-web-cross-stack-response.md` | `proposals/WRT-010-fact-provenance.md` |
 | `WRT-010` | this workline (DRAFT; follows up WRT-008) | `proposals/WRT-010-fact-provenance.md` | `proposals/WRT-010-fact-provenance.md` |
+| `WRT-011` | `all` / `any` / `count` over a pinned list — DRAFT, no gate | `proposals/WRT-011-bounded-aggregation.md` | `proposals/wrt-011-model/aggregation.py` |
 
 ## Known identifier collisions
 
