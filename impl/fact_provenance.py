@@ -161,7 +161,16 @@ class Finding:
 
     def __init__(self, fact, kind, state, detail="", actor=None):
         self.fact, self.kind, self.state = fact, kind, state
-        self.detail, self.actor = detail, actor
+        self.detail = detail
+        # `actor` is the id the record NAMES for itself. It is bound to the
+        # record's identity (the body recomputes to its WarrantID, §5.3) and to
+        # nothing else: this profile verifies no signature and reads no
+        # keyring, so it establishes neither that the record was signed by that
+        # actor nor that the key is theirs. That is SPEC §5.1's bound/unbound
+        # question and it belongs to `warrant verify` with a trust
+        # configuration. Reporting a name as if it were an attestation is the
+        # label this field must not be allowed to become.
+        self.actor = actor
 
     @property
     def ok(self):
@@ -336,6 +345,20 @@ def _superseded_by(recs, wid):
     return sorted(out)
 
 
+def _citation_closure(store, wid, recs):
+    """WarrantIDs reachable from `wid` through `prior`, plus `wid` itself.
+
+    A derived fact names a decision it USED. SPEC §7 builds a settlement tunnel
+    from `prior`, so a dependency the record does not also CITE is invisible to
+    re-litigation: superseding it would never reach this record through the
+    tunnel. Using without citing is therefore refused, not merely noted."""
+    try:
+        tun = w.tunnel(store, wid, recs)
+        return set(tun.get("records", ())) | {wid}
+    except Exception:
+        return {wid}
+
+
 def _provenance_docs_of(store, body):
     """Provenance documents cited in a record's `evidence`, plus whether any
     cited evidence could not be resolved intact, plus any document that does
@@ -349,8 +372,9 @@ def _provenance_docs_of(store, body):
     question entirely (review H1).
 
     Returns (docs, lost, foreign)."""
-    mine = {r.get("check") for r in _ski_reasons(body)}
-    docs, lost, foreign = [], [], []
+    mine = {r.get("check") for r in _ski_reasons(body)
+            if isinstance(r.get("check"), str)}
+    docs, lost, rejected = [], [], []
     for h in body.get("evidence", []):
         if not store.has_blob(h):
             lost.append(f"cited evidence {h[:12]}… is not in the store")
@@ -364,15 +388,26 @@ def _provenance_docs_of(store, body):
         except Exception:
             continue                     # a non-JSON evidence blob is normal
         if not (isinstance(doc, dict) and doc.get("provenance") == PROFILE):
+            continue                     # not claiming to be one of ours
+        # SHAPE BEFORE BINDING. The binding test below is a set membership, so
+        # an unhashable `check` (say `[]`) raised TypeError out of this
+        # function and past `check_record`'s ProvenanceError handler, losing
+        # the typed refusal AND the report for every other record in the store
+        # (review J1). A blob that claims to be one of ours and is malformed is
+        # a refusal, never an attachment to ignore.
+        try:
+            _validate_doc_shape(doc)
+        except ProvenanceError as e:
+            rejected.append(f"{h[:12]}…: malformed provenance document: {e}")
             continue
-        if doc.get("check") not in mine:
-            foreign.append(
+        if doc["check"] not in mine:
+            rejected.append(
                 f"{h[:12]}…: provenance document describes check "
-                f"{str(doc.get('check'))[:12]}…, which is not a ski@v1 reason "
+                f"{doc['check'][:12]}…, which is not a ski@v1 reason "
                 "of this record; a sidecar belongs to the reason it documents")
             continue
         docs.append((h, doc))
-    return docs, lost, foreign
+    return docs, lost, rejected
 
 
 # ------------------------------------------------ transitive source health
@@ -412,9 +447,9 @@ def _source_health(store, recs, wid, sg, depth, seen, memo, budget):
         return result
 
     seen = seen | {wid}
-    docs, lost, foreign = _provenance_docs_of(store, env["body"])
-    if lost or foreign:
-        result = (UNDERIVED, f"upstream {wid[:12]}…: {(lost + foreign)[0]}")
+    docs, lost, rejected = _provenance_docs_of(store, env["body"])
+    if lost or rejected:
+        result = (UNDERIVED, f"upstream {wid[:12]}…: {(lost + rejected)[0]}")
         memo[wid] = result
         return result
 
@@ -588,16 +623,34 @@ def check_record(store, wid, recs=None, sg=None):
     if env is None:
         return RecordResult(wid, [], [why], INCOMPLETE)
     actor = (env["body"].get("actor") or {}).get("id")
-    docs, lost, foreign = _provenance_docs_of(store, env["body"])
-    findings, refusals = [], list(lost) + list(foreign)
+    docs, lost, rejected = _provenance_docs_of(store, env["body"])
+    findings, refusals = [], list(lost) + list(rejected)
+    covered = _citation_closure(store, wid, recs)
+    kept = []
     for h, doc in docs:
+        uncited = sorted({e["from"] for e in doc.get("facts", {}).values()
+                          if isinstance(e, dict) and e.get("kind") == "derived"
+                          and isinstance(e.get("from"), str)} - covered)
+        if uncited:
+            refusals.append(
+                f"{h[:12]}…: derives a fact from {uncited[0][:12]}…, which is "
+                "not in this record's prior closure. SPEC §7 builds a "
+                "settlement tunnel from `prior`, so a dependency outside it is "
+                "invisible to re-litigation: the derivation must be cited as "
+                "well as used")
+            continue
+        kept.append((h, doc))
+    for h, doc in kept:
         try:
             findings.extend(check_doc(store, doc, recs, sg, actor))
         except ProvenanceError as e:
             refusals.append(f"{h[:12]}…: {e}")
-    if lost or foreign:
+    # Status is derived from `refusals`, not from a subset of them. Deriving it
+    # from `lost or rejected` alone left a record COMPLETE while a document it
+    # cited had been refused — the same shape as F3, one level up.
+    if refusals:
         status = INCOMPLETE
-    elif docs:
+    elif kept:
         status = COMPLETE
     else:
         status = NOT_APPLICABLE
@@ -636,7 +689,8 @@ def _report(store_path, settlement=False):
             lvl = f.level(settlement)
             if lvl:
                 bad += 1
-            who = f" (attested by {f.actor})" if f.actor and not f.detail else ""
+            who = (f" (record names {f.actor}; this profile checks no "
+                   "signature)") if f.actor and not f.detail else ""
             print(f"  {lvl or '   ':5} {f.fact}: {f.state}{who}"
                   + (f" — {f.detail}" if f.detail else ""))
     grade = "settlement" if settlement else "base"

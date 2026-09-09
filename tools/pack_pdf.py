@@ -55,6 +55,7 @@ import json
 import os
 import sys
 import tarfile
+import unicodedata
 from pathlib import Path
 
 PDF_HEADER = b"# coding: utf-8\n" + b'r"""%PDF-1.7\n' + b"%\xe2\x9a\x93\xf0\x9f\x93\x84\n"
@@ -92,13 +93,22 @@ def pack_store(store_dir: Path, prefix: str = ".warrants") -> bytes:
     return out.getvalue()
 
 
+def _fold(path: Path, dest: Path):
+    """A key under which two paths are the SAME FILE on a case- or
+    normalization-insensitive filesystem. Folds case and Unicode composition of
+    every component below `dest`; `os.path.normcase` alone is a no-op on POSIX
+    and does not model this host at all."""
+    rel = path.relative_to(dest).parts
+    return tuple(unicodedata.normalize("NFC", part).casefold() for part in rel)
+
+
 def _plan(members, dest: Path):
     """Validate EVERY member and resolve every target before one byte is
     written. Extraction used to validate and write member by member, so a
     hostile member late in the archive was refused only after an earlier one
     had already replaced a file in the destination (review F5): the refusal was
     real, the destination was not left alone. Returns [(member, target)]."""
-    plan, seen = [], {}
+    plan, seen, folded = [], {}, {}
     for m in members:
         if not m.isreg():
             raise ValueError(f"refusing non-regular archive member {m.name!r}")
@@ -109,6 +119,19 @@ def _plan(members, dest: Path):
             raise ValueError(
                 f"refusing archive: {m.name!r} and {seen[target]!r} resolve to "
                 "the same path")
+        # Two DIFFERENT strings can be one file. This host's filesystem is
+        # case-insensitive, so `NODE` and `node` resolved to distinct keys here
+        # and the second member silently overwrote the first (review J2). A
+        # portable pack refuses the alias rather than guessing the destination's
+        # naming policy. LIMIT: this folds case and Unicode composition, which
+        # covers the aliasing this project has actually observed; it is not a
+        # complete model of every filesystem's equivalence.
+        key = _fold(target, dest)
+        if key in folded and folded[key] != m.name:
+            raise ValueError(
+                f"refusing archive: {m.name!r} and {folded[key]!r} are the same "
+                "name on a case- or normalization-insensitive filesystem")
+        folded[key] = m.name
         seen[target] = m.name
         plan.append((m, target))
 
@@ -122,10 +145,11 @@ def _plan(members, dest: Path):
         for parent in target.parents:
             if parent == dest:
                 break
-            if parent in seen:
+            pkey = _fold(parent, dest)
+            if pkey in folded:
                 raise ValueError(
                     f"refusing archive: {name!r} needs {parent.name!r} as a "
-                    f"directory, but {seen[parent]!r} is a file there")
+                    f"directory, but {folded[pkey]!r} is a file there")
             if parent.exists() and not parent.is_dir():
                 raise ValueError(
                     f"refusing archive: {name!r} needs {parent.name!r} as a "
@@ -222,7 +246,7 @@ def build_pdf(lines, archive_b64: str, runner: str) -> bytes:
 
 # ------------------------------------------------------------------- runner
 RUNNER = '''
-import base64, gzip, hashlib, io, json, os, sys, tarfile
+import base64, gzip, hashlib, io, json, os, sys, tarfile, unicodedata
 
 # This file is a TRANSPORT, not a trust root. It does not adjudicate anything
 # about itself: whoever edited the evidence could edit this code in the same
@@ -245,8 +269,18 @@ def _extract(dest):
     dest = os.path.realpath(dest)
     os.makedirs(dest, exist_ok=True)
     raw = gzip.decompress(_blob())
+
+    def fold(p):
+        # Two different strings can be ONE file: this project's own host has a
+        # case-insensitive filesystem, where `NODE` and `node` are the same
+        # name. Folding case and Unicode composition refuses the alias instead
+        # of silently letting the second member overwrite the first. It is not
+        # a complete model of every filesystem's equivalence.
+        rel = os.path.relpath(p, dest).split(os.sep)
+        return tuple(unicodedata.normalize("NFC", x).casefold() for x in rel)
+
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as t:
-        plan, seen = [], {}
+        plan, seen, folded = [], {}, {}
         for m in t.getmembers():
             if not m.isreg():
                 raise SystemExit("refusing non-regular archive member: " + m.name)
@@ -256,6 +290,13 @@ def _extract(dest):
             if p in seen:
                 raise SystemExit("refusing archive: %s and %s resolve to the "
                                  "same path" % (m.name, seen[p]))
+            k = fold(p)
+            if k in folded and folded[k] != m.name:
+                raise SystemExit(
+                    "refusing archive: %s and %s are the same name on a case- "
+                    "or normalization-insensitive filesystem"
+                    % (m.name, folded[k]))
+            folded[k] = m.name
             seen[p] = m.name
             plan.append((m, p))
         # `node` and `node/child` in one archive is a structural conflict: one
@@ -265,10 +306,11 @@ def _extract(dest):
         for p, name in seen.items():
             parent = os.path.dirname(p)
             while parent and parent != dest and parent.startswith(dest + os.sep):
-                if parent in seen:
+                pk = fold(parent)
+                if pk in folded:
                     raise SystemExit(
                         "refusing archive: %s needs %s as a directory, but %s "
-                        "is a file there" % (name, parent, seen[parent]))
+                        "is a file there" % (name, parent, folded[pk]))
                 if os.path.exists(parent) and not os.path.isdir(parent):
                     raise SystemExit(
                         "refusing archive: %s needs %s as a directory, but a "

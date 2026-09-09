@@ -296,6 +296,45 @@ def test_extraction_refusals():
         chk("existing directory" in str(e),
             "refuses a member that would replace a directory", str(e)[:70])
 
+    # J2: two DIFFERENT strings can be ONE file. This host's filesystem is
+    # case-insensitive, so `NODE` and `node` resolved to distinct keys and the
+    # second member silently overwrote the first — no exception, just lost
+    # data. NFD/NFC composition is the same class of alias.
+    alias_cases = [
+        ((("NODE", b"FIRST"), ("node", b"SECOND")), "case alias NODE/node"),
+        ((("caf\u00e9", b"A"), ("cafe\u0301", b"B")), "NFC/NFD alias"),
+        ((("existing", b"REPLACED"), ("NODE", b"FILE"),
+          ("node/child", b"CHILD")), "case alias colliding with a parent"),
+    ]
+    for members, label in alias_cases:
+        blob = _archive(*[(n, tarfile.REGTYPE, "", p) for n, p in members])
+        for who, run in (("library", "lib"), ("embedded runner", "emb")):
+            dest = tmp()
+            (dest / "existing").write_text("ORIGINAL")
+            try:
+                if run == "lib":
+                    pp.unpack_store(blob, dest)
+                else:
+                    ns = {"PACK": base64.b64encode(blob).decode(),
+                          "MANIFEST_TEXT": ""}
+                    exec(compile(pp.RUNNER, "<embedded-runner>", "exec"), ns)
+                    ns["_extract"](str(dest))
+                err = None
+            except (ValueError, SystemExit) as e:
+                err = str(e)
+            chk(err is not None, f"{who}: refuses {label}",
+                "extracted instead — a member was silently lost")
+            chk((dest / "existing").read_text() == "ORIGINAL",
+                f"{who}: {label} leaves the destination untouched",
+                f"became {(dest / 'existing').read_text()!r}")
+
+    # The fold is load-bearing: without it these names look distinct.
+    chk(pp._fold(pathlib.Path("/d/NODE"), pathlib.Path("/d"))
+        == pp._fold(pathlib.Path("/d/node"), pathlib.Path("/d")),
+        "control: the fold really maps NODE and node together")
+    chk(pathlib.Path("/d/NODE") != pathlib.Path("/d/node"),
+        "control: and the raw paths really do differ")
+
     # Two members resolving to one target are refused up front too.
     dest = tmp()
     try:

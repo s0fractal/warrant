@@ -618,6 +618,122 @@ def test_derived_is_not_whole_chain_validity():
         [x[:8] for x in bad])
 
 
+# ---------------------------------------------- J1. malformed profile blob
+def test_malformed_sidecar_is_a_typed_refusal():
+    """J1: a blob that CLAIMS to be one of ours and is malformed must produce a
+    record refusal, not an exception through the report.
+
+    The binding test in `_provenance_docs_of` is a set membership, so an
+    unhashable `check` raised TypeError past `check_record`'s handler and took
+    the report for every other record in the store with it."""
+    for bad in ([], {}, 5, None, "short", True):
+        s = new_store()
+        good, _, _ = file_check(s, "fact ok: bool = true\ncheck ok\n")
+        c = pl.compile_source("fact a: bool = true\ncheck a\n", s.put_blob)
+        doc = {"provenance": fp.PROFILE, "check": bad,
+               "source": "aa" * 32, "facts": {}}
+        h = s.put_blob(json.dumps(doc, sort_keys=True).encode())
+        wid = W.file_warrant(
+            s, "accept", s.put_blob(b'{"x":1}'),
+            Args(under=[s.put_blob(b"POLICY")], evidence=[h], check=c.blob,
+                 runtime="ski@v1", verdict="pass", reason=["x"],
+                 actor="desk@test", key=keyfile()))
+        try:
+            r = fp.check_record(s, wid)
+        except Exception as e:
+            chk(False, f"check={bad!r} gives a typed refusal",
+                f"raised {type(e).__name__}: {e}")
+            continue
+        chk(r.status == fp.INCOMPLETE and r.refusals
+            and "malformed" in r.refusals[0],
+            f"check={bad!r} gives a typed refusal", (r.status, r.refusals))
+        # and the rest of the store is still reported
+        store_view = fp.check_store(s)
+        chk(good in store_view and store_view[good].status == fp.COMPLETE,
+            f"check={bad!r}: the other record is still reported",
+            {k[:8]: v.status for k, v in store_view.items()})
+
+    # The CLI must survive it too: a refusal, not a traceback.
+    s = new_store()
+    c = pl.compile_source("fact a: bool = true\ncheck a\n", s.put_blob)
+    h = s.put_blob(json.dumps({"provenance": fp.PROFILE, "check": [],
+                               "source": "aa" * 32, "facts": {}},
+                              sort_keys=True).encode())
+    W.file_warrant(s, "accept", s.put_blob(b'{"x":1}'),
+                   Args(under=[s.put_blob(b"POLICY")], evidence=[h],
+                        check=c.blob, runtime="ski@v1", verdict="pass",
+                        reason=["x"], actor="desk@test", key=keyfile()))
+    import subprocess
+    r = subprocess.run([sys.executable, str(ROOT / "impl" / "fact_provenance.py"),
+                        "--store", str(s.root)], capture_output=True, text=True)
+    chk(r.returncode == 1 and "Traceback" not in r.stderr,
+        "the CLI reports it as a finding, not a traceback",
+        (r.returncode, r.stderr[-160:]))
+    chk("malformed" in r.stdout, "and names it in the report", r.stdout[-160:])
+
+
+# ----------------------------------- K. edges found by the binding enumeration
+def test_derivation_must_also_be_cited():
+    """K1 (found by §10's enumeration, not by a reviewer): a derived fact names
+    a decision it USED. SPEC §7 builds a settlement tunnel from `prior`, so a
+    dependency the record does not also CITE is invisible to re-litigation —
+    superseding the source would never reach this record through the tunnel."""
+    s = new_store()
+    a, _, _ = file_check(s, "fact base: bool = true\ncheck base\n")
+
+    b, _, _ = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[a])
+    r = fp.check_record(s, b)
+    chk(r.status == fp.COMPLETE and states(r.findings) == {"e": fp.DERIVED},
+        "control: citing the source in `prior` is accepted",
+        (r.status, states(r.findings)))
+
+    c, _, _ = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[])
+    r = fp.check_record(s, c)
+    chk(r.status == fp.INCOMPLETE and not r.ok,
+        "using a decision without citing it is refused", (r.status, r.ok))
+    chk(r.refusals and "prior closure" in r.refusals[0],
+        "and the refusal explains why the tunnel would miss it", r.refusals)
+    chk(r.findings == [], "its facts are not credited", states(r.findings))
+
+    # Transitively cited is enough: the tunnel is the prior CLOSURE.
+    mid, _, _ = file_check(s, "fact m: bool = true\ncheck m\n", prior=[a])
+    d, _, _ = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[mid])
+    r = fp.check_record(s, d)
+    chk(r.status == fp.COMPLETE and states(r.findings) == {"e": fp.DERIVED},
+        "a source reached transitively through `prior` is accepted",
+        (r.status, r.refusals))
+
+
+def test_profile_claims_no_attestation():
+    """K2: `attested` carries the id the record NAMES. This profile verifies no
+    signature and reads no keyring, so it must not print that name as though
+    someone had attested."""
+    import inspect
+    src = inspect.getsource(fp)
+    for api in ("verify_sig", "sig_message", "_valid_sig_actors", "load_key",
+                "pubkey_hex"):
+        chk(api not in src, f"the profile calls no signature API ({api})")
+
+    s = new_store()
+    a, _, _ = file_check(s, "fact base: bool = true\ncheck base\n",
+                         actor="desk@test")
+    f = [x for x in fp.check_record(s, a).findings if x.kind == "observed"][0]
+    chk(f.actor == "desk@test", "the record's own actor id is carried")
+
+    import subprocess
+    r = subprocess.run([sys.executable, str(ROOT / "impl" / "fact_provenance.py"),
+                        "--store", str(s.root)], capture_output=True, text=True)
+    out = r.stdout.lower()
+    chk("checks no signature" in out,
+        "and the report says the profile checked no signature", r.stdout[-200:])
+    chk("attested by" not in out,
+        "it never prints `attested by <name>`, which would imply one",
+        r.stdout[-200:])
+
+
 # -------------------------------------------------------- F. mutation controls
 def test_mutation_controls():
     """A harness that cannot fail is the same defect one level up."""
@@ -753,6 +869,9 @@ def main():
         test_missing_provenance_is_incomplete()
         test_transitive_staleness()
         test_sidecar_belongs_to_this_record()
+        test_malformed_sidecar_is_a_typed_refusal()
+        test_derivation_must_also_be_cited()
+        test_profile_claims_no_attestation()
         test_derived_is_not_whole_chain_validity()
         test_mutation_controls()
         test_store_level_and_cli()

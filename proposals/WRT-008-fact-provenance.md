@@ -23,6 +23,16 @@ did not write it**. rev 2 has had one adversarial gate (Codex, 2026-09-09,
 AMEND, five findings F1–F5, all reproduced and all closed below). That is one
 round on a different layer, not an adoption.
 
+**Governance note (owner decision, 2026-09-09).** WRT-007 §6's stopping rule
+closes a proposal as deferred on a second AMEND on the same layer, and rounds 1
+and 2 were both on the binding layer. The owner's call was to continue, on the
+ground that two AMENDs is a low bar for a hard change and a rule applied by
+count alone selects for cosmetic work. This revision takes that as a condition,
+not a licence: the rule's *purpose* is to stop ad-hoc patching, so rev 4 answers
+it by changing method rather than by patching again. `proposals/wrt-008-model/BINDING-EDGES.md`
+enumerates every aboutness claim the profile relies on and what checks each. If
+that enumeration itself returns AMEND, the proposal defers without argument.
+
 **Status:** DRAFT rev 1 (2026-09-09) — **design plus a reference profile.** No
 SPEC edit and no change to `ski@v1` is made or proposed by this document. It
 adds an OPTIONAL verification profile (`warrant.fact-provenance@v0`) and an
@@ -437,4 +447,44 @@ not a different check. The test now asserts the two blobs differ before relying
 on them differing.
 
 Counts after rev 3: `fact_provenance` 109/109, `pack_pdf` 53/53, `policy_lang`
+147/147 (unchanged).
+
+## 13. Gate round 3 — disposition (Codex, 2026-09-09, AMEND)
+
+H1 and the original H2 confirmed closed. Two new P2, both reproduced, both
+closed with regressions.
+
+| Finding | What it showed | Closed by |
+|---|---|---|
+| **J1** P2 · binding tested before shape | a document with `check: []` reached a set membership and raised `TypeError` out past `check_record`'s handler, losing the typed refusal **and** the report for every other record. Introduced by the H1 fix | `_validate_doc_shape` now runs before the binding test; a blob that claims to be ours and is malformed is a refusal, never an ignored attachment. Six malformed shapes plus a CLI control |
+| **J2** P2 · path collisions compared as strings | on a case-insensitive filesystem `NODE` and `node` are one file; the second member silently overwrote the first, and the case variant of H2 lost `existing` before failing | `_fold` keys targets by case- and NFC-folded components, in the exact-collision check and the ancestor scan, in both extractors. `os.path.normcase` alone would have been a no-op here |
+
+## 14. Rev 4 — the binding enumeration, and what it found
+
+Rounds 1–3 produced F1, F2, H1 and J1: one defect wearing four faces, *something
+claims to be about something else and nobody checked the claim*. Rev 4 answers
+it by method rather than by another patch:
+[`proposals/wrt-008-model/BINDING-EDGES.md`](wrt-008-model/BINDING-EDGES.md)
+enumerates every such claim, what checks it, and the test.
+
+It found two nobody had reported, and one more while fixing the first:
+
+- **K1** — a derived fact was credited from a warrant outside the citing
+  record's `prior` closure. SPEC §7 builds the settlement tunnel from `prior`,
+  so such a dependency is invisible to re-litigation: superseding the source
+  would never reach the record, and the propagation this whole profile exists
+  for would silently not happen. Using a decision now requires citing it;
+  transitively is enough.
+- **K2** — `attested by <name>` implied an attestation. The name is
+  `body.actor.id`, bound to the record's identity and to nothing else; this
+  profile verifies no signature. The report now says so, and a test fails if the
+  profile ever grows a signature API.
+- Record status was derived from a subset of the refusal list, so a record could
+  read `complete` while a document it cited had been refused. F3 one level up.
+
+The enumeration cannot prove the list is complete. What it changes is the shape
+of the next finding: a row that is wrong, or a row that is missing — an argument
+about the model rather than another edge to patch.
+
+Counts after rev 4: `fact_provenance` 136/136, `pack_pdf` 67/67, `policy_lang`
 147/147 (unchanged).
