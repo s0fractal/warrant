@@ -345,18 +345,55 @@ def _superseded_by(recs, wid):
     return sorted(out)
 
 
+#: Bound on the citation walk. Reaching it is reported, never assumed benign.
+MAX_CITATION_RECORDS = 4096
+
+
 def _citation_closure(store, wid, recs):
-    """WarrantIDs reachable from `wid` through `prior`, plus `wid` itself.
+    """WarrantIDs reachable from `wid` through `prior`, **checking the address
+    of every record whose `prior` this walk reads**, plus `wid` itself.
 
     A derived fact names a decision it USED. SPEC §7 builds a settlement tunnel
     from `prior`, so a dependency the record does not also CITE is invisible to
     re-litigation: superseding it would never reach this record through the
-    tunnel. Using without citing is therefore refused, not merely noted."""
-    try:
-        tun = w.tunnel(store, wid, recs)
-        return set(tun.get("records", ())) | {wid}
-    except Exception:
-        return {wid}
+    tunnel. Using without citing is therefore refused, not merely noted.
+
+    The first version delegated the walk to `warrant.tunnel`, which reads
+    `body.prior` out of `Store.all_records` — a dict keyed by FILE NAME. An
+    intermediate record whose body had been swapped under its old name was
+    therefore trusted to prove reachability, and an off-address bridge turned
+    the refusal into `complete, derived` (review L1). Correct addresses at the
+    endpoints do not prove the edges between them, so E1 applies to every
+    record on the path, not only to the two ends.
+
+    Returns (reachable, broken) where `broken` maps a WarrantID this walk
+    refused to traverse to the reason. Nothing is swallowed: a missing
+    intermediate, an unparsable body and a hit bound are each named."""
+    reachable, broken = {wid}, {}
+    frontier, budget = [wid], MAX_CITATION_RECORDS
+    while frontier:
+        cur = frontier.pop()
+        if budget <= 0:
+            broken[cur] = (f"citation walk stopped after "
+                           f"{MAX_CITATION_RECORDS} records")
+            break
+        budget -= 1
+        env, why = _record_at(recs, cur)          # E1, on every hop
+        if env is None:
+            broken[cur] = why
+            continue
+        prior = env["body"].get("prior")
+        if not isinstance(prior, list):
+            broken[cur] = f"record {cur[:12]}… has no `prior` list"
+            continue
+        for nxt in prior:
+            if not w._is_hex64(nxt if isinstance(nxt, str) else ""):
+                broken[cur] = f"record {cur[:12]}… cites a malformed prior"
+                continue
+            if nxt not in reachable:
+                reachable.add(nxt)
+                frontier.append(nxt)
+    return reachable, broken
 
 
 def _provenance_docs_of(store, body):
@@ -625,21 +662,36 @@ def check_record(store, wid, recs=None, sg=None):
     actor = (env["body"].get("actor") or {}).get("id")
     docs, lost, rejected = _provenance_docs_of(store, env["body"])
     findings, refusals = [], list(lost) + list(rejected)
-    covered = _citation_closure(store, wid, recs)
+    covered, broken = _citation_closure(store, wid, recs)
     kept = []
     for h, doc in docs:
         uncited = sorted({e["from"] for e in doc.get("facts", {}).values()
                           if isinstance(e, dict) and e.get("kind") == "derived"
                           and isinstance(e.get("from"), str)} - covered)
         if uncited:
-            refusals.append(
-                f"{h[:12]}…: derives a fact from {uncited[0][:12]}…, which is "
-                "not in this record's prior closure. SPEC §7 builds a "
-                "settlement tunnel from `prior`, so a dependency outside it is "
-                "invisible to re-litigation: the derivation must be cited as "
-                "well as used")
+            why = (f"{h[:12]}…: derives a fact from {uncited[0][:12]}…, which "
+                   "is not in this record's prior closure. SPEC §7 builds a "
+                   "settlement tunnel from `prior`, so a dependency outside it "
+                   "is invisible to re-litigation: the derivation must be "
+                   "cited as well as used")
+            if broken:
+                # Do not let a broken bridge read as a plain miscitation: the
+                # source may well be cited THROUGH the record this walk could
+                # not traverse, and saying "not cited" would be wider than what
+                # was established.
+                bad, reason = sorted(broken.items())[0]
+                why += (f". The walk also could not traverse {bad[:12]}…: "
+                        f"{reason}; a path through it proves nothing")
+            refusals.append(why)
             continue
         kept.append((h, doc))
+    if broken and kept:
+        # Coverage was established without needing the broken record, so the
+        # documents stand — but the evidence path is not wholly walkable and
+        # the report must not imply it was.
+        bad, reason = sorted(broken.items())[0]
+        refusals.append(
+            f"citation walk could not traverse {bad[:12]}…: {reason}")
     for h, doc in kept:
         try:
             findings.extend(check_doc(store, doc, recs, sg, actor))

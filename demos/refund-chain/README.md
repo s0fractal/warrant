@@ -122,8 +122,8 @@ finding in its own reviews; keeping them apart is the whole point.
   retroactively and the tribunal held the airline liable. **Clause 4 and the
   45-day interval are invented for this demo.** They are not that case's facts.
 - The `warrant.fact-provenance@v0` profile is a **proposal**
-  ([WRT-008](../../proposals/WRT-008-fact-provenance.md) rev 4), not an adopted
-  part of the specification. It has had **three** adversarial gates, all AMEND,
+  ([WRT-008](../../proposals/WRT-008-fact-provenance.md) rev 5), not an adopted
+  part of the specification. It has had **four** adversarial gates, all AMEND,
   every finding closed with a negative fixture, plus two more the proposal's own
   [binding enumeration](../../proposals/wrt-008-model/BINDING-EDGES.md) found
   before a reviewer did. Three rounds by one reviewer on one host is not
@@ -132,7 +132,9 @@ finding in its own reviews; keeping them apart is the whole point.
 - **A derivation must also be cited.** A fact may only derive from a warrant
   inside the citing record's `prior` closure, because SPEC §7 builds the
   settlement tunnel from `prior`: a dependency outside it would be invisible to
-  re-litigation, and the propagation above would silently not happen.
+  re-litigation, and the propagation above would silently not happen. The walk
+  checks the address of every record whose `prior` it reads, so a record swapped
+  under its own name cannot bridge the gap.
 - **The profile checks no signature.** Where it prints a record's actor it says
   so. Whether a record was signed by the actor it names, and whether that key is
   theirs, is SPEC §5.1 with a trust configuration, in `warrant verify`.

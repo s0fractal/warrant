@@ -488,3 +488,29 @@ about the model rather than another edge to patch.
 
 Counts after rev 4: `fact_provenance` 136/136, `pack_pdf` 67/67, `policy_lang`
 147/147 (unchanged).
+
+## 15. Gate round 4 — disposition (Codex, 2026-09-09, AMEND)
+
+J1, J2, H1, H2, F5 and the S1 boundary all confirmed closed. One new P1, in the
+K1 code this proposal added one revision earlier.
+
+| Finding | What it showed | Closed by |
+|---|---|---|
+| **L1** P1 · an unverified bridge proved citation coverage | the K1 walk delegated reachability to `warrant.tunnel`, which reads `body.prior` out of a dict keyed by FILE NAME. Swapping an intermediate record's body under its old name turned the K1 refusal into `complete, ok=True, derived`. Both endpoints were correctly addressed; the edge between them was a lie | `_citation_closure` is now our own bounded walk that applies E1 on **every hop** before reading a `prior`, does not traverse what it cannot verify, and names the record it stopped at. A missing or unparsable intermediate and a hit bound are each reported rather than swallowed by a broad `except` |
+
+**What L1 taught the method, which matters more than the patch.** E1 was
+listed in the enumeration, implemented, and tested — and the new walk still
+read `prior` without it. *Listing an edge proves the check exists; it does not
+prove the check runs at every site where that data is used as evidence.*
+`BINDING-EDGES.md` now names **use sites** rather than checks, adds the
+intermediate prior-path record `P` as an object in its own right, and states
+the rule directly: a new path that consumes an existing object owes its own
+row even when the check it needs is already written.
+
+That is the enumeration doing what it was built for, one round later than
+ideal: the reviewer could name the finding as a missing object in the model
+rather than as another loose edge, which is exactly the change of argument
+rev 4 was meant to buy.
+
+Counts after rev 5: `fact_provenance` 145/145, `pack_pdf` 67/67, `policy_lang`
+147/147 (unchanged).

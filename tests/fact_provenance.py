@@ -697,6 +697,50 @@ def test_derivation_must_also_be_cited():
         "and the refusal explains why the tunnel would miss it", r.refusals)
     chk(r.findings == [], "its facts are not credited", states(r.findings))
 
+    # L1: correct addresses at the ENDPOINTS do not prove the edges between
+    # them. An intermediate record whose body was swapped under its old name
+    # must not be able to prove reachability for anything behind it.
+    m, _, _ = file_check(s, "fact m: bool = true\ncheck m\n", prior=[])
+    r, _, _ = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[m])
+    chk(fp.check_record(s, r).status == fp.INCOMPLETE,
+        "control: before the swap, A is not cited and the record is refused")
+
+    path = s.records / f"{m}.json"
+    original = path.read_bytes()
+    env = json.loads(original)
+    env["body"]["prior"] = [a]
+    path.write_text(json.dumps(env))
+    chk(W.warrant_id(env["body"]) != m,
+        "control: the swapped body really does not hash to its file name")
+
+    res = fp.check_record(s, r)
+    chk(res.status == fp.INCOMPLETE and not res.ok and res.findings == [],
+        "an off-address bridge does not prove citation coverage",
+        (res.status, res.ok, states(res.findings)))
+    chk(res.refusals and "proves nothing" in res.refusals[0],
+        "and the refusal names the record it could not traverse", res.refusals)
+
+    cov, broken = fp._citation_closure(s, r, s.all_records())
+    chk(a not in cov, "the walk does not reach through an unverified record")
+    chk(m in broken, "and reports which record it refused to traverse",
+        sorted(broken))
+    path.write_bytes(original)
+    chk(fp.check_record(s, r).status == fp.INCOMPLETE,
+        "restoring the original bytes restores the original refusal")
+
+    # A missing intermediate is named, not swallowed.
+    m2, _, _ = file_check(s, "fact m2: bool = true\ncheck m2\n", prior=[a])
+    r2, _, _ = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[m2])
+    chk(fp.check_record(s, r2).status == fp.COMPLETE,
+        "control: an honest transitive citation is accepted")
+    (s.records / f"{m2}.json").unlink()
+    res = fp.check_record(s, r2)
+    chk(res.status == fp.INCOMPLETE and res.refusals,
+        "a missing intermediate is a named refusal, not a silent pass",
+        (res.status, res.refusals))
+
     # Transitively cited is enough: the tunnel is the prior CLOSURE.
     mid, _, _ = file_check(s, "fact m: bool = true\ncheck m\n", prior=[a])
     d, _, _ = file_check(

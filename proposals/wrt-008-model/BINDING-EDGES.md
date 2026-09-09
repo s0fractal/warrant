@@ -13,6 +13,15 @@ A row with no check is a defect whether or not a reviewer has found it yet.
 
 Writing it found two nobody had reported: **K1** and **K2** below.
 
+**A check in the table is not a check on the path.** L1 was found *after* this
+document existed, and it is the sharpest thing the document has taught: E1 was
+listed, implemented and tested, and the new K1 walk still read `prior` out of
+records without applying it. Listing an edge proves the check exists. It does
+not prove the check runs at every site where that data is used as evidence.
+So every row below names a **use site**, and a new path that consumes an
+existing object owes its own row even when the check it needs is already
+written. Correct addresses at the endpoints do not prove the edges between them.
+
 **The honest limit of the method.** A complete-looking table proves the edges I
 thought to list are checked. It cannot prove I listed them all. What it does
 change is the failure mode: a future finding should either be a row here that is
@@ -33,6 +42,7 @@ model, which is a better argument than "here is another patch."
 | `Wr` | the `ski@v1` reason of `W` that supplies the value |
 | `Wc` | the check blob `Wr` cites |
 | `X` | a `supersede` record whose subject is `W` |
+| `P` | an **intermediate record on a `prior` path** whose own `prior` the citation walk reads |
 
 ## 2. The edges
 
@@ -50,6 +60,8 @@ Every row is a claim of the form *"A claims to be about B"*.
 | E8 | `D`'s per-fact value claims to be `S`'s literal | equality | `_require_complete` | `test_completeness_and_tampering` |
 | E9 | `D`'s per-fact kind / `from` / selector claims to be `S`'s `from` clause | field-by-field comparison against `Fact.source` | `_require_complete` | `test_completeness_and_tampering` (F1) |
 | **K1** | **a derived fact claims a dependency `R` also cites** | **`W` ∈ prior closure of `R`** | **`_citation_closure`** | **`test_derivation_must_also_be_cited`** |
+| **L1** | **`P` claims, under its address, the `prior` this walk reads from it** | **E1 on every hop, before its `prior` is read; an unverified `P` is not traversed and is named** | **`_citation_closure`** | **`test_derivation_must_also_be_cited`** |
+| L2 | the citation walk claims to have finished | record budget; a missing or unparsable intermediate is named, never swallowed | `_citation_closure` | `test_derivation_must_also_be_cited` |
 | E10 | `entry.from` claims warrant `W` exists | `_record_at`, which re-checks E1 for `W` | `_check_derived` | `test_derived_states` |
 | E11 | `entry.check` claims to select one of `W`'s reasons | filter, then require exactly one | `_check_derived` | `test_derived_states` |
 | E12 | `Wr` claims a check blob `Wc` | `_is_hex64`, then loaded at its address | `_check_derived` → `warrant._load_ski_doc` | `test_derived_states` |
@@ -115,6 +127,16 @@ profile ever grows a signature API or prints the old phrasing.
 
 Both are the same species as F1/F2/H1/J1, which is the point: they were found by
 walking the model rather than by waiting for the next round.
+
+**L1 · an unverified bridge proved citation coverage.** The first K1 walk
+delegated reachability to `warrant.tunnel`, which reads `body.prior` out of a
+dict keyed by file name. Swapping an intermediate record's body under its old
+name turned the refusal into `complete, derived` — the endpoints were both
+correctly addressed, and the edge between them was a lie. The walk is now our
+own, applies E1 on every hop before reading a `prior`, refuses to traverse what
+it cannot verify, and reports the record it stopped at rather than letting a
+broken path read as a plain miscitation. Found by a reviewer, not by this
+table; the table's repair is the use-site rule above.
 
 **One more, found while fixing K1.** Record status was derived from a *subset*
 of the refusal list, so a record could report `complete` while a document it
