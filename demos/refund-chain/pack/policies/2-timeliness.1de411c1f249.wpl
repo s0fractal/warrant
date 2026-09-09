@@ -1,0 +1,11 @@
+# 2-timeliness.wpl — LINK 2 of the chain.
+#
+# Was the discount asked for in time, and not as a retroactive claim?
+# This is the clause Air Canada's chatbot got wrong in Moffatt v. Air Canada.
+#
+# Both facts are OBSERVED, from the same request record.
+
+fact requested_before_travel: bool = true
+fact retroactive:             bool = false
+
+check requested_before_travel && !retroactive

@@ -281,10 +281,16 @@ def tokenize(src):
 #   ("bool", v) ("int", v) ("str", v) ("list", [e...]) ("fact", name)
 #   ("not", e) ("and", a, b) ("or", a, b) ("cmp", op, a, b) ("in", e, list)
 class Fact:
-    __slots__ = ("name", "type", "value", "line")
+    __slots__ = ("name", "type", "value", "line", "source")
 
-    def __init__(self, name, type_, value, line):
+    def __init__(self, name, type_, value, line, source=None):
         self.name, self.type, self.value, self.line = name, type_, value, line
+        # `source` is provenance, NOT semantics: None for an observed fact, or
+        # (warrant_id_hex, check_hex_or_None) for one derived from a prior
+        # decision (WRT-008). It never reaches the term — a source with and
+        # without `from` clauses compiles to byte-identical output, which
+        # `tests/fact_provenance.py` enforces.
+        self.source = source
 
 
 class Program:
@@ -350,7 +356,8 @@ def parse(src):
             ftype = _parse_type(p)
             p.expect("op", "=", "`=` after the fact type")
             value = _parse_literal(p, ftype)
-            facts[name] = Fact(name, ftype, value, ln)
+            source = _parse_provenance(p, name, ftype)
+            facts[name] = Fact(name, ftype, value, ln, source)
         elif k == "kw" and v == "check":
             if expr is not None:
                 raise PolicyError("a WPL source has exactly one `check` "
@@ -370,6 +377,45 @@ def parse(src):
     prog = Program(facts, expr, src)
     _typecheck(prog)
     return prog
+
+
+_HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
+
+
+def _parse_provenance(p, name, ftype):
+    """Optional `from "<WarrantID>"` / `from "<WarrantID>/<check>"` after a
+    fact literal (WRT-008). Returns None, or (warrant_hex, check_hex_or_None).
+
+    `from` is a CONTEXTUAL word, not a reserved one: it is recognized only in
+    this position, so a policy that already uses `from` as a fact name keeps
+    compiling. The clause is provenance only and never enters the term.
+    """
+    if not p.at("ident", "from"):
+        return None
+    _, _, ln, co = p.next()
+    if ftype != "bool":
+        raise PolicyError(
+            f"`from` is only for bool facts, and {name!r} is {ftype}. A "
+            "ski@v1 check answers one Church boolean (SPEC §3.1), so a "
+            "boolean is the only value a prior decision can hand to the next "
+            "policy. Deriving an int needs a check whose canonical outcome is "
+            "a numeral — not in WRT-008 rev 1.", ln, co)
+    k, v, ln2, co2 = p.peek()
+    if k != "str":
+        got = "end of file" if k == "eof" else repr(v)
+        raise PolicyError(
+            "`from` takes a quoted reference: `from \"<WarrantID>\"` or "
+            f"`from \"<WarrantID>/<check>\"`, got {got}. It is quoted because "
+            "a 64-char hex id is not a WPL number.", ln2, co2)
+    p.next()
+    parts = v.split("/")
+    if len(parts) > 2 or not all(_HEX64.match(x) for x in parts):
+        raise PolicyError(
+            f"{v!r} is not a fact reference. Expected one 64-char lowercase "
+            "hex WarrantID, optionally followed by `/` and the 64-char hex of "
+            "the ski@v1 check blob to select when that warrant carries more "
+            "than one.", ln2, co2)
+    return (parts[0], parts[1] if len(parts) == 2 else None)
 
 
 def _parse_name(p):
