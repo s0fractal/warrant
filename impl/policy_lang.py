@@ -287,7 +287,7 @@ class Fact:
         self.name, self.type, self.value, self.line = name, type_, value, line
         # `source` is provenance, NOT semantics: None for an observed fact, or
         # (warrant_id_hex, check_hex_or_None) for one derived from a prior
-        # decision (WRT-008). It never reaches the term — a source with and
+        # decision (WRT-010). It never reaches the term — a source with and
         # without `from` clauses compiles to byte-identical output, which
         # `tests/fact_provenance.py` enforces.
         self.source = source
@@ -384,7 +384,7 @@ _HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 
 def _parse_provenance(p, name, ftype):
     """Optional `from "<WarrantID>"` / `from "<WarrantID>/<check>"` after a
-    fact literal (WRT-008). Returns None, or (warrant_hex, check_hex_or_None).
+    fact literal (WRT-010). Returns None, or (warrant_hex, check_hex_or_None).
 
     `from` is a CONTEXTUAL word, not a reserved one: it is recognized only in
     this position, so a policy that already uses `from` as a fact name keeps
@@ -399,7 +399,7 @@ def _parse_provenance(p, name, ftype):
             "ski@v1 check answers one Church boolean (SPEC §3.1), so a "
             "boolean is the only value a prior decision can hand to the next "
             "policy. Deriving an int needs a check whose canonical outcome is "
-            "a numeral — not in WRT-008 rev 1.", ln, co)
+            "a numeral — not in WRT-010 rev 1.", ln, co)
     k, v, ln2, co2 = p.peek()
     if k != "str":
         got = "end of file" if k == "eof" else repr(v)

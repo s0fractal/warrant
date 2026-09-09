@@ -32,7 +32,7 @@
   ],
   "produced_by": "warrant demos/refund-chain/build.py",
   "profile": "warrant.fact-provenance@v0",
-  "proposal": "proposals/WRT-008-fact-provenance.md",
+  "proposal": "proposals/WRT-010-fact-provenance.md",
   "records": [
     "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
     "c11f646902b226f32ae7d395173235081d7f95ee126c7a7da119ad236e86aa08",

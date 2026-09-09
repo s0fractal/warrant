@@ -1,4 +1,4 @@
-# WRT-008: the binding enumeration
+# WRT-010: the binding enumeration
 
 **Why this document exists.** Three gate rounds returned AMEND, and F1, F2, H1
 and J1 are all one defect wearing four faces: *something claims to be about

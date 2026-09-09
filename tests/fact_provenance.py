@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for fact_provenance — `warrant.fact-provenance@v0` (WRT-008).
+"""Tests for fact_provenance — `warrant.fact-provenance@v0` (WRT-010).
 
 WHAT THIS HARNESS IS BUILT TO AVOID
 -----------------------------------
@@ -116,7 +116,7 @@ def states(findings):
 
 # ------------------------------------------------- A. term preservation (MUST)
 def test_term_preservation():
-    """The invariant WRT-008 is built around: provenance is not semantics."""
+    """The invariant WRT-010 is built around: provenance is not semantics."""
     wid = "5f" + "0" * 62
     chk_hex = "b4" + "0" * 62
     pairs = [
@@ -901,7 +901,7 @@ def test_refund_chain_demo():
 
 def main():
     print("=" * 66)
-    print("  fact_provenance — warrant.fact-provenance@v0 (WRT-008)")
+    print("  fact_provenance — warrant.fact-provenance@v0 (WRT-010)")
     print("=" * 66)
     try:
         test_term_preservation()

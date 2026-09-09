@@ -1,27 +1,31 @@
-# WRT-008: Fact provenance — derived facts, and the chain of decisions
+# WRT-010: Fact provenance — derived facts, and the chain of decisions
 
-**Identifier and prior disposition (read first).** The number **WRT-008 is not
-free**, and rev 1 of this document reused it without saying so — a provenance
-defect of exactly the kind this proposal is about. WRT-008 already names
-*"fact derivation profile"*, filed on branch `wrt-008/fact-derivation`
-(PR [#60](https://github.com/s0fractal/warrant/pull/60)), which reached
-**CLOSED — DEFERRED** under §7's stopping rule after two gate rounds, both
-AMEND on the same binding layer.
+**Identifier resolution (operator-authorized editorial change, 2026-09-09).**
+This proposal is **WRT-010**. **WRT-008** remains the *fact derivation profile*
+in [PR #60](https://github.com/s0fractal/warrant/pull/60), whose document is
+**CLOSED — DEFERRED**; the PR itself remains open. Its retained disposition is
+pinned at `6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3:proposals/WRT-008-fact-derivation-profile.md`.
+**WRT-009** is already reserved for the deployment-predicate proposal in
+`reviews/2026-09-chatgpt-web-cross-stack-response.md`; this change does not
+allocate that number again.
 
-This document is therefore a **reactivation attempt of that proposal**, not a
-new one that happens to share its number. That earlier disposition left exactly
-two findings open, and this revision closes both, because the same reviewer
-found them again here as F2:
+**Relation: follows up WRT-008, without replacing its disposition.** This
+workline was originally presented as a reactivation attempt under the same
+number. It now has a distinct identifier because it has a different profile
+(`warrant.fact-provenance@v0`), WPL authoring clause and implementation. The
+old extractor model and measurement remain WRT-008's evidence. Fixing analogous
+record-address defects here does not retroactively repair or adopt that model.
 
-| Left open by the earlier WRT-008 | Where it is closed here |
+| Earlier WRT-008 residual | Corresponding protection in this implementation |
 |---|---|
-| P1: a null/missing body read as "no record" after the label was set | `_record_at` refuses a record with no body object; `check_record` reports INCOMPLETE rather than an empty result (§5.2) |
-| P2: a record trusted by filename, its body hash never compared to the id | `_record_at` recomputes the canonical WarrantID and refuses any record whose body does not hash to the name it is stored under (§5.3) |
+| Null/missing body received citation credit | `_record_at` refuses it; `check_record` reports INCOMPLETE |
+| Filename was trusted as WarrantID | `_record_at` recomputes the body address before credit, including citation-walk intermediates |
 
-The reactivation conditions that PR states also require a gate **by someone who
-did not write it**. rev 2 has had one adversarial gate (Codex, 2026-09-09,
-AMEND, five findings F1–F5, all reproduced and all closed below). That is one
-round on a different layer, not an adoption.
+The five technical review rounds keep their original labels and exact commits.
+The bounded ACCEPT is for `848d103efda349bd46fa4273d7996c32ffdc1687`, documented
+below; renumbering neither upgrades that scope nor constitutes adoption.
+Historical WRT-008 labels in those reviews and frozen demo WPL comments denote
+this workline at their pinned revisions, not a second current allocation.
 
 **Governance note (owner decision, 2026-09-09).** WRT-007 §6's stopping rule
 closes a proposal as deferred on a second AMEND on the same layer, and rounds 1
@@ -29,11 +33,11 @@ and 2 were both on the binding layer. The owner's call was to continue, on the
 ground that two AMENDs is a low bar for a hard change and a rule applied by
 count alone selects for cosmetic work. This revision takes that as a condition,
 not a licence: the rule's *purpose* is to stop ad-hoc patching, so rev 4 answers
-it by changing method rather than by patching again. `proposals/wrt-008-model/BINDING-EDGES.md`
+it by changing method rather than by patching again. `proposals/wrt-010-model/BINDING-EDGES.md`
 enumerates every aboutness claim the profile relies on and what checks each. If
 that enumeration itself returns AMEND, the proposal defers without argument.
 
-**Status:** DRAFT rev 1 (2026-09-09) — **design plus a reference profile.** No
+**Status:** DRAFT rev 5 (editorially renumbered 2026-09-09) — **design plus a reference profile.** No
 SPEC edit and no change to `ski@v1` is made or proposed by this document. It
 adds an OPTIONAL verification profile (`warrant.fact-provenance@v0`) and an
 additive, term-preserving WPL clause. Adoption of the profile requires an
@@ -401,7 +405,7 @@ review's own counterexamples, adopted verbatim as tests.
 | Finding | What it showed | Closed by |
 |---|---|---|
 | **F1** P1 · entry not bound to `Fact.source` | relabelling a derived fact `observed` gave `attested`; retargeting `from` to another warrant gave `derived`, both with the source unchanged | `_require_complete` now compares kind, `from` and selector against the source's own clause; four vectors in `test_completeness_and_tampering` |
-| **F2** P1 · addresses unchecked | a body swapped under an existing record name was credited; an edited source blob was compiled and used | `_intact_blob` + `_record_at`; `test_address_integrity`. This also closes the two findings the earlier WRT-008 left open (§0) |
+| **F2** P1 · addresses unchecked | a body swapped under an existing record name was credited; an edited source blob was compiled and used | `_intact_blob` + `_record_at`; `test_address_integrity`. These checks address the analogous residuals recorded for the earlier WRT-008 (§0); its own deferred model is unchanged |
 | **F3** P2 · missing provenance silently skipped | deleting a cited provenance blob gave `findings=[], errors=[]` | record-level `complete` / `not-applicable` / `incomplete` (§5.2); `test_missing_provenance_is_incomplete` |
 | **F4** P1 · `stale` did not travel | A→B→C, supersede A: `B.e = stale` but `C.f = derived` | `_source_health` walks the cited record's own provenance, bounded; `test_transitive_staleness` checks two- and four-link chains and that a bound is never reported as `derived` |
 | **F5** P2 · refusal after a write | a hostile member after a valid one refused the traversal *and* left the earlier file replaced | full preflight in both `unpack_store` and the embedded runner; the fixture now carries a valid prefix, as the review asked |
@@ -464,7 +468,7 @@ closed with regressions.
 Rounds 1–3 produced F1, F2, H1 and J1: one defect wearing four faces, *something
 claims to be about something else and nobody checked the claim*. Rev 4 answers
 it by method rather than by another patch:
-[`proposals/wrt-008-model/BINDING-EDGES.md`](wrt-008-model/BINDING-EDGES.md)
+[`proposals/wrt-010-model/BINDING-EDGES.md`](wrt-010-model/BINDING-EDGES.md)
 enumerates every such claim, what checks it, and the test.
 
 It found two nobody had reported, and one more while fixing the first:
@@ -556,10 +560,10 @@ this whole sequence, and it generalizes past this profile.
 Counts at rev 5: `fact_provenance` 145/145, `pack_pdf` 67/67, `policy_lang`
 147/147 (unchanged throughout).
 
-### Where this leaves WRT-008
+### Identifier disposition
 
-Two live artifacts still share the number: PR
-[#60](https://github.com/s0fractal/warrant/pull/60) (`wrt-008/fact-derivation`,
-CLOSED — DEFERRED) and this branch. §0 records the relation and closes the two
-findings that disposition left open, but the duplication is an editorial state
-someone has to resolve, not a technical one this branch can settle by itself.
+WRT-010 is this live fact-provenance proposal. WRT-008 remains the deferred
+fact-derivation proposal in PR #60. Its PR state and disposition are unchanged.
+The two model directories have distinct namespaces (`wrt-010-model` here,
+`wrt-008-model` there), so the worklines can coexist without a path collision.
+The earlier review history is retained, not renumbered retroactively.

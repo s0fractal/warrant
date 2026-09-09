@@ -17,7 +17,7 @@ remembering the dependency existed.
     ACT I    three decisions chain: eligibility -> timeliness -> grant.
              Link 3's facts are not observations. Each is the ANSWER of a prior
              decision, cited by WarrantID and recovered by re-running it
-             (WRT-008, warrant.fact-provenance@v0).
+             (WRT-010, warrant.fact-provenance@v0).
 
     ACT II   an objector files a re-litigation carrying only prose.
              REFUSED by §7: "cites nothing new". Rhetoric is legal; it is not
@@ -48,7 +48,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 sys.path.insert(0, str(ROOT / "impl"))
 
-import fact_provenance as fp      # noqa: E402  (WRT-008 profile)
+import fact_provenance as fp      # noqa: E402  (WRT-010 profile)
 import policy_lang as pl          # noqa: E402  (WPL v1 -> ski@v1 compiler)
 import warrant as w               # noqa: E402  (reference implementation)
 
@@ -315,7 +315,7 @@ def main():
                  "and the 45-day interval are invented for this demo",
         "produced_by": "warrant demos/refund-chain/build.py",
         "profile": fp.PROFILE,
-        "proposal": "proposals/WRT-008-fact-provenance.md",
+        "proposal": "proposals/WRT-010-fact-provenance.md",
         "root": w1,
         "chain": {"eligibility": w1, "timeliness": w2, "grant": w3},
         "reopening": {"relitigation": w4, "supersede": w5},

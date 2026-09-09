@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fact_provenance — `warrant.fact-provenance@v0`, the WRT-008 reference profile.
+"""fact_provenance — `warrant.fact-provenance@v0`, the WRT-010 reference profile.
 
 WHAT THIS IS FOR
 ----------------
@@ -755,7 +755,7 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(
         prog="fact_provenance",
-        description=f"Check {PROFILE} documents in a warrant store (WRT-008).")
+        description=f"Check {PROFILE} documents in a warrant store (WRT-010).")
     ap.add_argument("--store", default=".warrants")
     ap.add_argument("--settlement", action="store_true",
                     help="settlement grade: `underived` and `stale` become ERR")

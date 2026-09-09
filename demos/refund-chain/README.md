@@ -38,7 +38,7 @@ fact timely:   bool = true from "c11f646902b2…"
 
 Nobody retyped a verdict. A verifier re-runs the cited check and recovers the
 value, so a wrong number here is not something a reviewer has to notice: it is
-`contradicted`, mechanically. This is [WRT-008](../../proposals/WRT-008-fact-provenance.md).
+`contradicted`, mechanically. This is [WRT-010](../../proposals/WRT-010-fact-provenance.md).
 
 **ACT II — an objection made of words.** An objector files a re-litigation
 carrying one prose reason: the grant *does not sit right with the spirit of the
@@ -122,10 +122,10 @@ finding in its own reviews; keeping them apart is the whole point.
   retroactively and the tribunal held the airline liable. **Clause 4 and the
   45-day interval are invented for this demo.** They are not that case's facts.
 - The `warrant.fact-provenance@v0` profile is a **proposal**
-  ([WRT-008](../../proposals/WRT-008-fact-provenance.md) rev 5), not an adopted
+  ([WRT-010](../../proposals/WRT-010-fact-provenance.md) rev 5), not an adopted
   part of the specification. It has had **four** adversarial gates, all AMEND,
   every finding closed with a negative fixture, plus two more the proposal's own
-  [binding enumeration](../../proposals/wrt-008-model/BINDING-EDGES.md) found
+  [binding enumeration](../../proposals/wrt-010-model/BINDING-EDGES.md) found
   before a reviewer did. Three rounds by one reviewer on one host is not
   adoption. A base-grade verifier ignores the provenance blobs entirely and is
   still conformant.
@@ -188,3 +188,11 @@ or `Q.E.D.` about its own contents, and if the embedded runner ever gains an
 | `policies/4-proximity.wpl` | the check nobody ran |
 | `pack/` | the generated evidence pack: store, `trust.json`, `manifest.json`, readable mirrors |
 | `refund-chain.pdf` | the envelope: the whole pack as one file that opens as a document and runs as its own archive |
+
+### Historical fixture labels
+
+The proposal is now WRT-010; WRT-008 remains PR #60's deferred fact-derivation
+profile. The frozen grant WPL comment still says WRT-008, its label when the
+fixture was created. The template, addressed source blobs and signed records
+retain those bytes so an editorial rename does not rotate the evidence chain.
+Current proposal links and the pack manifest point to WRT-010.

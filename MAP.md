@@ -37,6 +37,9 @@ present on a ref the reviewer was not looking at.
 | `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |
 | `WRT-006` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: B) | `proposals/WRT-006-ski-v1-implementation-substitution.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
 | `WRT-007` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED) | `proposals/WRT-007-per-tag-evaluator-dependency.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
+| `WRT-008` | open PR #60 (document CLOSED: DEFERRED) | `6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3:proposals/WRT-008-fact-derivation-profile.md` | `proposals/WRT-010-fact-provenance.md` |
+| `WRT-009` | reserved deployment-predicate proposal (not yet written) | `reviews/2026-09-chatgpt-web-cross-stack-response.md` | `proposals/WRT-010-fact-provenance.md` |
+| `WRT-010` | this workline (DRAFT; follows up WRT-008) | `proposals/WRT-010-fact-provenance.md` | `proposals/WRT-010-fact-provenance.md` |
 
 ## Known identifier collisions
 
