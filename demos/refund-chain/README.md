@@ -106,6 +106,11 @@ The two commands above deliberately disagree, and that is the discipline SPEC
 | `warrant … verify` | 5 records, **0 errors** | every record is well-formed, signed, and its check re-runs to its own `expect` |
 | `fact_provenance.py` | **1 finding** (exit 1) | one derived fact rests on a decision that has since been replaced |
 
+The profile also reports, per record, whether it saw *all* of that record's
+provenance: `complete`, `not-applicable` (a record that legitimately cites
+none), or `incomplete` (some cited evidence is missing or off-address, so a
+removed provenance document cannot be told from one that never existed).
+
 A store can be perfectly valid and still be resting on something that moved.
 Collapsing those two into one green token is the defect this stack keeps
 finding in its own reviews; keeping them apart is the whole point.
@@ -117,9 +122,15 @@ finding in its own reviews; keeping them apart is the whole point.
   retroactively and the tribunal held the airline liable. **Clause 4 and the
   45-day interval are invented for this demo.** They are not that case's facts.
 - The `warrant.fact-provenance@v0` profile is a **proposal**
-  ([WRT-008](../../proposals/WRT-008-fact-provenance.md) rev 1), not an adopted
-  part of the specification, and it has had no adversarial gate. A base-grade
-  verifier ignores the provenance blobs entirely and is still conformant.
+  ([WRT-008](../../proposals/WRT-008-fact-provenance.md) rev 2), not an adopted
+  part of the specification. It has had **one** adversarial gate (AMEND, five
+  findings, all closed), which is one round by one reviewer on one host, not
+  adoption. A base-grade verifier ignores the provenance blobs entirely and is
+  still conformant.
+- **Staleness is transitive but bounded.** If the decision a fact came from
+  itself rested on something since replaced, the staleness travels through the
+  named link. The walk has a depth limit, a record budget and a cycle guard,
+  and hitting any of them is reported as `underived`, never as success.
 - Provenance **never changes the term.** Every check in this pack compiles
   byte-identically with its `from` clauses stripped; `tests/fact_provenance.py`
   enforces it.

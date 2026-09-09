@@ -67,6 +67,13 @@ UNDERIVED = "underived"
 STALE = "stale"
 ATTESTED = "attested"
 
+#: Record-level completeness (§5.2). These are NOT fact states: they say
+#: whether the profile could see all of a record's provenance, which is a
+#: different question from whether each derivation holds.
+COMPLETE = "complete"
+NOT_APPLICABLE = "not-applicable"
+INCOMPLETE = "incomplete"
+
 #: States a checker MUST NOT report as success.
 BAD_STATES = (CONTRADICTED, UNDERIVED, STALE)
 
@@ -141,13 +148,20 @@ def put_doc(store, compiled, check_hex, source_hex):
 def has_derived(compiled):
     return any(f.source is not None for f in compiled.program.facts.values())
 
-
 # ------------------------------------------------------------------ checking
-class Finding:
-    __slots__ = ("fact", "kind", "state", "detail")
+#: Bounds on transitive propagation (§5.1). Hitting either is reported as
+#: `underived` with a reason, never as success — an unwalked dependency is not
+#: a walked one.
+MAX_DEPTH = 32
+MAX_RECORDS_WALKED = 512
 
-    def __init__(self, fact, kind, state, detail=""):
-        self.fact, self.kind, self.state, self.detail = fact, kind, state, detail
+
+class Finding:
+    __slots__ = ("fact", "kind", "state", "detail", "actor")
+
+    def __init__(self, fact, kind, state, detail="", actor=None):
+        self.fact, self.kind, self.state = fact, kind, state
+        self.detail, self.actor = detail, actor
 
     @property
     def ok(self):
@@ -162,6 +176,39 @@ class Finding:
     def __repr__(self):
         d = f" ({self.detail})" if self.detail else ""
         return f"{self.fact}: {self.state}{d}"
+
+
+class RecordResult:
+    """What the profile can say about ONE record.
+
+    `status` distinguishes three things a single (findings, errors) pair used
+    to conflate, which is how a vanished provenance document read as "nothing
+    to check" (review F3):
+
+        COMPLETE        every cited evidence blob resolved and was
+                        address-intact; the provenance below is all of it
+        NOT_APPLICABLE  everything resolved, and this record cites no
+                        provenance document (a legacy record, legitimately)
+        INCOMPLETE      some cited evidence is missing or its bytes do not
+                        hash to the address citing them, so the ABSENCE of a
+                        provenance document cannot be told from its LOSS
+    """
+    __slots__ = ("wid", "findings", "refusals", "status")
+
+    def __init__(self, wid, findings, refusals, status):
+        self.wid, self.findings = wid, findings
+        self.refusals, self.status = refusals, status
+
+    @property
+    def ok(self):
+        return (self.status != INCOMPLETE and not self.refusals
+                and all(f.ok for f in self.findings))
+
+    def __iter__(self):
+        """Kept tuple-compatible for callers that unpack (findings, refusals);
+        `status` is deliberately not in the tuple so a caller that ignores it
+        cannot silently read INCOMPLETE as COMPLETE."""
+        return iter((self.findings, self.refusals))
 
 
 def _validate_doc_shape(doc):
@@ -208,15 +255,52 @@ def _validate_doc_shape(doc):
                 f"observed fact {name!r} carries a derivation reference")
 
 
+def _intact_blob(store, h, what):
+    """Read a blob only after its bytes hash to the address citing them.
+
+    `has_blob` checks the NAME shape and that a regular file is there; it does
+    not check the address. Using bytes stored under an address they do not hash
+    to would let a substituted file be credited as provenance (review F2), so
+    every read on this path goes through here."""
+    if not store.has_blob(h):
+        raise ProvenanceError(f"{what} blob {h[:12]}… is not in the store")
+    if not store.blob_intact(h):
+        raise ProvenanceError(
+            f"{what} blob {h[:12]}… does not hash to the address citing it; "
+            "the store is not content-addressed at this entry")
+    return (store.blobs / h).read_bytes()
+
+
+def _record_at(recs, wid):
+    """Return the record stored under `wid`, only if its canonical body really
+    recomputes to `wid`.
+
+    `all_records` keys records by FILE NAME. A body swapped under an existing
+    name keeps that name and changes what it says, so a value derived from it
+    would be credited to a decision that never made it (review F2; also the
+    P2 left open by this proposal's earlier disposition, see §0)."""
+    env = recs.get(wid)
+    if env is None:
+        return None, f"cited warrant {wid[:12]}… is not in the store"
+    body = env.get("body")
+    if not isinstance(body, dict):
+        return None, f"cited record {wid[:12]}… has no body object"
+    try:
+        got = w.warrant_id(body)
+    except Exception as e:
+        return None, f"cited record {wid[:12]}… does not canonicalize: {e}"
+    if got != wid:
+        return None, (f"cited record is stored as {wid[:12]}… but its body "
+                      f"recomputes to {got[:12]}…")
+    return env, ""
+
+
 def _recompile(store, doc):
     """Recompile the cited source and require it to yield the cited check.
 
     This is what keeps the compiler untrusted: provenance is audited by
     re-running the compiler and comparing, never by believing it."""
-    src_hex = doc["source"]
-    if not store.has_blob(src_hex):
-        raise ProvenanceError(f"source blob {src_hex[:12]}… is not in the store")
-    src = (store.blobs / src_hex).read_bytes()
+    src = _intact_blob(store, doc["source"], "source")
     try:
         compiled = pl.compile_source(src.decode("utf-8"))
     except UnicodeDecodeError:
@@ -238,28 +322,121 @@ def _ski_reasons(body):
 
 
 def _superseded_by(recs, wid):
-    """WarrantIDs of stored `supersede` records whose subject is `wid`."""
+    """WarrantIDs of stored `supersede` records whose subject is `wid`. Only
+    records whose own body recomputes to their name are counted."""
     out = []
-    for other, env in recs.items():
-        b = env.get("body", {})
+    for other in recs:
+        env, why = _record_at(recs, other)
+        if env is None:
+            continue
+        b = env["body"]
         if b.get("decision") == "supersede" and \
                 b.get("subject", {}).get("hash") == wid:
             out.append(other)
     return sorted(out)
 
 
-def check_doc(store, doc, recs=None, sg=None):
-    """Check one provenance document. Returns [Finding] for every fact.
+def _provenance_docs_of(store, body):
+    """Provenance documents cited in a record's `evidence`, plus whether any
+    cited evidence could not be resolved intact."""
+    docs, lost = [], []
+    for h in body.get("evidence", []):
+        if not store.has_blob(h):
+            lost.append(f"cited evidence {h[:12]}… is not in the store")
+            continue
+        if not store.blob_intact(h):
+            lost.append(f"cited evidence {h[:12]}… does not hash to its address")
+            continue
+        raw = (store.blobs / h).read_bytes()
+        try:
+            doc = json.loads(raw)
+        except Exception:
+            continue                     # a non-JSON evidence blob is normal
+        if isinstance(doc, dict) and doc.get("provenance") == PROFILE:
+            docs.append((h, doc))
+    return docs, lost
 
-    Raises ProvenanceError when the DOCUMENT is unusable (malformed, or it does
-    not describe the check it names) — that is a refusal about the artifact,
-    which must not be reported as a per-fact state."""
-    _validate_doc_shape(doc)
-    compiled = _recompile(store, doc)
 
-    # Completeness (MUST): the described fact set is exactly the check's own.
-    # A missing entry would otherwise turn a fact off while the status stayed
-    # green; it is a refusal, never a default to `observed`.
+# ------------------------------------------------ transitive source health
+def _source_health(store, recs, wid, sg, depth, seen, memo, budget):
+    """Is `wid` still sound as a SOURCE of a derived value?
+
+    Superseding the record a value came from is only the shallow case. If that
+    record itself derived a fact from something that has since been replaced,
+    its answer rests on the same moved ground, so the staleness has to travel
+    (review F4). Returns (state, detail) with state in {None, STALE, UNDERIVED}
+    where None means healthy.
+
+    Bounded on purpose: depth, a global record budget and a cycle guard, each
+    reported as UNDERIVED rather than assumed benign."""
+    if wid in memo:
+        return memo[wid]
+    if wid in seen:
+        return (UNDERIVED, f"provenance cycle through {wid[:12]}…")
+    if depth > MAX_DEPTH:
+        return (UNDERIVED,
+                f"provenance chain deeper than {MAX_DEPTH}; not walked")
+    if budget[0] <= 0:
+        return (UNDERIVED,
+                f"walked {MAX_RECORDS_WALKED} records without finishing")
+    budget[0] -= 1
+
+    sup = _superseded_by(recs, wid)
+    if sup:
+        result = (STALE, f"cited warrant was superseded by {sup[0][:12]}…")
+        memo[wid] = result
+        return result
+
+    env, why = _record_at(recs, wid)
+    if env is None:
+        result = (UNDERIVED, why)
+        memo[wid] = result
+        return result
+
+    seen = seen | {wid}
+    docs, lost = _provenance_docs_of(store, env["body"])
+    if lost:
+        result = (UNDERIVED, f"upstream {wid[:12]}…: {lost[0]}")
+        memo[wid] = result
+        return result
+
+    for _h, doc in docs:
+        try:
+            _validate_doc_shape(doc)
+            compiled = _recompile(store, doc)
+            _require_complete(doc, compiled)
+        except ProvenanceError as e:
+            result = (UNDERIVED,
+                      f"upstream {wid[:12]}… has unusable provenance: {e}")
+            memo[wid] = result
+            return result
+        for name, entry in sorted(doc["facts"].items()):
+            if entry.get("kind") != "derived":
+                continue
+            state, detail = _source_health(
+                store, recs, entry["from"], sg, depth + 1, seen, memo, budget)
+            if state is not None:
+                result = (state,
+                          f"through {wid[:12]}….{name}: {detail}")
+                memo[wid] = result
+                return result
+
+    memo[wid] = (None, "")
+    return memo[wid]
+
+
+def _require_complete(doc, compiled):
+    """The described fact set is exactly the check's own, and each entry says
+    exactly what the source says about that fact.
+
+    Two separate rules, both refusals:
+      * completeness — a missing entry would turn a fact off while the status
+        stayed green, so it is never a default to `observed`;
+      * agreement — the entry's kind, `from` and selector must match the
+        source's own `from` clause. Without this a document could relabel a
+        derived fact as observed, or point it at a different decision, and the
+        term would not change because provenance is not semantics (review F1).
+    """
     declared = set(doc["facts"])
     actual = set(compiled.program.facts)
     if declared != actual:
@@ -274,10 +451,6 @@ def check_doc(store, doc, recs=None, sg=None):
             "provenance document " + " and ".join(bits) +
             "; it MUST describe exactly the facts of the check it names")
 
-    if recs is None:
-        recs = store.all_records()
-
-    findings = []
     for name in sorted(actual):
         entry = doc["facts"][name]
         fact = compiled.program.facts[name]
@@ -285,20 +458,64 @@ def check_doc(store, doc, recs=None, sg=None):
             raise ProvenanceError(
                 f"provenance document gives fact {name!r} the value "
                 f"{entry['value']!r}, but the source pins {fact.value!r}")
-        if entry["kind"] == "observed":
-            findings.append(Finding(name, "observed", ATTESTED))
+        if fact.source is None:
+            if entry["kind"] != "observed":
+                raise ProvenanceError(
+                    f"fact {name!r} is declared {entry['kind']} but its source "
+                    "has no `from` clause: it is an observation")
             continue
-        findings.append(_check_derived(store, recs, name, entry, sg))
+        wid, sel = fact.source
+        if entry["kind"] != "derived":
+            raise ProvenanceError(
+                f"fact {name!r} is declared {entry['kind']} but its source "
+                f"derives it from {wid[:12]}…; a derivation may not be "
+                "relabelled as an observation")
+        if entry.get("from") != wid:
+            raise ProvenanceError(
+                f"fact {name!r} is declared to come from "
+                f"{str(entry.get('from'))[:12]}…, but its source names "
+                f"{wid[:12]}…")
+        if entry.get("check") != sel:
+            raise ProvenanceError(
+                f"fact {name!r} disagrees with its source on which ski@v1 "
+                f"reason to select ({entry.get('check')} vs {sel})")
+
+
+def check_doc(store, doc, recs=None, sg=None, actor=None):
+    """Check one provenance document. Returns [Finding] for every fact.
+
+    Raises ProvenanceError when the DOCUMENT is unusable (malformed, not
+    address-intact, or disagreeing with the source it names) — that is a
+    refusal about the artifact, which must not be reported as a per-fact
+    state."""
+    _validate_doc_shape(doc)
+    compiled = _recompile(store, doc)
+    _require_complete(doc, compiled)
+
+    if recs is None:
+        recs = store.all_records()
+    memo, budget = {}, [MAX_RECORDS_WALKED]
+
+    findings = []
+    for name in sorted(compiled.program.facts):
+        entry = doc["facts"][name]
+        if entry["kind"] == "observed":
+            findings.append(Finding(name, "observed", ATTESTED, "", actor))
+            continue
+        findings.append(_check_derived(store, recs, name, entry, sg,
+                                       memo, budget))
     return findings
 
 
-def _check_derived(store, recs, name, entry, sg):
+def _check_derived(store, recs, name, entry, sg, memo=None, budget=None):
+    memo = {} if memo is None else memo
+    budget = [MAX_RECORDS_WALKED] if budget is None else budget
     wid = entry["from"]
-    env = recs.get(wid)
+
+    env, why = _record_at(recs, wid)
     if env is None:
-        return Finding(name, "derived", UNDERIVED,
-                       f"cited warrant {wid[:12]}… is not in the store")
-    body = env.get("body", {})
+        return Finding(name, "derived", UNDERIVED, why)
+    body = env["body"]
     reasons = _ski_reasons(body)
     sel = entry.get("check")
     if sel is not None:
@@ -309,8 +526,7 @@ def _check_derived(store, recs, name, entry, sg):
     if len(reasons) != 1:
         what = ("no ski@v1 reason" if not reasons
                 else f"{len(reasons)} ski@v1 reasons and none is selected")
-        return Finding(name, "derived", UNDERIVED,
-                       f"cited warrant has {what}")
+        return Finding(name, "derived", UNDERIVED, f"cited warrant has {what}")
     reason = reasons[0]
     check_hex = reason.get("check")
     if not w._is_hex64(check_hex or ""):
@@ -334,55 +550,54 @@ def _check_derived(store, recs, name, entry, sg):
             name, "derived", CONTRADICTED,
             f"cited decision answers {str(value).lower()}, but this policy "
             f"pins {str(entry['value']).lower()}")
-    sup = _superseded_by(recs, wid)
-    if sup:
-        return Finding(name, "derived", STALE,
-                       f"cited warrant was superseded by {sup[0][:12]}…")
+    state, detail = _source_health(store, recs, wid, sg, 0, frozenset(),
+                                   memo, budget)
+    if state is not None:
+        return Finding(name, "derived", state, detail)
     return Finding(name, "derived", DERIVED, f"from {wid[:12]}…")
 
 
 def check_record(store, wid, recs=None, sg=None):
     """Check every provenance document cited in a record's `evidence`.
 
-    Returns (findings, errors) where `errors` are ProvenanceError messages for
-    documents that could not be used at all."""
+    Returns a RecordResult. Cited evidence that cannot be resolved intact makes
+    the result INCOMPLETE rather than silently reducing the work: with a blob
+    gone, "this record cites no provenance" and "this record's provenance was
+    removed" are the same observation, and they must not report the same."""
     if recs is None:
         recs = store.all_records()
-    env = recs.get(wid)
+    env, why = _record_at(recs, wid)
     if env is None:
-        return [], [f"record {wid[:12]}… is not in the store"]
-    findings, errors = [], []
-    for h in env.get("body", {}).get("evidence", []):
-        if not store.has_blob(h):
-            continue
-        raw = (store.blobs / h).read_bytes()
+        return RecordResult(wid, [], [why], INCOMPLETE)
+    actor = (env["body"].get("actor") or {}).get("id")
+    docs, lost = _provenance_docs_of(store, env["body"])
+    findings, refusals = [], list(lost)
+    for h, doc in docs:
         try:
-            doc = json.loads(raw)
-        except Exception:
-            continue
-        if not isinstance(doc, dict) or doc.get("provenance") != PROFILE:
-            continue
-        try:
-            findings.extend(check_doc(store, doc, recs, sg))
+            findings.extend(check_doc(store, doc, recs, sg, actor))
         except ProvenanceError as e:
-            errors.append(f"{h[:12]}…: {e}")
-    return findings, errors
+            refusals.append(f"{h[:12]}…: {e}")
+    if lost:
+        status = INCOMPLETE
+    elif docs:
+        status = COMPLETE
+    else:
+        status = NOT_APPLICABLE
+    return RecordResult(wid, findings, refusals, status)
 
 
 def check_store(store, recs=None, sg=None):
-    """Check every provenance document reachable from every record.
-
-    Returns {wid: (findings, errors)} for records that cite at least one."""
+    """Check every record. Returns {wid: RecordResult} for every record that
+    cites provenance OR whose evidence could not be resolved — a record that
+    legitimately has none is omitted, one that lost its own is not."""
     if recs is None:
         recs = store.all_records()
     out = {}
     for wid in sorted(recs):
-        findings, errors = check_record(store, wid, recs, sg)
-        if findings or errors:
-            out[wid] = (findings, errors)
+        r = check_record(store, wid, recs, sg)
+        if r.status != NOT_APPLICABLE or r.refusals:
+            out[wid] = r
     return out
-
-
 # ----------------------------------------------------------------------- CLI
 def _report(store_path, settlement=False):
     store = w.Store(store_path)
@@ -392,16 +607,19 @@ def _report(store_path, settlement=False):
         print(f"{PROFILE}: no provenance documents in {store_path}")
         return 0
     bad = 0
-    for wid, (findings, errors) in results.items():
-        print(f"\n{wid[:16]}…")
-        for e in errors:
+    for wid, r in results.items():
+        print(f"\n{wid[:16]}…  [{r.status}]")
+        if r.status == INCOMPLETE:
+            bad += 1
+        for e in r.refusals:
             print(f"  ERR   refused: {e}")
             bad += 1
-        for f in findings:
+        for f in r.findings:
             lvl = f.level(settlement)
             if lvl:
                 bad += 1
-            print(f"  {lvl or '   ':5} {f.fact}: {f.state}"
+            who = f" (attested by {f.actor})" if f.actor and not f.detail else ""
+            print(f"  {lvl or '   ':5} {f.fact}: {f.state}{who}"
                   + (f" — {f.detail}" if f.detail else ""))
     grade = "settlement" if settlement else "base"
     print(f"\n{PROFILE} ({grade} grade): "

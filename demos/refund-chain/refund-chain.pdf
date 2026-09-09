@@ -226,22 +226,32 @@ def _members():
         return [(m.name, m.size) for m in t.getmembers() if m.isreg()]
 
 def _extract(dest):
+    # Every member is validated and every target resolved BEFORE one byte is
+    # written. Validating and writing member by member meant a hostile member
+    # late in the archive was refused only after an earlier one had already
+    # replaced a file in the destination: the refusal was real, the
+    # destination was not left alone.
     dest = os.path.realpath(dest)
     os.makedirs(dest, exist_ok=True)
     raw = gzip.decompress(_blob())
-    n = 0
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as t:
+        plan, seen = [], {}
         for m in t.getmembers():
             if not m.isreg():
                 raise SystemExit("refusing non-regular archive member: " + m.name)
             p = os.path.realpath(os.path.join(dest, m.name))
             if not p.startswith(dest + os.sep):
                 raise SystemExit("refusing member outside destination: " + m.name)
+            if p in seen:
+                raise SystemExit("refusing archive: %s and %s resolve to the "
+                                 "same path" % (m.name, seen[p]))
+            seen[p] = m.name
+            plan.append((m, p))
+        for m, p in plan:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "wb") as f:
                 f.write(t.extractfile(m).read())
-            n += 1
-    return dest, n
+    return dest, len(plan)
 
 def main():
     args = sys.argv[1:]

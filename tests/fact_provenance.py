@@ -325,14 +325,29 @@ def test_completeness_and_tampering():
     d["facts"]["ghost"] = {"kind": "observed", "value": True}
     refuses(d, "a fact the check does not have", "MUST describe exactly")
 
-    # Downgrading a derived fact to observed is a value change, so it is caught
-    # by the recompile + fact-set comparison, not by trust in the label.
+    # F1: the entry must agree with the source's own `from` clause. Neither of
+    # these changes the term — that is exactly why the document has to be
+    # checked against the source rather than only against the check hash.
     d = copy.deepcopy(good)
     d["facts"]["eligible"] = {"kind": "observed", "value": True}
-    f = fp.check_doc(s, d)
-    chk(states(f)["eligible"] == fp.ATTESTED,
-        "a document may downgrade to `observed` — but then it says `attested`, "
-        "never `derived`")
+    refuses(d, "a DERIVED fact relabelled as observed (F1)",
+            "may not be relabelled as an observation")
+
+    d = copy.deepcopy(good)
+    d["facts"]["eligible"]["from"] = "ab" + "0" * 62
+    refuses(d, "a derived fact retargeted to another warrant (F1)",
+            "but its source names")
+
+    d = copy.deepcopy(good)
+    d["facts"]["eligible"]["check"] = "cd" + "0" * 62
+    refuses(d, "a selector the source does not carry (F1)",
+            "which ski@v1 reason to select")
+
+    d = copy.deepcopy(good)
+    d["facts"]["retro"] = {"kind": "derived", "value": False,
+                           "from": "ab" + "0" * 62}
+    refuses(d, "an OBSERVED fact promoted to derived (F1)",
+            "it is an observation")
 
     d = copy.deepcopy(good)
     d["facts"]["retro"]["value"] = True
@@ -366,6 +381,149 @@ def test_completeness_and_tampering():
         d = copy.deepcopy(good)
         del d[key]
         refuses(d, f"the document with {key!r} removed")
+
+
+# ------------------------------------------------ F2/F3/F4. review vectors
+def test_address_integrity():
+    """F2: bytes stored under an address they do not hash to, and a body
+    swapped under an existing record name, must not be credited."""
+    # --- record identity: swap A's reason for one that answers differently,
+    # leaving the file under A's old name.
+    s = new_store()
+    a, ca, _ = file_check(s, "fact rel: bool = false\ncheck rel\n")
+    b, cb, _ = file_check(s, "fact rel: bool = true\ncheck rel\n")
+    _, _, p2 = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[a])
+    chk(states(fp.check_doc(s, load_doc(s, p2))) == {"e": fp.CONTRADICTED},
+        "control: A answers false, so pinning true is contradicted")
+
+    rec = s.records / f"{a}.json"
+    env = json.loads(rec.read_text())
+    for r in env["body"]["because"]:
+        if r.get("runtime") == "ski@v1":
+            r["check"] = cb.blob
+    rec.write_text(json.dumps(env))
+    f = fp.check_doc(s, load_doc(s, p2))
+    chk(states(f) == {"e": fp.UNDERIVED},
+        "a body swapped under an existing record name is refused, not credited",
+        states(f))
+    chk("recomputes to" in f[0].detail, "and says the id does not recompute",
+        f[0].detail)
+
+    # --- source identity: edit the source blob under its old address.
+    s = new_store()
+    a, _, _ = file_check(s, "fact rel: bool = true\ncheck rel\n")
+    src = 'fact e: bool = true from "%s"\ncheck e\n' % a
+    _, _, p2 = file_check(s, src, prior=[a])
+    doc = load_doc(s, p2)
+    (s.blobs / doc["source"]).write_bytes((src + "# appended\n").encode())
+    chk(not s.blob_intact(doc["source"]), "control: the blob is now off-address")
+    try:
+        fp.check_doc(s, doc)
+        chk(False, "a source blob that is off-address is refused", "accepted")
+    except fp.ProvenanceError as e:
+        chk("does not hash to the address" in str(e),
+            "a source blob that is off-address is refused", str(e)[:90])
+
+
+def test_missing_provenance_is_incomplete():
+    """F3: a vanished provenance document must not read as `nothing to check`."""
+    s = new_store()
+    a, _, _ = file_check(s, "fact rel: bool = false\ncheck rel\n")
+    w2, _, p2 = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[a])
+    before = fp.check_record(s, w2)
+    chk(before.status == fp.COMPLETE and states(before.findings) ==
+        {"e": fp.CONTRADICTED}, "control: the finding is there while the doc is",
+        (before.status, states(before.findings)))
+
+    (s.blobs / p2).unlink()
+    after = fp.check_record(s, w2)
+    chk(after.status == fp.INCOMPLETE,
+        "removing the cited provenance document makes the record INCOMPLETE",
+        after.status)
+    chk(after.refusals and "not in the store" in after.refusals[0],
+        "and says which evidence went missing", after.refusals)
+    chk(not after.ok, "an INCOMPLETE record is not ok")
+
+    # A record that never had provenance is a different answer.
+    s2 = new_store()
+    subj = s2.put_blob(b"{}")
+    pol = s2.put_blob(b"POLICY")
+    plain = W.file_warrant(s2, "accept", subj,
+                           Args(under=[pol], reason=["words"],
+                                actor="desk@test", key=keyfile()))
+    r = fp.check_record(s2, plain)
+    chk(r.status == fp.NOT_APPLICABLE,
+        "a record that cites no provenance is NOT_APPLICABLE, not COMPLETE",
+        r.status)
+    chk(fp.check_store(s2) == {},
+        "check_store omits a legitimately provenance-free record")
+    res = fp.check_store(s)
+    chk(w2 in res and res[w2].status == fp.INCOMPLETE,
+        "but keeps one whose own provenance was lost, marked INCOMPLETE",
+        {k[:8]: r.status for k, r in res.items()})
+
+
+def test_transitive_staleness():
+    """F4: staleness travels. A->B->C, supersede A, and C must not stay green."""
+    s = new_store()
+    a, _, _ = file_check(s, "fact base: bool = true\ncheck base\n")
+    b, _, pb = file_check(
+        s, 'fact e: bool = true from "%s"\ncheck e\n' % a, prior=[a])
+    c, _, pc = file_check(
+        s, 'fact f: bool = true from "%s"\ncheck f\n' % b, prior=[b])
+    chk(states(fp.check_doc(s, load_doc(s, pb))) == {"e": fp.DERIVED}
+        and states(fp.check_doc(s, load_doc(s, pc))) == {"f": fp.DERIVED},
+        "control: before the supersede both links are derived")
+
+    W.file_warrant(s, "supersede", a,
+                   Args(under=[s.put_blob(b"POLICY")], prior=[a],
+                        reason=["base was wrong"], actor="desk@test",
+                        key=keyfile(), ts=T0 + 99))
+    sb = states(fp.check_doc(s, load_doc(s, pb)))
+    sc = states(fp.check_doc(s, load_doc(s, pc)))
+    chk(sb == {"e": fp.STALE}, "the direct consumer is stale", sb)
+    chk(sc == {"f": fp.STALE},
+        "and so is the consumer TWO links away — staleness travels", sc)
+    detail = fp.check_doc(s, load_doc(s, pc))[0].detail
+    chk("through" in detail, "and the reason names the link it came through",
+        detail)
+
+    # Four links, to show it is a closure and not one extra hop.
+    s = new_store()
+    prev, _, _ = file_check(s, "fact base: bool = true\ncheck base\n")
+    root = prev
+    docs = []
+    for i in range(4):
+        prev, _, d = file_check(
+            s, 'fact x%d: bool = true from "%s"\ncheck x%d\n' % (i, prev, i),
+            prior=[prev])
+        docs.append(d)
+    chk(all(f.state == fp.DERIVED
+            for d in docs for f in fp.check_doc(s, load_doc(s, d))),
+        "control: a four-link chain is entirely derived")
+    W.file_warrant(s, "supersede", root,
+                   Args(under=[s.put_blob(b"POLICY")], prior=[root],
+                        reason=["x"], actor="desk@test", key=keyfile(),
+                        ts=T0 + 99))
+    tail = fp.check_doc(s, load_doc(s, docs[-1]))
+    chk(tail[0].state == fp.STALE,
+        "superseding the root makes the far end of a four-link chain stale",
+        tail[0].state)
+
+    # Bounds are reported, never assumed benign.
+    chk(fp.MAX_DEPTH > 0 and fp.MAX_RECORDS_WALKED > 0,
+        "the walk is bounded")
+    real = fp.MAX_DEPTH
+    try:
+        fp.MAX_DEPTH = 1
+        bounded = fp.check_doc(s, load_doc(s, docs[-1]))
+    finally:
+        fp.MAX_DEPTH = real
+    chk(bounded[0].state in (fp.UNDERIVED, fp.STALE),
+        "a chain deeper than the bound is never reported as `derived`",
+        bounded[0].state)
 
 
 # -------------------------------------------------------- F. mutation controls
@@ -426,8 +584,12 @@ def test_store_level_and_cli():
     res = fp.check_store(s)
     chk(set(res) == {w1, w2}, "check_store finds every record citing provenance",
         sorted(res))
-    chk(states(res[w2][0]) == {"e": fp.DERIVED}, "and reports the chain")
-    chk(res[w1][1] == [] and res[w2][1] == [], "with no document-level refusals")
+    chk(states(res[w2].findings) == {"e": fp.DERIVED}, "and reports the chain")
+    chk(res[w1].refusals == [] and res[w2].refusals == [],
+        "with no document-level refusals")
+    chk(all(r.status == fp.COMPLETE for r in res.values()),
+        "and every record is COMPLETE",
+        {k[:8]: r.status for k, r in res.items()})
     rc = fp.main(["--store", str(s.root)])
     chk(rc == 0, "CLI exits 0 on a store whose derivations all hold", rc)
 
@@ -467,8 +629,10 @@ def test_refund_chain_demo():
     store = W.Store(str(demo / "pack" / ".warrants"))
     recs = store.all_records()
     chk(len(recs) == 5, "five records load")
-    findings, errors = fp.check_record(store, man["chain"]["grant"], recs)
-    chk(errors == [], "the grant's provenance document is usable", errors)
+    r = fp.check_record(store, man["chain"]["grant"], recs)
+    findings = r.findings
+    chk(r.refusals == [], "the grant's provenance document is usable", r.refusals)
+    chk(r.status == fp.COMPLETE, "and the record is COMPLETE", r.status)
     chk(states(findings) == {"eligible": fp.STALE, "timely": fp.DERIVED},
         "the grant: one stale derivation, one live one", states(findings))
 
@@ -493,6 +657,9 @@ def main():
         test_derived_states()
         test_stale_propagation()
         test_completeness_and_tampering()
+        test_address_integrity()
+        test_missing_provenance_is_incomplete()
+        test_transitive_staleness()
         test_mutation_controls()
         test_store_level_and_cli()
         test_refund_chain_demo()

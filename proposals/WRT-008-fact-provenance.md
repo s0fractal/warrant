@@ -1,5 +1,28 @@
 # WRT-008: Fact provenance — derived facts, and the chain of decisions
 
+**Identifier and prior disposition (read first).** The number **WRT-008 is not
+free**, and rev 1 of this document reused it without saying so — a provenance
+defect of exactly the kind this proposal is about. WRT-008 already names
+*"fact derivation profile"*, filed on branch `wrt-008/fact-derivation`
+(PR [#60](https://github.com/s0fractal/warrant/pull/60)), which reached
+**CLOSED — DEFERRED** under §7's stopping rule after two gate rounds, both
+AMEND on the same binding layer.
+
+This document is therefore a **reactivation attempt of that proposal**, not a
+new one that happens to share its number. That earlier disposition left exactly
+two findings open, and this revision closes both, because the same reviewer
+found them again here as F2:
+
+| Left open by the earlier WRT-008 | Where it is closed here |
+|---|---|
+| P1: a null/missing body read as "no record" after the label was set | `_record_at` refuses a record with no body object; `check_record` reports INCOMPLETE rather than an empty result (§5.2) |
+| P2: a record trusted by filename, its body hash never compared to the id | `_record_at` recomputes the canonical WarrantID and refuses any record whose body does not hash to the name it is stored under (§5.3) |
+
+The reactivation conditions that PR states also require a gate **by someone who
+did not write it**. rev 2 has had one adversarial gate (Codex, 2026-09-09,
+AMEND, five findings F1–F5, all reproduced and all closed below). That is one
+round on a different layer, not an adoption.
+
 **Status:** DRAFT rev 1 (2026-09-09) — **design plus a reference profile.** No
 SPEC edit and no change to `ski@v1` is made or proposed by this document. It
 adds an OPTIONAL verification profile (`warrant.fact-provenance@v0`) and an
@@ -72,11 +95,25 @@ fact eligible:    bool = true from <WarrantID>       # derived
 fact timely:      bool = true from <WarrantID> check <hex64>
 ```
 
-Grammar: after a fact's literal, optionally `from` HEX64, optionally followed by
-`check` HEX64. The second form disambiguates when the cited warrant carries more
-than one `ski@v1` reason; without it, a cited warrant with more or fewer than
-exactly one `ski@v1` reason is a compile-time refusal, by name, per WPL's
-existing refusal discipline.
+Grammar: after a fact's literal, optionally the contextual word `from` followed
+by ONE quoted reference — `"<WarrantID>"` or `"<WarrantID>/<check>"`. The
+reference is a string literal because a 64-character hex id is not a WPL
+number: WPL's lexer refuses a numeral followed by a letter, so a bare hex64
+cannot be tokenized. Putting the optional selector inside the same string
+rather than in a second `check` token also keeps the grammar free of a
+two-token lookahead against the `check` keyword that opens the check
+expression.
+
+`from` is a **contextual word, not a reserved one**: it is recognized only in
+this position, so a policy that already uses `from` as a fact name keeps
+compiling.
+
+**Which refusals happen when.** The compiler has no store, so it can only
+refuse what is visible in the source: a non-bool fact, a malformed reference,
+a reference that is not one or two hex64 segments. Whether the cited warrant
+exists, and whether it carries exactly one `ski@v1` reason, is a **checking-time**
+question, reported as `underived` (§5) — not a compile-time refusal. rev 1 of
+this document described the ambiguity check as compile-time; that was wrong.
 
 **Derived facts are `bool` only in v0.** A `ski@v1` check answers one Church
 boolean (§3.1), so that is the only value shape a decision can hand to the next
@@ -141,8 +178,41 @@ Four terminal states per derived fact, which MUST be distinguishable in output:
 | `underived` | could not re-run: missing record or blob, over budget, ambiguous reason, non-boolean outcome | WARN, ERR under settlement grade |
 | `stale` | derivation reproduces, but the cited warrant has been **superseded** | WARN, ERR under settlement grade |
 
-Observed facts get one state, `attested`, carrying the actor of the citing
-record. A checker MUST NOT print `verified` for an observed fact.
+Observed facts get one state, `attested`, carrying the `actor.id` of the record
+that cites the provenance document. A checker MUST NOT print `verified` for an
+observed fact. The actor is available only through `check_record`, which knows
+the citing record; `check_doc` called on a bare document reports `attested` with
+no actor, because at that entry point there is no record to attribute it to.
+
+### 5.2. Record-level completeness
+
+Per-fact states answer "does this derivation hold". They cannot answer "did I
+see all of this record's provenance", and rev 1 conflated the two: a cited
+provenance blob that had been deleted produced an empty result, so a removed
+document and a record that never had one were the same answer. `check_record`
+now returns one of three record-level statuses:
+
+| Status | Meaning |
+|---|---|
+| `complete` | every cited evidence blob resolved and was address-intact; the findings below are all of it |
+| `not-applicable` | everything resolved, and this record cites no provenance document — a legacy record, legitimately |
+| `incomplete` | some cited evidence is missing or off-address, so the ABSENCE of a provenance document cannot be told from its LOSS |
+
+`incomplete` is not a fact state and is never success.
+
+### 5.3. Address integrity is a precondition, not an inference
+
+Every byte this profile reads is read only after its address is checked:
+
+* a **blob** (source or provenance) is read through `_intact_blob`, which
+  requires `blob_intact` and not merely that a regular file sits at that name;
+* a **record** is used only if its canonical body recomputes to the WarrantID it
+  is stored under. `all_records` keys records by file name, and a body swapped
+  under an existing name keeps that name while changing what it says.
+
+Neither is a claim about authority. Address integrity, signature validity and
+standing are three separate questions, and this profile answers only the first
+of them, as a precondition for the rest of its work.
 
 ### 5.1. Why `stale` is the point
 
@@ -157,6 +227,19 @@ down in a form a machine re-walks, not because anyone maintained a list.
 
 That is the honest version of the ambition: the format does not prevent a false
 observation. It makes the discovery of one *propagate*.
+
+**Propagation is transitive, and bounded.** Superseding the record a value came
+from is only the shallow case. If that record itself derived a fact from
+something since replaced, its answer rests on the same moved ground, so the
+staleness travels: `_source_health` walks a cited record's own provenance
+documents and reports `stale` through a named link. rev 1 claimed "every
+downstream policy" while checking only the direct edge — a label wider than its
+predicate, found at gate as F4.
+
+The walk is bounded by depth (`MAX_DEPTH`), a global record budget
+(`MAX_RECORDS_WALKED`) and a cycle guard. **Hitting any bound is reported as
+`underived` with the reason**, never as success: an unwalked dependency is not
+a walked one.
 
 ## 6. The term-preservation invariant
 
@@ -181,14 +264,18 @@ it verified before.
   term proves what the term computes, not that its author had standing. Authority
   remains §5/§12's problem, and the trust root remains the verifier's
   configuration.
-- **It does not bound chain depth or cost.** A derived fact re-runs another
-  check, which may itself carry derived facts. Implementations MUST bound
-  recursion depth and total re-execution budget across a chain, and report the
-  bound being hit as `underived` — never as success. The bound is local policy,
-  as in §3.1.
-- **It does not claim the profile has been reviewed.** rev 1 has had no
-  adversarial gate. The design is filed to be attacked, and the most likely
-  attack surfaces are named in §9.
+- **It bounds chain depth and cost, and the bounds are local policy.** A derived
+  fact re-runs another check, which may itself carry derived facts. The
+  reference checker bounds recursion depth and the number of records walked and
+  reports either bound being hit as `underived` — never as success. Two
+  verifiers configured differently may disagree about a very deep chain, which
+  is the same deliberate local-policy divergence SPEC §3.1 already allows for
+  the re-execution budget.
+- **It does not claim the profile is adopted.** rev 2 has had ONE adversarial
+  gate (Codex, 2026-09-09): AMEND, five findings, all reproduced against the
+  code and all closed here with negative fixtures. One round by one reviewer on
+  one host is not adoption, and the reactivation conditions in §0 are not
+  thereby met.
 - **It does not address cycles.** A store where W1's fact derives from W2 and
   W2's from W1 is possible to construct; §9(3) treats it as open.
 
@@ -213,9 +300,11 @@ it verified before.
 2. **Non-boolean outcomes.** v0 refuses. A canonical DISSONANCE outcome is a
    real and meaningful answer ("this did not settle") that a downstream policy
    might legitimately want to branch on. Refusing it may be over-strict.
-3. **Cycles and depth.** Cycle detection is unspecified. A malicious store can
-   construct one; the bound in §7 stops non-termination but the reported state
-   for a cycle member is undefined.
+3. **Cycles and depth.** Closed in rev 2: a cycle is detected by a visiting set
+   and reported `underived`, as is exceeding depth or the record budget. What
+   remains open is whether the bounds are the right ones, and whether an
+   `underived` caused by a bound should be distinguishable in the report from
+   one caused by a missing blob.
 4. **`stale` and re-filing.** A superseded warrant whose successor reaches the
    *same* answer arguably should not make downstream facts stale. Distinguishing
    "superseded and changed" from "superseded and unchanged" needs the successor's
@@ -238,3 +327,34 @@ it verified before.
 | `demos/refund-chain/` | Three policies, chained; rhetoric refused; a new consequence of old evidence reopens settlement, and the downstream derived fact goes `stale` on its own. |
 | `tools/pack_pdf.py` | The envelope: a pack as one file that is both a readable PDF and its own deterministic archive. It does not verify itself, on purpose. |
 | `tests/pack_pdf.py` | Including the xref walk, hostile-archive refusals, and a property test on the *absence* of self-adjudication. |
+
+---
+
+## 11. Gate round 1 — disposition (Codex, 2026-09-09, AMEND)
+
+All five findings reproduced against the code and closed in rev 2. Each has a
+negative fixture that fails if the fix is reverted; three of them are the
+review's own counterexamples, adopted verbatim as tests.
+
+| Finding | What it showed | Closed by |
+|---|---|---|
+| **F1** P1 · entry not bound to `Fact.source` | relabelling a derived fact `observed` gave `attested`; retargeting `from` to another warrant gave `derived`, both with the source unchanged | `_require_complete` now compares kind, `from` and selector against the source's own clause; four vectors in `test_completeness_and_tampering` |
+| **F2** P1 · addresses unchecked | a body swapped under an existing record name was credited; an edited source blob was compiled and used | `_intact_blob` + `_record_at`; `test_address_integrity`. This also closes the two findings the earlier WRT-008 left open (§0) |
+| **F3** P2 · missing provenance silently skipped | deleting a cited provenance blob gave `findings=[], errors=[]` | record-level `complete` / `not-applicable` / `incomplete` (§5.2); `test_missing_provenance_is_incomplete` |
+| **F4** P1 · `stale` did not travel | A→B→C, supersede A: `B.e = stale` but `C.f = derived` | `_source_health` walks the cited record's own provenance, bounded; `test_transitive_staleness` checks two- and four-link chains and that a bound is never reported as `derived` |
+| **F5** P2 · refusal after a write | a hostile member after a valid one refused the traversal *and* left the earlier file replaced | full preflight in both `unpack_store` and the embedded runner; the fixture now carries a valid prefix, as the review asked |
+
+Documentation findings are closed with them: §3 now describes the grammar the
+parser actually accepts and says which refusals are compile-time and which are
+checking-time; §5 scopes the `attested` actor to the entry point that has a
+record; §0 records the relation to the earlier WRT-008 disposition rather than
+silently reusing its number.
+
+**Not closed, and deliberately so.** The reviewer's note that executing an
+arbitrary PDF as Python is still executing its code stands. The envelope's
+non-adjudication narrows what it *claims*, not what it *is*; a reader who
+wants no execution at all should treat the artifact as data and extract it with
+a trusted extractor, which is what the review's own probes did.
+
+Counts after rev 2: `fact_provenance` 97/97, `pack_pdf` 42/42, `policy_lang`
+147/147 (unchanged).

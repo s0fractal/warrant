@@ -18,6 +18,7 @@ WHAT THIS HARNESS IS BUILT TO AVOID
     This is a property test on a deliberate absence, because the absence is the
     design.
 """
+import base64
 import gzip
 import hashlib
 import importlib.util
@@ -157,20 +158,26 @@ def test_round_trip_and_determinism():
 
 
 # ------------------------------------------------------- C. hostile archives
-def test_extraction_refusals():
-    def archive(name, *, kind=tarfile.REGTYPE, linkname=""):
-        raw = io.BytesIO()
-        with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as t:
+def _archive(*members):
+    """members: (name, kind, linkname, payload) -> deterministic tar.gz bytes."""
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as t:
+        for name, kind, linkname, payload in members:
             info = tarfile.TarInfo(name)
             info.type = kind
             info.linkname = linkname
-            payload = b"pwned\n"
             info.size = len(payload) if kind == tarfile.REGTYPE else 0
-            t.addfile(info, io.BytesIO(payload) if kind == tarfile.REGTYPE else None)
-        out = io.BytesIO()
-        with gzip.GzipFile(fileobj=out, mode="wb", mtime=0) as gz:
-            gz.write(raw.getvalue())
-        return out.getvalue()
+            t.addfile(info,
+                      io.BytesIO(payload) if kind == tarfile.REGTYPE else None)
+    out = io.BytesIO()
+    with gzip.GzipFile(fileobj=out, mode="wb", mtime=0) as gz:
+        gz.write(raw.getvalue())
+    return out.getvalue()
+
+
+def test_extraction_refusals():
+    def archive(name, *, kind=tarfile.REGTYPE, linkname=""):
+        return _archive((name, kind, linkname, b"pwned\n"))
 
     cases = [
         ("../escaped.txt", tarfile.REGTYPE, "", "parent-directory traversal"),
@@ -192,6 +199,54 @@ def test_extraction_refusals():
                 f"wrote {set(after) - set(before)}")
         except Exception as e:
             chk(False, f"refuses: {label}", f"wrong exception {e!r}")
+
+    # F5: a hostile member AFTER a valid one. The refusal must leave the
+    # destination exactly as it was. Validating and writing member by member
+    # refused the traversal and still replaced `existing` first.
+    def hostile():
+        return _archive(("existing", tarfile.REGTYPE, "", b"REPLACED"),
+                        ("../escape", tarfile.REGTYPE, "", b"pwned\n"))
+
+    dest = tmp()
+    (dest / "existing").write_text("ORIGINAL")
+    try:
+        pp.unpack_store(hostile(), dest)
+        chk(False, "library: hostile member after a valid one is refused",
+            "extracted")
+    except ValueError as e:
+        chk("outside destination" in str(e),
+            "library: hostile member after a valid one is refused", str(e)[:70])
+    chk((dest / "existing").read_text() == "ORIGINAL",
+        "library: the refusal leaves the pre-existing file untouched",
+        f"became {(dest / 'existing').read_text()!r}")
+    chk(not (dest.parent / "escape").exists(),
+        "library: nothing is written outside the destination")
+
+    # The same property for the runner that actually travels in the file: its
+    # source is executed verbatim, with the hostile archive as the operand.
+    dest = tmp()
+    (dest / "existing").write_text("ORIGINAL")
+    ns = {"PACK": base64.b64encode(hostile()).decode(), "MANIFEST_TEXT": ""}
+    exec(compile(pp.RUNNER, "<embedded-runner>", "exec"), ns)
+    try:
+        ns["_extract"](str(dest))
+        chk(False, "embedded runner: hostile member is refused", "extracted")
+    except SystemExit as e:
+        chk("outside destination" in str(e),
+            "embedded runner: hostile member is refused", str(e)[:70])
+    chk((dest / "existing").read_text() == "ORIGINAL",
+        "embedded runner: the refusal leaves the pre-existing file untouched",
+        f"became {(dest / 'existing').read_text()!r}")
+
+    # Two members resolving to one target are refused up front too.
+    dest = tmp()
+    try:
+        pp.unpack_store(_archive(("a/../x", tarfile.REGTYPE, "", b"1"),
+                                 ("x", tarfile.REGTYPE, "", b"2")), dest)
+        chk(False, "refuses: two members resolving to one path", "extracted")
+    except ValueError as e:
+        chk("same path" in str(e), "refuses: two members resolving to one path",
+            str(e)[:70])
 
     # And the guard is load-bearing: without it, the traversal case escapes.
     dest = tmp()

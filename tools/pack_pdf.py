@@ -52,6 +52,7 @@ import gzip
 import hashlib
 import io
 import json
+import os
 import sys
 import tarfile
 from pathlib import Path
@@ -91,20 +92,40 @@ def pack_store(store_dir: Path, prefix: str = ".warrants") -> bytes:
     return out.getvalue()
 
 
+def _plan(members, dest: Path):
+    """Validate EVERY member and resolve every target before one byte is
+    written. Extraction used to validate and write member by member, so a
+    hostile member late in the archive was refused only after an earlier one
+    had already replaced a file in the destination (review F5): the refusal was
+    real, the destination was not left alone. Returns [(member, target)]."""
+    plan, seen = [], {}
+    for m in members:
+        if not m.isreg():
+            raise ValueError(f"refusing non-regular archive member {m.name!r}")
+        target = (dest / m.name).resolve()
+        if not str(target).startswith(str(dest) + os.sep):
+            raise ValueError(f"refusing member outside destination: {m.name!r}")
+        if target in seen:
+            raise ValueError(
+                f"refusing archive: {m.name!r} and {seen[target]!r} resolve to "
+                "the same path")
+        seen[target] = m.name
+        plan.append((m, target))
+    return plan
+
+
 def unpack_store(blob: bytes, dest: Path) -> list[str]:
-    """Extract the archive under `dest`, refusing anything that is not a plain
-    file inside it. Absolute paths, `..` traversal, links and devices are
-    rejected before any byte is written."""
+    """Extract the archive under `dest`.
+
+    Nothing is written until every member has been validated: absolute paths,
+    `..` traversal, links, devices and colliding targets are all refused with
+    the destination untouched."""
     dest = dest.resolve()
     dest.mkdir(parents=True, exist_ok=True)
-    written = []
     with tarfile.open(fileobj=io.BytesIO(gzip.decompress(blob)), mode="r:") as t:
-        for m in t.getmembers():
-            if not m.isreg():
-                raise ValueError(f"refusing non-regular archive member {m.name!r}")
-            target = (dest / m.name).resolve()
-            if not str(target).startswith(str(dest) + "/"):
-                raise ValueError(f"refusing member outside destination: {m.name!r}")
+        plan = _plan(t.getmembers(), dest)      # refuses before any write
+        written = []
+        for m, target in plan:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(t.extractfile(m).read())
             written.append(m.name)
@@ -193,22 +214,32 @@ def _members():
         return [(m.name, m.size) for m in t.getmembers() if m.isreg()]
 
 def _extract(dest):
+    # Every member is validated and every target resolved BEFORE one byte is
+    # written. Validating and writing member by member meant a hostile member
+    # late in the archive was refused only after an earlier one had already
+    # replaced a file in the destination: the refusal was real, the
+    # destination was not left alone.
     dest = os.path.realpath(dest)
     os.makedirs(dest, exist_ok=True)
     raw = gzip.decompress(_blob())
-    n = 0
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as t:
+        plan, seen = [], {}
         for m in t.getmembers():
             if not m.isreg():
                 raise SystemExit("refusing non-regular archive member: " + m.name)
             p = os.path.realpath(os.path.join(dest, m.name))
             if not p.startswith(dest + os.sep):
                 raise SystemExit("refusing member outside destination: " + m.name)
+            if p in seen:
+                raise SystemExit("refusing archive: %s and %s resolve to the "
+                                 "same path" % (m.name, seen[p]))
+            seen[p] = m.name
+            plan.append((m, p))
+        for m, p in plan:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "wb") as f:
                 f.write(t.extractfile(m).read())
-            n += 1
-    return dest, n
+    return dest, len(plan)
 
 def main():
     args = sys.argv[1:]

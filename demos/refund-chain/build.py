@@ -137,14 +137,14 @@ def file_policy(store, src_text, *, decision, subject, policy_hex, prior,
 
 
 def show_provenance(store, wid, label):
-    findings, errors = fp.check_record(store, wid)
-    print(f"    {label}")
-    for e in errors:
+    r = fp.check_record(store, wid)
+    print(f"    {label}  [{r.status}]")
+    for e in r.refusals:
         print(f"      REFUSED  {e}")
-    for f in findings:
+    for f in r.findings:
         mark = "  " if f.ok else "!!"
         print(f"      {mark} {f.fact:<10} {f.state:<13} {f.detail}")
-    return findings
+    return r.findings
 
 
 def main():
