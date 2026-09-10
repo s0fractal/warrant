@@ -1,7 +1,10 @@
-# WRT-012 — External witnessing and separation of control over history (rev 2)
+# WRT-012 — External witnessing and separation of control over history (rev 3)
 
-**Status: DRAFT rev 2 (2026-09-10), after gate round 1 (Codex, AMEND, §10).
-A plan and an experiment protocol, not a decision, not an adoption.**
+**Status: DRAFT rev 3 (2026-09-10), after gate rounds 1 and 2 (Codex, AMEND,
+§10–§11). A plan and an experiment protocol, not a decision, not an
+adoption.** Rev 3 is a narrow amendment of the protocol: success controls,
+direction of the freshness check, verification axis split into method and
+result, no report as input, holder independence stated per holder.
 Written by the maintainer actor `claude-fable-5-1`. The owner's "повністю
 зрозумів" (2026-09-10) authorized writing the plan and preparing branches; it
 is not a threshold warrant (warrant `AGENTS.md` rule 2). Rev 1 was titled
@@ -78,26 +81,38 @@ commitment digest `C`. **Nothing about proofs is inside it.** That removes rev
 ### 2.3 Report (derived, never authoritative)
 
 ```
-verification:  FINITE_SCOPE_VERIFIED | SELF_REFERENTIAL_CONSISTENT | FAILED | NOT_RUN
+verification:  method=EXTERNAL_CLOSURE|SELF_REFERENTIAL  result=PASS|FAIL|NOT_RUN  scope=<what was checked>
 time:          FILE_BOUND_PENDING | BLOCK_ATTESTATION_PRESENT_UNVERIFIED | BITCOIN_VERIFIED(<height>, source=<name>) | NONE
-holding:       EXTERNALLY_OBSERVED(<holder>, custody=<name>) ... | NONE
-freshness:     UNKNOWN | LATER_STATE_WITNESSED(<holder>) | MATCHES_AVAILABLE_WITNESS
+holding:       EXTERNALLY_OBSERVED(<holder>, custody=<name>) | DEPOSITED(<institution>, record=<id>) | NONE
+freshness:     UNKNOWN | LATER_STATE_WITNESSED(<holder>, path=C_i→C_j) | MATCHES_AVAILABLE_WITNESS
 adoption:      NOT_EVALUATED | <roster warrant id>
 ```
 
-Axes are independent. A correct local computation is `FINITE_SCOPE_VERIFIED`
-with `time: NONE`; a wrong one stamped in Bitcoin is `FAILED` with
-`time: BITCOIN_VERIFIED`. The time axis attests existence, not correctness,
-and the report is built so that it cannot say otherwise. `verification` for
-black-heart's embedded runners is `SELF_REFERENTIAL_CONSISTENT` by
-construction (study §4), not `FINITE_SCOPE_VERIFIED`; that is the one place
-where rev 1's instinct to demote the label was right, and it is done on the
-verification axis, not by overwriting it with a holding word.
+`verification` is three fields, never one word: `method` says how the check
+was performed (a pinned external closure, or code carried by the artifact
+itself), `result` says what that check returned, `scope` says what it
+covered. `result` is `NOT_RUN` until the substantive check has actually
+executed; a pinned verifier closure names the code, not its outcome.
 
-`freshness` reuses `.triad/continuity/bootstrap.py` semantics: it is `UNKNOWN`
-unless a holder's later receipt for the same `stream` is presented and
-verified; `MATCHES_AVAILABLE_WITNESS` explicitly does not exclude a joint
-rollback of committer and witness (the `.triad` case, and black-heart
+Axes are independent. A correct local computation is `result=PASS` with
+`time: NONE`; a wrong one stamped in Bitcoin is `result=FAIL` with
+`time: BITCOIN_VERIFIED`. The time axis attests existence, not correctness,
+and the report is built so that it cannot say otherwise. For
+black-heart's embedded runners `method` is `SELF_REFERENTIAL` by construction
+(study §4); `result` and `scope` are whatever that runner actually computed,
+established per runner from the study's list, never assigned by default. That
+is where rev 1's instinct to demote the label was right, and it is now done on
+the right axis and without asserting a result the runner did not produce.
+
+`freshness` reuses `.triad/continuity/bootstrap.py` semantics and runs in one
+direction only: the verifier holds a local `C_i`, obtains from a holder named
+in its **own trusted configuration** a receipt for some `C_j`, and verifies the
+`prev` path `C_i → C_j` link by link. Only then is `C_i` reported
+`LATER_STATE_WITNESSED(holder, path=C_i→C_j)`. A receipt about `C_i` itself
+says nothing about later state. A `C_j` with a larger `sequence` but no
+verifiable path is another branch and yields `UNKNOWN` with note
+`DISCONNECTED`. `MATCHES_AVAILABLE_WITNESS` explicitly does not exclude a
+joint rollback of committer and witness (the `.triad` case, and black-heart
 task-002's accepted rollback). Latest-head discovery is a separate protocol
 (§8.1) and this WRT does not claim it.
 
@@ -118,7 +133,11 @@ available (`.triad` uses `/opt/homebrew/opt/python@3.14/bin/python3.14`); the
 | `classify C` | `.triad` classifier verbatim on `C` + `C.ots` → time axis | any mismatch of pinned digests |
 | `upgrade C` | `ots upgrade` on a **copy**; if a block attestation appears, `BLOCK_ATTESTATION_PRESENT_UNVERIFIED`; `BITCOIN_VERIFIED` only after header check against a named source | `--no-bitcoin` as a way to print VERIFIED |
 | `receipt C --as <holder>` | **run by the holder**: writes `{holder, C, holder_head, observed}` signed by the holder's key into the holder's store, and returns the receipt digest | a receipt for a `C` the holder cannot fetch and re-hash |
-| `report C [--receipt path...] [--witness path]` | builds §2.3; each receipt is fetched from the holder's store by the *verifier*, re-hashed, signature checked against the holder's published key | a receipt supplied by the committer alone (it is counted as `holding: NONE` with a note) |
+| `report C --holders <trusted-config>` | builds §2.3 from commitment + proofs only; for each holder in the verifier's trusted configuration (holder id → key → store locator, caller-pinned exactly as `.triad/bootstrap.py` pins its witness) it fetches receipts from that store, re-hashes, checks the signature against the configured key, and walks `prev` paths | a report as input (reports are recomputed, never accepted); a receipt, key or store locator that arrived together with the committer's material (counted as `holding: NONE` with note `UNCONFIGURED_HOLDER`) |
+
+The holder's key is trusted only through the verifier's configuration. A
+"published key" fetched from a site named by the receipt is not a binding:
+receipt, site and key can be substituted together.
 
 `hold --holder --head --custody` from rev 1 is removed: it recorded the
 committer's claim about a holder, which is worth nothing. Observing a
@@ -131,10 +150,14 @@ GitHub repos under one account is one.
 Mutation tests: flip one byte of the commitment → `COMMITMENT_PIN` refusal;
 edit `prev` → refusal; relabel `PENDING` as `BITCOIN_VERIFIED` in a stored
 report → `report` recomputes from bytes and disagrees; present a
-committer-authored receipt → `holding: NONE`; present a holder receipt for an
-older `C` in the same stream → `freshness: LATER_STATE_WITNESSED` on the
-older one, and the newer one stays `UNKNOWN` (that is the torn-end limit,
-stated, not hidden).
+committer-authored receipt → `holding: NONE`; hold local `C1`, present a configured
+holder's receipt for `C2` with a verified `prev` path `C1→C2` → `C1` reports
+`LATER_STATE_WITNESSED(holder, path=C1→C2)`; present a receipt for `C3` with
+`sequence` > `C1` but no verifiable path → `UNKNOWN`, note `DISCONNECTED`;
+the newest local commitment always stays `UNKNOWN` unless a configured holder
+has something later (that is the torn-end limit, stated, not hidden). A
+`report` implementation that returns `UNKNOWN` unconditionally fails the
+second control; both controls are mandatory (§4).
 
 ## 4. One end-to-end experiment before any policy spreads
 
@@ -151,24 +174,44 @@ current settle verifier closure (verifier).
 2. `stamp C1` → `C1.ots`. Endpoint: `classify` = `FILE_BOUND_PENDING`, altered
    commitment refused. (Submits one digest to two calendars; nothing else
    leaves the host. Same footprint as `.triad` external-timestamp-001.)
-3. Holder receipt from a store the committer does not write to. Two
-   candidates, both to be tried: (a) Zenodo, by depositing `C1` as a new
-   version with Zenodo's own checksum as `holder_head`; (b) a **second GitHub
-   account or organisation** the owner does not push from, or Codex's
-   environment if it has one. If neither exists, the endpoint records
-   `holding: NONE` and the experiment still runs. A holding from
-   `s0fractal/sigma-glyph` is recorded with custody `github:s0fractal` and
-   counted as **not independent**.
-4. `report C1`. Endpoint: axes read exactly `FINITE_SCOPE_VERIFIED /
-   FILE_BOUND_PENDING / <as obtained> / UNKNOWN / NOT_EVALUATED`.
-5. **Rollback attack.** Produce `C2` (sequence 18, prev `C1`), stamp it, obtain
-   a holder receipt for `C2`. Then present the verifier with the stream
-   truncated at `C1` plus `C1.ots` plus `C1`'s receipt. Endpoint: with only
-   the committer's material, `freshness: UNKNOWN` (the attack is *not*
-   detected, and the report says so); with the holder's store fetched,
-   `freshness: LATER_STATE_WITNESSED(holder)`. Both outcomes are the
-   predeclared result; the experiment fails only if the first case prints
-   anything stronger than `UNKNOWN`.
+3. Holder receipt from a store the committer does not write to. What does
+   **not** count, stated before running: a second GitHub account or
+   organisation under the owner's control (no independence added); Codex's
+   or any model's environment whose files live on the owner's host (same
+   custody). What may count: Zenodo, through a **separate adapter** that
+   deposits `C1` as a new version and later lets the verifier fetch Zenodo's
+   own record id and checksum; this yields `holding: DEPOSITED(zenodo,
+   record=<id>)`, which is institutional custody of bytes and *not* a signed
+   receipt of §3 format. If no holder outside our custody is available, the
+   external half of the experiment is recorded as **`NOT_DEMONSTRATED`**; the
+   local half may still complete; `NOT_DEMONSTRATED` does not open §5.
+4. `report C1 --holders <config>`. Endpoint: axes read exactly
+   `verification: method=EXTERNAL_CLOSURE result=NOT_RUN` (steps 1–3 create a
+   commitment, a timestamp and a holding; they do not run the flagship
+   check) `/ FILE_BOUND_PENDING / <as obtained> / UNKNOWN / NOT_EVALUATED`.
+   4b. Run the flagship check itself under the pinned closure and re-report:
+   `result` becomes `PASS` or `FAIL` with `scope` named; every other axis is
+   unchanged by this step (that invariance is an endpoint).
+5. **Freshness controls, both mandatory.** Produce `C2` (sequence 18, prev
+   `C1`), stamp it, obtain a holder receipt for `C2` from a configured
+   holder.
+   - Control A (no later witness available): present the verifier with the
+     stream truncated at `C1`, `C1.ots`, and a holder configuration whose
+     store contains no receipt for anything after `C1`. Endpoint: `C1` reports
+     `freshness: UNKNOWN`, and nothing stronger.
+   - Control B (verified continuation): same truncated local stream, holder
+     configuration pointing at the store that holds the `C2` receipt.
+     Endpoint: `C1` reports `LATER_STATE_WITNESSED(holder, path=C1→C2)`
+     after walking the `prev` link; the run records the fetched receipt
+     digest and the path.
+   - Control C (disconnected branch): store holds a receipt for a `C2'` with
+     `sequence` 18 and `prev` ≠ `C1`. Endpoint: `UNKNOWN`, note
+     `DISCONNECTED`.
+   The experiment passes only if A, B and C all hit their endpoints. An
+   implementation that returns `UNKNOWN` unconditionally fails B; one that
+   trusts `sequence` fails C. If the only available holder is under our
+   custody, B and C run against it and the run is labelled
+   `NOT_DEMONSTRATED (holder not independent)`.
 6. Later, on a copy: `upgrade C1`; if a block attestation appears, classify
    it `…_UNVERIFIED`; choose and name a header source (§8.2) before any
    `BITCOIN_VERIFIED` line exists.
@@ -202,22 +245,33 @@ a backup.)
 Now, independent of this WRT: fix the `cli.py verify` crashes (study §3) with
 one test per branch, and the `cegis_kernel.parse_term` `eval`. After §4:
 `cli.py verify` prints the five-axis report; its embedded runners' `VERIFIED`
-lines become `verification: SELF_REFERENTIAL_CONSISTENT` because that is the
-predicate they compute. `--witness <report>` is optional and adds the other
-axes; absence is `NONE`, not failure.
+lines become `verification: method=SELF_REFERENTIAL result=<what the runner
+returned> scope=<what it checked>`, with `scope` established per runner from
+the study (e.g. colony `--audit`: `prev_epoch_hash` links only). Inputs are
+`--commitment`, the proofs, and `--holders <trusted-config>`; the report is
+recomputed, never accepted as input. Absence of proofs is `NONE`, not
+failure.
 
-### 5.5 CI grep, revised
-Fail a job when an output line contains a guarantee word from one axis while
-the same report's other axis is weaker and the line does not name it. A
-`WARNING` is acceptable output; a `VERIFIED` that hides `freshness: UNKNOWN`
-in the same tool run is not.
+### 5.5 CI check, revised
+Not a grep over prose. Each consumer parses the structured report and applies
+its own stated policy over the five fields; the job fails when the policy's
+required combination is not met, and the failure names the axis. A weak
+`freshness` never refutes a `verification.result=PASS`; it refuses only the
+combinations the consumer's policy says need freshness (e.g. adoption). A
+`WARNING` is acceptable output; a downstream line that upgrades a warned axis
+into a guarantee is not.
 
 ## 6. Custody accounting (unchanged in substance, corrected in method)
 
 Custody is a named assumption per holder, printed in the report; it is not a
 count of strings. Bitcoin: header source is the assumption. Zenodo: its
-operators and policies. GitHub `s0fractal/*` including all CI keys: one
-custody. Model sessions: hold nothing between sessions.
+operators and policies, reachable only through the §4.3 adapter. GitHub
+`s0fractal/*` including all CI keys, and any second account the owner
+controls: one custody. Codex's environment for these experiments: files on the
+owner's host, same custody. Model sessions: hold nothing between sessions. As
+of rev 3 there is **no holder outside our custody with a §3-format receipt**;
+the first experiment is expected to end `NOT_DEMONSTRATED` on the external
+half unless the Zenodo adapter is built first.
 
 ## 7. What this does not claim
 
@@ -239,8 +293,10 @@ Not a fix for black-heart's engines.
    full-node validation.
 3. **Independent holder in practice**: does a second GitHub identity count
    for anything, and what does Codex's environment retain between runs?
-4. Whether `SELF_REFERENTIAL_CONSISTENT` should be the verification value for
-   any runner that imports its engine from `sys.path` rather than embedding it.
+4. Whether `method=SELF_REFERENTIAL` should also be assigned to any runner
+   that imports its engine from `sys.path` rather than embedding it (the
+   engine bytes are then chosen by whoever controls the directory, not by the
+   artifact).
 
 ## 9. Relation to the stack
 
@@ -267,3 +323,20 @@ Codex's recommended next step (fix spec → one e2e experiment with commitment,
 real external receipt and rollback attack → only then spread) is adopted as
 §4 and the gate on §5. The black-heart `cli.py verify` fixes proceed now,
 independently.
+
+## 11. Gate round 2 — disposition (Codex, 2026-09-10, narrow AMEND)
+
+Read against `86de8e6`. All points accepted.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 0 | The §4.5 success condition let an implementation that always returns `UNKNOWN` pass; two mandatory controls needed; without an independent holder the external half is `NOT_DEMONSTRATED` and does not open the spread | **Accepted.** §4.5 rewritten as controls A/B/C, all mandatory; `NOT_DEMONSTRATED` defined in §4.3 and §6; §3 mutation test names the always-`UNKNOWN` failure. |
+| 1 | §3 had the time direction backwards; verify local `C1`, obtain receipt for `C2`, verify path `C1→C2`; a larger `sequence` without a verified link may be another branch | **Accepted.** §2.3 freshness paragraph and §3 mutation tests rewritten; control C covers the disconnected branch. |
+| 2 | `FINITE_SCOPE_VERIFIED` was pre-assigned in §4.4; the flagship check had not run; correct value `NOT_RUN`; a pinned closure names code, not outcome | **Accepted.** `verification` split into `method / result / scope`; §4.4 endpoint is `NOT_RUN`, §4.4b runs the check and requires the other axes to stay invariant. |
+| 3 | `--witness <report>` contradicted "report is not authority"; accept commitment, proofs and separately trusted holder configuration, recompute; a "published key" needs a trusted binding | **Accepted.** `report --holders <trusted-config>` in §3, caller-pinned like `.triad/bootstrap.py`; §5.4 rewritten; substitution of receipt+site+key named as the refused case. |
+| 4 | `SELF_REFERENTIAL_CONSISTENT` asserts a result; establish per runner what it checked; §5.5 should check structured fields under a consumer policy, and weak freshness must not refute correct local computation | **Accepted.** `method` is separated from `result`/`scope` (§2.3); §5.4 sets `scope` per runner from the study; §5.5 is a structured policy check, not a grep. |
+| — | Holder independence: a second account under our control adds nothing; Codex's environment is on this host; Zenodo needs a separate adapter and is not a §3 receipt | **Accepted.** §4.3 lists what does not count before running; `DEPOSITED(...)` is a distinct holding value; §6 states that no independent §3-format holder exists as of rev 3. |
+
+Codex's disposition — one more narrow AMEND, then implementation and the
+experiment — is followed: rev 3 changes protocol text only. `cli.py verify`
+and `cegis_kernel.parse_term` fixes in black-heart continue independently.
