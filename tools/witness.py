@@ -14,8 +14,8 @@ Three objects, never folded (proposals/WRT-012-ownerless-root.md §2):
 
 Axes of the report (§2.3), each independent:
 
-  verification  method / result / scope   — result is NOT_RUN until a run record
-                                            produced by `run-verifier` exists
+  verification  method / result / scope   — byte-profile results are replayed;
+                                            legacy run claims remain NOT_RUN
   time          NONE | FILE_BOUND_PENDING | BLOCK_ATTESTATION_PRESENT_UNVERIFIED
                 | UNCLASSIFIED             — this tool never emits BITCOIN_VERIFIED:
                                             it has no chain-header source
@@ -292,32 +292,65 @@ def cmd_classify(a):
 
 # ---------------------------------------------------------- verification ---
 
+BYTE_PROFILE = "warrant.byte-equality@v1"
+
+
+def checker_sha256():
+    return sha(read(__file__))
+
+
+def byte_check(policy_bytes, subject_bytes, obj):
+    """Trusted built-in predicate. No artifact-supplied code is executed."""
+    need(sha(policy_bytes) == obj["verifier"]["closure_sha256"], "POLICY_PIN")
+    policy = parse(policy_bytes)
+    need(isinstance(policy, dict) and set(policy) == {"type", "checker_sha256", "expected_sha256"}, "POLICY_SHAPE")
+    need(canonical(policy) == policy_bytes and policy["type"] == BYTE_PROFILE, "POLICY_PROFILE")
+    need(policy["checker_sha256"] == checker_sha256(), "CHECKER_CHANGED")
+    need(hex64(policy["expected_sha256"]), "EXPECTED_DIGEST")
+    need(obj["subject"]["kind"] == "file", "SUBJECT_KIND")
+    need(sha(subject_bytes) == obj["subject"]["sha256"], "SUBJECT_PIN")
+    return {"method": "EXTERNAL_CLOSURE", "result": "PASS" if sha(subject_bytes) == policy["expected_sha256"] else "FAIL",
+            "scope": "subject bytes SHA-256 equals policy.expected_sha256", "profile": BYTE_PROFILE}
+
+
+def put_operand(st, data):
+    path = st.path("operands", sha(data), "bin")
+    try:
+        write_new(path, data)
+    except FileExistsError:
+        need(read(path) == data, "OPERAND_COLLISION")
+
+
 def cmd_run_verifier(a):
-    """Execute the pinned closure on the subject; record what it returned. The
-    record is a run, not an assertion: script bytes must hash to the closure."""
+    # Refuse legacy execution BEFORE launching anything, including on retries.
+    need(a.script is None and not a.args and a.cwd is None and a.scope is None
+         and a.method == "EXTERNAL_CLOSURE", "UNBOUND_EXECUTION_UNSUPPORTED")
+    need(a.policy is not None and a.subject is not None, "POLICY_AND_SUBJECT_REQUIRED")
     st = Store(a.store)
     c, obj = load_commitment(st.path("commitments", a.commitment), a.commitment)
-    script = read(a.script)
-    need(sha(script) == obj["verifier"]["closure_sha256"], "SCRIPT_NOT_CLOSURE")
-    method = a.method
-    if method == "SELF_REFERENTIAL":
-        need(a.scope is not None, "SELF_REFERENTIAL_NEEDS_--scope")
-    argv = [sys.executable, str(Path(a.script).resolve())] + list(a.args)
-    r = subprocess.run(argv, capture_output=True, text=True, cwd=a.cwd or None)
-    scope = a.scope
-    if scope is None:
-        for line in r.stdout.splitlines():
-            if line.startswith("scope:"):
-                scope = line[len("scope:"):].strip()
-                break
-    rec = {"type": RUN_TYPE, "commitment": c, "closure_sha256": sha(script),
-           "method": method, "result": "PASS" if r.returncode == 0 else "FAIL",
-           "scope": scope or "unspecified", "exit": r.returncode, "argv": argv,
-           "stdout_sha256": sha(r.stdout.encode()), "stderr_sha256": sha(r.stderr.encode())}
+    policy_bytes, subject_bytes = read(a.policy), read(a.subject)
+    # Validate all operands before any write. Computation has no external effects.
+    ver = byte_check(policy_bytes, subject_bytes, obj)
     dst = st.path("runs", c)
-    need(not dst.exists(), "RUN_EXISTS_NEVER_OVERWRITE")
-    write_new(dst, canonical(rec))
-    print(json.dumps({k: rec[k] for k in ("commitment", "method", "result", "scope", "exit")}))
+    try:
+        write_new(dst, canonical({"type": RUN_TYPE, "commitment": c, "state": "RESERVED"}))
+    except FileExistsError:
+        raise Refused("RUN_EXISTS_NEVER_OVERWRITE")
+    # A crash leaves RESERVED; report never turns it into completed work.
+    put_operand(st, policy_bytes)
+    put_operand(st, subject_bytes)
+    rec = {"type": RUN_TYPE, "commitment": c, "state": "COMPLETE", "profile": BYTE_PROFILE,
+           "closure_sha256": sha(policy_bytes), "subject_sha256": sha(subject_bytes), "verification": ver}
+    # Only the exclusive reservation owner reaches this publication step.
+    fd, name = tempfile.mkstemp(prefix=".run-", dir=dst.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(canonical(rec)); f.flush(); os.fsync(f.fileno())
+        os.replace(name, dst)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+    print(json.dumps({"commitment": c, **ver}))
     return 0
 
 
@@ -394,8 +427,8 @@ def verify_receipt(rec_bytes: bytes, pubkey_hex: str) -> dict:
 
 # ---------------------------------------------------------------- report ---
 
-def load_holders(path) -> list:
-    cfg = parse(read(path))
+def parse_holders(data) -> list:
+    cfg = parse(data)
     need(isinstance(cfg, dict) and set(cfg) == {"holders"} and isinstance(cfg["holders"], list), "HOLDERS_SHAPE")
     out = []
     for h in cfg["holders"]:
@@ -404,6 +437,11 @@ def load_holders(path) -> list:
         need(isinstance(h["store"], str) and Path(h["store"]).is_absolute(), "HOLDER_STORE_ABSOLUTE")
         out.append(h)
     return out
+
+
+
+def load_holders(path) -> list:
+    return parse_holders(read(path))
 
 
 def walk_path(local_c: str, local_obj: dict, cj: str, sources: list, inputs: dict, max_steps: int) -> dict:
@@ -452,6 +490,7 @@ def walk_path(local_c: str, local_obj: dict, cj: str, sources: list, inputs: dic
 
 
 def build_report(store, c: str, holders_cfg, max_steps=MAX_PATH_STEPS) -> dict:
+    need(type(max_steps) is int and 1 <= max_steps <= MAX_PATH_STEPS, "PATH_LIMIT")
     st = Store(store)
     inputs = {}
     cpath = st.path("commitments", c)
@@ -461,18 +500,33 @@ def build_report(store, c: str, holders_cfg, max_steps=MAX_PATH_STEPS) -> dict:
     obj = validate_commitment(parse(cb))
     need(canonical(obj) == cb, "NOT_CANONICAL")
 
-    # verification: only from a run record whose closure matches the commitment
+    # Old run records are untrusted claims. The bounded profile is replayed
+    # from pinned operands; no result string or claimed historical execution is trusted.
     ver = {"method": "EXTERNAL_CLOSURE", "result": "NOT_RUN", "scope": None}
     rp = st.path("runs", c)
     if rp.exists():
         rb = read(rp)
         inputs[str(rp)] = sha(rb)
         run = parse(rb)
-        need(isinstance(run, dict) and run.get("type") == RUN_TYPE and run.get("commitment") == c
-             and run.get("closure_sha256") == obj["verifier"]["closure_sha256"]
-             and run.get("result") in ("PASS", "FAIL")
-             and run.get("method") in ("EXTERNAL_CLOSURE", "SELF_REFERENTIAL"), "RUN_RECORD")
-        ver = {"method": run["method"], "result": run["result"], "scope": run["scope"]}
+        need(isinstance(run, dict) and run.get("type") == RUN_TYPE and run.get("commitment") == c, "RUN_RECORD")
+        if run.get("state") == "RESERVED":
+            ver["note"] = "RUN_INCOMPLETE"
+        elif run.get("profile") != BYTE_PROFILE:
+            ver["note"] = "UNVERIFIED_LEGACY_RUN_CLAIM"
+        else:
+            need(set(run) == {"type", "commitment", "state", "profile", "closure_sha256", "subject_sha256", "verification"}
+                 and run["state"] == "COMPLETE"
+                 and run["closure_sha256"] == obj["verifier"]["closure_sha256"]
+                 and run["subject_sha256"] == obj["subject"]["sha256"], "RUN_BINDING")
+            operands = []
+            for digest in [run["closure_sha256"], run["subject_sha256"]]:
+                op = st.path("operands", digest, "bin")
+                data = read(op); inputs[str(op)] = sha(data)
+                need(sha(data) == digest, "OPERAND_PIN")
+                operands.append(data)
+            ver = byte_check(*operands, obj)
+            need(canonical(ver) == canonical(run["verification"]), "RUN_RESULT_DIVERGED")
+            ver = {**ver, "basis": "REPLAYED_NOW_NOT_HISTORICAL_ATTESTATION"}
 
     # time: from the initial receipt (and the upgraded copy if present)
     time_axis = {"status": "NONE"}
@@ -502,6 +556,7 @@ def build_report(store, c: str, holders_cfg, max_steps=MAX_PATH_STEPS) -> dict:
             inputs[str(rp_)] = sha(rb_)
             try:
                 rec = verify_receipt(rb_, h["pubkey_hex"])
+                need(rec["holder"] == h["id"], "RECEIPT_HOLDER")
             except Refused as e:
                 fresh["notes"].append({"holder": h["id"], "receipt": rp_.name, "outcome": "RECEIPT_REFUSED", "why": str(e)})
                 continue
@@ -544,12 +599,17 @@ def build_report(store, c: str, holders_cfg, max_steps=MAX_PATH_STEPS) -> dict:
     return {"type": REPORT_TYPE, "commitment": c, "stream": obj["stream"], "sequence": obj["sequence"],
             "verification": ver, "time": time_axis, "holding": holdings, "freshness": fresh,
             "adoption": "NOT_EVALUATED", "authority": "none", "network_calls": 0,
-            "inputs_sha256": dict(sorted(inputs.items()))}
+            "inputs_sha256": dict(sorted(inputs.items())),
+            "evaluation": {"tool_sha256": checker_sha256(), "max_path_steps": max_steps,
+                           "holders_value_sha256": sha(canonical(holders_cfg))}}
 
 
 def cmd_report(a):
-    holders = load_holders(a.holders)
+    config_bytes = read(a.holders)
+    holders = parse_holders(config_bytes)
     rep = build_report(a.store, a.commitment, holders, a.max_path)
+    rep["inputs_sha256"][str(Path(a.holders))] = sha(config_bytes)
+    rep["holder_config_sha256"] = sha(config_bytes)
     print(json.dumps(rep, sort_keys=True, indent=None if a.compact else 1))
     return 0
 
@@ -576,7 +636,8 @@ def main(argv=None):
 
     p = sp.add_parser("run-verifier"); p.set_defaults(fn=cmd_run_verifier)
     p.add_argument("--store", required=True); p.add_argument("--commitment", required=True)
-    p.add_argument("--script", required=True); p.add_argument("--cwd")
+    p.add_argument("--script"); p.add_argument("--cwd")
+    p.add_argument("--policy"); p.add_argument("--subject")
     p.add_argument("--method", choices=("EXTERNAL_CLOSURE", "SELF_REFERENTIAL"), default="EXTERNAL_CLOSURE")
     p.add_argument("--scope"); p.add_argument("args", nargs="*")
 

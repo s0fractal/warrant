@@ -224,46 +224,40 @@ def test_time(S, c0):
 
 # ---------------------------------------------------------------- C ---
 
+def byte_fixture(expected=b"subject"):
+    d = tmp(); subject = d / "subject"; subject.write_bytes(b"subject")
+    policy = d / "policy.json"
+    policy.write_bytes(W.canonical({"type": W.BYTE_PROFILE, "checker_sha256": W.checker_sha256(),
+                                   "expected_sha256": W.sha(expected)}))
+    S = tmp()
+    rc, out, _ = commit(S, subj=W.sha(subject.read_bytes()), closure=W.sha(policy.read_bytes()), stream=STREAM)
+    assert rc == 0
+    return S, out["commitment"], policy, subject
+
+
 def test_verification(S, c0):
-    print("\n[C] verification axis")
+    print("\n[C] replayed byte verification")
     hf = holders_file()
-    r = report(S, c0, hf)
-    chk(r["verification"] == {"method": "EXTERNAL_CLOSURE", "result": "NOT_RUN", "scope": None},
-        "NOT_RUN before any run", r["verification"])
-    script = tmp() / "v.py"
-    script.write_text("import sys\nprint('scope: counts three things')\nsys.exit(0 if sys.argv[1]=='pass' else 1)\n")
-    rc, out, _ = cli("run-verifier", "--store", S, "--commitment", c0, "--script", script, "--", "pass")
-    chk(rc == 2 and out["reason"] == "SCRIPT_NOT_CLOSURE", "script not matching closure refused", out)
-    # a fresh stream whose closure IS this script
-    S2 = tmp()
-    closure = hashlib.sha256(script.read_bytes()).hexdigest()
-    rc, out, _ = commit(S2, closure=closure, stream=STREAM)
-    c = out["commitment"]
-    rc, out, _ = cli("run-verifier", "--store", S2, "--commitment", c, "--script", script, "--", "fail")
-    chk(rc == 0 and out["result"] == "FAIL" and out["scope"] == "counts three things", "FAIL recorded with scope from stdout", out)
-    rc, out, _ = cli("run-verifier", "--store", S2, "--commitment", c, "--script", script, "--", "pass")
-    chk(rc == 2 and "RUN_EXISTS" in out["reason"], "run record never overwritten", out)
-    r = report(S2, c, hf)
-    chk(r["verification"]["result"] == "FAIL" and r["verification"]["method"] == "EXTERNAL_CLOSURE", "report reads the run")
-    rc, out, _ = commit(S2, closure=closure)
-    c2 = out["commitment"]
-    rc, out, _ = cli("run-verifier", "--store", S2, "--commitment", c2, "--script", script, "--method", "SELF_REFERENTIAL", "--", "pass")
-    chk(rc == 2 and "SELF_REFERENTIAL_NEEDS" in out["reason"], "SELF_REFERENTIAL without scope refused", out)
-    rc, out, _ = cli("run-verifier", "--store", S2, "--commitment", c2, "--script", script,
-                     "--method", "SELF_REFERENTIAL", "--scope", "prev_epoch_hash links only", "--", "pass")
-    r = report(S2, c2, hf)
-    chk(r["verification"] == {"method": "SELF_REFERENTIAL", "result": "PASS", "scope": "prev_epoch_hash links only"},
-        "SELF_REFERENTIAL carries an explicit scope", r["verification"])
-    # a run record whose closure differs from the commitment's is refused by report
-    rp = pathlib.Path(S2) / "runs" / f"{c2}.json"
-    rec = json.loads(rp.read_bytes())
-    rec["closure_sha256"] = "00" * 32
+    chk(report(S,c0,hf)["verification"]["result"] == "NOT_RUN", "NOT_RUN without execution operands")
+    script = tmp()/"v.py"; script.write_text("raise Exception('must not execute')\n")
+    rc,out,_ = cli("run-verifier","--store",S,"--commitment",c0,"--script",script)
+    chk(rc == 2 and out["reason"] == "UNBOUND_EXECUTION_UNSUPPORTED", "unbound execution refused before launch")
+    S,c,policy,subject = byte_fixture(expected=b"other")
+    rc,out,_ = cli("run-verifier","--store",S,"--commitment",c,"--policy",policy,"--subject",subject)
+    chk(rc == 0 and out["result"] == "FAIL", "negative byte comparison actually fails")
+    rc,out,_ = cli("run-verifier","--store",S,"--commitment",c,"--policy",policy,"--subject",subject)
+    chk(rc == 2 and out["reason"] == "RUN_EXISTS_NEVER_OVERWRITE", "exclusive run reservation refuses repeat")
+    chk(report(S,c,hf)["verification"]["result"] == "FAIL", "report replays actual operands")
+    rp = S/"runs"/f"{c}.json"; rec = json.loads(rp.read_bytes()); rec["verification"]["result"] = "PASS"
     rp.write_bytes(W.canonical(rec))
     try:
-        report(S2, c2, hf)
-        chk(False, "run record with foreign closure refused", "accepted")
+        report(S,c,hf)
+        chk(False,"forged result refused")
     except W.Refused as e:
-        chk(str(e) == "RUN_RECORD", "run record with foreign closure refused", str(e))
+        chk(str(e) == "RUN_RESULT_DIVERGED","forged result refused",str(e))
+    rec = {"type":W.RUN_TYPE,"commitment":c,"result":"PASS","scope":"forged","closure_sha256":"00"*32}
+    rp.write_bytes(W.canonical(rec))
+    chk(report(S,c,hf)["verification"]["result"] == "NOT_RUN", "legacy claim never grants PASS")
 
 
 # ---------------------------------------------------------------- D ---
@@ -427,10 +421,10 @@ def test_freshness(Wmod=None):
 
 def test_invariance():
     print("\n[F] invariance on frozen proofs")
-    script = tmp() / "v.py"
-    script.write_text("print('scope: one file')\n")
-    closure = hashlib.sha256(script.read_bytes()).hexdigest()
-    S, cs = chain(2, closure=closure)
+    S,c,policy,subject = byte_fixture()
+    rc,out,_ = commit(S, subj=H64, closure=W.sha(policy.read_bytes()))
+    assert rc == 0
+    cs = [c, out["commitment"]]
     h = Holder("holder-E")
     h.receive(cpath(S, cs[0]))
     h.receive(cpath(S, cs[1]))
@@ -441,14 +435,14 @@ def test_invariance():
     except ImportError:
         pass
     r1 = report(S, cs[0], hf)
-    cli("run-verifier", "--store", S, "--commitment", cs[0], "--script", script)
+    cli("run-verifier", "--store", S, "--commitment", cs[0], "--policy", policy, "--subject", subject)
     r2 = report(S, cs[0], hf)
     same = {k: r1[k] for k in r1 if k not in ("verification", "inputs_sha256")}
     same2 = {k: r2[k] for k in r2 if k not in ("verification", "inputs_sha256")}
     chk(same == same2, "all axes but verification byte-identical across the run", (same, same2))
     chk(r1["verification"]["result"] == "NOT_RUN" and r2["verification"]["result"] == "PASS", "verification moved NOT_RUN -> PASS")
-    proofs1 = {k: v for k, v in r1["inputs_sha256"].items() if "/runs/" not in k}
-    proofs2 = {k: v for k, v in r2["inputs_sha256"].items() if "/runs/" not in k}
+    proofs1 = {k: v for k, v in r1["inputs_sha256"].items() if "/runs/" not in k and "/operands/" not in k}
+    proofs2 = {k: v for k, v in r2["inputs_sha256"].items() if "/runs/" not in k and "/operands/" not in k}
     chk(proofs1 == proofs2, "proof inputs identical (no re-fetch between reports)")
     # an edited stored report changes nothing: reports are recomputed, never read
     rep_file = tmp() / "report.json"

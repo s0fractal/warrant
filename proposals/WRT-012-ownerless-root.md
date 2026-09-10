@@ -375,3 +375,21 @@ code is the current reading:
 - Receipts are written only by `receive` on the holder side (domain-separated
   Ed25519 over the canonical body), never overwrite, and chain through
   `holder_head`. Initial `.ots` receipts and run records are create-only.
+
+## 13. Review repair after 8bb3fdf (Codex)
+
+Implementation amended on `fix/wrt-012-verification-bindings`. The independent
+review found unsigned run-claim laundering, absent subject binding, a script
+mistaken for an execution closure, execution before retry refusal, holder-ID
+misattribution and an omitted trust-configuration input hash.
+
+The supported verification profile is now deliberately narrower:
+`warrant.byte-equality@v1`, a built-in byte predicate with pinned subject and
+policy. Report recomputes its result. Legacy run records confer NOT_RUN only;
+arbitrary `--script` execution is refused before launch. This does not establish
+that the original flagship PDF was substantively checked. A bound flagship
+adapter remains deferred; the old experiment is preserved as historical output.
+
+See `experiments/wrt-012-repair-001/REPORT.md` for F1–F6 dispositions, recovery
+limits, commands and measured outcomes. There is still no independent holder,
+no adoption and no opening of the per-repository rollout in §5.

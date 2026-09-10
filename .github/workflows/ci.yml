@@ -127,6 +127,11 @@ jobs:
         run: python3 tests/mcp_seal.py
       - name: ski@v1 policy predicates (truth table, real re-execution, warrant integration)
         run: python3 tests/ski_policy.py
+      - name: Witness profile bindings (offline, no external stamping)
+        run: |
+          python3 tests/witness.py
+          python3 tests/witness_bindings.py
+          python3 tests/witness_binding_mutations.py
       - name: Merkle anchoring (RFC 6962 structure, inclusion proofs, store integration)
         run: python3 tests/anchor.py
 
