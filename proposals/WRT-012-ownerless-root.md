@@ -340,3 +340,38 @@ Read against `86de8e6`. All points accepted.
 Codex's disposition — one more narrow AMEND, then implementation and the
 experiment — is followed: rev 3 changes protocol text only. `cli.py verify`
 and `cegis_kernel.parse_term` fixes in black-heart continue independently.
+
+## 12. Implementation notes (prototype, 2026-09-10) — deviations from the text above
+
+Prototype: `tools/witness.py`, harness `tests/witness.py` (49 checks, 5 mutants
+killed), experiment `experiments/wrt-012-e2e-001/` (all 9 endpoints met,
+external half `NOT_DEMONSTRATED`). Where the code differs from rev 3 text, the
+code is the current reading:
+
+- `freshness` values are `UNKNOWN | LATER_STATE_WITNESSED(holder, path, steps)`.
+  `MATCHES_AVAILABLE_WITNESS` is not emitted: a holder's receipt for `C_i`
+  itself appears on the holding axis (`EXTERNALLY_OBSERVED`) and grants no
+  freshness. Typed notes under `UNKNOWN`: `PATH_INCOMPLETE` (a link's bytes
+  are missing), `DISCONNECTED` (proven not the same chain: stream mismatch,
+  sequence inconsistency, genesis reached, or sequence reached without meeting
+  the local commitment), `LINK_TAMPERED` (bytes at an address do not hash to
+  it), `PATH_BOUND_EXCEEDED` (default bound 10 000 links), `RECEIPT_REFUSED`,
+  `STORE_UNAVAILABLE`. None grants later state.
+- The path is checked link by link: address ↔ bytes, stream equality,
+  `sequence == child − 1`, `prev` leads to a verified predecessor; the local
+  commitment is met only with `sequence == local + 1`.
+- `time` values the tool can emit: `NONE | FILE_BOUND_PENDING |
+  BLOCK_ATTESTATION_PRESENT_UNVERIFIED | FILE_BOUND_UNSUPPORTED_ATTESTATION |
+  UNCLASSIFIED`. `BITCOIN_VERIFIED` is never produced: no chain-header source.
+- `verification.result` comes only from a run record written by
+  `run-verifier`, which refuses a script whose bytes do not hash to the
+  commitment's closure; `method=SELF_REFERENTIAL` requires an explicit
+  `--scope`. A run record whose closure differs from the commitment's is
+  refused by `report`.
+- `report` takes commitment + proofs + `--holders <trusted-config>` (absolute
+  store paths, holder public keys) and nothing else; it is offline and prints
+  `authority: none`, `network_calls: 0`, and `inputs_sha256` for every byte it
+  read, so two reports on frozen proofs can be compared input by input.
+- Receipts are written only by `receive` on the holder side (domain-separated
+  Ed25519 over the canonical body), never overwrite, and chain through
+  `holder_head`. Initial `.ots` receipts and run records are create-only.

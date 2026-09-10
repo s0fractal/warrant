@@ -1,0 +1,183 @@
+{
+ "all_endpoints_met": true,
+ "endpoints": {
+  "E1": {
+   "expected": "C1 canonical bytes reproduce the digest on a second read",
+   "met": true,
+   "observed": {
+    "reread_sha256": "402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe"
+   }
+  },
+  "E2": {
+   "expected": "classify C1 = FILE_BOUND_PENDING; time_verified false; a receipt for other bytes is refused",
+   "met": true,
+   "observed": {
+    "classify": "FILE_BOUND_PENDING",
+    "wrong": "OTS_FILE_DIGEST"
+   }
+  },
+  "E3": {
+   "expected": "holder receipt for C1 verifies -> holding EXTERNALLY_OBSERVED(same-host-holder, custody github:s0fractal); external half = NOT_DEMONSTRATED (holder not independent)",
+   "met": true,
+   "observed": {
+    "external_half": "NOT_DEMONSTRATED (holder not independent)",
+    "holding": [
+     {
+      "custody": "github:s0fractal",
+      "holder": "same-host-holder",
+      "receipt_sha256": "1df8f1aa5ed73a284360a96983337373afdd6d56ad9b826a8adb0a7ca2d5ec56",
+      "status": "EXTERNALLY_OBSERVED"
+     }
+    ]
+   }
+  },
+  "E4": {
+   "expected": "report before any run: verification method=EXTERNAL_CLOSURE result=NOT_RUN",
+   "met": true,
+   "observed": {
+    "method": "EXTERNAL_CLOSURE",
+    "result": "NOT_RUN",
+    "scope": null
+   }
+  },
+  "E4b": {
+   "expected": "after run-verifier with check_claims.py --ref d83984f: result in {PASS,FAIL} recorded; every other axis byte-identical; proof inputs identical",
+   "met": true,
+   "observed": {
+    "other_axes_identical": true,
+    "proof_inputs_identical": true,
+    "verification": {
+     "method": "EXTERNAL_CLOSURE",
+     "result": "PASS",
+     "scope": "countable claims in paper.md recounted at d83984f; source identity of paper.md/references.bib/build.sh"
+    }
+   }
+  },
+  "E5A": {
+   "expected": "local stream truncated at C1, holder store WITHOUT anything after C1 -> freshness UNKNOWN and nothing stronger",
+   "met": true,
+   "observed": {
+    "notes": [],
+    "status": "UNKNOWN"
+   }
+  },
+  "E5B": {
+   "expected": "same truncated stream, holder store WITH C2 (prev=C1) -> LATER_STATE_WITNESSED(same-host-holder, path C1->C2, steps 1)",
+   "met": true,
+   "observed": {
+    "holder": "same-host-holder",
+    "notes": [
+     {
+      "candidate": "1d158cb9a046e5e7078aa1f0433a0a2a0b63777641983f9da614a0c5a84fcad5",
+      "holder": "same-host-holder",
+      "outcome": "COMPLETE",
+      "path": [
+       "1d158cb9a046e5e7078aa1f0433a0a2a0b63777641983f9da614a0c5a84fcad5",
+       "402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe"
+      ],
+      "steps": 1
+     }
+    ],
+    "path": "402f1a6bbfec->1d158cb9a046",
+    "status": "LATER_STATE_WITNESSED",
+    "steps": 1
+   }
+  },
+  "E5C": {
+   "expected": "holder store with a branch commitment of larger sequence and no path to C1 -> UNKNOWN with note DISCONNECTED, no PATH_INCOMPLETE",
+   "met": true,
+   "observed": {
+    "notes": [
+     {
+      "candidate": "14ca0dc69c4054ccb079f7aa4bfe14c0f5d1a29a3526a3e5f15d0deb635ec46d",
+      "holder": "branch-holder",
+      "outcome": "DISCONNECTED",
+      "path": [
+       "14ca0dc69c4054ccb079f7aa4bfe14c0f5d1a29a3526a3e5f15d0deb635ec46d",
+       "f88c18863cacaf9b28f35b27f65d87e7f2ee7de11257df114ea004036ac4bc50"
+      ],
+      "steps": 1,
+      "why": "sequence_reached_without_meeting_local"
+     }
+    ],
+    "status": "UNKNOWN"
+   }
+  },
+  "E6": {
+   "expected": "external half: NOT_DEMONSTRATED (no holder outside our custody); \u00a75 spread stays closed",
+   "met": true,
+   "observed": {
+    "external_half": "NOT_DEMONSTRATED",
+    "reason": "no holder outside custody github:s0fractal",
+    "spread_open": false
+   }
+  }
+ },
+ "external_half": "NOT_DEMONSTRATED",
+ "model_calls": 0,
+ "protocol_sha256": "dbef2367bb36a9974c2d20cccdd0b58340763a4a2461ebf4cf00b8e771b7b94b",
+ "resume_note": "first attempt (2026-09-10) completed steps 1-4b and stopped at step 5 with FileNotFoundError: the driver ran on `master`, where the C2 subject file (WRT-012 on the branch) does not exist. The store, the initial .ots receipt, the holder store and reports 1/2 were kept; nothing was re-stamped. E1-E4b below are re-derived from those stored artifacts on resume.",
+ "resumed": true,
+ "steps": [
+  {
+   "commitment": "402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe",
+   "step": "commit C1 (reused from first attempt)"
+  },
+  {
+   "proof_sha256": "b08f955753c40e8c6f34b859857cbb4652df1d089138536aa2edf85837b7f21a",
+   "step": "stamp C1 (initial receipt from first attempt, not re-stamped)"
+  },
+  {
+   "classification": {
+    "bitcoin_attestations": [],
+    "calendar_authenticity_verified": false,
+    "file_binding_verified": true,
+    "note": "no chain-header source; chain time is never claimed by this tool",
+    "pending_calendars": [
+     "https://alice.btc.calendar.opentimestamps.org",
+     "https://bob.btc.calendar.opentimestamps.org",
+     "https://btc.calendar.catallaxy.com",
+     "https://finney.calendar.eternitywall.com"
+    ],
+    "status": "FILE_BOUND_PENDING",
+    "time_verified": false,
+    "unsupported_attestations": []
+   },
+   "exit": 0,
+   "step": "classify C1"
+  },
+  {
+   "exit": 2,
+   "out": {
+    "authority": "none",
+    "reason": "OTS_FILE_DIGEST",
+    "status": "REFUSED"
+   },
+   "step": "classify receipt against other bytes"
+  },
+  {
+   "pubkey": "c09338718f1ac4f26f9c65edc58566d229c110161bd88e1c1a9f2b24e850c036",
+   "receipt_sha256": "1df8f1aa5ed73a284360a96983337373afdd6d56ad9b826a8adb0a7ca2d5ec56",
+   "step": "holder receipt for C1 (reused)"
+  },
+  {
+   "run": {
+    "exit": 0,
+    "method": "EXTERNAL_CLOSURE",
+    "result": "PASS",
+    "scope": "countable claims in paper.md recounted at d83984f; source identity of paper.md/references.bib/build.sh"
+   },
+   "step": "run-verifier (run record from first attempt, never re-run)"
+  },
+  {
+   "identical": true,
+   "step": "report-2 recomputed on resume: identical to stored"
+  },
+  {
+   "commitment": "1d158cb9a046e5e7078aa1f0433a0a2a0b63777641983f9da614a0c5a84fcad5",
+   "prev": "402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe",
+   "sequence": 1,
+   "step": "commit C2"
+  }
+ ]
+}
