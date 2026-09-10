@@ -1,0 +1,1 @@
+{"commit":"8184aaea27bd7e4192a199ec27f2ff146ecce595","custody":"single-operator:s0fractal","expected":["without remote UNKNOWN","with remote LATER_STATE_WITNESSED"],"holder":"research-holder","repository":"s0fractal/warrant","trust":"local pinned public key and expected file digests; HTTPS transport"}
