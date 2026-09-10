@@ -1,297 +1,269 @@
-# WRT-012 — ROOT-0.1: an ownerless trust root for the four repositories
+# WRT-012 — External witnessing and separation of control over history (rev 2)
 
-**Status: DRAFT rev 1 (2026-09-10). A plan, not a decision, not an adoption.**
-Written by the maintainer actor `claude-fable-5-1` after the owner's verbal
-"повністю зрозумів" in chat on 2026-09-10. That is authorization to write this
-plan and to prepare branches; it is not a threshold warrant, and nothing here is
-adopted (warrant `AGENTS.md` rule 2). Filed in two places on purpose: this
-file under `~/Projects/` so it survives a session ending, and as
-`proposals/WRT-012-ownerless-root.md` on branch `wrt-012-ownerless-root` in
-warrant, where the gate rounds will be appended.
+**Status: DRAFT rev 2 (2026-09-10), after gate round 1 (Codex, AMEND, §10).
+A plan and an experiment protocol, not a decision, not an adoption.**
+Written by the maintainer actor `claude-fable-5-1`. The owner's "повністю
+зрозумів" (2026-09-10) authorized writing the plan and preparing branches; it
+is not a threshold warrant (warrant `AGENTS.md` rule 2). Rev 1 was titled
+"ROOT-0.1: an ownerless trust root"; the title was too large a word and the
+record conflated several guarantees. Rev 2 keeps the direction and separates
+them. Filed as `~/Projects/ROOT-0.1-PLAN-2026-09-10.md` (durable copy) and
+`proposals/WRT-012-ownerless-root.md` on warrant branch
+`wrt-012-ownerless-root` (path kept for continuity of the branch; the word
+"ownerless" is retired in the text).
 
-Companion notes: `~/Projects/TRUST-ROOT-WITHOUT-OWNER-2026-09-10.md` (why),
-`~/Projects/BLACK-HEART-STUDY-2026-09-10.md` (what black-heart does today).
-
-Answer to the owner's question: **yes, this is the purpose spec of a new WRT in
-warrant.** Warrant is the normative repo of the stack; the other three consume
-the profile. The number 012 is free as of warrant `c25d494`.
+Companions: `~/Projects/TRUST-ROOT-WITHOUT-OWNER-2026-09-10.md` (why),
+`~/Projects/BLACK-HEART-STUDY-2026-09-10.md` (black-heart today).
 
 ---
 
-## 0. Provenance check — what already exists, so this does not duplicate it
+## 0. Provenance — what exists, and what rev 1 missed
 
-| Repo | Existing thing | What it is | What it is not |
+| Where | Existing thing | Establishes | Does not establish |
 |---|---|---|---|
-| warrant | `trust-config.json` (`genesis_roots`, `genesis_json_sha256`, actor keys) | roster trust for warrants | a root outside the roster's custody |
-| warrant | `trust/*.json` | evaluator/anchor trust sets | time-anchored or externally held |
-| warrant | WRT-010 fact provenance, WRT-011 bounded aggregation | provenance of facts inside a pack | provenance of the pack's *verdict* |
-| sigma-glyph | SA-5 / SA-5b | honest count: 2-of-3 satisfied by one custody | a remedy |
-| sigma-glyph + warrant | `x1-cross-repo.yml` | HEAD-vs-HEAD coupling canary, daily | a record that either repo *holds* the other's head |
-| manifesto | embedded-claims: `verifier` closure digest, `dep.sha256` | external verifier identity and operand pin | a time anchor or a holding |
-| black-heart | `continuation/x0000_check.py` anchor | the one externally supplied anchor in that repo | used by any of the 35 engines |
-| black-heart | everything else | trust roots read from the artifact; secret keys inside artifacts | a root |
+| `.triad/experiments/external-timestamp-001` | a real OTS submission of a commitment (`commitment.json`, `initial.ots`), two calendar paths, and in `followup-003` a **BitcoinBlockHeaderAttestation at height 966087** | a commitment digest was submitted; a block attestation was later supplied by calendar Alice | chain verification (`ots verify` exited 1: no node); latest head; custody |
+| `.triad/continuity/ots_receipt_status.py` | offline receipt classifier | `file_binding_verified`, `FILE_BOUND_PENDING` vs `BLOCK_ATTESTATION_PRESENT_UNVERIFIED`; `time_verified:false` on both; `calendar_authenticity_verified:false`; `latest_head_discovery:false` | time; authenticity; freshness — and it says so in every output |
+| `.triad/continuity/bootstrap.py` | history observation against a caller-pinned witness snapshot | `LATER_HISTORY_WITNESSED`, `MATCHES_AVAILABLE_WITNESS`, `WITNESS_UNAVAILABLE`, fork refusal; 14 CLI controls incl. **the undetectable joint rollback** | complete history; recoverable bytes; freshness beyond the supplied witness |
+| `.triad/continuity/history_receipt.py` | links a commitment head into observed history | `LOCAL/WITNESSED_TIP` vs `_ANCESTOR` vs `UNLINKED`, `admission: NOT_EVALUATED` | time credit; completeness |
+| black-heart `continuation/x1002_task_journal.py` + `continuation-task-002` | checkpoint pinning implementation digests; restore refuses 10 named divergences | detection of edits to journal/task/implementation | **old journal + old checkpoint is accepted by design** (joint rollback, again) |
+| warrant `trust-config.json`, `trust/*.json`, WRT-010, WRT-011 | roster trust; fact provenance; bounded aggregation | provenance inside a pack | any witness outside the roster's custody |
+| sigma-glyph SA-5 / SA-5b | honest custody count | 2-of-3 satisfied by one custody | a remedy |
+| manifesto embedded-claims | `verifier` closure digest, `dep.sha256` | external verifier identity, operand pin | time; holding |
+| Zenodo deposits `10.5281/zenodo.22172098`, `…22646920` | institutional custody of *those* bytes | those bytes exist under Zenodo's policies | custody of any later commitment or verifier closure |
 
-Search on 2026-09-10 for `opentimestamps`, `ots`, `timestamp authority`,
-`zenodo` in warrant `SPEC.md`, `THREAT-MODEL.md`, `ARCHITECT.md`,
-`PUBLISHING.md`, `proposals/*.md`: **no hits.** Nothing in the stack anchors a
-digest in proof-of-work time or records an independent holding. That is the
-gap this WRT fills, and nothing else.
+Rev 1's §0 claimed the stack had no OTS prior art. Wrong: `.triad` had
+submitted, classified and linked a real receipt two days earlier. The rev 2
+design reuses its axis vocabulary rather than inventing a parallel one.
 
-## 1. The fulcrum, in one sentence
+## 1. The direction, restated without the big word
 
-Every verdict word emitted by the stack (`VERIFIED`, `SETTLED`, `SOUND`,
-`REPLAYED`, `ADOPTED`) must name a **root record** whose digest is held
-outside the emitting repository, by at least one holder the emitting
-repository cannot change, or the tool prints `UNROOTED`.
+The verifier of an artifact should be able to obtain evidence about that
+artifact's past from a party other than whoever hands the verifier its current
+environment. Today, in all four repos, the environment and the evidence come
+from the same hand. This WRT separates:
 
-Two ownerless holders exist today at zero cost:
+1. the **commitment** (what is claimed to have existed),
+2. **proofs** about the commitment, each from a different party with a named
+   trust assumption,
+3. a **report** that states each proof's outcome on its own axis and never
+   folds them.
 
-- **Bitcoin time** via OpenTimestamps (`ots` v0.7.2 is installed on the
-  maintainer host). Gives "digest D existed not later than block N". Nobody
-  can edit the block or revoke the attestation.
-- **Zenodo** as independent institutional custody. Warrant's flagship is
-  already deposited as `10.5281/zenodo.22172098`; sigma-glyph's paper v2 as
-  `10.5281/zenodo.22646920`. Zenodo records file checksums it computed itself.
+"Ownerless" is retired. Bitcoin time has no key to revoke, but header trust is a
+choice; Zenodo has operators and policies; a verifier digest is chosen by
+someone. The honest claim is *external* and *separated*, not *ownerless*.
 
-A third source is not a holder but a recomputation: the **verifier closure
-digest** (manifesto already emits `settle-gate://sha256:…`). Nobody owns a
-digest; it is matched or not.
+## 2. Three objects, not one
 
-## 2. ROOT-0.1 record
-
-One JSON document, canonical (sorted keys, compact separators, UTF-8, no
-floats), content-addressed by its own SHA-256.
+### 2.1 Commitment (immutable, content-addressed, what gets stamped)
 
 ```json
-{
-  "schema": "root.v0.1",
-  "subject": {"kind": "git-commit | file | bundle | warrant-record",
-              "sha256": "<64 hex>", "ref": "<human pointer, informative>"},
-  "verifier": {"closure_sha256": "<64 hex>", "ref": "<tool path@commit>"},
-  "time": {"kind": "ots", "proof_sha256": "<64 hex of the .ots file>",
-           "status": "PENDING | BITCOIN(<height>) | UNCHECKED"},
-  "holdings": [
-    {"holder": "zenodo:10.5281/zenodo.NNN", "holder_head": "<zenodo file checksum>",
-     "observed": "<ISO date>", "custody": "zenodo"},
-    {"holder": "git:s0fractal/sigma-glyph", "holder_head": "<commit sha>",
-     "observed": "<ISO date>", "custody": "github:s0fractal",
-     "sig": "<ed25519 over this holding by that repo's CI key, optional>"}
-  ],
-  "prev": "<sha256 of the previous root record for this subject line | null>"
-}
+{"type": "warrant.commitment@wrt012-dev",
+ "subject": {"kind": "git-commit|file|bundle|warrant-record", "sha256": "<64hex>"},
+ "verifier": {"closure_sha256": "<64hex>"},
+ "stream": "<64hex stream id>", "sequence": 17, "prev": "<64hex|null>"}
 ```
 
-Rules:
+Canonical JSON (sorted keys, compact, UTF-8, no floats). Its SHA-256 is the
+commitment digest `C`. **Nothing about proofs is inside it.** That removes rev
+1's cycle (a record containing the hash of the `.ots` that stamps the record).
 
-- `subject.sha256` is what a verdict is about. A verdict without a matching
-  `subject.sha256` is not rooted by this record.
-- `time.status` is exactly what `ots` can prove. `PENDING` = calendar
-  attestation only; `BITCOIN(h)` = `ots verify` succeeded against a Bitcoin
-  header source; `UNCHECKED` = `.ots` present, no header source available at
-  check time. The label never outruns the predicate.
-- `holdings[].custody` is a free string, but the **custody count** is the
-  number of *distinct* custody strings, and the honest count for the four repos
-  under one GitHub account is **1**, plus Zenodo = **2**. This is SA-5's
-  counting rule applied to holdings.
-- `prev` makes the record line append-only per subject line. A record with a
-  `prev` that does not resolve is `UNROOTED`.
+### 2.2 Proofs (separate files, each about `C`)
 
-Verdict vocabulary emitted by `root.py check`:
-
-```
-ANCHORED(block N)            time.status == BITCOIN(N)
-ANCHORED_PENDING             time.status == PENDING
-HELD_BY(n, custodies m)      len(holdings), distinct custody
-UNROOTED                     no record, subject mismatch, broken prev, or verifier mismatch
-```
-
-No truth semantics. Binding (WRT-010) and settlement (WRT-005) stay separate.
-
-## 3. The tool — `tools/root.py`, one file, stdlib + `ots` CLI
-
-Target ≤ 250 lines, Python 3.11, zero third-party imports (warrant policy).
-Four verbs:
-
-| Verb | Input | Output | Notes |
+| Proof | File | Produced by | Trust assumption named in the report |
 |---|---|---|---|
-| `stamp <path\|sha256>` | subject bytes or digest | `<name>.ots` (pending) + a root record with `time.status=PENDING` | shells out to `ots stamp`; digests are public information, nothing else leaves the host |
-| `upgrade <record>` | record with pending `.ots` | record with `BITCOIN(h)` or unchanged | `ots upgrade` then `ots verify`; without a header source, sets `UNCHECKED`, never `BITCOIN` |
-| `hold <record> --holder <id> --head <sha> --custody <str>` | a record + one holding | new record with `prev` = old | append-only; refuses to rewrite |
-| `check <record> --subject <sha256> [--verifier <sha256>]` | record + what the caller is about to call verified | one verdict line from §2 | exit 0 on ANCHORED*/HELD_BY, exit 2 on UNROOTED |
+| time | `C.ots` | `ots stamp` on the commitment bytes | calendars; then a chosen chain-header source |
+| holder receipt | `<holder>/receipts/<C>.json` | **the holder**, in the holder's own store | that store is not under the committer's control |
+| verifier recomputation | none (recomputed) | anyone with the pinned closure | the closure choice |
 
-Mutation tests shipped with it (the "burn it" rule): edit `subject.sha256` →
-UNROOTED; drop `prev` link → UNROOTED; relabel `PENDING` as `BITCOIN` by hand →
-`check` recomputes from the `.ots` bytes and refuses; add two holdings with the
-same custody string → custody count stays 1.
+### 2.3 Report (derived, never authoritative)
 
-Header-source question (open, §8): `ots verify` needs a Bitcoin node or a
-trusted header set. CI has neither. Proposal: pin `tools/bitcoin-headers.json`
-with `{height, merkle_root, block_hash}` for the specific blocks cited, fetched
-by the maintainer from two independent explorers and committed; `check` uses
-that set, and states `UNCHECKED` for any height not in it. Adding a header is a
-reviewable diff, which is the point.
+```
+verification:  FINITE_SCOPE_VERIFIED | SELF_REFERENTIAL_CONSISTENT | FAILED | NOT_RUN
+time:          FILE_BOUND_PENDING | BLOCK_ATTESTATION_PRESENT_UNVERIFIED | BITCOIN_VERIFIED(<height>, source=<name>) | NONE
+holding:       EXTERNALLY_OBSERVED(<holder>, custody=<name>) ... | NONE
+freshness:     UNKNOWN | LATER_STATE_WITNESSED(<holder>) | MATCHES_AVAILABLE_WITNESS
+adoption:      NOT_EVALUATED | <roster warrant id>
+```
 
-## 4. Per-repository modification plan
+Axes are independent. A correct local computation is `FINITE_SCOPE_VERIFIED`
+with `time: NONE`; a wrong one stamped in Bitcoin is `FAILED` with
+`time: BITCOIN_VERIFIED`. The time axis attests existence, not correctness,
+and the report is built so that it cannot say otherwise. `verification` for
+black-heart's embedded runners is `SELF_REFERENTIAL_CONSISTENT` by
+construction (study §4), not `FINITE_SCOPE_VERIFIED`; that is the one place
+where rev 1's instinct to demote the label was right, and it is done on the
+verification axis, not by overwriting it with a holding word.
 
-Each step is independently landable and independently useful. Order matters
-only within a repo.
+`freshness` reuses `.triad/continuity/bootstrap.py` semantics: it is `UNKNOWN`
+unless a holder's later receipt for the same `stream` is presented and
+verified; `MATCHES_AVAILABLE_WITNESS` explicitly does not exclude a joint
+rollback of committer and witness (the `.triad` case, and black-heart
+task-002's accepted rollback). Latest-head discovery is a separate protocol
+(§8.1) and this WRT does not claim it.
 
-### 4.1 warrant (normative; the profile lives here)
+Composition policy (which combinations a consumer accepts) is the consumer's,
+stated per repo in §4. Warnings are allowed; what is refused is a downstream
+line that upgrades a warned axis into a guarantee.
 
-1. `proposals/WRT-012-ownerless-root.md` — this document, on branch
-   `wrt-012-ownerless-root`. Gate rounds appended as §10+ in the WRT-010 style.
-2. `tools/root.py` + `tests/test_root.py` (mutations above) on the same branch.
-3. `holdings/README.md` + first records: subject = warrant flagship bytes at
-   `d83984f`; holdings = Zenodo checksum (custody `zenodo`) + sigma-glyph HEAD
-   (custody `github:s0fractal`). Stamp with `ots`. This produces the first
-   record whose honest line reads `ANCHORED_PENDING; HELD_BY(2, custodies 2)`.
-4. `.github/workflows/hold.yml` (weekly, `workflow_dispatch`): `git ls-remote`
-   the other three repos' `master`/`main` heads, run `root.py hold`, `ots
-   stamp` the new record, commit to branch `holdings` (**not** `master`,
-   `AGENTS.md` rule 1), open no PR. The branch is append-only by `prev`.
-5. Verdict grep: in `ci.yml`, after the existing suites, run the verify surface
-   (`impl/` verify command over `examples/`) and fail if any output line
-   matching `VERIFIED|SETTLED|ADOPTED` lacks `root=<sha256>`; run once more
-   with no record and assert `UNROOTED` appears.
-6. `SPEC.md`: no change in rev 1. The profile is additive; SPEC changes, if
-   any, come after a gate round says the record format is stable.
+## 3. The tool — `tools/witness.py` (rename from `root.py`)
 
-Not changed: WarrantID, signature construction (DEC-001 territory), roster
-policy, settlement rules.
+Stdlib + `opentimestamps` library where the OTS-enabled interpreter is
+available (`.triad` uses `/opt/homebrew/opt/python@3.14/bin/python3.14`); the
+`ots` CLI for submission only. Verbs:
 
-### 4.2 sigma-glyph (governance consumer)
-
-1. `SECURITY-ASSUMPTIONS.md` SA-5: add one paragraph and one column: for each
-   adoption in `.warrants/records/`, the holdings count and custody count from
-   its root record, or `UNROOTED` if none. Today every row reads `UNROOTED`;
-   that is the truthful starting line.
-2. `.github/workflows/hold.yml` mirror of warrant's (§4.1.4).
-3. `.warrants/records/`: adoption records get `ots stamp` at adoption time
-   (the maintainer's one non-delegable command, SA-5b, gains one more line).
-4. Verdict grep on the arbiter's output (`ADOPTED`, `SETTLED`).
-
-Not changed: the arbiter, the three-inputs/receipt design (v0.7.0), PyPI
-release process.
-
-### 4.3 manifesto (execution consumer)
-
-1. `drafts/embedded-claims-poc/claims.py run`: after the vector report, compute
-   the compiled-bundle digest (already available as the runner's bundle id),
-   `root.py stamp` it, write the `.ots` and record under
-   `drafts/embedded-claims-poc/anchors/`. Report gains one document-level line:
-   `root: ANCHORED_PENDING | UNROOTED`. Per-record verdicts (`REPLAYED`,
-   `MISMATCH`, `STALE`) are unchanged and still carry no document-level truth.
-2. `embedded-claims-poc.yml`: run with `--root`, keep `--strict` semantics.
-3. `.github/workflows/hold.yml` mirror.
-4. Verdict grep on `REPLAYED` lines: each must be followed by the bundle's
-   root line in the same report.
-
-Not changed: capsule.v2 schema, verifier closure identity, `KNOWN_CLASSES`.
-
-### 4.4 black-heart (the repo that needs it most)
-
-Precondition, from the study §3: `cli.py verify` currently crashes or
-mis-sniffs for nearly every document type. `--root` gating a function that
-raises `ImportError` proves nothing. So:
-
-0. Fix exactly the crashes, not the engines: `polyglot.py:234` and
-   `monad.py:699/701` tuple-unpack → use `EvalResult` fields; `cli.py:151`
-   `LivingLedger.verify()` → call the ledger's chain/signature checks that
-   exist; `cli.py:126/135` import `audit_self`/`audit_zkp` → call the library
-   auditors that exist or drop those branches; `cli.py:155/164` manifest
-   prefixes → match what compilers emit; drop `Colony.load_from_polyglot`.
-   Add one test per branch that compiles a fresh document and runs
-   `cli.py verify` on it. This is a bounded PR.
-1. `cli.py verify --root <record>` **required**; without it the command prints
-   `UNROOTED` and exits 2, the same fail-closed shape `adjudicate` already has
-   with `--pinned-author-pk`. `--allow-unrooted` exists for demos and prints
-   `UNROOTED` on every line anyway.
-2. Runner templates: every `print("... VERIFIED ...")` / `SOUND` / `Q.E.D.` in
-   the embedded runners becomes `print(f"... {verdict}")` where `verdict` is
-   `UNROOTED` unless the runner was given a record via argv. This is a
-   mechanical edit across the runner strings; the study lists them.
-3. `holdings/` + `hold.yml` mirror; black-heart's first holding is the other
-   three repos' heads, and its first stamped subject is the study's HEAD
-   `1bf7ad3`.
-4. Verdict grep over `python3 test_all.py` output and over every
-   `examples/*.pdf` executed with `--audit`: no `VERIFIED|SOUND|SETTLED|Q.E.D.`
-   without `root=`.
-
-Not changed in this WRT: the 35 engines' internals, secret-key-in-artifact
-(separate finding, separate PR), `cegis_kernel.parse_term` `eval` (separate,
-one-line fix, should land first).
-
-## 5. Custody accounting — the honest table to maintain
-
-| Holder | Custody string | Independent of the four repos? |
+| Verb | Does | Refuses |
 |---|---|---|
-| Bitcoin (via ots) | `bitcoin` | yes, but time only; not a holder of bytes |
-| Zenodo | `zenodo` | yes |
-| GitHub `s0fractal/*` incl. all CI keys | `github:s0fractal` | no, one custody for all four |
-| Codex / Gemini / Kimi sessions | none | they hold nothing between sessions (study, Kimi dialogue) |
+| `commit` | writes a commitment (§2.1) for a subject, `prev` = last commitment in that stream | a `prev` that is not the current tip of the local stream |
+| `stamp C` | `ots stamp` the commitment bytes; stores `C.ots` beside it | re-stamping an existing `C.ots` (never overwrite the initial receipt; `.triad` rule) |
+| `classify C` | `.triad` classifier verbatim on `C` + `C.ots` → time axis | any mismatch of pinned digests |
+| `upgrade C` | `ots upgrade` on a **copy**; if a block attestation appears, `BLOCK_ATTESTATION_PRESENT_UNVERIFIED`; `BITCOIN_VERIFIED` only after header check against a named source | `--no-bitcoin` as a way to print VERIFIED |
+| `receipt C --as <holder>` | **run by the holder**: writes `{holder, C, holder_head, observed}` signed by the holder's key into the holder's store, and returns the receipt digest | a receipt for a `C` the holder cannot fetch and re-hash |
+| `report C [--receipt path...] [--witness path]` | builds §2.3; each receipt is fetched from the holder's store by the *verifier*, re-hashed, signature checked against the holder's published key | a receipt supplied by the committer alone (it is counted as `holding: NONE` with a note) |
 
-Honest line for any record today: `HELD_BY(n, custodies ≤ 2)`. A third custody
-appears only when an outside party runs `root.py hold` on our heads from their
-own repo or ledger. That is the invitation the owner made to Kimi; it becomes
-real only as a record in *their* store.
+`hold --holder --head --custody` from rev 1 is removed: it recorded the
+committer's claim about a holder, which is worth nothing. Observing a
+sibling's HEAD by `git ls-remote` is *our* observation of *them*; it is not
+their holding of *us*. A holding exists only as a receipt in the holder's
+store. Custody independence is not the count of distinct strings; it is a
+named assumption per holder in the report, and the honest number for the four
+GitHub repos under one account is one.
 
-## 6. Order and cost
+Mutation tests: flip one byte of the commitment → `COMMITMENT_PIN` refusal;
+edit `prev` → refusal; relabel `PENDING` as `BITCOIN_VERIFIED` in a stored
+report → `report` recomputes from bytes and disagrees; present a
+committer-authored receipt → `holding: NONE`; present a holder receipt for an
+older `C` in the same stream → `freshness: LATER_STATE_WITNESSED` on the
+older one, and the newer one stays `UNKNOWN` (that is the torn-end limit,
+stated, not hidden).
 
-| Step | Where | Size | Depends on |
-|---|---|---|---|
-| A | warrant §4.1.1–2 (WRT + tool + tests) | 1 day | nothing |
-| B | warrant §4.1.3 first record | 1 hour | A, `ots` on maintainer host |
-| C | black-heart §4.4.0 verify fixes | ½ day | nothing (can run parallel to A) |
-| D | `hold.yml` ×4 | ½ day | A |
-| E | consumers §4.2–4.4.1–2 | 1 day | A, C |
-| F | verdict grep ×4 | ½ day | E |
-| G | gate round on WRT-012 (OpenRouter, normative → per multifamily policy) | 1 round | A–F on branches |
+## 4. One end-to-end experiment before any policy spreads
 
-If the session ends after any row, the rows above it stand on their own: A is a
-proposal plus a tool; B is one real anchored record; C is a bug-fix PR
-black-heart needs regardless.
+Per gate round 1: prove the objects on one stream before touching four CIs.
+Predeclared in `protocol.json` before running, `.triad` style.
+
+**Stream:** warrant flagship release bytes at `d83984f` (subject) with the
+current settle verifier closure (verifier).
+
+**Steps and predeclared endpoints:**
+
+1. `commit` → `C1`. Endpoint: canonical bytes reproduce `C1` on a second
+   interpreter.
+2. `stamp C1` → `C1.ots`. Endpoint: `classify` = `FILE_BOUND_PENDING`, altered
+   commitment refused. (Submits one digest to two calendars; nothing else
+   leaves the host. Same footprint as `.triad` external-timestamp-001.)
+3. Holder receipt from a store the committer does not write to. Two
+   candidates, both to be tried: (a) Zenodo, by depositing `C1` as a new
+   version with Zenodo's own checksum as `holder_head`; (b) a **second GitHub
+   account or organisation** the owner does not push from, or Codex's
+   environment if it has one. If neither exists, the endpoint records
+   `holding: NONE` and the experiment still runs. A holding from
+   `s0fractal/sigma-glyph` is recorded with custody `github:s0fractal` and
+   counted as **not independent**.
+4. `report C1`. Endpoint: axes read exactly `FINITE_SCOPE_VERIFIED /
+   FILE_BOUND_PENDING / <as obtained> / UNKNOWN / NOT_EVALUATED`.
+5. **Rollback attack.** Produce `C2` (sequence 18, prev `C1`), stamp it, obtain
+   a holder receipt for `C2`. Then present the verifier with the stream
+   truncated at `C1` plus `C1.ots` plus `C1`'s receipt. Endpoint: with only
+   the committer's material, `freshness: UNKNOWN` (the attack is *not*
+   detected, and the report says so); with the holder's store fetched,
+   `freshness: LATER_STATE_WITNESSED(holder)`. Both outcomes are the
+   predeclared result; the experiment fails only if the first case prints
+   anything stronger than `UNKNOWN`.
+6. Later, on a copy: `upgrade C1`; if a block attestation appears, classify
+   it `…_UNVERIFIED`; choose and name a header source (§8.2) before any
+   `BITCOIN_VERIFIED` line exists.
+
+Recorded under `warrant/experiments/wrt-012-e2e-001/` with `SHA256SUMS`,
+exact commands, zero model calls.
+
+## 5. Per-repo plan — gated on §4
+
+Nothing below starts until §4 has run and its report is in the branch.
+
+### 5.1 warrant
+WRT-012 rev 2 (this) + `tools/witness.py` + tests + the §4 experiment.
+`SPEC.md` unchanged. Consumers' composition policy lives in each consumer.
+
+### 5.2 sigma-glyph
+SA-5 gains a per-adoption line with the five axes; every row today reads
+`holding: NONE, freshness: UNKNOWN`. Adoption records get `commit`+`stamp` at
+adoption time (SA-5b's one non-delegable command gains one line). No arbiter
+change.
+
+### 5.3 manifesto
+`claims.py run` gains `--commit`: the compiled-bundle digest becomes a
+commitment, stamped, classified; the report's document-level line carries the
+five axes. Per-record `REPLAYED/MISMATCH/STALE` unchanged. Retirement norm:
+keep commitment + `.ots` + receipts; the report is derivable and removable.
+(Rev 1 §9 said the `.ots` could restore a lost JSON. It cannot; a hash is not
+a backup.)
+
+### 5.4 black-heart
+Now, independent of this WRT: fix the `cli.py verify` crashes (study §3) with
+one test per branch, and the `cegis_kernel.parse_term` `eval`. After §4:
+`cli.py verify` prints the five-axis report; its embedded runners' `VERIFIED`
+lines become `verification: SELF_REFERENTIAL_CONSISTENT` because that is the
+predicate they compute. `--witness <report>` is optional and adds the other
+axes; absence is `NONE`, not failure.
+
+### 5.5 CI grep, revised
+Fail a job when an output line contains a guarantee word from one axis while
+the same report's other axis is weaker and the line does not name it. A
+`WARNING` is acceptable output; a `VERIFIED` that hides `freshness: UNKNOWN`
+in the same tool run is not.
+
+## 6. Custody accounting (unchanged in substance, corrected in method)
+
+Custody is a named assumption per holder, printed in the report; it is not a
+count of strings. Bitcoin: header source is the assumption. Zenodo: its
+operators and policies. GitHub `s0fractal/*` including all CI keys: one
+custody. Model sessions: hold nothing between sessions.
 
 ## 7. What this does not claim
 
-- Not a consensus, not a mesh, not a network. Two holders and a clock.
-- Not authenticity of content. `ANCHORED` says "existed by block N", `HELD_BY`
-  says "these others recorded this digest". Neither says the artifact is
-  correct, and `check` never emits a word that implies it.
-- Not a fix for black-heart's self-attestation family by itself. It is the
-  external root that family lacked; the family's per-engine defects remain and
-  are listed in the study.
-- Not a replacement for roster warrants. Adoption stays a threshold warrant;
-  this WRT gives adoption records a root they currently do not have.
+Not consensus, not a mesh. Not correctness from time. Not freshness from
+`prev`: `prev` verifies a supplied chain and cannot reveal a hidden
+continuation or equivocation between successors; only a holder's later receipt
+can, and only for holders the verifier reaches independently. Not adoption.
+Not a fix for black-heart's engines.
 
-## 8. Open questions (for the gate)
+## 8. Open questions (for gate round 2)
 
-1. Header source for `ots verify` in CI (§3). Pinned header set vs.
-   `UNCHECKED` forever vs. a maintainer-run `upgrade` step.
-2. `holdings` branch written by CI: same custody as `master`; is a branch the
-   right store, or should holdings be artifacts attached to releases?
-3. Should `hold` require a signature by the holding repo's CI key? It adds no
-   custody (same account) but does bind the holding to that repo's commit line.
-4. Zenodo holding: the checksum Zenodo records is MD5 for older deposits. A
-   holding whose `holder_head` is MD5 is weaker than SHA-256; state it, or
-   re-deposit with a SHA-256 manifest inside the file.
-5. Whether `UNROOTED` should fail warrant's CI on day one (it will fail
-   everywhere) or be a warning for one release cycle. Recommendation: fail,
-   because a warning is a label wider than its predicate.
+1. **Latest-head discovery** as its own protocol: which holders to query, how
+   a verifier learns of them without the committer's help. `.triad`'s
+   `bootstrap.py` witness snapshot is the current answer and it is
+   caller-pinned, i.e. still supplied by someone.
+2. **Header source** for `BITCOIN_VERIFIED`: local node (none available), or
+   a named public explorer pair with the trust assumption printed. The
+   `.triad` followup-003 note applies: never label explorer comparison as
+   full-node validation.
+3. **Independent holder in practice**: does a second GitHub identity count
+   for anything, and what does Codex's environment retain between runs?
+4. Whether `SELF_REFERENTIAL_CONSISTENT` should be the verification value for
+   any runner that imports its engine from `sys.path` rather than embedding it.
 
-## 9. Relation to the rest of the stack
+## 9. Relation to the stack
 
-- WRT-010 (fact provenance) says where a fact came from; WRT-012 says where the
-  *verdict about the pack* can be checked from outside. They compose: a pack's
-  provenance document is a natural `subject`.
-- WRT-005 settlement fingerprints get a `subject` line each; settlement stays
-  the same, its record gains a time.
-- manifesto's controlled-forgetting norm: a root record is derivable from its
-  `.ots` and holdings, so records are removable in the norm's sense only if the
-  `.ots` bytes are kept. Keep the `.ots`; forget the JSON if needed.
-- Decision-archaeology loop: this WRT is the resolve step for a need that was
-  never filed as a need. File `needs/NEED-004-external-root.md` alongside, so
-  the loop has its case→need→resolve shape.
+WRT-010 says where a fact came from; WRT-012 says where evidence about the
+pack's past can be fetched from outside the pack's supplier. WRT-005 settlement
+records are natural subjects. `.triad/continuity` is the reference
+implementation of the time and freshness axes; this WRT should import, not
+reimplement, its classifier.
 
-## 10. Gate rounds
+## 10. Gate round 1 — disposition (Codex, 2026-09-10, AMEND)
 
-*(appended in place as they happen; none yet)*
+Read against `4d4c6c5`. All six points accepted; two with a refinement.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | External witness must not replace the verification result; keep independent axes; a warning is not by itself an overclaim | **Accepted.** §2.3 axes. Refinement: for black-heart's embedded runners the verification axis value is `SELF_REFERENTIAL_CONSISTENT` because that is the predicate they compute; the demotion is on the right axis now, not by overwriting with `UNROOTED`. |
+| 2 | `prev` + Bitcoin do not solve the torn end; a stamped old checkpoint cannot reveal a newer one; need latest-state discovery | **Accepted.** `freshness` axis with `.triad` semantics; §4 step 5 makes the undetected case a predeclared endpoint; §8.1 keeps discovery as a separate protocol. |
+| 3 | `hold` counted our claims; `ls-remote` observes the sibling, does not prove the sibling holds us; custody ≠ distinct strings; old Zenodo deposit ≠ custody of a new record | **Accepted.** `hold` removed; receipts are written by the holder in the holder's store and fetched by the verifier (§3); custody is a named assumption (§6); Zenodo counts only for bytes it holds (§0). |
+| 4 | Circularity between record and `.ots`; split commitment / proofs / report; a hash is not a backup | **Accepted.** §2; rev 1 §9 corrected in §5.3. |
+| 5 | "Ownerless" is too big a word; profile can live in warrant, mandating it elsewhere needs separate acceptance | **Accepted.** Title and §1 rewritten; §5 gated on §4 and on each repo's own adoption. |
+| 6 | `.triad` already did the OTS submission, receipt classification, and head linkage; §0 must cite it | **Accepted, and it was my miss.** §0 rewritten; §3 imports the classifier; §4 reuses the experiment shape. |
+
+Codex's recommended next step (fix spec → one e2e experiment with commitment,
+real external receipt and rollback attack → only then spread) is adopted as
+§4 and the gate on §5. The black-heart `cli.py verify` fixes proceed now,
+independently.
