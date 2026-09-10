@@ -46,3 +46,7 @@ Holder secret keys were generated outside the repository (`/private/tmp/wrt012-e
 1. Later, on a copy: `witness.py upgrade` C1; classify; if a block attestation appears, choose and name a header source before any chain-time claim (same rule as `.triad` followup-003).
 2. A holder outside custody `github:s0fractal`. Candidates in WRT-012 §4.3: a Zenodo adapter (`DEPOSITED`, institutional bytes, not a §3 receipt), or a party running `witness.py receive` on their own machine with their own key, whose public key enters our configuration by a channel we can name.
 3. Only after 2: revisit §5 per repository, each under its own acceptance.
+
+Maintenance after the recorded run: the driver default key directory now uses
+the operator home rather than a predictable shared temporary path. Recorded
+outputs are unchanged; the original driver is available at commit 8bb3fdf.

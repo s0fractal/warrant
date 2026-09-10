@@ -24,7 +24,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 TOOL = ROOT / "tools" / "witness.py"
 PAPER = ROOT / "papers" / "the-reason-runs-again"
-KEYDIR = pathlib.Path(os.environ.get("WRT012_KEYDIR", "/private/tmp/wrt012-e2e-001-keys"))
+KEYDIR = pathlib.Path(os.environ.get("WRT012_KEYDIR", str(pathlib.Path.home() / ".local" / "share" / "warrant" / "wrt012-e2e-001-keys")))
 
 SUBJECT = "da2f5506e315cb2243eac2700dc7898c2b52930f667963304e0db7904b13a111"   # the-reason-runs-again.pdf (deposited/SHA256SUMS)
 CLOSURE = hashlib.sha256((PAPER / "check_claims.py").read_bytes()).hexdigest()
