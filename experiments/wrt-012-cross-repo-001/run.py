@@ -19,7 +19,11 @@ SOURCE = '816d36bed9e156ca1913ac45adbbe2b1ec8d2048'
 
 
 def git(path, *args):
-    return subprocess.check_output(['git', '-C', str(path), *args], stderr=subprocess.PIPE)
+    directory = Path(path).resolve(strict=True)
+    if not directory.is_dir():
+        raise ValueError('Git working directory must be a directory')
+    return subprocess.check_output(['git', *args], cwd=directory,
+                                   stderr=subprocess.PIPE, timeout=30)
 
 
 def main():

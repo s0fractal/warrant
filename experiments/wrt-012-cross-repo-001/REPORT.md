@@ -89,3 +89,11 @@ python3 -B experiments/wrt-012-cross-repo-001/network_readback.py --output /tmp/
 This follow-up makes six bounded public HTTP reads; it performs no remote writes.
 The receiver's expected manifest and public key remain local trusted inputs.
 It cannot detect their joint rollback and does not discover a newest GitHub head.
+
+## Git invocation repair
+
+Sonar flagged the CLI repository path flowing into command arguments. The driver
+now resolves an existing directory and passes it as subprocess cwd; Git command
+arguments remain fixed by the driver. Git calls have a 30-second deadline.
+The updated driver passes all eight endpoints and both mutation assertions.
+Historical evidence retains its original driver pin; it has not been relabelled.
