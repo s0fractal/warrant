@@ -1,0 +1,5 @@
+DETECTED subject test_F2_wrong_subject_refused_before_writes
+DETECTED result test_F1_replay_rejects_false_result
+DETECTED holder test_F5_signed_holder_must_match_config
+DETECTED config test_F6_exact_config_bytes_and_limits_recorded
+4/4 regression mutations detected by assertions

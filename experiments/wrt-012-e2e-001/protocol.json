@@ -1,0 +1,37 @@
+{
+ "endpoints": {
+  "E1": "C1 canonical bytes reproduce the digest on a second read",
+  "E2": "classify C1 = FILE_BOUND_PENDING; time_verified false; a receipt for other bytes is refused",
+  "E3": "holder receipt for C1 verifies -> holding EXTERNALLY_OBSERVED(same-host-holder, custody github:s0fractal); external half = NOT_DEMONSTRATED (holder not independent)",
+  "E4": "report before any run: verification method=EXTERNAL_CLOSURE result=NOT_RUN",
+  "E4b": "after run-verifier with check_claims.py --ref d83984f: result in {PASS,FAIL} recorded; every other axis byte-identical; proof inputs identical",
+  "E5A": "local stream truncated at C1, holder store WITHOUT anything after C1 -> freshness UNKNOWN and nothing stronger",
+  "E5B": "same truncated stream, holder store WITH C2 (prev=C1) -> LATER_STATE_WITNESSED(same-host-holder, path C1->C2, steps 1)",
+  "E5C": "holder store with a branch commitment of larger sequence and no path to C1 -> UNKNOWN with note DISCONNECTED, no PATH_INCOMPLETE",
+  "E6": "external half: NOT_DEMONSTRATED (no holder outside our custody); \u00a75 spread stays closed"
+ },
+ "holder": {
+  "custody": "github:s0fractal",
+  "id": "same-host-holder",
+  "independent": false,
+  "note": "same host, same custody as the committer; exists to exercise mechanics only"
+ },
+ "model_calls": 0,
+ "network": "one `ots stamp` of C1 (a digest) to the two public calendars; `report` is offline",
+ "stream": "322686bf84b7fb079497165099e1d14d68374437a182db12348b5fb53dcc717e",
+ "subject": {
+  "kind": "file",
+  "ref": "papers/the-reason-runs-again/deposited/SHA256SUMS: the-reason-runs-again.pdf",
+  "sha256": "da2f5506e315cb2243eac2700dc7898c2b52930f667963304e0db7904b13a111"
+ },
+ "type": "warrant.experiment-protocol@wrt012-e2e-001",
+ "verifier": {
+  "argv": [
+   "--ref",
+   "d83984f"
+  ],
+  "closure_sha256": "ddde1fcd6d7ea96b65a735e1f797f0edc6fd09d9a086170f7a551162844a2683",
+  "ref": "papers/the-reason-runs-again/check_claims.py"
+ },
+ "wrt": "WRT-012 rev 3 \u00a74"
+}
