@@ -70,3 +70,22 @@ must verify downloaded bytes against the caller's expected SHA-256, not rely on 
 metadata checksum or a DOI alone. API reference: https://developers.zenodo.org/ .
 No Zenodo upload was attempted; no Zenodo credential was present in the checked
 standard environment variables, and no logged-in browser session was inspected.
+
+## Actual public readback follow-up
+
+The bundle was pushed to Warrant's experiment branch at the full commit in
+`published-source.txt`. `network_readback.py` downloaded all six holder JSON files
+from GitHub into a fresh store, checked SHA-256 against locally pinned expected
+bytes, then recomputed signatures and the two-link path using the locally pinned
+holder key. No local later commitments are available in the successor store.
+Before: UNKNOWN. After: LATER_STATE_WITNESSED, two steps.
+`evidence/network/` preserves protocol, URLs, digests and both reports.
+This completes the network transport step proposed above, still one custody.
+
+```sh
+python3 -B experiments/wrt-012-cross-repo-001/network_readback.py --output /tmp/wrt012-network-fresh
+```
+
+This follow-up makes six bounded public HTTP reads; it performs no remote writes.
+The receiver's expected manifest and public key remain local trusted inputs.
+It cannot detect their joint rollback and does not discover a newest GitHub head.
