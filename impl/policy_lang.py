@@ -63,7 +63,10 @@ source text says. Four things make a mis-compilation detectable instead:
 
 WHAT IT COSTS (SPEC §3.1 budget)
 --------------------------------
-`atp` bounds work AND peak memory (Σ-GLYPH's `size − 1 ≤ spent`). Every compile
+`atp` bounds work and materialized semantic state (Σ-GLYPH's `size − 1 ≤ spent`).
+ATP does not bound process peak memory (RSS) or wall-clock time; those remain
+host responsibilities. The Python evaluator's explicit node, depth and fetch
+limits raise ResourceFault, reported as unverified. Every compile
 reports the exact ATP the verifier will spend and the number of blobs the check
 adds to the store. A program that would exceed `max_atp` (default 1,000,000 —
 two orders of magnitude under the reference verifiers' 100,000,000 re-execution
