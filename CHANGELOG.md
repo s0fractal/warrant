@@ -26,6 +26,16 @@ right.
 
 ## Unreleased
 
+- Docs, no protocol surface moved: the `ski@v1` safety claim is qualified
+  everywhere it was still stated as "work and peak memory bounded by `atp`, safe
+  by construction" — THREAT-MODEL A8, SPEC §3.1 and its security
+  considerations, the `policy_lang` docstring, `docs/index.html`, the listing
+  entry text. `atp` bounds priced work and materialized semantic state
+  (`size − 1 ≤ spent`); it does not bound process peak memory, wall-clock or
+  host admission/parsing work, so the re-execution budget and local resource
+  fences remain the verifier's job and a breached local limit is reported
+  `unverified`, never as a verdict. The paper and the 2026-08 review response
+  (MC6, accepted) already said this; the normative text had not caught up.
 - `experiments/EXP-001-adversarial-adjudication/`: pre-registration of the
   adjudication experiment the 2026-09 cross-stack review asked for (evidence
   pack versus plain log, four planted defect kinds placed by a second party

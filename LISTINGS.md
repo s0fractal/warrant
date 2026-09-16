@@ -259,9 +259,9 @@ argument instead.
 > content-addressed, deterministic, budget-bounded check, so `warrant_show_reason`
 > **re-runs the check on your machine and hands you the fresh verdict next to the
 > filed one**. You are not asked to believe the record; you recompute the claim
-> and compare. Work and peak memory are bounded by the check's own budget, which
-> is what makes re-executing a stranger's reason safe rather than reckless. No
-> network is involved in any of it.
+> and compare. Work and materialized state are bounded by the check's own budget,
+> which is what makes re-executing a stranger's reason far safer than running a
+> stranger's script. No network is involved in any of it.
 >
 > Three tools. `warrant_file_decision` files a propose / accept / reject /
 > supersede into a local store and returns the record's hash.
