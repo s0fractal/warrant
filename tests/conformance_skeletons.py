@@ -50,10 +50,24 @@ SKELETONS = ROOT / "conformance-skeletons"
 EXIT_FAIL, EXIT_GRADE_NOT_MET = 1, 2
 
 # (label, the class this skeleton implements, the candidate command line)
+# The Go skeleton is compiled ONCE per run (`go build` in a temp dir, the same
+# compiler `go run` would invoke) and the binary is the candidate: `go run`
+# recompiled the file on every one of the ~140 vector invocations, twice, and
+# that was ~55 s of a ~60 s check. Nothing about the skeleton changed -- it is
+# still one file with no build system; `build_go()` is that one command.
 CASES = [
-    ("go", "canon", f"go run {SKELETONS / 'go' / 'main.go'}"),
+    ("go", "canon", None),      # filled by build_go()
     ("ts", "canon", f"node {SKELETONS / 'ts' / 'main.ts'}"),
 ]
+
+
+def build_go(tmpdir):
+    binary = Path(tmpdir) / "skeleton-go"
+    built = subprocess.run(["go", "build", "-o", str(binary), str(SKELETONS / "go" / "main.go")],
+                           capture_output=True, text=True)
+    if built.returncode != 0:
+        raise SystemExit(f"go build of the skeleton failed:\n{built.stderr}")
+    return str(binary)
 
 # The corrupting proxy. It speaks the contract faithfully in both directions and
 # changes exactly one thing: the leading hex digit of each hex field it sees.
@@ -112,6 +126,8 @@ def main():
 
     by_class, by_grade = pack_vector_counts()
     ok = True
+    build_dir = tempfile.mkdtemp(prefix="skeleton-go-")
+    CASES[0] = ("go", "canon", build_go(build_dir))
 
     def check(label, cond, detail=""):
         nonlocal ok
@@ -170,6 +186,7 @@ def main():
                   f"{c['FAIL']} failed, exit {code} "
                   f"(expected {by_class[implements]} and {EXIT_FAIL})")
 
+    shutil.rmtree(build_dir, ignore_errors=True)
     print(f"\nCONFORMANCE SKELETONS: {'ALL PASS' if ok else 'FAILURES PRESENT'}")
     return 0 if ok else 1
 

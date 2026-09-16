@@ -1,0 +1,5 @@
+pack/.warrants: the signed, content-addressed store (records/, blobs/). pack/manifest.json: what the
+sealing proxy observed, incl. seal_failures, unreturned_calls, observation_complete.
+TRANSCRIPTS.txt: `warrant verify`, `warrant why <decision>`, and `warrant check <hash>` for every
+ski@v1 reason -- each check is re-executed offline; its evidence blobs are in pack/.warrants/blobs.
+Blobs are raw bytes named by their sha256: policies, subjects, evidence (tool results), WPL sources.

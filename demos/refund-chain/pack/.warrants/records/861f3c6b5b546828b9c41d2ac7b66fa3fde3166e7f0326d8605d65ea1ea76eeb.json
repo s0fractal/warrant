@@ -1,0 +1,45 @@
+{
+  "body": {
+    "actor": {
+      "id": "auditor@airline"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "eligibility rested on clauses 1-3 alone; clause 4 excludes this claim"
+      },
+      {
+        "check": "4334f2cb18eb5c254b6a4aab0d0ca23b15c971f9a2aca16270f7b3928bf4d80c",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "supersede",
+    "evidence": [
+      "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8",
+      "b5a6ceadd065d43245b2484cda36907909342e57f1bde8b47e7277db9d94450b",
+      "9e4d7578aeb81a516d544305fd6cafe57ee8dc6072056dd0bc2e59e2b764b642"
+    ],
+    "prior": [
+      "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
+      "d9f15d3e4532228cf9d25619be6463fe99cf1bbfdc8615e43724c9a5c517a935"
+    ],
+    "subject": {
+      "hash": "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58",
+      "note": "eligibility decision replaced"
+    },
+    "ts": 1713484860,
+    "under": [
+      "5b11b31d31886c265ed0ac0663f49cdbe894d8793fb7967f41f37ab1b68c9f8d"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "auditor@airline",
+      "key": "c91cb3ce2b84e4ba85f562ece41edfe4e27afc52d88d507f66a18638df823e9f",
+      "sig": "f3382a1456d3f8922a1cace6b651731000dbd6bd30a999ba8d11569cc30ae0f7f8132ee3ff9bb1c64eb1335e7f626431f8851fb8427ca83e240a584adc09f50e"
+    }
+  ]
+}

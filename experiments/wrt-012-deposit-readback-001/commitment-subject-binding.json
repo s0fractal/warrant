@@ -1,0 +1,7 @@
+{
+  "commitment": "402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe",
+  "commitment_path": "experiments/wrt-012-e2e-001/store/commitments/402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe.json",
+  "subject_sha256": "da2f5506e315cb2243eac2700dc7898c2b52930f667963304e0db7904b13a111",
+  "deposited_object": "SUBJECT_ONLY",
+  "commitment_deposited": false
+}

@@ -1,0 +1,4 @@
+{"args": {"sku": "HP-100"}, "op": "shop.add_to_cart", "result": {"cart": ["HP-100"], "subtotal_cents": 4900}, "ts": 1788862746}
+{"args": {}, "op": "shop.checkout", "result": {"charged_cents": 4900, "currency": "USD", "order": "ORD-0003"}, "ts": 1788862752}
+{"args": {"order": "ORD-0001"}, "op": "shop.request_refund", "result": {"amount_cents": 12900, "order": "ORD-0001", "refund": "RF-0001"}, "ts": 1788862761}
+{"args": {"order": "ORD-0003"}, "op": "shop.cancel_order", "result": {"order": "ORD-0003", "status": "cancelled"}, "ts": 1788862778}

@@ -1,0 +1,42 @@
+{
+  "body": {
+    "actor": {
+      "id": "desk@airline"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "claimant is inside the bereavement programme"
+      },
+      {
+        "check": "10744bd5612c2adf113c3f795c29952ece923d6f9bf31925ddd137e692009237",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "65fc80b3577ef121397e11ef0a558afa6da0073d54f6993e629361cb21c47950",
+      "cbf7d3547ac5a51a3f112fb60252c310fcd07a3968fea32746b13c56f7d65c65",
+      "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8"
+    ],
+    "prior": [],
+    "subject": {
+      "hash": "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8",
+      "note": "claimant is inside the bereavement programme"
+    },
+    "ts": 1708300800,
+    "under": [
+      "5b11b31d31886c265ed0ac0663f49cdbe894d8793fb7967f41f37ab1b68c9f8d"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "desk@airline",
+      "key": "6ee091fd280a9b68554fa73c588125d47d3425c68a26ba236b4dad90f90a8f92",
+      "sig": "f2d768d52df83d8bbf8a432f1761d2fc25e366c1abd7b5722d0885aecec24366ffce4d81a7b1710b3076775ff6968b8ad5f07ac4a1cb95dca60f5902535c630f"
+    }
+  ]
+}

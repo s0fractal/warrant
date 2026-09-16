@@ -107,6 +107,16 @@ SCAN_DIRS = ("proposals", "briefs", "spec", "profiles", "needs")
 # The MAP row's Path column carries that exact target, and `--check-map`
 # verifies the whole row, not just that the token appears somewhere.
 CANONICAL = {
+    # WRT-001/002 are CLOSED (DEFERRED, 2026-09-07). Pinned here so the row
+    # does not follow the shortest path that happens to carry the token: the
+    # substring search resolved WRT-002 to the executable model, and that
+    # model was retired with the closure (history/RETIREMENT-2026-09-REVIEW-CORPUS.md).
+    "WRT-001": {"lives_in": "this repo, `master` (CLOSED: DEFERRED)",
+                "commit": None,
+                "path": "proposals/WRT-001-wave-v1-runtime.md"},
+    "WRT-002": {"lives_in": "this repo, `master` (CLOSED: DEFERRED)",
+                "commit": None,
+                "path": "proposals/WRT-002-keystate-effective-lifecycle-r1.md"},
     "WRT-003": {"lives_in": "closed PR #20 (verification receipts)",
                 "commit": "25bd44c829cb015a836e08642022412c568de16a",
                 "path": "proposals/WRT-003-verification-receipt.md"},
@@ -122,6 +132,15 @@ CANONICAL = {
     "WRT-007": {"lives_in": "this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED)",
                 "commit": None,
                 "path": "proposals/WRT-007-per-tag-evaluator-dependency.md"},
+    "WRT-008": {"lives_in": "open PR #60 (document CLOSED: DEFERRED)",
+                "commit": "6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3",
+                "path": "proposals/WRT-008-fact-derivation-profile.md"},
+    "WRT-009": {"lives_in": "reserved deployment-predicate proposal (not yet written)",
+                "commit": None,
+                "path": "reviews/2026-09-chatgpt-web-cross-stack-response.md"},
+    "WRT-010": {"lives_in": "this workline (DRAFT; follows up WRT-008)",
+                "commit": None,
+                "path": "proposals/WRT-010-fact-provenance.md"},
 }
 
 
@@ -134,7 +153,7 @@ COLLISIONS = {
         {"lives_in": "closed PR #21 (verify-report) — the CANONICAL target",
          "commit": "7f40932060ded9a1fde7e6b74e91334e73b8080e",
          "path": "proposals/WRT-004-verify-report-v1.md"},
-        {"lives_in": "branch `papers/the-reason-runs-again` (draft PR #30), reason-binding profile — NOT on master",
+        {"lives_in": "branch `papers/the-reason-runs-again` (PR #30, closed 2026-09-07 unmerged; branch retained), reason-binding profile — NOT on master",
          "commit": "23ef8103606ecadfa650886fa412720ccd49980a",
          "path": "proposals/WRT-004-reason-binding-profile.md"},
     ],

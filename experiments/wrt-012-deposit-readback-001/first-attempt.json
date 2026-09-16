@@ -1,0 +1,7 @@
+{
+  "outcome": "TimeoutError",
+  "stage": "record metadata read",
+  "output": "/private/tmp/wrt012-zenodo-readback-001",
+  "remote_writes": 0,
+  "disposition": "preserved first protocol; added typed network failure; second read-only run succeeded"
+}

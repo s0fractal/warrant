@@ -1,0 +1,48 @@
+{
+ "adoption": "NOT_EVALUATED",
+ "authority": "none",
+ "commitment": "402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe",
+ "freshness": {
+  "notes": [],
+  "status": "UNKNOWN"
+ },
+ "holding": [
+  {
+   "custody": "github:s0fractal",
+   "holder": "same-host-holder",
+   "receipt_sha256": "1df8f1aa5ed73a284360a96983337373afdd6d56ad9b826a8adb0a7ca2d5ec56",
+   "status": "EXTERNALLY_OBSERVED"
+  }
+ ],
+ "inputs_sha256": {
+  "/Users/s0fractal/Projects/warrant/experiments/wrt-012-e2e-001/holder-same-host/receipts/402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe.json": "1df8f1aa5ed73a284360a96983337373afdd6d56ad9b826a8adb0a7ca2d5ec56",
+  "/Users/s0fractal/Projects/warrant/experiments/wrt-012-e2e-001/store/commitments/402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe.json": "402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe",
+  "/Users/s0fractal/Projects/warrant/experiments/wrt-012-e2e-001/store/proofs/402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe.ots": "b08f955753c40e8c6f34b859857cbb4652df1d089138536aa2edf85837b7f21a",
+  "/Users/s0fractal/Projects/warrant/experiments/wrt-012-e2e-001/store/runs/402f1a6bbfec84201316135e3dd4cd0b03476e22e3e474d3521151c758b87cbe.json": "545f6abc2b9f38f339cac33ab7687394043d2ad00aa6de1d389c7ca6daa21dd9"
+ },
+ "network_calls": 0,
+ "sequence": 0,
+ "stream": "322686bf84b7fb079497165099e1d14d68374437a182db12348b5fb53dcc717e",
+ "time": {
+  "bitcoin_attestations": [],
+  "calendar_authenticity_verified": false,
+  "file_binding_verified": true,
+  "note": "no chain-header source; chain time is never claimed by this tool",
+  "pending_calendars": [
+   "https://alice.btc.calendar.opentimestamps.org",
+   "https://bob.btc.calendar.opentimestamps.org",
+   "https://btc.calendar.catallaxy.com",
+   "https://finney.calendar.eternitywall.com"
+  ],
+  "proof": "ots",
+  "status": "FILE_BOUND_PENDING",
+  "time_verified": false,
+  "unsupported_attestations": []
+ },
+ "type": "warrant.witness-report@wrt012-dev",
+ "verification": {
+  "method": "EXTERNAL_CLOSURE",
+  "result": "PASS",
+  "scope": "countable claims in paper.md recounted at d83984f; source identity of paper.md/references.bib/build.sh"
+ }
+}

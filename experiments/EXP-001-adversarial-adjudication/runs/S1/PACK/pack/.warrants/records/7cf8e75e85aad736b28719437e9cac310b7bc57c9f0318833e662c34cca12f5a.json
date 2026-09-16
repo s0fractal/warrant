@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Order ORD-0002 status is 'shipped' but mandate only allows refunds for orders with 'delivered' status [mandate rule for refund evaluates FALSE on the stated facts]"
+      },
+      {
+        "check": "2f810b183539b199b3eb529eb42759f5b14cb459535a6f995ef74517f2e1d526",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "reject",
+    "evidence": [
+      "1ccb6da52e26a248a67fb07418b554e4fd22f78f3905e43ebe10e83c4b204b82",
+      "4b82039de21b091eb41131b31f70557d26310777ea0cd33bd1a33448a0c96eca"
+    ],
+    "prior": [
+      "b46e6ce113fc772125e8d57fe1748be12fd51e689926ad1cf4f0943e8369977c"
+    ],
+    "subject": {
+      "hash": "2a0645a352c6f57db7e97ca0ddf50bf901ec190be986c41f349c5e55fa815319",
+      "note": "refund ORD-0002"
+    },
+    "ts": 1788862768,
+    "under": [
+      "3d33af25186a03dc7fc012a9b7e47ef16df852cc9a7f5ce07a43119a8e6968bd"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "10ab64a8a0a89af6616050382c3715db71cac9987caca212ebe4f2b07dfa267ed54aeb6c9535147445d0b21a99f5392f961c9570b102677f93de5f47d84cf30f"
+    }
+  ]
+}

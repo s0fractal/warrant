@@ -1,0 +1,16 @@
+{
+  "record": 22172098,
+  "file": "the-reason-runs-again.pdf",
+  "expected_sha256": "da2f5506e315cb2243eac2700dc7898c2b52930f667963304e0db7904b13a111",
+  "driver_sha256": "a22bbe84175771fa412961f96cda1b90c7ef2e3180581f3264364afb651cb629",
+  "endpoints": [
+    "actual subject matches",
+    "wrong subject refused",
+    "wrong record refused",
+    "missing file refused",
+    "duplicate file refused",
+    "size limit refuses"
+  ],
+  "publication_calls": 0,
+  "new_commitment_retained": "NOT_DEMONSTRATED"
+}

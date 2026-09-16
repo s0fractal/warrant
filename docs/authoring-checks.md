@@ -19,9 +19,14 @@ the reasons for it. A reason can be prose — which a reader has to take on fait
 
 A `ski@v1` check is the strong kind. It is a closed, total, budget-bounded
 program: it cannot loop, cannot read your disk, cannot reach the network, and
-its work *and* peak memory are bounded by a number stored in the check itself.
-That is why re-running a stranger's `ski@v1` reason is safe, and re-running a
-stranger's shell script is not (SPEC §3.1).
+its semantic work *and* the peak number of nodes it materializes are bounded
+by a number stored in the check itself. That bound is a theorem about the
+calculus, not about your process — it says nothing about resident memory,
+stack or the store's index (sigma-glyph `SECURITY-ASSUMPTIONS.md`) — so a
+verifier still decides what it is willing to spend: SPEC §3.1 lets it refuse
+an over-budget reason and report it unverified. Within that admission limit,
+re-running a stranger's `ski@v1` reason is a bounded computation you chose to
+afford; re-running a stranger's shell script is neither bounded nor chosen.
 
 You write these in **WPL** — facts and one boolean expression:
 
@@ -223,14 +228,41 @@ check base_fare_cents + tax_cents <= 50000
 
 ```
 $ python3 impl/policy_lang.py compile examples/policies/refused-arithmetic.wpl
-REFUSED   arithmetic (`+`) is not in WPL v1. WPL has no arithmetic on purpose: every operand must be a literal or a pinned fact, so the verifier re-executes every step of the decision instead of trusting a number the compiler worked out. Compute the value where the facts are gathered and pin the result as a fact. (line 10, column 23)
+REFUSED   arithmetic (`+`) is not in WPL v1. WPL v1 has no arithmetic: it is not implemented and not admitted. Integers compile to fixed-width bit vectors of Church booleans for comparison only; an adder over them would need its own encoding, cost and admission design, which nobody has done. Compute the value where the facts are gathered, pin the result as a fact, and pin its source as evidence: the verifier re-executes the comparison, not the sum. (line 10, column 23)
 ```
 
-That is not laziness. If the compiler were allowed to add two numbers, the
-verifier would be re-running a term built around a sum *the compiler* computed
-and nobody re-checks. Because there is no arithmetic, every operand in a
-compiled term is a literal you wrote or a fact you pinned, and every operator is
-re-executed. Add `total_cents` where you gather the facts, and pin it.
+That is not because a sum could not be re-executed. Arithmetic compiled into
+the term would be re-run by every verifier exactly like `<=` is; an earlier
+version of this page (and of the compiler's message) said otherwise, and a
+review (ChatGPT web, 2026-09) was right to call it a limit of the
+implementation dressed up as a condition of verifiability. The honest
+statement is narrower still: arithmetic is **not implemented and not
+admitted** in WPL v1. Integers compile to fixed-width bit vectors of Church
+booleans (§6 of `impl/policy_lang.py`, "ENCODING"), built for comparison
+folds; an adder over those vectors would need its own encoding, a measured
+cost curve and an admission decision, and none of the three exists. (A first
+draft of this correction said "Church numerals, unaffordable" — wrong encoding
+and an unmeasured cost claim; Codex caught it. sigma-glyph's
+`EXP-ADR011-01` concerns *computed Church naturals* in its own admission
+profile, related work, not a reason here.) Until someone does that design,
+WPL v1 keeps arithmetic out and says so at compile time. Add `total_cents`
+where you gather the facts, and pin it.
+
+**Where the trust went.** Be clear-eyed about what that move does: the
+addition is now performed by the code that gathers the facts, and the
+verifier re-executes the comparison, not the sum. A check over pinned facts
+is a signed, re-executable answer to a questionnaire that the decider filled
+in. If the fact says `100` and the payment was `100 000`, `amount <= 500`
+passes honestly. Fact provenance — where a fact came from, and whether it
+describes the thing decided — is a separate obligation this format does not
+discharge: `THREAT-MODEL.md` lists it, and WRT-008 measured it on ten real
+decisions: **0 of 58 facts carried any provenance** in the authored sample;
+48 of the 58 were *classified* as candidates for derivation from cited bytes,
+and no derivation was executed, so neither number is an extraction result.
+WRT-008 is closed DEFERRED under its own stopping rule, with its reactivation
+condition recorded in the proposal. Until a derivation profile exists, a green
+check certifies the *reasoning*, and the reader is owed the facts' source as
+evidence, pinned beside the check.
 
 Cost is refused the same way. Ask for a check the budget will not cover and you
 get a number and a refusal, not a term:

@@ -1,0 +1,319 @@
+# coding: utf-8
+r"""%PDF-1.7
+%⚓📄
+1 0 obj
+<</Type /Catalog /Pages 2 0 R>>
+endobj
+2 0 obj
+<</Type /Pages /Kids [3 0 R] /Count 1>>
+endobj
+3 0 obj
+<</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources <</Font <</F1 5 0 R /F2 6 0 R /F3 7 0 R>>>> /Contents 4 0 R>>
+endobj
+4 0 obj
+<</Length 1516>>
+stream
+BT
+/F1 15 Tf
+56 760 Td
+17 TL
+(Bereavement refund: granted on a chain, reopened by a consequence) Tj T*
+/F2 10 Tf
+(warrant evidence pack - warrant.fact-provenance@v0) Tj T*
+() Tj T*
+(Bereavement refund ? granted on a chain, reopened by a consequence nobody had drawn) Tj T*
+() Tj T*
+/F3 9 Tf
+(story: modelled on Moffatt v. Air Canada, 2024 BCCRT 149; clause 4 and the 45-day interval are ) Tj T*
+/F2 10 Tf
+() Tj T*
+/F3 9 Tf
+(  eligibility    87d423187c7d792fc879228f?) Tj T*
+(  grant          74bd08b86df85a3f87165cdb?) Tj T*
+(  timeliness     c11f646902b226f32ae7d395?) Tj T*
+(  relitigation   d9f15d3e4532228cf9d25619?) Tj T*
+(  supersede      861f3c6b5b546828b9c41d2a?) Tj T*
+/F2 10 Tf
+() Tj T*
+/F3 9 Tf
+(re-runnable checks:) Tj T*
+(  eligibility          answer=true   7 ATP) Tj T*
+(  timeliness           answer=true   18 ATP) Tj T*
+(  grant                answer=true   7 ATP) Tj T*
+(  clause-4-proximity   answer=false  255 ATP) Tj T*
+(  grant.eligible       -> stale) Tj T*
+(  grant.timely         -> derived) Tj T*
+/F2 10 Tf
+() Tj T*
+/F3 9 Tf
+(This file is also a Python script:) Tj T*
+(    python3 <thisfile> --extract DIR) Tj T*
+() Tj T*
+(It does not verify itself. A document that prints its own green) Tj T*
+(checkmark proves nothing, because whoever edited the evidence) Tj T*
+(edited the checker in the same edit. Extract, then check with a) Tj T*
+(verifier obtained independently of this file.) Tj T*
+() Tj T*
+(archive sha256: 44d37d702b7bc0fcac2dd6d23b4bdecfa5c996e867504e32b8825abf950827e4) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<</Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold>>
+endobj
+6 0 obj
+<</Type /Font /Subtype /Type1 /BaseFont /Helvetica>>
+endobj
+7 0 obj
+<</Type /Font /Subtype /Type1 /BaseFont /Courier>>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000038 00000 n 
+0000000085 00000 n 
+0000000140 00000 n 
+0000000280 00000 n 
+0000001846 00000 n 
+0000001919 00000 n 
+0000001987 00000 n 
+trailer
+<</Size 8 /Root 1 0 R>>
+startxref
+2053
+%%EOF
+"""
+# ---- WARRANT-PACK-V0 (base64 tar.gz of the store) ----
+PACK = '''\
+H4sIAAAAAAAC/+19CYBcVZkuOgjaKKgjsjzmeemM4NJpzr60IAlJAyEkwSQCojGctbtIdVVTVZ2kCWFUBhfcUNmGTZAQEFwG
+0HHDEdFRQBZHxwUJT8QFo7ghIE9B339udac76UBLuizzuu8JdFXde+655557vvP/3zn/+f/uNaZWM5VG/RBbrtr6IYhQEjFX
+ImDpgyYaO+lMZIhgTjUjVGOFqdeCUYRYoFYoOOOMhewqCrTLdhKCJBjLPyFt+4kZ4aPfm8cJkoLtkm23sFanoXrD1OD2u8zM
+NCujs/tSB+heM1jOHnjLudmxCxYvzGhPtqY/1ELW6A+Z6zelSmZcY8iUy8OZK1frod7dMatjVrY4lCBHLYtwNrOhXF2TleqZ
+qWTQl0JttWmUqpXurNe4/nQ8FTZ38bITepdmS47M5mbHLV2wZGk2v3fegmULlizugvJcqRF8Zochq2lkPrhSHUo4uJ6d0Oym
+C+Z3Z4urtuqHs1poDA9CZpOtDjVfgvunCvc0f5diKdSgvFqYXRuqNO/cLNv1B7cKaujhnKtC1ubJ1aY8FLqyehWuX1OrVvqy
+ytCAhSeDaleqjcxAYY3+Ehwfrg5l/WY1NE01nSm5kDdbqZGynuyqlUbNpOoEf3JXNhCg8SollzfcK05Yunw2QuqVzbZbDrfd
+8ljQaNDa9SFbb5QaQyONYIdKZd89ONyVhbXQwFCEqWfdI4g9pM80QnprUNTYdXWoSB1ua+pDNSgkvZd6/ljpIevVoZoLzbbt
+C5BvsFSppCaEu2cJ//AI+XNuyWqglYyHZkiNNTBYKqcX35G/7VAu9ZVsGVrcVqvl7LCsURsKWaxVB7JOJT0MFVhJJ73UJDoF
+f4mKUjFFDFNORxhVtHPBCBGZtlywoFDg3uAYuOps3qJRGgjl4Z4s284tHMZRMKERsYSISIkJ0lPNsaSEcqSwl1HzEDARThoJ
+BWNtPKEiKGEMglt0NLvC6HNkBx00csOOGYT/7m3Hf6adFNh47p0RWHjEFZEiGkZcVEFY+IsjodRiE7BTQiHDpOIeeRm0Yjsw
+/iOMyDbjP+aSF+N/O9Kzd7ty/3vv/eEfZ4V/veO9c7+8y4rb37PqDVdf8LpTPnTFob+35NL7Ghf/ZePa+x74xS/u/+Tzyx+4
+8MFHLr7/ifNvWfiFd1190uWlu392ybd2KdJ0wr8VMBxbG5WzBBuqgnSCYi5I0Nwa4aKWjICq54LH1iHFI5eSMo2DCISrFuFf
+SFTgvz34v+n5hzxQmf/AJ75/13EdjfNfc8vgk8cseOj53UfLu07zX+g4ujzZ+FBgaFrhP4Ks1wKUKwC2tygQzyi2xFFpLDES
+gbbGcYRRACkjkprnQVYjS40XzulWyX9BRYH/9uD/XV86vvT5Daeu/tD7v/Odl9x8wVc33XfqC6555LHu7hfsc/RNsw++MNx5
+3r/8+ozb/oT3uO2eU7se2uegr7//LQc9uXH4Y++fNayuzC4sMDSd8I+RZMx6LjBxxPiIMXU0Ss0d0ZqT4IIm1IuobaRYE+69
+x1QGoQlCcEbuCP4Jk9vin6Ji/qctaV2naQx29siuzrB2MLhGZ08naHWOxEBEYCwArfbKBY6QkUwLah0BGeCZYTqkfIEpKl2Q
+RjBrgQoq4Tq7OuurSp09uKuzEWoDUOJUhUrn+gKo7cI/UPrAqSOeKhY8NU5HpjgjwUfkAao2YqWxY0IGjDBhWloXMEecOPge
+WiT/05Rwgf+2yP93Dvbe1Pmhkx560+dnf/klu/zPT/i6ryzarX//ygd/W1lz3vWPb9z1ktX7f2fTxpd+88SDqxu6Hv/ZTY+/
+bNZr9v/Rrf0dR531ze9t/tcCQ9MK/54IG7xkWOIkARxIfE+0g2/EEu85JYxLgTD1hkkvOOYyIu2A/GulRWzV/B8u9P824f/G
+x87Y43d3v2/Dl7+776te9+6vHP+Z8x/4c+OdZ/z5woWnff1d73no8EL/n1n4DwxjhyNIdq2Q4/DPYCaFFxp0N8eUZNwYK6x1
+HkYIhtJ0IY2JMihQ13YE/2Ii/iUp8N+WNCsjs/NVr1Il1OtbLwKTrBrHFoCbi5YnmOZ6qS/VXXWo0shMfVVaZ6zWslIlXz/r
+yhdX8zXTer5+2KhVjWuUVkM5ZVMaODxf+izVRxeE4eBQPWRzS7VsnqkYbw6upxs2LJTQB/83V2Oh8EXVGE2jka3uHpe5Wasj
+qo3+5lpnvoy65IhlvUuP753f1VwrzNczzUCAupw6FOqNfDGz5kcXMkeOBr/SBniOsLJRM6tDeat1zdGcW54lLUqOpZGc0ZTr
+YXRd8SmKTcuMB44rqGPnwj9B2AkqmDOGYU8J8cDtZeJ5hioaMbMiCgVKApOEReEIjjAg8KA5Q9Y73CL5T2nB/9sk/6+/Ze+5
+X7zv8X1vN/cPbzps4KWbvvjBdx/xH7PifdevPuPI+e+49E8rXtl96Me+++fj52x66MwLXnvy4F8+see5995z8tr/XnHmi08x
+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
+'''
+MANIFEST_TEXT = "Bereavement refund: granted on a chain, reopened by a consequence\nwarrant evidence pack - warrant.fact-provenance@v0\n\nBereavement refund \u2014 granted on a chain, reopened by a consequence nobody had drawn\n\nstory: modelled on Moffatt v. Air Canada, 2024 BCCRT 149; clause 4 and the 45-day interval are \n\n  eligibility    87d423187c7d792fc879228f\u2026\n  grant          74bd08b86df85a3f87165cdb\u2026\n  timeliness     c11f646902b226f32ae7d395\u2026\n  relitigation   d9f15d3e4532228cf9d25619\u2026\n  supersede      861f3c6b5b546828b9c41d2a\u2026\n\nre-runnable checks:\n  eligibility          answer=true   7 ATP\n  timeliness           answer=true   18 ATP\n  grant                answer=true   7 ATP\n  clause-4-proximity   answer=false  255 ATP\n  grant.eligible       -> stale\n  grant.timely         -> derived"
+
+import base64, gzip, hashlib, io, json, os, sys, tarfile, unicodedata
+
+# This file is a TRANSPORT, not a trust root. It does not adjudicate anything
+# about itself: whoever edited the evidence could edit this code in the same
+# edit. It extracts, lists, and points at a verifier you obtained elsewhere.
+
+def _blob():
+    return base64.b64decode("".join(PACK.split()))
+
+def _members():
+    raw = gzip.decompress(_blob())
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as t:
+        return [(m.name, m.size) for m in t.getmembers() if m.isreg()]
+
+def _extract(dest):
+    # Every member is validated and every target resolved BEFORE one byte is
+    # written. Validating and writing member by member meant a hostile member
+    # late in the archive was refused only after an earlier one had already
+    # replaced a file in the destination: the refusal was real, the
+    # destination was not left alone.
+    dest = os.path.realpath(dest)
+    os.makedirs(dest, exist_ok=True)
+    raw = gzip.decompress(_blob())
+
+    def fold(p):
+        # Two different strings can be ONE file: this project's own host has a
+        # case-insensitive filesystem, where `NODE` and `node` are the same
+        # name. Folding case and Unicode composition refuses the alias instead
+        # of silently letting the second member overwrite the first. It is not
+        # a complete model of every filesystem's equivalence.
+        rel = os.path.relpath(p, dest).split(os.sep)
+        return tuple(unicodedata.normalize("NFC", x).casefold() for x in rel)
+
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as t:
+        plan, seen, folded = [], {}, {}
+        for m in t.getmembers():
+            if not m.isreg():
+                raise SystemExit("refusing non-regular archive member: " + m.name)
+            p = os.path.realpath(os.path.join(dest, m.name))
+            if not p.startswith(dest + os.sep):
+                raise SystemExit("refusing member outside destination: " + m.name)
+            if p in seen:
+                raise SystemExit("refusing archive: %s and %s resolve to the "
+                                 "same path" % (m.name, seen[p]))
+            k = fold(p)
+            if k in folded and folded[k] != m.name:
+                raise SystemExit(
+                    "refusing archive: %s and %s are the same name on a case- "
+                    "or normalization-insensitive filesystem"
+                    % (m.name, folded[k]))
+            folded[k] = m.name
+            seen[p] = m.name
+            plan.append((m, p))
+        # `node` and `node/child` in one archive is a structural conflict: one
+        # member needs a path the other needs as a plain file. Catching it only
+        # when mkdir raises meant the failure landed after earlier members had
+        # been written, so a refusal still changed the destination.
+        for p, name in seen.items():
+            parent = os.path.dirname(p)
+            while parent and parent != dest and parent.startswith(dest + os.sep):
+                pk = fold(parent)
+                if pk in folded:
+                    raise SystemExit(
+                        "refusing archive: %s needs %s as a directory, but %s "
+                        "is a file there" % (name, parent, folded[pk]))
+                if os.path.exists(parent) and not os.path.isdir(parent):
+                    raise SystemExit(
+                        "refusing archive: %s needs %s as a directory, but a "
+                        "file already exists there" % (name, parent))
+                parent = os.path.dirname(parent)
+            if os.path.isdir(p):
+                raise SystemExit(
+                    "refusing archive: %s would replace an existing directory"
+                    % name)
+        for m, p in plan:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "wb") as f:
+                f.write(t.extractfile(m).read())
+    return dest, len(plan)
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--extract":
+        dest = args[1] if len(args) > 1 else "extracted-store"
+        where, n = _extract(dest)
+        print("extracted %d file(s) to %s" % (n, where))
+        print()
+        print("Now verify with a verifier you did NOT get from this file:")
+        print("  pip install warrant-verify   # or clone the repository")
+        print("  warrant --store %s verify" % os.path.join(where, ".warrants"))
+        return 0
+    print(MANIFEST_TEXT)
+    print("archive: %d file(s), sha256 %s" % (len(_members()),
+          hashlib.sha256(_blob()).hexdigest()[:16] + "..."))
+    print()
+    print("  python3 %s --extract DIR    write the store back out"
+          % os.path.basename(__file__))
+    print()
+    print("This file does not verify itself, on purpose. A document that prints")
+    print("its own green checkmark proves nothing: an attacker who edits the")
+    print("evidence edits the checker in the same edit. Extract, then check the")
+    print("bytes with a verifier obtained independently of this file.")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

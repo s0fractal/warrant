@@ -1,0 +1,26 @@
+[
+  {
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-B",
+      "tests/witness.py"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-B",
+      "tests/witness_bindings.py"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "-B",
+      "tests/witness_binding_mutations.py"
+    ],
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,3 @@
+{"action": "purchase", "check_result": true, "decision": "accept", "event": "decision", "facts": {"spend_total_cents": 4900}, "order": null, "ts": 1788862751.057847}
+{"action": "refund", "check_result": true, "decision": "accept", "event": "decision", "facts": {"order_status": "delivered"}, "order": "ORD-0001", "ts": 1788862759.1080651}
+{"action": "refund", "check_result": false, "decision": "reject", "event": "decision", "facts": {"order_status": "shipped"}, "order": "ORD-0002", "ts": 1788862768.352581}

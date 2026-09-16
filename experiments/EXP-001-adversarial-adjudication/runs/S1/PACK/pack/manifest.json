@@ -1,0 +1,24 @@
+{
+  "ceiling": "A2",
+  "decision": "35fdd2e4e015b5ddddbc7d12f2900950feb3b42ede3434307462a162c6403302",
+  "downstream_returncode": 0,
+  "evidence_pack": "0",
+  "expected_verification": {
+    "errors": 0
+  },
+  "how_to_verify": "warrant --store .warrants verify",
+  "incomplete_because": [],
+  "observation_complete": true,
+  "produced_by": "warrant-mcp",
+  "records": [
+    "20e0892c7b8a890e3bf45a134ff0adc6553a85f7c698ead795bc58027c2a536f",
+    "2a35686daf72f2a8184196b30cbd0462c844679f852cfd39f2b3fe0d8d729b19",
+    "35fdd2e4e015b5ddddbc7d12f2900950feb3b42ede3434307462a162c6403302"
+  ],
+  "root": "20e0892c7b8a890e3bf45a134ff0adc6553a85f7c698ead795bc58027c2a536f",
+  "seal_failure_log": [],
+  "seal_failures": 0,
+  "sealed_calls": 3,
+  "title": "warrant-mcp session (agent@exp001)",
+  "unreturned_calls": []
+}

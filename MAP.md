@@ -24,19 +24,25 @@ present on a ref the reviewer was not looking at.
 | Cited | Lives in | Path | First cited by |
 |---|---|---|---|
 | `ADR-004` | **sigma-glyph**, `master` | `proposals/ADR-004-literal-blob-scope.md` | `proposals/GOV-001-settlement-at-scale.md` |
-| `ADR-008` | **sigma-glyph**, `master` | `proposals/ADR-008-specification-is-the-arbiter.md` | `briefs/WRT-002-rev7-adversarial-gate.md` |
-| `ADR-012` | **sigma-glyph**, `origin/master` | `proposals/ADR-012-checkout-independent-consumer-surface.md` | `proposals/WRT-007-per-tag-evaluator-dependency.md` |
+| `ADR-008` | **sigma-glyph**, `master` | `proposals/ADR-008-specification-is-the-arbiter.md` | `proposals/WRT-001-wave-v1-runtime.md` |
+| `ADR-011` | **sigma-glyph**, `master` | `proposals/adr-011/selftest.py` | `proposals/WRT-011-bounded-aggregation.md` |
+| `ADR-012` | **sigma-glyph**, `master` | `proposals/ADR-012-checkout-independent-consumer-surface.md` | `proposals/WRT-007-per-tag-evaluator-dependency.md` |
 | `Book I` | **sigma-glyph**, `master` | `spec/book-1-truth.md` | `ARCHITECT.md` |
 | `Book II` | **sigma-glyph**, `master` | `spec/book-2-navigation.md` | `proposals/WRT-001-wave-v1-runtime.md` |
 | `Book III` | **sigma-glyph**, `master` | `spec/book-3-federation.md` | `ARCHITECT.md` |
 | `GOV-001` | this repo, `master` | `proposals/GOV-001-settlement-at-scale.md` | `SPEC.md` |
-| `WRT-001` | this repo, `master` | `proposals/WRT-001-wave-v1-runtime.md` | `briefs/WRT-002-rev7-adversarial-gate.md` |
-| `WRT-002` | this repo, `master` | `proposals/wrt-002-model/model.py` | `briefs/WRT-002-rev7-adversarial-gate.md` |
+| `WRT-001` | this repo, `master` (CLOSED: DEFERRED) | `proposals/WRT-001-wave-v1-runtime.md` | `proposals/WRT-001-wave-v1-runtime.md` |
+| `WRT-002` | this repo, `master` (CLOSED: DEFERRED) | `proposals/WRT-002-keystate-effective-lifecycle-r1.md` | `ARCHITECT.md` |
 | `WRT-003` | closed PR #20 (verification receipts) | `25bd44c829cb015a836e08642022412c568de16a:proposals/WRT-003-verification-receipt.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-004` | closed PR #21 (verify-report) | `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md` | `proposals/WRT-005-outcome-fingerprint-purity.md` |
 | `WRT-005` | this repo, `proposals/wrt-005-outcome-fingerprint-purity` | `proposals/WRT-005-outcome-fingerprint-purity.md` | `needs/README.md` |
 | `WRT-006` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: B) | `proposals/WRT-006-ski-v1-implementation-substitution.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
 | `WRT-007` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED) | `proposals/WRT-007-per-tag-evaluator-dependency.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
+| `WRT-008` | open PR #60 (document CLOSED: DEFERRED) | `6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3:proposals/WRT-008-fact-derivation-profile.md` | `proposals/WRT-010-fact-provenance.md` |
+| `WRT-009` | reserved deployment-predicate proposal (not yet written) | `reviews/2026-09-chatgpt-web-cross-stack-response.md` | `proposals/WRT-010-fact-provenance.md` |
+| `WRT-010` | this workline (DRAFT; follows up WRT-008) | `proposals/WRT-010-fact-provenance.md` | `proposals/WRT-010-fact-provenance.md` |
+| `WRT-011` | this repo, `master` | `proposals/wrt-011-model/aggregation.py` | `proposals/WRT-011-bounded-aggregation.md` |
+| `WRT-012` | this repo, `fix/wrt-012-verification-bindings` | `experiments/wrt-012-e2e-001/run.py` | `proposals/WRT-012-ownerless-root.md` |
 
 ## Known identifier collisions
 
@@ -47,4 +53,4 @@ not take it for the canonical one. A collision is a defect to
 resolve by renumbering; until then it is recorded, not hidden.
 
 - `WRT-004` — closed PR #21 (verify-report) — the CANONICAL target: `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md`
-- `WRT-004` — branch `papers/the-reason-runs-again` (draft PR #30), reason-binding profile — NOT on master: `23ef8103606ecadfa650886fa412720ccd49980a:proposals/WRT-004-reason-binding-profile.md`
+- `WRT-004` — branch `papers/the-reason-runs-again` (PR #30, closed 2026-09-07 unmerged; branch retained), reason-binding profile — NOT on master: `23ef8103606ecadfa650886fa412720ccd49980a:proposals/WRT-004-reason-binding-profile.md`

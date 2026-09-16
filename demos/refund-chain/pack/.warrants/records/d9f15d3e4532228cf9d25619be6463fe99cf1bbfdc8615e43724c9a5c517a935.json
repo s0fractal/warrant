@@ -1,0 +1,42 @@
+{
+  "body": {
+    "actor": {
+      "id": "auditor@airline"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "policy clause 4: travel began 45 days after the death, outside the 10-day interval"
+      },
+      {
+        "check": "4334f2cb18eb5c254b6a4aab0d0ca23b15c971f9a2aca16270f7b3928bf4d80c",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "reject",
+    "evidence": [
+      "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8"
+    ],
+    "prior": [
+      "74bd08b86df85a3f87165cdbf784e23524136aed4b77ed6a05e11b99fcab8c38"
+    ],
+    "subject": {
+      "hash": "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8",
+      "note": "clause 4 was never compiled against the filed interval"
+    },
+    "ts": 1713484800,
+    "under": [
+      "5b11b31d31886c265ed0ac0663f49cdbe894d8793fb7967f41f37ab1b68c9f8d"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "auditor@airline",
+      "key": "c91cb3ce2b84e4ba85f562ece41edfe4e27afc52d88d507f66a18638df823e9f",
+      "sig": "0bcd4503ecc330f572667d678ba1b9b7e86f81b28e69bba6a020f96be55867dc177367f5868a5184c8cfb5f741e3a58b6b7066a01f033185a60f5ded8e18920b"
+    }
+  ]
+}

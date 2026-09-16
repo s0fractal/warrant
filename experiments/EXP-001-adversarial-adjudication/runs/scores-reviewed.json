@@ -1,0 +1,106 @@
+{
+  "reviewer": "Codex",
+  "status": "post_run_review_not_replacement_of_frozen_scores",
+  "cells": [
+    {
+      "scenario": "S1",
+      "condition": "PACK",
+      "adjudicator": "A",
+      "found_kinds": [
+        3
+      ],
+      "entries": [
+        {
+          "entry": 1,
+          "classification": "plant",
+          "kind": 3
+        },
+        {
+          "entry": 2,
+          "classification": "false_positive"
+        }
+      ],
+      "decoy_hits": 0
+    },
+    {
+      "scenario": "S1",
+      "condition": "LOG",
+      "adjudicator": "B",
+      "found_kinds": [
+        3
+      ],
+      "entries": [
+        {
+          "entry": 1,
+          "classification": "plant",
+          "kind": 3
+        }
+      ],
+      "decoy_hits": 0
+    },
+    {
+      "scenario": "S2",
+      "condition": "LOG",
+      "adjudicator": "A",
+      "found_kinds": [
+        1
+      ],
+      "entries": [
+        {
+          "entry": 1,
+          "classification": "plant",
+          "kind": 1
+        },
+        {
+          "entry": 2,
+          "classification": "true_symptom_without_kind_identification",
+          "kind": 2
+        },
+        {
+          "entry": 3,
+          "classification": "ambiguous_consequential_scope"
+        },
+        {
+          "entry": 4,
+          "classification": "false_positive"
+        },
+        {
+          "entry": 5,
+          "classification": "false_positive"
+        }
+      ],
+      "decoy_hits": 0
+    },
+    {
+      "scenario": "S2",
+      "condition": "PACK",
+      "adjudicator": "B",
+      "found_kinds": [
+        2,
+        1
+      ],
+      "entries": [
+        {
+          "entry": 1,
+          "classification": "true_secondary_symptom",
+          "kind": 2
+        },
+        {
+          "entry": 2,
+          "classification": "plant",
+          "kind": 2
+        },
+        {
+          "entry": 3,
+          "classification": "plant_record_id_resolved",
+          "kind": 1
+        },
+        {
+          "entry": 4,
+          "classification": "false_positive"
+        }
+      ],
+      "decoy_hits": 0
+    }
+  ]
+}

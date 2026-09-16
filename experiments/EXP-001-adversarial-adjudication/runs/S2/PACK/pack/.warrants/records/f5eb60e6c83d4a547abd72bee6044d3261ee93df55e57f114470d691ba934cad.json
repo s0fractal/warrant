@@ -1,0 +1,36 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "MCP tools/call 'shop.request_refund' classified A4 (effects=['transfer'], via config); ok"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "fd84fdd75bba7411be30cf44bf2e2c4e961b9c6449af8fd33d463bd0dc5eb504"
+    ],
+    "prior": [
+      "2276bb71436ec77c10f2f6a9f4701111ca11a522e9813c47dd35dc7d2c8c7c9e"
+    ],
+    "subject": {
+      "hash": "ef6b74786ff7ac2de4846f6d3fdde6ce63f73877005a6a4d23aaac97bec1296e",
+      "note": "shop.request_refund [A4]"
+    },
+    "ts": 1788862809,
+    "under": [
+      "13675e07d1a3fe3bcd993f903575691fd0652c7cead18513f5106679c0843ae1"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "3fde6eb7a1069fb4d6534707b5924d614173235128e0a861c3366cd203ea8826fd9402f3f3ee25321717dfcb3eef058c6e8e1ba6c35d215bcac8de37473ffb05"
+    }
+  ]
+}

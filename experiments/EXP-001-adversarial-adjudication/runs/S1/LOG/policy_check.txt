@@ -1,0 +1,4 @@
+$ policy_check.py --bundle LOG
+spend total: 4900 cents (cap 15000)
+decisions recorded: 3; rejects: [('refund', 'ORD-0002')]
+findings: none

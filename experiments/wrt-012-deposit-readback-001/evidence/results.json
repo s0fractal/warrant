@@ -1,0 +1,39 @@
+{
+  "observation": {
+    "status": "DEPOSIT_BYTES_OBSERVED",
+    "record": 22172098,
+    "file": "the-reason-runs-again.pdf",
+    "sha256": "da2f5506e315cb2243eac2700dc7898c2b52930f667963304e0db7904b13a111",
+    "bytes": 142823,
+    "holder_receipt": "NONE",
+    "freshness": "UNKNOWN",
+    "time_verified": false,
+    "authority": "none",
+    "scope": "bytes returned by pinned Zenodo record endpoint match caller SHA-256"
+  },
+  "controls": {
+    "wrong_subject": {
+      "status": "REFUSED",
+      "reason": "SUBJECT_PIN"
+    },
+    "wrong_record": {
+      "status": "REFUSED",
+      "reason": "RECORD_ID"
+    },
+    "missing_file": {
+      "status": "REFUSED",
+      "reason": "FILE_LIST"
+    },
+    "duplicate_file": {
+      "status": "REFUSED",
+      "reason": "FILE_LIST"
+    },
+    "size_limit": {
+      "status": "REFUSED",
+      "reason": "SIZE_LIMIT"
+    }
+  },
+  "metadata_sha256": "8d4baa29ebde2f7a927b97f10f8eacd208bd7725920a7e7fb3c5c355ba80b8c2",
+  "download_url": "https://zenodo.org/api/records/22172098/files/the-reason-runs-again.pdf/content",
+  "new_commitment_retained": "NOT_DEMONSTRATED"
+}

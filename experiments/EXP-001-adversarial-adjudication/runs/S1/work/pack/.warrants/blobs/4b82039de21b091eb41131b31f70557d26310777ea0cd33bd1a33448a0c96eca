@@ -1,0 +1,2 @@
+fact order_status: string = "shipped"
+check order_status == "delivered"

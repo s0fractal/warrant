@@ -1,0 +1,13 @@
+# 4-proximity.wpl — THE CHECK NOBODY RAN.
+#
+# Policy clause 4 has been in `under` since the first decision, and the number
+# it needs has been in the evidence blob since the first decision. Nobody ever
+# compiled the two together.
+#
+# This is SPEC §7(b): "a new demonstrable consequence of evidence already
+# present". No new evidence is filed. The same bytes, a check nobody ran.
+
+fact days_between_death_and_travel: int = 45
+fact max_days_under_clause_4:       int = 10
+
+check days_between_death_and_travel <= max_days_under_clause_4

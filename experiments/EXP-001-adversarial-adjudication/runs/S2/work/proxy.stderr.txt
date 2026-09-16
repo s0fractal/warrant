@@ -1,0 +1,5 @@
+warrant-mcp: sealed shop.add_to_cart -> 88ae7339601c
+warrant-mcp: sealed shop.add_to_cart -> 5775b3ec23f2
+warrant-mcp: sealed shop.checkout -> 2276bb71436e
+warrant-mcp: sealed shop.request_refund -> f5eb60e6c83d
+warrant-mcp: session sealed 4 calls into /Users/s0fractal/Projects/warrant/experiments/EXP-001-adversarial-adjudication/runs/S2/work/pack/.warrants (downstream exit 0)

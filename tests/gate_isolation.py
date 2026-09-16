@@ -153,6 +153,22 @@ def main() -> int:
         else:
             print("OK   the report names the revision the rule was read from")
 
+        # 5. A change whose diff is not UTF-8 text (a blob git still diffs as
+        #    text) must be decided, not crashed on. The verdict is the rule's
+        #    business; a traceback instead of a report is not.
+        blob = root / "not-utf8.bin"
+        blob.write_bytes(b"\xce\xb1\xce" * 40 + b"\xff\xfe" * 20)      # no NUL, invalid UTF-8
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "data: a term blob")
+        binary_head = git(root, "rev-parse", "HEAD").strip()
+        (root / "gate-report.md").unlink(missing_ok=True)
+        code, output = gate(root, "--base", base, "--head", binary_head,
+                            "--policy-from", base, "--out", "gate-report.md")
+        if "Traceback" in output or "UnicodeDecodeError" in output or not (root / "gate-report.md").exists():
+            failures.append(f"a non-UTF-8 diff crashed the gate instead of being decided:\n{output[-400:]}")
+        else:
+            print("OK   a non-UTF-8 diff is decided (report written), not a traceback")
+
     for problem in check_workflow():
         failures.append(f"workflow: {problem}")
     if not [f for f in failures if f.startswith("workflow:")]:

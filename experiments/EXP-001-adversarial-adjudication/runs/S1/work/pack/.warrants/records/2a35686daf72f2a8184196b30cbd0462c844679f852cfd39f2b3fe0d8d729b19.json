@@ -1,0 +1,36 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "MCP tools/call 'shop.checkout' classified A4 (effects=['spend'], via config); ok"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "812557f47b49b7a0139076f464b931059b64e0c7f256cf79a69d42dea8ec9527"
+    ],
+    "prior": [
+      "20e0892c7b8a890e3bf45a134ff0adc6553a85f7c698ead795bc58027c2a536f"
+    ],
+    "subject": {
+      "hash": "b7ab230b7a8401abb9a2b5b804343ed6fe2e78d5d059e63139778fde8183c330",
+      "note": "shop.checkout [A4]"
+    },
+    "ts": 1788862752,
+    "under": [
+      "13675e07d1a3fe3bcd993f903575691fd0652c7cead18513f5106679c0843ae1"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "8279c59c17222f6d6457d33ad3b8e3e587d08ad390de595200ab837edd0152ea9dc98c9c53b4da645b86321a1f08425d2cb098e81ca5c7499a29f72ec197a505"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+ "bundle": "/Users/s0fractal/Projects/warrant/experiments/EXP-001-adversarial-adjudication/runs/S1/PACK",
+ "finish_reason": "stop",
+ "model": "google/gemini-2.5-flash",
+ "outcome": "verdict",
+ "prompt_bytes": 55790,
+ "seconds": 11.5,
+ "started": 1788862838.35901,
+ "usage": {
+  "completion_tokens": 2313,
+  "completion_tokens_details": {
+   "audio_tokens": 0,
+   "image_tokens": 0,
+   "reasoning_tokens": 0
+  },
+  "cost": 0.0165192,
+  "cost_details": {
+   "upstream_inference_completions_cost": 0.0057825,
+   "upstream_inference_cost": 0.0165192,
+   "upstream_inference_prompt_cost": 0.0107367
+  },
+  "is_byok": false,
+  "prompt_tokens": 35789,
+  "prompt_tokens_details": {
+   "audio_tokens": 0,
+   "cache_write_tokens": 0,
+   "cached_tokens": 0,
+   "video_tokens": 0
+  },
+  "total_tokens": 38102
+ }
+}

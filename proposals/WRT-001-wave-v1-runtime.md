@@ -1,11 +1,53 @@
 # WRT-001: `sigma-glyph.wave@v1` — a settlement-integrated check runtime
 
-**Status:** PROPOSED (2026-07-26) — Warrant-side companion to **sigma-glyph ADR-008 (Resonant Precedent)**, which consumes this runtime. Not adopted; no production signatures; no cross-implementation port yet. This document is the normative home of the runtime per ADR-008's cross-project split: *C1 (the runtime) belongs to Warrant; Book II owns the coherence math; Book III owns effective-wave selection; the ADR-008 profile owns the view/entry/result schemas.*
+**Status: CLOSED — DEFERRED, 2026-09-07.** The runtime this document specifies has no
+consumer: sigma-glyph ADR-008 (Resonant Precedent, rev 15), whose citation form is the
+only reason `wave@v1` exists, was archived on 2026-09-03 as the tag
+`archive/2026-09-03/adr-008-rev15-candidate` ("historical candidate and review lineage;
+not adopted or active"), together with the `examples/resonant_precedent_*` probes this
+file names as its reference prototype; none of them is on sigma-glyph `master`. WRT-002,
+the settlement substrate that Deferred items 1–2 depend on, is closed as deferred the
+same day with a P0 open. Closing adopts nothing and moves no byte.
+
+**Retained, already in the tree.** Deferred item 0 — the generic verifier refactor (one
+record snapshot through settlement and re-litigation, strict I-JSON trust and genesis
+inputs with Python↔Go parity, fail-closed trust short-circuit, read-only version-scoped
+runtime dispatch) — is on `master`, hardened by the eleven findings of the Kimi K3 item-0
+gate. The rule this document argued first, that a new runtime tag requires a new body
+version, is SPEC §13.1 and needs nothing from here.
+
+**Retained as design evidence, not as a contract.** §§1–6 (reason schema with a
+per-citation `budget`, ruleset binding, single settlement context, totality, severity,
+role binding with the R0 live-head contract) and §8 as the *shape* of a deterministic
+re-execution meter. §8 was gated once (Codex, AMEND) and never re-gated after its
+amendments.
+
+**Not retained.** `0.2+sigma-wave.1` as a reserved version, any `RUNTIMES` entry, the §7
+novelty/tunnel extension, and every claim that the R1 stored path is specifiable before
+WRT-002 F3 is closed.
+
+**Reactivation condition.** A re-adopted precedent profile that needs a stored,
+settlement-integrated citation (a re-adoption act on the sigma side, not a `git show`),
+plus WRT-002's F3 closed under a three-family gate. Until then `wave@v1` is neither
+registered nor reserved; a successor may reuse this design but starts its own gate
+history.
+
+**Lesson kept on purpose.** rev 1→7 of this document and rev 3→15 of ADR-008 were gated
+by one reviewer family; the first three-family gate on the companion design reproduced
+nine defects that six single-family rounds had passed. In this lineage, repeated same-family gates missed defects that broader review
+then reproduced; reviewer-family diversity does not by itself establish correctness.
+
+Closed by Claude Fable 5.1 at the owner's decision of 2026-09-07. A closure is an owner's
+governance act, not a gate verdict, and it adopts nothing (AGENTS.md rules 3–4).
+
+---
+
+**Status (historical, 2026-07-26):** PROPOSED — Warrant-side companion to **sigma-glyph ADR-008 (Resonant Precedent)**, which consumes this runtime. Not adopted; no production signatures; no cross-implementation port yet. This document is the normative home of the runtime per ADR-008's cross-project split: *C1 (the runtime) belongs to Warrant; Book II owns the coherence math; Book III owns effective-wave selection; the ADR-008 profile owns the view/entry/result schemas.*
 
 **Origin:** ADR-008 needs to cite a prior decision as *precedent* with a machine-checkable claim "decision X's projected wave coheres with query Q, under jurisdiction J's effective wave." `ski@v1` cannot express this: it evaluates a Book I SigmaNode graph and cannot parse a Book III JCS assertion, call Book II `wave()`/`LUT_COS`, or bind body-level evidence to a fact inside the term. So ADR-008 requires a **new Warrant check runtime**. The rev-1..7 gate history (in `sigma-glyph/reviews/`) established that this is a Warrant-level contract — not a string added to `RUNTIMES` — because it changes validation, severity, tunnel expansion, novelty fingerprinting, and future budget.
 
 **§8 gate record (what it passed and what it does not claim).** §8 was gated by
-Codex on 2026-07-27 (`reviews/2026-07-codex-wrt001-budget-spec-gate.md`) —
+Codex on 2026-07-27 (retired `codex-wrt001-budget-spec-gate`, see `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`) —
 verdict **AMEND**, five P1 and one P2. Three P1s are answered in the text below
 (the circular bootstrap, the bounded-read arithmetic, unmetered Book III
 selection). One P1 was **accepted rather than answered**: §8 is labelled a DRAFT
@@ -15,7 +57,7 @@ stable. The P2 and one further seam found on re-reading (the size-source
 paragraph in §8) were closed on 2026-07-31 **without a second gate**. The
 remaining P1 was an implementation finding, not a §8 finding, and is fixed on
 `master` — reproduced, with a control, in
-`reviews/2026-07-codex-wrt001-budget-spec-gate-response.md`. **No independent
+the retired `codex-wrt001-budget-spec-gate-response`. **No independent
 gate has run on the post-AMEND text**; §8 has not been re-gated, nothing here is
 adopted, and `0.2+sigma-wave.1` remains unregistered.
 
@@ -392,7 +434,7 @@ Ordered close-out before adoption:
    verifier-hardening track (the Kimi full-audit line).
 
    **Independent gate:** Kimi K3 ran an adversarial gate
-   (`reviews/2026-07-kimi-k3-item0-adversarial-gate.md`), forbidden from
+   (retired `kimi-k3-item0-adversarial-gate`), forbidden from
    rubber-stamping. Verdict `AMEND` — 11 P1 counter-vectors. Triage: **all 11 are
    in verifier code byte-identical to `origin/master` (pre-existing latent bugs,
    NOT item-0 regressions)**; the gate refuted an over-broad contract claim (now
@@ -405,7 +447,7 @@ Ordered close-out before adoption:
    dir-as-blob / dir-as-genesis / lone-surrogate record; the `-0`
    canonicalization/WarrantID **consensus split**) plus the count-parity gaps were
    fixed and independently re-gated by Kimi K3 (all 11 confirmed FIXED, no new P1;
-   `reviews/2026-07-kimi-k3-item0-regate.md`). This generic verifier refactor +
+   retired `kimi-k3-item0-regate`). This generic verifier refactor +
    hardening is landed on `master`. **`wave@v1` itself is NOT adopted here:**
    `0.2+sigma-wave.1` is **not registered** in `ACCEPTED`/`RUNTIMES` and this doc
    is PROPOSED, not adopted. Adoption still requires the deferred items below

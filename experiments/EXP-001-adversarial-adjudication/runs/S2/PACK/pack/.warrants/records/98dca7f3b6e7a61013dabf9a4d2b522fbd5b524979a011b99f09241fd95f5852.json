@@ -1,0 +1,43 @@
+{
+  "body": {
+    "actor": {
+      "id": "agent@exp001"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "Order ORD-0003 status is 'shipped', not 'pending'. The mandate only allows cancellation of orders with 'pending' status [mandate rule for cancel evaluates FALSE on the stated facts]"
+      },
+      {
+        "check": "c3ee2c5dd5965cec47028fe9caedce05c4db7d8b85e1f195f4004794a337dd7c",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "reject",
+    "evidence": [
+      "9d8449d9db7efdbaa4610bb20207ed6dce464911701c22e16ac2218d0ce9863c",
+      "3e5211455c72fd19ddbabf0f210f27ff627727fbf18e79b7c8d41fae789c11dd"
+    ],
+    "prior": [
+      "cca0ca6d4887d78232987883428dffbdbc89de97648eabcde5de918a43c0ec21"
+    ],
+    "subject": {
+      "hash": "055afb09b96a8e923d34e520e6f720933ce958b9c3a9239648f67e90d6d8d7e8",
+      "note": "cancel ORD-0003"
+    },
+    "ts": 1788862803,
+    "under": [
+      "86a1e9afdca720717ca23c5199166881561c8411b44d79031c0de22a7c885073"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "agent@exp001",
+      "key": "d404bc44565aedbb899150e5b0b3b32b9441bf0cb7884c33130da8dbc27dd2cf",
+      "sig": "94b1c32579f5e90bda667a1a896151f29b984367f9b0de0147a827d9e3a9bf35ee74d79385e36a675448790bf9537f8116da15860737fd9914cee6c86aaef103"
+    }
+  ]
+}

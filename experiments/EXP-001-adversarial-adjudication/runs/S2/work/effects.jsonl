@@ -1,0 +1,4 @@
+{"args": {"sku": "CB-1"}, "op": "shop.add_to_cart", "result": {"cart": ["CB-1"], "subtotal_cents": 900}, "ts": 1788862791}
+{"args": {"sku": "ST-7"}, "op": "shop.add_to_cart", "result": {"cart": ["CB-1", "ST-7"], "subtotal_cents": 3300}, "ts": 1788862793}
+{"args": {}, "op": "shop.checkout", "result": {"charged_cents": 3300, "currency": "USD", "order": "ORD-0005"}, "ts": 1788862798}
+{"args": {"order": "ORD-0004"}, "op": "shop.request_refund", "result": {"amount_cents": 12900, "order": "ORD-0004", "refund": "RF-0004"}, "ts": 1788862809}

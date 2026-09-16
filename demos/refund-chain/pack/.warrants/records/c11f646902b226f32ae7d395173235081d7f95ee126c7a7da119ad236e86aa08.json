@@ -1,0 +1,44 @@
+{
+  "body": {
+    "actor": {
+      "id": "desk@airline"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "request was made before travel and is not retroactive"
+      },
+      {
+        "check": "a0880299485b410211162f7ff5a5fcb7cb426f55d3d5ff177286e384b3c288cc",
+        "kind": "check",
+        "runtime": "ski@v1",
+        "verdict": "pass"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [
+      "1de411c1f249980c5c5ca1476d69f5dc48745aab6bbcd1264049bb3fbd568ad6",
+      "bd229c84548431d645d18685a3030d4ecb3067290ee84f553932d3abe394df0e",
+      "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8"
+    ],
+    "prior": [
+      "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58"
+    ],
+    "subject": {
+      "hash": "42e274376bef25041f40eb84acc6eec030cdc91553169daf6906362c2dc55cb8",
+      "note": "request was made before travel and is not retroactive"
+    },
+    "ts": 1708304400,
+    "under": [
+      "5b11b31d31886c265ed0ac0663f49cdbe894d8793fb7967f41f37ab1b68c9f8d"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "desk@airline",
+      "key": "6ee091fd280a9b68554fa73c588125d47d3425c68a26ba236b4dad90f90a8f92",
+      "sig": "90c3ca8da41b64524f0ad75b79e2c799a6394a4519b5f970e8357d91970456f04e0b61ca2d26419ba998cc543e0f09e41c73864ce0bfbc95fc9fe13f04303400"
+    }
+  ]
+}

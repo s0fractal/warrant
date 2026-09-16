@@ -56,9 +56,17 @@ FACT = "fact "
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_./-]+$")
 
 
-def git(*arguments: str) -> str:
+def git_bytes(*arguments: str) -> bytes:
+    """git output as the bytes it is. The diff is hashed from these: a change
+    that adds a file which is neither UTF-8 nor NUL-containing (a Σ-GLYPH term
+    blob, for one) is diffed by git as text, and decoding it crashed the gate
+    before it decided anything (EXP-001 run, PR #68)."""
     return subprocess.run(["git", "-C", str(ROOT), *arguments],
-                          capture_output=True, text=True, check=True).stdout
+                          capture_output=True, check=True).stdout
+
+
+def git(*arguments: str) -> str:
+    return git_bytes(*arguments).decode("utf-8", errors="replace")
 
 
 def resolve(rev: str) -> str:
@@ -377,7 +385,7 @@ def main() -> int:
         raise SystemExit("the compiled term disagrees with the reference "
                          "interpreter — refusing to report either")
 
-    subject = hashlib.sha256(git("diff", f"{base}...{head}").encode()).hexdigest()
+    subject = hashlib.sha256(git_bytes("diff", f"{base}...{head}")).hexdigest()
     rule = rule_of(source)
     rerun = (f"`warrant --store {arguments.store} check {compiled.blob[:16]}…` — "
              "the blobs are in this run's `gate-store` artifact"

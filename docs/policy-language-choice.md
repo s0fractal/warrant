@@ -83,8 +83,9 @@ That is the trade this decision makes: **familiarity without a promise.**
 
 Maximum power, and it destroys the property that makes `ski@v1` worth having.
 `ski@v1`'s trusted computing base is a few hundred lines of evaluator that three
-independent implementations agree on, with work *and* peak memory bounded by
-`size − 1 ≤ spent`. A Wasm runtime is a large TCB with its own CVE history, and
+separately implemented engines from one lineage agree on, with semantic work
+*and* peak materialized size bounded by `size − 1 ≤ spent` — a bound on the
+calculus, not on the host process, which still needs its own admission limit. A Wasm runtime is a large TCB with its own CVE history, and
 "budget-bounded" becomes a property of a fuel meter in someone's engine rather
 than of the calculus. It also splits the format: a verifier without a Wasm
 runtime reports every such reason unverified. The gap it would close — real

@@ -1,0 +1,14 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/s0fractal/black-heart/816d36bed9e156ca1913ac45adbbe2b1ec8d2048/CLI-VERIFY.md",
+    "sha256": "4ac4b9e5cc2bf90c363e5ab5188553f7e2ff840e82dff23374f351f16a9fae9c",
+    "bytes": 2373,
+    "matched": true
+  },
+  {
+    "url": "https://raw.githubusercontent.com/s0fractal/black-heart/816d36bed9e156ca1913ac45adbbe2b1ec8d2048/artifact_audit.py",
+    "sha256": "39b926300e2343394a22749157e9149087aafaa521a3358f83c4dd5db76a7e7f",
+    "bytes": 5252,
+    "matched": true
+  }
+]

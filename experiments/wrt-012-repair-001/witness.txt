@@ -1,0 +1,74 @@
+==================================================================
+WITNESS (WRT-012 prototype) — tests
+==================================================================
+
+[A] commitment
+OK   genesis commit 
+OK   digest is sha256 of canonical bytes 
+OK   bytes are canonical (sorted, compact) 
+OK   second commit chains to tip 
+OK   prev != tip refused by name 
+OK   stream mismatch refused 
+OK   new store without --stream refused 
+OK   tampered commitment refused 
+OK   parse refuses FLOAT 
+OK   parse refuses DUPLICATE_KEY 
+OK   parse refuses CONSTANT 
+OK   sequence>0 with prev null refused 
+
+[B] time axis
+OK   no .ots -> NONE 
+OK   pending receipt -> FILE_BOUND_PENDING, time_verified false 
+OK   tool never says BITCOIN_VERIFIED 
+OK   receipt for other bytes refused 
+
+[C] replayed byte verification
+OK   NOT_RUN without execution operands 
+OK   unbound execution refused before launch 
+OK   negative byte comparison actually fails 
+OK   exclusive run reservation refuses repeat 
+OK   report replays actual operands 
+OK   forged result refused 
+OK   legacy claim never grants PASS 
+
+[D] holding axis
+OK   configured holder with empty store -> NONE / STORE_UNAVAILABLE 
+OK   holder receives and re-hashes 
+OK   verified receipt -> EXTERNALLY_OBSERVED with named custody 
+OK   receipt under a foreign key -> NONE, note RECEIPT_SIG 
+OK   committer-supplied receipt is not an input 
+OK   relative holder store refused 
+OK   report is offline and claims no authority 
+
+[E] freshness controls
+OK   control A: no later witness -> UNKNOWN 
+OK   control B: verified continuation -> LATER_STATE_WITNESSED(holder, C1->C2) 
+OK   rollback attack, holder consulted: path C1->C2->C3 walked from holder bytes 
+OK   missing intermediate -> UNKNOWN with PATH_INCOMPLETE, not DISCONNECTED 
+OK   substituted intermediate -> UNKNOWN with LINK_TAMPERED 
+OK   traversal bound enforced 
+OK   control C: larger sequence on another branch -> UNKNOWN / DISCONNECTED 
+OK   prev points at local but sequence is not +1 -> DISCONNECTED 
+
+[F] invariance on frozen proofs
+OK   all axes but verification byte-identical across the run 
+OK   verification moved NOT_RUN -> PASS 
+OK   proof inputs identical (no re-fetch between reports) 
+OK   stored report is not an input; recompute disagrees with the edit 
+
+[G] mutation controls (a mutant that survives is a FAIL)
+    (re-running E against a mutant)
+    (re-running E against a mutant)
+OK   mutant killed: always UNKNOWN (rev 2 defect) 
+    (re-running E against a mutant)
+OK   mutant killed: trust sequence, skip path 
+    (re-running E against a mutant)
+OK   mutant killed: endpoint-only: intermediate bytes not re-hashed 
+    (re-running E against a mutant)
+OK   mutant killed: no traversal bound 
+    (re-running E against a mutant)
+OK   mutant killed: incomplete reported as disconnected 
+OK   baseline unchanged after mutants 
+
+48/48 checks
+WITNESS: ALL PASS

@@ -32,9 +32,59 @@ an external audit returns 0×P0/P1. Self-review is a substrate, never the gate.
 | W4 | §8.3 negative battery (weak-key + schema-invalid) checked by both `conformance` commands; parse-layer rejections (dup-key/trailing/canonicality) referenced to the cross-impl harnesses | `examples/conformance-negatives.json`, both impls 40/40 | **done** |
 | W3 | Third independent implementation (**Rust**) of the verifier, mirroring sigma's discipline | byte-exact on §8 + differential | **done** (canon/schema/WarrantID/weak-key **+ from-scratch Ed25519**; verifies all three §8 signatures; 3-way canon differential 43/43; Ed25519 differential vs Python 452/452; no external crates) |
 | X1 | Combined CI: Book III / sigma store verified by the live warrant CLI, so cross-repo coupling regressions surface | CI job across both repos | **done** (`tools/x1_cross_repo.sh` + `x1_negative_control.sh` + workflow, mirrored byte-identically in sigma; 11 crossings HEAD-vs-HEAD, 2 effective negative controls per direction) |
+| W5 | **Authorized effective lifecycle** — supersede is a bare marker, conflict resolution is dormant, no checkpoint or effective set exists (extracted from WRT-002, closed deferred 2026-09-07) | a design that closes F3 with an executable countervector, under a three-family gate, before any byte is frozen | **open problem**, not scheduled; see below |
 
 **Explicitly NOT doing** (anti-gold-plating): new features, marketing, elegance
 rewrites, or spec prose without a vector behind it.
+
+## Open problem: authorized effective lifecycle
+
+Extracted from `proposals/WRT-002-keystate-effective-lifecycle-r1.md` when it
+was closed as deferred (2026-09-07), so that the unsolved part outlives the
+proposal without the proposal's 590 lines staying on the active surface.
+
+**What is true of Warrant today** (WRT-002 §0, still accurate): `supersede` is a
+bare marker with no authorization and no eviction, so `active_records` never
+subtracts a supersede target and eligibility equals effect; key-state exists
+(`keys_before`, DAG-ordered authorized rotations, latest-wins, not monotone);
+conflict is detected (`conflict_actors`) but its resolution is dormant; there is
+no checkpoint and no effective set. THREAT-MODEL NG-2 states the consequence:
+no anti-censorship property, and none is claimed.
+
+**The shape that survived six gates:** effectiveness as three ordered layers with
+no negation cycle — `valid_cap` (immutable causal authorization, permanent) →
+`selected_lineage` / `admits` (which branch won each conflict; path-aware,
+distance-stratified root admission) → `effective` (lifecycle, well-founded on
+causal depth) — plus a closed `may_reverse` capability table with a fail-closed
+default, and a finite consumer-independent checkpoint identity.
+
+**The four counterexamples that defeat it**, reproduced by the three-family gate
+of 2026-07-28 (Appendix A of the retired `kimi-k3-wrt-002-rev7-adversarial-gate`,
+retrievable with status through `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`; adjudicated in
+`reviews/2026-07-wrt-002-rev7-multifamily-gate-response.md`):
+
+- **F3 (P0).** A supersede authorized *solely* by a resolver-rejected policy
+  branch reverses an adoption in `admits`, and revoking the censor plus
+  re-adopting cannot restore admission: a dead branch permanently censors a
+  root — the censorship primitive the design exists to eliminate, laundered
+  through governance already rejected.
+- **F4 (P1).** The dual: an adoption authorized only under the dead branch admits
+  a root the selected governance never adopted.
+- **F5 (P1).** `selected_lineage` is non-monotone in the cut: a later succession
+  makes the single-maximal path return both forks, so a rejected succession
+  re-enters the lineage.
+- **F7 (P1).** Two honest quorums resolving one fork differently brick the slot
+  permanently; one governance race is a permanent deadlock.
+
+They share one root: Layer 2a consumes Layer 1's permanence without Layer 2b's
+gate, which is exactly the trade that bought cycle-freedom. Patching them one at
+a time risks reintroducing the rev-6 non-monotone loop; that is why WRT-002
+stopped instead of papering over them.
+
+**Done-criterion for a successor:** close F3 with an executable countervector
+that goes red on rev 8b and green on the new definition, under a three-family
+gate, before freezing any byte; and do not lose the losing-quorum root-adoption
+finding, which is the part of WRT-002 already in SPEC.
 
 ## Progress log
 
@@ -87,7 +137,7 @@ rewrites, or spec prose without a vector behind it.
   from RFC on mixed-torsion keys (`A=A0+T8`) -> added `mod_l` and reduce k mod L.
   Plus a benign P2 (`fe_mul` r1 mask). Re-validated: `edtest` PASS, §8 sigs
   verify, Ed25519 differential now 472/472 incl. 20 mixed-torsion cases. See
-  `reviews/2026-07-gemini31pro-ed25519-audit{,-response}.md`. Lesson: a random
+  the retired `gemini31pro-ed25519-audit` pair, indexed in `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`. Lesson: a random
   differential can't reach the canonicality/cofactor edges; adversarial algebra
   can. **Three external models across three rounds now back the codebase.**
 - **2026-07-17 — W3 increment 2 (from-scratch Ed25519 in Rust) — W3 COMPLETE.**
@@ -121,7 +171,7 @@ rewrites, or spec prose without a vector behind it.
   One real P2: wrong-length pubkeys weren't pinned — adding them **caught a panic
   in my own conformance harness** (`k[:12]` on a short key, Go), fixed with
   `sh12`. Battery now 45/45 both impls. See
-  `reviews/2026-07-gptoss120b-agy-audit{,-response}.md`.
+  the retired `gptoss120b-agy-audit` pair, indexed in `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`.
 - **2026-07-17 — W1 + W4 shipped (normative negatives).** `examples/conformance-negatives.json`
   is a machine-readable §8.3 battery every implementation MUST reject: 11 weak
   Ed25519 keys (signature verification must fail) + 9 schema-invalid bodies
@@ -141,7 +191,7 @@ rewrites, or spec prose without a vector behind it.
   budgets; new hostile.py regressions. Three other findings (ATP `force` wrap,
   2 missing blocklist keys, scalar-record crash) were refuted empirically; the
   2 keys were blocklisted anyway as defense-in-depth. See
-  `reviews/2026-07-gemini31pro-agy-audit{,-response}.md`. Lesson recorded:
+  the retired `gemini31pro-agy-audit` pair, indexed in `history/RETIREMENT-2026-09-REVIEW-CORPUS.md`. Lesson recorded:
   external audit is the gate, self-review is the substrate.
 - **2026-07-17 (Fable 5, architect):** shipped **W2**. The fuzzer immediately
   found three real defects, all fixed the same pass:

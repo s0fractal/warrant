@@ -1,0 +1,17 @@
+{
+ "adjudicator": "claude (maintainer model)",
+ "artifact_commit": "84e42dd (warrant); manifesto 188f4b6; sigma-glyph 78b9481",
+ "backfilled": false,
+ "context_sha256": "unrecorded",
+ "manifest": "review-manifest@v0",
+ "notes": "Operator-relayed from a web session; the operator described the prompt as deliberately adversarial (\"спеціально негативно налаштований\"). The reviewer states it read specifications, proof boundaries, integrations and selected code and locally reproduced the MCP proxy classifier and error path; it did not run the full test suites or Lean. Cross-stack: the manifesto part is also filed in manifesto/reviews/, sigma-glyph carries an inbox pointer.",
+ "orchestrator": "s0fractal (operator)",
+ "prior_reviews_visible": "unrecorded",
+ "prompt_sha256": "unrecorded",
+ "review_file": "2026-09-chatgpt-web-cross-stack.md",
+ "reviewer_model": "ChatGPT (web; exact model unrecorded)",
+ "reviewer_vendor": "OpenAI",
+ "session": "unrecorded",
+ "stopping_criterion": "unrecorded (single response; operator relayed)",
+ "web_access": true
+}

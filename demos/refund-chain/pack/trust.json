@@ -1,0 +1,16 @@
+{
+  "actors": {
+    "auditor@airline": [
+      "c91cb3ce2b84e4ba85f562ece41edfe4e27afc52d88d507f66a18638df823e9f"
+    ],
+    "desk@airline": [
+      "6ee091fd280a9b68554fa73c588125d47d3425c68a26ba236b4dad90f90a8f92"
+    ],
+    "objector@airline": [
+      "b8fc9d70b330b5d377a521047bce772144a747caa203c453a91385de86e177cc"
+    ]
+  },
+  "genesis_roots": [
+    "87d423187c7d792fc879228f78482a48c9f7ca9ccea66f49b564e80e5da1fe58"
+  ]
+}

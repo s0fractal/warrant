@@ -1,0 +1,12 @@
+{
+  "action": "grant_refund",
+  "amount_cad": 650.88,
+  "basis": "bereavement_discount",
+  "certificate_filed": true,
+  "date_of_death": "2024-01-02",
+  "days_between_death_and_travel": 45,
+  "relationship": "grandmother",
+  "requested_before_travel": true,
+  "retroactive": false,
+  "travel_commenced": "2024-02-16"
+}
