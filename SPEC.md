@@ -88,11 +88,29 @@ Why this runtime exists: `cmd@v1` proves a claim to whoever trusts the container
 
 **One evaluator per tag (MUST).** Because a runtime tag is immutable (§13.1), an implementation that ships an evaluator for a `ski@vN` tag MUST bind that tag to exactly one evaluator, identified by the digest of its bytes, and MUST verify that digest **before** loading it; a tag with no bound evaluator, or a bound module whose bytes do not match, MUST make the tag's reasons *unverified* (§6) — never a fallback to another tag's evaluator. The reference implementation records its bindings in `trust/ski-runtime-evaluators.json` and enforces them in `impl/warrant.py` (`SKI_EVALUATORS`).
 
-### 3.2. `ski@v2` — Σ-GLYPH Book I 0.6.0 (reserved candidate; not registered or admitted)
+### 3.2. `ski@v2` — Σ-GLYPH Book I 0.6.0 (reserved candidate; DRAFT REGISTRATION, NOT IN FORCE)
 
-`ski@v2` names evaluation per **Σ-GLYPH Book I 0.6.0** (the anchored `v0.7.0` bundle, adoption warrant `0e634c17…`): the same check-blob shape as §3.1 with `"ski": 2`, evaluated over `(term_hash, atp: uint32, env)` with a `Receipt = { exit, result_hash, atp_spent }` whose `exit` is one of the three canonical exits, and with Book I 0.6.0 §3.5 (bytes stored under a key they do not hash to are refused, never evaluated). `ski@v1` is unchanged by this registration and remains Book I v0.5.
+> **STATUS (MUST read before implementing anything below).** `ski@v2` is **reserved and admitted in no body version**. The text of this section is a **draft registration** — the contract a future admission change will register, written down so implementations can be built and reviewed against it instead of against a diff. It is **not in force**: a conforming verifier today MUST reject any record carrying `runtime: "ski@v2"`, in every body version, exactly as it rejects any unregistered runtime (§3, §13.1), and MUST reject a body declaring `"warrant": "0.3"`. Nothing in this section makes a record valid, and nothing in it may be cited as a registration. The design is `proposals/WRT-013-ski-v2-admission.md`; the admission act is a single later change that satisfies every condition in its §8.
 
-`ski@v2` is **reserved as a candidate and admitted in no body version**: §13.2 reserves body version `0.3` for it and `0.3` is not yet specified, so every conforming verifier — Python, Go, Rust — rejects a record carrying `ski@v2` today exactly as it rejects any unregistered runtime. The reference wheel therefore ships no `ski@v2` evaluator. Its evaluator bytes, outcome-fingerprint tuple (§7), negative vector set (§8.3) and the `0.3` body rules belong to the future registration-and-admission change, not to this reservation.
+`ski@v2` names evaluation per **Σ-GLYPH Book I 0.6.0** (the anchored `v0.7.0` bundle, adoption warrant `0e634c17…`, published as `sigma-glyph` 0.7.0). `ski@v1` is unchanged by this draft and remains Book I v0.5; its bytes, verdicts, outcome fingerprints and replays do not move.
+
+**Check blob (draft).** I-JSON, JCS-canonical, integers only, hashed like any blob:
+
+```json
+{ "ski": 2, "term": "<hex64 NodeHash>", "atp": <uint32>, "expect": "<hex64 NodeHash>", "exit": "<canonical exit>" }
+```
+
+The member set is exactly these five; a missing or unknown member makes the blob invalid — which is *not* a `fail` verdict. `"ski"` MUST be `2`; a `"ski": 1` document is a `ski@v1` blob and MUST NOT be executed under `ski@v2`, nor the converse. `exit` MUST be one of `"normal_form"`, `"atp_exhausted"`, `"unresolved_reference"` — the three canonical exits of Book I 0.6.0 §3.4.
+
+**Evaluation (draft).** Evaluate `eval(term_hash, atp, content environment)` and obtain `Receipt = { exit, result_hash, atp_spent }`. The content environment IS the Warrant blob store, as in §3.1; Book I 0.6.0 §3.5 applies, so bytes stored under a key they do not hash to are refused and never evaluated. Genesis axioms are intrinsic. An implementation MUST pin the Book I ruleset by the digest of the evaluator bytes it ships (§3.1's one-evaluator-per-tag rule), never by a URL.
+
+**Verdict (draft).** `pass` **iff** `receipt.exit` equals the blob's `exit` **and** `receipt.result_hash` equals `expect`; otherwise `fail`. `atp_spent` is reported and never compared: a claim about the budget consumed is a different proposition from the one the blob states.
+
+**Local outcomes are never verdicts (draft).** Admission refusal, resource fault, an `atp` above the verifier's re-execution budget, a check blob that is missing, mis-addressed, malformed or non-canonical, foreign-keyed bytes at any fetch, a missing or digest-mismatched evaluator, and an unpinned evaluator override each make the reason **`ski@v2 unverified: <reason class>`** — a WARN in base verification and an ERR under settlement-grade verification when the reason participates in a settlement-active record (§6(7)). None of them is `pass`, none is `fail`, and a silent skip is non-conformant.
+
+**Outcome fingerprint (draft, §7).** `{runtime, term, expect, expect_exit, verdict, result_node_hash, exit}`, where `verdict`, `result_node_hash` and `exit` are the **re-run's**, never the filer's claim, and `expect_exit` is the blob's declared exit. `atp_spent` is deliberately excluded: were it a member, novelty would be reachable by editing one integer, re-opening any settled question without bound. The re-run's `exit` is a member because without it one term at two budgets is one outcome although it is two (WRT-013 §2, M5); the claimed `expect_exit` alone does not carry that, which vector 19a isolates.
+
+**Body version (draft).** The admission change introduces body version `0.3`, admitting `cmd@v1`, `ski@v1` and `ski@v2`, with the same field set as `0.2` (§13.2). Until then `0.3` is unspecified and MUST be rejected.
 
 ## 4. Canonicalization and identity (MUST)
 
@@ -173,7 +191,7 @@ An `accept` or `reject` whose subject is a *question* blob settles it. `supersed
 
 **Re-litigation.** A re-litigation warrant MUST carry at least one of: (a) an evidence hash absent from the tunnel's blob set, or (b) a **new demonstrable consequence** of evidence already present — a check, all of whose blobs are resolvable, that re-runs to a previously absent **outcome fingerprint** within the settling tunnel.
 
-Outcome fingerprints: `ski@v1` — `{runtime, term, expect, verdict, result_node_hash}`; `cmd@v1` — `{runtime, sorted evidence hashes, verdict, transcript hash}`, with `transcript` REQUIRED for §7(b) use. A check whose outcome fingerprint already appears in the tunnel is not new even if the check blob hash differs. Only tunnel reasons supplying all required fields count toward the tunnel's fingerprint set — a reason lacking a required field (e.g. `transcript`) cannot block novelty. (The `evidence` array is not ordered by JCS; the fingerprint sorts hex hashes ascending lexicographically.) Prose MAY explain why a consequence matters, but prose is not part of the novelty test and alone never re-opens settlement.
+Outcome fingerprints: `ski@v1` — `{runtime, term, expect, verdict, result_node_hash}`; `cmd@v1` — `{runtime, sorted evidence hashes, verdict, transcript hash}`, with `transcript` REQUIRED for §7(b) use. (`ski@v2`'s tuple is drafted in §3.2 and is **not in force**; no reason carrying that runtime can reach this rule while the tag is unregistered.) A check whose outcome fingerprint already appears in the tunnel is not new even if the check blob hash differs. Only tunnel reasons supplying all required fields count toward the tunnel's fingerprint set — a reason lacking a required field (e.g. `transcript`) cannot block novelty. (The `evidence` array is not ordered by JCS; the fingerprint sorts hex hashes ascending lexicographically.) Prose MAY explain why a consequence matters, but prose is not part of the novelty test and alone never re-opens settlement.
 
 **Novelty ≠ relevance.** The format layer decides only whether an outcome is new; whether a novel check is *relevant* to the settled subject — or a strawman testing something adjacent — MUST be decided by the active settlement policy, not the core format. Tools SHOULD refuse to file re-litigation warrants carrying neither (a) nor (b); verifiers SHOULD flag them `WARN: re-litigation cites nothing new`. NOTE: because novelty is purely syntactic, a permissive-policy store may accumulate unbounded fingerprint-distinct but irrelevant re-litigations; implementations SHOULD provide configurable limits — a policy choice, not a format requirement.
 
@@ -410,11 +428,11 @@ Policy: **Specification Required** in the IETF sense — a registration MUST cit
 | --- | --- | --- | --- |
 | `cmd@v1` | `0.1`, `0.2` | current | §3 |
 | `ski@v1` | `0.2` | current | §3.1 (Σ-GLYPH Book I **v0.5**) |
-| `ski@v2` | *none yet* (`0.3` reserved, §13.2) | reserved candidate; not registered or admitted | §3.2 (Σ-GLYPH Book I **0.6.0**, bundle v0.7.0) |
+| `ski@v2` | *none yet* (`0.3` reserved, §13.2) | reserved candidate; **draft registration text in §3.2, NOT IN FORCE** — not registered, not admitted | §3.2 (Σ-GLYPH Book I **0.6.0**, bundle v0.7.0) |
 
 A registration MUST supply: the tag, the body versions it is valid in, whether a verifier is expected to re-execute it (§6(7)) and with what budget unit, the exact outcome-fingerprint tuple for §7 novelty, the pinning rule for whatever ruleset it evaluates (as §3.1 requires of `ski@v1`), and a normative negative vector set (§8.3).
 
-A **reserved candidate row is not a registration** and carries no compatibility credit. It MAY pin candidate semantics and evaluator bytes so implementations can prepare without redefining an immutable tag, but verifiers MUST treat it as unregistered until one change supplies every item above and admits it only through a new body version.
+A **reserved candidate row is not a registration** and carries no compatibility credit. It MAY pin candidate semantics and evaluator bytes so implementations can prepare without redefining an immutable tag, but verifiers MUST treat it as unregistered until one change supplies every item above and admits it only through a new body version. A **draft registration** (§3.2's status block) is that preparation written out in full: it is still not a registration, it moves no validity surface, and the presence of draft text MUST NOT cause any implementation to accept the tag.
 
 Rules that hold regardless of registration:
 
@@ -429,7 +447,7 @@ Rules that hold regardless of registration:
 | --- | --- | --- |
 | `0.1` | current | base schema (§2, §3) |
 | `0.2` | current | `ski@v1` runtime (§3.1) |
-| `0.3` | **reserved — not specified** | `ski@v2` runtime (§3.2). No implementation accepts a `0.3` body until this row is completed with its §8 vectors; until then `ski@v2` is reserved-and-rejected in `0.1` and `0.2` like any unregistered runtime |
+| `0.3` | **reserved — not specified** (draft rules in §3.2, NOT IN FORCE) | `ski@v2` runtime (§3.2). No implementation accepts a `0.3` body until this row is completed with its §8 vectors; until then `ski@v2` is reserved-and-rejected in `0.1`, `0.2` **and** in any body claiming `0.3`, like any unregistered runtime |
 
 Policy: maintainer action recorded in `CHANGELOG.md` (§14.3), with the §8 vectors extended in the same change. A new body version MUST NOT invalidate any record valid under an earlier one (§4 of the version preamble), and MUST state, for every runtime tag in §13.1, whether it is admitted or reserved-and-rejected. Document-level versions that add no body schema (as v0.3 did) do NOT consume a `warrant` value.
 

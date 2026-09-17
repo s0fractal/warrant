@@ -251,6 +251,15 @@ CHECKS = [
     # immutable, so its evaluator is fixed and checked BEFORE import).
     ("ski runtimes: admitted evaluator pinned and refused-before-import on drift",
      ["python3", "tests/ski_runtime_evaluators.py"], None),
+    # WRT-013 stage S1 (draft registration). A draft that quietly moved a
+    # validity surface would be worse than no draft, so the inertness is
+    # asserted by execution: ski@v2 and body 0.3 stay rejected (Python, and Go
+    # through the probe `validate` class when the binary is built), the draft
+    # schemas and vectors are unreachable from every in-force loader, the tag
+    # still has no evaluator, and ski@v1's specimen and M5 fingerprint equality
+    # are pinned as they are TODAY so admission has to move them deliberately.
+    ("ski@v2 draft is inert (tag and body 0.3 still rejected; v1 unmoved)",
+     ["python3", "tests/ski_v2_draft_status.py"], None),
     # The air-canada replay driver must read the installed CLI's own refusal
     # (grade/ok/errors/exit of every consumed report) and count controls it
     # executed, not manifest entries (exact-head review of 29aecf8). Runs the

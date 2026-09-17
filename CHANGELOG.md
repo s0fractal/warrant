@@ -26,6 +26,29 @@ right.
 
 ## Unreleased
 
+- **WRT-013 stage S1 — a DRAFT registration for `ski@v2`, in force nowhere.**
+  SPEC §3.2 now carries the full contract a future admission change would
+  register (check-blob shape with an explicit `exit`, verdict mapping, the
+  local-outcomes-are-never-verdicts rule, the §7 fingerprint tuple that excludes
+  `atp_spent`, and body version `0.3`), under a status block that says a
+  conforming verifier MUST still reject the tag and the version. §7, §13.1 and
+  §13.2 point at it and keep their "reserved, not registered" wording.
+  `schemas/drafts/` gains the `0.3` body schema and the first schema the ski
+  check blob has ever had; `examples/drafts/ski-v2-vectors.json` carries the
+  23-case vector set, each case marked `executable_today` so a case nobody runs
+  cannot be cited as evidence. **No protocol surface moved**: no implementation
+  accepts `ski@v2` or `0.3`, no evaluator ships, no in-force schema, vector or
+  conformance-pack entry changed, and `ski@v1` is byte-identical.
+  `tests/ski_v2_draft_status.py` asserts exactly that by execution (Python, and
+  Go over the probe `validate` class), pins the §8.2 specimen and each M5
+  fingerprint as the COMPLETE historical tuple
+  `('ski@v1', term, expect, 'pass', expect)` — a preservation contract that
+  admitting `ski@v2` must leave untouched, since v2 changes nothing about what a
+  `ski@v1` reason fingerprints to — and fails if any `executable_today` case is
+  not actually executed. Demonstrated to fail twice: admitting the tag in
+  `RUNTIMES`/`ACCEPTED` turns it red on six assertions, and appending a member
+  to every fingerprint turns the preservation assertions red (the earlier
+  equality-only form passed that mutation — found in review, not by me).
 - Docs, no protocol surface moved: the `ski@v1` safety claim is qualified
   everywhere it was still stated as "work and peak memory bounded by `atp`, safe
   by construction" — THREAT-MODEL A8, SPEC §3.1 and its security
