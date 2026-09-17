@@ -42,7 +42,8 @@ present on a ref the reviewer was not looking at.
 | `WRT-009` | reserved deployment-predicate proposal (not yet written) | `reviews/2026-09-chatgpt-web-cross-stack-response.md` | `proposals/WRT-010-fact-provenance.md` |
 | `WRT-010` | this workline (DRAFT; follows up WRT-008) | `proposals/WRT-010-fact-provenance.md` | `proposals/WRT-010-fact-provenance.md` |
 | `WRT-011` | this repo, `master` | `proposals/wrt-011-model/aggregation.py` | `proposals/WRT-011-bounded-aggregation.md` |
-| `WRT-012` | this repo, `fix/wrt-012-verification-bindings` | `experiments/wrt-012-e2e-001/run.py` | `proposals/WRT-012-ownerless-root.md` |
+| `WRT-012` | this repo, `master` | `experiments/wrt-012-e2e-001/run.py` | `proposals/WRT-012-ownerless-root.md` |
+| `WRT-013` | this repo, `design/wrt-013-ski-v2` | `proposals/WRT-013-ski-v2-admission.md` | `proposals/WRT-013-ski-v2-admission.md` |
 
 ## Known identifier collisions
 
