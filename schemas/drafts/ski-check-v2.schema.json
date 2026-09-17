@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/s0fractal/warrant/schemas/drafts/ski-check-v2.schema.json",
+  "title": "ski@v2 check blob (DRAFT — NOT IN FORCE)",
+  "description": "DRAFT. NOT IN FORCE. The ski@v2 check blob of SPEC §3.2's draft registration. ski@v1's blob has no schema in this repository — it is constrained in code (validate_ski_blob) — so this file is new surface, not a copy. It is DERIVATIVE AND SECONDARY to SPEC.md and cannot express what matters most about a blob: that its bytes are JCS-canonical and that the file's name is their SHA-256. A validator that ran only this schema would accept blobs no verifier accepts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ski",
+    "term",
+    "atp",
+    "expect",
+    "exit"
+  ],
+  "properties": {
+    "ski": {
+      "const": 2
+    },
+    "term": {
+      "$ref": "#/$defs/hex64"
+    },
+    "atp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "expect": {
+      "$ref": "#/$defs/hex64"
+    },
+    "exit": {
+      "enum": [
+        "normal_form",
+        "atp_exhausted",
+        "unresolved_reference"
+      ],
+      "description": "The CLAIMED exit, compared against the re-run's. The three canonical exits of Book I 0.6.0 §3.4; local refusals (AdmissionRefused, ResourceFault) are not exits and are never expressible here."
+    }
+  },
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
