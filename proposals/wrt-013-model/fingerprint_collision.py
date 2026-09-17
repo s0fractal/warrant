@@ -46,6 +46,11 @@ Exit status: 0 iff the fingerprints are equal AND the exits differ; 1 otherwise.
              that Warrant computes two DIFFERENT fingerprints for it. That is the
              falsification control for this script: if the assertion above could
              not fail, it would not be measuring anything.
+
+    --isolate
+             hold the CLAIMED exit fixed and vary only the ACTUAL one, so the
+             proposed ski@v2 tuple is separated from the claim it carries. See
+             `isolating_control` below for why the default pair cannot do this.
 """
 import importlib.util
 import json
@@ -111,7 +116,80 @@ def rev1_control(e06):
     return 1
 
 
-def main(v06_path, rev1=False):
+def v2_fingerprint(term, expect, expect_exit, receipt, omit_actual_exit=False):
+    """The §7 tuple WRT-013 §3.6 PROPOSES for ski@v2 — a model, not an implementation.
+
+    No ski@v2 verifier exists; this function is the design's arithmetic written
+    down so the vectors can be checked against it before anything is built.
+    `omit_actual_exit` is the mutant: an implementation that adopted the contract
+    but forgot to put the RE-RUN's exit in the tuple.
+    """
+    verdict = "pass" if (receipt.exit == expect_exit
+                         and receipt.result_hash.hex() == expect) else "fail"
+    tup = ("ski@v2", term, expect, expect_exit, verdict, receipt.result_hash.hex())
+    return tup if omit_actual_exit else tup + (receipt.exit,)
+
+
+def isolating_control(e06):
+    """Same term, same expect, same CLAIMED exit — only the ACTUAL exit differs.
+
+    Vector 19's two-pass authoring example varies `expect_exit` (atp_exhausted →
+    normal_form) as well as the actual exit, so its two fingerprints differ even
+    for an implementation that never put the actual exit in the tuple: the
+    claimed member alone separates them. Codex's review of rev 2 (P2) asked for
+    a case that isolates the field, and this is it.
+
+    Holding `expect_exit = unresolved_reference` for both checks makes both
+    verdicts `fail` (neither run reaches that exit) and leaves term, expect,
+    verdict and result hash identical. What remains is the actual exit —
+    `atp_exhausted` at atp 0, `normal_form` at atp 9. The full proposed tuples
+    MUST differ; the mutant's tuples MUST be equal. `normal_form` as the fixed
+    claim would not isolate anything: the verdict would move from fail to pass
+    and carry the difference by itself.
+    """
+    store = W.Store(tempfile.mkdtemp(prefix="wrt013-isolate-"))
+    store.init()
+    term, expect = _build_m5_term(store, e06)
+    claimed = "unresolved_reference"
+    rows = []
+    for atp in (0, 9):
+        rec = e06.eval_receipt(bytes.fromhex(term), atp, _BlobCAS(store))
+        rows.append((atp, rec,
+                     v2_fingerprint(term, expect, claimed, rec),
+                     v2_fingerprint(term, expect, claimed, rec, omit_actual_exit=True)))
+    print(f"term    {term}\nexpect  {expect}\nclaimed exit (both)  {claimed}\n")
+    for atp, rec, full, mutant in rows:
+        print(f"  atp={atp:<2} actual exit={rec.exit:<20} verdict={full[4]}")
+        print(f"         proposed ski@v2 tuple : {full}")
+        print(f"         mutant (no actual exit): {mutant}")
+    full_differ = rows[0][2] != rows[1][2]
+    mutant_equal = rows[0][3] == rows[1][3]
+    verdicts_equal = rows[0][2][4] == rows[1][2][4] == "fail"
+    print(f"\nproposed tuples differ: {full_differ}   "
+          f"mutant tuples equal: {mutant_equal}   both verdicts fail: {verdicts_equal}")
+    if full_differ and mutant_equal and verdicts_equal:
+        print("=> the difference is carried by the RE-RUN's exit and by nothing "
+              "else. An implementation that omits that member loses exactly the "
+              "distinction ski@v2 is being registered for.")
+        return 0
+    print("=> the isolating control did NOT reproduce", file=sys.stderr)
+    return 1
+
+
+def _build_m5_term(store, e06):
+    """APPLY(I, APPLY(I, DISSONANCE("ATP Exhausted"))) and H(that node), in `store`."""
+    dis_bytes = e06.ser(e06.DISSONANCE, e06.F_ATOM, atom=e06.sha(b"ATP Exhausted"))
+    dis_h = e06.node_hash(dis_bytes)
+    store.put_blob(dis_bytes)
+    node = dis_h
+    for _ in range(2):
+        b = e06.ser(e06.APPLY, e06.F_LEFT | e06.F_RIGHT, left=e06.I_H, right=node)
+        node = e06.node_hash(b)
+        store.put_blob(b)
+    return node.hex(), dis_h.hex()
+
+
+def main(v06_path, rev1=False, isolate=False):
     import hashlib
     v06_path = Path(v06_path)
     got = hashlib.sha256(v06_path.read_bytes()).hexdigest()
@@ -122,20 +200,13 @@ def main(v06_path, rev1=False):
     e06 = load(v06_path, "sigma_v06")
     if rev1:
         return rev1_control(e06)
+    if isolate:
+        return isolating_control(e06)
 
     store = W.Store(tempfile.mkdtemp(prefix="wrt013-store-"))
     store.init()
-
     # The Warrant blob store IS the Σ-GLYPH CAS, so the nodes go in as blobs.
-    dis_bytes = e06.ser(e06.DISSONANCE, e06.F_ATOM, atom=e06.sha(b"ATP Exhausted"))
-    dis_h = e06.node_hash(dis_bytes)
-    store.put_blob(dis_bytes)
-    node = dis_h
-    for _ in range(2):                                # APPLY(I, ·) twice
-        b = e06.ser(e06.APPLY, e06.F_LEFT | e06.F_RIGHT, left=e06.I_H, right=node)
-        node = e06.node_hash(b)
-        store.put_blob(b)
-    term, expect = node.hex(), dis_h.hex()
+    term, expect = _build_m5_term(store, e06)
 
     reasons, receipts = [], []
     for atp in (0, 9):
@@ -181,7 +252,9 @@ class _BlobCAS:
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--rev1"]
-    if len(args) != 1:
+    flags = {"--rev1", "--isolate"}
+    args = [a for a in sys.argv[1:] if a not in flags]
+    if len(args) != 1 or {"--rev1", "--isolate"} <= set(sys.argv[1:]):
         sys.exit(__doc__)
-    sys.exit(main(args[0], rev1="--rev1" in sys.argv[1:]))
+    sys.exit(main(args[0], rev1="--rev1" in sys.argv[1:],
+                  isolate="--isolate" in sys.argv[1:]))

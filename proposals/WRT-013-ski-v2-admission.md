@@ -1,6 +1,6 @@
 # WRT-013: Admitting `ski@v2` — Σ-GLYPH Book I 0.6.0 in body version `0.3`
 
-**Status: DRAFT rev 2 (2026-09-17) — DESIGN ONLY.** No SPEC edit, no `impl/`
+**Status: DRAFT rev 3 (2026-09-17) — DESIGN ONLY.** No SPEC edit, no `impl/`
 change, no vector change, no schema change is made by this document. It carries
 no claim of adoption or implementation. Written by Claude Opus 5 at the owner's
 request, under the plan in `~/Projects/CLAUDE-SIGMA-WARRANT-2026-09-17.md`
@@ -38,6 +38,18 @@ request, under the plan in `~/Projects/CLAUDE-SIGMA-WARRANT-2026-09-17.md`
    do not match their pinned digests, exit nonzero on a failed comparison, and
    label the differential's verdict columns as the **`ski@v1` projection**, not
    the proposed `ski@v2` verdict.
+
+**rev 3 — what the second review (Codex, AMEND on `478bd1b`) changed.** One
+finding, and it is the same species as R1: a control whose difference came from
+somewhere other than the field it was named after. rev 2's vector 19 moved
+`expect_exit` *and* the actual exit together, so its two fingerprints differ even
+for an implementation that never puts the re-run's exit in the tuple — the
+claimed member separates them by itself. rev 3 keeps that vector as the two-pass
+authoring example it really is, and adds **19a**, which holds the claim fixed at
+`unresolved_reference` (so both verdicts are `fail`) and varies only the actual
+exit. New measurement M7 and the `--isolate` mode of the control execute it,
+including the mutant that omits the actual-exit member and thereby collides. No
+other part of the design changed.
 
 **What it is for:** `ski@v2` is a reserved candidate (SPEC §3.2, §13.1) admitted
 in no body version. SPEC §13.1 says a reserved row becomes a registration only
@@ -88,11 +100,15 @@ engine) and the `sigma_glyph.py` inside PyPI `sigma-glyph==0.7.0`
 | M4 | bytes stored under a key they do not hash to | v0.5 engine **evaluates them** and returns a normal form (`8785b7dd…`, spent 1); Book I 0.6.0 engine **refuses**: `ResourceFault: CAS key mismatch` |
 | M5 | **one term, one §7 fingerprint, two exits** | reproduced through Warrant's own `fingerprint()` over a real `Store`: term `3dbd8701…` = `APPLY(I, APPLY(I, DISSONANCE("ATP Exhausted")))`, `expect = 8bb0006f…`, at **atp 0** and **atp 9**. Both re-runs verdict `pass`, both fingerprints `('ski@v1', 3dbd8701…, 8bb0006f…, 'pass', 8bb0006f…)` — **byte-identical** — while Book I 0.6.0 reports `atp_exhausted` and `normal_form` |
 | M5′ | the pair rev 1 offered (different terms, equal result and spend) | fingerprints **differ** (`97a2eede…` vs `3dbd8701…`): an output-pair collision, not a settlement collision. Kept as the falsification control for M5 |
+| M7 | **the actual exit isolated from the claimed one** | same term, same `expect`, `expect_exit = unresolved_reference` in both checks, atp 0 and 9: both verdicts `fail`, term/expect/verdict/result identical, actual exits `atp_exhausted` vs `normal_form`. The proposed `ski@v2` tuples **differ**; a mutant tuple omitting the re-run's exit makes them **equal** |
 | M6 | Book I 0.6.0 admission limits | `DEFAULT_LIMITS.max_atp = None`; `VERIFIER_LIMITS.max_atp = 10_000_000`; over-limit raises `AdmissionRefused` **before execution** — while Warrant's own documented budget is `100_000_000` (`impl/warrant.py:37`) |
 
 Reproduce: `proposals/wrt-013-model/engine_differential.py <sigma_glyph.py>`
 (M1–M2), `proposals/wrt-013-model/fingerprint_collision.py <sigma_glyph.py>`
-(M5) and the same script with `--rev1` (M5′). Both refuse to run unless the
+(M5), the same script with `--rev1` (M5′) and with `--isolate` (M7). M7's
+receipts come from the published evaluator; its tuples come from the design's
+proposed arithmetic written out in `v2_fingerprint()` — a **model, not a
+`ski@v2` implementation**, because none exists. Both refuse to run unless the
 evaluator bytes match their pinned digests, and both exit nonzero when their
 assertion fails. M3 replays the sibling's anchored suite; M4/M6 are four lines
 against each module.
@@ -243,6 +259,11 @@ like `expect`) and the re-run's `exit`.
   then 7 — each exhausts at a different spend, each is a "new outcome", and
   settlement re-opens without limit. This is the §7 hazard WRT-005 exists
   around, and it must not be re-introduced through a new tag.
+- **`exit` here is the RE-RUN's, and `expect_exit` is the claim's; the two are
+  separate members for a reason.** M7 holds the claim fixed and varies only the
+  re-run's exit: the tuples still differ, and a variant that omits the re-run's
+  exit collides. An implementation that carried only `expect_exit` would satisfy
+  the shape of this tuple and none of its purpose.
 - **`exit` is included, and the novelty surface it adds is bounded.** For a
   fixed `(term, expect_exit, expect)` the exit takes at most three values, so
   the fingerprint set grows by a factor of at most 3 — and each of those three
@@ -391,16 +412,29 @@ vector set"; the vectors themselves are part of the implementing change.
     tunnel fingerprint → `inadmissible: cites nothing new`.
 18. Re-litigation differing only in `atp` (and therefore in `atp_spent`) with the
     same result and exit → **inadmissible** (the §3.6 exclusion, tested).
-19. **The M5 pair, pinned.** term `3dbd87017589d8e6636e076795e2f226b15752fe989088de1614fa3ee5ddf634`
+19. **The M5 pair, pinned — the authoring example.** term
+    `3dbd87017589d8e6636e076795e2f226b15752fe989088de1614fa3ee5ddf634`
     (`APPLY(I, APPLY(I, DISSONANCE("ATP Exhausted")))`), `expect
     8bb0006f4c0a51a645877c10db80b7360b0d34f6f826e5737d0847f8b1493176`, at atp 0
     and atp 9. As `ski@v1` reasons the two fingerprints MUST be equal (the
     second is `inadmissible: cites nothing new`) — a regression test on today's
-    behaviour, not a change to it. As `ski@v2` reasons with
-    `expect_exit` `atp_exhausted` and `normal_form` respectively, both verdicts
-    are `pass`, the fingerprints MUST differ, and the second is admissible (b).
-    The assertion is on the computed fingerprints, never on matching result
-    hashes.
+    behaviour, not a change to it. As `ski@v2` reasons with `expect_exit`
+    `atp_exhausted` and `normal_form` respectively, both verdicts are `pass`,
+    the fingerprints MUST differ and the second is admissible (b). **This vector
+    does not isolate the actual-exit member**: it moves the claimed exit too, so
+    it passes for an implementation that omits the re-run's exit entirely. 19a
+    is what isolates it.
+19a. **The actual exit isolated (M7).** Same term, same `expect`, atp 0 and 9,
+    and `expect_exit = unresolved_reference` in **both** check blobs. Neither run
+    reaches that exit, so both verdicts are `fail`, and term, expect,
+    `expect_exit`, verdict and result hash are identical across the pair. The
+    two fingerprints MUST differ, and they may differ **only** through the
+    re-run's `exit` (`atp_exhausted` vs `normal_form`). The vector MUST be
+    accompanied by its mutant — the same arithmetic with the actual-exit member
+    removed — which MUST make the two equal and MUST therefore fail the novelty
+    assertion. Holding the claim at `normal_form` instead would not isolate
+    anything: the verdict would move from `fail` to `pass` and carry the
+    difference by itself.
 20. A `ski@v1` record's fingerprint, computed in a store that also contains
     `ski@v2` records, is byte-identical to its value before this change.
 
