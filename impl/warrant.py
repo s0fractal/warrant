@@ -441,11 +441,63 @@ SKI_EVALUATORS = {
 }
 DEFAULT_SKI_TAG = "ski@v1"
 
+# ---- DRAFT, NOT ADMITTED (WRT-013 S2; SPEC §3.2's status block) -------------
+# `ski@v2` is reserved: RUNTIMES admits it in no body version, so NO RECORD CAN
+# REACH THIS TABLE. It is deliberately a SECOND table rather than a row in
+# SKI_EVALUATORS, because SKI_EVALUATORS is the in-force per-tag pin that
+# verification consults, and a reserved tag has no business in it.
+#
+# The module is vendored in the checkout and is NOT in pyproject's `py-modules`:
+# `history/SKI-V2-EXECUTABLE-CANDIDATE-RETIREMENT.md` withdrew candidate bytes
+# from the wheel precisely because no valid record could invoke them, and that
+# still holds. So an INSTALLED warrant has no ski@v2 evaluator at all and
+# `load_draft_sigma` returns None there; a checkout has one, which is what lets
+# the machinery below be tested before it is admitted. Shipping it is part of
+# the admission act, not of this stage.
+#
+# Same discipline as the in-force table: one evaluator per tag, digest checked
+# BEFORE import, no fallback to another tag's module.
+DRAFT_SKI_EVALUATORS = {
+    "ski@v2": ("sigma_glyph_v06.py",
+               "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4"),
+}
+DRAFT_SKI_TAG = "ski@v2"
+
 
 def bundled_sigma_path(tag=DEFAULT_SKI_TAG):
     """Path of the evaluator this package ships for `tag`, or None if unregistered."""
     ent = SKI_EVALUATORS.get(tag)
     return (Path(__file__).resolve().parent / ent[0]) if ent else None
+
+
+def draft_sigma_path(tag=DRAFT_SKI_TAG):
+    """Path of the DRAFT evaluator for `tag` in a checkout, or None.
+
+    A named seam, as `bundled_sigma_path` is for admitted tags: the drift
+    control needs to point the loader at a file it controls, and a test that can
+    only exercise the loader by writing into `impl/` is a test that edits the
+    thing it measures.
+    """
+    ent = DRAFT_SKI_EVALUATORS.get(tag)
+    return (Path(__file__).resolve().parent / ent[0]) if ent else None
+
+
+def load_draft_sigma(tag=DRAFT_SKI_TAG):
+    """Load the DRAFT evaluator for a reserved tag, or None.
+
+    Reachable only from code that names a reserved tag explicitly: no record can
+    carry one (§3, RUNTIMES), so verification never calls this. Returns None
+    when the tag is not a draft, when the module is absent (an installed wheel:
+    reserved candidates do not ship), or when its bytes do not match the pin —
+    in that last case nothing is imported, exactly as for an admitted tag.
+    """
+    ent = DRAFT_SKI_EVALUATORS.get(tag)
+    if ent is None:
+        return None
+    path = draft_sigma_path(tag)
+    if path is None or not path.exists():
+        return None                        # installed wheel: candidates do not ship
+    return _import_sigma(path, unpinned=False, expected_sha=ent[1])
 
 
 def _import_sigma(path, unpinned, expected_sha=None):
@@ -548,6 +600,8 @@ def load_sigma(tag=DEFAULT_SKI_TAG):
 
 
 def validate_ski_blob(doc):
+    """SPEC §3.1's ski@v1 check blob. Unchanged: a `ski: 2` document is not a
+    v1 blob and is refused here exactly as any other malformed document."""
     if not isinstance(doc, dict) or set(doc) != {"ski", "term", "atp", "expect"}:
         return "ski check blob must be exactly {ski, term, atp, expect}"
     if doc["ski"] != 1:
@@ -557,6 +611,33 @@ def validate_ski_blob(doc):
     a = doc.get("atp")
     if not isinstance(a, int) or isinstance(a, bool) or not (0 <= a < 2**32):
         return "atp must be a uint32"
+    return None
+
+
+# The three canonical exits of Book I 0.6.0 §3.4. Local refusals (admission,
+# resource faults) are NOT exits and can never appear in a blob or a receipt.
+DRAFT_SKI_V2_EXITS = ("normal_form", "atp_exhausted", "unresolved_reference")
+
+
+def validate_ski_v2_blob(doc):
+    """DRAFT (SPEC §3.2): {ski: 2, term, atp, expect, exit}, closed member set.
+
+    Separate from `validate_ski_blob` rather than a branch inside it: the two
+    shapes are different documents, and a v1 blob must keep being refused under
+    the v2 tag and the converse — a shared validator is how that stops being
+    true after an edit.
+    """
+    if not isinstance(doc, dict) or set(doc) != {"ski", "term", "atp", "expect", "exit"}:
+        return "ski@v2 check blob must be exactly {ski, term, atp, expect, exit}"
+    if doc["ski"] != 2:
+        return "ski field must be 2"
+    if not (_is_hex64(doc.get("term")) and _is_hex64(doc.get("expect"))):
+        return "term and expect must be hex64 NodeHashes"
+    a = doc.get("atp")
+    if not isinstance(a, int) or isinstance(a, bool) or not (0 <= a < 2**32):
+        return "atp must be a uint32"
+    if doc.get("exit") not in DRAFT_SKI_V2_EXITS:
+        return f"exit must be one of {DRAFT_SKI_V2_EXITS}"
     return None
 
 
@@ -570,7 +651,7 @@ class _CASAddressMismatch(Exception):
     it is an INADMISSIBLE check, not a computation that produced a `fail`."""
 
 
-def _load_ski_doc(store, check_hex):
+def _load_ski_doc(store, check_hex, ski_version=1):
     """Resolve and validate the ski@v1 check blob AT ITS CONTENT ADDRESS.
 
     The check blob is itself a CAS entry: file `<check_hex>` must contain bytes
@@ -591,12 +672,98 @@ def _load_ski_doc(store, check_hex):
         raise RuntimeError("malformed check blob (not JSON)")
     if not _canon_eq(doc, raw):
         raise RuntimeError("malformed check blob (not JCS-canonical)")
-    err = validate_ski_blob(doc)
+    err = (validate_ski_blob(doc) if ski_version == 1
+           else validate_ski_v2_blob(doc))
     if err:
         raise RuntimeError(f"invalid ski check blob: {err}")
     if doc["atp"] > SKI_REEXEC_MAX_ATP:   # SPEC §3.1: local re-execution budget
         raise RuntimeError("atp exceeds re-execution budget")
     return doc
+
+
+class SkiV2Result(tuple):
+    """DRAFT: what a ski@v2 re-execution answers — (verdict, result_hash, atp_spent, exit).
+
+    A plain tuple so a caller can unpack it, with names because the whole point
+    of the tag is that `result_hash` alone does not identify the outcome."""
+    __slots__ = ()
+
+    def __new__(cls, verdict, result_hash, atp_spent, exit_kind):
+        return super().__new__(cls, (verdict, result_hash, atp_spent, exit_kind))
+
+    verdict = property(lambda self: self[0])
+    result_hash = property(lambda self: self[1])
+    atp_spent = property(lambda self: self[2])
+    exit = property(lambda self: self[3])
+
+
+def _blob_cas(store):
+    """warrant blobs as a Σ-GLYPH CAS, refusing bytes that are not at their address.
+
+    Defence in depth, kept even though Book I 0.6.0 enforces Identity by Hash
+    itself: a rule only one layer applies is one edit from being applied by
+    nobody. Both layers normalise to REASON_CAS_MISMATCH.
+    """
+
+    class BlobCAS:
+        def get(self, h):
+            q = store.blobs / h.hex()
+            if not q.exists():
+                return None                  # legitimately unresolved (SPEC §7)
+            b = q.read_bytes()
+            if hashlib.sha256(b).digest() != h:
+                raise _CASAddressMismatch()
+            return b
+
+    return BlobCAS()
+
+
+def _sigma_fault(sg, ex):
+    """One stable reason class for every local fault an evaluator can raise."""
+    msg = str(ex)
+    if "CAS key mismatch" in msg or "non-bytes" in msg:
+        return RuntimeError(REASON_CAS_MISMATCH)
+    return RuntimeError(f"resource fault: {msg}")
+
+
+def run_ski_v2_check(store, check_hex, sg=None):
+    """DRAFT (SPEC §3.2, WRT-013): re-execute a ski@v2 check. NOT ADMITTED.
+
+    No record can carry a ski@v2 reason (§3, RUNTIMES), so nothing in
+    verification, filing, fingerprinting or settlement calls this. It exists so
+    the contract can be exercised before it is registered.
+
+    Returns SkiV2Result(verdict, result_hash, atp_spent, exit) where
+    `verdict` is `pass` IFF the re-run's exit equals the blob's declared exit
+    AND the result hash equals `expect` — `atp_spent` is reported, never
+    compared. Raises RuntimeError with a bounded reason class for everything
+    that is NOT a verdict: a malformed or mis-addressed blob, an over-budget
+    `atp`, an admission refusal, a resource fault, foreign-keyed bytes, or no
+    evaluator. A local refusal is never a `fail`.
+    """
+    sg = sg or load_draft_sigma("ski@v2")
+    if sg is None:
+        raise RuntimeError("runtime unavailable")
+    doc = _load_ski_doc(store, check_hex, ski_version=2)
+    # Warrant's own re-execution budget is the single admission gate: the blob's
+    # atp was already refused above if it exceeds it, and the evaluator is told
+    # the same ceiling so its admission and ours cannot disagree. Book I's own
+    # VERIFIER_LIMITS carries a different (smaller) default on purpose; adopting
+    # it here would silently give this verifier a budget it does not document.
+    limits = dict(getattr(sg, "DEFAULT_LIMITS", {}), max_atp=SKI_REEXEC_MAX_ATP)
+    try:
+        receipt = sg.eval_receipt(bytes.fromhex(doc["term"]), doc["atp"],
+                                  _blob_cas(store), limits)
+    except _CASAddressMismatch:
+        raise RuntimeError(REASON_CAS_MISMATCH)
+    except getattr(sg, "AdmissionRefused", ()) as ar:
+        raise RuntimeError(f"admission refused: {ar}")
+    except getattr(sg, "ResourceFault", ()) as rf:
+        raise _sigma_fault(sg, rf)
+    result = receipt.result_hash.hex()
+    verdict = "pass" if (receipt.exit == doc["exit"]
+                         and result == doc["expect"]) else "fail"
+    return SkiV2Result(verdict, result, receipt.atp_spent, receipt.exit)
 
 
 def run_ski_check(store, check_hex, sg=None):

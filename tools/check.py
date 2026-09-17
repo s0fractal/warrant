@@ -260,6 +260,14 @@ CHECKS = [
     # are pinned as they are TODAY so admission has to move them deliberately.
     ("ski@v2 draft is inert (tag and body 0.3 still rejected; v1 unmoved)",
      ["python3", "tests/ski_v2_draft_status.py"], None),
+    # WRT-013 stage S2. The draft execution path exists and is exercised, while
+    # remaining unreachable from any record: verdict = exit AND result over one
+    # term at two budgets, every local refusal asserted to be a refusal rather
+    # than a verdict, the wrong-version blob refused under either tag, and the
+    # evaluator's pin enforced before import with a side-effect marker proving
+    # nothing ran. Both halves were mutated to check they can go red.
+    ("ski@v2 draft execution (verdicts, refusals, pinned evaluator)",
+     ["python3", "tests/ski_v2_execution.py"], None),
     # The air-canada replay driver must read the installed CLI's own refusal
     # (grade/ok/errors/exit of every consumed report) and count controls it
     # executed, not manifest entries (exact-head review of 29aecf8). Runs the
