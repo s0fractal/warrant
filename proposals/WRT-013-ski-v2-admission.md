@@ -1,11 +1,43 @@
 # WRT-013: Admitting `ski@v2` — Σ-GLYPH Book I 0.6.0 in body version `0.3`
 
-**Status: DRAFT rev 1 (2026-09-17) — DESIGN ONLY.** No SPEC edit, no `impl/`
+**Status: DRAFT rev 2 (2026-09-17) — DESIGN ONLY.** No SPEC edit, no `impl/`
 change, no vector change, no schema change is made by this document. It carries
 no claim of adoption or implementation. Written by Claude Opus 5 at the owner's
 request, under the plan in `~/Projects/CLAUDE-SIGMA-WARRANT-2026-09-17.md`
 (stage 2). A gate verdict on it would be evidence, not adoption
 (`AGENTS.md` rules 3–4).
+
+**rev 2 — what the first review (Codex, AMEND on `ae9f743`) changed.**
+
+1. **rev 1's headline counterexample did not show what it said.** It exhibited
+   two runs with equal `result_hash` and equal `atp_spent` and called that a §7
+   fingerprint collision. The two runs used different **terms**, and `term` is
+   the second member of the `ski@v1` tuple, so Warrant computes two *different*
+   fingerprints for them; the script never called `fingerprint()` and so could
+   not have caught it. The corrected case (§2, M5) uses **one term at two
+   budgets**, and the control now computes the real fingerprints through
+   `impl/warrant.py` over a real `Store` and asserts their equality. A `--rev1`
+   mode rebuilds the old pair and asserts the fingerprints **differ**, so the
+   equality assertion is falsifiable rather than decorative. M3's claim is
+   narrowed to the sample actually measured.
+2. **rev 1 registered the tag in stage S1, before the capability existed.**
+   §§5.1 and 7 require the silent-skip repairs, the per-tag evaluator selection,
+   authoring and conformance to be part of the admission; S1 then called
+   SPEC+schemas+vectors "the registration itself" and deferred all of them. That
+   would open exactly the SILENT window this document exists to close. §8 rev 2
+   makes S1 a *draft* registration on an integration branch and puts one final
+   admission boundary after every required part passes; the tag stays reserved
+   and inert until then.
+3. **rev 1 left the second implementation undecided.** The matrix required Go
+   EXEC while S5 and Q4 allowed REFUSE. rev 2 decides it: **Python and Go
+   execution agreement is a precondition of admission.** A declared Go REFUSE is
+   an acceptable intermediate state, and it defers admission rather than
+   completing it.
+4. The evidence harness is repaired: both scripts derive the checkout from
+   `__file__` instead of an absolute path, refuse to run on evaluator bytes that
+   do not match their pinned digests, exit nonzero on a failed comparison, and
+   label the differential's verdict columns as the **`ski@v1` projection**, not
+   the proposed `ski@v2` verdict.
 
 **What it is for:** `ski@v2` is a reserved candidate (SPEC §3.2, §13.1) admitted
 in no body version. SPEC §13.1 says a reserved row becomes a registration only
@@ -52,23 +84,36 @@ engine) and the `sigma_glyph.py` inside PyPI `sigma-glyph==0.7.0`
 |---|---|---|
 | M1 | §8.2 specimen (`examples/ski/check.json`) on both engines | identical: `887045bc…` (H(S)), 20 ATP, verdict `pass`; v2 additionally reports `exit=normal_form` |
 | M2 | same term at atp 0/1/5/19/20/21 | identical result hash and spend at every budget; v2 adds `exit` (`atp_exhausted` below 20, `normal_form` at/above) |
-| M3 | the 33 `eval` vectors of the anchored Book I 0.6.0 suite (`vectors.json`, v0.7.0 bundle) | **33/33 agree** on `(result_hash, atp_spent)`; 0 divergences |
+| M3 | the 33 `eval` vectors of the anchored Book I 0.6.0 suite (`vectors.json`, v0.7.0 bundle) | **33/33 agree** on `(result_hash, atp_spent)`; 0 divergences **in that sample** |
 | M4 | bytes stored under a key they do not hash to | v0.5 engine **evaluates them** and returns a normal form (`8785b7dd…`, spent 1); Book I 0.6.0 engine **refuses**: `ResourceFault: CAS key mismatch` |
-| M5 | one result hash, one spend, two exits | reproduced: `result 8bb0006f…`, `atp_spent 9` — §8.2 term at atp 9 (`atp_exhausted`) vs `APPLY(I,·)²` over the stored `DISSONANCE("ATP Exhausted")` node at atp 9 (`normal_form`) |
+| M5 | **one term, one §7 fingerprint, two exits** | reproduced through Warrant's own `fingerprint()` over a real `Store`: term `3dbd8701…` = `APPLY(I, APPLY(I, DISSONANCE("ATP Exhausted")))`, `expect = 8bb0006f…`, at **atp 0** and **atp 9**. Both re-runs verdict `pass`, both fingerprints `('ski@v1', 3dbd8701…, 8bb0006f…, 'pass', 8bb0006f…)` — **byte-identical** — while Book I 0.6.0 reports `atp_exhausted` and `normal_form` |
+| M5′ | the pair rev 1 offered (different terms, equal result and spend) | fingerprints **differ** (`97a2eede…` vs `3dbd8701…`): an output-pair collision, not a settlement collision. Kept as the falsification control for M5 |
 | M6 | Book I 0.6.0 admission limits | `DEFAULT_LIMITS.max_atp = None`; `VERIFIER_LIMITS.max_atp = 10_000_000`; over-limit raises `AdmissionRefused` **before execution** — while Warrant's own documented budget is `100_000_000` (`impl/warrant.py:37`) |
 
 Reproduce: `proposals/wrt-013-model/engine_differential.py <sigma_glyph.py>`
-(M1–M2) and `proposals/wrt-013-model/exit_collision.py <sigma_glyph.py>` (M5).
-M3 replays the sibling's anchored suite; M4/M6 are four lines against each
-module.
+(M1–M2), `proposals/wrt-013-model/fingerprint_collision.py <sigma_glyph.py>`
+(M5) and the same script with `--rev1` (M5′). Both refuse to run unless the
+evaluator bytes match their pinned digests, and both exit nonzero when their
+assertion fails. M3 replays the sibling's anchored suite; M4/M6 are four lines
+against each module.
 
-**What M3 and M5 together mean.** The two engines are not in dispute about any
-value `ski@v1` can express — so `ski@v2` is not a bug fix, and no existing record
-is wrong. What Book I 0.6.0 adds is an **observable that v0.5 does not have**:
-the exit. M5 shows that observable is load-bearing rather than cosmetic: a
-finished computation and an unfinished one can agree on the result hash *and* on
-the spend. Every field of the §7 `ski@v1` fingerprint is identical across that
-pair. Only `exit` separates them.
+**What M3 and M5 together mean.** In the 33 anchored eval vectors and the
+seven specimen budgets measured here, the two engines answered identically.
+That is a sample, not a proof of extensional equality: it does not establish
+agreement on every expressible term, and it certifies no existing record. What
+it does support is the narrower claim the design needs — `ski@v2` is not a bug
+fix, and nothing in the store is retroactively wrong.
+
+What Book I 0.6.0 adds is an **observable v0.5 does not have**: the exit. M5
+shows that observable is load-bearing inside Warrant's own settlement
+arithmetic. One term, evaluated at two budgets, produces **one §7 fingerprint**
+— identical runtime, term, expect, re-run verdict and result hash — while the
+two runs are a finished computation and an unfinished one. Under §7 the second
+reason therefore "cites nothing new" and cannot re-open a settled question,
+although it establishes something the first did not: that the term *has* a
+normal form. That is a representational gap in this repository, demonstrated
+against published bytes. It is **not** evidence of outside demand for `ski@v2`
+records, and §9 Q5 keeps those two apart.
 
 **What M4 means.** The refusal of foreign-keyed bytes moves from a Warrant-side
 adapter guard (`run_ski_check`'s `BlobCAS`, added after the CAS-identity
@@ -202,8 +247,11 @@ like `expect`) and the re-run's `exit`.
   fixed `(term, expect_exit, expect)` the exit takes at most three values, so
   the fingerprint set grows by a factor of at most 3 — and each of those three
   is a genuinely different fact about the computation (it finished / it ran out
-  / it demanded an object that is not there). M5 is the case that forces it: two
-  computations that a v1-shaped tuple cannot tell apart.
+  / it demanded an object that is not there). M5 is the case that forces it:
+  **one term at two budgets, one v1 fingerprint, two exits**, verified against
+  `impl/warrant.py`'s own `fingerprint()`. Note what that costs today: the
+  second reason is `inadmissible: cites nothing new` even though it establishes
+  that the term has a normal form.
 - The `ski@v1` tuple is **unchanged**, and a `ski@v1` reason's fingerprint under
   a store containing `ski@v2` records is bit-identical to what it is today.
   Fingerprints of different runtimes never compare equal — the tag is the first
@@ -248,7 +296,7 @@ reason is neither executed nor reported.
 | Body → | `0.1` | `0.2` | `0.3` (proposed) | |
 |---|---|---|---|---|
 | **Python** (`impl/warrant.py`) | cmd EXEC · ski@v1 INVALID · ski@v2 INVALID | cmd EXEC · ski@v1 EXEC · ski@v2 INVALID | cmd EXEC · ski@v1 EXEC · **ski@v2 EXEC** | settlement grade |
-| **Go** (`impl-go`) | same | same | **ski@v2 EXEC required** — a second Book I rule set, or REFUSE declared | settlement grade today |
+| **Go** (`impl-go`) | same | same | **ski@v2 EXEC — required for admission** (see §5.2) | settlement grade today |
 | **Rust** (`impl-rs`) | same | cmd EXEC · ski@v1 **REFUSE** | cmd EXEC · ski@v1 REFUSE · **ski@v2 REFUSE** | base grade by design |
 | **Conformance pack** | `validate` vectors | `validate`, `ski-run` | new `validate` + `ski-run-v2` vectors, pack version bump | |
 
@@ -257,6 +305,25 @@ verifier that cannot execute `ski@v2` MUST still (a) treat a `0.3` body as
 schema-valid if it claims to support `0.3`, and (b) report every `ski@v2` reason
 as unverified. A verifier that does not support `0.3` at all rejects the body —
 which is also conformant, and is what `impl-rs` may choose.
+
+### 5.2 Two executing implementations are a precondition, not an aspiration
+
+SPEC's design rule is that *two independent implementations MUST agree on every
+verification outcome*. A runtime one implementation executes and the other only
+declares it cannot run does not meet it: the refusal is honest, and it produces
+no agreement to check. rev 1 left this open (the matrix demanded Go EXEC while
+§8 and Q4 allowed REFUSE); rev 2 closes it:
+
+- **Admission requires Python and Go executing `ski@v2` and agreeing** on the
+  vector set of §6, including the verdict/exit cases and the fingerprint cases.
+- A **declared Go REFUSE is a legitimate intermediate state** — it keeps the
+  silent-skip defect closed while the port is written — but it **defers
+  admission**. It is not a state in which the tag is registered.
+- **`impl-rs` is exempt**: it is base grade by design and may either report
+  `ski@v2 unverified: runtime unavailable` or reject `0.3` bodies outright,
+  provided it does so visibly.
+- Changing the two-implementation rule itself would be a separate decision. It
+  is not implied by adding a runtime.
 
 ### 5.1 Where the current code would go SILENT (verified by reading it)
 
@@ -307,9 +374,10 @@ vector set"; the vectors themselves are part of the implementing change.
 *Execution*
 11. Term whose demanded object is absent → `exit=unresolved_reference`; a claim
     of `normal_form` with the same result hash → `fail`, not `pass`.
-12. **M5's pair**: claim `{expect=8bb0006f…, exit=normal_form}` filed for the
-    exhausting run → `fail` under `ski@v2`, while the same claim shaped as
-    `ski@v1` is `pass`. This is the vector that proves the tag does something.
+12. **M5's term at atp 0**, claimed as `{expect=8bb0006f…, exit=normal_form}`
+    → `fail` under `ski@v2` (the run exhausted), while the same claim shaped as
+    a `ski@v1` reason is `pass`. One term, two tags, two verdicts: the vector
+    that proves the tag does something.
 13. A term thunk stored under a foreign key → `content does not match its
     address`, from the engine and from the adapter independently.
 14. `atp` above the local budget → `atp exceeds re-execution budget` (unverified),
@@ -323,9 +391,16 @@ vector set"; the vectors themselves are part of the implementing change.
     tunnel fingerprint → `inadmissible: cites nothing new`.
 18. Re-litigation differing only in `atp` (and therefore in `atp_spent`) with the
     same result and exit → **inadmissible** (the §3.6 exclusion, tested).
-19. Re-litigation whose re-run differs only in `exit` → admissible (b), and the
-    `ski@v1` twin of the same store remains inadmissible — the two tags'
-    fingerprints must not collide.
+19. **The M5 pair, pinned.** term `3dbd87017589d8e6636e076795e2f226b15752fe989088de1614fa3ee5ddf634`
+    (`APPLY(I, APPLY(I, DISSONANCE("ATP Exhausted")))`), `expect
+    8bb0006f4c0a51a645877c10db80b7360b0d34f6f826e5737d0847f8b1493176`, at atp 0
+    and atp 9. As `ski@v1` reasons the two fingerprints MUST be equal (the
+    second is `inadmissible: cites nothing new`) — a regression test on today's
+    behaviour, not a change to it. As `ski@v2` reasons with
+    `expect_exit` `atp_exhausted` and `normal_form` respectively, both verdicts
+    are `pass`, the fingerprints MUST differ, and the second is admissible (b).
+    The assertion is on the computed fingerprints, never on matching result
+    hashes.
 20. A `ski@v1` record's fingerprint, computed in a store that also contains
     `ski@v2` records, is byte-identical to its value before this change.
 
@@ -367,48 +442,83 @@ answer to "how big is this":
 **Readiness is not admission.** Code and green CI do not register a tag; the
 specification act does, and this document is not it.
 
-## 8. Implementation staging (proposed, after design review)
+## 8. Implementation staging, and where admission actually happens
 
-Each stage is separately reviewable and separately revertable:
+rev 1 called S1 "the registration itself" and deferred the silent-skip repairs,
+the per-tag evaluator selection, authoring and conformance to later stages. That
+is wrong in the way this document is otherwise about: a normative admission
+whose executable capability does not exist yet, and — if schema acceptance lands
+before the filters — precisely the SILENT window §5.1 identifies. rev 2 separates
+*development steps* from *the admission act*.
 
-- **S1** — SPEC + schemas + vectors, no runtime code. The registration itself.
-- **S2** — Python: evaluator binding, blob validation, execution, verdict.
-- **S3** — Python: fingerprint, settlement per-tag pin, re-litigation vectors.
-- **S4** — Python authoring: CLI/MCP, filing-time re-run, WPL/`ski_policy`
-  decision (see open question Q3).
-- **S5** — Go: table, engine or declared refusal, fingerprint, filters, probe.
-- **S6** — Rust: admission + honest reporting.
-- **S7** — conformance pack version bump and cross-implementation run.
+**Development steps** (integration branch `ski-v2-admission`, each separately
+reviewable and revertable; the tag stays **reserved and inert** throughout — no
+step publishes a supported body `0.3` that admits a reason any shipped verifier
+would ignore):
 
-S5 is the largest and the one that may return "REFUSE" rather than "EXEC"; that
-choice is a reviewable outcome, not a failure, provided it is declared.
+- **S1** — **draft** registration: SPEC §3.2/§7/§13 text, schemas and vectors
+  written against the contract, marked `DRAFT — NOT IN FORCE`, with no
+  implementation claiming `0.3` support.
+- **S2** — Python: evaluator binding (`SKI_EVALUATORS`, `trust/` record,
+  digest-before-import), blob validation, execution, verdict mapping.
+- **S3** — Python: fingerprint, per-tag settlement pin, re-litigation vectors
+  (including the M5 pair as a fixture).
+- **S4** — Python authoring: CLI/MCP opt-in, filing-time re-run; WPL and
+  `ski_policy` keep emitting `ski@v1` (Q3).
+- **S5** — Go: admission table, Book I 0.6.0 rule set, fingerprint arm, both
+  re-execution filters, probe class and capability string.
+- **S6** — Rust: admission list and honest reporting (`ski@v2 unverified`), or a
+  documented `0.3` rejection.
+- **S7** — conformance pack: vectors, runtime selector on `ski-run`,
+  `PACK_VERSION` bump, cross-implementation run.
+
+**The admission boundary** is a single subsequent change that flips the draft to
+in-force, and it may only be made when **all** of these hold, each demonstrated
+rather than asserted:
+
+1. every §5.1 silent-skip site is repaired, with a test that fails if it
+   regresses;
+2. Python **and** Go execute `ski@v2` and agree on the §6 vector set (§5.2);
+3. `impl-rs` reports or rejects visibly;
+4. the negative vector set of §6 passes in every implementation that claims
+   `0.3`;
+5. the conformance pack carries the new vectors at a bumped version;
+6. `ski@v1` bytes, fingerprints and replays are unchanged, shown by re-running
+   the §8.2 specimen and `demos/air-canada/replay.json`.
+
+If the steps are merged to `master` independently, the tag remains
+reserved-and-rejected in every shipped verifier until that final change. A
+half-admitted runtime is the one outcome worse than an unimplemented one.
 
 ## 9. Open questions for the reviewer
 
-- **Q1.** `exit` as a fifth blob member (§3.1) versus a receipt digest. I chose
-  legibility; a reviewer who weighs "one comparison, one field" differently
-  should say so now, because the blob shape is the one thing that cannot be
-  changed after registration.
-- **Q2.** Should `0.3` admit `ski@v1`? Admitting it keeps one body version able
-  to carry both tags; refusing it would force a store to split by version. I
-  chose admit.
-- **Q3.** Should WPL / `ski_policy` (which compile Church-boolean predicates)
-  emit `ski@v2` by default once admitted? Their terms evaluate identically on
-  both engines (M3), so the only gain is the exit observable, and the cost is
-  that every emitted check becomes unverifiable to a `0.2`-only verifier. My
-  inclination: keep emitting `ski@v1` by default, add an opt-in flag, revisit
-  when a second implementation executes `ski@v2`.
-- **Q4.** Go: implement a second Book I rule set, or declare REFUSE for
-  `ski@v2` and lose cross-implementation execution parity for the new tag? A
-  declared refusal is honest but makes `ski@v2` a single-implementation runtime,
-  which is precisely what the SPEC's "two independent implementations MUST
-  agree" design rule exists to prevent.
-- **Q5.** Is there a pressure case that needs `ski@v2` *records* now, or is the
-  motivation the semantics (M5) plus the supply (published 0.7.0)? I did not
-  find an application in `needs/` demanding it; the honest statement is that
-  this is a protocol-completeness change with a demonstrated semantic gap, not a
-  user-driven one. If the reviewer thinks that is insufficient grounds, the
-  answer is to defer admission and keep the reservation — which costs nothing.
+- **Q1 — settled in rev 2 (reviewer concurred).** The blob carries an explicit
+  expected `exit`; the fingerprint carries the actual one; spend is in neither
+  the verdict nor the novelty test. The rationale is the claim semantics and the
+  bounded novelty surface — *not* a claim that a receipt digest is inherently
+  unreadable.
+- **Q2 — settled in rev 2 (reviewer concurred).** `0.3` admits `ski@v1`, whose
+  bytes, fingerprint and replay are unchanged.
+- **Q3 — settled in rev 2 (reviewer concurred).** WPL and `ski_policy` keep
+  emitting `ski@v1` in `0.2` bodies. `ski@v2` is an explicit opt-in. Their
+  Church-boolean terms evaluate identically on both engines, so a default switch
+  would buy the exit observable at the price of making every emitted check
+  unverifiable to a `0.2`-only verifier.
+- **Q4 — settled in rev 2 (reviewer's decision, §5.2).** Python **and** Go must
+  execute `ski@v2` before admission. A declared Go REFUSE is an acceptable
+  intermediate capability statement and defers admission.
+- **Q5 — settled in rev 2, with the distinction preserved.** There is **no
+  application in `needs/` demanding `ski@v2` records**, and this document does
+  not manufacture one. What M5 demonstrates is a **representational need inside
+  Warrant's own settlement arithmetic**: one term at two budgets is one §7
+  outcome, so a reason establishing that a term terminates cannot re-open a
+  question settled by a reason that only established exhaustion. That is
+  sufficient grounds to design and implement; it is not evidence of outside
+  demand, and the two must not be conflated in any later claim. The M5 pair
+  becomes an authoring and re-litigation fixture rather than a rhetorical
+  example.
+
+Still open for the reviewer:
 
 ## 10. What this document does not do
 
