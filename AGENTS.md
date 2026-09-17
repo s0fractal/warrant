@@ -45,3 +45,7 @@ neither an independent adversarial gate nor a governance adoption. The commits
 (unpushed) were reset and re-recorded honestly on candidate branches; a genuine
 adversarial gate (Kimi K3) then returned `AMEND` with 11 reproducible findings the
 green suites had missed. This file exists so that does not recur.
+
+## Retired context
+
+triad-related references in proposals, comments and historical experiment records are ARCHIVED provenance only. They are not active specifications or instructions. Follow `history/TRIAD-RETIREMENT.md`; use independent current repository sources for ongoing work.

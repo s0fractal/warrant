@@ -1,5 +1,11 @@
 # WRT-012 — External witnessing and separation of control over history (rev 3)
 
+> **2026-09-17 admission update:** triad is ARCHIVED / EXCLUDED. All triad
+> references below are historical provenance, not active specifications,
+> imports, queues or permission to continue that ecosystem. WRT-012's
+> independently maintained implementation is `tools/witness.py`.
+> [Retirement status and known loss](../history/TRIAD-RETIREMENT.md).
+
 **Status: DRAFT rev 3 (2026-09-10), after gate rounds 1 and 2 (Codex, AMEND,
 §10–§11). A plan and an experiment protocol, not a decision, not an
 adoption.** Rev 3 is a narrow amendment of the protocol: success controls,
@@ -10,7 +16,7 @@ Written by the maintainer actor `claude-fable-5-1`. The owner's "повніст�
 is not a threshold warrant (warrant `AGENTS.md` rule 2). Rev 1 was titled
 "ROOT-0.1: an ownerless trust root"; the title was too large a word and the
 record conflated several guarantees. Rev 2 keeps the direction and separates
-them. Filed as `~/Projects/ROOT-0.1-PLAN-2026-09-10.md` (durable copy) and
+them. Historically filed as `~/Projects/ROOT-0.1-PLAN-2026-09-10.md` (now archived) and
 `proposals/WRT-012-ownerless-root.md` on warrant branch
 `wrt-012-ownerless-root` (path kept for continuity of the branch; the word
 "ownerless" is retired in the text).
@@ -104,7 +110,8 @@ established per runner from the study's list, never assigned by default. That
 is where rev 1's instinct to demote the label was right, and it is now done on
 the right axis and without asserting a result the runner did not produce.
 
-`freshness` reuses `.triad/continuity/bootstrap.py` semantics and runs in one
+The historical `freshness` design drew on `.triad/continuity/bootstrap.py`;
+this proposal states its own rule and runs in one
 direction only: the verifier holds a local `C_i`, obtains from a holder named
 in its **own trusted configuration** a receipt for some `C_j`, and verifies the
 `prev` path `C_i → C_j` link by link. Only then is `C_i` reported
@@ -123,14 +130,14 @@ line that upgrades a warned axis into a guarantee.
 ## 3. The tool — `tools/witness.py` (rename from `root.py`)
 
 Stdlib + `opentimestamps` library where the OTS-enabled interpreter is
-available (`.triad` uses `/opt/homebrew/opt/python@3.14/bin/python3.14`); the
+available; select and verify an interpreter for this implementation. Use the
 `ots` CLI for submission only. Verbs:
 
 | Verb | Does | Refuses |
 |---|---|---|
 | `commit` | writes a commitment (§2.1) for a subject, `prev` = last commitment in that stream | a `prev` that is not the current tip of the local stream |
-| `stamp C` | `ots stamp` the commitment bytes; stores `C.ots` beside it | re-stamping an existing `C.ots` (never overwrite the initial receipt; `.triad` rule) |
-| `classify C` | `.triad` classifier verbatim on `C` + `C.ots` → time axis | any mismatch of pinned digests |
+| `stamp C` | `ots stamp` the commitment bytes; stores `C.ots` beside it | re-stamping an existing `C.ots` (never overwrite the initial receipt; local create-only rule) |
+| `classify C` | the local `tools/witness.py` classifier on `C` + `C.ots` → time axis | any mismatch of pinned digests |
 | `upgrade C` | `ots upgrade` on a **copy**; if a block attestation appears, `BLOCK_ATTESTATION_PRESENT_UNVERIFIED`; `BITCOIN_VERIFIED` only after header check against a named source | `--no-bitcoin` as a way to print VERIFIED |
 | `receipt C --as <holder>` | **run by the holder**: writes `{holder, C, holder_head, observed}` signed by the holder's key into the holder's store, and returns the receipt digest | a receipt for a `C` the holder cannot fetch and re-hash |
 | `report C --holders <trusted-config>` | builds §2.3 from commitment + proofs only; for each holder in the verifier's trusted configuration (holder id → key → store locator, caller-pinned exactly as `.triad/bootstrap.py` pins its witness) it fetches receipts from that store, re-hashes, checks the signature against the configured key, and walks `prev` paths | a report as input (reports are recomputed, never accepted); a receipt, key or store locator that arrived together with the committer's material (counted as `holding: NONE` with note `UNCONFIGURED_HOLDER`) |
@@ -284,9 +291,8 @@ Not a fix for black-heart's engines.
 ## 8. Open questions (for gate round 2)
 
 1. **Latest-head discovery** as its own protocol: which holders to query, how
-   a verifier learns of them without the committer's help. `.triad`'s
-   `bootstrap.py` witness snapshot is the current answer and it is
-   caller-pinned, i.e. still supplied by someone.
+   a verifier learns of them without the committer's help. The historical caller-pinned witness snapshot did not solve this
+   discovery question; it was still supplied by someone.
 2. **Header source** for `BITCOIN_VERIFIED`: local node (none available), or
    a named public explorer pair with the trust assumption printed. The
    `.triad` followup-003 note applies: never label explorer comparison as
@@ -302,9 +308,9 @@ Not a fix for black-heart's engines.
 
 WRT-010 says where a fact came from; WRT-012 says where evidence about the
 pack's past can be fetched from outside the pack's supplier. WRT-005 settlement
-records are natural subjects. `.triad/continuity` is the reference
-implementation of the time and freshness axes; this WRT should import, not
-reimplement, its classifier.
+records are natural subjects. The earlier `.triad/continuity` reference is
+archived provenance. The maintained implementation is `tools/witness.py`;
+this proposal imposes no import or runtime dependency on the retired source.
 
 ## 10. Gate round 1 — disposition (Codex, 2026-09-10, AMEND)
 
