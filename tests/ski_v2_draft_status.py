@@ -280,14 +280,20 @@ check("case ids are unique", len(ids) == len(set(ids)))
 check("every case declares executable_today",
       all(isinstance(c.get("executable_today"), bool) for c in doc["cases"]))
 check("the document says it is not in force", "NOT IN FORCE" in doc["status"])
-expected_exec = {c["id"] for c in doc["cases"] if c["executable_today"]}
-missing = sorted(expected_exec - _covered)
-check("every executable_today case was executed above", not missing,
+check("every executable case names the suite that executes it",
+      all(c.get("executed_by") for c in doc["cases"] if c["executable_today"]))
+mine = {c["id"] for c in doc["cases"]
+        if c.get("executed_by") == "tests/ski_v2_draft_status.py"}
+missing = sorted(mine - _covered)
+check("every case assigned to THIS suite was executed above", not missing,
       f"not executed: {missing}")
-extra = sorted(_covered - expected_exec)
+extra = sorted(_covered - mine)
 check("no case claims coverage it does not have", not extra, f"{extra}")
-print(f"        {len(expected_exec)} executable / {len(ids)} total; the rest need a "
-      f"ski@v2 implementation and are NOT evidence yet")
+executable = [c for c in doc["cases"] if c["executable_today"]]
+elsewhere = sorted({c["executed_by"] for c in executable} - {"tests/ski_v2_draft_status.py"})
+print(f"        {len(mine)} case(s) here, {len(executable)} executable in total "
+      f"({', '.join(elsewhere) or 'none elsewhere'}); {len(ids) - len(executable)} of "
+      f"{len(ids)} still need a ski@v2 implementation and are NOT evidence yet")
 
 print()
 if _fail:
