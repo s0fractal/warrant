@@ -40,10 +40,15 @@ right.
   accepts `ski@v2` or `0.3`, no evaluator ships, no in-force schema, vector or
   conformance-pack entry changed, and `ski@v1` is byte-identical.
   `tests/ski_v2_draft_status.py` asserts exactly that by execution (Python, and
-  Go over the probe `validate` class), pins the §8.2 specimen and the M5
-  fingerprint *equality* as today's behaviour, and fails if any
-  `executable_today` case is not actually executed. Demonstrated to fail:
-  admitting the tag in `RUNTIMES`/`ACCEPTED` turns it red on six assertions.
+  Go over the probe `validate` class), pins the §8.2 specimen and each M5
+  fingerprint as the COMPLETE historical tuple
+  `('ski@v1', term, expect, 'pass', expect)` — a preservation contract that
+  admitting `ski@v2` must leave untouched, since v2 changes nothing about what a
+  `ski@v1` reason fingerprints to — and fails if any `executable_today` case is
+  not actually executed. Demonstrated to fail twice: admitting the tag in
+  `RUNTIMES`/`ACCEPTED` turns it red on six assertions, and appending a member
+  to every fingerprint turns the preservation assertions red (the earlier
+  equality-only form passed that mutation — found in review, not by me).
 - Docs, no protocol surface moved: the `ski@v1` safety claim is qualified
   everywhere it was still stated as "work and peak memory bounded by `atp`, safe
   by construction" — THREAT-MODEL A8, SPEC §3.1 and its security

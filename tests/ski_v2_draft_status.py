@@ -17,10 +17,14 @@ outcome of writing one, so this suite asserts the opposite, by execution:
   - no draft artifact is reachable from any in-force loader (`schema_check`'s
     registry, the conformance pack, the examples the conformance command reads);
   - the reserved tag still has no evaluator and no fallback to another tag's;
-  - `ski@v1` has not moved: the §8.2 specimen re-runs to its `expect` in exactly
-    20 ATP, and the M5 pair's two §7 fingerprints are EQUAL — the property
-    `ski@v2` exists to change, pinned here as it is TODAY so the admission
-    change has to move it deliberately;
+  - `ski@v1` has not moved, pinned as the COMPLETE historical tuple rather than
+    as a relation between two of them: the §8.2 specimen re-runs to its `expect`
+    in exactly 20 ATP, and each M5 fingerprint is exactly
+    `('ski@v1', term, expect, 'pass', expect)`. That equality between the two
+    MUST SURVIVE admission unchanged — `ski@v2` does not change what a `ski@v1`
+    reason fingerprints to; only v2's own tuple carries the exit distinction.
+    An in-process mutation appending a member to every tuple is run here and
+    must be rejected, because the earlier equality-only form passed it;
   - every `executable_today: true` case in the vector document is actually
     executed here, by id. A case list nobody runs is a wish list.
 
@@ -138,10 +142,17 @@ check("ACCEPTED body versions are unchanged", W.ACCEPTED == ("0.1", "0.2"),
       f"{W.ACCEPTED}")
 
 print("\nthe reserved tag still has no evaluator")
+# NOT C-15. C-15 is the one-byte evaluator mutation with a refusal BEFORE import;
+# there is no ski@v2 evaluator to mutate, and the absence of a registered one
+# demonstrates nothing about digest enforcement (Codex, S1 review R2). That case
+# is marked non-executable until S2 ships the evaluator. What IS executed here is
+# the reserved-tag rule, which is its own case.
 check("load_sigma('ski@v2') is None", W.load_sigma("ski@v2") is None,
-      covers=("C-15",))
+      covers=("C-00",))
 check("load_bundled_sigma('ski@v2') is None", W.load_bundled_sigma("ski@v2") is None,
-      covers=("C-15",))
+      covers=("C-00",))
+check("an unregistered tag yields None, with no fallback to another tag's module",
+      W.load_sigma("ski@v9") is None, covers=("C-00",))
 check("no ski@v2 row in SKI_EVALUATORS", "ski@v2" not in W.SKI_EVALUATORS)
 record = json.loads((REPO / "trust/ski-runtime-evaluators.json").read_text())
 check("no ski@v2 row in trust/ski-runtime-evaluators.json",
@@ -182,15 +193,55 @@ with tempfile.TemporaryDirectory() as tmp:
                                        "expect": expect}))
         reasons.append({"kind": "check", "check": blob, "runtime": "ski@v1",
                         "verdict": "pass"})
-    m5_body = dict(body("0.2", runtime=None), because=reasons)
+    # A ski@v2 check blob and a ski@v2 reason sit in the SAME store and the SAME
+    # body as the v1 reasons. This is as close to R-20's "a store that also holds
+    # ski@v2 records" as is constructible while the tag is rejected — a record
+    # carrying that reason cannot be valid, which is asserted here rather than
+    # assumed. The genuinely mixed store (valid v2 records beside v1 ones) is
+    # R-20b and is NOT executable until admission.
+    v2_blob = store.put_blob(W.canon({"ski": 2, "term": term, "atp": 9,
+                                      "expect": expect, "exit": "normal_form"}))
+    v2_reason = {"kind": "check", "check": v2_blob, "runtime": "ski@v2",
+                 "verdict": "pass"}
+    m5_body = dict(body("0.2", runtime=None), because=reasons + [v2_reason])
+    check("a body mixing ski@v1 and ski@v2 reasons is still invalid",
+          bool(W.validate_body(m5_body)), covers=("R-20",))
+    check("the ski@v2 reason contributes NO fingerprint (unregistered runtime)",
+          W.fingerprint(v2_reason, m5_body, store) is None, covers=("R-20",))
+
     fps = [W.fingerprint(r, m5_body, store) for r in reasons]
-    check("M5 pair: both ski@v1 re-runs verdict pass",
-          all(fp is not None and fp[3] == "pass" for fp in fps), f"{fps}",
-          covers=("R-20",))
-    check("M5 pair: the two ski@v1 fingerprints are EQUAL (today's behaviour)",
+    # The COMPLETE historical tuple, written out. Equality of the two was the
+    # earlier assertion and it was too weak: appending a member to both left it
+    # green (Codex, S1 review R1). The pinned form fails on any change of shape,
+    # order or value — including an added member, since the comparison is on the
+    # whole tuple and the length is asserted beside it.
+    HISTORIC = ("ski@v1", term, expect, "pass", expect)
+    for atp, fp in zip((0, 9), fps):
+        check(f"M5 atp={atp}: the ski@v1 fingerprint is exactly the historical "
+              f"5-tuple", fp == HISTORIC and len(fp) == 5, f"{fp}",
+              covers=("R-20",))
+    check("M5 pair: the two ski@v1 fingerprints are equal — and MUST stay equal "
+          "after v2 is admitted (only v2 tuples gain the exit distinction)",
           fps[0] == fps[1], f"{fps[0]}\n{fps[1]}", covers=("R-20",))
-    check("M5 pair: and the second is therefore inadmissible as re-litigation",
+    check("M5 pair: the second is therefore inadmissible as re-litigation",
           W.fingerprint(reasons[1], m5_body, store) in set(fps[:1]))
+
+    # The control for the control. A preservation test that cannot notice a
+    # changed tuple is decoration, so the change is made here, in process, and
+    # the assertion must reject it.
+    original_fingerprint = W.fingerprint
+    try:
+        W.fingerprint = lambda r, b, s: (None if original_fingerprint(r, b, s) is None
+                                         else original_fingerprint(r, b, s)
+                                         + ("unexpected-v1-format-change",))
+        drifted = [W.fingerprint(r, m5_body, store) for r in reasons]
+        caught = all(fp != HISTORIC and len(fp) != 5 for fp in drifted)
+        equal_still = drifted[0] == drifted[1]
+        check("mutation control: an added tuple member is REJECTED by the pinned "
+              "comparison (and would have passed a bare equality check)",
+              caught and equal_still, f"{drifted[0]}")
+    finally:
+        W.fingerprint = original_fingerprint
 
 print("\nGo agrees that ski@v2 and 0.3 are invalid")
 go_bin = Path(GO) if GO else REPO / "impl-go/warrant-go"

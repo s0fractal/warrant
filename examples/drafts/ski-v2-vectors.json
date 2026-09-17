@@ -15,7 +15,7 @@
       "0": "atp_exhausted",
       "9": "normal_form"
     },
-    "note": "One term at two budgets. As ski@v1 reasons both re-runs verdict `pass` and the two §7 fingerprints are EQUAL — that equality is current behaviour and case R-20 pins it. The draft ski@v2 tuples differ, which is what the tag is for."
+    "note": "One term at two budgets. As ski@v1 reasons both re-runs verdict `pass` and the two §7 fingerprints are EQUAL. That equality is current behaviour, R-20 pins it as complete tuples, and it MUST SURVIVE the admission of ski@v2 unchanged: v2 does not alter what a v1 reason fingerprints to. What differs is the draft ski@v2 tuple for the same pair, which is what the tag is for."
   },
   "cases": [
     {
@@ -119,12 +119,20 @@
       "executable_today": false
     },
     {
+      "id": "C-00",
+      "requires": "SPEC §3.1 one-evaluator-per-tag",
+      "statement": "the reserved ski@v2 tag, and an unregistered ski@v9 tag",
+      "expected": "no evaluator for either; no fallback to another tag's module",
+      "executable_today": true,
+      "note": "The reserved-tag rule. Digest enforcement on a REGISTERED tag is C-15."
+    },
+    {
       "id": "C-15",
       "requires": "SPEC §3.1",
       "statement": "evaluator bytes moved by one byte",
       "expected": "refused before import; reason unverified",
-      "executable_today": true,
-      "note": "Executable today for the shape: load_sigma refuses an unpinned/unknown tag and never falls back."
+      "executable_today": false,
+      "note": "Deferred to S2, which ships the evaluator there is currently nothing to mutate. S1 credited this case for load_sigma('ski@v2') being None, which demonstrates the reserved-tag rule and NOT digest enforcement (Codex, S1 review R2)."
     },
     {
       "id": "C-16",
@@ -165,9 +173,18 @@
     {
       "id": "R-20",
       "requires": "SPEC §7",
-      "statement": "the M5 pair as ski@v1 reasons, in a store that also holds ski@v2 records",
-      "expected": "the two fingerprints are EQUAL and byte-identical to their value before this change",
-      "executable_today": true
+      "statement": "the M5 pair as ski@v1 reasons, in a body and store that also carry a ski@v2 check blob and reason",
+      "expected": "each fingerprint is exactly the historical 5-tuple ('ski@v1', term, expect, 'pass', expect); the two are equal; the ski@v2 reason contributes no fingerprint and makes the body invalid",
+      "executable_today": true,
+      "note": "Pinned as complete tuples, not as equality between them: an added member left the equality-only form green (Codex, S1 review R1). The suite runs that mutation and requires it to be rejected."
+    },
+    {
+      "id": "R-20b",
+      "requires": "SPEC §7",
+      "statement": "the M5 pair as ski@v1 reasons in a genuinely mixed store: valid ski@v2 records filed beside the v1 ones",
+      "expected": "the ski@v1 fingerprints are byte-identical to the historical tuples above — admitting v2 does not change what a v1 reason fingerprints to",
+      "executable_today": false,
+      "note": "Not constructible while the tag is rejected: no valid record can carry a ski@v2 reason. R-20 executes the closest constructible form today."
     },
     {
       "id": "R-21",
