@@ -34,7 +34,11 @@ right.
   are listed in `unreturned_calls` with `"ambiguous": true`, responses on that id are
   kept as blobs in the new manifest field `unpaired_responses` and never sealed, and
   the pack is incomplete (exit 3). The proxy refuses to start (exit 2) if the table does
-  not load, and `run_proxy` loads it before spawning a server. No protocol surface moved.
+  not load, and `run_proxy` loads it before spawning a server. A `tools/call` with no id
+  (or id null), which the server may still execute and whose answer can never be paired,
+  is listed unreturned with `"reason": "no request id"`, and a null-id response is kept in
+  `unpaired_responses` (found in Codex's adversarial review of #81). No protocol surface
+  moved.
 
 - **`warrant_mcp.load_table()` authenticates and loads the certified table, unused.**
   The runtime's and the table's SHA-256 are pinned in `warrant_mcp.py`; a difference
