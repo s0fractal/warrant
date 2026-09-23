@@ -20,6 +20,10 @@
      runtime (src/projection_runtime.py at stargate 5b568a2) byte for byte, ships
      as a py-module, and imports nothing but the standard library. Nothing uses it
      yet; this only establishes the artifact a later change pins and loads.
+  H. pinned table: warrant_mcp pins the table runtime's and the projection's
+     SHA-256 in its own source. load_table() refuses a runtime or a projection one
+     byte away from the pins before executing anything, and the pinned table answers
+     a first call on an idle id by holding it. run_proxy does not use it yet.
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -331,6 +335,34 @@ def test_table_runtime_artifact():
         "the runtime imports only the standard library", str(sorted(imports)))
 
 
+def test_pinned_table():
+    import shutil
+    load = getattr(M, "load_table", None)
+    chk(load is not None, "warrant_mcp has load_table()")
+    if load is None:
+        return
+    d = tempfile.mkdtemp()
+    runtime = os.path.join(d, "warrant_mcp_table.py")
+    shutil.copy(os.path.join(ROOT, "impl", "warrant_mcp_table.py"), runtime)
+    marker = os.path.join(d, "ran.marker")
+    open(runtime, "a").write(f"open({marker!r}, 'w').write('ran')\n")
+    try:
+        load(runtime_path=runtime); refused = False
+    except ValueError:
+        refused = True
+    chk(refused and not os.path.exists(marker),
+        "a runtime one line longer is refused before any of it runs")
+    try:
+        load(projection=M.TABLE_PROJECTION.replace(b'"pending":true', b'"pending":false', 1)); refused = False
+    except ValueError:
+        refused = True
+    chk(refused, "a changed projection is refused")
+    idle = {"ambiguous": False, "calls.one": False, "calls.two": False, "pending": False}
+    chk(load().step(idle, {"host": True, "reply": False}) ==
+        {"ambiguous": False, "calls.one": True, "calls.two": False, "pending": True},
+        "the pinned table holds a first call on an idle id")
+
+
 def main():
     test_classifier()
     test_sealer_core()
@@ -339,6 +371,7 @@ def main():
     test_unanswered_call()
     test_reverse_request()
     test_table_runtime_artifact()
+    test_pinned_table()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 
