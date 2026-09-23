@@ -62,6 +62,6 @@ warrant-anchor = "warrant_anchor:main"
 # One bundled Σ-GLYPH evaluator per ADMITTED runtime tag (SPEC §13.1):
 # sigma_glyph_v05 is ski@v1 (Book I v0.5). Reserved candidates do not ship in
 # the wheel before a body version can invoke them. impl/warrant.py pins it.
-py-modules = ["warrant", "sigma_glyph_v05", "warrant_mcp",
+py-modules = ["warrant", "sigma_glyph_v05", "warrant_mcp", "warrant_mcp_table",
               "warrant_mcp_server", "ski_policy", "policy_lang", "warrant_anchor"]
 package-dir = { "" = "impl" }

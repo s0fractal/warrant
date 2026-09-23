@@ -24,6 +24,9 @@
      incomplete and the proxy exits 3. Found by the stargate MCP proxy vertical
      (a model of run_proxy refuted with the trace call, call); today the first call
      is overwritten in `pending` and the second is sealed with the first's result.
+  H. pinned table: a table runtime or projection one byte away from the digests
+     pinned in warrant_mcp.py is refused before any server is spawned (exit 2),
+     and load_table() refuses a changed projection.
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -347,6 +350,31 @@ def test_duplicate_request_id():
         "the pack is incomplete and the proxy exits 3", f"rc={proc.returncode} {m['incomplete_because']}")
 
 
+def test_pinned_table():
+    import shutil
+    d = tempfile.mkdtemp()
+    impl = os.path.join(d, "impl"); shutil.copytree(os.path.join(ROOT, "impl"), impl)
+    runtime = os.path.join(impl, "warrant_mcp_table.py")
+    open(runtime, "a").write("# one more line\n")
+    marker = os.path.join(d, "server.marker")
+    server = [sys.executable, "-c", f"open({marker!r}, 'w').write('spawned')"]
+    proc = subprocess.run([sys.executable, os.path.join(impl, "warrant_mcp.py"), "--store", d,
+                           "--actor", "agent@test", "--key", keyfile(d), "--", *server],
+                          input="", capture_output=True, text=True, timeout=30)
+    chk(proc.returncode == 2 and "pinned digest" in proc.stderr and not os.path.exists(marker),
+        "a changed table runtime is refused before the server is spawned (exit 2)",
+        f"rc={proc.returncode} {proc.stderr[-160:]}")
+    try:
+        M.load_table(projection=M.TABLE_PROJECTION.replace(b'"pending":true', b'"pending":false', 1))
+        refused = False
+    except ValueError:
+        refused = True
+    chk(refused, "a changed projection is refused by load_table")
+    chk(M.load_table().step(M.IDLE, M.CALL) == {"ambiguous": False, "calls.one": True,
+                                                  "calls.two": False, "pending": True},
+        "the pinned table holds a first call")
+
+
 def main():
     test_classifier()
     test_sealer_core()
@@ -355,6 +383,7 @@ def main():
     test_unanswered_call()
     test_reverse_request()
     test_duplicate_request_id()
+    test_pinned_table()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 

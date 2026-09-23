@@ -26,6 +26,21 @@ right.
 
 ## Unreleased
 
+- **`warrant-mcp` no longer loses a call when the host reuses a request id.** Two
+  `tools/call` with one id, both outstanding, used to leave one entry in `pending`:
+  the first call vanished from the pack and the second was sealed with the first's
+  result, while the manifest said complete and the proxy exited 0. Per-id bookkeeping
+  is now decided by a certified transition table (stargate `examples/mcp-proxy`,
+  variant `fixed`; the model of the old code is refuted by the trace call, call):
+  a reused id is marked ambiguous, both calls are listed in `unreturned_calls` with
+  `"ambiguous": true`, responses on that id are kept as blobs in the new manifest
+  field `unpaired_responses` and never sealed, and the pack is incomplete (exit 3).
+  The table runtime ships as `warrant_mcp_table` (stargate's fixed table runtime,
+  byte for byte); its digest and the table's are pinned in `warrant_mcp.py`, and the
+  proxy refuses to start (exit 2) on any difference. Evidence-pack manifest gains
+  `unpaired_responses` and the `ambiguous` field of an unreturned call. No protocol
+  surface moved.
+
 - **WRT-013 stage S1 — a DRAFT registration for `ski@v2`, in force nowhere.**
   SPEC §3.2 now carries the full contract a future admission change would
   register (check-blob shape with an explicit `exit`, verdict mapping, the
