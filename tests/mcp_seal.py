@@ -27,6 +27,13 @@
   H. pinned table: a table runtime or projection one byte away from the digests
      pinned in warrant_mcp.py is refused before any server is spawned (exit 2),
      and load_table() refuses a changed projection.
+  I. id-less tools/call (Codex adversarial review of #81): a tools/call with no
+     id, or id null, is a notification the server may still execute, and nothing
+     that comes back can be paired with it. It must be listed unreturned with the
+     reason, a null-id response kept unpaired, the pack incomplete, exit 3. Before:
+     both sides ignored it -> 0 sealed, 0 unreturned, complete, exit 0.
+     Also: run_proxy loads the pinned table before it spawns any server, so the
+     invariant holds for a direct caller, not only for main().
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -375,6 +382,55 @@ def test_pinned_table():
         "the pinned table holds a first call")
 
 
+def test_idless_call():
+    mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
+    for label, call in (("no id", {"jsonrpc": "2.0", "method": "tools/call",
+                                   "params": {"name": "write_noid", "arguments": {"row": "x"}}}),
+                        ("id null", {"jsonrpc": "2.0", "id": None, "method": "tools/call",
+                                     "params": {"name": "write_noid", "arguments": {"row": "x"}}})):
+        d = tempfile.mkdtemp()
+        env = dict(os.environ); env.pop("MOCK_MCP_SILENT_EXIT", None)
+        cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+               "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+               "--", sys.executable, mock]
+        proc = subprocess.run(cmd, input=json.dumps(call) + "\n", capture_output=True, text=True,
+                              timeout=30, env=env)
+        m = json.load(open(os.path.join(d, "manifest.json")))
+        u = m["unreturned_calls"]
+        chk(len(u) == 1 and u[0]["tool"] == "write_noid" and u[0].get("reason") == "no request id"
+            and u[0]["consequential"] is True,
+            f"[{label}] the call is listed unreturned, consequential, with the reason", json.dumps(u)[:200])
+        chk(len(m.get("unpaired_responses", [])) == 1 and m["unpaired_responses"][0]["id"] is None,
+            f"[{label}] the null-id response is kept unpaired", json.dumps(m.get("unpaired_responses"))[:200])
+        chk(proc.returncode == 3 and m["sealed_calls"] == 0 and m["observation_complete"] is False,
+            f"[{label}] nothing sealed, pack incomplete, exit 3", f"rc={proc.returncode} {m['incomplete_because']}")
+
+
+def test_run_proxy_loads_the_table_first():
+    d = tempfile.mkdtemp()
+    sealer = M.Sealer(os.path.join(d, ".warrants"), "agent@test", keyfile(d), {})
+    spawned = []
+    original_load, original_popen = M.load_table, M.subprocess.Popen
+    def refuse(*a, **k):
+        raise ValueError("table refused for the test")
+    def record(*a, **k):                         # a marker file would race the child process
+        spawned.append(a)
+        raise RuntimeError("spawned")
+    M.load_table, M.subprocess.Popen = refuse, record
+    try:
+        M.run_proxy([sys.executable, "-c", "pass"], sealer)
+        outcome = "returned"
+    except ValueError:
+        outcome = "refused"
+    except RuntimeError:
+        outcome = "spawned"
+    finally:
+        M.load_table, M.subprocess.Popen = original_load, original_popen
+    chk(outcome == "refused" and not spawned,
+        "run_proxy refuses before spawning a server when the table does not load",
+        f"outcome={outcome} spawned={len(spawned)}")
+
+
 def main():
     test_classifier()
     test_sealer_core()
@@ -384,6 +440,8 @@ def main():
     test_reverse_request()
     test_duplicate_request_id()
     test_pinned_table()
+    test_idless_call()
+    test_run_proxy_loads_the_table_first()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 
