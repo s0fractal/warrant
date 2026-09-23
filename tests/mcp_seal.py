@@ -16,6 +16,10 @@
      not a response: it must not resolve the pending call, must not become a
      sealed record with null evidence, and the call stays unreturned (Codex
      rev-2 P1 on PR #63).
+  J. table runtime artifact: impl/warrant_mcp_table.py is stargate's fixed table
+     runtime (src/projection_runtime.py at stargate 5b568a2) byte for byte, ships
+     as a py-module, and imports nothing but the standard library. Nothing uses it
+     yet; this only establishes the artifact a later change pins and loads.
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -305,6 +309,28 @@ def test_reverse_request():
         "the sealed evidence is the real tool result, not the ping", str(ev)[:120])
 
 
+TABLE_RUNTIME_EXPECTED = "4ab9224fac3605bd150cb12764424e9b5c7147c72a0e5259c2d0861f94746b1a"
+
+
+def test_table_runtime_artifact():
+    import ast, hashlib, re
+    path = os.path.join(ROOT, "impl", "warrant_mcp_table.py")
+    present = os.path.exists(path)
+    data = open(path, "rb").read() if present else b""
+    chk(present and hashlib.sha256(data).hexdigest() == TABLE_RUNTIME_EXPECTED,
+        "impl/warrant_mcp_table.py is stargate's table runtime, byte for byte",
+        hashlib.sha256(data).hexdigest() if present else "missing")
+    modules = re.search(r'py-modules\s*=\s*\[([^\]]*)\]', open(os.path.join(ROOT, "pyproject.toml")).read())
+    chk(modules is not None and '"warrant_mcp_table"' in modules.group(1),
+        "the wheel ships warrant_mcp_table as a py-module")
+    imports = set()
+    for node in ast.walk(ast.parse(data or b"")):
+        if isinstance(node, ast.Import): imports |= {a.name for a in node.names}
+        if isinstance(node, ast.ImportFrom): imports.add(node.module or ".")
+    chk(present and imports <= {"json", "hashlib", "itertools", "pathlib"},
+        "the runtime imports only the standard library", str(sorted(imports)))
+
+
 def main():
     test_classifier()
     test_sealer_core()
@@ -312,6 +338,7 @@ def main():
     test_seal_failure()
     test_unanswered_call()
     test_reverse_request()
+    test_table_runtime_artifact()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 
