@@ -32,6 +32,9 @@
      incomplete and the proxy exits 3. Found by the stargate MCP proxy vertical
      (a model of run_proxy refuted with the trace call, call); on master the first
      call is overwritten in `pending` and the second is sealed with the first's result.
+  K. the proxy runs only under the pinned table: a runtime one line longer is
+     refused before any server is spawned (exit 2), and run_proxy itself loads the
+     table before it spawns one, so a direct caller gets the same refusal.
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -405,6 +408,42 @@ def test_duplicate_request_id():
         "the pack is incomplete and the proxy exits 3", f"rc={proc.returncode} {m['incomplete_because']}")
 
 
+def test_proxy_requires_the_pinned_table():
+    import shutil
+    d = tempfile.mkdtemp()
+    impl = os.path.join(d, "impl"); shutil.copytree(os.path.join(ROOT, "impl"), impl)
+    open(os.path.join(impl, "warrant_mcp_table.py"), "a").write("# one more line\n")
+    marker = os.path.join(d, "server.marker")
+    server = [sys.executable, "-c", f"open({marker!r}, 'w').write('spawned')"]
+    proc = subprocess.run([sys.executable, os.path.join(impl, "warrant_mcp.py"), "--store", d,
+                           "--actor", "agent@test", "--key", keyfile(d), "--", *server],
+                          input="", capture_output=True, text=True, timeout=30)
+    chk(proc.returncode == 2 and "pinned digest" in proc.stderr and not os.path.exists(marker),
+        "a changed table runtime is refused before the server is spawned (exit 2)",
+        f"rc={proc.returncode} {proc.stderr[-160:]}")
+    sealer = M.Sealer(os.path.join(d, "direct", ".warrants"), "agent@test", keyfile(d), {})
+    spawned = []
+    original_load, original_popen = M.load_table, M.subprocess.Popen
+    def refuse(*a, **k):
+        raise ValueError("table refused for the test")
+    def record(*a, **k):                         # a marker file would race the child process
+        spawned.append(a)
+        raise RuntimeError("spawned")
+    M.load_table, M.subprocess.Popen = refuse, record
+    try:
+        M.run_proxy([sys.executable, "-c", "pass"], sealer)
+        outcome = "returned"
+    except ValueError:
+        outcome = "refused"
+    except RuntimeError:
+        outcome = "spawned"
+    finally:
+        M.load_table, M.subprocess.Popen = original_load, original_popen
+    chk(outcome == "refused" and not spawned,
+        "run_proxy refuses before spawning a server when the table does not load",
+        f"outcome={outcome} spawned={len(spawned)}")
+
+
 def main():
     test_classifier()
     test_sealer_core()
@@ -415,6 +454,7 @@ def main():
     test_table_runtime_artifact()
     test_pinned_table()
     test_duplicate_request_id()
+    test_proxy_requires_the_pinned_table()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 
