@@ -73,6 +73,26 @@ right.
   `RUNTIMES`/`ACCEPTED` turns it red on six assertions, and appending a member
   to every fingerprint turns the preservation assertions red (the earlier
   equality-only form passed that mutation — found in review, not by me).
+- **WRT-013 stage S2 — the `ski@v2` execution path, reachable by no record.**
+  `impl/warrant.py` gains `validate_ski_v2_blob` (the closed five-member draft
+  blob), `run_ski_v2_check` (Book I 0.6.0 `eval_receipt`, verdict = declared exit
+  **and** result hash, `atp_spent` reported and never compared) and a SECOND
+  evaluator table, `DRAFT_SKI_EVALUATORS`, kept apart from the in-force
+  `SKI_EVALUATORS` because a reserved tag has no business in the table
+  verification consults. `impl/sigma_glyph_v06.py` is vendored for the checkout
+  and deliberately **not** added to `pyproject`'s `py-modules`: candidate bytes
+  do not ship before a body version can invoke them
+  (`history/SKI-V2-EXECUTABLE-CANDIDATE-RETIREMENT.md`), so an installed wheel
+  has no `ski@v2` evaluator and reports `runtime unavailable`. **No protocol
+  surface moved**: `RUNTIMES`, `ACCEPTED`, the schemas, the fingerprint and both
+  verify loops are untouched, so `ski@v2` and body `0.3` are still rejected
+  everywhere. `tests/ski_v2_execution.py` pins the four-cell verdict matrix over
+  one term at two budgets, the refusal class of every local fault (admission,
+  resource, foreign-keyed bytes, over-budget, drifted evaluator, missing or
+  non-canonical blob), the wrong-version blob under either tag, and `ski@v1`
+  still answering its §8.2 specimen in exactly 20 ATP. Demonstrated to fail:
+  dropping the exit from the verdict reddens four assertions; turning an
+  admission refusal into a `fail` reddens one.
 - Docs, no protocol surface moved: the `ski@v1` safety claim is qualified
   everywhere it was still stated as "work and peak memory bounded by `atp`, safe
   by construction" — THREAT-MODEL A8, SPEC §3.1 and its security
