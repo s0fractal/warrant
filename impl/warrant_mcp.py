@@ -27,6 +27,7 @@ A0–A4 authority taxonomy lives in trinity/autonomy-kernel.
 """
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -144,6 +145,7 @@ class Sealer:
         self.records = []
         self.seal_failures = []                  # calls observed but NOT sealed
         self.unreturned = []                     # calls sent, never answered
+        self.unpaired = []                       # responses on an ambiguous id, never sealed
         self.downstream_returncode = None
         # Pin the effect policy itself (bytes) so a verifier sees exactly which
         # table classified these actions.
@@ -209,7 +211,7 @@ class Sealer:
                 "tool": tool, "ts": int(time.time()),
                 "error": f"{type(error).__name__}: {error}"[:300]})
 
-    def record_unreturned(self, tool, tool_input, ts):
+    def record_unreturned(self, tool, tool_input, ts, ambiguous=False, reason=None):
         """A tools/call went downstream and the session ended before a response
         came back. The effect may have happened; nobody observed the outcome.
         It is listed, classified, and counts against completeness if it is a
@@ -217,8 +219,18 @@ class Sealer:
         cls, effects, source = classify(tool, self.effects_map)
         with self._lock:
             self.unreturned.append({"tool": tool, "arguments": tool_input, "class": cls, "effects": effects,
-                                    "source": source, "ts": ts,
+                                    "source": source, "ts": ts, "ambiguous": bool(ambiguous),
+                                    "reason": reason,
                                     "consequential": ORDER[cls] >= ORDER[self.ceiling]})
+
+    def record_unpaired(self, request_id, result, is_error):
+        """A response arrived for a request id whose calls can no longer be told apart
+        (the host reused the id while a call was outstanding). It is kept as a blob and
+        listed, and it is never sealed as the evidence of any one call."""
+        blob = self.store.put_blob(json.dumps(result, sort_keys=True, separators=(",", ":")).encode())
+        with self._lock:
+            self.unpaired.append({"id": request_id, "result": blob, "is_error": bool(is_error),
+                                  "ts": int(time.time())})
 
     def incomplete(self):
         """Why the pack must not be read as a complete observation, or []."""
@@ -243,6 +255,7 @@ class Sealer:
             "seal_failures": len(self.seal_failures),
             "seal_failure_log": list(self.seal_failures),
             "unreturned_calls": list(self.unreturned),
+            "unpaired_responses": list(self.unpaired),
             "downstream_returncode": self.downstream_returncode,
             "observation_complete": not self.incomplete(),
             "incomplete_because": self.incomplete(),
@@ -273,24 +286,230 @@ def _pump_and_forward(src, dst, on_line, on_error=None):
             return
 
 
-def run_proxy(server_cmd, sealer):
+# ---------- the per-id bookkeeping table ----------
+# What run_proxy does with a request id is decided by a certified transition table,
+# not by the branches below. The table is stargate's projection of the model in
+# stargate examples/mcp-proxy (variant `fixed`): certified there with `idle` live, a
+# repair of the model of this file's earlier code, which a two-step trace refuted
+# (call, call on one id). `warrant_mcp_table.py` is stargate's fixed table runtime,
+# byte for byte. Both are pinned here, in this file, not read from anything shipped
+# next to them; the proxy refuses to start on any difference, and runs the runtime
+# from the bytes it hashed.
+TABLE_RUNTIME_SHA256 = "4ab9224fac3605bd150cb12764424e9b5c7147c72a0e5259c2d0861f94746b1a"
+TABLE_PROJECTION_SHA256 = "6235a212057f2ef360d30cb767f170a363311f20bfa18f00dbf4143c8d7ac321"
+TABLE_PROJECTION = (
+    b'{"events":["host","reply"],"model":"14cfbf8c906b36518bf1d7be689aeeaa7032e6fb03beb333d269'
+    b'7568f55b8234","projection":1,"rows":[{"event":{"host":false,"reply":false},"next":{"ambi'
+    b'guous":false,"calls.one":false,"calls.two":false,"pending":false},"state":{"ambiguous":f'
+    b'alse,"calls.one":false,"calls.two":false,"pending":false}},{"event":{"host":false,"reply'
+    b'":true},"next":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":false},"'
+    b'state":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":false}},{"event"'
+    b':{"host":true,"reply":false},"next":{"ambiguous":false,"calls.one":true,"calls.two":fals'
+    b'e,"pending":true},"state":{"ambiguous":false,"calls.one":false,"calls.two":false,"pendin'
+    b'g":false}},{"event":{"host":true,"reply":true},"next":{"ambiguous":false,"calls.one":fal'
+    b'se,"calls.two":false,"pending":false},"state":{"ambiguous":false,"calls.one":false,"call'
+    b's.two":false,"pending":false}},{"event":{"host":false,"reply":false},"next":{"ambiguous"'
+    b':false,"calls.one":false,"calls.two":false,"pending":true},"state":{"ambiguous":false,"c'
+    b'alls.one":false,"calls.two":false,"pending":true}},{"event":{"host":false,"reply":true},'
+    b'"next":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":false},"state":{'
+    b'"ambiguous":false,"calls.one":false,"calls.two":false,"pending":true}},{"event":{"host":'
+    b'true,"reply":false},"next":{"ambiguous":true,"calls.one":true,"calls.two":false,"pending'
+    b'":false},"state":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":true}}'
+    b',{"event":{"host":true,"reply":true},"next":{"ambiguous":false,"calls.one":false,"calls.'
+    b'two":false,"pending":false},"state":{"ambiguous":false,"calls.one":false,"calls.two":fal'
+    b'se,"pending":true}},{"event":{"host":false,"reply":false},"next":{"ambiguous":false,"cal'
+    b'ls.one":false,"calls.two":true,"pending":false},"state":{"ambiguous":false,"calls.one":f'
+    b'alse,"calls.two":true,"pending":false}},{"event":{"host":false,"reply":true},"next":{"am'
+    b'biguous":false,"calls.one":true,"calls.two":false,"pending":false},"state":{"ambiguous":'
+    b'false,"calls.one":false,"calls.two":true,"pending":false}},{"event":{"host":true,"reply"'
+    b':false},"next":{"ambiguous":false,"calls.one":true,"calls.two":false,"pending":true},"st'
+    b'ate":{"ambiguous":false,"calls.one":false,"calls.two":true,"pending":false}},{"event":{"'
+    b'host":true,"reply":true},"next":{"ambiguous":false,"calls.one":false,"calls.two":false,"'
+    b'pending":false},"state":{"ambiguous":false,"calls.one":false,"calls.two":true,"pending":'
+    b'false}},{"event":{"host":false,"reply":false},"next":{"ambiguous":false,"calls.one":fals'
+    b'e,"calls.two":true,"pending":true},"state":{"ambiguous":false,"calls.one":false,"calls.t'
+    b'wo":true,"pending":true}},{"event":{"host":false,"reply":true},"next":{"ambiguous":false'
+    b',"calls.one":true,"calls.two":false,"pending":false},"state":{"ambiguous":false,"calls.o'
+    b'ne":false,"calls.two":true,"pending":true}},{"event":{"host":true,"reply":false},"next":'
+    b'{"ambiguous":true,"calls.one":true,"calls.two":false,"pending":false},"state":{"ambiguou'
+    b's":false,"calls.one":false,"calls.two":true,"pending":true}},{"event":{"host":true,"repl'
+    b'y":true},"next":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":false},'
+    b'"state":{"ambiguous":false,"calls.one":false,"calls.two":true,"pending":true}},{"event":'
+    b'{"host":false,"reply":false},"next":{"ambiguous":false,"calls.one":true,"calls.two":fals'
+    b'e,"pending":false},"state":{"ambiguous":false,"calls.one":true,"calls.two":false,"pendin'
+    b'g":false}},{"event":{"host":false,"reply":true},"next":{"ambiguous":false,"calls.one":fa'
+    b'lse,"calls.two":false,"pending":false},"state":{"ambiguous":false,"calls.one":true,"call'
+    b's.two":false,"pending":false}},{"event":{"host":true,"reply":false},"next":{"ambiguous":'
+    b'false,"calls.one":true,"calls.two":true,"pending":true},"state":{"ambiguous":false,"call'
+    b's.one":true,"calls.two":false,"pending":false}},{"event":{"host":true,"reply":true},"nex'
+    b't":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":false},"state":{"amb'
+    b'iguous":false,"calls.one":true,"calls.two":false,"pending":false}},{"event":{"host":fals'
+    b'e,"reply":false},"next":{"ambiguous":false,"calls.one":true,"calls.two":false,"pending":'
+    b'true},"state":{"ambiguous":false,"calls.one":true,"calls.two":false,"pending":true}},{"e'
+    b'vent":{"host":false,"reply":true},"next":{"ambiguous":false,"calls.one":false,"calls.two'
+    b'":false,"pending":false},"state":{"ambiguous":false,"calls.one":true,"calls.two":false,"'
+    b'pending":true}},{"event":{"host":true,"reply":false},"next":{"ambiguous":true,"calls.one'
+    b'":true,"calls.two":true,"pending":false},"state":{"ambiguous":false,"calls.one":true,"ca'
+    b'lls.two":false,"pending":true}},{"event":{"host":true,"reply":true},"next":{"ambiguous":'
+    b'false,"calls.one":false,"calls.two":false,"pending":false},"state":{"ambiguous":false,"c'
+    b'alls.one":true,"calls.two":false,"pending":true}},{"event":{"host":false,"reply":false},'
+    b'"next":{"ambiguous":false,"calls.one":true,"calls.two":true,"pending":false},"state":{"a'
+    b'mbiguous":false,"calls.one":true,"calls.two":true,"pending":false}},{"event":{"host":fal'
+    b'se,"reply":true},"next":{"ambiguous":false,"calls.one":true,"calls.two":false,"pending":'
+    b'false},"state":{"ambiguous":false,"calls.one":true,"calls.two":true,"pending":false}},{"'
+    b'event":{"host":true,"reply":false},"next":{"ambiguous":false,"calls.one":true,"calls.two'
+    b'":true,"pending":true},"state":{"ambiguous":false,"calls.one":true,"calls.two":true,"pen'
+    b'ding":false}},{"event":{"host":true,"reply":true},"next":{"ambiguous":false,"calls.one":'
+    b'false,"calls.two":false,"pending":false},"state":{"ambiguous":false,"calls.one":true,"ca'
+    b'lls.two":true,"pending":false}},{"event":{"host":false,"reply":false},"next":{"ambiguous'
+    b'":false,"calls.one":true,"calls.two":true,"pending":true},"state":{"ambiguous":false,"ca'
+    b'lls.one":true,"calls.two":true,"pending":true}},{"event":{"host":false,"reply":true},"ne'
+    b'xt":{"ambiguous":false,"calls.one":true,"calls.two":false,"pending":false},"state":{"amb'
+    b'iguous":false,"calls.one":true,"calls.two":true,"pending":true}},{"event":{"host":true,"'
+    b'reply":false},"next":{"ambiguous":true,"calls.one":true,"calls.two":true,"pending":false'
+    b'},"state":{"ambiguous":false,"calls.one":true,"calls.two":true,"pending":true}},{"event"'
+    b':{"host":true,"reply":true},"next":{"ambiguous":false,"calls.one":false,"calls.two":fals'
+    b'e,"pending":false},"state":{"ambiguous":false,"calls.one":true,"calls.two":true,"pending'
+    b'":true}},{"event":{"host":false,"reply":false},"next":{"ambiguous":true,"calls.one":fals'
+    b'e,"calls.two":false,"pending":false},"state":{"ambiguous":true,"calls.one":false,"calls.'
+    b'two":false,"pending":false}},{"event":{"host":false,"reply":true},"next":{"ambiguous":tr'
+    b'ue,"calls.one":false,"calls.two":false,"pending":false},"state":{"ambiguous":true,"calls'
+    b'.one":false,"calls.two":false,"pending":false}},{"event":{"host":true,"reply":false},"ne'
+    b'xt":{"ambiguous":true,"calls.one":true,"calls.two":false,"pending":false},"state":{"ambi'
+    b'guous":true,"calls.one":false,"calls.two":false,"pending":false}},{"event":{"host":true,'
+    b'"reply":true},"next":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":fa'
+    b'lse},"state":{"ambiguous":true,"calls.one":false,"calls.two":false,"pending":false}},{"e'
+    b'vent":{"host":false,"reply":false},"next":{"ambiguous":true,"calls.one":false,"calls.two'
+    b'":false,"pending":true},"state":{"ambiguous":true,"calls.one":false,"calls.two":false,"p'
+    b'ending":true}},{"event":{"host":false,"reply":true},"next":{"ambiguous":true,"calls.one"'
+    b':false,"calls.two":false,"pending":false},"state":{"ambiguous":true,"calls.one":false,"c'
+    b'alls.two":false,"pending":true}},{"event":{"host":true,"reply":false},"next":{"ambiguous'
+    b'":true,"calls.one":true,"calls.two":false,"pending":false},"state":{"ambiguous":true,"ca'
+    b'lls.one":false,"calls.two":false,"pending":true}},{"event":{"host":true,"reply":true},"n'
+    b'ext":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":false},"state":{"a'
+    b'mbiguous":true,"calls.one":false,"calls.two":false,"pending":true}},{"event":{"host":fal'
+    b'se,"reply":false},"next":{"ambiguous":true,"calls.one":false,"calls.two":true,"pending":'
+    b'false},"state":{"ambiguous":true,"calls.one":false,"calls.two":true,"pending":false}},{"'
+    b'event":{"host":false,"reply":true},"next":{"ambiguous":true,"calls.one":true,"calls.two"'
+    b':false,"pending":false},"state":{"ambiguous":true,"calls.one":false,"calls.two":true,"pe'
+    b'nding":false}},{"event":{"host":true,"reply":false},"next":{"ambiguous":true,"calls.one"'
+    b':true,"calls.two":false,"pending":false},"state":{"ambiguous":true,"calls.one":false,"ca'
+    b'lls.two":true,"pending":false}},{"event":{"host":true,"reply":true},"next":{"ambiguous":'
+    b'false,"calls.one":false,"calls.two":false,"pending":false},"state":{"ambiguous":true,"ca'
+    b'lls.one":false,"calls.two":true,"pending":false}},{"event":{"host":false,"reply":false},'
+    b'"next":{"ambiguous":true,"calls.one":false,"calls.two":true,"pending":true},"state":{"am'
+    b'biguous":true,"calls.one":false,"calls.two":true,"pending":true}},{"event":{"host":false'
+    b',"reply":true},"next":{"ambiguous":true,"calls.one":true,"calls.two":false,"pending":fal'
+    b'se},"state":{"ambiguous":true,"calls.one":false,"calls.two":true,"pending":true}},{"even'
+    b't":{"host":true,"reply":false},"next":{"ambiguous":true,"calls.one":true,"calls.two":fal'
+    b'se,"pending":false},"state":{"ambiguous":true,"calls.one":false,"calls.two":true,"pendin'
+    b'g":true}},{"event":{"host":true,"reply":true},"next":{"ambiguous":false,"calls.one":fals'
+    b'e,"calls.two":false,"pending":false},"state":{"ambiguous":true,"calls.one":false,"calls.'
+    b'two":true,"pending":true}},{"event":{"host":false,"reply":false},"next":{"ambiguous":tru'
+    b'e,"calls.one":true,"calls.two":false,"pending":false},"state":{"ambiguous":true,"calls.o'
+    b'ne":true,"calls.two":false,"pending":false}},{"event":{"host":false,"reply":true},"next"'
+    b':{"ambiguous":true,"calls.one":false,"calls.two":false,"pending":false},"state":{"ambigu'
+    b'ous":true,"calls.one":true,"calls.two":false,"pending":false}},{"event":{"host":true,"re'
+    b'ply":false},"next":{"ambiguous":true,"calls.one":true,"calls.two":true,"pending":false},'
+    b'"state":{"ambiguous":true,"calls.one":true,"calls.two":false,"pending":false}},{"event":'
+    b'{"host":true,"reply":true},"next":{"ambiguous":false,"calls.one":false,"calls.two":false'
+    b',"pending":false},"state":{"ambiguous":true,"calls.one":true,"calls.two":false,"pending"'
+    b':false}},{"event":{"host":false,"reply":false},"next":{"ambiguous":true,"calls.one":true'
+    b',"calls.two":false,"pending":true},"state":{"ambiguous":true,"calls.one":true,"calls.two'
+    b'":false,"pending":true}},{"event":{"host":false,"reply":true},"next":{"ambiguous":true,"'
+    b'calls.one":false,"calls.two":false,"pending":false},"state":{"ambiguous":true,"calls.one'
+    b'":true,"calls.two":false,"pending":true}},{"event":{"host":true,"reply":false},"next":{"'
+    b'ambiguous":true,"calls.one":true,"calls.two":true,"pending":false},"state":{"ambiguous":'
+    b'true,"calls.one":true,"calls.two":false,"pending":true}},{"event":{"host":true,"reply":t'
+    b'rue},"next":{"ambiguous":false,"calls.one":false,"calls.two":false,"pending":false},"sta'
+    b'te":{"ambiguous":true,"calls.one":true,"calls.two":false,"pending":true}},{"event":{"hos'
+    b't":false,"reply":false},"next":{"ambiguous":true,"calls.one":true,"calls.two":true,"pend'
+    b'ing":false},"state":{"ambiguous":true,"calls.one":true,"calls.two":true,"pending":false}'
+    b'},{"event":{"host":false,"reply":true},"next":{"ambiguous":true,"calls.one":true,"calls.'
+    b'two":false,"pending":false},"state":{"ambiguous":true,"calls.one":true,"calls.two":true,'
+    b'"pending":false}},{"event":{"host":true,"reply":false},"next":{"ambiguous":true,"calls.o'
+    b'ne":true,"calls.two":true,"pending":false},"state":{"ambiguous":true,"calls.one":true,"c'
+    b'alls.two":true,"pending":false}},{"event":{"host":true,"reply":true},"next":{"ambiguous"'
+    b':false,"calls.one":false,"calls.two":false,"pending":false},"state":{"ambiguous":true,"c'
+    b'alls.one":true,"calls.two":true,"pending":false}},{"event":{"host":false,"reply":false},'
+    b'"next":{"ambiguous":true,"calls.one":true,"calls.two":true,"pending":true},"state":{"amb'
+    b'iguous":true,"calls.one":true,"calls.two":true,"pending":true}},{"event":{"host":false,"'
+    b'reply":true},"next":{"ambiguous":true,"calls.one":true,"calls.two":false,"pending":false'
+    b'},"state":{"ambiguous":true,"calls.one":true,"calls.two":true,"pending":true}},{"event":'
+    b'{"host":true,"reply":false},"next":{"ambiguous":true,"calls.one":true,"calls.two":true,"'
+    b'pending":false},"state":{"ambiguous":true,"calls.one":true,"calls.two":true,"pending":tr'
+    b'ue}},{"event":{"host":true,"reply":true},"next":{"ambiguous":false,"calls.one":false,"ca'
+    b'lls.two":false,"pending":false},"state":{"ambiguous":true,"calls.one":true,"calls.two":t'
+    b'rue,"pending":true}}],"state":["ambiguous","calls.one","calls.two","pending"]}'
+)
+IDLE = {"ambiguous": False, "calls.one": False, "calls.two": False, "pending": False}
+CALL, RESPONSE = {"host": True, "reply": False}, {"host": False, "reply": True}
+REQUEST, END = {"host": False, "reply": False}, {"host": True, "reply": True}
+
+
+def load_table(runtime_path=None, projection=None):
+    """The pinned table, or ValueError. Nothing is executed before both digests match."""
+    runtime_path = Path(runtime_path or Path(__file__).with_name("warrant_mcp_table.py"))
+    projection = TABLE_PROJECTION if projection is None else projection
+    source = runtime_path.read_bytes()
+    if hashlib.sha256(source).hexdigest() != TABLE_RUNTIME_SHA256:
+        raise ValueError(f"table runtime {runtime_path} does not match the pinned digest")
+    if hashlib.sha256(projection).hexdigest() != TABLE_PROJECTION_SHA256:
+        raise ValueError("table projection does not match the pinned digest")
+    namespace = {"__name__": "warrant_mcp_table"}
+    exec(compile(source, str(runtime_path), "exec"), namespace)
+    return namespace["ProjectionMachine"].from_bytes(projection)
+
+
+def run_proxy(server_cmd, sealer, table=None):
     """Spawn the downstream server and relay JSON-RPC both ways, sealing A2+
     tools/call results as they pass server->host."""
+    table = table or load_table()                # before any server exists
     proc = subprocess.Popen(server_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=None, bufsize=1, text=True)
-    pending = {}                                 # request id -> (tool, input, ts)
+    ids = {}                                     # request id -> [table state, held call or None]
     plock = threading.Lock()
+
+    def step(mid, event):
+        """One table step for this id; returns (previous state, next state, held call)."""
+        state, held = ids.get(mid, (IDLE, None))
+        after = table.step(state, event)
+        if after == IDLE:
+            ids.pop(mid, None)
+        else:
+            ids[mid] = (after, held)
+        return state, after, held
 
     def on_host_line(raw):                        # host -> server: note tools/call
         try:
             msg = json.loads(raw)
         except ValueError:
             return
-        if msg.get("method") == "tools/call" and "id" in msg:
+        if msg.get("method") == "tools/call" and msg.get("id") is None:
+            # A notification-style call: the server may run it, and nothing that
+            # comes back can be paired with it. It is not a non-event either.
             params = msg.get("params") or {}
+            sealer.record_unreturned(params.get("name", ""), params.get("arguments", {}),
+                                     int(time.time()), reason="no request id")
+            return
+        if msg.get("method") == "tools/call":
+            params = msg.get("params") or {}
+            call = (params.get("name", ""), params.get("arguments", {}), int(time.time()))
+            unreturned = []
             with plock:
-                pending[msg["id"]] = (params.get("name", ""),
-                                      params.get("arguments", {}), int(time.time()))
+                before, after, held = step(msg["id"], CALL)
+                if before["pending"] and held and after["ambiguous"]:
+                    unreturned.append(held)      # displaced: its response can no longer be told apart
+                # (a held call the table neither keeps nor marks ambiguous is overwritten:
+                # that is what the table says, and what this file did before the table)
+                if after["pending"]:
+                    ids[msg["id"]] = (after, call)
+                else:
+                    unreturned.append(call)
+                    if msg["id"] in ids:
+                        ids[msg["id"]] = (after, None)
+            for tool, tinput, ts in unreturned:
+                sealer.record_unreturned(tool, tinput, ts, ambiguous=after["ambiguous"])
 
     def on_server_line(raw):                       # server -> host: seal the result
         try:
@@ -302,18 +521,36 @@ def run_proxy(server_cmd, sealer):
         # on this channel, and request ids belong to the requesting direction --
         # a server ping with id 1 is not the answer to the host's tools/call 1.
         # Both are forwarded untouched; neither touches `pending`.
-        if not isinstance(msg, dict) or "method" in msg:
-            return
-        if "result" not in msg and "error" not in msg:
+        if not isinstance(msg, dict):
             return
         mid = msg.get("id")
+        is_response = "method" not in msg and ("result" in msg or "error" in msg)
+        if mid is None:
+            if is_response:                      # e.g. the answer to an id-less call: keep it, pair nothing
+                sealer.record_unpaired(None, msg.get("result", msg.get("error")), "error" in msg)
+            return
+        if "method" not in msg and not is_response:
+            return
         with plock:
-            call = pending.pop(mid, None) if mid is not None else None
+            if mid not in ids:
+                return                           # not a call this proxy saw: nothing to pair
+            before, after, held = step(mid, RESPONSE if is_response else REQUEST)
+            if is_response and before["ambiguous"]:
+                call, unpaired = None, True
+            elif before["pending"] and not after["pending"]:
+                call, unpaired = held, False     # the table resolves the held call with this message
+            else:
+                call, unpaired = None, False
+            if mid in ids and not after["pending"]:
+                ids[mid] = (after, None)
+        result = msg.get("result", msg.get("error"))
+        is_error = "error" in msg or bool((msg.get("result") or {}).get("isError"))
+        if unpaired:
+            sealer.record_unpaired(mid, result, is_error)
+            return
         if not call:
             return
         tool, tinput, ts = call
-        result = msg.get("result", msg.get("error"))
-        is_error = "error" in msg or bool((msg.get("result") or {}).get("isError"))
         try:
             wid = sealer.seal(tool, tinput, result, is_error, ts=ts)
         except Exception as ex:                  # attributed here; the pump still forwards
@@ -342,9 +579,14 @@ def run_proxy(server_cmd, sealer):
     # exited without a response) -- list it, classify it, refuse to call the
     # pack complete. Nothing is invented about its outcome.
     with plock:
-        for mid, (tool, tinput, ts) in list(pending.items()):
-            sealer.record_unreturned(tool, tinput, ts)
-        pending.clear()
+        leftover = []
+        for mid in list(ids):
+            before, after, held = step(mid, END)
+            if held:
+                leftover.append(held)
+        ids.clear()
+    for tool, tinput, ts in leftover:
+        sealer.record_unreturned(tool, tinput, ts)
     sealer.write_manifest()
     why = sealer.incomplete()
     print(f"warrant-mcp: session sealed {sealer.sealed} calls into {sealer.store.root}"
@@ -401,9 +643,14 @@ def main(argv=None):
     except ValueError as ex:
         print(f"warrant-mcp: {ex}", file=sys.stderr)
         return 2
+    try:
+        table = load_table()                     # before any server is spawned or any byte is sealed
+    except (OSError, ValueError) as ex:
+        print(f"warrant-mcp: refusing to start: {ex}", file=sys.stderr)
+        return 2
     store_dir = Path(args.store) / ".warrants"
     sealer = Sealer(store_dir, args.actor, args.key, effects_map, args.ceiling)
-    incomplete = run_proxy(server_cmd, sealer)
+    incomplete = run_proxy(server_cmd, sealer, table)
     # 0: every consequential call the host sent was answered and sealed. 3: the
     # stream was kept but the pack is incomplete (a seal failed, or a call went
     # downstream and was never answered) -- a consumer must not read it as whole.
