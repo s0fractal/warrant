@@ -277,7 +277,12 @@ def _pump_and_forward(src, dst, on_line, on_error=None):
 # ---------- the per-id bookkeeping table (not used by run_proxy yet) ----------
 # stargate's projection of examples/mcp-proxy variant `fixed` (certified there with
 # `idle` live; a verified repair of the model of this file's per-id bookkeeping,
-# which the trace call, call refutes), run by warrant_mcp_table.py.
+# which the trace call, call refutes), run by warrant_mcp_table.py. Both are pinned
+# here, in this file, not read from anything shipped next to them; load_table()
+# hashes the bytes, refuses a difference before executing anything, and runs the
+# runtime from the bytes it hashed.
+TABLE_RUNTIME_SHA256 = "4ab9224fac3605bd150cb12764424e9b5c7147c72a0e5259c2d0861f94746b1a"
+TABLE_PROJECTION_SHA256 = "6235a212057f2ef360d30cb767f170a363311f20bfa18f00dbf4143c8d7ac321"
 TABLE_PROJECTION = (
     b'{"events":["host","reply"],"model":"14cfbf8c906b36518bf1d7be689aeeaa7032e6fb03beb333d269'
     b'7568f55b8234","projection":1,"rows":[{"event":{"host":false,"reply":false},"next":{"ambi'
@@ -426,10 +431,14 @@ TABLE_PROJECTION = (
 
 
 def load_table(runtime_path=None, projection=None):
-    """RED: loads whatever bytes it is given; nothing is pinned yet."""
+    """The pinned table, or ValueError. Nothing is executed before both digests match."""
     runtime_path = Path(runtime_path or Path(__file__).with_name("warrant_mcp_table.py"))
     projection = TABLE_PROJECTION if projection is None else projection
     source = runtime_path.read_bytes()
+    if hashlib.sha256(source).hexdigest() != TABLE_RUNTIME_SHA256:
+        raise ValueError(f"table runtime {runtime_path} does not match the pinned digest")
+    if hashlib.sha256(projection).hexdigest() != TABLE_PROJECTION_SHA256:
+        raise ValueError("table projection does not match the pinned digest")
     namespace = {"__name__": "warrant_mcp_table"}
     exec(compile(source, str(runtime_path), "exec"), namespace)
     return namespace["ProjectionMachine"].from_bytes(projection)

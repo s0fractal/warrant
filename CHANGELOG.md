@@ -26,6 +26,11 @@ right.
 
 ## Unreleased
 
+- **`warrant_mcp.load_table()` authenticates and loads the certified table, unused.**
+  The runtime's and the table's SHA-256 are pinned in `warrant_mcp.py`; a difference
+  is refused before anything executes, and the runtime runs from the bytes that were
+  hashed. `run_proxy` does not use it yet. No protocol surface moved.
+
 - **`warrant_mcp_table` ships in the wheel, unused.** stargate's fixed table runtime
   (standard library only, lookup only), byte for byte; the first of three changes that
   put `warrant-mcp`'s per-id bookkeeping under a pinned, certified table. Nothing loads
