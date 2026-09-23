@@ -24,6 +24,21 @@
      SHA-256 in its own source. load_table() refuses a runtime or a projection one
      byte away from the pins before executing anything, and the pinned table answers
      a first call on an idle id by holding it. run_proxy does not use it yet.
+  G. duplicate request id: the host sends two tools/call with the same id before
+     either is answered. Both effects run downstream; the two responses carry the
+     same id and cannot be told apart. Neither call may vanish from the pack, and no
+     response may be sealed as the evidence of a call it may not belong to: both
+     calls are listed unreturned (ambiguous), both responses unpaired, the pack is
+     incomplete and the proxy exits 3. Found by the stargate MCP proxy vertical
+     (a model of run_proxy refuted with the trace call, call); on master the first
+     call is overwritten in `pending` and the second is sealed with the first's result.
+  K. the proxy runs only under the pinned table: a runtime one line longer is
+     refused before any server is spawned (exit 2), and run_proxy itself loads the
+     table before it spawns one, so a direct caller gets the same refusal.
+  I. id-less tools/call (Codex adversarial review of #81): a tools/call with no
+     id, or id null, is a notification the server may still execute, and nothing
+     that comes back can be paired with it. It must be listed unreturned with the
+     reason, a null-id response kept unpaired, the pack incomplete, exit 3.
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -363,6 +378,100 @@ def test_pinned_table():
         "the pinned table holds a first call on an idle id")
 
 
+def test_duplicate_request_id():
+    mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
+    d = tempfile.mkdtemp()
+    env = dict(os.environ); env.pop("MOCK_MCP_SILENT_EXIT", None)
+    cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+           "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+           "--", sys.executable, mock]
+    calls = [
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+         "params": {"name": "write_held_a", "arguments": {"row": "a"}}},
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+         "params": {"name": "write_held_b", "arguments": {"row": "b"}}},
+        {"jsonrpc": "2.0", "id": 6, "method": "tools/call",
+         "params": {"name": "write_release", "arguments": {}}},
+    ]
+    stdin = "".join(json.dumps(c) + "\n" for c in calls)
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30, env=env)
+    lines = [json.loads(l) for l in proc.stdout.splitlines() if l.strip()]
+    chk([m.get("id") for m in lines] == [5, 5, 6],
+        "both responses with id 5 and the release are forwarded to the host", str(lines)[:200])
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    unreturned = sorted(u["tool"] for u in m["unreturned_calls"])
+    chk(unreturned == ["write_held_a", "write_held_b"],
+        "neither call with the reused id vanishes: both are listed unreturned", json.dumps(m["unreturned_calls"])[:240])
+    chk(len(m["unreturned_calls"]) == 2 and all(u.get("ambiguous") is True for u in m["unreturned_calls"]),
+        "both are marked ambiguous", json.dumps(m["unreturned_calls"])[:240])
+    chk(len(m.get("unpaired_responses", [])) == 2,
+        "both responses with the reused id are recorded unpaired", json.dumps(m.get("unpaired_responses"))[:240])
+    chk(m["sealed_calls"] == 1,
+        "only the release is sealed; no response is sealed as another call's evidence", str(m["sealed_calls"]))
+    chk(proc.returncode == 3 and m["observation_complete"] is False,
+        "the pack is incomplete and the proxy exits 3", f"rc={proc.returncode} {m['incomplete_because']}")
+
+
+def test_proxy_requires_the_pinned_table():
+    import shutil
+    d = tempfile.mkdtemp()
+    impl = os.path.join(d, "impl"); shutil.copytree(os.path.join(ROOT, "impl"), impl)
+    open(os.path.join(impl, "warrant_mcp_table.py"), "a").write("# one more line\n")
+    marker = os.path.join(d, "server.marker")
+    server = [sys.executable, "-c", f"open({marker!r}, 'w').write('spawned')"]
+    proc = subprocess.run([sys.executable, os.path.join(impl, "warrant_mcp.py"), "--store", d,
+                           "--actor", "agent@test", "--key", keyfile(d), "--", *server],
+                          input="", capture_output=True, text=True, timeout=30)
+    chk(proc.returncode == 2 and "pinned digest" in proc.stderr and not os.path.exists(marker),
+        "a changed table runtime is refused before the server is spawned (exit 2)",
+        f"rc={proc.returncode} {proc.stderr[-160:]}")
+    sealer = M.Sealer(os.path.join(d, "direct", ".warrants"), "agent@test", keyfile(d), {})
+    spawned = []
+    original_load, original_popen = M.load_table, M.subprocess.Popen
+    def refuse(*a, **k):
+        raise ValueError("table refused for the test")
+    def record(*a, **k):                         # a marker file would race the child process
+        spawned.append(a)
+        raise RuntimeError("spawned")
+    M.load_table, M.subprocess.Popen = refuse, record
+    try:
+        M.run_proxy([sys.executable, "-c", "pass"], sealer)
+        outcome = "returned"
+    except ValueError:
+        outcome = "refused"
+    except RuntimeError:
+        outcome = "spawned"
+    finally:
+        M.load_table, M.subprocess.Popen = original_load, original_popen
+    chk(outcome == "refused" and not spawned,
+        "run_proxy refuses before spawning a server when the table does not load",
+        f"outcome={outcome} spawned={len(spawned)}")
+
+
+def test_idless_call():
+    mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
+    for label, call in (("no id", {"jsonrpc": "2.0", "method": "tools/call",
+                                   "params": {"name": "write_noid", "arguments": {"row": "x"}}}),
+                        ("id null", {"jsonrpc": "2.0", "id": None, "method": "tools/call",
+                                     "params": {"name": "write_noid", "arguments": {"row": "x"}}})):
+        d = tempfile.mkdtemp()
+        env = dict(os.environ); env.pop("MOCK_MCP_SILENT_EXIT", None)
+        cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+               "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+               "--", sys.executable, mock]
+        proc = subprocess.run(cmd, input=json.dumps(call) + "\n", capture_output=True, text=True,
+                              timeout=30, env=env)
+        m = json.load(open(os.path.join(d, "manifest.json")))
+        u = m["unreturned_calls"]
+        chk(len(u) == 1 and u[0]["tool"] == "write_noid" and u[0].get("reason") == "no request id"
+            and u[0]["consequential"] is True,
+            f"[{label}] the call is listed unreturned, consequential, with the reason", json.dumps(u)[:200])
+        chk(len(m.get("unpaired_responses", [])) == 1 and m["unpaired_responses"][0]["id"] is None,
+            f"[{label}] the null-id response is kept unpaired", json.dumps(m.get("unpaired_responses"))[:200])
+        chk(proc.returncode == 3 and m["sealed_calls"] == 0 and m["observation_complete"] is False,
+            f"[{label}] nothing sealed, pack incomplete, exit 3", f"rc={proc.returncode} {m['incomplete_because']}")
+
+
 def main():
     test_classifier()
     test_sealer_core()
@@ -372,6 +481,9 @@ def main():
     test_reverse_request()
     test_table_runtime_artifact()
     test_pinned_table()
+    test_duplicate_request_id()
+    test_proxy_requires_the_pinned_table()
+    test_idless_call()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 
