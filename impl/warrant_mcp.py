@@ -211,7 +211,7 @@ class Sealer:
                 "tool": tool, "ts": int(time.time()),
                 "error": f"{type(error).__name__}: {error}"[:300]})
 
-    def record_unreturned(self, tool, tool_input, ts, ambiguous=False):
+    def record_unreturned(self, tool, tool_input, ts, ambiguous=False, reason=None):
         """A tools/call went downstream and the session ended before a response
         came back. The effect may have happened; nobody observed the outcome.
         It is listed, classified, and counts against completeness if it is a
@@ -220,6 +220,7 @@ class Sealer:
         with self._lock:
             self.unreturned.append({"tool": tool, "arguments": tool_input, "class": cls, "effects": effects,
                                     "source": source, "ts": ts, "ambiguous": bool(ambiguous),
+                                    "reason": reason,
                                     "consequential": ORDER[cls] >= ORDER[self.ceiling]})
 
     def record_unpaired(self, request_id, result, is_error):
@@ -463,9 +464,9 @@ def load_table(runtime_path=None, projection=None):
 def run_proxy(server_cmd, sealer, table=None):
     """Spawn the downstream server and relay JSON-RPC both ways, sealing A2+
     tools/call results as they pass server->host."""
+    table = table or load_table()                # before any server exists
     proc = subprocess.Popen(server_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=None, bufsize=1, text=True)
-    table = table or load_table()
     ids = {}                                     # request id -> [table state, held call or None]
     plock = threading.Lock()
 
@@ -484,7 +485,14 @@ def run_proxy(server_cmd, sealer, table=None):
             msg = json.loads(raw)
         except ValueError:
             return
-        if msg.get("method") == "tools/call" and "id" in msg:
+        if msg.get("method") == "tools/call" and msg.get("id") is None:
+            # A notification-style call: the server may run it, and nothing that
+            # comes back can be paired with it. It is not a non-event either.
+            params = msg.get("params") or {}
+            sealer.record_unreturned(params.get("name", ""), params.get("arguments", {}),
+                                     int(time.time()), reason="no request id")
+            return
+        if msg.get("method") == "tools/call":
             params = msg.get("params") or {}
             call = (params.get("name", ""), params.get("arguments", {}), int(time.time()))
             unreturned = []
@@ -516,9 +524,11 @@ def run_proxy(server_cmd, sealer, table=None):
         if not isinstance(msg, dict):
             return
         mid = msg.get("id")
-        if mid is None:
-            return
         is_response = "method" not in msg and ("result" in msg or "error" in msg)
+        if mid is None:
+            if is_response:                      # e.g. the answer to an id-less call: keep it, pair nothing
+                sealer.record_unpaired(None, msg.get("result", msg.get("error")), "error" in msg)
+            return
         if "method" not in msg and not is_response:
             return
         with plock:

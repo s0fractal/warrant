@@ -37,9 +37,13 @@ right.
   field `unpaired_responses` and never sealed, and the pack is incomplete (exit 3).
   The table runtime ships as `warrant_mcp_table` (stargate's fixed table runtime,
   byte for byte); its digest and the table's are pinned in `warrant_mcp.py`, and the
-  proxy refuses to start (exit 2) on any difference. Evidence-pack manifest gains
-  `unpaired_responses` and the `ambiguous` field of an unreturned call. No protocol
-  surface moved.
+  proxy refuses to start (exit 2) on any difference. A `tools/call` with no id (or
+  id null) — which the server may still execute and whose answer can never be paired —
+  is listed unreturned with `"reason": "no request id"`, and a null-id response is
+  kept in `unpaired_responses`; before, both sides ignored it and the pack looked
+  complete (found in Codex's adversarial review of this change). Evidence-pack
+  manifest gains `unpaired_responses` and the `ambiguous` and `reason` fields of an
+  unreturned call. No protocol surface moved.
 
 - **WRT-013 stage S1 — a DRAFT registration for `ski@v2`, in force nowhere.**
   SPEC §3.2 now carries the full contract a future admission change would
