@@ -16,6 +16,14 @@
      not a response: it must not resolve the pending call, must not become a
      sealed record with null evidence, and the call stays unreturned (Codex
      rev-2 P1 on PR #63).
+  G. duplicate request id: the host sends two tools/call with the same id before
+     either is answered. Both effects run downstream; the two responses carry the
+     same id and cannot be told apart. Neither call may vanish from the pack, and no
+     response may be sealed as the evidence of a call it may not belong to: both
+     calls are listed unreturned (ambiguous), both responses unpaired, the pack is
+     incomplete and the proxy exits 3. Found by the stargate MCP proxy vertical
+     (a model of run_proxy refuted with the trace call, call); today the first call
+     is overwritten in `pending` and the second is sealed with the first's result.
   E. unanswered call: the server performs an effect and exits (cleanly, or
      crashing) without responding. The call is listed as unreturned, the
      pack is marked incomplete, the downstream exit code is recorded, and the
@@ -305,6 +313,40 @@ def test_reverse_request():
         "the sealed evidence is the real tool result, not the ping", str(ev)[:120])
 
 
+def test_duplicate_request_id():
+    mock = os.path.join(ROOT, "tests", "fixtures", "mock_mcp_server.py")
+    d = tempfile.mkdtemp()
+    env = dict(os.environ); env.pop("MOCK_MCP_SILENT_EXIT", None)
+    cmd = [sys.executable, os.path.join(ROOT, "impl", "warrant_mcp.py"),
+           "--store", d, "--actor", "agent@test", "--key", keyfile(d),
+           "--", sys.executable, mock]
+    calls = [
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+         "params": {"name": "write_held_a", "arguments": {"row": "a"}}},
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+         "params": {"name": "write_held_b", "arguments": {"row": "b"}}},
+        {"jsonrpc": "2.0", "id": 6, "method": "tools/call",
+         "params": {"name": "write_release", "arguments": {}}},
+    ]
+    stdin = "".join(json.dumps(c) + "\n" for c in calls)
+    proc = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=30, env=env)
+    lines = [json.loads(l) for l in proc.stdout.splitlines() if l.strip()]
+    chk([m.get("id") for m in lines] == [5, 5, 6],
+        "both responses with id 5 and the release are forwarded to the host", str(lines)[:200])
+    m = json.load(open(os.path.join(d, "manifest.json")))
+    unreturned = sorted(u["tool"] for u in m["unreturned_calls"])
+    chk(unreturned == ["write_held_a", "write_held_b"],
+        "neither call with the reused id vanishes: both are listed unreturned", json.dumps(m["unreturned_calls"])[:240])
+    chk(len(m["unreturned_calls"]) == 2 and all(u.get("ambiguous") is True for u in m["unreturned_calls"]),
+        "both are marked ambiguous", json.dumps(m["unreturned_calls"])[:240])
+    chk(len(m.get("unpaired_responses", [])) == 2,
+        "both responses with the reused id are recorded unpaired", json.dumps(m.get("unpaired_responses"))[:240])
+    chk(m["sealed_calls"] == 1,
+        "only the release is sealed; no response is sealed as another call's evidence", str(m["sealed_calls"]))
+    chk(proc.returncode == 3 and m["observation_complete"] is False,
+        "the pack is incomplete and the proxy exits 3", f"rc={proc.returncode} {m['incomplete_because']}")
+
+
 def main():
     test_classifier()
     test_sealer_core()
@@ -312,6 +354,7 @@ def main():
     test_seal_failure()
     test_unanswered_call()
     test_reverse_request()
+    test_duplicate_request_id()
     print("\n" + ("MCP-SEAL: ALL PASS" if all(ok) else "MCP-SEAL: FAILURES PRESENT"))
     return 0 if all(ok) else 1
 
