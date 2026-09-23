@@ -55,6 +55,8 @@ warrant-anchor = "warrant_anchor:main"
 # sealing proxy, the MCP decision server, the ski@v1 policy-predicate authoring
 # library, the WPL -> ski@v1 compiler an author actually writes against, and the
 # RFC 6962 Merkle batching/anchoring tool.
+# `warrant_mcp_table` is stargate's fixed table runtime, byte for byte; nothing
+# loads it until warrant_mcp pins its digest (tests/mcp_seal.py J checks the bytes).
 #
 # `package-dir = {"" = "impl"}` is why `warrant_mcp_server.py` lives in `impl/`
 # and not in `integrations/mcp-server/` where it was written: setuptools has one
@@ -62,6 +64,6 @@ warrant-anchor = "warrant_anchor:main"
 # One bundled Σ-GLYPH evaluator per ADMITTED runtime tag (SPEC §13.1):
 # sigma_glyph_v05 is ski@v1 (Book I v0.5). Reserved candidates do not ship in
 # the wheel before a body version can invoke them. impl/warrant.py pins it.
-py-modules = ["warrant", "sigma_glyph_v05", "warrant_mcp",
+py-modules = ["warrant", "sigma_glyph_v05", "warrant_mcp", "warrant_mcp_table",
               "warrant_mcp_server", "ski_policy", "policy_lang", "warrant_anchor"]
 package-dir = { "" = "impl" }

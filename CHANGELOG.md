@@ -26,6 +26,11 @@ right.
 
 ## Unreleased
 
+- **`warrant_mcp_table` ships in the wheel, unused.** stargate's fixed table runtime
+  (standard library only, lookup only), byte for byte; the first of three changes that
+  put `warrant-mcp`'s per-id bookkeeping under a pinned, certified table. Nothing loads
+  it yet. No protocol surface moved.
+
 - **WRT-013 stage S1 — a DRAFT registration for `ski@v2`, in force nowhere.**
   SPEC §3.2 now carries the full contract a future admission change would
   register (check-blob shape with an explicit `exit`, verdict mapping, the
