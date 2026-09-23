@@ -26,6 +26,16 @@ right.
 
 ## Unreleased
 
+- **`warrant-mcp` no longer loses a call when the host reuses a request id.** Two
+  `tools/call` with one id, both outstanding, used to leave one entry in `pending`: the
+  first call vanished from the pack and the second was sealed with the first's result,
+  while the manifest said complete and the proxy exited 0. `run_proxy` now decides each
+  id's bookkeeping with the pinned table: a reused id is marked ambiguous, both calls
+  are listed in `unreturned_calls` with `"ambiguous": true`, responses on that id are
+  kept as blobs in the new manifest field `unpaired_responses` and never sealed, and
+  the pack is incomplete (exit 3). The proxy refuses to start (exit 2) if the table does
+  not load, and `run_proxy` loads it before spawning a server. No protocol surface moved.
+
 - **`warrant_mcp.load_table()` authenticates and loads the certified table, unused.**
   The runtime's and the table's SHA-256 are pinned in `warrant_mcp.py`; a difference
   is refused before anything executes, and the runtime runs from the bytes that were
