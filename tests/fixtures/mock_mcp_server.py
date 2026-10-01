@@ -5,13 +5,19 @@ contains "delete", which returns an error result (isError), and -- when the
 environment sets MOCK_MCP_SILENT_EXIT -- a tool whose name contains "silent",
 for which the server performs an "effect" (writes the file named by
 MOCK_MCP_MARKER) and exits with that code WITHOUT responding. That is the
-2026-09 review probe: an effect ran, nobody answered."""
+2026-09 review probe: an effect ran, nobody answered.
+
+A tool whose name contains "held" is not answered at once: its response is queued
+until a tool whose name contains "release" arrives, and then every queued response
+is sent, in order, before the release's own. That keeps two calls outstanding at the
+same time, which is what a host reusing a request id needs to be observable."""
 import json
 import os
 import sys
 
 
 def main():
+    held = []
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
@@ -40,6 +46,15 @@ def main():
                         "result": {"content": [{"type": "text", "text": f"ok:{name}"}]}}
         else:
             resp = {"jsonrpc": "2.0", "id": mid, "result": {}}
+        if msg.get("method") == "tools/call":
+            name = (msg.get("params") or {}).get("name", "")
+            if "held" in name.lower():
+                held.append(resp)
+                continue
+            if "release" in name.lower():
+                for queued in held:
+                    sys.stdout.write(json.dumps(queued) + "\n")
+                held.clear()
         sys.stdout.write(json.dumps(resp) + "\n")
         sys.stdout.flush()
 
