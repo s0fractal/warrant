@@ -160,6 +160,14 @@ with tempfile.TemporaryDirectory(prefix="ski-v2-exec-") as tmp:
           and {r.verdict for r in seen} == {"pass", "fail"},
           f"{[(r.exit, r.verdict) for r in seen]}")
 
+    print("\nmatching exit with a wrong result hash must fail")
+    for atp, exit_kind in ((0, "atp_exhausted"), (9, "normal_form")):
+        r = W.run_ski_v2_check(store, put_v2(
+            store, atp=atp, exit=exit_kind, expect="00" * 32))
+        check(f"atp={atp}: matching exit cannot hide a wrong expected hash",
+              r.verdict == "fail" and r.result_hash == EXPECT
+              and r.exit == exit_kind, f"{tuple(r)}")
+
     print("\nthe same claim under ski@v1 still passes: one term, two tags, two verdicts")
     v1_blob = store.put_blob(W.canon({"ski": 1, "term": TERM, "atp": 0,
                                       "expect": EXPECT}))
