@@ -23,14 +23,16 @@
       "requires": "SPEC §3.2 status block",
       "statement": "a ski@v2 check reason in a 0.1 body",
       "expected": "record invalid",
-      "executable_today": true
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_draft_status.py"
     },
     {
       "id": "A-02",
       "requires": "SPEC §3.2 status block",
       "statement": "a ski@v2 check reason in a 0.2 body",
       "expected": "record invalid",
-      "executable_today": true
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_draft_status.py"
     },
     {
       "id": "A-03",
@@ -38,7 +40,8 @@
       "statement": "a body declaring warrant: \"0.3\"",
       "expected": "record invalid (unknown body version)",
       "executable_today": true,
-      "note": "No vector asserted this for any future version before WRT-013; the gap is closed here."
+      "note": "No vector asserted this for any future version before WRT-013; the gap is closed here.",
+      "executed_by": "tests/ski_v2_draft_status.py"
     },
     {
       "id": "A-04",
@@ -52,71 +55,81 @@
       "requires": "SPEC §3, §13.1",
       "statement": "runtime \"ski@v3\" in any body",
       "expected": "record invalid (unregistered runtime)",
-      "executable_today": true
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_draft_status.py"
     },
     {
       "id": "B-06",
       "requires": "draft §3.2",
       "statement": "a {\"ski\":1,…} blob referenced by a ski@v2 reason, and the mirror",
       "expected": "unverified: invalid ski check blob — never a fail",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "B-07",
       "requires": "draft §3.2",
       "statement": "blob missing `exit`; unknown member; exit \"dissonance\"; exit null",
       "expected": "unverified: invalid ski check blob",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "B-08",
       "requires": "SPEC §4",
       "statement": "blob not JCS-canonical; duplicate member; trailing content",
       "expected": "unverified: malformed check blob",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "B-09",
       "requires": "draft §3.2",
       "statement": "atp = 2**32, -1, 1.0, true",
       "expected": "unverified: invalid ski check blob",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "B-10",
       "requires": "SPEC §3.1",
       "statement": "check blob stored under a foreign name",
       "expected": "unverified: content does not match its address",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "C-11",
       "requires": "draft §3.2",
       "statement": "term whose demanded object is absent, claimed as exit normal_form with the matching result hash",
       "expected": "fail (not pass)",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "C-12",
       "requires": "WRT-013 M5",
       "statement": "the M5 term at atp 0, claimed {expect=8bb0006f…, exit=normal_form}",
       "expected": "fail under ski@v2 while the same claim as a ski@v1 reason is pass",
-      "executable_today": false,
-      "note": "One term, two tags, two verdicts: the case that shows the tag does something."
+      "executable_today": true,
+      "note": "One term, two tags, two verdicts: the case that shows the tag does something.",
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "C-13",
       "requires": "Book I 0.6.0 §3.5",
       "statement": "a term thunk stored under a foreign key",
       "expected": "unverified: content does not match its address, from the engine AND from the adapter independently",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "C-14",
       "requires": "SPEC §3.1",
       "statement": "atp above the local re-execution budget",
       "expected": "unverified: atp exceeds re-execution budget; evaluator never loaded",
-      "executable_today": false
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "C-00",
@@ -124,15 +137,17 @@
       "statement": "the reserved ski@v2 tag, and an unregistered ski@v9 tag",
       "expected": "no evaluator for either; no fallback to another tag's module",
       "executable_today": true,
-      "note": "The reserved-tag rule. Digest enforcement on a REGISTERED tag is C-15."
+      "note": "The reserved-tag rule. Digest enforcement on a REGISTERED tag is C-15.",
+      "executed_by": "tests/ski_v2_draft_status.py"
     },
     {
       "id": "C-15",
       "requires": "SPEC §3.1",
       "statement": "evaluator bytes moved by one byte",
       "expected": "refused before import; reason unverified",
-      "executable_today": false,
-      "note": "Deferred to S2, which ships the evaluator there is currently nothing to mutate. S1 credited this case for load_sigma('ski@v2') being None, which demonstrates the reserved-tag rule and NOT digest enforcement (Codex, S1 review R2)."
+      "executable_today": true,
+      "note": "S1 credited this to load_sigma('ski@v2') being None, which shows the reserved-tag rule and NOT digest enforcement (Codex, S1 review R2). S2 runs the real control: a module whose bytes miss the pin is refused before import, no side-effect marker is written, and a check under it is unverified.",
+      "executed_by": "tests/ski_v2_execution.py"
     },
     {
       "id": "C-16",
@@ -176,7 +191,8 @@
       "statement": "the M5 pair as ski@v1 reasons, in a body and store that also carry a ski@v2 check blob and reason",
       "expected": "each fingerprint is exactly the historical 5-tuple ('ski@v1', term, expect, 'pass', expect); the two are equal; the ski@v2 reason contributes no fingerprint and makes the body invalid",
       "executable_today": true,
-      "note": "Pinned as complete tuples, not as equality between them: an added member left the equality-only form green (Codex, S1 review R1). The suite runs that mutation and requires it to be rejected."
+      "note": "Pinned as complete tuples, not as equality between them: an added member left the equality-only form green (Codex, S1 review R1). The suite runs that mutation and requires it to be rejected.",
+      "executed_by": "tests/ski_v2_draft_status.py"
     },
     {
       "id": "R-20b",
@@ -191,7 +207,8 @@
       "requires": "SPEC §8.2",
       "statement": "examples/ski/ re-run under the unchanged ski@v1 evaluator",
       "expected": "pass, 887045bc…, exactly 20 ATP",
-      "executable_today": true
+      "executable_today": true,
+      "executed_by": "tests/ski_v2_draft_status.py"
     },
     {
       "id": "R-22",

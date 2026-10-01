@@ -1,5 +1,13 @@
 # WRT-013: Admitting `ski@v2` — Σ-GLYPH Book I 0.6.0 in body version `0.3`
 
+> **Superseded in part, 2026-09-18.** The owner's direction in
+> `~/Projects/CLAUDE-POST-S2-SIMPLIFICATION-2026-09-18.md` replaces the work
+> after S2. See **`WRT-013-AMENDMENT-1-one-current-path.md`**: body `1.0`
+> instead of `0.3`, Python alone instead of a Python+Go precondition, one
+> integration change instead of S3–S7, and old records verified by the frozen
+> release rather than by the current path. S1 and S2 stand as reviewed; the
+> rest of this document is the accepted design that amendment builds on.
+
 **Status: DRAFT rev 3 (2026-09-17) — DESIGN ONLY.** No SPEC edit, no `impl/`
 change, no vector change, no schema change is made by this document. It carries
 no claim of adoption or implementation. Written by Claude Opus 5 at the owner's
