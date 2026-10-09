@@ -26,6 +26,28 @@ right.
 
 ## Unreleased
 
+- **Eleven reference defects found by the port, fixed in `impl/warrant.py`.**
+  Each is a store anyone with write access can produce. Nine crashed the
+  verifier outright (one record took the whole report down): a float in a ski
+  check or threshold policy blob (`_canon_eq` caught only ValueError); a record
+  nested ~500 deep (the canonicalizer recursed — it is iterative now); a trust
+  config member that is `null`; a directory at a term child's address; a
+  malformed record reached as an ancestor by settlement's tunnel walk; a valid
+  signature whose `actor` is a list; a `ski@v1` reason without `check`; `why` on
+  a record with no computable WarrantID; `under: [5]` at settlement grade. Two
+  were **validity splits from Go**, the class this project ranks first: `HEX64`
+  was `^…$`, and Python's `$` matches before a trailing newline, so
+  `"<64 hex>\n"` was a valid hash in Python and not in Go (now `\A…\Z`); and
+  `"ski": true` passed `ski != 1` (`True == 1`) and ran as a v1 check blob.
+  **[protocol-visible]** in that the reference now refuses what SPEC and Go
+  always refused. JSON nesting depth was the interpreter's stack (~990 to parse,
+  ~500 to canonicalize, varying with the caller); it is now an explicit bound of
+  **512**, checked before parsing, identical in Python, Go and Rust — documents
+  deeper than that, which previously crashed or depended on the stack, are now
+  uniformly "malformed JSON (nesting too deep)". `tests/reference_defects_2026_10.py`
+  is red on the pre-fix reference for every case and green after, in all three
+  implementations.
+
 - **`warrant-mcp` no longer loses a call when the host reuses a request id.** Two
   `tools/call` with one id, both outstanding, used to leave one entry in `pending`: the
   first call vanished from the pack and the second was sealed with the first's result,
