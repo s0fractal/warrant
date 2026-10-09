@@ -255,23 +255,36 @@ def _check_json_depth(text):
     count. A pure scan, no validation: syntax is the parser's business."""
     if text.count("[") + text.count("{") <= MAX_JSON_DEPTH:
         return
-    # Strings are skipped whole (an escape consumes the character after the
-    # backslash), so only structural brackets are counted.
-    depth = 0
-    for m in _JSON_DEPTH_TOKENS.finditer(text):
-        tok = m.group()
-        if tok in "[{":
+    depth, i, n = 0, 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            i = _skip_json_string(text, i + 1)
+            continue
+        if ch in "[{":
             depth += 1
             if depth > MAX_JSON_DEPTH:
                 raise JSONNestingTooDeep(
                     f"JSON nested deeper than {MAX_JSON_DEPTH} levels")
-        elif tok in "]}":
+        elif ch in "]}":
             depth -= 1
+        i += 1
 
 
-# A string literal (possibly unterminated, which then runs to the end), or one
-# structural bracket. Same scan as impl-go jsonTooDeep and impl-rs too_deep.
-_JSON_DEPTH_TOKENS = re.compile(r'(?:"(?:[^"\\]|\\.)*(?:"|\\?\Z))|(?:[\[\]{}])', re.S)
+def _skip_json_string(text, i):
+    """Index just past the string literal whose body starts at `i` (or the end
+    of `text` if it never closes). A backslash consumes the next character.
+    Same scan as impl-go jsonTooDeep and impl-rs too_deep."""
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+        elif ch == '"':
+            return i + 1
+        else:
+            i += 1
+    return n
 
 
 def _loads_plain(raw):
