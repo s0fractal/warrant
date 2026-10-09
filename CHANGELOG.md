@@ -40,7 +40,10 @@ right.
   `tests/rs_parity.py` compares its stdout, exit status and written bytes with
   the reference's over every reference-CLI call in the adversarial harnesses,
   fuzzed settlement stores (with a 29-branch coverage floor), the whole pack and
-  fuzzed near-JSON; it has a negative control. CI gains a parallel `rust` job. `tests/conformance_runner.py` and
+  fuzzed near-JSON; it has a negative control. CI gains a parallel `rust` job;
+  `publish.yml` gains a `crate` job (package, test the package, dry-run upload)
+  and a `crates-io` job gated off until the one-time setup in PUBLISHING.md is
+  done. Nothing has been published. `tests/conformance_runner.py` and
   `tests/verify_three_way.py` now expect settlement grade from Rust and ask both
   grades; the runner's base-only path is kept under test by a proxy candidate
   (`tests/fixtures/base_only_candidate.py`). No protocol surface moved by the

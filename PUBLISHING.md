@@ -49,7 +49,10 @@ Add protection to `pypi` if you want a manual approval gate before each publish
 
 ## Releasing (every version, automated)
 
-1. Bump `version` in `pyproject.toml` (e.g. `0.6.0` → `0.6.1`) and merge to
+1. Bump `version` in `pyproject.toml` **and in `impl-rs/Cargo.toml`** (e.g.
+   `0.6.0` → `0.6.1`; one tooling version, CHANGELOG.md — the `crate` job fails
+   the release if the two disagree), run `cargo update -p warrant-verify
+   --manifest-path impl-rs/Cargo.toml` so the lock file follows, and merge to
    `master`.
 2. Build the evidence packs the README tells strangers to download. The README's
    "no clone, no build, no account" quest is only true if these assets exist on
@@ -126,6 +129,57 @@ bump.** `integrations/mcp-server/server.json` names the PyPI package *and its
 version*, and the registry refuses a version that is not on PyPI yet — so the
 order is: publish to PyPI, then `mcp-publisher publish`. `LISTINGS.md` has the
 ownership-marker requirement that must already be in the published README.
+
+## crates.io — the Rust implementation (`warrant-verify` crate)
+
+`impl-rs/` publishes to crates.io as **`warrant-verify`** (library
+`warrant_verify`, binary `warrant-rs` — not `warrant`, so it never shadows the
+Python CLI on a PATH that has both). The bare name `warrant` is taken on
+crates.io, as it is on PyPI.
+
+**Status: prepared, never published.** Everything up to the upload runs on every
+release and every manual dispatch: the `crate` job in `publish.yml` packages the
+crate from its listed files only, builds and tests *that package* (not the
+checkout), runs its CLI's conformance and selftest, and dry-runs the upload. The
+`crates-io` job, which uploads, is gated on the repository variable
+`CRATES_IO_TRUSTED_PUBLISHING`, which is not set.
+
+### One-time setup (the owner, on the web and once at a terminal)
+
+crates.io Trusted Publishing is configured on an *existing* crate, so the first
+version goes up by hand:
+
+1. Sign in at <https://crates.io> with the GitHub account that owns
+   `s0fractal/warrant`, create an API token scoped to **publish-new** (and
+   `publish-update`) for the crate name `warrant-verify`, and from a clean
+   checkout of the release tag:
+
+   ```bash
+   cd impl-rs
+   cargo login                   # paste the token; it stays in ~/.cargo/credentials.toml
+   cargo publish --dry-run --locked
+   cargo publish --locked        # irreversible: a version can be yanked, never replaced
+   ```
+
+   Then revoke that token: every later version goes through OIDC.
+2. On the crate's page → Settings → Trusted Publishing → add GitHub with
+   **exactly**: owner `s0fractal`, repository `warrant`, workflow
+   `publish.yml`, environment `crates-io`.
+3. In the GitHub repository → Settings → Environments, create `crates-io`
+   (required reviewers recommended, as for `pypi`), and under Variables set
+   `CRATES_IO_TRUSTED_PUBLISHING` = `true`.
+
+From then on a published GitHub Release uploads both packages, each from the
+same tag, each by OIDC with no stored token.
+
+### What the crate claims, and what checks it
+
+The crate's README states its parity claim and its limits (signing is not
+constant-time; `keygen` is Unix-only; the MCP/anchoring programs of the Python
+package are not part of it). The claim is checked by CI's `rust` job:
+`cargo fmt/clippy/test`, the conformance pack at settlement grade, the
+three-way verifier agreement at both grades, `tests/reference_defects_2026_10.py`,
+and `tests/rs_parity.py` (byte-identical output against the Python reference).
 
 ## Manual fallback (if you ever bypass CI)
 
