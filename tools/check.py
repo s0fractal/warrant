@@ -41,6 +41,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
+TRUST_CONFIG = "trust-config.json"   # the repository's own trust configuration
 
 # Reserved exit code a check may return to say "I ran but could not COMPLETE" —
 # a partial execution that must render as UNRUN, not PASS and not FAIL.
@@ -77,7 +78,7 @@ CHECKS = [
      ["python3", "impl/warrant.py", "selftest"], None),
     ("python: verify own store (settlement grade)",
      ["python3", "impl/warrant.py", "verify", "--settlement",
-      "--trust-config", "trust-config.json"], None),
+      "--trust-config", TRUST_CONFIG], None),
     ("negative vectors (MUST-REJECT, Python vs Go)",
      ["python3", "tests/negative.py"], "go"),
     ("differential canonicalization (PY/GO[/RS])",
@@ -195,13 +196,13 @@ CHECKS = [
     ("go: selftest", [str(GO), "selftest", "examples"], "go"),
     ("go: verify own store (settlement grade)",
      [str(GO), "verify", "--settlement", "--trust-config",
-      "trust-config.json", ".warrants"], "go"),
+      TRUST_CONFIG, ".warrants"], "go"),
     ("three-way store verification (PY/GO/RS agree on broken stores)",
      ["python3", "tests/verify_three_way.py"], "go+rs"),
     ("rust: verify own store (SPEC §6 base grade)",
      [str(RS), "verify", ".warrants"], "rs"),
     ("rust: verify own store (settlement grade)",
-     [str(RS), "verify", "--settlement", "--trust-config", "trust-config.json"], "rs"),
+     [str(RS), "verify", "--settlement", "--trust-config", TRUST_CONFIG], "rs"),
     ("rust: conformance", [str(RS), "conformance", "examples"], "rs"),
     ("rust: selftest (round-trip + tamper detection)", [str(RS), "selftest"], "rs"),
     ("rust: ed25519 selftest", [str(RS), "edtest"], "rs"),

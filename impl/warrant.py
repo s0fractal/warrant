@@ -183,9 +183,7 @@ def canon(body):
             keys = sorted(value, key=lambda key: key.encode("utf-16-be"))
             stack.append(("s", "}"))
             for i in range(len(keys) - 1, -1, -1):
-                stack.append(("v", value[keys[i]]))
-                stack.append(("s", ":"))
-                stack.append(("v", keys[i]))
+                stack.extend((("v", value[keys[i]]), ("s", ":"), ("v", keys[i])))
                 if i:
                     stack.append(("s", ","))
             stack.append(("s", "{"))
@@ -257,24 +255,23 @@ def _check_json_depth(text):
     count. A pure scan, no validation: syntax is the parser's business."""
     if text.count("[") + text.count("{") <= MAX_JSON_DEPTH:
         return
-    depth, in_str, esc = 0, False, False
-    for ch in text:
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-        elif ch == '"':
-            in_str = True
-        elif ch == "[" or ch == "{":
+    # Strings are skipped whole (an escape consumes the character after the
+    # backslash), so only structural brackets are counted.
+    depth = 0
+    for m in _JSON_DEPTH_TOKENS.finditer(text):
+        tok = m.group()
+        if tok in "[{":
             depth += 1
             if depth > MAX_JSON_DEPTH:
                 raise JSONNestingTooDeep(
                     f"JSON nested deeper than {MAX_JSON_DEPTH} levels")
-        elif ch == "]" or ch == "}":
+        elif tok in "]}":
             depth -= 1
+
+
+# A string literal (possibly unterminated, which then runs to the end), or one
+# structural bracket. Same scan as impl-go jsonTooDeep and impl-rs too_deep.
+_JSON_DEPTH_TOKENS = re.compile(r'"(?:[^"\\]|\\.)*(?:"|\\?\Z)|[\[\]{}]', re.S)
 
 
 def _loads_plain(raw):
@@ -1215,25 +1212,28 @@ def _read_json_blob_if_canonical(store, h):
     return doc if _canon_eq(doc, raw) else None
 
 
+def _cmd_fingerprint(reason, body, store, verdict):
+    """The cmd@v1 outcome fingerprint, or None. Total over malformed tunnel
+    records: a non-string reference has no blob, an unhashable verdict has no
+    fingerprint."""
+    transcript = reason.get("transcript")
+    evidence = body.get("evidence", [])
+    if not transcript or not isinstance(evidence, list):
+        return None
+    needed = list(evidence) + [reason.get("check"), transcript]
+    if any(not isinstance(h, str) or not h or not store.has_blob(h)
+           for h in needed) or isinstance(verdict, (list, dict)):
+        return None
+    return ("cmd@v1", tuple(sorted(evidence)), verdict, transcript)
+
+
 def fingerprint(reason, body, store):
     if not isinstance(reason, dict) or reason.get("kind") != "check":
         return None
     runtime = reason.get("runtime")
     verdict = reason.get("verdict")
     if runtime == "cmd@v1":
-        transcript = reason.get("transcript")
-        if not transcript:
-            return None
-        evidence = body.get("evidence", [])
-        if not isinstance(evidence, list):
-            return None
-        needed = list(evidence) + [reason.get("check"), transcript]
-        # Total over malformed tunnel records: a non-string reference has no
-        # blob, and an unhashable verdict has no fingerprint.
-        if any(not isinstance(h, str) or not h or not store.has_blob(h)
-               for h in needed) or isinstance(verdict, (list, dict)):
-            return None
-        return ("cmd@v1", tuple(sorted(evidence)), verdict, transcript)
+        return _cmd_fingerprint(reason, body, store, verdict)
     if runtime == "ski@v1":
         doc = _read_json_blob_if_canonical(store, reason.get("check"))
         if doc is None or validate_ski_blob(doc):
