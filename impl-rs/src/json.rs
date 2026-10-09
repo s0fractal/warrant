@@ -1065,7 +1065,7 @@ pub fn canon(v: &Json) -> Result<Vec<u8>, CanonError> {
                         }
                         out
                     };
-                    entries.sort_by(|(a, _), (b, _)| utf16(a).cmp(&utf16(b)));
+                    entries.sort_by_key(|(a, _)| utf16(a));
                     stack.push(Item::Raw("}"));
                     for (i, (k, val)) in entries.into_iter().enumerate().rev() {
                         stack.push(Item::Val(val));

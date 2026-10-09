@@ -203,11 +203,8 @@ fn parse_sub(cmd: &str, sp: &Spec, argv: &[String]) -> Result<Args, String> {
             return Err(format!("unrecognized arguments: {tok}"));
         };
         if kind == Kind::Flag {
-            if inline.is_some() {
-                return Err(format!(
-                    "argument {name}: ignored explicit argument {:?}",
-                    inline.unwrap()
-                ));
+            if let Some(v) = inline {
+                return Err(format!("argument {name}: ignored explicit argument {v:?}"));
             }
             a.flags.insert(name, true);
             continue;
