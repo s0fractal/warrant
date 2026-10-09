@@ -271,7 +271,7 @@ def _check_json_depth(text):
 
 # A string literal (possibly unterminated, which then runs to the end), or one
 # structural bracket. Same scan as impl-go jsonTooDeep and impl-rs too_deep.
-_JSON_DEPTH_TOKENS = re.compile(r'"(?:[^"\\]|\\.)*(?:"|\\?\Z)|[\[\]{}]', re.S)
+_JSON_DEPTH_TOKENS = re.compile(r'(?:"(?:[^"\\]|\\.)*(?:"|\\?\Z))|(?:[\[\]{}])', re.S)
 
 
 def _loads_plain(raw):
