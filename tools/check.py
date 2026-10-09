@@ -41,6 +41,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
+TRUST_CONFIG = "trust-config.json"   # the repository's own trust configuration
 
 # Reserved exit code a check may return to say "I ran but could not COMPLETE" —
 # a partial execution that must render as UNRUN, not PASS and not FAIL.
@@ -77,7 +78,7 @@ CHECKS = [
      ["python3", "impl/warrant.py", "selftest"], None),
     ("python: verify own store (settlement grade)",
      ["python3", "impl/warrant.py", "verify", "--settlement",
-      "--trust-config", "trust-config.json"], None),
+      "--trust-config", TRUST_CONFIG], None),
     ("negative vectors (MUST-REJECT, Python vs Go)",
      ["python3", "tests/negative.py"], "go"),
     ("differential canonicalization (PY/GO[/RS])",
@@ -195,13 +196,26 @@ CHECKS = [
     ("go: selftest", [str(GO), "selftest", "examples"], "go"),
     ("go: verify own store (settlement grade)",
      [str(GO), "verify", "--settlement", "--trust-config",
-      "trust-config.json", ".warrants"], "go"),
+      TRUST_CONFIG, ".warrants"], "go"),
     ("three-way store verification (PY/GO/RS agree on broken stores)",
      ["python3", "tests/verify_three_way.py"], "go+rs"),
     ("rust: verify own store (SPEC §6 base grade)",
      [str(RS), "verify", ".warrants"], "rs"),
+    ("rust: verify own store (settlement grade)",
+     [str(RS), "verify", "--settlement", "--trust-config", TRUST_CONFIG], "rs"),
     ("rust: conformance", [str(RS), "conformance", "examples"], "rs"),
+    ("rust: selftest (round-trip + tamper detection)", [str(RS), "selftest"], "rs"),
     ("rust: ed25519 selftest", [str(RS), "edtest"], "rs"),
+    # The Rust implementation held to the reference's exact OUTPUT, not its
+    # counts: every reference-CLI call the harnesses make is replayed against
+    # it, plus fuzzed settlement stores and the whole conformance pack. Needs a
+    # 3.13+ interpreter (the reference's parse-error wording changed in 3.13).
+    ("rust = reference, byte for byte (shadowed harnesses + settlement fuzz)",
+     ["python3", "tests/rs_parity.py", "--stores", "60"], "go+rs+py313"),
+    # Found while porting: hostile stores that crashed the reference verifier or
+    # split its validity verdict from Go's. Red on the pre-fix reference.
+    ("reference defects found by the Rust port (2026-10): no crash, PY=RS(=GO)",
+     ["python3", "tests/reference_defects_2026_10.py"], "go+rs"),
     # SPEC §5 signature domain separation, in force since 0.6.0 (DEC-001).
     # The vectors pin the signed bytes; the suite drives all three binaries over
     # a pre-v1 store, so "the three agree" is executed rather than assumed.
@@ -310,6 +324,9 @@ NEEDS = {
                      "in-repo Go test is UNRUN without it, never passed)"),
     "rs": (lambda: RS.is_file(),
            "impl-rs not built  ->  (cd impl-rs && cargo build --release)"),
+    "go+rs+py313": (lambda: GO.is_file() and RS.is_file() and sys.version_info >= (3, 13),
+                    "needs impl-go and impl-rs built, and Python >= 3.13 (the "
+                    "reference's parse-error wording is its interpreter's)"),
     "sigma": (lambda: (ROOT / "impl" / "sigma_glyph_v05.py").exists(),
               "the admitted ski@v1 evaluator is missing from impl/"),
     "x1-not-covered-elsewhere": (

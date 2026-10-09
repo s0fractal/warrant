@@ -25,7 +25,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 VERSION = "0.2"           # version written into NEW records
 ACCEPTED = ("0.1", "0.2")  # versions this implementation validates
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
+# \A...\Z, not ^...$: Python's `$` also matches before a final newline, so
+# "<64 hex>\n" used to pass `_is_hex64` and every `HEX64.match` site. Go's RE2
+# `$` does not, so the same body was schema-valid here and invalid in Go -- a
+# validity split, found by the Rust port's differential (2026-10-09).
+HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 DECISIONS = ("propose", "accept", "reject", "supersede")
 # SPEC §3.1: re-executing a stranger's ski@v1 reason is safe by construction
 # (terminating, work+memory bounded by atp), but the atp ceiling is uint32
@@ -143,30 +147,49 @@ def canon(body):
     is compared with a BMP key at or above U+E000, so `sort_keys=True` is not
     a general implementation of the format even though it is sufficient for
     Warrant's fixed ASCII schema keys.
+
+    Iterative, so a deep-but-admissible value cannot exhaust the interpreter's
+    stack: the recursive renderer crashed `verify` (an uncaught RecursionError)
+    on any record nested ~500 deep -- below the parser's own limit, so the
+    record loaded and then took the whole verifier down with it.
     """
-    def render(value):
+    out = []
+    stack = [("v", body)]
+    while stack:
+        tag, value = stack.pop()
+        if tag == "s":
+            out.append(value)
+            continue
         if value is None:
-            return "null"
-        if value is True:
-            return "true"
-        if value is False:
-            return "false"
-        if isinstance(value, int):
-            return str(value)
-        if isinstance(value, str):
-            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        if isinstance(value, list):
-            return "[" + ",".join(render(item) for item in value) + "]"
-        if isinstance(value, dict):
+            out.append("null")
+        elif value is True:
+            out.append("true")
+        elif value is False:
+            out.append("false")
+        elif isinstance(value, int):
+            out.append(str(value))
+        elif isinstance(value, str):
+            out.append(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+        elif isinstance(value, list):
+            stack.append(("s", "]"))
+            for i in range(len(value) - 1, -1, -1):
+                stack.append(("v", value[i]))
+                if i:
+                    stack.append(("s", ","))
+            stack.append(("s", "["))
+        elif isinstance(value, dict):
             if not all(isinstance(key, str) for key in value):
                 raise TypeError("JSON object member names must be strings")
             keys = sorted(value, key=lambda key: key.encode("utf-16-be"))
-            return "{" + ",".join(
-                render(key) + ":" + render(value[key]) for key in keys
-            ) + "}"
-        raise TypeError(f"unsupported JSON value {type(value).__name__}")
-
-    return render(body).encode("utf-8")
+            stack.append(("s", "}"))
+            for i in range(len(keys) - 1, -1, -1):
+                stack.extend((("v", value[keys[i]]), ("s", ":"), ("v", keys[i])))
+                if i:
+                    stack.append(("s", ","))
+            stack.append(("s", "{"))
+        else:
+            raise TypeError(f"unsupported JSON value {type(value).__name__}")
+    return "".join(out).encode("utf-8")
 
 
 def _reject_dup_keys(pairs):
@@ -213,6 +236,67 @@ def _reject_lone_surrogates(obj):
     return obj
 
 
+# SPEC §4 / RFC 7493 leave nesting depth to the implementation, and this one used
+# to leave it to the INTERPRETER: json.loads raised RecursionError somewhere near
+# depth 990 depending on how deep the caller's own stack already was, and the
+# canonicalizer gave out near 500. One store could therefore get two reports
+# from one implementation. The bound is now explicit, checked before parsing,
+# and identical in the Rust implementation (impl-rs/src/json.rs MAX_DEPTH).
+MAX_JSON_DEPTH = 512
+
+
+class JSONNestingTooDeep(ValueError):
+    """JSON nested deeper than MAX_JSON_DEPTH: refused before it is parsed."""
+
+
+def _check_json_depth(text):
+    """Raise JSONNestingTooDeep if `text` (a decoded JSON document) opens more
+    than MAX_JSON_DEPTH arrays/objects at once. Brackets inside strings do not
+    count. A pure scan, no validation: syntax is the parser's business."""
+    if text.count("[") + text.count("{") <= MAX_JSON_DEPTH:
+        return
+    depth, i, n = 0, 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            i = _skip_json_string(text, i + 1)
+            continue
+        if ch in "[{":
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise JSONNestingTooDeep(
+                    f"JSON nested deeper than {MAX_JSON_DEPTH} levels")
+        elif ch in "]}":
+            depth -= 1
+        i += 1
+
+
+def _skip_json_string(text, i):
+    """Index just past the string literal whose body starts at `i` (or the end
+    of `text` if it never closes). A backslash consumes the next character.
+    Same scan as impl-go jsonTooDeep and impl-rs too_deep."""
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+        elif ch == '"':
+            return i + 1
+        else:
+            i += 1
+    return n
+
+
+def _loads_plain(raw):
+    """``json.loads`` with the explicit depth bound -- for blobs and other
+    documents read WITHOUT the I-JSON guard (each is then compared with its own
+    canonical bytes, so leniency here only decides which refusal it earns)."""
+    if isinstance(raw, (bytes, bytearray)):
+        raw = bytes(raw).decode(json.detect_encoding(raw), "surrogatepass")
+    _check_json_depth(raw)
+    return json.loads(raw)
+
+
 def loads_ijson(raw):
     """json.loads restricted to I-JSON: rejects duplicate member names, the
     non-JSON constants NaN/Infinity/-Infinity, unpaired surrogates in any string
@@ -240,6 +324,7 @@ def loads_ijson(raw):
     bom = b"\xef\xbb\xbf" if isinstance(raw, (bytes, bytearray)) else "﻿"
     if raw[:len(bom)] == bom:
         raise ValueError("leading byte order mark (not canonical I-JSON)")
+    _check_json_depth(raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw)
     return _reject_lone_surrogates(
         json.loads(raw, object_pairs_hook=_reject_dup_keys,
                    parse_constant=_reject_constant))
@@ -256,7 +341,10 @@ def _canon_eq(doc, raw):
     a bounded "not canonical" outcome instead of a Python-only crash."""
     try:
         return canon(doc) == raw
-    except ValueError:
+    except (ValueError, TypeError):
+        # TypeError too: a float (or NaN/Infinity, which plain json.loads
+        # accepts) has no canonical form either. Catching only ValueError let a
+        # `1.5` in a check or policy blob crash `check` and `verify`.
         return False
 
 
@@ -604,7 +692,9 @@ def validate_ski_blob(doc):
     v1 blob and is refused here exactly as any other malformed document."""
     if not isinstance(doc, dict) or set(doc) != {"ski", "term", "atp", "expect"}:
         return "ski check blob must be exactly {ski, term, atp, expect}"
-    if doc["ski"] != 1:
+    if doc["ski"] != 1 or isinstance(doc["ski"], bool):
+        # `True == 1` in Python, so `"ski": true` passed as a v1 document here
+        # while Go refused it (found by the Rust port's differential).
         return "ski field must be 1"
     if not (_is_hex64(doc.get("term")) and _is_hex64(doc.get("expect"))):
         return "term and expect must be hex64 NodeHashes"
@@ -660,14 +750,16 @@ def _load_ski_doc(store, check_hex, ski_version=1):
     foreign name being executed as if it were the addressed one, with the same
     stable, path-free reason as every other address lie. Raises RuntimeError with
     a bounded reason class on any malformed / mis-addressed blob."""
-    p = store.blobs / check_hex
-    if not (isinstance(check_hex, str) and HEX64.match(check_hex) and p.is_file()):
+    if not (isinstance(check_hex, str) and HEX64.match(check_hex)
+            and (store.blobs / check_hex).is_file()):
+        # Type first: `store.blobs / 5` raised TypeError out of the verifier.
         raise RuntimeError("check blob missing")      # absent / dir / non-hex: bounded
+    p = store.blobs / check_hex
     raw = p.read_bytes()
     if hashlib.sha256(raw).digest() != bytes.fromhex(check_hex):
         raise RuntimeError(REASON_CAS_MISMATCH)
     try:
-        doc = json.loads(raw)                # was leaking JSONDecodeError past the
+        doc = _loads_plain(raw)              # was leaking JSONDecodeError past the
     except ValueError:                       # caller's `except RuntimeError` (crash)
         raise RuntimeError("malformed check blob (not JSON)")
     if not _canon_eq(doc, raw):
@@ -708,7 +800,10 @@ def _blob_cas(store):
     class BlobCAS:
         def get(self, h):
             q = store.blobs / h.hex()
-            if not q.exists():
+            if not q.is_file():
+                # Absent, or not a regular file (a directory at a child's
+                # address made read_bytes() raise out of the verifier):
+                # unresolved, exactly as `has_blob` says.
                 return None                  # legitimately unresolved (SPEC §7)
             b = q.read_bytes()
             if hashlib.sha256(b).digest() != h:
@@ -790,8 +885,8 @@ def run_ski_check(store, check_hex, sg=None):
     class BlobCAS:                       # adapter: warrant blobs -> Σ-GLYPH store
         def get(self, h):
             q = store.blobs / h.hex()
-            if not q.exists():
-                return None              # legitimately unresolved (SPEC §7)
+            if not q.is_file():
+                return None              # absent or not a file: unresolved (SPEC §7)
             b = q.read_bytes()
             # Defense in depth at the ADAPTER boundary, independent of the
             # evaluator version: the claim "this store is a Σ-GLYPH CAS" must
@@ -1020,7 +1115,7 @@ class Store:
 
     def get_record(self, wid):
         p = self.records / f"{wid}.json"
-        return json.loads(p.read_text()) if p.exists() else None
+        return _loads_plain(p.read_text()) if p.exists() else None
 
     def all_records(self, load_errors=None):
         """Parse each record independently (Codex v0.3 hardening audit P2):
@@ -1038,6 +1133,10 @@ class Store:
                 continue
             try:
                 env = loads_ijson(raw)          # SPEC §4: reject duplicate keys
+            except JSONNestingTooDeep:
+                if load_errors is not None:
+                    load_errors[p.stem] = "malformed JSON (nesting too deep)"
+                continue
             except ValueError:
                 if load_errors is not None:
                     load_errors[p.stem] = "malformed JSON"
@@ -1058,25 +1157,47 @@ class Store:
 
 
 # ---------- settlement (SPEC §7, §9, §5.1) ----------
+def _str_list(body, key):
+    """The string members of a list-valued body field; anything else, none.
+
+    The settlement helpers below run over every record in a tunnel, and a tunnel
+    can reach a schema-invalid ancestor (it is reported by §6 and simply cited
+    as a `prior`). Indexing such a body as if it were valid -- `prior: 5`,
+    `under: [5]`, a check without `check` -- crashed settlement-grade `verify`
+    and `settle` outright (found by the Rust port's differential, 2026-10-09).
+    A type-confused field now contributes nothing, as it already did in
+    `record_roots` and in Go."""
+    v = body.get(key) if isinstance(body, dict) else None
+    return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+
+
+def _dict_list(body, key):
+    v = body.get(key) if isinstance(body, dict) else None
+    return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+
+
 def cited_blobs(body):
-    refs = set(body["under"]) | set(body["evidence"]) | {body["subject"]["hash"]}
-    for r in body["because"]:
+    refs = set(_str_list(body, "under")) | set(_str_list(body, "evidence"))
+    subj = body.get("subject") if isinstance(body, dict) else None
+    if isinstance(subj, dict) and isinstance(subj.get("hash"), str):
+        refs.add(subj["hash"])
+    for r in _dict_list(body, "because"):
         if r.get("kind") == "check":
-            refs.add(r["check"])
-            if "transcript" in r:
-                refs.add(r["transcript"])
+            for k in ("check", "transcript"):
+                if isinstance(r.get(k), str):
+                    refs.add(r[k])
     return refs
 
 
 def prior_closure(recs, wid):
     seen = set()
-    stack = list(recs.get(wid, {}).get("body", {}).get("prior", []))
+    stack = _str_list(recs.get(wid, {}).get("body", {}), "prior")
     while stack:
         cur = stack.pop()
         if cur in seen or cur not in recs:
             continue
         seen.add(cur)
-        stack.extend(recs[cur]["body"]["prior"])
+        stack.extend(_str_list(recs[cur]["body"], "prior"))
     return seen
 
 
@@ -1091,30 +1212,41 @@ def tunnel(store, wid, recs=None):
 
 
 def _read_json_blob_if_canonical(store, h):
+    if not (isinstance(h, str) and HEX64.match(h)):
+        return None                        # not a blob address: never a path
     p = store.blobs / h
     if not p.exists():
         return None
     try:
         raw = p.read_bytes()
-        doc = json.loads(raw)
+        doc = _loads_plain(raw)
     except Exception:
         return None
     return doc if _canon_eq(doc, raw) else None
 
 
+def _cmd_fingerprint(reason, body, store, verdict):
+    """The cmd@v1 outcome fingerprint, or None. Total over malformed tunnel
+    records: a non-string reference has no blob, an unhashable verdict has no
+    fingerprint."""
+    transcript = reason.get("transcript")
+    evidence = body.get("evidence", [])
+    if not transcript or not isinstance(evidence, list):
+        return None
+    needed = list(evidence) + [reason.get("check"), transcript]
+    if any(not isinstance(h, str) or not h or not store.has_blob(h)
+           for h in needed) or isinstance(verdict, (list, dict)):
+        return None
+    return ("cmd@v1", tuple(sorted(evidence)), verdict, transcript)
+
+
 def fingerprint(reason, body, store):
-    if reason.get("kind") != "check":
+    if not isinstance(reason, dict) or reason.get("kind") != "check":
         return None
     runtime = reason.get("runtime")
     verdict = reason.get("verdict")
     if runtime == "cmd@v1":
-        transcript = reason.get("transcript")
-        if not transcript:
-            return None
-        needed = set(body.get("evidence", [])) | {reason.get("check"), transcript}
-        if any(not h or not store.has_blob(h) for h in needed):
-            return None
-        return ("cmd@v1", tuple(sorted(body.get("evidence", []))), verdict, transcript)
+        return _cmd_fingerprint(reason, body, store, verdict)
     if runtime == "ski@v1":
         doc = _read_json_blob_if_canonical(store, reason.get("check"))
         if doc is None or validate_ski_blob(doc):
@@ -1146,7 +1278,7 @@ def tunnel_fingerprints(store, wid, recs=None):
     fps = set()
     for rwid in tunnel(store, wid, recs)["records"]:
         body = recs[rwid]["body"]
-        for r in body["because"]:
+        for r in _dict_list(body, "because"):
             fp = fingerprint(r, body, store)
             if fp is not None:
                 fps.add(fp)
@@ -1169,7 +1301,7 @@ def settlement_admissibility(store, settling_wid, candidate_body, recs=None):
             return "admissible: (a) new evidence"
     old_fps = tunnel_fingerprints(store, settling_wid, recs)
     if settling_body:
-        for r in settling_body["because"]:
+        for r in _dict_list(settling_body, "because"):
             fp = fingerprint(r, settling_body, store)
             if fp is not None:
                 old_fps.add(fp)
@@ -1198,11 +1330,14 @@ def _validate_trust_config(doc):
         return "trust config must be a JSON object"
     if set(doc) - TRUST_FIELDS:
         return "trust config has unknown fields"
+    # Membership, not `is not None`: a PRESENT member must have its type. A
+    # `null` slipped past every check here and then crashed settlement
+    # (`set(None)`); Go always refused it (Rust-port differential).
     gr = doc.get("genesis_roots")
-    if gr is not None and not (isinstance(gr, list) and all(_is_hex64(x) for x in gr)):
+    if "genesis_roots" in doc and not (isinstance(gr, list) and all(_is_hex64(x) for x in gr)):
         return "genesis_roots must be a list of hex64"
     ac = doc.get("actors")
-    if ac is not None:
+    if "actors" in doc:
         if not isinstance(ac, dict):
             return "actors must be an object"
         for a, keys in ac.items():
@@ -1211,7 +1346,7 @@ def _validate_trust_config(doc):
             if not (isinstance(keys, list) and all(_is_hex64(k) for k in keys)):
                 return "each actor's keys must be a list of hex64"
     gh = doc.get("genesis_json_sha256")
-    if gh is not None and not _is_hex64(gh):
+    if "genesis_json_sha256" in doc and not _is_hex64(gh):
         return "genesis_json_sha256 must be hex64"
     return None
 
@@ -1245,12 +1380,14 @@ def _trust_roots(store, trust, explicit_roots):
 
 
 def _parse_policy_blob(store, h):
-    p = store.blobs / h
-    if not (isinstance(h, str) and HEX64.match(h) and p.is_file()):
+    # Type before path: `store.blobs / 5` raised TypeError, so one `under: [5]`
+    # anywhere in a store crashed settlement-grade verification.
+    if not (isinstance(h, str) and HEX64.match(h) and (store.blobs / h).is_file()):
         return None, False                          # absent / dir / non-hex: not a policy
+    p = store.blobs / h
     raw = p.read_bytes()
     try:
-        doc = json.loads(raw)
+        doc = _loads_plain(raw)
     except Exception:
         return None, False
     if not isinstance(doc, dict) or doc.get("warrant_policy") != "0.3":
@@ -1277,7 +1414,8 @@ def _parse_policy_blob(store, h):
 def _record_policy(store, body):
     valid = []
     invalid = False
-    for h in body.get("under", []):
+    under = body.get("under", []) if isinstance(body, dict) else []
+    for h in (under if isinstance(under, list) else []):
         policy, bad = _parse_policy_blob(store, h)
         invalid = invalid or bad
         if policy:
@@ -1299,6 +1437,11 @@ def _valid_sig_actors(wid, env, allowed_keys=None):
         if not verify_sig(wid, s):
             continue
         actor = s.get("actor")
+        if not isinstance(actor, str):
+            # The envelope is not hashed, so `actor` is whatever the file says;
+            # a list here raised TypeError from the set/dict lookups below. Only
+            # a string can ever match a policy's actors, so nothing is lost.
+            continue
         if allowed_keys is not None:
             if s.get("key") not in allowed_keys.get(actor, set()):
                 continue
@@ -1718,7 +1861,8 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 actor = s.get("actor")
                 key = s.get("key")
                 keys = ctx["keys_before"](wid)
-                bound = (actor not in ctx["conflict_actors"]
+                bound = (isinstance(actor, str)
+                         and actor not in ctx["conflict_actors"]
                          and key in keys.get(actor, set()))
                 # RENDERER-INDEPENDENCE (2026-07-30). This was:
                 #     if quiet: pass
@@ -1823,10 +1967,13 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
         for r in _because:                          # re-run ski@v1 claims
             if r.get("kind") == "check" and r.get("runtime") == "ski@v1":
                 try:
-                    got, rh, _ = run_ski_check(store, r["check"])
-                    if got != r["verdict"]:
+                    # .get: a ski@v1 reason with no `check` (or `verdict`) is
+                    # schema-invalid, already ERR'd -- it must not also crash
+                    # the verifier with a KeyError (Rust-port differential).
+                    got, rh, _ = run_ski_check(store, r.get("check"))
+                    if got != r.get("verdict"):
                         out("WARN", wid, f"ski@v1 verdict mismatch: claimed "
-                                         f"{r['verdict']}, re-run gives {got} ({rh[:12]})")
+                                         f"{r.get('verdict')}, re-run gives {got} ({rh[:12]})")
                 except RuntimeError as ex:
                     # Codex v0.3 hardening audit P1: "reran and matched" and
                     # "not executed" MUST NOT be observationally equivalent.
@@ -1987,7 +2134,11 @@ def why(store, wid):
         # gate, so there is now one definition of "this record is signed" rather
         # than a second one spelled out here.
         sigs = env["sigs"]
-        ok = (warrant_id(body) == cur and bool(sigs)
+        try:
+            id_ok = warrant_id(body) == cur
+        except (TypeError, ValueError):
+            id_ok = False         # uncomputable: not the record its name claims
+        ok = (id_ok and bool(sigs)
               and _well_signed(cur, env))
         if not ok:
             failed += 1
@@ -2047,7 +2198,7 @@ def resign_envelopes(paths, key_path, dry_run=False, log=print):
         p = Path(p)
         try:
             raw = p.read_text(encoding="utf-8")
-            env = json.loads(raw)
+            env = _loads_plain(raw)
         except Exception as e:
             res["unmigratable"].append((str(p), None, f"unreadable envelope: {e}"))
             continue
@@ -2410,7 +2561,7 @@ def probe(stream_in=None, stream_out=None):
     stream_in = stream_in or sys.stdin.buffer
     stream_out = stream_out or sys.stdout
     raw = stream_in.read()
-    req = json.loads(raw.decode("utf-8"))
+    req = _loads_plain(raw.decode("utf-8"))
     if req.get("warrant_conformance") != PROBE_PROTOCOL:
         raise ValueError(f"unsupported request protocol "
                          f"{req.get('warrant_conformance')!r}")

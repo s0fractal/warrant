@@ -1,5 +1,5 @@
-//! Ed25519 signature VERIFICATION, from scratch, no external crates (RFC 8032).
-//! Only verification is needed (Warrant never signs in Rust). Field is the
+//! Ed25519 (RFC 8032), from scratch, no external crates: verification, and a
+//! signing path for filing and re-signing records (see the note at `sign`). Field is the
 //! 5×51-bit representation mod p = 2^255-19; points are extended Edwards
 //! coordinates. `verify` reduces the SHA-512 challenge mod L (`mod_l`) and checks
 //! [S]B = R + [k]A cofactorless — RFC-exact for EVERY key, including mixed-torsion
@@ -14,30 +14,96 @@ type Fe = [u64; 5];
 // ---------- SHA-512 (FIPS 180-4) ----------
 pub fn sha512(input: &[u8]) -> [u8; 64] {
     const K: [u64; 80] = [
-        0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
-        0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
-        0xd807aa98a3030242, 0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,
-        0x72be5d74f27b896f, 0x80deb1fe3b1696b1, 0x9bdc06a725c71235, 0xc19bf174cf692694,
-        0xe49b69c19ef14ad2, 0xefbe4786384f25e3, 0x0fc19dc68b8cd5b5, 0x240ca1cc77ac9c65,
-        0x2de92c6f592b0275, 0x4a7484aa6ea6e483, 0x5cb0a9dcbd41fbd4, 0x76f988da831153b5,
-        0x983e5152ee66dfab, 0xa831c66d2db43210, 0xb00327c898fb213f, 0xbf597fc7beef0ee4,
-        0xc6e00bf33da88fc2, 0xd5a79147930aa725, 0x06ca6351e003826f, 0x142929670a0e6e70,
-        0x27b70a8546d22ffc, 0x2e1b21385c26c926, 0x4d2c6dfc5ac42aed, 0x53380d139d95b3df,
-        0x650a73548baf63de, 0x766a0abb3c77b2a8, 0x81c2c92e47edaee6, 0x92722c851482353b,
-        0xa2bfe8a14cf10364, 0xa81a664bbc423001, 0xc24b8b70d0f89791, 0xc76c51a30654be30,
-        0xd192e819d6ef5218, 0xd69906245565a910, 0xf40e35855771202a, 0x106aa07032bbd1b8,
-        0x19a4c116b8d2d0c8, 0x1e376c085141ab53, 0x2748774cdf8eeb99, 0x34b0bcb5e19b48a8,
-        0x391c0cb3c5c95a63, 0x4ed8aa4ae3418acb, 0x5b9cca4f7763e373, 0x682e6ff3d6b2b8a3,
-        0x748f82ee5defb2fc, 0x78a5636f43172f60, 0x84c87814a1f0ab72, 0x8cc702081a6439ec,
-        0x90befffa23631e28, 0xa4506cebde82bde9, 0xbef9a3f7b2c67915, 0xc67178f2e372532b,
-        0xca273eceea26619c, 0xd186b8c721c0c207, 0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178,
-        0x06f067aa72176fba, 0x0a637dc5a2c898a6, 0x113f9804bef90dae, 0x1b710b35131c471b,
-        0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc, 0x431d67c49c100d4c,
-        0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817,
+        0x428a2f98d728ae22,
+        0x7137449123ef65cd,
+        0xb5c0fbcfec4d3b2f,
+        0xe9b5dba58189dbbc,
+        0x3956c25bf348b538,
+        0x59f111f1b605d019,
+        0x923f82a4af194f9b,
+        0xab1c5ed5da6d8118,
+        0xd807aa98a3030242,
+        0x12835b0145706fbe,
+        0x243185be4ee4b28c,
+        0x550c7dc3d5ffb4e2,
+        0x72be5d74f27b896f,
+        0x80deb1fe3b1696b1,
+        0x9bdc06a725c71235,
+        0xc19bf174cf692694,
+        0xe49b69c19ef14ad2,
+        0xefbe4786384f25e3,
+        0x0fc19dc68b8cd5b5,
+        0x240ca1cc77ac9c65,
+        0x2de92c6f592b0275,
+        0x4a7484aa6ea6e483,
+        0x5cb0a9dcbd41fbd4,
+        0x76f988da831153b5,
+        0x983e5152ee66dfab,
+        0xa831c66d2db43210,
+        0xb00327c898fb213f,
+        0xbf597fc7beef0ee4,
+        0xc6e00bf33da88fc2,
+        0xd5a79147930aa725,
+        0x06ca6351e003826f,
+        0x142929670a0e6e70,
+        0x27b70a8546d22ffc,
+        0x2e1b21385c26c926,
+        0x4d2c6dfc5ac42aed,
+        0x53380d139d95b3df,
+        0x650a73548baf63de,
+        0x766a0abb3c77b2a8,
+        0x81c2c92e47edaee6,
+        0x92722c851482353b,
+        0xa2bfe8a14cf10364,
+        0xa81a664bbc423001,
+        0xc24b8b70d0f89791,
+        0xc76c51a30654be30,
+        0xd192e819d6ef5218,
+        0xd69906245565a910,
+        0xf40e35855771202a,
+        0x106aa07032bbd1b8,
+        0x19a4c116b8d2d0c8,
+        0x1e376c085141ab53,
+        0x2748774cdf8eeb99,
+        0x34b0bcb5e19b48a8,
+        0x391c0cb3c5c95a63,
+        0x4ed8aa4ae3418acb,
+        0x5b9cca4f7763e373,
+        0x682e6ff3d6b2b8a3,
+        0x748f82ee5defb2fc,
+        0x78a5636f43172f60,
+        0x84c87814a1f0ab72,
+        0x8cc702081a6439ec,
+        0x90befffa23631e28,
+        0xa4506cebde82bde9,
+        0xbef9a3f7b2c67915,
+        0xc67178f2e372532b,
+        0xca273eceea26619c,
+        0xd186b8c721c0c207,
+        0xeada7dd6cde0eb1e,
+        0xf57d4f7fee6ed178,
+        0x06f067aa72176fba,
+        0x0a637dc5a2c898a6,
+        0x113f9804bef90dae,
+        0x1b710b35131c471b,
+        0x28db77f523047d84,
+        0x32caab7b40c72493,
+        0x3c9ebe0a15c9bebc,
+        0x431d67c49c100d4c,
+        0x4cc5d4becb3e42b6,
+        0x597f299cfc657e2a,
+        0x5fcb6fab3ad6faec,
+        0x6c44198c4a475817,
     ];
     let mut h: [u64; 8] = [
-        0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
-        0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
+        0x6a09e667f3bcc908,
+        0xbb67ae8584caa73b,
+        0x3c6ef372fe94f82b,
+        0xa54ff53a5f1d36f1,
+        0x510e527fade682d1,
+        0x9b05688c2b3e6c1f,
+        0x1f83d9abfb41bd6b,
+        0x5be0cd19137e2179,
     ];
     let bit_len = (input.len() as u128) * 8;
     let mut m = input.to_vec();
@@ -123,8 +189,8 @@ fn fe_to_bytes(f: &Fe) -> [u8; 32] {
     }
     // conditional subtract p: q = 1 iff t >= p
     let mut q = (t[0] + 19) >> 51;
-    for i in 1..5 {
-        q = (t[i] + q) >> 51;
+    for limb in t.iter().skip(1) {
+        q = (limb + q) >> 51;
     }
     t[0] += 19 * q;
     let mut carry = 0u64;
@@ -159,7 +225,13 @@ fn local_hex(bytes: &[u8]) -> String {
 }
 
 fn fe_add(a: &Fe, b: &Fe) -> Fe {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3], a[4] + b[4]]
+    [
+        a[0] + b[0],
+        a[1] + b[1],
+        a[2] + b[2],
+        a[3] + b[3],
+        a[4] + b[4],
+    ]
 }
 
 fn fe_sub(a: &Fe, b: &Fe) -> Fe {
@@ -190,10 +262,18 @@ fn fe_sub(a: &Fe, b: &Fe) -> Fe {
 
 fn fe_mul(a: &Fe, b: &Fe) -> Fe {
     let (a0, a1, a2, a3, a4) = (
-        a[0] as u128, a[1] as u128, a[2] as u128, a[3] as u128, a[4] as u128,
+        a[0] as u128,
+        a[1] as u128,
+        a[2] as u128,
+        a[3] as u128,
+        a[4] as u128,
     );
     let (b0, b1, b2, b3, b4) = (
-        b[0] as u128, b[1] as u128, b[2] as u128, b[3] as u128, b[4] as u128,
+        b[0] as u128,
+        b[1] as u128,
+        b[2] as u128,
+        b[3] as u128,
+        b[4] as u128,
     );
     let (b1_19, b2_19, b3_19, b4_19) = (b1 * 19, b2 * 19, b3 * 19, b4 * 19);
     let c0 = a0 * b0 + a1 * b4_19 + a2 * b3_19 + a3 * b2_19 + a4 * b1_19;
@@ -528,7 +608,9 @@ fn ge256(a: &[u64; 4], b: &[u64; 4]) -> bool {
 fn sub256(a: &mut [u64; 4], b: &[u64; 4]) {
     let mut borrow = 0u128;
     for i in 0..4 {
-        let v = (a[i] as u128).wrapping_sub(b[i] as u128).wrapping_sub(borrow);
+        let v = (a[i] as u128)
+            .wrapping_sub(b[i] as u128)
+            .wrapping_sub(borrow);
         a[i] = v as u64;
         borrow = (v >> 127) & 1;
     }
@@ -598,6 +680,117 @@ pub fn verify(pk: &[u8; 32], sig: &[u8; 64], msg: &[u8]) -> bool {
     pt_eq(&lhs, &rhs)
 }
 
+// ---------- signing (RFC 8032 §5.1.5/§5.1.6) ----------
+//
+// NOT CONSTANT-TIME. The scalar multiplication below branches on secret bits,
+// so signing leaks timing information about the key to anyone who can time it.
+// It exists so this implementation can file and re-sign records on the machine
+// that holds the key (the same job `warrant propose`/`resign` do), and it is
+// differentially tested against Python's `cryptography` (tests/rs_parity.py
+// compares every signature byte). Do not expose it as a signing oracle.
+
+fn base_point() -> Pt {
+    let (bx, by) = base_xy();
+    Pt {
+        t: fe_mul(&bx, &by),
+        x: bx,
+        y: by,
+        z: fe_one(),
+    }
+}
+
+fn pt_compress(p: &Pt) -> [u8; 32] {
+    let zinv = fe_invert(&p.z);
+    let x = fe_mul(&p.x, &zinv);
+    let y = fe_mul(&p.y, &zinv);
+    let mut out = fe_to_bytes(&y);
+    if fe_is_negative(&x) {
+        out[31] |= 0x80;
+    }
+    out
+}
+
+/// The clamped secret scalar and the nonce prefix of a 32-byte seed.
+fn expand(seed: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
+    let h = sha512(seed);
+    let mut a = [0u8; 32];
+    a.copy_from_slice(&h[..32]);
+    a[0] &= 248;
+    a[31] &= 127;
+    a[31] |= 64;
+    let mut prefix = [0u8; 32];
+    prefix.copy_from_slice(&h[32..]);
+    (a, prefix)
+}
+
+/// The public key of a 32-byte RFC 8032 seed.
+pub fn public_key(seed: &[u8; 32]) -> [u8; 32] {
+    let (a, _) = expand(seed);
+    pt_compress(&pt_scalarmul(&a, &base_point()))
+}
+
+/// (x * y + z) mod L for 32-byte little-endian x, y, z.
+fn muladd_mod_l(x: &[u8; 32], y: &[u8; 32], z: &[u8; 32]) -> [u8; 32] {
+    let limbs = |b: &[u8; 32]| -> [u64; 4] {
+        let mut l = [0u64; 4];
+        for i in 0..4 {
+            l[i] = u64::from_le_bytes(b[i * 8..i * 8 + 8].try_into().unwrap());
+        }
+        l
+    };
+    let (xl, yl, zl) = (limbs(x), limbs(y), limbs(z));
+    let mut prod = [0u64; 8];
+    for i in 0..4 {
+        let mut carry = 0u128;
+        for j in 0..4 {
+            let cur = prod[i + j] as u128 + (xl[i] as u128) * (yl[j] as u128) + carry;
+            prod[i + j] = cur as u64;
+            carry = cur >> 64;
+        }
+        let mut k = i + 4;
+        while carry != 0 && k < 8 {
+            let cur = prod[k] as u128 + carry;
+            prod[k] = cur as u64;
+            carry = cur >> 64;
+            k += 1;
+        }
+    }
+    let mut carry = 0u128;
+    for i in 0..8 {
+        let add = if i < 4 { zl[i] as u128 } else { 0 };
+        let cur = prod[i] as u128 + add + carry;
+        prod[i] = cur as u64;
+        carry = cur >> 64;
+    }
+    let mut wide = [0u8; 64];
+    for i in 0..8 {
+        wide[i * 8..i * 8 + 8].copy_from_slice(&prod[i].to_le_bytes());
+    }
+    mod_l(&wide)
+}
+
+/// RFC 8032 Ed25519 signature of `msg` under the 32-byte `seed`.
+pub fn sign(seed: &[u8; 32], msg: &[u8]) -> [u8; 64] {
+    let (a, prefix) = expand(seed);
+    let base = base_point();
+    let pk = pt_compress(&pt_scalarmul(&a, &base));
+    let mut buf = Vec::with_capacity(32 + msg.len());
+    buf.extend_from_slice(&prefix);
+    buf.extend_from_slice(msg);
+    let r = mod_l(&sha512(&buf));
+    let big_r = pt_compress(&pt_scalarmul(&r, &base));
+    let mut kb = Vec::with_capacity(64 + msg.len());
+    kb.extend_from_slice(&big_r);
+    kb.extend_from_slice(&pk);
+    kb.extend_from_slice(msg);
+    let k = mod_l(&sha512(&kb));
+    let s = muladd_mod_l(&k, &a, &r);
+    let mut sig = [0u8; 64];
+    sig[..32].copy_from_slice(&big_r);
+    sig[32..].copy_from_slice(&s);
+    sig
+}
+
 // ---------- self-test (field + SHA-512 + a known-good verify) ----------
 pub fn selftest() -> bool {
     let mut ok = true;
@@ -623,10 +816,10 @@ pub fn selftest() -> bool {
     sig.copy_from_slice(&{
         let mut v = [0u8; 64];
         let hx = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b";
-        for i in 0..64 {
+        for (i, slot) in v.iter_mut().enumerate() {
             let hi = (hx.as_bytes()[2 * i] as char).to_digit(16).unwrap() as u8;
             let lo = (hx.as_bytes()[2 * i + 1] as char).to_digit(16).unwrap() as u8;
-            v[i] = (hi << 4) | lo;
+            *slot = (hi << 4) | lo;
         }
         v
     });
@@ -640,15 +833,36 @@ pub fn selftest() -> bool {
     let mut noncanon = [0u8; 32];
     noncanon[0] = 1;
     noncanon[31] = 0x80;
-    chk("non-canonical identity (0100..80) rejected", pt_decompress(&noncanon).is_none());
+    chk(
+        "non-canonical identity (0100..80) rejected",
+        pt_decompress(&noncanon).is_none(),
+    );
     // and the canonical identity (0100..00) DOES decompress
     let mut ident = [0u8; 32];
     ident[0] = 1;
-    chk("canonical identity (0100..00) decompresses", pt_decompress(&ident).is_some());
+    chk(
+        "canonical identity (0100..00) decompresses",
+        pt_decompress(&ident).is_some(),
+    );
     // Gemini audit P0-2: mod_l matches the reference reduction on a known vector.
     // H = all-0xff (512 bits); (2^512-1) mod L computed by the reference:
     let all_ff = [0xffu8; 64];
     let want_mod_l = hexbytes("000f9c44e31106a447938568a71b0ed065bef517d273ecce3d9a307c1b419903");
-    chk("mod_l(0xff..) matches reference", mod_l(&all_ff) == want_mod_l);
+    chk(
+        "mod_l(0xff..) matches reference",
+        mod_l(&all_ff) == want_mod_l,
+    );
+    // RFC 8032 TV1 signing: secret 9d61..7f60 -> the public key and signature above.
+    let seed = hexbytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
+    chk("RFC8032 TV1 public key", public_key(&seed) == pk);
+    chk("RFC8032 TV1 signature", sign(&seed, b"") == sig);
+    // RFC 8032 TV2 (one-byte message 0x72).
+    let seed2 = hexbytes("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb");
+    let sig2 = sign(&seed2, &[0x72]);
+    chk("RFC8032 TV2 signature", local_hex(&sig2) == "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
+    chk(
+        "RFC8032 TV2 verifies",
+        verify(&public_key(&seed2), &sig2, &[0x72]),
+    );
     ok
 }

@@ -5,6 +5,13 @@ name: publish
 # `workflow_dispatch` publishes to TestPyPI for a dry run.
 # One-time PyPI setup is documented in PUBLISHING.md.
 #
+# The same release publishes the Rust implementation (impl-rs) to crates.io as
+# the `warrant-verify` crate, also by Trusted Publishing -- once the one-time
+# setup in PUBLISHING.md is done and the repository variable
+# CRATES_IO_TRUSTED_PUBLISHING is "true". Until then the `crate` job still
+# builds, tests and dry-runs the upload on every release and dispatch, so the
+# crate cannot rot unpublished.
+#
 # ACTIONS ARE PINNED BY COMMIT SHA, version in the trailing comment. The `pypi`
 # and `testpypi` jobs below hold `id-token: write` and mint an OIDC token that
 # PyPI accepts as this repository's identity; anything running in them can use
@@ -100,3 +107,52 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
+
+  crate:
+    # The crate exactly as `cargo publish` would upload it: packaged from the
+    # listed files only, built and tested from that package, and refused if its
+    # version disagrees with the release tag or with the Python package (one
+    # tooling version, CHANGELOG.md).
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Crate version matches pyproject (and the release tag)
+        run: |
+          CRATE=$(python3 -c "import tomllib;print(tomllib.load(open('impl-rs/Cargo.toml','rb'))['package']['version'])")
+          PY=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "crate=$CRATE pyproject=$PY ref=${GITHUB_REF_NAME}"
+          test "$CRATE" = "$PY" || { echo "::error::impl-rs/Cargo.toml $CRATE != pyproject $PY"; exit 1; }
+          if [ "${{ github.event_name }}" = "release" ]; then
+            test "$CRATE" = "${GITHUB_REF_NAME#v}" || { echo "::error::tag ${GITHUB_REF_NAME} != crate $CRATE"; exit 1; }
+          fi
+      - name: Package, then build and test from the packaged files
+        run: |
+          cd impl-rs
+          cargo package --locked
+          PKG=$(ls target/package/warrant-verify-*.crate)
+          mkdir -p /tmp/pkg && tar xzf "$PKG" -C /tmp/pkg
+          cd /tmp/pkg/warrant-verify-*/
+          cargo test --release --locked
+          ./target/release/warrant-rs conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS"
+          ./target/release/warrant-rs selftest
+      - name: Upload dry run
+        run: cd impl-rs && cargo publish --dry-run --locked
+
+  crates-io:
+    # Real, irreversible publish — only from a published GitHub Release, and only
+    # once crates.io trusts this workflow (PUBLISHING.md, "crates.io").
+    needs: [build, crate]
+    if: github.event_name == 'release' && vars.CRATES_IO_TRUSTED_PUBLISHING == 'true'
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      id-token: write            # OIDC token for crates.io Trusted Publishing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+        id: auth
+      - run: cd impl-rs && cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

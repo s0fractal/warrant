@@ -26,6 +26,51 @@ right.
 
 ## Unreleased
 
+- **The Rust implementation reaches the reference: the whole `warrant` CLI, held
+  to its output byte for byte, and prepared for crates.io as `warrant-verify`.**
+  `impl-rs` was a base-grade verifier (canon, schema, WarrantIDs, Ed25519
+  verification, §6 store checks). It now implements every verb of the reference
+  CLI — `init keygen blob policy propose accept reject supersede why check
+  verify settle resign conformance selftest probe canon`, with the same flags —
+  including settlement grade (§5.1 key state, §7 tunnels and fingerprints, §9
+  roots and thresholds), `ski@v1` re-execution (a port of the pinned Book I v0.5
+  evaluator, resource limits and their sampling cadence included), Ed25519
+  signing, and the `warrant.verify-report@v0` report. Still no dependencies and
+  no `unsafe`. On the conformance pack it reaches **settlement** grade, 139/139.
+  `tests/rs_parity.py` compares its stdout, exit status and written bytes with
+  the reference's over every reference-CLI call in the adversarial harnesses,
+  fuzzed settlement stores (with a 29-branch coverage floor), the whole pack and
+  fuzzed near-JSON; it has a negative control. CI gains a parallel `rust` job;
+  `publish.yml` gains a `crate` job (package, test the package, dry-run upload)
+  and a `crates-io` job gated off until the one-time setup in PUBLISHING.md is
+  done. Nothing has been published. `tests/conformance_runner.py` and
+  `tests/verify_three_way.py` now expect settlement grade from Rust and ask both
+  grades; the runner's base-only path is kept under test by a proxy candidate
+  (`tests/fixtures/base_only_candidate.py`). No protocol surface moved by the
+  port itself.
+
+- **Eleven reference defects found by the port, fixed in `impl/warrant.py`.**
+  Each is a store anyone with write access can produce. Nine crashed the
+  verifier outright (one record took the whole report down): a float in a ski
+  check or threshold policy blob (`_canon_eq` caught only ValueError); a record
+  nested ~500 deep (the canonicalizer recursed — it is iterative now); a trust
+  config member that is `null`; a directory at a term child's address; a
+  malformed record reached as an ancestor by settlement's tunnel walk; a valid
+  signature whose `actor` is a list; a `ski@v1` reason without `check`; `why` on
+  a record with no computable WarrantID; `under: [5]` at settlement grade. Two
+  were **validity splits from Go**, the class this project ranks first: `HEX64`
+  was `^…$`, and Python's `$` matches before a trailing newline, so
+  `"<64 hex>\n"` was a valid hash in Python and not in Go (now `\A…\Z`); and
+  `"ski": true` passed `ski != 1` (`True == 1`) and ran as a v1 check blob.
+  **[protocol-visible]** in that the reference now refuses what SPEC and Go
+  always refused. JSON nesting depth was the interpreter's stack (~990 to parse,
+  ~500 to canonicalize, varying with the caller); it is now an explicit bound of
+  **512**, checked before parsing, identical in Python, Go and Rust — documents
+  deeper than that, which previously crashed or depended on the stack, are now
+  uniformly "malformed JSON (nesting too deep)". `tests/reference_defects_2026_10.py`
+  is red on the pre-fix reference for every case and green after, in all three
+  implementations.
+
 - **`warrant-mcp` no longer loses a call when the host reuses a request id.** Two
   `tools/call` with one id, both outstanding, used to leave one entry in `pending`: the
   first call vanished from the pack and the second was sealed with the first's result,

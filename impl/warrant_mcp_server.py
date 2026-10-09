@@ -61,7 +61,7 @@ from pathlib import Path
 # one this module ships is a listing that points at the wrong artifact.
 __version__ = "0.9.0"
 PROTOCOL_VERSION = "2025-06-18"
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
+HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")   # not ^...$: `$` admits a trailing newline
 SUBPROCESS_TIMEOUT = 120
 
 

@@ -1,13 +1,26 @@
 [package]
-name = "warrant-rs"
-version = "0.1.0"
+name = "warrant-verify"
+version = "0.9.0"
 edition = "2021"
+rust-version = "1.78"
+description = "Independent, dependency-free Rust implementation of the Warrant decision-record format: canonical WarrantIDs, Ed25519 signatures, ski@v1 re-execution, and base- and settlement-grade store verification, held byte-for-byte to the reference implementation."
+license = "MIT"
+repository = "https://github.com/s0fractal/warrant"
+homepage = "https://github.com/s0fractal/warrant"
+documentation = "https://docs.rs/warrant-verify"
+readme = "README.md"
+keywords = ["provenance", "verification", "ed25519", "canonical-json", "decision-records"]
+categories = ["command-line-utilities", "cryptography", "encoding"]
+include = ["src/**/*.rs", "tests/**/*.rs", "tests/vectors/**", "README.md", "LICENSE", "Cargo.toml", "Cargo.lock"]
 
-# Third independent implementation of the Warrant canonicalization + schema +
-# WarrantID + weak-key layer (SPEC §2/§3/§4/§5/§8), from scratch, NO external
-# crates — mirroring sigma-glyph's impl-rs discipline. Ed25519 signature
-# verification is a separate increment; this binary covers the layer where the
-# consensus-split bugs live (JCS escaping, dup keys, note length, ts, weak keys).
+# Independent implementation of the Warrant format (SPEC §2–§9, §11), from
+# scratch and with NO external crates — SHA-256, SHA-512, Ed25519, I-JSON and
+# RFC 8785 are all written here, so that agreement with the reference is
+# evidence about the specification rather than about a shared library.
+
+[lib]
+name = "warrant_verify"
+path = "src/lib.rs"
 
 [[bin]]
 name = "warrant-rs"

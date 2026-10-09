@@ -230,12 +230,49 @@ func readJSON(path string) (map[string]any, error) {
 // non-object top level. Using it for genesis.json closes the divergence where Go
 // accepted a duplicate `roots` key that Python rejected under the same pinned
 // digest.
+// maxJSONDepth is the explicit nesting bound shared with the Python
+// (MAX_JSON_DEPTH) and Rust (json::MAX_DEPTH) implementations. Python's limit
+// used to be its interpreter stack (and its canonicalizer crashed near 500),
+// while this decoder went to 10000: one store, three reports.
+const maxJSONDepth = 512
+
+// jsonTooDeep reports whether data opens more than maxJSONDepth arrays/objects
+// at once, counting brackets outside strings only. A pure scan, identical to
+// Python's _check_json_depth; syntax is the decoder's business.
+func jsonTooDeep(data []byte) bool {
+	depth, inStr, esc := 0, false, false
+	for _, c := range data {
+		switch {
+		case inStr && esc:
+			esc = false
+		case inStr && c == '\\':
+			esc = true
+		case inStr && c == '"':
+			inStr = false
+		case inStr:
+		case c == '"':
+			inStr = true
+		case c == '[' || c == '{':
+			depth++
+			if depth > maxJSONDepth {
+				return true
+			}
+		case c == ']' || c == '}':
+			depth--
+		}
+	}
+	return false
+}
+
 func decodeStrictJSON(data []byte) (map[string]any, error) {
 	// One shared I-JSON domain. Go's encoding/json silently substitutes U+FFFD for
 	// malformed UTF-8, which Python (read_text/decode utf-8) rejects — a real
 	// trust/genesis authority split. Reject invalid UTF-8 up front so both agree.
 	if !utf8.Valid(data) {
 		return nil, errors.New("invalid UTF-8")
+	}
+	if jsonTooDeep(data) {
+		return nil, errors.New("malformed JSON (nesting too deep)")
 	}
 	// RFC 7493 I-JSON: strings must be valid Unicode. A lone-surrogate escape
 	// (\ud800 not forming a pair) is valid ASCII bytes, so utf8.Valid passes it;
@@ -869,6 +906,9 @@ func hash32Hex(h [32]byte) string {
 
 func parseSkiCheckBlob(data []byte) (skiCheck, error) {
 	var out skiCheck
+	if jsonTooDeep(data) {
+		return out, errors.New("malformed check blob (nesting too deep)")
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	var v any
@@ -1991,7 +2031,7 @@ func settlementAdmissibility(records map[string]map[string]any, blobs map[string
 
 func parsePolicyBlob(blobs map[string][]byte, h string) (map[string]any, bool) {
 	raw := blobs[h]
-	if raw == nil {
+	if raw == nil || jsonTooDeep(raw) {
 		return nil, false
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
@@ -2126,7 +2166,7 @@ func policiesSatisfied(blobs map[string][]byte, wid string, env map[string]any, 
 
 func parseKeyBlob(blobs map[string][]byte, h string) (string, string, bool) {
 	raw := blobs[h]
-	if raw == nil {
+	if raw == nil || jsonTooDeep(raw) {
 		return "", "", false
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))

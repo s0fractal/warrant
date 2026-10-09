@@ -180,10 +180,12 @@ proxy for somebody else's downstream MCP server. See
 | Releases and artifacts | [`PUBLISHING.md`](PUBLISHING.md) and [`CHANGELOG.md`](CHANGELOG.md) |
 
 The Python reference implements the five filing verbs and settlement. Go is an
-independent verify/settle implementation. Rust is a from-scratch base-grade
-implementation including Ed25519 verification. All three were produced within
-one author/model lineage: agreement is conformance evidence, not independent
-custody or adoption.
+independent verify/settle implementation. Rust (`impl-rs/`, the `warrant-verify`
+crate) is a from-scratch, dependency-free implementation of the whole `warrant`
+CLI — filing, settlement grade, `ski@v1` re-execution, Ed25519 signing and
+verification — held to the reference's output byte for byte by
+`tests/rs_parity.py`. All three were produced within one author/model lineage:
+agreement is conformance evidence, not independent custody or adoption.
 
 ```bash
 python3 impl/warrant.py conformance examples
