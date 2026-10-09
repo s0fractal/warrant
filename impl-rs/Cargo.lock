@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "warrant-rs"
-version = "0.1.0"
+name = "warrant-verify"
+version = "0.9.0"

@@ -8,14 +8,15 @@ also what a runner that asks nothing returns. So each implementation is checked
 against the shape of result it should produce, not merely against success:
 
   * the grade ACHIEVED is the one that implementation actually implements —
-    settlement for Python and Go, base for Rust. Rust reaching base is a pass
-    here, not a failure to reach settlement, and the suite fails if the runner
-    ever reports Rust as settlement-grade;
+    settlement for all three (Rust reached it on 2026-10-09; until then it was
+    base, and this suite failed if the runner ever reported it as settlement);
   * MUST-REJECT vectors actually RAN. A run whose negative half was skipped is
     passed by an implementation that accepts everything, so a zero here is a
     failure even when nothing failed;
-  * nothing is UNRUN inside a claimed grade, and Rust's above-grade vectors are
-    reported NOT-CLAIMED rather than silently omitted;
+  * nothing is UNRUN inside a claimed grade, and a base-only candidate's
+    above-grade vectors are reported NOT-CLAIMED rather than silently omitted
+    (tests/fixtures/base_only_candidate.py is that candidate, now that no
+    implementation here is base-only);
   * the negative control is detected. `--self-check` corrupts each
     implementation on purpose and the runner must go red for every mutation.
 
@@ -77,8 +78,7 @@ def main():
     cases = [
         ("python", PY, "settlement", EXIT_OK),
         ("go", f"{GO} probe", "settlement", EXIT_OK),
-        # Rust implements SPEC §6 and not §7. Base IS its correct result.
-        ("rust", f"{RS} probe", "base", EXIT_OK),
+        ("rust", f"{RS} probe", "settlement", EXIT_OK),
     ]
     for label, candidate, want_grade, want_exit in cases:
         report, code = run_json(candidate)
@@ -98,23 +98,30 @@ def main():
               report["negatives_accepted"] == 0,
               f"{report['negatives_accepted']} accepted")
 
-    # The asymmetry must be VISIBLE, not smoothed over: Rust's settlement-grade
-    # vectors are reported as not claimed rather than quietly dropped.
-    rs_report, _ = run_json(f"{RS} probe")
-    check("rust: above-grade vectors reported NOT-CLAIMED",
-          rs_report["counts"]["NOT-CLAIMED"] > 0,
+    # The asymmetry must be VISIBLE, not smoothed over: a base-only
+    # candidate's settlement-grade vectors are reported as not claimed rather
+    # than quietly dropped. No implementation here is base-only any more, so
+    # the control is a proxy that declines exactly the §7 questions.
+    base_only = (f"{sys.executable} {ROOT / 'tests' / 'fixtures' / 'base_only_candidate.py'}"
+                 f" -- {RS} probe")
+    bo_report, code = run_json(base_only)
+    check("base-only control: reaches base grade, exit 0",
+          bo_report["grade_achieved"] == "base" and code == EXIT_OK,
+          f"grade={bo_report['grade_achieved']} exit={code}")
+    check("base-only control: above-grade vectors reported NOT-CLAIMED",
+          bo_report["counts"]["NOT-CLAIMED"] > 0,
           "settlement vectors vanished from the report")
-    check("rust: declares base grade for itself",
-          rs_report["declared"]["grade"] == "base",
-          rs_report["declared"].get("grade"))
+    check("base-only control: declares base grade for itself",
+          bo_report["declared"]["grade"] == "base",
+          bo_report["declared"].get("grade"))
 
     # Forcing a base-only implementation to claim settlement must surface the
     # gap as UNRUN and withhold the grade -- never as a quiet pass.
-    forced, code = run_json(f"{RS} probe", extra=("--claim", "settlement"))
-    check("rust forced to claim settlement: gap reported as UNRUN",
+    forced, code = run_json(base_only, extra=("--claim", "settlement"))
+    check("base-only forced to claim settlement: gap reported as UNRUN",
           forced["counts"]["UNRUN"] > 0 and forced["counts"]["FAIL"] == 0,
           json.dumps(forced["counts"]))
-    check("rust forced to claim settlement: grade withheld, exit 2",
+    check("base-only forced to claim settlement: grade withheld, exit 2",
           forced["grade_achieved"] == "base" and code == EXIT_GRADE_NOT_MET,
           f"grade={forced['grade_achieved']} exit={code}")
 

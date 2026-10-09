@@ -40,7 +40,7 @@ no account:
 python3 tools/check.py                  # everything, one verdict
 ```
 
-That runs all 61 checks the repository's claims rest on and prints one line. A
+That runs all 65 checks the repository's claims rest on and prints one line. A
 check that could not run — Go not built, oracle missing — is reported UNRUN with
 its own exit status, never as passed: a harness printing ALL PASS while silently
 skipping the Go suites would be claiming two implementations agreed on the
@@ -138,8 +138,10 @@ else's namespace is a false claim about who defines it.
   the EU AI Act record-keeping clause, with its gaps stated in the same document.
 - Three implementations that agree on every vector: `impl/` (Python), `impl-go/`,
   `impl-rs/` (no third-party crates, own SHA-256 and Ed25519). All three now also
-  agree on whether a **store** verifies, on broken stores as well as clean ones —
-  bounded by SA-6 (base grade) in the threat model.
+  agree on whether a **store** verifies, on broken stores as well as clean ones,
+  at base and settlement grade. The Rust one (the `warrant-verify` crate) is
+  also held to the Python reference's exact output — every report line, exit
+  status and written byte — by `tests/rs_parity.py`.
 - **Signatures are domain-separated as of SPEC v0.4**: the signed message is
   `"warrant-sig-v1:" || WarrantID_raw`, 47 bytes, still pure RFC 8032 Ed25519.
   The pre-0.6.0 bare-WarrantID message MUST NOT verify and nothing accepts both.

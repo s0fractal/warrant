@@ -26,6 +26,26 @@ right.
 
 ## Unreleased
 
+- **The Rust implementation reaches the reference: the whole `warrant` CLI, held
+  to its output byte for byte, and prepared for crates.io as `warrant-verify`.**
+  `impl-rs` was a base-grade verifier (canon, schema, WarrantIDs, Ed25519
+  verification, §6 store checks). It now implements every verb of the reference
+  CLI — `init keygen blob policy propose accept reject supersede why check
+  verify settle resign conformance selftest probe canon`, with the same flags —
+  including settlement grade (§5.1 key state, §7 tunnels and fingerprints, §9
+  roots and thresholds), `ski@v1` re-execution (a port of the pinned Book I v0.5
+  evaluator, resource limits and their sampling cadence included), Ed25519
+  signing, and the `warrant.verify-report@v0` report. Still no dependencies and
+  no `unsafe`. On the conformance pack it reaches **settlement** grade, 139/139.
+  `tests/rs_parity.py` compares its stdout, exit status and written bytes with
+  the reference's over every reference-CLI call in the adversarial harnesses,
+  fuzzed settlement stores (with a 29-branch coverage floor), the whole pack and
+  fuzzed near-JSON; it has a negative control. CI gains a parallel `rust` job. `tests/conformance_runner.py` and
+  `tests/verify_three_way.py` now expect settlement grade from Rust and ask both
+  grades; the runner's base-only path is kept under test by a proxy candidate
+  (`tests/fixtures/base_only_candidate.py`). No protocol surface moved by the
+  port itself.
+
 - **Eleven reference defects found by the port, fixed in `impl/warrant.py`.**
   Each is a store anyone with write access can produce. Nine crashed the
   verifier outright (one record took the whole report down): a float in a ski

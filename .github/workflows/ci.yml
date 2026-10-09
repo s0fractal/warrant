@@ -30,6 +30,60 @@ env:
   SIGMA_PIN: c5ab2ab218bbeaaf4d80d2e49be2cc7b48fb7f37
 
 jobs:
+  rust:
+    # The Rust implementation (impl-rs, published as the `warrant-verify` crate)
+    # held to the reference byte for byte. Its own job so it runs beside `test`
+    # rather than after it. Python 3.14, not `test`'s 3.12: the reference's
+    # parse-error wording is its interpreter's (3.13 changed it), and the Rust
+    # implementation reproduces the current one -- tests/rs_parity.py refuses an
+    # older interpreter rather than calling its wording a Rust divergence.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.14' }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version: '1.22' }
+      - run: >-
+          python3 -m pip install --only-binary=:all:
+          'cryptography==45.0.7'
+      - name: Build Go and Rust implementations
+        run: |
+          (cd impl-go && go build -o warrant-go .)
+          (cd impl-rs && cargo build --release --locked)
+      - name: "Rust crate: format, lint, unit + integration tests"
+        run: |
+          cd impl-rs
+          cargo fmt --check
+          cargo clippy --release --locked --all-targets -- -D warnings
+          cargo test --release --locked
+      # `rust-version` in Cargo.toml is a promise to everyone who installs the
+      # crate; this is what keeps it one.
+      - name: "Rust crate: builds and tests on its declared rust-version"
+        run: |
+          cd impl-rs
+          MSRV=$(python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['package']['rust-version'])")
+          rustup toolchain install "$MSRV" --profile minimal
+          cargo +"$MSRV" test --locked --target-dir target/msrv
+      - name: "Rust: settlement grade on the conformance pack (139/139, no UNRUN)"
+        run: python3 conformance/run.py --candidate "./impl-rs/target/release/warrant-rs probe" --claim settlement
+      - name: "Rust: settlement-grade verification of the repo's own store + selftest"
+        run: |
+          ./impl-rs/target/release/warrant-rs verify --settlement --trust-config trust-config.json
+          ./impl-rs/target/release/warrant-rs selftest
+      - name: "Three-way agreement at both grades (PY/GO/RS)"
+        run: python3 tests/verify_three_way.py
+      - name: "Reference defects found by the Rust port: no crash, PY=RS(=GO)"
+        run: python3 tests/reference_defects_2026_10.py
+      - name: "Conformance runner: PY/GO/RS reach settlement; base-only control"
+        run: python3 tests/conformance_runner.py
+      - name: "Rust = reference, byte for byte (shadowed harnesses + settlement fuzz)"
+        run: python3 tests/rs_parity.py --stores 80
+      # What `cargo publish` would upload, built and tested from the packaged
+      # files alone -- so a missing `include` fails here, not on crates.io.
+      - name: "Crate packages and builds from its own files"
+        run: cd impl-rs && cargo package --locked
+
   test:
     # Codex v0.3 hardening audit P2-c: for a repo centered on reproducible
     # settlement, dependencies should be immutable. Every action in this repo is

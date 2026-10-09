@@ -15,16 +15,16 @@ each defect found and fixed on 2026-07-29.
 
 SCOPE, STATED
 -------------
-Rust implements SPEC §6 at BASE grade only: no settlement, no key state, no trust
-config. Python is therefore run with its oracle made unreachable and without a
-trust config, so all three are being asked the same question. Comparing Rust
-against settlement-grade Python would be comparing two different questions and
-calling the difference a divergence.
+Every case is asked twice: at BASE grade (SPEC §6) and at SETTLEMENT grade
+(§5.1/§7/§9, with the repository's own trust config), and all three
+implementations must agree on both. Until 2026-10-09 Rust was base-grade only,
+with no `ski@v1` evaluator, so Python was run here with its oracle made
+unreachable and only the base question was asked; Rust now implements both
+grades and re-executes `ski@v1`, so every implementation runs as shipped.
 
-`ski@v1` re-execution is not available in Rust, and it reports
-`ski@v1 unverified: runtime unavailable` -- exactly what Python prints when its
-oracle is absent. That is why the counts are comparable at all, and it is the
-reason "was not executed" must never look like "ran and matched".
+Agreement here is on (records, errors, warnings). Byte-identical report text
+between Python and Rust is asserted separately, over every reference-CLI call
+in the test suite, by tests/rs_parity.py.
 """
 import json
 import os
@@ -40,14 +40,12 @@ GO = ROOT / "impl-go" / "warrant-go"
 RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
 SUMMARY = re.compile(r"verify:\s*(\d+) records?,\s*(\d+) errors?,\s*(\d+) warnings?")
 
-# Python must be asked the BASE-grade question: a copy with no bundled oracle
-# beside it, an empty HOME so the conventional checkout is not found, and no
-# SIGMA_GLYPH. Anything less and the comparison is between different questions.
-_PY_DIR = tempfile.mkdtemp(prefix="threeway-py-")
-shutil.copy2(ROOT / "impl" / "warrant.py", _PY_DIR)
-_HOME = tempfile.mkdtemp(prefix="threeway-home-")
-_ENV = {k: v for k, v in os.environ.items() if k != "SIGMA_GLYPH"}
-_ENV["HOME"] = _HOME
+# Python runs as shipped, on its pinned bundled evaluator: no SIGMA_GLYPH
+# override (an unpinned evaluator is refused at settlement grade by design).
+_PY = ROOT / "impl" / "warrant.py"
+_ENV = {k: v for k, v in os.environ.items()
+        if k not in ("SIGMA_GLYPH", "WARRANT_SIGMA_DIFFERENTIAL")}
+TRUST = ROOT / "trust-config.json"
 
 
 def counts(text):
@@ -55,15 +53,17 @@ def counts(text):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
-def run_all(store):
+def run_all(store, settlement=False):
     out = {}
-    r = subprocess.run([sys.executable, os.path.join(_PY_DIR, "warrant.py"),
-                        "--store", str(store), "verify"],
+    extra = ["--settlement", "--trust-config", str(TRUST)] if settlement else []
+    r = subprocess.run([sys.executable, str(_PY), "--store", str(store), "verify"] + extra,
                        capture_output=True, text=True, env=_ENV)
     out["py"] = counts(r.stdout + r.stderr)
-    r = subprocess.run([str(GO), "verify", str(store)], capture_output=True, text=True)
+    r = subprocess.run([str(GO), "verify"] + extra + [str(store)],
+                       capture_output=True, text=True, env=_ENV)
     out["go"] = counts(r.stdout + r.stderr)
-    r = subprocess.run([str(RS), "verify", str(store)], capture_output=True, text=True)
+    r = subprocess.run([str(RS), "--store", str(store), "verify"] + extra,
+                       capture_output=True, text=True, env=_ENV)
     out["rs"] = counts(r.stdout + r.stderr)
     return out
 
@@ -84,17 +84,18 @@ def main():
             shutil.copytree(src, store)
             if mutate:
                 mutate(store)
-            got = run_all(store)
-            agree = got["py"] is not None and got["py"] == got["go"] == got["rs"]
-            good = agree
-            if good and expect_errors is not None:
-                # A case that produces no error proves nothing about the defect it
-                # was written for: three implementations agreeing on "fine" is not
-                # agreement that something is broken.
-                good = (got["py"][1] > 0) if expect_errors else (got["py"][1] == 0)
-            print(("OK   " if good else "FAIL "), f"{label:44s}",
-                  f"py={got['py']} go={got['go']} rs={got['rs']}")
-            ok &= good
+            for grade in ("base", "settlement"):
+                got = run_all(store, settlement=grade == "settlement")
+                agree = got["py"] is not None and got["py"] == got["go"] == got["rs"]
+                good = agree
+                if good and expect_errors is not None:
+                    # A case that produces no error proves nothing about the defect it
+                    # was written for: three implementations agreeing on "fine" is not
+                    # agreement that something is broken.
+                    good = (got["py"][1] > 0) if expect_errors else (got["py"][1] == 0)
+                print(("OK   " if good else "FAIL "), f"{label + ' [' + grade + ']':58s}",
+                      f"py={got['py']} go={got['go']} rs={got['rs']}")
+                ok &= good
 
     case("clean store", None, expect_errors=False)
 
@@ -154,7 +155,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         missing = str(Path(tmp) / "nope")
         rcs = {
-            "py": subprocess.run([sys.executable, os.path.join(_PY_DIR, "warrant.py"),
+            "py": subprocess.run([sys.executable, str(_PY),
                                   "--store", missing, "verify"],
                                  capture_output=True, env=_ENV).returncode,
             "go": subprocess.run([str(GO), "verify", missing],
@@ -167,8 +168,6 @@ def main():
               f"exit={rcs}")
         ok &= good
 
-    shutil.rmtree(_PY_DIR, ignore_errors=True)
-    shutil.rmtree(_HOME, ignore_errors=True)
     print(f"\nTHREE-WAY VERIFY: {'ALL AGREE' if ok else 'DIVERGENCE'}")
     return 0 if ok else 1
 
