@@ -26,6 +26,22 @@ right.
 
 ## Unreleased
 
+- **Telemetry correlation: warrant beside OpenTelemetry, joined by
+  `tool_use_id`.** `docs/telemetry-correlation.md` synthesises two external
+  drafts that proposed putting WarrantIDs on spans, keeps their aim and replaces
+  the mechanism the integration study had declined (an agent signing its own
+  telemetry). The PreToolUse hook now binds `tool_use_id`, `session_id`, the
+  tool input and any `TRACEPARENT` it is handed into the **signed subject**
+  (`warrant.tool-call@v0`, built by `warrant_approval.tool_call_subject`) rather
+  than a prose reason. `tools/otel_audit.py` (stdlib only) reads an OTLP/JSON
+  export and a store and classifies each call: `store-invalid`, `misbound`,
+  `contradiction`, `unwarranted` (exit 1), `telemetry-missing`, `corroborated`,
+  `not-hook`, with a reason column (`reruns` for a re-executed `ski@v1` check).
+  Its fixtures are synthesised from the documented Claude Code / Claude API event
+  shapes, not captured; the selftest is wired into `tools/check.py`
+  and was mutation-tested; `demos/otel-vs-warrant/` walks six scenes (edited export, API refusal with no span, dropped batch, relabelled pointer, edited evidence, a re-run reason) and asserts each (69 checks). No protocol surface moved; `warrant.otel-audit@v0` is
+  a non-normative tool output. Self-tested only; no independent gate ran.
+
 - **Browser lab and Rust-to-WASM adapter.** A static Pages frontend explains
   the format, opens a repository-pinned signed example or local record/store,
   returns the existing verify-report schema and re-executes `ski@v1` locally.

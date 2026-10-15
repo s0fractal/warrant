@@ -157,6 +157,13 @@ CHECKS = [
     # That asymmetry against the LangGraph binding is the study's whole argument.
     ("pretooluse hook binding (wire format, fail-open recording, tamper control)",
      ["python3", "integrations/approval/examples/test_pretooluse_hook.py"], None),
+    # Joins a telemetry export to a store by the tool_use_id the hook binds.
+    # Stdlib only and fixtures synthesised from the documented event shapes, so
+    # it runs on a clean checkout; see docs/telemetry-correlation.md.
+    ("telemetry correlation audit (join on tool_use_id; tamper, loss, relabel controls)",
+     ["python3", "tools/otel_audit.py", "selftest"], None),
+    ("otel-vs-warrant demo (six scenes, each asserts its outcome)",
+     ["python3", "demos/otel-vs-warrant/demo.py"], None),
     ("documented CLI surface exists",
      ["python3", "tools/check_release_surface.py"], None),
     ("gate settlement rule (47 cases)",

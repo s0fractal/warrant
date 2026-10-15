@@ -73,6 +73,33 @@ class ApprovalError(Exception):
     """A filing could not be made. Never raised to mean 'denied'."""
 
 
+# The subject of a sanctioned tool call, in a shape an auditor can join to
+# telemetry (tools/otel_audit.py, docs/telemetry-correlation.md). The ids are
+# the ones the harness hands the hook and also writes into its own telemetry;
+# binding them into the SIGNED subject is what lets a reader holding a trace
+# find the warrant, and a reader holding the warrant find the trace, without
+# anyone writing to a span. The tool input is kept whole: the store is the
+# operator's own evidence and already held it; a digest of a short command
+# would hide nothing (it is guessable) and would lose what was refused.
+TOOL_CALL_SUBJECT = "warrant.tool-call@v0"
+
+
+def tool_call_subject(tool_name, tool_input, tool_use_id, session_id=None,
+                      traceparent=None):
+    """The subject text for one tool call. Deterministic: same call, same hash."""
+    if not isinstance(tool_use_id, str) or not tool_use_id.strip():
+        raise ApprovalError("a tool-call subject needs the harness's tool_use_id")
+    doc = {"type": TOOL_CALL_SUBJECT, "tool_name": str(tool_name),
+           "tool_input": tool_input if tool_input is not None else {},
+           "tool_use_id": tool_use_id}
+    if session_id:
+        doc["session_id"] = str(session_id)
+    if traceparent:
+        doc["traceparent"] = str(traceparent)
+    return json.dumps(doc, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False)
+
+
 class Boundary:
     """One approval boundary: a store, a policy, and two custodies.
 
@@ -181,7 +208,8 @@ class Boundary:
         return wid
 
     # -- the two verbs that matter ---------------------------------------
-    def record_request(self, action, requester, reasons=(), evidence=()):
+    def record_request(self, action, requester, reasons=(), evidence=(),
+                       note=None):
         """An actor asks to do `action`. Returns the propose WarrantID.
 
         `action` is free text describing the thing to be sanctioned; it is
@@ -195,7 +223,7 @@ class Boundary:
             with os.fdopen(fd, "w") as f:
                 f.write(str(action))
             argv = ["propose", "--subject", tmp, "--under", self.policy,
-                    "--note", f"requested: {str(action)[:120]}",
+                    "--note", note or f"requested: {str(action)[:120]}",
                     "--actor", str(requester)]
             for r in reasons:
                 argv += ["--reason", str(r)]
