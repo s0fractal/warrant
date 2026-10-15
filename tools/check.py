@@ -218,6 +218,13 @@ CHECKS = [
      ["python3", "tests/rs_parity.py", "--stores", "60"], "go+rs+py313"),
     # Found while porting: hostile stores that crashed the reference verifier or
     # split its validity verdict from Go's. Red on the pre-fix reference.
+    # Finer than the three-way counts: every finding's (level, subject) over
+    # fuzzed settlement stores, plus a threshold policy in ten encodings.
+    # Found Go adopting a root on one signature when a 2-of-2 policy was
+    # UTF-16/BOM-encoded (Python/Rust fail closed), a silent ski@v1 skip, and
+    # per-hash instead of per-reference counting.
+    ("Python and Go report the same findings (level, subject), not just counts",
+     ["python3", "tests/go_findings_parity.py"], "go"),
     ("reference defects found by the Rust port (2026-10): no crash, PY=RS(=GO)",
      ["python3", "tests/reference_defects_2026_10.py"], "go+rs"),
     # SPEC §5 signature domain separation, in force since 0.6.0 (DEC-001).
