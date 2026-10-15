@@ -1351,19 +1351,6 @@ def _validate_trust_config(doc):
     return None
 
 
-def _trust_config_path(path):
-    """The trust config `trust` may write: a `.json` file inside the current
-    directory, by its real path. `--config` arrives from whoever runs the CLI --
-    increasingly an agent -- and a writer that follows `../` or a symlink out of
-    the working directory is a write primitive, not a convenience."""
-    base = os.path.realpath(os.getcwd())
-    real = os.path.realpath(path)
-    if not real.startswith(base + os.sep) or not real.endswith(".json"):
-        sys.exit(f"{path}: a trust config must be a .json file inside the current "
-                 f"directory; refusing")
-    return Path(real)
-
-
 def _trust_load(path, p):
     """The existing config, validated -- or {} when there is none yet."""
     if not p.exists():
@@ -1419,15 +1406,24 @@ def trust_edit(path, store, actor=None, pubkey=None, root=None):
     refused, never rewritten, and nothing outside the working directory is
     written at all.
     """
-    p = _trust_config_path(path)
-    doc = _trust_load(path, p)
+    # Only a `.json` file inside the current directory, by its real path.
+    # `--config` arrives from whoever runs the CLI -- increasingly an agent --
+    # and a writer that follows `../` or a symlink out of the working
+    # directory is a write primitive, not a convenience.
+    base = os.path.realpath(os.getcwd())
+    real = os.path.realpath(path)
+    if not real.startswith(base + os.sep) or not real.endswith(".json"):
+        sys.exit(f"{path}: a trust config must be a .json file inside the current "
+                 f"directory; refusing")
+    doc = _trust_load(path, Path(real))
     if actor is not None:
         msg = _trust_add_key(path, doc, actor, pubkey)
     else:
         msg = _trust_add_root(path, doc, store, root)
     if msg is None:
         return
-    p.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with open(real, "w", encoding="utf-8") as f:
+        f.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
     print(msg)
 
 
