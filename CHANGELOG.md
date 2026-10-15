@@ -26,6 +26,17 @@ right.
 
 ## Unreleased
 
+- **Disclosed: a §9 threshold does not bind adoption in any implementation.**
+  SPEC §9 admits an adopted root only if the adoption satisfies "the adopting
+  root's current settlement policy, including any threshold rule"; Python, Go and
+  Rust all evaluate instead the policies the adoption record itself cites, which
+  its filer chooses — so a genesis root filed under a 2-of-2 threshold admits a
+  root on one signature, 0 errors, 0 warnings
+  (`proposals/wrt-014-model/reproduce.py`). THREAT-MODEL SA-7 now says so;
+  [WRT-014](proposals/WRT-014-adoption-policy-binding.md) lays out the readings
+  and options (fail-closed A/B, documentation-only C) and **decides none** — it is
+  a settlement-semantics change for the owner. No behaviour changed.
+
 - **Three Go consensus defects, found by comparing findings rather than counts.**
   (1) A threshold policy re-encoded as UTF-16, UTF-32 or with a UTF-8 BOM (also:
   with a `NaN` member) was "not JSON" to `encoding/json`, so `warrant-go` treated
