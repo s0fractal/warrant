@@ -195,6 +195,10 @@ still the log. Reach is not free when what travels is a weaker claim.
 the fourth would remain true even if OTel added an approval convention tomorrow,
 unless the signer's custody were separated from the agent's.
 
+*Revisited 2026-10-15 in [`telemetry-correlation.md`](telemetry-correlation.md):
+this verdict on a bridge stands; a record made at the harness hook and joined to
+telemetry by `tool_use_id` is proposed there as a separate candidate.*
+
 ---
 
 ## Candidate 3 — the approval boundary itself
