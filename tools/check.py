@@ -99,6 +99,10 @@ CHECKS = [
      ["python3", "tools/schema_check.py"], None),
     ("why/verify agree on what \"signed\" means (SPEC §5 co-signatures)",
      ["python3", "tests/why_signature_predicate.py"], None),
+    # The quickstart's path to a green settlement-grade report, and the JSON
+    # walk agents read; Python always, Rust when built (it names a skip).
+    ("trust add/root reach green; why --json walks what why prints",
+     ["python3", "tests/trust_and_why_json.py"], None),
     ("pedantic edges (parity on the awkward cases)",
      ["python3", "tests/pedantic_edges.py"], "go"),
     ("ski@v1 policy predicates (real re-execution)",

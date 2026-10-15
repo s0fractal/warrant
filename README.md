@@ -48,15 +48,17 @@ warrant init
 warrant keygen --out me.key
 printf 'demo diff\n' > diff.patch
 printf 'clause 1: no coverage drop\n' > policy.txt
-printf '#!/bin/sh\nexit 1\n' > check.sh && chmod +x check.sh
+printf '#!/bin/sh\necho coverage 71%%; exit 1\n' > check.sh && chmod +x check.sh
 
 POL=$(warrant policy add policy.txt)
 P=$(warrant propose --subject diff.patch --under "$POL" \
       --reason "utility functions needed" --actor me@host --key me.key)
-R=$(warrant reject "$P" --check check.sh --verdict fail \
+./check.sh > run1.txt
+R=$(warrant reject "$P" --check check.sh --verdict fail --transcript run1.txt \
       --reason "clause 1: coverage drop" --actor me@host --key me.key)
-printf '#!/bin/sh\nexit 0\n' > check.sh
-A=$(warrant accept "$R" --check check.sh --verdict pass \
+printf '#!/bin/sh\necho coverage 84%%; exit 0\n' > check.sh
+./check.sh > run2.txt
+A=$(warrant accept "$R" --check check.sh --verdict pass --transcript run2.txt \
       --actor me@host --key me.key)
 
 warrant why "$A"
@@ -65,7 +67,22 @@ warrant verify
 
 Every file used above is created above. The final warnings say that the key-to-
 actor binding is unverified until a trust configuration supplies that authority;
-a valid signature is not silently promoted into a valid identity claim.
+a valid signature is not silently promoted into a valid identity claim. Supplying
+it is two commands — *you* decide which key speaks for `me@host`, and which
+record the chain starts from:
+
+```bash
+warrant trust add --actor me@host --key me.key     # writes trust.json
+warrant trust root "$P"
+warrant verify --settlement --trust-config trust.json   # 0 errors, 0 warnings
+```
+
+The transcripts matter. Without them the accept carries no new evidence and no
+new outcome fingerprint, and settlement grade reports it as a re-litigation that
+cites nothing new — a filer who writes a different word is not a new reason
+(THREAT-MODEL SA-1). warrant never runs `check.sh` itself: a `cmd@v1` verdict
+is the filer's claim, bound to the script and transcript bytes; only `ski@v1`
+reasons are re-executed by the verifier.
 
 The `warrant-verify` distribution installs four commands:
 
@@ -111,6 +128,13 @@ Consumers may rely on these boundaries:
   is human prose and may differ;
 - `grade` distinguishes `base` from `settlement`;
 - the report is unsigned and carries **no Warrant authority**.
+
+`warrant why <WarrantID> --json` emits the same walk `why` prints as one
+`warrant.why@v0` object — every record visited, its status (`verified`,
+`verify_failed`, `missing`) and its whole body — with `why`'s exit status. It is
+a convenience, **not** a SPEC surface: `verified` there means the name recomputes
+and the record carries a valid signature by its actor, not that the key is
+trusted; ask `verify --settlement` for that.
 
 The normative contract is [`SPEC.md` §11](SPEC.md#11-verification-report--warrantverify-reportv0),
 with [`schemas/verify-report-v0.schema.json`](schemas/verify-report-v0.schema.json)
