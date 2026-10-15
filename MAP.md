@@ -44,7 +44,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-011` | this repo, `master` | `proposals/wrt-011-model/aggregation.py` | `proposals/WRT-011-bounded-aggregation.md` |
 | `WRT-012` | this repo, `master` | `experiments/wrt-012-e2e-001/run.py` | `proposals/WRT-012-ownerless-root.md` |
 | `WRT-013` | this repo, `master` | `proposals/WRT-013-ski-v2-admission.md` | `SPEC.md` |
-| `WRT-014` | this repo, `go/policy-classifier` | `proposals/wrt-014-model/reproduce.py` | `proposals/WRT-014-adoption-policy-binding.md` |
+| `WRT-014` | this repo, `origin/master` | `proposals/wrt-014-model/reproduce.py` | `proposals/WRT-014-adoption-policy-binding.md` |
 
 ## Known identifier collisions
 
