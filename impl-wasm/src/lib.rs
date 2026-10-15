@@ -13,7 +13,7 @@ fn error(s: impl ToString) -> JsValue {
 }
 
 fn decode_hex(s: &str) -> Result<Vec<u8>, JsValue> {
-    if s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !s.len().is_multiple_of(2) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(error("File bytes must be hexadecimal pairs"));
     }
     hash::fromhex(s).ok_or_else(|| error("Invalid file bytes"))

@@ -86,5 +86,9 @@ test('a stopped worker rejects without returning a passing report', async () => 
     terminated = false;
     const stopped = callVerifier('verify', example.files);
     worker.onerror();await assert.rejects(stopped, /No passing report/);assert.equal(terminated, true);
+    terminated = false;
+    const controller = new AbortController();
+    const canceled = callVerifier('verify', example.files, { signal: controller.signal });
+    controller.abort();await assert.rejects(canceled, /Stopped by you/);assert.equal(terminated, true);
   } finally { Object.assign(globalThis, saved); }
 });
