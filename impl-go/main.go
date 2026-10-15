@@ -2157,62 +2157,75 @@ func decodeUTF32(b []byte, be bool) (string, bool) {
 // with spaces so it can never join a neighbouring token.
 func normalizePyJSON(t string) (string, bool) {
 	var sb strings.Builder
-	inStr, esc := false, false
 	for i := 0; i < len(t); {
 		c := t[i]
-		if inStr {
-			sb.WriteByte(c)
-			switch {
-			case esc:
-				esc = false
-			case c == '\\':
-				esc = true
-			case c == '"':
-				inStr = false
-			}
-			i++
-			continue
-		}
 		switch {
 		case c == '"':
-			inStr = true
-		case strings.HasPrefix(t[i:], "-Infinity"):
+			j := skipJSONString(t, i+1)
+			sb.WriteString(t[i:j])
+			i = j
+		case pyConstantAt(t, i) > 0:
 			sb.WriteString(" 0 ")
-			i += len("-Infinity")
-			continue
-		case strings.HasPrefix(t[i:], "Infinity"):
-			sb.WriteString(" 0 ")
-			i += len("Infinity")
-			continue
-		case strings.HasPrefix(t[i:], "NaN"):
-			sb.WriteString(" 0 ")
-			i += len("NaN")
-			continue
+			i += pyConstantAt(t, i)
 		case c >= '0' && c <= '9' && (i == 0 || t[i-1] < '0' || t[i-1] > '9'):
-			j := i
-			for j < len(t) && t[j] >= '0' && t[j] <= '9' {
-				j++
-			}
-			frac := j+1 < len(t) && t[j] == '.' && t[j+1] >= '0' && t[j+1] <= '9'
-			exp := false
-			if j < len(t) && (t[j] == 'e' || t[j] == 'E') {
-				k := j + 1
-				if k < len(t) && (t[k] == '+' || t[k] == '-') {
-					k++
-				}
-				exp = k < len(t) && t[k] >= '0' && t[k] <= '9'
-			}
-			if j-i > 4300 && !frac && !exp {
+			j, ok := scanPyNumber(t, i)
+			if !ok {
 				return "", false
 			}
 			sb.WriteString(t[i:j])
 			i = j
-			continue
+		default:
+			sb.WriteByte(c)
+			i++
 		}
-		sb.WriteByte(c)
-		i++
 	}
 	return sb.String(), true
+}
+
+// skipJSONString returns the index just past the string literal whose body
+// starts at i (or len(t) if it never closes); a backslash consumes the next byte.
+func skipJSONString(t string, i int) int {
+	for i < len(t) {
+		switch t[i] {
+		case '\\':
+			i += 2
+		case '"':
+			return i + 1
+		default:
+			i++
+		}
+	}
+	return len(t)
+}
+
+// pyConstantAt is the length of a NaN/Infinity/-Infinity token at i, or 0.
+func pyConstantAt(t string, i int) int {
+	for _, k := range []string{"-Infinity", "Infinity", "NaN"} {
+		if strings.HasPrefix(t[i:], k) {
+			return len(k)
+		}
+	}
+	return 0
+}
+
+// scanPyNumber returns the end of the digit run at i, and false when it is an
+// integer (no fraction or exponent follows) longer than CPython converts.
+func scanPyNumber(t string, i int) (int, bool) {
+	isDigit := func(k int) bool { return k < len(t) && t[k] >= '0' && t[k] <= '9' }
+	j := i
+	for isDigit(j) {
+		j++
+	}
+	frac := j < len(t) && t[j] == '.' && isDigit(j+1)
+	exp := false
+	if j < len(t) && (t[j] == 'e' || t[j] == 'E') {
+		k := j + 1
+		if k < len(t) && (t[k] == '+' || t[k] == '-') {
+			k++
+		}
+		exp = isDigit(k)
+	}
+	return j, j-i <= 4300 || frac || exp
 }
 
 func parsePolicyBlob(blobs map[string][]byte, h string) (map[string]any, bool) {
