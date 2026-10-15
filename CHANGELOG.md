@@ -26,6 +26,13 @@ right.
 
 ## Unreleased
 
+## 0.10.0 — one version, one behaviour, on both registries
+
+`warrant-verify 0.9.0` shipped twice with different code: the PyPI wheel
+(2026-08-01) and the crates.io crate (2026-10, carrying eleven reference fixes).
+0.10.0 is cut from one tag for both, so the same version number again means the
+same verdicts. Release contents, newest first:
+
 - **Disclosed: a §9 threshold does not bind adoption in any implementation.**
   SPEC §9 admits an adopted root only if the adoption satisfies "the adopting
   root's current settlement policy, including any threshold rule"; Python, Go and
@@ -769,7 +776,8 @@ body schema (§2), reasons (§3), JCS canonicalization and WarrantID (§4), the
 envelope and Ed25519 signatures (§5), verification (§6). Python reference
 implementation, five verbs, plain-file store, conformance vectors.
 
-[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/s0fractal/warrant/compare/v0.9.0...v0.10.0
 [0.8.0]: https://github.com/s0fractal/warrant/compare/v0.7.1...v0.8.0
 [0.6.0]: https://github.com/s0fractal/warrant/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/s0fractal/warrant/compare/v0.4.0...v0.5.0
