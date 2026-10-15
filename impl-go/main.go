@@ -2029,15 +2029,199 @@ func settlementAdmissibility(records map[string]map[string]any, blobs map[string
 	return "inadmissible: cites nothing new"
 }
 
-func parsePolicyBlob(blobs map[string][]byte, h string) (map[string]any, bool) {
-	raw := blobs[h]
-	if raw == nil || jsonTooDeep(raw) {
+// lenientJSONLoads reads bytes the way the reference CLASSIFIES a blob
+// (Python's json.loads on bytes, impl/warrant.py _loads_plain): the encoding is
+// detected (UTF-8, UTF-8 with BOM, UTF-16, UTF-32), NaN/Infinity are accepted,
+// trailing content is refused, and an integer of more than 4300 digits is not
+// JSON. It exists for one decision only -- "does this blob DECLARE itself a
+// threshold policy?" -- because the answer must not depend on the decoder.
+//
+// It did. A 2-of-2 threshold policy re-encoded as UTF-16 or prefixed with a
+// UTF-8 BOM was "not JSON" to encoding/json, so Go treated it as an opaque
+// policy and adopted a root on ONE signature, while Python and Rust read the
+// declaration, found the bytes non-canonical and reported `ERR: invalid
+// threshold policy` (fail closed). Same store, different settlement verdict.
+// Canonicality is still judged on the raw bytes by the caller; what this
+// returns only decides whether the blob is a policy at all.
+func lenientJSONLoads(raw []byte) (any, bool) {
+	text, ok := decodeJSONBytes(raw)
+	if !ok || strings.HasPrefix(text, "\ufeff") || jsonTooDeep([]byte(text)) {
 		return nil, false
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
+	norm, ok := normalizePyJSON(text)
+	if !ok {
+		return nil, false
+	}
+	dec := json.NewDecoder(strings.NewReader(norm))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
+		return nil, false
+	}
+	if strings.Trim(norm[dec.InputOffset():], " \t\n\r") != "" {
+		return nil, false
+	}
+	return v, true
+}
+
+// decodeJSONBytes is json.detect_encoding followed by a `surrogatepass`
+// decode; an unpaired surrogate becomes U+FFFD (such a document can never be
+// canonical, which is all the caller then needs to know).
+func decodeJSONBytes(b []byte) (string, bool) {
+	has := func(p ...byte) bool { return bytes.HasPrefix(b, p) }
+	switch {
+	case has(0, 0, 0xfe, 0xff):
+		return decodeUTF32(b[4:], true)
+	case has(0xff, 0xfe, 0, 0):
+		return decodeUTF32(b[4:], false)
+	case has(0xfe, 0xff):
+		return decodeUTF16(b[2:], true)
+	case has(0xff, 0xfe):
+		return decodeUTF16(b[2:], false)
+	case has(0xef, 0xbb, 0xbf):
+		return decodeUTF8Pass(b[3:])
+	case len(b) >= 4 && b[0] == 0:
+		if b[1] != 0 {
+			return decodeUTF16(b, true)
+		}
+		return decodeUTF32(b, true)
+	case len(b) >= 4 && b[1] == 0:
+		if b[2] != 0 || b[3] != 0 {
+			return decodeUTF16(b, false)
+		}
+		return decodeUTF32(b, false)
+	case len(b) == 2 && b[0] == 0:
+		return decodeUTF16(b, true)
+	case len(b) == 2 && b[1] == 0:
+		return decodeUTF16(b, false)
+	}
+	return decodeUTF8Pass(b)
+}
+
+func decodeUTF8Pass(b []byte) (string, bool) {
+	var sb strings.Builder
+	for i := 0; i < len(b); {
+		if b[i] == 0xed && i+2 < len(b) && b[i+1] >= 0xa0 && b[i+1] <= 0xbf && b[i+2] >= 0x80 && b[i+2] <= 0xbf {
+			sb.WriteRune(utf8.RuneError) // an encoded surrogate: kept by surrogatepass
+			i += 3
+			continue
+		}
+		r, size := utf8.DecodeRune(b[i:])
+		if r == utf8.RuneError && size == 1 {
+			return "", false
+		}
+		sb.WriteRune(r)
+		i += size
+	}
+	return sb.String(), true
+}
+
+func decodeUTF16(b []byte, be bool) (string, bool) {
+	if len(b)%2 != 0 {
+		return "", false
+	}
+	units := make([]uint16, len(b)/2)
+	for i := range units {
+		if be {
+			units[i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
+		} else {
+			units[i] = uint16(b[2*i+1])<<8 | uint16(b[2*i])
+		}
+	}
+	return string(utf16.Decode(units)), true
+}
+
+func decodeUTF32(b []byte, be bool) (string, bool) {
+	if len(b)%4 != 0 {
+		return "", false
+	}
+	var sb strings.Builder
+	for i := 0; i < len(b); i += 4 {
+		var v uint32
+		if be {
+			v = uint32(b[i])<<24 | uint32(b[i+1])<<16 | uint32(b[i+2])<<8 | uint32(b[i+3])
+		} else {
+			v = uint32(b[i+3])<<24 | uint32(b[i+2])<<16 | uint32(b[i+1])<<8 | uint32(b[i])
+		}
+		if v > 0x10ffff {
+			return "", false
+		}
+		sb.WriteRune(rune(v)) // a surrogate value becomes U+FFFD
+	}
+	return sb.String(), true
+}
+
+// normalizePyJSON makes the constants Python's json accepts (NaN, Infinity,
+// -Infinity) parseable by encoding/json, outside strings only, and refuses an
+// integer of more than 4300 digits as CPython does. The replacement is padded
+// with spaces so it can never join a neighbouring token.
+func normalizePyJSON(t string) (string, bool) {
+	var sb strings.Builder
+	inStr, esc := false, false
+	for i := 0; i < len(t); {
+		c := t[i]
+		if inStr {
+			sb.WriteByte(c)
+			switch {
+			case esc:
+				esc = false
+			case c == '\\':
+				esc = true
+			case c == '"':
+				inStr = false
+			}
+			i++
+			continue
+		}
+		switch {
+		case c == '"':
+			inStr = true
+		case strings.HasPrefix(t[i:], "-Infinity"):
+			sb.WriteString(" 0 ")
+			i += len("-Infinity")
+			continue
+		case strings.HasPrefix(t[i:], "Infinity"):
+			sb.WriteString(" 0 ")
+			i += len("Infinity")
+			continue
+		case strings.HasPrefix(t[i:], "NaN"):
+			sb.WriteString(" 0 ")
+			i += len("NaN")
+			continue
+		case c >= '0' && c <= '9' && (i == 0 || t[i-1] < '0' || t[i-1] > '9'):
+			j := i
+			for j < len(t) && t[j] >= '0' && t[j] <= '9' {
+				j++
+			}
+			frac := j+1 < len(t) && t[j] == '.' && t[j+1] >= '0' && t[j+1] <= '9'
+			exp := false
+			if j < len(t) && (t[j] == 'e' || t[j] == 'E') {
+				k := j + 1
+				if k < len(t) && (t[k] == '+' || t[k] == '-') {
+					k++
+				}
+				exp = k < len(t) && t[k] >= '0' && t[k] <= '9'
+			}
+			if j-i > 4300 && !frac && !exp {
+				return "", false
+			}
+			sb.WriteString(t[i:j])
+			i = j
+			continue
+		}
+		sb.WriteByte(c)
+		i++
+	}
+	return sb.String(), true
+}
+
+func parsePolicyBlob(blobs map[string][]byte, h string) (map[string]any, bool) {
+	raw := blobs[h]
+	if raw == nil {
+		return nil, false
+	}
+	v, ok := lenientJSONLoads(raw)
+	if !ok {
 		return nil, false
 	}
 	doc, ok := v.(map[string]any)
@@ -2768,10 +2952,11 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 			if !ok || r["kind"] != "check" || r["runtime"] != "ski@v1" {
 				continue
 			}
-			checkHex, ok := r["check"].(string)
-			if !ok {
-				continue
-			}
+			// A reason with no string `check` is schema-invalid (already an
+			// ERR) but it is still a ski@v1 claim that was not executed, and
+			// SPEC §6(7) forbids a silent skip. Go used to `continue` here while
+			// Python reported it -- a count split on the same store.
+			checkHex, _ := r["check"].(string)
 			got, _, _, err := runSkiCheckFromStore(blobs, checkHex)
 			if err != nil {
 				// "reran and matched" and "not executed" MUST NOT look alike
@@ -2785,8 +2970,8 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 				out(lvl, wid, "ski@v1 unverified: "+err.Error())
 				continue
 			}
-			if claimed, ok := r["verdict"].(string); ok && claimed != got {
-				out("WARN", wid, "ski@v1 verdict mismatch: claimed "+claimed+", got "+got)
+			if claimed, ok := r["verdict"].(string); !ok || claimed != got {
+				out("WARN", wid, "ski@v1 verdict mismatch: claimed "+fmt.Sprint(r["verdict"])+", got "+got)
 			}
 		}
 		if ctx.activeRecords[wid] {
@@ -3046,10 +3231,11 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 			if !ok || r["kind"] != "check" || r["runtime"] != "ski@v1" {
 				continue
 			}
-			checkHex, ok := r["check"].(string)
-			if !ok {
-				continue
-			}
+			// A reason with no string `check` is schema-invalid (already an
+			// ERR) but it is still a ski@v1 claim that was not executed, and
+			// SPEC §6(7) forbids a silent skip. Go used to `continue` here while
+			// Python reported it -- a count split on the same store.
+			checkHex, _ := r["check"].(string)
 			got, _, _, err := runSkiCheckFromStore(blobs, checkHex)
 			if err != nil {
 				// Base verification: an unexecutable ski@v1 claim is a stable
@@ -3058,8 +3244,8 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 				out("WARN", wid, "ski@v1 unverified: "+err.Error())
 				continue
 			}
-			if claimed, ok := r["verdict"].(string); ok && claimed != got {
-				out("WARN", wid, "ski@v1 verdict mismatch: claimed "+claimed+", got "+got)
+			if claimed, ok := r["verdict"].(string); !ok || claimed != got {
+				out("WARN", wid, "ski@v1 verdict mismatch: claimed "+fmt.Sprint(r["verdict"])+", got "+got)
 			}
 		}
 	}
@@ -3321,15 +3507,11 @@ func referencedBlobs(body map[string]any) []string {
 			refs = append(refs, h)
 		}
 	}
-	seen := map[string]bool{}
-	out := make([]string, 0, len(refs))
-	for _, h := range refs {
-		if !seen[h] {
-			seen[h] = true
-			out = append(out, h)
-		}
-	}
-	return out
+	// One finding per REFERENCE, not per distinct hash, as the reference
+	// implementation reports: a hash cited twice (twice in `evidence`, or in
+	// both `under` and `evidence`) that does not resolve is two findings there
+	// and was one here -- the same store had different error counts.
+	return refs
 }
 
 func getArray(m map[string]any, key string) []any {

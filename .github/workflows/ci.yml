@@ -73,6 +73,8 @@ jobs:
           ./impl-rs/target/release/warrant-rs selftest
       - name: "Three-way agreement at both grades (PY/GO/RS)"
         run: python3 tests/verify_three_way.py
+      - name: "Python and Go: same findings (level, subject) on fuzzed settlement stores"
+        run: python3 tests/go_findings_parity.py 80
       - name: "Reference defects found by the Rust port: no crash, PY=RS(=GO)"
         run: python3 tests/reference_defects_2026_10.py
       - name: "Conformance runner: PY/GO/RS reach settlement; base-only control"

@@ -26,6 +26,24 @@ right.
 
 ## Unreleased
 
+- **Three Go consensus defects, found by comparing findings rather than counts.**
+  (1) A threshold policy re-encoded as UTF-16, UTF-32 or with a UTF-8 BOM (also:
+  with a `NaN` member) was "not JSON" to `encoding/json`, so `warrant-go` treated
+  it as an opaque policy and **adopted a root on one signature where the policy
+  asked for two**; Python and Rust read the declaration, found the bytes
+  non-canonical and reported `ERR: invalid threshold policy`. Go now classifies a
+  blob as a policy the way the reference does (`lenientJSONLoads`: encoding
+  detection, NaN/Infinity, trailing content refused, the 4300-digit limit);
+  canonicality is still judged on the raw bytes. (2) A `ski@v1` reason with no
+  string `check` was skipped silently by Go — the silent skip SPEC §6(7)
+  forbids — and is now reported `ski@v1 unverified`. (3) Go reported one finding
+  per distinct referenced hash, the reference one per reference, so a hash cited
+  twice gave different error counts. `tests/go_findings_parity.py` compares every
+  finding's `(level, subject)` over fuzzed settlement stores at both grades and a
+  policy in ten encodings; it is red on the previous Go (7/10 encodings split)
+  and green now (240 reports). **[protocol-visible]** for `warrant-go` users at
+  settlement grade.
+
 - **The quickstart reaches a green settlement-grade report, with two new
   commands, and agents can read `why`.** `warrant trust add --actor ID
   --key FILE|--pubkey HEX` and `warrant trust root WARRANT_ID` create or extend a
