@@ -528,13 +528,64 @@ pub fn why_report(store: &Store, wid: &str) -> Result<Json, Exit> {
 /// local trust configuration (SPEC §12), creating the file if absent. It
 /// writes only what it is told; an existing file that does not validate is
 /// refused, never rewritten.
+/// `os.path.realpath`: the real path even when the file does not exist yet
+/// (its parent is resolved, the name kept). A symlink is followed even when its
+/// target does not exist -- `canonicalize` refuses a dangling link, and a
+/// writer that then took the link's own name would write through it.
+fn real_path(path: &str) -> Option<PathBuf> {
+    let mut abs = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    for _ in 0..40 {
+        if let Ok(r) = std::fs::canonicalize(&abs) {
+            return Some(r);
+        }
+        match std::fs::symlink_metadata(&abs) {
+            Ok(m) if m.file_type().is_symlink() => {
+                let target = std::fs::read_link(&abs).ok()?;
+                abs = abs.parent()?.join(target);
+            }
+            _ => {
+                let parent = std::fs::canonicalize(abs.parent()?).ok()?;
+                return Some(parent.join(abs.file_name()?));
+            }
+        }
+    }
+    None
+}
+
+/// The trust config `trust` may write: a `.json` file inside the current
+/// directory, by its real path (`--config` may come from an agent; a writer
+/// that follows `../` or a symlink out of the working directory is a write
+/// primitive, not a convenience).
+fn trust_config_path(path: &str) -> Result<PathBuf, Exit> {
+    let refuse = || {
+        Exit::msg(format!(
+            "{path}: a trust config must be a .json file inside the current directory; refusing"
+        ))
+    };
+    let base = std::env::current_dir()
+        .ok()
+        .and_then(|d| std::fs::canonicalize(d).ok())
+        .ok_or_else(refuse)?;
+    let real = real_path(path).ok_or_else(refuse)?;
+    let inside = real.starts_with(&base) && real != base;
+    if !inside || !real.to_string_lossy().ends_with(".json") {
+        return Err(refuse());
+    }
+    Ok(real)
+}
+
 pub fn trust_edit(
     path: &str,
     store: &Store,
     add: Option<(&str, &str)>,
     root: Option<&str>,
 ) -> Result<(), Exit> {
-    let p = Path::new(path);
+    let real = trust_config_path(path)?;
+    let p = real.as_path();
     let mut doc = Json::Object(Obj::new());
     if p.exists() {
         let text = std::fs::read_to_string(p).map_err(|e| {

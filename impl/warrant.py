@@ -1351,6 +1351,63 @@ def _validate_trust_config(doc):
     return None
 
 
+def _trust_config_path(path):
+    """The trust config `trust` may write: a `.json` file inside the current
+    directory, by its real path. `--config` arrives from whoever runs the CLI --
+    increasingly an agent -- and a writer that follows `../` or a symlink out of
+    the working directory is a write primitive, not a convenience."""
+    base = os.path.realpath(os.getcwd())
+    real = os.path.realpath(path)
+    if not real.startswith(base + os.sep) or not real.endswith(".json"):
+        sys.exit(f"{path}: a trust config must be a .json file inside the current "
+                 f"directory; refusing")
+    return Path(real)
+
+
+def _trust_load(path, p):
+    """The existing config, validated -- or {} when there is none yet."""
+    if not p.exists():
+        return {}
+    try:
+        doc = loads_ijson(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as ex:
+        sys.exit(f"{path}: not a readable trust config ({ex}); refusing to rewrite it")
+    err = _validate_trust_config(doc)
+    if err:
+        sys.exit(f"{path}: not a valid trust config ({err}); refusing to rewrite it")
+    return doc
+
+
+def _trust_add_key(path, doc, actor, pubkey):
+    """Bind `pubkey` to `actor`; the message to print, or None if already bound."""
+    if not actor:
+        sys.exit("an actor id must be a nonempty string")
+    if not (_is_hex64(pubkey) and not weak_ed25519_pubkey(bytes.fromhex(pubkey))):
+        sys.exit(f"not an acceptable Ed25519 public key (SPEC §5): {pubkey}")
+    keys = doc.setdefault("actors", {}).setdefault(actor, [])
+    if pubkey in keys:
+        print(f"key {pubkey[:12]} for actor {actor} already in {path}")
+        return None
+    keys.append(pubkey)
+    return f"trusted key {pubkey[:12]} for actor {actor} in {path}"
+
+
+def _trust_add_root(path, doc, store, root):
+    """Trust `root` as a genesis root; the message to print, or None if already."""
+    if not _is_hex64(root):
+        sys.exit(f"not a WarrantID (64 lowercase hex): {root}")
+    roots = doc.setdefault("genesis_roots", [])
+    if root in roots:
+        print(f"genesis root {root[:12]} already in {path}")
+        return None
+    if store.records.is_dir() and not (store.records / f"{root}.json").is_file():
+        print(f"warning: {root[:12]} is not a record in {store.root}; a root "
+              f"must be a stored, well-signed record to become active",
+              file=sys.stderr)
+    roots.append(root)
+    return f"trusted genesis root {root[:12]} in {path}"
+
+
 def trust_edit(path, store, actor=None, pubkey=None, root=None):
     """`warrant trust add|root`: add one key binding or one genesis root to a
     local trust configuration (SPEC §12), creating the file if it is absent.
@@ -1359,42 +1416,17 @@ def trust_edit(path, store, actor=None, pubkey=None, root=None):
     forward but hand-writing JSON: the step that answers SA-2 -- which key may
     speak for which actor -- had no tool. It writes only what it is told; it
     never decides who is trusted. An existing file that does not validate is
-    refused, never rewritten.
+    refused, never rewritten, and nothing outside the working directory is
+    written at all.
     """
-    p = Path(path)
-    doc = {}
-    if p.exists():
-        try:
-            doc = loads_ijson(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as ex:
-            sys.exit(f"{path}: not a readable trust config ({ex}); refusing to rewrite it")
-        err = _validate_trust_config(doc)
-        if err:
-            sys.exit(f"{path}: not a valid trust config ({err}); refusing to rewrite it")
+    p = _trust_config_path(path)
+    doc = _trust_load(path, p)
     if actor is not None:
-        if not actor:
-            sys.exit("an actor id must be a nonempty string")
-        if not (_is_hex64(pubkey) and not weak_ed25519_pubkey(bytes.fromhex(pubkey))):
-            sys.exit(f"not an acceptable Ed25519 public key (SPEC §5): {pubkey}")
-        keys = doc.setdefault("actors", {}).setdefault(actor, [])
-        if pubkey in keys:
-            print(f"key {pubkey[:12]} for actor {actor} already in {path}")
-            return
-        keys.append(pubkey)
-        msg = f"trusted key {pubkey[:12]} for actor {actor} in {path}"
+        msg = _trust_add_key(path, doc, actor, pubkey)
     else:
-        if not _is_hex64(root):
-            sys.exit(f"not a WarrantID (64 lowercase hex): {root}")
-        roots = doc.setdefault("genesis_roots", [])
-        if root in roots:
-            print(f"genesis root {root[:12]} already in {path}")
-            return
-        if store.records.is_dir() and not (store.records / f"{root}.json").is_file():
-            print(f"warning: {root[:12]} is not a record in {store.root}; a root "
-                  f"must be a stored, well-signed record to become active",
-                  file=sys.stderr)
-        roots.append(root)
-        msg = f"trusted genesis root {root[:12]} in {path}"
+        msg = _trust_add_root(path, doc, store, root)
+    if msg is None:
+        return
     p.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(msg)
 
@@ -2239,6 +2271,18 @@ def why(store, wid):
 WHY_REPORT_VERSION = "warrant.why@v0"
 
 
+def _why_node(store, cur, d, body, ok):
+    """One walked record as `why --json` reports it."""
+    under = body.get("under") if isinstance(body, dict) else None
+    unresolved = [h for h in (under if isinstance(under, list) else [])
+                  if not (isinstance(h, str) and store.has_blob(h))]
+    return {"warrant_id": cur, "depth": d,
+            "status": "verified" if ok else "verify_failed",
+            "unverifiable": is_unverifiable(body),
+            "unresolved_under": unresolved,
+            "body": body}
+
+
 def why_report(store, wid):
     """`why --json`: the same walk as `why`, as one object an agent can read.
 
@@ -2259,16 +2303,8 @@ def why_report(store, wid):
         elif kind == "max-depth":
             nodes[-1]["truncated"] = True
         else:
-            body = env["body"]
             failed += 0 if ok else 1
-            under = body.get("under") if isinstance(body, dict) else None
-            unresolved = [h for h in (under if isinstance(under, list) else [])
-                          if not (isinstance(h, str) and store.has_blob(h))]
-            nodes.append({"warrant_id": cur, "depth": d,
-                          "status": "verified" if ok else "verify_failed",
-                          "unverifiable": is_unverifiable(body),
-                          "unresolved_under": unresolved,
-                          "body": body})
+            nodes.append(_why_node(store, cur, d, env["body"], ok))
     return {"why": WHY_REPORT_VERSION, "warrant_id": wid,
             "ok": missing == 0 and failed == 0,
             "missing": missing, "failed": failed, "nodes": nodes}
@@ -2847,6 +2883,17 @@ def build_parser():
     return ap
 
 
+def _trust_argv_invariants(ap, args):
+    """`trust add` needs an actor and exactly one key source; `trust root` a WarrantID."""
+    if args.action == "add":
+        if args.actor is None or (args.key is None) == (args.pubkey is None):
+            ap.error("trust add requires --actor and exactly one of --key/--pubkey")
+        if args.root_id is not None:
+            ap.error("trust add takes no positional WarrantID")
+    elif args.root_id is None:
+        ap.error("trust root requires the WarrantID to trust")
+
+
 def parse_cli(argv=None):
     """Parse an argv AND apply the pure post-parse invariants. No side effects.
 
@@ -2868,13 +2915,7 @@ def parse_cli(argv=None):
     # stopped at parse_args reported a surface the CLI does not accept (Codex
     # release-surface re-gate 3). Nothing here touches the filesystem.
     if args.cmd == "trust":
-        if args.action == "add":
-            if args.actor is None or (args.key is None) == (args.pubkey is None):
-                ap.error("trust add requires --actor and exactly one of --key/--pubkey")
-            if args.root_id is not None:
-                ap.error("trust add takes no positional WarrantID")
-        elif args.root_id is None:
-            ap.error("trust root requires the WarrantID to trust")
+        _trust_argv_invariants(ap, args)
     if args.cmd == "propose" and not args.subject:
         ap.error("propose requires --subject")
     if args.cmd in ("accept", "reject", "supersede") and args.prior_id is None:

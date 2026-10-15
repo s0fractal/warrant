@@ -491,14 +491,22 @@ def writers(tally, mism):
             go("why", w3)
             go("why", w3, "--json")
             # The path to a green settlement-grade report: a key binding and a root.
-            tcfg = str(Path(tmp, f"trust-{who}.json"))
-            go("trust", "add", "--actor", "a@x", "--key", str(k), "--config", tcfg)
-            go("trust", "add", "--actor", "a@x", "--key", str(k), "--config", tcfg)
-            go("trust", "add", "--actor", "b@x", "--pubkey", "00" * 32, "--config", tcfg)
-            go("trust", "root", w1, "--config", tcfg)
-            go("trust", "root", "f" * 64, "--config", tcfg)
+            # `trust` writes only inside the working directory, so run it there.
+            tname = f"trust-{who}.json"
+            tcfg = str(Path(tmp, tname))
+
+            def tr(*a):
+                r = subprocess.run(cmd + ["--store", st] + list(a), capture_output=True,
+                                   env=ENV, cwd=tmp)
+                outs.append((r.returncode, r.stdout.replace(st.encode(), b"<store>")))
+            tr("trust", "add", "--actor", "a@x", "--key", str(k), "--config", tname)
+            tr("trust", "add", "--actor", "a@x", "--key", str(k), "--config", tname)
+            tr("trust", "add", "--actor", "b@x", "--pubkey", "00" * 32, "--config", tname)
+            tr("trust", "root", w1, "--config", tname)
+            tr("trust", "root", "f" * 64, "--config", tname)
+            tr("trust", "root", w1, "--config", "../outside.json")
             go("verify", "--settlement", "--trust-config", tcfg)
-            outs.append((0, Path(tcfg).read_bytes().replace(tcfg.encode(), b"<cfg>")))
+            outs.append((0, Path(tcfg).read_bytes()))
             # A legacy (pre-v1) record, then the migration.
             body = {"warrant": "0.2", "decision": "propose", "subject": {"hash": "a" * 64},
                     "under": ["b" * 64], "because": [], "evidence": [], "actor": {"id": "a@x"},

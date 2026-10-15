@@ -27,7 +27,8 @@ WHAT IS ASSERTED, FOR PYTHON AND RUST ALIKE
      (exit status == 0); every walked record appears once per visit.
   4. `trust` writes only what it is told: idempotent, refuses a weak key, a
      non-hex root, and an existing config that does not validate -- leaving
-     that file byte-for-byte unchanged.
+     that file byte-for-byte unchanged -- and writes nothing outside the
+     working directory (`../`, absolute, symlinked out) or to a non-`.json`.
   5. The README's "Try it" section, executed VERBATIM (its bash blocks, minus
      the install line) with each implementation as `warrant` on PATH, ends at
      `0 errors, 0 warnings`. A promise in the README is checked by running it.
@@ -165,6 +166,18 @@ def main():
             check(f"{name}: trust refuses a weak key and a non-hex root, file unchanged",
                   weak.returncode == 1 and bad_root.returncode == 1 and cfg.read_bytes() == before,
                   (weak.returncode, bad_root.returncode))
+            # Nothing is written outside the working directory, nor to a non-.json.
+            outside = Path(tmp, "outside.json")
+            (d / "sub").mkdir()
+            (d / "link.json").symlink_to(outside)
+            refusals = [w("trust", "root", p, "--config", c).returncode
+                        for c in ("../outside.json", str(outside), "trust.txt", "link.json", "sub")]
+            check(f"{name}: trust refuses a config outside the working directory or not .json",
+                  refusals == [1] * 5 and not outside.exists() and not (d / "trust.txt").exists(),
+                  refusals)
+            inner = w("trust", "root", p, "--config", "sub/t.json")
+            check(f"{name}: trust writes a .json in a subdirectory of the working directory",
+                  inner.returncode == 0 and (d / "sub" / "t.json").is_file(), inner.returncode)
             junk = d / "junk.json"
             junk.write_text('{"actors": null}')
             j0 = junk.read_bytes()

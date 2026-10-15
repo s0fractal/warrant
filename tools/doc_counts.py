@@ -367,6 +367,8 @@ def check_release_versions():
 # a following sentence does not count. `literal` means the span must carry a
 # version literal (there is no way to write a compare link without one).
 # Either way, every version literal inside the span must equal pyproject's.
+PYPROJECT_POINTER = r"`pyproject\.toml`"
+
 CURRENT_RELEASE_PROSE = (
     {
         "file": "CHANGELOG.md",
@@ -374,7 +376,7 @@ CURRENT_RELEASE_PROSE = (
         # the third cell of the row; the row label itself says "PyPI", so the
         # pointer test must not be allowed to see it
         "span": r"(?m)^\| release tag / PyPI \|[^|\n]*\|([^|\n]*)\|",
-        "pointers": (r"`pyproject\.toml`", r"\bPyPI\b"),
+        "pointers": (PYPROJECT_POINTER, r"\bPyPI\b"),
         "literal": False,
     },
     {
@@ -384,7 +386,7 @@ CURRENT_RELEASE_PROSE = (
         # whitespace: `pyproject.toml` and `publish.yml` are not), across the
         # blockquote's line breaks
         "span": r"(?is)(\bcurrent releas\w*\b.*?\.)(?=\s|$)",
-        "pointers": (r"`pyproject\.toml`", r"pypi\.org/project/warrant-verify"),
+        "pointers": (PYPROJECT_POINTER, r"pypi\.org/project/warrant-verify"),
         "literal": False,
     },
     {
@@ -392,7 +394,7 @@ CURRENT_RELEASE_PROSE = (
         "desc": "what-is-published paragraph",
         # the opening paragraph of the section, up to its blank line
         "span": r"(?s)## What is published, and what that does not mean\n\n(.*?)\n\n",
-        "pointers": (r"`pyproject\.toml`", r"`impl-rs/Cargo\.toml`",
+        "pointers": (PYPROJECT_POINTER, r"`impl-rs/Cargo\.toml`",
                      r"pypi\.org/project/warrant-verify", r"crates\.io/crates/warrant-verify"),
         "literal": False,
     },
