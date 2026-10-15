@@ -167,7 +167,12 @@ jobs:
       - name: Package smoke test (built wheel -> `warrant` CLI, bundled oracle, offline, any cwd)
         run: |
           python3 -m build --wheel --no-isolation --outdir /tmp/warrant-wheel
-          python3 -m pip install --no-deps /tmp/warrant-wheel/warrant_verify-0.9.0-py3-none-any.whl
+          # The wheel name follows pyproject's version; a literal here broke the
+          # 0.10.0 release branch the moment the version moved.
+          VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          WHEEL="/tmp/warrant-wheel/warrant_verify-${VERSION}-py3-none-any.whl"
+          echo "WARRANT_WHEEL=$WHEEL" >> "$GITHUB_ENV"
+          python3 -m pip install --no-deps "$WHEEL"
           ( cd /tmp && warrant selftest )
           ( cd /tmp && warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
       - name: Evidence-pack guard (demo packs verify; ski re-executes; no private keys shipped)
@@ -178,7 +183,7 @@ jobs:
       # plus the fail-closed controls (evaluator failure without fallback, root
       # and nested CAS identity). Exit 3 is a typed refusal, not a pass.
       - name: Evidence-pack replay (built wheel, clean venv, per-record vector + fail-closed controls)
-        run: WARRANT_REPLAY_WHEEL=/tmp/warrant-wheel/warrant_verify-0.9.0-py3-none-any.whl bash demos/air-canada/replay-clean.sh
+        run: WARRANT_REPLAY_WHEEL="$WARRANT_WHEEL" bash demos/air-canada/replay-clean.sh
       - name: MCP sealing proxy (classifier, sealer, stdio round-trip -> verifiable pack)
         run: python3 tests/mcp_seal.py
       - name: ski@v1 policy predicates (truth table, real re-execution, warrant integration)
