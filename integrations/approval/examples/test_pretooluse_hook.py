@@ -85,6 +85,39 @@ def main():
         chk(actor_id == "harness:pretooluse",
             f"the decider is the harness, not the agent (got {actor_id})")
 
+        # 2b. The ids the harness also writes into its telemetry are bound in
+        #     the SIGNED subject, not in prose -- the auditor joins on them.
+        blob = store / "blobs" / rej["subject"]["hash"]
+        try:
+            subj = json.loads(blob.read_text())
+        except (OSError, ValueError):
+            subj = {}
+        chk(subj.get("type") == "warrant.tool-call@v0"
+            and subj.get("tool_use_id") == "toolu_01"
+            and subj.get("session_id") == "sess_abc"
+            and subj.get("tool_name") == "Bash"
+            and subj.get("tool_input") == {"command": "rm -rf /tmp/build"},
+            "subject binds tool_use_id, session_id and the input", str(subj))
+        chk(not any("tool_use_id" in (r.get("text") or "")
+                    for b in bodies for r in b.get("because", [])),
+            "tool_use_id is no longer smuggled through a prose reason")
+        env_tp = dict(env, TRACEPARENT="00-" + "a" * 32 + "-" + "b" * 16 + "-01")
+        before = set((store / "records").glob("*.json"))
+        run_hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                  "tool_input": {"command": "rm -rf /tmp/build"},
+                  "tool_use_id": "toolu_02", "session_id": "sess_abc"}, env_tp)
+        new = [json.loads(p.read_text())["body"]
+               for p in set((store / "records").glob("*.json")) - before]
+        hashes = {b["subject"]["hash"] for b in new}
+        chk(len(new) == 2 and rej["subject"]["hash"] not in hashes,
+            "same command, different tool_use_id -> a different subject")
+        subj2 = json.loads((store / "blobs" / next(iter(hashes))).read_text()) \
+            if len(hashes) == 1 else {}
+        chk(subj2.get("traceparent") == env_tp["TRACEPARENT"],
+            "a TRACEPARENT handed to the hook is bound", str(subj2))
+        for p in set((store / "records").glob("*.json")) - before:
+            p.unlink()
+
         w = subprocess.run([sys.executable, str(ROOT / "impl" / "warrant.py"),
                             "--store", str(store), "verify", "--store-mode", "--json"],
                            capture_output=True, text=True)

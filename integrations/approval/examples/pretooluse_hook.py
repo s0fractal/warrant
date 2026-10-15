@@ -61,7 +61,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "integrations" / "approval"))
-from warrant_approval import ApprovalError, Boundary            # noqa: E402
+from warrant_approval import (ApprovalError, Boundary,         # noqa: E402
+                              tool_call_subject)
 
 POLICY = """Tool calls that can destroy data outside the workspace require a
 human sanction. A refusal must name the pattern that matched.
@@ -187,11 +188,18 @@ def record(event, decision, reason):
         b = Boundary(store=store, policy_text=POLICY,
                      requester_key=keys / "agent.key",
                      decider_key=keys / "harness.key")
-        action = (f"{event.get('tool_name')}: "
-                  f"{json.dumps(event.get('tool_input') or {}, sort_keys=True)}")
+        # The subject binds the ids the harness also writes into its own
+        # telemetry, so an auditor can join the two (tools/otel_audit.py).
+        # TRACEPARENT is bound only if this process was actually handed one.
+        subject = tool_call_subject(
+            event.get("tool_name"), event.get("tool_input"),
+            event.get("tool_use_id"), event.get("session_id"),
+            os.environ.get("TRACEPARENT"))
+        summary = (f"{event.get('tool_name')}: "
+                   f"{json.dumps(event.get('tool_input') or {}, sort_keys=True)}")
         req = b.record_request(
-            action, requester=f"agent:{event.get('session_id', 'unknown')[:12]}",
-            reasons=[f"tool_use_id={event.get('tool_use_id', '?')}"])
+            subject, requester=f"agent:{str(event.get('session_id', 'unknown'))[:12]}",
+            note=f"requested: {summary[:120]}")
         dec = b.record_decision(req, decision != "deny", decider="harness:pretooluse",
                                 reasons=[reason])
         return {"request": req, "decision": dec,

@@ -1,7 +1,8 @@
 # Warrant beside telemetry, not inside it
 
-**Status: a design synthesis. Nothing here is built or adopted.** No independent
-gate ran. It revisits Candidate 2 of [`integration-study.md`](integration-study.md)
+**Status: a design synthesis; phases P0 and P1 are built, nothing is adopted.**
+No independent gate ran: what exists is self-tested, with mutation checks of
+the selftest itself (see "What P1 actually checks"). It revisits Candidate 2 of [`integration-study.md`](integration-study.md)
 ("OpenTelemetry GenAI semantic conventions — declined") in light of two external
 drafts that proposed an OTel bridge, and of vendor telemetry read on 2026-10-15.
 Vendor facts below were **read from documentation, not executed**; each names
@@ -112,23 +113,24 @@ holding both lets an auditor say things neither can say alone.
 ### 1. Record at the sanction point (exists; one change)
 
 The PreToolUse binding (`integrations/approval/examples/pretooluse_hook.py`)
-already files a request and a sanction for every non-deferred decision. Today it
-puts `tool_use_id=…` into a **prose reason**. It must move into the **signed
-subject** as structured fields, because the join and the two-way binding check
-read it:
+files a request and a sanction for every non-deferred decision. It used to put
+`tool_use_id=…` into a **prose reason**; it now writes a **signed subject**
+built by `warrant_approval.tool_call_subject`, because the join and the two-way
+binding check read it:
 
 ```json
-{"tool_name": "Bash",
+{"type": "warrant.tool-call@v0",
+ "tool_name": "Bash",
+ "tool_input": {"command": "rm -rf /srv/data"},
  "tool_use_id": "toolu_…",
  "session_id": "…",
- "traceparent": "00-<trace>-<span>-01",
- "tool_input_sha256": "…"}
+ "traceparent": "00-<trace>-<span>-01"}
 ```
 
-`traceparent` is included only when the hook process actually receives one
-(**unverified**: the monitoring page says Agent SDK and `-p` sessions honour
-`TRACEPARENT` for event records; whether hooks inherit it must be checked by
-running). The tool input is bound by digest, not copied; see open decision 2.
+`traceparent` is bound only when the hook process actually receives one in
+`TRACEPARENT` (**unverified** for Claude Code: the monitoring page says Agent SDK
+and `-p` sessions honour `TRACEPARENT` for event records; whether hooks inherit
+it must be checked by running). The tool input is kept whole (decision 2 below).
 
 The same boundary serves the Claude API: on Managed Agents the *application*
 answers `user.tool_confirmation`, so the application is the sanctioner and the
@@ -136,25 +138,32 @@ join key is the `gen_ai.tool.call.id` of that tool use.
 
 ### 2. Correlate without touching telemetry (new, the core)
 
-`tools/otel_audit.py`, standard library only, the same shape as
-`tools/intoto.py` (a projection plus a `check` that recomputes everything from
-the store and trusts nothing it is handed). Input: an OTLP/JSON export (the
-collector's file exporter output) and a store, optionally a trust config.
-Output: one row per `tool_use_id`, each in exactly one class.
+`tools/otel_audit.py` (built), standard library only, the same shape as
+`tools/intoto.py`: it recomputes from the store and trusts nothing it is handed,
+including the subject blob that carries the join key (it re-hashes that blob
+itself, not only through `verify`). Input: OTLP/JSON exports (the collector's
+file exporter output, one request per line or one document) and a store,
+optionally `--settlement --trust-config`. Output: one row per `tool_use_id`, in
+exactly one class, checked in this order:
 
-| Class | Telemetry | Warrant | What it means |
-| --- | --- | --- | --- |
-| `corroborated` | decision present | sanction bound to this id, same decision, store verifies | the two records agree, and one of them is signed |
-| `reason-reruns` | as above | reason is a `ski@v1` check that re-executes | a stranger can recompute *why*, offline |
-| `prose-only` | as above | reason is prose | integrity and custody only; flagged, as `verify` flags it today |
-| `invisible-refusal` | no tool span / no `tool_result` | signed `reject` | the refusal the trace dropped by design |
-| `unwarranted` | `source = hook`, no warrant | none | the hook decided but nothing was filed (recorder failed, or bypassed) |
-| `contradiction` | `accept` | signed `reject` (or the reverse) | one of the two records is wrong; the signed one names its signer |
-| `misbound` | span or event names `warrant.id` X | X binds a different `tool_use_id` | a pointer relabelled to another valid record |
-| `store-invalid` | any | record fails verification | the evidence itself was altered |
+| Class | Telemetry | Warrant | What it means | Exit |
+| --- | --- | --- | --- | --- |
+| `store-invalid` | any | a bound record fails verification, or its subject blob does not hash to its name | the evidence itself was altered | 1 |
+| `misbound` | a `warrant.sanction` pointer names X | X does not bind this call, or holds another decision | a pointer relabelled to another valid record, or a lying hint | 1 |
+| `contradiction` | a decision that differs, or a `tool_result`/tool span after a signed `reject` | — or two signed sanctions that disagree | one record is wrong; the signed one names its signer | 1 |
+| `unwarranted` | `source = hook` | none | the hook decided; nothing was filed (recorder failed or bypassed) | 1 |
+| `telemetry-missing` | nothing about this call | signed sanction | sampled, lost, or a refusal the trace does not record (API: no tool span for a denied call) | 0 |
+| `corroborated` | decision present, or the tool ran after a signed `accept` | signed sanction, same decision | the two records agree, and one is signed | 0 |
+| `not-hook` | decided by `config` or a person | none | outside this boundary; no warrant expected | 0 |
 
-`contradiction` and `misbound` are the classes no trace-only tool can produce,
-because producing them needs a record the telemetry pipeline cannot write.
+Each sanction also carries a **reason** status: `reruns` (a `ski@v1` check
+re-executed by the CLI reproduced its claimed verdict), `fails`, `unverified`
+(the check could not run), `cmd-unrun` (`cmd@v1` is never executed here), or
+`prose-only`. That column is what a trace can never have.
+
+`contradiction`, `misbound` and `telemetry-missing` are the classes no
+trace-only tool can produce, because producing them needs a record the
+telemetry pipeline cannot write or delete.
 
 The report is a new **non-normative** tag, `warrant.otel-audit@v0`, the same
 status `warrant.why@v0` has: a tool output, not a SPEC section.
@@ -188,7 +197,9 @@ packaging of the same function, not a separate verifier.
 
 ## The demonstration, end to end
 
-`demos/otel-vs-warrant/`, one script, offline, run by `tools/check.py`:
+Most of this now runs as `python3 tools/otel_audit.py selftest` (wired into
+`tools/check.py`); a standalone `demos/otel-vs-warrant/` with a readable
+walkthrough is still to do:
 
 1. Three tool calls through the PreToolUse binding: a benign read (deferred,
    nothing filed), `rm -rf` (denied), and a deploy allowed under a **compiled
@@ -217,8 +228,8 @@ export with the Claude Code version that produced it. That step needs the owner
 
 | Phase | Deliverable | Done means | Testable on a clean checkout |
 | --- | --- | --- | --- |
-| P0 | structured binding in the hook's subject | `test_pretooluse_hook.py` asserts the bound fields and that a changed `tool_use_id` changes the WarrantID | yes |
-| P1 | `tools/otel_audit.py` + fixtures + every class above with a negative control | each control flips exactly its row; wired into `tools/check.py` | yes, stdlib only |
+| P0 | structured binding in the hook's subject | **built**: `test_pretooluse_hook.py` asserts the bound fields, that a changed `tool_use_id` changes the subject, and that a handed `TRACEPARENT` is bound | yes |
+| P1 | `tools/otel_audit.py` + fixtures + every class above with a negative control | **built**: each control flips exactly its row; wired into `tools/check.py` | yes, stdlib only |
 | P2 | gated OTLP/JSON emission from the hook | a local stdlib HTTP server receives the record; hook latency unchanged with the variable unset; a dead endpoint does not block the hook | yes |
 | P3 | browser audit view | the same fixture gives the same table in WASM as in Python | yes (Node + WASM, as `web/` tests now) |
 | P4 | a real captured export replaces the synthetic fixture | version-stamped, redacted, reproduced by the audit | **no** — needs the owner and a live session |
@@ -233,22 +244,43 @@ export with the Claude Code version that produced it. That step needs the owner
 - Enforcement. The harness enforces; the record records.
 - Key custody. Same-host keys stay one custody, reported, not solved.
 
-## Open decisions for the owner
+## Decisions taken (owner, 2026-10-15)
 
-1. **Does this amend the study's verdict?** Proposed reading: the OTel *bridge*
-   stays declined; a *correlation auditor beside telemetry* is a new candidate
-   that passes the study's four-part test (decision point: the hook; independent
+1. **The study's verdict is amended, not reversed.** The OTel *bridge* stays
+   declined; a *correlation auditor beside telemetry* is a new candidate that
+   passes the study's four-part test (decision point: the hook; independent
    sanctioner: the harness; contract: one id field per source plus a JSON export
    format; reason re-executes: in the `ski@v1` path).
-2. **Tool input binding.** A digest of a low-entropy input (a short shell
-   command) is guessable by enumeration, so it is not confidential; copying the
-   input is worse. Options: digest (proposed, with that limit stated), keyed
-   digest (needs a key policy), or no binding of the input at all.
-3. **Attribute prefix.** `warrant.*` (proposed) versus a URI-qualified prefix.
-   Neither is a convention; the choice only affects collision risk.
-4. **Which vendor first.** Claude Code (hooks + `tool_decision`; documented
-   join key; the binding already exists) is proposed. Managed Agents
+2. **The tool input stays whole in the subject.** The owner left this open; the
+   reasoning that settled it: the store is the operator's own evidence and the
+   hook already kept the full input there; a digest of a short command is
+   guessable, so it would hide nothing while losing *what was refused*. Nothing
+   from the store goes into telemetry except ids (P2). Sharing a store shares the
+   commands in it, as it always did.
+3. **Attribute prefix `warrant.*`** (owner delegated). Not a convention.
+4. **Claude Code first** (owner delegated): hooks + `tool_decision`, a documented
+   join key, and a binding that already exists. Managed Agents
    `user.tool_confirmation` second.
+
+## What P1 actually checks
+
+The selftest drives the real hook as a subprocess for the refusal and the
+deferral, files the allowed call with a compiled `ski@v1` reason, synthesises
+telemetry in the documented event shapes, and asserts the baseline table. Then
+each control must change **exactly** its target row: telemetry flipped to
+`accept`; a refusal shown executing; B's telemetry lost; an API-shaped trace
+where the denied call has no span (and B is known only by its `execute_tool`
+span); a pointer relabelled to another valid record; a pointer hint that lies;
+a second signed sanction that disagrees; a rewritten record; a subject blob
+edited to rebind another call, also under a stub verifier that reports
+everything ok. The reason column is tested directly for `reruns`, `fails`,
+`unverified` and `cmd-unrun`.
+
+The selftest was itself mutation-tested before commit: twelve single-line
+breakages of the auditor (ignore a disagreement, skip the pointer check, trust
+the blob, stop comparing the ski verdict, ignore spans, …). The first run let
+three survive; the controls above were strengthened until every one fails the
+selftest. That is a check of the tests, not an independent gate.
 
 ## Limits, stated
 
@@ -260,6 +292,9 @@ export with the Claude Code version that produced it. That step needs the owner
 - `unwarranted` cannot distinguish "the recorder failed" from "the recorder was
   bypassed" from telemetry alone; it only says a sanction exists without
   evidence.
-- Nothing above has been executed. The vendor quotations were read on
-  2026-10-15. Green suites, when they exist, will be necessary and not
-  sufficient; an adversarial gate is still owed.
+- The telemetry the selftest reads is **synthesised from documentation**, not
+  captured from a live harness (P4). Field names, `event.name` values and the
+  OTLP/JSON envelope are the documented ones; a real export may differ in ways
+  only a capture will show. The vendor quotations were read on 2026-10-15.
+- Green suites are necessary and not sufficient; an adversarial gate is still
+  owed.
