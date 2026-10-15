@@ -48,6 +48,22 @@ def read(name):
     return (ROOT / name).read_text(encoding="utf-8")
 
 
+def load_conformance_checks():
+    """How many checks `warrant conformance examples` runs, from its own summary.
+
+    llms.txt quoted "ALL PASS (45/45)" for weeks after the battery had grown to
+    67: a count copied from a run, next to the thing that kept growing. The
+    number is read from an actual run rather than from a constant, so it cannot
+    drift the same way here.
+    """
+    import subprocess
+    out = subprocess.run([sys.executable, str(ROOT / "impl" / "warrant.py"),
+                          "conformance", str(ROOT / "examples")],
+                         capture_output=True, text=True).stdout
+    m = re.search(r"CONFORMANCE: ALL PASS \((\d+)/\1\)", out)
+    return int(m.group(1)) if m else -1
+
+
 def load_pack_counts():
     """How many conformance vectors there are, and how many are MUST-REJECT.
 
@@ -158,6 +174,9 @@ CLAIMS = [
      r"of the (\d+) vectors are MUST-REJECT", "vectors"),
     ("llms.txt", "count of conformance vectors",
      r"\n(\d+) vectors, \d+ of them MUST-REJECT", "vectors"),
+    ("llms.txt", "count of SPEC §8 conformance checks the reference runs",
+     r"python3 impl/warrant\.py conformance\s+# ALL PASS \((\d+)/\d+\)",
+     "conformance"),
     ("llms.txt", "count of MUST-REJECT conformance vectors",
      r"\n\d+ vectors, (\d+) of them MUST-REJECT", "negatives"),
     ("conformance/README.md", "count of MUST-REJECT conformance vectors",
@@ -320,6 +339,15 @@ def check_release_versions():
                             f"version is {p.get('version')!r}, pyproject.toml "
                             f"version is {dist} — the registry would resolve a "
                             f"different release, or none")
+    # The Rust crate ships under the same name and must ship the same number:
+    # PyPI 0.9.0 and crates.io 0.9.0 once described two different behaviours,
+    # because the number was shared and the release was not.
+    m = re.search(r'(?m)^version = "([^"]+)"', read("impl-rs/Cargo.toml"))
+    if m is None:
+        failures.append("impl-rs/Cargo.toml: no `version = \"…\"` line found")
+    elif m.group(1) != dist:
+        failures.append(f"impl-rs/Cargo.toml: version is {m.group(1)}, "
+                        f"pyproject.toml version is {dist}")
     failures += check_current_release_prose(dist)
     return failures
 
@@ -357,6 +385,15 @@ CURRENT_RELEASE_PROSE = (
         # blockquote's line breaks
         "span": r"(?is)(\bcurrent releas\w*\b.*?\.)(?=\s|$)",
         "pointers": (r"`pyproject\.toml`", r"pypi\.org/project/warrant-verify"),
+        "literal": False,
+    },
+    {
+        "file": "llms.txt",
+        "desc": "what-is-published paragraph",
+        # the opening paragraph of the section, up to its blank line
+        "span": r"(?s)## What is published, and what that does not mean\n\n(.*?)\n\n",
+        "pointers": (r"`pyproject\.toml`", r"`impl-rs/Cargo\.toml`",
+                     r"pypi\.org/project/warrant-verify", r"crates\.io/crates/warrant-verify"),
         "literal": False,
     },
     {
@@ -420,6 +457,7 @@ def main():
         "classes": class_count,
         # every class except the mandatory `capabilities` declaration
         "vector_classes": class_count - 1,
+        "conformance": load_conformance_checks(),
     }
     where = {
         "checks": "len(CHECKS) in tools/check.py",
@@ -430,6 +468,7 @@ def main():
         "base_vectors": "base-grade vectors in conformance/vectors/index.json",
         "classes": "grades.* in conformance/vectors/index.json, plus capabilities",
         "vector_classes": "the same, minus capabilities",
+        "conformance": "`warrant conformance examples` summary line",
     }
 
     failures = check_contract_page(pack_rows)
@@ -474,11 +513,12 @@ def main():
                 f"{fname}: {desc} says '{stated}', {where[key]} is "
                 f"{truth[key]} ('{expected}')")
 
-    # +5 for the listing identities: the release-version identities (module
+    # +6 for the listing identities: the release-version identities (module
     # __version__, manifest version, manifest pypi identifier, manifest pypi
-    # version) against pyproject.toml, plus README.md's MCP ownership marker;
-    # then one per document whose current-release prose is held to pyproject.
-    n = (len(CLAIMS) + len(WORD_CLAIMS) + len(pack_rows) + 3 + 5
+    # version, the Rust crate's version) against pyproject.toml, plus
+    # README.md's MCP ownership marker; then one per document whose
+    # current-release prose is held to pyproject.
+    n = (len(CLAIMS) + len(WORD_CLAIMS) + len(pack_rows) + 3 + 6
          + len(CURRENT_RELEASE_PROSE))
     if failures:
         for f in failures:
