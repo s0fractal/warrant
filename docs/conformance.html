@@ -228,10 +228,11 @@ python3 run.py --candidate "./my-verifier probe"</pre>
 
   <div class="honest">
   <h3>The honest state of this</h3>
-  <p class="note"><strong>Three implementations, all ours.</strong> Python and Go
-  each pass all 139 vectors at settlement grade; Rust is deliberately base-only
-  and passes the 135 base vectors, reported as <em>reaching base</em> rather than
-  as failing settlement. Their agreement is byte-exact — canonical bytes,
+  <p class="note"><strong>Three implementations, all ours.</strong> Python, Go and Rust
+  each pass all 139 vectors at settlement grade. A candidate that
+  passes the 135 base vectors without claiming settlement is reported as
+  <em>reaching base</em>, rather than as failing settlement.
+  Their agreement is byte-exact — canonical bytes,
   WarrantIDs, signed messages, and store verdicts. All three live in one
   repository and share one author.</p>
   <p class="note"><strong>No external party has implemented this contract.</strong>

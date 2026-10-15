@@ -41,6 +41,13 @@ v1.0.0, 2026-08-30 — deposited, not peer reviewed; see
 
 ## Try it
 
+**[Open the browser lab](https://s0fractal.github.io/warrant/)** — inspect a signed
+repository example, re-run its portable reason locally, change its bytes, or
+open your own store. The browser runs the Rust core compiled to WebAssembly;
+the report keeps the same schema as the CLI. Its local limits and build identity
+are shown on the page. See [`web/README.md`](web/README.md) for implementation
+and deployment details.
+
 ```bash
 pipx install warrant-verify   # or: pip install warrant-verify
 

@@ -12,7 +12,7 @@ use crate::settlement::{
     WARN_UNADOPTED_ROOT,
 };
 use crate::sig::{legacy_sig, verify_sig, LEGACY_SIG_MESSAGE};
-use crate::ski::run_ski_check;
+use crate::ski::run_store_ski_check;
 use crate::store::{warrant_id, Store};
 
 pub const VERIFY_REPORT_VERSION: &str = "warrant.verify-report@v0";
@@ -110,6 +110,15 @@ fn int_gt(a: &str, b: &str) -> bool {
 /// `verify_store`: verify every record. The returned report holds the counts,
 /// the ordered findings and (unless `quiet`) the exact text the CLI prints.
 pub fn verify_store(store: &Store, quiet: bool, settlement: Option<&Settlement>) -> Report {
+    verify_store_inner(store, quiet, settlement, None)
+}
+
+fn verify_store_inner(
+    store: &Store,
+    quiet: bool,
+    settlement: Option<&Settlement>,
+    supplied_trust: Option<&Result<Trust, String>>,
+) -> Report {
     let mut rep = Report::new(quiet);
     let (recs, load_errors) = store.all_records();
     rep.records = recs.len() + load_errors.len();
@@ -118,8 +127,14 @@ pub fn verify_store(store: &Store, quiet: bool, settlement: Option<&Settlement>)
     // short-circuit is exactly one global ERR.
     let mut trust = Trust::default();
     if let Some(s) = settlement {
-        if let Some(path) = s.trust_config.as_deref().filter(|p| !p.is_empty()) {
-            match load_trust_config(path) {
+        let loaded = supplied_trust.cloned().or_else(|| {
+            s.trust_config
+                .as_deref()
+                .filter(|p| !p.is_empty())
+                .map(load_trust_config)
+        });
+        if let Some(loaded) = loaded {
+            match loaded {
                 Ok(t) => trust = t,
                 Err(_) => {
                     rep.out("ERR", "settlement", ERR_SETTLEMENT_TRUST.to_string());
@@ -360,7 +375,7 @@ pub fn verify_store(store: &Store, quiet: bool, settlement: Option<&Settlement>)
                     .is_some_and(|x| py_eq(x, &Json::str("ski@v1")))
             {
                 let check = r.get("check").and_then(Json::as_str).unwrap_or("");
-                match run_ski_check(&store.blobs, check) {
+                match run_store_ski_check(store, check) {
                     Ok((got, rh, _)) => {
                         let claimed = r.get("verdict");
                         if !claimed.is_some_and(|v| py_eq(v, &Json::Str(got.clone()))) {
@@ -424,6 +439,21 @@ pub fn verify_store(store: &Store, quiet: bool, settlement: Option<&Settlement>)
 
 /// `verify_report`: the SPEC §11 machine report, fail-closed on a non-store.
 pub fn verify_report(store: &Store, settlement: Option<&Settlement>) -> Json {
+    verify_report_inner(store, settlement, None)
+}
+
+/// Same report and validation pass with explicitly supplied external trust.
+/// `None` requests base grade; an invalid supplied config refuses settlement.
+pub fn verify_report_with_trust(store: &Store, trust: Option<Result<Trust, String>>) -> Json {
+    let settlement = trust.as_ref().map(|_| Settlement::default());
+    verify_report_inner(store, settlement.as_ref(), trust.as_ref())
+}
+
+fn verify_report_inner(
+    store: &Store,
+    settlement: Option<&Settlement>,
+    supplied_trust: Option<&Result<Trust, String>>,
+) -> Json {
     let grade = if settlement.is_some() {
         "settlement"
     } else {
@@ -447,7 +477,7 @@ pub fn verify_report(store: &Store, settlement: Option<&Settlement>) -> Json {
         o.insert("findings", Json::Array(vec![Json::Object(f)]));
         return Json::Object(o);
     }
-    let rep = verify_store(store, true, settlement);
+    let rep = verify_store_inner(store, true, settlement, supplied_trust);
     o.insert("ok", Json::Bool(rep.errors == 0));
     o.insert("records", Json::Int(rep.records.to_string()));
     o.insert("errors", Json::Int(rep.errors.to_string()));

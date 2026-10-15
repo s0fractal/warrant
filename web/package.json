@@ -1,0 +1,11 @@
+{
+  "name": "@s0fractal/warrant-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "python3 build.py",
+    "test": "node --test test/*.test.mjs",
+    "preview": "python3 -m http.server 4173 --directory dist --bind 127.0.0.1"
+  }
+}
