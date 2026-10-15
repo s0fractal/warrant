@@ -26,6 +26,31 @@ right.
 
 ## Unreleased
 
+- **The quickstart reaches a green settlement-grade report, with two new
+  commands, and agents can read `why`.** `warrant trust add --actor ID
+  --key FILE|--pubkey HEX` and `warrant trust root WARRANT_ID` create or extend a
+  local trust config (SPEC §12) — the act that answers SA-2 had no tool, and the
+  README stopped at "0 errors, 3 warnings". They write only what they are told:
+  idempotent, weak keys and non-hex roots refused, an existing config that does
+  not validate refused and left untouched. `warrant why ID --json` emits the walk
+  `why` prints as one `warrant.why@v0` object (status per record, whole bodies,
+  same exit status) — **non-normative**, no SPEC section. Both in Python and in
+  `warrant-rs`, byte-identical (`tests/rs_parity.py` now compares them too).
+  Following the README to settlement grade also showed its own accept was a
+  re-litigation citing nothing new (no transcripts, so no new evidence and no
+  new fingerprint — SA-1): the README now files transcripts that differ, and
+  `tests/trust_and_why_json.py` runs the README's "Try it" blocks **verbatim**
+  in both implementations and requires `0 errors, 0 warnings`. No protocol
+  surface moved.
+
+- **Orientation files made true and checked.** `llms.txt` named PyPI 0.6.0,
+  "conformance 45/45" and DRAFT AGENTS rules that no longer exist, and did not
+  mention the crate; THREAT-MODEL SA-6 and TRADEMARK still called `impl-rs`
+  base-only. SA-6 now states what parity still assumes (one lineage, two ports).
+  `tools/doc_counts.py` holds the conformance count to a real run, the crate
+  version to pyproject, and llms.txt's published-packages paragraph to pointers
+  rather than numbers.
+
 - **The Rust implementation reaches the reference: the whole `warrant` CLI, held
   to its output byte for byte, and prepared for crates.io as `warrant-verify`.**
   `impl-rs` was a base-grade verifier (canon, schema, WarrantIDs, Ed25519

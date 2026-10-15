@@ -1351,6 +1351,82 @@ def _validate_trust_config(doc):
     return None
 
 
+def _trust_load(path, p):
+    """The existing config, validated -- or {} when there is none yet."""
+    if not p.exists():
+        return {}
+    try:
+        doc = loads_ijson(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as ex:
+        sys.exit(f"{path}: not a readable trust config ({ex}); refusing to rewrite it")
+    err = _validate_trust_config(doc)
+    if err:
+        sys.exit(f"{path}: not a valid trust config ({err}); refusing to rewrite it")
+    return doc
+
+
+def _trust_add_key(path, doc, actor, pubkey):
+    """Bind `pubkey` to `actor`; the message to print, or None if already bound."""
+    if not actor:
+        sys.exit("an actor id must be a nonempty string")
+    if not (_is_hex64(pubkey) and not weak_ed25519_pubkey(bytes.fromhex(pubkey))):
+        sys.exit(f"not an acceptable Ed25519 public key (SPEC §5): {pubkey}")
+    keys = doc.setdefault("actors", {}).setdefault(actor, [])
+    if pubkey in keys:
+        print(f"key {pubkey[:12]} for actor {actor} already in {path}")
+        return None
+    keys.append(pubkey)
+    return f"trusted key {pubkey[:12]} for actor {actor} in {path}"
+
+
+def _trust_add_root(path, doc, store, root):
+    """Trust `root` as a genesis root; the message to print, or None if already."""
+    if not _is_hex64(root):
+        sys.exit(f"not a WarrantID (64 lowercase hex): {root}")
+    roots = doc.setdefault("genesis_roots", [])
+    if root in roots:
+        print(f"genesis root {root[:12]} already in {path}")
+        return None
+    if store.records.is_dir() and not (store.records / f"{root}.json").is_file():
+        print(f"warning: {root[:12]} is not a record in {store.root}; a root "
+              f"must be a stored, well-signed record to become active",
+              file=sys.stderr)
+    roots.append(root)
+    return f"trusted genesis root {root[:12]} in {path}"
+
+
+def trust_edit(path, store, actor=None, pubkey=None, root=None):
+    """`warrant trust add|root`: add one key binding or one genesis root to a
+    local trust configuration (SPEC §12), creating the file if it is absent.
+
+    Exists because the quickstart ended at "0 errors, 3 warnings" with no way
+    forward but hand-writing JSON: the step that answers SA-2 -- which key may
+    speak for which actor -- had no tool. It writes only what it is told; it
+    never decides who is trusted. An existing file that does not validate is
+    refused, never rewritten, and nothing outside the working directory is
+    written at all.
+    """
+    # Only a `.json` file inside the current directory, by its real path.
+    # `--config` arrives from whoever runs the CLI -- increasingly an agent --
+    # and a writer that follows `../` or a symlink out of the working
+    # directory is a write primitive, not a convenience.
+    base = os.path.realpath(os.getcwd())
+    real = os.path.realpath(path)
+    if not real.startswith(base + os.sep) or not real.endswith(".json"):
+        sys.exit(f"{path}: a trust config must be a .json file inside the current "
+                 f"directory; refusing")
+    doc = _trust_load(path, Path(real))
+    if actor is not None:
+        msg = _trust_add_key(path, doc, actor, pubkey)
+    else:
+        msg = _trust_add_root(path, doc, store, root)
+    if msg is None:
+        return
+    with open(real, "w", encoding="utf-8") as f:
+        f.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    print(msg)
+
+
 def _trust_roots(store, trust, explicit_roots):
     roots = set(explicit_roots or []) | set(trust.get("genesis_roots", []))
     warnings = []
@@ -2086,28 +2162,27 @@ def verify_report(store, settlement=None):
 WHY_MAX_DEPTH = 4096
 
 
-def why(store, wid):
+def _why_walk(store, wid):
+    """The one walk behind `why` and `why --json`: yield the steps in print order.
+
+    Each step is (kind, warrant_id, depth, envelope, ok), kind being "node",
+    "missing", "cycle" (the node just yielded was already visited) or
+    "max-depth" (its priors were not followed). Both renderers consume this, so
+    the text and the JSON cannot disagree about which records were walked or
+    which of them verified.
+    """
     # Iterative pre-order DAG walk. Was recursive: a deep *linear* prior-chain
     # (no cycle, so `seen` did not help) exhausted Python's call stack and
     # raised RecursionError — a `why` on hostile input crashed instead of
     # printing (Kimi full-audit, 2026-07). An explicit stack removes the call-
     # depth limit; `seen` still cuts cycles and depth is bounded defensively.
-    # `why` printed [VERIFY FAILED] and `?? (not in store)` honestly and then
-    # exited 0 regardless, so `warrant why "$ID" && echo ok` reported success for
-    # a chain containing a record whose signature does not verify, and for an id
-    # absent from the store entirely. verify was made fail-closed at the machine
-    # boundary by an earlier gate; why was left behind. The OUTPUT was never the
-    # problem -- the exit status was.
-    missing = failed = 0
     seen = set()
     stack = [(wid, 0)]
     while stack:
         cur, d = stack.pop()
         env = store.get_record(cur)
-        pad = "  " * d
         if env is None:
-            print(f"{pad}?? {cur[:16]} (not in store)")
-            missing += 1
+            yield ("missing", cur, d, None, False)
             continue
         body = env["body"]
         # The predicate here must be the one §5 and §6 define, because `why`
@@ -2140,31 +2215,95 @@ def why(store, wid):
             id_ok = False         # uncomputable: not the record its name claims
         ok = (id_ok and bool(sigs)
               and _well_signed(cur, env))
-        if not ok:
-            failed += 1
-        mark = "" if ok else "  [VERIFY FAILED]"
-        unv = "  [unverifiable]" if is_unverifiable(body) else ""
-        note = body["subject"].get("note", "")
-        print(f"{pad}{body['decision'].upper()} {cur[:16]} by {body['actor']['id']}"
-              f"  subject={body['subject']['hash'][:12]} {note}{mark}{unv}")
-        for r in body["because"]:
-            if r["kind"] == "prose":
-                print(f"{pad}  - prose: {r['text']}")
-            else:
-                print(f"{pad}  - check {r['check'][:12]} [{r['runtime']}] -> {r['verdict']}")
-        for h in body["under"]:
-            print(f"{pad}  under policy {h[:12]}"
-                  + ("" if store.has_blob(h) else " (unresolved)"))
+        yield ("node", cur, d, env, ok)
         if cur in seen:
-            print(f"{pad}  (cycle)")
+            yield ("cycle", cur, d, env, ok)
             continue
         seen.add(cur)
         if d >= WHY_MAX_DEPTH:
-            print(f"{pad}  (max depth {WHY_MAX_DEPTH} reached)")
+            yield ("max-depth", cur, d, env, ok)
             continue
         for p in reversed(body["prior"]):
             stack.append((p, d + 1))
+
+
+def why(store, wid):
+    # `why` printed [VERIFY FAILED] and `?? (not in store)` honestly and then
+    # exited 0 regardless, so `warrant why "$ID" && echo ok` reported success for
+    # a chain containing a record whose signature does not verify, and for an id
+    # absent from the store entirely. verify was made fail-closed at the machine
+    # boundary by an earlier gate; why was left behind. The OUTPUT was never the
+    # problem -- the exit status was.
+    missing = failed = 0
+    for kind, cur, d, env, ok in _why_walk(store, wid):
+        pad = "  " * d
+        if kind == "missing":
+            print(f"{pad}?? {cur[:16]} (not in store)")
+            missing += 1
+        elif kind == "cycle":
+            print(f"{pad}  (cycle)")
+        elif kind == "max-depth":
+            print(f"{pad}  (max depth {WHY_MAX_DEPTH} reached)")
+        else:
+            body = env["body"]
+            if not ok:
+                failed += 1
+            mark = "" if ok else "  [VERIFY FAILED]"
+            unv = "  [unverifiable]" if is_unverifiable(body) else ""
+            note = body["subject"].get("note", "")
+            print(f"{pad}{body['decision'].upper()} {cur[:16]} by {body['actor']['id']}"
+                  f"  subject={body['subject']['hash'][:12]} {note}{mark}{unv}")
+            for r in body["because"]:
+                if r["kind"] == "prose":
+                    print(f"{pad}  - prose: {r['text']}")
+                else:
+                    print(f"{pad}  - check {r['check'][:12]} [{r['runtime']}] -> {r['verdict']}")
+            for h in body["under"]:
+                print(f"{pad}  under policy {h[:12]}"
+                      + ("" if store.has_blob(h) else " (unresolved)"))
     return missing, failed
+
+
+WHY_REPORT_VERSION = "warrant.why@v0"
+
+
+def _why_node(store, cur, d, body, ok):
+    """One walked record as `why --json` reports it."""
+    under = body.get("under") if isinstance(body, dict) else None
+    unresolved = [h for h in (under if isinstance(under, list) else [])
+                  if not (isinstance(h, str) and store.has_blob(h))]
+    return {"warrant_id": cur, "depth": d,
+            "status": "verified" if ok else "verify_failed",
+            "unverifiable": is_unverifiable(body),
+            "unresolved_under": unresolved,
+            "body": body}
+
+
+def why_report(store, wid):
+    """`why --json`: the same walk as `why`, as one object an agent can read.
+
+    NON-NORMATIVE (no SPEC section; the tag says so by being its own). It
+    carries no authority beyond `why`'s: `verified` is `why`'s predicate --
+    the name recomputes and a valid signature by `body.actor.id` is present --
+    not a binding to a trusted key and not a settlement verdict; for those, run
+    `verify --settlement`. Each node carries the record's whole body as stored,
+    so a reader never has to trust a summary of it.
+    """
+    nodes, missing, failed = [], 0, 0
+    for kind, cur, d, env, ok in _why_walk(store, wid):
+        if kind == "missing":
+            missing += 1
+            nodes.append({"warrant_id": cur, "depth": d, "status": "missing"})
+        elif kind == "cycle":
+            nodes[-1]["cycle"] = True
+        elif kind == "max-depth":
+            nodes[-1]["truncated"] = True
+        else:
+            failed += 0 if ok else 1
+            nodes.append(_why_node(store, cur, d, env["body"], ok))
+    return {"why": WHY_REPORT_VERSION, "warrant_id": wid,
+            "ok": missing == 0 and failed == 0,
+            "missing": missing, "failed": failed, "nodes": nodes}
 
 
 # ---------- migration to warrant-sig-v1 (SPEC §5) ----------
@@ -2686,6 +2825,18 @@ def build_parser():
     filing(sub.add_parser("supersede"), with_prior_pos=True)
     wy = sub.add_parser("why")
     wy.add_argument("id")
+    wy.add_argument("--json", action="store_true",
+                    help="emit one warrant.why@v0 JSON object (non-normative): the "
+                         "same walk and exit status as the text")
+    tr = sub.add_parser("trust", help="add a key binding or a genesis root to a "
+                                      "local trust config (SPEC §12)")
+    tr.add_argument("action", choices=["add", "root"])
+    tr.add_argument("root_id", nargs="?", help="for `root`: the WarrantID to trust")
+    tr.add_argument("--actor", help="for `add`: the actor id the key may speak for")
+    tr.add_argument("--key", help="for `add`: a key file; its public key is trusted")
+    tr.add_argument("--pubkey", help="for `add`: a public key (64 hex) instead of a key file")
+    tr.add_argument("--config", default="trust.json",
+                    help="the trust config to create or extend (default trust.json)")
     ck = sub.add_parser("check", help="re-run a ski@v1 check blob against the store")
     ck.add_argument("hash")
     vf = sub.add_parser("verify")
@@ -2728,6 +2879,17 @@ def build_parser():
     return ap
 
 
+def _trust_argv_invariants(ap, args):
+    """`trust add` needs an actor and exactly one key source; `trust root` a WarrantID."""
+    if args.action == "add":
+        if args.actor is None or (args.key is None) == (args.pubkey is None):
+            ap.error("trust add requires --actor and exactly one of --key/--pubkey")
+        if args.root_id is not None:
+            ap.error("trust add takes no positional WarrantID")
+    elif args.root_id is None:
+        ap.error("trust root requires the WarrantID to trust")
+
+
 def parse_cli(argv=None):
     """Parse an argv AND apply the pure post-parse invariants. No side effects.
 
@@ -2748,6 +2910,8 @@ def parse_cli(argv=None):
     # was to run it against a real store -- and a documentation checker that
     # stopped at parse_args reported a surface the CLI does not accept (Codex
     # release-surface re-gate 3). Nothing here touches the filesystem.
+    if args.cmd == "trust":
+        _trust_argv_invariants(ap, args)
     if args.cmd == "propose" and not args.subject:
         ap.error("propose requires --subject")
     if args.cmd in ("accept", "reject", "supersede") and args.prior_id is None:
@@ -2798,6 +2962,17 @@ def main():
             args.under = list(prior_env["body"]["under"])
         note = args.note or prior_env["body"]["subject"].get("note")
         file_warrant(store, args.cmd, subject, args, note=note)
+    elif args.cmd == "trust":
+        if args.action == "add":
+            pub = pubkey_hex(load_key(args.key)) if args.key else args.pubkey
+            trust_edit(args.config, store, actor=args.actor, pubkey=pub)
+        else:
+            trust_edit(args.config, store, root=args.root_id)
+    elif args.cmd == "why" and args.json:
+        store.require()
+        report = why_report(store, args.id)
+        print(json.dumps(report, separators=(",", ":"), ensure_ascii=True))
+        sys.exit(0 if report["ok"] else 1)
     elif args.cmd == "why":
         store.require()
         missing, failed = why(store, args.id)

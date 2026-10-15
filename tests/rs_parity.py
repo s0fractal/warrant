@@ -432,6 +432,7 @@ def fuzz(n, seed, tally, mism, keep):
                     + sum((["--genesis", x] for x in g), []), tally, mism)
             for wid in s.wids + ["f" * 64]:
                 compare("why", ["--store", st, "why", wid], tally, mism)
+                compare("why --json", ["--store", st, "why", wid, "--json"], tally, mism)
             for _ in range(3):
                 settling = rng.choice(s.wids)
                 cand = rng.choice(s.wids)
@@ -488,6 +489,24 @@ def writers(tally, mism):
                "--key", str(k))
             go("verify")
             go("why", w3)
+            go("why", w3, "--json")
+            # The path to a green settlement-grade report: a key binding and a root.
+            # `trust` writes only inside the working directory, so run it there.
+            tname = f"trust-{who}.json"
+            tcfg = str(Path(tmp, tname))
+
+            def tr(*a):
+                r = subprocess.run(cmd + ["--store", st] + list(a), capture_output=True,
+                                   env=ENV, cwd=tmp)
+                outs.append((r.returncode, r.stdout.replace(st.encode(), b"<store>")))
+            tr("trust", "add", "--actor", "a@x", "--key", str(k), "--config", tname)
+            tr("trust", "add", "--actor", "a@x", "--key", str(k), "--config", tname)
+            tr("trust", "add", "--actor", "b@x", "--pubkey", "00" * 32, "--config", tname)
+            tr("trust", "root", w1, "--config", tname)
+            tr("trust", "root", "f" * 64, "--config", tname)
+            tr("trust", "root", w1, "--config", "../outside.json")
+            go("verify", "--settlement", "--trust-config", tcfg)
+            outs.append((0, Path(tcfg).read_bytes()))
             # A legacy (pre-v1) record, then the migration.
             body = {"warrant": "0.2", "decision": "propose", "subject": {"hash": "a" * 64},
                     "under": ["b" * 64], "because": [], "evidence": [], "actor": {"id": "a@x"},
@@ -500,6 +519,7 @@ def writers(tally, mism):
             go("resign", "--key", str(k), "--dry-run")
             go("resign", "--key", str(k))
             go("verify", "--json")
+            outs = [(c, o.replace(f"trust-{who}.json".encode(), b"trust-<who>.json")) for c, o in outs]
             trees[who] = ({str(p.relative_to(st)): p.read_bytes()
                            for p in sorted(Path(st).rglob("*")) if p.is_file()}, outs)
         tally["writers"] += 1
@@ -648,7 +668,7 @@ def main():
 
     for m in mism[:8]:
         print("MISMATCH", json.dumps(m, ensure_ascii=False)[:3000])
-    need = ["verify", "verify --json", "why", "settle", "check", "writers", "probe",
+    need = ["verify", "verify --json", "why", "why --json", "settle", "check", "writers", "probe",
             "parse-fuzz", "canon-fuzz", "validate-fuzz"]
     if not args.no_shadow:
         need += ["shadow:verify", "shadow:canon", "shadow:why", "shadow:settle", "shadow:resign",

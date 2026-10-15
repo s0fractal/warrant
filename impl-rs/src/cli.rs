@@ -8,6 +8,7 @@
 //! Abbreviated flags are refused, as the reference refuses them.
 
 use crate::conformance::{conformance, probe, selftest};
+use crate::json::Json;
 use crate::ops::{file_warrant, resign_envelopes, respond, settle, why, Exit, Filing};
 use crate::sig::{os_random_32, SigningKey};
 use crate::store::Store;
@@ -85,10 +86,21 @@ fn spec(cmd: &str) -> Option<Spec> {
             positionals: &["prior_id?"],
         },
         "why" => Spec {
-            opts: none,
+            opts: &[("--json", Kind::Flag)],
             required: &[],
             choices: &[],
             positionals: &["id"],
+        },
+        "trust" => Spec {
+            opts: &[
+                ("--actor", Kind::Value),
+                ("--key", Kind::Value),
+                ("--pubkey", Kind::Value),
+                ("--config", Kind::Value),
+            ],
+            required: &[],
+            choices: &[],
+            positionals: &["action", "root_id?"],
         },
         "check" => Spec {
             opts: none,
@@ -168,7 +180,7 @@ impl Args {
     }
 }
 
-const COMMANDS: &str = "init,keygen,blob,policy,propose,accept,reject,supersede,why,check,verify,settle,resign,conformance,selftest,probe,canon";
+const COMMANDS: &str = "init,keygen,blob,policy,propose,accept,reject,supersede,why,trust,check,verify,settle,resign,conformance,selftest,probe,canon";
 
 fn usage() -> String {
     format!("usage: warrant-rs [-h] [--store STORE] {{{COMMANDS}}} ...")
@@ -271,6 +283,12 @@ fn parse_sub(cmd: &str, sp: &Spec, argv: &[String]) -> Result<Args, String> {
     }
     if !extra.is_empty() {
         return Err(format!("unrecognized arguments: {}", extra.join(" ")));
+    }
+    if cmd == "trust" && !matches!(a.p("action").as_deref(), Some("add" | "root")) {
+        return Err(format!(
+            "argument action: invalid choice: '{}' (choose from 'add', 'root')",
+            a.p("action").unwrap_or_default()
+        ));
     }
     if (cmd == "blob" || cmd == "policy") && a.p("action").as_deref() != Some("add") {
         return Err(format!(
@@ -425,6 +443,28 @@ fn dispatch(argv: &[String]) -> Result<(), Exit> {
     }
     let a = parse_sub(cmd, &sp, rest).map_err(|m| usage_error(Some(cmd), &m))?;
     // Pure argv invariants, checked before any store access.
+    if cmd == "trust" {
+        if a.p("action").as_deref() == Some("add") {
+            if a.val("--actor").is_none() || a.val("--key").is_some() == a.val("--pubkey").is_some()
+            {
+                return Err(usage_error(
+                    Some(cmd),
+                    "trust add requires --actor and exactly one of --key/--pubkey",
+                ));
+            }
+            if a.p("root_id").is_some() {
+                return Err(usage_error(
+                    Some(cmd),
+                    "trust add takes no positional WarrantID",
+                ));
+            }
+        } else if a.p("root_id").is_none() {
+            return Err(usage_error(
+                Some(cmd),
+                "trust root requires the WarrantID to trust",
+            ));
+        }
+    }
     if cmd == "propose" && a.val("--subject").filter(|s| !s.is_empty()).is_none() {
         return Err(usage_error(Some(cmd), "propose requires --subject"));
     }
@@ -487,6 +527,31 @@ fn dispatch(argv: &[String]) -> Result<(), Exit> {
             require(&store)?;
             let f = filing(&a).map_err(|m| usage_error(Some(cmd), &m))?;
             respond(&store, cmd, a.p("prior_id").as_deref(), &f)?;
+        }
+        "trust" => {
+            let config = a.val("--config").unwrap_or_else(|| "trust.json".into());
+            if a.p("action").as_deref() == Some("add") {
+                let pubkey = match a.val("--key") {
+                    Some(k) => SigningKey::load(&k).map_err(Exit::msg)?.public_hex(),
+                    None => a.val("--pubkey").unwrap_or_default(),
+                };
+                crate::ops::trust_edit(
+                    &config,
+                    &store,
+                    Some((&a.val("--actor").unwrap(), &pubkey)),
+                    None,
+                )?;
+            } else {
+                crate::ops::trust_edit(&config, &store, None, a.p("root_id").as_deref())?;
+            }
+        }
+        "why" if a.flag("--json") => {
+            require(&store)?;
+            let report = crate::ops::why_report(&store, &a.p("id").unwrap())?;
+            println!("{}", crate::json::dumps_compact(&report));
+            if !matches!(report.get("ok"), Some(Json::Bool(true))) {
+                return Err(Exit::code(1));
+            }
         }
         "why" => {
             require(&store)?;

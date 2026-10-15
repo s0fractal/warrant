@@ -28,8 +28,7 @@ So: read this before concluding anything.
 - [MAP.md](MAP.md): generated from git — for every document this repository
   cites, which ref actually holds it. Several live in the sibling repository
   `sigma-glyph`, and the map says which branch.
-- [AGENTS.md](AGENTS.md): conduct rules. Rules 1–5 are in force; 6–7 are marked
-  DRAFT and are not.
+- [AGENTS.md](AGENTS.md): conduct rules 1–5, all in force.
 
 ## Check anything in one command
 
@@ -40,7 +39,7 @@ no account:
 python3 tools/check.py                  # everything, one verdict
 ```
 
-That runs all 65 checks the repository's claims rest on and prints one line. A
+That runs all 66 checks the repository's claims rest on and prints one line. A
 check that could not run — Go not built, oracle missing — is reported UNRUN with
 its own exit status, never as passed: a harness printing ALL PASS while silently
 skipping the Go suites would be claiming two implementations agreed on the
@@ -50,7 +49,7 @@ Individual pieces, if you want them:
 
 ```bash
 python3 impl/warrant.py selftest        # ALL PASS
-python3 impl/warrant.py conformance     # ALL PASS (45/45)
+python3 impl/warrant.py conformance     # ALL PASS (67/67)
 python3 tests/differential.py           # ALL AGREE  — Python vs Go, byte-exact
 python3 tests/negative.py               # ALL AGREE  — MUST-REJECT vectors
 python3 tools/repo_map.py --check-map   # every cited document is located
@@ -80,18 +79,22 @@ caught; the fix was to generate the numbers rather than type them.
 
 ## What is published, and what that does not mean
 
-`warrant-verify` is on PyPI: **0.3.0**, **0.4.0**, **0.5.0** and **0.6.0**, the
-last of them on 2026-07-31 from tag `v0.6.0`, through the Trusted Publishing
-(OIDC) path in `.github/workflows/publish.yml`. `pipx install warrant-verify`
-gets 0.6.0 and it runs; the maintainer installed it into a clean venv and ran
-`warrant selftest` to `SELFTEST: ALL PASS`, and re-ran the README's no-clone
-quickstart end to end against the published wheel and the release assets.
+`warrant-verify` is published twice, from one repository and one version number
+(`version` in `pyproject.toml`, which `impl-rs/Cargo.toml` must equal): the
+Python reference on PyPI (<https://pypi.org/project/warrant-verify/>, CLI
+`warrant`) and the Rust implementation on crates.io
+(<https://crates.io/crates/warrant-verify>, CLI `warrant-rs`). Which versions
+actually shipped is whatever those two registries say — this file does not
+restate a number, because the last two that it did went stale. A release
+publishes both from one tag through Trusted Publishing (OIDC),
+`.github/workflows/publish.yml`.
 
 What that does **not** establish, because the flattering reading is as wrong as
-the pessimistic one: nobody outside the maintainer is known to have installed
-it, there are no reported users, no download figures are claimed, and a
-successful publish is not an independent gate (`AGENTS.md` rule 3) and not a
-governance adoption. If this section and PyPI ever disagree, PyPI is right.
+the pessimistic one: nobody outside the maintainer is known to have reported
+using either, a successful publish is not an independent gate (`AGENTS.md` rule
+3) and not a governance adoption, and the same version number on both registries
+is only the same behaviour if both were cut from the same tag — check the release
+notes before assuming it.
 
 ## Interoperating with the provenance world
 
@@ -208,9 +211,9 @@ the thing it summarises:
 - **SA-3** — a threshold assumes independent custody and has not had it: **zero**
   multi-signature records in this repository, five in `sigma-glyph`, three of
   those five signed from one host.
-- **SA-6** — three-way implementation parity is a claim about **base grade**
-  only; settlement-grade parity is Python against Go, and §9 multi-root is
-  vectored only as far as root admission.
+- **SA-6** — three-way implementation parity (now at settlement grade too) is
+  agreement within **one author/model lineage**, two implementations ported from
+  the third; it shows they agree, not that SPEC.md alone determines the answer.
 - **SA-10** — no independent gate is currently available, so items land UNGATED
   under a recorded attestation rather than a passed gate.
 

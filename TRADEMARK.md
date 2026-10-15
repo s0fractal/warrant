@@ -38,7 +38,7 @@ vectors it claims to implement.**
 
 Say which **grade** you claim. `base` (SPEC §6) and `settlement` (§7) are
 different amounts of implementation, and claiming base is a complete, honest
-claim — one of the three reference implementations is deliberately base-only. The
+claim — the conformance runner tests exactly the grade you declare. The
 runner reports the grade achieved, and reports separately anything it could not
 run, so "passes at base grade, 4 vectors above that grade not claimed" is a
 sentence you can publish exactly as printed.

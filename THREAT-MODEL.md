@@ -206,16 +206,27 @@ by an external audit and fixed. It remains hand-rolled verification crypto in a
 trust path; differential testing narrows that risk and does not eliminate it. Use
 `impl/` or `impl-go/` where that matters.
 
-#### SA-6. Three-way parity is assumed only at base grade
+#### SA-6. Three-way parity is assumed to be evidence about the text, and it is evidence about one lineage
 
-`impl-rs` implements SPEC §6 **base grade only**: no settlement, no key state, no
-trust config, and `ski@v1` reasons are reported `unverified: runtime
-unavailable`. Three-way parity is a claim about base-grade verification.
-Settlement-grade parity is Python↔Go — tested in `tests/verify_three_way.py` on
-nine deliberately broken stores, so the base-grade claim is that all three agree
-on broken stores as well as clean ones. §9 multi-root behaviour is vectored only
-as far as root admission (SA-7). The most novel layer of the format is the least
-proven implementable from the text by a stranger.
+Until 2026-10-09 this assumption read "three-way parity holds only at base
+grade", because `impl-rs` implemented SPEC §6 only. That limit is gone: all three
+implementations now verify at **settlement** grade and agree on
+`(records, errors, warnings)` at both grades over nine deliberately broken stores
+(`tests/verify_three_way.py`), and the Rust implementation is held to the
+Python reference's exact output — every report line, exit status and written
+byte — over every reference-CLI call in the adversarial harnesses plus fuzzed
+settlement stores (`tests/rs_parity.py`).
+
+What is still assumed, and is the reason this entry stays: **all three were
+written within one author/model lineage, two of them by porting the reference**.
+Agreement therefore shows that the implementations agree, not that the
+specification determines what they agree on — the Rust port was written by
+reading `impl/warrant.py`, not SPEC.md alone, and it found eleven reference
+defects precisely because it copied the reference closely enough to hit them.
+Go and Python agree on counts, not on message text (README, "Machine boundary").
+§9 multi-root behaviour is vectored only as far as root admission (SA-7). An
+implementation written from SPEC.md by someone who has not read ours is still
+the missing evidence; the conformance pack is how one would be measured.
 
 #### SA-7. §9 multi-root behaviour is assumed correct beyond root admission
 

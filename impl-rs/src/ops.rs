@@ -279,17 +279,43 @@ fn field<'a>(v: &'a Json, k: &str) -> Result<&'a Json, Exit> {
         .ok_or_else(|| Exit::msg(format!("why: malformed record (no {k:?})")))
 }
 
-/// Walk a decision's chain of reasons. Returns (missing, failed) counts.
-pub fn why(store: &Store, wid: &str) -> Result<(usize, usize), Exit> {
-    let (mut missing, mut failed) = (0, 0);
+/// One step of the walk behind `why` and `why --json`, in print order.
+pub enum WhyStep<'a> {
+    Node {
+        wid: &'a str,
+        depth: usize,
+        env: &'a Json,
+        ok: bool,
+    },
+    Missing {
+        wid: &'a str,
+        depth: usize,
+    },
+    /// The node just visited had been visited before; its priors are not followed.
+    Cycle {
+        depth: usize,
+    },
+    /// The node just visited is at the depth bound; its priors are not followed.
+    MaxDepth {
+        depth: usize,
+    },
+}
+
+/// The one walk both renderers consume, so the text and the JSON cannot
+/// disagree about which records were walked or which of them verified.
+pub fn why_walk(
+    store: &Store,
+    wid: &str,
+    visit: &mut dyn FnMut(WhyStep) -> Result<(), Exit>,
+) -> Result<(), Exit> {
     let mut seen = std::collections::BTreeSet::new();
     let mut stack: Vec<(String, usize)> = vec![(wid.to_string(), 0)];
     while let Some((cur, d)) = stack.pop() {
-        let env = store.get_record(&cur).map_err(Exit::msg)?;
-        let pad = "  ".repeat(d);
-        let Some(env) = env else {
-            println!("{pad}?? {} (not in store)", prefix(&cur, 16));
-            missing += 1;
+        let Some(env) = store.get_record(&cur).map_err(Exit::msg)? else {
+            visit(WhyStep::Missing {
+                wid: &cur,
+                depth: d,
+            })?;
             continue;
         };
         let body = field(&env, "body")?;
@@ -297,67 +323,18 @@ pub fn why(store: &Store, wid: &str) -> Result<(usize, usize), Exit> {
         let ok = warrant_id(body).is_ok_and(|w| w == cur)
             && crate::settlement::truthy(Some(sigs))
             && well_signed(&cur, &env);
-        if !ok {
-            failed += 1;
-        }
-        let mark = if ok { "" } else { "  [VERIFY FAILED]" };
-        let unv = if is_unverifiable(body) {
-            "  [unverifiable]"
-        } else {
-            ""
-        };
-        let subject = field(body, "subject")?;
-        let note = subject
-            .as_obj()
-            .ok_or_else(|| Exit::msg("why: malformed record (subject)"))?
-            .get("note")
-            .map(py_str)
-            .unwrap_or_default();
-        let decision = match field(body, "decision")? {
-            Json::Str(s) | Json::BadStr(s, _) => s.to_uppercase(),
-            _ => return Err(Exit::msg("why: malformed record (decision)")),
-        };
-        let actor = py_str(field(field(body, "actor")?, "id")?);
-        println!(
-            "{pad}{decision} {} by {actor}  subject={} {note}{mark}{unv}",
-            prefix(&cur, 16),
-            slice(subject.get("hash"), 12)?
-        );
-        for r in field(body, "because")?
-            .as_arr()
-            .ok_or_else(|| Exit::msg("why: malformed record (because)"))?
-        {
-            if crate::json::py_eq(field(r, "kind")?, &Json::str("prose")) {
-                println!("{pad}  - prose: {}", py_str(field(r, "text")?));
-            } else {
-                println!(
-                    "{pad}  - check {} [{}] -> {}",
-                    slice(r.get("check"), 12)?,
-                    py_str(field(r, "runtime")?),
-                    py_str(field(r, "verdict")?)
-                );
-            }
-        }
-        for h in field(body, "under")?
-            .as_arr()
-            .ok_or_else(|| Exit::msg("why: malformed record (under)"))?
-        {
-            let hs = slice(Some(h), 12)?;
-            let resolved = store.has_blob(
-                h.as_str()
-                    .ok_or_else(|| Exit::msg("why: malformed record (under)"))?,
-            );
-            println!(
-                "{pad}  under policy {hs}{}",
-                if resolved { "" } else { " (unresolved)" }
-            );
-        }
+        visit(WhyStep::Node {
+            wid: &cur,
+            depth: d,
+            env: &env,
+            ok,
+        })?;
         if !seen.insert(cur.clone()) {
-            println!("{pad}  (cycle)");
+            visit(WhyStep::Cycle { depth: d })?;
             continue;
         }
         if d >= WHY_MAX_DEPTH {
-            println!("{pad}  (max depth {WHY_MAX_DEPTH} reached)");
+            visit(WhyStep::MaxDepth { depth: d })?;
             continue;
         }
         for p in field(body, "prior")?
@@ -372,7 +349,326 @@ pub fn why(store: &Store, wid: &str) -> Result<(usize, usize), Exit> {
             }
         }
     }
+    Ok(())
+}
+
+/// Print a decision's chain of reasons. Returns (missing, failed) counts.
+pub fn why(store: &Store, wid: &str) -> Result<(usize, usize), Exit> {
+    let (mut missing, mut failed) = (0, 0);
+    why_walk(store, wid, &mut |step| {
+        match step {
+            WhyStep::Missing { wid, depth } => {
+                println!(
+                    "{}?? {} (not in store)",
+                    "  ".repeat(depth),
+                    prefix(wid, 16)
+                );
+                missing += 1;
+            }
+            WhyStep::Cycle { depth } => println!("{}  (cycle)", "  ".repeat(depth)),
+            WhyStep::MaxDepth { depth } => {
+                println!(
+                    "{}  (max depth {WHY_MAX_DEPTH} reached)",
+                    "  ".repeat(depth)
+                )
+            }
+            WhyStep::Node {
+                wid,
+                depth,
+                env,
+                ok,
+            } => {
+                if !ok {
+                    failed += 1;
+                }
+                print_why_node(store, wid, depth, env, ok)?;
+            }
+        }
+        Ok(())
+    })?;
     Ok((missing, failed))
+}
+
+fn print_why_node(store: &Store, cur: &str, d: usize, env: &Json, ok: bool) -> Result<(), Exit> {
+    let pad = "  ".repeat(d);
+    let body = field(env, "body")?;
+    let mark = if ok { "" } else { "  [VERIFY FAILED]" };
+    let unv = if is_unverifiable(body) {
+        "  [unverifiable]"
+    } else {
+        ""
+    };
+    let subject = field(body, "subject")?;
+    let note = subject
+        .as_obj()
+        .ok_or_else(|| Exit::msg("why: malformed record (subject)"))?
+        .get("note")
+        .map(py_str)
+        .unwrap_or_default();
+    let decision = match field(body, "decision")? {
+        Json::Str(s) | Json::BadStr(s, _) => s.to_uppercase(),
+        _ => return Err(Exit::msg("why: malformed record (decision)")),
+    };
+    let actor = py_str(field(field(body, "actor")?, "id")?);
+    println!(
+        "{pad}{decision} {} by {actor}  subject={} {note}{mark}{unv}",
+        prefix(cur, 16),
+        slice(subject.get("hash"), 12)?
+    );
+    for r in field(body, "because")?
+        .as_arr()
+        .ok_or_else(|| Exit::msg("why: malformed record (because)"))?
+    {
+        if crate::json::py_eq(field(r, "kind")?, &Json::str("prose")) {
+            println!("{pad}  - prose: {}", py_str(field(r, "text")?));
+        } else {
+            println!(
+                "{pad}  - check {} [{}] -> {}",
+                slice(r.get("check"), 12)?,
+                py_str(field(r, "runtime")?),
+                py_str(field(r, "verdict")?)
+            );
+        }
+    }
+    for h in field(body, "under")?
+        .as_arr()
+        .ok_or_else(|| Exit::msg("why: malformed record (under)"))?
+    {
+        let hs = slice(Some(h), 12)?;
+        let resolved = store.has_blob(
+            h.as_str()
+                .ok_or_else(|| Exit::msg("why: malformed record (under)"))?,
+        );
+        println!(
+            "{pad}  under policy {hs}{}",
+            if resolved { "" } else { " (unresolved)" }
+        );
+    }
+    Ok(())
+}
+
+pub const WHY_REPORT_VERSION: &str = "warrant.why@v0";
+
+/// `why --json`: the same walk as `why`, as one object an agent can read.
+/// NON-NORMATIVE: `verified` is `why`'s predicate (the name recomputes and a
+/// valid signature by `body.actor.id` is present), not a key binding and not
+/// a settlement verdict. Each node carries the record's whole body as stored.
+pub fn why_report(store: &Store, wid: &str) -> Result<Json, Exit> {
+    let mut nodes: Vec<Json> = Vec::new();
+    let (mut missing, mut failed) = (0usize, 0usize);
+    why_walk(store, wid, &mut |step| {
+        match step {
+            WhyStep::Missing { wid, depth } => {
+                missing += 1;
+                let mut o = Obj::new();
+                o.insert("warrant_id", Json::str(wid));
+                o.insert("depth", Json::Int(depth.to_string()));
+                o.insert("status", Json::str("missing"));
+                nodes.push(Json::Object(o));
+            }
+            WhyStep::Cycle { .. } => {
+                if let Some(o) = nodes.last_mut().and_then(Json::as_obj_mut) {
+                    o.insert("cycle", Json::Bool(true));
+                }
+            }
+            WhyStep::MaxDepth { .. } => {
+                if let Some(o) = nodes.last_mut().and_then(Json::as_obj_mut) {
+                    o.insert("truncated", Json::Bool(true));
+                }
+            }
+            WhyStep::Node {
+                wid,
+                depth,
+                env,
+                ok,
+            } => {
+                if !ok {
+                    failed += 1;
+                }
+                let body = field(env, "body")?;
+                let unresolved: Vec<Json> = match body.get("under") {
+                    Some(Json::Array(a)) => a
+                        .iter()
+                        .filter(|h| {
+                            !h.as_str()
+                                .is_some_and(|s| matches!(h, Json::Str(_)) && store.has_blob(s))
+                        })
+                        .cloned()
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                let mut o = Obj::new();
+                o.insert("warrant_id", Json::str(wid));
+                o.insert("depth", Json::Int(depth.to_string()));
+                o.insert(
+                    "status",
+                    Json::str(if ok { "verified" } else { "verify_failed" }),
+                );
+                o.insert("unverifiable", Json::Bool(is_unverifiable(body)));
+                o.insert("unresolved_under", Json::Array(unresolved));
+                o.insert("body", body.clone());
+                nodes.push(Json::Object(o));
+            }
+        }
+        Ok(())
+    })?;
+    let mut r = Obj::new();
+    r.insert("why", Json::str(WHY_REPORT_VERSION));
+    r.insert("warrant_id", Json::str(wid));
+    r.insert("ok", Json::Bool(missing == 0 && failed == 0));
+    r.insert("missing", Json::Int(missing.to_string()));
+    r.insert("failed", Json::Int(failed.to_string()));
+    r.insert("nodes", Json::Array(nodes));
+    Ok(Json::Object(r))
+}
+
+// ----------------------------------------------------------------- trust ----
+
+/// `warrant trust add|root`: add one key binding or one genesis root to a
+/// local trust configuration (SPEC §12), creating the file if absent. It
+/// writes only what it is told; an existing file that does not validate is
+/// refused, never rewritten.
+/// `os.path.realpath`: the real path even when the file does not exist yet
+/// (its parent is resolved, the name kept). A symlink is followed even when its
+/// target does not exist -- `canonicalize` refuses a dangling link, and a
+/// writer that then took the link's own name would write through it.
+fn real_path(path: &str) -> Option<PathBuf> {
+    let mut abs = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    for _ in 0..40 {
+        if let Ok(r) = std::fs::canonicalize(&abs) {
+            return Some(r);
+        }
+        match std::fs::symlink_metadata(&abs) {
+            Ok(m) if m.file_type().is_symlink() => {
+                let target = std::fs::read_link(&abs).ok()?;
+                abs = abs.parent()?.join(target);
+            }
+            _ => {
+                let parent = std::fs::canonicalize(abs.parent()?).ok()?;
+                return Some(parent.join(abs.file_name()?));
+            }
+        }
+    }
+    None
+}
+
+/// The trust config `trust` may write: a `.json` file inside the current
+/// directory, by its real path (`--config` may come from an agent; a writer
+/// that follows `../` or a symlink out of the working directory is a write
+/// primitive, not a convenience).
+fn trust_config_path(path: &str) -> Result<PathBuf, Exit> {
+    let refuse = || {
+        Exit::msg(format!(
+            "{path}: a trust config must be a .json file inside the current directory; refusing"
+        ))
+    };
+    let base = std::env::current_dir()
+        .ok()
+        .and_then(|d| std::fs::canonicalize(d).ok())
+        .ok_or_else(refuse)?;
+    let real = real_path(path).ok_or_else(refuse)?;
+    let inside = real.starts_with(&base) && real != base;
+    if !inside || !real.to_string_lossy().ends_with(".json") {
+        return Err(refuse());
+    }
+    Ok(real)
+}
+
+pub fn trust_edit(
+    path: &str,
+    store: &Store,
+    add: Option<(&str, &str)>,
+    root: Option<&str>,
+) -> Result<(), Exit> {
+    let real = trust_config_path(path)?;
+    let p = real.as_path();
+    let mut doc = Json::Object(Obj::new());
+    if p.exists() {
+        let text = std::fs::read_to_string(p).map_err(|e| {
+            Exit::msg(format!(
+                "{path}: not a readable trust config ({e}); refusing to rewrite it"
+            ))
+        })?;
+        doc = parse_ijson_str(&text).map_err(|e| {
+            Exit::msg(format!(
+                "{path}: not a readable trust config ({e}); refusing to rewrite it"
+            ))
+        })?;
+        if let Err(e) = crate::settlement::validate_trust_config(&doc) {
+            return Err(Exit::msg(format!(
+                "{path}: not a valid trust config ({e}); refusing to rewrite it"
+            )));
+        }
+    }
+    let o = doc.as_obj_mut().expect("validated as an object");
+    let msg = if let Some((actor, pubkey)) = add {
+        if actor.is_empty() {
+            return Err(Exit::msg("an actor id must be a nonempty string"));
+        }
+        let ok = is_hex64(pubkey)
+            && !crate::sig::weak_ed25519_pubkey(&crate::hash::fromhex(pubkey).unwrap_or_default());
+        if !ok {
+            return Err(Exit::msg(format!(
+                "not an acceptable Ed25519 public key (SPEC §5): {pubkey}"
+            )));
+        }
+        if !o.contains_key("actors") {
+            o.insert("actors", Json::Object(Obj::new()));
+        }
+        let actors = o.get_mut("actors").and_then(Json::as_obj_mut).unwrap();
+        if !actors.contains_key(actor) {
+            actors.insert(actor, Json::Array(Vec::new()));
+        }
+        let Some(Json::Array(keys)) = actors.get_mut(actor) else {
+            unreachable!()
+        };
+        if keys.iter().any(|k| k.as_str() == Some(pubkey)) {
+            println!(
+                "key {} for actor {actor} already in {path}",
+                prefix(pubkey, 12)
+            );
+            return Ok(());
+        }
+        keys.push(Json::str(pubkey));
+        format!(
+            "trusted key {} for actor {actor} in {path}",
+            prefix(pubkey, 12)
+        )
+    } else {
+        let root = root.unwrap_or_default();
+        if !is_hex64(root) {
+            return Err(Exit::msg(format!(
+                "not a WarrantID (64 lowercase hex): {root}"
+            )));
+        }
+        if !o.contains_key("genesis_roots") {
+            o.insert("genesis_roots", Json::Array(Vec::new()));
+        }
+        let Some(Json::Array(roots)) = o.get_mut("genesis_roots") else {
+            unreachable!()
+        };
+        if roots.iter().any(|r| r.as_str() == Some(root)) {
+            println!("genesis root {} already in {path}", prefix(root, 12));
+            return Ok(());
+        }
+        if store.records.is_dir() && !store.records.join(format!("{root}.json")).is_file() {
+            eprintln!(
+                "warning: {} is not a record in {}; a root must be a stored, well-signed record to become active",
+                prefix(root, 12),
+                crate::cli::py_path(&store.root.display().to_string())
+            );
+        }
+        roots.push(Json::str(root));
+        format!("trusted genesis root {} in {path}", prefix(root, 12))
+    };
+    std::fs::write(p, dumps_pretty_sorted(&doc) + "\n")
+        .map_err(|e| Exit::msg(format!("{path}: {e}")))?;
+    println!("{msg}");
+    Ok(())
 }
 
 // ---------------------------------------------------------------- resign ----

@@ -19,8 +19,8 @@ reference (`warrant-verify` on PyPI) and Go. It ships:
   (Σ-GLYPH Book I v0.5), store verification at base and settlement grade, the
   `warrant.verify-report@v0` machine report, and settlement admissibility;
 * a **CLI** (`warrant-rs`) with the reference CLI's verbs and flags:
-  `init keygen blob policy propose accept reject supersede why check verify
-  settle resign conformance selftest probe canon`.
+  `init keygen blob policy propose accept reject supersede why trust check
+  verify settle resign conformance selftest probe canon` (`why --json` too).
 
 ## Held to the reference, byte for byte
 

@@ -99,6 +99,10 @@ CHECKS = [
      ["python3", "tools/schema_check.py"], None),
     ("why/verify agree on what \"signed\" means (SPEC §5 co-signatures)",
      ["python3", "tests/why_signature_predicate.py"], None),
+    # The quickstart's path to a green settlement-grade report, and the JSON
+    # walk agents read; Python always, Rust when built (it names a skip).
+    ("trust add/root reach green; why --json walks what why prints",
+     ["python3", "tests/trust_and_why_json.py"], None),
     ("pedantic edges (parity on the awkward cases)",
      ["python3", "tests/pedantic_edges.py"], "go"),
     ("ski@v1 policy predicates (real re-execution)",
@@ -353,6 +357,11 @@ SERIAL = {
     "x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
     "x1: sibling-ref resolver (one-sided PR -> sibling master; ci.yml wired)",
     "go: ski@v1 CAS identity mirrors Python (foreign key refused)",
+    # Rebuilds demos/refund-chain/pack IN THE TREE (build.py removes the pack
+    # first), while "evidence PDF pack" reads that same pack. In the pool the
+    # two raced: CI saw PACK-PDF 69/72 on a run where nothing either test
+    # covers had changed -- only the pool's order, after two checks were added.
+    "WRT-010 fact provenance (binding, citation paths, mutations, demo)",
 }
 # Known-long checks are submitted first so the pool's makespan is bounded by
 # the longest of them rather than by whichever one happened to be last.
