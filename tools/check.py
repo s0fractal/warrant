@@ -364,6 +364,11 @@ SERIAL = {
     "x1: cross-repo HEAD-vs-HEAD (regression canary, not a gate)",
     "x1: sibling-ref resolver (one-sided PR -> sibling master; ci.yml wired)",
     "go: ski@v1 CAS identity mirrors Python (foreign key refused)",
+    # Rebuilds demos/refund-chain/pack IN THE TREE (build.py removes the pack
+    # first), while "evidence PDF pack" reads that same pack. In the pool the
+    # two raced: CI saw PACK-PDF 69/72 on a run where nothing either test
+    # covers had changed -- only the pool's order, after two checks were added.
+    "WRT-010 fact provenance (binding, citation paths, mutations, demo)",
 }
 # Known-long checks are submitted first so the pool's makespan is bounded by
 # the longest of them rather than by whichever one happened to be last.
