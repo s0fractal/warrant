@@ -197,9 +197,8 @@ packaging of the same function, not a separate verifier.
 
 ## The demonstration, end to end
 
-Most of this now runs as `python3 tools/otel_audit.py selftest` (wired into
-`tools/check.py`); a standalone `demos/otel-vs-warrant/` with a readable
-walkthrough is still to do:
+Built as `demos/otel-vs-warrant/demo.py` (wired into `tools/check.py`; every
+scene asserts its outcome). The plan it implements:
 
 1. Three tool calls through the PreToolUse binding: a benign read (deferred,
    nothing filed), `rm -rf` (denied), and a deploy allowed under a **compiled

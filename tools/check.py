@@ -162,6 +162,8 @@ CHECKS = [
     # it runs on a clean checkout; see docs/telemetry-correlation.md.
     ("telemetry correlation audit (join on tool_use_id; tamper, loss, relabel controls)",
      ["python3", "tools/otel_audit.py", "selftest"], None),
+    ("otel-vs-warrant demo (six scenes, each asserts its outcome)",
+     ["python3", "demos/otel-vs-warrant/demo.py"], None),
     ("documented CLI surface exists",
      ["python3", "tools/check_release_surface.py"], None),
     ("gate settlement rule (47 cases)",

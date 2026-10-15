@@ -38,8 +38,8 @@ right.
   `contradiction`, `unwarranted` (exit 1), `telemetry-missing`, `corroborated`,
   `not-hook`, with a reason column (`reruns` for a re-executed `ski@v1` check).
   Its fixtures are synthesised from the documented Claude Code / Claude API event
-  shapes, not captured; the selftest is wired into `tools/check.py` (68 checks)
-  and was mutation-tested. No protocol surface moved; `warrant.otel-audit@v0` is
+  shapes, not captured; the selftest is wired into `tools/check.py`
+  and was mutation-tested; `demos/otel-vs-warrant/` walks six scenes (edited export, API refusal with no span, dropped batch, relabelled pointer, edited evidence, a re-run reason) and asserts each (69 checks). No protocol surface moved; `warrant.otel-audit@v0` is
   a non-normative tool output. Self-tested only; no independent gate ran.
 
 - **Browser lab and Rust-to-WASM adapter.** A static Pages frontend explains

@@ -343,8 +343,8 @@ def print_text(res):
           f"({res['store_errors']} errors, {res['grade']} grade); {shown or 'no calls'}")
 
 
-# -- selftest ----------------------------------------------------------------
-def _log(name, **attrs):
+# -- fixtures (selftest and demos/otel-vs-warrant) ----------------------------
+def log_record(name, **attrs):
     def val(v):
         if isinstance(v, bool):
             return {"boolValue": v}
@@ -357,7 +357,7 @@ def _log(name, **attrs):
             + [{"key": k, "value": val(v)} for k, v in attrs.items()]}
 
 
-def _export(logs=(), spans=()):
+def export_request(logs=(), spans=()):
     doc = {}
     if logs:
         doc["resourceLogs"] = [{"resource": {"attributes": []},
@@ -370,13 +370,15 @@ def _export(logs=(), spans=()):
     return doc
 
 
-def _span(tool_use_id):
+def tool_span(tool_use_id):
+    """An API/SDK execute_tool span: the shape of a tool call that ran."""
     return {"name": "anthropic.custom_tool_use deploy", "kind": 1,
             "attributes": [{"key": "gen_ai.operation.name",
                             "value": {"stringValue": "execute_tool"}},
                            {"key": SPAN_TOOL_ID, "value": {"stringValue": tool_use_id}}]}
 
 
+# -- selftest ----------------------------------------------------------------
 def selftest():
     sys.path.insert(0, str(ROOT / "integrations" / "approval"))
     sys.path.insert(0, str(ROOT / "impl"))
@@ -436,19 +438,19 @@ def selftest():
         b_id = granted["decision"]
 
         base_logs = {
-            "A": [_log("claude_code.tool_decision", tool_use_id="toolu_A",
+            "A": [log_record("claude_code.tool_decision", tool_use_id="toolu_A",
                        decision="reject", source="hook", tool_name="Bash"),
-                  _log(POINTER_EVENT, **{"warrant.id": a_id,
+                  log_record(POINTER_EVENT, **{"warrant.id": a_id,
                                          "warrant.tool_use_id": "toolu_A",
                                          "warrant.decision": "reject"})],
-            "B": [_log("tool_decision", tool_use_id="toolu_B", decision="accept",
+            "B": [log_record("tool_decision", tool_use_id="toolu_B", decision="accept",
                        source="hook", tool_name="Bash"),
-                  _log("tool_result", tool_use_id="toolu_B", success="true",
+                  log_record("tool_result", tool_use_id="toolu_B", success="true",
                        decision_source="hook", duration_ms=12)],
-            "C": [_log("tool_decision", tool_use_id="toolu_C", decision="accept",
+            "C": [log_record("tool_decision", tool_use_id="toolu_C", decision="accept",
                        source="config", tool_name="Bash"),
-                  _log("tool_result", tool_use_id="toolu_C", success="true")],
-            "D": [_log("tool_decision", tool_use_id="toolu_D", decision="reject",
+                  log_record("tool_result", tool_use_id="toolu_C", success="true")],
+            "D": [log_record("tool_decision", tool_use_id="toolu_D", decision="reject",
                        source="hook", tool_name="Bash")],
         }
 
@@ -457,10 +459,10 @@ def selftest():
             if as_lines:
                 # The collector's file exporter: one request per line, and real
                 # files have blank lines and split batches.
-                f.write_text("\n".join(json.dumps(_export([x])) for x in logs) + "\n\n"
-                             + (json.dumps(_export(spans=spans)) + "\n" if spans else ""))
+                f.write_text("\n".join(json.dumps(export_request([x])) for x in logs) + "\n\n"
+                             + (json.dumps(export_request(spans=spans)) + "\n" if spans else ""))
             else:
-                f.write_text(json.dumps(_export(logs, spans)))
+                f.write_text(json.dumps(export_request(logs, spans)))
             return audit(store, [f], verify=verify)
 
         def classes(res):
@@ -493,25 +495,25 @@ def selftest():
                 f"control: {label} -> {target} {expect}, every other row unchanged",
                 str(got))
 
-        flipped = dict(base_logs, A=[_log("tool_decision", tool_use_id="toolu_A",
+        flipped = dict(base_logs, A=[log_record("tool_decision", tool_use_id="toolu_A",
                                           decision="accept", source="hook")]
                        + base_logs["A"][1:])
         control("telemetry edited reject->accept", "toolu_A", "contradiction",
                 flat(flipped))
-        ran = dict(base_logs, A=base_logs["A"] + [_log("tool_result", tool_use_id="toolu_A",
+        ran = dict(base_logs, A=base_logs["A"] + [log_record("tool_result", tool_use_id="toolu_A",
                                                        success="true")])
         control("a signed refusal that telemetry shows executing", "toolu_A",
                 "contradiction", flat(ran))
         control("telemetry for B lost (sampling, dropped batch)", "toolu_B",
                 "telemetry-missing", flat(base_logs, drop=("B",)))
         relabel = dict(base_logs, A=base_logs["A"][:1]
-                       + [_log(POINTER_EVENT, **{"warrant.id": b_id,
+                       + [log_record(POINTER_EVENT, **{"warrant.id": b_id,
                                                  "warrant.tool_use_id": "toolu_A",
                                                  "warrant.decision": "accept"})])
         control("pointer relabelled to another valid record", "toolu_A", "misbound",
                 flat(relabel))
         hint = dict(base_logs, A=base_logs["A"][:1]
-                    + [_log(POINTER_EVENT, **{"warrant.id": a_id,
+                    + [log_record(POINTER_EVENT, **{"warrant.id": a_id,
                                               "warrant.tool_use_id": "toolu_A",
                                               "warrant.decision": "accept"})])
         control("pointer hint disagrees with the signed record", "toolu_A", "misbound",
@@ -522,7 +524,7 @@ def selftest():
         # corroborated only if an execute_tool span is actually read.
         control("API-shaped trace: denied call has no span", "toolu_A",
                 "telemetry-missing", flat(base_logs, drop=("A", "B")),
-                spans=[_span("toolu_B")])
+                spans=[tool_span("toolu_B")])
 
         # Tampering with the evidence itself.
         rec = store / "records" / f"{a_id}.json"
@@ -585,7 +587,7 @@ def selftest():
 
         # The command line, end to end: exit status follows the failing classes.
         f = tmp / "ok.jsonl"
-        f.write_text(json.dumps(_export(flat(base_logs, drop=("D",)))))
+        f.write_text(json.dumps(export_request(flat(base_logs, drop=("D",)))))
         p = subprocess.run([sys.executable, __file__, "audit", "--store", str(store),
                             "--telemetry", str(f), "--json"],
                            capture_output=True, text=True)
@@ -593,7 +595,7 @@ def selftest():
         chk(p.returncode == 0 and out.get("report") == REPORT and out.get("ok") is True,
             "CLI: no failing class -> exit 0 and a warrant.otel-audit@v0 report",
             p.stderr[-300:])
-        f.write_text(json.dumps(_export(flat(base_logs))))
+        f.write_text(json.dumps(export_request(flat(base_logs))))
         p = subprocess.run([sys.executable, __file__, "audit", "--store", str(store),
                             "--telemetry", str(f)], capture_output=True, text=True)
         chk(p.returncode == 1 and "unwarranted" in p.stdout,
