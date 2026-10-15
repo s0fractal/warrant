@@ -32,6 +32,13 @@ So: read this before concluding anything.
 
 ## Check anything in one command
 
+The browser lab at https://s0fractal.github.io/warrant/ runs the Rust verifier
+locally as WebAssembly. Its /llms.txt, /example.json and /build.json expose the
+browser contract, exact sample bytes and build identity. It does not upload
+selected stores or automatically trust sample keys. Its report uses the same
+warrant.verify-report@v0 schema; browser limits can yield incomplete outcomes
+where native execution has more resources. Implementation: web/README.md.
+
 Nothing here asks to be believed. Every claim below is one command away, offline,
 no account:
 

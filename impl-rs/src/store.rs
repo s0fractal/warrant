@@ -2,7 +2,7 @@
 
 use crate::hash::{blob_hash, is_hex64};
 use crate::json::{canon, dumps_pretty_sorted, parse_ijson_str, parse_plain_str, Json, ParseError};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -61,6 +61,7 @@ pub struct Store {
     pub root: PathBuf,
     pub blobs: PathBuf,
     pub records: PathBuf,
+    memory: Option<BTreeMap<String, Vec<u8>>>,
 }
 
 impl Store {
@@ -70,19 +71,44 @@ impl Store {
             blobs: root.join("blobs"),
             records: root.join("records"),
             root,
+            memory: None,
+        }
+    }
+
+    /// Read-only virtual store. Paths are relative to the store root; callers
+    /// supply file bytes unchanged, including malformed record bytes.
+    pub fn from_memory(files: BTreeMap<String, Vec<u8>>) -> Self {
+        let mut store = Self::new("");
+        store.memory = Some(files);
+        store
+    }
+
+    pub fn root_file_exists(&self, name: &str) -> bool {
+        match &self.memory {
+            Some(files) => files.contains_key(name),
+            None => self.root.join(name).exists(),
+        }
+    }
+
+    pub fn root_file_bytes(&self, name: &str) -> Option<Vec<u8>> {
+        match &self.memory {
+            Some(files) => files.get(name).cloned(),
+            None => fs::read(self.root.join(name)).ok(),
         }
     }
 
     pub fn init(&self) -> std::io::Result<()> {
+        self.require_writable()?;
         fs::create_dir_all(&self.blobs)?;
         fs::create_dir_all(&self.records)
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.records.is_dir()
+        self.memory.is_some() || self.records.is_dir()
     }
 
     pub fn put_blob(&self, data: &[u8]) -> std::io::Result<String> {
+        self.require_writable()?;
         let h = blob_hash(data);
         let p = self.blobs.join(&h);
         if !p.exists() {
@@ -93,20 +119,28 @@ impl Store {
 
     /// A blob exists only if `h` is a hex64 name AND names a regular file.
     pub fn has_blob(&self, h: &str) -> bool {
-        is_hex64(h) && self.blobs.join(h).is_file()
+        is_hex64(h)
+            && match &self.memory {
+                Some(files) => files.contains_key(&format!("blobs/{h}")),
+                None => self.blobs.join(h).is_file(),
+            }
     }
 
     /// Do the bytes at `blobs/<h>` actually hash to `<h>`?
     pub fn blob_intact(&self, h: &str) -> bool {
-        fs::read(self.blobs.join(h)).is_ok_and(|b| blob_hash(&b) == h)
+        self.blob_bytes(h).is_some_and(|b| blob_hash(&b) == h)
     }
 
     pub fn blob_bytes(&self, h: &str) -> Option<Vec<u8>> {
-        fs::read(self.blobs.join(h)).ok()
+        match &self.memory {
+            Some(files) => files.get(&format!("blobs/{h}")).cloned(),
+            None => fs::read(self.blobs.join(h)).ok(),
+        }
     }
 
     /// Write an envelope with the store's one writer; returns its WarrantID.
     pub fn put_record(&self, env: &Json) -> Result<String, String> {
+        self.require_writable().map_err(|e| e.to_string())?;
         let body = env.get("body").ok_or("envelope has no body")?;
         let wid = warrant_id(body).map_err(|e| e.to_string())?;
         let text = dumps_pretty_sorted(env) + "\n";
@@ -116,6 +150,15 @@ impl Store {
 
     /// `get_record`: plain `json.loads` of the file's text, or None if absent.
     pub fn get_record(&self, wid: &str) -> Result<Option<Json>, String> {
+        if let Some(files) = &self.memory {
+            return files
+                .get(&format!("records/{wid}.json"))
+                .map(|raw| {
+                    let text = std::str::from_utf8(raw).map_err(|e| e.to_string())?;
+                    parse_plain_str(text).map_err(|e| e.to_string())
+                })
+                .transpose();
+        }
         let p = self.records.join(format!("{wid}.json"));
         if !p.exists() {
             return Ok(None);
@@ -129,6 +172,14 @@ impl Store {
 
     /// Record file names in the reference's order (`sorted(glob("*.json"))`).
     pub fn record_files(&self) -> Vec<String> {
+        if let Some(files) = &self.memory {
+            return files
+                .keys()
+                .filter_map(|p| p.strip_prefix("records/"))
+                .filter(|p| !p.contains('/') && p.ends_with(".json"))
+                .map(String::from)
+                .collect();
+        }
         let mut out = Vec::new();
         if let Ok(rd) = fs::read_dir(&self.records) {
             for e in rd.flatten() {
@@ -150,8 +201,8 @@ impl Store {
         let mut errors = Vec::new();
         for name in self.record_files() {
             let wid = stem(&name).to_string();
-            let text = match fs::read(self.records.join(&name))
-                .ok()
+            let text = match self
+                .root_file_bytes(&format!("records/{name}"))
                 .and_then(|b| String::from_utf8(b).ok())
             {
                 Some(t) => t,
@@ -178,5 +229,16 @@ impl Store {
             recs.push(wid, env);
         }
         (recs, errors)
+    }
+
+    fn require_writable(&self) -> std::io::Result<()> {
+        if self.memory.is_some() {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "in-memory stores are read-only",
+            ))
+        } else {
+            Ok(())
+        }
     }
 }

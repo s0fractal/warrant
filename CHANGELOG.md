@@ -26,6 +26,17 @@ right.
 
 ## Unreleased
 
+- **Browser lab and Rust-to-WASM adapter.** A static Pages frontend explains
+  the format, opens a repository-pinned signed example or local record/store,
+  returns the existing verify-report schema and re-executes `ski@v1` locally.
+  The Rust core gains read-only in-memory store reads and explicitly supplied
+  trust configuration; native defaults and protocol rules are unchanged. The
+  browser uses a worker, smaller local ATP/input limits and an incomplete
+  result for unfinished work. npm/JSR publication and signed website claims
+  are not part of this increment. File/memory parity, actual WASM/reference
+  comparisons and local browser interaction checks cover this implementation;
+  these are tests, not an independent governance gate.
+
 ## 0.10.0 — one version, one behaviour, on both registries
 
 `warrant-verify 0.9.0` shipped twice with different code: the PyPI wheel

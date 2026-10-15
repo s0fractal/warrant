@@ -14,6 +14,9 @@ use std::rc::Rc;
 /// SPEC §3.1 local re-execution budget (`WARRANT_SKI_MAX_ATP`, default 1e8).
 /// Operators MAY raise it, accepting the divergence that implies.
 pub fn reexec_max_atp() -> Result<i128, String> {
+    #[cfg(target_arch = "wasm32")]
+    return Ok(1_000_000);
+    #[cfg(not(target_arch = "wasm32"))]
     match std::env::var("WARRANT_SKI_MAX_ATP") {
         Err(_) => Ok(100_000_000),
         Ok(v) => py_int(&v).ok_or_else(|| format!("invalid literal for int() with base 10: {v:?}")),
@@ -22,6 +25,7 @@ pub fn reexec_max_atp() -> Result<i128, String> {
 
 /// Python `int(str)`: surrounding whitespace, an optional sign, decimal digits
 /// with single underscores between them. Saturates far beyond any uint32 atp.
+#[cfg(not(target_arch = "wasm32"))]
 fn py_int(s: &str) -> Option<i128> {
     let t = s.trim();
     let (neg, digits) = match t.as_bytes().first() {
@@ -444,14 +448,18 @@ pub fn load_ski_doc(
         return Err("check blob missing".into());
     }
     let raw = std::fs::read(&p).map_err(|_| "check blob missing".to_string())?;
-    if blob_hash(&raw) != check_hex {
+    parse_ski_doc(&raw, check_hex, max_atp)
+}
+
+fn parse_ski_doc(raw: &[u8], check_hex: &str, max_atp: i128) -> Result<SkiDoc, String> {
+    if blob_hash(raw) != check_hex {
         return Err(REASON_CAS_MISMATCH.into());
     }
-    let doc = match parse_plain_bytes(&raw) {
+    let doc = match parse_plain_bytes(raw) {
         Ok(d) => d,
         Err(_) => return Err("malformed check blob (not JSON)".into()),
     };
-    if !canon_eq(&doc, &raw) {
+    if !canon_eq(&doc, raw) {
         return Err("malformed check blob (not JCS-canonical)".into());
     }
     if let Some(e) = validate_ski_blob(&doc) {
@@ -478,7 +486,39 @@ pub fn run_ski_check(blobs: &std::path::Path, check_hex: &str) -> Result<SkiOutc
     let max_atp = reexec_max_atp()?;
     let doc = load_ski_doc(blobs, check_hex, max_atp)?;
     let mut cas = BlobCas { dir: blobs };
-    match eval_on_big_stack(doc.term, doc.atp, &mut cas) {
+    run_doc(doc, &mut cas)
+}
+
+struct StoreCas<'a>(&'a crate::store::Store);
+
+impl Cas for StoreCas<'_> {
+    fn get(&mut self, h: &Hash) -> Result<Option<Vec<u8>>, CasMismatch> {
+        let name = encode_hex(h);
+        if !self.0.has_blob(&name) {
+            return Ok(None);
+        }
+        match self.0.blob_bytes(&name) {
+            Some(bytes) if sha256(&bytes) == *h => Ok(Some(bytes)),
+            _ => Err(CasMismatch),
+        }
+    }
+}
+
+/// File and in-memory stores use the same descriptor checks and evaluator.
+pub fn run_store_ski_check(
+    store: &crate::store::Store,
+    check_hex: &str,
+) -> Result<SkiOutcome, String> {
+    if !store.has_blob(check_hex) {
+        return Err("check blob missing".into());
+    }
+    let raw = store.blob_bytes(check_hex).ok_or("check blob missing")?;
+    let doc = parse_ski_doc(&raw, check_hex, reexec_max_atp()?)?;
+    run_doc(doc, &mut StoreCas(store))
+}
+
+fn run_doc(doc: SkiDoc, cas: &mut (dyn Cas + Send)) -> Result<SkiOutcome, String> {
+    match eval_on_big_stack(doc.term, doc.atp, cas) {
         Ok((rh, spent)) => {
             let rh = encode_hex(&rh);
             let verdict = if rh == doc.expect { "pass" } else { "fail" };
@@ -497,6 +537,9 @@ pub fn eval_on_big_stack(
     atp: u64,
     cas: &mut (dyn Cas + Send),
 ) -> Result<(Hash, u64), EvalFault> {
+    #[cfg(target_arch = "wasm32")]
+    return eval_hash(&term, atp, cas);
+    #[cfg(not(target_arch = "wasm32"))]
     std::thread::scope(|s| {
         std::thread::Builder::new()
             .stack_size(512 << 20)

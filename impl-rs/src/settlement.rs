@@ -10,7 +10,7 @@ use crate::hash::{blob_hash, is_hex64};
 use crate::json::{canon_eq, parse_ijson, parse_plain_bytes, py_eq, py_hashable, Json, Obj};
 use crate::schema::{int_domain_violation, validate_body};
 use crate::sig::verify_sig;
-use crate::ski::run_ski_check;
+use crate::ski::run_store_ski_check;
 use crate::ski::validate_ski_blob;
 use crate::store::{Records, Store};
 use std::cell::RefCell;
@@ -216,7 +216,7 @@ pub fn fingerprint(reason: &Obj, body: &Json, store: &Store) -> Option<Fingerpri
         if validate_ski_blob(&doc).is_some() {
             return None;
         }
-        let (rerun, result, _) = run_ski_check(&store.blobs, check).ok()?;
+        let (rerun, result, _) = run_store_ski_check(store, check).ok()?;
         let o = doc.as_obj().unwrap();
         return Some(Fingerprint::Ski {
             term: o.get("term").unwrap().as_str().unwrap().to_string(),
@@ -359,9 +359,8 @@ pub fn trust_roots(
     let mut roots: BTreeSet<String> = explicit.iter().cloned().collect();
     roots.extend(trust.genesis_roots.iter().cloned());
     let mut warnings = Vec::new();
-    let g = store.root.join("genesis.json");
-    if g.exists() {
-        let raw = std::fs::read(&g).ok();
+    if store.root_file_exists("genesis.json") {
+        let raw = store.root_file_bytes("genesis.json");
         match raw {
             Some(raw) if trust.genesis_json_sha256.as_deref() == Some(blob_hash(&raw).as_str()) => {
                 if let Ok(doc) = parse_ijson(&raw) {
@@ -399,7 +398,7 @@ pub fn parse_policy_blob(store: &Store, h: &Json) -> Result<Option<Policy>, Inva
     let Some(h) = h.as_str().filter(|h| is_hex64(h)) else {
         return Ok(None);
     };
-    if !store.blobs.join(h).is_file() {
+    if !store.has_blob(h) {
         return Ok(None);
     }
     let Some(raw) = store.blob_bytes(h) else {

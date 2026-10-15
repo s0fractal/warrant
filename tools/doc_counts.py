@@ -208,9 +208,9 @@ CLAIMS = [
      r"spawns your candidate (\d+) times", "vectors"),
     # The landing page carries the same two numbers in its pitch to an
     # implementer. Same page, same rot, same gate.
-    ("docs/index.html", "conformance vector total",
+    ("web/index.html", "conformance vector total",
      r"(\d+) vectors, \d+ of them MUST-REJECT", "vectors"),
-    ("docs/index.html", "count of MUST-REJECT vectors",
+    ("web/index.html", "count of MUST-REJECT vectors",
      r"\d+ vectors, (\d+) of them MUST-REJECT", "negatives"),
 ]
 
