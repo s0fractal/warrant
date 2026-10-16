@@ -130,6 +130,15 @@ def build():
         "foreign_payload_utf8": foreign_payload.decode(),
     })
 
+    # The signatures on which cofactorless and cofactored verifiers split
+    # (SPEC §5: cofactorless is a MUST). tools/ed25519_edge.py builds them and
+    # proves, in its selftest, that each one separates the two rules.
+    sys.path.insert(0, str(ROOT / "tools"))
+    import ed25519_edge
+    for polarity, why, key, sig in ed25519_edge.edge_vectors(DEMO_SEED, wid):
+        (accept if polarity == "positive" else reject).append(
+            {"why": f"EDGE: {why}", "warrant_id": wid, "key": key, "sig": sig})
+
     return {
         "signature_vectors": TAG,
         "note": ("SPEC §8.5. `message`: an implementation MUST build exactly these "

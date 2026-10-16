@@ -27,6 +27,20 @@ right.
 
 ## Unreleased
 
+- **Conformance pack 1.3.0: Ed25519 EDGE vectors; the cofactorless equation
+  is now a MUST.** DeepReview (2026-10-16, R1/R2) observed that SPEC §5 only
+  said "SHOULD prefer" a cofactorless verifier, and checking it showed the
+  pack had no signature on which verifiers actually split. A cofactored
+  verifier passed all 139 vectors. Five §8.5 vectors now pin the equation:
+  `S + L`, a small-order `R` and its non-canonical alias, and a mixed-torsion
+  key with one signature that MUST NOT verify (`[k]T8 ≠ O`) and one that MUST
+  (`[k]T8 = O`). `tools/ed25519_edge.py` builds them and its selftest proves
+  each one separates the two rules. Python, Go and Rust pass all of them
+  unchanged (72/72 each). Pack: 144 vectors, 66 MUST-REJECT, new digest in
+  SPEC §8.6. Also corrected: `tests/ed25519_differential.py`'s "mixed-torsion"
+  loop signed for the *other* key, so it never reached the divergent case. Its
+  comment now says so.
+
 - **Plugin 0.2.0: auto mode is witnessed, and refusals are remembered.**
   Unprompted Bash calls that are checks (tests, builds, `gh pr checks`) or
   consequential (push, commit, merge, tag, publish, `rm -rf`) are filed as
