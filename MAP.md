@@ -46,8 +46,8 @@ present on a ref the reviewer was not looking at.
 | `WRT-013` | this repo, `master` | `proposals/WRT-013-ski-v2-admission.md` | `SPEC.md` |
 | `WRT-014` | this repo, `origin/master` | `proposals/wrt-014-model/reproduce.py` | `proposals/WRT-014-adoption-policy-binding.md` |
 | `WRT-015` | this repo, `origin/master` | `proposals/WRT-015-pre-rotation.md` | `SPEC.md` |
-| `WRT-016` | **resolves nowhere** | — | `SPEC.md` |
-| `WRT-017` | **resolves nowhere** | — | `SPEC.md` |
+| `WRT-016` | this repo, `spec/keystate-residuals` | `proposals/WRT-016-conflict-scope.md` | `SPEC.md` |
+| `WRT-017` | this repo, `spec/keystate-residuals` | `proposals/WRT-017-revocation.md` | `SPEC.md` |
 
 ## Known identifier collisions
 
@@ -59,13 +59,3 @@ resolve by renumbering; until then it is recorded, not hidden.
 
 - `WRT-004` — closed PR #21 (verify-report) — the CANONICAL target: `7f40932060ded9a1fde7e6b74e91334e73b8080e:proposals/WRT-004-verify-report-v1.md`
 - `WRT-004` — branch `papers/the-reason-runs-again` (PR #30, closed 2026-09-07 unmerged; branch retained), reason-binding profile — NOT on master: `23ef8103606ecadfa650886fa412720ccd49980a:proposals/WRT-004-reason-binding-profile.md`
-
-## Cited and resolving nowhere
-
-These are named by this repository and exist in neither repository
-on any ref known here. Either the document is unpublished, or the
-citation is wrong; both are defects and neither is the reader's to
-guess about.
-
-- `WRT-016`
-- `WRT-017`
