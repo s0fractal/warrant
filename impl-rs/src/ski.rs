@@ -571,6 +571,58 @@ mod tests {
     }
 
     #[test]
+    fn declared_atp_ceiling_is_inclusive_and_local() {
+        let raw = include_bytes!("../tests/vectors/ski/check.json");
+        let text = std::str::from_utf8(raw).unwrap();
+        for budget in [999_999, 1_000_000, 1_000_001, 100_000_000] {
+            let raw = text.replace("\"atp\":20", &format!("\"atp\":{budget}"));
+            let hash = blob_hash(raw.as_bytes());
+            assert_eq!(
+                parse_ski_doc(raw.as_bytes(), &hash, 1_000_000).is_ok(),
+                budget <= 1_000_000
+            );
+            assert!(parse_ski_doc(raw.as_bytes(), &hash, 100_000_000).is_ok());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_cas_preserves_file_and_symlink_semantics() {
+        use std::{fs, os::unix::fs::symlink};
+        let root = std::env::temp_dir().join(format!("warrant-cas-edges-{}", std::process::id()));
+        let store = crate::store::Store::new(&root);
+        store.init().unwrap();
+        let bytes = b"CAS edge specimen";
+        let h = sha256(bytes);
+        let file = store.blobs.join(encode_hex(&h));
+        let target = root.join("target");
+        fs::write(&target, bytes).unwrap();
+        let compare = |expected| {
+            assert_eq!(
+                BlobCas { dir: &store.blobs }.get(&h).map_err(|_| ()),
+                expected
+            );
+            assert_eq!(StoreCas(&store).get(&h).map_err(|_| ()), expected);
+        };
+        compare(Ok(None));
+        fs::create_dir(&file).unwrap();
+        compare(Ok(None));
+        fs::remove_dir(&file).unwrap();
+        symlink(&target, &file).unwrap();
+        compare(Ok(Some(bytes.to_vec())));
+        fs::write(&target, b"different bytes").unwrap();
+        compare(Err(()));
+        fs::remove_file(&target).unwrap();
+        compare(Ok(None)); // dangling link
+        fs::create_dir(&target).unwrap();
+        compare(Ok(None)); // link to a directory
+        fs::remove_file(&file).unwrap();
+        fs::write(&file, b"wrong address").unwrap();
+        compare(Err(()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn book_one_vectors() {
         let g = genesis();
         assert_eq!(

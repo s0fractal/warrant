@@ -44,9 +44,9 @@ in ignored `web/dist/`. No JS dependencies or bundler are required.
 The path-to-hex map used between JS and WASM is an adapter transport, **not a
 new Warrant format**. It preserves raw input bytes and duplicate JSON keys in
 record files. The thin `client.js` API and `client.d.ts` can be reused by another
-frontend together with the generated `wasm/` files and worker. The package is
-private until a separate package release is chosen; nothing has been published
-to npm or JSR.
+frontend together with the generated `wasm/` files and worker. The standalone `js/` package supplies a synchronous, offline API for npm
+and JSR consumers; it carries the same WASM profile. Its callers manage workers
+and elapsed-time limits themselves. See `js/README.md` for installation and API.
 
 ## Limits and meaning
 
@@ -73,10 +73,10 @@ limits. Consult the repository's current specification and threat model.
 
 `.github/workflows/pages.yml` builds and tests on relevant pull requests without
 deploying them. A successful `master` build can deploy the static artifact under
-the existing `github-pages` environment. Before first deployment, the repository
-owner must select **GitHub Actions** as the Pages build source; the repository
-currently uses the legacy `master:/docs` source. The workflow does not change
-that setting automatically. Existing `docs/conformance.html` is retained in the
+the existing `github-pages` environment. The repository's Pages build source is
+**GitHub Actions** (the API reports `build_type: workflow`); the workflow does
+not change that setting itself, so an owner who switches the source back to
+`master:/docs` stops these deployments. Existing `docs/conformance.html` is retained in the
 built site. Merging and publishing still follow the repository's authorization
 rules.
 

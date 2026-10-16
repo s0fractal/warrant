@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Warrant package browser check</title>
+  <h1>Warrant package browser check</h1>
+  <pre id="result">Running…</pre>
+  <script type="module">
+    import { verifyStore, runCheck } from "../dist/mod.js";
+    try {
+      const { files } = await (
+        await fetch("../../web/dist/example.json")
+      ).json();
+      const report = verifyStore(files);
+      const path = Object.keys(files).find((p) => p.startsWith("records/"));
+      const record = JSON.parse(
+        new TextDecoder().decode(
+          Uint8Array.from(files[path].match(/../g), (h) =>
+            Number.parseInt(h, 16),
+          ),
+        ),
+      );
+      const check = runCheck(files, record.body.because[0].check);
+      document.getElementById("result").textContent = JSON.stringify(
+        { report, check },
+        null,
+        2,
+      );
+    } catch (error) {
+      document.getElementById("result").textContent = String(error);
+    }
+  </script>
+</html>
