@@ -20,7 +20,7 @@ should be cited as carrying more than that.
 | | |
 | --- | --- |
 | source | [`paper.md`](paper.md), bibliography in [`references.bib`](references.bib) |
-| build | [`build.sh`](build.sh) — pandoc 3.10.2 with `--citeproc`, tectonic 0.17.0 |
+| build | [`build.sh`](build.sh) — pandoc 3.12.1 with `--citeproc`, tectonic 0.17.0 (version 1.1.0); version 1.0.0 was built with pandoc 3.10.2 |
 | claims | [`check_claims.py`](check_claims.py) — recounts every countable number in the paper from the repository; `build.sh` runs it first and refuses to build on a mismatch |
 | licence | CC BY 4.0 for the paper (see [`LICENSE.md`](LICENSE.md)); the code it documents stays MIT |
 
@@ -50,11 +50,11 @@ record on 2026-09-07 and verified against Zenodo's own checksums:
 
 **Both binaries reproduce from the tag, byte for byte.** `paper.md`,
 `references.bib` and `build.sh` on `master` are identical to `d83984f`. With
-`SOURCE_DATE_EPOCH=1788048000` (which `build.sh` pins) the PDF rebuilds to the
+`SOURCE_DATE_EPOCH=1788048000` (which `build.sh` pinned for 1.0.0) the PDF rebuilds to the
 digest above; the tarball is
 `git archive --format=tar.gz --prefix=warrant-paper-v1.0.0/ paper-the-reason-runs-again-v1.0.0`.
 Re-verified on 2026-09-07 with tectonic 0.17.0 and pandoc 3.11 — one minor
-version past the 3.10.2 that `build.sh` enforces — which is a second successful
+version past the 3.10.2 that `build.sh` enforced for 1.0.0 — which is a second successful
 reproduction, not a loosening of the pin. Because the bytes reproduce, neither
 binary is tracked here; the tracked artifacts are the source, the manifest and
 the sums.
