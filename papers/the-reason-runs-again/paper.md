@@ -1395,7 +1395,10 @@ appears here only once reserved. This is
 **version 1.1.0 of the paper** — a deposit version, not a Warrant software or
 protocol release and not a v1.0 adoption of the format; a claims checker
 deposited beside this paper recomputes its countable numbers from the repository
-commit this version was built from. Version 1.0.0 remains at its own DOI, with
+commit this version was built from. That commit is the one the annotated tag
+`paper-the-reason-runs-again-v1.1.0` names. Its hash is recorded in the
+deposit's `MANIFEST.md` and in the Zenodo record rather than here, because a
+document cannot contain the hash of the commit that contains it. Version 1.0.0 remains at its own DOI, with
 its numbers bound to its own commit; the concept DOI
 [`10.5281/zenodo.22172097`](https://doi.org/10.5281/zenodo.22172097) resolves to
 the latest version.
