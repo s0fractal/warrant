@@ -1427,9 +1427,10 @@ Software Heritage holds snapshots of both repositories from 2026-07-28;
 archival of the exact deposited commit is requested at deposit time and is
 stated here only once confirmed, not implied in advance. Disclosure manifests
 are timestamped via OpenTimestamps. Version 1.0.0 of this paper is at
-[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098). This
-version's own DOI is reserved before its final build, as 1.0.0's was, and
-appears here only once reserved. This is
+[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098). This version
+is at [`10.5281/zenodo.23414323`](https://doi.org/10.5281/zenodo.23414323),
+reserved before its final build, as 1.0.0's DOI was, so that the identifier
+appears in the artifact it identifies. This is
 **version 1.1.0 of the paper** — a deposit version, not a Warrant software or
 protocol release and not a v1.0 adoption of the format; a claims checker
 deposited beside this paper recomputes its countable numbers from the repository
