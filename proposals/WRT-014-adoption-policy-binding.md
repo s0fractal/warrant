@@ -1,10 +1,6 @@
 # WRT-014: Whose policy admits a root — the adopter's, or the jurisdiction's?
 
-**Status:** DRAFT rev 1 (2026-10-15) — **finding and options only.** No SPEC
-edit, no code change. Every implementation in this repository behaves as
-described in §1; changing that is a settlement-semantics change that needs an
-adversarial gate, an owner decision and a SPEC document-version bump. Nothing
-here claims adoption.
+**Status:** DECIDED: option A, by the owner, 2026-10-16. An adoption must satisfy every threshold policy of each settlement-active root it descends from, as well as its own `under`. Implemented in Python, Go and Rust, held by `tests/wrt014_adoption.py`, and recorded in contract ADOPT-T1. The text below is the finding as it was drafted.
 
 ## 1. The finding
 

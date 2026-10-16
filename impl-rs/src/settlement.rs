@@ -683,6 +683,7 @@ impl<'a> Context<'a> {
                             .and_then(|s| s.get("hash"))
                             .is_some_and(|h| py_eq(h, &Json::Str(root.clone())))
                         && policies_satisfied(store, wid, env, Some(&ctx.threshold_keys(wid)))
+                        && ctx.adopting_policies_satisfied(wid, env)
                     {
                         ctx.active_roots.insert(root.clone());
                         grew = true;
@@ -765,6 +766,30 @@ impl<'a> Context<'a> {
             .borrow_mut()
             .insert(wid.to_string(), out.clone());
         out
+    }
+
+    /// WRT-014 option A (SPEC §9): an adoption must also satisfy every
+    /// threshold policy of each settlement-active root it descends from.
+    fn adopting_policies_satisfied(&self, wid: &str, env: &Json) -> bool {
+        let keys = self.threshold_keys(wid);
+        let roots: BTreeSet<String> = self
+            .record_roots(wid)
+            .intersection(&self.active_roots)
+            .cloned()
+            .collect();
+        for r in roots {
+            let Some(body) = self.recs.body(&r) else {
+                continue;
+            };
+            let (policies, _bad) = record_policy(self.store, body);
+            if !policies
+                .iter()
+                .all(|p| threshold_satisfied(wid, env, p, Some(&keys)))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// Keys that count toward a threshold at `wid`: those bound there, minus

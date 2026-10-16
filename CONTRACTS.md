@@ -8,6 +8,7 @@ observed and what was seen. `python3 tools/contract.py check` holds all of it.
 
 | ID | SPEC | Statement | Witnesses | Decisions |
 |---|---|---|---|---|
+| ADOPT-T1 | §9 | That policy is the adopting jurisdiction's, not the adoption's (MUST; WRT-014): the adoption MUST satisfy ever… | `tests/wrt014_adoption.py::scenario`<br>`tests/wrt014_adoption.py::main` | 1 |
 | KEY-C1 | §5.1 | A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendan… | `tests/settlement.py::case_key_state`<br>`tests/settlement.py::case_stale_replay`<br>`tests/r13_retired_key_denial.py::case_residual`<br>`tests/r13_retired_key_denial.py::case_multihop_residual`<br>`tests/r13_retired_key_denial.py::case_conflict_counts_toward_no_quorum` | 3 |
 | KEY-P1 | §5.1 | Pre-rotation (MUST; WRT-015). Every key state commits in advance to its successor: genesis keys through the tr… | `tests/r13_retired_key_denial.py::case_retired_key`<br>`tests/r13_retired_key_denial.py::case_terminal`<br>`tests/r13_retired_key_denial.py::case_chain`<br>`tests/settlement.py::case_key_state` | 1 |
 | KEY-R1 | §5.1 | There is no revocation operation (MUST; WRT-017). A key leaves use only by a rotation to its committed success… | `tests/r13_retired_key_denial.py::case_no_revocation` | 1 |
@@ -15,6 +16,8 @@ observed and what was seen. `python3 tools/contract.py check` holds all of it.
 
 ## Decisions
 
+- **ADOPT-T1 #0** (2026-10-16): Owner decision on WRT-014: option A. §9 had always asked for the adopting root's policy including any threshold, but all three implementations checked only the policies the adoption cites, which its filer chooses. Option A fails closed: adoptions can only become fewer, and no store in use had exercised a threshold.
+  - counterexample at `3a0e3ae` via `proposals/wrt-014-model/reproduce.py`: observed under a 2-of-2 jurisdiction, a@x alone citing an opaque policy adopted another root in Python, Go and Rust, with 0 errors and 0 warnings; expected the adoption must meet the jurisdiction's 2-of-2, so the root stays unadopted
 - **KEY-C1 #0** (2026-10-16): Recorded as a contract on 2026-10-16. The rule dates from SPEC v0.3, and its stale-replay case was refuted by DeepSeek gate 3 (tests/settlement.py case_stale_replay). Since WRT-015 the only way to reach a conflict is the residual duplicity: a key and its committed successor introducing that successor twice at one DAG position. Ordering it needs an external witness (WRT-012).
 - **KEY-C1 #1** (2026-10-16): DeepReview of paper 1.1.0, reproduced before acting: under pre-rotation the conflict rule still reaches back over all history, and the forking pair can be two RETIRED keys. The statement stands as current behaviour. Scoping a conflict to the fork is proposed as WRT-016, for an owner decision.
   - counterexample at `3adccdf` via `tests/r13_retired_key_denial.py::case_multihop_residual`: observed after a0 -> a1 -> a2, a fork at the root signed by the retired a0 and a1 made a@x conflicted; records signed by the uncompromised current key a2, and the genesis root, reported unbound (Python = Go = Rust); expected under the rule as written, exactly this, so the residual must be stated as reachable with retired keys alone, not as needing the current key

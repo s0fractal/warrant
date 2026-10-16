@@ -2,12 +2,13 @@
 """WRT-014 reproduction: one actor adopts a root under a jurisdiction whose own
 policy is 2-of-2, by citing an opaque policy in the adoption record.
 
-Prints what each implementation decides. As of 2026-10-15 all three adopt the
-root on one signature with 0 errors and 0 warnings. SPEC §9 asks for "the
-adopting root's current settlement policy, including any threshold rule".
+Prints what each implementation decides. On 2026-10-15 (and still on
+3a0e3ae) all three adopted the root on one signature with 0 errors and 0
+warnings. Since WRT-014 was decided as option A (2026-10-16) all three leave it
+unadopted; tests/wrt014_adoption.py holds that as a gate.
 
     python3 proposals/wrt-014-model/reproduce.py
-Exit 0 always: this is a measurement, not a gate (no decision has been taken).
+Exit 0 always: this is a measurement; the gate is tests/wrt014_adoption.py.
 """
 import json
 import re

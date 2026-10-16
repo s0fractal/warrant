@@ -93,6 +93,8 @@ CHECKS = [
     # able to rotate; the residual (key + committed successor) is pinned.
     ("WRT-015 pre-rotation: a retired key cannot rotate (PY/GO/RS, R13)",
      ["python3", "tests/r13_retired_key_denial.py"], "rs"),
+    ("WRT-014: an adoption meets the adopting jurisdiction's threshold (PY/GO/RS)",
+     ["python3", "tests/wrt014_adoption.py"], "rs"),
     # Contracts: each names a SPEC MUST sentence verbatim, the witnesses that hold
     # it and the decisions behind it, counterexamples included (method from
     # sokol-core ADR-0023/0024). History against a base is CI's step; here the

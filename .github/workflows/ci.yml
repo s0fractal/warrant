@@ -75,6 +75,8 @@ jobs:
         run: python3 tests/verify_three_way.py
       - name: "WRT-015 pre-rotation: a retired key cannot rotate (PY/GO/RS, R13)"
         run: python3 tests/r13_retired_key_denial.py
+      - name: "WRT-014: an adoption meets the adopting jurisdiction's threshold (PY/GO/RS)"
+        run: python3 tests/wrt014_adoption.py
       - name: "Python and Go: same findings (level, subject) on fuzzed settlement stores"
         run: python3 tests/go_findings_parity.py 80
       - name: "Reference defects found by the Rust port: no crash, PY=RS(=GO)"
