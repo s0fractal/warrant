@@ -10,7 +10,7 @@ covers everything.
 
 | | words | subject |
 |---|---|---|
-| [`the-reason-runs-again/`](the-reason-runs-again/) | 12 927 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
+| [`the-reason-runs-again/`](the-reason-runs-again/) | 13 754 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
 
 The flagship paper is **deposited**: Zenodo DOI
 [`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098)
