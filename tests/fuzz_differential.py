@@ -118,10 +118,16 @@ def build_base_store(tmp):
     _, u, _ = sh(PY + ["--store", store, "blob", "add", pol]).stdout, None, None
     u = sh(PY + ["--store", store, "blob", "add", pol]).stdout.strip()
     subj = sh(PY + ["--store", store, "blob", "add", sub]).stdout.strip()
+    # Explicit --ts: without it the CLI stamps the current second, and
+    # tests/rs_parity.py, which replays every reference call against Rust a
+    # moment later, saw two WarrantIDs whenever a second boundary fell between
+    # the two runs (CI, PR #103: 3356/3357). The base store is data, not a clock.
     w1 = sh(PY + ["--store", store, "accept", "--subject", subj, "--note", "base",
-                  "--under", u, "--reason", "ok", "--actor", "a@b", "--key", key]).stdout.strip()
+                  "--under", u, "--reason", "ok", "--actor", "a@b", "--key", key,
+                  "--ts", "1751700000"]).stdout.strip()
     w2 = sh(PY + ["--store", store, "supersede", w1, "--under", u,
-                  "--reason", "sup", "--actor", "a@b", "--key", key]).stdout.strip()
+                  "--reason", "sup", "--actor", "a@b", "--key", key,
+                  "--ts", "1751700001"]).stdout.strip()
     return store, key, w1, w2
 
 
