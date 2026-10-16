@@ -22,19 +22,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "impl"))
-import warrant as W  # noqa: E402
+from three_clis import GO, PY, RS, Tally, W, unbuilt
 
-GO = ROOT / "impl-go" / "warrant-go"
-RS = ROOT / "impl-rs" / "target" / "release" / "warrant-rs"
-ok = True
-
-
-def check(label, cond, detail=""):
-    global ok
-    ok &= bool(cond)
-    print(("OK   " if cond else "FAIL "), label, "" if cond else f"-> {detail}")
+T = Tally()
+check = T.check
 
 
 def store(cosign_other=False):
@@ -68,13 +59,13 @@ def store(cosign_other=False):
 def run_all(st, args):
     """{impl: (exit code, error count or None, full output)} for the same request."""
     cmds = {
-        "py": [sys.executable, str(ROOT / "impl" / "warrant.py"), "--store", str(st), "verify"] + args,
+        "py": PY + ["--store", str(st), "verify"] + args,
         "go": [str(GO), "verify"] + args + [str(st)],
         "rs": [str(RS), "--store", str(st), "verify"] + args,
     }
     res = {}
     for k, c in cmds.items():
-        p = subprocess.run(c, capture_output=True, text=True)
+        p = subprocess.run(c, capture_output=True, text=True, check=False)
         m = re.search(r"verify: \d+ records, (\d+) errors", p.stdout)
         res[k] = (p.returncode, int(m.group(1)) if m else None, p.stdout + p.stderr)
     return res
@@ -85,11 +76,11 @@ def agree(res):
 
 
 def main():
-    for b in (GO, RS):
-        if not b.is_file():
-            print(f"UNRUN  {b} not built")
-            return 3
-    st, bound, unbound = store()
+    missing = unbuilt()
+    if missing:
+        print(f"UNRUN  {missing} not built")
+        return 3
+    st, _, unbound = store()
     r = run_all(st, ["--settlement", "--trust-config", str(unbound)])
     check("1. unbound actor, no option: 0 ERR (PY = GO = RS)",
           agree(r) and r["py"][1] == 0 and "signature unbound" in r["py"][2], r)
@@ -109,8 +100,8 @@ def main():
     r = run_all(st, ["--require-bound"])
     check("5. --require-bound without --settlement: refused, no verdict (PY = GO = RS)",
           all(c != 0 and e is None for c, e, _ in r.values()), r)
-    print(f"\nWRT-018-REQUIRED-BINDING: {'ALL PASS' if ok else 'FAILURES PRESENT'}")
-    return 0 if ok else 1
+    print(f"\nWRT-018-REQUIRED-BINDING: {'ALL PASS' if T.ok else 'FAILURES PRESENT'}")
+    return 0 if T.ok else 1
 
 
 if __name__ == "__main__":
