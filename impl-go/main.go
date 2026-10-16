@@ -1823,6 +1823,10 @@ type settlementContext struct {
 	activeRecords  map[string]bool
 	invalidPolicy  map[string]bool
 	globalWarnings [][2]string
+	// conflictedAt (WRT-016): actors whose key state is ambiguous at a record's
+	// DAG position. A conflict elsewhere does not reach a record whose ancestry
+	// sees only one side of it.
+	conflictedAt   func(string) map[string]bool
 	conflictActors map[string]bool
 	keysBefore     func(string) map[string]map[string]bool
 }
@@ -2643,6 +2647,50 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		rotationAuthCache[wid] = r
 		return r
 	}
+	conflictCache := map[string]map[string]bool{}
+	conflictedAt := func(wid string) map[string]bool {
+		if c, ok := conflictCache[wid]; ok {
+			return c
+		}
+		conflictCache[wid] = map[string]bool{} // re-entrancy on prior cycles
+		byActor := map[string][]string{}
+		for a := range ancestors(wid) {
+			if a == wid {
+				continue
+			}
+			if actor, _, _, ok := rotation(a); ok && rotationAuthorized(a) {
+				byActor[actor] = append(byActor[actor], a)
+			}
+		}
+		out := map[string]bool{}
+		for actor, ws := range byActor {
+			maximal := 0
+			for _, x := range ws {
+				dominated := false
+				for _, y := range ws {
+					if x != y && ancestors(y)[x] {
+						dominated = true
+						break
+					}
+				}
+				if !dominated {
+					maximal++
+				}
+			}
+			if maximal > 1 {
+				out[actor] = true
+			}
+		}
+		conflictCache[wid] = out
+		return out
+	}
+	thresholdKeys := func(wid string) map[string]map[string]bool {
+		keys := keysBefore(wid)
+		for actor := range conflictedAt(wid) {
+			delete(keys, actor)
+		}
+		return keys
+	}
 	rotationAuthCompute = func(wid string) bool {
 		actor, incoming, _, ok := rotation(wid)
 		if !ok || ctx.invalidPolicy[wid] || !ctx.activeRecords[wid] {
@@ -2671,8 +2719,16 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 			return false
 		}
 		if len(policies) > 0 {
+			// A conflicted actor counts toward no quorum here (WRT-016).
+			quorumKeys := map[string]map[string]bool{}
+			conflicted := conflictedAt(wid)
+			for a, k := range priorKeys {
+				if !conflicted[a] {
+					quorumKeys[a] = k
+				}
+			}
 			for _, p := range policies {
-				if !thresholdSatisfied(wid, env, p, priorKeys, nil) {
+				if !thresholdSatisfied(wid, env, p, quorumKeys, nil) {
 					return false
 				}
 			}
@@ -2709,6 +2765,9 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		keysCache = map[string]map[string]map[string]bool{}
 		nextCache = map[string]map[string]string{}
 		rotationAuthCache = map[string]bool{}
+		for k := range conflictCache {
+			delete(conflictCache, k)
+		}
 		grew := false
 		for root := range ctx.roots {
 			if ctx.activeRoots[root] || !wellSigned[root] {
@@ -2720,7 +2779,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 				if !ctx.activeRecords[wid] || body["decision"] != "accept" || getSubjectHash(body) != root {
 					continue
 				}
-				if policiesSatisfied(blobs, wid, env, keysBefore(wid)) {
+				if policiesSatisfied(blobs, wid, env, thresholdKeys(wid)) {
 					ctx.activeRoots[root] = true
 					grew = true
 					break
@@ -2757,7 +2816,19 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 			ctx.conflictActors[actor] = true
 		}
 	}
+	// WRT-016 option C: reported once per actor on the store, acting only
+	// where a record's ancestry is ambiguous.
+	conflicted := make([]string, 0, len(ctx.conflictActors))
+	for actor := range ctx.conflictActors {
+		conflicted = append(conflicted, actor)
+	}
+	sort.Strings(conflicted)
+	for _, actor := range conflicted {
+		ctx.globalWarnings = append(ctx.globalWarnings, [2]string{"store",
+			"key-state conflict: " + actor + " has mutually unordered key histories in this store"})
+	}
 	ctx.keysBefore = keysBefore
+	ctx.conflictedAt = conflictedAt
 	return ctx
 }
 
@@ -2957,7 +3028,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 			actor, _ := sm["actor"].(string)
 			key, _ := sm["key"].(string)
 			keys := ctx.keysBefore(wid)
-			bound := !ctx.conflictActors[actor] && keys[actor] != nil && keys[actor][key]
+			bound := !ctx.conflictedAt(wid)[actor] && keys[actor] != nil && keys[actor][key]
 			short := key
 			if len(short) > 12 {
 				short = short[:12]
@@ -3050,7 +3121,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 			}
 		}
 		if ctx.activeRecords[wid] {
-			if ctx.conflictActors[actorID] {
+			if ctx.conflictedAt(wid)[actorID] {
 				out("WARN", wid, "key-state conflict")
 			}
 			if body["decision"] == "accept" || body["decision"] == "reject" {

@@ -599,6 +599,7 @@ pub struct Context<'a> {
     rotation_cache: RefCell<HashMap<String, Option<KeyBlob>>>,
     keys_cache: RefCell<HashMap<String, KeyState>>,
     next_cache: RefCell<HashMap<String, BTreeMap<String, String>>>,
+    conflict_cache: RefCell<HashMap<String, BTreeSet<String>>>,
     rotation_auth_cache: RefCell<HashMap<String, bool>>,
 }
 
@@ -646,6 +647,7 @@ impl<'a> Context<'a> {
             rotation_cache: RefCell::new(HashMap::new()),
             keys_cache: RefCell::new(HashMap::new()),
             next_cache: RefCell::new(HashMap::new()),
+            conflict_cache: RefCell::new(HashMap::new()),
             rotation_auth_cache: RefCell::new(HashMap::new()),
         };
         // Fixpoint: adoption thresholds count only keys bound at the adopting
@@ -665,6 +667,7 @@ impl<'a> Context<'a> {
             ctx.keys_cache.borrow_mut().clear();
             ctx.next_cache.borrow_mut().clear();
             ctx.rotation_auth_cache.borrow_mut().clear();
+            ctx.conflict_cache.borrow_mut().clear();
             let mut grew = false;
             let pending: Vec<String> = ctx.roots.difference(&ctx.active_roots).cloned().collect();
             for root in pending {
@@ -679,7 +682,7 @@ impl<'a> Context<'a> {
                             .get("subject")
                             .and_then(|s| s.get("hash"))
                             .is_some_and(|h| py_eq(h, &Json::Str(root.clone())))
-                        && policies_satisfied(store, wid, env, Some(&ctx.keys_before(wid)))
+                        && policies_satisfied(store, wid, env, Some(&ctx.threshold_keys(wid)))
                     {
                         ctx.active_roots.insert(root.clone());
                         grew = true;
@@ -714,7 +717,64 @@ impl<'a> Context<'a> {
                 ctx.conflict_actors.insert(actor.clone());
             }
         }
+        // WRT-016 option C: reported once per actor on the store, acting only
+        // where a record's ancestry is ambiguous.
+        for actor in ctx.conflict_actors.clone() {
+            ctx.global_warnings.push((
+                "store".to_string(),
+                format!(
+                    "key-state conflict: {actor} has mutually unordered key histories in this store"
+                ),
+            ));
+        }
         ctx
+    }
+
+    /// WRT-016: actors whose key state is ambiguous at `wid`'s DAG position:
+    /// two or more authorized rotations among its ancestors that are maximal
+    /// and mutually unordered there. A conflict elsewhere does not reach it.
+    pub fn conflicted_at(&self, wid: &str) -> BTreeSet<String> {
+        if let Some(c) = self.conflict_cache.borrow().get(wid) {
+            return c.clone();
+        }
+        self.conflict_cache
+            .borrow_mut()
+            .insert(wid.to_string(), BTreeSet::new()); // re-entrancy on prior cycles
+        let mut by_actor: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for a in self.ancestors(wid) {
+            if a == wid {
+                continue;
+            }
+            if let Some((actor, _, _)) = self.rotation(&a) {
+                if self.rotation_authorized(&a) {
+                    by_actor.entry(actor).or_default().push(a);
+                }
+            }
+        }
+        let mut out = BTreeSet::new();
+        for (actor, ws) in &by_actor {
+            let maximal = ws
+                .iter()
+                .filter(|x| !ws.iter().any(|y| x != &y && self.ancestors(y).contains(*x)))
+                .count();
+            if maximal > 1 {
+                out.insert(actor.clone());
+            }
+        }
+        self.conflict_cache
+            .borrow_mut()
+            .insert(wid.to_string(), out.clone());
+        out
+    }
+
+    /// Keys that count toward a threshold at `wid`: those bound there, minus
+    /// every actor conflicted there (WRT-016; SPEC §5.1 "no quorum").
+    pub fn threshold_keys(&self, wid: &str) -> KeyState {
+        let mut keys = self.keys_before(wid);
+        for actor in self.conflicted_at(wid) {
+            keys.remove(&actor);
+        }
+        keys
     }
 
     /// The roots a record descends from (iterative, cycle-safe, shape-defensive).
@@ -811,6 +871,15 @@ impl<'a> Context<'a> {
         keys
     }
 
+    fn quorum_keys(&self, wid: &str, prior: &KeyState) -> KeyState {
+        let conflicted = self.conflicted_at(wid);
+        prior
+            .iter()
+            .filter(|(a, _)| !conflicted.contains(*a))
+            .map(|(a, k)| (a.clone(), k.clone()))
+            .collect()
+    }
+
     fn rotation_authorized(&self, wid: &str) -> bool {
         if let Some(&r) = self.rotation_auth_cache.borrow().get(wid) {
             return r;
@@ -849,9 +918,9 @@ impl<'a> Context<'a> {
             return false;
         }
         let ok = if !policies.is_empty() {
-            policies
-                .iter()
-                .all(|p| threshold_satisfied(wid, env, p, Some(&prior_keys)))
+            policies.iter().all(|p| {
+                threshold_satisfied(wid, env, p, Some(&self.quorum_keys(wid, &prior_keys)))
+            })
         } else {
             sigs.iter().any(|s| {
                 verify_sig(wid, s)

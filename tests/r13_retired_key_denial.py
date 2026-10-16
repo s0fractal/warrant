@@ -26,9 +26,12 @@ WHAT IS ASSERTED, FOR PYTHON, GO AND RUST, REPORT FOR REPORT
   4. Residual, pinned: a holder of a_old AND its committed successor a_new can
      still fork at the root (same successor, different `next`). That is a
      conflict, as before. Closing it needs an external order (WRT-012).
-  5. The same residual after two rotations: both keys of the forking pair are
-     retired, and the store-wide conflict unbinds the current key's records
-     too. Pinned as current behaviour; WRT-016 proposes scoping it.
+  5. The same residual after two rotations, under WRT-016 option C: the fork
+     is reported once on the store, and the current key's records and the
+     genesis root stay bound.
+  6. No revocation operation (WRT-017 A).
+  7. A conflicted actor counts toward no quorum, at the positions whose
+     ancestry sees the conflict.
 """
 import hashlib
 import json
@@ -187,12 +190,13 @@ def case_residual():
 
 
 def case_multihop_residual():
-    """Pinned as CURRENT behaviour, not as the right one (WRT-016).
+    """WRT-016 option C (owner decision 2026-10-16).
 
     After a_old -> a_new -> a_newer, the holder of the two RETIRED keys a_old
-    and a_new forks at the root. The uncompromised current key's record is
-    unbound by the store-wide conflict along with everything else. Found by the
-    DeepReview of paper 1.1.0.
+    and a_new forks at the root. Before WRT-016 the store-wide conflict unbound
+    everything, the uncompromised current key's record included (recorded as
+    the KEY-C1 counterexample). Now the conflict is reported once on the
+    store, and only a record whose ancestry sees both sides is affected.
     """
     tmp, store, keys, opaque, subject, root, trust = world("multihop")
     rot1 = T.add_record(store, T.body("accept", key_blob(store, keys["a_new"], keys["a_newer"]),
@@ -212,10 +216,52 @@ def case_multihop_residual():
                  [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
     py, go, rs = run_all(store, trust)
     agree("multihop residual", py, go, rs)
-    check("5. residual, pinned: two RETIRED keys fork at the root -> store-wide conflict "
-          "that unbinds the uncompromised current key's record and the genesis root",
-          errors(py.stdout) == 0 and conflicted(py.stdout)
-          and not bound(py.stdout, cur) and not bound(py.stdout, root), lines(py.stdout))
+    store_warn = [l for l in lines(py.stdout) if l.startswith("WARN") and " store " in f" {l} "
+                  and "key-state conflict" in l]
+    check("5. WRT-016 C: the fork is reported once on the store",
+          errors(py.stdout) == 0 and len(store_warn) == 1, lines(py.stdout))
+    check("5. WRT-016 C: the current key's record and the genesis root stay bound",
+          bound(py.stdout, cur, keys["a_newer"]) and bound(py.stdout, root, keys["a_old"]),
+          lines(py.stdout))
+
+
+def case_conflict_counts_toward_no_quorum():
+    """SPEC §5.1: a conflicted actor's key MUST NOT count toward any quorum.
+    No implementation enforced it: with a@x conflicted in the adoption's own
+    ancestry, a 2-of-2 threshold {a@x, b@x} still adopted root two (Python,
+    Go and Rust; counterexample recorded in contract KEY-C1). Now the
+    adoption fails and the conflicted signature is unbound at that position."""
+    tmp = tempfile.mkdtemp(prefix="wrt016-quorum-")
+    store, keys, opaque = T.setup(tmp)
+    subject = T.put_blob(store, b"quorum subject")
+    r1 = T.add_record(store, T.body("accept", subject, [opaque], "a@x", ts=1),
+                      [("a@x", keys["a_old"])])
+    r2 = T.add_record(store, T.body("accept", T.put_blob(store, b"root two"), [opaque], "b@x", ts=1),
+                      [("b@x", keys["b"])])
+    pol = T.put_json_blob(store, {"warrant_policy": "0.3",
+                                  "threshold": {"min_sigs": 2, "actors": ["a@x", "b@x"]}})
+    kb1 = key_blob(store, keys["a_new"], keys["c"])
+    kb2 = T.put_json_blob(store, {"actor": "a@x", "key": T.pubkey(keys["a_new"]),
+                                  "next": commit(keys["a_fork"])})
+    rot = T.add_record(store, T.body("accept", kb1, [opaque], "a@x", prior=[r1], ts=2),
+                       [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
+    fork = T.add_record(store, T.body("accept", kb2, [opaque], "a@x", prior=[r1], ts=3),
+                        [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
+    adopt = T.add_record(store, T.body("accept", r2, [pol], "a@x", prior=[rot, fork], ts=4),
+                         [("a@x", keys["a_new"]), ("b@x", keys["b"])])
+    trust = os.path.join(tmp, "trust.json")
+    open(trust, "w").write(json.dumps({
+        "genesis_roots": [r1],
+        "actors": {"a@x": [T.pubkey(keys["a_old"])], "b@x": [T.pubkey(keys["b"])]},
+        "next": {"a@x": commit(keys["a_new"])}}))
+    py, go, rs = run_all(store, trust)
+    agree("conflict and quorum", py, go, rs)
+    out = lines(py.stdout)
+    check("7. a conflicted actor counts toward no quorum: the 2-of-2 adoption fails",
+          any(r2[:12] in l and "unadopted" in l for l in out), out)
+    check("7. at the adoption, whose ancestry sees both sides, a@x is conflicted and unbound",
+          any(adopt[:12] in l and l.endswith("key-state conflict") for l in out)
+          and not bound(py.stdout, adopt, keys["a_new"]), out)
 
 
 def case_no_revocation():
@@ -250,6 +296,7 @@ def main():
     case_residual()
     case_multihop_residual()
     case_no_revocation()
+    case_conflict_counts_toward_no_quorum()
     print(f"\nWRT-015-PRE-ROTATION: {'ALL PASS' if ok else 'FAILURES PRESENT'}")
     return 0 if ok else 1
 
