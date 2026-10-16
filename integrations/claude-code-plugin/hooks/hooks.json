@@ -1,0 +1,17 @@
+{
+  "description": "Witness permission outcomes into a local warrant store. Never returns a decision.",
+  "hooks": {
+    "PermissionRequest": [
+      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "timeout": 10 } ] }
+    ],
+    "PermissionDenied": [
+      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "async": true } ] }
+    ],
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "async": true } ] }
+    ],
+    "PostToolUseFailure": [
+      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "async": true } ] }
+    ]
+  }
+}

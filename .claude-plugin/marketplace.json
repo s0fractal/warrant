@@ -1,0 +1,12 @@
+{
+  "name": "s0fractal",
+  "description": "Plugins from the warrant project",
+  "owner": { "name": "s0fractal", "url": "https://github.com/s0fractal" },
+  "plugins": [
+    {
+      "name": "warrant",
+      "source": "./integrations/claude-code-plugin",
+      "description": "Signed, offline-verifiable records of Claude Code permission decisions"
+    }
+  ]
+}
