@@ -16,22 +16,27 @@ Then ask Claude `/warrant:decisions`, or run it yourself:
 python3 ~/.claude/plugins/.../scripts/decisions.py --hours 24
 ```
 
-```
-store: /Users/you/.warrant/claude-code/store
-verify: 4 records, 0 errors, 4 warnings
+A smoke run of the installed plugin, from one simulated auto-mode denial:
 
-last 24 h: 2 witnessed decisions, 1 open asks
-  2026-10-16 14:02  denied                 Bash  {"command": "gh pr merge 95 ..."}
-      auto mode denied the call; harness reason: [Merge Without Review]
-      warrant 3f9c0e...  tool_use_id toolu_01...
-  2026-10-16 13:40  asked, then executed   Bash  {"command": "npm publish"}
-      permission was requested at ...; the call then executed (approved in the
-      dialog, by an allow rule or by another hook -- the witness cannot tell which)
+```
+store: .../store
+verify: 2 records, 0 errors, 3 warnings
+
+last 1 h: 1 witnessed decisions, 0 open asks
+  2026-10-16 05:40  denied                 Bash  {"command": "echo smoke"}
+      auto mode denied the call; harness reason: [Smoke Test]
+      warrant 857ec81c76dc1a13  tool_use_id toolu_smoke
 ```
 
-The four warnings say the signing key is not yet bound to an actor in a trust
-config. `warrant trust add --actor claude-code-witness --key ~/.warrant/claude-code/keys/witness.key`
-binds it.
+Each denial is two records: the request and the refusal. The three warnings are
+expected:
+
+- **binding unverified, once per record.** Nothing has yet said that this key
+  speaks for `claude-code-witness`. A trust config does that
+  (`warrant trust add`, see the main README).
+- **UNVERIFIABLE: reject with prose-only reasons.** The classifier's reasoning
+  is not something a reader can re-run. The record keeps its verdict, not its
+  logic, and the verifier says so.
 
 ## What it records, and what it cannot
 
