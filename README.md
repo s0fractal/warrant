@@ -82,6 +82,7 @@ record the chain starts from:
 warrant trust add --actor me@host --key me.key     # writes trust.json
 warrant trust root "$P"
 warrant verify --settlement --trust-config trust.json   # 0 errors, 0 warnings
+warrant verify --settlement --trust-config trust.json --require-bound   # same, and an actor's own unbound key would be an ERR (WRT-018)
 ```
 
 The transcripts matter. Without them the accept carries no new evidence and no

@@ -68,9 +68,19 @@ fn read_store(input: &str, require_records: bool) -> Result<Store, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn verify_store(input: &str, trust_config: Option<String>) -> Result<String, JsValue> {
+pub fn verify_store(
+    input: &str,
+    trust_config: Option<String>,
+    require_bound: Option<bool>,
+) -> Result<String, JsValue> {
     if trust_config.as_ref().is_some_and(|t| t.len() > 256 * 1024) {
         return Err(error("Trust configuration exceeds 256 KiB"));
+    }
+    let require_bound = require_bound.unwrap_or(false);
+    if require_bound && trust_config.is_none() {
+        // WRT-018: binding is derived from the reader's trust; without it there is
+        // nothing to require. The CLI refuses the same request without --settlement.
+        return Err(error("requireBound needs a trust configuration"));
     }
     let store = read_store(input, true)?;
     let trust = trust_config.map(|text| {
@@ -78,8 +88,10 @@ pub fn verify_store(input: &str, trust_config: Option<String>) -> Result<String,
             .map_err(|e| e.to_string())
             .and_then(|v| settlement::validate_trust_config(&v))
     });
-    Ok(json::dumps_compact(&verify::verify_report_with_trust(
-        &store, trust,
+    Ok(json::dumps_compact(&verify::verify_report_with_trust_opts(
+        &store,
+        trust,
+        require_bound,
     )))
 }
 

@@ -40,6 +40,11 @@ export interface CheckResult {
 /** Explicit external trust selects settlement grade; omission selects base. */
 export interface VerifyOptions {
   trust?: string;
+  /**
+   * WRT-018: a record whose own actor has no signature by a key bound in `trust`
+   * is an ERR. Co-signatures are unaffected. Requires `trust`; throws without it.
+   */
+  requireBound?: boolean;
 }
 /** WASM limits apply in every host, including Node and Deno. No time limit here. */
 export const LIMITS: Readonly<{
@@ -98,7 +103,7 @@ export function verifyStore(
 ): VerificationReport {
   const input = transport(files);
   return JSON.parse(
-    execute(() => verify_store(input, options.trust)),
+    execute(() => verify_store(input, options.trust, options.requireBound === true)),
   ) as VerificationReport;
 }
 /** Compute a body ID; this alone does not verify the record or its signature. */
