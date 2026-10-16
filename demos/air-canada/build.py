@@ -28,7 +28,6 @@ IMPL = HERE.parent.parent / "impl"
 sys.path.insert(0, str(IMPL))
 
 import policy_lang as pl          # noqa: E402  (WPL v1 -> ski@v1 compiler)
-import sigma_glyph as sg          # noqa: E402  (bundled Book I oracle)
 import ski_policy as sp           # noqa: E402  (the hand-built predecessor)
 import warrant as w               # noqa: E402  (reference implementation)
 
