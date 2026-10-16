@@ -157,6 +157,11 @@ CHECKS = [
     # That asymmetry against the LangGraph binding is the study's whole argument.
     ("pretooluse hook binding (wire format, fail-open recording, tamper control)",
      ["python3", "integrations/approval/examples/test_pretooluse_hook.py"], None),
+    # The same boundary packaged as a Claude Code plugin that only WITNESSES:
+    # it never returns a decision, files what the harness reports, and keeps
+    # its vendored copy of the boundary module byte-identical to the original.
+    ("claude code witness plugin (silent hook, asked/executed/denied, tamper, no-CLI)",
+     ["python3", "integrations/claude-code-plugin/test_plugin.py"], None),
     # Joins a telemetry export to a store by the tool_use_id the hook binds.
     # Stdlib only and fixtures synthesised from the documented event shapes, so
     # it runs on a clean checkout; see docs/telemetry-correlation.md.

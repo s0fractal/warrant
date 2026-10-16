@@ -105,6 +105,22 @@ admitted by any body version and ships no executable candidate bytes.
 The longer walkthrough, including negative controls, is
 [`docs/try-this-in-fifteen-minutes.md`](docs/try-this-in-fifteen-minutes.md).
 
+## In Claude Code
+
+A plugin witnesses the permission decisions Claude Code makes about your agent's
+tool calls: auto-mode denials, and calls that were asked about and then ran. It
+keeps them as signed records in a local store and never takes part in the
+decision itself.
+
+```text
+/plugin install warrant --marketplace s0fractal/warrant
+```
+
+Then `/warrant:decisions` lists what was refused, what ran after asking, and
+which asks have no observed outcome. See
+[`integrations/claude-code-plugin/`](integrations/claude-code-plugin/README.md)
+for what a record proves and what it cannot see.
+
 ## Machine boundary
 
 For CI, MCP or an agent framework, verify an initialized store with

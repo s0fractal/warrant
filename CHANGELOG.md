@@ -27,6 +27,17 @@ right.
 
 ## Unreleased
 
+- **Claude Code plugin: a decision witness** (`integrations/claude-code-plugin/`,
+  marketplace `.claude-plugin/marketplace.json`). Hooks on `PermissionDenied`,
+  `PermissionRequest` and `PostToolUse(Failure)` file a signed `reject` for each
+  auto-mode denial (the harness's reason verbatim) and an `accept` for each call
+  that was asked about and then ran. Manual dialog denials fire no hook, so
+  they show as open asks rather than as a guess. The hook prints nothing and
+  always exits 0. `/warrant:decisions` lists the records with the store's
+  verification. `test_plugin.py` is wired into `tools/check.py`, and five
+  mutations of the hook each turn it red. Prototype 0.1.0, not independently
+  reviewed.
+
 - **`@s0fractal/warrant` publishes from the release workflow.** `publish.yml`
   gains `js` (build once, test, gate on versions, clean tree and embedded WASM
   digest via `js/verify-build.mjs`) and `npm` / `jsr`, which publish those same
