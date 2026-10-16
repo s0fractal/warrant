@@ -946,8 +946,13 @@ def _write_new_key_file(path, text):
     following a symlink. `--out` comes from whoever runs the CLI (increasingly an
     agent); a key writer that overwrites whatever path it is handed is a write
     primitive, so an existing path is refused instead."""
+    # Sonar S8707 (CLI-supplied path) is dispositioned here, not suppressed blindly:
+    # the operator chooses where a key lives (the plugin uses ~/.warrant, demos a
+    # temp dir), so the path cannot be confined to one base. What made it a write
+    # primitive was overwriting and following symlinks; O_EXCL|O_NOFOLLOW removes
+    # both (tests/keygen_never_overwrites.py).
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)  # NOSONAR
     except FileExistsError:
         sys.exit(f"{path}: exists; keygen never overwrites a key file")
     with os.fdopen(fd, "w") as f:
@@ -959,7 +964,9 @@ def load_key(path):
     p = Path(path)
     if not p.is_file() or p.stat().st_size > KEY_FILE_MAX:
         sys.exit(f"{path}: a key file must be a regular file of at most {KEY_FILE_MAX} bytes")
-    text = p.read_text().strip()
+    # Sonar S8707: the operator names the key file; it is read only if it is a
+    # regular file of at most 4 KiB, and its bytes are never echoed back.
+    text = p.read_text().strip()  # NOSONAR
     if text.startswith(P256_KEYFILE_PREFIX):
         d = bytes.fromhex(text[len(P256_KEYFILE_PREFIX):])
         if len(d) != 32 or not 0 < int.from_bytes(d, "big") < _P256_N:
