@@ -67,12 +67,20 @@ def verify(store, argv):
             "warnings": rep.get("warnings")}
 
 
+def outcome_of(decision, reason):
+    if decision == "reject":
+        return "denied"
+    if reason.startswith("executed without a prompt"):
+        return "executed, no prompt"
+    return "asked, then executed"
+
+
 def decision_row(store, recs, wid, body):
     prior = recs.get((body.get("prior") or [None])[0], {})
     subj = subject_doc(store, prior) if prior else {}
     reasons = [b.get("text") for b in body.get("because", []) if b.get("kind") == "prose"]
     return {"warrant_id": wid, "ts": body.get("ts"),
-            "outcome": "denied" if body["decision"] == "reject" else "asked, then executed",
+            "outcome": outcome_of(body["decision"], reasons[0] if reasons else ""),
             "tool": subj.get("tool_name"), "tool_use_id": subj.get("tool_use_id"),
             "input": json.dumps(subj.get("tool_input"), ensure_ascii=False)[:160],
             "reason": reasons[0] if reasons else None}

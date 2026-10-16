@@ -27,6 +27,18 @@ right.
 
 ## Unreleased
 
+- **Plugin 0.2.0: auto mode is witnessed, and refusals are remembered.**
+  Unprompted Bash calls that are checks (tests, builds, `gh pr checks`) or
+  consequential (push, commit, merge, tag, publish, `rm -rf`) are filed as
+  "executed, no prompt" with the permission mode, success or failure and a
+  SHA-256 of the tool response. The output is not stored. A `SessionStart`
+  hook gives the model up to five recent auto-mode denials, labelled as data,
+  so a refused call is not retried blind. `/warrant:decisions` renders the
+  report when the skill loads instead of through a prompted tool call. Tests
+  cover a 20-case classifier table, the hash, that the output is absent from
+  the store, and recall output both with and without denials. Four new
+  mutations each turn them red.
+
 - **Plugin 0.1.1: a fresh install no longer reads as a damaged store.** Before
   anything was witnessed, `/warrant:decisions` reported `1 errors` (the verifier
   on a store that does not exist yet). It now says "nothing to verify". A

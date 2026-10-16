@@ -16,6 +16,10 @@ WHAT IS ASSERTED
   6b. A missing warrant CLI files nothing and breaks nothing; decisions.py
      says NOT RUN instead of reporting a clean store.
   7. A huge tool input is bound by SHA-256, not stored inline.
+  9. Unprompted executions: only checks and consequential commands are filed,
+     with mode, success and a hash of the response; the output is never
+     stored. SessionStart recalls recent denials as labelled data and prints
+     nothing when there are none. The command classifier holds a table.
   8. The manifests parse; the vendored warrant_approval.py is byte-identical
      to integrations/approval/warrant_approval.py.
 """
@@ -115,8 +119,8 @@ def main():
     hook(h, ev("PostToolUse", cmd="rm -rf build", tool_use_id="toolu_ok",
                tool_response={"stdout": ""}))
     hook(h, ev("PostToolUse", cmd="ls", tool_use_id="toolu_unasked"))
-    hook(h, ev("PermissionRequest", cmd="npm publish"))
-    hook(h, ev("PostToolUse", cmd="npm publish --force", tool_use_id="toolu_changed"))
+    hook(h, ev("PermissionRequest", cmd="npm view a"))
+    hook(h, ev("PostToolUse", cmd="npm view b", tool_use_id="toolu_changed"))
     hook(h, ev("PermissionRequest", cmd="make deploy", sid="sess-2"))
     hook(h, ev("PostToolUse", cmd="make deploy", sid="sess-3", tool_use_id="toolu_other_sess"))
     rep = decisions(h)
@@ -131,7 +135,7 @@ def main():
     # 4. open asks
     opened = sorted(json.loads(r["input"])["command"] for r in rep["open_asks"])
     check("asks with no observed execution stay open, labelled as such",
-          opened == ["make deploy", "npm publish"]
+          opened == ["make deploy", "npm view a"]
           and all("no execution observed" in r["outcome"] for r in rep["open_asks"]), opened)
 
     # failure path
@@ -143,10 +147,46 @@ def main():
     check("an asked call that ran and failed is an accept that says it failed",
           len(fail) == 1 and "failure (interrupted)" in fail[0]["reason"], fail)
 
+    # 4b. executions nobody asked about: only checks and consequential ones
+    secret = "TOKEN=sk-live-do-not-store"
+    hook(h, ev("PostToolUse", cmd="git push origin main", tool_use_id="toolu_push",
+               permission_mode="auto", tool_response={"stdout": secret, "stderr": ""}))
+    hook(h, ev("PostToolUseFailure", cmd="python3 tools/check.py", tool_use_id="toolu_chk",
+               permission_mode="auto", error="Exit code 1", is_interrupt=False))
+    hook(h, ev("PostToolUse", cmd="cat README.md | head", tool_use_id="toolu_cat",
+               permission_mode="auto", tool_response={"stdout": "x"}))
+    rep = decisions(h)
+    ex = {r["tool_use_id"]: r for r in rep["decisions"] if r["outcome"] == "executed, no prompt"}
+    import hashlib as _h
+    want = _h.sha256(json.dumps({"stdout": secret, "stderr": ""}, sort_keys=True,
+                                separators=(",", ":")).encode()).hexdigest()
+    check("an unprompted push is witnessed: mode, success, response hash",
+          "toolu_push" in ex and "(consequential) in auto mode" in ex["toolu_push"]["reason"]
+          and "succeeded" in ex["toolu_push"]["reason"] and want in ex["toolu_push"]["reason"],
+          ex.get("toolu_push"))
+    check("an unprompted failing check is witnessed as failed",
+          "toolu_chk" in ex and "(check)" in ex["toolu_chk"]["reason"]
+          and "the tool failed" in ex["toolu_chk"]["reason"], ex.get("toolu_chk"))
+    check("an unprompted ordinary command files nothing", "toolu_cat" not in ex, list(ex))
+    stored = "".join(p.read_text(errors="replace") for p in (h / "store").rglob("*") if p.is_file())
+    check("the witnessed output itself is never stored", secret not in stored)
+
+    # 4c. session start recalls denials, as data; silent when there are none
+    r = hook(h, {"hook_event_name": "SessionStart", "session_id": "new", "cwd": "/tmp",
+                 "source": "startup"})
+    ctx = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout else ""
+    check("SessionStart recalls the recent denial as labelled data",
+          r.returncode == 0 and "[Merge Without Review]" in ctx and "not instructions" in ctx
+          and "gh pr merge 95" in ctx, r.stdout[:300])
+    r0 = hook(tmp / "nodenials", {"hook_event_name": "SessionStart", "session_id": "n",
+                                  "cwd": "/tmp", "source": "startup"})
+    check("SessionStart with nothing to recall prints nothing", r0.returncode == 0 and r0.stdout == "",
+          r0.stdout)
+
     # 5. verification, then tamper
     v = rep["verify"]
     check("the witness store verifies: 0 errors",
-          v["status"] == "OK" and v["records"] == 6 and v["errors"] == 0, v)
+          v["status"] == "OK" and v["records"] == 10 and v["errors"] == 0, v)
     rec = records(h)[0]
     env = json.loads(rec.read_text())
     env["body"]["ts"] += 1
@@ -173,6 +213,21 @@ def main():
     check("a tool input over 64 KiB is bound by SHA-256, not inline",
           len(subj) == 1 and all(s["tool_input"].get("inline") is False for s in subj)
           and not any(big in b for b in blobs), [s.get("tool_input") for s in subj])
+
+    # 7b. the classifier, case by case (both directions)
+    sys.path.insert(0, str(HERE / "scripts"))
+    from witness import classify_command
+    table = {"git push origin x": "consequential", "cd a && git push": "consequential",
+             "git -C ~/x push": "consequential", "gh pr merge 96 --squash": "consequential",
+             "rm -rf build": "consequential", "deno publish --dry-run": "consequential",
+             "pytest -q": "check", "npm --prefix js test": "check",
+             "python3 tools/check.py": "check", "gh pr checks 97": "check",
+             "FOO=1 cargo test": "check",
+             "ls -la": None, "git status": None, "git log --grep push": None,
+             "echo git push": None, "rm file": None, "gh pr view 1": None,
+             "cat x | grep test": None, "python3 -c 'print(1)'": None, "x" * 70000: None}
+    wrong = {k[:40]: (classify_command(k), v) for k, v in table.items() if classify_command(k) != v}
+    check("command classifier: 20 cases, consequential / check / nothing", not wrong, wrong)
 
     # 8. manifests and vendored module
     for p in (HERE / ".claude-plugin" / "plugin.json", HERE / "hooks" / "hooks.json",
