@@ -27,7 +27,6 @@ right.
 
 ## Unreleased
 
-<<<<<<< HEAD
 - **WRT-016 decided (C): a key-state conflict is scoped to the ancestry that
   contains it.** Before, a conflict anywhere unbound every signature of the
   actor across the whole store. Two retired keys could thereby deny an
@@ -43,8 +42,6 @@ right.
   `case_conflict_counts_toward_no_quorum` was added; mutating either rule
   out turns them red. Contract KEY-C1 was amended with a new decision.
 
-=======
->>>>>>> origin/master
 - **WRT-017 decided (A): there is no revocation operation.** SPEC §5.1 had
   specified revocation as a `supersede` of the introducing rotation, and no
   implementation ever derived key state from it. It is dropped rather than
@@ -56,8 +53,6 @@ right.
   `case_no_revocation` (formerly `case_revocation_not_implemented`) now holds
   the rule instead of a known gap.
 
-<<<<<<< HEAD
-=======
 - **Paper "The Reason Runs Again" 1.1.0 candidate** (not deposited). It
   answers the 2026-10-16 DeepReview point by point (see the triage in
   `papers/the-reason-runs-again/reviews/`):
@@ -75,7 +70,6 @@ right.
   Rust is described at settlement parity, and the "20 mixed-torsion keys" claim
   is corrected. `check_claims.py --deposited d83984f` keeps 1.0.0 true at its
   own commit while the candidate is measured against the working tree.
->>>>>>> origin/master
 - **Contracts for SPEC rules (method from sokol-core).** `contracts/<ID>.json`
   names one SPEC MUST sentence verbatim, the witnesses that hold it (test
   functions run by `tools/check.py`, or marked vectors), and the decisions
