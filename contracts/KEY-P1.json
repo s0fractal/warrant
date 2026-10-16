@@ -1,0 +1,27 @@
+{
+  "profile": "warrant.contract.v1",
+  "id": "KEY-P1",
+  "spec": "§5.1",
+  "statement": "**Pre-rotation (MUST; WRT-015).** Every key state commits in advance to its successor: genesis keys through the trust configuration's `next` (§12), and every later key through the `next` of the key blob that introduced it. A rotation is authorized only if the actor's key state at the rotation's DAG position carries a commitment and `SHA-256(incoming key)` equals it.",
+  "witnesses": [
+    "tests/r13_retired_key_denial.py::case_retired_key",
+    "tests/r13_retired_key_denial.py::case_terminal",
+    "tests/r13_retired_key_denial.py::case_chain",
+    "tests/settlement.py::case_key_state"
+  ],
+  "decisions": [
+    {
+      "date": "2026-10-16",
+      "because": "DeepReview 2026-10-16 (R13), reproduced first: rotation authorization is judged at the record's DAG position while key-state conflict is store-wide, so one retired key could deny an actor's whole history. Pre-rotation (WRT-015) adopted by the owner the same day and implemented in Python, Go and Rust (PR #101).",
+      "statement_sha256": "fb9a21c4490da4cf1825cf390b36c76aa28ea2b511c6a92a115a36a882b79cc9",
+      "previous_statement_sha256": null,
+      "counterexample": {
+        "at": "80c644e",
+        "witness": "tests/r13_retired_key_denial.py (its first, pinning version, PR #101)",
+        "observed": "a rotation a_old -> a_fork signed by the retired a_old alone at the root position was authorized; a@x became conflicted store-wide and every a@x signature, the genesis root's included, reported unbound (Python = Go)",
+        "expected": "a retired key alone authorizes no rotation: no conflict, the root and the legitimate branch stay bound"
+      }
+    }
+  ],
+  "annotations": "Unsigned note. The residual (a key plus its committed successor can still fork) is KEY-C1's subject, not this contract's."
+}

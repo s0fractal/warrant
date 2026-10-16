@@ -1,0 +1,20 @@
+{
+  "profile": "warrant.contract.v1",
+  "id": "KEY-C1",
+  "spec": "§5.1",
+  "statement": "A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendant: warrants ordered by the DAG are never a conflict; only maximal, mutually unordered warrants trigger this rule. On conflict, verifiers MUST report `WARN: key-state conflict`, and the conflicted actor's key MUST NOT count toward any quorum until a later warrant — authorized by the unconflicted remainder of the quorum — resolves it; if the threshold would become unsatisfiable, it is reduced to exclude the conflicted actor strictly for conflict resolution.",
+  "witnesses": [
+    "tests/settlement.py::case_key_state",
+    "tests/settlement.py::case_stale_replay",
+    "tests/r13_retired_key_denial.py::case_residual"
+  ],
+  "decisions": [
+    {
+      "date": "2026-10-16",
+      "because": "Recorded as a contract on 2026-10-16. The rule dates from SPEC v0.3, and its stale-replay case was refuted by DeepSeek gate 3 (tests/settlement.py case_stale_replay). Since WRT-015 the only way to reach a conflict is the residual duplicity: a key and its committed successor introducing that successor twice at one DAG position. Ordering it needs an external witness (WRT-012).",
+      "statement_sha256": "960dc67427674b7edf620a596e416c3c720d32bb92461a166042517ffe4e2c43",
+      "previous_statement_sha256": null
+    }
+  ],
+  "annotations": "Unsigned note. A conflict is a denial, never a takeover (THREAT-MODEL A10)."
+}
