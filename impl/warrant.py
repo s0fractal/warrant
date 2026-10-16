@@ -938,8 +938,28 @@ ALG_P256 = "ecdsa-p256-sha256"
 _P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
 
 
+KEY_FILE_MAX = 4096
+
+
+def _write_new_key_file(path, text):
+    """Create a key file that did not exist, 0600 from the first byte, without
+    following a symlink. `--out` comes from whoever runs the CLI (increasingly an
+    agent); a key writer that overwrites whatever path it is handed is a write
+    primitive, so an existing path is refused instead."""
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except FileExistsError:
+        sys.exit(f"{path}: exists; keygen never overwrites a key file")
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+
+
 def load_key(path):
-    text = Path(path).read_text().strip()
+    """A key file: a regular file of at most 4 KiB (not a device, FIFO or directory)."""
+    p = Path(path)
+    if not p.is_file() or p.stat().st_size > KEY_FILE_MAX:
+        sys.exit(f"{path}: a key file must be a regular file of at most {KEY_FILE_MAX} bytes")
+    text = p.read_text().strip()
     if text.startswith(P256_KEYFILE_PREFIX):
         d = bytes.fromhex(text[len(P256_KEYFILE_PREFIX):])
         if len(d) != 32 or not 0 < int.from_bytes(d, "big") < _P256_N:
@@ -3134,15 +3154,14 @@ def main():
         store.init()
         print(f"initialized {store.root}")
     elif args.cmd == "keygen":
-        p = Path(args.out)
         if args.alg == "p256":
             sk = ec.generate_private_key(ec.SECP256R1())
-            p.write_text(P256_KEYFILE_PREFIX + sk.private_numbers().private_value.to_bytes(32, "big").hex() + "\n")
+            text = P256_KEYFILE_PREFIX + sk.private_numbers().private_value.to_bytes(32, "big").hex()
         else:
             seed = os.urandom(32)
-            p.write_text(seed.hex() + "\n")
+            text = seed.hex()
             sk = Ed25519PrivateKey.from_private_bytes(seed)
-        p.chmod(0o600)
+        _write_new_key_file(args.out, text + "\n")
         print("pubkey", pubkey_hex(sk))
     elif args.cmd in ("blob", "policy"):
         store.require()

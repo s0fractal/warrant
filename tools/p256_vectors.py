@@ -145,4 +145,6 @@ def selftest():
 
 
 if __name__ == "__main__":
-    sys.exit(selftest() if "--selftest" in sys.argv else __doc__ and print(__doc__) or 0)
+    if "--selftest" in sys.argv:
+        sys.exit(selftest())
+    print(__doc__)

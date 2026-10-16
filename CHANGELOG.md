@@ -27,6 +27,16 @@ right.
 
 ## Unreleased
 
+- **keygen never overwrites a key file (Python, Rust).** Sonar flagged the new
+  key-file paths (S8707: CLI-supplied paths). Checking showed a real write
+  primitive: `keygen --out` silently overwrote any existing file and followed a
+  symlink, creating the file at its target. It also set 0600 only after
+  writing. `keygen` now creates a new file, 0600 from the first byte, and
+  never follows a symlink; an existing path is refused. `load_key` reads only
+  a regular file of at most 4 KiB, so `/dev/zero` is refused instead of read
+  forever. The Rust shadow harness gives Rust its own `--out` path in the same
+  prior state. `tests/keygen_never_overwrites.py` checks Python and Rust.
+
 - **[protocol] WRT-019 decided: ECDSA P-256 signatures, for keys held in phone
   hardware.** Phone secure elements (Secure Enclave, StrongBox) sign P-256
   only. A signature entry may now carry `alg: "ecdsa-p256-sha256"`; an absent
