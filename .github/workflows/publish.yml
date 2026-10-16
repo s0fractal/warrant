@@ -81,7 +81,7 @@ jobs:
       # regrettable.
       - name: Documented CLI surface exists in the built wheel
         run: python3 tools/check_release_surface.py --wheel "$(ls dist/*.whl)" --bin /tmp/wv/bin
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
@@ -209,7 +209,7 @@ jobs:
         run: |
           mkdir -p /tmp/js-release
           cp -R js/dist js/generated js/mod.ts js/jsr.json js/package.json js/README.md js/LICENSE /tmp/js-release/
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: js-release
           path: /tmp/js-release/
