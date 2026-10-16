@@ -49,6 +49,13 @@ def subject_doc(store, body):
 def verify(store, argv):
     if argv is None:
         return {"status": "UNRUN", "detail": "warrant CLI not found (pipx install warrant-verify)"}
+    if not store.exists():
+        # Nothing has been filed yet: the first record creates the store.
+        # Reported apart from ERRORS, so a fresh install does not read as a
+        # damaged store. A missing CLI is reported first, above: without it
+        # nothing will ever be filed. A store directory that exists but is
+        # incomplete still goes to the verifier and is reported as it is.
+        return {"status": "EMPTY", "detail": "no store yet: nothing has been witnessed"}
     r = subprocess.run(argv + ["--store", str(store), "verify", "--store-mode", "--json"],
                        capture_output=True, text=True)
     try:
@@ -118,6 +125,8 @@ def main(argv=None):
     print(f"store: {rep['store']}")
     if v["status"] == "UNRUN":
         print(f"verify: NOT RUN -- {v['detail']}")
+    elif v["status"] == "EMPTY":
+        print(f"verify: nothing to verify -- {v['detail']}")
     else:
         print(f"verify: {v['records']} records, {v['errors']} errors, {v['warnings']} warnings")
     print(f"\nlast {a.hours:g} h: {len(rep['decisions'])} witnessed decisions, "
