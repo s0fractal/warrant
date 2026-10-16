@@ -139,13 +139,23 @@ def build():
         (accept if polarity == "positive" else reject).append(
             {"why": f"EDGE: {why}", "warrant_id": wid, "key": key, "sig": sig})
 
+    # WRT-019: ECDSA P-256 entries carry `alg`. tools/p256_vectors.py builds them
+    # and proves in its selftest that each negative one separates the rule.
+    import p256_vectors
+    demo_entry = next(a for a in accept if a["warrant_id"] == wid and not a["why"].startswith("EDGE"))
+    for polarity, why, entry, _ in p256_vectors.vectors(wid, demo_entry["key"], demo_entry["sig"]):
+        (accept if polarity == "positive" else reject).append(
+            {"why": f"P256: {why}", "warrant_id": wid, **entry})
+
     return {
         "signature_vectors": TAG,
         "note": ("SPEC §8.5. `message`: an implementation MUST build exactly these "
                  "bytes for the given WarrantID. `accept`: verify_sig MUST return "
                  "true. `reject`: verify_sig MUST return false. The demo key and "
                  "seed are SPEC §8's, so every signature here is reproducible "
-                 "from the spec alone."),
+                 "from the spec alone. An entry with `alg` is a WRT-019 P-256 "
+                 "signature (absent = ed25519); its key derives from a label in "
+                 "tools/p256_vectors.py and its signature is RFC 6979."),
         "domain_separator_ascii": W.SIG_DOMAIN.decode(),
         "domain_separator_hex": W.SIG_DOMAIN.hex(),
         "construction": 'msg = "warrant-sig-v1:" || WarrantID_raw   (15 + 32 = 47 bytes)',

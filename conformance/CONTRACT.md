@@ -252,6 +252,19 @@ so if you delegate verification to a stock library you must add the key test in
 front of it. Never raise — a malformed key, a short signature and a wrong key are
 all `{"valid": false}`.
 
+**P-256 (pack 1.5.0; SPEC §5, WRT-019).** A request may carry `"alg"`. Absent
+means Ed25519, as above. `"ecdsa-p256-sha256"` means ECDSA with SHA-256 over the
+same message:
+
+- `key` is the 33-byte **compressed** SEC1 point (`02`/`03` then x, lowercase
+  hex). It must lie on P-256 with x < p.
+- `sig` is 64 bytes `r ‖ s`, with 1 ≤ r < n and **s ≤ (n − 1)/2**.
+
+Most stock ECDSA verifiers accept DER, uncompressed keys and high-S, and those are
+exactly what the negative vectors carry. Any other `alg`, including one that is not
+a string, is `{"valid": false}`. Never infer the algorithm from the key's length:
+a valid P-256 key and signature *without* `alg` must fail.
+
 #### `parse` — SPEC §4 / RFC 7493 I-JSON
 
 * input: `{"bytes_base64": "<base64>"}`

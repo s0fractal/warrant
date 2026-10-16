@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -823,12 +825,12 @@ func validateTrust(m map[string]any) string {
 			}
 			arr, ok := keys.([]any)
 			if !ok {
-				return "each actor's keys must be a list of hex64"
+				return "each actor's keys must be a list of hex64 (Ed25519) or compressed P-256 keys"
 			}
 			for _, k := range arr {
 				s, ok := k.(string)
-				if !ok || !isHex64(s) {
-					return "each actor's keys must be a list of hex64"
+				if !ok || !isPubKeyHex(s) {
+					return "each actor's keys must be a list of hex64 (Ed25519) or compressed P-256 keys"
 				}
 			}
 		}
@@ -1375,16 +1377,68 @@ func trunc(s string, n int) string {
 	return s
 }
 
+// WRT-019: a signature entry names its algorithm; absent means Ed25519.
+const algEd25519 = "ed25519"
+const algP256 = "ecdsa-p256-sha256"
+
+var p256KeyHex = regexp.MustCompile(`\A0[23][0-9a-f]{64}\z`)
+var p256SigHex = regexp.MustCompile(`\A[0-9a-f]{128}\z`)
+
+// isPubKeyHex: a key slot (trust config, key-state blob) holds an Ed25519 key
+// (64 hex) or a compressed P-256 point (66 hex, WRT-019).
+func isPubKeyHex(s string) bool { return isHex64(s) || p256KeyHex.MatchString(s) }
+
 func verifySig(wid string, sig any) bool {
-	key, rawSig, ok := sigParts(sig)
+	s, ok := sig.(map[string]any)
 	if !ok {
 		return false
+	}
+	alg := algEd25519
+	if v, present := s["alg"]; present {
+		a, isStr := v.(string)
+		if !isStr {
+			return false
+		}
+		alg = a
 	}
 	msg, ok := sigMessage(wid)
 	if !ok {
 		return false
 	}
-	return ed25519.Verify(key, msg, rawSig)
+	switch alg {
+	case algEd25519:
+		key, rawSig, ok := sigParts(sig)
+		return ok && ed25519.Verify(key, msg, rawSig)
+	case algP256:
+		keyHex, ok1 := s["key"].(string)
+		sigHex, ok2 := s["sig"].(string)
+		return ok1 && ok2 && verifyP256(keyHex, sigHex, msg)
+	}
+	return false // an unknown algorithm does not verify
+}
+
+// verifyP256 (WRT-019): ECDSA P-256 / SHA-256. One encoding per key (compressed,
+// on the curve) and per signature (64-byte r||s, 1 <= r < n, 1 <= s <= (n-1)/2).
+func verifyP256(keyHex, sigHex string, msg []byte) bool {
+	if !p256KeyHex.MatchString(keyHex) || !p256SigHex.MatchString(sigHex) {
+		return false
+	}
+	kb, _ := hex.DecodeString(keyHex)
+	curve := elliptic.P256()
+	x, y := elliptic.UnmarshalCompressed(curve, kb)
+	if x == nil {
+		return false
+	}
+	sb, _ := hex.DecodeString(sigHex)
+	r := new(big.Int).SetBytes(sb[:32])
+	sv := new(big.Int).SetBytes(sb[32:])
+	n := curve.Params().N
+	half := new(big.Int).Rsh(n, 1)
+	if r.Sign() <= 0 || r.Cmp(n) >= 0 || sv.Sign() <= 0 || sv.Cmp(half) > 0 {
+		return false
+	}
+	h := sha256.Sum256(msg)
+	return ecdsa.Verify(&ecdsa.PublicKey{Curve: curve, X: x, Y: y}, h[:], r, sv)
 }
 
 // legacySig reports whether sig is a valid signature over the BARE 32-byte
@@ -1602,8 +1656,16 @@ func conformance(dir string) bool {
 		type sigCase struct {
 			Why       string `json:"why"`
 			WarrantID string `json:"warrant_id"`
+			Alg       string `json:"alg"`
 			Key       string `json:"key"`
 			Sig       string `json:"sig"`
+		}
+		entry := func(c sigCase) map[string]any {
+			m := map[string]any{"actor": "x", "key": c.Key, "sig": c.Sig}
+			if c.Alg != "" {
+				m["alg"] = c.Alg
+			}
+			return m
 		}
 		var sv struct {
 			Message []struct {
@@ -1620,12 +1682,10 @@ func conformance(dir string) bool {
 				chk("sig-msg: "+trunc(m.Why, 60), okMsg && hex.EncodeToString(msg) == m.MessageHex, "")
 			}
 			for _, a := range sv.Accept {
-				sig := map[string]any{"actor": "x", "key": a.Key, "sig": a.Sig}
-				chk("sig-accept: "+trunc(a.Why, 60), verifySig(a.WarrantID, sig), "")
+				chk("sig-accept: "+trunc(a.Why, 60), verifySig(a.WarrantID, entry(a)), "")
 			}
 			for _, r := range sv.Reject {
-				sig := map[string]any{"actor": "x", "key": r.Key, "sig": r.Sig}
-				chk("sig-reject: "+trunc(r.Why, 60), !verifySig(r.WarrantID, sig), "")
+				chk("sig-reject: "+trunc(r.Why, 60), !verifySig(r.WarrantID, entry(r)), "")
 			}
 		}
 	}
@@ -2414,7 +2474,7 @@ func parseKeyBlob(blobs map[string][]byte, h string) (string, string, string, bo
 	}
 	actor, ok1 := doc["actor"].(string)
 	key, ok2 := doc["key"].(string)
-	if !ok1 || !ok2 || actor == "" || !isHex64(key) {
+	if !ok1 || !ok2 || actor == "" || !isPubKeyHex(key) {
 		return "", "", "", false
 	}
 	next := ""

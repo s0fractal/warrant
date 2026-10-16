@@ -49,6 +49,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-016` | this repo, `spec/keystate-residuals` | `proposals/WRT-016-conflict-scope.md` | `SPEC.md` |
 | `WRT-017` | this repo, `spec/keystate-residuals` | `proposals/WRT-017-revocation.md` | `SPEC.md` |
 | `WRT-018` | this repo, `proposal/wrt-018-required-binding` | `proposals/WRT-018-required-binding.md` | `SPEC.md` |
+| `WRT-019` | this repo, `wrt-019-p256` | `proposals/WRT-019-p256-signatures.md` | `SPEC.md` |
 
 ## Known identifier collisions
 

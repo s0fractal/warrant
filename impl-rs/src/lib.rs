@@ -43,6 +43,7 @@ pub mod ed25519;
 pub mod hash;
 pub mod json;
 pub mod ops;
+pub mod p256;
 pub mod schema;
 pub mod settlement;
 pub mod sig;

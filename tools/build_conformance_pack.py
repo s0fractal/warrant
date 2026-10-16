@@ -51,10 +51,11 @@ VECTOR_TAG = "warrant.conformance-vectors@v1"
 # 1.1.0 -> 1.2.0 for the UTF-16 member-ordering vector, then 1.2.0 -> 1.3.0 for
 # the Ed25519 EDGE vectors (cofactorless vs cofactored, S >= L, non-canonical
 # and small-order R; DeepReview 2026-10-16, R1/R2), then 1.3.0 -> 1.4.0 for the
-# WRT-018 required-binding vectors (`require_bound` input). A conformance pack whose
+# WRT-018 required-binding vectors (`require_bound` input), then 1.4.0 -> 1.5.0
+# for the WRT-019 P-256 signature vectors (`alg` input). A conformance pack whose
 # CONTENTS change under a fixed version string is the defect this pack exists to
 # detect: published older assets stay exactly as they are and keep their names.
-PACK_VERSION = "1.4.0"
+PACK_VERSION = "1.5.0"
 
 # Store verification is SPEC §6 — BASE grade. What settlement grade adds is
 # §7/§5.1/§12: ski@v1 re-execution and a trust configuration that must fail
@@ -222,16 +223,20 @@ def build_verify_sig():
     sv = json.loads((EXAMPLES / "signature-vectors.json").read_text())
     neg = json.loads((EXAMPLES / "conformance-negatives.json").read_text())
     out = []
+
+    def sig_input(c):
+        # WRT-019: a P-256 vector carries `alg`; absent means Ed25519.
+        inp = {"warrant_id": c["warrant_id"], "key": c["key"], "sig": c["sig"]}
+        if "alg" in c:
+            inp["alg"] = c["alg"]
+        return inp
     for i, a in enumerate(sv["accept"]):
-        out.append(vec(f"verify-sig/accept-{i:02d}", "positive", "§8.5",
-                       a["why"],
-                       {"warrant_id": a["warrant_id"], "key": a["key"], "sig": a["sig"]},
-                       {"valid": True}))
+        out.append(vec(f"verify-sig/accept-{i:02d}", "positive",
+                       "§5 (WRT-019)" if "alg" in a else "§8.5", a["why"], sig_input(a), {"valid": True}))
     for i, r in enumerate(sv["reject"]):
-        out.append(vec(f"verify-sig/reject-{i:02d}", "negative", "§8.5",
-                       f"MUST NOT verify: {r['why']}",
-                       {"warrant_id": r["warrant_id"], "key": r["key"], "sig": r["sig"]},
-                       {"valid": False}))
+        out.append(vec(f"verify-sig/reject-{i:02d}", "negative",
+                       "§5 (WRT-019)" if r["why"].startswith("P256") else "§8.5",
+                       f"MUST NOT verify: {r['why']}", sig_input(r), {"valid": False}))
     for i, k in enumerate(neg["weak_ed25519_pubkeys"]):
         out.append(vec(f"verify-sig/weak-key-{i:02d}", "negative", "§8.3",
                        f"MUST NOT verify under small-order / non-canonical key {k[:16]}…",
@@ -244,7 +249,9 @@ def build_verify_sig():
                f"{neg_n} of the {len(out)} vectors here are MUST-NOT-VERIFY. A verifier "
                f"that returns true unconditionally passes the other {len(out) - neg_n}. "
                "The EDGE vectors separate the cofactorless rule SPEC §5 pins from a "
-               "cofactored or reducing verifier.", out)
+               "cofactored or reducing verifier. The P256 vectors (WRT-019, input "
+               "`alg`) separate the one-encoding rules (compressed key, 64-byte r||s, "
+               "low-S, explicit algorithm) from a lenient ECDSA verifier.", out)
 
 
 # ---------- class: parse (SPEC §4 / RFC 7493 I-JSON) ----------

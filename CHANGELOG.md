@@ -27,6 +27,31 @@ right.
 
 ## Unreleased
 
+- **[protocol] WRT-019 decided: ECDSA P-256 signatures, for keys held in phone
+  hardware.** Phone secure elements (Secure Enclave, StrongBox) sign P-256
+  only. A signature entry may now carry `alg: "ecdsa-p256-sha256"`; an absent
+  `alg` still means Ed25519.
+  - **One encoding per key and per signature.** The key is a compressed SEC1
+    point on the curve with x < p. The signature is 64-byte `r ‖ s`, low-S.
+    It covers the same 47-byte message.
+  - **The algorithm is never inferred from a key's length**, and an unknown
+    `alg` does not verify.
+  - **Key slots:** the trust config `actors`, key-state blobs and `next`
+    commitments accept compressed P-256 keys.
+  - **Implementations:** Python (`cryptography`, which also signs: `keygen
+    --alg p256`, RFC 6979, low-S normalized), Go (standard library) and Rust
+    (written from scratch, verification only). All three agree on 280 random
+    and mutated requests (`tests/p256_differential.py`) and end to end
+    (`tests/wrt019_p256.py`).
+  - **Conformance pack 1.4.0 → 1.5.0:** 17 `verify-sig` vectors with input
+    `alg`; 166 vectors, 83 MUST-REJECT. Each negative is shown to be accepted
+    by lenient ECDSA or to be malformed for a named reason
+    (`tools/p256_vectors.py --selftest`).
+  - **Found along the way:** the reject vectors could not catch a missing
+    on-curve, x < p or prefix check in Rust's decoder, because they carry a
+    real signature under another key. A direct decoding unit test now kills
+    all three mutants. Contract SIG-P1.
+
 ## 0.11.0 — the reader can require the actor's own binding
 
 Tooling version 0.11.0 (PyPI `warrant-verify`, npm/JSR `@s0fractal/warrant`, crate `warrant-verify`). SPEC document version unchanged; conformance pack 1.4.0. The protocol-visible change is WRT-018 below (an opt-in verifier option; no body, report schema or WarrantID change).
