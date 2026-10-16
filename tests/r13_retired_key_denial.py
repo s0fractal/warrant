@@ -26,6 +26,9 @@ WHAT IS ASSERTED, FOR PYTHON, GO AND RUST, REPORT FOR REPORT
   4. Residual, pinned: a holder of a_old AND its committed successor a_new can
      still fork at the root (same successor, different `next`). That is a
      conflict, as before. Closing it needs an external order (WRT-012).
+  5. The same residual after two rotations: both keys of the forking pair are
+     retired, and the store-wide conflict unbinds the current key's records
+     too. Pinned as current behaviour; WRT-016 proposes scoping it.
 """
 import hashlib
 import json
@@ -183,6 +186,59 @@ def case_residual():
           errors(py.stdout) == 0 and conflicted(py.stdout), lines(py.stdout))
 
 
+def case_multihop_residual():
+    """Pinned as CURRENT behaviour, not as the right one (WRT-016).
+
+    After a_old -> a_new -> a_newer, the holder of the two RETIRED keys a_old
+    and a_new forks at the root. The uncompromised current key's record is
+    unbound by the store-wide conflict along with everything else. Found by the
+    DeepReview of paper 1.1.0.
+    """
+    tmp, store, keys, opaque, subject, root, trust = world("multihop")
+    rot1 = T.add_record(store, T.body("accept", key_blob(store, keys["a_new"], keys["a_newer"]),
+                                      [opaque], "a@x", prior=[root], ts=2),
+                        [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
+    rot2 = T.add_record(store, T.body("accept", key_blob(store, keys["a_newer"]),
+                                      [opaque], "a@x", prior=[rot1], ts=3),
+                        [("a@x", keys["a_new"]), ("a@x", keys["a_newer"])])
+    cur = T.add_record(store, T.body("propose", subject, [opaque], "a@x", prior=[rot2],
+                                     because=[{"kind": "prose", "text": "current key"}], ts=4),
+                       [("a@x", keys["a_newer"])])
+    py, go, rs = run_all(store, trust)
+    check("5. before the fork: the current key's record is bound, no conflict",
+          bound(py.stdout, cur, keys["a_newer"]) and not conflicted(py.stdout), lines(py.stdout))
+    T.add_record(store, T.body("accept", key_blob(store, keys["a_new"], keys["a_fork"]),
+                               [opaque], "a@x", prior=[root], ts=5),
+                 [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
+    py, go, rs = run_all(store, trust)
+    agree("multihop residual", py, go, rs)
+    check("5. residual, pinned: two RETIRED keys fork at the root -> store-wide conflict "
+          "that unbinds the uncompromised current key's record and the genesis root",
+          errors(py.stdout) == 0 and conflicted(py.stdout)
+          and not bound(py.stdout, cur) and not bound(py.stdout, root), lines(py.stdout))
+
+
+def case_revocation_not_implemented():
+    """SPEC §5.1 specifies revocation as a supersede of the introducing rotation.
+    No implementation derives key state from it (WRT-017). Pinned so that the
+    gap is visible and closing it is a decision: today the "revoked" key stays
+    bound after the supersede."""
+    tmp, store, keys, opaque, subject, root, trust = world("revocation")
+    rot = T.add_record(store, T.body("accept", key_blob(store, keys["a_new"], keys["a_newer"]),
+                                     [opaque], "a@x", prior=[root], ts=2),
+                       [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
+    sup = T.add_record(store, T.body("supersede", rot, [opaque], "a@x", prior=[rot],
+                                     because=[{"kind": "prose", "text": "revoke a_new"}], ts=3),
+                       [("a@x", keys["a_new"])])
+    after = T.add_record(store, T.body("propose", subject, [opaque], "a@x", prior=[sup],
+                                       because=[{"kind": "prose", "text": "after revocation"}], ts=4),
+                         [("a@x", keys["a_new"])])
+    py, go, rs = run_all(store, trust)
+    agree("revocation", py, go, rs)
+    check("6. known gap, pinned: after a supersede of its rotation the key is still bound (WRT-017)",
+          errors(py.stdout) == 0 and bound(py.stdout, after, keys["a_new"]), lines(py.stdout))
+
+
 def main():
     for binary in (T.GO, RS):
         if not os.path.isfile(binary):
@@ -192,6 +248,8 @@ def main():
     case_retired_key()
     case_terminal()
     case_residual()
+    case_multihop_residual()
+    case_revocation_not_implemented()
     print(f"\nWRT-015-PRE-ROTATION: {'ALL PASS' if ok else 'FAILURES PRESENT'}")
     return 0 if ok else 1
 
