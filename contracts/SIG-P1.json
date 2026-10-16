@@ -1,0 +1,26 @@
+{
+  "profile": "warrant.contract.v1",
+  "id": "SIG-P1",
+  "spec": "§5",
+  "statement": "**ECDSA P-256 entries (MUST; WRT-019):** an entry whose `alg` is `ecdsa-p256-sha256` is an ECDSA signature with SHA-256 over the same 47-byte message; its `key` MUST be the 33-byte compressed SEC1 point (`02` or `03` then the 32-byte big-endian x, lowercase hex) of a point on P-256 with x < p, and its `sig` MUST be 64 bytes `r ‖ s` (big-endian, lowercase hex) with 1 ≤ r < n and 1 ≤ s ≤ (n − 1)/2; an uncompressed, hybrid or otherwise non-canonical key, a DER or high-S signature, and an entry whose `alg` is absent but whose key is not an Ed25519 key MUST NOT verify. An absent `alg` means `ed25519`, any other `alg` value MUST NOT verify, and the algorithm MUST NOT be inferred from a key's length.",
+  "witnesses": [
+    "tests/wrt019_p256.py::main",
+    "tests/wrt019_p256.py::build",
+    "tools/p256_vectors.py::selftest"
+  ],
+  "decisions": [
+    {
+      "date": "2026-10-16",
+      "because": "WRT-019, decided by Claude under the owner's delegation: phone secure elements sign ECDSA P-256 only, so a hardware-held key could not sign a warrant record. One encoding per key (compressed, on the curve, x < p) and per signature (64-byte r||s, low-S), an explicit alg, the same 47-byte message. Implemented in Python (cryptography), Go (stdlib) and Rust (from scratch); 280 random and mutated requests agree three ways (tests/p256_differential.py).",
+      "statement_sha256": "2acdc52bb31f6ad8329f613aaada1fba88e1ad38b649b853ad6a38c469d6fedf",
+      "previous_statement_sha256": null,
+      "counterexample": {
+        "at": "impl-rs/src/p256.rs (first draft)",
+        "witness": "impl-rs p256::tests::decompress_accepts_one_encoding_per_point",
+        "observed": "with the on-curve, x < p and prefix checks each removed from Rust's decompress, its unit tests and all 89 conformance checks still passed: the reject vectors carry a real signature under another key, so they fail for that reason whatever the decoder does",
+        "expected": "each encoding rule has a witness that fails without it; the decoding unit test now kills all three mutants (02||p decodes as an alias of 02||0 without the x < p check)"
+      }
+    }
+  ],
+  "annotations": "Unsigned note. Conformance pack 1.5.0 adds 17 verify-sig vectors with input `alg`."
+}

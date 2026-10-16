@@ -97,6 +97,14 @@ CHECKS = [
      ["python3", "tests/wrt014_adoption.py"], "rs"),
     ("WRT-018: --require-bound makes the actor's own binding fatal, co-signatures stay excluded (PY/GO/RS)",
      ["python3", "tests/wrt018_required_binding.py"], "rs"),
+    ("keygen creates a new 0600 file and never overwrites or follows a symlink (PY = RS)",
+     ["python3", "tests/keygen_never_overwrites.py"], "rs"),
+    ("WRT-019: P-256 vectors bite (each negative separates the rule from lenient ECDSA)",
+     ["python3", "tools/p256_vectors.py", "--selftest"], None),
+    ("WRT-019: a P-256-signed record verifies end to end; high-S, missing alg, unbound and uncompressed keys refuse (PY/GO/RS)",
+     ["python3", "tests/wrt019_p256.py"], "rs"),
+    ("WRT-019: P-256 verification agrees three ways on random and mutated signatures (PY/GO/RS)",
+     ["python3", "tests/p256_differential.py", "8"], "rs"),
     # Contracts: each names a SPEC MUST sentence verbatim, the witnesses that hold
     # it and the decisions behind it, counterexamples included (method from
     # sokol-core ADR-0023/0024). History against a base is CI's step; here the

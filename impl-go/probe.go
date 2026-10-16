@@ -133,6 +133,9 @@ func probeAnswer(req map[string]any) (map[string]any, error) {
 			return nil, err
 		}
 		sig := map[string]any{"actor": "probe", "key": key, "sig": sg}
+		if alg, present := input["alg"]; present {
+			sig["alg"] = alg // WRT-019; verifySig rejects a non-string
+		}
 		return map[string]any{"valid": verifySig(wid, sig)}, nil
 
 	case "parse":

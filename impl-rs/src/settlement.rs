@@ -323,10 +323,13 @@ pub fn validate_trust_config(doc: &Json) -> Result<Trust, String> {
             if a.is_empty() {
                 return Err("actors keys must be nonempty actor-id strings".into());
             }
-            let ks = keys
-                .as_arr()
-                .filter(|k| k.iter().all(|x| x.as_str().is_some_and(is_hex64)));
-            let ks = ks.ok_or("each actor's keys must be a list of hex64")?;
+            let ks = keys.as_arr().filter(|k| {
+                k.iter()
+                    .all(|x| x.as_str().is_some_and(crate::sig::is_pubkey_hex))
+            });
+            let ks = ks.ok_or(
+                "each actor's keys must be a list of hex64 (Ed25519) or compressed P-256 keys",
+            )?;
             t.actors.push((
                 a.clone(),
                 ks.iter().map(|x| x.as_str().unwrap().to_string()).collect(),
@@ -550,7 +553,11 @@ fn parse_key_blob(store: &Store, h: &str) -> Option<KeyBlob> {
         Json::Str(s) => s.clone(),
         _ => return None,
     };
-    let key = o.get("key")?.as_str().filter(|k| is_hex64(k))?.to_string();
+    let key = o
+        .get("key")?
+        .as_str()
+        .filter(|k| crate::sig::is_pubkey_hex(k))?
+        .to_string();
     let next = if with_next {
         Some(o.get("next")?.as_str().filter(|k| is_hex64(k))?.to_string())
     } else {

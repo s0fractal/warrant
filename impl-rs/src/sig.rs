@@ -1,8 +1,9 @@
 //! SPEC §5: keys, the signed message, and signature checks.
 
 use crate::ed25519;
-use crate::hash::{encode_hex, fromhex};
+use crate::hash::{encode_hex, fromhex, is_hex64};
 use crate::json::{Json, Obj};
+use crate::p256;
 
 /// SPEC §5 signature domain separation (`warrant-sig-v1`, DEC-001):
 /// `msg = "warrant-sig-v1:" || WarrantID_raw`, 15 + 32 = 47 bytes. Pure RFC 8032
@@ -81,15 +82,60 @@ fn ed_verify(pk: &[u8; 32], sig: &[u8], msg: &[u8]) -> bool {
     ed25519::verify(pk, &s, msg)
 }
 
+/// WRT-019: the algorithm a signature entry names; absent means Ed25519.
+pub const ALG_ED25519: &str = "ed25519";
+pub const ALG_P256: &str = "ecdsa-p256-sha256";
+
+fn lower_hex(s: &str, len: usize) -> bool {
+    s.len() == len
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// A compressed SEC1 P-256 key as WRT-019 writes it: `02`/`03` + 64 lowercase hex.
+pub fn is_p256_key_hex(s: &str) -> bool {
+    lower_hex(s, 66) && (s.starts_with("02") || s.starts_with("03"))
+}
+
+/// A key slot (trust config, key-state blob): Ed25519 (hex64) or compressed P-256.
+pub fn is_pubkey_hex(s: &str) -> bool {
+    is_hex64(s) || is_p256_key_hex(s)
+}
+
 /// A signature entry verifies over `wid` under `warrant-sig-v1`. Total: any
 /// malformed input is simply "does not verify".
 pub fn verify_sig(wid: &str, sig: &Obj) -> bool {
-    let Some((pk, sg)) = sig_parts(sig) else {
+    let alg = match sig.get("alg") {
+        None => ALG_ED25519,
+        Some(v) => match v.as_str() {
+            Some(a) => a,
+            None => return false,
+        },
+    };
+    let Ok(msg) = sig_message(wid) else {
         return false;
     };
-    match sig_message(wid) {
-        Ok(msg) => ed_verify(&pk, &sg, &msg),
-        Err(_) => false,
+    match alg {
+        ALG_ED25519 => match sig_parts(sig) {
+            Some((pk, sg)) => ed_verify(&pk, &sg, &msg),
+            None => false,
+        },
+        ALG_P256 => {
+            let (Some(k), Some(sg)) = (
+                sig.get("key").and_then(Json::as_str),
+                sig.get("sig").and_then(Json::as_str),
+            ) else {
+                return false;
+            };
+            if !is_p256_key_hex(k) || !lower_hex(sg, 128) {
+                return false;
+            }
+            match (fromhex(k), fromhex(sg)) {
+                (Some(kb), Some(sb)) => p256::verify(&kb, &sb, &msg),
+                _ => false,
+            }
+        }
+        _ => false, // an unknown algorithm does not verify
     }
 }
 

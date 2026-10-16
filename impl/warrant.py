@@ -19,9 +19,12 @@ import sys
 import time
 from pathlib import Path
 
-from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey)
+from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 VERSION = "0.2"           # version written into NEW records
 ACCEPTED = ("0.1", "0.2")  # versions this implementation validates
@@ -30,6 +33,8 @@ ACCEPTED = ("0.1", "0.2")  # versions this implementation validates
 # `$` does not, so the same body was schema-valid here and invalid in Go -- a
 # validity split, found by the Rust port's differential (2026-10-09).
 HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
+# WRT-019: a compressed SEC1 P-256 public key, 33 bytes: 02/03 then x.
+P256_KEY_HEX = re.compile(r"\A0[23][0-9a-f]{64}\Z")
 DECISIONS = ("propose", "accept", "reject", "supersede")
 # SPEC §3.1: re-executing a stranger's ski@v1 reason is safe by construction
 # (terminating, work+memory bounded by atp), but the atp ceiling is uint32
@@ -426,6 +431,13 @@ def int_domain_violation(obj):
 
 def _is_hex64(x):
     return isinstance(x, str) and bool(HEX64.match(x))
+
+
+def _is_pubkey_hex(x):
+    """A key slot (trust config, key-state blob): Ed25519 (64 hex) or, per
+    WRT-019, a compressed P-256 point (66 hex). Validity on the curve is checked
+    where the key is used to verify."""
+    return _is_hex64(x) or (isinstance(x, str) and bool(P256_KEY_HEX.match(x)))
 
 
 def validate_body(b):
@@ -918,16 +930,80 @@ def run_ski_check(store, check_hex, sg=None):
 
 
 # ---------- keys & signatures (SPEC §5) ----------
+# WRT-019: a key file is a 32-byte hex Ed25519 seed, or `p256:` + a 32-byte hex
+# P-256 private scalar. The prefix names the algorithm; a key's length never does.
+P256_KEYFILE_PREFIX = "p256:"
+ALG_ED25519 = "ed25519"
+ALG_P256 = "ecdsa-p256-sha256"
+_P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+
+
+KEY_FILE_MAX = 4096
+
+
+def _write_new_key_file(path, text):
+    """Create a key file that did not exist, 0600 from the first byte, without
+    following a symlink. `--out` comes from whoever runs the CLI (increasingly an
+    agent); a key writer that overwrites whatever path it is handed is a write
+    primitive, so an existing path is refused instead."""
+    # Sonar S8707 (CLI-supplied path) is dispositioned here, not suppressed blindly:
+    # the operator chooses where a key lives (the plugin uses ~/.warrant, demos a
+    # temp dir), so the path cannot be confined to one base. What made it a write
+    # primitive was overwriting and following symlinks; O_EXCL|O_NOFOLLOW removes
+    # both (tests/keygen_never_overwrites.py).
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)  # NOSONAR
+    except FileExistsError:
+        sys.exit(f"{path}: exists; keygen never overwrites a key file")
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+
+
 def load_key(path):
-    seed = bytes.fromhex(Path(path).read_text().strip())
+    """A key file: a regular file of at most 4 KiB (not a device, FIFO or directory)."""
+    p = Path(path)
+    if not p.is_file() or p.stat().st_size > KEY_FILE_MAX:
+        sys.exit(f"{path}: a key file must be a regular file of at most {KEY_FILE_MAX} bytes")
+    # Sonar S8707: the operator names the key file; it is read only if it is a
+    # regular file of at most 4 KiB, and its bytes are never echoed back.
+    text = p.read_text().strip()  # NOSONAR
+    if text.startswith(P256_KEYFILE_PREFIX):
+        d = bytes.fromhex(text[len(P256_KEYFILE_PREFIX):])
+        if len(d) != 32 or not 0 < int.from_bytes(d, "big") < _P256_N:
+            sys.exit("a p256: key file must contain a 32-byte hex scalar in [1, n)")
+        return ec.derive_private_key(int.from_bytes(d, "big"), ec.SECP256R1())
+    seed = bytes.fromhex(text)
     if len(seed) != 32:
         sys.exit("key file must contain a 32-byte hex seed")
     return Ed25519PrivateKey.from_private_bytes(seed)
 
 
+def key_alg(sk):
+    return ALG_P256 if isinstance(sk, ec.EllipticCurvePrivateKey) else ALG_ED25519
+
+
 def pubkey_hex(sk):
+    if key_alg(sk) == ALG_P256:
+        return sk.public_key().public_bytes(
+            serialization.Encoding.X962, serialization.PublicFormat.CompressedPoint).hex()
     return sk.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+
+
+def sign_message(sk, msg):
+    """Signature bytes for `msg` under SPEC §5 (Ed25519) or WRT-019 (P-256:
+    64-byte r||s, deterministic RFC 6979 nonce where the library has it, low-S)."""
+    if key_alg(sk) == ALG_ED25519:
+        return sk.sign(msg)
+    try:
+        algo = ec.ECDSA(hashes.SHA256(), deterministic_signing=True)
+    except TypeError:          # cryptography < 43: random nonce, equally valid
+        algo = ec.ECDSA(hashes.SHA256())
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+    r, sv = decode_dss_signature(sk.sign(msg, algo))
+    if sv > _P256_N // 2:
+        sv = _P256_N - sv
+    return r.to_bytes(32, "big") + sv.to_bytes(32, "big")
 
 
 # SPEC §5 — signature domain separation (`warrant-sig-v1`), adopted 2026-07-31
@@ -977,8 +1053,11 @@ def sig_message(wid):
 def sign_envelope(body, actor, key_path):
     sk = load_key(key_path)
     wid = warrant_id(body)
-    return {"actor": actor, "key": pubkey_hex(sk),
-            "sig": sk.sign(sig_message(wid)).hex()}
+    entry = {"actor": actor, "key": pubkey_hex(sk),
+             "sig": sign_message(sk, sig_message(wid)).hex()}
+    if key_alg(sk) == ALG_P256:
+        entry = {"actor": actor, "alg": ALG_P256, "key": entry["key"], "sig": entry["sig"]}
+    return entry
 
 
 # SPEC §5: small-order and non-canonical Ed25519 public keys are rejected.
@@ -1007,6 +1086,14 @@ _ED25519_SMALL_ORDER = {bytes.fromhex(h) for h in (
 )}
 
 
+def _p256_on_curve(key_hex):
+    try:
+        ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), bytes.fromhex(key_hex))
+        return True
+    except ValueError:
+        return False
+
+
 def weak_ed25519_pubkey(raw):
     """True if `raw` (32 bytes) is a small-order or non-canonically-encoded
     Ed25519 public key that a conforming verifier MUST reject (SPEC §5)."""
@@ -1018,6 +1105,11 @@ def weak_ed25519_pubkey(raw):
 
 def verify_sig(wid, sig):
     try:
+        alg = sig.get("alg", ALG_ED25519)
+        if alg == ALG_P256:
+            return verify_p256(sig["key"], sig["sig"], sig_message(wid))
+        if alg != ALG_ED25519:
+            return False       # WRT-019: an unknown algorithm does not verify
         key = bytes.fromhex(sig["key"])
         if weak_ed25519_pubkey(key):
             return False
@@ -1025,6 +1117,26 @@ def verify_sig(wid, sig):
         pk.verify(bytes.fromhex(sig["sig"]), sig_message(wid))
         return True
     except Exception:
+        return False
+
+
+def verify_p256(key_hex, sig_hex, msg):
+    """WRT-019: ECDSA P-256 / SHA-256 over `msg`. One encoding per key (compressed
+    SEC1, on the curve) and per signature (64-byte r||s, 1 <= r < n, 1 <= s <= (n-1)/2).
+    Everything else is False, never an exception."""
+    if not (isinstance(key_hex, str) and P256_KEY_HEX.match(key_hex)):
+        return False
+    if not (isinstance(sig_hex, str) and re.fullmatch(r"[0-9a-f]{128}", sig_hex)):
+        return False
+    raw = bytes.fromhex(sig_hex)
+    r, sv = int.from_bytes(raw[:32], "big"), int.from_bytes(raw[32:], "big")
+    if not (0 < r < _P256_N and 0 < sv <= _P256_N // 2):
+        return False
+    try:
+        pk = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), bytes.fromhex(key_hex))
+        pk.verify(encode_dss_signature(r, sv), msg, ec.ECDSA(hashes.SHA256()))
+        return True
+    except (ValueError, InvalidSignature):
         return False
 
 
@@ -1348,8 +1460,8 @@ def _validate_trust_config(doc):
         for a, keys in ac.items():
             if not (isinstance(a, str) and a):
                 return "actors keys must be nonempty actor-id strings"
-            if not (isinstance(keys, list) and all(_is_hex64(k) for k in keys)):
-                return "each actor's keys must be a list of hex64"
+            if not (isinstance(keys, list) and all(_is_pubkey_hex(k) for k in keys)):
+                return "each actor's keys must be a list of hex64 (Ed25519) or compressed P-256 keys"
     gh = doc.get("genesis_json_sha256")
     if "genesis_json_sha256" in doc and not _is_hex64(gh):
         return "genesis_json_sha256 must be hex64"
@@ -1385,8 +1497,10 @@ def _trust_add_key(path, doc, actor, pubkey):
     """Bind `pubkey` to `actor`; the message to print, or None if already bound."""
     if not actor:
         sys.exit("an actor id must be a nonempty string")
-    if not (_is_hex64(pubkey) and not weak_ed25519_pubkey(bytes.fromhex(pubkey))):
-        sys.exit(f"not an acceptable Ed25519 public key (SPEC §5): {pubkey}")
+    ok = (_is_hex64(pubkey) and not weak_ed25519_pubkey(bytes.fromhex(pubkey))) or (
+        isinstance(pubkey, str) and bool(P256_KEY_HEX.match(pubkey)) and _p256_on_curve(pubkey))
+    if not ok:
+        sys.exit(f"not an acceptable Ed25519 or compressed P-256 public key (SPEC §5, WRT-019): {pubkey}")
     keys = doc.setdefault("actors", {}).setdefault(actor, [])
     if pubkey in keys:
         print(f"key {pubkey[:12]} for actor {actor} already in {path}")
@@ -1564,7 +1678,7 @@ def _parse_key_blob(store, h):
     SHA-256 of the successor's raw public key; absent means terminal."""
     doc = _read_json_blob_if_canonical(store, h)
     if (isinstance(doc, dict) and set(doc) in ({"actor", "key"}, {"actor", "key", "next"})
-            and isinstance(doc["actor"], str) and _is_hex64(doc["key"])
+            and isinstance(doc["actor"], str) and _is_pubkey_hex(doc["key"])
             and ("next" not in doc or _is_hex64(doc["next"]))):
         return doc["actor"], doc["key"], doc.get("next")
     return None
@@ -2436,6 +2550,8 @@ def resign_envelopes(paths, key_path, dry_run=False, log=print):
     forged. Returns a dict of counts plus the list of unmigratable entries, so a
     caller can tell "migrated" from "silently left broken"."""
     sk = load_key(key_path)
+    if key_alg(sk) != ALG_ED25519:
+        sys.exit("resign migrates Ed25519 signatures only; P-256 (WRT-019) never had the legacy construction")
     pub = pubkey_hex(sk)
     res = {"files": 0, "resigned": 0, "already_current": 0,
            "unmigratable": [], "unchanged_files": 0, "id_moved": []}
@@ -2756,6 +2872,8 @@ def probe_answer(req):
 
     if cls == "verify-sig":
         sig = {"actor": "probe", "key": inp["key"], "sig": inp["sig"]}
+        if "alg" in inp:
+            sig["alg"] = inp["alg"]       # WRT-019
         return {"valid": bool(verify_sig(inp["warrant_id"], sig))}, None
 
     if cls == "parse":
@@ -2899,6 +3017,8 @@ def build_parser():
     sub.add_parser("init")
     kg = sub.add_parser("keygen")
     kg.add_argument("--out", required=True)
+    kg.add_argument("--alg", choices=["ed25519", "p256"], default="ed25519",
+                    help="p256: an ECDSA P-256 key (WRT-019), the algorithm phone secure elements sign with")
     ba = sub.add_parser("blob")
     ba.add_argument("action", choices=["add"])
     ba.add_argument("file")
@@ -3041,11 +3161,15 @@ def main():
         store.init()
         print(f"initialized {store.root}")
     elif args.cmd == "keygen":
-        seed = os.urandom(32)
-        p = Path(args.out)
-        p.write_text(seed.hex() + "\n")
-        p.chmod(0o600)
-        print("pubkey", pubkey_hex(Ed25519PrivateKey.from_private_bytes(seed)))
+        if args.alg == "p256":
+            sk = ec.generate_private_key(ec.SECP256R1())
+            text = P256_KEYFILE_PREFIX + sk.private_numbers().private_value.to_bytes(32, "big").hex()
+        else:
+            seed = os.urandom(32)
+            text = seed.hex()
+            sk = Ed25519PrivateKey.from_private_bytes(seed)
+        _write_new_key_file(args.out, text + "\n")
+        print("pubkey", pubkey_hex(sk))
     elif args.cmd in ("blob", "policy"):
         store.require()
         print(store.put_blob(Path(args.file).read_bytes()))

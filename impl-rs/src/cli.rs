@@ -493,14 +493,27 @@ fn dispatch(argv: &[String]) -> Result<(), Exit> {
         "keygen" => {
             let out = a.val("--out").unwrap();
             let seed = os_random_32().map_err(Exit::msg)?;
-            std::fs::write(&out, crate::hash::encode_hex(&seed) + "\n")
-                .map_err(|e| Exit::msg(e.to_string()))?;
+            // A new file only, 0600 from the first byte, never through a symlink:
+            // keygen never overwrites a key file (same rule as the reference).
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create_new(true);
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600))
-                    .map_err(|e| Exit::msg(e.to_string()))?;
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600).custom_flags(libc_o_nofollow());
             }
+            let mut f = match opts.open(&out) {
+                Ok(f) => f,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    return Err(Exit::msg(format!(
+                        "{out}: exists; keygen never overwrites a key file"
+                    )))
+                }
+                Err(e) => return Err(Exit::msg(e.to_string())),
+            };
+            use std::io::Write;
+            f.write_all((crate::hash::encode_hex(&seed) + "\n").as_bytes())
+                .map_err(|e| Exit::msg(e.to_string()))?;
             println!("pubkey {}", SigningKey::from_seed(seed).public_hex());
         }
         "blob" | "policy" => {
@@ -710,4 +723,18 @@ fn dispatch(argv: &[String]) -> Result<(), Exit> {
         _ => unreachable!(),
     }
     Ok(())
+}
+
+/// `O_NOFOLLOW` without the libc crate (this crate takes no dependencies).
+#[cfg(unix)]
+fn libc_o_nofollow() -> i32 {
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "freebsd"
+    )) {
+        0x0100
+    } else {
+        0o400000 // Linux
+    }
 }

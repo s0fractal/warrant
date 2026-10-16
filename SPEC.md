@@ -133,7 +133,8 @@ WarrantID = SHA-256( canonical_json(body) )
 A stored warrant is an envelope:
 
 ```json
-{ "body": { ... }, "sigs": [ { "actor": "<id>", "key": "<hex64 Ed25519 pubkey>", "sig": "<hex128>" } ] }
+{ "body": { ... }, "sigs": [ { "actor": "<id>", "key": "<hex64 Ed25519 pubkey>", "sig": "<hex128>" },
+                            { "actor": "<id>", "alg": "ecdsa-p256-sha256", "key": "<hex66 compressed P-256 pubkey>", "sig": "<hex128>" } ] }
 ```
 
 The envelope MUST have exactly the members `body` and `sigs`, and any other member is an error. The unknown-field rule of §2 applies to the **body**, recursively. A signature entry is read for `actor`, `key` and `sig`. Other members of an entry are ignored, because the envelope is outside the hash and anyone may append to it. An entry that is not an object is reported and excluded (§6(3)). All three implementations behave this way.
@@ -157,13 +158,14 @@ The envelope MUST have exactly the members `body` and `sigs`, and any other memb
 - **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`), MUST reject a malformed (non-canonical) public-key or signature-point encoding, and **MUST reject a small-order or non-canonically-encoded public key** before verifying. A small-order public key (the 8 torsion points, e.g. all-zero) lets an all-zero signature verify for a large fraction of messages, and libraries disagree on which such keys they accept — so a crafted envelope would verify under one library and not another ("Taming the many EdDSAs"). The rejection set is a byte-exact blocklist of the 8 canonical torsion encodings plus a non-canonical check (`y ≥ p` after clearing the sign bit), so every implementation agrees by construction; it is a normative negative-conformance vector (§8.3), not a library-dependent heuristic. **The verification equation is cofactorless (MUST):** accept iff `[S]B = R + [k]A` with `k = SHA-512(R ‖ A ‖ M) mod L`, `S < L`, and both `R` and `A` canonically encoded per RFC 8032 §5.1.3 (`y < p`; `x = 0` with the sign bit set is malformed). A verifier MUST NOT use the cofactored equation `[8][S]B = [8]R + [8][k]A`, MUST NOT reduce `S` or a point's `y` before checking, and MUST NOT reject a key merely for having a torsion component (a mixed-torsion key verifies exactly when the cofactorless equation holds). Libraries split on precisely these points ("Taming the many EdDSAs"; ZIP-215), so they are pinned by the §8.5 EDGE vectors rather than left to the library.
 - ≥1 signature MUST be present and MUST include one whose `actor` equals `body.actor.id` and which verifies. If no *valid* signature by `body.actor.id` is present, the record is invalid (§6 ERR).
 - Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is). **A co-signature that fails to verify is reported and EXCLUDED, not fatal (MUST):** because anyone with store write access can append envelope signatures, a single junk co-signature MUST NOT be able to invalidate a record that still carries a valid signature by `body.actor.id`. An invalid signature is a §6 WARN; only the *absence* of a valid actor signature is an ERR. (For settlement thresholds, §5.1, an invalid signature simply does not count.)
+- **ECDSA P-256 entries (MUST; WRT-019):** an entry whose `alg` is `ecdsa-p256-sha256` is an ECDSA signature with SHA-256 over the same 47-byte message; its `key` MUST be the 33-byte compressed SEC1 point (`02` or `03` then the 32-byte big-endian x, lowercase hex) of a point on P-256 with x < p, and its `sig` MUST be 64 bytes `r ‖ s` (big-endian, lowercase hex) with 1 ≤ r < n and 1 ≤ s ≤ (n − 1)/2; an uncompressed, hybrid or otherwise non-canonical key, a DER or high-S signature, and an entry whose `alg` is absent but whose key is not an Ed25519 key MUST NOT verify. An absent `alg` means `ed25519`, any other `alg` value MUST NOT verify, and the algorithm MUST NOT be inferred from a key's length.
 - Key↔actor binding is out of scope for v0.1 (use your existing PKI/keyring); implementations MUST verify signatures against the stated key and report the binding as unverified if no keyring is configured.
 
 ### 5.1. Key state: binding, rotation, thresholds (v0.3)
 
 Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification. **A reader may require the actor's own binding (MAY; WRT-018):** a settlement-grade verifier MAY offer a required-binding option; with it, a record that has no valid signature by `body.actor.id` made with a key bound at that record's DAG position MUST be reported `ERR: no bound signature by body.actor.id`, every other signature keeps its §5 treatment (reported and excluded, never fatal), and a request for the option without a trust configuration MUST be reported as exactly one `ERR` with subject `settlement`. The option is local verification policy, like the re-execution budget: it changes no body, record, report schema or WarrantID.
 
-**Rotation is a warrant:** an `accept` whose subject is the new key blob. A key blob is the JCS-canonical object `{"actor": <string>, "key": <hex64>}` or `{"actor": <string>, "key": <hex64>, "next": <hex64>}`, where `next` is the lowercase-hex SHA-256 of the raw 32-byte public key of the key's successor.
+**Rotation is a warrant:** an `accept` whose subject is the new key blob. A key blob is the JCS-canonical object `{"actor": <string>, "key": <key>}` or `{"actor": <string>, "key": <key>, "next": <hex64>}`, where `<key>` is a hex64 Ed25519 key or a hex66 compressed P-256 key (WRT-019) and `next` is the lowercase-hex SHA-256 of the raw public-key bytes (32 for Ed25519, 33 for compressed P-256) of the key's successor.
 
 **Pre-rotation (MUST; WRT-015).** Every key state commits in advance to its successor: genesis keys through the trust configuration's `next` (§12), and every later key through the `next` of the key blob that introduced it. A rotation is authorized only if the actor's key state at the rotation's DAG position carries a commitment and `SHA-256(incoming key)` equals it. A key state without a commitment is **terminal**: nothing can rotate away from it. This is in addition to every rule below, not in place of one. Its purpose is that a **retired** key alone can never produce an authorized rotation, at any DAG position. Without it, a leaked retired key could file a rotation at a position where it was still current and make the actor conflicted store-wide, which retroactively unbinds every signature that actor ever made (DeepReview R13; `tests/r13_retired_key_denial.py`). Residual: a holder of a key *and* its committed successor can still file a second rotation at that position, which is a conflict. **Both of those keys may already be retired.** After `a0 → a1 → a2`, a holder of the retired pair `a0` and `a1` can fork at the root (DeepReview of paper 1.1.0). Since WRT-016 that fork is reported on the store and acts only on records whose ancestry contains both sides. The current key `a2`'s records and everything before the fork keep their binding (`case_multihop_residual`). What remains is that the fork's own branch is consistent at its own positions, so a parallel key history is representable. Choosing between histories needs an order that a DAG does not carry (WRT-012).
 
@@ -303,7 +305,7 @@ digest is SHA-256 of that manifest:
 
 | artifact | SHA-256 |
 | --- | --- |
-| conformance pack 1.4.0 candidate (`MANIFEST.sha256`) | `26b6f92b72a5c94d28442673fae34d45d4f2a2b55dd9376e46e4cc30d02e377c` |
+| conformance pack 1.5.0 candidate (`MANIFEST.sha256`) | `65281ce3e4d014c851f3bb9a8d42603a729e2dcc4d2cf6a282b057fb139d9d64` |
 
 Verify with `python3 run.py --verify-pack` and compare against the line above at
 the spec revision you are implementing. Because this document is versioned and
@@ -395,7 +397,7 @@ A report is only interoperable when the verifier has been asked to treat its arg
 JSON object with a **closed** member set — an unknown member makes the configuration invalid:
 
 ```json
-{ "actors": { "<actor-id>": ["<hex64 Ed25519 pubkey>", "..."] },
+{ "actors": { "<actor-id>": ["<hex64 Ed25519 pubkey | hex66 compressed P-256 pubkey>", "..."] },
   "genesis_roots": ["<hex64 WarrantID>", "..."],
   "genesis_json_sha256": "<hex64>",
   "next": { "<actor-id>": "<hex64 SHA-256 of the successor public key>" } }
@@ -403,17 +405,17 @@ JSON object with a **closed** member set — an unknown member makes the configu
 
 | Member | Req | Meaning |
 | --- | --- | --- |
-| `actors` | MAY | Object mapping a **nonempty** actor id string to an array of hex64 Ed25519 public keys **genesis-bound** to that actor. Array MAY be empty. |
+| `actors` | MAY | Object mapping a **nonempty** actor id string to an array of public keys **genesis-bound** to that actor: hex64 Ed25519 or hex66 compressed P-256 (WRT-019). Array MAY be empty. |
 | `genesis_roots` | MAY | Array of hex64 WarrantIDs the operator pins as settlement-active roots for this store (§9(1)). |
 | `genesis_json_sha256` | MAY | hex64 SHA-256 of the exact `genesis.json` bytes the operator has accepted (§9). |
-| `next` | MAY | Object mapping an actor id **listed in `actors`** to the hex64 SHA-256 of the raw 32-byte public key that actor's first rotation MUST introduce (§5.1, pre-rotation). An actor without an entry is terminal at genesis: no rotation away from its genesis keys is ever authorized. |
+| `next` | MAY | Object mapping an actor id **listed in `actors`** to the hex64 SHA-256 of the raw public-key bytes (32 for Ed25519, 33 for compressed P-256) that actor's first rotation MUST introduce (§5.1, pre-rotation). An actor without an entry is terminal at genesis: no rotation away from its genesis keys is ever authorized. |
 
 All three members are optional; `{}` is valid and means "no local trust", which is not the same as "no trust configuration supplied" (§12.3).
 
 ### 12.2. Parsing and validation (MUST)
 
 - The file MUST be parsed in the same I-JSON domain as every other trust-bearing input (§4): duplicate member names, trailing content after the JSON value, invalid UTF-8 and unpaired surrogate escapes MUST be rejected. A trust input parsed more leniently than a record is a way to make two verifiers disagree about who is bound.
-- Validation is **closed and recursive**: an unknown top-level member, a non-object `actors`, an empty actor id, a non-array key list, or any element of `actors[*]`/`genesis_roots` that is not hex64, or a non-hex64 `genesis_json_sha256`, or a `next` that is not an object, names an actor absent from `actors`, or holds a non-hex64 value, makes the configuration invalid. (Nested types are named explicitly because they were the actual split: `{"actors":[]}` and `{"actors":{"a":1}}` once crashed one implementation while the other returned zero errors.)
+- Validation is **closed and recursive**: an unknown top-level member, a non-object `actors`, an empty actor id, a non-array key list, or any element of `genesis_roots` that is not hex64, or any element of `actors[*]` that is neither hex64 nor a hex66 string beginning `02`/`03`, or a non-hex64 `genesis_json_sha256`, or a `next` that is not an object, names an actor absent from `actors`, or holds a non-hex64 value, makes the configuration invalid. (Nested types are named explicitly because they were the actual split: `{"actors":[]}` and `{"actors":{"a":1}}` once crashed one implementation while the other returned zero errors.)
 - The file MUST NOT be canonicalized, hashed, or otherwise treated as content-addressed; it is not a blob.
 
 ### 12.3. Fail-closed semantics (MUST)

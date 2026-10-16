@@ -1,6 +1,6 @@
 {
   "signature_vectors": "warrant.signature-vectors@v0",
-  "note": "SPEC \u00a78.5. `message`: an implementation MUST build exactly these bytes for the given WarrantID. `accept`: verify_sig MUST return true. `reject`: verify_sig MUST return false. The demo key and seed are SPEC \u00a78's, so every signature here is reproducible from the spec alone.",
+  "note": "SPEC \u00a78.5. `message`: an implementation MUST build exactly these bytes for the given WarrantID. `accept`: verify_sig MUST return true. `reject`: verify_sig MUST return false. The demo key and seed are SPEC \u00a78's, so every signature here is reproducible from the spec alone. An entry with `alg` is a WRT-019 P-256 signature (absent = ed25519); its key derives from a label in tools/p256_vectors.py and its signature is RFC 6979.",
   "domain_separator_ascii": "warrant-sig-v1:",
   "domain_separator_hex": "77617272616e742d7369672d76313a",
   "construction": "msg = \"warrant-sig-v1:\" || WarrantID_raw   (15 + 32 = 47 bytes)",
@@ -57,6 +57,20 @@
       "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
       "key": "fdb72e2c0dcec867bf7d851663a076405312ef7fe86ccac92ec2cbb7ecee6dc8",
       "sig": "ffc2028cfa06d7d198fbb382267c0b2387c75f583d4f5e215081fa560a198e358edc59df6b2d38d9653cdeedfd6a6b90327badd8d7c68bfd41ff6ca2f2beb904"
+    },
+    {
+      "why": "P256: a P-256 signature, compressed key, low-S r||s",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: a natively high-S signature after normalization (s -> n - s), as a Secure Enclave signer must file it",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "032426b1d0d2cceb5cda48223e4382d95f6017d96f3b8b0e1c6ea64b19c57be821",
+      "sig": "3e75274735c91d78e12f3315cead94614227c030d41eb306dcbc3c72474070254869fe4693595d7d7aab6aebe334bfbdccef4bd34799c85221f4c48448591f37"
     }
   ],
   "reject": [
@@ -144,6 +158,110 @@
       "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
       "key": "fdb72e2c0dcec867bf7d851663a076405312ef7fe86ccac92ec2cbb7ecee6dc8",
       "sig": "3073da1a6047e44c42ddddad5c5599ded662f2d7cce1b046fcbf0364cd6d9f24ccd34629c343719b26de5e8ea4291135adea03c0ebd02d445096bdbf2fd35c0f"
+    },
+    {
+      "why": "P256: high-S: the same signature with s replaced by n - s (valid ECDSA, rejected by WRT-019's low-S rule)",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f09b32ce31734bc67172f2e419981e77ec5c142648635afe4e447eeac7708082ef"
+    },
+    {
+      "why": "P256: r = 0",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "000000000000000000000000000000000000000000000000000000000000000064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: s = 0",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f00000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "why": "P256: r = n",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc63255164cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: s = n",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f0ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"
+    },
+    {
+      "why": "P256: the key in UNCOMPRESSED form (04 || x || y) with a valid signature: one key, one encoding",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0470f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655ef24edcbb4a7c169daab90188ffd31aa32781e052924ae45c19fa9586f3761117",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: a key with prefix 05",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0570f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: a compressed key whose x = p (not a field element)",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "02ffffffff00000001000000000000000000000000ffffffffffffffffffffffff",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: a compressed key whose x is not on P-256 (x^3 - 3x + b is not a square)",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "020000000000000000000000000000000000000000000000000000000000000001",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: a P-256 signature over the bare WarrantID (no warrant-sig-v1 separator)",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "b03aa97289dfb60a2235ad0e8392da02e0f009719a72be0bb2b60ec02cea323338c4e7e4d65d6a80834f646990efe47a0fbf8939b58a8e18480afc545a982f79"
+    },
+    {
+      "why": "P256: a valid P-256 key and signature WITHOUT alg: read as Ed25519, which a 33-byte key cannot be",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: a valid Ed25519 key and signature labelled alg ecdsa-p256-sha256",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+      "sig": "db19ae73113791a9482f94b04aaacf6041c424241f66804841ef4b81bd5209ad618efb7a62857d15f1b64b447a4e6d5639b247e5270bf17086a5a87fe4346703"
+    },
+    {
+      "why": "P256: a valid P-256 key and signature under an unknown alg",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p384-sha384",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: the signature DER-encoded instead of 64-byte r||s",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370f149aa33b67ffbada19c9adcc9a452262dcc172951d9bf6341254323bc655e",
+      "sig": "30440220009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f0022064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
+    },
+    {
+      "why": "P256: the key in UPPERCASE hex: one key, one string",
+      "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+      "alg": "ecdsa-p256-sha256",
+      "key": "0370F149AA33B67FFBADA19C9ADCC9A452262DCC172951D9BF6341254323BC655E",
+      "sig": "009eafa5219ee67a4fa22c1e098cd7893423a387cf4f1a3b89bdde2d1b0222f064cd31cd8cb4398f8d0d1be667e1881360d2d46543bca036af3adffb8be2a262"
     }
   ]
 }

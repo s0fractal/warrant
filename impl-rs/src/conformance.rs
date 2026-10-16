@@ -479,6 +479,9 @@ pub fn probe_answer(class: Option<&Json>, inp: &Json) -> Result<Result<Json, Str
                 "sig",
                 inp.get("sig").cloned().ok_or("input.sig is required")?,
             );
+            if let Some(alg) = inp.get("alg") {
+                sig.insert("alg", alg.clone()); // WRT-019; verify_sig rejects a non-string
+            }
             let wid = inp
                 .get("warrant_id")
                 .ok_or("input.warrant_id is required")?;

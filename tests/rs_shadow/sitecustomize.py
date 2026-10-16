@@ -141,6 +141,19 @@ def run(*popenargs, **kw):
                         copies.append((f, c))
                         rs_args[j] = str(c)
                 j += 1
+    if cmd == "keygen" and "--out" in rs_args:
+        # keygen never overwrites (it creates the file it is given), so the two
+        # implementations cannot share one --out path: the second would find the
+        # first's file. Rust gets its own path in the same prior state.
+        j = rs_args.index("--out") + 1
+        if j < len(rs_args):
+            ref = Path(cwd, rs_args[j])
+            mine = Path(tmp, "keygen-out", ref.name)
+            mine.parent.mkdir()
+            if ref.exists() or ref.is_symlink():
+                shutil.copy2(ref, mine, follow_symlinks=False)
+            mapping.append((str(mine), rs_args[j]))
+            rs_args[j] = str(mine)
     want_text = kw.get("text") or kw.get("universal_newlines") or kw.get("encoding")
     pkw = dict(kw)
     pkw.pop("args", None)
