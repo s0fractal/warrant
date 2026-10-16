@@ -99,6 +99,7 @@ func main() {
 		jsonMode := false
 		storeStrict := false
 		trustConfig := ""
+		requireBound := false
 		var genesis []string
 		args := os.Args[2:]
 		for i := 0; i < len(args); i++ {
@@ -107,6 +108,8 @@ func main() {
 				settlement = true
 			case "--json", "-json":
 				jsonMode = true
+			case "--require-bound", "-require-bound":
+				requireBound = true
 			case "--store-mode", "-store-mode":
 				storeStrict = true
 			case "--trust-config", "-trust-config":
@@ -127,6 +130,12 @@ func main() {
 				dir = args[i]
 			}
 		}
+		if requireBound && !settlement {
+			fmt.Fprintln(os.Stderr, "--require-bound applies to settlement-grade verification only "+
+				"(binding is derived from your trust config).\n"+
+				"  run:  warrant verify --settlement --trust-config <file> --require-bound")
+			os.Exit(2)
+		}
 		var report *verifyReport
 		if jsonMode {
 			report = &verifyReport{}
@@ -134,7 +143,7 @@ func main() {
 		var errs int
 		if settlement {
 			// settlement grade already requires records/, so store-strict is implied.
-			errs, _ = verifyDirSettlement(dir, trustConfig, genesis, jsonMode, report)
+			errs, _ = verifyDirSettlement(dir, trustConfig, genesis, requireBound, jsonMode, report)
 		} else {
 			errs, _ = verifyDir(dir, jsonMode, report, storeStrict)
 		}
@@ -2896,7 +2905,7 @@ func fillNoStore(r *verifyReport, grade string) {
 		Message: "no store (records/ is missing or not a directory)"}}
 }
 
-func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, report *verifyReport) (int, int) {
+func verifyDirSettlement(dir, trustConfig string, genesis []string, requireBound, quiet bool, report *verifyReport) (int, int) {
 	// A settlement verify is a STORE operation: require records/ (matching
 	// Python's Store.require), so a dir with blobs/ but no records/ is a bounded
 	// "no store" error in both — not a Go flat-mode silent (0,0,0) exit 0
@@ -2971,6 +2980,14 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 		}
 		trust = m
 	}
+	// WRT-018: without a trust config there is no binding to require.
+	if requireBound && trustConfig == "" {
+		out("ERR", "settlement", "required binding needs a trust config")
+		if !quiet {
+			fmt.Printf("\nverify: %d records, %d errors, %d warnings\n", len(recList), errs, warns)
+		}
+		return finish()
+	}
 	ctx := settlementCtx(dir, records, blobs, trust, genesis)
 	for _, w := range ctx.globalWarnings {
 		out("WARN", w[0], w[1])
@@ -3028,6 +3045,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 		}
 		actorID := getActorID(body) // for the key-state-conflict check below
 		actorSigned := false
+		actorBound := false
 		for _, s := range sigs {
 			if !verifySig(wid, s) {
 				// SPEC §5/§6: a co-signature that fails to verify is reported
@@ -3072,12 +3090,19 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 				if id, ok := ba["id"].(string); ok {
 					if sa, ok := sm["actor"].(string); ok && sa == id {
 						actorSigned = true
+						if bound {
+							actorBound = true
+						}
 					}
 				}
 			}
 		}
 		if len(sigs) > 0 && !actorSigned {
 			out("ERR", wid, "no valid signature by body.actor.id")
+		} else if len(sigs) > 0 && requireBound && !actorBound {
+			// WRT-018: only the record's own actor must be bound; co-signatures
+			// keep §5's report-and-exclude treatment.
+			out("ERR", wid, "no bound signature by body.actor.id")
 		}
 		for _, p := range getStringArray(body, "prior") {
 			prev, ok := records[p]

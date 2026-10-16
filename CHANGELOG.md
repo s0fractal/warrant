@@ -27,6 +27,26 @@ right.
 
 ## Unreleased
 
+- **[protocol] WRT-018 decided (A): a reader may require the actor's own
+  binding.** At settlement grade, bound/unbound is a report (§5.1). An actor
+  signing with a key the reader's trust config does not bind therefore
+  verified `ok: true` with one WARN. Two consumers rebuilt the rule outside
+  warrant: oaip by parsing `signature unbound` lines, and warrant-pdf by
+  refusing every finding. The latter refused a contract over an appended
+  junk co-signature, which §5 says is excluded, never fatal. A new
+  settlement-only option `verify --require-bound` (Python, Go, Rust)
+  reports `ERR: no bound signature by body.actor.id` when a record's own
+  actor has no bound signature. Co-signatures keep §5. The option without a
+  trust config is exactly one `ERR` on `settlement`, and without
+  `--settlement` the CLI refuses. No body, report schema or WarrantID changes.
+  Conformance pack 1.3.0 → 1.4.0 adds five settlement vectors, with input
+  `require_bound`. The two negative ones fail an implementation that ignores
+  the option (measured on origin/master Python), and three mutants of the
+  rule are each caught by their own vector. Contract KEY-B1;
+  `tests/wrt018_required_binding.py` (PY = GO = RS). The JS/WASM package
+  does not expose the option until its next release. THREAT-MODEL A4 now
+  places the "gates on `ok` alone" residual at settlement grade too.
+
 - **Paper "The Reason Runs Again" 1.1.0 published**: DOI
   10.5281/zenodo.23414323, tag `paper-the-reason-runs-again-v1.1.0` =
   `e494dbb`. The PDF was rebuilt byte-identically from two clean exports of

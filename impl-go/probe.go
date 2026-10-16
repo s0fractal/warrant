@@ -164,7 +164,8 @@ func probeAnswer(req map[string]any) (map[string]any, error) {
 					}
 				}
 			}
-			errs, warns = verifyDirSettlement(dir, trust, genesis, true, nil)
+			requireBound, _ := input["require_bound"].(bool)
+			errs, warns = verifyDirSettlement(dir, trust, genesis, requireBound, true, nil)
 		} else {
 			errs, warns = verifyDir(dir, true, nil, true)
 		}

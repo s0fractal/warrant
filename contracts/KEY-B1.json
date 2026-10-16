@@ -1,0 +1,25 @@
+{
+  "profile": "warrant.contract.v1",
+  "id": "KEY-B1",
+  "spec": "§5.1",
+  "statement": "**A reader may require the actor's own binding (MAY; WRT-018):** a settlement-grade verifier MAY offer a required-binding option; with it, a record that has no valid signature by `body.actor.id` made with a key bound at that record's DAG position MUST be reported `ERR: no bound signature by body.actor.id`, every other signature keeps its §5 treatment (reported and excluded, never fatal), and a request for the option without a trust configuration MUST be reported as exactly one `ERR` with subject `settlement`.",
+  "witnesses": [
+    "tests/wrt018_required_binding.py::main",
+    "tests/wrt018_required_binding.py::store"
+  ],
+  "decisions": [
+    {
+      "date": "2026-10-16",
+      "because": "Owner delegated WRT-018 to Claude, who chose option A: a reader-side, settlement-only option. Two consumers had rebuilt the rule outside warrant: oaip parses 'signature unbound' lines, and warrant-pdf refuses every finding but 'unadopted root', which made it refuse a contract over an appended junk co-signature that §5 says is excluded. A keeps §5, changes no schema or WarrantID, and the reader, not the filer, decides.",
+      "statement_sha256": "49beaa4c6532abe8653d022e4fe6c854fb5f6faff8b8e9b97be1354e1c9eff42",
+      "previous_statement_sha256": null,
+      "counterexample": {
+        "at": "af2a506",
+        "witness": "warrant-pdf tests/test_counter_vectors.py::test_accept_signed_by_another_key_for_the_same_actor_refuses (mutant tolerate-all-warnings)",
+        "observed": "an accept for bob@demo.test signed with Mallory's key, Bob's key in the reader's trust config: warrant 0.10.0 verify --settlement reported ok:true, errors:0, one WARN 'signature unbound'",
+        "expected": "a reader who requires the actor's binding gets an ERR, without refusing records over third parties' co-signatures"
+      }
+    }
+  ],
+  "annotations": "Unsigned note. Conformance pack 1.4.0 carries five settlement vectors for this sentence; a candidate that ignores the option fails the two negative ones (measured on origin/master Python)."
+}

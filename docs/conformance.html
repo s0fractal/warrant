@@ -118,7 +118,7 @@
   <p>A class is one question the format can be asked. <code>capabilities</code> is
   mandatory — declining it is a contract violation, because a candidate that will
   not say what it claims cannot be tested against its claim. The other eight carry
-  the 144 vectors:</p>
+  the 149 vectors:</p>
 
   <table>
     <tr><th>class</th><th>grade</th><th class="n">vectors</th><th class="n">must-reject</th><th>what it asks</th></tr>
@@ -130,15 +130,15 @@
     <tr><td><code>verify-sig</code></td><td>base</td><td class="n">33</td><td class="n">28</td><td>Ed25519 over those bytes; small-order and non-canonical keys must fail; cofactorless, so mixed-torsion, small-order-R and S&nbsp;&ge;&nbsp;L edge signatures separate a cofactored verifier</td></tr>
     <tr><td><code>parse</code></td><td>base</td><td class="n">20</td><td class="n">15</td><td>I-JSON at the door: duplicates, trailing content, BOM, lone surrogates</td></tr>
     <tr><td><code>verify-store</code></td><td>base</td><td class="n">6</td><td class="n">5</td><td>a directory of records and blobs — how many errors, at least one</td></tr>
-    <tr><td><code>verify-store</code></td><td>settlement</td><td class="n">3</td><td class="n">2</td><td>§12.3 fail-closed trust: unreadable trust config is one error, not zero</td></tr>
+    <tr><td><code>verify-store</code></td><td>settlement</td><td class="n">8</td><td class="n">4</td><td>§12.3 fail-closed trust: unreadable trust config is one error, not zero; §5.1 <code>require_bound</code> (WRT-018): the actor's own binding, not co-signatures</td></tr>
     <tr><td><code>ski-run</code></td><td>settlement</td><td class="n">1</td><td class="n">0</td><td>re-execute a budget-bounded check and reproduce its verdict</td></tr>
   </table>
 
-  <p><strong>66 of the 144 vectors are MUST-REJECT.</strong> That ratio is
+  <p><strong>68 of the 149 vectors are MUST-REJECT.</strong> That ratio is
   deliberate. An implementation whose <code>validate()</code> returns true
   unconditionally passes every positive vector in the pack, so the negatives get
   their own headline in the report rather than being averaged into a score:
-  <code>PERMISSIVE IMPLEMENTATION: 66 of 66 MUST-REJECT vectors were ACCEPTED.</code>
+  <code>PERMISSIVE IMPLEMENTATION: 68 of 68 MUST-REJECT vectors were ACCEPTED.</code>
   If no negative vector ran at all, the report says <em>that</em>, in place of a
   score.</p>
 
@@ -163,7 +163,7 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   against a Python candidate.</p>
 
   <p>Those seconds are your program's start-up cost, paid once per vector. The
-  runner spawns your candidate 144 times rather than holding a session open,
+  runner spawns your candidate 149 times rather than holding a session open,
   because a stateless contract is one you can satisfy with a shell script — that
   trade is worth stating rather than hiding behind a faster-looking number. A
   compiled candidate is substantially quicker.</p>
@@ -205,7 +205,7 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   <ul>
     <li><strong>An answer to the question at the top of this page</strong>, for
       your own code. Not "my tests pass" but "my reading of the format and theirs
-      produce the same bytes, including on the 66 inputs that must be refused."</li>
+      produce the same bytes, including on the 68 inputs that must be refused."</li>
     <li><strong>A grade you can state, with the evidence for it re-runnable by
       anyone.</strong> The report names every UNRUN vector; nothing is rounded up.</li>
     <li><strong>The name.</strong>
@@ -229,7 +229,7 @@ python3 run.py --candidate "./my-verifier probe"</pre>
   <div class="honest">
   <h3>The honest state of this</h3>
   <p class="note"><strong>Three implementations, all ours.</strong> Python, Go and Rust
-  each pass all 144 vectors at settlement grade. A candidate that
+  each pass all 149 vectors at settlement grade. A candidate that
   passes the 140 base vectors without claiming settlement is reported as
   <em>reaching base</em>, rather than as failing settlement.
   Their agreement is byte-exact — canonical bytes,

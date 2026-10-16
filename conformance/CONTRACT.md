@@ -345,6 +345,16 @@ configures nothing: `{"genesis_roots": []}` is a valid configuration, trust was
 constructed, and the clean store verifies with zero errors. Missing and
 unparseable fail closed; empty does not.
 
+**Required binding (pack 1.4.0; SPEC §5.1, WRT-018).** A settlement request may
+also carry `"require_bound": true`. It asks for the reader-side option: a record
+whose own actor (`body.actor.id`) has no valid signature by a key the trust
+configuration binds at that record's position counts one error. Co-signatures are
+unaffected: an invalid or unbound co-signature by another actor is still reported
+and excluded, never an error. With the option and no `trust_config_path`, report
+exactly one error. If you do not implement the option, you will fail the two
+negative `require-bound` vectors. Answering with the option silently ignored is
+exactly what they detect.
+
 If you verify stores at base grade only, answer `unsupported` for
 `grade: "settlement"` requests. Returning base-grade counts instead would report
 a verification that never happened — which is the very failure §12.3 forbids.

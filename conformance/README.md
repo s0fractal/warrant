@@ -1,4 +1,4 @@
-# Warrant conformance pack 1.3.0
+# Warrant conformance pack 1.4.0
 
 **Does your Warrant implementation agree with the specification?** Run this
 against it and find out. You do not need to clone the Warrant repository, and
@@ -6,9 +6,9 @@ this runner never executes a Warrant reference implementation — it only knows 
 to talk to yours.
 
 ```
-curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.3.0.tar.gz
-tar xzf warrant-conformance-1.3.0.tar.gz
-cd warrant-conformance-1.3.0
+curl -LO https://github.com/s0fractal/warrant/releases/latest/download/warrant-conformance-1.4.0.tar.gz
+tar xzf warrant-conformance-1.4.0.tar.gz
+cd warrant-conformance-1.4.0
 python3 run.py --candidate "./my-verifier probe"
 ```
 
@@ -84,7 +84,7 @@ Four outcomes per vector, never three:
 Vectors above your claimed grade are reported as `NOT CLAIMED`, which is an
 honest result rather than a gap.
 
-**Negative vectors carry equal weight.** 66 of the 144 vectors are MUST-REJECT:
+**Negative vectors carry equal weight.** 68 of the 149 vectors are MUST-REJECT:
 bodies that must not validate, signatures that must not verify, bytes that must
 not parse, broken stores whose defects must be reported. An implementation whose
 `validate()` returns `true` unconditionally passes *every positive vector here*,
@@ -92,7 +92,7 @@ so failing the negatives gets its own headline rather than being averaged into a
 score:
 
 ```
-PERMISSIVE IMPLEMENTATION: 66 of 66 MUST-REJECT vectors were ACCEPTED.
+PERMISSIVE IMPLEMENTATION: 68 of 68 MUST-REJECT vectors were ACCEPTED.
 ```
 
 If no negative vector ran at all, the report says that too, in place of a score.
@@ -203,7 +203,7 @@ already had; it is also why that figure grew from the ~35 s an earlier revision
 of this file measured.
 
 Those seconds are your program's start-up cost, paid once per vector: the runner
-spawns the candidate 144 times rather than holding a session open, because a
+spawns the candidate 149 times rather than holding a session open, because a
 stateless contract is one you can satisfy with a shell script. A compiled
 candidate is substantially faster. An earlier draft of this file claimed "904 ms
 from extraction to verdict" — that measured extraction plus a trivial candidate,

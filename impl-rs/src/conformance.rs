@@ -513,6 +513,7 @@ pub fn probe_answer(class: Option<&Json>, inp: &Json) -> Result<Result<Json, Str
                             .get("trust_config_path")
                             .and_then(Json::as_str)
                             .map(String::from),
+                        require_bound: matches!(inp.get("require_bound"), Some(Json::Bool(true))),
                     });
                 let r = verify_store(&store, true, settlement.as_ref());
                 obj(vec![
