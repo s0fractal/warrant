@@ -94,6 +94,7 @@ The test proves:
 - a changed input, a different session or an unasked call files nothing;
 - tampering turns verification red;
 - a missing CLI breaks nothing and reports `NOT RUN`;
+- a fresh install with no store reports "nothing to verify", not an error, while a store directory without `records/` is still reported;
 - large inputs are bound by hash;
 - the vendored `scripts/warrant_approval.py` is byte-identical to
   `integrations/approval/warrant_approval.py`.
@@ -102,4 +103,4 @@ Five mutations of `witness.py` were each confirmed to turn the test red: two key
 instead of one, ignoring the session, printing to stdout, dropping the size cap,
 and filing unasked calls.
 
-Status: prototype, version 0.1.0. No independent review has run.
+Status: prototype, version 0.1.1. No independent review has run.

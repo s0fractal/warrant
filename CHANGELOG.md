@@ -27,6 +27,12 @@ right.
 
 ## Unreleased
 
+- **Plugin 0.1.1: a fresh install no longer reads as a damaged store.** Before
+  anything was witnessed, `/warrant:decisions` reported `1 errors` (the verifier
+  on a store that does not exist yet). It now says "nothing to verify". A
+  missing CLI is still reported first, and a store directory without `records/`
+  still goes to the verifier. Found on the first live run.
+
 - **Claude Code plugin: a decision witness** (`integrations/claude-code-plugin/`,
   marketplace `.claude-plugin/marketplace.json`). Hooks on `PermissionDenied`,
   `PermissionRequest` and `PostToolUse(Failure)` file a signed `reject` for each

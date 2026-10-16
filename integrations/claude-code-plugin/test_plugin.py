@@ -11,7 +11,9 @@ WHAT IS ASSERTED
      changed input does not match (negative control).
   4. An ask that never executes stays an open ask in decisions.py.
   5. The store verifies with 0 errors, and a tampered record turns it red.
-  6. A missing warrant CLI files nothing and breaks nothing; decisions.py
+  6. A fresh install with no store reports EMPTY, not errors; a store
+     directory without records/ is still reported as a problem.
+  6b. A missing warrant CLI files nothing and breaks nothing; decisions.py
      says NOT RUN instead of reporting a clean store.
   7. A huge tool input is bound by SHA-256, not stored inline.
   8. The manifests parse; the vendored warrant_approval.py is byte-identical
@@ -81,6 +83,16 @@ def main():
     check("hook prints nothing and exits 0 on every input",
           all(r.returncode == 0 and r.stdout == "" for r in outs),
           [(r.returncode, r.stdout[:40]) for r in outs])
+
+    # 1b. fresh install: no store is not a broken store; a gutted one still is
+    fresh = decisions(tmp / "fresh")
+    check("a fresh install reports EMPTY, not errors",
+          fresh["verify"]["status"] == "EMPTY" and fresh["decisions"] == [], fresh["verify"])
+    gutted = tmp / "gutted" / "store"
+    gutted.mkdir(parents=True)
+    g = decisions(tmp / "gutted")
+    check("a store directory without records/ is still reported, not called empty",
+          g["verify"]["status"] in ("ERRORS", "UNRUN") and g["verify"]["status"] != "EMPTY", g["verify"])
 
     # 2. auto-mode denial
     h = tmp / "main"

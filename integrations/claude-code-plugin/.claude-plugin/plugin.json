@@ -1,7 +1,7 @@
 {
   "name": "warrant",
   "displayName": "Warrant decision witness",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Signed, offline-verifiable records of the permission decisions Claude Code makes about your agent's tool calls: auto-mode denials, and calls that were asked about and then ran.",
   "author": { "name": "s0fractal", "url": "https://github.com/s0fractal" },
   "homepage": "https://github.com/s0fractal/warrant/tree/master/integrations/claude-code-plugin",
