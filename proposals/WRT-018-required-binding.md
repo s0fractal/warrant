@@ -1,6 +1,6 @@
 # WRT-018: Let the reader require that a record's actor signed with a bound key
 
-**Status:** PROPOSED, 2026-10-16. Awaiting the owner's decision. Nothing is implemented.
+**Status:** DECIDED: option A, 2026-10-16. The owner delegated the decision ("на твій розсуд"), and Claude chose A. Implemented in Python, Go and Rust (`verify --require-bound`). SPEC §5.1 carries the sentence, recorded in contract KEY-B1. Conformance pack 1.4.0 adds five vectors. The JS/WASM package gains `requireBound` in its next release.
 
 ## The finding (two consumers, measured)
 

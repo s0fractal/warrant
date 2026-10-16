@@ -22,7 +22,13 @@ pub const VERIFY_REPORT_VERSION: &str = "warrant.verify-report@v0";
 pub struct Settlement {
     pub genesis_roots: Vec<String>,
     pub trust_config: Option<String>,
+    /// WRT-018: a record whose own actor has no signature by a key bound at its
+    /// position is an ERR. Local policy; co-signatures are unaffected.
+    pub require_bound: bool,
 }
+
+pub const ERR_REQUIRE_BOUND_TRUST: &str = "required binding needs a trust config";
+pub const ERR_NOT_BOUND: &str = "no bound signature by body.actor.id";
 
 pub struct Finding {
     pub level: &'static str,
@@ -133,6 +139,7 @@ fn verify_store_inner(
                 .filter(|p| !p.is_empty())
                 .map(load_trust_config)
         });
+        let have_trust = loaded.is_some();
         if let Some(loaded) = loaded {
             match loaded {
                 Ok(t) => trust = t,
@@ -142,6 +149,11 @@ fn verify_store_inner(
                     return rep;
                 }
             }
+        }
+        if s.require_bound && !have_trust {
+            rep.out("ERR", "settlement", ERR_REQUIRE_BOUND_TRUST.to_string());
+            rep.summary();
+            return rep;
         }
     }
     let mut load_errors = load_errors;
@@ -199,6 +211,7 @@ fn verify_store_inner(
             rep.out("ERR", wid, "no signatures".to_string());
         }
         let mut actor_signed = false;
+        let mut actor_bound = false;
         let body_actor_id = body
             .get("actor")
             .and_then(|a| a.as_obj())
@@ -234,6 +247,7 @@ fn verify_store_inner(
                 continue;
             }
             let key = s.get("key").map(py_str).unwrap_or_default();
+            let mut this_bound = false;
             match &ctx {
                 None => rep.out(
                     "WARN",
@@ -258,6 +272,7 @@ fn verify_store_inner(
                         prefix(&key, 12),
                         py_str_opt(actor)
                     );
+                    this_bound = bound;
                     if bound {
                         rep.info(wid, format!("signature bound: {line}"));
                     } else {
@@ -268,6 +283,7 @@ fn verify_store_inner(
             if let (Some(id), Some(a)) = (body_actor_id, actor) {
                 if py_eq(a, id) {
                     actor_signed = true;
+                    actor_bound |= this_bound;
                 }
             }
         }
@@ -277,6 +293,14 @@ fn verify_store_inner(
                 wid,
                 "no valid signature by body.actor.id".to_string(),
             );
+        } else if !sigs.is_empty()
+            && ctx.is_some()
+            && settlement.is_some_and(|s| s.require_bound)
+            && !actor_bound
+        {
+            // WRT-018: only the record's own actor must be bound; co-signatures
+            // keep §5's report-and-exclude treatment.
+            rep.out("ERR", wid, ERR_NOT_BOUND.to_string());
         }
 
         // prior MUST resolve (§6(4)); ts non-decreasing along each edge is a

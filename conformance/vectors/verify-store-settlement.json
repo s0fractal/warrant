@@ -46,6 +46,79 @@
       "expect": {
         "errors": 0
       }
+    },
+    {
+      "id": "verify-store/settlement-require-bound-actor-unbound",
+      "polarity": "negative",
+      "spec": "\u00a75.1 (WRT-018)",
+      "why": "MUST report exactly one ERR per record: with `require_bound`, a record whose own actor signed only with a key the trust config does not bind to that actor is an error. Both records here are filed that way. A candidate that ignores the option reports zero errors and fails",
+      "input": {
+        "store_dir": "stores/clean",
+        "trust_config": "trust/fixture-other-key.json",
+        "grade": "settlement",
+        "require_bound": true
+      },
+      "expect": {
+        "errors": 2
+      }
+    },
+    {
+      "id": "verify-store/settlement-unbound-actor-without-option",
+      "polarity": "positive",
+      "spec": "\u00a75.1",
+      "why": "the same store and trust WITHOUT `require_bound`: bound/unbound is a report, so zero errors. A candidate that requires binding by default fails",
+      "input": {
+        "store_dir": "stores/clean",
+        "grade": "settlement",
+        "trust_config": "trust/fixture-other-key.json"
+      },
+      "expect": {
+        "errors": 0
+      }
+    },
+    {
+      "id": "verify-store/settlement-require-bound-actor-bound",
+      "polarity": "positive",
+      "spec": "\u00a75.1 (WRT-018)",
+      "why": "with `require_bound` and the actor's key bound, the clean store verifies with zero errors",
+      "input": {
+        "store_dir": "stores/clean",
+        "trust_config": "trust/fixture-bound.json",
+        "grade": "settlement",
+        "require_bound": true
+      },
+      "expect": {
+        "errors": 0
+      }
+    },
+    {
+      "id": "verify-store/settlement-require-bound-junk-cosignature",
+      "polarity": "positive",
+      "spec": "\u00a75, \u00a75.1 (WRT-018)",
+      "why": "MUST report zero errors: every record carries, besides its actor's bound signature, a valid co-signature by an unbound key claiming another actor. `require_bound` concerns the record's own actor only; a co-signature stays reported and excluded, never fatal (\u00a75)",
+      "input": {
+        "store_dir": "stores/junk-cosignature",
+        "trust_config": "trust/fixture-bound.json",
+        "grade": "settlement",
+        "require_bound": true
+      },
+      "expect": {
+        "errors": 0
+      }
+    },
+    {
+      "id": "verify-store/settlement-require-bound-no-trust",
+      "polarity": "negative",
+      "spec": "\u00a75.1 (WRT-018)",
+      "why": "MUST report exactly one ERR: binding cannot be required without a trust configuration to derive it from",
+      "input": {
+        "store_dir": "stores/clean",
+        "grade": "settlement",
+        "require_bound": true
+      },
+      "expect": {
+        "errors": 1
+      }
     }
   ]
 }

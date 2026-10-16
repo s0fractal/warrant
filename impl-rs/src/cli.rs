@@ -113,6 +113,7 @@ fn spec(cmd: &str) -> Option<Spec> {
                 ("--settlement", Kind::Flag),
                 ("--genesis", Kind::Append),
                 ("--trust-config", Kind::Value),
+                ("--require-bound", Kind::Flag),
                 ("--json", Kind::Flag),
                 ("--store-mode", Kind::Flag),
             ],
@@ -375,6 +376,7 @@ fn require(store: &Store) -> Result<(), Exit> {
     }
 }
 
+const REQUIRE_BOUND_NEEDS_SETTLEMENT: &str = "--require-bound applies to settlement-grade verification only (binding is derived from your trust config).\n  run:  warrant verify --settlement --trust-config <file> --require-bound";
 const NO_SETTLEMENT_FLAGS: &str = "--trust-config/--genesis are used only by settlement-grade verification, and were supplied without --settlement.\n  run:  warrant verify --settlement --trust-config <file>\nWithout --settlement the key<->actor binding is not derived at all, and every signature is reported as unverified binding -- which would have been misleading here, since you did provide a keyring.";
 
 /// Run the CLI over `argv` (without the program name). Returns the exit status.
@@ -584,9 +586,13 @@ fn dispatch(argv: &[String]) -> Result<(), Exit> {
             {
                 return Err(Exit::msg(NO_SETTLEMENT_FLAGS));
             }
+            if a.flag("--require-bound") && !a.flag("--settlement") {
+                return Err(Exit::msg(REQUIRE_BOUND_NEEDS_SETTLEMENT));
+            }
             let settlement = a.flag("--settlement").then_some(Settlement {
                 genesis_roots: genesis,
                 trust_config: trust,
+                require_bound: a.flag("--require-bound"),
             });
             if a.flag("--json") {
                 let (line, ok) = verify_report_line(&store, settlement.as_ref());

@@ -161,7 +161,7 @@ The envelope MUST have exactly the members `body` and `sigs`, and any other memb
 
 ### 5.1. Key state: binding, rotation, thresholds (v0.3)
 
-Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification.
+Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification. **A reader may require the actor's own binding (MAY; WRT-018):** a settlement-grade verifier MAY offer a required-binding option; with it, a record that has no valid signature by `body.actor.id` made with a key bound at that record's DAG position MUST be reported `ERR: no bound signature by body.actor.id`, every other signature keeps its §5 treatment (reported and excluded, never fatal), and a request for the option without a trust configuration MUST be reported as exactly one `ERR` with subject `settlement`. The option is local verification policy, like the re-execution budget: it changes no body, record, report schema or WarrantID.
 
 **Rotation is a warrant:** an `accept` whose subject is the new key blob. A key blob is the JCS-canonical object `{"actor": <string>, "key": <hex64>}` or `{"actor": <string>, "key": <hex64>, "next": <hex64>}`, where `next` is the lowercase-hex SHA-256 of the raw 32-byte public key of the key's successor.
 
@@ -303,7 +303,7 @@ digest is SHA-256 of that manifest:
 
 | artifact | SHA-256 |
 | --- | --- |
-| conformance pack 1.3.0 candidate (`MANIFEST.sha256`) | `0f3fbde33b2f4c26e70d35597764781f68286cd08ea0936c1d902dc6c6c4971f` |
+| conformance pack 1.4.0 candidate (`MANIFEST.sha256`) | `26b6f92b72a5c94d28442673fae34d45d4f2a2b55dd9376e46e4cc30d02e377c` |
 
 Verify with `python3 run.py --verify-pack` and compare against the line above at
 the spec revision you are implementing. Because this document is versioned and

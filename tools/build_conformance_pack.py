@@ -50,10 +50,11 @@ VECTOR_TAG = "warrant.conformance-vectors@v1"
 # Bumped 1.0.0 -> 1.1.0 on 2026-08-01 for the integer-domain vectors, then
 # 1.1.0 -> 1.2.0 for the UTF-16 member-ordering vector, then 1.2.0 -> 1.3.0 for
 # the Ed25519 EDGE vectors (cofactorless vs cofactored, S >= L, non-canonical
-# and small-order R; DeepReview 2026-10-16, R1/R2). A conformance pack whose
+# and small-order R; DeepReview 2026-10-16, R1/R2), then 1.3.0 -> 1.4.0 for the
+# WRT-018 required-binding vectors (`require_bound` input). A conformance pack whose
 # CONTENTS change under a fixed version string is the defect this pack exists to
 # detect: published older assets stay exactly as they are and keep their names.
-PACK_VERSION = "1.3.0"
+PACK_VERSION = "1.4.0"
 
 # Store verification is SPEC §6 — BASE grade. What settlement grade adds is
 # §7/§5.1/§12: ski@v1 re-execution and a trust configuration that must fail
@@ -501,6 +502,36 @@ def build_verify_store_settlement():
     trust.mkdir(parents=True)
     (trust / "malformed.json").write_text("{not json\n")
     (trust / "empty.json").write_text('{"genesis_roots":[]}\n')
+
+    # WRT-018 fixtures. The clean store's records are all filed by
+    # fixture@warrant.example with the SPEC §8 demo key.
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    def raw_pub(sk):
+        return sk.public_key().public_bytes(encoding=serialization.Encoding.Raw,
+                                            format=serialization.PublicFormat.Raw).hex()
+    actor = "fixture@warrant.example"
+    other = Ed25519PrivateKey.from_private_bytes(hashlib.sha256(b"wrt-018 other key").digest())
+    (trust / "fixture-bound.json").write_text(
+        json.dumps({"actors": {actor: [raw_pub(_demo_key())]}}, sort_keys=True) + "\n")
+    (trust / "fixture-other-key.json").write_text(
+        json.dumps({"actors": {actor: [raw_pub(other)]}}, sort_keys=True) + "\n")
+    # The clean store plus one VALID co-signature, by a key no trust config binds,
+    # claiming an unrelated actor, appended to every record (co-signatures sit
+    # outside the WarrantID, so anyone with a copy can do this).
+    clean = VECTORS / "stores" / "clean"
+    junk = VECTORS / "stores" / "junk-cosignature"
+    if junk.exists():
+        shutil.rmtree(junk)
+    shutil.copytree(clean, junk)
+    for rec in sorted((junk / "records").iterdir()):
+        env = json.loads(rec.read_text())
+        wid = rec.stem
+        env["sigs"].append({"actor": "someone-else@warrant.example", "key": raw_pub(other),
+                            "sig": other.sign(b"warrant-sig-v1:" + bytes.fromhex(wid)).hex()})
+        rec.write_text(json.dumps(env, indent=2, sort_keys=True) + "\n")
+    rb = {"grade": "settlement", "require_bound": True}
     out = [
         vec("verify-store/settlement-trust-malformed", "negative", "§12.3",
             "MUST report exactly one ERR: a settlement verification was requested "
@@ -522,6 +553,36 @@ def build_verify_store_settlement():
             {"store_dir": "stores/clean", "grade": "settlement",
              "trust_config": "trust/empty.json"},
             {"errors": 0}),
+        vec("verify-store/settlement-require-bound-actor-unbound", "negative", "§5.1 (WRT-018)",
+            "MUST report exactly one ERR per record: with `require_bound`, a record "
+            "whose own actor signed only with a key the trust config does not bind to "
+            "that actor is an error. Both records here are filed that way. A candidate "
+            "that ignores the option reports zero errors and fails",
+            {"store_dir": "stores/clean", "trust_config": "trust/fixture-other-key.json", **rb},
+            {"errors": 2}),
+        vec("verify-store/settlement-unbound-actor-without-option", "positive", "§5.1",
+            "the same store and trust WITHOUT `require_bound`: bound/unbound is a report, "
+            "so zero errors. A candidate that requires binding by default fails",
+            {"store_dir": "stores/clean", "grade": "settlement",
+             "trust_config": "trust/fixture-other-key.json"},
+            {"errors": 0}),
+        vec("verify-store/settlement-require-bound-actor-bound", "positive", "§5.1 (WRT-018)",
+            "with `require_bound` and the actor's key bound, the clean store verifies "
+            "with zero errors",
+            {"store_dir": "stores/clean", "trust_config": "trust/fixture-bound.json", **rb},
+            {"errors": 0}),
+        vec("verify-store/settlement-require-bound-junk-cosignature", "positive", "§5, §5.1 (WRT-018)",
+            "MUST report zero errors: every record carries, besides its actor's bound "
+            "signature, a valid co-signature by an unbound key claiming another actor. "
+            "`require_bound` concerns the record's own actor only; a co-signature stays "
+            "reported and excluded, never fatal (§5)",
+            {"store_dir": "stores/junk-cosignature", "trust_config": "trust/fixture-bound.json", **rb},
+            {"errors": 0}),
+        vec("verify-store/settlement-require-bound-no-trust", "negative", "§5.1 (WRT-018)",
+            "MUST report exactly one ERR: binding cannot be required without a trust "
+            "configuration to derive it from",
+            {"store_dir": "stores/clean", **rb},
+            {"errors": 1}),
     ]
     return doc("verify-store", "settlement", "fixtures generated for this pack",
                "Settlement grade adds the fail-closed trust surface of SPEC §12.3. "

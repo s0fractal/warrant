@@ -126,6 +126,11 @@ WARN_KEY_CONFLICT = "key-state conflict"
 # invalid is one global ERR with this exact string in BOTH Python and Go — never
 # a silent fail-open (Go previously ignored the read error and returned 0 errors).
 ERR_SETTLEMENT_TRUST = "settlement trust config unavailable"
+# WRT-018 (decided A): the reader may require that each record's own actor signed
+# with a key bound at that record's position. Local verification policy, like the
+# re-execution budget. Without a trust config there is no binding to require.
+ERR_REQUIRE_BOUND_TRUST = "required binding needs a trust config"
+ERR_NOT_BOUND = "no bound signature by body.actor.id"
 # Settlement is the grade a stranger relies on, so it must re-execute ski@v1
 # reasons on the PINNED evaluator this package shipped. A byte-divergent
 # $SIGMA_GLYPH override is not settlement-grade; verify --settlement refuses it
@@ -1910,6 +1915,11 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
             if not quiet:
                 print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
             return _finish()
+        if settlement.get("require_bound") and not trust_path:
+            out("ERR", "settlement", ERR_REQUIRE_BOUND_TRUST)
+            if not quiet:
+                print(f"\nverify: {len(recs) + len(load_errors)} records, {errs} errors, {warns} warnings")
+            return _finish()
     # Trust preflight passed (or base grade): now emit per-record load errors and
     # build the single settlement context over the SAME `recs` snapshot.
     for wid, reason in sorted(load_errors.items()):
@@ -1980,6 +1990,7 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
         if not sigs:
             out("ERR", wid, "no signatures")
         actor_signed = False
+        actor_bound = False
         # body.actor may be type-confused in a schema-invalid record (already
         # ERR'd above); dereference it defensively so a string/scalar `actor`
         # cannot crash the signature loop with a valid co-signature attached
@@ -2045,6 +2056,8 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 # The INFO line is the renderer-dependent part; the WARN is
                 # verification truth and must reach every renderer.
                 if bound:
+                    if body_actor_id is not None and actor == body_actor_id:
+                        actor_bound = True
                     if not quiet:
                         print(f"INFO {wid[:12]}  signature bound: key "
                               f"{str(key)[:12]} claims actor {actor}")
@@ -2055,6 +2068,11 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 actor_signed = True
         if sigs and not actor_signed:
             out("ERR", wid, "no valid signature by body.actor.id")
+        elif sigs and ctx is not None and settlement.get("require_bound") and not actor_bound:
+            # WRT-018: only the record's OWN actor must be bound. Co-signatures keep
+            # §5's treatment (reported and excluded, never fatal), so a junk
+            # co-signature appended by anyone cannot turn this into an ERR.
+            out("ERR", wid, ERR_NOT_BOUND)
         # SPEC totality (Kimi full-audit, 2026-07): the semantic/DAG checks
         # below assume well-*typed* prior/under/evidence/because/subject. A
         # schema-invalid record may type-confuse them (e.g. prior:5, subject:"x")
@@ -2755,7 +2773,8 @@ def probe_answer(req):
         settlement = None
         if inp.get("grade") == "settlement":
             settlement = {"genesis_roots": inp.get("genesis") or [],
-                          "trust_config": inp.get("trust_config_path")}
+                          "trust_config": inp.get("trust_config_path"),
+                          "require_bound": inp.get("require_bound") is True}
         errs, warns = verify_store(store, quiet=True, settlement=settlement)
         return {"errors": errs, "warnings": warns}, None
 
@@ -2934,6 +2953,10 @@ def build_parser():
                     help="trusted genesis root WarrantID; repeatable")
     vf.add_argument("--trust-config",
                     help="local trust JSON: genesis_roots, genesis_json_sha256, actors")
+    vf.add_argument("--require-bound", action="store_true",
+                    help="settlement grade only: a record whose own actor has no "
+                         "signature by a key bound in your trust config is an ERR "
+                         "(WRT-018); co-signatures are unaffected")
     vf.add_argument("--json", action="store_true",
                     help="emit exactly one warrant.verify-report@v0 JSON object "
                          "(no human text); same counts and exit status as text mode")
@@ -3096,9 +3119,14 @@ def main():
                      "at all, and every signature is reported as unverified "
                      "binding -- which would have been misleading here, since you "
                      "did provide a keyring.")
+        if args.require_bound and not args.settlement:
+            sys.exit("--require-bound applies to settlement-grade verification only "
+                     "(binding is derived from your trust config).\n"
+                     "  run:  warrant verify --settlement --trust-config <file> --require-bound")
         if args.settlement:
             settlement = {"genesis_roots": args.genesis,
-                          "trust_config": args.trust_config}
+                          "trust_config": args.trust_config,
+                          "require_bound": args.require_bound}
         if args.json:
             # --json ALWAYS emits exactly one JSON object, even on a preflight
             # failure (verify_report is fail-closed on a missing store) — so the
