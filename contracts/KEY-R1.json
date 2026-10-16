@@ -1,0 +1,24 @@
+{
+  "profile": "warrant.contract.v1",
+  "id": "KEY-R1",
+  "spec": "§5.1",
+  "statement": "**There is no revocation operation (MUST; WRT-017).** A key leaves use only by a rotation to its committed successor. A `supersede` whose subject is a rotation warrant is an ordinary record: verifiers MUST NOT derive key state from it, and the rotated key stays bound. An actor whose committed successor is lost cannot rotate and is terminal; a threshold policy is the recovery path.",
+  "witnesses": [
+    "tests/r13_retired_key_denial.py::case_no_revocation"
+  ],
+  "decisions": [
+    {
+      "date": "2026-10-16",
+      "because": "DeepReview of paper 1.1.0, reproduced: revocation was specified as a supersede of the introducing rotation and implemented nowhere. The owner chose option A of WRT-017: drop it. Under pre-rotation, rotation to the committed successor already retires a key, and a revocation the old key could authorize would reopen the R13 class of attack. Implementing it would add a second key-state operation with its own surface. The cost, stated: an actor whose committed successor is lost is terminal unless a threshold policy rescues it.",
+      "statement_sha256": "737fa8d2fcfc1193b92efb1a8cc7d282254a96e70d3173ec1b8d06a7d64bd3aa",
+      "previous_statement_sha256": null,
+      "counterexample": {
+        "at": "3adccdf",
+        "witness": "tests/r13_retired_key_denial.py (case_revocation_not_implemented, PR #104)",
+        "observed": "after a supersede of the rotation that introduced a_new, a record signed by a_new still reported bound in Python, Go and Rust",
+        "expected": "either revocation takes effect, as SPEC then promised, or SPEC does not promise it"
+      }
+    }
+  ],
+  "annotations": "Unsigned note. The behaviour did not change; the specification did, so that it says what every implementation does."
+}

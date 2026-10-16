@@ -27,6 +27,17 @@ right.
 
 ## Unreleased
 
+- **WRT-017 decided (A): there is no revocation operation.** SPEC §5.1 had
+  specified revocation as a `supersede` of the introducing rotation, and no
+  implementation ever derived key state from it. It is dropped rather than
+  half-kept. A key leaves use only by rotation to its committed successor, a
+  `supersede` of a rotation MUST NOT change key state, and an actor whose
+  successor is lost is terminal unless a threshold policy rescues it. No
+  implementation changes: the specification now says what all three do. New
+  contract KEY-R1 records the decision and its counterexample.
+  `case_no_revocation` (formerly `case_revocation_not_implemented`) now holds
+  the rule instead of a known gap.
+
 - **Paper "The Reason Runs Again" 1.1.0 candidate** (not deposited). It
   answers the 2026-10-16 DeepReview point by point (see the triage in
   `papers/the-reason-runs-again/reviews/`):
