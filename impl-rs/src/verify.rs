@@ -469,7 +469,20 @@ pub fn verify_report(store: &Store, settlement: Option<&Settlement>) -> Json {
 /// Same report and validation pass with explicitly supplied external trust.
 /// `None` requests base grade; an invalid supplied config refuses settlement.
 pub fn verify_report_with_trust(store: &Store, trust: Option<Result<Trust, String>>) -> Json {
-    let settlement = trust.as_ref().map(|_| Settlement::default());
+    verify_report_with_trust_opts(store, trust, false)
+}
+
+/// As [`verify_report_with_trust`], with WRT-018's required-binding option.
+/// `require_bound` takes effect only with supplied trust (settlement grade).
+pub fn verify_report_with_trust_opts(
+    store: &Store,
+    trust: Option<Result<Trust, String>>,
+    require_bound: bool,
+) -> Json {
+    let settlement = trust.as_ref().map(|_| Settlement {
+        require_bound,
+        ..Settlement::default()
+    });
     verify_report_inner(store, settlement.as_ref(), trust.as_ref())
 }
 

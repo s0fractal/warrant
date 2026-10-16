@@ -89,6 +89,17 @@ test("offline package preserves raw bytes, the closed report and explicit trust"
     });
     assert.equal(verifyStore(files, { trust }).warnings, 0);
     assert.equal(verifyStore(files, { trust: "{bad" }).ok, false);
+    // WRT-018: requireBound makes the actor's own unbound key an ERR, and only that.
+    assert.equal(verifyStore(files, { trust, requireBound: true }).errors, 0);
+    const otherKey = JSON.stringify({
+      genesis_roots: [record.slice(8, -5)],
+      actors: { [env.body.actor.id]: ["11".repeat(32)] },
+    });
+    assert.equal(verifyStore(files, { trust: otherKey }).errors, 0);
+    const strict = verifyStore(files, { trust: otherKey, requireBound: true });
+    assert.equal(strict.errors, 1);
+    assert.ok(strict.findings.some((f) => f.message === "no bound signature by body.actor.id"));
+    assert.throws(() => verifyStore(files, { requireBound: true }), /requireBound needs a trust/);
     const edited = structuredClone(env);
     edited.body.subject.note += " changed";
     assert.equal(

@@ -27,6 +27,12 @@ right.
 
 ## Unreleased
 
+## 0.11.0 — the reader can require the actor's own binding
+
+Tooling version 0.11.0 (PyPI `warrant-verify`, npm/JSR `@s0fractal/warrant`, crate `warrant-verify`). SPEC document version unchanged; conformance pack 1.4.0. The protocol-visible change is WRT-018 below (an opt-in verifier option; no body, report schema or WarrantID change).
+
+- **JS/WASM: `verifyStore(files, { trust, requireBound: true })`** exposes WRT-018. It throws without `trust`, as the CLI refuses `--require-bound` without `--settlement`. The core gains `verify_report_with_trust_opts`.
+
 - **[protocol] WRT-018 decided (A): a reader may require the actor's own
   binding.** At settlement grade, bound/unbound is a report (§5.1). An actor
   signing with a key the reader's trust config does not bind therefore
@@ -1009,7 +1015,8 @@ body schema (§2), reasons (§3), JCS canonicalization and WarrantID (§4), the
 envelope and Ed25519 signatures (§5), verification (§6). Python reference
 implementation, five verbs, plain-file store, conformance vectors.
 
-[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/s0fractal/warrant/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/s0fractal/warrant/compare/v0.9.0...v0.10.0
 [0.8.0]: https://github.com/s0fractal/warrant/compare/v0.7.1...v0.8.0
 [0.6.0]: https://github.com/s0fractal/warrant/compare/v0.5.0...v0.6.0

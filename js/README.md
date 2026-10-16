@@ -5,14 +5,14 @@ API. The same package name and version are published to npm and JSR. It includes
 the WASM bytes: no local checkout, CLI, runtime download or native install step.
 
 ```sh
-npm install @s0fractal/warrant@0.10.0
+npm install @s0fractal/warrant@0.11.0
 # or
-deno add jsr:@s0fractal/warrant@0.10.0
+deno add jsr:@s0fractal/warrant@0.11.0
 ```
 
 ```ts
 import { verifyStore, runCheck, recordId } from "@s0fractal/warrant";
-// Deno can also import from "jsr:@s0fractal/warrant@0.10.0".
+// Deno can also import from "jsr:@s0fractal/warrant@0.11.0".
 
 const files = {
   // Preserve the record's original filename and every original byte.
@@ -23,6 +23,8 @@ const report = verifyStore(files);
 console.log(report.ok, report.errors, report.warnings, report.findings);
 // Explicit trust config JSON selects settlement grade:
 const settlement = verifyStore(files, { trust: trustConfigText });
+// WRT-018: also make "the actor's own key is not bound in my trust" an ERR:
+const strict = verifyStore(files, { trust: trustConfigText, requireBound: true });
 // Optional separate re-execution (blobs alone suffice) and identity calculation:
 const result = runCheck(files, checkHash);
 const id = recordId(recordBytes);
