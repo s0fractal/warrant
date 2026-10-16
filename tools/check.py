@@ -93,6 +93,14 @@ CHECKS = [
     # able to rotate; the residual (key + committed successor) is pinned.
     ("WRT-015 pre-rotation: a retired key cannot rotate (PY/GO/RS, R13)",
      ["python3", "tests/r13_retired_key_denial.py"], "rs"),
+    # Contracts: each names a SPEC MUST sentence verbatim, the witnesses that hold
+    # it and the decisions behind it, counterexamples included (method from
+    # sokol-core ADR-0023/0024). History against a base is CI's step; here the
+    # structure, the SPEC binding, the witnesses and the generated CONTRACTS.md.
+    ("contracts: SPEC sentence, witnesses run, decisions chained, CONTRACTS.md generated",
+     ["python3", "tools/contract.py", "check"], None),
+    ("contracts: every predicate refuses its broken copy (11 controls)",
+     ["python3", "tests/contracts.py"], None),
     ("hostile stores (cycles, malformed JSON, unsigned links)",
      ["python3", "tests/hostile.py"], "go"),
     ("evidence packs (demo packs verify; no private keys shipped)",

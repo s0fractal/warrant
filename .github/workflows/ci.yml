@@ -136,6 +136,22 @@ jobs:
       # of this file exists to catch, nearly added by the person catching it.
       - name: Reference map (every cited document is located in MAP.md)
         run: python3 tools/repo_map.py --check-map
+      # Contracts (tools/contract.py): a SPEC MUST sentence, its witnesses, and the
+      # decisions behind it. History is append-only against the base this change
+      # lands on, so the base is fetched here; a check that silently compared a
+      # contract with itself would be the label-wider-than-predicate failure.
+      - name: Contracts hold, and no accepted decision was rewritten
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE=$(git rev-parse HEAD^ 2>/dev/null || echo "")
+          fi
+          git fetch -q --depth=1 origin "$BASE"
+          python3 tools/contract.py check --base "$BASE"
       # The single entry point a reader is told to run. CI runs it too, so the
       # command in llms.txt cannot rot into something only the workflow does --
       # and an UNRUN check fails here rather than passing quietly.

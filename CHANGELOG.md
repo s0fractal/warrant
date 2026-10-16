@@ -27,6 +27,25 @@ right.
 
 ## Unreleased
 
+- **Contracts for SPEC rules (method from sokol-core).** `contracts/<ID>.json`
+  names one SPEC MUST sentence verbatim, the witnesses that hold it (test
+  functions run by `tools/check.py`, or marked vectors), and the decisions
+  behind it. Each decision has its `because`, and a decision made on a
+  counterexample records the commit, the witness, what was observed and what
+  was expected. The red is recorded as evidence; CI is not made to fail to
+  show it (AGENTS.md rule 6). `tools/contract.py check` refuses:
+  - a SPEC edit under a contract, or a statement change without a decision;
+  - a rewritten or dropped decision against the base (CI fetches the base);
+  - a witness that is gone or that no check runs;
+  - a hand-edited `CONTRACTS.md`, which is generated.
+
+  The first three contracts are SIG-E1 (§5 cofactorless equation), KEY-P1
+  (§5.1 pre-rotation) and KEY-C1 (§5.1 conflict and its residual).
+  `tests/contracts.py` gives each predicate a control: 11 broken copies, each
+  refused, and two predicates mutated out turn their controls red. Not yet: an
+  owner signature over contracts and witness bodies (sokol-core's
+  witness-pin). Until then, append-only rests on git.
+
 - **WRT-015 pre-rotation (SPEC §5.1, §12): a retired key can no longer rotate.**
   DeepReview R13, reproduced first: rotation authorization was judged at the
   record's DAG position while key-state conflict is store-wide. One leaked

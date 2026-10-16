@@ -32,6 +32,17 @@ are not style — breaking them corrupts the thing this project exists to protec
    rewriting shared history, publishing) require explicit human authorization
    for the specific action. Approval of one step is not approval of the next.
 
+6. **A counterexample is recorded, not staged as red CI.** When a test shows a
+   rule broken, the test and the fix land in the same change, and CI stays
+   green. The red goes into the record instead: in the rule's contract
+   (`contracts/<ID>.json`, a `decisions[]` entry whose `counterexample` names
+   the commit it was observed on, the witness, what was observed and what was
+   expected), and in the commit message. Show that a new check can fail by
+   mutating what it guards and watching it go red. Changing a contracted SPEC
+   sentence requires a new decision in its contract; accepted decisions are
+   never rewritten (`tools/contract.py`, `CONTRACTS.md`). Method taken from
+   sokol-core (ADR-0023/0024).
+
 The retired autonomy-envelope experiment and the lessons preserved from it are
 indexed in `history/AUTONOMY-ENVELOPE-0.1-RETIREMENT.md`. Its policy is not an
 active source of authority.
