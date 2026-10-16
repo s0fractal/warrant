@@ -754,24 +754,26 @@ Python/Go refinement, evaluator correctness, or authorization; whether
 
 Key management does not get a side channel. A rotation is an `accept`
 warrant whose subject is the new key blob, carrying proof-of-possession by
-the incoming key and authorization under the current key policy; a
-revocation is a `supersede` of the rotation that introduced the key. Key
+the incoming key and authorization under the current key policy. There is no
+revocation operation: a key leaves use only by rotation to its committed
+successor (below). Key
 validity derives from **DAG order, never from wall-clock timestamps** — a
 timestamp is attacker-writable; an ancestry relation among signed records
 is not. Where a threshold policy is configured, an unbound signature
 satisfies nothing, the incoming key's proof-of-possession does not count
 toward its own authorization, and mutually unordered authorized rotations
 for one actor produce a reported conflict during which that actor's key
-counts toward no quorum — a denial rather than a takeover.
+counts toward no quorum where the conflict is visible — a denial rather than a
+takeover, and since version 1.1.0 a local one.
 
 The predicates, stated exactly because the outside review asked for them and
 because stating them exposed an attack. A signature counts for an actor if its
 key is bound to that actor *at the signed record's DAG position*: genesis keys,
 then every authorized rotation among the record's ancestors, in DAG order.
-Authorization is judged at the same position. A conflict is defined over the
-whole store, as authorized rotations for one actor that are maximal and
-mutually unordered. It holds until a later warrant, authorized by the
-unconflicted remainder of the quorum, resolves it. The two scopes did not
+Authorization is judged at the same position. In version 1.0.0 a conflict was
+defined over the whole store, as authorized rotations for one actor that are
+maximal and mutually unordered, held until a later warrant authorized by the
+unconflicted remainder of the quorum resolved it. The two scopes did not
 match, and that was exploitable. Once an actor had rotated `a_old → a_new`, a
 leaked `a_old` could still sign a rotation `a_old → a_fork` at a position where
 `a_old` was current. That rotation was authorized, the actor became conflicted
@@ -800,15 +802,32 @@ takes a compromise of the current key. That is false after two rotations.
 After `a0 → a1 → a2`, the pair `a0` and `a1` are both retired. Their holder
 forks at the root, and because a conflict is store-wide, the records signed by
 the uncompromised current key `a2` report unbound along with everything else.
-This was reproduced in all three implementations before the text changed, and
-a test pins it. Pre-rotation therefore raises the bar from one retired key to
-two consecutive ones, without limiting how far back a conflict reaches. Ordering
-such duplicity needs what KERI gets from its witnesses' first-seen rule, and a
-store that is only a DAG has nothing in that role. Two proposals await a
-decision: scoping a conflict to the records that descend from the fork
-(WRT-016), and revocation. The specification defines revocation as a
-`supersede` of the introducing rotation, but no implementation derives key
-state from it, so a "revoked" key stays bound (WRT-017, reproduced and pinned).
+This was reproduced in all three implementations before the text changed.
+Pre-rotation alone therefore raises the bar from one retired key to two
+consecutive ones, without limiting how far back a conflict reaches.
+
+The scope was the remaining defect, and it is now fixed (WRT-016, decided by
+the owner). An actor is conflicted *at a record* exactly when that record's
+ancestors hold two or more of its authorized rotations that are maximal and
+mutually unordered among them. Only there are its signatures unbound and its
+key excluded from quorums. A record whose ancestry sees one side keeps the key
+state that ancestry gives it. Every conflict is also reported once on the
+store, so a parallel key history is never silent. The two-retired-key fork now
+leaves the current key's records and everything before the fork bound. It
+stays a visible fork: each branch is consistent at its own positions, and
+choosing between them needs what KERI gets from its witnesses' first-seen rule.
+A store that is only a DAG has nothing in that role. Implementing the scope
+found one more gap. The specification had always said that a conflicted actor
+counts toward no quorum, but no implementation enforced it: a 2-of-2 adoption
+still succeeded with one signer conflicted in its own ancestry. All three now
+enforce it, and a test with a mutation control holds that.
+
+Revocation went the other way. The specification defined it as a `supersede`
+of the introducing rotation, and no implementation ever derived key state from
+it, so a "revoked" key stayed bound. The owner chose to drop it rather than
+implement it (WRT-017). A revocation that an old key could authorize would
+reopen the attack pre-rotation closes, and rotation to the committed successor
+already retires a key.
 Pre-rotation also costs liveness, and we say so. An actor whose committed
 successor is lost before the rotation cannot rotate at all. Without a threshold
 policy to rescue it, its current key is terminal.
@@ -818,12 +837,14 @@ store, joined only by explicit adoption records. The specification requires an
 adoption to satisfy the adopting root's current settlement policy, threshold
 included. All three implementations instead check the policies that the
 adoption record itself cites, and its filer chooses those. So a root governed
-by a 2-of-2 threshold can adopt another root on one signature, with zero
-errors and zero warnings. This is disclosed as proposal WRT-014 with
-reproductions and options, and not yet decided. No threshold has ever been
-exercised in this repository's own governance store (Section 8), so it
-compromises nothing here. It is a gap between what the text promises a
-jurisdiction and what any verifier enforces. The store-level `genesis.json` is advisory and must not
+by a 2-of-2 threshold could adopt another root on one signature, with zero
+errors and zero warnings. No threshold had ever been exercised in this
+repository's own governance store (Section 8), so it compromised nothing here,
+but it was a gap between what the text promised a jurisdiction and what any
+verifier enforced. It is now closed (WRT-014, decided by the owner). An
+adoption must also satisfy every threshold policy of each settlement-active
+root it descends from. The rule fails closed: adoptions can only become fewer.
+A test holds it, with a positive control in which both signers adopt. The store-level `genesis.json` is advisory and must not
 be treated as a trust anchor — it is a mutable unsigned file, and the spec
 says so instead of hoping. One consequence recurs throughout the design and
 deserves its own sentence: **every input that could make two verifiers
@@ -1008,7 +1029,7 @@ without its casualty list is advertising:
   silently skipped a `ski@v1` reason with no check, which the specification
   forbids. Both are fixed and pinned across ten encodings of the policy. The
   same investigation found WRT-014 (Section 5.3), which no implementation
-  enforced.
+  enforced until it was decided.
 - An outside automated review asked for the Ed25519 equation to be pinned, and
   checking the request showed the pack could not tell a cofactored verifier
   from the specified one (Section 4). That defect was in the conformance
@@ -1215,12 +1236,11 @@ in its own gate policy belongs to re-runnable evidence rather than to
 signatures, precisely because a stranger can re-run a reproduction and
 cannot re-derive a signature from a shared keyring.
 
-**A jurisdiction's threshold does not bind adoption (WRT-014).** The
-specification says an adopted root must be admitted under the adopting root's
-policy, threshold included. Every implementation checks the policies the
-adoption record cites instead, and its filer chooses those (Section 5.3). Until
-a decision on WRT-014 is implemented, a threshold protects what a root signs,
-not which other roots it admits.
+**A threshold changes nothing until it has been exercised.** WRT-014 now binds
+adoption to the adopting jurisdiction's threshold (Section 5.3), but in this
+repository's own store no threshold has been exercised, and three
+implementations from one author enforcing a rule is weaker evidence than a
+jurisdiction that has used it.
 
 **The store is a directory.** Deletion and censorship are undetected
 beyond dangling references; completeness and availability are non-goals;
@@ -1252,7 +1272,8 @@ ordinary record there.
 parity is now three-way, but all three implementations come from one author
 and one line of models, so agreement among them is weaker evidence than an
 outsider's implementation would be. Multi-root behaviour is vectored only as
-far as root admission, and adoption has the disclosed gap above. The
+far as root admission, and adoption's threshold rule is new and unexercised.
+The
 from-scratch Rust cryptography — written without external crates as a
 deliberate trusted-base-diversification experiment, **not** as a security
 virtue — is differentially and conformance tested, which finds divergences but
@@ -1344,10 +1365,12 @@ request.
 - **Resource fences as local policy** (Section 5.1).
 - **Pre-rotation** (Section 5.3).
 - **Contracts** for specification rules (Section 6).
-- **Key-state gaps from the second review, reproduced and disclosed.** The
-  pre-rotation residual reaches pairs of retired keys, and revocation is
-  specified but not implemented. Both are pinned by tests as current behaviour
-  and proposed for decision (WRT-016, WRT-017; Section 5.3).
+- **Key-state decisions after the second review** (Section 5.3). Conflicts are
+  scoped to the ancestry that contains them (WRT-016), and "no quorum" for a
+  conflicted actor is enforced at last. Revocation is dropped (WRT-017).
+  Adoption meets the adopting jurisdiction's threshold (WRT-014). Each change
+  was reproduced first, made in all three implementations, held by a test with
+  a mutation control, and recorded in a contract.
 
 # Availability
 
