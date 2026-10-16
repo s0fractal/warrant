@@ -253,12 +253,12 @@ correctness beyond it; see [`needs/README.md`](needs/README.md).
 To test another implementation without executing ours:
 
 ```bash
-python3 conformance/run.py --candidate "./your-verifier probe"   # 139 vectors
+python3 conformance/run.py --candidate "./your-verifier probe"   # 144 vectors
 python3 conformance/run.py --candidate "./your-verifier probe" --self-check
 ```
 
-The runner checks the candidate's typed answer. 62
-of the 139 vectors are MUST-REJECT, and the pack reports `base` and `settlement`
+The runner checks the candidate's typed answer. 66
+of the 144 vectors are MUST-REJECT, and the pack reports `base` and `settlement`
 separately. Details and digest verification are in
 [`conformance/README.md`](conformance/README.md).
 

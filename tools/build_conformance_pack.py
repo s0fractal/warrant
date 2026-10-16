@@ -48,10 +48,12 @@ VECTORS = PACK / "vectors"
 PACK_TAG = "warrant.conformance-pack@v1"
 VECTOR_TAG = "warrant.conformance-vectors@v1"
 # Bumped 1.0.0 -> 1.1.0 on 2026-08-01 for the integer-domain vectors, then
-# 1.1.0 -> 1.2.0 for the UTF-16 member-ordering vector. A conformance pack whose
+# 1.1.0 -> 1.2.0 for the UTF-16 member-ordering vector, then 1.2.0 -> 1.3.0 for
+# the Ed25519 EDGE vectors (cofactorless vs cofactored, S >= L, non-canonical
+# and small-order R; DeepReview 2026-10-16, R1/R2). A conformance pack whose
 # CONTENTS change under a fixed version string is the defect this pack exists to
 # detect: published older assets stay exactly as they are and keep their names.
-PACK_VERSION = "1.2.0"
+PACK_VERSION = "1.3.0"
 
 # Store verification is SPEC §6 — BASE grade. What settlement grade adds is
 # §7/§5.1/§12: ski@v1 re-execution and a trust configuration that must fail
@@ -235,10 +237,13 @@ def build_verify_sig():
                        {"warrant_id": SPEC8["propose.warrant.json"], "key": k,
                         "sig": "00" * 64},
                        {"valid": False}))
+    neg_n = sum(1 for v in out if v["polarity"] == "negative")
     return doc("verify-sig", "base",
                "examples/signature-vectors.json + examples/conformance-negatives.json",
-               "24 of the 28 vectors here are MUST-NOT-VERIFY. A verifier that "
-               "returns true unconditionally passes the other four.", out)
+               f"{neg_n} of the {len(out)} vectors here are MUST-NOT-VERIFY. A verifier "
+               f"that returns true unconditionally passes the other {len(out) - neg_n}. "
+               "The EDGE vectors separate the cofactorless rule SPEC §5 pins from a "
+               "cofactored or reducing verifier.", out)
 
 
 # ---------- class: parse (SPEC §4 / RFC 7493 I-JSON) ----------

@@ -3,7 +3,7 @@
   "class": "verify-sig",
   "grade": "base",
   "source": "examples/signature-vectors.json + examples/conformance-negatives.json",
-  "note": "24 of the 28 vectors here are MUST-NOT-VERIFY. A verifier that returns true unconditionally passes the other four.",
+  "note": "28 of the 33 vectors here are MUST-NOT-VERIFY. A verifier that returns true unconditionally passes the other 5. The EDGE vectors separate the cofactorless rule SPEC \u00a75 pins from a cofactored or reducing verifier.",
   "vectors": [
     {
       "id": "verify-sig/accept-00",
@@ -56,6 +56,20 @@
         "warrant_id": "8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0",
         "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
         "sig": "18a77b15ff36ea817be796cfe57dafc87517667d03c999c010cddaacf85fb60509ac24340b696fa7d603acb310d2861883511cd09c6803bae55f5b323fe2fc03"
+      },
+      "expect": {
+        "valid": true
+      }
+    },
+    {
+      "id": "verify-sig/accept-04",
+      "polarity": "positive",
+      "spec": "\u00a78.5",
+      "why": "EDGE: mixed-torsion key A + T8, signature made for that key with [k]T8 = O: the cofactorless equation holds, so it MUST verify (a verifier that rejects every mixed-torsion key fails here)",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "fdb72e2c0dcec867bf7d851663a076405312ef7fe86ccac92ec2cbb7ecee6dc8",
+        "sig": "ffc2028cfa06d7d198fbb382267c0b2387c75f583d4f5e215081fa560a198e358edc59df6b2d38d9653cdeedfd6a6b90327badd8d7c68bfd41ff6ca2f2beb904"
       },
       "expect": {
         "valid": true
@@ -196,6 +210,62 @@
         "warrant_id": "4051f4523cdb1b91a9c1e7392c8bf65497088e3c1f01c6cebfbd688d3deb2e2e",
         "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
         "sig": "03705b1001776fb15e23ea310d54404d957b0f801c3ab49fe57f2d55e72f63c150850ba865222c32c0a6b9ee77b200bd1117a667e40f8368ea46c609a2584a03"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-10",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: EDGE: S >= L: a valid signature with S replaced by S + L (a verifier that reduces S accepts it)",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "bc2206c8a600e5951cfcc97140e03e7dd693740fb154aaa35aeb5cece59a8694c1ef46ccf14400bba065ec99c524656b341aee68b3296a6f2f882584ad84f712"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-11",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: EDGE: small-order R (canonical order-4 point), S = k*a: cofactored verifiers accept, cofactorless ones do not",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "000000000000000000000000000000000000000000000000000000000000000022357e91c95ef4dd97443acb6c4280b86c4d5382d427d4e45e289b003886ac07"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-12",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: EDGE: non-canonical R encoding (y = p, an alias of an order-4 point), S = k*a: a verifier that reduces y mod p and multiplies by the cofactor accepts it",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5",
+        "sig": "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f7f4f8182f91c755d3e6230900866c2b5b6b4666516dc0611f002eb40dc6d9302"
+      },
+      "expect": {
+        "valid": false
+      }
+    },
+    {
+      "id": "verify-sig/reject-13",
+      "polarity": "negative",
+      "spec": "\u00a78.5",
+      "why": "MUST NOT verify: EDGE: mixed-torsion key A + T8, signature made for that key with [k]T8 != O: cofactored verifiers accept, cofactorless ones reject",
+      "input": {
+        "warrant_id": "bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78",
+        "key": "fdb72e2c0dcec867bf7d851663a076405312ef7fe86ccac92ec2cbb7ecee6dc8",
+        "sig": "3073da1a6047e44c42ddddad5c5599ded662f2d7cce1b046fcbf0364cd6d9f24ccd34629c343719b26de5e8ea4291135adea03c0ebd02d445096bdbf2fd35c0f"
       },
       "expect": {
         "valid": false

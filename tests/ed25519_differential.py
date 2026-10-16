@@ -79,7 +79,13 @@ def main():
 
     # MIXED-TORSION keys (A = A0 + T8): the case where an unreduced-k verifier
     # diverges from RFC 8032 (Gemini audit P0-2). RS reduces mod L, so it MUST
-    # agree with Python on these too. (Both reject a signature not made for A.)
+    # agree with Python on these too.
+    # SCOPE, stated plainly: each signature below was made for A0, not for
+    # A0 + T8, so every verifier rejects it and this loop exercises only the
+    # key-decoding path. It never reached the case where cofactorless and
+    # cofactored verifiers actually split (a signature made FOR the mixed key,
+    # with [k]T8 != O). That case is pinned by the §8.5 EDGE vectors from
+    # tools/ed25519_edge.py, which every implementation's `conformance` runs.
     p = 2**255 - 19
     d = (-121665 * pow(121666, p - 2, p)) % p
     I = pow(2, (p - 1) // 4, p)

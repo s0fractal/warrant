@@ -245,6 +245,11 @@ CHECKS = [
     # a pre-v1 store, so "the three agree" is executed rather than assumed.
     ("signature vectors reproduce (SPEC §8.5 warrant-sig-v1 construction)",
      ["python3", "tools/signature_vectors.py"], None),
+    # The EDGE signatures are only worth pinning if each one really separates
+    # the cofactorless rule (SPEC §5) from a cofactored / reducing verifier;
+    # the selftest checks that against both equations, written out in full.
+    ("ed25519 EDGE vectors separate cofactorless from cofactored (DeepReview R1/R2)",
+     ["python3", "tools/ed25519_edge.py"], None),
     ("domain separation (PY/GO/RS agree; pre-v1 store diagnosed and migrated)",
      ["python3", "tests/domain_separation.py"], "go+rs"),
     # The conformance pack (SPEC §8.6): the artifact a third party runs against
