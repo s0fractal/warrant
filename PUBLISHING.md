@@ -137,14 +137,24 @@ ownership-marker requirement that must already be in the published README.
 Python CLI on a PATH that has both). The bare name `warrant` is taken on
 crates.io, as it is on PyPI.
 
-**Status: prepared, never published.** Everything up to the upload runs on every
-release and every manual dispatch: the `crate` job in `publish.yml` packages the
-crate from its listed files only, builds and tests *that package* (not the
-checkout), runs its CLI's conformance and selftest, and dry-runs the upload. The
-`crates-io` job, which uploads, is gated on the repository variable
-`CRATES_IO_TRUSTED_PUBLISHING`, which is not set.
+**Status: live.** Per the crates.io API:
+- **0.9.0** was published by hand by the owner on 2026-10-09; that was the
+  one-time step below.
+- **0.10.0** and **0.11.0** were published by Trusted Publishing from
+  `publish.yml` runs on their release tags (`6fbea13`, `8c1b6e4`). crates.io
+  records the run id and commit of each.
 
-### One-time setup (the owner, on the web and once at a terminal)
+The repository variable `CRATES_IO_TRUSTED_PUBLISHING` is `true`. Every release
+and every manual dispatch also runs the `crate` job: it packages the crate from
+its listed files only, builds and tests *that package* (not the checkout), runs
+its CLI's conformance and selftest, and dry-runs the upload. The `crates-io` job
+then uploads on a release.
+
+This section said "prepared, never published" until after 0.11.0 shipped. The
+document trailed the registry by three versions. Ask the registry
+(`https://crates.io/api/v1/crates/warrant-verify/versions`), not this file.
+
+### One-time setup (done; kept for re-establishing the publisher)
 
 crates.io Trusted Publishing is configured on an *existing* crate, so the first
 version goes up by hand:
