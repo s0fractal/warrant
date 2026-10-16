@@ -27,6 +27,11 @@ right.
 
 ## Unreleased
 
+- **Paper 1.1.0 candidate states the key-state decisions.** §5.3, §8 and §10
+  now describe WRT-014, WRT-016 and WRT-017 as decided and implemented, with
+  the "no quorum" gap found and closed along the way, rather than as open
+  proposals. The triage of the second review records the decisions.
+
 - **WRT-014 decided (A): an adoption satisfies the adopting jurisdiction's
   threshold.** SPEC §9 always asked for "the adopting root's current
   settlement policy, including any threshold rule". All three
