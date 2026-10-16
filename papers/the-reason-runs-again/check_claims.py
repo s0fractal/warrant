@@ -19,6 +19,13 @@ at its own candidate commit. A commit missing from a shallow clone is fetched
 once from `origin` by SHA; if it still is not there, that is a failure, not a
 skip.
 
+`--deposited COMMIT` is `--ref COMMIT` with the paper itself, and the papers/
+index its word count is read from, taken from COMMIT as well. It exists because
+a newer version is now written in the working tree (1.1.0): the deposited 1.0.0
+no longer lives there, and its numbers must still be true at its own commit.
+Without options the working-tree paper is measured against the working tree,
+which is the binding a candidate has until its deposit gives it a commit.
+
 In `--ref` mode the paper's SOURCE IDENTITY is checked too: `paper.md`,
 `references.bib` and `build.sh` in this directory must be byte-identical to
 the same files at the commit. The count check alone is a census of selected
@@ -46,32 +53,73 @@ REPO = HERE.parent.parent
 # else should ever set it, and the repository tree is never the thing mutated.
 PAPER_DIR = Path(os.environ.get("CHECK_CLAIMS_PAPER_DIR", str(HERE)))
 SOURCE_FILES = ("paper.md", "references.bib", "build.sh")
+
+
+def _deposited_dir(commit):
+    """`--deposited COMMIT`: the paper AND its papers/ index as they were at COMMIT.
+
+    Once a newer version is being written in the working tree, the deposited
+    version's text no longer lives there; its numbers must still be true at its
+    own commit. So the deposited paper is read from the commit itself, and
+    measured against the same commit (`--ref`).
+    """
+    repo = HERE.parent.parent
+    def git(*a, **k):
+        return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, **k)
+    if git("cat-file", "-e", f"{commit}^{{commit}}").returncode != 0:
+        git("fetch", "--depth=1", "origin", commit)
+    tmp = tempfile.mkdtemp(prefix="check_claims-deposited-")
+    rel = HERE.relative_to(repo).parent
+    tar = tarfile.open(fileobj=io.BytesIO(
+        git("archive", "--format=tar", commit, str(rel), check=True).stdout))
+    kw = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+    tar.extractall(tmp, **kw)
+    return Path(tmp) / HERE.relative_to(repo)
+
+
+if "--deposited" in sys.argv:
+    _i = sys.argv.index("--deposited")
+    _commit = sys.argv[_i + 1]
+    PAPER_DIR = _deposited_dir(_commit)
+    sys.argv[_i:_i + 2] = ["--ref", _commit]
+
 PAPER = (PAPER_DIR / "paper.md").read_text(encoding="utf-8")
 
 _ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 _ap.add_argument("--ref", metavar="COMMIT",
                  help="measure the repository at this git commit, not the working tree; "
                       "also require paper.md/references.bib/build.sh to equal that commit's")
+_ap.add_argument("--deposited", metavar="COMMIT", dest="_deposited_unused",
+                 help="check a deposited version: its own paper.md and papers/README.md "
+                      "read from COMMIT, measured at COMMIT (implies --ref COMMIT)")
 _ap.add_argument("--selftest", metavar="COMMIT",
                  help="prove the --ref refusals fire against this commit, on mutated copies")
 ARGS = _ap.parse_args()
 
 
 def _selftest(ref):
+    """The deposited version's binding refuses a retitled and a miscounted copy.
+
+    The copies are made from the paper AS DEPOSITED at `ref` (not from the
+    working tree, which may already hold a newer version), together with the
+    papers/ index the word count is read from.
+    """
     me = Path(__file__).resolve()
-    def run(paper_dir=None):
+    deposited = _deposited_dir(ref)
+
+    def run(paper_dir):
         env = dict(os.environ)
-        if paper_dir:
-            env["CHECK_CLAIMS_PAPER_DIR"] = str(paper_dir)
+        env["CHECK_CLAIMS_PAPER_DIR"] = str(paper_dir)
         return subprocess.run([sys.executable, str(me), "--ref", ref],
                               capture_output=True, text=True, env=env)
-    base = run()
-    ok = [("baseline: the real paper passes at the deposit commit", base.returncode == 0)]
+    base = run(deposited)
+    ok = [("baseline: the deposited paper passes at its deposit commit", base.returncode == 0)]
     with tempfile.TemporaryDirectory(prefix="check_claims-selftest-") as tmp:
         rel = Path(tmp) / "papers" / "x"
         rel.mkdir(parents=True)
         for f in SOURCE_FILES:
-            shutil.copy(HERE / f, rel / f)
+            shutil.copy(deposited / f, rel / f)
+        shutil.copy(deposited.parent / "README.md", rel.parent / "README.md")
         text = (rel / "paper.md").read_text(encoding="utf-8")
         (rel / "paper.md").write_text(text.replace("The Reason Runs Again",
                                                     "The Fiction Runs Again", 1), encoding="utf-8")
@@ -171,6 +219,35 @@ pack_canon = json.loads(
 claim(r"its (\d+) canonicalization vectors", len(pack_canon["vectors"]),
       "pack canon vectors")
 
+# --- the pack's per-class table (DeepReview R17: a breakdown that sums).
+#     Every row of the table in §6 must equal its vector file: total, MUST-REJECT
+#     count and grade; and every class file must have a row.
+_rows = re.findall(r"^\|\s*`([a-z-]+)`\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(base|settlement)\s*\|",
+                   PAPER, re.M)
+_files = {f.stem: f for f in (REPO / "conformance" / "vectors").glob("*.json") if f.name != "index.json"}
+if not _rows and "By class:" not in PAPER:
+    checked.append("pack class table: absent from this paper version (added in 1.1.0)")
+elif not _rows:
+    failures.append("pack class table: 'By class:' is present but no row parses")
+else:
+    for cls, n, neg_n, grade in _rows:
+        f = _files.get(cls)
+        if f is None:
+            failures.append(f"pack class table: {cls} has no vector file")
+            continue
+        d = json.loads(f.read_text(encoding="utf-8"))
+        vs = d.get("vectors") or d.get("cases") or []
+        real = (len(vs), sum(1 for v in vs if v.get("polarity") == "negative"), d.get("grade"))
+        if (int(n), int(neg_n), grade) != real:
+            failures.append(f"pack class table: {cls} says {(int(n), int(neg_n), grade)}, "
+                            f"repository measures {real}")
+    _before = len(failures)
+    missing = set(_files) - {r[0] for r in _rows}
+    if missing:
+        failures.append(f"pack class table: no row for {sorted(missing)}")
+    if len(failures) == _before and not any(f.startswith("pack class table") for f in failures):
+        checked.append(f"pack class table: {len(_rows)} classes, each equal to its file")
+
 # --- canonicalization battery (examples/canon-vectors.json)
 canon = json.loads((REPO / "examples" / "canon-vectors.json").read_text(encoding="utf-8"))
 claim(r"a (\d+)-case canonicalization battery", len(canon["cases"]), "canon battery")
@@ -262,7 +339,7 @@ else:
     checked.append("default ATP budget: 100,000,000 (SPEC 3.1)")
 
 # --- the word count the papers/ index states for this paper
-index = (HERE.parent / "README.md").read_text(encoding="utf-8")
+index = (PAPER_DIR.parent / "README.md").read_text(encoding="utf-8")
 m = re.search(r"the-reason-runs-again/\)\s*\|\s*([\d\s ]+?)\s*\|", index)
 words_actual = len(re.findall(r"\S+", PAPER.split("---", 2)[2]))
 if m:
@@ -286,7 +363,7 @@ for line in checked:
 # 2026-08-27: the old final line "all countable claims verified" overstated,
 # so the summary now reports verified AND unchecked, and never claims "all".
 UNCHECKED = [
-    '"43/43" canon differential and "472 cases incl. 20 mixed-torsion": '
+    '"43/43" canon differential and "472 cases": '
     "measurements of harness RUNS (ARCHITECT.md progress log). Recomputing "
     "means running the harnesses — python3 tools/check.py does; this script "
     "must not half-do it.",
