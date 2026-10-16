@@ -96,8 +96,10 @@ of the answer, because nothing in the system was built to make that question
 answerable. The operator's logs were the operator's logs. We flag at the
 outset a distinction we develop in Section 5.5: pinning *which policy a record
 claims governed a decision* is within a self-contained store's reach; proving
-which policy was in force *at a past instant* is not, and needs an external
-time witness. This paper is honest about which half each mechanism buys.
+which policy was in force *at a past instant* is not. It needs an external
+witness of time and registration, *and* a rule for what made a policy active,
+which no witness supplies. This paper is honest about which part each
+mechanism buys.
 
 That situation is the default. The observability stack that has grown around
 deployed language-model agents — transcript stores, tracing frameworks,
@@ -292,8 +294,18 @@ object: a decision *receipt* whose computation is pinned by content address
 inside a durable, signed DAG, and whose budget bounds metered work and
 materialized state by construction. It shares the same open problem, too: none
 of these establishes that the evaluated program is the policy the decision
-claims (Section 1.2). We name the comparison here and leave the
-requirement-by-requirement study as work the paper does not yet do.
+claims (Section 1.2). An outside review asked for the difference to be shown
+rather than named. The table states, for one disputed decision, what each
+approach hands a third party. Its rows describe the other systems from their
+documentation, not from experiments here, and an end-to-end comparison on one
+concrete case remains work the paper does not yet do.
+
+| | Warrant store | OPA decision log + signed bundle | in-toto attestation + transparency log |
+| --- | --- | --- | --- |
+| what the third party needs | the records and blobs; a trust configuration to bind keys to actors | the log entry, the bundle at the logged revision, the logged input, a compatible OPA | the signed statement, the signer's certificate or key, an inclusion proof |
+| what it re-executes | a `ski@v1` reason, offline, bounded by its budget | the policy query, if the input was logged unmasked and the bundle and engine version are at hand | nothing by default; a verification-result predicate names a policy by digest |
+| what tampering it detects | any change to a body, a cited policy, evidence or check; a signature that does not verify; a reason that does not reproduce its result | a changed bundle (by its signature); a recorded result that the re-run disagrees with | a changed statement; a statement absent from the log |
+| what it still assumes | key-to-actor binding is local; no historicity without an outside witness; the result is not bound to the decision (NG-7) | the log's integrity unless it is exported elsewhere; that the engine version reproduces the old semantics | the issuer's identity infrastructure; log honesty under monitoring |
 
 **Key event logs.** KERI [@smith2019keri] derives key state from a hash-chained
 log of key events rather than from wall-clock time, as Warrant's key governance
@@ -495,7 +507,14 @@ cleanly disjoint — exactly one verifies, never both — and a verifier that
 *recognizes* a legacy signature must say so in a pinned diagnostic string
 while still rejecting it. Re-signing rewrites only the envelope: the
 WarrantID is the hash of the body, the envelope is outside the hash, so no
-identity moves, no `prior` edge breaks, and nothing needs re-anchoring.
+identity moves, no `prior` edge breaks, and an anchor of the bodies stays
+valid. The same fact cuts the other way, and an outside review showed it. The
+repository's anchoring tool commits to WarrantIDs only, so adding a valid
+signature to an anchored record changes the envelope and leaves the anchor's
+Merkle root, and every old inclusion proof, unchanged. An anchor therefore
+proves which bodies existed, never which signatures did. Evidence that a
+particular set of signatures existed at a time needs a commitment to the
+envelope, which the tool does not make today.
 
 **Acceptance is pinned, equation included.** A verifier accepts a signature
 exactly when $[S]B = R + [k]A$, with $k = \mathrm{SHA\text{-}512}(R \,\|\, A
@@ -902,18 +921,35 @@ self-contained:
 - **Self-contained integrity and replay** — provided by a Warrant store
   alone: the records say what they say, the keys signed them, the `ski@v1`
   reasons re-execute.
-- **Historical existence and non-equivocation** — provided *only* when records
-  or periodic checkpoints carry independently verifiable external receipts: a
-  transparency-log inclusion (SCITT [@scitt2026] is designed for exactly this),
-  an OpenTimestamps anchor, or an archive snapshot, made *before* the dispute.
+- **Historical evidence** — provided *only* by something outside the store,
+  made *before* the dispute. It has to be separated into four properties,
+  because no single mechanism supplies all of them, and earlier versions of
+  this section ran them together:
+  - *existence before T*: these bytes existed by time T. An OpenTimestamps
+    anchor or an archive snapshot gives this, and nothing more.
+  - *registration*: these bytes were entered into a particular log by T, at a
+    position in its order. A transparency-log inclusion gives this. Registration
+    order is not issuance order (SCITT [@scitt2026] says so itself).
+  - *non-equivocation*: the log showed every observer the same history.
+    Consistency proofs and monitoring give this. It does not stop an issuer
+    from registering two contradictory statements, each one consistently.
+  - *authoritative activation*: this policy, and not another, was the one in
+    force at T. No timestamp or receipt gives this. An operator can timestamp
+    two contradictory policies in advance and later show whichever suits.
+    Activation needs a rule that defines it — for example, the latest activation
+    record registered in one designated non-equivocating log governs — and a
+    reader who accepts that rule.
 
-The composition is the honest answer to the Air Canada question. A bare
+The composition narrows the Air Canada question; it does not close it. A bare
 Warrant store demonstrates a record that *would have been* useful if honestly
-created at the time; a Warrant store plus a pre-dispute transparency receipt
-demonstrates a record that can *prove it existed* at the time. Those are
-different evidentiary products, and only the second closes the motivating
-scenario — which is why anchoring belongs in the system model here, not only
-in the residuals.
+created at the time. A store plus a pre-dispute timestamp shows that the
+record's bytes existed then. A registration in a non-equivocating log shows it
+was entered there and that the log did not fork. Which policy was *in force*
+still rests on an activation rule outside all three. Those are different
+evidentiary products, which is why anchoring belongs in the system model here,
+and why its limits do too. One more limit belongs here. This repository's
+anchoring tool commits to WarrantIDs, i.e. to record bodies only, so an anchor
+says nothing about which *signatures* existed when it was made (Section 4).
 
 # 6. Conformance without trusting us
 
@@ -1260,8 +1296,10 @@ but nothing, then, establishes *when a signature was produced*. An attacker
 who compromises a formerly valid key can sign today into a DAG position
 where that key was bound, and because envelopes are appendable, a fresh
 co-signature on an old record is not detectable as fresh from the store
-alone. The mitigation is external checkpointing — transparency-log
-anchoring, archive snapshots — made *before* the compromise; the review of
+alone. The mitigation is external checkpointing of the *envelopes* — not just
+the bodies — made *before* the compromise. The repository's anchoring tool does
+not do that yet: it commits to WarrantIDs only (Section 4), so as built it cannot
+date a co-signature; the review of
 this paper surfaced that the project's anchoring tooling is therefore part
 of its security argument, not merely its archival one — a row the threat
 model has since gained (SA-12). Since version 1.1.0 such a key can no longer
