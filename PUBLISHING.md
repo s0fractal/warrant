@@ -191,13 +191,40 @@ twine upload dist/*                    # needs your PyPI token in ~/.pypirc
 ## JavaScript: npm and JSR
 
 `js/` publishes `@s0fractal/warrant` to both registries. Its package version
-matches the Rust core version. Build from a clean canonical commit with
-`python3 js/build.py`; inspect the generated source identity and WASM digest.
-Run `npm --prefix js test` (requires a release-built native Rust CLI),
-`cd js && npm pack --dry-run` and `deno publish --dry-run`. Then publish from
-that same `js/` directory using `npm publish --access public` and
-`deno publish`. Both CLIs support browser authentication. A browser login alone
-does not authenticate the npm CLI.
+matches the Rust core version. From the release after 0.10.0, the GitHub Release that
+publishes PyPI and crates.io publishes it, by OIDC with no stored token
+(`.github/workflows/publish.yml`, jobs `js`, `npm`, `jsr`):
+
+- `js` builds the package once from the release commit, runs `npm --prefix js
+  test` and `deno publish --dry-run`, and refuses unless `js/package.json`,
+  `js/jsr.json`, the crate and the tag agree and `node js/verify-build.mjs`
+  confirms a clean tree at that commit and an embedded WASM equal to
+  `build.json`. The digest goes to the job summary.
+- `npm` and `jsr` publish those same staged bytes without checking out the
+  repository. One build for both matters: the WASM is not reproducible across
+  build locations, so two builds would ship two binaries under one version.
+
+### One-time setup (the owner)
+
+- **npm:** on npmjs.com, package `@s0fractal/warrant` → Settings → Trusted
+  publisher → GitHub Actions: `s0fractal` / `warrant` / workflow `publish.yml` /
+  environment `npm`. Create the GitHub Environment `npm`. Then set the
+  repository variable `NPM_TRUSTED_PUBLISHING` to `true`.
+- **JSR:** on jsr.io, `@s0fractal/warrant` → Settings → GitHub repository:
+  link `s0fractal/warrant`. Then set the repository variable
+  `JSR_TRUSTED_PUBLISHING` to `true`.
+
+Until a variable is `true` its job is skipped; `js` still builds and tests on
+every release and manual dispatch, so the package cannot rot unpublished.
+
+### Manual fallback
+
+Build from a clean canonical commit with `python3 js/build.py`; inspect the
+generated source identity and WASM digest. Run `npm --prefix js test` (requires
+a release-built native Rust CLI), `cd js && npm pack --dry-run` and `deno
+publish --dry-run`. Then publish from that same `js/` directory using `npm
+publish --access public` and `deno publish`. Both CLIs support browser
+authentication. A browser login alone does not authenticate the npm CLI.
 
 The initial JavaScript publication uses a later source commit than the existing
 `v0.10.0` Python/Cargo tag: the WASM adapter was added after that tag. The

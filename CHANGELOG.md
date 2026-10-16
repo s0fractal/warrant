@@ -27,6 +27,13 @@ right.
 
 ## Unreleased
 
+- **`@s0fractal/warrant` publishes from the release workflow.** `publish.yml`
+  gains `js` (build once, test, gate on versions, clean tree and embedded WASM
+  digest via `js/verify-build.mjs`) and `npm` / `jsr`, which publish those same
+  bytes by OIDC — npm in environment `npm`, JSR from the linked repository, each
+  behind a repository variable until its registry trusts the workflow. 0.10.0
+  was published by hand from 0ec3b73.
+
 - **WASM builds no longer carry the builder's paths.** `web/build.py` remaps the
   checkout and the cargo registry (`--remap-path-prefix` → `/warrant`, `/cargo`);
   the binary embedded 18 copies of the checkout path and the builder's home
