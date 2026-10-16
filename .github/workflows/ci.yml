@@ -147,10 +147,15 @@ jobs:
           else
             BASE="${{ github.event.before }}"
           fi
+          # A new branch's first push has no `before` (all zeros): compare with
+          # master, which is what the branch will land on.
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            BASE=$(git rev-parse HEAD^ 2>/dev/null || echo "")
+            git fetch -q --depth=1 origin master
+            BASE=$(git rev-parse FETCH_HEAD)
+          else
+            git fetch -q --depth=1 origin "$BASE"
           fi
-          git fetch -q --depth=1 origin "$BASE"
+          echo "contracts history base: $BASE"
           python3 tools/contract.py check --base "$BASE"
       # The single entry point a reader is told to run. CI runs it too, so the
       # command in llms.txt cannot rot into something only the workflow does --

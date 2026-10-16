@@ -46,7 +46,9 @@ FIELDS = {"profile", "id", "spec", "statement", "witnesses", "decisions", "annot
 DECISION_FIELDS = {"date", "because", "statement_sha256", "previous_statement_sha256",
                    "counterexample"}
 CX_FIELDS = {"at", "witness", "observed", "expected"}
-ID_RE = re.compile(r"^[A-Z]{2,8}-[A-Z][0-9]+$")
+ID_RE = re.compile(r"^[A-Z]{2,8}-[A-Z]\d+$")
+# A git revision as this tool accepts it: no option-looking or shell-shaped input.
+REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/~^-]{0,199}$")
 
 
 def sha(text):
@@ -95,58 +97,63 @@ def witness_problem(root, w, executed):
     return None
 
 
+def decision_problems(c):
+    """The decision chain: reasons, dates, links, and the statement it ends on."""
+    out = []
+    prev = None
+    for i, d in enumerate(c["decisions"]):
+        if not isinstance(d, dict) or set(d) - DECISION_FIELDS or \
+                {"date", "because", "statement_sha256", "previous_statement_sha256"} - set(d):
+            out.append(f"decision {i}: fields must be {sorted(DECISION_FIELDS)}")
+            continue
+        if not (isinstance(d["because"], str) and d["because"].strip()):
+            out.append(f"decision {i}: a decision without a reason")
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(d["date"])):
+            out.append(f"decision {i}: date must be YYYY-MM-DD")
+        if d["previous_statement_sha256"] != prev:
+            out.append(f"decision {i}: previous_statement_sha256 must be the statement "
+                       f"the decision before it established ({prev})")
+        cx = d.get("counterexample")
+        if cx is not None and (not isinstance(cx, dict) or set(cx) != CX_FIELDS
+                               or not all(isinstance(cx[k], str) and cx[k] for k in CX_FIELDS)):
+            out.append(f"decision {i}: counterexample must name {sorted(CX_FIELDS)}")
+        prev = d["statement_sha256"]
+    if prev != sha(c["statement"]):
+        out.append("the statement changed without a decision that establishes it "
+                   "(the last decision's statement_sha256 is not the statement's hash)")
+    return out
+
+
+def contract_problems(root, cid, c, spec, executed):
+    """Every predicate on one contract except history."""
+    required = {"profile", "id", "spec", "statement", "witnesses", "decisions"}
+    if set(c) - FIELDS or required - set(c):
+        return [f"fields must be {sorted(FIELDS)} (annotations optional)"]
+    out = []
+    if c["profile"] != PROFILE:
+        out.append(f"profile must be {PROFILE}")
+    if c["id"] != cid or not ID_RE.match(cid):
+        out.append("id must match the file name and the form AAA-X1")
+    if not isinstance(c["statement"], str) or c["statement"] not in spec:
+        out.append("statement is not a verbatim sentence of SPEC.md")
+    if not (isinstance(c["witnesses"], list) and c["witnesses"]):
+        out.append("witnesses must be a nonempty list")
+    else:
+        out += [f"witness {w}: {why}" for w in c["witnesses"]
+                for why in [witness_problem(root, w, executed)] if why]
+    if not (isinstance(c["decisions"], list) and c["decisions"]):
+        return out + ["decisions must be a nonempty list"]
+    return out + decision_problems(c)
+
+
 def problems(root, contracts):
     """Every predicate except history. A list of (contract id, message)."""
-    out = []
     spec = (root / "SPEC.md").read_text(encoding="utf-8")
     executed = checked_files(root)
-    for cid, c in contracts.items():
-        def bad(msg):
-            out.append((cid, msg))
-        if set(c) - FIELDS or {"profile", "id", "spec", "statement", "witnesses", "decisions"} - set(c):
-            bad(f"fields must be {sorted(FIELDS)} (annotations optional)")
-            continue
-        if c["profile"] != PROFILE:
-            bad(f"profile must be {PROFILE}")
-        if c["id"] != cid or not ID_RE.match(cid):
-            bad("id must match the file name and the form AAA-X1")
-        if not isinstance(c["statement"], str) or c["statement"] not in spec:
-            bad("statement is not a verbatim sentence of SPEC.md")
-        if not (isinstance(c["witnesses"], list) and c["witnesses"]):
-            bad("witnesses must be a nonempty list")
-        else:
-            for w in c["witnesses"]:
-                why = witness_problem(root, w, executed)
-                if why:
-                    bad(f"witness {w}: {why}")
-        ds = c["decisions"]
-        if not (isinstance(ds, list) and ds):
-            bad("decisions must be a nonempty list")
-            continue
-        prev = None
-        for i, d in enumerate(ds):
-            if not isinstance(d, dict) or set(d) - DECISION_FIELDS or \
-                    {"date", "because", "statement_sha256", "previous_statement_sha256"} - set(d):
-                bad(f"decision {i}: fields must be {sorted(DECISION_FIELDS)}")
-                continue
-            if not (isinstance(d["because"], str) and d["because"].strip()):
-                bad(f"decision {i}: a decision without a reason")
-            if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(d["date"])):
-                bad(f"decision {i}: date must be YYYY-MM-DD")
-            if d["previous_statement_sha256"] != prev:
-                bad(f"decision {i}: previous_statement_sha256 must be the statement "
-                    f"the decision before it established ({prev})")
-            cx = d.get("counterexample")
-            if cx is not None and (not isinstance(cx, dict) or set(cx) != CX_FIELDS
-                                   or not all(isinstance(cx[k], str) and cx[k] for k in CX_FIELDS)):
-                bad(f"decision {i}: counterexample must name {sorted(CX_FIELDS)}")
-            prev = d["statement_sha256"]
-        if prev != sha(c["statement"]):
-            bad("the statement changed without a decision that establishes it "
-                "(the last decision's statement_sha256 is not the statement's hash)")
-    rendered = render(contracts)
+    out = [(cid, msg) for cid, c in contracts.items()
+           for msg in contract_problems(root, cid, c, spec, executed)]
     doc = root / DOC
-    if not doc.is_file() or doc.read_text(encoding="utf-8") != rendered:
+    if not doc.is_file() or doc.read_text(encoding="utf-8") != render(contracts):
         out.append(("*", f"{DOC} is not what the contracts render (python3 tools/contract.py render)"))
     return out
 
@@ -154,6 +161,8 @@ def problems(root, contracts):
 def history_problems(root, contracts, base):
     """Append-only against `base`: no contract vanishes, no decision is rewritten."""
     out = []
+    if not REF_RE.match(base):
+        return [("*", f"refusing base {base!r}: not a plain git revision")]
     r = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "--name-only", base, CONTRACTS + "/"],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -180,7 +189,7 @@ def render(contracts):
              "| ID | SPEC | Statement | Witnesses | Decisions |", "|---|---|---|---|---|"]
     for cid, c in sorted(contracts.items()):
         st = c.get("statement", "")
-        short = re.sub(r"\*\*", "", st.split(". ")[0])[:110].replace("|", "\\|")
+        short = st.split(". ")[0].replace("**", "")[:110].replace("|", "\\|")
         ws = "<br>".join(f"`{w}`" for w in c.get("witnesses", []))
         lines.append(f"| {cid} | {c.get('spec', '')} | {short}… | {ws} | {len(c.get('decisions', []))} |")
     lines += ["", "## Decisions", ""]
