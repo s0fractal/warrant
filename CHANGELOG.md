@@ -1,5 +1,6 @@
 # Changelog
 
+
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 **tooling** version (the `warrant-verify` package and the `warrant` /
@@ -25,6 +26,28 @@ emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
 ## Unreleased
+
+- **`@s0fractal/warrant` for npm and JSR: the Rust verifier as an offline,
+  typed JavaScript package.** Built from the same Rust/WASM adapter as the
+  browser lab (`impl-wasm`, `web/build.py`), with the WASM bytes embedded so
+  an import never fetches anything and needs no CLI, checkout or install
+  script. `verifyStore` returns the existing `warrant.verify-report@v0`;
+  `runCheck` re-executes `ski@v1` (never `cmd@v1`); admission refusals and
+  engine traps throw instead of becoming a report. It carries the WASM
+  resource profile in every host — notably a **1,000,000 declared-ATP cap
+  per check** against the native CLI's 100,000,000 — and the tests pin that
+  divergence: at the boundary (inclusive cap, native passes above it while the
+  package refuses), at depth (a 1,500-deep spine passes natively and either
+  completes or traps in a disposable worker, never a fabricated result), and in
+  the native `StoreCas`/`BlobCas` adapters (missing file, directory, symlink,
+  dangling symlink, wrong bytes behave identically). `runCheck` — and the WASM
+  `run_check` beneath it — no longer demands a `records/*.json` file: a check
+  needs blobs only, as native `warrant check` always did (the browser lab keeps
+  its own "select a record" guard). The deepest stored term the 2,048-file limit
+  admits (2,046 nodes) completes in WASM as natively; the packed tarball is
+  installed offline into an empty project by `js/test/installed.test.mjs`; CI
+  also dry-runs the JSR publication. Self-tests and package QA, not an
+  independent governance gate. No protocol surface moved.
 
 - **Telemetry correlation: warrant beside OpenTelemetry, joined by
   `tool_use_id`.** `docs/telemetry-correlation.md` synthesises two external

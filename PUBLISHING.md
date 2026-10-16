@@ -187,3 +187,22 @@ and `tests/rs_parity.py` (byte-identical output against the Python reference).
 python3 -m build && twine check dist/*
 twine upload dist/*                    # needs your PyPI token in ~/.pypirc
 ```
+
+## JavaScript: npm and JSR
+
+`js/` publishes `@s0fractal/warrant` to both registries. Its package version
+matches the Rust core version. Build from a clean canonical commit with
+`python3 js/build.py`; inspect the generated source identity and WASM digest.
+Run `npm --prefix js test` (requires a release-built native Rust CLI),
+`cd js && npm pack --dry-run` and `deno publish --dry-run`. Then publish from
+that same `js/` directory using `npm publish --access public` and
+`deno publish`. Both CLIs support browser authentication. A browser login alone
+does not authenticate the npm CLI.
+
+The initial JavaScript publication uses a later source commit than the existing
+`v0.10.0` Python/Cargo tag: the WASM adapter was added after that tag. The
+package's build metadata records its actual source; the old tag is never moved.
+Future tooling version bumps must include `js/package.json` and `js/jsr.json`.
+Neither registry publication grants governance adoption. Download/install both
+public packages into a fresh project, verify the embedded WASM digest and run
+a specimen before reporting publication complete.

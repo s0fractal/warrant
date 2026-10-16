@@ -19,7 +19,10 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, JsValue> {
     hash::fromhex(s).ok_or_else(|| error("Invalid file bytes"))
 }
 
-fn read_store(input: &str) -> Result<Store, JsValue> {
+/// `require_records`: verification needs a record to verify; re-running a
+/// check does not (native `warrant check` reads blobs only), so it may pass
+/// blobs alone.
+fn read_store(input: &str, require_records: bool) -> Result<Store, JsValue> {
     // The transport is not a Warrant format. Raw file bytes are never parsed
     // and re-serialized by JS before the actual verifier reads them.
     if input.len() > MAX_BYTES * 2 + 512 * 1024 {
@@ -58,7 +61,7 @@ fn read_store(input: &str) -> Result<Store, JsValue> {
         }
         loaded.insert(path.clone(), bytes);
     }
-    if records == 0 {
+    if require_records && records == 0 {
         return Err(error("Select at least one records/*.json file"));
     }
     Ok(Store::from_memory(loaded))
@@ -69,7 +72,7 @@ pub fn verify_store(input: &str, trust_config: Option<String>) -> Result<String,
     if trust_config.as_ref().is_some_and(|t| t.len() > 256 * 1024) {
         return Err(error("Trust configuration exceeds 256 KiB"));
     }
-    let store = read_store(input)?;
+    let store = read_store(input, true)?;
     let trust = trust_config.map(|text| {
         json::parse_ijson(text.as_bytes())
             .map_err(|e| e.to_string())
@@ -93,7 +96,7 @@ pub fn record_id(raw_hex: &str) -> Result<String, JsValue> {
 
 #[wasm_bindgen]
 pub fn run_check(input: &str, check: &str) -> Result<String, JsValue> {
-    let store = read_store(input)?;
+    let store = read_store(input, false)?;
     let (verdict, result, spent) = ski::run_store_ski_check(&store, check).map_err(error)?;
     let mut out = json::Obj::new();
     out.insert("verdict", json::Json::str(&verdict));

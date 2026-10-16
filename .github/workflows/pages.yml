@@ -3,9 +3,9 @@ name: browser-verifier
 on:
   push:
     branches: [master]
-    paths: ['impl-rs/**', 'impl-wasm/**', 'web/**', 'examples/ski/**', 'docs/conformance.html', '.github/workflows/pages.yml']
+    paths: ['impl-rs/**', 'impl-wasm/**', 'web/**', 'js/**', 'examples/ski/**', 'docs/conformance.html', '.github/workflows/pages.yml']
   pull_request:
-    paths: ['impl-rs/**', 'impl-wasm/**', 'web/**', 'examples/ski/**', 'docs/conformance.html', '.github/workflows/pages.yml']
+    paths: ['impl-rs/**', 'impl-wasm/**', 'web/**', 'js/**', 'examples/ski/**', 'docs/conformance.html', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -40,6 +40,15 @@ jobs:
           python3 web/build.py
           cd web
           npm test
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with: { deno-version: v2.x }
+      - name: Build and test the portable npm and JSR package
+        run: |
+          cargo build --release --locked --manifest-path impl-rs/Cargo.toml
+          python3 js/build.py
+          npm --prefix js test
+          npm pack ./js --dry-run
+          (cd js && deno check mod.ts && deno publish --dry-run --allow-dirty)
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with: {path: web/dist}
 

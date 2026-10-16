@@ -28,3 +28,9 @@ gate-store.zip
 # Local secrets (never commit) — e.g. SONAR_TOKEN
 .env
 .env.*
+
+# JavaScript registry artifacts (built from the checked-in Rust and TS sources)
+js/generated/
+js/dist/
+js/LICENSE
+js/*.tgz
