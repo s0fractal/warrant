@@ -230,7 +230,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: {node-version: '22', registry-url: 'https://registry.npmjs.org'}
       # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
-      - run: npm install -g npm@11.21.1
+      - run: npm install -g --ignore-scripts npm@11.21.1
       - run: cd js-release && npm publish --provenance --access public
 
   jsr:
