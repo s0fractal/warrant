@@ -202,7 +202,7 @@ CHECKS = [
     # rebuild for a new deposit moves the --ref to its own candidate commit.
     # Selftest first: a retitled copy and a miscounted copy must both go red
     # against the real deposit commit, or the binding below is a label.
-    ("paper claims: the refusals fire (retitled / miscounted copies)",
+    ("paper claims: the refusals fire on the deposited text (retitled / miscounted copies)",
      ["python3", "papers/the-reason-runs-again/check_claims.py",
       "--selftest", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),
     # EXP-001's harness plumbing (tee -> warrant-mcp -> shop, no model): the
@@ -210,9 +210,15 @@ CHECKS = [
     # and the experiment cannot be run on a harness that rotted.
     ("exp-001 harness: ledger, pack and log agree on a scripted session",
      ["python3", "experiments/EXP-001-adversarial-adjudication/harness/smoke.py"], None),
-    ("paper claims bind to the deposited commit (v1.0.0 at d83984f): counts and source identity",
+    # Two bindings since the 1.1.0 candidate. The deposited 1.0.0 keeps its own
+    # text and numbers at its own commit (--deposited reads both from there);
+    # the candidate in the working tree is measured against the working tree,
+    # until its own deposit gives it a commit of its own.
+    ("paper v1.0.0 (deposited) still holds at d83984f: its own text, counts and identity",
      ["python3", "papers/the-reason-runs-again/check_claims.py",
-      "--ref", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),
+      "--deposited", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),
+    ("paper v1.1.0 (candidate): every countable claim equals the working tree",
+     ["python3", "papers/the-reason-runs-again/check_claims.py"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),
     ("go: selftest", [str(GO), "selftest", "examples"], "go"),
     ("go: verify own store (settlement grade)",

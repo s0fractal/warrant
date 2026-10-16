@@ -1,7 +1,7 @@
 ---
 title: "The Reason Runs Again: Content-Addressed Decision Records with Checks a Stranger Can Re-Run"
 author: "Serhii Glova (independent) — sergey.glova@gmail.com"
-date: 2026-08-30
+date: 2026-10-16
 keywords:
   - AI agents
   - accountability
@@ -44,25 +44,27 @@ closed-schema machine-readable verification report that fails closed, and an
 *experimental* settlement layer whose current honest result is partly negative
 (§5.2): mechanically checkable *semantic* novelty for adversarial
 re-litigation is hard, and a repair is drafted but unadopted — though the
-narrow rule that survives four adversarial rounds has its invariants
-mechanized in Lean 4.
+narrow rule that survives three adversarial gate rounds and four revisions has
+its invariants mechanized in Lean 4.
 
 The format is specified to a design rule that anything two independent
 implementations cannot agree on byte-exactly stays out of the document. Three
 implementations — Python, Go, and a from-scratch Rust verifier written without
 external crates as a trusted-base-diversification experiment, not as a
-production-hardening claim (§6) — agree byte-exactly on the surfaces they claim:
-Python and Go at settlement grade, Rust deliberately at base grade. A third party can
-check any of them, or an implementation we have never seen, against 138
-vectors in a runner-driven pack (134 base-grade, 4 settlement-grade),
+production-hardening claim (§6) — agree byte-exactly at settlement grade; the
+Rust verifier reached that parity after version 1.0.0 of this paper. A third
+party can check any of them, or an implementation we have never seen, against
+144 vectors in a runner-driven pack (140 base-grade, 4 settlement-grade),
 including normative *negative* batteries (14 weak Ed25519 keys that must
-fail verification, 15 bodies that must fail validation, 10 signature
+fail verification, 15 bodies that must fail validation, 14 signature
 constructions that must not verify). We report the engineering findings that
 produced those batteries — an integer domain the declared canonicalization
 could not carry, cross-implementation JSON leniency splits, torsion-point and
 scalar-reduction defects in the hand-rolled Ed25519, and a conformance suite
 that reported `ALL PASS` while silently skipping a third of its vectors — as
-measured events from a review ledger of 92 documents spanning six model
+measured events from a review ledger of 24 documents in the current tree (92
+at version 1.0.0, before 71 archived July files left the default tree under a
+recorded controlled-forgetting act) spanning five model
 vendors, of which one is unattributed, carrying no reviewer label: a
 label census under this repository's own naming convention, not a validation
 score, and — a distinction its reviewers forced us to make — not a claim of
@@ -72,6 +74,14 @@ format does not provide: key–actor binding is local configuration, not a
 protocol fact; one of the two check runtimes is trusted by specification and
 that trust reaches settlement; and no independent party has yet implemented
 the format from its text alone.
+
+Version 1.1.0 of this paper follows an automated review of version 1.0.0. Each
+of its points was checked against the repository before the text changed, and
+two turned out to be gaps in the artifact rather than in the prose. The
+conformance pack could not tell a cofactored Ed25519 verifier from the
+specified one. And under the key-rotation rule, one leaked *retired* key could
+retroactively deny an actor's whole history. Both were closed in the artifact
+first (Sections 4 and 5.3), and the text follows.
 
 # 1. Introduction
 
@@ -157,6 +167,18 @@ countable claims. What no checker supplies is independence: the format has
 been adversarially reviewed (Section 7) but never implemented by a party who
 had not read our code, and this paper has had no human peer review. Section 8
 returns to what that limits.
+
+This is version 1.1.0. Version 1.0.0 (2026-08-30) was reviewed by an
+automated reviewer (Google Research's DeepReview), run by the owner. The
+review is kept verbatim beside the paper (`reviews/2026-10-16-deepreview.md`)
+with a triage that checks each of its points against the specification, the
+threat model and the code before acting on it. Each point gets one
+disposition: a defect in the artifact, a gap in the text, missing prior art,
+or not upheld (with the reason). That review is a model too, so its citations
+were also checked before being used. Section 10 lists what changed in the
+artifact between the two versions. Every count in this version is measured at
+its own commit, so some numbers that were true at version 1.0.0 have moved,
+the review ledger above all (Section 7).
 
 ## 1.2 What a verified Warrant proves, and what it does not
 
@@ -258,8 +280,31 @@ revision, and OPA bundles can be signed and content-checked. Warrant's
 distinct offerings are offline self-containment, immutable content identity,
 and a reason object a third party re-executes without the policy engine — but
 those are differences to *demonstrate on concrete requirements*, not to obtain
-by defining the comparison class as "logs". We name the comparison here and
-leave the requirement-by-requirement study as work the paper does not yet do.
+by defining the comparison class as "logs". Closer baselines evaluate policy
+deterministically and offline themselves. Cedar [@cutler2024cedar] is an
+authorization language whose authors pair the production implementation with
+a formal model and differential random testing against it. Biscuit [@biscuit]
+tokens carry a Datalog authorization program that anyone holding the root
+public key can evaluate offline. OPA compiles Rego to WebAssembly modules
+[@opawasm] that can be evaluated outside the policy engine. Against these,
+Warrant's `ski@v1` reason is not a better policy language. It is a different
+object: a decision *receipt* whose computation is pinned by content address
+inside a durable, signed DAG, and whose budget bounds metered work and
+materialized state by construction. It shares the same open problem, too: none
+of these establishes that the evaluated program is the policy the decision
+claims (Section 1.2). We name the comparison here and leave the
+requirement-by-requirement study as work the paper does not yet do.
+
+**Key event logs.** KERI [@smith2019keri] derives key state from a hash-chained
+log of key events rather than from wall-clock time, as Warrant's key governance
+does (Section 5.3). It also solves two things Warrant at first did not. It uses
+self-certifying identifiers, which bind keys to identifiers in a way that
+Warrant's local trust configuration does not (Section 8). And it uses
+*pre-rotation*, in which each key state commits to the digest of its successor.
+Version 1.1.0 adopts pre-rotation after an attack showed it was needed
+(Section 5.3). KERI's answer to duplicity, first-seen ordering by witnesses,
+has no counterpart in a store that is only a DAG, and the residual that leaves
+is stated in Section 5.3.
 
 **Transparency and non-equivocation.** SCITT [@scitt2026] (RFC 9943) addresses
 signed statements, issuer identity, an externally maintained verifiable
@@ -268,7 +313,7 @@ the properties Warrant discovers, in Section 8, that it needs *externally* to
 turn content integrity into historical evidence. Rather than treat SCITT as a
 competitor, we position Warrant as the decision/justification payload and its
 replay semantics, with SCITT (or an equivalent transparency service) supplying
-registration time and non-equivocation around those records (Section 5.4).
+registration time and non-equivocation around those records (Section 5.5).
 That composition is the paper's honest answer to "which policy was in force at
 time T", which content addressing alone cannot give.
 
@@ -291,8 +336,12 @@ with an interest in what it says. That is a hypothesis, and we label it one.
 direct application of the analysis in "Taming the many EdDSAs"
 [@chalkias2020]: libraries disagree on small-order and non-canonical inputs,
 so a format that wants two verifiers to agree must pin the acceptance set
-normatively. Section 6 reports finding two such defects in our own Rust
-implementation — after a 452-case random differential had passed.
+normatively. ZIP 215 [@devalence2020zip215] makes the same point from the
+other side, by fixing one validation rule for a whole ecosystem. Section 6
+reports finding two such defects in our own Rust implementation — after a
+452-case random differential had passed — and Section 4 a third gap, in the
+conformance pack rather than an implementation, found only by an outside
+review.
 
 **Regulation.** Article 12 of the EU AI Act [@euaiact] requires that
 high-risk AI systems technically allow the automatic recording of events,
@@ -326,8 +375,13 @@ $$\mathit{WarrantID} = \mathrm{SHA\text{-}256}\big(\mathrm{JCS}(\mathit{body})\b
 
 where JCS is RFC 8785 canonical JSON [@rfc8785] over an I-JSON [@rfc7493]
 body. Because bodies admit integers only — no floats anywhere — the
-canonical form is short to state: UTF-8, keys sorted, no insignificant
-whitespace. The brevity is deceptive, and most of what this section has to
+canonical form is short to state: UTF-8, object members sorted by their UTF-16
+code units (RFC 8785; for the ASCII member names of a body this coincides with
+byte order, but not for arbitrary keys in a canonicalized blob), no
+insignificant whitespace. Every hash a body carries — `subject.hash`, `under`,
+`evidence`, `prior`, and the check and transcript references of a reason — is
+written as 64 lowercase hexadecimal characters, and so is the WarrantID;
+`WarrantID_raw` in Section 4 is the same digest as 32 raw bytes. The brevity is deceptive, and most of what this section has to
 report is where it deceived us.
 
 ## 3.1 The integer domain, or: a schema the canonicalization could not carry
@@ -371,10 +425,10 @@ different stores:
 - **Escaping.** Go's `encoding/json` HTML-escapes `<` `>` `&` by default;
   ECMAScript-derived serializers `\u`-escape U+2028/U+2029; libraries split
   on `\b`/`\f` short forms and hex case. The spec pins the exact escape
-  table normatively and backs it with a 47-case canonicalization battery
+  table normatively and backs it with a 48-case canonicalization battery
   covering every control code point, NFC vs NFD as distinct content,
   astral-plane code points, and the 200/201-code-point boundary of the one
-  length-limited field — measured in code points, never bytes, because
+  length-limited field, `subject.note` — measured in code points, never bytes, because
   byte-length and code-point-length disagree for any non-ASCII string.
 - **Duplicate member names.** Python's `json` and Go's `encoding/json` keep
   the last occurrence silently; the spec requires rejection, so a dup-key
@@ -396,7 +450,9 @@ every one was extracted from an observed split rather than anticipated.
 
 # 4. Signatures that name their protocol
 
-A stored warrant is an envelope: the body plus a signature array. Ed25519
+A stored warrant is an envelope: the body plus a signature array, each entry
+an object of exactly `actor`, `key` (the 64-hex public key) and `sig` (the
+128-hex signature). Ed25519
 [@rfc8032] signs a message that is **not** the WarrantID. It is:
 
 ```
@@ -437,22 +493,53 @@ while still rejecting it. Re-signing rewrites only the envelope: the
 WarrantID is the hash of the body, the envelope is outside the hash, so no
 identity moves, no `prior` edge breaks, and nothing needs re-anchoring.
 
-**Acceptance is pinned.** Verifiers must reject non-canonical scalars
-($S \ge L$), malformed point encodings, and small-order or non-canonically
-encoded public keys — as a byte-exact blocklist of the 8 canonical torsion
-encodings plus a $y \ge p$ check, shipped as a normative negative vector,
-not as a library-dependent heuristic. A small-order public key lets an
-all-zero signature verify for a large fraction of messages, and libraries
-disagree on which such keys they accept [@chalkias2020]; a format that
-leaves acceptance to the library has left two conforming verifiers free to
-disagree about a crafted envelope.
+**Acceptance is pinned, equation included.** A verifier accepts a signature
+exactly when $[S]B = R + [k]A$, with $k = \mathrm{SHA\text{-}512}(R \,\|\, A
+\,\|\, M) \bmod L$ and $S < L$, and with both points $R$ and $A$ canonically
+encoded as RFC 8032 §5.1.3 requires: $y < p$, and $x = 0$ with the sign bit set
+is malformed. That last rule is what rejects the two sign-bit aliases of the
+torsion points with $x = 0$ (`0100..0080` and `ecff..ffff`), which a
+$y \ge p$ check alone would let through. Small-order public keys are rejected
+before verification, as a byte-exact blocklist of the 8 canonical torsion
+encodings shipped as a normative negative vector rather than as a
+library-dependent heuristic. A small-order public key lets an all-zero
+signature verify for a large fraction of messages, and libraries disagree on
+which such keys they accept [@chalkias2020]. The equation is the
+*cofactorless* one, and the specification forbids the cofactored
+$[8][S]B = [8]R + [8][k]A$. It also forbids reducing $S$ or a point's $y$
+before checking, and rejecting a key merely because it has a torsion
+component: a mixed-torsion key verifies exactly when the cofactorless equation
+holds. A format that leaves any of these to the library has left two conforming
+verifiers free to disagree about a crafted envelope.
+
+Version 1.0.0 stated the blocklist and the canonicality rules, and said only
+that verifiers *should* prefer the cofactorless equation. The automated review
+asked for the equation to be pinned. Checking that request against the pack
+showed the gap was real, and larger than wording. None of the pack's 28
+signature vectors at the time — 4 that verify, 10 construction rejects, 14
+weak-key rejects — separated the two equations, so a cofactored verifier would
+have passed all of them. The pack now carries five *edge* signatures:
+$S + L$ in place of $S$; a small-order $R$, and the same $R$ written
+non-canonically, each with $S = ka$; and a mixed-torsion key $A + T_8$ with one
+signature made for it where $[k]T_8 \ne \mathcal{O}$ (must not verify) and one
+where $[k]T_8 = \mathcal{O}$ (must verify). Each of the four negative ones
+verifies under a cofactored or reducing verifier and fails under the specified
+one. A selftest checks that against both equations written out in full. All
+three implementations passed the new vectors unchanged. The implementations
+had been right; the pack could not show it.
 
 The envelope also embodies a smaller decision with an adversarial
 rationale: co-signatures are outside the hash and may be appended freely,
 so **an invalid co-signature is reported and excluded, never fatal** —
 because anyone with store write access can append junk, and a junk
 signature must not be able to invalidate a record that still carries a
-valid signature by its filing actor.
+valid signature by its filing actor. Precisely: each entry is verified on its
+own, and a cryptographically invalid one is a warning and is dropped. The
+record is an error only if no valid signature remains whose `actor` is the
+body's `actor.id`. Which entry carries it does not matter, so no index is
+privileged. An entry that is not even an object is treated the same way: it is
+reported as a warning and excluded, and only the absence of any valid
+signature by the filing actor makes the record an error.
 
 # 5. Reasons, settlement, and governance
 
@@ -504,6 +591,18 @@ observationally equivalent; a suite that reports them identically is
 non-conformant, and Section 6 reports the day our own tooling violated
 exactly this rule.
 
+The budget is not the only local limit, and version 1.0.0 left the others
+unstated. A verifier also fences materialized state while re-executing. The
+reference implementations both stop at a node depth of 4096, $10^6$ materialized
+nodes and $10^6$ store fetches, checked at the same moments, and the Rust port
+reproduces the Python limits and their cadence because a limit checked at a
+different moment produces a different report. The specification now treats
+these fences as local policy, in the same sense as the budget. A check that
+trips one is reported unverified, exactly like an over-budget check. Two
+verifiers with different fences may disagree on whether such a check was
+re-executed, and on nothing else. Verifiers that interoperate should use the
+reference fences so that they agree by default.
+
 One distinction the format demands and a reader can easily miss: a check
 `verdict` of `pass`/`fail` means *the computation reproduced the expected
 result*, not *the policy permitted the action*. A policy expression may reduce
@@ -524,8 +623,8 @@ purely syntactic answer is easy to state and, we now know, easy to defeat; a
 *semantic* answer — "only a genuinely new consequence re-opens" — turns out to
 be hard to obtain from filer-controlled syntax at all. What this section
 actually establishes is that difficulty, demonstrated by attack, and the
-narrow rule that survives it. The mechanism, then the evidence that it is a
-mechanism and not yet a guarantee.
+narrow rule that survives it. We give the mechanism first, then the evidence
+that it is a mechanism and not yet a guarantee.
 
 A settling record's **tunnel** is itself plus the transitive closure of its
 `prior` edges, together with every blob those records cite. A blob **forecloses**
@@ -536,6 +635,17 @@ over. A re-litigation record must carry either (a) an evidence hash absent
 from the tunnel, or (b) a check, all of whose blobs resolve, that re-runs
 to an **outcome fingerprint** not present in the tunnel. Prose never
 re-opens anything.
+
+Two precisions the outside review asked for. First, branch (a) tests absence
+from the tunnel's whole blob set: every blob a tunnel record cites, whether or
+not anything foreclosed it. It is therefore satisfiable at zero cost, since any
+fresh blob has a fresh hash. The format leaves the cost of re-opening by new
+evidence to the active policy, and the repair discussed below hardens branch
+(b) only. Second, the specification defines foreclosure by "the claims some
+reason in the tunnel actually makes about" a blob, but defines no read set for
+either runtime. Under `cmd@v1`, which the verifier never runs, none could be
+observed. We list that as an open imprecision of the settlement rule, not as
+something the text resolves.
 
 The rule's boundary is stated in four words that took several review rounds
 to earn: **novelty is format; relevance is policy.** The format decides
@@ -548,7 +658,10 @@ reflexive — a check demonstrating that the rule itself forces a wrong
 settlement is admissible evidence against the rule.
 
 The asymmetry of Section 5.1 reaches here, and so does a limit that
-survives it. A `cmd@v1` outcome fingerprint contains the **verdict its
+survives it. The baseline fingerprints are, exactly, `ski@v1`:
+`{runtime, term, expect, verdict, result_node_hash}` and `cmd@v1`:
+`{runtime, sorted evidence hashes, verdict, transcript hash}`. A `cmd@v1`
+outcome fingerprint therefore contains the **verdict its
 filer wrote**, so under `cmd@v1` a party can satisfy the novelty test by
 filing the same check with the opposite verdict — by writing a different
 word. The `ski@v1` fingerprint was repaired to contain the **re-run**
@@ -599,8 +712,8 @@ writes, and a settled matter cannot be re-opened without a new demonstrated
 value — are proved theorems in Lean 4 (`proofs/Settlement.lean`, a sound axiom
 cone, no `sorry`), so the four attack families fail *for all inputs* rather
 than on the harness's concrete ones, and a genuinely new result is proved
-admissible so the guarantee is not vacuous. Three honesties about the scope,
-because a proof that overclaims is worse than none. The theorems are about the
+admissible so the guarantee is not vacuous. We state three caveats about the
+scope, because a proof that overclaims is worse than none. The theorems are about the
 rule's **algebra given a result value**; they model the evaluator abstractly
 as a deterministic function, which is the rule's stated precondition, and do
 *not* re-mechanize Book I. One further guarantee — that no budget the filer
@@ -608,7 +721,11 @@ picks yields a *different* eligible result — is stated conditionally on a Book
 I stability fact that the sibling repository has not yet proved, and is carried
 as an explicit hypothesis rather than assumed away; the four families' closure
 does not depend on it (a starved run produces a DISSONANCE, ineligible
-unconditionally). And a proof that the rule has this shape is not a proof that
+unconditionally). In Book I a reduction ends either in a value or in a
+DISSONANCE node, the canonical marker that a computation failed: its budget ran
+out, or a reference did not resolve. A DISSONANCE can sit inside a composite
+value as well as at its root. Eligibility requires that none occurs anywhere in
+the value, and that is the root/nested seam the third gate round broke. And a proof that the rule has this shape is not a proof that
 the running Python/Go code computes this rule — that refinement is the standing
 implementation gap (Section 6). What the mechanization does buy is that the
 rule is *exactly what it says* — its structural algebra over a result value, and
@@ -630,9 +747,48 @@ toward its own authorization, and mutually unordered authorized rotations
 for one actor produce a reported conflict during which that actor's key
 counts toward no quorum — a denial rather than a takeover.
 
+The predicates, stated exactly because the outside review asked for them and
+because stating them exposed an attack. A signature counts for an actor if its
+key is bound to that actor *at the signed record's DAG position*: genesis keys,
+then every authorized rotation among the record's ancestors, in DAG order.
+Authorization is judged at the same position. A conflict is defined over the
+whole store, as authorized rotations for one actor that are maximal and
+mutually unordered. It holds until a later warrant, authorized by the
+unconflicted remainder of the quorum, resolves it. The two scopes did not
+match, and that was exploitable. Once an actor had rotated `a_old → a_new`, a
+leaked `a_old` could still sign a rotation `a_old → a_fork` at a position where
+`a_old` was current. That rotation was authorized, the actor became conflicted
+store-wide, and every signature it had ever made, the genesis root's included,
+reported unbound. One *retired* key was enough to deny a whole history. Python
+and Go agreed on all of it. It was reproduced before anything was changed.
+
+Version 1.1.0 closes it with **pre-rotation**, as in KERI [@smith2019keri].
+Every key state commits in advance to the SHA-256 of its successor: genesis
+keys through the trust configuration, and every later key through the key blob
+that introduced it. A rotation is authorized only if its incoming key matches
+the commitment in force at its position, and a key state without a commitment
+is terminal. This is added to the existing rules and replaces none of them. A
+retired key alone can then authorize nothing at any position, which a
+three-implementation countervector now checks. The residual is stated rather
+than hidden. A holder of a key *and* its committed successor can still
+introduce that successor a second time at the same position with a different
+onward commitment, and that is a conflict. Since the successor is the current
+or a later signing key, this takes a compromise that already lets the attacker
+sign as the actor. Ordering such duplicity needs what KERI gets from its
+witnesses' first-seen rule, and a store that is only a DAG has nothing in that
+role.
+
 Stores may carry multiple roots: separate jurisdictions sharing a blob
-store, joined only by explicit adoption records satisfying the adopting
-root's threshold. The store-level `genesis.json` is advisory and must not
+store, joined only by explicit adoption records. The specification requires an
+adoption to satisfy the adopting root's current settlement policy, threshold
+included. All three implementations instead check the policies that the
+adoption record itself cites, and its filer chooses those. So a root governed
+by a 2-of-2 threshold can adopt another root on one signature, with zero
+errors and zero warnings. This is disclosed as proposal WRT-014 with
+reproductions and options, and not yet decided. No threshold has ever been
+exercised in this repository's own governance store (Section 8), so it
+compromises nothing here. It is a gap between what the text promises a
+jurisdiction and what any verifier enforces. The store-level `genesis.json` is advisory and must not
 be treated as a trust anchor — it is a mutable unsigned file, and the spec
 says so instead of hoping. One consequence recurs throughout the design and
 deserves its own sentence: **every input that could make two verifiers
@@ -644,14 +800,23 @@ not fall open into "no trust configured, nothing found wrong."
 ## 5.4 The verification report
 
 Verifiers expose a machine-readable report under a closed schema of exactly
-seven members, in which `ok` means `errors == 0` and *nothing else* —
+seven members — `report` (the schema tag), `grade` (the grade *requested*,
+`base` or `settlement`), `ok`, `records` (including records that could not be
+loaded), `errors`, `warnings`, and `findings` (each exactly a `level` of `ERR`
+or `WARN`, a `subject`, and a non-normative `message`) — in which `ok` means
+`errors == 0` and *nothing else* —
 explicitly not "this store is trustworthy," a misreading the threat model
 names as an attack on the reader. Counts must equal findings, order must be
 deterministic, and an uninitialized store is a reported failure rather than
 an empty success, because without that rule "there was nothing to verify"
 and "everything verified" are the same JSON. Two implementations must agree
 on the counts and the multiset of (severity, subject) pairs; human-oriented
-message text is explicitly non-normative. One known divergence — a legacy
+message text is explicitly non-normative. A check that could not be
+re-executed (over budget, over a fence, a missing blob) is a `WARN` finding,
+`ski@v1 unverified`. Under settlement-grade verification it is escalated to
+`ERR` when it belongs to a settlement-active record, because an unexecuted
+claim cannot be trusted to settle. So it never quietly leaves `ok` true where
+settlement depends on it. One known divergence — a legacy
 non-store mode in the Go CLI that emits an optimistic report where Python
 fails closed — is disclosed in the spec as an open defect rather than
 legislated away, because the design rule ("two implementations must agree
@@ -701,34 +866,56 @@ including settlement; the Go implementation implements settlement-grade
 verification and is differentially fuzzed against Python; the Rust
 implementation is from scratch with **no external crates** — its own
 SHA-256, its own strict I-JSON parser, its own 5×51-bit field arithmetic
-and Edwards-curve Ed25519 — and deliberately claims only base grade.
-Three-way agreement is byte-exact on the adversarial canonicalization
-differential (43/43 cases at the time of that run; the committed battery
-has since grown to 47) and on all pinned record hashes and signatures; the
-Ed25519 differential against Python's `cryptography` runs 472 cases
-including 20 mixed-torsion keys. Settlement-grade agreement is a two-way,
-Python–Go claim; the base/settlement split below keeps the two claims from
-blurring.
+and Edwards-curve Ed25519. At version 1.0.0 it deliberately claimed only base
+grade. It now verifies at settlement grade, and its reports are byte-identical
+to the reference's. That claim is held by a harness that runs the reference's
+own test suites with the Rust binary substituted, and by random settlement
+stores whose reports must match byte for byte. Porting it to that standard
+found eleven defects in the *reference* (Section 10). Three-way agreement is
+byte-exact on the adversarial canonicalization differential (43/43 cases at
+the time of that run; the committed battery has since grown) and on all pinned
+record hashes and signatures. The Ed25519 differential against Python's
+`cryptography` runs 472 cases. Version 1.0.0 counted "20 mixed-torsion keys"
+among them, and that overstated what they test: each of those signatures was
+made for a different key, so every verifier rejects it and the loop exercises
+key decoding only. The case where verifiers actually split is pinned since
+version 1.1.0 by the edge vectors of Section 4.
 
 **Vectors, positive and negative.** The spec pins five hashes for a
 three-record chain (propose → reject → accept) that every implementation
-must reproduce byte-exactly, a 47-case canonicalization battery, and — the
+must reproduce byte-exactly, a 48-case canonicalization battery, and — the
 part we would argue for hardest — *normative negative batteries*: 14 weak
 or non-canonical Ed25519 public keys for which verification must fail, 15
-bodies for which validation must return an error, and 10 signature
-constructions that must **not** verify, including the bare-digest legacy
-construction and, pointedly, a signature made over the bare SHA-256 of
-unrelated content offered as a warrant signature for the record whose
-WarrantID equals that digest. A pre-flag-day verifier accepted that last
-one. What an implementation must reject is as much a part of
+bodies for which validation must return an error, and 14 signature
+constructions that must **not** verify. Ten of those concern the signed message.
+They include the bare-digest legacy construction and, pointedly, a signature
+made over the bare SHA-256 of unrelated content, offered as a warrant signature
+for the record whose WarrantID equals that digest; a pre-flag-day verifier
+accepted that one. The other four are the edge signatures of Section 4, which
+a cofactored or reducing verifier accepts. What an implementation must reject is as much a part of
 interoperability as what it must accept, and is far less likely to be
 tested spontaneously.
 
-**The pack.** All of it ships as a 138-vector conformance pack — 134
-base-grade, 4 settlement-grade; its 51 canonicalization vectors are the
-47-case battery above plus four record vectors from the spec's pinned
+**The pack.** All of it ships as a 144-vector conformance pack, version
+1.3.0 — 140 base-grade, 4 settlement-grade; its 52 canonicalization vectors are the
+48-case battery above plus four record vectors from the spec's pinned
 tables — driven by a runner speaking a one-request-one-response CLI
-contract to the candidate implementation. The runner does not import, link against, or execute a
+contract to the candidate implementation. By class:
+
+| class | vectors | must reject | grade |
+| --- | ---: | ---: | --- |
+| `canon` | 52 | 0 | base |
+| `validate` | 21 | 16 | base |
+| `parse` | 20 | 15 | base |
+| `verify-sig` | 33 | 28 | base |
+| `sig-message` | 4 | 0 | base |
+| `blob-hash` | 4 | 0 | base |
+| `verify-store` | 6 | 5 | base |
+| `verify-store-settlement` | 3 | 2 | settlement |
+| `ski-run` | 1 | 0 | settlement |
+
+The 49 check-engine vectors mentioned below belong to the sibling repository's
+suite, not to this pack. The runner does not import, link against, or execute a
 reference implementation, and the expected value is never sent to the
 candidate; a declined vector is reported UNRUN — a distinct outcome from
 pass and fail that withholds the conformance grade, because a vector that
@@ -762,6 +949,30 @@ without its casualty list is advertising:
   class was byte-level rejection, exactly where independent implementations
   diverge most. The re-run passed 49/49, so the gap was coverage rather
   than divergence — but demonstrated, now, instead of assumed.
+- After version 1.0.0, a finding-level comparison of Python and Go found a
+  consensus split that a count-level comparison never had. A 2-of-2 threshold
+  policy re-encoded as UTF-16, as UTF-32 or with a byte-order mark was not JSON
+  to Go's decoder, so Go treated it as an opaque policy and **adopted a root on
+  one signature**, while Python and Rust reported the policy invalid. Go also
+  silently skipped a `ski@v1` reason with no check, which the specification
+  forbids. Both are fixed and pinned across ten encodings of the policy. The
+  same investigation found WRT-014 (Section 5.3), which no implementation
+  enforced.
+- An outside automated review asked for the Ed25519 equation to be pinned, and
+  checking the request showed the pack could not tell a cofactored verifier
+  from the specified one (Section 4). That defect was in the conformance
+  apparatus, not in any implementation.
+
+The fuzzers have stated surfaces. The Python–Go differential fuzzer runs three
+loops: canonicalization of random bodies with adversarial strings,
+verification of a valid store with one record mutated, and rejection of
+non-integer, duplicate-member and trailing-content inputs. CI runs it under
+three seeds at 400 iterations each. The Rust–reference harness builds random
+settlement stores (rotations, deliberate duplicate rotations, re-litigations
+under both runtimes, hostile records, malformed trust configurations), 80 per
+CI run, and requires byte-identical reports. Both are random searches over
+those surfaces and prove nothing beyond the inputs they reach. That is why the
+edges they cannot reach are pinned as vectors instead.
 
 Every fix in the repository carries a **negative control**: the fix is
 removed and the attack is shown to come back. Two of the negative controls
@@ -771,18 +982,41 @@ red at the wrong step, which proves nothing about the step it claims to
 cover. We take from this the same lesson twice: a green that cannot be
 shown capable of turning red, for the stated reason, is not evidence.
 
+Since version 1.1.0 that lesson has a mechanism for the rules it matters most
+for. The method comes from a sibling project. A *contract* binds one MUST
+sentence of the specification, verbatim, to the tests that witness it and to
+an append-only history of decisions. A decision taken on a counterexample
+records the commit, the witness, what was observed and what was expected, so
+the red stays as evidence in the record rather than as a failing build. Editing
+a contracted sentence without a new decision, rewriting an accepted decision,
+or citing a test that no check runs is refused. The first three contracts cover
+the signature equation of Section 4 and the key rules of Section 5.3. Each of
+the checker's eleven refusals has a control, a broken copy that must be
+refused. Two of the refusals were then disabled to show that their controls
+turn red. The rest have not had that done yet.
+
 # 7. The review ledger
 
 The repository's operating rhythm is: a bounded hardening pass, then an
 external adversarial audit as the acceptance oracle, then adjudication of
 findings as warrants in the repository's own store. The ledger currently
-holds 92 documents — 70 inbound reviews and gates plus 22 written
-responses. Of the inbound reviews, all but one fall under fourteen reviewer
-labels drawn from six model vendors (OpenAI, Google, Anthropic, DeepSeek,
-Moonshot, Alibaba); the remaining review is unattributed. That **one
+holds 24 documents — 15 inbound reviews and gates plus 9 written
+responses. Of the inbound reviews, all but one fall under ten reviewer
+labels drawn from five vendors' models (OpenAI, Google, DeepSeek, Moonshot,
+Alibaba); the remaining review is unattributed. At version 1.0.0 the ledger
+held ninety-two documents under fourteen labels from six vendors, Anthropic
+among them. On 2026-09-07 a controlled-forgetting act moved 71 July 2026 files
+out of the default tree. They were gates and audits of designs since adopted,
+merged or closed. The act archived them and did not refute them: it is
+recorded with its subjects, its losses and its before-revision, and every byte
+remains in git history (`history/RETIREMENT-2026-09-REVIEW-CORPUS.md`). The
+census below therefore describes the current tree, and the observations that
+follow draw partly on the archived corpus. The automated review of version 1.0.0
+is kept with the paper and its triage. This census, which covers the ledger
+directory only, does not count it. That **one
 unattributed review** has its author, model, and vendor recorded literally as
 *unrecorded* in its manifest — counted in the total, claimed for no label or
-vendor, so it cannot silently drop out of the census. The corpus spans specification audits,
+vendor, so it cannot silently drop out of the census. The corpus, current and archived, spans specification audits,
 cryptographic attacks, release-surface gates, governance-proposal adversarial
 rounds, three design-gate rounds on the settlement repair, and whole-paper
 adversarial model reviews — each of which, like every entry here, is
@@ -919,6 +1153,13 @@ in its own gate policy belongs to re-runnable evidence rather than to
 signatures, precisely because a stranger can re-run a reproduction and
 cannot re-derive a signature from a shared keyring.
 
+**A jurisdiction's threshold does not bind adoption (WRT-014).** The
+specification says an adopted root must be admitted under the adopting root's
+policy, threshold included. Every implementation checks the policies the
+adoption record cites instead, and its filer chooses those (Section 5.3). Until
+a decision on WRT-014 is implemented, a threshold protects what a root signs,
+not which other roots it admits.
+
 **The store is a directory.** Deletion and censorship are undetected
 beyond dangling references; completeness and availability are non-goals;
 withholding a blob can suppress a settlement — records with unresolvable
@@ -941,11 +1182,15 @@ alone. The mitigation is external checkpointing — transparency-log
 anchoring, archive snapshots — made *before* the compromise; the review of
 this paper surfaced that the project's anchoring tooling is therefore part
 of its security argument, not merely its archival one — a row the threat
-model has since gained (SA-12).
+model has since gained (SA-12). Since version 1.1.0 such a key can no longer
+*rotate* at an old position (pre-rotation, Section 5.3). It can still sign an
+ordinary record there.
 
-**The most novel layer is the least proven implementable.** Three-way
-parity is a base-grade claim; settlement-grade parity is two-way;
-multi-root behaviour is vectored only as far as root admission. The
+**The most novel layer is the least proven implementable.** Settlement-grade
+parity is now three-way, but all three implementations come from one author
+and one line of models, so agreement among them is weaker evidence than an
+outsider's implementation would be. Multi-root behaviour is vectored only as
+far as root admission, and adoption has the disclosed gap above. The
 from-scratch Rust cryptography — written without external crates as a
 deliberate trusted-base-diversification experiment, **not** as a security
 virtue — is differentially and conformance tested, which finds divergences but
@@ -994,6 +1239,50 @@ by an independent human logician or context-isolated agent (NEED-001), which
 the model-gate loop has said it cannot itself substitute for. Neither is a
 blocker on merge, adoption, or deposit.
 
+Version 1.1.0 adds one data point about the method itself. An outside reviewer,
+itself a model, read only the paper. Two of its requests turned out to be
+defects in the artifact: a conformance pack that could not see a whole class of
+divergent verifier, and a key rule under which one retired key denied a whole
+history. Both were found because each request was checked against the code
+instead of answered in prose, and both were closed in the artifact before this
+text was revised.
+
+# 10. Changes since version 1.0.0
+
+What changed in the artifact between the two versions of this paper, in the
+order it happened. Each item is in the repository's changelog with its pull
+request.
+
+- **Rust at parity.** The from-scratch Rust verifier reached settlement grade
+  with reports byte-identical to the reference. The port found eleven defects in
+  the reference, which were fixed in all implementations. It is published as a
+  crate.
+- **Trust from the command line, and a machine-readable `why`.** `warrant trust
+  add|root` writes the trust configuration that binds keys to actors. Before,
+  the quickstart ended in permanent "binding unverified" warnings with no tool
+  to clear them. `why --json` gives agents a decision's chain as data. The
+  README's walkthrough is executed verbatim in CI and must end at zero errors
+  and zero warnings.
+- **Go consensus fixes and WRT-014** (Section 6, Section 5.3).
+- **The verifier offline in a browser and in JavaScript.** The Rust core is
+  compiled to WebAssembly for a static browser lab and for an npm/JSR package
+  that verifies stores offline. The build is *not* reproducible across build
+  locations, and the package says so; its recorded digest identifies the
+  published bytes, nothing more.
+- **Decisions witnessed at the harness.** A Claude Code plugin records, as
+  signed warrants, permission outcomes the agent harness itself reports:
+  auto-mode denials, calls that were asked about and then ran, and checks or
+  consequential commands that ran without a prompt (only a hash of their
+  output). The witness is not the decider, and the policy every record cites
+  says so. A
+  companion auditor joins such records to telemetry by the tool-call identifier
+  both carry.
+- **Edge signature vectors** (pack 1.3.0) and a cofactorless equation as a
+  requirement (Section 4).
+- **Resource fences as local policy** (Section 5.1).
+- **Pre-rotation** (Section 5.3).
+- **Contracts** for specification rules (Section 6).
+
 # Availability
 
 The specification, all three implementations, the conformance pack, the
@@ -1010,11 +1299,14 @@ Lean 4 mechanization are at <https://github.com/s0fractal/sigma-glyph>.
 Software Heritage holds snapshots of both repositories from 2026-07-28;
 archival of the exact deposited commit is requested at deposit time and is
 stated here only once confirmed, not implied in advance. Disclosure manifests
-are timestamped via OpenTimestamps. This paper's Zenodo DOI is
-[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) — reserved
-before the final build so the identifier appears in this artifact, and
-resolving to the deposited version once that version is published. This is
-**version 1.0.0 of the paper** — a deposit version, not a Warrant software or
+are timestamped via OpenTimestamps. Version 1.0.0 of this paper is at
+[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098). This
+version's own DOI is reserved before its final build, as 1.0.0's was, and
+appears here only once reserved. This is
+**version 1.1.0 of the paper** — a deposit version, not a Warrant software or
 protocol release and not a v1.0 adoption of the format; a claims checker
 deposited beside this paper recomputes its countable numbers from the repository
-commit this version was built from.
+commit this version was built from. Version 1.0.0 remains at its own DOI, with
+its numbers bound to its own commit; the concept DOI
+[`10.5281/zenodo.22172097`](https://doi.org/10.5281/zenodo.22172097) resolves to
+the latest version.
