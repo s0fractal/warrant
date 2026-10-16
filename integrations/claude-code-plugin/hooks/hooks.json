@@ -1,17 +1,75 @@
 {
-  "description": "Witness permission outcomes into a local warrant store. Never returns a decision.",
+  "description": "Witness permission outcomes and consequential executions into a local warrant store; recall recent denials at session start. Never returns a decision.",
   "hooks": {
     "PermissionRequest": [
-      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "timeout": 10 } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
     ],
     "PermissionDenied": [
-      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "async": true } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"
+            ],
+            "async": true
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "async": true } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"
+            ],
+            "async": true
+          }
+        ]
+      }
     ],
     "PostToolUseFailure": [
-      { "hooks": [ { "type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"], "async": true } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/witness.py"
+            ],
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

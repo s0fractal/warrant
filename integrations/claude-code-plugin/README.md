@@ -44,12 +44,34 @@ expected:
 |---|---|---|
 | `PermissionDenied` (auto mode) | `reject` | the harness's reason, verbatim |
 | `PermissionRequest`, then the same call runs (`PostToolUse` / `PostToolUseFailure`) | `accept` | "asked, then executed", and that the witness cannot tell who approved |
-| a call that ran without being asked about | nothing | volume is not provenance |
+| a Bash call that ran without a prompt, and is a **check** (test, build, lint, `gh pr checks`) or **consequential** (push, commit, merge, tag, publish, release, `rm -rf`) | `accept` "executed, no prompt" | permission mode, success or failure, SHA-256 and size of the tool response; **the output itself is not stored** |
+| any other call that ran without a prompt | nothing | volume is not provenance |
 | a person denies the dialog | nothing (no hook fires) | shown as an **open ask**: denied by hand, interrupted or still open |
 
 Each record's subject binds the harness's `tool_use_id` and `session_id`, which
 Claude Code also writes into its own telemetry. `tools/otel_audit.py` joins the
 two ([`docs/telemetry-correlation.md`](../../docs/telemetry-correlation.md)).
+
+## Why unprompted executions, and why only a hash
+
+In auto mode nobody confirms each call, so the store is the only trace of what
+the agent did on its own. Recording every call would bury the few that matter.
+The plugin records the ones a reader would ask about: checks, which back an
+agent's claims ("tests pass"), and consequential commands. A report can then
+cite a record id instead of asking to be believed. The tool's output can hold
+secrets and the store is meant to be shareable, so only its hash is kept. The
+session transcript holds the output, and the hash shows whether a transcript's
+output is the one that was witnessed.
+
+The command list is the plugin's own policy, stored as the `under` blob of
+every record, so anyone can see which rule picked a call.
+
+## Recall at session start
+
+When a session starts, the hook tells the model which calls auto mode refused
+in the last seven days: at most five lines, labelled as recorded data, not
+instructions. A model that was refused a merge yesterday then knows before it
+tries again. If nothing was refused, the hook prints nothing.
 
 ## What a record proves
 
@@ -62,8 +84,9 @@ witness, not the decider.
 
 ## Never in the way
 
-The hook prints nothing and always exits 0, so it cannot allow, deny or delay a
-call. Filing runs asynchronously. The one synchronous step, noting a
+The hook always exits 0 and prints nothing on any tool or permission event, so
+it cannot allow, deny or delay a call. Its only output is the session-start
+recall above. Filing runs asynchronously. The one synchronous step, noting a
 `PermissionRequest`, is a single atomic file write. Failures go to
 `~/.warrant/claude-code/witness.log`.
 
@@ -103,4 +126,4 @@ Five mutations of `witness.py` were each confirmed to turn the test red: two key
 instead of one, ignoring the session, printing to stdout, dropping the size cap,
 and filing unasked calls.
 
-Status: prototype, version 0.1.1. No independent review has run.
+Status: prototype, version 0.2.0. No independent review has run.
