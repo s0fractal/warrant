@@ -81,5 +81,8 @@ built site. Merging and publishing still follow the repository's authorization
 rules.
 
 `build.json` records the source commit, working-tree state, WASM digest and local
-limits. It is unsigned build metadata. The website does not claim to verify its
+limits. It is unsigned build metadata, and the digest names these bytes rather
+than promising that a rebuild elsewhere reproduces them (the build location
+reaches rustc's symbol metadata; local paths themselves are remapped out). The
+website does not claim to verify its
 own delivery or turn its explanatory copy into signed protocol authority.
