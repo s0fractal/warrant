@@ -27,6 +27,19 @@ right.
 
 ## Unreleased
 
+- **WRT-014 decided (A): an adoption satisfies the adopting jurisdiction's
+  threshold.** SPEC §9 always asked for "the adopting root's current
+  settlement policy, including any threshold rule". All three
+  implementations checked only the policies the adoption cites, which its
+  filer chooses. Under a 2-of-2 jurisdiction, one actor citing an opaque
+  policy therefore adopted another root on one signature (recorded at
+  3a0e3ae). An adoption must now also satisfy every threshold policy of each
+  settlement-active root it descends from. Python, Go and Rust were changed
+  together. `tests/wrt014_adoption.py` checks this with a positive control
+  (both signers adopt), and mutating the rule out turns it red. Contract
+  ADOPT-T1 records the decision and its counterexample. THREAT-MODEL SA-7
+  is updated.
+
 - **WRT-016 decided (C): a key-state conflict is scoped to the ancestry that
   contains it.** Before, a conflict anywhere unbound every signature of the
   actor across the whole store. Two retired keys could thereby deny an

@@ -237,7 +237,12 @@ of several admitted roots across a settlement — has no vector here. The
 assumption is that an implementation which passes root admission implements the
 rest as written; nothing in this repository checks it.
 
-**Measured 2026-10-15: one part of it does not hold.** §9 admits a root
+**Measured 2026-10-15, fixed 2026-10-16 (WRT-014, decided A).** The paragraph
+below describes the gap as it was. Since the decision, an adoption must satisfy
+every threshold policy of the settlement-active roots it descends from, as well
+as the policies it cites (`tests/wrt014_adoption.py`, PY/GO/RS).
+
+**As measured on 2026-10-15:** §9 admits a root
 adopted "through an `accept` warrant whose signatures satisfy the adopting
 root's current settlement policy, including any threshold rule". Every
 implementation here evaluates instead the policies the *adoption record itself*
@@ -246,8 +251,8 @@ threshold therefore admits a new root on **one** signature, with
 `0 errors, 0 warnings`, if the adoption cites an opaque policy
 (`proposals/wrt-014-model/reproduce.py`). Which policy *should* bind is not
 defined by the SPEC; [WRT-014](proposals/WRT-014-adoption-policy-binding.md)
-sets out the readings and options and decides none of them. Until it is decided,
-read every §9 threshold as binding only adoptions that choose to cite it.
+sets out the readings and options and decides none of them. It was decided as option A on
+2026-10-16 (see above).
 
 #### SA-8. Part of the Lean chain assumes the compiler
 

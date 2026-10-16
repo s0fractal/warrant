@@ -1750,6 +1750,20 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
         rotation_auth_cache[wid] = ok
         return ok
 
+    def adopting_policies_satisfied(wid, env):
+        """WRT-014 option A (SPEC s9): an adoption must ALSO satisfy every
+        threshold policy of each settlement-active root it descends from -- the
+        adopting jurisdiction's own rule, which its filer cannot choose. Before,
+        only the policies the adoption cited counted, so a filer citing an
+        opaque policy adopted under a 2-of-2 jurisdiction on one signature."""
+        keys = threshold_keys(wid)
+        for r in sorted(record_roots(wid) & active_roots):
+            policies, _bad = _record_policy(store, recs[r]["body"])
+            for p in policies:
+                if not _threshold_satisfied(wid, env, p, keys):
+                    return False
+        return True
+
     # Fixpoint: adoption thresholds count only keys bound at the adopting
     # warrant's DAG position (SPEC s5.1/s9); key state depends on the active
     # set, so iterate to stability. Roots and adopting records must be
@@ -1772,7 +1786,8 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
                         and body["decision"] == "accept"
                         and body["subject"]["hash"] == root
                         and _policies_satisfied(store, wid, env,
-                                                keys=threshold_keys(wid))):
+                                                keys=threshold_keys(wid))
+                        and adopting_policies_satisfied(wid, env)):
                     active_roots.add(root)
                     grew = True
                     break

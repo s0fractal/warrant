@@ -2691,6 +2691,28 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		}
 		return keys
 	}
+	// WRT-014 option A (SPEC s9): an adoption must also satisfy every
+	// threshold policy of each settlement-active root it descends from.
+	adoptingPoliciesSatisfied := func(wid string, env map[string]any) bool {
+		keys := thresholdKeys(wid)
+		roots := []string{}
+		for r := range recordRoots(wid) {
+			if ctx.activeRoots[r] {
+				roots = append(roots, r)
+			}
+		}
+		sort.Strings(roots)
+		for _, r := range roots {
+			rb, _ := records[r]["body"].(map[string]any)
+			policies, _ := recordPolicy(blobs, rb)
+			for _, p := range policies {
+				if !thresholdSatisfied(wid, env, p, keys, nil) {
+					return false
+				}
+			}
+		}
+		return true
+	}
 	rotationAuthCompute = func(wid string) bool {
 		actor, incoming, _, ok := rotation(wid)
 		if !ok || ctx.invalidPolicy[wid] || !ctx.activeRecords[wid] {
@@ -2779,7 +2801,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 				if !ctx.activeRecords[wid] || body["decision"] != "accept" || getSubjectHash(body) != root {
 					continue
 				}
-				if policiesSatisfied(blobs, wid, env, thresholdKeys(wid)) {
+				if policiesSatisfied(blobs, wid, env, thresholdKeys(wid)) && adoptingPoliciesSatisfied(wid, env) {
 					ctx.activeRoots[root] = true
 					grew = true
 					break
