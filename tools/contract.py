@@ -97,27 +97,36 @@ def witness_problem(root, w, executed):
     return None
 
 
+REQUIRED_DECISION = {"date", "because", "statement_sha256", "previous_statement_sha256"}
+
+
+def one_decision_problems(i, d, prev):
+    """What is wrong with decision `i`, given the statement the one before it set."""
+    if not isinstance(d, dict) or set(d) - DECISION_FIELDS or REQUIRED_DECISION - set(d):
+        return [f"decision {i}: fields must be {sorted(DECISION_FIELDS)}"]
+    out = []
+    if not (isinstance(d["because"], str) and d["because"].strip()):
+        out.append(f"decision {i}: a decision without a reason")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(d["date"])):
+        out.append(f"decision {i}: date must be YYYY-MM-DD")
+    if d["previous_statement_sha256"] != prev:
+        out.append(f"decision {i}: previous_statement_sha256 must be the statement "
+                   f"the decision before it established ({prev})")
+    cx = d.get("counterexample")
+    if cx is not None and (not isinstance(cx, dict) or set(cx) != CX_FIELDS
+                           or not all(isinstance(cx[k], str) and cx[k] for k in CX_FIELDS)):
+        out.append(f"decision {i}: counterexample must name {sorted(CX_FIELDS)}")
+    return out
+
+
 def decision_problems(c):
     """The decision chain: reasons, dates, links, and the statement it ends on."""
     out = []
     prev = None
     for i, d in enumerate(c["decisions"]):
-        if not isinstance(d, dict) or set(d) - DECISION_FIELDS or \
-                {"date", "because", "statement_sha256", "previous_statement_sha256"} - set(d):
-            out.append(f"decision {i}: fields must be {sorted(DECISION_FIELDS)}")
-            continue
-        if not (isinstance(d["because"], str) and d["because"].strip()):
-            out.append(f"decision {i}: a decision without a reason")
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(d["date"])):
-            out.append(f"decision {i}: date must be YYYY-MM-DD")
-        if d["previous_statement_sha256"] != prev:
-            out.append(f"decision {i}: previous_statement_sha256 must be the statement "
-                       f"the decision before it established ({prev})")
-        cx = d.get("counterexample")
-        if cx is not None and (not isinstance(cx, dict) or set(cx) != CX_FIELDS
-                               or not all(isinstance(cx[k], str) and cx[k] for k in CX_FIELDS)):
-            out.append(f"decision {i}: counterexample must name {sorted(CX_FIELDS)}")
-        prev = d["statement_sha256"]
+        out += one_decision_problems(i, d, prev)
+        if isinstance(d, dict):
+            prev = d.get("statement_sha256")
     if prev != sha(c["statement"]):
         out.append("the statement changed without a decision that establishes it "
                    "(the last decision's statement_sha256 is not the statement's hash)")
