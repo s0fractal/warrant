@@ -1318,7 +1318,7 @@ def _load_trust_config(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-TRUST_FIELDS = {"genesis_roots", "actors", "genesis_json_sha256"}
+TRUST_FIELDS = {"genesis_roots", "actors", "genesis_json_sha256", "next"}
 
 
 def _validate_trust_config(doc):
@@ -1348,6 +1348,17 @@ def _validate_trust_config(doc):
     gh = doc.get("genesis_json_sha256")
     if "genesis_json_sha256" in doc and not _is_hex64(gh):
         return "genesis_json_sha256 must be hex64"
+    # WRT-015 pre-rotation: each genesis actor MAY commit to the SHA-256 of its
+    # first successor key. Without an entry the actor's genesis key is terminal.
+    nx = doc.get("next")
+    if "next" in doc:
+        if not isinstance(nx, dict):
+            return "next must be an object"
+        for a, c in nx.items():
+            if not (isinstance(a, str) and a and a in (ac or {})):
+                return "next keys must be actors listed in actors"
+            if not _is_hex64(c):
+                return "each next commitment must be hex64"
     return None
 
 
@@ -1544,11 +1555,19 @@ def _policies_satisfied(store, wid, env, keys=None, conflicted=frozenset()):
 
 
 def _parse_key_blob(store, h):
+    """(actor, key, next) for a key blob, else None. `next` (WRT-015) is the
+    SHA-256 of the successor's raw public key; absent means terminal."""
     doc = _read_json_blob_if_canonical(store, h)
-    if (isinstance(doc, dict) and set(doc) == {"actor", "key"}
-            and isinstance(doc["actor"], str) and _is_hex64(doc["key"])):
-        return doc["actor"], doc["key"]
+    if (isinstance(doc, dict) and set(doc) in ({"actor", "key"}, {"actor", "key", "next"})
+            and isinstance(doc["actor"], str) and _is_hex64(doc["key"])
+            and ("next" not in doc or _is_hex64(doc["next"]))):
+        return doc["actor"], doc["key"], doc.get("next")
     return None
+
+
+def _key_commitment(key_hex):
+    """WRT-015: what a `next` commitment to this public key must equal."""
+    return hashlib.sha256(bytes.fromhex(key_hex)).hexdigest()
 
 
 def _well_signed(wid, env):
@@ -1610,6 +1629,7 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
         return roots
 
     genesis_keys = {a: set(keys) for a, keys in trust.get("actors", {}).items()}
+    genesis_next = dict(trust.get("next", {}))
     ancestors_cache = {}
 
     def ancestors(wid):
@@ -1641,16 +1661,25 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
                     rotation_cache[wid] = _parse_key_blob(store, subj["hash"])
         return rotation_cache[wid]
 
+    def state_before(wid):
+        """(keys, next commitments) in force at wid's DAG position (WRT-015)."""
+        if wid not in keys_cache:
+            keys = {a: set(v) for a, v in genesis_keys.items()}
+            nexts = dict(genesis_next)
+            for awid in sorted(ancestors(wid), key=lambda x: (depth(x), x)):
+                rot = rotation(awid)
+                if rot and rotation_authorized(awid):
+                    keys[rot[0]] = {rot[1]}
+                    if rot[2] is None:
+                        nexts.pop(rot[0], None)       # terminal from here on
+                    else:
+                        nexts[rot[0]] = rot[2]
+            keys_cache[wid] = (keys, nexts)
+        keys, nexts = keys_cache[wid]
+        return {a: set(v) for a, v in keys.items()}, dict(nexts)
+
     def keys_before(wid):
-        if wid in keys_cache:
-            return {a: set(v) for a, v in keys_cache[wid].items()}
-        keys = {a: set(v) for a, v in genesis_keys.items()}
-        for awid in sorted(ancestors(wid), key=lambda x: (depth(x), x)):
-            rot = rotation(awid)
-            if rot and rotation_authorized(awid):
-                keys[rot[0]] = {rot[1]}
-        keys_cache[wid] = {a: set(v) for a, v in keys.items()}
-        return keys
+        return state_before(wid)[0]
 
     def threshold_keys(wid):
         """SPEC s5.1/s9: for settlement-grade thresholds a signature counts
@@ -1667,12 +1696,18 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
         rot = rotation(wid)
         if not rot or wid in invalid_policy or wid not in active_records:
             return False
-        actor, incoming = rot
+        actor, incoming, _next = rot
         proof = any(verify_sig(wid, s) and s.get("actor") == actor
                     and s.get("key") == incoming for s in _iter_sigs(env))
         if not proof:
             return False
-        prior_keys = keys_before(wid)
+        prior_keys, commitments = state_before(wid)
+        # WRT-015 pre-rotation: the incoming key must be the successor the
+        # actor's key state committed to at this DAG position. No commitment
+        # means the key is terminal, so nothing can rotate away from it, and a
+        # retired key alone can never produce an authorized rotation.
+        if commitments.get(actor) != _key_commitment(incoming):
+            return False
         policies, bad = _record_policy(store, env["body"])
         if bad:
             return False

@@ -27,17 +27,23 @@ right.
 
 ## Unreleased
 
-- **DeepReview R13/R14, checked against code.** R13: a *retired* key can still
-  authorize a rotation at an old DAG position. That makes the actor conflicted
-  store-wide and retroactively reports every signature it ever made as
-  `unbound`. Python and Go agree, and there is no takeover. The behaviour was
-  intended, but its trigger and its retroactivity were never written down.
-  `tests/r13_retired_key_denial.py` now pins it as current behaviour (not as
-  the right one), and THREAT-MODEL A10 states it and names the closing rule
-  (pre-rotation), which is not adopted. R14: SPEC §3.1 exempted only the ATP
-  budget from cross-implementation agreement. Resource fences (depth 4096,
-  10⁶ nodes, 10⁶ fetches in the reference) are now local policy in the same
-  sense, and a fence trip MUST report `unverified`.
+- **WRT-015 pre-rotation (SPEC §5.1, §12): a retired key can no longer rotate.**
+  DeepReview R13, reproduced first: rotation authorization was judged at the
+  record's DAG position while key-state conflict is store-wide. One leaked
+  retired key could therefore sign an authorized rotation where it was still
+  current, make the actor conflicted everywhere, and retroactively unbind
+  every signature the actor ever made. Now every key state commits in advance
+  to its successor's SHA-256: `next` in the key blob, and `next` in the trust
+  config for genesis keys. A rotation must introduce exactly that key, and a
+  key state without a commitment is terminal. This was implemented red-first:
+  the countervector `tests/r13_retired_key_denial.py` (PY/GO/RS, report for
+  report) landed failing and passes now. Residual: a key together with its
+  committed successor can still fork, which is a conflict; ordering that
+  duplicity needs WRT-012. `tests/settlement.py` and the `rs_parity` fuzz now
+  build committed rotations, and the fuzz deliberately files duplicates so
+  conflict handling stays covered. `trust add --next` is a follow-up. Also
+  R14: SPEC §3.1 now treats resource fences as local policy, like the ATP
+  budget, and a fence trip MUST report `unverified`.
 
 - **Conformance pack 1.3.0: Ed25519 EDGE vectors; the cofactorless equation
   is now a MUST.** DeepReview (2026-10-16, R1/R2) observed that SPEC §5 only

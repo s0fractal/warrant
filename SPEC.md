@@ -161,7 +161,11 @@ A stored warrant is an envelope:
 
 Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification.
 
-**Rotation is a warrant:** an `accept` whose subject is the new key blob. A rotation MUST include a valid signature by the incoming key as proof of possession and MUST be authorized under the actor/store's current key policy. If that policy has a threshold, the rotation MUST satisfy it using keys already bound before the rotation; the incoming key's proof-of-possession signature does not count toward the threshold. The outgoing key's signature MAY be required by policy for ordinary rotation, but MUST NOT be sufficient authorization when the store has a multi-actor threshold policy. Emergency replacement of a suspected-compromised outgoing key SHOULD be authorized by quorum without requiring the outgoing key. **Revocation is a warrant:** a `supersede` of the rotation warrant that introduced the key, authorized under the same current-policy rule.
+**Rotation is a warrant:** an `accept` whose subject is the new key blob. A key blob is the JCS-canonical object `{"actor": <string>, "key": <hex64>}` or `{"actor": <string>, "key": <hex64>, "next": <hex64>}`, where `next` is the lowercase-hex SHA-256 of the raw 32-byte public key of the key's successor.
+
+**Pre-rotation (MUST; WRT-015).** Every key state commits in advance to its successor: genesis keys through the trust configuration's `next` (§12), and every later key through the `next` of the key blob that introduced it. A rotation is authorized only if the actor's key state at the rotation's DAG position carries a commitment and `SHA-256(incoming key)` equals it. A key state without a commitment is **terminal**: nothing can rotate away from it. This is in addition to every rule below, not in place of one. Its purpose is that a **retired** key alone can never produce an authorized rotation, at any DAG position. Without it, a leaked retired key could file a rotation at a position where it was still current and make the actor conflicted store-wide, which retroactively unbinds every signature that actor ever made (DeepReview R13; `tests/r13_retired_key_denial.py`). Residual: a holder of a key *and* its committed successor can still file a second rotation at that position, which is a conflict. Resolving such duplicity needs an order that a DAG does not carry (WRT-012).
+
+A rotation MUST include a valid signature by the incoming key as proof of possession and MUST be authorized under the actor/store's current key policy. If that policy has a threshold, the rotation MUST satisfy it using keys already bound before the rotation; the incoming key's proof-of-possession signature does not count toward the threshold. The outgoing key's signature MAY be required by policy for ordinary rotation, but MUST NOT be sufficient authorization when the store has a multi-actor threshold policy. Emergency replacement of a suspected-compromised outgoing key SHOULD be authorized by quorum without requiring the outgoing key. **Revocation is a warrant:** a `supersede` of the rotation warrant that introduced the key, authorized under the same current-policy rule.
 
 **Ordering:** key validity derives from accepted rotation/revocation warrants in **DAG order**, never from wall-clock trust in `ts` alone; a `ts` outside non-decreasing prior order remains a §6 warning and MUST NOT extend or resurrect a key. Only *authorized* key-state warrants can conflict — a record failing current-policy authorization is an invalid record, not a conflict. A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendant: warrants ordered by the DAG are never a conflict; only maximal, mutually unordered warrants trigger this rule. On conflict, verifiers MUST report `WARN: key-state conflict`, and the conflicted actor's key MUST NOT count toward any quorum until a later warrant — authorized by the unconflicted remainder of the quorum — resolves it; if the threshold would become unsatisfiable, it is reduced to exclude the conflicted actor strictly for conflict resolution.
 
@@ -391,7 +395,8 @@ JSON object with a **closed** member set — an unknown member makes the configu
 ```json
 { "actors": { "<actor-id>": ["<hex64 Ed25519 pubkey>", "..."] },
   "genesis_roots": ["<hex64 WarrantID>", "..."],
-  "genesis_json_sha256": "<hex64>" }
+  "genesis_json_sha256": "<hex64>",
+  "next": { "<actor-id>": "<hex64 SHA-256 of the successor public key>" } }
 ```
 
 | Member | Req | Meaning |
@@ -399,13 +404,14 @@ JSON object with a **closed** member set — an unknown member makes the configu
 | `actors` | MAY | Object mapping a **nonempty** actor id string to an array of hex64 Ed25519 public keys **genesis-bound** to that actor. Array MAY be empty. |
 | `genesis_roots` | MAY | Array of hex64 WarrantIDs the operator pins as settlement-active roots for this store (§9(1)). |
 | `genesis_json_sha256` | MAY | hex64 SHA-256 of the exact `genesis.json` bytes the operator has accepted (§9). |
+| `next` | MAY | Object mapping an actor id **listed in `actors`** to the hex64 SHA-256 of the raw 32-byte public key that actor's first rotation MUST introduce (§5.1, pre-rotation). An actor without an entry is terminal at genesis: no rotation away from its genesis keys is ever authorized. |
 
 All three members are optional; `{}` is valid and means "no local trust", which is not the same as "no trust configuration supplied" (§12.3).
 
 ### 12.2. Parsing and validation (MUST)
 
 - The file MUST be parsed in the same I-JSON domain as every other trust-bearing input (§4): duplicate member names, trailing content after the JSON value, invalid UTF-8 and unpaired surrogate escapes MUST be rejected. A trust input parsed more leniently than a record is a way to make two verifiers disagree about who is bound.
-- Validation is **closed and recursive**: an unknown top-level member, a non-object `actors`, an empty actor id, a non-array key list, or any element of `actors[*]`/`genesis_roots` that is not hex64, or a non-hex64 `genesis_json_sha256`, makes the configuration invalid. (Nested types are named explicitly because they were the actual split: `{"actors":[]}` and `{"actors":{"a":1}}` once crashed one implementation while the other returned zero errors.)
+- Validation is **closed and recursive**: an unknown top-level member, a non-object `actors`, an empty actor id, a non-array key list, or any element of `actors[*]`/`genesis_roots` that is not hex64, or a non-hex64 `genesis_json_sha256`, or a `next` that is not an object, names an actor absent from `actors`, or holds a non-hex64 value, makes the configuration invalid. (Nested types are named explicitly because they were the actual split: `{"actors":[]}` and `{"actors":{"a":1}}` once crashed one implementation while the other returned zero errors.)
 - The file MUST NOT be canonicalized, hashed, or otherwise treated as content-addressed; it is not a blob.
 
 ### 12.3. Fail-closed semantics (MUST)

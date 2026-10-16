@@ -53,7 +53,13 @@ must reveal a key matching that commitment.
   needs it, and keep that key unused and offline until the rotation. That is
   the point of the rule, not a side effect.
 
-## 4. Transition
+## 4. Follow-up not in this change
+
+- `warrant trust add` / `warrant-rs trust add` cannot yet write a `next`
+  commitment. Until they can, a genesis commitment is written into the trust
+  config by hand: the SHA-256 of the successor's raw 32-byte public key.
+
+## 5. Transition
 
 There are no deployed stores with rotations. The repository's own stores
 contain none, which was checked before the change. Tests and generators that
