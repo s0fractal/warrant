@@ -60,38 +60,45 @@ def verify(store, argv):
             "warnings": rep.get("warnings")}
 
 
-def report(hours):
-    h = home()
-    store = h / "store"
-    since = time.time() - hours * 3600
+def decision_row(store, recs, wid, body):
+    prior = recs.get((body.get("prior") or [None])[0], {})
+    subj = subject_doc(store, prior) if prior else {}
+    reasons = [b.get("text") for b in body.get("because", []) if b.get("kind") == "prose"]
+    return {"warrant_id": wid, "ts": body.get("ts"),
+            "outcome": "denied" if body["decision"] == "reject" else "asked, then executed",
+            "tool": subj.get("tool_name"), "tool_use_id": subj.get("tool_use_id"),
+            "input": json.dumps(subj.get("tool_input"), ensure_ascii=False)[:160],
+            "reason": reasons[0] if reasons else None}
+
+
+def decision_rows(store, since):
     recs = load(store) if (store / "records").is_dir() else {}
-    rows = []
-    for wid, body in recs.items():
-        if body.get("decision") not in ("accept", "reject") or body.get("ts", 0) < since:
-            continue
-        prior = recs.get((body.get("prior") or [None])[0], {})
-        subj = subject_doc(store, prior) if prior else {}
-        reasons = [b.get("text") for b in body.get("because", []) if b.get("kind") == "prose"]
-        rows.append({"warrant_id": wid, "ts": body.get("ts"),
-                     "outcome": "denied" if body["decision"] == "reject" else "asked, then executed",
-                     "tool": subj.get("tool_name"), "tool_use_id": subj.get("tool_use_id"),
-                     "input": json.dumps(subj.get("tool_input"), ensure_ascii=False)[:160],
-                     "reason": reasons[0] if reasons else None})
-    rows.sort(key=lambda r: r["ts"] or 0, reverse=True)
-    open_asks = []
-    for p in (h / "pending").glob("*.json"):
+    rows = [decision_row(store, recs, wid, body) for wid, body in recs.items()
+            if body.get("decision") in ("accept", "reject") and body.get("ts", 0) >= since]
+    return sorted(rows, key=lambda r: r["ts"] or 0, reverse=True)
+
+
+def open_asks(pending, since):
+    out = []
+    for p in pending.glob("*.json"):
         try:
             n = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if n.get("asked_at", 0) >= since:
-            open_asks.append({"asked_at": n.get("asked_at"), "tool": n.get("tool_name"),
-                              "input": n.get("summary"),
-                              "outcome": "asked, no execution observed (denied by hand, "
-                                         "interrupted or still open)"})
-    open_asks.sort(key=lambda r: r["asked_at"] or 0, reverse=True)
+            out.append({"asked_at": n.get("asked_at"), "tool": n.get("tool_name"),
+                        "input": n.get("summary"),
+                        "outcome": "asked, no execution observed (denied by hand, "
+                                   "interrupted or still open)"})
+    return sorted(out, key=lambda r: r["asked_at"] or 0, reverse=True)
+
+
+def report(hours):
+    h = home()
+    store = h / "store"
+    since = time.time() - hours * 3600
     return {"store": str(store), "hours": hours, "verify": verify(store, cli()),
-            "decisions": rows, "open_asks": open_asks}
+            "decisions": decision_rows(store, since), "open_asks": open_asks(h / "pending", since)}
 
 
 def fmt_ts(ts):
@@ -106,7 +113,7 @@ def main(argv=None):
     rep = report(a.hours)
     if a.json:
         print(json.dumps(rep, ensure_ascii=False, indent=1))
-        return 0
+        return
     v = rep["verify"]
     print(f"store: {rep['store']}")
     if v["status"] == "UNRUN":
@@ -118,12 +125,11 @@ def main(argv=None):
     for r in rep["decisions"]:
         print(f"  {fmt_ts(r['ts'])}  {r['outcome']:<22} {r['tool']}  {r['input']}")
         print(f"      {r['reason']}")
-        print(f"      warrant {r['warrant_id'][:16]}  tool_use_id {r['tool_use_id']}")
+        print(f"      record {r['warrant_id'][:16]}  tool_use_id {r['tool_use_id']}")
     for r in rep["open_asks"]:
         print(f"  {fmt_ts(r['asked_at'])}  {r['outcome']}")
         print(f"      {r['tool']}  {r['input']}")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

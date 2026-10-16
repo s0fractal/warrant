@@ -180,15 +180,16 @@ HANDLERS = {"PermissionRequest": on_permission_request,
 
 
 def main():
+    """Always ends with exit status 0 and empty stdout: the hook never decides."""
     try:
         event = json.load(sys.stdin)
     except ValueError:
-        return 0
+        return
     if not isinstance(event, dict):
-        return 0
+        return
     handler = HANDLERS.get(event.get("hook_event_name"))
     if handler is None:
-        return 0
+        return
     h = home()
     try:
         h.mkdir(parents=True, exist_ok=True)
@@ -198,14 +199,13 @@ def main():
             # progress elsewhere can never delay the prompt.
             handler(h, event)
             sweep(h)
-            return 0
+            return
         with open(h / ".lock", "w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             handler(h, event)
     except Exception as exc:                # noqa: BLE001 -- never break the agent
         log(h, f"{event.get('hook_event_name')} not filed: {type(exc).__name__}: {exc}")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

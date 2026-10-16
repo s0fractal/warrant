@@ -25,7 +25,7 @@ verify: 2 records, 0 errors, 3 warnings
 last 1 h: 1 witnessed decisions, 0 open asks
   2026-10-16 05:40  denied                 Bash  {"command": "echo smoke"}
       auto mode denied the call; harness reason: [Smoke Test]
-      warrant 857ec81c76dc1a13  tool_use_id toolu_smoke
+      record 857ec81c76dc1a13  tool_use_id toolu_smoke
 ```
 
 Each denial is two records: the request and the refusal. The three warnings are
