@@ -218,12 +218,12 @@ def case_multihop_residual():
           and not bound(py.stdout, cur) and not bound(py.stdout, root), lines(py.stdout))
 
 
-def case_revocation_not_implemented():
-    """SPEC §5.1 specifies revocation as a supersede of the introducing rotation.
-    No implementation derives key state from it (WRT-017). Pinned so that the
-    gap is visible and closing it is a decision: today the "revoked" key stays
-    bound after the supersede."""
-    tmp, store, keys, opaque, subject, root, trust = world("revocation")
+def case_no_revocation():
+    """WRT-017, decided A: there is no revocation operation. A supersede of the
+    introducing rotation is an ordinary record and MUST NOT change key state,
+    so the key stays bound. (Before the decision this case pinned the same
+    behaviour as an unimplemented promise of SPEC.)"""
+    tmp, store, keys, opaque, subject, root, trust = world("no-revocation")
     rot = T.add_record(store, T.body("accept", key_blob(store, keys["a_new"], keys["a_newer"]),
                                      [opaque], "a@x", prior=[root], ts=2),
                        [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
@@ -234,8 +234,8 @@ def case_revocation_not_implemented():
                                        because=[{"kind": "prose", "text": "after revocation"}], ts=4),
                          [("a@x", keys["a_new"])])
     py, go, rs = run_all(store, trust)
-    agree("revocation", py, go, rs)
-    check("6. known gap, pinned: after a supersede of its rotation the key is still bound (WRT-017)",
+    agree("no revocation", py, go, rs)
+    check("6. no revocation (WRT-017 A): a supersede of a rotation leaves the key bound",
           errors(py.stdout) == 0 and bound(py.stdout, after, keys["a_new"]), lines(py.stdout))
 
 
@@ -249,7 +249,7 @@ def main():
     case_terminal()
     case_residual()
     case_multihop_residual()
-    case_revocation_not_implemented()
+    case_no_revocation()
     print(f"\nWRT-015-PRE-ROTATION: {'ALL PASS' if ok else 'FAILURES PRESENT'}")
     return 0 if ok else 1
 

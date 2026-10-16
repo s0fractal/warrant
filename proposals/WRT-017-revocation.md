@@ -1,6 +1,6 @@
 # WRT-017: Revocation is specified and implemented nowhere
 
-**Status:** DRAFT, for an owner decision. Not in force.
+**Status:** DECIDED: option A, by the owner, 2026-10-16. Revocation is dropped from SPEC §5.1, a `supersede` of a rotation has no key-state effect, and rotation to the committed successor is the only way a key leaves use. Recorded in contract KEY-R1.
 
 ## The finding (DeepReview of paper 1.1.0; reproduced)
 
