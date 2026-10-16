@@ -89,6 +89,12 @@ CHECKS = [
     # is the same confusion this file exists to prevent, in the safer direction.
     ("settlement semantics (§7 tunnels, novelty, key state)",
      ["python3", "tests/settlement.py"], SIGMA_GO),
+    # DeepReview R13: a RETIRED key can still authorize a rotation at an old DAG
+    # position, which makes the actor conflicted store-wide and retroactively
+    # unbinds every signature it ever made. Pinned as current behaviour (not as
+    # the right one) so that changing it is a decision, not an accident.
+    ("retired-key rotation: store-wide, retroactive denial; no takeover (R13)",
+     ["python3", "tests/r13_retired_key_denial.py"], SIGMA_GO),
     ("hostile stores (cycles, malformed JSON, unsigned links)",
      ["python3", "tests/hostile.py"], "go"),
     ("evidence packs (demo packs verify; no private keys shipped)",

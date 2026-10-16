@@ -27,6 +27,18 @@ right.
 
 ## Unreleased
 
+- **DeepReview R13/R14, checked against code.** R13: a *retired* key can still
+  authorize a rotation at an old DAG position. That makes the actor conflicted
+  store-wide and retroactively reports every signature it ever made as
+  `unbound`. Python and Go agree, and there is no takeover. The behaviour was
+  intended, but its trigger and its retroactivity were never written down.
+  `tests/r13_retired_key_denial.py` now pins it as current behaviour (not as
+  the right one), and THREAT-MODEL A10 states it and names the closing rule
+  (pre-rotation), which is not adopted. R14: SPEC §3.1 exempted only the ATP
+  budget from cross-implementation agreement. Resource fences (depth 4096,
+  10⁶ nodes, 10⁶ fetches in the reference) are now local policy in the same
+  sense, and a fence trip MUST report `unverified`.
+
 - **Conformance pack 1.3.0: Ed25519 EDGE vectors; the cofactorless equation
   is now a MUST.** DeepReview (2026-10-16, R1/R2) observed that SPEC §5 only
   said "SHOULD prefer" a cofactorless verifier, and checking it showed the
