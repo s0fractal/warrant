@@ -89,6 +89,10 @@ CHECKS = [
     # is the same confusion this file exists to prevent, in the safer direction.
     ("settlement semantics (§7 tunnels, novelty, key state)",
      ["python3", "tests/settlement.py"], SIGMA_GO),
+    # DeepReview R13 / WRT-015: pre-rotation. A retired key alone must not be
+    # able to rotate; the residual (key + committed successor) is pinned.
+    ("WRT-015 pre-rotation: a retired key cannot rotate (PY/GO/RS, R13)",
+     ["python3", "tests/r13_retired_key_denial.py"], "rs"),
     ("hostile stores (cycles, malformed JSON, unsigned links)",
      ["python3", "tests/hostile.py"], "go"),
     ("evidence packs (demo packs verify; no private keys shipped)",

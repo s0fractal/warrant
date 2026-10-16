@@ -27,6 +27,24 @@ right.
 
 ## Unreleased
 
+- **WRT-015 pre-rotation (SPEC §5.1, §12): a retired key can no longer rotate.**
+  DeepReview R13, reproduced first: rotation authorization was judged at the
+  record's DAG position while key-state conflict is store-wide. One leaked
+  retired key could therefore sign an authorized rotation where it was still
+  current, make the actor conflicted everywhere, and retroactively unbind
+  every signature the actor ever made. Now every key state commits in advance
+  to its successor's SHA-256: `next` in the key blob, and `next` in the trust
+  config for genesis keys. A rotation must introduce exactly that key, and a
+  key state without a commitment is terminal. This was implemented red-first:
+  the countervector `tests/r13_retired_key_denial.py` (PY/GO/RS, report for
+  report) landed failing and passes now. Residual: a key together with its
+  committed successor can still fork, which is a conflict; ordering that
+  duplicity needs WRT-012. `tests/settlement.py` and the `rs_parity` fuzz now
+  build committed rotations, and the fuzz deliberately files duplicates so
+  conflict handling stays covered. `trust add --next` is a follow-up. Also
+  R14: SPEC §3.1 now treats resource fences as local policy, like the ATP
+  budget, and a fence trip MUST report `unverified`.
+
 - **Conformance pack 1.3.0: Ed25519 EDGE vectors; the cofactorless equation
   is now a MUST.** DeepReview (2026-10-16, R1/R2) observed that SPEC §5 only
   said "SHOULD prefer" a cofactorless verifier, and checking it showed the

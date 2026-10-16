@@ -245,6 +245,11 @@ def signers_for(s, rng, b):
     return out
 
 
+def commit(pub_hex):
+    """WRT-015: the `next` commitment to a public key (SHA-256 of its raw bytes)."""
+    return hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()
+
+
 def hostile(s, rng):
     """A record file the reference must survive."""
     choice = rng.choice(["float", "dup", "deep", "bom", "notobj", "nobody", "listactor",
@@ -334,14 +339,30 @@ def build(root, rng):
             b = body(s, rng, "accept", target, prior, ts)
             if rng.random() < 0.3:
                 b["under"].append(rng.choice(weird))
-        elif r < 0.25:    # key rotation: accept of an {actor, key} blob
+        elif r < 0.25:    # key rotation: accept of an {actor, key[, next]} blob
+            # WRT-015: mostly the committed successor (rot-<actor>), sometimes a
+            # key nobody committed to (<actor>-fork). The blob commits onwards
+            # to one of two successors, so two rotations introducing the same
+            # committed key at unordered positions differ and conflict.
             actor = rng.choice(ACTORS)
-            new = rng.choice(["rot-" + actor, actor + "-fork"])
-            kb = s.jblob({"actor": actor, "key": s.pub(new)})
+            new = "rot-" + actor if rng.random() < 0.75 else actor + "-fork"
+            doc = {"actor": actor, "key": s.pub(new)}
+            if rng.random() < 0.7:
+                doc["next"] = commit(s.pub(rng.choice([new + "-next", new + "-alt"])))
+            kb = s.jblob(doc)
             b = body(s, rng, "accept", kb, prior, ts)
             b["actor"]["id"] = actor
             sig = [(actor, actor), (actor, new)] + [(a, a) for a in ACTORS if a != actor and rng.random() < 0.6]
             live.append(s.record(b, sig))
+            if rng.random() < 0.4:
+                # WRT-015 residual duplicity: the same successor introduced again
+                # at the same position, committing onwards elsewhere -- the one
+                # way a key-state conflict can still arise, so the fuzz keeps
+                # exercising conflict handling across implementations.
+                dup = dict(doc, next=commit(s.pub(new + "-dup")))
+                b2 = body(s, rng, "accept", s.jblob(dup), prior, ts + 1)
+                b2["actor"]["id"] = actor
+                live.append(s.record(b2, sig))
             continue
         elif r < 0.45:    # re-litigate: same subject as an earlier decision
             try:
@@ -372,6 +393,12 @@ def build(root, rng):
         trust["genesis_roots"] = rng.sample(roots, rng.randint(0, len(roots)))
     if rng.random() < 0.9:
         trust["actors"] = {a: [s.pub(a)] for a in ACTORS if rng.random() < 0.8}
+        # WRT-015 genesis commitments: usually to rot-<actor>, sometimes absent
+        # (terminal genesis key) or to the fork key.
+        nexts = {a: commit(s.pub(rng.choice(["rot-" + a] * 3 + [a + "-fork"])))
+                 for a in trust["actors"] if rng.random() < 0.85}
+        if nexts:
+            trust["next"] = nexts
     if gh:
         trust["genesis_json_sha256"] = gh
     tpath = s.root.parent / "trust.json"

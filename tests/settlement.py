@@ -101,6 +101,19 @@ def trust_file(tmp, roots=None, actors=None, genesis_hash=None):
     return path
 
 
+def commit(key_path):
+    """WRT-015: the `next` commitment to a key (SHA-256 of its raw public key)."""
+    return hashlib.sha256(bytes.fromhex(pubkey(key_path))).hexdigest()
+
+
+def committed_trust(tmp, roots, actor, genesis_key, first_successor):
+    path = os.path.join(tmp, "trust.json")
+    doc = {"genesis_roots": roots, "actors": {actor: [pubkey(genesis_key)]},
+           "next": {actor: commit(first_successor)}}
+    open(path, "w").write(json.dumps(doc, sort_keys=True, separators=(",", ":")))
+    return path
+
+
 def setup(tmp):
     store = os.path.join(tmp, "warrants")
     W.Store(store).init()
@@ -298,24 +311,31 @@ def case_relitigation(tmp):
 
 
 def case_key_state(tmp):
+    """WRT-015: a committed rotation binds; a fork needs the old key AND its
+    committed successor (the residual) -- a retired key alone cannot fork,
+    which tests/r13_retired_key_denial.py pins."""
     store, keys, opaque = setup(tmp)
     subject = put_blob(store, b"key state subject")
     root = add_record(store, body("accept", subject, [opaque], "a@x", ts=1),
                       [("a@x", keys["a_old"])])
-    new_key_blob = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_new"])})
+    new_key_blob = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_new"]),
+                                         "next": commit(keys["b"])})
     rot = add_record(store, body("accept", new_key_blob, [opaque], "a@x",
                                  prior=[root], ts=2),
                      [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
     add_record(store, body("propose", subject, [opaque], "a@x", prior=[rot],
                            because=[{"kind": "prose", "text": "after rotation"}], ts=3),
                [("a@x", keys["a_new"])])
-    trust = trust_file(tmp, [root], {"a@x": [pubkey(keys["a_old"])]})
+    trust = committed_trust(tmp, [root], "a@x", keys["a_old"], keys["a_new"])
     py, go = verify_both(store, trust)
     ok = assert_verify("key rotation binds incoming key", py, go)
-    fork_key_blob = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_fork"])})
+    # The residual duplicity: the same committed successor introduced a second
+    # time at the root, committing onwards to something else.
+    fork_key_blob = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_new"]),
+                                          "next": commit(keys["a_fork"])})
     add_record(store, body("accept", fork_key_blob, [opaque], "a@x",
                            prior=[root], ts=4),
-               [("a@x", keys["a_old"]), ("a@x", keys["a_fork"])])
+               [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
     py, go = verify_both(store, trust)
     ok &= assert_verify("genuine forked rotation conflicts", py, go,
                         [W.WARN_KEY_CONFLICT])
@@ -331,7 +351,8 @@ def case_stale_replay(tmp):
     subject = put_blob(store, b"stale replay subject")
     root = add_record(store, body("accept", subject, [opaque], "a@x", ts=1),
                       [("a@x", keys["a_old"])])
-    key2 = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_new"])})
+    key2 = put_json_blob(store, {"actor": "a@x", "key": pubkey(keys["a_new"]),
+                                 "next": commit(keys["a_fork"])})
     rot_old = add_record(store, body("accept", key2, [opaque], "a@x",
                                      prior=[root], ts=2),
                          [("a@x", keys["a_old"]), ("a@x", keys["a_new"])])
@@ -345,7 +366,7 @@ def case_stale_replay(tmp):
                            because=[{"kind": "prose", "text": "fork branch"}],
                            ts=4),
                [("a@x", keys["a_new"])])
-    trust = trust_file(tmp, [root], {"a@x": [pubkey(keys["a_old"])]})
+    trust = committed_trust(tmp, [root], "a@x", keys["a_old"], keys["a_new"])
     py, go = verify_both(store, trust)
     ok = assert_verify("stale-rotation replay on a fork", py, go)
     no_conflict = all(W.WARN_KEY_CONFLICT not in msg

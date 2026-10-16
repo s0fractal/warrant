@@ -6,7 +6,7 @@
 //! schema-invalid ones reached as ancestors of valid records: a type-confused
 //! field contributes nothing rather than aborting the verifier.
 
-use crate::hash::{blob_hash, is_hex64};
+use crate::hash::{blob_hash, encode_hex, fromhex, is_hex64, sha256};
 use crate::json::{canon_eq, parse_ijson, parse_plain_bytes, py_eq, py_hashable, Json, Obj};
 use crate::schema::{int_domain_violation, validate_body};
 use crate::sig::verify_sig;
@@ -295,12 +295,14 @@ pub struct Trust {
     pub genesis_roots: Vec<String>,
     pub actors: Vec<(String, Vec<String>)>,
     pub genesis_json_sha256: Option<String>,
+    /// WRT-015 pre-rotation: genesis commitments to each actor's first successor.
+    pub next: Vec<(String, String)>,
 }
 
 pub fn validate_trust_config(doc: &Json) -> Result<Trust, String> {
     let o = doc.as_obj().ok_or("trust config must be a JSON object")?;
     if o.keys()
-        .any(|k| !["genesis_roots", "actors", "genesis_json_sha256"].contains(&k.as_str()))
+        .any(|k| !["genesis_roots", "actors", "genesis_json_sha256", "next"].contains(&k.as_str()))
     {
         return Err("trust config has unknown fields".into());
     }
@@ -329,6 +331,20 @@ pub fn validate_trust_config(doc: &Json) -> Result<Trust, String> {
                 a.clone(),
                 ks.iter().map(|x| x.as_str().unwrap().to_string()).collect(),
             ));
+        }
+    }
+    if let Some(nx) = o.get("next") {
+        // WRT-015: an actor without an entry is terminal at genesis.
+        let nx = nx.as_obj().ok_or("next must be an object")?;
+        for (a, c) in nx.iter() {
+            if a.is_empty() || !t.actors.iter().any(|(x, _)| x == a) {
+                return Err("next keys must be actors listed in actors".into());
+            }
+            let c = c
+                .as_str()
+                .filter(|s| is_hex64(s))
+                .ok_or("each next commitment must be hex64")?;
+            t.next.push((a.clone(), c.to_string()));
         }
     }
     if let Some(gh) = o.get("genesis_json_sha256") {
@@ -519,10 +535,15 @@ fn policies_satisfied(store: &Store, wid: &str, env: &Json, keys: Option<&KeySta
         .all(|p| threshold_satisfied(wid, env, p, keys))
 }
 
-fn parse_key_blob(store: &Store, h: &str) -> Option<(String, String)> {
+/// A key rotation's subject: `(actor, key, next)`. `next` (WRT-015) is the
+/// SHA-256 of the successor's raw public key; `None` means terminal.
+type KeyBlob = (String, String, Option<String>);
+
+fn parse_key_blob(store: &Store, h: &str) -> Option<KeyBlob> {
     let doc = read_json_blob_if_canonical(store, h)?;
     let o = doc.as_obj()?;
-    if !o.has_exactly(&["actor", "key"]) {
+    let with_next = o.has_exactly(&["actor", "key", "next"]);
+    if !with_next && !o.has_exactly(&["actor", "key"]) {
         return None;
     }
     let actor = match o.get("actor")? {
@@ -530,7 +551,19 @@ fn parse_key_blob(store: &Store, h: &str) -> Option<(String, String)> {
         _ => return None,
     };
     let key = o.get("key")?.as_str().filter(|k| is_hex64(k))?.to_string();
-    Some((actor, key))
+    let next = if with_next {
+        Some(o.get("next")?.as_str().filter(|k| is_hex64(k))?.to_string())
+    } else {
+        None
+    };
+    Some((actor, key, next))
+}
+
+/// What a WRT-015 `next` commitment to this public key must equal.
+fn key_commitment(key_hex: &str) -> String {
+    fromhex(key_hex)
+        .map(|raw| encode_hex(&sha256(&raw)))
+        .unwrap_or_default()
 }
 
 /// SPEC §9: schema-valid and signed by body.actor.id.
@@ -561,9 +594,11 @@ pub struct Context<'a> {
     pub global_warnings: Vec<(String, String)>,
     pub conflict_actors: BTreeSet<String>,
     genesis_keys: KeyState,
+    genesis_next: BTreeMap<String, String>,
     ancestors_cache: RefCell<HashMap<String, BTreeSet<String>>>,
-    rotation_cache: RefCell<HashMap<String, Option<(String, String)>>>,
+    rotation_cache: RefCell<HashMap<String, Option<KeyBlob>>>,
     keys_cache: RefCell<HashMap<String, KeyState>>,
+    next_cache: RefCell<HashMap<String, BTreeMap<String, String>>>,
     rotation_auth_cache: RefCell<HashMap<String, bool>>,
 }
 
@@ -606,9 +641,11 @@ impl<'a> Context<'a> {
             global_warnings,
             conflict_actors: BTreeSet::new(),
             genesis_keys,
+            genesis_next: trust.next.iter().cloned().collect(),
             ancestors_cache: RefCell::new(HashMap::new()),
             rotation_cache: RefCell::new(HashMap::new()),
             keys_cache: RefCell::new(HashMap::new()),
+            next_cache: RefCell::new(HashMap::new()),
             rotation_auth_cache: RefCell::new(HashMap::new()),
         };
         // Fixpoint: adoption thresholds count only keys bound at the adopting
@@ -626,6 +663,7 @@ impl<'a> Context<'a> {
                 .cloned()
                 .collect();
             ctx.keys_cache.borrow_mut().clear();
+            ctx.next_cache.borrow_mut().clear();
             ctx.rotation_auth_cache.borrow_mut().clear();
             let mut grew = false;
             let pending: Vec<String> = ctx.roots.difference(&ctx.active_roots).cloned().collect();
@@ -657,7 +695,7 @@ impl<'a> Context<'a> {
         by_depth.sort_by_key(|w| (ctx.depth(w), w.clone()));
         let mut authorized: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for wid in &by_depth {
-            if let Some((actor, _)) = ctx.rotation(wid) {
+            if let Some((actor, _, _)) = ctx.rotation(wid) {
                 if ctx.rotation_authorized(wid) {
                     authorized.entry(actor).or_default().insert(wid.clone());
                 }
@@ -719,7 +757,7 @@ impl<'a> Context<'a> {
     }
 
     /// A key rotation: an accept whose subject is a canonical {actor, key} blob.
-    fn rotation(&self, wid: &str) -> Option<(String, String)> {
+    fn rotation(&self, wid: &str) -> Option<KeyBlob> {
         if let Some(r) = self.rotation_cache.borrow().get(wid) {
             return r.clone();
         }
@@ -748,18 +786,28 @@ impl<'a> Context<'a> {
             return k.clone();
         }
         let mut keys = self.genesis_keys.clone();
+        let mut nexts = self.genesis_next.clone();
         let mut anc: Vec<String> = self.ancestors(wid).into_iter().collect();
         anc.sort_by_key(|w| (self.depth(w), w.clone()));
         for a in anc {
-            if let Some((actor, key)) = self.rotation(&a) {
+            if let Some((actor, key, next)) = self.rotation(&a) {
                 if self.rotation_authorized(&a) {
-                    keys.insert(actor, BTreeSet::from([key]));
+                    keys.insert(actor.clone(), BTreeSet::from([key]));
+                    match next {
+                        Some(c) => {
+                            nexts.insert(actor, c);
+                        }
+                        None => {
+                            nexts.remove(&actor); // terminal from here on
+                        }
+                    }
                 }
             }
         }
         self.keys_cache
             .borrow_mut()
             .insert(wid.to_string(), keys.clone());
+        self.next_cache.borrow_mut().insert(wid.to_string(), nexts);
         keys
     }
 
@@ -770,7 +818,7 @@ impl<'a> Context<'a> {
         self.rotation_auth_cache
             .borrow_mut()
             .insert(wid.to_string(), false);
-        let Some((actor, incoming)) = self.rotation(wid) else {
+        let Some((actor, incoming, _)) = self.rotation(wid) else {
             return false;
         };
         if self.invalid_policy.contains(wid) || !self.active_records.contains(wid) {
@@ -786,6 +834,16 @@ impl<'a> Context<'a> {
             return false;
         }
         let prior_keys = self.keys_before(wid);
+        // WRT-015 pre-rotation: the incoming key must be the successor the key
+        // state at this DAG position committed to; no commitment = terminal.
+        let committed = self
+            .next_cache
+            .borrow()
+            .get(wid)
+            .and_then(|n| n.get(&actor).cloned());
+        if committed.as_deref() != Some(key_commitment(&incoming).as_str()) {
+            return false;
+        }
         let (policies, bad) = record_policy(self.store, env.get("body").unwrap());
         if bad {
             return false;

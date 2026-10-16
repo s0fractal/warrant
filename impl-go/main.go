@@ -785,7 +785,7 @@ func isHex64(s string) bool {
 // validation so a REQUESTED settlement verification fails closed on invalid
 // trust in BOTH implementations. Returns "" (valid) or a reason.
 func validateTrust(m map[string]any) string {
-	allowed := map[string]bool{"genesis_roots": true, "actors": true, "genesis_json_sha256": true}
+	allowed := map[string]bool{"genesis_roots": true, "actors": true, "genesis_json_sha256": true, "next": true}
 	for k := range m {
 		if !allowed[k] {
 			return "trust config has unknown fields"
@@ -821,6 +821,23 @@ func validateTrust(m map[string]any) string {
 				if !ok || !isHex64(s) {
 					return "each actor's keys must be a list of hex64"
 				}
+			}
+		}
+	}
+	if nx, ok := m["next"]; ok {
+		// WRT-015 pre-rotation: genesis actors MAY commit to their first
+		// successor key; an actor without an entry is terminal at genesis.
+		obj, ok := nx.(map[string]any)
+		if !ok {
+			return "next must be an object"
+		}
+		actors, _ := m["actors"].(map[string]any)
+		for a, c := range obj {
+			if _, listed := actors[a]; a == "" || !listed {
+				return "next keys must be actors listed in actors"
+			}
+			if s, ok := c.(string); !ok || !isHex64(s) {
+				return "each next commitment must be hex64"
 			}
 		}
 	}
@@ -1553,7 +1570,7 @@ func conformance(dir string) bool {
 			// re-decode bodies with UseNumber so ints stay ints (matches readJSON)
 			var negN struct {
 				SchemaInvalid []struct {
-					Why  string `json:"why"`
+					Why  string          `json:"why"`
 					Body json.RawMessage `json:"body"`
 				} `json:"schema_invalid"`
 			}
@@ -1813,7 +1830,7 @@ type settlementContext struct {
 func loadVerifyData(dir string) ([]verifyRecord, map[string]map[string]any, map[string][]byte, map[string]bool, error) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
-	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
+	storeMode := isDir(recordsDir) // a store is defined by records/ (blobs/ may be empty)
 	recordFiles, blobFiles, err := verifyInputs(dir, recordsDir, blobsDir, storeMode)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -2361,31 +2378,51 @@ func policiesSatisfied(blobs map[string][]byte, wid string, env map[string]any, 
 	return true
 }
 
-func parseKeyBlob(blobs map[string][]byte, h string) (string, string, bool) {
+// parseKeyBlob returns (actor, key, next, ok). `next` (WRT-015) is the SHA-256
+// of the successor's raw public key, or "" when the key is terminal.
+func parseKeyBlob(blobs map[string][]byte, h string) (string, string, string, bool) {
 	raw := blobs[h]
 	if raw == nil || jsonTooDeep(raw) {
-		return "", "", false
+		return "", "", "", false
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
-		return "", "", false
+		return "", "", "", false
 	}
 	doc, ok := v.(map[string]any)
-	if !ok || len(doc) != 2 {
-		return "", "", false
+	if !ok || (len(doc) != 2 && len(doc) != 3) {
+		return "", "", "", false
 	}
 	canon, err := canonicalJSON(doc)
 	if err != nil || !bytes.Equal(canon, raw) {
-		return "", "", false
+		return "", "", "", false
 	}
 	actor, ok1 := doc["actor"].(string)
 	key, ok2 := doc["key"].(string)
 	if !ok1 || !ok2 || actor == "" || !isHex64(key) {
-		return "", "", false
+		return "", "", "", false
 	}
-	return actor, key, true
+	next := ""
+	if len(doc) == 3 {
+		n, ok := doc["next"].(string)
+		if !ok || !isHex64(n) {
+			return "", "", "", false
+		}
+		next = n
+	}
+	return actor, key, next, true
+}
+
+// keyCommitment is what a WRT-015 `next` commitment to keyHex must equal.
+func keyCommitment(keyHex string) string {
+	raw, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func settlementCtx(dir string, records map[string]map[string]any, blobs map[string][]byte, trust map[string]any, explicitGenesis []string) settlementContext {
@@ -2501,6 +2538,14 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		recordRootsCache[wid] = roots
 		return roots
 	}
+	genesisNext := map[string]string{}
+	if nx, ok := trust["next"].(map[string]any); ok {
+		for actor, c := range nx {
+			if s, ok := c.(string); ok {
+				genesisNext[actor] = s
+			}
+		}
+	}
 	genesisKeys := map[string]map[string]bool{}
 	if actors, ok := trust["actors"].(map[string]any); ok {
 		for actor, raw := range actors {
@@ -2522,31 +2567,32 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		return ancestorsCache[wid]
 	}
 	depth := func(wid string) int { return len(ancestors(wid)) }
-	rotationCache := map[string][2]string{}
+	rotationCache := map[string][3]string{}
 	rotationOK := map[string]bool{}
-	rotation := func(wid string) (string, string, bool) {
+	rotation := func(wid string) (string, string, string, bool) {
 		if _, seen := rotationCache[wid]; seen || rotationOK[wid] {
 			v := rotationCache[wid]
-			return v[0], v[1], rotationOK[wid]
+			return v[0], v[1], v[2], rotationOK[wid]
 		}
 		env := records[wid]
 		if env == nil {
-			rotationCache[wid] = [2]string{}
-			return "", "", false
+			rotationCache[wid] = [3]string{}
+			return "", "", "", false
 		}
 		body, _ := env["body"].(map[string]any)
 		if body["decision"] == "accept" {
-			a, k, ok := parseKeyBlob(blobs, getSubjectHash(body))
+			a, k, n, ok := parseKeyBlob(blobs, getSubjectHash(body))
 			if ok {
-				rotationCache[wid] = [2]string{a, k}
+				rotationCache[wid] = [3]string{a, k, n}
 				rotationOK[wid] = true
-				return a, k, true
+				return a, k, n, true
 			}
 		}
-		rotationCache[wid] = [2]string{}
-		return "", "", false
+		rotationCache[wid] = [3]string{}
+		return "", "", "", false
 	}
 	keysCache := map[string]map[string]map[string]bool{}
+	nextCache := map[string]map[string]string{}
 	var keysBefore func(string) map[string]map[string]bool
 	var rotationAuthorized func(string) bool
 	keysBefore = func(wid string) map[string]map[string]bool {
@@ -2554,6 +2600,10 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 			return cloneKeyMap(cached)
 		}
 		keys := cloneKeyMap(genesisKeys)
+		nexts := map[string]string{}
+		for a, c := range genesisNext {
+			nexts[a] = c
+		}
 		aws := keysOfBool(ancestors(wid))
 		sort.Slice(aws, func(i, j int) bool {
 			di, dj := depth(aws[i]), depth(aws[j])
@@ -2563,11 +2613,17 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 			return aws[i] < aws[j]
 		})
 		for _, awid := range aws {
-			if actor, key, ok := rotation(awid); ok && rotationAuthorized(awid) {
+			if actor, key, next, ok := rotation(awid); ok && rotationAuthorized(awid) {
 				keys[actor] = map[string]bool{key: true}
+				if next == "" {
+					delete(nexts, actor) // terminal from here on
+				} else {
+					nexts[actor] = next
+				}
 			}
 		}
 		keysCache[wid] = cloneKeyMap(keys)
+		nextCache[wid] = nexts
 		return keys
 	}
 	// Cache + pre-seed (matches Python's rotation_auth_cache): seeding `false`
@@ -2588,7 +2644,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 		return r
 	}
 	rotationAuthCompute = func(wid string) bool {
-		actor, incoming, ok := rotation(wid)
+		actor, incoming, _, ok := rotation(wid)
 		if !ok || ctx.invalidPolicy[wid] || !ctx.activeRecords[wid] {
 			return false
 		}
@@ -2604,6 +2660,11 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 			return false
 		}
 		priorKeys := keysBefore(wid)
+		// WRT-015 pre-rotation: the incoming key must be the successor the key
+		// state at this DAG position committed to; no commitment = terminal.
+		if c := nextCache[wid][actor]; c == "" || c != keyCommitment(incoming) {
+			return false
+		}
 		body, _ := env["body"].(map[string]any)
 		policies, bad := recordPolicy(blobs, body)
 		if bad {
@@ -2646,6 +2707,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 	for {
 		recomputeActive()
 		keysCache = map[string]map[string]map[string]bool{}
+		nextCache = map[string]map[string]string{}
 		rotationAuthCache = map[string]bool{}
 		grew := false
 		for root := range ctx.roots {
@@ -2672,7 +2734,7 @@ func settlementCtx(dir string, records map[string]map[string]any, blobs map[stri
 
 	authorizedRotations := map[string]map[string]bool{}
 	for _, wid := range sortedRecordIDs(records) {
-		if actor, _, ok := rotation(wid); ok && rotationAuthorized(wid) {
+		if actor, _, _, ok := rotation(wid); ok && rotationAuthorized(wid) {
 			if authorizedRotations[actor] == nil {
 				authorizedRotations[actor] = map[string]bool{}
 			}
@@ -2949,8 +3011,8 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
 				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
 					out("WARN", wid, "unresolved blob "+sh12(h))
-			} else if corruptBlobs[h] {
-				out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
+				} else if corruptBlobs[h] {
+					out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
 				}
 			}
 		}
@@ -3015,7 +3077,7 @@ func verifyDirSettlement(dir, trustConfig string, genesis []string, quiet bool, 
 func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (int, int) {
 	recordsDir := filepath.Join(dir, "records")
 	blobsDir := filepath.Join(dir, "blobs")
-	storeMode := isDir(recordsDir)  // a store is defined by records/ (blobs/ may be empty)
+	storeMode := isDir(recordsDir) // a store is defined by records/ (blobs/ may be empty)
 
 	// --store-mode (explicit flag, NOT the renderer) requires an initialized store,
 	// so a machine/store caller fails closed on a non-store instead of silently
@@ -3224,8 +3286,8 @@ func verifyDir(dir string, quiet bool, report *verifyReport, storeStrict bool) (
 				mayBeRecord := body["decision"] == "supersede" || body["decision"] == "accept"
 				if blobs[h] == nil && !(mayBeRecord && records[h] != nil) {
 					out("WARN", wid, "unresolved blob "+sh12(h))
-			} else if corruptBlobs[h] {
-				out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
+				} else if corruptBlobs[h] {
+					out("ERR", wid, "blob "+sh12(h)+" content does not match its address")
 				}
 			}
 		}

@@ -65,7 +65,7 @@ jobs:
           MSRV=$(python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['package']['rust-version'])")
           rustup toolchain install "$MSRV" --profile minimal
           cargo +"$MSRV" test --locked --target-dir target/msrv
-      - name: "Rust: settlement grade on the conformance pack (139/139, no UNRUN)"
+      - name: "Rust: settlement grade on the conformance pack (all vectors, no UNRUN)"
         run: python3 conformance/run.py --candidate "./impl-rs/target/release/warrant-rs probe" --claim settlement
       - name: "Rust: settlement-grade verification of the repo's own store + selftest"
         run: |
@@ -73,6 +73,8 @@ jobs:
           ./impl-rs/target/release/warrant-rs selftest
       - name: "Three-way agreement at both grades (PY/GO/RS)"
         run: python3 tests/verify_three_way.py
+      - name: "WRT-015 pre-rotation: a retired key cannot rotate (PY/GO/RS, R13)"
+        run: python3 tests/r13_retired_key_denial.py
       - name: "Python and Go: same findings (level, subject) on fuzzed settlement stores"
         run: python3 tests/go_findings_parity.py 80
       - name: "Reference defects found by the Rust port: no crash, PY=RS(=GO)"
