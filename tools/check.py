@@ -227,8 +227,12 @@ CHECKS = [
     ("paper v1.0.0 (deposited) still holds at d83984f: its own text, counts and identity",
      ["python3", "papers/the-reason-runs-again/check_claims.py",
       "--deposited", "d83984f26207cc79ecefac9e1348f3739e94c8fe"], None),
-    ("paper v1.1.0 (candidate): every countable claim equals the working tree",
-     ["python3", "papers/the-reason-runs-again/check_claims.py"], None),
+    # 1.1.0 is deposited (10.5281/zenodo.23414323): the text in the tree must
+    # BE the deposited text, and its numbers must hold at that commit. A later
+    # edit to paper.md fails here and needs a new version and its own --ref.
+    ("paper v1.1.0 (deposited) binds to e494dbb: counts and source identity",
+     ["python3", "papers/the-reason-runs-again/check_claims.py",
+      "--ref", "e494dbb84ea68a3d67752d929154b74f7fb415e8"], None),
     ("go: conformance", [str(GO), "conformance", "examples"], "go"),
     ("go: selftest", [str(GO), "selftest", "examples"], "go"),
     ("go: verify own store (settlement grade)",

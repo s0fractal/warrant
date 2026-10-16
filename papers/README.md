@@ -23,13 +23,12 @@ deposited `MANIFEST.md` binds DOI, version, tag, commit and file hashes, and is
 kept under `the-reason-runs-again/deposited/`; `check_claims.py --deposited
 d83984f` holds that version's own text to the commit it names.
 
-**Version 1.1.0 is a candidate, not yet deposited.** It follows an automated
-review of 1.0.0 (kept verbatim with its triage in
-`the-reason-runs-again/reviews/`), and its numbers are measured against the
-current tree (`check_claims.py` without options). The word count above is the
-candidate's. Its deposit is the owner's decision, made after a second review of
-the rebuilt PDF; at deposit, its own commit replaces the working tree as its
-binding.
+**Version 1.1.0 is published** (2026-10-16): DOI
+[`10.5281/zenodo.23414323`](https://doi.org/10.5281/zenodo.23414323), tag
+`paper-the-reason-runs-again-v1.1.0` = `e494dbb`. It follows two automated
+reviews and one model review of the drafts, kept verbatim with triage in
+`the-reason-runs-again/reviews/`. `check_claims.py --ref e494dbb` holds the
+text in the tree to that commit; the word count above is 1.1.0's.
 
 Candidate companions, mined from material already in this repository (each
 listed here so the flagship paper does not silently absorb their scope):
