@@ -1681,12 +1681,40 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
     def keys_before(wid):
         return state_before(wid)[0]
 
+    conflict_cache = {}
+
+    def conflicted_at(wid):
+        """WRT-016: actors whose key state is ambiguous AT wid's DAG position,
+        i.e. with two or more authorized rotations among wid's ancestors that
+        are maximal and mutually unordered there. A conflict elsewhere in the
+        store does not reach a record whose ancestry sees only one side."""
+        if wid not in conflict_cache:
+            conflict_cache[wid] = frozenset()     # re-entrancy on prior cycles
+            anc = ancestors(wid) - {wid}
+            by_actor = {}
+            for a in anc:
+                rot = rotation(a)
+                if rot and rotation_authorized(a):
+                    by_actor.setdefault(rot[0], set()).add(a)
+            out = set()
+            for actor, ws in by_actor.items():
+                maximal = {x for x in ws
+                           if not any(x != y and x in ancestors(y) for y in ws)}
+                if len(maximal) > 1:
+                    out.add(actor)
+            conflict_cache[wid] = frozenset(out)
+        return conflict_cache[wid]
+
     def threshold_keys(wid):
         """SPEC s5.1/s9: for settlement-grade thresholds a signature counts
         for an actor only if made by a key currently bound to that actor at
         this warrant's DAG position; actors with NO configured key state
-        contribute nothing (unbound claims MUST NOT satisfy a v0.3 threshold)."""
-        return keys_before(wid)
+        contribute nothing (unbound claims MUST NOT satisfy a v0.3 threshold).
+        An actor conflicted at this position counts toward no quorum (WRT-016)."""
+        keys = keys_before(wid)
+        for actor in conflicted_at(wid):
+            keys.pop(actor, None)
+        return keys
 
     def rotation_authorized(wid):
         if wid in rotation_auth_cache:
@@ -1712,7 +1740,9 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
         if bad:
             return False
         if policies:
-            ok = all(_threshold_satisfied(wid, env, p, prior_keys) for p in policies)
+            # A conflicted actor counts toward no quorum here (WRT-016).
+            quorum_keys = {a: k for a, k in prior_keys.items() if a not in conflicted_at(wid)}
+            ok = all(_threshold_satisfied(wid, env, p, quorum_keys) for p in policies)
         else:
             ok = any(verify_sig(wid, s) and s.get("actor") == actor
                      and s.get("key") in prior_keys.get(actor, set())
@@ -1731,6 +1761,7 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
                           and wid not in invalid_policy and wid in well}
         keys_cache.clear()
         rotation_auth_cache.clear()
+        conflict_cache.clear()
         grew = False
         for root in sorted(roots - active_roots):
             if root not in well:
@@ -1763,6 +1794,12 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
                     maximal.discard(a)
         if len(maximal) > 1:
             conflict_actors.add(actor)
+    # WRT-016 option C: a conflict no longer unbinds the whole store. It is
+    # reported once per actor on the store, so a parallel key history is
+    # never silent, and it acts only where a record's ancestry is ambiguous.
+    for actor in sorted(conflict_actors):
+        global_warnings.append(("store", f"{WARN_KEY_CONFLICT}: {actor} has mutually "
+                                         "unordered key histories in this store"))
 
     return {
         "recs": recs,
@@ -1773,6 +1810,7 @@ def _settlement_context(store, trust_config=None, genesis_roots=None, recs=None,
         "global_warnings": global_warnings,
         "keys_before": keys_before,
         "conflict_actors": conflict_actors,
+        "conflicted_at": conflicted_at,
         "record_roots": record_roots,
     }
 
@@ -1973,7 +2011,7 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                 key = s.get("key")
                 keys = ctx["keys_before"](wid)
                 bound = (isinstance(actor, str)
-                         and actor not in ctx["conflict_actors"]
+                         and actor not in ctx["conflicted_at"](wid)
                          and key in keys.get(actor, set()))
                 # RENDERER-INDEPENDENCE (2026-07-30). This was:
                 #     if quiet: pass
@@ -2096,7 +2134,7 @@ def verify_store(store, quiet=False, settlement=None, report_out=None):
                     lvl = "ERR" if (settlement is not None and settle_active) else "WARN"
                     out(lvl, wid, f"ski@v1 unverified: {reason}")
         if ctx is not None and wid in ctx["active_records"]:
-            if body["actor"]["id"] in ctx["conflict_actors"]:
+            if body["actor"]["id"] in ctx["conflicted_at"](wid):
                 out("WARN", wid, WARN_KEY_CONFLICT)
             if body["decision"] in ("accept", "reject"):
                 for prior in sorted(prior_closure(recs, wid)):

@@ -248,7 +248,7 @@ fn verify_store_inner(
                     let keys = c.keys_before(wid);
                     let bound = match actor.and_then(Json::as_str) {
                         Some(a) if matches!(actor, Some(Json::Str(_))) => {
-                            !c.conflict_actors.contains(a)
+                            !c.conflicted_at(wid).contains(a)
                                 && keys.get(a).is_some_and(|ks| ks.contains(&key))
                         }
                         _ => false,
@@ -405,7 +405,7 @@ fn verify_store_inner(
                     .and_then(|a| a.get("id"))
                     .and_then(Json::as_str)
                     .unwrap_or("");
-                if c.conflict_actors.contains(id) {
+                if c.conflicted_at(wid).contains(id) {
                     rep.out("WARN", wid, WARN_KEY_CONFLICT.to_string());
                 }
                 if dec_is("accept") || dec_is("reject") {

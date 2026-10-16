@@ -1,6 +1,6 @@
 # WRT-016: Scope a key-state conflict to the fork, not the whole store
 
-**Status:** DRAFT, for an owner decision. Not in force.
+**Status:** DECIDED: option C, by the owner, 2026-10-16. Implemented in Python, Go and Rust. A conflict acts only on records whose ancestry contains both sides, and it is reported once per actor on the store. Implementing it also closed a related gap: SPEC said a conflicted actor counts toward no quorum, and no implementation enforced that. Recorded in contract KEY-C1.
 
 ## The finding (DeepReview of paper 1.1.0; reproduced)
 

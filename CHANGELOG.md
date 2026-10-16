@@ -27,6 +27,21 @@ right.
 
 ## Unreleased
 
+- **WRT-016 decided (C): a key-state conflict is scoped to the ancestry that
+  contains it.** Before, a conflict anywhere unbound every signature of the
+  actor across the whole store. Two retired keys could thereby deny an
+  actor's entire history, the uncompromised current key included. Now an
+  actor is conflicted at a record only when that record's ancestors hold two
+  unordered authorized rotations for it, and every conflict is also reported
+  once on the store (subject `store`). Implementing this found that SPEC's
+  "a conflicted actor counts toward no quorum" had been enforced by none of
+  the three implementations: a 2-of-2 adoption still succeeded with one
+  signer conflicted. It is now enforced at the positions where the conflict
+  is visible. Python, Go and Rust were changed together.
+  `case_multihop_residual` was flipped to the new rule, and
+  `case_conflict_counts_toward_no_quorum` was added; mutating either rule
+  out turns them red. Contract KEY-C1 was amended with a new decision.
+
 - **WRT-017 decided (A): there is no revocation operation.** SPEC §5.1 had
   specified revocation as a `supersede` of the introducing rotation, and no
   implementation ever derived key state from it. It is dropped rather than
