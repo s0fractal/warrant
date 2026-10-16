@@ -5,13 +5,17 @@ content-addressed identity, domain-separated signatures, re-executable
 reasons, settlement, and the conformance apparatus — together with what
 building it broke and what it still does not provide.
 
-**Deposit status: published.** Zenodo DOI
-[`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098) (record
-22172098, concept DOI
-[`10.5281/zenodo.22172097`](https://doi.org/10.5281/zenodo.22172097)),
-**paper version 1.0.0**, CC BY 4.0, published 2026-08-30 from annotated tag
-`paper-the-reason-runs-again-v1.0.0` = commit
-[`d83984f`](https://github.com/s0fractal/warrant/tree/d83984f26207cc79ecefac9e1348f3739e94c8fe).
+**Deposit status: version 1.1.0 published** 2026-10-16: Zenodo DOI
+[`10.5281/zenodo.23414323`](https://doi.org/10.5281/zenodo.23414323) (record
+23414323), from annotated tag `paper-the-reason-runs-again-v1.1.0` = commit
+[`e494dbb`](https://github.com/s0fractal/warrant/tree/e494dbb84ea68a3d67752d929154b74f7fb415e8).
+Its manifest and sums, downloaded from the published record and checked against
+the local build, are in [`deposited/v1.1.0/`](deposited/v1.1.0/). Version 1.0.0
+stays at [`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098)
+(published 2026-08-30, tag `paper-the-reason-runs-again-v1.0.0` = `d83984f`;
+its manifest is in [`deposited/`](deposited/)). The concept DOI
+[`10.5281/zenodo.22172097`](https://doi.org/10.5281/zenodo.22172097) resolves
+to the latest version.
 The paper version is the paper's own, distinct from any Warrant software or
 protocol version — the deposit is **not** a v1.0 software release or a
 governance adoption of the format. It has had no peer review, and nothing here

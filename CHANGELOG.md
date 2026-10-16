@@ -27,6 +27,13 @@ right.
 
 ## Unreleased
 
+- **Paper "The Reason Runs Again" 1.1.0 published**: DOI
+  10.5281/zenodo.23414323, tag `paper-the-reason-runs-again-v1.1.0` =
+  `e494dbb`. The PDF was rebuilt byte-identically from two clean exports of
+  the tag, and every published file was checked after publication against
+  the manifest (`deposited/v1.1.0/`). `tools/check.py` now binds the tree's
+  paper to that commit, as it did for 1.0.0.
+
 - **Paper 1.1.0 candidate states the key-state decisions.** §5.3, §8 and §10
   now describe WRT-014, WRT-016 and WRT-017 as decided and implemented, with
   the "no quorum" gap found and closed along the way, rather than as open
