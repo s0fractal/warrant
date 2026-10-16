@@ -23,7 +23,17 @@ def build():
         shutil.copyfile(HERE / name, OUT / name)
     shutil.copyfile(ROOT / "docs/conformance.html", OUT / "conformance.html")
     env = dict(os.environ)
-    env["RUSTFLAGS"] = "-C link-arg=-zstack-size=16777216 -C link-arg=--max-memory=268435456"
+    # Remap the checkout and the cargo registry out of the binary. Without this
+    # rustc embeds absolute source paths (panic locations), so the WASM digest
+    # recorded in build.json depended on WHERE it was built -- no one else could
+    # reproduce it -- and the shipped bytes carried the builder's home path.
+    cargo_home = os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo")
+    env["RUSTFLAGS"] = " ".join([
+        "-C link-arg=-zstack-size=16777216",
+        "-C link-arg=--max-memory=268435456",
+        f"--remap-path-prefix={ROOT}=/warrant",
+        f"--remap-path-prefix={cargo_home}=/cargo",
+    ])
     run("cargo", "build", "--release", "--locked", "--target", "wasm32-unknown-unknown", "--manifest-path", "impl-wasm/Cargo.toml", env=env)
     run(os.environ.get("WASM_BINDGEN", "wasm-bindgen"), str(ROOT / "impl-wasm/target/wasm32-unknown-unknown/release/warrant_browser.wasm"), "--target", "web", "--out-dir", str(OUT / "wasm"), "--out-name", "warrant_browser")
     # The signed specimen already lives in this repository. Package its exact

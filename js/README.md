@@ -75,7 +75,11 @@ remain applicable; see the repository specification and threat model.
 MIT. Source: <https://github.com/s0fractal/warrant/tree/master/js>.
 The shipped `generated/build.json` (JSR) or `dist/generated/build.json` (npm)
 records the source commit, package/core versions, working-tree state and the
-SHA-256 of the decoded WASM. This is unsigned build metadata. The binary is
+SHA-256 of the decoded WASM. This is unsigned build metadata. The digest
+identifies the shipped bytes; it is **not** a reproducible-build claim:
+rebuilding the same commit in another directory or on another machine gives
+different bytes (rustc hashes the build location into symbol metadata). Local
+source paths are remapped out of the binary (`/warrant`, `/cargo`). The binary is
 embedded as base64 to make offline imports portable across hosts and bundlers.
 
 From a checkout with Rust, Python, Node, the wasm32 target and wasm-bindgen CLI

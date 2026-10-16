@@ -27,6 +27,14 @@ right.
 
 ## Unreleased
 
+- **WASM builds no longer carry the builder's paths.** `web/build.py` remaps the
+  checkout and the cargo registry (`--remap-path-prefix` → `/warrant`, `/cargo`);
+  the binary embedded 18 copies of the checkout path and the builder's home
+  directory, and would have shipped them in `@s0fractal/warrant`. Also corrected:
+  the WASM digest is **not** reproducible across build locations (the location
+  reaches rustc's symbol metadata), which the previous entry's commit message
+  implied it was; `js/README.md` and `web/README.md` now say so.
+
 - **`@s0fractal/warrant` for npm and JSR: the Rust verifier as an offline,
   typed JavaScript package.** Built from the same Rust/WASM adapter as the
   browser lab (`impl-wasm`, `web/build.py`), with the WASM bytes embedded so
