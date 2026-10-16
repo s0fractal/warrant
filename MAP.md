@@ -45,7 +45,9 @@ present on a ref the reviewer was not looking at.
 | `WRT-012` | this repo, `master` | `experiments/wrt-012-e2e-001/run.py` | `SPEC.md` |
 | `WRT-013` | this repo, `master` | `proposals/WRT-013-ski-v2-admission.md` | `SPEC.md` |
 | `WRT-014` | this repo, `origin/master` | `proposals/wrt-014-model/reproduce.py` | `proposals/WRT-014-adoption-policy-binding.md` |
-| `WRT-015` | this repo, `origin/research/r13-keystate` | `proposals/WRT-015-pre-rotation.md` | `SPEC.md` |
+| `WRT-015` | this repo, `origin/master` | `proposals/WRT-015-pre-rotation.md` | `SPEC.md` |
+| `WRT-016` | this repo, `spec/keystate-residuals` | `proposals/WRT-016-conflict-scope.md` | `SPEC.md` |
+| `WRT-017` | this repo, `spec/keystate-residuals` | `proposals/WRT-017-revocation.md` | `SPEC.md` |
 
 ## Known identifier collisions
 

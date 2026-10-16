@@ -6,7 +6,8 @@
   "witnesses": [
     "tests/settlement.py::case_key_state",
     "tests/settlement.py::case_stale_replay",
-    "tests/r13_retired_key_denial.py::case_residual"
+    "tests/r13_retired_key_denial.py::case_residual",
+    "tests/r13_retired_key_denial.py::case_multihop_residual"
   ],
   "decisions": [
     {
@@ -14,6 +15,18 @@
       "because": "Recorded as a contract on 2026-10-16. The rule dates from SPEC v0.3, and its stale-replay case was refuted by DeepSeek gate 3 (tests/settlement.py case_stale_replay). Since WRT-015 the only way to reach a conflict is the residual duplicity: a key and its committed successor introducing that successor twice at one DAG position. Ordering it needs an external witness (WRT-012).",
       "statement_sha256": "960dc67427674b7edf620a596e416c3c720d32bb92461a166042517ffe4e2c43",
       "previous_statement_sha256": null
+    },
+    {
+      "date": "2026-10-16",
+      "because": "DeepReview of paper 1.1.0, reproduced before acting: under pre-rotation the conflict rule still reaches back over all history, and the forking pair can be two RETIRED keys. The statement stands as current behaviour. Scoping a conflict to the fork is proposed as WRT-016, for an owner decision.",
+      "statement_sha256": "960dc67427674b7edf620a596e416c3c720d32bb92461a166042517ffe4e2c43",
+      "previous_statement_sha256": "960dc67427674b7edf620a596e416c3c720d32bb92461a166042517ffe4e2c43",
+      "counterexample": {
+        "at": "3adccdf",
+        "witness": "tests/r13_retired_key_denial.py::case_multihop_residual",
+        "observed": "after a0 -> a1 -> a2, a fork at the root signed by the retired a0 and a1 made a@x conflicted; records signed by the uncompromised current key a2, and the genesis root, reported unbound (Python = Go = Rust)",
+        "expected": "under the rule as written, exactly this, so the residual must be stated as reachable with retired keys alone, not as needing the current key"
+      }
     }
   ],
   "annotations": "Unsigned note. A conflict is a denial, never a takeover (THREAT-MODEL A10)."
