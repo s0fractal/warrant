@@ -94,5 +94,29 @@ fail the proof:
 - the five hex mutants;
 - the five JCS mutants.
 
-A proof that still closes on broken code would show nothing about the code. None
-of this runs in CI, because installing Creusot takes about half an hour.
+A proof that still closes on broken code would show nothing about the code.
+
+## In CI: attested, not re-run
+
+Installing Creusot takes about half an hour, so CI does not run it. Whoever runs
+the proofs signs a warrant record instead:
+
+```sh
+python3 tools/proof_attestation.py --attest   # runs both commands above, then signs
+python3 tools/proof_attestation.py --check    # what CI runs (tools/check.py)
+```
+
+The record's subject is a manifest of the proof inputs: the proved impl-rs files,
+this crate's sources and pins, `mutants.py`, and the proof certificates. Prose is
+not an input. The record carries the two logs and the environment as evidence.
+`--check` recomputes the manifest from the checkout and looks for a record about
+exactly it, bound to a key in [attestation/trust.json](attestation/trust.json).
+
+The result is reported as **CLAIMED**, never as passed. A green check means a
+trusted key says the proofs and mutants passed on these inputs; CI ran nothing.
+If a proved file changes without a new attestation, the check turns red and names
+what changed. [attestation/POLICY.md](attestation/POLICY.md) states what a record
+claims and what it does not. The key is an agent's (`claude@warrant-proofs`), and
+no other check consults this trust file. `tests/proof_attestation_vectors.py`
+holds the attacks: a changed input, a foreign key, edited or deleted evidence, and
+an untrusted signer.

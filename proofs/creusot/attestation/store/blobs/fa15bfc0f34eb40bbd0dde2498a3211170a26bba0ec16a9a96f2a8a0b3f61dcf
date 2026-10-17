@@ -1,0 +1,13 @@
+Proved (46 files) ✔
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/num/uint_macros.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/option.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/option.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/num/uint_macros.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/option.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/option.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/num/uint_macros.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/num/uint_macros.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/num/uint_macros.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/num/uint_macros.rs]
+Warning: inexistent file in source location: No resolved file among [/rustc/11177f2235f0c842b00f82c558ad9480c0c3a895/library/core/src/panic.rs]
