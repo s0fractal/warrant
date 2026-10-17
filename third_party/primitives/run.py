@@ -60,6 +60,32 @@ def ask(argv, vector, cls, timeout):
     return ("FAIL", why) if why else ("PASS", "")
 
 
+def run_classes(argv, classes, timeout):
+    results = {}
+    for cls in classes:
+        doc = json.loads((ROOT / "vectors" / f"{cls}.json").read_text())
+        rows = []
+        for v in doc["vectors"]:
+            outcome, why = ask(argv, v, cls, timeout)
+            rows.append({"id": v["id"], "polarity": v["polarity"], "outcome": outcome, "why": why})
+        results[cls] = rows
+    return results
+
+
+def print_table(results):
+    print(f"{'class':14} {'vectors':>7} {'PASS':>5} {'FAIL':>5} {'UNRUN':>6}")
+    for cls, rows in results.items():
+        n = {o: sum(r["outcome"] == o for r in rows) for o in ("PASS", "FAIL", "UNRUN")}
+        print(f"{cls:14} {len(rows):7} {n['PASS']:5} {n['FAIL']:5} {n['UNRUN']:6}")
+    for cls, rows in results.items():
+        for r in (r for r in rows if r["outcome"] == "FAIL"):
+            tag = "MUST-REJECT ACCEPTED" if r["polarity"] == "negative" else "FAIL"
+            print(f"  {tag:22} {r['id']}  {r['why']}")
+        unrun = [r for r in rows if r["outcome"] == "UNRUN"]
+        if unrun:
+            print(f"  UNRUN {len(unrun):3} in {cls}: {unrun[0]['why']}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--candidate", required=True)
@@ -73,30 +99,11 @@ def main():
         return 2
     catalog = json.loads((ROOT / "catalog.json").read_text())
     wanted = [c for c in args.classes.split(",") if c] or list(catalog["classes"])
-    argv = args.candidate.split()
-    results = {}
-    for cls in wanted:
-        doc = json.loads((ROOT / "vectors" / f"{cls}.json").read_text())
-        rows = []
-        for v in doc["vectors"]:
-            outcome, why = ask(argv, v, cls, args.timeout)
-            rows.append({"id": v["id"], "polarity": v["polarity"], "outcome": outcome, "why": why})
-        results[cls] = rows
+    results = run_classes(args.candidate.split(), wanted, args.timeout)
     if args.json:
         print(json.dumps(results, indent=2))
     else:
-        print(f"{'class':14} {'vectors':>7} {'PASS':>5} {'FAIL':>5} {'UNRUN':>6}")
-        for cls, rows in results.items():
-            n = {o: sum(r["outcome"] == o for r in rows) for o in ("PASS", "FAIL", "UNRUN")}
-            print(f"{cls:14} {len(rows):7} {n['PASS']:5} {n['FAIL']:5} {n['UNRUN']:6}")
-        for cls, rows in results.items():
-            for r in rows:
-                if r["outcome"] == "FAIL":
-                    tag = "MUST-REJECT ACCEPTED" if r["polarity"] == "negative" else "FAIL"
-                    print(f"  {tag:22} {r['id']}  {r['why']}")
-            unrun = [r for r in rows if r["outcome"] == "UNRUN"]
-            if unrun:
-                print(f"  UNRUN {len(unrun):3} in {cls}: {unrun[0]['why']}")
+        print_table(results)
     ok = all(r["outcome"] == "PASS" for rows in results.values() for r in rows)
     print("\nPRIMITIVES:", "ALL PASS" if ok else "NOT ALL PASS")
     return 0 if ok else 1

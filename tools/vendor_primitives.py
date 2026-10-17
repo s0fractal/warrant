@@ -19,11 +19,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / "third_party" / "primitives"
 PIN = DEST / "PIN.json"
+MANIFEST = "MANIFEST.sha256"
 
 
 def check():
     pin = json.loads(PIN.read_text())
-    manifest = DEST / "MANIFEST.sha256"
+    manifest = DEST / MANIFEST
     problems = []
     if hashlib.sha256(manifest.read_bytes()).hexdigest() != pin["manifest_sha256"]:
         problems.append("MANIFEST.sha256 does not match PIN.json")
@@ -34,8 +35,8 @@ def check():
         f = DEST / name
         if not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest() != digest:
             problems.append(f"{name} does not match the manifest")
-    present = sorted(str(p.relative_to(DEST)) for p in DEST.rglob("*") if p.is_file())
-    extra = set(present) - set(listed) - {"MANIFEST.sha256", "PIN.json"}
+    present = {str(p.relative_to(DEST)) for p in DEST.rglob("*") if p.is_file()}
+    extra = present - set(listed) - {MANIFEST, "PIN.json"}
     if extra:
         problems.append(f"files not in the manifest: {sorted(extra)}")
     for p in problems:
@@ -46,9 +47,13 @@ def check():
 
 
 def vendor(repo, commit):
-    show = lambda path: subprocess.run(["git", "-C", repo, "show", f"{commit}:{path}"],  # noqa: E731
-                                       capture_output=True, check=True).stdout
-    manifest = show("MANIFEST.sha256")
+    # Sonar S8707 (CLI-supplied path): the maintainer names their own primitives
+    # checkout; only `git show <commit>:<path>` reads from it, and every file is
+    # then held to the pinned manifest digest by check().
+    def show(path):
+        return subprocess.run(["git", "-C", repo, "show", f"{commit}:{path}"],  # NOSONAR
+                              capture_output=True, check=True).stdout
+    manifest = show(MANIFEST)
     if DEST.exists():
         for p in sorted(DEST.rglob("*"), reverse=True):
             p.unlink() if p.is_file() else p.rmdir()
@@ -56,7 +61,7 @@ def vendor(repo, commit):
         name = line.split("  ", 1)[1]
         (DEST / name).parent.mkdir(parents=True, exist_ok=True)
         (DEST / name).write_bytes(show(name))
-    (DEST / "MANIFEST.sha256").write_bytes(manifest)
+    (DEST / MANIFEST).write_bytes(manifest)
     PIN.write_text(json.dumps({"repository": "https://github.com/s0fractal/primitives", "commit": commit,
                                "manifest_sha256": hashlib.sha256(manifest).hexdigest()}, indent=2) + "\n")
     return check()
