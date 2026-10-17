@@ -130,7 +130,10 @@ pub fn verify_sig(wid: &str, sig: &Obj) -> bool {
             if !is_p256_key_hex(k) || !lower_hex(sg, 128) {
                 return false;
             }
-            match (hexcanon::decode(k.as_bytes()), hexcanon::decode(sg.as_bytes())) {
+            match (
+                hexcanon::decode(k.as_bytes()),
+                hexcanon::decode(sg.as_bytes()),
+            ) {
                 (Some(kb), Some(sb)) => p256::verify(&kb, &sb, &msg),
                 _ => false,
             }
