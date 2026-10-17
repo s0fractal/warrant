@@ -60,15 +60,32 @@ def proved_files(root):
     return sorted(p.as_posix() for p in referenced(root) if p.parts[:2] == ("impl-rs", "src"))
 
 
+class UnsupportedInput(OutsideInput):
+    """An input the manifest cannot pin as bytes: a symlink. os.walk does not
+    descend a symlinked directory, so a `.cargo -> elsewhere` would be read by
+    Cargo and missed by the manifest (independent review PA01). Refused, not
+    followed: the supported closure is plain files and directories."""
+
+
+def _refuse_symlink(path, root):
+    if path.is_symlink():
+        raise UnsupportedInput(f"{path.relative_to(root)} is a symlink: not a supported proof input")
+
+
 def crate_files(root):
     crate = root / PROOFS
+    _refuse_symlink(crate, root)
     out = []
     for dirpath, dirnames, filenames in os.walk(crate):
-        dirnames[:] = sorted(d for d in dirnames if d not in NON_INPUT_DIRS)
         here = Path(dirpath)
+        for d in dirnames:
+            if d not in NON_INPUT_DIRS:
+                _refuse_symlink(here / d, root)
+        dirnames[:] = sorted(d for d in dirnames if d not in NON_INPUT_DIRS)
         for f in sorted(filenames):
             if f.endswith(NON_INPUT_SUFFIXES) or (here == crate and f in NON_INPUT_FILES):
                 continue
+            _refuse_symlink(here / f, root)
             out.append((here / f).relative_to(root))
     return out
 
@@ -83,6 +100,7 @@ def referenced(root):
         if any(part in NON_INPUT_DIRS for part in src.relative_to(crate).parts):
             continue
         for rel in REFERENCE.findall(src.read_text(errors="replace")):
+            _refuse_symlink(src.parent / rel, root)
             target = (src.parent / rel).resolve()
             try:
                 found.add(target.relative_to(root.resolve()))
@@ -92,12 +110,18 @@ def referenced(root):
 
 
 def ancestor_files(root):
+    """Cargo configuration and toolchain files from the crate's OWN directory up
+    to the repository root (Cargo reads `.cargo/config*` starting at the crate)."""
     out = []
-    d = (root / PROOFS).parent
+    d = root / PROOFS
     while True:
         for name in ANCESTOR_INPUTS:
-            if (d / name).is_file():
-                out.append((d / name).relative_to(root))
+            q = d / name
+            for part in (q.parent, q):
+                if part.is_symlink():
+                    _refuse_symlink(part, root)
+            if q.is_file():
+                out.append(q.relative_to(root))
         if d == root:
             return out
         d = d.parent

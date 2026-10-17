@@ -98,6 +98,12 @@ def unit_checks():
         print(("ok  " if ok else "FAIL"), "an untracked input refuses attestation", "" if ok else loose)
 
 
+def symlinked_cargo(root):
+    (root / "cargo-inputs").mkdir()
+    (root / "cargo-inputs" / "config.toml").write_bytes(bytes.fromhex("5b6275696c640a"))   # "[build\n"
+    (root / PA.PROOFS / ".cargo").symlink_to("../../cargo-inputs")
+
+
 def other_key(root):
     (root / ATT / "trust.json").write_text(json.dumps(
         {"actors": {PA.ACTOR: ["5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5"]}}))
@@ -162,6 +168,10 @@ def main():
     case("a source that names a file outside the repository: refused",
          append_text("proofs/creusot/src/lib.rs", '\nconst X: &str = include_str!("../../../../outside.txt");\n'),
          1, "outside the repository")
+    # Independent review PA01: a symlinked .cargo in the crate was read by Cargo
+    # and missed by the manifest (os.walk does not descend it). Exact fixture.
+    case("a crate-local .cargo that is a symlink (review PA01): refused as unsupported",
+         symlinked_cargo, 1, "symlink")
     case("trust binds another key: the record is unbound, refused", other_key, 1, "no bound signature")
     # warrant itself refuses edited bytes; a DELETED blob is only a warning there,
     # which is why --check looks at the evidence itself (next case).
