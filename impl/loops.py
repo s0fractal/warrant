@@ -29,6 +29,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import warrant as W  # noqa: E402
+import triggers as TR  # noqa: E402  (WRT-022 S1)
 
 DUTY = "warrant.duty@draft-2"
 TRANSITION = "warrant.transition@draft-2"
@@ -54,6 +55,8 @@ FLAGS = {"CONTESTED", "ORPHANED", "LAPSED", "BREACHED", "UNOBSERVED", "MISSING",
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")    # a git SHA-1 or a blob hash
 EVALUATOR = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+PROFILE = "warrant.loops-profile@draft-2"
+RELIANCE = {"ELIGIBLE", "STALE", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSING"}
 
 DUTY_FIELDS = {"schema", "kind", "shape", "holder", "owed_to", "statement", "scope", "serves",
                "admits", "acceptance", "release_by"}
@@ -61,7 +64,7 @@ DUTY_OPTIONAL = {"period", "freshness", "answers", "closure_requires"}
 TRANSITION_FIELDS = {"schema", "relied_on", "addresses", "did", "established", "closes", "opened",
                      "not_established", "scope"}
 MAPPING_FIELDS = {"duty", "disposition", "evidence"}
-MAPPING_OPTIONAL = {"instance", "to", "holds"}
+MAPPING_OPTIONAL = {"instance", "to", "holds", "triggers"}
 ACCEPTANCE_FIELDS = {"schema", "duty", "transition", "mapping", "evidence"}
 ACCEPTANCE_OPTIONAL = {"support"}
 
@@ -218,6 +221,10 @@ def transition_problem(t):
             return "to"
         if (m["disposition"] == "OBSERVED") != ("holds" in m) or ("holds" in m and type(m["holds"]) is not bool):
             return "holds"
+        if "triggers" in m:
+            why = TR.triggers_problem(m["triggers"])
+            if why:
+                return why
     return None
 
 
@@ -438,7 +445,8 @@ def _apply(d, state, acc, tbody, t_id, t, m):
     elif d["shape"] == "recurring" and disp == "DISCHARGED":
         acc["instances"].setdefault(m["instance"], t_id)
     else:
-        acc["closures"].append((disp, t_id, tbody["actor"]["id"], t["scope"].get("subject")))
+        acc["closures"].append((disp, t_id, tbody["actor"]["id"], t["scope"].get("subject"),
+                                m.get("triggers", [])))
 
 
 def _recurring(d, out, instances, as_of):
@@ -481,6 +489,7 @@ def _settle_disposition(out, closures):
         label = "RELEASE_BY" if kinds[0] == "RELEASED" else "ACTOR_ATTESTATION"
         out["assessed_basis"] = sorted({f"{label}:{c[2]}" for c in chosen})
         out["closure_scope"] = sorted({c[3] for c in chosen if c[3]})
+        out["declared_triggers"] = [{"closure": c[1], "trigger": tr} for c in chosen for tr in c[4]]
     out["closed_by"] = [c[1] for c in closures]
 
 
@@ -577,11 +586,49 @@ def _questions(view):
     return out
 
 
-def assess(store_root, trust_path, as_of, current=None):
+def profile_problem(prof):
+    """None if `prof` is a well-formed recipient profile, else the reason. A profile
+    names the uses a recipient may rely on closures for, and what each use needs."""
+    if not (isinstance(prof, dict) and set(prof) == {"schema", "uses"} and prof["schema"] == PROFILE):
+        return "profile fields"
+    uses = prof["uses"]
+    if not (isinstance(uses, dict) and uses and all(isinstance(k, str) and k for k in uses)):
+        return "profile uses"
+    for need in uses.values():
+        if not (isinstance(need, dict) and set(need) == {"requires_declared_triggers"}
+                and type(need["requires_declared_triggers"]) is bool):
+            return "use requirements"
+    return None
+
+
+def _evaluate_triggers(view, report, workspace):
+    """After every duty is assessed: each declared trigger of each admitted closure,
+    in this view. Results are kept per trigger, so several causes stay visible."""
+    dispositions = {did: r["disposition"] for did, r in report.items()}
+    for r in report.values():
+        declared = r.pop("declared_triggers", [])
+        r["triggers"] = []
+        for item in declared:
+            result, detail = TR.evaluate(item["trigger"], lambda h: _blob(view.store, h), workspace, dispositions)
+            if result not in TR.RESULTS:
+                raise ValueError(f"trigger result outside its vocabulary: {result}")
+            r["triggers"].append({"closure": item["closure"], **item["trigger"], "result": result, "detail": detail})
+        if r["disposition"] == "DISCHARGED":
+            r["trigger_coverage"] = "NO_DECLARED_TRIGGERS" if not r["triggers"] else \
+                {k: sum(t["result"] == k for t in r["triggers"]) for k in sorted(TR.RESULTS)}
+
+
+def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=None):
     """Assess every duty in ONE snapshot of the store, under the recipient's trust
     snapshot, at `as_of`. `current`, if given, is the set of subjects the recipient
-    treats as current (F2, review R5)."""
+    treats as current (F2, review R5). `workspace` is (repo, commit): the recipient's
+    current revision, against which `subject_changed` triggers are evaluated (WRT-022
+    S1). `profile` is the recipient's named uses. Every operand that can change a
+    result is in `view.assessment_id`."""
+    if profile is not None and profile_problem(profile):
+        raise ValueError(f"profile: {profile_problem(profile)}")
     trust_bytes = Path(trust_path).read_bytes()
+    ws = TR.Workspace(*workspace) if workspace is not None else None
     with tempfile.TemporaryDirectory() as tmp:
         store, store_sha = _snapshot(store_root, Path(tmp) / "store")
         snap_trust = Path(tmp) / "trust.json"
@@ -593,17 +640,23 @@ def assess(store_root, trust_path, as_of, current=None):
         view = _View(store, valid, as_of)
         report = _assess_all(view, as_of, current)
         _orphan_and_missing(view, report)
+        _evaluate_triggers(view, report, ws)
         dangling = sorted({m["duty"] for _, t in view.transitions.values() for m in t["closes"]
                            if m["duty"] not in view.duties})
         for r in report.values():
             unknown = (set(r["flags"]) - FLAGS) | ({c["verdict"] for c in r["candidates"]} - VERDICTS)
             if unknown:
                 raise ValueError(f"value outside its vocabulary: {sorted(unknown)}")
-        return {"schema": REPORT,
-                "view": {"store_snapshot_sha256": store_sha,
-                         "trust_sha256": hashlib.sha256(trust_bytes).hexdigest(),
-                         "as_of": as_of, "evaluator": EVALUATOR, "validated_bases": sorted(VALIDATED_BASES),
-                         "completeness": "UNATTESTED", "store_integrity": "VERIFIED" if store_ok else "INVALID"},
+        v = {"store_snapshot_sha256": store_sha,
+             "trust_sha256": hashlib.sha256(trust_bytes).hexdigest(),
+             "as_of": as_of, "evaluator": EVALUATOR, "trigger_evaluator": TR.EVALUATOR,
+             "validated_bases": sorted(VALIDATED_BASES),
+             "current": sorted(current) if current is not None else None,
+             "workspace": ws.identity() if ws is not None else None,
+             "profile_sha256": hashlib.sha256(canon(profile)).hexdigest() if profile is not None else None,
+             "completeness": "UNATTESTED", "store_integrity": "VERIFIED" if store_ok else "INVALID"}
+        v["assessment_id"] = hashlib.sha256(canon(v)).hexdigest()
+        return {"schema": REPORT, "view": v, "profile": profile,
                 "duties": report, "invalid_records": sorted(set(ids) - set(valid)),
                 "refused_events": view.refused, "missing_duties": dangling,
                 "unowned_questions": _questions(view),
@@ -636,13 +689,48 @@ def questions(rep, scope=None):
     return [q for q in rep["unowned_questions"] if scope is None or q["scope"] == scope]
 
 
-def reliance(rep, did):
-    """F2: may a current action rely on this duty's closure? RELIABLE only for an
-    uncontested DISCHARGED whose closure was established on a current revision;
-    absence from someone's frontier is not this answer."""
+def reliance_detail(rep, did, use=None):
+    """WRT-022 S1: may a current action rely on this duty's closure, for `use`?
+
+    Three judgments stay apart: the closure's historical validity (its disposition,
+    never rewritten here), present eligibility (this answer) and trigger coverage.
+    ELIGIBLE needs an uncontested DISCHARGED, a revision basis, and no trigger that
+    FIRED or is UNEVALUABLE. The revision basis is either the closure being
+    established on a revision the recipient treats as current, or a scoped
+    `subject_changed` trigger that evaluated NOT_FIRED. NO_DECLARED_TRIGGERS is
+    neutral: it neither satisfies nor skips the other requirements. Absence from
+    someone's frontier is not this answer."""
+    out = {"duty": did, "use": use, "assessment_id": rep["view"]["assessment_id"], "causes": []}
     r = rep["duties"].get(did)
     if r is None:
-        return "MISSING"
+        return dict(out, state="MISSING")
+    out["coverage"] = r.get("trigger_coverage")
+    if "CONTESTED" in r["flags"]:
+        return dict(out, state="CONTESTED")
     if r["disposition"] != "DISCHARGED":
-        return "NOT_CLOSED"
-    return "RELIABLE" if r["applicability"] == "CURRENT" else "UNASSESSED"
+        return dict(out, state="NOT_CLOSED")
+    if use is not None:
+        uses = (rep.get("profile") or {}).get("uses", {})
+        if use not in uses:
+            return dict(out, state="UNASSESSED", causes=[f"use {use!r} is not in the recipient profile"])
+        if uses[use]["requires_declared_triggers"] and not r["triggers"]:
+            return dict(out, state="UNASSESSED", causes=[f"use {use!r} requires declared triggers"])
+    fired = [f"{t['kind']}: {t['detail']}" for t in r["triggers"] if t["result"] == "FIRED"]
+    if fired:
+        return dict(out, state="STALE", causes=fired)
+    unknown = [f"{t['kind']}: {t['detail']}" for t in r["triggers"] if t["result"] == "UNEVALUABLE"]
+    if unknown:
+        return dict(out, state="UNASSESSED", causes=unknown)
+    scoped = any(t["kind"] == "subject_changed" and t["result"] == "NOT_FIRED" for t in r["triggers"])
+    if r["applicability"] != "CURRENT" and not scoped:
+        return dict(out, state="UNASSESSED",
+                    causes=["no revision basis: not established on a current revision, and no scoped subject trigger"])
+    return dict(out, state="ELIGIBLE")
+
+
+def reliance(rep, did, use=None):
+    """The state of reliance_detail: one of RELIANCE."""
+    state = reliance_detail(rep, did, use)["state"]
+    if state not in RELIANCE:
+        raise ValueError(f"reliance outside its vocabulary: {state}")
+    return state

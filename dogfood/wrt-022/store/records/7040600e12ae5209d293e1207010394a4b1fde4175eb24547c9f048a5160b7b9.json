@@ -1,0 +1,32 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude@warrant-wrt022"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "duty"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [],
+    "prior": [],
+    "subject": {
+      "hash": "772135bce0f38d476e10c680f04a2fe1ef3717cf7a219e1980530d00c72973f3",
+      "note": "duty"
+    },
+    "ts": 1792276917,
+    "under": [
+      "119fad9210ea709cccb008f0ee7712e37ff3359787e5165d19e130bd7ff3b1b3"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude@warrant-wrt022",
+      "key": "fdd3de20d61dd2fe851f2612eaedeb5530a2adebc10ff3bb9edcf7fc9db938cd",
+      "sig": "8dbf93586f19d57822d7a43c880797c295b23b52f2addc4cdd7436fb0bf7ce0a7882808cd30cdc0e83ecadb41b3a6034e3e3446bbb7ba7bae3aad6bffffe9a0d"
+    }
+  ]
+}

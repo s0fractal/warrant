@@ -52,7 +52,7 @@ present on a ref the reviewer was not looking at.
 | `WRT-019` | this repo, `origin/master` | `proposals/WRT-019-p256-signatures.md` | `README.md` |
 | `WRT-020` | this repo, `origin/master` | `proposals/WRT-020-policy-binding.md` | `README.md` |
 | `WRT-021` | this repo, `origin/master` | `demos/wrt-021-dogfood/run.py` | `proposals/WRT-021-open-loops.md` |
-| `WRT-022` | this repo, `wrt-022/authority-falsifiers-crossings` | `proposals/WRT-022-authority-falsifiers-crossings.md` | `proposals/WRT-022-authority-falsifiers-crossings.md` |
+| `WRT-022` | this repo, `origin/master` | `proposals/WRT-022-authority-falsifiers-crossings.md` | `proposals/WRT-022-authority-falsifiers-crossings.md` |
 
 ## Known identifier collisions
 

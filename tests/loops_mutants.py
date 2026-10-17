@@ -129,7 +129,7 @@ MUTANTS = [
      [('            if why is None and not all(_resolves(self.store, h) for h in doc.get("support", [])):',
        '            if False:')]),
     ("L34", "any closure is reliable, whatever the revision (F2)",
-     [('    return "RELIABLE" if r["applicability"] == "CURRENT" else "UNASSESSED"', '    return "RELIABLE"')]),
+     [('    if r["applicability"] != "CURRENT" and not scoped:', '    if False:')]),
     ("L35", "the question view ignores the scope (F3)",
      [('    return [q for q in rep["unowned_questions"] if scope is None or q["scope"] == scope]',
        '    return list(rep["unowned_questions"])')]),

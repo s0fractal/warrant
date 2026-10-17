@@ -167,6 +167,13 @@ CHECKS = [
      ["python3", "tests/loops_mutants.py"], None),
     ("WRT-021 dogfood: #131 N1, service recovery, maintenance (transcribed)",
      ["python3", "demos/wrt-021-dogfood/run.py"], None),
+    # WRT-022 S1: scoped tri-state revalidation triggers and reliance for a named use.
+    ("WRT-022 S1 triggers: unchanged/unrelated/relevant/unavailable/missing, identity (T01-T15)",
+     ["python3", "tests/triggers_test.py"], None),
+    ("WRT-022 S1 triggers: one on-target mutant per rule",
+     ["python3", "tests/triggers_mutants.py"], None),
+    ("WRT-022 dogfood store: real agent-signed events verify, none refused",
+     ["python3", "dogfood/wrt-022/events.py", "check"], None),
     ("evidence PDF pack (portable extraction refusal controls)",
      ["python3", "tests/pack_pdf.py"], None),
     # WRT-005 (design only): the outcome-fingerprint gate countervectors,
