@@ -1,0 +1,13 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_lt_be": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_p256_x_in_range": {
+        "tactic": "compute_specified",
+        "children": [ { "prover": "z3", "time": 0.126 } ]
+      },
+      "vc_set_P256_P_BE": { "prover": "alt-ergo", "time": 0.012 }
+    }
+  }
+}

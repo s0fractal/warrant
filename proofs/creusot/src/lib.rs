@@ -1,11 +1,15 @@
-//! The shipped file, not a copy: `hexcanon` below IS impl-rs/src/hexcanon.rs.
-//! Its contracts are proved where they stand; the two theorems here follow.
+//! The shipped files, not copies: `hexcanon` and `bounds` below ARE
+//! impl-rs/src/hexcanon.rs and impl-rs/src/bounds.rs. Their contracts are proved
+//! where they stand; the two hex theorems below follow from them.
 #![allow(dead_code)]
 
 use creusot_std::prelude::*;
 
 #[path = "../../../impl-rs/src/hexcanon.rs"]
 pub mod hexcanon;
+
+#[path = "../../../impl-rs/src/bounds.rs"]
+pub mod bounds;
 
 use hexcanon::{decode, encode, encodes};
 

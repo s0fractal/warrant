@@ -36,7 +36,14 @@
       "what": "a compressed SEC1 P-256 key decoded alone: the point, or a refusal",
       "boundary": "deterministic",
       "spec": "SEC 1 v2 §2.3.4, narrowed by warrant WRT-019 (compressed, lowercase, x < p, on the curve)",
-      "bite_proof": "tools/p256_decode.py --selftest"
+      "bite_proof": "tools/p256_decode.py --selftest",
+      "proofs": [
+        {"implementation": "warrant/impl-rs",
+         "covers": "the hex layer only: hexcanon::decode accepts exactly the lowercase spellings encode writes (complete and canonical); the curve checks after it are vector-tested, not proved",
+         "tool": "Creusot (Why3: Alt-Ergo, Z3, CVC5)",
+         "where": "https://github.com/s0fractal/warrant/tree/cae3e6d064a74fe624971eef7e923e4764270d06/proofs/creusot",
+         "bite_proof": "proofs/creusot/mutants.py: 5/5 mutants make the proof fail"}
+      ]
     }
   },
   "implementations": [
