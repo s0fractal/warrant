@@ -23,6 +23,8 @@ every policy blob it cites, one of:
     SIGNATURES    a v0.3 threshold policy: it governs who signs, which settlement
                   already enforces; there is no computation to bind
 
+The CLI exits 1 when any pair is CONTRADICTED, else 0.
+
 Only `accept` is gated by the answer: a `reject` where the policy would allow is
 discretion, not a contradiction, and `propose`/`supersede` decide nothing yet.
 
@@ -50,7 +52,7 @@ def classify_policy(raw):
         doc = json.loads(raw)
         if isinstance(doc, dict) and doc.get("warrant_policy") == "0.3":
             return "threshold", None
-    except (ValueError, UnicodeDecodeError):
+    except ValueError:               # UnicodeDecodeError is a ValueError
         pass
     if len(raw) > MAX_POLICY_BYTES:
         return "opaque", "larger than the profile reads"
@@ -88,7 +90,7 @@ def runs_policy(reason, want, blobs):
         return False
     try:
         got = json.loads(p.read_bytes())
-    except (ValueError, UnicodeDecodeError):
+    except ValueError:               # UnicodeDecodeError is a ValueError
         return False
     if not isinstance(got, dict) or got.get("ski") != want["ski"] or got.get("term") != want["term"]:
         return False
@@ -102,37 +104,36 @@ def runs_policy(reason, want, blobs):
     return True
 
 
+def _wpl_row(h, info, reasons, decision, blobs):
+    compiled, want = info
+    row = {"policy": h, "term": want["term"]}
+    verdicts = [runs_policy(r, want, blobs) for r in reasons]
+    if True not in verdicts:
+        why = next((v for v in verdicts if isinstance(v, str)), None)
+        return {**row, "status": "UNBOUND",
+                "why": why or f"no ski@v1 reason runs this policy's term ({want['term'][:12]})"}
+    if decision in GATED and compiled.result is not True:
+        return {**row, "status": "CONTRADICTED", "why": f"{decision} while the policy answers {compiled.result}"}
+    return {**row, "status": "BOUND", "why": f"policy answers {compiled.result}; decision {decision}"}
+
+
+def _policy_row(h, reasons, decision, blobs):
+    p = blobs / h if isinstance(h, str) else None
+    if p is None or not p.is_file():
+        return {"policy": h, "status": "OPAQUE", "why": "policy blob absent"}
+    kind, info = classify_policy(p.read_bytes())
+    if kind == "threshold":
+        return {"policy": h, "status": "SIGNATURES", "why": "v0.3 threshold policy"}
+    if kind == "opaque":
+        return {"policy": h, "status": "OPAQUE", "why": info}
+    return _wpl_row(h, info, reasons, decision, blobs)
+
+
 def classify_record(body, blobs):
-    rows = []
     reasons = [r for r in body.get("because", []) if isinstance(r, dict)
                and r.get("kind") == "check" and r.get("runtime") == "ski@v1"]
-    decision = body.get("decision")
-    for h in body.get("under", []):
-        p = blobs / h if isinstance(h, str) else None
-        if p is None or not p.is_file():
-            rows.append({"policy": h, "status": "OPAQUE", "why": "policy blob absent"})
-            continue
-        kind, info = classify_policy(p.read_bytes())
-        if kind == "threshold":
-            rows.append({"policy": h, "status": "SIGNATURES", "why": "v0.3 threshold policy"})
-        elif kind == "opaque":
-            rows.append({"policy": h, "status": "OPAQUE", "why": info})
-        else:
-            compiled, want = info
-            verdicts = [runs_policy(r, want, blobs) for r in reasons]
-            if True not in verdicts:
-                why = next((v for v in verdicts if isinstance(v, str)), None)
-                rows.append({"policy": h, "status": "UNBOUND", "term": want["term"],
-                             "why": why or f"no ski@v1 reason runs this policy's term ({want['term'][:12]})"})
-            elif decision in GATED and compiled.result is not True:
-                rows.append({"policy": h, "status": "CONTRADICTED", "term": want["term"],
-                             "why": f"{decision} while the policy answers {compiled.result}"})
-            else:
-                rows.append({"policy": h, "status": "BOUND", "term": want["term"],
-                             "why": f"policy answers {compiled.result}; decision {decision}"})
-    if not rows:
-        rows.append({"policy": None, "status": "OPAQUE", "why": "cites no policy"})
-    return rows
+    rows = [_policy_row(h, reasons, body.get("decision"), blobs) for h in body.get("under", [])]
+    return rows or [{"policy": None, "status": "OPAQUE", "why": "cites no policy"}]
 
 
 def classify_store(root):
@@ -154,16 +155,19 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     report = {s: classify_store(s) for s in args.stores}
+    # Exit 1 when a decision contradicts its own policy: the one status that is a
+    # defect of the record rather than an absence of evidence.
+    status = 1 if any(r["status"] == "CONTRADICTED" for rows in report.values() for r in rows) else 0
     if args.json:
         print(json.dumps(report, indent=2))
-        return 0
+        return status
     for s, rows in report.items():
         counts = {k: sum(r["status"] == k for r in rows) for k in ORDER}
         print(f"{s}: {len(rows)} (record, policy) pairs  " + "  ".join(f"{k} {v}" for k, v in counts.items() if v))
         for r in rows:
             if r["status"] in ("CONTRADICTED", "UNBOUND"):
                 print(f"  {r['status']:12} {r['record'][:12]} {r['decision']:9} {r['why']}")
-    return 0
+    return status
 
 
 if __name__ == "__main__":

@@ -119,20 +119,24 @@ def manifest(root):
     return ("\n".join(lines) + "\n").encode()
 
 
+def _depinfo_deps(text):
+    """The dependency paths of one Makefile-style .d file (escaped spaces kept)."""
+    text = text.replace("\\\n", " ")
+    for line in text.splitlines():
+        if ":" in line and not line.startswith("#"):
+            for tok in re.split(r"(?<!\\) ", line.split(":", 1)[1]):
+                tok = tok.replace("\\ ", " ").strip()
+                if tok:
+                    yield tok
+
+
 def depinfo_files(crate):
     """Every file rustc reports reading for this crate (its .d dep-info files)."""
     seen = set()
     for d in (crate / "target").rglob("*.d"):
-        if "warrant_creusot_proofs" not in d.name and "warrant-creusot-proofs" not in str(d.parent):
-            continue
-        text = d.read_text(errors="replace").replace("\\\n", " ")
-        for line in text.splitlines():
-            if ":" not in line or line.startswith("#"):
-                continue
-            for tok in re.split(r"(?<!\\) ", line.split(":", 1)[1]):
-                tok = tok.replace("\\ ", " ").strip()
-                if tok:
-                    seen.add((crate / tok).resolve() if not tok.startswith("/") else Path(tok).resolve())
+        if "warrant_creusot_proofs" in d.name or "warrant-creusot-proofs" in str(d.parent):
+            for tok in _depinfo_deps(d.read_text(errors="replace")):
+                seen.add(Path(tok).resolve() if tok.startswith("/") else (crate / tok).resolve())
     return seen
 
 
@@ -152,9 +156,9 @@ def uncovered(root, read, inputs):
 
 
 def untracked(root, inputs):
-    """Inputs git does not track: present here, absent from the checkout CI sees."""
-    r = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", *[p.as_posix() for p in inputs]],
-                       capture_output=True, check=False)
+    """Inputs git does not track: present here, absent from the checkout CI sees.
+    Lists every tracked file and compares in Python, so no path reaches argv."""
+    r = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, check=False)
     tracked = set(r.stdout.decode().split("\0")) - {""}
     return [p.as_posix() for p in inputs if p.as_posix() not in tracked]
 
@@ -254,6 +258,34 @@ def changed_since(old, new):
     return sorted(p for p in set(a) | set(b) if a.get(p) != b.get(p))
 
 
+def _store_errors(root, trust_path):
+    """None if the attestation store verifies at settlement grade, else why not."""
+    r = warrant(root, "verify", "--settlement", "--require-bound", "--trust-config", str(trust_path),
+                "--json", text=True)
+    try:
+        report = json.loads(r.stdout)
+    except ValueError:
+        return f"the attestation store does not verify: {r.stderr.strip()[:300]}"
+    if report.get("errors") != 0:
+        errs = [f for f in report.get("findings", []) if f.get("level") == "ERR"]
+        return f"the attestation store has {report.get('errors')} error(s): {errs[:3]}"
+    return None
+
+
+def _broken_evidence(body, blobs):
+    return [h for h in body.get("evidence", []) + [body["subject"]["hash"]]
+            if not (blobs / h).is_file() or hashlib.sha256((blobs / h).read_bytes()).hexdigest() != h]
+
+
+def _explain_missing(mine, blobs, current):
+    if mine:
+        last = max(mine, key=lambda e: e["body"]["ts"])["body"]["subject"]["hash"]
+        if (blobs / last).is_file():
+            diff = changed_since((blobs / last).read_text(), current.decode())
+            print("      changed since the last attestation: " + ", ".join(diff[:12]))
+    print("      run the proofs where Creusot is installed: python3 tools/proof_attestation.py --attest")
+
+
 def check(root):
     trust_path = root / ATT / "trust.json"
     trusted = set(json.loads(trust_path.read_text()).get("actors", {}))
@@ -263,26 +295,15 @@ def check(root):
         print(f"FAIL  {e}: an input CI cannot see cannot be attested")
         return 1
     want = hashlib.sha256(current).hexdigest()
-    r = warrant(root, "verify", "--settlement", "--require-bound", "--trust-config", str(trust_path),
-                "--json", text=True)
-    try:
-        report = json.loads(r.stdout)
-    except ValueError:
-        print(f"FAIL  the attestation store does not verify: {r.stderr.strip()[:300]}")
-        return 1
-    if report.get("errors") != 0:
-        errs = [f for f in report.get("findings", []) if f.get("level") == "ERR"]
-        print(f"FAIL  the attestation store has {report.get('errors')} error(s): {errs[:3]}")
+    why = _store_errors(root, trust_path)
+    if why:
+        print(f"FAIL  {why}")
         return 1
     blobs = root / ATT / "store" / "blobs"
     mine = [e for e in records(root) if e["body"].get("actor", {}).get("id") in trusted
             and e["body"].get("decision") == "propose"]
-    for e in mine:
-        b = e["body"]
-        if b["subject"]["hash"] != want:
-            continue
-        missing = [h for h in b.get("evidence", []) + [b["subject"]["hash"]]
-                   if not (blobs / h).is_file() or hashlib.sha256((blobs / h).read_bytes()).hexdigest() != h]
+    for b in (e["body"] for e in mine if e["body"]["subject"]["hash"] == want):
+        missing = _broken_evidence(b, blobs)
         if missing:
             print(f"FAIL  the record for this manifest lacks intact evidence: {missing}")
             return 1
@@ -290,12 +311,7 @@ def check(root):
               f"not re-run here. {b['subject'].get('note', '')}")
         return 0
     print(f"FAIL  no trusted attestation for this tree's proof inputs (manifest {want[:16]}…).")
-    if mine:
-        last = max(mine, key=lambda e: e["body"]["ts"])["body"]["subject"]["hash"]
-        if (blobs / last).is_file():
-            diff = changed_since((blobs / last).read_text(), current.decode())
-            print("      changed since the last attestation: " + ", ".join(diff[:12]))
-    print("      run the proofs where Creusot is installed: python3 tools/proof_attestation.py --attest")
+    _explain_missing(mine, blobs, current)
     return 1
 
 
