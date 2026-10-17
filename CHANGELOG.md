@@ -37,6 +37,17 @@ right.
   decoder directly. Measured: with impl-rs's `x < p` or on-curve check
   removed, `verify-sig` still passed 50/50, while `p256-decode` reported the
   decoder accepting what it must refuse.
+- **The policy-binding gap is now executable, and the README says so.** A
+  record filed under a `DENY_ALL` policy blob, with a real `ski@v1` reason the
+  verifier re-executes (it computes something unrelated to the policy) and an
+  `accept` signed by a bound key, verifies with 0 errors in Python, Go and Rust
+  at settlement grade with `--require-bound`. Every guarantee the construction
+  offers holds; the claim that the decision was allowed by its policy is false.
+  The countermodel and the three missing links (policy → computation, evidence
+  → facts, result → decision) were named in a review conversation (manifesto
+  `quotes/Monday/chat-0001`). THREAT-MODEL A6 said the same in prose.
+  `tests/countermodel_policy_binding.py` pins it; it is meant to fail, and to
+  become the witness of the binding rule, once one lands (WRT-010).
 
 ## 0.12.0 — keys that live in phone hardware can sign
 

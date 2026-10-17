@@ -99,6 +99,8 @@ CHECKS = [
      ["python3", "tests/wrt018_required_binding.py"], "rs"),
     ("primitives (vendored, pinned): PY/GO/RS pass every class, p256-decode included",
      ["python3", "tests/primitives_pack.py"], "rs"),
+    ("KNOWN GAP pinned: DENY_ALL policy + replayed unrelated reason + accept verifies clean (PY/GO/RS)",
+     ["python3", "tests/countermodel_policy_binding.py"], "rs"),
     ("keygen creates a new 0600 file and never overwrites or follows a symlink (PY = RS)",
      ["python3", "tests/keygen_never_overwrites.py"], "rs"),
     ("WRT-019: P-256 vectors bite (each negative separates the rule from lenient ECDSA)",

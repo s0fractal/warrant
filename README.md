@@ -31,6 +31,15 @@ signature says which key signed the body; whether that key belongs to the named
 actor is a separate trust-configuration question. A rejection is a durable
 record, not an absence.
 
+**What a clean verification does not show: that the reason implements the
+policy.** Warrant pins the policy bytes and re-runs the reason, but nothing binds
+one to the other. A record filed under a `DENY_ALL` policy, with a re-executed
+`ski@v1` reason that computes something unrelated, and an `accept`, verifies with
+0 errors in all three implementations, even at settlement grade with
+`--require-bound` ([`tests/countermodel_policy_binding.py`](tests/countermodel_policy_binding.py)).
+The missing links, policy → computation → decision, are open design work
+([WRT-010](proposals/WRT-010-fact-provenance.md)).
+
 Warrant is not an agent framework, blockchain or observability system. It is one
 file format and five filing verbs, designed to be boring.
 

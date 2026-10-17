@@ -22,7 +22,8 @@ DEST = ROOT / "third_party" / "primitives"
 PIN = DEST / "PIN.json"
 MANIFEST = "MANIFEST.sha256"
 COMMIT = re.compile(r"[0-9a-f]{40}")
-SAFE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*")
+# \w under re.ASCII: without the flag Python's \w also matches non-ASCII letters.
+SAFE_NAME = re.compile(r"\w[\w.-]*(/\w[\w.-]*)*", re.ASCII)
 
 
 def safe_name(name):
@@ -80,7 +81,9 @@ def vendor(repo, commit):
         (DEST / name).parent.mkdir(parents=True, exist_ok=True)
         (DEST / name).write_bytes(show(name))
     (DEST / MANIFEST).write_bytes(manifest)
-    PIN.write_text(json.dumps({"repository": "https://github.com/s0fractal/primitives", "commit": commit,
+    # Sonar S8707: PIN is a fixed path in this repository; `commit` reaches only its
+    # content, and only after COMMIT.fullmatch above (40 lowercase hex).
+    PIN.write_text(json.dumps({"repository": "https://github.com/s0fractal/primitives", "commit": commit,  # NOSONAR
                                "manifest_sha256": hashlib.sha256(manifest).hexdigest()}, indent=2) + "\n")
     return check()
 

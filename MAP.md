@@ -40,16 +40,16 @@ present on a ref the reviewer was not looking at.
 | `WRT-007` | this repo, `proposals/wrt-006-ski-v1-equivalence-gate` (CLOSED: DEFERRED) | `proposals/WRT-007-per-tag-evaluator-dependency.md` | `proposals/WRT-006-ski-v1-implementation-substitution.md` |
 | `WRT-008` | open PR #60 (document CLOSED: DEFERRED) | `6360f83e3dce16b780a8c4ce9b713f15b8b6ffb3:proposals/WRT-008-fact-derivation-profile.md` | `proposals/WRT-010-fact-provenance.md` |
 | `WRT-009` | reserved deployment-predicate proposal (not yet written) | `reviews/2026-09-chatgpt-web-cross-stack-response.md` | `proposals/WRT-010-fact-provenance.md` |
-| `WRT-010` | this workline (DRAFT; follows up WRT-008) | `proposals/WRT-010-fact-provenance.md` | `proposals/WRT-010-fact-provenance.md` |
+| `WRT-010` | this workline (DRAFT; follows up WRT-008) | `proposals/WRT-010-fact-provenance.md` | `README.md` |
 | `WRT-011` | this repo, `master` | `proposals/wrt-011-model/aggregation.py` | `proposals/WRT-011-bounded-aggregation.md` |
 | `WRT-012` | this repo, `master` | `experiments/wrt-012-e2e-001/run.py` | `SPEC.md` |
 | `WRT-013` | this repo, `master` | `proposals/WRT-013-ski-v2-admission.md` | `SPEC.md` |
-| `WRT-014` | this repo, `origin/master` | `proposals/wrt-014-model/reproduce.py` | `proposals/WRT-014-adoption-policy-binding.md` |
+| `WRT-014` | this repo, `origin/master` | `proposals/wrt-014-model/reproduce.py` | `SPEC.md` |
 | `WRT-015` | this repo, `origin/master` | `proposals/WRT-015-pre-rotation.md` | `SPEC.md` |
-| `WRT-016` | this repo, `spec/keystate-residuals` | `proposals/WRT-016-conflict-scope.md` | `SPEC.md` |
-| `WRT-017` | this repo, `spec/keystate-residuals` | `proposals/WRT-017-revocation.md` | `SPEC.md` |
-| `WRT-018` | this repo, `proposal/wrt-018-required-binding` | `proposals/WRT-018-required-binding.md` | `SPEC.md` |
-| `WRT-019` | this repo, `wrt-019-p256` | `proposals/WRT-019-p256-signatures.md` | `SPEC.md` |
+| `WRT-016` | this repo, `origin/master` | `proposals/WRT-016-conflict-scope.md` | `SPEC.md` |
+| `WRT-017` | this repo, `origin/master` | `proposals/WRT-017-revocation.md` | `SPEC.md` |
+| `WRT-018` | this repo, `origin/master` | `proposals/WRT-018-required-binding.md` | `README.md` |
+| `WRT-019` | this repo, `origin/master` | `proposals/WRT-019-p256-signatures.md` | `README.md` |
 
 ## Known identifier collisions
 
