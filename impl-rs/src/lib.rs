@@ -41,6 +41,7 @@ pub mod cli;
 pub mod conformance;
 pub mod ed25519;
 pub mod hash;
+pub mod hexcanon;
 pub mod json;
 pub mod ops;
 pub mod p256;

@@ -1,0 +1,12 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_decode": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_deref_Vec_u8_Global": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_elim_Some": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_encode": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_round_trip": { "prover": "alt-ergo", "time": 0.022 }
+    }
+  }
+}
