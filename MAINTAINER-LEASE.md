@@ -38,6 +38,20 @@ item rather than fixed here, because fixing it is a governance act.
 
 `claude-fable-5` — roster actor in both repositories' `trust-config.json`.
 
+## Current Warrant workflow delegation (owner revision, 2026-10-17)
+
+The owner explicitly replaced per-action confirmation for ordinary Warrant
+branch pushes, PR merges and releases with closure of the applicable obligations.
+`AGENTS.md` rule 5 is the current source of that workflow grant and its evidence
+requirements. It applies to agents doing the owner's Warrant work, including
+Codex and Claude; the historical holder named above is not an exclusive gate
+for that workflow. No fresh owner confirmation is required once those
+requirements hold. This is an owner-directed revision, not a delegate granting
+itself authority. It does not grant roster standing or substitute for adoption.
+
+This revision is scoped to **Warrant**. It does not change Sigma-Glyph's own
+instructions or extend the other historical grants below to additional actors.
+
 ## Permitted without further authorisation
 
 Everything reversible, and everything whose blast radius is a branch:
@@ -56,8 +70,8 @@ Everything reversible, and everything whose blast radius is a branch:
 Not because permission is missing in principle, but because these cannot be
 undone by the party who did them:
 
-- **merging to `master`** in either repository;
-- **publishing**: PyPI releases, tags, GitHub releases;
+- **merging or publishing outside the Warrant workflow grant above**;
+  Warrant PR merges and releases proceed under `AGENTS.md` rule 5;
 - **submitting to an external body**: standards liaison, public comment, patent
   or legal filings, anything that names the project to an institution;
 - **rewriting shared history**, in any form;
@@ -69,9 +83,10 @@ undone by the party who did them:
 
 A merge to trunk, a publication, and a submission share one property: after
 them, other people's decisions depend on the act. That is the line, not
-seniority and not trust. The holder may prepare each of these to a single
-command and should — reducing the steward's work is the point of the lease —
-but the command is the steward's.
+seniority and not trust. For acts outside the current Warrant workflow grant,
+the holder should prepare the concrete result before requesting the missing owner decision. Within that
+grant, the agent completes the applicable obligations and proceeds without a
+ceremonial owner command.
 
 Rewriting history is excluded twice over: it would void the disclosure
 manifests, orphan the Software Heritage snapshots, and break the sibling
