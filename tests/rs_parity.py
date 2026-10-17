@@ -113,6 +113,32 @@ def negative_control(tmp):
     return len(rows) == 1 and bad(rows[0])
 
 
+
+def clock_control(tmp):
+    """A filing without --ts must compare equal even when the second ticks over
+    between the two runs. The proxy makes Rust start 1.1 s late, so without the
+    hook pinning --ts its record would carry a later ts and another WarrantID."""
+    proxy = Path(tmp, "late-rs")
+    proxy.write_text("#!/bin/sh\nsleep 1.1\nexec \"%s\" \"$@\"\n" % RS)
+    proxy.chmod(0o755)
+    log = Path(tmp, "clock.jsonl")
+    store = Path(tmp, "clock-store")
+    key = Path(tmp, "clock.key")
+    key.write_text(hashlib.sha256(b"clock").hexdigest() + "\n")
+    subprocess.run(PY + ["--store", str(store), "init"], capture_output=True, env=ENV, check=True)
+    blob = Path(tmp, "clock-subject")
+    blob.write_bytes(b"clock")
+    sub = subprocess.run(PY + ["--store", str(store), "blob", "add", str(blob)],
+                         capture_output=True, text=True, env=ENV, check=True).stdout.strip()
+    script = Path(tmp, "clock.py")
+    script.write_text("import subprocess\n"
+                      f"subprocess.run({PY!r} + ['--store', {str(store)!r}, 'propose', "
+                      f"'--subject', {sub!r}, '--under', {sub!r}, '--note', 'n', "
+                      f"'--actor', 'a@x', '--key', {str(key)!r}], capture_output=True)\n")
+    run_shadowed([str(script)], log, rs=proxy)
+    rows = read_log(log)
+    return len(rows) == 1 and rows[0]["py_code"] == 0 and not bad(rows[0])
+
 # -------------------------------------------------------------------- fuzz ----
 
 class Store:
@@ -676,6 +702,10 @@ def main():
                 print("FAIL  negative control: the shadow did not see a deliberate output change")
                 return 1
             print("OK    negative control: a one-byte output change is reported")
+            if not clock_control(tmp):
+                print("FAIL  clock control: a filing that straddles a second diverged")
+                return 1
+            print("OK    clock control: a filing that straddles a second compares equal")
             log = Path(tmp, "shadow.jsonl")
             for h in HARNESSES:
                 r = run_shadowed([str(ROOT / "tests" / h[0])] + h[1:], log)
