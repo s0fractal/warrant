@@ -133,6 +133,11 @@ def _int(v):
     return type(v) is int
 
 
+def _enum(value, choices):
+    """Check JSON types before set membership; arrays/objects are not enum values."""
+    return isinstance(value, str) and value in choices
+
+
 def duty_problem(d):
     """None if `d` is a well-formed duty blob, else the reason."""
     if not isinstance(d, dict) or d.get("schema") != DUTY:
@@ -140,7 +145,7 @@ def duty_problem(d):
     keys = set(d)
     if not DUTY_FIELDS <= keys or keys - DUTY_FIELDS - DUTY_OPTIONAL:
         return "duty fields"
-    if d["kind"] not in KINDS or d["shape"] not in SHAPES:
+    if not _enum(d["kind"], KINDS) or not _enum(d["shape"], SHAPES):
         return "kind or shape"
     if not (isinstance(d["holder"], str) and d["holder"]):
         return "holder"
@@ -156,7 +161,7 @@ def duty_problem(d):
     if not _hexes(d["serves"]):
         return "serves"
     if not (isinstance(d["admits"], list) and all(
-            isinstance(p, list) and len(p) == 2 and p[0] in ADMITTABLE and p[1] in BASES
+            isinstance(p, list) and len(p) == 2 and _enum(p[0], ADMITTABLE) and _enum(p[1], BASES)
             for p in d["admits"])):
         return "admits"
     if d["shape"] == "recurring":
@@ -188,16 +193,19 @@ def transition_problem(t):
         return "not_established"
     did = t["did"]
     if not (isinstance(did, dict) and {"basis", "evidence"} <= set(did) <= {"basis", "evidence", "runner"}
-            and did["basis"] in BASES and _hexes(did["evidence"])):
+            and _enum(did["basis"], BASES) and _hexes(did["evidence"])):
         return "did"
     if not isinstance(t["scope"], dict) or set(t["scope"]) - {"subject"}:
         return "scope"
+    if "subject" in t["scope"] and not (isinstance(t["scope"]["subject"], str)
+                                        and SUBJECT.fullmatch(t["scope"]["subject"])):
+        return "scope subject"
     if not isinstance(t["closes"], list):
         return "closes"
     for m in t["closes"]:
         if not (isinstance(m, dict) and MAPPING_FIELDS <= set(m) <= MAPPING_FIELDS | MAPPING_OPTIONAL):
             return "mapping fields"
-        if not (isinstance(m["duty"], str) and HEX64.match(m["duty"]) and m["disposition"] in DISPOSITIONS
+        if not (isinstance(m["duty"], str) and HEX64.match(m["duty"]) and _enum(m["disposition"], DISPOSITIONS)
                 and _hexes(m["evidence"])):
             return "mapping"
         if not set(m["evidence"]) <= set(did["evidence"]):

@@ -24,8 +24,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = (ROOT / "impl" / "loops.py").read_text()
 
 MUTANTS = [
+    ("L37", "JSON containers reach enum membership (WL03)",
+     [('    return isinstance(value, str) and value in choices',
+       '    return value in choices')]),
+    ("L38", "a transition scope accepts an untyped subject (WL03)",
+     [('    if "subject" in t["scope"] and not (isinstance(t["scope"]["subject"], str)',
+       '    if False and not (isinstance(t["scope"]["subject"], str)')]),
     ("L01", "an unknown kind is accepted",
-     [('    if d["kind"] not in KINDS or d["shape"] not in SHAPES:', '    if False:')]),
+     [('    if not _enum(d["kind"], KINDS) or not _enum(d["shape"], SHAPES):', '    if False:')]),
     ("L02", "anyone may open a duty for a holder",
      [('            if why is None and body["actor"]["id"] != doc["holder"]:', '            if False:')]),
     ("L03", "no acceptance is required",

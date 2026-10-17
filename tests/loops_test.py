@@ -511,6 +511,51 @@ def main():
          and d(rep, parent)["disposition"] == "DISCHARGED" and d(rep, child)["disposition"] == "DISCHARGED",
          "a named child condition is checked, and only on the parent's own candidate", r_early["candidates"])
 
+    # WL03: a core-valid, trusted record can carry malformed profile JSON.
+    # Refuse that event and keep assessing the unrelated good duty; never crash.
+    malformed = []
+    for field in ("kind", "shape", "admits-disposition", "admits-basis", "basis", "disposition"):
+        for value in ([], {}, None, True, 1, "unknown"):
+            c = Case()
+            good = c.open()
+            if field in ("kind", "shape", "admits-disposition", "admits-basis"):
+                doc = L.duty(CLAUDE, [CODEX], "malformed event", SHA_OLD, [["DISCHARGED", "ATTESTED"]])
+                if field.startswith("admits-"):
+                    doc["admits"][0][0 if field == "admits-disposition" else 1] = value
+                else:
+                    doc[field] = value
+            else:
+                doc = L.transition("ATTESTED", [c.evidence],
+                                   closes=[L.mapping(good, "DISCHARGED", [c.evidence])])
+                if field == "basis":
+                    doc["did"]["basis"] = value
+                else:
+                    doc["closes"][0]["disposition"] = value
+            bad = c.record("propose", c.blob(doc), CLAUDE)
+            try:
+                rep = c.assess()
+                if bad not in rep["refused_events"] or d(rep, good)["disposition"] != "OPEN":
+                    malformed.append((field, value, "not refused or affected good duty"))
+            except (TypeError, ValueError) as exc:
+                malformed.append((field, value, type(exc).__name__))
+    case("L37", not malformed, "malformed enum values are refused per event without losing the view", malformed)
+
+    malformed = []
+    for value in ([], {}, {"bad": "subject"}, None, True, 1, "not-an-address"):
+        c = Case()
+        good = c.open(acceptance=[])
+        doc = L.transition("ATTESTED", [c.evidence],
+                           closes=[L.mapping(good, "DISCHARGED", [c.evidence])])
+        doc["scope"] = {"subject": value}
+        bad = c.record("propose", c.blob(doc), CLAUDE, prior=[good])
+        try:
+            rep = c.assess()
+            if bad not in rep["refused_events"] or d(rep, good)["disposition"] != "OPEN":
+                malformed.append((value, "not refused or closed good duty"))
+        except (TypeError, ValueError) as exc:
+            malformed.append((value, type(exc).__name__))
+    case("L38", not malformed, "an optional transition subject must be an exact addressed string", malformed)
+
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"LOOPS: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"
           + (f" ({', '.join(failed)})" if failed else ""))

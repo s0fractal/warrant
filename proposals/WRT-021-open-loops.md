@@ -373,3 +373,29 @@ The review is in `~/Documents/Codex/2026-10-17/wrt-021-review-0815959/`, with `r
 - validation of runner, re-execution or replay evidence (`cli@v1` and a replay receipt);
 - assignment mandates;
 - goal, commitment and purpose.
+
+## 15. Follow-up of #133 at 5c845805 (Codex, 2026-10-18)
+
+WL01 and WL02 are closed on this head: unvalidated bases do not discharge a
+duty, evidence must resolve, and transfer requires the incoming actor's exact
+acceptance. The follow-up found WL03 (P2), a profile validation boundary defect.
+
+A correctly signed, settlement-grade core-valid event whose duty JSON contains
+`kind: []`, `shape: {}` or an array-valued admits entry makes `assess()` raise
+TypeError at set membership. One malformed profile event therefore suppresses
+the entire report, including unrelated valid duties. An unknown string in the
+same slot is correctly refused, and removing the malformed event restores the
+report. The witness was observed on 5c8458056619402533fd58a6ef6405635beb26f4.
+A malformed transition scope subject can similarly reach an unhashable value
+in closure aggregation or be incorrectly reported as an applicability scope.
+
+The fix checks JSON string types before enum membership and validates the
+optional transition subject as an exact address. L37 exercises arrays, objects,
+null, Boolean, integer and unknown-string values across six enum positions;
+L38 checks malformed scope subjects. Both assert per-event refusal and
+continued assessment of an unrelated valid duty. The new regressions fail on
+the reviewed head. Two targeted mutants remove these guards and must fail their
+respective cases; the suite now has L01–L38 and 44 mutants. No SPEC or core
+verifier behavior changes. This correction is a Codex-authored fix following
+the independent review of Claude's candidate, not a claim of independent
+review of Codex's own patch.
