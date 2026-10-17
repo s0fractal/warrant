@@ -385,7 +385,10 @@ def assess(store_root, record_id, prof):
     with tempfile.TemporaryDirectory() as tmp:
         store, store_sha = _snapshot_store(store_root, Path(tmp) / "store")
         snapshot_trust = Path(tmp) / "trust.json"
-        snapshot_trust.write_bytes(trust_bytes)
+        # The recipient's bytes are file CONTENT; the destination is the fixed
+        # name in our private temporary directory, never a value from the file.
+        with snapshot_trust.open("wb") as trust_file:
+            trust_file.write(trust_bytes)
         return _assess_snapshot(store, store_sha, record_id, prof, snapshot_trust, trust_bytes)
 
 
