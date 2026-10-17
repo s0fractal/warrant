@@ -481,7 +481,7 @@ def main():
     t = c.discharge(n1)
     c.accept(CODEX, n1, t)
     rep_cur, rep_moved = c.assess(current={SHA_NEW}), c.assess(current={"416ea4a8" + "0" * 32})
-    case("L34", L.reliance(rep_cur, n1) == "RELIABLE" and L.reliance(rep_moved, n1) == "UNASSESSED"
+    case("L34", L.reliance(rep_cur, n1) == "ELIGIBLE" and L.reliance(rep_moved, n1) == "UNASSESSED"
          and L.reliance(rep_cur, open_duty) == "NOT_CLOSED" and L.reliance(rep_cur, "ef" * 32) == "MISSING"
          and L.frontier(rep_moved, CLAUDE) == [{"duty": open_duty, "disposition": "OPEN", "flags": [],
                                                  "question": None}],

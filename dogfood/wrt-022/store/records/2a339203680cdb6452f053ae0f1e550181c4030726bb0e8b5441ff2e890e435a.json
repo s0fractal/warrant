@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "codex@warrant-wrt022"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "current design acceptance of WRT-022 rev 2; not S1 implementation acceptance"
+      }
+    ],
+    "decision": "accept",
+    "evidence": [],
+    "prior": [
+      "a6a6a73b8c92853f3bde0881aa4ae197d61314bb6cc8969827408d6d580b7cc1"
+    ],
+    "subject": {
+      "hash": "ad8ac0b1fcc071bc217a8c532e58d5fe2189f00f402d71e568ff4409318c13a6",
+      "note": "current design acceptance of WRT-022 rev 2; not S1 implementation acceptance"
+    },
+    "ts": 1792278154,
+    "under": [
+      "119fad9210ea709cccb008f0ee7712e37ff3359787e5165d19e130bd7ff3b1b3"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "codex@warrant-wrt022",
+      "key": "197d9097fb4fdd9afc63d287059889c33926b2c658155617ef2c14a462cf8d75",
+      "sig": "330a36ca249d576c3325b658f1e9fa7edeb3cdd2e2782cc5945ed760938ae6d0ab3ddb554bf91741e9b02e98bde90fe48194827717c3a3c84a9cca2a165adc09"
+    }
+  ]
+}

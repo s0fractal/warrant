@@ -1,0 +1,7 @@
+{
+  "schema": "warrant.loops-profile@draft-2",
+  "uses": {
+    "merge-wrt022-slice": {"requires_declared_triggers": true},
+    "read": {"requires_declared_triggers": false}
+  }
+}

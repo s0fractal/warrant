@@ -1,0 +1,50 @@
+{
+  "malformed_manifest": {
+    "result": [
+      "UNEVALUABLE"
+    ],
+    "unrelated": "OPEN"
+  },
+  "unassessable_duty": {
+    "dependency": "NOT_IMPLEMENTED",
+    "trigger": [
+      {
+        "closure": "2fecbaf9f24b1feb96d3b56cd3b8e7cb741d0ed474fab88a3a7e1d08b11c549e",
+        "duty": "2bdd0c1cf26867e7d357efaf6d8dbde8c78ff690a0c3cfd1b44a87f182e6363a",
+        "kind": "duty_not_discharged",
+        "result": "UNEVALUABLE",
+        "detail": "duty state not assessable here: NOT_IMPLEMENTED"
+      }
+    ],
+    "reliance": "UNASSESSED"
+  },
+  "recurring_trigger": {
+    "duty": {
+      "kind": "obligation",
+      "shape": "recurring",
+      "holder": "claude@local",
+      "owed_to": [
+        "codex@local"
+      ],
+      "scope": "cda525ef00000000000000000000000000000000",
+      "disposition": "RECURRING",
+      "assessed_basis": [],
+      "flags": [
+        "LAPSED"
+      ],
+      "closed_by": [],
+      "candidates": [],
+      "delegates": [],
+      "acceptance": [
+        "codex@local"
+      ],
+      "release_by": [],
+      "instances": {
+        "0": "LAPSED",
+        "1": "OPEN"
+      },
+      "applicability": "NOT_ASKED",
+      "triggers": []
+    }
+  }
+}

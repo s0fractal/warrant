@@ -1,0 +1,19 @@
+ok    T01 an unchanged dependency slice: NOT_FIRED, ELIGIBLE
+ok    T02 a change outside the declared slice does not fire
+ok    T03 a changed relevant operand fires; historical validity stays
+ok    T04 a toolchain operand change fires
+ok    T05 a mode change fires
+ok    T06 an unavailable current revision is UNEVALUABLE
+ok    T07 a missing required dependency is UNEVALUABLE, not unchanged
+ok    T08 no workspace, or no baseline, is UNEVALUABLE
+ok    T09 known discharged / known open / missing duty are three different results
+ok    T10 every trigger result and every cause is kept
+ok    T11 NO_DECLARED_TRIGGERS is neutral coverage
+ok    T12 eligibility is for a named use in the recipient's profile
+ok    T13 same operands, same id; any changed operand, a different id
+ok    T14 symlink, directory, missing, unsafe or unsorted selectors refuse
+ok    T15 malformed triggers refuse their transition only
+FAIL  T16 malformed manifest entries are UNEVALUABLE, and the rest of the view survives | assessment aborted: cannot use 'list' as a set element (unhashable type: 'list')
+FAIL  T17 NOT_IMPLEMENTED, contested and recurring are UNEVALUABLE; OPEN and RELEASED fire; DISCHARGED does not | ['FIRED', 'FIRED', 'FIRED', 'FIRED', 'FIRED', 'NOT_FIRED']
+FAIL  T18 triggers on unsupported mapping shapes refuse the transition | {}
+TRIGGERS: 15 PASS / 3 FAIL (T16, T17, T18)

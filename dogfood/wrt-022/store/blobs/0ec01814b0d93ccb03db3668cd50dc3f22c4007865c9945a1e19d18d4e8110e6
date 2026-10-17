@@ -1,0 +1,30 @@
+{
+  "candidate": "c8c59e758ef68ff6656c5ebabcd3e6f09ea6ab4a",
+  "trigger_tests": {
+    "pass": 18,
+    "fail": 0
+  },
+  "loop_tests": {
+    "pass": 38,
+    "fail": 0
+  },
+  "trigger_mutants": {
+    "killed_on_target": 26,
+    "total": 26
+  },
+  "loop_mutants": {
+    "killed_on_target": 44,
+    "total": 44
+  },
+  "new_tests_on_81f11fe2": {
+    "T16": "FAIL TypeError",
+    "T17": "FAIL incorrect FIRED",
+    "T18": "FAIL no explicit refusal"
+  },
+  "store": {
+    "design_duties_discharged_eligible": 8,
+    "S1": "OPEN",
+    "invalid": 0,
+    "refused": 0
+  }
+}
