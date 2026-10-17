@@ -22,11 +22,11 @@
                   {
                     "tactic": "split_vc",
                     "children": [
-                      { "prover": "alt-ergo", "time": 0.987 },
+                      { "prover": "alt-ergo", "time": 1.1 },
                       { "prover": "alt-ergo", "time": 0.012 }
                     ]
                   },
-                  { "prover": "alt-ergo", "time": 0.934 }
+                  { "prover": "alt-ergo", "time": 1.2 }
                 ]
               },
               { "prover": "alt-ergo", "time": 0.025 }

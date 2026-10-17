@@ -23,7 +23,7 @@
                 "tactic": "split_vc",
                 "children": [
                   { "prover": "z3", "time": 1.6 },
-                  { "prover": "z3", "time": 1.2 }
+                  { "prover": "z3", "time": 0.989 }
                 ]
               },
               { "prover": "alt-ergo", "time": 0.025 },

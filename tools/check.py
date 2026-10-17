@@ -99,6 +99,12 @@ CHECKS = [
      ["python3", "tests/wrt018_required_binding.py"], "rs"),
     ("primitives (vendored, pinned): PY/GO/RS pass every class, p256-decode included",
      ["python3", "tests/primitives_pack.py"], "rs"),
+    # CI cannot run Creusot (a half-hour install); a trusted key attests the run
+    # instead. Reported as CLAIMED, never as passed: see proofs/creusot/attestation.
+    ("Creusot proofs: this tree's proof inputs carry a trusted attestation (CLAIMED, not re-run)",
+     ["python3", "tools/proof_attestation.py", "--check"], None),
+    ("Creusot attestation check refuses changed inputs, foreign keys and broken evidence",
+     ["python3", "tests/proof_attestation_vectors.py"], None),
     ("KNOWN GAP pinned: DENY_ALL policy + replayed unrelated reason + accept verifies clean (PY/GO/RS)",
      ["python3", "tests/countermodel_policy_binding.py"], "rs"),
     ("keygen creates a new 0600 file and never overwrites or follows a symlink (PY = RS)",
