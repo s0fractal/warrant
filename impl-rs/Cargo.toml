@@ -26,6 +26,10 @@ path = "src/lib.rs"
 name = "warrant-rs"
 path = "src/main.rs"
 
+# Creusot proves hexcanon.rs (proofs/creusot/); the specs exist only under cfg(creusot).
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(creusot)"] }
+
 [profile.release]
 overflow-checks = true
 strip = true

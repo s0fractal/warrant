@@ -2,6 +2,7 @@
 
 use crate::ed25519;
 use crate::hash::{encode_hex, fromhex, is_hex64};
+use crate::hexcanon;
 use crate::json::{Json, Obj};
 use crate::p256;
 
@@ -86,10 +87,9 @@ fn ed_verify(pk: &[u8; 32], sig: &[u8], msg: &[u8]) -> bool {
 pub const ALG_ED25519: &str = "ed25519";
 pub const ALG_P256: &str = "ecdsa-p256-sha256";
 
+/// Exactly `len` characters of canonical lowercase hex (proved in `hexcanon`).
 fn lower_hex(s: &str, len: usize) -> bool {
-    s.len() == len
-        && s.bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == len && hexcanon::decode(s.as_bytes()).is_some()
 }
 
 /// A compressed SEC1 P-256 key as WRT-019 writes it: `02`/`03` + 64 lowercase hex.
@@ -130,7 +130,10 @@ pub fn verify_sig(wid: &str, sig: &Obj) -> bool {
             if !is_p256_key_hex(k) || !lower_hex(sg, 128) {
                 return false;
             }
-            match (fromhex(k), fromhex(sg)) {
+            match (
+                hexcanon::decode(k.as_bytes()),
+                hexcanon::decode(sg.as_bytes()),
+            ) {
                 (Some(kb), Some(sb)) => p256::verify(&kb, &sb, &msg),
                 _ => false,
             }
