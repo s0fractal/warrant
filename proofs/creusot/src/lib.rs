@@ -11,6 +11,9 @@ pub mod hexcanon;
 #[path = "../../../impl-rs/src/bounds.rs"]
 pub mod bounds;
 
+#[path = "../../../impl-rs/src/jcsquote.rs"]
+pub mod jcsquote;
+
 use hexcanon::{decode, encode, encodes};
 
 /// The value of a lowercase hex digit (the inverse of `hex_digit` on 0..16).

@@ -1,6 +1,6 @@
 # Creusot proofs
 
-Two files of the Rust implementation are proved with [Creusot](https://creusot.rs).
+Three files of the Rust implementation are proved with [Creusot](https://creusot.rs).
 This crate compiles the shipped files themselves through `#[path]`, not copies. The
 contracts sit under `cfg_attr(creusot, ...)`, so a normal `cargo build` drops them
 and impl-rs stays free of dependencies.
@@ -40,12 +40,31 @@ stop at i128, so each modulus is built from `w() = 2^64`. A table's value is
 reached in 64-bit steps (`hb(c, 8)`, `hb(c, 16)`, …). The steps are generated from
 the table and are not trusted: the last step must equal the published form.
 
+## `impl-rs/src/jcsquote.rs`: JCS string quoting
+
+`canon` uses this to write every string and member name. It is the reason two
+different bodies cannot produce the same canonical text through their strings.
+
+- `quote_units(s, out)` appends exactly `quoted(s)`: `"`, the escape of each unit
+  (`esc`), and `"`. `esc` is RFC 8785's table: `\"` and `\\`, the five short
+  controls, `\u00xx` in lowercase for the other controls below U+0020, and every
+  other unit unchanged.
+- **Theorem `quoted_delimits`:** if `quoted(s) ++ x == quoted(t) ++ y`, then `s == t`
+  and `x == y`. A quoted string is self-delimiting. Whatever canonical text
+  follows two strings, the strings cannot collide.
+
+The theorem has its own mutants, which change the escape table in the spec and in
+the code together. The code then still matches its spec, so the theorem is the
+thing that must break: a quote or a backslash passed through raw, or two controls
+given one short form. If the theorem survived those, it would be vacuous.
+
 ## What is not proved
 
-- The callers. That `ed25519.rs` and `p256.rs` call these functions is plain code;
-  review it.
-- The arithmetic after the checks (field operations, scalar multiplication). That
-  is held by the vectors and by three implementations agreeing.
+- The callers. That `ed25519.rs`, `p256.rs` and `json.rs` call these functions is
+  plain code; review it.
+- The arithmetic after the checks (field operations, scalar multiplication), and
+  the rest of `canon`: member ordering, numbers, UTF-8 output. Those are held by
+  the vectors and by three implementations agreeing.
 - Creusot, Why3 and the solvers are trusted. The specs (`be`, `le`, `encodes`, the
   moduli) are trusted to mean what RFC 8032, FIPS 186 and WRT-019 mean.
 
@@ -55,10 +74,11 @@ You need Creusot installed. Its `./INSTALL` sets up the toolchain, the solvers, 
 a `[patch]` for `creusot-std` in `~/.cargo/config.toml`. That patch adds
 `[[patch.unused]]` to other crates' `Cargo.lock` files; do not commit that. Measured
 with Creusot `cc8b768`, `nightly-2026-08-03`, Alt-Ergo 2.6.4, Z3 and CVC5 1.4.1.
-CVC4 is left out because it failed to calibrate on this machine.
+CVC4 is left out because it failed to calibrate on this machine. The time limit per
+goal is 5 s: at 1 s, one goal timed out under a parallel test load.
 
 ```sh
-cargo creusot              # Proved (27 files) ✔
+cargo creusot              # Proved (46 files) ✔
 python3 mutants.py         # every mutant must make the proof fail
 ```
 
@@ -71,7 +91,8 @@ fail the proof:
 - accepting `r = 0`;
 - clearing two top bits of `y`;
 - reading `S` big-endian;
-- the five hex mutants.
+- the five hex mutants;
+- the five JCS mutants.
 
 A proof that still closes on broken code would show nothing about the code. None
 of this runs in CI, because installing Creusot takes about half an hour.
