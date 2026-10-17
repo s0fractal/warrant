@@ -12,6 +12,7 @@ file matches the manifest, and the manifest matches the pin.
 """
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,20 @@ ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / "third_party" / "primitives"
 PIN = DEST / "PIN.json"
 MANIFEST = "MANIFEST.sha256"
+COMMIT = re.compile(r"[0-9a-f]{40}")
+SAFE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*")
+
+
+def safe_name(name):
+    """A manifest entry names a file inside the pack: no absolute path, no `..`,
+    nothing that resolves outside third_party/primitives/. The manifest comes from
+    another repository, so a hostile one must not be able to write elsewhere."""
+    if not SAFE_NAME.fullmatch(name) or ".." in name.split("/"):
+        sys.exit(f"refusing manifest entry {name!r}: not a plain relative path")
+    target = (DEST / name).resolve()
+    if not target.is_relative_to(DEST.resolve()):
+        sys.exit(f"refusing manifest entry {name!r}: resolves outside {DEST}")
+    return name
 
 
 def check():
@@ -31,7 +46,7 @@ def check():
     listed = []
     for line in manifest.read_text().splitlines():
         digest, name = line.split("  ", 1)
-        listed.append(name)
+        listed.append(safe_name(name))
         f = DEST / name
         if not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest() != digest:
             problems.append(f"{name} does not match the manifest")
@@ -47,6 +62,8 @@ def check():
 
 
 def vendor(repo, commit):
+    if not COMMIT.fullmatch(commit):
+        sys.exit("pin a full 40-hex commit, not a ref: a ref can move")
     # Sonar S8707 (CLI-supplied path): the maintainer names their own primitives
     # checkout; only `git show <commit>:<path>` reads from it, and every file is
     # then held to the pinned manifest digest by check().
@@ -57,8 +74,9 @@ def vendor(repo, commit):
     if DEST.exists():
         for p in sorted(DEST.rglob("*"), reverse=True):
             p.unlink() if p.is_file() else p.rmdir()
-    for line in manifest.decode().splitlines():
-        name = line.split("  ", 1)[1]
+    names = [safe_name(line.split("  ", 1)[1]) for line in manifest.decode().splitlines()]
+    DEST.mkdir(parents=True, exist_ok=True)
+    for name in names:
         (DEST / name).parent.mkdir(parents=True, exist_ok=True)
         (DEST / name).write_bytes(show(name))
     (DEST / MANIFEST).write_bytes(manifest)
