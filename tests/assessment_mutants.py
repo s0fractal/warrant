@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = (ROOT / "impl" / "assessment.py").read_text()
 
 MUTANTS = [
+    ("SNAPSHOT", "the assessment reads the live store instead of one snapshot",
+     '        store, store_sha = _snapshot_store(store_root, Path(tmp) / "store")',
+     '        store, store_sha = W.Store(str(store_root)), "live"'),
     # Independent review (Codex, 2026-10-17): each fix has a mutant that undoes it.
     ("WA01", "a derived int is accepted from a Boolean answer",
      '    if typ != "bool" or type(f.get("value")) is not bool:',

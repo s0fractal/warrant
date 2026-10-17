@@ -300,6 +300,7 @@ def main():
     case("WA05", r05["axes"]["compilation_binding"] == "COMPILATION_MISMATCH" and not r05["consumer_admits_action"]
          and r05r["axes"]["compilation_binding"] == "COMPILATION_MISMATCH",
          "a plan that misstates runtime, expect or atp, or only its runtime, is not MATCHED", (r05["axes"], r05r["axes"]))
+    snapshot_case()
     try:
         A.profile([pid5], OBL, w5.trust, ["i@x"], None)
         explicit = False
@@ -323,6 +324,48 @@ def main():
     print(f"ASSESSMENT: {counts['PASS']} PASS, {counts['FAIL']} FAIL, {counts['UNRUN']} UNRUN"
           + ("" if counts["UNRUN"] == 0 else " (an UNRUN is not a pass)"))
     return 0 if counts["FAIL"] == 0 else 1
+
+
+def snapshot_case():
+    """Re-review of cda525e (Codex, N1): the CLI verified the LIVE store while the
+    assessment judged its own earlier read. Deterministic interleaving, exactly as
+    the review built it: a forged accept (decision flipped, reject's signature
+    kept) is in place when assess starts; another writer atomically restores the
+    signed reject before the real CLI verify runs. No verifier is faked."""
+    c = Case()
+    rid, pid = c.decision("reject", 12000)
+    prof = c.profile([pid])
+    path = c.S.records / f"{rid}.json"
+    honest = path.read_bytes()
+    forged = json.loads(honest)
+    forged["body"]["decision"] = "accept"
+    forged = A._canon(forged)
+
+    def install(data):
+        tmp = path.with_suffix(".replacement")
+        tmp.write_bytes(data)
+        tmp.replace(path)
+    clean = A.assess(c.S.root, rid, prof)
+    install(forged)
+    static = A.assess(c.S.root, rid, prof)
+    real = A._record_integrity
+
+    def restore_then_verify(store, trust):
+        install(honest)
+        return real(store, trust)
+    A._record_integrity = restore_then_verify
+    try:
+        mixed = A.assess(c.S.root, rid, prof)
+    finally:
+        A._record_integrity = real
+        install(honest)
+    ok = (clean["axes"]["record_integrity"] == "VERIFIED" and not clean["consumer_admits_action"]
+          and static["axes"]["record_integrity"] == "INVALID" and not static["consumer_admits_action"]
+          and not mixed["consumer_admits_action"] and mixed["axes"]["record_integrity"] == "INVALID")
+    case("SNAPSHOT", ok, "a store changed between reads cannot pair a verified reject with an admitted accept: "
+         "the assessment verifies and judges one snapshot (forged accept -> INVALID, nothing admitted)",
+         (clean["axes"]["record_integrity"], static["axes"]["record_integrity"],
+          mixed["axes"]["record_integrity"], mixed["consumer_admits_action"]))
 
 
 # ---------------------------------------------------------------- helpers

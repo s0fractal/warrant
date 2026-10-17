@@ -350,24 +350,55 @@ def _assess_typed(store, records, body, typed, prof, integrity, axes, why):
     return scope, slots
 
 
+def _snapshot_store(src_root, dst_root):
+    """Copy every record and blob, reading each file ONCE, into a private store.
+    Everything the assessment uses comes from these bytes: signature verification,
+    typed blobs, replay and the context. A writer changing the live store between
+    two reads can no longer make the CLI verify one envelope while the assessment
+    judges another (re-review of cda525e, N1). Symlinks are not copied: a snapshot
+    holds bytes, not pointers. Returns the snapshot Store and its content digest."""
+    src, dst = Path(src_root), W.Store(str(dst_root))
+    dst.init()
+    listing = []
+    for kind in ("records", "blobs"):
+        folder = src / kind
+        if not folder.is_dir():
+            continue
+        for p in sorted(folder.iterdir()):
+            if p.is_file() and not p.is_symlink():
+                data = p.read_bytes()
+                (dst.root / kind / p.name).write_bytes(data)
+                listing.append(f"{kind}/{p.name} {hashlib.sha256(data).hexdigest()}")
+    genesis = src / "genesis.json"
+    if genesis.is_file() and not genesis.is_symlink():
+        data = genesis.read_bytes()
+        (dst.root / "genesis.json").write_bytes(data)
+        listing.append(f"genesis.json {hashlib.sha256(data).hexdigest()}")
+    return dst, hashlib.sha256("\n".join(listing).encode()).hexdigest()
+
+
 def assess(store_root, record_id, prof):
-    """Assess one record for one recipient. The trust config is read ONCE; that
-    snapshot is what verification uses and what the context names, so a change
-    of the file after (or during) the assessment cannot be hidden (review WA04)."""
-    store = W.Store(str(store_root))
+    """Assess one record for one recipient, over ONE immutable snapshot: the store
+    (records and blobs) and the trust config are each read once, and every step
+    after that reads only the snapshot (review WA04; re-review N1)."""
+    trust_bytes = Path(prof["trust_config"]).read_bytes()
+    with tempfile.TemporaryDirectory() as tmp:
+        store, store_sha = _snapshot_store(store_root, Path(tmp) / "store")
+        snapshot_trust = Path(tmp) / "trust.json"
+        snapshot_trust.write_bytes(trust_bytes)
+        return _assess_snapshot(store, store_sha, record_id, prof, snapshot_trust, trust_bytes)
+
+
+def _assess_snapshot(store, store_sha, record_id, prof, snapshot_trust, trust_bytes):
     records = _records(store)
     env = records.get(record_id)
     if env is None:
         raise KeyError(record_id)
     body = env["body"]
-    trust_bytes = Path(prof["trust_config"]).read_bytes()
     axes = dict.fromkeys(("policy_authority", "fact_provenance", "compilation_binding",
                           "computation_verification", "policy_answer", "decision_compliance"), "NOT_ASSESSED")
     why = {}
-    with tempfile.TemporaryDirectory() as tmp:
-        snapshot = Path(tmp) / "trust.json"
-        snapshot.write_bytes(trust_bytes)
-        integrity, errs = _record_integrity(store, snapshot)
+    integrity, errs = _record_integrity(store, snapshot_trust)
     axes["record_integrity"] = integrity
     if errs:
         why["record_integrity"] = errs[:3]
@@ -387,10 +418,11 @@ def assess(store_root, record_id, prof):
     return {"schema": SCHEMA_REPORT, "record": record_id, "axes": axes,
             "why": {k: v for k, v in why.items() if v}, "consumer_admits_action": admitted,
             "profile_id": blob_id(prof), "scope": scope, "slots": slots, "trust_sha256": trust_sha,
-            "context_id": context_id(store, prof, records, trust_sha)}
+            "store_snapshot_sha256": store_sha,
+            "context_id": context_id(prof, records, trust_sha, store_sha)}
 
 
-def context_id(store, prof, records, trust_sha):
+def context_id(prof, records, trust_sha, store_sha):
     """What this verdict rests on: the verifier build, the recipient profile, the
     exact trust bytes it used, and each record's envelope snapshot (body AND the
     signatures present), not file names (review WA04). Unsigned; a signature over
@@ -399,7 +431,7 @@ def context_id(store, prof, records, trust_sha):
                            + (HERE / "policy_lang.py").read_bytes()).hexdigest()
     envelopes = sorted(envelope_snapshot_id(e) for e in records.values() if isinstance(e, dict) and "body" in e)
     return blob_id({"verifier_build": build, "profile_id": blob_id(prof), "trust_sha256": trust_sha,
-                    "envelopes": envelopes, "runtime": RUNTIME})
+                    "store_snapshot_sha256": store_sha, "envelopes": envelopes, "runtime": RUNTIME})
 
 
 # ---------------------------------------------------------------- P4: settlement
