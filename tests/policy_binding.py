@@ -41,11 +41,21 @@ def blob(store, tmp, data, name):
     return w(store, "blob", "add", str(p))
 
 
-def compiled(store, tmp, src, name):
+def compiled(store, tmp, src, name, *extra):
     p = Path(tmp) / name
     p.write_bytes(src)
-    r = subprocess.run(COMPILE + [str(p), "--store", str(store), "--json"], capture_output=True, text=True, check=True)
+    r = subprocess.run(COMPILE + [str(p), "--store", str(store), "--json", *extra],
+                       capture_output=True, text=True, check=True)
     return json.loads(r.stdout)["check"]
+
+
+def variant(store, tmp, src, **change):
+    """The policy's own check with some fields replaced: a near miss."""
+    doc = json.loads((Path(store) / "blobs" / compiled(store, tmp, src, "policy.wpl")).read_bytes())
+    doc.update(change)
+    return blob(store, tmp, json.dumps(doc, sort_keys=True, separators=(",", ":")).encode(), "variant.json")
+
+
 
 
 def unrelated_ski(store):
@@ -64,8 +74,19 @@ def file(decision, policy_bytes, reason):
     subject = blob(store, tmp, b"PR-1: refund\n", "subject")
     policy = blob(store, tmp, policy_bytes, "policy.wpl")
     args = ["--under", policy, "--actor", "a@x", "--key", str(key)]
+    ski = ["--runtime", "ski@v1", "--verdict", "pass"]
     if reason == "own":
-        args += ["--check", compiled(store, tmp, policy_bytes, "policy.wpl"), "--runtime", "ski@v1", "--verdict", "pass"]
+        args += ["--check", compiled(store, tmp, policy_bytes, "policy.wpl"), *ski]
+    elif reason == "headroom":
+        args += ["--check", compiled(store, tmp, policy_bytes, "policy.wpl", "--headroom", "1"), *ski]
+    elif reason == "other-answer":
+        allow = json.loads((Path(store) / "blobs" / compiled(store, tmp, ALLOW, "allow.wpl")).read_bytes())
+        # The CLI refuses to file `pass` for a check that does not reproduce it,
+        # so the near misses are filed honestly, as `fail`.
+        args += ["--check", variant(store, tmp, policy_bytes, expect=allow["expect"]),
+                 "--runtime", "ski@v1", "--verdict", "fail"]
+    elif reason == "low-budget":
+        args += ["--check", variant(store, tmp, policy_bytes, atp=1), "--runtime", "ski@v1", "--verdict", "fail"]
     elif reason == "unrelated":
         args += ["--check", unrelated_ski(store), "--runtime", "ski@v1", "--verdict", "pass"]
     prop = w(store, "propose", "--subject", subject, "--note", "refund", *(["--under", policy]),
@@ -82,14 +103,16 @@ def verify_errors(store):
     return json.loads(r.stdout)["errors"]
 
 
-def case(name, decision, policy_bytes, reason, want):
+def case(name, decision, policy_bytes, reason, want, why=None, verify_clean=True):
     store, rec = file(decision, policy_bytes, reason)
     rows = [r for r in PB.classify_store(store) if r["record"] == rec]
     got = [r["status"] for r in rows]
     errs = verify_errors(store)
-    ok = got == [want] and errs == 0
+    ok = (got == [want] and (verify_clean is None or (errs == 0) == verify_clean)
+          and (why is None or why in rows[0]["why"]))
     results.append(ok)
-    print(("ok  " if ok else "FAIL"), f"{name}: profile {got}, verify {errs} errors", "" if ok else f"(want [{want}], 0)")
+    print(("ok  " if ok else "FAIL"), f"{name}: profile {got}, verify {errs} errors",
+          "" if ok else f"(want [{want}], verify clean={verify_clean}, why~{why!r}; got {rows[0]['why']!r})")
 
 
 def main():
@@ -98,9 +121,17 @@ def main():
     case("accept whose reason is the policy's own compilation, which answers FALSE",
          "accept", DENY, "own", "CONTRADICTED")
     case("accept under a WPL policy, reason an unrelated computation",
-         "accept", ALLOW, "unrelated", "UNBOUND")
+         "accept", ALLOW, "unrelated", "UNBOUND", why="no ski@v1 reason runs this policy's term")
     case("accept under a WPL policy, no reason at all", "accept", ALLOW, None, "UNBOUND")
     case("accept whose reason is the policy's compilation, answering TRUE", "accept", ALLOW, "own", "BOUND")
+    # Codex review (2026-10-17, P2): headroom is a permitted compile option that
+    # raises `atp` and changes the check hash. Same term, same answer: BOUND.
+    case("accept whose reason was compiled with headroom (same term and answer, more budget)",
+         "accept", ALLOW, "headroom", "BOUND")
+    case("near miss: the policy's term, but a different pinned answer",
+         "accept", DENY, "other-answer", "UNBOUND", why="pins a different answer", verify_clean=None)
+    case("near miss: the policy's term and answer, but too little budget to reach it",
+         "accept", ALLOW, "low-budget", "UNBOUND", why="less than", verify_clean=None)
     case("reject where the policy denies (consistent)", "reject", DENY, "own", "BOUND")
     case("reject where the policy would allow (discretion, not a contradiction)", "reject", ALLOW, "own", "BOUND")
     case("propose with no reason: UNBOUND (nothing computed), never CONTRADICTED", "propose", DENY, None, "UNBOUND")

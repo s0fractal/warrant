@@ -10,12 +10,14 @@ verify clean today (tests/countermodel_policy_binding.py, and an `accept` whose
 reason replays the policy's FALSE). This profile reports, for every record and
 every policy blob it cites, one of:
 
-    BOUND         the policy is WPL; a ski@v1 reason of the record is exactly its
-                  compilation (same check hash), and the decision does not
-                  contradict the policy's answer
+    BOUND         the policy is WPL; a ski@v1 reason of the record runs its
+                  compilation (same term, same expected answer, at least the
+                  budget it needs), and the decision does not contradict the
+                  policy's answer
     CONTRADICTED  as BOUND, but the record ACCEPTS while the policy answers false
-    UNBOUND       the policy is WPL, but no ski@v1 reason is its compilation: the
-                  reasons, whatever they compute, are not this policy
+    UNBOUND       the policy is WPL, but no ski@v1 reason runs its term with its
+                  answer and enough budget; the row says which, when one came
+                  close
     OPAQUE        the policy is not machine-readable (prose, any other bytes):
                   compliance is NOT CHECKED, and is reported as such
     SIGNATURES    a v0.3 threshold policy: it governs who signs, which settlement
@@ -56,14 +58,48 @@ def classify_policy(raw):
         src = raw.decode("utf-8")
     except UnicodeDecodeError:
         return "opaque", "not UTF-8"
+    seen = {}
+
+    def put(b):
+        # Keeps the bytes in memory and nothing else: the profile must not write
+        # to the store it reads, and without a put the compiler emits no check.
+        h = hashlib.sha256(b).hexdigest()
+        seen[h] = b
+        return h
     try:
-        # put() only hashes: the profile must not write to the store it reads,
-        # and without a put the compiler computes no check hash at all.
-        return "wpl", WPL.compile_source(src, lambda b: hashlib.sha256(b).hexdigest())
+        c = WPL.compile_source(src, put)
+        return "wpl", (c, json.loads(seen[c.blob]))
     except WPL.PolicyError as e:
         return "opaque", f"not WPL: {str(e).splitlines()[0][:80]}"
     except (WPL.CompilerBug, RecursionError, ValueError) as e:
         return "opaque", f"did not compile: {type(e).__name__}"
+
+
+def runs_policy(reason, want, blobs):
+    """True if this reason's check runs the policy: the same term and the same
+    expected answer as the policy's own compilation, with at least the budget
+    that compilation needs. `atp` is a budget, not part of what is computed:
+    compiling with headroom (a permitted option) raises it and changes the check
+    hash, so the hash is not the binding. Otherwise False, or a string naming a
+    near miss worth reporting."""
+    h = reason.get("check")
+    p = blobs / h if isinstance(h, str) else None
+    if p is None or not p.is_file():
+        return False
+    try:
+        got = json.loads(p.read_bytes())
+    except (ValueError, UnicodeDecodeError):
+        return False
+    if not isinstance(got, dict) or got.get("ski") != want["ski"] or got.get("term") != want["term"]:
+        return False
+    if got.get("expect") != want["expect"]:
+        return "a reason runs this policy's term but pins a different answer"
+    atp = got.get("atp")
+    if not isinstance(atp, int) or isinstance(atp, bool) or atp < want["atp"]:
+        return f"a reason runs this policy's term with less than the {want['atp']} ATP it needs"
+    if reason.get("verdict") != "pass":
+        return "a reason runs this policy but does not claim pass"
+    return True
 
 
 def classify_record(body, blobs):
@@ -82,16 +118,18 @@ def classify_record(body, blobs):
         elif kind == "opaque":
             rows.append({"policy": h, "status": "OPAQUE", "why": info})
         else:
-            match = [r for r in reasons if r.get("check") == info.blob]
-            if not match:
-                rows.append({"policy": h, "status": "UNBOUND", "check": info.blob,
-                             "why": f"no ski@v1 reason is this policy's compilation ({info.blob[:12]})"})
-            elif decision in GATED and info.result is not True:
-                rows.append({"policy": h, "status": "CONTRADICTED", "check": info.blob,
-                             "why": f"{decision} while the policy answers {info.result}"})
+            compiled, want = info
+            verdicts = [runs_policy(r, want, blobs) for r in reasons]
+            if True not in verdicts:
+                why = next((v for v in verdicts if isinstance(v, str)), None)
+                rows.append({"policy": h, "status": "UNBOUND", "term": want["term"],
+                             "why": why or f"no ski@v1 reason runs this policy's term ({want['term'][:12]})"})
+            elif decision in GATED and compiled.result is not True:
+                rows.append({"policy": h, "status": "CONTRADICTED", "term": want["term"],
+                             "why": f"{decision} while the policy answers {compiled.result}"})
             else:
-                rows.append({"policy": h, "status": "BOUND", "check": info.blob,
-                             "why": f"policy answers {info.result}; decision {decision}"})
+                rows.append({"policy": h, "status": "BOUND", "term": want["term"],
+                             "why": f"policy answers {compiled.result}; decision {decision}"})
     if not rows:
         rows.append({"policy": None, "status": "OPAQUE", "why": "cites no policy"})
     return rows
