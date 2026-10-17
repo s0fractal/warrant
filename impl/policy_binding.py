@@ -157,17 +157,20 @@ def main(argv=None):
     report = {s: classify_store(s) for s in args.stores}
     # Exit 1 when a decision contradicts its own policy: the one status that is a
     # defect of the record rather than an absence of evidence.
-    status = 1 if any(r["status"] == "CONTRADICTED" for rows in report.values() for r in rows) else 0
     if args.json:
         print(json.dumps(report, indent=2))
-        return status
+    else:
+        print_report(report)
+    return 1 if any(r["status"] == "CONTRADICTED" for rows in report.values() for r in rows) else 0
+
+
+def print_report(report):
     for s, rows in report.items():
         counts = {k: sum(r["status"] == k for r in rows) for k in ORDER}
         print(f"{s}: {len(rows)} (record, policy) pairs  " + "  ".join(f"{k} {v}" for k, v in counts.items() if v))
         for r in rows:
             if r["status"] in ("CONTRADICTED", "UNBOUND"):
                 print(f"  {r['status']:12} {r['record'][:12]} {r['decision']:9} {r['why']}")
-    return status
 
 
 if __name__ == "__main__":

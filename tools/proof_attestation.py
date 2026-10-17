@@ -158,7 +158,7 @@ def uncovered(root, read, inputs):
 def untracked(root, inputs):
     """Inputs git does not track: present here, absent from the checkout CI sees.
     Lists every tracked file and compares in Python, so no path reaches argv."""
-    r = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, check=False)
+    r = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, check=False)
     tracked = set(r.stdout.decode().split("\0")) - {""}
     return [p.as_posix() for p in inputs if p.as_posix() not in tracked]
 
@@ -186,28 +186,32 @@ def run_logged(argv, cwd):
     return r.returncode, r.stdout + r.stderr
 
 
-def attest(root, key, reuse_logs=False):
-    if not key.is_file():
-        sys.exit(f"no key at {key} (set WARRANT_PROOFS_KEY)")
+def _saved_logs(root):
+    """Logs a passing run saved for THESE inputs (a failed propose should not
+    cost another proof run); anything else is refused."""
     logs = root / LOGS
-    if reuse_logs:
-        # Only logs written by a passing run of THIS manifest are reused (a failed
-        # propose should not cost another proof run); anything else reruns.
-        saved = json.loads((logs / "run.json").read_text())
-        if saved["manifest"] != hashlib.sha256(manifest(root)).hexdigest():
-            sys.exit("saved logs are for other proof inputs; run --attest without --reuse-logs")
-        proof_log, mutant_log = (logs / "creusot.log").read_text(), (logs / "mutants.log").read_text()
-    else:
-        code, proof_log = run_logged(["cargo", "creusot"], root / PROOFS)
-        if code != 0 or "Proved" not in proof_log:
-            sys.exit("cargo creusot did not prove everything; nothing attested\n" + proof_log[-2000:])
-        code, mutant_log = run_logged([sys.executable, "-u", "mutants.py"], root / PROOFS)
-        if code != 0:
-            sys.exit("mutants.py: not every mutant was killed; nothing attested\n" + mutant_log[-2000:])
-        logs.mkdir(parents=True, exist_ok=True)
-        (logs / "creusot.log").write_text(proof_log)
-        (logs / "mutants.log").write_text(mutant_log)
-        (logs / "run.json").write_text(json.dumps({"manifest": hashlib.sha256(manifest(root)).hexdigest()}))
+    saved = json.loads((logs / "run.json").read_text())
+    if saved["manifest"] != hashlib.sha256(manifest(root)).hexdigest():
+        sys.exit("saved logs are for other proof inputs; run --attest without --reuse-logs")
+    return (logs / "creusot.log").read_text(), (logs / "mutants.log").read_text()
+
+
+def _fresh_logs(root):
+    code, proof_log = run_logged(["cargo", "creusot"], root / PROOFS)
+    if code != 0 or "Proved" not in proof_log:
+        sys.exit("cargo creusot did not prove everything; nothing attested\n" + proof_log[-2000:])
+    code, mutant_log = run_logged([sys.executable, "-u", "mutants.py"], root / PROOFS)
+    if code != 0:
+        sys.exit("mutants.py: not every mutant was killed; nothing attested\n" + mutant_log[-2000:])
+    logs = root / LOGS
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "creusot.log").write_text(proof_log)
+    (logs / "mutants.log").write_text(mutant_log)
+    (logs / "run.json").write_text(json.dumps({"manifest": hashlib.sha256(manifest(root)).hexdigest()}))
+    return proof_log, mutant_log
+
+
+def _refuse_uncovered(root):
     inputs = input_paths(root)
     missed = uncovered(root, depinfo_files(root / PROOFS), inputs)
     if missed:
@@ -217,6 +221,13 @@ def attest(root, key, reuse_logs=False):
     if loose:
         sys.exit("proof inputs not tracked by git (CI would not see them); commit or remove them first: "
                  + ", ".join(loose))
+
+
+def attest(root, key, reuse_logs=False):
+    if not key.is_file():
+        sys.exit(f"no key at {key} (set WARRANT_PROOFS_KEY)")
+    proof_log, mutant_log = _saved_logs(root) if reuse_logs else _fresh_logs(root)
+    _refuse_uncovered(root)
     creusot = subprocess.run(["git", "-C", str(Path.home() / "Projects" / "creusot"), "rev-parse", "HEAD"],
                              capture_output=True, text=True, check=False).stdout.strip() or "unknown"
     env = json.dumps({"creusot_commit": creusot, "platform": platform.platform(),
