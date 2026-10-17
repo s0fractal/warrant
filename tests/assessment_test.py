@@ -48,6 +48,7 @@ class Case:
         self.trust.write_text(json.dumps({"actors": {a: [W.pubkey_hex(W.load_key(str(self.keys[a])))]
                                                      for a in trusted}}))
         self.ts = 0
+        self.attested = {}
 
     def blob(self, doc):
         return self.S.put_blob(doc if isinstance(doc, bytes) else A._canon(doc))
@@ -59,23 +60,31 @@ class Case:
                 "actor": {"id": actor}, "prior": [], "ts": self.ts}
         return self.S.put_record({"body": body, "sigs": [W.sign_envelope(body, actor, str(self.keys[actor]))]})
 
-    def attest(self, name, value, issuer="i@x"):
-        rules = self.blob(b"issuer attestation: we observed this value\n")
-        return self.record("accept", self.blob(A.observation(OBL, name, value)), [rules], actor=issuer)
+    def attest(self, name, value, issuer="i@x", obligation=OBL):
+        """One attestation per (fact, value, issuer, obligation): asking twice
+        returns the same record, as a real issuer's single observation would."""
+        key = (name, value, issuer, obligation)
+        if key not in self.attested:
+            rules = self.blob(b"issuer attestation: we observed this value\n")
+            self.attested[key] = self.record("accept", self.blob(A.observation(obligation, name, value)),
+                                             [rules], actor=issuer)
+        return self.attested[key]
 
     def decision(self, decision, amount, *, rule="amount <= 50000", options=None, compiler=None,
-                 reason="own", issuer="i@x", actor="a@x"):
-        prog = A.program(OBL, {"amount": "int"}, rule)
-        facts = A.fact_set(OBL, {"amount": A.observed(amount, self.attest("amount", amount, issuer))})
+                 reason="own", issuer="i@x", actor="a@x", obligation=OBL, evidence=()):
+        prog = A.program(obligation, {"amount": "int"}, rule)
+        facts = A.fact_set(obligation, {"amount": A.observed(amount, self.attest("amount", amount, issuer,
+                                                                                  obligation))})
         pl = A.plan(prog, facts, options, put=self.S.put_blob, **({"compiler": compiler} if compiler else {}))
         under = [self.blob(prog), self.blob(facts), self.blob(pl)]
         check = pl["emitted"]["check"] if reason == "own" else reason
         because = [{"kind": "check", "check": check, "runtime": "ski@v1", "verdict": "pass"}] if check else []
-        rec = self.record(decision, self.blob(b"refund request\n"), under, because, actor=actor)
+        rec = self.record(decision, self.blob(b"refund request\n"), under, because, actor=actor, evidence=evidence)
         return rec, A.blob_id(prog)
 
-    def profile(self, programs, **kw):
-        return A.profile(programs, OBL, self.trust, ["i@x"], **kw)
+    def profile(self, programs, discretionary_reject=True, **kw):
+        # The API has no default for discretion; this helper states one explicitly.
+        return A.profile(programs, OBL, self.trust, ["i@x"], discretionary_reject, **kw)
 
 
 def assess(c, rec, prof):
@@ -199,36 +208,104 @@ def main():
          and A.decide("reject", answer, False) == "NOT_ASSESSED",
          "a run that ran out of budget is PAUSED: not TRUE, not FALSE, and no decision is assessed", (comp, answer))
 
-    # ------------------------------------------------------------ P4
-    prof = c.profile([pid], evidence_slots=["amount"])
-    settled = A.consequence(rb, prof)
-    case("N51", A.novelty(settled, A.consequence(rh, prof), prof) == "NO_NEW_CONSEQUENCE",
-         "another supported compilation of the same answer: NO_NEW_CONSEQUENCE")
-    paused_report = {"axes": dict(rb["axes"], computation_verification="PAUSED", policy_answer="NOT_ASSESSED")}
-    stale_answer = {"axes": dict(rb["axes"], computation_verification="PAUSED")}   # answer left over: TRUE
+    # ------------------------------------------------------------ P4 (one store, one profile)
+    s = Case(trusted=("a@x", "i@x", "m@x"))       # m@x: a bound key, NOT an admitted fact issuer
+    rec_base, pid4 = s.decision("accept", 12000)
+    prof = s.profile([pid4], evidence_slots=["amount"])
+    base = A.assess(s.S.root, rec_base, prof)
+    settled = A.consequence(base, prof)
+    rec_head, _ = s.decision("accept", 12000, options={"atp_headroom": 1000})
+    head = A.assess(s.S.root, rec_head, prof)
+    case("N51", A.novelty(base, head, prof) == "NO_NEW_CONSEQUENCE",
+         "another supported compilation of the same answer, same facts: NO_NEW_CONSEQUENCE")
+    paused_report = dict(base, axes=dict(base["axes"], computation_verification="PAUSED", policy_answer="NOT_ASSESSED"))
+    stale_answer = dict(base, axes=dict(base["axes"], computation_verification="PAUSED"))   # answer left over: TRUE
     case("N52", A.consequence(paused_report, prof) is None and A.consequence(stale_answer, prof) is None
-         and A.novelty(settled, A.consequence(paused_report, prof), prof) == "NO_NEW_CONSEQUENCE",
+         and A.novelty(base, paused_report, prof) == "NO_NEW_CONSEQUENCE",
          "less budget, PAUSED instead of the known answer: not a consequence, nothing reopened")
-    c = Case()
-    rec_claim, pidc = c.decision("accept", 12000)
-    body_claims = _records(c)[rec_claim]["body"]
+    body_claims = _records(s)[rec_base]["body"]
     body_claims["because"][0]["verdict"] = "fail"           # claimed expectation flipped
-    rec_flip = c.record("accept", body_claims["subject"]["hash"], body_claims["under"], body_claims["because"])
-    r53 = assess(c, rec_flip, c.profile([pidc]))
-    case("N53", A.consequence(r53, prof) is None and A.novelty(settled, A.consequence(r53, prof), prof) == "NO_NEW_CONSEQUENCE",
+    rec_flip = s.record("accept", body_claims["subject"]["hash"], body_claims["under"], body_claims["because"])
+    r53 = A.assess(s.S.root, rec_flip, prof)
+    case("N53", A.consequence(r53, prof) is None and A.novelty(base, r53, prof) == "NO_NEW_CONSEQUENCE",
          "a flipped claimed verdict is not a consequence (binding requires the replayed pass)", r53["axes"])
     case("N54", settled == (prof["semantics_class"], OBL, "TRUE"),
          "the consequence is (semantics class, obligation, answer) and nothing about how it was reached")
-    case("N55", A.novelty(settled, None, prof, new_evidence=("compiler-log.txt", "i@x")) == "NO_NEW_CONSEQUENCE",
-         "an arbitrary new blob is not an admitted evidence slot")
-    case("N56", A.novelty(settled, None, prof, new_evidence=("amount", "i@x")) == "NEW_EVIDENCE"
-         and A.novelty(settled, None, prof, new_evidence=("amount", "m@x")) == "NO_NEW_CONSEQUENCE",
-         "a new value in a named slot from an admitted issuer may reopen; from anyone else, not")
-    case("N57", A.novelty(settled, A.consequence(r38, prof), prof) == "NEW_CONSEQUENCE",
-         "a genuinely different replayed answer in the same scope: NEW_CONSEQUENCE")
-    case("N58", A.novelty(settled, (prof["semantics_class"], "made_up_obligation", "FALSE"), prof) == "SCOPE_MISMATCH"
-         and A.novelty(settled, ("sigma-resume@v1/wpl@v1", OBL, "FALSE"), prof) == "MIGRATION_REQUIRED",
+    rec_blob, _ = s.decision("accept", 12000, evidence=[s.blob(b"compiler-log.txt: nothing new\n")])
+    case("N55", A.novelty(base, A.assess(s.S.root, rec_blob, prof), prof) == "NO_NEW_CONSEQUENCE",
+         "an arbitrary new evidence blob, same named facts: NO_NEW_CONSEQUENCE")
+    rec_new, _ = s.decision("accept", 13000)              # a new admitted observation, same answer
+    rec_m, _ = s.decision("accept", 13000, issuer="m@x")  # the same value from a non-admitted issuer
+    r_new, r_m = A.assess(s.S.root, rec_new, prof), A.assess(s.S.root, rec_m, prof)
+    case("N56", A.novelty(base, r_new, prof) == "NEW_EVIDENCE" and A.novelty(base, r_m, prof) == "NO_NEW_CONSEQUENCE",
+         "a new ACCEPTED value in the named slot reopens; the same value from an unadmitted issuer does not",
+         (A.novelty(base, r_new, prof), A.novelty(base, r_m, prof)))
+    rec_false, _ = s.decision("accept", 65088)
+    r_false = A.assess(s.S.root, rec_false, prof)
+    case("N57", A.novelty(base, r_false, prof) == "NEW_CONSEQUENCE",
+         "a genuinely different replayed answer on accepted facts in the same scope: NEW_CONSEQUENCE")
+    rec_scope, _ = s.decision("accept", 65088, obligation="made_up_obligation")
+    r_scope = A.assess(s.S.root, rec_scope, prof)
+    migrated = dict(r_false, scope=dict(r_false["scope"], semantics_class="sigma-resume@v1/wpl@v1"))
+    case("N58", A.novelty(base, r_scope, prof) == "SCOPE_MISMATCH" and A.novelty(base, migrated, prof) == "MIGRATION_REQUIRED",
          "an invented obligation or another runtime class does not count as novelty")
+
+    # ------------------------------------------------------------ independent review WA01-WA05
+    wa = Case()
+    src, _ = wa.decision("accept", 12000)                  # its policy answers TRUE
+    src_check = json.loads((wa.S.blobs / _under(wa, src)[2]).read_bytes())["emitted"]["check"]
+    prog = A.program(OBL, {"amount": "int"}, "amount <= 50000")
+    facts = A.fact_set(OBL, {"amount": A.derived(40000, src, src_check)})   # an int "derived" from TRUE
+    pl = A.plan(prog, facts, put=wa.S.put_blob)
+    rec = wa.record("accept", wa.blob(b"x\n"), [wa.blob(prog), wa.blob(facts), wa.blob(pl)],
+                    [{"kind": "check", "check": pl["emitted"]["check"], "runtime": "ski@v1", "verdict": "pass"}])
+    r01 = assess(wa, rec, wa.profile([A.blob_id(prog)]))
+    facts_b = A.fact_set(OBL, {"amount": A.observed(True, wa.attest("amount", True))})       # bool for int
+    rec_b = wa.record("accept", wa.blob(b"y\n"), [wa.blob(prog), wa.blob(facts_b), wa.blob(A.plan(prog, A.fact_set(OBL, {"amount": A.observed(1, "x")}), put=wa.S.put_blob))], [])
+    r01b = assess(wa, rec_b, wa.profile([A.blob_id(prog)]))
+    src_f, _ = wa.decision("accept", 65088)                 # its policy answers FALSE
+    chk_f = json.loads((wa.S.blobs / _under(wa, src_f)[2]).read_bytes())["emitted"]["check"]
+    facts0 = A.fact_set(OBL, {"amount": A.derived(0, src_f, chk_f)})   # int 0 'derived' from FALSE: truthiness agrees
+    pl0 = A.plan(prog, facts0, put=wa.S.put_blob)
+    rec0 = wa.record("accept", wa.blob(b"z\n"), [wa.blob(prog), wa.blob(facts0), wa.blob(pl0)],
+                     [{"kind": "check", "check": pl0["emitted"]["check"], "runtime": "ski@v1", "verdict": "pass"}])
+    r01c = assess(wa, rec0, wa.profile([A.blob_id(prog)]))
+    case("WA01", r01["axes"]["fact_provenance"] == "DERIVATION_MISMATCH" and not r01["consumer_admits_action"]
+         and r01b["axes"]["fact_provenance"] == "TYPE_MISMATCH"
+         and r01c["axes"]["fact_provenance"] == "DERIVATION_MISMATCH",
+         "an int 'derived' from a Boolean answer is refused, and a bool is not an int", (r01["axes"], r01b["axes"]))
+    case("WA02", A.consequence(r_m, prof) is None and A.novelty(base, r_m, prof) == "NO_NEW_CONSEQUENCE",
+         "unattested facts produce no consequence and reopen nothing")
+    case("WA03", A.novelty(base, r_scope, prof) == "SCOPE_MISMATCH" and A.novelty(base, base, prof) == "NO_NEW_CONSEQUENCE",
+         "scope is checked first; novelty needs a new accepted value, not a named channel")
+    w4 = Case()
+    rec4, pid_4 = w4.decision("accept", 12000)
+    prof4 = w4.profile([pid_4])
+    r4a, r4b = assess(w4, rec4, prof4), assess(w4, rec4, prof4)
+    w4.trust.write_text(json.dumps({"actors": {"a@x": ["00" * 32], "i@x": ["00" * 32]}}))
+    r4c = assess(w4, rec4, prof4)
+    case("WA04", r4a["context_id"] == r4b["context_id"] and r4c["axes"]["record_integrity"] == "INVALID"
+         and r4c["context_id"] != r4a["context_id"],
+         "the context names the trust bytes it used: same snapshot same id; changed trust, new id")
+    w5 = Case()
+    rec5, pid5 = w5.decision("accept", 12000)
+    pl5 = json.loads((w5.S.blobs / _under(w5, rec5)[2]).read_bytes())
+    pl5["runtime"] = "not-the-runtime"
+    pl5["emitted"]["expect"] = "00" * 32
+    pl5["emitted"]["atp"] = 0
+    r05 = assess(w5, _swap_under(w5, rec5, 2, w5.blob(pl5)), w5.profile([pid5]))
+    pl5r = json.loads((w5.S.blobs / _under(w5, rec5)[2]).read_bytes())
+    pl5r["runtime"] = "not-the-runtime"                     # ONLY the runtime is false
+    r05r = assess(w5, _swap_under(w5, rec5, 2, w5.blob(pl5r)), w5.profile([pid5]))
+    case("WA05", r05["axes"]["compilation_binding"] == "COMPILATION_MISMATCH" and not r05["consumer_admits_action"]
+         and r05r["axes"]["compilation_binding"] == "COMPILATION_MISMATCH",
+         "a plan that misstates runtime, expect or atp, or only its runtime, is not MATCHED", (r05["axes"], r05r["axes"]))
+    try:
+        A.profile([pid5], OBL, w5.trust, ["i@x"], None)
+        explicit = False
+    except (ValueError, TypeError):
+        explicit = True
+    case("WA-discretion", explicit, "the recipient must choose discretionary_reject explicitly: no default")
     unrun("N59", "cycle consequences need a sigma-resume runtime; ski@v1 Boolean policies have none")
     c = Case()
     cmd = c.S.put_blob(b"#!/bin/sh\nexit 0\n")

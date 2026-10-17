@@ -7,18 +7,21 @@ One refund request against a rule limit:
 
  1. the recipient admits a policy program, one obligation and one fact issuer;
  2. the issuer attests the amount; the rule is compiled by a registered compiler;
- 3. the policy's term runs on the sigma-resume kernel with a small credit: PAUSED,
-    and a checkpoint is written to disk;
- 4. a second producer, a separate process with only those files, replays the
-    prefix (REPLAYED) and adds credit;
+ 3. the policy's term runs on the sigma-resume kernel and is cut by an action
+    limit: INCOMPLETE, with credit left unused, and the checkpoint goes to disk;
+ 4. a second producer, a separate process with only those files, verifies that
+    checkpoint by replay (REPLAYED, PREFIX: reachable, not terminal) and finishes
+    it with the credit it already carries;
  5. the computation reaches NORMAL_FORM: the policy answers FALSE, and warrant's
     own ski@v1 replay of the same check agrees;
  6. a signed accept is a well-formed record, and the assessment calls it
     CONTRADICTED_DECISION; the consumer does not act;
  7. a witness records the refusal: a reject, which is COMPLIANT;
- 8. more ATP or another checkpoint is not a new consequence;
- 9. a new admitted observation in the named slot is NEW_EVIDENCE; reassessed, the
-    policy answers TRUE and an accept is COMPLIANT: a NEW_CONSEQUENCE;
+ 8. filing the same decision again (more progress, another checkpoint) is not a
+    new consequence;
+ 9. a new admitted observation in the named slot is NEW_EVIDENCE (same answer,
+    a new accepted value); another, under which the policy answers TRUE, is a
+    NEW_CONSEQUENCE, and its accept is COMPLIANT;
 10. everything above ran from this directory alone (tests/redesign_demo_offline.py
     runs it in a fresh one).
 
@@ -69,8 +72,8 @@ def producer_b(work):
         print(json.dumps({"refused": code}))
         return 1
     doc, cid = R.parse_checkpoint(raw)
-    done = R.advance(doc, cid, state, env, 100_000)
-    out = {"basis": basis, "outcome": done.outcome, "spent": done.checkpoint["spent_total"],
+    done = R.advance(doc, cid, state, env, 0)          # the credit it carries is enough
+    out = {"basis": basis, "verified_as": code, "outcome": done.outcome, "spent": done.checkpoint["spent_total"],
            "result_hash": SG.term_hash(done.term()).hex()}
     print(json.dumps(out))
     return 0
@@ -107,21 +110,21 @@ def main():
 
     # 1-2. recipient profile; attested fact; compilation by a registered compiler
     prog = A.program(OBL, {"amount": "int"}, RULE)
-    prof = A.profile([A.blob_id(prog)], OBL, trust, [ISSUER], discretionary_reject=True,
-                     evidence_slots=["amount"])
+    prof = A.profile([A.blob_id(prog)], OBL, trust, [ISSUER], True, evidence_slots=["amount"])
     facts = A.fact_set(OBL, {"amount": A.observed(65088, observe(65088))})
     pl = A.plan(prog, facts, put=store.put_blob)
     term = bytes.fromhex(json.loads((store.blobs / pl["emitted"]["check"]).read_bytes())["term"])
     (work / "task.json").write_text(json.dumps({"term": term.hex()}))
 
-    # 3. producer A: a small credit, PAUSED, checkpoint on disk
+    # 3. producer A: an action limit cuts the run; the unused credit stays in the checkpoint
     env = kernel_env(store)
     rt = R.root(term, env)
     doc, cid, sb = R.start(rt[1], term)
-    paused = R.advance(doc, cid, sb, env, 40)
-    (work / "checkpoint.json").write_bytes(R._canon(paused.checkpoint))
-    (work / "state.bin").write_bytes(paused.state_bytes)
-    steps[S3] = {"outcome": paused.outcome, "spent": paused.checkpoint["spent_total"]}
+    cut = R.advance(doc, cid, sb, env, 1000, max_actions=10)
+    (work / "checkpoint.json").write_bytes(R._canon(cut.checkpoint))
+    (work / "state.bin").write_bytes(cut.state_bytes)
+    steps[S3] = {"outcome": cut.outcome, "credit": cut.checkpoint["credit_total"],
+                 "spent": cut.checkpoint["spent_total"]}
 
     # 4-5. producer B in its own process; the answer, cross-checked with ski@v1
     b = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--producer-b"],
@@ -144,25 +147,25 @@ def main():
     rej = A.write_decision(store, "reject", subject, prog, facts, pl, AUDITOR, keys[AUDITOR], ts=101)
     steps[S7] = A.assess(store.root, rej, prof)["axes"]["decision_compliance"]
 
-    # 8. more ATP / another checkpoint: no new consequence
-    settled = A.consequence(r6, prof)
-    more = R.advance(paused.checkpoint, paused.checkpoint_id, paused.state_bytes, env, 7)
-    steps[S8] = {"kernel": more.outcome,
-                           "novelty": A.novelty(settled, A.consequence(r6, prof), prof)}
+    # 8. the same decision filed again: progress is not a new consequence
+    again = A.write_decision(store, "accept", subject, prog, facts, pl, DESK, keys[DESK], ts=103)
+    steps[S8] = {"novelty": A.novelty(r6, A.assess(store.root, again, prof), prof)}
 
-    # 9. a new admitted observation in the named slot
-    steps[S9] = {"novelty": A.novelty(settled, None, prof, new_evidence=("amount", ISSUER))}
+    # 9. new admitted observations in the named slot
+    facts_e = A.fact_set(OBL, {"amount": A.observed(70000, observe(70000))})      # still over the limit
+    acc_e = A.write_decision(store, "accept", subject, prog, facts_e, A.plan(prog, facts_e, put=store.put_blob),
+                             DESK, keys[DESK], ts=104)
+    steps[S9] = {"novelty": A.novelty(r6, A.assess(store.root, acc_e, prof), prof)}
     facts2 = A.fact_set(OBL, {"amount": A.observed(12000, observe(12000))})
     pl2 = A.plan(prog, facts2, put=store.put_blob)
     acc2 = A.write_decision(store, "accept", subject, prog, facts2, pl2, DESK, keys[DESK], ts=102)
     r9 = A.assess(store.root, acc2, prof)
     steps[S9R] = {"decision_compliance": r9["axes"]["decision_compliance"],
-                             "novelty": A.novelty(settled, A.consequence(r9, prof), prof),
-                             "consumer_admits_action": r9["consumer_admits_action"]}
+                  "novelty": A.novelty(r6, r9, prof), "consumer_admits_action": r9["consumer_admits_action"]}
 
     expected = {
-        S3: steps[S3]["outcome"] == "PAUSED",
-        S45: pb.get("basis") == "REPLAYED" and pb.get("outcome") == "NORMAL_FORM"
+        S3: steps[S3]["outcome"] == "INCOMPLETE" and steps[S3]["credit"] > steps[S3]["spent"],
+        S45: pb.get("basis") == "REPLAYED" and pb.get("verified_as") == "PREFIX" and pb.get("outcome") == "NORMAL_FORM"
         and steps[S45]["answer"] == "FALSE" and ski_answer == "FALSE",
         S6: r6["axes"]["record_integrity"] == "VERIFIED"
         and r6["axes"]["decision_compliance"] == "CONTRADICTED_DECISION" and not r6["consumer_admits_action"],

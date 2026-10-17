@@ -57,10 +57,21 @@ def main():
     r_old = subprocess.run(hp + ["verify", str(pack), str(S.root)], capture_output=True, text=True, check=False)
     (pack / "impl" / "warrant.py").write_bytes((pack / "impl" / "warrant.py").read_bytes() + b"# tampered\n")
     r_bad = subprocess.run(hp + ["verify", str(pack), str(S.root)], capture_output=True, text=True, check=False)
+    # Independent review WA06: an empty self-declared file list and a substituted verifier.
+    sub = tmp / "substituted"
+    (sub / "impl").mkdir(parents=True)
+    (sub / "impl" / "warrant.py").write_text('print("SUBSTITUTED_VERIFIER")\n')
+    (sub / "MANIFEST.json").write_text(json.dumps({"schema": "warrant.historical-pack@draft-1",
+                                                   "repository": "https://github.com/s0fractal/warrant",
+                                                   "commit": "ca53e6489c5d888768193e2d172e72409a1eb560",
+                                                   "files": {}}))
+    r_sub = subprocess.run(hp + ["verify", str(sub), str(S.root)], capture_output=True, text=True, check=False)
     case("N66-pack", r_old.returncode == 0 and " 0 errors" in r_old.stdout
-         and r_bad.returncode == 2 and "PACK INTEGRITY" in r_bad.stdout,
-         "historical pack (baseline commit, digests) verifies the old record; a tampered pack runs nothing",
-         (r_old.stdout[-200:], r_bad.stdout[-200:]))
+         and r_bad.returncode == 2 and "PACK" in r_bad.stdout
+         and r_sub.returncode == 2 and "SUBSTITUTED_VERIFIER" not in r_sub.stdout,
+         "the baseline pack verifies the old record; a tampered pack, or one declaring the baseline with an "
+         "empty file list and its own verifier (review WA06), runs nothing",
+         (r_old.stdout[-200:], r_bad.stdout[-200:], r_sub.stdout[-200:]))
 
     # N67: a co-signature changes the envelope snapshot, not the body id
     env = json.loads((S.records / f"{new}.json").read_text())

@@ -113,7 +113,7 @@ accepts a map like this one.
 | N61, N62, N69 | sigma `tests/resume_differential.py` | PASS (plus wasm route and worker deadline) |
 | N63–N65 | warrant #130 attestation vectors | PASS |
 | N66–N68 | warrant `tests/redesign_p6_test.py` | PASS |
-| N70 | `tools/check.py` already reports a check that did not run as UNRUN, never PASS, and its summary refuses to call such a run clean. Each suite here also carries its own on-target mutants or controls. | covered by existing behaviour; no new test |
+| N70 | warrant `tests/check_omission_control.py`: `tools/check.py` names REQUIRED_SCRIPTS; a copy with one dropped is red and names it (independent review: the general UNRUN mechanism alone was not this control) | PASS |
 
 ## 7. Not done, deliberately
 
@@ -123,3 +123,30 @@ accepts a map like this one.
   is a SPEC change and needs the gate.
 - **A Rust engine for the rich Y/M/W profile** (added by another session, sigma
   `f371005`). The differential covers the Book I profile only, and says so.
+
+## 8. Independent review (Codex, 2026-10-17): AMEND, and what changed
+
+Report: `Documents/Codex/2026-10-17/sigma-warrant-redesign/INDEPENDENT-REVIEW.md`.
+Verdicts: 4 ACCEPT, 10 AMEND, 0 REJECT. Every finding has a regression, and each
+regression fails on the reviewed head on the review's own reason.
+
+| Finding | Fix | Where |
+|---|---|---|
+| SG01 a cycle proven under another environment | one shared context check for both verifiers | sigma #62 `8398ce8` |
+| SG02 an INCOMPLETE prefix could not be verified | replay to the claimed spent; PREFIX is not terminal | sigma #62 `8398ce8` |
+| SG03 a malformed parent crashed the cached verify | exact id formats; INVALID_ENCODING | sigma #62 `8398ce8` |
+| SG04 a host exception, and NORMAL_FORM over the size ceiling | fenced first measurement; the completed return is checked | sigma #62 `ad54abc` |
+| PA01 a symlinked `.cargo` was missed by the manifest | symlinks refused as unsupported inputs; config read from the crate itself | warrant #130 `8e6401d` |
+| WA01 an int "derived" from a Boolean answer | exact types (bool is not int); only Boolean derivation, equal to the replayed answer | #131 |
+| WA02 unattested facts produced a consequence | a consequence needs integrity, ACCEPTED facts, a SATISFIED profile and the same profile id | #131 |
+| WA03 NEW_EVIDENCE from a tuple, scope checked late | `novelty(settled_report, candidate_report)`: scope first, then answer, then accepted slot values | #131 |
+| WA04 context_id ignored the trust bytes | trust read once; verification uses that snapshot; the context names its digest and each envelope snapshot | #131 |
+| WA05 MATCHED with a false runtime, expect or atp | closed plan schema; every emitted value equals the recompilation | #131 |
+| WA06 a pack ran a substituted verifier | expected manifest digest chosen by the recipient (pinned or `--expect-manifest`); exact file set | #131 |
+| D14 the demo transferred only PAUSED, and NEW_EVIDENCE was a tuple | INCOMPLETE transfer verified as PREFIX; NEW_EVIDENCE from a real new observation | #131 |
+| reject discretion defaulted to true | `discretionary_reject` has no default: the recipient must choose | #131 |
+| N70 was claimed from the general UNRUN mechanism | a named harness-omission control | #131 |
+
+This response is the author's. Whether these fixes hold is for the next review
+round, which covers the changed boundaries. ACCEPTs from the previous round do not
+carry over automatically.

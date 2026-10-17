@@ -28,6 +28,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -53,7 +54,7 @@ COMPILE_OPTIONS = {"atp_headroom"}
 AXES = {
     "record_integrity": {"VERIFIED", "INVALID"},
     "policy_authority": {"ADMITTED", "AUTHORITY_UNESTABLISHED", "NOT_ASSESSED"},
-    "fact_provenance": {"ACCEPTED", "UNATTESTED", "DERIVATION_MISMATCH", "NOT_ASSESSED"},
+    "fact_provenance": {"ACCEPTED", "UNATTESTED", "DERIVATION_MISMATCH", "TYPE_MISMATCH", "NOT_ASSESSED"},
     "compilation_binding": {"MATCHED_COMPILATION", "COMPILATION_MISMATCH", "UNREGISTERED_COMPILER",
                             "NOT_ASSESSED"},
     "computation_verification": {"REPLAYED_NORMAL_FORM", "PAUSED", "BLOCKED_REFERENCE", "HOST_UNAVAILABLE",
@@ -136,9 +137,15 @@ def plan(prog, facts, options=None, put=None, compiler=WPL_COMPILER_ID):
 
 # ---------------------------------------------------------------- profile
 
-def profile(admitted_programs, obligation, trust_config, fact_issuers, discretionary_reject=True,
+def profile(admitted_programs, obligation, trust_config, fact_issuers, discretionary_reject,
             required="policy-decision", evidence_slots=None, semantics_class="ski@v1/wpl@v1"):
-    """What THIS recipient requires. Nothing in a record or its store can widen it."""
+    """What THIS recipient requires. Nothing in a record or its store can widen it.
+
+    `discretionary_reject` has no default: whether a rule that is satisfied
+    merely PERMITS the action or OBLIGES it is the recipient's to say, every
+    time (independent review, reject-when-TRUE)."""
+    if type(discretionary_reject) is not bool:
+        raise ValueError("discretionary_reject must be chosen explicitly: True or False")
     return {"admitted_programs": sorted(admitted_programs), "obligation": obligation,
             "trust_config": str(trust_config), "fact_issuers": sorted(fact_issuers),
             "discretionary_reject": discretionary_reject, "required": required,
@@ -178,9 +185,9 @@ def _records(store):
     return out
 
 
-def _record_integrity(store, trust_config):
+def _record_integrity(store, trust_snapshot_path):
     r = subprocess.run([sys.executable, str(HERE / "warrant.py"), "--store", str(store.root), "verify",
-                        "--settlement", "--require-bound", "--trust-config", str(trust_config), "--json"],
+                        "--settlement", "--require-bound", "--trust-config", str(trust_snapshot_path), "--json"],
                        capture_output=True, text=True, check=False)
     try:
         rep = json.loads(r.stdout)
@@ -212,6 +219,15 @@ def replay_answer(store, check):
 
 # ---------------------------------------------------------------- axes
 
+def _typed(value, typ):
+    """Exact WPL types: a bool is not an int (review WA01)."""
+    if typ == "bool":
+        return type(value) is bool
+    if typ == "int":
+        return type(value) is int
+    return False
+
+
 def _observed_ok(name, f, facts, prof, trusted_bodies):
     rec = trusted_bodies.get(f.get("attested_by"))
     want = blob_id(observation(facts["obligation"], name, f.get("value")))
@@ -219,29 +235,41 @@ def _observed_ok(name, f, facts, prof, trusted_bodies):
                 and rec.get("subject", {}).get("hash") == want and rec.get("decision") == "accept")
 
 
-def _derived_problem(store, records, name, f):
+def _derived_problem(store, records, name, f, typ):
+    """Only Boolean derivation is supported: the cited record's own ski@v1 reason,
+    claiming pass, must replay to exactly this bool. A number cannot be derived
+    from a Boolean answer (review WA01), so a non-bool derived fact is refused."""
+    if typ != "bool" or type(f.get("value")) is not bool:
+        return f"{name}: only Boolean derived facts are supported; {typ} cannot come from a Boolean answer"
     src = f.get("from", {})
     rec = records.get(src.get("record"), {}).get("body", {})
-    if not any(r.get("check") == src.get("check") for r in rec.get("because", [])):
-        return f"{name}: the cited record does not run that check"
+    if not any(r.get("check") == src.get("check") and r.get("runtime") == RUNTIME and r.get("verdict") == "pass"
+               for r in rec.get("because", [])):
+        return f"{name}: the cited record does not run that check as a ski@v1 pass"
     comp, ans = replay_answer(store, src["check"])
-    if comp != "REPLAYED_NORMAL_FORM" or ans != ("TRUE" if f.get("value") else "FALSE"):
-        return f"{name}: the cited check answers {ans}, not {f.get('value')}"
+    if comp != "REPLAYED_NORMAL_FORM" or ans != ("TRUE" if f["value"] is True else "FALSE"):
+        return f"{name}: the cited check answers {ans}, not {f['value']}"
     return None
 
 
-def _fact_provenance(store, records, facts, prof, trusted_bodies):
-    """ACCEPTED only if every fact is attested by an admitted issuer's bound
-    record about exactly its value, or derived from a record whose cited check
+def _fact_provenance(store, records, prog, facts, prof, trusted_bodies):
+    """ACCEPTED only if the facts are exactly the program's parameters with their
+    exact types, and each is attested by an admitted issuer's bound record about
+    exactly its value, or derived (Boolean only) from a record whose cited check
     replays to that value. An attestation says who vouched, not that the
     observation is true (N46)."""
+    if set(facts["facts"]) != set(prog["params"]):
+        return "TYPE_MISMATCH", "the fact set does not name exactly the program's parameters"
     for name, f in facts["facts"].items():
+        typ = prog["params"][name]
+        if not _typed(f.get("value"), typ):
+            return "TYPE_MISMATCH", f"{name}: {type(f.get('value')).__name__} is not {typ}"
         kind = f.get("kind")
         if kind == "observed":
             if not _observed_ok(name, f, facts, prof, trusted_bodies):
                 return "UNATTESTED", f"{name}: no admitted issuer attests this value"
         elif kind == "derived":
-            problem = _derived_problem(store, records, name, f)
+            problem = _derived_problem(store, records, name, f, typ)
             if problem:
                 return "DERIVATION_MISMATCH", problem
         else:
@@ -249,19 +277,40 @@ def _fact_provenance(store, records, facts, prof, trusted_bodies):
     return "ACCEPTED", None
 
 
+PLAN_FIELDS = {"schema", "policy_program_id", "fact_set_id", "compiler_id", "options", "runtime", "emitted"}
+EMITTED_FIELDS = {"check", "term", "expect", "atp"}
+
+
+def _plan_shape_problem(pl):
+    if set(pl) != PLAN_FIELDS or not isinstance(pl.get("emitted"), dict) or set(pl["emitted"]) != EMITTED_FIELDS:
+        return "the plan's fields are not exactly the schema's"
+    if pl.get("runtime") != RUNTIME:
+        return f"the plan names runtime {pl.get('runtime')!r}; this verifier runs {RUNTIME}"
+    opts = pl.get("options")
+    if not isinstance(opts, dict) or set(opts) - COMPILE_OPTIONS or any(
+            type(v) is not int or v < 0 for v in opts.values()):
+        return "unsupported or malformed compiler options"
+    return None
+
+
 def _compilation_binding(body, prog, facts, pl):
+    """MATCHED_COMPILATION only if EVERYTHING the plan states is what recompiling
+    it emits: runtime, check, term, expect and atp, under its declared options
+    (review WA05). A claim the verifier did not check is not left in the plan."""
     if pl.get("compiler_id") not in COMPILERS:
         return "UNREGISTERED_COMPILER", f"{pl.get('compiler_id')!r} is not a compiler this verifier runs"
-    if set(pl.get("options", {})) - COMPILE_OPTIONS:
-        return "COMPILATION_MISMATCH", "unsupported compiler options"
+    shape = _plan_shape_problem(pl)
+    if shape:
+        return "COMPILATION_MISMATCH", shape
     if pl.get("policy_program_id") != blob_id(prog) or pl.get("fact_set_id") != blob_id(facts):
         return "COMPILATION_MISMATCH", "the plan names another program or fact set"
     try:
         doc, check = _compile(prog, facts, pl["options"], None)
     except (WPL.PolicyError, WPL.CompilerBug) as e:
         return "COMPILATION_MISMATCH", f"does not compile: {str(e)[:80]}"
-    if check != pl["emitted"]["check"] or doc["term"] != pl["emitted"]["term"]:
-        return "COMPILATION_MISMATCH", "recompiling the plan does not emit its check"
+    emitted = pl["emitted"]
+    if (emitted["check"], emitted["term"], emitted["expect"], emitted["atp"]) != (check, doc["term"], doc["expect"], doc["atp"]):
+        return "COMPILATION_MISMATCH", "recompiling the plan does not emit what it states"
     if not any(r.get("runtime") == RUNTIME and r.get("check") == check and r.get("verdict") == "pass"
                for r in body.get("because", [])):
         return "COMPILATION_MISMATCH", "no ski@v1 reason runs the plan's check"
@@ -280,13 +329,14 @@ def decide(decision, answer, discretionary_reject):
 
 
 def _assess_typed(store, records, body, typed, prof, integrity, axes, why):
-    """Fill the policy axes for a record that cites program, facts and plan."""
+    """Fill the policy axes for a record that cites program, facts and plan.
+    Returns the record's scope and its named-slot facts, for settlement."""
     (p_id, prog), (_, facts), (_, pl) = typed[SCHEMA_PROGRAM], typed[SCHEMA_FACTS], typed[SCHEMA_PLAN]
     admitted = (p_id in prof["admitted_programs"] and prog.get("obligation") == prof["obligation"]
                 and facts.get("obligation") == prof["obligation"])
     axes["policy_authority"] = "ADMITTED" if admitted else "AUTHORITY_UNESTABLISHED"
     trusted_bodies = {k: v["body"] for k, v in records.items()} if integrity == "VERIFIED" else {}
-    axes["fact_provenance"], why["fact_provenance"] = _fact_provenance(store, records, facts, prof, trusted_bodies)
+    axes["fact_provenance"], why["fact_provenance"] = _fact_provenance(store, records, prog, facts, prof, trusted_bodies)
     axes["compilation_binding"], why["compilation_binding"] = _compilation_binding(body, prog, facts, pl)
     if axes["compilation_binding"] == "MATCHED_COMPILATION":
         axes["computation_verification"], axes["policy_answer"] = replay_answer(store, pl["emitted"]["check"])
@@ -294,19 +344,30 @@ def _assess_typed(store, records, body, typed, prof, integrity, axes, why):
              and axes["fact_provenance"] == "ACCEPTED" and axes["compilation_binding"] == "MATCHED_COMPILATION")
     if gates:
         axes["decision_compliance"] = decide(body.get("decision"), axes["policy_answer"], prof["discretionary_reject"])
+    scope = {"obligation": prog.get("obligation"), "semantics_class": f"{pl.get('runtime')}/wpl@v1"}
+    slots = {name: {"value": f.get("value"), "source": f.get("attested_by") or f.get("from")}
+             for name, f in facts.get("facts", {}).items() if name in prof["evidence_slots"]}
+    return scope, slots
 
 
 def assess(store_root, record_id, prof):
+    """Assess one record for one recipient. The trust config is read ONCE; that
+    snapshot is what verification uses and what the context names, so a change
+    of the file after (or during) the assessment cannot be hidden (review WA04)."""
     store = W.Store(str(store_root))
     records = _records(store)
     env = records.get(record_id)
     if env is None:
         raise KeyError(record_id)
     body = env["body"]
+    trust_bytes = Path(prof["trust_config"]).read_bytes()
     axes = dict.fromkeys(("policy_authority", "fact_provenance", "compilation_binding",
                           "computation_verification", "policy_answer", "decision_compliance"), "NOT_ASSESSED")
     why = {}
-    integrity, errs = _record_integrity(store, prof["trust_config"])
+    with tempfile.TemporaryDirectory() as tmp:
+        snapshot = Path(tmp) / "trust.json"
+        snapshot.write_bytes(trust_bytes)
+        integrity, errs = _record_integrity(store, snapshot)
     axes["record_integrity"] = integrity
     if errs:
         why["record_integrity"] = errs[:3]
@@ -314,61 +375,81 @@ def assess(store_root, record_id, prof):
     has_all = all(s in typed for s in (SCHEMA_PROGRAM, SCHEMA_FACTS, SCHEMA_PLAN))
     axes["required_profile"] = "SATISFIED" if (has_all or prof["required"] == "witness") else \
         "REQUIRED_PROFILE_NOT_SATISFIED"
+    scope, slots = (None, {})
     if has_all:
-        _assess_typed(store, records, body, typed, prof, integrity, axes, why)
+        scope, slots = _assess_typed(store, records, body, typed, prof, integrity, axes, why)
     admitted = (axes["required_profile"] == "SATISFIED" and axes["decision_compliance"] == "COMPLIANT"
                 and body.get("decision") == "accept")
     bad = [k for k, v in axes.items() if v not in AXES[k]]
     if bad:
         raise ValueError(f"axis value outside its vocabulary: {bad}")
+    trust_sha = hashlib.sha256(trust_bytes).hexdigest()
     return {"schema": SCHEMA_REPORT, "record": record_id, "axes": axes,
             "why": {k: v for k, v in why.items() if v}, "consumer_admits_action": admitted,
-            "context_id": context_id(store, prof)}
+            "profile_id": blob_id(prof), "scope": scope, "slots": slots, "trust_sha256": trust_sha,
+            "context_id": context_id(store, prof, records, trust_sha)}
 
 
-def context_id(store, prof):
-    """Who assessed what under which rules: verifier build, recipient profile,
-    and the store's record set. Unsigned; a signature over it would only attest it."""
+def context_id(store, prof, records, trust_sha):
+    """What this verdict rests on: the verifier build, the recipient profile, the
+    exact trust bytes it used, and each record's envelope snapshot (body AND the
+    signatures present), not file names (review WA04). Unsigned; a signature over
+    it would only attest it."""
     build = hashlib.sha256((HERE / "assessment.py").read_bytes() + (HERE / "warrant.py").read_bytes()
                            + (HERE / "policy_lang.py").read_bytes()).hexdigest()
-    recs = sorted(p.stem for p in store.records.glob("*.json"))
-    return blob_id({"verifier_build": build, "profile": prof, "records": recs, "runtime": RUNTIME})
+    envelopes = sorted(envelope_snapshot_id(e) for e in records.values() if isinstance(e, dict) and "body" in e)
+    return blob_id({"verifier_build": build, "profile_id": blob_id(prof), "trust_sha256": trust_sha,
+                    "envelopes": envelopes, "runtime": RUNTIME})
 
 
 # ---------------------------------------------------------------- P4: settlement
 
 def consequence(report, prof):
-    """The settled meaning of an assessment, or None. Only a replayed answer of a
-    matched compilation in the recipient's admitted scope is a consequence; how it
-    was reached (term syntax, headroom, budget, checkpoints, claimed verdict) is not
+    """The settled meaning of an assessment, or None.
+
+    Settlement-eligible only if the report was made under THIS recipient's
+    profile, the record verified, the facts are accepted, the required profile is
+    met, the compilation matched in the admitted scope, and a normal form was
+    replayed (review WA02). Compliance is NOT required: a correctly obtained
+    FALSE is a consequence even when an accept contradicts it. How the answer was
+    reached (term syntax, headroom, budget, checkpoints, claimed verdict) is not
     part of it (§17, D09)."""
     a = report["axes"]
-    if a["computation_verification"] != "REPLAYED_NORMAL_FORM" or a["compilation_binding"] != "MATCHED_COMPILATION" \
-            or a["policy_authority"] != "ADMITTED" or a["policy_answer"] not in ("TRUE", "FALSE"):
+    eligible = (report.get("profile_id") == blob_id(prof) and a["record_integrity"] == "VERIFIED"
+                and a["fact_provenance"] == "ACCEPTED" and a["required_profile"] == "SATISFIED"
+                and a["policy_authority"] == "ADMITTED" and a["compilation_binding"] == "MATCHED_COMPILATION"
+                and a["computation_verification"] == "REPLAYED_NORMAL_FORM"
+                and a["policy_answer"] in ("TRUE", "FALSE"))
+    if not eligible:
         return None
-    return (prof["semantics_class"], prof["obligation"], a["policy_answer"])
+    return (report["scope"]["semantics_class"], report["scope"]["obligation"], a["policy_answer"])
 
 
-def novelty(settled, candidate, prof, candidate_class=None, new_evidence=None):
-    """May `candidate` reopen a matter settled as `settled` (a consequence)?
+def novelty(settled_report, candidate_report, prof):
+    """May `candidate_report` reopen a matter settled by `settled_report`?
 
-    NEW_CONSEQUENCE   a different replayed answer in the same admitted scope
-    NEW_EVIDENCE      a new value in a slot the recipient names, from an admitted issuer
-    NO_NEW_CONSEQUENCE everything else in scope: progress, wrappers, more budget,
-                      another checkpoint, a claimed expectation, an unnamed blob
-    MIGRATION_REQUIRED the candidate runs another semantics class
-    SCOPE_MISMATCH    another obligation than the settled one"""
-    if candidate_class is not None and candidate_class != prof["semantics_class"]:
+    Checked in this order (review WA03: scope before anything else):
+    MIGRATION_REQUIRED  the candidate runs another semantics class
+    SCOPE_MISMATCH      another obligation than the recipient's
+    NO_NEW_CONSEQUENCE  the candidate is not settlement-eligible (see consequence)
+    NEW_CONSEQUENCE     a different replayed answer in the same scope
+    NEW_EVIDENCE        the same answer, but an ACCEPTED fact in a slot the
+                        recipient names has a new value or source
+    NO_NEW_CONSEQUENCE  anything else: progress, wrappers, budget, checkpoints,
+                        claimed expectations, unnamed blobs, a renamed tuple"""
+    scope = candidate_report.get("scope") or {}
+    if scope.get("semantics_class") is not None and scope.get("semantics_class") != prof["semantics_class"]:
         return "MIGRATION_REQUIRED"
-    if new_evidence:
-        slot, issuer = new_evidence
-        if slot in prof["evidence_slots"] and issuer in prof["fact_issuers"]:
-            return "NEW_EVIDENCE"
-    if candidate is None:
+    if scope.get("obligation") != prof["obligation"]:
+        return "SCOPE_MISMATCH"
+    settled, candidate = consequence(settled_report, prof), consequence(candidate_report, prof)
+    if candidate is None or settled is None:
         return "NO_NEW_CONSEQUENCE"
-    if candidate[:2] != settled[:2]:
-        return "SCOPE_MISMATCH" if candidate[0] == settled[0] else "MIGRATION_REQUIRED"
-    return "NEW_CONSEQUENCE" if candidate[2] != settled[2] else "NO_NEW_CONSEQUENCE"
+    if candidate[2] != settled[2]:
+        return "NEW_CONSEQUENCE"
+    if candidate_report.get("slots") != settled_report.get("slots"):
+        return "NEW_EVIDENCE"
+    return "NO_NEW_CONSEQUENCE"
 
 
 # ---------------------------------------------------------------- P6: one current path
