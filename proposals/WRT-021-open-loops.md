@@ -1,8 +1,8 @@
 # WRT-021: Transitions with a residual: claims, questions, duties, and what closes them
 
-**Status:** DRAFT, revision 2, 2026-10-17. Written by Claude at the owner's request. Nothing is decided, nothing is implemented, and nothing in SPEC.md or `warrant verify` changes.
+**Status:** DRAFT, revision 3, 2026-10-17. Written by Claude at the owner's request. Nothing in SPEC.md or `warrant verify` changes. P1 and P2 are implemented as a profile on this branch (§13).
 
-Revision 1 (`764affa`) received an AMEND from Codex: REVIEW.md plus MANIFESTO-ADDENDUM.md, in `~/Documents/Codex/2026-10-17/wrt-021-review/`. §12 maps every point to where this revision answers it. Codex's suggested dispositions are not owner decisions, and neither are mine (§10).
+Revision 1 (`764affa`) received an AMEND from Codex: REVIEW.md plus MANIFESTO-ADDENDUM.md, in `~/Documents/Codex/2026-10-17/wrt-021-review/`. Revision 2 (`7a11247`) answered it; §12 maps every point. D1–D5 are now engineering decisions for the experiment (§10, Codex's ENGINEERING-DECISIONS.md in the same folder), not owner choices.
 
 ## 1. Why
 
@@ -258,15 +258,17 @@ Measured instead, each under a fixed view:
 
 The every-check paper's offspring counts are motivation, within their stated limits. They are not a law.
 
-## 10. Owner decisions
+## 10. Engineering decisions for the experiment (D1–D5)
 
-| # | Question | Codex suggested | This draft recommends |
-|---|---|---|---|
-| D1 | Profile or core | profile first, as an experiment, with explicit permission to change the core later | same |
-| D2 | Kinds | keep four as concepts; implement the obligation slice first | same; desire, value and meaning stay out |
-| D3 | Acceptance | explicit per-duty acceptance policy, no implicit consent | same; the profile states the admitted disposition × basis combinations (§5.3) |
-| D4 | Where records live | in-tree, append-only, adequate for the dogfood; pin the reviewed SHA, not a branch | same |
-| D5 | First consumer | the Codex–Claude review loop | same, plus two non-review specimens in P2 so that review does not become the ontology |
+The owner asked whether the agents can decide these themselves. Codex recorded the following as reversible engineering defaults (ENGINEERING-DECISIONS.md, 2026-10-17), and they match this draft's recommendations. They are not an owner signature, a roster adoption, or authority to push, merge or release. Scope, obligations actually imposed on someone, the owner's purpose and external publication remain separate decisions when they arise.
+
+| # | Decision | Reconsider when |
+|---|---|---|
+| D1 | a profile first; the core may change if the experiment shows it is needed; backward compatibility is not a constraint here | a P2 case cannot be expressed without a body change |
+| D2 | four conceptual kinds; the obligation slice implemented first; desire, value and meaning are not implemented | a real case needs a goal or a commitment closed |
+| D3 | an explicit per-duty acceptance policy; no implicit beneficiary consent | the policy turns out to be the same for every duty |
+| D4 | in-tree, addressed, append-only records; exact subjects; corrections are new events | in-tree storage causes an operational problem (then consider Git refs) |
+| D5 | the Codex–Claude review round, service recovery and two maintenance periods | |
 
 ## 11. Plan
 
@@ -302,3 +304,47 @@ The every-check paper's offspring counts are motivation, within their stated lim
 | N1 experiment | P2a, with one correction: `c5ea176` merges #131 into the #130 branch, not master |
 
 **Where I add to the review rather than follow it.** Unowned questions stay out of every frontier (§7). Without that, rule A2 alone still lets generated questions flood a shared view, even though they bind nobody.
+
+## 13. P1 and P2 results (revision 3)
+
+**P1, the obligation slice, as a profile.**
+
+| Part | What it does |
+|---|---|
+| `impl/loops.py` | closed schemas for `warrant.duty@draft-2`, `warrant.transition@draft-2` and `warrant.acceptance@draft-2`; `assess(store, trust, as_of, current)` over one snapshot of the store and the trust file, with settlement-grade `verify --require-bound` deciding which records are in the view; `frontier(report, actor)` |
+| `tests/loops_test.py` | 28 cases, L01–L28; each case names the rule it checks |
+| `tests/loops_mutants.py` | 31 mutants, each undoing one rule; each must fail its own case: 31/31 killed on target |
+| `demos/wrt-021-dogfood/run.py` | P2a, P2b, P2c, 12 checks |
+
+All three are wired into `tools/check.py`.
+
+Two rules have no mutant, and the harness says why:
+- **L09, a failed attempt closes nothing.** No code could close it, so the rule is an absence.
+- **L24, settlement compatibility.** It is a property of the encoding: every acceptance has its own subject, so no two `accept` records share one. L24 runs the real verifier on a loop store at settlement grade and finds no error and no re-litigation warning. That answers the open §7 question of §8 for this encoding.
+
+**P2, the transcription.** Every actor signs with a fixture key named `*@transcribed`. No record is Codex's, Claude's or the owner's own signature. The git SHAs are the real ones.
+
+- **P2a, #131 N1.** Codex's AMEND opens a question, not a duty. Claude takes it on. Claude's run at `e2f679c` is a candidate, and Codex's acceptance binds that exact candidate. At `as_of` with `current = {416ea4a, c5ea176}`:
+  - N1 is DISCHARGED, and its applicability is UNASSESSED because its scope is `cda525e`;
+  - the review round stays OPEN;
+  - integrating #131 is a separate duty, DISCHARGED at `c5ea176`;
+  - "#130 into master" stays OPEN;
+  - the AMEND record is kept;
+  - the question Claude's run exposed binds nobody.
+- **P2b, service recovery.** "Ticket set to Done" (ATTESTED) is OVERCLAIMED, and the probe run (RUNNER_ATTESTED) discharges the restore. The invariant "service functional" is UNOBSERVED once the probe is older than its freshness. It is not "fine".
+- **P2c, maintenance.** Period 0 is covered, period 1 lapsed, period 2 open.
+
+**What the transcription found.** These are the findings P2 exists to produce.
+
+| # | Finding | State |
+|---|---|---|
+| F1 | A closed duty's earlier overclaim kept it in the frontier forever, so the restore duty never left ops' list. | Fixed: OVERCLAIMED_CANDIDATE on a closed duty stays in the report, not the frontier. L28, plus a mutant. |
+| F2 | A DISCHARGED duty whose scope is not current (N1 at `cda525e`) leaves the frontier. Whether it should come back as "revalidate" depends on the recipient's freshness policy, which the profile does not express yet. | Open. Needs a profile field (§6.4, judgment 2). |
+| F3 | An unowned question (the genesis.json one) is correctly in nobody's frontier, but then nobody sees it unless they read `unowned_questions`. A shared, read-only view per scope is needed, without making it anyone's duty (addendum A2). | Open. |
+| F4 | Codex's re-execution is a transition of its own, but the acceptance that follows cannot cite it: the acceptance blob binds Claude's evidence and has no field for the acceptor's support. The link exists only through `prior`. | Open. A candidate is an optional `support` list in the acceptance. |
+| F5 | "Answer the re-review" closes only by its own closure, as §6.1 requires. Nothing records which child duties its closure condition covers, so an acceptor has to know. | Open. A closure condition that names child duties, checked and not propagated, is the candidate. |
+
+**Not done.**
+- The real in-repo store, with each agent signing its own events with its own key. The transcription shows that the format can express the round. Real use needs Codex's key, generated and held by Codex.
+- MCP tools (P3).
+- Any change to `warrant verify`.
