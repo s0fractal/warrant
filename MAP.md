@@ -50,7 +50,8 @@ present on a ref the reviewer was not looking at.
 | `WRT-017` | this repo, `origin/master` | `proposals/WRT-017-revocation.md` | `SPEC.md` |
 | `WRT-018` | this repo, `origin/master` | `proposals/WRT-018-required-binding.md` | `README.md` |
 | `WRT-019` | this repo, `origin/master` | `proposals/WRT-019-p256-signatures.md` | `README.md` |
-| `WRT-020` | this repo, `wrt-020/policy-binding` | `proposals/WRT-020-policy-binding.md` | `README.md` |
+| `WRT-020` | this repo, `origin/master` | `proposals/WRT-020-policy-binding.md` | `README.md` |
+| `WRT-021` | this repo, `wrt-021/open-loops` | `demos/wrt-021-dogfood/run.py` | `proposals/WRT-021-open-loops.md` |
 
 ## Known identifier collisions
 

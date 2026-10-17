@@ -160,6 +160,13 @@ CHECKS = [
      ["python3", "tests/policy_lang.py"], "sigma"),
     ("WRT-010 fact provenance (binding, citation paths, mutations, demo)",
      ["python3", "tests/fact_provenance.py"], "sigma"),
+    # WRT-021 draft-2 (obligation slice): a profile, nothing verify decides changes.
+    ("WRT-021 loops: duties, transitions, acceptance, view (L01-L36)",
+     ["python3", "tests/loops_test.py"], None),
+    ("WRT-021 loops: one on-target mutant per rule",
+     ["python3", "tests/loops_mutants.py"], None),
+    ("WRT-021 dogfood: #131 N1, service recovery, maintenance (transcribed)",
+     ["python3", "demos/wrt-021-dogfood/run.py"], None),
     ("evidence PDF pack (portable extraction refusal controls)",
      ["python3", "tests/pack_pdf.py"], None),
     # WRT-005 (design only): the outcome-fingerprint gate countervectors,
