@@ -183,3 +183,31 @@ test("deep evaluation either completes or raises a worker error, never a fabrica
   const fresh = await workerCheck({ files: example.files, check });
   assert.equal(fresh.result.verdict, "pass");
 });
+
+test("WRT-019: a P-256 signature made by an independent signer (node:crypto) verifies; high-S does not", async () => {
+  const { generateKeyPairSync, sign } = await import("node:crypto");
+  const N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const spki = publicKey.export({ format: "der", type: "spki" });
+  const point = spki.subarray(spki.length - 65); // 04 || x || y
+  const key = ((point[64] & 1) ? "03" : "02") + point.subarray(1, 33).toString("hex");
+  const wid = record.slice(8, -5);
+  const msg = Buffer.concat([Buffer.from("warrant-sig-v1:"), Buffer.from(wid, "hex")]);
+  const raw = sign("sha256", msg, { key: privateKey, dsaEncoding: "ieee-p1363" });
+  let s = BigInt("0x" + raw.subarray(32).toString("hex"));
+  if (s > N / 2n) s = N - s;
+  const r = raw.subarray(0, 32).toString("hex");
+  const hex = (x) => x.toString(16).padStart(64, "0");
+  const withSig = (sig) => ({
+    ...example.files,
+    [record]: Buffer.from(JSON.stringify({
+      body: env.body,
+      sigs: [{ actor: env.body.actor.id, alg: "ecdsa-p256-sha256", key, sig }],
+    })).toString("hex"),
+  });
+  const trust = JSON.stringify({ genesis_roots: [wid], actors: { [env.body.actor.id]: [key] } });
+  const low = verifyStore(withSig(r + hex(s)), { trust, requireBound: true });
+  assert.equal(low.errors, 0, JSON.stringify(low.findings));
+  const high = verifyStore(withSig(r + hex(N - s)), { trust, requireBound: true });
+  assert.ok(high.errors >= 1, "high-S must not verify");
+});

@@ -3,7 +3,7 @@
   "name": "io.github.s0fractal/warrant",
   "title": "Warrant",
   "description": "Record an agent's decisions with reasons anyone can re-execute offline — verify recomputes them.",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "repository": {
     "url": "https://github.com/s0fractal/warrant",
     "source": "github",
@@ -15,7 +15,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "warrant-verify",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "transport": {
         "type": "stdio"
       },

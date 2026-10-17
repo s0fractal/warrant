@@ -106,6 +106,17 @@ admitted by any body version and ships no executable candidate bytes.
 The longer walkthrough, including negative controls, is
 [`docs/try-this-in-fifteen-minutes.md`](docs/try-this-in-fifteen-minutes.md).
 
+## Hardware keys (P-256)
+
+A key that lives in phone hardware (Secure Enclave, StrongBox) signs ECDSA P-256,
+not Ed25519. Warrant accepts both (WRT-019): Python, Go and Rust verify both; the
+Python CLI also makes a software P-256 key to try it with. A hardware signer files
+the same entry shape (`alg: ecdsa-p256-sha256`, compressed key, 64-byte low-S `r‖s`):
+
+```bash
+warrant keygen --alg p256 --out phone.key        # never overwrites an existing file
+```
+
 ## In Claude Code
 
 A plugin witnesses the permission decisions Claude Code makes about your agent's
