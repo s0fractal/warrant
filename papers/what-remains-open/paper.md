@@ -1,6 +1,6 @@
 ---
 title: "What Remains Open: From Verified Decision Records to Settled Obligations Between Agents"
-subtitle: "Working draft 0.2, written for review of the vision; not deposited"
+subtitle: "Working draft 0.3, written for review of the vision; not deposited"
 author: "Serhii Glova (independent) — sergey.glova@gmail.com"
 date: 2026-10-17
 keywords:
@@ -44,7 +44,7 @@ This paper does three things.
    execution and a deterministic replay are different things, and they form a
    partial order, not a ladder. The most persistent defect we found is a check
    that reports one of them under the name of a stronger one.
-3. **It proposes a direction that is still a draft.** The proposal moves from
+3. **It proposes a direction, now partly implemented.** The proposal moves from
    decisions to *open loops*. A unit of work becomes a transition with a
    residual: what it relied on, what it established, which named obligations it
    closed and by what evidence, and what it opened. Closure is typed and never
@@ -152,13 +152,16 @@ level.
      its own case.
 5. **IMPLEMENTED**, warrant #129, `ca53e64`: a proof attestation reported as
    CLAIMED and never as PASSED (§4.2). The *separation of evidence bases* is
-   otherwise a rule in prose (§4.1), and checked only in the DRAFT of
+   otherwise a rule in prose (§4.1), and checked only by the open-loop profile of
    contribution 6.
-6. **DRAFT**, warrant PR #133 at `5c84580`: WRT-021, an open-loop profile.
+6. **IMPLEMENTED**, warrant #133, merged at `8855f7b`: WRT-021, an open-loop
+   profile.
    - It covers duties, transitions with a residual, typed closure, consent for
      transfer, and a per-actor frontier.
-   - It has 36 test cases and 42 mutants, each killed on its own case.
+   - It has 38 test cases and 44 mutants, each killed on its own case.
    - It was exercised on three transcribed specimens (§5).
+   - The gaps §8 lists are addressed by a follow-on *proposal*, WRT-022. It has
+     no code, so by §1.3 it is VISION.
 7. **VISION:** settlement between agents as a design objective, and the threats
    to it that we can already name (§6, §8).
 
@@ -587,7 +590,7 @@ probe run, because the profile cannot yet validate runner evidence. We consider
 that the correct output. We also name the pressure it creates (§8): with only
 attestation validated, the convenient move is to admit attestation everywhere.
 
-# 5. Open loops (WRT-021; DRAFT)
+# 5. Open loops (WRT-021; IMPLEMENTED as a profile)
 
 ## 5.1 Content, demand and duty
 
@@ -602,7 +605,7 @@ The draft separates three objects:
 A model that generates a hypothesis creates a claim. A check that exposes a
 missing premise creates a question. Neither assigns work.
 
-In the draft as implemented, a duty is opened only by its holder's own signed
+In the profile as implemented, a duty is opened only by its holder's own signed
 act. There is no policy that assigns duties automatically. Allowing one would
 reintroduce the problem the separation exists to stop, unless it is bounded
 (§8).
@@ -730,10 +733,15 @@ snapshot.
 
 ## 5.5 Measured state, and the dogfood
 
-At `5c84580` (warrant PR #133, under review):
+At `8855f7b` (warrant #133, merged):
 
-- 36 test cases;
-- 42 mutants, each killed on its own case.
+- 38 test cases;
+- 44 mutants, each killed on its own case.
+
+The last two cases came from a third review round (WL03): malformed but signed
+enum values had aborted the whole assessment. The fix refuses that one event
+and keeps assessing the rest of the view. It was written by the reviewer, not
+the author.
 
 `warrant verify` at settlement grade, run on a store full of loop events,
 reports no error and no re-litigation warning. This shows that the events are
@@ -924,6 +932,9 @@ open obligation.
 
 # 8. Threats, limits and known gaps
 
+The design answers to most of the gaps below are proposed in WRT-022 (VISION).
+None of them is implemented.
+
 **One operator, many keys.** Every agent key in the dogfood belongs to one
 operator's environment. Agents that review each other under one owner are not
 independent parties, whatever their model vendors. Without key isolation, a
@@ -1032,7 +1043,7 @@ The pieces we can already check are:
 - the separation of evidence bases.
 
 The open-loop layer that would tie them into settlement between agents is a
-draft. It has been reviewed twice and amended twice, and it is honest about
+merged profile. It went through three review rounds, and it is honest about
 the one basis it can validate. Its known gaps are listed in §8 rather than
 left for the reader to find.
 
@@ -1067,6 +1078,18 @@ a point-by-point triage against the code, in `reviews/`.
 
 **Real gaps, now listed in §8:** about a dozen, none fixed here.
 
+# Changes since draft 0.2
+
+- WRT-021 was merged, after a third review round (WL03). Its label moves from
+  DRAFT to IMPLEMENTED, with the merged counts.
+- The gaps of §8 now have a follow-on proposal, WRT-022 (VISION: no code). It
+  organises them around two components the open-loop records lacked:
+  *authority* (power records with rooted grant chains) and *falsifiers*
+  (declared, checkable conditions under which a closure stops being reliable).
+  It adds crossings with zero automatic credit, which carry, among other
+  things, the replay receipt; contest and adjudication with standing; admission
+  by irreversibility tier; claim types; and view checkpoints.
+
 # Availability
 
 All artifacts are public.
@@ -1080,12 +1103,14 @@ All artifacts are public.
 | typed assessment (REDESIGN-1) | IMPLEMENTED | #131, head `416ea4a`; on master via `b214c6c` |
 | proof attestation | IMPLEMENTED | #129, merged at `ca53e64` |
 | obligation-based governance text | prose | #132, merged at `3e551e4` |
-| WRT-021 open loops | DRAFT | PR #133, head `5c84580`, under review |
+| WRT-021 open loops | IMPLEMENTED | #133, merged at `8855f7b` |
+| WRT-022 authority, falsifiers, crossings | VISION (proposal, no code) | `proposals/WRT-022-…`, this branch |
 
 **sigma-glyph** [@glova2026sigma]: the sigma-resume kernel, #62, merged at
 `c864d3e` (IMPLEMENTED).
 
-**manifesto** [@manifesto2026]: the idea sources, at `a148caf`.
+**manifesto** [@manifesto2026]: the idea sources, at `a148caf`; the
+meta-ontology compilation that WRT-022 draws on, as manifesto #17 at `dd0a74b`.
 
 Every count in this paper was re-run on the named commit on 2026-10-17. This
 draft has no claims checker of its own yet. That is a gap, not a choice.

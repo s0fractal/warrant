@@ -1,4 +1,4 @@
-# What Remains Open (working draft 0.2)
+# What Remains Open (working draft 0.3)
 
 A follow-on to [`the-reason-runs-again`](../the-reason-runs-again/) (1.1.0,
 DOI 10.5281/zenodo.23414323). It reports the work on the three links that paper
