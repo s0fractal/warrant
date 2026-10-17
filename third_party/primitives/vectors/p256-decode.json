@@ -1,0 +1,250 @@
+{
+  "tag": "primitives.vectors@v0",
+  "class": "p256-decode",
+  "source": {
+    "authored": "tools/p256_decode.py"
+  },
+  "note": "A compressed SEC1 P-256 key, decoded alone. Negatives are encodings a lenient decoder accepts or that are malformed for a named reason; see the selftest.",
+  "vectors": [
+    {
+      "id": "p256-decode/accept-00",
+      "polarity": "positive",
+      "spec": "WRT-019",
+      "why": "generator, its own parity",
+      "input": {
+        "key": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": {
+          "x": "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+          "y": "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+        }
+      }
+    },
+    {
+      "id": "p256-decode/accept-01",
+      "polarity": "positive",
+      "spec": "WRT-019",
+      "why": "generator x with the other parity: the point -G",
+      "input": {
+        "key": "026b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": {
+          "x": "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+          "y": "b01cbd1c01e58065711814b583f061e9d431cca994cea1313449bf97c840ae0a"
+        }
+      }
+    },
+    {
+      "id": "p256-decode/accept-02",
+      "polarity": "positive",
+      "spec": "WRT-019",
+      "why": "x = 0, the smallest x on the curve",
+      "input": {
+        "key": "020000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expect": {
+        "point": {
+          "x": "0000000000000000000000000000000000000000000000000000000000000000",
+          "y": "66485c780e2f83d72433bd5d84a06bb6541c2af31dae871728bf856a174f93f4"
+        }
+      }
+    },
+    {
+      "id": "p256-decode/accept-03",
+      "polarity": "positive",
+      "spec": "WRT-019",
+      "why": "x = p - 1 if on the curve, else the largest such x below it",
+      "input": {
+        "key": "02ffffffff00000001000000000000000000000000fffffffffffffffffffffffc"
+      },
+      "expect": {
+        "point": {
+          "x": "ffffffff00000001000000000000000000000000fffffffffffffffffffffffc",
+          "y": "e68e641309515ec1da369202838e0adda2b37040614a5f5460c616e871aa3ede"
+        }
+      }
+    },
+    {
+      "id": "p256-decode/reject-00",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: x = p + 0: an alias of x = 0 (two strings, one point)",
+      "input": {
+        "key": "02ffffffff00000001000000000000000000000000ffffffffffffffffffffffff"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-01",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: x = p",
+      "input": {
+        "key": "02ffffffff00000001000000000000000000000000ffffffffffffffffffffffff"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-02",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: x = 1: x^3 - 3x + b is not a square, no point has this x",
+      "input": {
+        "key": "020000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-03",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: the generator UNCOMPRESSED (04 || x || y): one key, one encoding",
+      "input": {
+        "key": "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-04",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: the generator in UPPERCASE hex: one key, one string",
+      "input": {
+        "key": "036B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-05",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: prefix 00",
+      "input": {
+        "key": "006b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-06",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: prefix 01",
+      "input": {
+        "key": "016b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-07",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: prefix 04",
+      "input": {
+        "key": "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-08",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: prefix 05",
+      "input": {
+        "key": "056b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-09",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: prefix 06",
+      "input": {
+        "key": "066b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-10",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: prefix 07",
+      "input": {
+        "key": "076b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-11",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: 32 bytes: the prefix missing",
+      "input": {
+        "key": "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-12",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: 34 bytes: one byte too many",
+      "input": {
+        "key": "036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c29600"
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-13",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: empty",
+      "input": {
+        "key": ""
+      },
+      "expect": {
+        "point": null
+      }
+    },
+    {
+      "id": "p256-decode/reject-14",
+      "polarity": "negative",
+      "spec": "WRT-019",
+      "why": "MUST NOT decode: not hex",
+      "input": {
+        "key": "zz6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+      },
+      "expect": {
+        "point": null
+      }
+    }
+  ]
+}

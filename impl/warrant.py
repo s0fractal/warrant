@@ -2812,7 +2812,7 @@ def conformance(examples_dir):
 # never sent, so a candidate cannot echo it back.
 PROBE_PROTOCOL = "1"
 PROBE_BASE_CLASSES = ("capabilities", "canon", "validate", "blob-hash",
-                      "sig-message", "verify-sig", "parse")
+                      "sig-message", "verify-sig", "parse", "p256-decode")
 PROBE_SETTLEMENT_CLASSES = ("verify-store", "ski-run")
 
 
@@ -2869,6 +2869,20 @@ def probe_answer(req):
             return {"message_hex": sig_message(inp["warrant_id"]).hex()}, None
         except ValueError as e:
             return {"error": str(e)[:200]}, None
+
+    if cls == "p256-decode":
+        # s0fractal/primitives class: the WRT-019 key decoder asked directly, because
+        # signature vectors cannot test a decoder's refusals.
+        key = inp.get("key")
+        point = None
+        if isinstance(key, str) and P256_KEY_HEX.match(key):
+            try:
+                n = ec.EllipticCurvePublicKey.from_encoded_point(
+                    ec.SECP256R1(), bytes.fromhex(key)).public_numbers()
+                point = {"x": f"{n.x:064x}", "y": f"{n.y:064x}"}
+            except ValueError:
+                point = None
+        return {"point": point}, None
 
     if cls == "verify-sig":
         sig = {"actor": "probe", "key": inp["key"], "sig": inp["sig"]}

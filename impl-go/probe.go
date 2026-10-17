@@ -12,6 +12,7 @@ package main
 // encodes both as a nonzero exit lets a broken candidate look like a strict one.
 
 import (
+	"crypto/elliptic"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -26,7 +27,7 @@ const probeProtocol = "1"
 
 var (
 	probeBaseClasses = []string{"capabilities", "canon", "validate", "blob-hash",
-		"sig-message", "verify-sig", "parse"}
+		"sig-message", "verify-sig", "parse", "p256-decode"}
 	probeSettlementClasses = []string{"verify-store", "ski-run"}
 )
 
@@ -118,6 +119,20 @@ func probeAnswer(req map[string]any) (map[string]any, error) {
 			return map[string]any{"error": "WarrantID is not 64 lowercase hex characters"}, nil
 		}
 		return map[string]any{"message_hex": hex.EncodeToString(msg)}, nil
+
+	case "p256-decode":
+		// s0fractal/primitives: the WRT-019 decoder asked directly.
+		key, _ := input["key"].(string)
+		if !p256KeyHex.MatchString(key) {
+			return map[string]any{"point": nil}, nil
+		}
+		kb, _ := hex.DecodeString(key)
+		x, y := elliptic.UnmarshalCompressed(elliptic.P256(), kb)
+		if x == nil {
+			return map[string]any{"point": nil}, nil
+		}
+		return map[string]any{"point": map[string]any{
+			"x": fmt.Sprintf("%064x", x), "y": fmt.Sprintf("%064x", y)}}, nil
 
 	case "verify-sig":
 		wid, err := probeString(input, "warrant_id")
