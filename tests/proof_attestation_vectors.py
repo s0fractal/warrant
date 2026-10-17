@@ -56,6 +56,54 @@ def append(rel):
     return f
 
 
+def write(rel, text):
+    def f(root):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text)
+    return f
+
+
+def append_text(rel, text):
+    def f(root):
+        with open(root / rel, "a") as fh:
+            fh.write(text)
+    return f
+
+
+def unit_checks():
+    """The attest-time cross-checks, which --check (CI) never reaches."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = copy_root(tmp)
+        # 1. a file named by include_str! is an input, and changing it changes the manifest
+        (root / "impl-rs/src/data.txt").write_text("v1\n")
+        append_text("proofs/creusot/src/lib.rs", '\nconst D: &str = include_str!("../../../impl-rs/src/data.txt");\n')(root)
+        m1 = PA.manifest(root)
+        (root / "impl-rs/src/data.txt").write_text("v2\n")
+        named = "impl-rs/src/data.txt" in m1.decode() and PA.manifest(root) != m1
+        results.append(named)
+        print(("ok  " if named else "FAIL"), "a file named by include_str! is an input; changing it changes the manifest")
+        # 2. dep-info: a repository file rustc read but the manifest does not name is caught
+        (root / "impl-rs/src/secret.rs").write_text("// read by rustc\n")
+        d = root / PA.PROOFS / "target" / "x" / "warrant_creusot_proofs-0.d"
+        d.parent.mkdir(parents=True)
+        d.write_text("out.rmeta: src/lib.rs ../../impl-rs/src/secret.rs\n")
+        got = PA.uncovered(root, PA.depinfo_files(root / PA.PROOFS), PA.input_paths(root))
+        ok = got == ["impl-rs/src/secret.rs"]
+        results.append(ok)
+        print(("ok  " if ok else "FAIL"), "dep-info: a file rustc read that the manifest misses refuses attestation", "" if ok else got)
+        # 3. git: an input present here but not tracked is reported (CI would not see it)
+        loose = PA.untracked(ROOT, [Path("proofs/creusot/untracked-probe.rs")])
+        ok = loose == ["proofs/creusot/untracked-probe.rs"]
+        results.append(ok)
+        print(("ok  " if ok else "FAIL"), "an untracked input refuses attestation", "" if ok else loose)
+
+
+def symlinked_cargo(root):
+    (root / "cargo-inputs").mkdir()
+    (root / "cargo-inputs" / "config.toml").write_bytes(bytes.fromhex("5b6275696c640a"))   # "[build\n"
+    (root / PA.PROOFS / ".cargo").symlink_to("../../cargo-inputs")
+
+
 def other_key(root):
     (root / ATT / "trust.json").write_text(json.dumps(
         {"actors": {PA.ACTOR: ["5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5"]}}))
@@ -104,6 +152,26 @@ def main():
     case("a proof certificate changed: refused, file named",
          append("proofs/creusot/verif/warrant_creusot_proofs_rlib/jcsquote/push_esc/proof.json"),
          1, "jcsquote/push_esc/proof.json")
+    # Cargo picks inputs up on its own; the manifest is deny-by-default, so each
+    # of these is an input the moment it exists. The first is the Codex review's
+    # own control (2026-10-17): it left the old manifest unchanged and green.
+    case("build.rs added, Cargo.toml unchanged: refused, file named",
+         write("proofs/creusot/build.rs", 'compile_error!("UNATTESTED_BUILD_INPUT");\nfn main() {}\n'),
+         1, "proofs/creusot/build.rs")
+    case("any new file in the crate (benches/): refused, file named",
+         write("proofs/creusot/benches/b.rs", "fn main() {}\n"), 1, "proofs/creusot/benches/b.rs")
+    case("Cargo config in an ancestor directory (repo root): refused, file named",
+         write(".cargo/config.toml", "[build]\nrustflags = []\n"), 1, ".cargo/config.toml")
+    case("a toolchain pin in the crate: refused, file named",
+         write("proofs/creusot/rust-toolchain.toml", "[toolchain]\nchannel = \"stable\"\n"),
+         1, "proofs/creusot/rust-toolchain.toml")
+    case("a source that names a file outside the repository: refused",
+         append_text("proofs/creusot/src/lib.rs", '\nconst X: &str = include_str!("../../../../outside.txt");\n'),
+         1, "outside the repository")
+    # Independent review PA01: a symlinked .cargo in the crate was read by Cargo
+    # and missed by the manifest (os.walk does not descend it). Exact fixture.
+    case("a crate-local .cargo that is a symlink (review PA01): refused as unsupported",
+         symlinked_cargo, 1, "symlink")
     case("trust binds another key: the record is unbound, refused", other_key, 1, "no bound signature")
     # warrant itself refuses edited bytes; a DELETED blob is only a warning there,
     # which is why --check looks at the evidence itself (next case).
@@ -111,6 +179,7 @@ def main():
          "does not match its address")
     case("an evidence log deleted: refused", delete_evidence, 1, "evidence")
     case("an untrusted actor attests the current manifest: refused", forged_actor, 1, "error")
+    unit_checks()
     print("PROOF ATTESTATION VECTORS:", "ALL PASS" if all(results) else "FAILURES")
     return 0 if all(results) else 1
 

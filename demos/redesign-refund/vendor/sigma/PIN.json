@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/s0fractal/sigma-glyph",
+  "branch": "resume/p1-p2-reference",
+  "commit": "ad54abc8d9390d1be539371f004ef73168012e91",
+  "status": "draft kernel on draft PR s0fractal/sigma-glyph#62, not a release",
+  "files": {
+    "sigma_glyph.py": "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4",
+    "sigma_resume.py": "9bb1a17a89e9ca6450a9e97c78d0eb8177d827316192ee47b2ce500038002753"
+  }
+}

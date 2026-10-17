@@ -37,8 +37,12 @@ one to the other. A record filed under a `DENY_ALL` policy, with a re-executed
 `ski@v1` reason that computes something unrelated, and an `accept`, verifies with
 0 errors in all three implementations, even at settlement grade with
 `--require-bound` ([`tests/countermodel_policy_binding.py`](tests/countermodel_policy_binding.py)).
-The missing links, policy → computation → decision, are open design work
-([WRT-010](proposals/WRT-010-fact-provenance.md)).
+Nor that the decision is the one the policy answered: an `accept` whose reason is
+the policy's own compilation, replaying to *false*, also verifies clean. The
+missing links, policy → computation → decision, are open design work
+([WRT-020](proposals/WRT-020-policy-binding.md), with a read-only profile that
+reports them); whether the facts are true is
+[WRT-010](proposals/WRT-010-fact-provenance.md).
 
 Warrant is not an agent framework, blockchain or observability system. It is one
 file format and five filing verbs, designed to be boring.
