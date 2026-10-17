@@ -111,6 +111,8 @@ CHECKS = [
      ["python3", "tests/assessment_test.py"], None),
     ("redesign P3/P4 draft: every assessment mutant is killed by its own case",
      ["python3", "tests/assessment_mutants.py"], None),
+    ("redesign P6 draft: one current writer, historical pack, envelope snapshot, offline demo (N66-N68)",
+     ["python3", "tests/redesign_p6_test.py"], None),
     ("KNOWN GAP pinned: DENY_ALL policy + replayed unrelated reason + accept verifies clean (PY/GO/RS)",
      ["python3", "tests/countermodel_policy_binding.py"], "rs"),
     ("keygen creates a new 0600 file and never overwrites or follows a symlink (PY = RS)",

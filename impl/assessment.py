@@ -366,3 +366,47 @@ def novelty(settled, candidate, prof, candidate_class=None, new_evidence=None):
     if candidate[:2] != settled[:2]:
         return "SCOPE_MISMATCH" if candidate[0] == settled[0] else "MIGRATION_REQUIRED"
     return "NEW_CONSEQUENCE" if candidate[2] != settled[2] else "NO_NEW_CONSEQUENCE"
+
+
+# ---------------------------------------------------------------- P6: one current path
+
+CURRENT_PROFILE = "warrant.decision@draft-1"
+UNSUPPORTED_HISTORICAL_PROFILE = "UNSUPPORTED_HISTORICAL_PROFILE"
+
+
+def write_decision(store, decision, subject, prog, facts, pl, actor, key_path, ts, note="decision"):
+    """The ONE writer of the draft current path: a decision cites its program,
+    facts and plan, and runs the plan's check. There is no option to write the
+    old shape; the old shape is only ever read (D11)."""
+    for doc, schema in ((prog, SCHEMA_PROGRAM), (facts, SCHEMA_FACTS), (pl, SCHEMA_PLAN)):
+        if doc.get("schema") != schema:
+            raise ValueError(f"expected {schema}")
+    under = [store.put_blob(_canon(d)) for d in (prog, facts, pl)]
+    body = {"warrant": "0.2", "decision": decision, "subject": {"hash": subject, "note": note},
+            "under": under, "because": [{"kind": "check", "check": pl["emitted"]["check"],
+                                         "runtime": RUNTIME, "verdict": "pass"}],
+            "evidence": [], "actor": {"id": actor}, "prior": [], "ts": ts}
+    return store.put_record({"body": body, "sigs": [W.sign_envelope(body, actor, str(key_path))]})
+
+
+def read_current(store, record_id):
+    """The current reader. A record of any other shape is refused by name, with
+    its exact identity, and its bytes are left as they are: no silent fallback to
+    an old evaluator, no re-signing, no reinterpretation (N66)."""
+    p = W.Store(str(store.root)).records / f"{record_id}.json"
+    raw = p.read_bytes()
+    body = json.loads(raw)["body"]
+    typed = _typed_under(store, body)
+    if all(s in typed for s in (SCHEMA_PROGRAM, SCHEMA_FACTS, SCHEMA_PLAN)):
+        return {"profile": CURRENT_PROFILE, "record": record_id}
+    return {"profile": UNSUPPORTED_HISTORICAL_PROFILE, "record": record_id,
+            "basis": {"warrant_id": W.warrant_id(body), "bytes_sha256": hashlib.sha256(raw).hexdigest()},
+            "hint": "verify it with the historical verifier pack; the current path does not run it"}
+
+
+def envelope_snapshot_id(envelope):
+    """Identity of a body AND the signatures present at one moment. The
+    WarrantID names the body only, so it cannot show which co-signatures existed
+    when an assessment relied on them (§19, N67)."""
+    sigs = sorted(envelope.get("sigs", []), key=lambda s: json.dumps(s, sort_keys=True))
+    return blob_id({"body_id": W.warrant_id(envelope["body"]), "sigs": sigs})
