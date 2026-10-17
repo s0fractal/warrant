@@ -11,7 +11,7 @@ covers everything.
 | | words | subject |
 |---|---|---|
 | [`the-reason-runs-again/`](the-reason-runs-again/) | 14 645 | the format: content-addressed decision records, domain-separated signatures, re-executable reasons, settlement — and the measured record of what the conformance apparatus caught |
-| [`what-remains-open/`](what-remains-open/) | 5 400 | **working draft 0.1, not deposited**: the follow-on work on the three links the flagship leaves open (policy binding, typed assessment, resumable computation), evidence bases, and the WRT-021 open-loop draft; written for review of the vision, with every claim labelled IMPLEMENTED / DRAFT / VISION |
+| [`what-remains-open/`](what-remains-open/) | 8 100 | **working draft 0.2, not deposited**: the follow-on work on the three links the flagship leaves open (policy binding, typed assessment, resumable computation), evidence bases, and the WRT-021 open-loop draft; written for review of the vision, with every claim labelled IMPLEMENTED / DRAFT / VISION |
 
 The flagship paper is **deposited**: Zenodo DOI
 [`10.5281/zenodo.22172098`](https://doi.org/10.5281/zenodo.22172098)
