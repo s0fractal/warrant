@@ -1020,7 +1020,7 @@ pub fn canon(v: &Json) -> Result<Vec<u8>, CanonError> {
         match it {
             Item::Raw(r) => raw(&mut text, r),
             Item::Key(k) => {
-                quote_jcs_units(&k, &mut text);
+                crate::jcsquote::quote_units(&k, &mut text);
                 text.push(':' as u32);
             }
             Item::Val(v) => match v {
@@ -1029,7 +1029,9 @@ pub fn canon(v: &Json) -> Result<Vec<u8>, CanonError> {
                 Json::Bool(false) => raw(&mut text, "false"),
                 Json::Int(t) => raw(&mut text, t),
                 Json::Float(_) => return Err(CanonError::Float),
-                Json::Str(_) | Json::BadStr(..) => quote_jcs_units(&units_of(v), &mut text),
+                Json::Str(_) | Json::BadStr(..) => {
+                    crate::jcsquote::quote_units(&units_of(v), &mut text)
+                }
                 Json::Array(a) => {
                     stack.push(Item::Raw("]"));
                     for (i, item) in a.iter().enumerate().rev() {
@@ -1094,30 +1096,6 @@ pub fn canon(v: &Json) -> Result<Vec<u8>, CanonError> {
         out.extend_from_slice(char::from_u32(u).unwrap().encode_utf8(&mut buf).as_bytes());
     }
     Ok(out)
-}
-
-/// JCS string escaping over code points (surrogates pass through raw, as
-/// `json.dumps(ensure_ascii=False)` passes them).
-fn quote_jcs_units(s: &[u32], out: &mut Vec<u32>) {
-    out.push('"' as u32);
-    for &u in s {
-        let esc: Option<&str> = match u {
-            0x22 => Some("\\\""),
-            0x5c => Some("\\\\"),
-            0x08 => Some("\\b"),
-            0x09 => Some("\\t"),
-            0x0a => Some("\\n"),
-            0x0c => Some("\\f"),
-            0x0d => Some("\\r"),
-            _ => None,
-        };
-        match esc {
-            Some(e) => out.extend(e.chars().map(|c| c as u32)),
-            None if u < 0x20 => out.extend(format!("\\u{u:04x}").chars().map(|c| c as u32)),
-            None => out.push(u),
-        }
-    }
-    out.push('"' as u32);
 }
 
 /// `canon(doc) == raw`, where a value with no canonical form is simply not

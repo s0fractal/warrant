@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Each mutant of a proved file (impl-rs/src/hexcanon.rs, bounds.rs) must make
-`cargo creusot` fail.
+"""Each mutant of a proved file (impl-rs/src/hexcanon.rs, bounds.rs, jcsquote.rs)
+must make `cargo creusot` fail.
 
     python3 mutants.py
 
@@ -18,7 +18,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SRC = HERE.parents[1] / "impl-rs" / "src"
-FILES = ["hexcanon.rs", "bounds.rs"]
+FILES = ["hexcanon.rs", "bounds.rs", "jcsquote.rs"]
 
 # (file, what the mutant does, exact text, replacement)
 HEX = [
@@ -59,7 +59,27 @@ BOUNDS = [
     ("read S big-endian (no reversal)",
      "    lt_be(&reversed(s), &l)", "    lt_be(s, &l)"),
 ]
-MUTANTS = [("hexcanon.rs", *m) for m in HEX] + [("bounds.rs", *m) for m in BOUNDS]
+# jcsquote: code-only mutants break `quote_units == quoted`. SPEC+CODE mutants change
+# the escape table on both sides, so the code still matches its spec; what must
+# break then is the THEOREM (quoted strings are self-delimiting). That is the
+# evidence the theorem is not vacuous.
+JCS = [
+    ("code: wrong short form for newline", [("        0x0a => 0x6e,", "        0x0a => 0x6f,")]),
+    ("code: control bound off by one (0x1f passes raw)", [("    } else if u < 0x20 {", "    } else if u < 0x1f {")]),
+    ("spec+code: quote passes raw",
+     [("        if u == 0x22u32 { Seq::singleton(0x5cu32).concat(Seq::singleton(0x22u32)) }\n        else if",
+       "        if"),
+      ("        0x22 => 0x22,\n", "")]),
+    ("spec+code: backslash passes raw",
+     [("        else if u == 0x5cu32 { Seq::singleton(0x5cu32).concat(Seq::singleton(0x5cu32)) }\n", ""),
+      ("        0x5c => 0x5c,\n", "")]),
+    ("spec+code: backspace spelled like tab",
+     [("        else if u == 0x08u32 { Seq::singleton(0x5cu32).concat(Seq::singleton(0x62u32)) }",
+       "        else if u == 0x08u32 { Seq::singleton(0x5cu32).concat(Seq::singleton(0x74u32)) }"),
+      ("        0x08 => 0x62,", "        0x08 => 0x74,")]),
+]
+MUTANTS = ([("hexcanon.rs", w, [(o, n)]) for w, o, n in HEX] + [("bounds.rs", w, [(o, n)]) for w, o, n in BOUNDS]
+           + [("jcsquote.rs", w, edits) for w, edits in JCS])
 
 
 def prove(texts):
@@ -86,12 +106,16 @@ def main():
         print(out[-2000:])
         return 1
     all_killed = True
-    for name, what, old, new in MUTANTS:
-        if original[name].count(old) != 1:
-            print("FAIL", f"mutant site not unique or missing: {name}: {what}")
+    for name, what, edits in MUTANTS:
+        text = original[name]
+        bad = [o for o, _ in edits if text.count(o) != 1]
+        if bad:
+            print("FAIL", f"mutant site not unique or missing: {name}: {what}: {bad[0][:50]!r}")
             all_killed = False
             continue
-        proved, out = prove(dict(original, **{name: original[name].replace(old, new)}))
+        for o, n in edits:
+            text = text.replace(o, n)
+        proved, out = prove(dict(original, **{name: text}))
         failed = [ln for ln in out.splitlines() if "✘" in ln]
         print(("KILLED  " if not proved else "SURVIVED"), f"{name}: {what}", "|", (failed[0] if failed else "")[:60])
         all_killed &= not proved

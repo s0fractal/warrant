@@ -1,6 +1,6 @@
 {
   "fast": 0.2,
-  "time": 1.0,
+  "time": 5.0,
   "depth": 6,
   "packages": [
     "creusot"

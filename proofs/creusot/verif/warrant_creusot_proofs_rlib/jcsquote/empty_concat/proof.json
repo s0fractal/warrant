@@ -1,0 +1,6 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": { "vc_empty_concat": { "prover": "alt-ergo", "time": 0.015 } }
+  }
+}
