@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The redesign's acceptance scenario (§25), end to end, offline.
 
-    python3 demos/redesign-refund/run.py [--work DIR]
+    python3 demos/redesign-refund/run.py
 
 One refund request against a rule limit:
 
@@ -26,8 +26,8 @@ Draft: the kernel is vendored from a LOCAL, unpushed sigma-glyph branch
 (vendor/sigma/PIN.json), and the assessment is the draft P3/P4 reference.
 """
 import argparse
-import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -43,6 +43,10 @@ import warrant as W           # noqa: E402
 
 OBL = "refund_within_limit"
 RULE = "amount <= 50000"
+DESK, ISSUER, AUDITOR = "desk@shop", "issuer@bank", "auditor@shop"
+S3, S45, S6, S7 = "3 producer A", "4-5 producer B", "6 accept", "7 witness reject"
+S8, S9, S9R = "8 more ATP", "9 new observation", "9 reassessed"
+WORK_ENV = "REDESIGN_DEMO_WORK"     # producer B learns the work dir here, never from argv
 
 
 def kernel_env(store):
@@ -53,7 +57,8 @@ def kernel_env(store):
 
 
 def producer_b(work):
-    """Step 4, a separate process: it has the files, not producer A's memory."""
+    """Step 4, a separate process: it has the files, not producer A's memory.
+    The directory comes from the environment producer A set, not from argv."""
     store = W.Store(str(work / "store"))
     env = kernel_env(store)
     term = bytes.fromhex(json.loads((work / "task.json").read_text())["term"])
@@ -73,16 +78,15 @@ def producer_b(work):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--work")
-    ap.add_argument("--producer-b")
+    ap.add_argument("--producer-b", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
     if args.producer_b:
-        return producer_b(Path(args.producer_b))
-    work = Path(args.work or tempfile.mkdtemp(prefix="redesign-demo-"))
+        return producer_b(Path(os.environ[WORK_ENV]))
+    work = Path(tempfile.mkdtemp(prefix="redesign-demo-"))   # always new: no path is taken from argv
     store = W.Store(str(work / "store"))
     store.init()
     keys = {}
-    for actor, b in {"desk@shop": "44", "issuer@bank": "55", "auditor@shop": "77"}.items():
+    for actor, b in {DESK: "44", ISSUER: "55", AUDITOR: "77"}.items():
         keys[actor] = work / f"{actor}.key"
         keys[actor].write_text(b * 32 + "\n")
     trust = work / "trust.json"
@@ -99,11 +103,11 @@ def main():
     def observe(amount):
         attest_rules = store.put_blob(b"issuer@bank attests observed amounts\n")
         return record("accept", store.put_blob(A._canon(A.observation(OBL, "amount", amount))),
-                      [attest_rules], "issuer@bank")
+                      [attest_rules], ISSUER)
 
     # 1-2. recipient profile; attested fact; compilation by a registered compiler
     prog = A.program(OBL, {"amount": "int"}, RULE)
-    prof = A.profile([A.blob_id(prog)], OBL, trust, ["issuer@bank"], discretionary_reject=True,
+    prof = A.profile([A.blob_id(prog)], OBL, trust, [ISSUER], discretionary_reject=True,
                      evidence_slots=["amount"])
     facts = A.fact_set(OBL, {"amount": A.observed(65088, observe(65088))})
     pl = A.plan(prog, facts, put=store.put_blob)
@@ -117,56 +121,56 @@ def main():
     paused = R.advance(doc, cid, sb, env, 40)
     (work / "checkpoint.json").write_bytes(R._canon(paused.checkpoint))
     (work / "state.bin").write_bytes(paused.state_bytes)
-    steps["3 producer A"] = {"outcome": paused.outcome, "spent": paused.checkpoint["spent_total"]}
+    steps[S3] = {"outcome": paused.outcome, "spent": paused.checkpoint["spent_total"]}
 
     # 4-5. producer B in its own process; the answer, cross-checked with ski@v1
-    b = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--producer-b", str(work)],
-                       capture_output=True, text=True, check=False)
+    b = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--producer-b"],
+                       env=dict(os.environ, **{WORK_ENV: str(work)}), capture_output=True, text=True, check=False)
     pb = json.loads(b.stdout)
     false_h = SG.term_hash(("app", SG.KG, SG.IG)).hex()
-    comp, ski_answer = A.replay_answer(store, pl["emitted"]["check"])
-    steps["4-5 producer B"] = dict(pb, answer="FALSE" if pb.get("result_hash") == false_h else "?",
+    _, ski_answer = A.replay_answer(store, pl["emitted"]["check"])
+    steps[S45] = dict(pb, answer="FALSE" if pb.get("result_hash") == false_h else "?",
                                    ski_v1_answer=ski_answer)
 
     # 6. the signed accept, assessed
     subject = store.put_blob(b"refund request #1: 650.88\n")
-    acc = A.write_decision(store, "accept", subject, prog, facts, pl, "desk@shop", keys["desk@shop"], ts=100)
+    acc = A.write_decision(store, "accept", subject, prog, facts, pl, DESK, keys[DESK], ts=100)
     r6 = A.assess(store.root, acc, prof)
-    steps["6 accept"] = {"record_integrity": r6["axes"]["record_integrity"],
+    steps[S6] = {"record_integrity": r6["axes"]["record_integrity"],
                          "decision_compliance": r6["axes"]["decision_compliance"],
                          "consumer_admits_action": r6["consumer_admits_action"]}
 
     # 7. the witness keeps the refusal
-    rej = A.write_decision(store, "reject", subject, prog, facts, pl, "auditor@shop", keys["auditor@shop"], ts=101)
-    steps["7 witness reject"] = A.assess(store.root, rej, prof)["axes"]["decision_compliance"]
+    rej = A.write_decision(store, "reject", subject, prog, facts, pl, AUDITOR, keys[AUDITOR], ts=101)
+    steps[S7] = A.assess(store.root, rej, prof)["axes"]["decision_compliance"]
 
     # 8. more ATP / another checkpoint: no new consequence
     settled = A.consequence(r6, prof)
     more = R.advance(paused.checkpoint, paused.checkpoint_id, paused.state_bytes, env, 7)
-    steps["8 more ATP"] = {"kernel": more.outcome,
+    steps[S8] = {"kernel": more.outcome,
                            "novelty": A.novelty(settled, A.consequence(r6, prof), prof)}
 
     # 9. a new admitted observation in the named slot
-    steps["9 new observation"] = {"novelty": A.novelty(settled, None, prof, new_evidence=("amount", "issuer@bank"))}
+    steps[S9] = {"novelty": A.novelty(settled, None, prof, new_evidence=("amount", ISSUER))}
     facts2 = A.fact_set(OBL, {"amount": A.observed(12000, observe(12000))})
     pl2 = A.plan(prog, facts2, put=store.put_blob)
-    acc2 = A.write_decision(store, "accept", subject, prog, facts2, pl2, "desk@shop", keys["desk@shop"], ts=102)
+    acc2 = A.write_decision(store, "accept", subject, prog, facts2, pl2, DESK, keys[DESK], ts=102)
     r9 = A.assess(store.root, acc2, prof)
-    steps["9 reassessed"] = {"decision_compliance": r9["axes"]["decision_compliance"],
+    steps[S9R] = {"decision_compliance": r9["axes"]["decision_compliance"],
                              "novelty": A.novelty(settled, A.consequence(r9, prof), prof),
                              "consumer_admits_action": r9["consumer_admits_action"]}
 
     expected = {
-        "3 producer A": steps["3 producer A"]["outcome"] == "PAUSED",
-        "4-5 producer B": pb.get("basis") == "REPLAYED" and pb.get("outcome") == "NORMAL_FORM"
-        and steps["4-5 producer B"]["answer"] == "FALSE" and ski_answer == "FALSE",
-        "6 accept": r6["axes"]["record_integrity"] == "VERIFIED"
+        S3: steps[S3]["outcome"] == "PAUSED",
+        S45: pb.get("basis") == "REPLAYED" and pb.get("outcome") == "NORMAL_FORM"
+        and steps[S45]["answer"] == "FALSE" and ski_answer == "FALSE",
+        S6: r6["axes"]["record_integrity"] == "VERIFIED"
         and r6["axes"]["decision_compliance"] == "CONTRADICTED_DECISION" and not r6["consumer_admits_action"],
-        "7 witness reject": steps["7 witness reject"] == "COMPLIANT",
-        "8 more ATP": steps["8 more ATP"]["novelty"] == "NO_NEW_CONSEQUENCE",
-        "9 new observation": steps["9 new observation"]["novelty"] == "NEW_EVIDENCE",
-        "9 reassessed": r9["axes"]["decision_compliance"] == "COMPLIANT"
-        and steps["9 reassessed"]["novelty"] == "NEW_CONSEQUENCE" and r9["consumer_admits_action"],
+        S7: steps[S7] == "COMPLIANT",
+        S8: steps[S8]["novelty"] == "NO_NEW_CONSEQUENCE",
+        S9: steps[S9]["novelty"] == "NEW_EVIDENCE",
+        S9R: r9["axes"]["decision_compliance"] == "COMPLIANT"
+        and steps[S9R]["novelty"] == "NEW_CONSEQUENCE" and r9["consumer_admits_action"],
     }
     for k, v in steps.items():
         print(("ok    " if expected.get(k, True) else "FAIL  ") + f"{k}: {json.dumps(v)}")

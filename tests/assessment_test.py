@@ -239,7 +239,8 @@ def main():
          "a cmd@v1 'pass' is a claim: no replayed consequence, nothing admitted", r60["axes"])
 
     for rep in (r38, r39, r40, r41, r44, r45a, r46, r47, strict):
-        assert set(rep["axes"]) == set(A.AXES) and all(v in A.AXES[k] for k, v in rep["axes"].items())
+        assert set(rep["axes"]) == set(A.AXES)
+        assert all(v in A.AXES[k] for k, v in rep["axes"].items())
     print()
     counts = {k: sum(v == k for v in results.values()) for k in ("PASS", "FAIL", "UNRUN")}
     print(f"ASSESSMENT: {counts['PASS']} PASS, {counts['FAIL']} FAIL, {counts['UNRUN']} UNRUN"

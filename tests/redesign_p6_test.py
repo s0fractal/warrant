@@ -79,7 +79,7 @@ def main():
     (fresh / "impl").mkdir()
     for f in IMPL_FILES:
         shutil.copy2(ROOT / "impl" / f, fresh / "impl" / f)
-    r = subprocess.run([sys.executable, "-I", "demos/redesign-refund/run.py", "--work", str(fresh / "work")],
+    r = subprocess.run([sys.executable, "-I", "demos/redesign-refund/run.py"],
                        cwd=fresh, capture_output=True, text=True, check=False, timeout=600)
     out = r.stdout + r.stderr
     leaked = str(ROOT) in out

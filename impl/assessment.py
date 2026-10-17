@@ -105,7 +105,10 @@ def wpl_source(prog, facts):
     lines = []
     for name, typ in prog["params"].items():
         v = facts["facts"][name]["value"]
-        lit = ("true" if v else "false") if typ == "bool" else str(v)
+        if typ == "bool":
+            lit = "true" if v else "false"
+        else:
+            lit = str(v)
         lines.append(f"fact {name}: {typ} = {lit}")
     return "\n".join(lines) + f"\ncheck {prog['rule']}\n"
 
@@ -246,7 +249,7 @@ def _fact_provenance(store, records, facts, prof, trusted_bodies):
     return "ACCEPTED", None
 
 
-def _compilation_binding(store, body, prog, facts, pl):
+def _compilation_binding(body, prog, facts, pl):
     if pl.get("compiler_id") not in COMPILERS:
         return "UNREGISTERED_COMPILER", f"{pl.get('compiler_id')!r} is not a compiler this verifier runs"
     if set(pl.get("options", {})) - COMPILE_OPTIONS:
@@ -284,7 +287,7 @@ def _assess_typed(store, records, body, typed, prof, integrity, axes, why):
     axes["policy_authority"] = "ADMITTED" if admitted else "AUTHORITY_UNESTABLISHED"
     trusted_bodies = {k: v["body"] for k, v in records.items()} if integrity == "VERIFIED" else {}
     axes["fact_provenance"], why["fact_provenance"] = _fact_provenance(store, records, facts, prof, trusted_bodies)
-    axes["compilation_binding"], why["compilation_binding"] = _compilation_binding(store, body, prog, facts, pl)
+    axes["compilation_binding"], why["compilation_binding"] = _compilation_binding(body, prog, facts, pl)
     if axes["compilation_binding"] == "MATCHED_COMPILATION":
         axes["computation_verification"], axes["policy_answer"] = replay_answer(store, pl["emitted"]["check"])
     gates = (integrity == "VERIFIED" and axes["policy_authority"] == "ADMITTED"
@@ -300,8 +303,8 @@ def assess(store_root, record_id, prof):
     if env is None:
         raise KeyError(record_id)
     body = env["body"]
-    axes = {k: "NOT_ASSESSED" for k in ("policy_authority", "fact_provenance", "compilation_binding",
-                                         "computation_verification", "policy_answer", "decision_compliance")}
+    axes = dict.fromkeys(("policy_authority", "fact_provenance", "compilation_binding",
+                          "computation_verification", "policy_answer", "decision_compliance"), "NOT_ASSESSED")
     why = {}
     integrity, errs = _record_integrity(store, prof["trust_config"])
     axes["record_integrity"] = integrity
