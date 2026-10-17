@@ -64,23 +64,23 @@ class Case:
         kw.setdefault("owed_to", [CODEX])
         kw.setdefault("statement", "fix finding N1")
         kw.setdefault("scope_subject", SHA_OLD)
-        kw.setdefault("admits", [["DISCHARGED", "RUNNER_ATTESTED"]])
+        kw.setdefault("admits", [["DISCHARGED", "ATTESTED"]])
         kw.setdefault("acceptance", [CODEX])
         return self.record("propose", self.blob(L.duty(**kw)), actor,
                            prior=kw.get("serves", ()) if prior is None else prior)
 
-    def act(self, actor, closes, basis="RUNNER_ATTESTED", ts=None, opened=(), addresses=(), prior=None):
+    def act(self, actor, closes, basis="ATTESTED", ts=None, opened=(), addresses=(), prior=None):
         t = L.transition(basis, [self.evidence], closes=closes, opened=opened, addresses=addresses,
                          scope_subject=SHA_NEW)
         if prior is None:
             prior = sorted({m["duty"] for m in closes} | set(addresses))
         return self.record("propose", self.blob(t), actor, prior=prior, ts=ts)
 
-    def accept(self, actor, duty_id, t_id, index=0, evidence=None):
-        a = L.acceptance(duty_id, t_id, index, [self.evidence] if evidence is None else evidence)
+    def accept(self, actor, duty_id, t_id, index=0, evidence=None, support=None):
+        a = L.acceptance(duty_id, t_id, index, [self.evidence] if evidence is None else evidence, support)
         return self.record("accept", self.blob(a), actor, prior=[t_id])
 
-    def discharge(self, duty_id, actor=CLAUDE, basis="RUNNER_ATTESTED"):
+    def discharge(self, duty_id, actor=CLAUDE, basis="ATTESTED"):
         return self.act(actor, [L.mapping(duty_id, "DISCHARGED", [self.evidence])], basis)
 
     def assess(self, as_of=T_END, current=None):
@@ -118,13 +118,14 @@ def main():
     rep = c.assess()
     case("L03", d(rep_pending, n1)["disposition"] == "OPEN"
          and "PENDING_ACCEPTANCE" in d(rep_pending, n1)["flags"]
-         and d(rep, n1)["disposition"] == "DISCHARGED" and d(rep, n1)["basis"] == ["RUNNER_ATTESTED"],
+         and d(rep, n1)["disposition"] == "DISCHARGED"
+         and d(rep, n1)["assessed_basis"] == [f"ACTOR_ATTESTATION:{CLAUDE}"],
          "DISCHARGED needs the admitted basis and the named acceptance", (d(rep_pending, n1), d(rep, n1)))
 
     # L04: a basis the duty does not admit is OVERCLAIMED and closes nothing (review R1)
     c = Case()
     n1 = c.open()
-    t = c.discharge(n1, basis="ATTESTED")
+    t = c.discharge(n1, basis="RUNNER_ATTESTED")       # the duty admits ATTESTED only
     c.accept(CODEX, n1, t)
     r = d(c.assess(), n1)
     case("L04", r["disposition"] == "OPEN" and "OVERCLAIMED_CANDIDATE" in r["flags"]
@@ -198,32 +199,37 @@ def main():
     # L12: delegation keeps the holder; the delegate may discharge; only the holder delegates
     c = Case()
     n1 = c.open()
-    c.act(OWNER, [L.mapping(n1, "DELEGATED", to=OWNER)])
+    self_dl = c.act(OWNER, [L.mapping(n1, "DELEGATED", to=OWNER)])   # a non-holder delegates to itself
+    c.accept(OWNER, n1, self_dl, evidence=[])                          # and accepts its own request
     r_bad = d(c.assess(), n1)
-    c.act(CLAUDE, [L.mapping(n1, "DELEGATED", to=OWNER)])
+    dl = c.act(CLAUDE, [L.mapping(n1, "DELEGATED", to=OWNER)])
+    c.accept(OWNER, n1, dl, evidence=[])               # the delegate takes the request on
     t = c.discharge(n1, actor=OWNER)
     c.accept(CODEX, n1, t)
     r = d(c.assess(), n1)
     case("L12", r_bad["delegates"] == [] and r["holder"] == CLAUDE and r["delegates"] == [OWNER]
          and r["disposition"] == "DISCHARGED", "delegation keeps the holder; the delegate may close", (r_bad, r))
 
-    # L13: substitution needs the creditor; afterwards the old holder no longer closes (review R3)
+    # L13: substitution needs the incoming holder AND the creditor; afterwards the old
+    # holder no longer closes (review R3, WL02)
     c = Case()
     n1 = c.open()
     s = c.act(CLAUDE, [L.mapping(n1, "SUBSTITUTED", to=OWNER)])
+    c.accept(OWNER, n1, s, evidence=[])                 # incoming consent alone
     r_pending = d(c.assess(), n1)
-    c.accept(CODEX, n1, s, evidence=[])
+    c.accept(CODEX, n1, s, evidence=[])                 # and the creditor
     t_old = c.discharge(n1)
     c.accept(CODEX, n1, t_old)
     r = d(c.assess(), n1)
     case("L13", r_pending["holder"] == CLAUDE and "PENDING_ACCEPTANCE" in r_pending["flags"]
+         and "creditor" in r_pending["candidates"][0]["why"]
          and r["holder"] == OWNER and r["disposition"] == "OPEN",
          "holder and successor alone cannot substitute; after it the old holder cannot close",
          (r_pending["holder"], r["holder"], r["disposition"]))
 
     # L14: two admitted, incompatible closures are CONTESTED, not silently ordered
     c = Case()
-    n1 = c.open(admits=[["DISCHARGED", "RUNNER_ATTESTED"], ["DECLARED_IMPOSSIBLE", "ATTESTED"]])
+    n1 = c.open(admits=[["DISCHARGED", "ATTESTED"], ["DECLARED_IMPOSSIBLE", "ATTESTED"]])
     t1 = c.discharge(n1)
     c.accept(CODEX, n1, t1)
     t2 = c.act(CLAUDE, [L.mapping(n1, "DECLARED_IMPOSSIBLE", [c.evidence])], basis="ATTESTED")
@@ -273,7 +279,7 @@ def main():
     # L18: an invariant is observed at a time; no fresh observation is not "holds" (review R4)
     c = Case()
     inv = c.open(statement="service functional", shape="invariant", freshness=50,
-                 admits=[["OBSERVED", "RUNNER_ATTESTED"]], acceptance=[])
+                 admits=[["OBSERVED", "ATTESTED"]], acceptance=[])
     r0 = d(c.assess(as_of=100), inv)
     c.act(CLAUDE, [L.mapping(inv, "OBSERVED", [c.evidence], holds=True)], ts=200)
     r1 = d(c.assess(as_of=220), inv)
@@ -323,10 +329,13 @@ def main():
     n1 = c.open()
     t = c.discharge(n1)
     c.accept(CODEX, n1, t)
-    r_old = d(c.assess(current={SHA_OLD}), n1)
+    r_est = d(c.assess(current={SHA_NEW}), n1)          # where the closure was established
+    r_old = d(c.assess(current={SHA_OLD}), n1)          # where the defect was found
     r_new = d(c.assess(current={"416ea4a8" + "0" * 32}), n1)
-    case("L22", r_old["applicability"] == "CURRENT" and r_new["applicability"] == "UNASSESSED"
-         and r_new["disposition"] == "DISCHARGED", "replacement is not invalidation", (r_old, r_new))
+    case("L22", r_est["applicability"] == "CURRENT" and r_old["applicability"] == "UNASSESSED"
+         and r_new["applicability"] == "UNASSESSED" and r_new["disposition"] == "DISCHARGED",
+         "a closure applies to the revision it was established on; replacement is not invalidation",
+         (r_est["applicability"], r_old["applicability"], r_new))
 
     # L23: the frontier: unowned questions bind nobody; a taken question appears with its duty
     c = Case()
@@ -336,7 +345,7 @@ def main():
     c.act(CODEX, [], opened=[q_unowned, q_taken], addresses=[n1])
     rep = c.assess()
     fc, fx, fo = L.frontier(rep, CLAUDE), L.frontier(rep, CODEX), L.frontier(rep, OWNER)
-    case("L23", rep["unowned_questions"] == [q_unowned] and [x["question"] for x in fc] == [q_taken]
+    case("L23", [x["question"] for x in rep["unowned_questions"]] == [q_unowned] and [x["question"] for x in fc] == [q_taken]
          and len(fx) == 1 and fo == [],
          "unowned questions are in nobody's frontier", (rep["unowned_questions"], fc, fx, fo))
 
@@ -381,13 +390,126 @@ def main():
     # L28: an overclaim on a duty that was then properly closed leaves the frontier
     c = Case()
     n1 = c.open()
-    c.discharge(n1, basis="ATTESTED")                  # overclaimed
+    c.discharge(n1, basis="RUNNER_ATTESTED")           # not admitted: overclaimed
     t = c.discharge(n1)
     c.accept(CODEX, n1, t)
     rep = c.assess()
     case("L28", d(rep, n1)["disposition"] == "DISCHARGED" and "OVERCLAIMED_CANDIDATE" in d(rep, n1)["flags"]
          and L.frontier(rep, CLAUDE) == [], "a closed duty's past overclaim stays in the report, not the frontier",
          L.frontier(rep, CLAUDE))
+
+    # L29 (WL01): a claimed basis is not an assessed one. A REPLAYED or RUNNER_ATTESTED
+    # label with real evidence closes nothing, because this profile cannot validate it.
+    c = Case()
+    dr = c.open(admits=[["DISCHARGED", "REPLAYED"], ["DISCHARGED", "RUNNER_ATTESTED"]], acceptance=[])
+    c.discharge(dr, basis="REPLAYED")
+    c.discharge(dr, basis="RUNNER_ATTESTED")
+    r = d(c.assess(), dr)
+    case("L29", r["disposition"] == "OPEN" and r["assessed_basis"] == []
+         and [x["verdict"] for x in r["candidates"]] == ["UNVERIFIED_BASIS", "UNVERIFIED_BASIS"]
+         and [x["claimed_basis"] for x in r["candidates"]] == ["REPLAYED", "RUNNER_ATTESTED"]
+         and "UNVERIFIED_CANDIDATE" in r["flags"], "a label is not the act it names", r)
+
+    # L30 (WL01): evidence must resolve to its exact bytes; an attestation names evidence
+    c = Case()
+    n1 = c.open(acceptance=[])
+    ghost = "ab" * 32
+    t_gh = L.transition("ATTESTED", [ghost], closes=[L.mapping(n1, "DISCHARGED", [ghost])])
+    c.record("propose", c.blob(t_gh), CLAUDE, prior=[n1])
+    c.act(CLAUDE, [L.mapping(n1, "DISCHARGED", [])])
+    swapped = c.S.put_blob(b"probe output, original\n")
+    t_sw = L.transition("ATTESTED", [swapped], closes=[L.mapping(n1, "DISCHARGED", [swapped])])
+    c.record("propose", c.blob(t_sw), CLAUDE, prior=[n1])
+    (c.S.blobs / swapped).write_bytes(b"probe output, replaced\n")
+    r_bad = d(c.assess(), n1)
+    c.discharge(n1)                                      # positive control
+    r_ok = d(c.assess(), n1)
+    case("L30", r_bad["disposition"] == "OPEN"
+         and [x["verdict"] for x in r_bad["candidates"]] == ["MISSING_EVIDENCE"] * 3
+         and r_ok["disposition"] == "DISCHARGED",
+         "missing, empty or replaced evidence closes nothing; resolvable evidence does",
+         [x["why"] for x in r_bad["candidates"]])
+
+    # L31 (WL02): nobody acquires a duty without accepting it
+    c = Case()
+    n1 = c.open()
+    target = "absent@unconsented"
+    s = c.act(CLAUDE, [L.mapping(n1, "SUBSTITUTED", to=target)])
+    c.accept(CODEX, n1, s, evidence=[])                  # the creditor agrees; the target never signs
+    r1 = d(c.assess(), n1)
+    rep1 = c.assess()
+    c.accept(OWNER, n1, s, index=1, evidence=[])         # a wrong mapping index binds nothing
+    fwd = c.act(OWNER, [L.mapping(n1, "SUBSTITUTED", to=OWNER)])   # a non-holder's transfer
+    c.accept(CODEX, n1, fwd, evidence=[])
+    c.accept(OWNER, n1, fwd, evidence=[])
+    r2 = d(c.assess(), n1)
+    case("L31", r1["holder"] == CLAUDE and "PENDING_ACCEPTANCE" in r1["flags"]
+         and L.frontier(rep1, CLAUDE) != [] and L.frontier(rep1, target) == []
+         and r2["holder"] == CLAUDE and r2["candidates"][-1]["verdict"] == "OVERCLAIMED",
+         "no incoming consent, no transfer; only the holder transfers", (r1, r2["candidates"]))
+
+    # L32 (WL02): a delegation is a request until the delegate accepts it
+    c = Case()
+    n1 = c.open()
+    c.act(CLAUDE, [L.mapping(n1, "DELEGATED", to=OWNER)])
+    t = c.discharge(n1, actor=OWNER)
+    c.accept(CODEX, n1, t)
+    r = d(c.assess(), n1)
+    case("L32", r["delegates"] == [] and r["disposition"] == "OPEN" and r["candidates"][0]["verdict"] == "PENDING",
+         "an unaccepted delegation gives nobody the duty", r)
+
+    # L33 (F4): an acceptance may carry the acceptor's own support, which must resolve
+    c = Case()
+    n1 = c.open()
+    t = c.discharge(n1)
+    rerun = c.S.put_blob(b"codex: reproduced at the new head\n")
+    c.accept(CODEX, n1, t, support=[rerun])
+    r_ok = d(c.assess(), n1)
+    c2 = Case()
+    n1b = c2.open()
+    tb = c2.discharge(n1b)
+    bad_acc = c2.accept(CODEX, n1b, tb, support=["cd" * 32])
+    rep_bad = c2.assess()
+    case("L33", r_ok["disposition"] == "DISCHARGED" and r_ok["candidates"][0]["acceptor_support"] == {CODEX: [rerun]}
+         and bad_acc in rep_bad["refused_events"] and d(rep_bad, n1b)["disposition"] == "OPEN",
+         "the acceptor's support is recorded and must resolve", (r_ok["candidates"], rep_bad["refused_events"]))
+
+    # L34 (F2): reliance needs a closure established on a current revision
+    c = Case()
+    n1 = c.open()
+    open_duty = c.open(statement="still open")
+    t = c.discharge(n1)
+    c.accept(CODEX, n1, t)
+    rep_cur, rep_moved = c.assess(current={SHA_NEW}), c.assess(current={"416ea4a8" + "0" * 32})
+    case("L34", L.reliance(rep_cur, n1) == "RELIABLE" and L.reliance(rep_moved, n1) == "UNASSESSED"
+         and L.reliance(rep_cur, open_duty) == "NOT_CLOSED" and L.reliance(rep_cur, "ef" * 32) == "MISSING"
+         and L.frontier(rep_moved, CLAUDE) == [{"duty": open_duty, "disposition": "OPEN", "flags": [],
+                                                 "question": None}],
+         "absence from the frontier is not reliance", (L.reliance(rep_cur, n1), L.reliance(rep_moved, n1)))
+
+    # L35 (F3): unowned questions have a shared view with provenance, per scope
+    c = Case()
+    q1 = c.S.put_blob(b"q1\n")
+    t = c.act(CODEX, [], opened=[q1])
+    rep = c.assess()
+    qs = L.questions(rep)
+    case("L35", qs == [{"question": q1, "opened_by": t, "actor": CODEX, "scope": SHA_NEW}]
+         and L.questions(rep, SHA_NEW) == qs and L.questions(rep, SHA_OLD) == []
+         and L.frontier(rep, CODEX) == [], "questions are visible and bind nobody", qs)
+
+    # L36 (F5): a parent's closure condition may name its children; it is evaluated, not inferred
+    c = Case()
+    child = c.open(statement="fix N1")
+    parent = c.open(statement="answer the review", closure_requires=[child])
+    tp = c.discharge(parent)
+    c.accept(CODEX, parent, tp)
+    r_early = d(c.assess(), parent)
+    tc = c.discharge(child)
+    c.accept(CODEX, child, tc)
+    rep = c.assess()
+    case("L36", r_early["disposition"] == "OPEN" and r_early["candidates"][0]["verdict"] == "UNMET_CONDITION"
+         and d(rep, parent)["disposition"] == "DISCHARGED" and d(rep, child)["disposition"] == "DISCHARGED",
+         "a named child condition is checked, and only on the parent's own candidate", r_early["candidates"])
 
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"LOOPS: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"

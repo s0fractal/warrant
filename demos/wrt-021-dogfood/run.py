@@ -10,13 +10,17 @@ checked against ~/Projects/warrant on 2026-10-17. What the transcription tests i
 whether the protocol can express each case without prose doing the work, and
 whether the assessment then says what actually is open.
 
-P2a  warrant #131, finding N1 (Codex re-review of cda525e):
+P2a  warrant #131, finding N1 (Codex re-review of cda525e), a FROZEN historical
+     slice that ends before #130 was merged into master (b214c6c):
      the AMEND opens a QUESTION, not a duty on Claude; Claude takes it on;
-     Claude's run at e2f679c is a candidate; Codex reproduces at e2f679c/416ea4a
-     and accepts that exact candidate; the merge of #131 at c5ea176 is a separate
-     duty, and it went into the #130 branch, so "#130 into master" stays open.
-P2b  service recovery: "restore the service" is closed by a probe run, and
-     "the engineer clicked done" (an attestation) is not admitted.
+     Claude attests its run at e2f679c (transcript as evidence); Codex accepts
+     that exact candidate, citing its own re-execution as support; the merge of
+     #131 at c5ea176 is a separate duty and went into the #130 branch, so within
+     the slice "#130 into master" is open.
+P2b  service recovery: "the engineer clicked done" is not admitted (the duty
+     admits a runner attestation only), and the probe run, which CLAIMS a runner
+     attestation, closes nothing either: this profile cannot validate runner
+     evidence yet (review WL01), so the restore honestly stays OPEN.
 P2c  maintenance: a recurring key rotation, one period covered and one lapsed.
 """
 import json
@@ -66,8 +70,9 @@ class Store:
     def act(self, actor, ts, t, prior=()):
         return self.rec("propose", self.blob(t), actor, ts, prior=prior)
 
-    def accept(self, actor, ts, duty_id, t_id, index, evidence):
-        return self.rec("accept", self.blob(L.acceptance(duty_id, t_id, index, evidence)), actor, ts, prior=[t_id])
+    def accept(self, actor, ts, duty_id, t_id, index, evidence, support=None):
+        return self.rec("accept", self.blob(L.acceptance(duty_id, t_id, index, evidence, support)), actor, ts,
+                        prior=[t_id])
 
 
 def p2a(st):
@@ -85,13 +90,13 @@ def p2a(st):
     round_duty = st.open(11, holder=CLAUDE, owed_to=[CODEX], statement="answer the cda525e re-review",
                          scope_subject=CDA525E, admits=[["DISCHARGED", "ATTESTED"]], acceptance=[CODEX])
     n1 = st.open(12, holder=CLAUDE, owed_to=[CODEX], statement="fix N1", scope_subject=CDA525E,
-                 admits=[["DISCHARGED", "RUNNER_ATTESTED"]], acceptance=[CODEX], serves=[round_duty],
+                 admits=[["DISCHARGED", "ATTESTED"]], acceptance=[CODEX], serves=[round_duty],
                  answers=n1_q)
     # 3. Claude's amendment at e2f679c: regression red on cda525e, green on e2f679c; a candidate.
     run_e2f = st.blob(b"tests/assessment_test.py N1 regression: FAIL at cda525e, PASS at e2f679c; "
                       b"mutant SNAPSHOT killed\n")
     exposed = st.blob(L.canon({"question": "Is genesis.json part of the snapshot?", "about": E2F679C}))
-    amend = st.act(CLAUDE, 20, L.transition("RUNNER_ATTESTED", [run_e2f],
+    amend = st.act(CLAUDE, 20, L.transition("ATTESTED", [run_e2f],
                                             closes=[L.mapping(n1, "DISCHARGED", [run_e2f])],
                                             addresses=[n1], opened=[exposed], scope_subject=E2F679C),
                    prior=[n1])
@@ -100,7 +105,7 @@ def p2a(st):
                     b"report about the verified reject\n")
     st.act(CODEX, 30, L.transition("RECIPIENT_REEXECUTED", [rerun], relied_on=[amend],
                                    scope_subject=F416EA4), prior=[amend])
-    st.accept(CODEX, 31, n1, amend, 0, [run_e2f])
+    st.accept(CODEX, 31, n1, amend, 0, [run_e2f], support=[rerun])
     # 5. Integration is a separate duty, held by the owner; #131 went into the #130 branch.
     merge_131 = st.open(40, holder=OWNER, owed_to=[CLAUDE, CODEX], statement="integrate #131",
                         scope_subject=F416EA4, admits=[["DISCHARGED", "ATTESTED"]], acceptance=[])
@@ -150,13 +155,19 @@ def main():
     checks = {
         "P2a N1 is DISCHARGED on the accepted candidate": du[a["n1"]]["disposition"] == "DISCHARGED",
         "P2a closing N1 does not close the review round": du[a["round"]]["disposition"] == "OPEN",
-        "P2a N1 is not current at 416ea4a until revalidated": du[a["n1"]]["applicability"] == "UNASSESSED",
+        "P2a N1 is not current at 416ea4a until revalidated": du[a["n1"]]["applicability"] == "UNASSESSED"
+        and L.reliance(rep, a["n1"]) == "UNASSESSED",
+        "P2a Codex's re-execution is recorded as the acceptor's support":
+        CODEX in du[a["n1"]]["candidates"][0].get("acceptor_support", {}),
         "P2a #131 integration is a separate, closed duty": du[a["merge_131"]]["disposition"] == "DISCHARGED",
-        "P2a #130 into master stays open": du[a["master_130"]]["disposition"] == "OPEN",
+        "P2a within the slice, #130 into master is open": du[a["master_130"]]["disposition"] == "OPEN",
         "P2a the AMEND is kept: the review transition is in the store": st.S.get_record(a["review"]) is not None,
-        "P2a the question Claude exposed binds nobody": rep["unowned_questions"] == [a["exposed"]],
+        "P2a the question Claude exposed binds nobody and is visible":
+        [q["question"] for q in L.questions(rep)] == [a["exposed"]],
         "P2b 'clicked done' is not admitted": any(x["verdict"] == "OVERCLAIMED" for x in du[b["restore"]]["candidates"]),
-        "P2b the probe run discharges the restore": du[b["restore"]]["disposition"] == "DISCHARGED",
+        "P2b the probe's runner claim is not validated; the restore stays OPEN":
+        du[b["restore"]]["disposition"] == "OPEN"
+        and [x["verdict"] for x in du[b["restore"]]["candidates"]] == ["OVERCLAIMED", "UNVERIFIED_BASIS"],
         "P2b the observation is stale by as_of, so the service is UNOBSERVED": "UNOBSERVED" in du[b["up"]]["flags"],
         "P2c period 0 covered, 1 lapsed, 2 open": du[c["rotate"]].get("instances") == {"0": "COVERED", "1": "LAPSED",
                                                                                          "2": "OPEN"},
@@ -169,7 +180,7 @@ def main():
         for x in L.frontier(rep, actor):
             print(f"  {x['duty'][:12]} {json.dumps(x['disposition'])} {x['flags']}"
                   + (f" answers {x['question'][:12]}" if x["question"] else ""))
-    print(f"\nunowned questions: {[q[:12] for q in rep['unowned_questions']]}")
+    print(f"\nunowned questions: {[q['question'][:12] for q in L.questions(rep)]}")
     print("WRT-021 DOGFOOD:", "EXPRESSIBLE" if all(checks.values()) else "BROKEN", f"(store {st.S.root})")
     return 0 if all(checks.values()) else 1
 

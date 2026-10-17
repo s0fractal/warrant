@@ -1,6 +1,6 @@
 # WRT-021: Transitions with a residual: claims, questions, duties, and what closes them
 
-**Status:** DRAFT, revision 3, 2026-10-17. Written by Claude at the owner's request. Nothing in SPEC.md or `warrant verify` changes. P1 and P2 are implemented as a profile on this branch (§13).
+**Status:** DRAFT, revision 4, 2026-10-17. Written by Claude at the owner's request. Nothing in SPEC.md or `warrant verify` changes. P1 and P2 are implemented as a profile on this branch (§13), with Codex's review of `0815959` addressed (§14).
 
 Revision 1 (`764affa`) received an AMEND from Codex: REVIEW.md plus MANIFESTO-ADDENDUM.md, in `~/Documents/Codex/2026-10-17/wrt-021-review/`. Revision 2 (`7a11247`) answered it; §12 maps every point. D1–D5 are now engineering decisions for the experiment (§10, Codex's ENGINEERING-DECISIONS.md in the same folder), not owner choices.
 
@@ -348,3 +348,28 @@ Two rules have no mutant, and the harness says why:
 - The real in-repo store, with each agent signing its own events with its own key. The transcription shows that the format can express the round. Real use needs Codex's key, generated and held by Codex.
 - MCP tools (P3).
 - Any change to `warrant verify`.
+
+## 14. Review of `0815959` (Codex, AMEND): WL01, WL02 and F2–F5
+
+The review is in `~/Documents/Codex/2026-10-17/wrt-021-review-0815959/`, with `repro.py` and `RESULTS.json`. Both P1 findings reproduced on the reviewed head before the fix. On the fixed head, `repro.py` now stops at its first assertion, the WL01 one. Its WL02 half, run on its own, shows the holder unchanged.
+
+| Finding | What was wrong | Fix | Regression | Mutants |
+|---|---|---|---|---|
+| WL01 (P1) | A claimed basis became the assessed one. `REPLAYED` with a prose reason and a missing evidence hash came out as DISCHARGED / REPLAYED, though no replay ran. | The claimed basis and the assessed basis are separate fields. `VALIDATED_BASES = {ATTESTED}` lists the bases this profile can validate; a candidate claiming any other basis is UNVERIFIED_BASIS and closes nothing. Mapping evidence must resolve to exact bytes, and an attestation must name its evidence. The assessed basis now says what was validated: `ACTOR_ATTESTATION:<actor>` or `RELEASE_BY:<actor>`. | L29, L30 | 4 |
+| WL02 (P1) | A substitution with the creditor's acceptance gave the duty to `absent@unconsented`, an actor that had signed nothing. | Only the holder transfers. The incoming actor must accept the exact duty, transition, mapping and evidence, and a substitution also needs the creditor or `release_by`. A delegation is a request until the delegate accepts it. Assignment under a pre-existing mandate is not implemented: there is no mandate record yet. | L13 (full consent path), L31, L32 | 4 |
+| F2 | Applicability followed the revision where the defect was found. | Applicability now follows the revision the closure was established on (`closure_scope`). `reliance()` returns RELIABLE only for an uncontested DISCHARGED whose closure scope is current. Absence from a frontier is not reliance. | L22, L34 | 3 |
+| F3 | Unowned questions were invisible. | `questions(rep, scope)` is a shared, read-only view. Each entry carries the transition that opened it, the actor and the scope. Being listed there gives nobody a duty. | L35 | 1 |
+| F4 | The acceptance could not cite the acceptor's own work. | Acceptances take an optional `support`, which must resolve or the acceptance is refused. It is reported per acceptor and never raises a basis: a producer's transcript is not a recipient's execution. | L33 | 1 |
+| F5 | A parent's condition over its children was implicit. | Duties take an optional `closure_requires`. A parent's own DISCHARGED candidate is UNMET_CONDITION until every named child is DISCHARGED. The condition is evaluated, never inferred from `serves`. Children are assessed first; a cycle stays unmet. | L36 | 1 |
+
+**Effect on the dogfood.** It is now 13 checks.
+
+- **P2b.** The probe run claims a runner attestation, which this profile cannot validate, so the restore stays OPEN. That is the true state of the profile, and it is reported as such.
+- **P2a.** It is labelled a frozen slice ending before `b214c6c`, the merge of #130 into master. Codex's re-execution is now the support of its acceptance.
+
+**Totals:** 36 cases, 42 mutants, each killed on its own case.
+
+**Still not implemented, on purpose:**
+- validation of runner, re-execution or replay evidence (`cli@v1` and a replay receipt);
+- assignment mandates;
+- goal, commitment and purpose.

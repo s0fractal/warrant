@@ -5,7 +5,8 @@ OFF_TARGET, a crash is CRASH, and neither counts as killed.
 
     python3 tests/loops_mutants.py
 
-Rules with no mutant, and why:
+WL01/WL02 (Codex review of 0815959) and F2-F5 each have their own mutants
+(L29-L36). Rules with no mutant, and why:
   L09  a failed attempt closes nothing: there is no code that could close it;
        the rule is an absence, and L09 checks it.
   L24  settlement compatibility is a property of the encoding (unique accept
@@ -16,6 +17,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,14 +27,16 @@ MUTANTS = [
     ("L01", "an unknown kind is accepted",
      [('    if d["kind"] not in KINDS or d["shape"] not in SHAPES:', '    if False:')]),
     ("L02", "anyone may open a duty for a holder",
-     [('                if why is None and body["actor"]["id"] != doc["holder"]:', '                if False:')]),
+     [('            if why is None and body["actor"]["id"] != doc["holder"]:', '            if False:')]),
     ("L03", "no acceptance is required",
      [('    if missing:\n        return "PENDING"', '    if False:\n        return "PENDING"')]),
     ("L04", "any basis discharges",
-     [('    if [disp, t["did"]["basis"]] not in d["admits"]:', '    if False:')]),
+     [('    if [disp, claimed] not in d["admits"]:', '    if False:')]),
     ("L05", "an acceptance is not bound to its transition",
-     [('                if a["duty"] == duty_id and a["transition"] == t_id and a["mapping"] == index',
-       '                if a["duty"] == duty_id and a["mapping"] == index')]),
+     [('                if a["duty"] == duty_id and a["transition"] == t_id and a["mapping"] == index\n'
+       '                and sorted',
+       '                if a["duty"] == duty_id and a["mapping"] == index\n'
+       '                and sorted')]),
     ("L06", "anyone's acceptance satisfies the duty",
      [('    missing = set(d["acceptance"]) - view.accepted_by(did, t_id, i, m["evidence"])',
        '    missing = set() if view.accepted_by(did, t_id, i, m["evidence"]) else set(d["acceptance"])')]),
@@ -49,17 +53,16 @@ MUTANTS = [
      [('        return ("ADMITTED", "") if actor in set(d["owed_to"]) | set(d["release_by"]) else \\',
        '        return ("ADMITTED", "") if True else \\')]),
     ("L11", "the holder abandons an obligation",
-     [('        return "OVERCLAIMED", "an obligation cannot be abandoned by its holder"', '        return "ADMITTED", ""'),
-      ('CLOSING = {"DISCHARGED", "DECLARED_IMPOSSIBLE", "RELEASED"}',
-       'CLOSING = {"DISCHARGED", "DECLARED_IMPOSSIBLE", "RELEASED", "ABANDONED"}')]),
+     [('        return "OVERCLAIMED", "an obligation cannot be abandoned by its holder"', '        return "ADMITTED", ""')]),
     ("L12", "anyone delegates",
-     [('        return ("ADMITTED", "") if actor == state["holder"] else ("OVERCLAIMED", "only the holder delegates")',
-       '        return ("ADMITTED", "") if True else ("OVERCLAIMED", "only the holder delegates")')]),
+     [('    if actor != state["holder"]:\n        return "OVERCLAIMED", "only the holder transfers or delegates"',
+       '    if False:\n        return "OVERCLAIMED", "only the holder transfers or delegates"')]),
     ("L13", "holder and successor substitute without the creditor",
-     [('        if view.accepted_by(did, t_id, i, m["evidence"]) & authority:', '        if True:')]),
+     [('    if m["disposition"] == "SUBSTITUTED" and not accepted & (set(d["owed_to"]) | set(d["release_by"])):',
+       '    if False:')]),
     ("L13", "substitution keeps the old holder as a closer",
-     [('                state["holder"], state["delegates"] = m["to"], set()',
-       '                state["delegates"].add(m["to"])')]),
+     [('        state["holder"], state["delegates"] = m["to"], set()',
+       '        state["delegates"].add(m["to"])')]),
     ("L14", "incompatible closures are not contested",
      [('    if len(kinds) > 1:', '    if False:')]),
     ("L15", "a root duty is vacuously orphaned",
@@ -70,31 +73,27 @@ MUTANTS = [
     ("L16", "an unknown reference is not reported",
      [('            r["flags"].append("MISSING")\n            continue', '            continue')]),
     ("L17", "a past instance without a closure is open, not lapsed",
-     [('                report[str(n)] = "LAPSED" if end <= as_of else "OPEN"', '                report[str(n)] = "OPEN"')]),
+     [('            report[str(n)] = "LAPSED" if end <= as_of else "OPEN"', '            report[str(n)] = "OPEN"')]),
     ("L17", "a recurring duty closes without an instance",
      [('    if d["shape"] == "recurring" and "instance" not in m:', '    if False:'),
-      ('                instances.setdefault(m["instance"], (t_id, t["did"]["basis"]))',
-       '                instances.setdefault(m.get("instance", 0), (t_id, t["did"]["basis"]))')]),
+      ('        acc["instances"].setdefault(m["instance"], t_id)',
+       '        acc["instances"].setdefault(m.get("instance", 0), t_id)')]),
     ("L18", "no observation reads as holding",
-     [('        if not fresh:\n            out["flags"].append("UNOBSERVED")', '        if not fresh:\n            pass')]),
+     [('    if not fresh:\n        out["flags"].append("UNOBSERVED")', '    if not fresh:\n        pass')]),
     ("L18", "a stale observation counts as fresh",
-     [('        fresh = [o for o in observations if as_of - o[0] <= d["freshness"]]', '        fresh = observations')]),
+     [('    fresh = [o for o in observations if as_of - o[0] <= d["freshness"]]', '    fresh = observations')]),
     ("L19", "records failing verification stay in the view",
      [('        valid = [w for w in ids if w not in bad] if store_ok else []', '        valid = ids')]),
     ("L21", "the view does not end at as_of",
      [('            if env["body"]["ts"] <= as_of:          # the view ends at as_of', '            if True:')]),
     ("L22", "a new revision is treated as current",
-     [('        out["applicability"] = "CURRENT" if d["scope"]["subject"] in current else "UNASSESSED"',
-       '        out["applicability"] = "CURRENT"')]),
+     [('    return "CURRENT" if any(s in current for s in scopes or []) else "UNASSESSED"', '    return "CURRENT"')]),
+    ("L22", "applicability follows the defect's revision, not the closure's (F2)",
+     [('    scopes = out.get("closure_scope") if out["closed_by"] else [out["scope"]]', '    scopes = [out["scope"]]')]),
     ("L23", "a taken question still counts as unowned",
-     [('        unowned = sorted({q for _, t in view.transitions.values() for q in t["opened"]}\n'
-       '                         - {d["answers"] for d in view.duties.values() if "answers" in d})',
-       '        unowned = sorted({q for _, t in view.transitions.values() for q in t["opened"]})')]),
+     [('            if q not in taken:', '            if True:')]),
     ("L23", "every duty is in every actor's frontier",
      [('        if not involved:\n            continue\n', '')]),
-    ("L28", "a past overclaim keeps a closed duty in the frontier",
-     [('        live = open_like or bool(set(r["flags"]) - {"OVERCLAIMED_CANDIDATE"})',
-       '        live = open_like or bool(r["flags"])')]),
     ("L25", "unimplemented kinds are assessed as obligations",
      [('    if d["kind"] not in IMPLEMENTED_KINDS:', '    if False:')]),
     ("L26", "a mapping may cite evidence the transition does not carry",
@@ -104,6 +103,33 @@ MUTANTS = [
     ("L27", "non-canonical bytes are read",
      [('    return doc if isinstance(doc, dict) and canon(doc) == raw else None',
        '    return doc if isinstance(doc, dict) else None')]),
+    ("L28", "a past overclaim keeps a closed duty in the frontier",
+     [('        live = open_like or bool(set(r["flags"]) - {"OVERCLAIMED_CANDIDATE", "UNVERIFIED_CANDIDATE"})',
+       '        live = open_like or bool(r["flags"])')]),
+    ("L29", "a claimed basis is taken as validated (WL01)",
+     [('    if claimed not in VALIDATED_BASES:', '    if False:')]),
+    ("L30", "cited evidence need not be in the view (WL01)",
+     [('    if not all(_resolves(view.store, h) for h in m["evidence"]):', '    if False:')]),
+    ("L30", "evidence bytes need not match their address (WL01)",
+     [('        return p.is_file() and not p.is_symlink() and hashlib.sha256(p.read_bytes()).hexdigest() == h',
+       '        return p.is_file()')]),
+    ("L30", "an attestation need not name its evidence",
+     [('    if not m["evidence"]:', '    if False:')]),
+    ("L31", "a duty is assigned to someone who never accepted it (WL02)",
+     [('    if m["to"] not in accepted:', '    if False:')]),
+    ("L32", "a delegation counts before the delegate accepts it (WL02)",
+     [('    if m["to"] not in accepted:', '    if m["to"] not in accepted and m["disposition"] == "SUBSTITUTED":')]),
+    ("L33", "an acceptor's support need not resolve (F4)",
+     [('            if why is None and not all(_resolves(self.store, h) for h in doc.get("support", [])):',
+       '            if False:')]),
+    ("L34", "any closure is reliable, whatever the revision (F2)",
+     [('    return "RELIABLE" if r["applicability"] == "CURRENT" else "UNASSESSED"', '    return "RELIABLE"')]),
+    ("L35", "the question view ignores the scope (F3)",
+     [('    return [q for q in rep["unowned_questions"] if scope is None or q["scope"] == scope]',
+       '    return list(rep["unowned_questions"])')]),
+    ("L36", "a parent closes without the children its condition names (F5)",
+     [('    if disp == "DISCHARGED":\n        unmet = _unmet_children(d, done)',
+       '    if False:\n        unmet = _unmet_children(d, done)')]),
 ]
 
 
@@ -129,9 +155,12 @@ def run(target, pairs):
 
 
 def main():
+    # Each mutant runs in its own temporary directory and process, so they run in
+    # parallel; the report keeps the list's order.
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        outcomes = list(pool.map(lambda mt: run(mt[0], mt[2]), MUTANTS))
     verdicts = []
-    for target, what, pairs in MUTANTS:
-        v, detail = run(target, pairs)
+    for (target, what, _), (v, detail) in zip(MUTANTS, outcomes):
         verdicts.append(v)
         print(f"{v:10} {target} {what}" + (f"  [{detail}]" if detail else ""))
     killed = verdicts.count("KILLED")

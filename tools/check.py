@@ -161,7 +161,7 @@ CHECKS = [
     ("WRT-010 fact provenance (binding, citation paths, mutations, demo)",
      ["python3", "tests/fact_provenance.py"], "sigma"),
     # WRT-021 draft-2 (obligation slice): a profile, nothing verify decides changes.
-    ("WRT-021 loops: duties, transitions, acceptance, view (L01-L28)",
+    ("WRT-021 loops: duties, transitions, acceptance, view (L01-L36)",
      ["python3", "tests/loops_test.py"], None),
     ("WRT-021 loops: one on-target mutant per rule",
      ["python3", "tests/loops_mutants.py"], None),
