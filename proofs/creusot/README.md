@@ -106,9 +106,13 @@ python3 tools/proof_attestation.py --attest   # runs both commands above, then s
 python3 tools/proof_attestation.py --check    # what CI runs (tools/check.py)
 ```
 
-The record's subject is a manifest of the proof inputs: the proved impl-rs files,
-this crate's sources and pins, `mutants.py`, and the proof certificates. Prose is
-not an input. The record carries the two logs and the environment as evidence.
+The record's subject is a manifest of the proof inputs. Inputs are deny-by-default:
+every file of this crate except outputs, caches and prose; every file its sources
+name by path; and Cargo configuration and toolchain files in ancestor directories.
+The first version listed the inputs it thought of instead, and a review showed it
+missing `build.rs`, which Cargo picks up on its own. Before signing, `--attest`
+also checks that every repository file rustc's dep-info says it read is in the
+manifest, and that every input is tracked by git. The record carries the two logs and the environment as evidence.
 `--check` recomputes the manifest from the checkout and looks for a record about
 exactly it, bound to a key in [attestation/trust.json](attestation/trust.json).
 
@@ -118,5 +122,12 @@ If a proved file changes without a new attestation, the check turns red and name
 what changed. [attestation/POLICY.md](attestation/POLICY.md) states what a record
 claims and what it does not. The key is an agent's (`claude@warrant-proofs`), and
 no other check consults this trust file. `tests/proof_attestation_vectors.py`
-holds the attacks: a changed input, a foreign key, edited or deleted evidence, and
-an untrusted signer.
+holds the attacks:
+- a changed input;
+- an added `build.rs`, `benches/` file, ancestor `.cargo/config.toml` or
+  `rust-toolchain.toml`;
+- a source naming a file outside the repository;
+- a foreign key;
+- edited or deleted evidence;
+- an untrusted signer;
+- the dep-info and git cross-checks.

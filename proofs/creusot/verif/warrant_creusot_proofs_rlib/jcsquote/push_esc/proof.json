@@ -26,7 +26,7 @@
                       { "prover": "alt-ergo", "time": 0.012 }
                     ]
                   },
-                  { "prover": "alt-ergo", "time": 1.2 }
+                  { "prover": "alt-ergo", "time": 1.0 }
                 ]
               },
               { "prover": "alt-ergo", "time": 0.025 }
