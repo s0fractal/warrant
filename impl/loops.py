@@ -56,6 +56,7 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")    # a git SHA-1 or a blob hash
 EVALUATOR = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 PROFILE = "warrant.loops-profile@draft-2"
+TRIGGER_DISPOSITIONS = {"DISCHARGED", "DECLARED_IMPOSSIBLE"}
 RELIANCE = {"ELIGIBLE", "STALE", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSING"}
 
 DUTY_FIELDS = {"schema", "kind", "shape", "holder", "owed_to", "statement", "scope", "serves",
@@ -225,6 +226,11 @@ def transition_problem(t):
             why = TR.triggers_problem(m["triggers"])
             if why:
                 return why
+            # S1 assesses triggers on one-shot closures only. A recurring instance, an
+            # observation, a transfer or a release that declared triggers is refused
+            # explicitly, never accepted with its triggers dropped (S1-03).
+            if m["triggers"] and (m["disposition"] not in TRIGGER_DISPOSITIONS or "instance" in m):
+                return "triggers are supported on one-shot DISCHARGED or DECLARED_IMPOSSIBLE mappings only"
     return None
 
 

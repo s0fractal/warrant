@@ -37,7 +37,10 @@ FINDINGS = {
 
 
 def main():
-    review = Path(sys.argv[1]).read_bytes()
+    # Sonar S8707: the owner names the review file to import; reading it is this
+    # one-off script's purpose, with no confinement root or remote input (Codex,
+    # review of 81f11fe2).
+    review = Path(sys.argv[1]).read_bytes()  # NOSONAR
     s = E.store()
     review_blob = s.put_blob(review)
     rev2_blob = s.put_blob(E.subprocess.run(["git", "-C", str(E.ROOT), "show", f"{REV2}:{PROPOSAL}"],

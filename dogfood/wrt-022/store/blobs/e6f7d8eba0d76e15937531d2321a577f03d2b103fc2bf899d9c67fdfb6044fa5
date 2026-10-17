@@ -1,0 +1,33 @@
+# WRT-022 revision 2: bounded design re-review
+
+Reviewed exact revision 410a048af3e8fdbcbb1e793dfd5512efc562a2b4. Verdict: ACCEPT the revised contracts as a design direction and proceed with S1. This closes R22-01 through R22-07 at the document level. It is not validation of unimplemented grants, triggers, crossings or consensus, not normative adoption, and not approval of the full paper. No new source changes, push or CI for this document review.
+
+## Disposition
+
+- R22-01: addressed. Explicit recipient-accepted roots, per-edge attenuation and delegation authority; key binding alone grants nothing; authority, competence and purpose remain different. open_for needs an existing assignment mandate. Quotas are view-local and substitution retains incoming consent.
+- R22-02: addressed. Triggers are tri-state, coverage is neutral for no declarations, and named-use eligibility still requires closure, binding, freshness, basis and view assumptions. Historical validity is distinct from future-use revalidation.
+- R22-03: addressed. New counterexamples have a route outside declared triggers; standing governs binding dispute effects. Child enrolment is an authorized act, not a serves edge. Occurrences are distinct from semantic values.
+- R22-04: addressed. Per-act recipient requirements replace a universal evidence ladder; input bases remain separate; migrations are opt-in with declared meta-constraints and an explicit new-root exit.
+- R22-05: addressed. Binding and observed compliance are independent axes; absence of an observation is UNKNOWN, and a violation does not cancel a norm.
+- R22-06: addressed for the proposed object boundary. The shared pre-action manifest excludes itself and the result. Checkpoint conflict ordering is explicitly open and outside S1.
+- R22-07: addressed. Evidence status, semantic force and lifecycle are separate; debt is an unresolved relation, and ontology adaptation losses are stated. Preserved/newly established and lost/not established are no longer conflated.
+
+## S1 engineering contract
+
+Start with a closed explicit dependency selector/manifest. Arbitrary glob semantics are not needed for the first slice. The baseline dependency set and its relevant compiler/config/toolchain operands must be addressed; the current view supplies their actual bytes or an explicit missing/refusal result. Comparing two producer-chosen incomplete lists is not a completeness check. Scope claims stay bounded to this declared set.
+
+subject_changed: identical relevant operands -> NOT_FIRED; unrelated changes outside the declared dependency slice -> NOT_FIRED; changed relevant operand -> FIRED; unavailable current revision/required operand -> UNEVALUABLE (or typed refusal), never a silent empty/unchanged manifest. If file modes or symlink behavior affect the supported execution, include them or refuse unsupported inputs rather than claiming full coverage.
+
+duty_not_discharged: a known admitted DISCHARGED duty -> NOT_FIRED; a known duty that is not discharged -> FIRED; missing/unassessable duty -> UNEVALUABLE. Missing is not OPEN. Preserve individual trigger results when several causes coexist. No declared triggers stays a neutral coverage result; it does not skip the existing eligibility requirements.
+
+The assessment identity must bind the actual recipient profile, named use, selector, baseline/current manifests, relevant evaluator identity, trust/view operands and as_of. Changing an operand that can change the result must change that identity. Preserve historical closure and compute current eligibility separately. No global completeness or trusted wall-clock is established by signing this view.
+
+Required vectors and targeted mutations: unchanged, unrelated change, relevant change, unavailable current revision, missing required dependency, and known-open versus missing duty. Positive closures must continue working. Profile/use/current-manifest changes must not silently reuse an earlier eligibility result. S2/S3/S7 mechanisms remain separate future slices, not prerequisites invented for S1.
+
+## Signing handoff
+
+Generated a new Ed25519 key scoped to WRT-022 review and S1 dogfood, actor codex@warrant-wrt022. PUBLIC-KEY.json carries only the public key and scope/custody statement. Local sign/verify possession check passed; private material is outside the repository in a dedicated 0700 directory and a 0600 key file. No private key bytes are included here.
+
+Status: GENERATED_NOT_ENROLLED. Enrollment in the real store's recipient policy is still an explicit act by that policy's legitimate authority. This key does not confer roster standing, independent custody or authority over other actors. It is a new current identity: no old review receives a backdated signature. A signed current-review event may be imported as evidence after the recipient chooses to enroll the key.
+
+#134 is already MERGED at a2ac0eeea6de95ce154bdc6c76c91c13df755cc9. S1 must go through a new PR; pushing the old branch cannot add code to the merged PR. The agreed workflow remains: review draft changes locally, then one coherent implementation slice with its proposal.

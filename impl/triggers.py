@@ -28,6 +28,11 @@ import warrant as W
 MANIFEST = "warrant.manifest@draft-2"
 TRIGGER_KINDS = {"subject_changed", "duty_not_discharged"}
 RESULTS = {"FIRED", "NOT_FIRED", "UNEVALUABLE"}
+# The dispositions this evaluator can state as "known not discharged" (S1-02).
+# Anything else -- NOT_IMPLEMENTED, a contested duty (None), a recurring or
+# standing duty, which has no single discharge -- is not a known state of
+# non-discharge, so the trigger is UNEVALUABLE, never FIRED.
+KNOWN_NOT_DISCHARGED = {"OPEN", "RELEASED", "DECLARED_IMPOSSIBLE"}
 FILE_MODES = {"100644", "100755"}
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 MAX_TRIGGERS = 32
@@ -105,8 +110,9 @@ def manifest_problem(doc):
     if not (isinstance(ents, dict) and sorted(ents) == doc["selector"]):
         return "manifest entries must name exactly the selector"
     for e in ents.values():
-        if not (isinstance(e, dict) and set(e) == {"mode", "sha256"} and e["mode"] in FILE_MODES
-                and isinstance(e["sha256"], str) and HEX64.match(e["sha256"])):
+        # JSON types before set membership: a list or object is not a mode (S1-01).
+        if not (isinstance(e, dict) and set(e) == {"mode", "sha256"} and isinstance(e["mode"], str)
+                and e["mode"] in FILE_MODES and isinstance(e["sha256"], str) and HEX64.match(e["sha256"])):
             return "manifest entry"
     return None
 
@@ -168,7 +174,11 @@ def evaluate(trigger, read_blob, workspace, dispositions):
         if d not in dispositions:
             return "UNEVALUABLE", "duty not in view"
         disp = dispositions[d]
-        return ("NOT_FIRED", "DISCHARGED") if disp == "DISCHARGED" else ("FIRED", f"duty is {disp}")
+        if disp == "DISCHARGED":
+            return "NOT_FIRED", "DISCHARGED"
+        if disp in KNOWN_NOT_DISCHARGED:
+            return "FIRED", f"duty is {disp}"
+        return "UNEVALUABLE", f"duty state not assessable here: {disp}"
     base = read_blob(trigger["baseline"])
     if base is None:
         return "UNEVALUABLE", "baseline manifest not in view"

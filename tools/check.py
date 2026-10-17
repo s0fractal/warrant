@@ -168,7 +168,7 @@ CHECKS = [
     ("WRT-021 dogfood: #131 N1, service recovery, maintenance (transcribed)",
      ["python3", "demos/wrt-021-dogfood/run.py"], None),
     # WRT-022 S1: scoped tri-state revalidation triggers and reliance for a named use.
-    ("WRT-022 S1 triggers: unchanged/unrelated/relevant/unavailable/missing, identity (T01-T15)",
+    ("WRT-022 S1 triggers: unchanged/unrelated/relevant/unavailable/missing, identity (T01-T18)",
      ["python3", "tests/triggers_test.py"], None),
     ("WRT-022 S1 triggers: one on-target mutant per rule",
      ["python3", "tests/triggers_mutants.py"], None),

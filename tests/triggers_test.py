@@ -258,6 +258,64 @@ def main():
     check("T15", all(r in rep["refused_events"] for r in refused_ids) and rep["duties"][other]["disposition"] == "OPEN",
           "malformed triggers refuse their transition only", rep["refused_events"])
 
+    # T16 (S1-01): a malformed but addressed baseline manifest is UNEVALUABLE for its own
+    # closure; an unrelated valid duty is still assessed (WL03's class, one level down)
+    c10 = LT.Case()
+    good = close(c10, [], scope=LT.SHA_NEW)
+    bad_ids = []
+    for entry in ({"mode": [], "sha256": "ab" * 32}, {"mode": {}, "sha256": "ab" * 32},
+                  {"mode": 1, "sha256": "ab" * 32}, {"mode": None, "sha256": "ab" * 32},
+                  {"mode": "100644", "sha256": ["ab"]}):
+        doc = {"schema": TR.MANIFEST, "selector": ["a.txt"], "entries": {"a.txt": entry}}
+        bad_ids.append(close(c10, [{"kind": "subject_changed", "baseline": c10.blob(doc)}], scope=LT.SHA_NEW))
+    try:     # the defect was an exception that aborted the whole assessment: record it as this case failing
+        rep = L.assess(c10.S.root, c10.trust, LT.T_END, current={LT.SHA_NEW}, workspace=(repo.path, base))
+        ok16 = (all(results_of(rep, b) == ["UNEVALUABLE"] and "baseline manifest" in
+                    rep["duties"][b]["triggers"][0]["detail"] for b in bad_ids)
+                and L.reliance(rep, good) == "ELIGIBLE")
+        detail16 = [rep["duties"][b]["triggers"] for b in bad_ids]
+    except TypeError as e:
+        ok16, detail16 = False, f"assessment aborted: {e}"
+    check("T16", ok16, "malformed manifest entries are UNEVALUABLE, and the rest of the view survives", detail16)
+
+    # T17 (S1-02): only a supported, known state is FIRED or NOT_FIRED
+    c11 = LT.Case()
+    goal = c11.open(kind="goal", owed_to=[], statement="a goal: NOT_IMPLEMENTED here")
+    contested = c11.open(statement="contested", admits=[["DISCHARGED", "ATTESTED"], ["DECLARED_IMPOSSIBLE", "ATTESTED"]])
+    t1 = c11.discharge(contested)
+    c11.accept(LT.CODEX, contested, t1)
+    t2 = c11.act(LT.CLAUDE, [L.mapping(contested, "DECLARED_IMPOSSIBLE", [c11.evidence])])
+    c11.accept(LT.CODEX, contested, t2)
+    rec = c11.open(statement="recurring", shape="recurring", period={"start": 0, "every": 10}, acceptance=[])
+    opened = c11.open(statement="open")
+    released = c11.open(statement="released")
+    c11.act(LT.CODEX, [L.mapping(released, "RELEASED")])
+    done = c11.open(statement="done")
+    td = c11.discharge(done)
+    c11.accept(LT.CODEX, done, td)
+    deps = [goal, contested, rec, opened, released, done]
+    dependents = [close(c11, [{"kind": "duty_not_discharged", "duty": x}], scope=LT.SHA_NEW) for x in deps]
+    rep = L.assess(c11.S.root, c11.trust, LT.T_END, current={LT.SHA_NEW})
+    got = [results_of(rep, x)[0] for x in dependents]
+    check("T17", got == ["UNEVALUABLE", "UNEVALUABLE", "UNEVALUABLE", "FIRED", "FIRED", "NOT_FIRED"]
+          and L.reliance(rep, dependents[0]) == "UNASSESSED",
+          "NOT_IMPLEMENTED, contested and recurring are UNEVALUABLE; OPEN and RELEASED fire; DISCHARGED does not", got)
+
+    # T18 (S1-03): triggers on a recurring instance or an observation are refused, not dropped
+    c12 = LT.Case()
+    rec12 = c12.open(statement="maintenance", shape="recurring", period={"start": 0, "every": 10},
+                     admits=[["DISCHARGED", "ATTESTED"]], acceptance=[])
+    inv12 = c12.open(statement="service up", shape="invariant", freshness=50,
+                     admits=[["OBSERVED", "ATTESTED"]], acceptance=[])
+    other12 = c12.open(statement="unrelated")
+    trig = [{"kind": "duty_not_discharged", "duty": other12}]
+    ra = c12.act(LT.CLAUDE, [L.mapping(rec12, "DISCHARGED", [c12.evidence], instance=0, triggers=trig)], ts=5)
+    ob = c12.act(LT.CLAUDE, [L.mapping(inv12, "OBSERVED", [c12.evidence], holds=True, triggers=trig)], ts=6)
+    rep = L.assess(c12.S.root, c12.trust, 7)
+    check("T18", ra in rep["refused_events"] and ob in rep["refused_events"]
+          and rep["duties"][rec12]["instances"].get("0") == "OPEN" and rep["duties"][other12]["disposition"] == "OPEN",
+          "triggers on unsupported mapping shapes refuse the transition", rep["refused_events"])
+
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"TRIGGERS: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"
           + (f" ({', '.join(failed)})" if failed else ""))
