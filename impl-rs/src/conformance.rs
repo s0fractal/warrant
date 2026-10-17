@@ -346,7 +346,7 @@ pub fn selftest() -> Result<bool, String> {
 // ----------------------------------------------------------------- probe ----
 
 pub const PROBE_PROTOCOL: &str = "1";
-const PROBE_CLASSES: [&str; 9] = [
+const PROBE_CLASSES: [&str; 10] = [
     "capabilities",
     "canon",
     "validate",
@@ -356,6 +356,7 @@ const PROBE_CLASSES: [&str; 9] = [
     "parse",
     "verify-store",
     "ski-run",
+    "p256-decode",
 ];
 
 /// `base64.b64decode(s, validate=True)`.
@@ -468,6 +469,23 @@ pub fn probe_answer(class: Option<&Json>, inp: &Json) -> Result<Result<Json, Str
             Ok(m) => obj(vec![("message_hex", Json::Str(encode_hex(&m)))]),
             Err(e) => obj(vec![("error", trunc(&e))]),
         },
+        "p256-decode" => {
+            // s0fractal/primitives: the WRT-019 decoder asked directly.
+            let point = inp
+                .get("key")
+                .and_then(Json::as_str)
+                .filter(|k| crate::sig::is_p256_key_hex(k))
+                .and_then(crate::hash::fromhex)
+                .and_then(|kb| crate::p256::decode_compressed(&kb));
+            let point = match point {
+                Some((x, y)) => obj(vec![
+                    ("x", Json::str(&crate::hash::encode_hex(&x))),
+                    ("y", Json::str(&crate::hash::encode_hex(&y))),
+                ]),
+                None => Json::Null,
+            };
+            obj(vec![("point", point)])
+        }
         "verify-sig" => {
             let mut sig = Obj::new();
             sig.insert("actor", Json::str("probe"));

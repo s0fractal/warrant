@@ -27,6 +27,16 @@ right.
 
 ## Unreleased
 
+- **The shared primitives are held to [s0fractal/primitives](https://github.com/s0fractal/primitives).**
+  That repository states the behaviour of SHA-256, RFC 8785, the signature
+  message, Ed25519 and P-256 as vectors, not as shared code, so the three
+  implementations stay independent. A copy pinned by commit and manifest
+  digest lives in `third_party/primitives/`, and `tools/vendor_primitives.py
+  --check` verifies it. `tests/primitives_pack.py` runs it against Python, Go
+  and Rust. The probes gain one class, `p256-decode`, which asks the P-256 key
+  decoder directly. Measured: with impl-rs's `x < p` or on-curve check
+  removed, `verify-sig` still passed 50/50, while `p256-decode` reported the
+  decoder accepting what it must refuse.
 - **The policy-binding gap is now executable, and the README says so.** A
   record filed under a `DENY_ALL` policy blob, with a real `ski@v1` reason the
   verifier re-executes (it computes something unrelated to the policy) and an

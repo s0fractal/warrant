@@ -348,6 +348,20 @@ impl Curve {
     }
 }
 
+/// WRT-019: the affine point of a compressed SEC1 key (33 bytes), as 32-byte
+/// big-endian x and y, or None if it is not one encoding of a point on P-256.
+pub fn decode_compressed(key: &[u8]) -> Option<([u8; 32], [u8; 32])> {
+    let (x, y) = Curve::new().decompress(key)?;
+    let be = |v: &U| {
+        let mut out = [0u8; 32];
+        for i in 0..4 {
+            out[8 * i..8 * i + 8].copy_from_slice(&v[3 - i].to_be_bytes());
+        }
+        out
+    };
+    Some((be(&x), be(&y)))
+}
+
 /// WRT-019: true iff `sig` (64-byte r||s) is a valid low-S ECDSA P-256 / SHA-256
 /// signature of `msg` under the compressed SEC1 key `key` (33 bytes).
 pub fn verify(key: &[u8], sig: &[u8], msg: &[u8]) -> bool {

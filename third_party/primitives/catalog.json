@@ -1,0 +1,52 @@
+{
+  "tag": "primitives.catalog@v0",
+  "boundaries": {
+    "deterministic": "bytes in, bytes out: every conforming implementation gives the same answer for every input",
+    "proven": "deterministic, and a machine-checked proof covers the stated property",
+    "vector-tested": "held only by the vectors here; agreement outside them is not claimed",
+    "heuristic": "no agreement is promised; only the stated bounds"
+  },
+  "classes": {
+    "blob-hash": {
+      "what": "SHA-256 over raw bytes, no framing",
+      "boundary": "deterministic",
+      "spec": "FIPS 180-4; warrant SPEC §4",
+      "bite_proof": "positive-only class: a wrong digest fails every vector"
+    },
+    "canon": {
+      "what": "RFC 8785 (JCS) canonical bytes of a warrant body, and their SHA-256 (the WarrantID)",
+      "boundary": "deterministic",
+      "spec": "RFC 8785; warrant SPEC §4, §8.4",
+      "bite_proof": "warrant tests/canon_*; UTF-16 key ordering and number forms are vectored",
+      "limit": "inputs are warrant bodies: a generic JCS (floats, deep nesting) is not covered"
+    },
+    "sig-message": {
+      "what": "the 47 bytes a warrant signature covers: \"warrant-sig-v1:\" || WarrantID_raw",
+      "boundary": "deterministic",
+      "spec": "warrant SPEC §5",
+      "bite_proof": "positive-only class; wrong constructions are verify-sig negatives"
+    },
+    "verify-sig": {
+      "what": "Ed25519 (cofactorless, small-order and non-canonical keys rejected) and, with alg, ECDSA P-256/SHA-256 (compressed key, 64-byte r||s, low-S)",
+      "boundary": "deterministic",
+      "spec": "RFC 8032; warrant SPEC §5, WRT-019",
+      "bite_proof": "warrant tools/ed25519_edge.py --selftest and tools/p256_vectors.py --selftest"
+    },
+    "p256-decode": {
+      "what": "a compressed SEC1 P-256 key decoded alone: the point, or a refusal",
+      "boundary": "deterministic",
+      "spec": "SEC 1 v2 §2.3.4, narrowed by warrant WRT-019 (compressed, lowercase, x < p, on the curve)",
+      "bite_proof": "tools/p256_decode.py --selftest"
+    }
+  },
+  "implementations": [
+    {"name": "warrant/impl (Python, cryptography)", "repository": "https://github.com/s0fractal/warrant",
+     "probe": "python3 impl/warrant.py probe"},
+    {"name": "warrant/impl-go (Go standard library)", "repository": "https://github.com/s0fractal/warrant",
+     "probe": "impl-go/warrant-go probe"},
+    {"name": "warrant/impl-rs (Rust, from scratch)", "repository": "https://github.com/s0fractal/warrant",
+     "probe": "impl-rs/target/release/warrant-rs probe"},
+    {"name": "black-heart/crypto.py (Python, from scratch)", "repository": "https://github.com/s0fractal/black-heart",
+     "probe": "python3 adapters/black_heart_probe.py"}
+  ]
+}
