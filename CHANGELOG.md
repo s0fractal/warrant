@@ -27,6 +27,10 @@ right.
 
 ## Unreleased
 
+## 0.12.0 — keys that live in phone hardware can sign
+
+Tooling version 0.12.0 (PyPI `warrant-verify`, npm/JSR `@s0fractal/warrant`, crate `warrant-verify`). SPEC document version unchanged. Conformance pack 1.5.0. The protocol-visible change is WRT-019 below (ECDSA P-256 signature entries, opt-in per entry; no body, report schema or WarrantID change). Also: `keygen` no longer overwrites a file or follows a symlink.
+
 - **keygen never overwrites a key file (Python, Rust).** Sonar flagged the new
   key-file paths (S8707: CLI-supplied paths). Checking showed a real write
   primitive: `keygen --out` silently overwrote any existing file and followed a
@@ -1050,7 +1054,8 @@ body schema (§2), reasons (§3), JCS canonicalization and WarrantID (§4), the
 envelope and Ed25519 signatures (§5), verification (§6). Python reference
 implementation, five verbs, plain-file store, conformance vectors.
 
-[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/s0fractal/warrant/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/s0fractal/warrant/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/s0fractal/warrant/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/s0fractal/warrant/compare/v0.9.0...v0.10.0
 [0.8.0]: https://github.com/s0fractal/warrant/compare/v0.7.1...v0.8.0

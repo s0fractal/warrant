@@ -1,6 +1,6 @@
 {
   "name": "@s0fractal/warrant",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Verify Warrant decision records with the Rust core, offline in JavaScript and WebAssembly",
   "type": "module",
   "license": "MIT",
