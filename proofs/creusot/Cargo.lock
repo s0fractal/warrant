@@ -181,7 +181,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "warrant-hexcanon-proof"
+name = "warrant-creusot-proofs"
 version = "0.1.0"
 dependencies = [
  "creusot-std",

@@ -521,20 +521,9 @@ fn pt_decompress(s: &[u8; 32]) -> Option<Pt> {
     let sign = (s[31] >> 7) & 1;
     let mut yb = *s;
     yb[31] &= 0x7f;
-    // reject non-canonical y >= p
-    {
-        let mut be = [0u8; 32];
-        for i in 0..32 {
-            be[i] = yb[31 - i];
-        }
-        const P: [u8; 32] = [
-            0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xed,
-        ];
-        if be >= P {
-            return None;
-        }
+    // reject non-canonical y >= p (proved in crate::bounds)
+    if !crate::bounds::ed25519_y_canonical(s) {
+        return None;
     }
     let y = fe_from_bytes(&yb);
     let y2 = fe_sq(&y);
@@ -568,24 +557,6 @@ fn pt_decompress(s: &[u8; 32]) -> Option<Pt> {
         y,
         z: fe_one(),
     })
-}
-
-fn scalar_lt_l(s: &[u8; 32]) -> bool {
-    // s < L ? compare 32-byte little-endian to L
-    const L: [u8; 32] = [
-        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde,
-        0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x10,
-    ];
-    for i in (0..32).rev() {
-        if s[i] < L[i] {
-            return true;
-        }
-        if s[i] > L[i] {
-            return false;
-        }
-    }
-    false // equal is not < L
 }
 
 // L = 2^252 + 27742317777372353535851937790883648493 (Ed25519 group order)
@@ -649,7 +620,7 @@ pub fn verify(pk: &[u8; 32], sig: &[u8; 64], msg: &[u8]) -> bool {
     r_bytes.copy_from_slice(&sig[0..32]);
     let mut s_bytes = [0u8; 32];
     s_bytes.copy_from_slice(&sig[32..64]);
-    if !scalar_lt_l(&s_bytes) {
+    if !crate::bounds::ed25519_scalar_canonical(&s_bytes) {
         return false; // non-canonical S
     }
     let big_r = match pt_decompress(&r_bytes) {

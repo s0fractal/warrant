@@ -317,10 +317,10 @@ impl Curve {
         if key.len() != 33 || (key[0] != 2 && key[0] != 3) {
             return None;
         }
-        let x = from_be(&key[1..]);
-        if cmp(&x, &P) != Ordering::Less {
+        if !crate::bounds::p256_x_in_range(&key[1..]) {
             return None;
         }
+        let x = from_be(&key[1..]);
         let f = &self.f;
         let xm = f.to(&x);
         let x3 = f.mul(&f.mul(&xm, &xm), &xm);
@@ -368,21 +368,12 @@ pub fn verify(key: &[u8], sig: &[u8], msg: &[u8]) -> bool {
     if sig.len() != 64 {
         return false;
     }
-    let r = from_be(&sig[..32]);
-    let s = from_be(&sig[32..]);
-    let half_n = [
-        N[0] >> 1 | N[1] << 63,
-        N[1] >> 1 | N[2] << 63,
-        N[2] >> 1 | N[3] << 63,
-        N[3] >> 1,
-    ];
-    if is_zero(&r)
-        || cmp(&r, &N) != Ordering::Less
-        || is_zero(&s)
-        || cmp(&s, &half_n) == Ordering::Greater
-    {
+    // 0 < r < n and 0 < s <= n/2 (low-S), proved in crate::bounds
+    if !crate::bounds::p256_sig_in_range(sig) {
         return false;
     }
+    let r = from_be(&sig[..32]);
+    let s = from_be(&sig[32..]);
     let c = Curve::new();
     let Some((qx, qy)) = c.decompress(key) else {
         return false;

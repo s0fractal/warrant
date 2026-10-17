@@ -37,6 +37,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bounds;
 pub mod cli;
 pub mod conformance;
 pub mod ed25519;
