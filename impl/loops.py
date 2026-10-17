@@ -1,0 +1,648 @@
+#!/usr/bin/env python3
+"""WRT-021 draft-2 profile: duties, transitions with a residual, and their
+assessment under a named view. The obligation slice only (engineering decision
+D2, 2026-10-17); goal, commitment and purpose are recognized and reported as
+NOT_IMPLEMENTED.
+
+DRAFT. This is a profile over the existing record body: it changes nothing that
+`warrant verify` decides. A record is admitted here only if settlement-grade
+verification (with --require-bound, under the recipient's trust snapshot) finds
+no error attributed to it, or to the store.
+
+Events, each a signed record whose subject is a closed-schema JSON blob:
+
+  open        propose  subject = warrant.duty@draft-2        actor = the holder
+  transition  propose  subject = warrant.transition@draft-2  actor = who did it
+  acceptance  accept   subject = warrant.acceptance@draft-2  actor = who accepts
+
+`prior` carries traversal only; every relation's meaning is in the typed blob
+(proposal §4.4).
+"""
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import warrant as W  # noqa: E402
+
+DUTY = "warrant.duty@draft-2"
+TRANSITION = "warrant.transition@draft-2"
+ACCEPTANCE = "warrant.acceptance@draft-2"
+REPORT = "warrant.loops-report@draft-2"
+
+KINDS = {"obligation", "goal", "commitment", "purpose"}
+IMPLEMENTED_KINDS = {"obligation"}
+SHAPES = {"one_shot", "recurring", "invariant"}
+BASES = {"ATTESTED", "RUNNER_ATTESTED", "RECIPIENT_REEXECUTED", "REPLAYED"}
+# The bases this profile can actually validate. A transition may CLAIM any basis
+# in BASES; only these become an assessed basis. Runner, re-execution and replay
+# evidence have no validator yet, so a candidate claiming them closes nothing
+# (review WL01: a label is not a replay).
+VALIDATED_BASES = {"ATTESTED"}
+CLOSING = {"DISCHARGED", "DECLARED_IMPOSSIBLE", "RELEASED"}
+ADMITTABLE = {"DISCHARGED", "DECLARED_IMPOSSIBLE", "OBSERVED"}
+DISPOSITIONS = CLOSING | {"ABANDONED", "DELEGATED", "SUBSTITUTED", "OBSERVED"}
+ENDED = {"RELEASED", "ABANDONED", "DECLARED_IMPOSSIBLE"}
+FLAGS = {"CONTESTED", "ORPHANED", "LAPSED", "BREACHED", "UNOBSERVED", "MISSING", "UNVERIFIED_CANDIDATE",
+         "PENDING_ACCEPTANCE", "OVERCLAIMED_CANDIDATE"}
+
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")    # a git SHA-1 or a blob hash
+EVALUATOR = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+DUTY_FIELDS = {"schema", "kind", "shape", "holder", "owed_to", "statement", "scope", "serves",
+               "admits", "acceptance", "release_by"}
+DUTY_OPTIONAL = {"period", "freshness", "answers", "closure_requires"}
+TRANSITION_FIELDS = {"schema", "relied_on", "addresses", "did", "established", "closes", "opened",
+                     "not_established", "scope"}
+MAPPING_FIELDS = {"duty", "disposition", "evidence"}
+MAPPING_OPTIONAL = {"instance", "to", "holds"}
+ACCEPTANCE_FIELDS = {"schema", "duty", "transition", "mapping", "evidence"}
+ACCEPTANCE_OPTIONAL = {"support"}
+
+
+def canon(doc):
+    return W.canon(doc)
+
+
+def blob_id(doc):
+    return hashlib.sha256(canon(doc)).hexdigest()
+
+
+# ---------------------------------------------------------------- authoring
+
+def duty(holder, owed_to, statement, scope_subject, admits, acceptance=(), release_by=(),
+         serves=(), kind="obligation", shape="one_shot", period=None, freshness=None, answers=None,
+         closure_requires=None):
+    d = {"schema": DUTY, "kind": kind, "shape": shape, "holder": holder, "owed_to": list(owed_to),
+         "statement": statement, "scope": {"subject": scope_subject}, "serves": list(serves),
+         "admits": [list(p) for p in admits], "acceptance": list(acceptance),
+         "release_by": list(release_by)}
+    if period is not None:
+        d["period"] = dict(period)
+    if freshness is not None:
+        d["freshness"] = freshness
+    if answers is not None:
+        d["answers"] = answers
+    if closure_requires is not None:
+        d["closure_requires"] = list(closure_requires)
+    return d
+
+
+def mapping(duty_id, disposition, evidence=(), **extra):
+    m = {"duty": duty_id, "disposition": disposition, "evidence": list(evidence)}
+    m.update(extra)
+    return m
+
+
+def transition(basis, evidence, closes=(), addresses=(), relied_on=(), established=(), opened=(),
+               not_established=(), scope_subject=None, runner=None):
+    did = {"basis": basis, "evidence": list(evidence)}
+    if runner is not None:
+        did["runner"] = runner
+    return {"schema": TRANSITION, "relied_on": list(relied_on), "addresses": list(addresses),
+            "did": did, "established": list(established), "closes": list(closes),
+            "opened": list(opened), "not_established": list(not_established),
+            "scope": {"subject": scope_subject} if scope_subject else {}}
+
+
+def acceptance(duty_id, transition_id, index, evidence, support=None):
+    a = {"schema": ACCEPTANCE, "duty": duty_id, "transition": transition_id, "mapping": index,
+         "evidence": list(evidence)}
+    if support is not None:
+        a["support"] = list(support)
+    return a
+
+
+# ---------------------------------------------------------------- shapes
+
+def _actors(v):
+    return isinstance(v, list) and all(isinstance(a, str) and a for a in v)
+
+
+def _hexes(v):
+    return isinstance(v, list) and all(isinstance(h, str) and HEX64.match(h) for h in v)
+
+
+def _int(v):
+    return type(v) is int
+
+
+def _enum(value, choices):
+    """Check JSON types before set membership; arrays/objects are not enum values."""
+    return isinstance(value, str) and value in choices
+
+
+def duty_problem(d):
+    """None if `d` is a well-formed duty blob, else the reason."""
+    if not isinstance(d, dict) or d.get("schema") != DUTY:
+        return "not a duty"
+    keys = set(d)
+    if not DUTY_FIELDS <= keys or keys - DUTY_FIELDS - DUTY_OPTIONAL:
+        return "duty fields"
+    if not _enum(d["kind"], KINDS) or not _enum(d["shape"], SHAPES):
+        return "kind or shape"
+    if not (isinstance(d["holder"], str) and d["holder"]):
+        return "holder"
+    if not all(_actors(d[f]) for f in ("owed_to", "acceptance", "release_by")):
+        return "actor lists"
+    if d["kind"] == "obligation" and not d["owed_to"]:
+        return "an obligation is owed to someone"
+    if not (isinstance(d["statement"], str) and len(d["statement"]) <= 200):
+        return "statement"
+    if not (isinstance(d["scope"], dict) and set(d["scope"]) == {"subject"}
+            and isinstance(d["scope"]["subject"], str) and SUBJECT.match(d["scope"]["subject"])):
+        return "scope must pin an exact subject"
+    if not _hexes(d["serves"]):
+        return "serves"
+    if not (isinstance(d["admits"], list) and all(
+            isinstance(p, list) and len(p) == 2 and _enum(p[0], ADMITTABLE) and _enum(p[1], BASES)
+            for p in d["admits"])):
+        return "admits"
+    if d["shape"] == "recurring":
+        p = d.get("period")
+        if not (isinstance(p, dict) and set(p) == {"start", "every"} and _int(p["start"])
+                and _int(p["every"]) and p["every"] > 0):
+            return "a recurring duty needs period {start, every}"
+    elif "period" in d:
+        return "period on a non-recurring duty"
+    if d["shape"] == "invariant":
+        if not (_int(d.get("freshness")) and d["freshness"] > 0):
+            return "an invariant duty needs freshness"
+    elif "freshness" in d:
+        return "freshness on a non-invariant duty"
+    if "answers" in d and not (isinstance(d["answers"], str) and HEX64.match(d["answers"])):
+        return "answers"
+    if "closure_requires" in d and not (_hexes(d["closure_requires"]) and d["closure_requires"]):
+        return "closure_requires"
+    return None
+
+
+def transition_problem(t):
+    if not isinstance(t, dict) or t.get("schema") != TRANSITION or set(t) != TRANSITION_FIELDS:
+        return "transition fields"
+    for f in ("relied_on", "addresses", "established", "opened"):
+        if not _hexes(t[f]):
+            return f
+    if not (isinstance(t["not_established"], list) and all(isinstance(s, str) for s in t["not_established"])):
+        return "not_established"
+    did = t["did"]
+    if not (isinstance(did, dict) and {"basis", "evidence"} <= set(did) <= {"basis", "evidence", "runner"}
+            and _enum(did["basis"], BASES) and _hexes(did["evidence"])):
+        return "did"
+    if not isinstance(t["scope"], dict) or set(t["scope"]) - {"subject"}:
+        return "scope"
+    if "subject" in t["scope"] and not (isinstance(t["scope"]["subject"], str)
+                                        and SUBJECT.fullmatch(t["scope"]["subject"])):
+        return "scope subject"
+    if not isinstance(t["closes"], list):
+        return "closes"
+    for m in t["closes"]:
+        if not (isinstance(m, dict) and MAPPING_FIELDS <= set(m) <= MAPPING_FIELDS | MAPPING_OPTIONAL):
+            return "mapping fields"
+        if not (isinstance(m["duty"], str) and HEX64.match(m["duty"]) and _enum(m["disposition"], DISPOSITIONS)
+                and _hexes(m["evidence"])):
+            return "mapping"
+        if not set(m["evidence"]) <= set(did["evidence"]):
+            return "a mapping cites evidence the transition does not carry"
+        if "instance" in m and not (_int(m["instance"]) and m["instance"] >= 0):
+            return "instance"
+        if (m["disposition"] in ("DELEGATED", "SUBSTITUTED")) != ("to" in m):
+            return "to"
+        if "to" in m and not (isinstance(m["to"], str) and m["to"]):
+            return "to"
+        if (m["disposition"] == "OBSERVED") != ("holds" in m) or ("holds" in m and type(m["holds"]) is not bool):
+            return "holds"
+    return None
+
+
+def acceptance_problem(a):
+    if not (isinstance(a, dict) and a.get("schema") == ACCEPTANCE
+            and ACCEPTANCE_FIELDS <= set(a) <= ACCEPTANCE_FIELDS | ACCEPTANCE_OPTIONAL):
+        return "acceptance fields"
+    if "support" in a and not (_hexes(a["support"]) and a["support"]):
+        return "support"
+    if not (isinstance(a["duty"], str) and HEX64.match(a["duty"]) and isinstance(a["transition"], str)
+            and HEX64.match(a["transition"]) and _int(a["mapping"]) and a["mapping"] >= 0
+            and _hexes(a["evidence"])):
+        return "acceptance values"
+    return None
+
+
+# ---------------------------------------------------------------- the view
+
+def _snapshot(src_root, dst_root):
+    """Copy records and blobs, reading each file once; symlinks are not followed.
+    Everything after this reads only the snapshot (the #131 N1 lesson)."""
+    src, dst = Path(src_root), W.Store(str(dst_root))
+    dst.init()
+    listing = []
+    for kind in ("records", "blobs"):
+        folder = src / kind
+        if not folder.is_dir():
+            continue
+        for p in sorted(folder.iterdir()):
+            if p.is_file() and not p.is_symlink():
+                data = p.read_bytes()
+                (dst.root / kind / p.name).write_bytes(data)
+                listing.append(f"{kind}/{p.name} {hashlib.sha256(data).hexdigest()}")
+    return dst, hashlib.sha256("\n".join(listing).encode()).hexdigest()
+
+
+def _integrity(store, trust_path):
+    """Settlement-grade verification under the trust snapshot. Returns
+    (store_ok, {wid with an ERR}) -- a store-level ERR invalidates the view."""
+    r = subprocess.run([sys.executable, str(Path(W.__file__).resolve()), "--store", str(store.root), "verify",
+                        "--settlement", "--require-bound", "--trust-config", str(trust_path), "--json"],
+                       capture_output=True, text=True, check=False)
+    try:
+        rep = json.loads(r.stdout)
+    except ValueError:
+        return False, set()
+    bad = {f["subject"] for f in rep.get("findings", []) if f.get("level") == "ERR"}
+    return not (bad - set(store_ids(store))), bad
+
+
+def store_ids(store):
+    return [p.stem for p in sorted(store.records.glob("*.json"))]
+
+
+def _blob(store, h):
+    """A canonical JSON object blob, or None: non-canonical bytes are not read,
+    so one document cannot travel under two addresses."""
+    if not (isinstance(h, str) and HEX64.match(h)):
+        return None
+    p = store.blobs / h
+    if not p.is_file():
+        return None
+    raw = p.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != h:
+        return None
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return None
+    return doc if isinstance(doc, dict) and canon(doc) == raw else None
+
+
+
+
+def _resolves(store, h):
+    """Evidence is available iff a blob with exactly these bytes is in the view."""
+    p = store.blobs / h
+    try:
+        return p.is_file() and not p.is_symlink() and hashlib.sha256(p.read_bytes()).hexdigest() == h
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------- assessment
+
+VERDICTS = {"ADMITTED", "PENDING", "OVERCLAIMED", "UNVERIFIED_BASIS", "MISSING_EVIDENCE", "UNMET_CONDITION"}
+
+
+class _View:
+    def __init__(self, store, valid, as_of):
+        self.store = store
+        self.bodies = {}
+        for wid in valid:
+            env = W._loads_plain((store.records / f"{wid}.json").read_text())
+            if env["body"]["ts"] <= as_of:          # the view ends at as_of
+                self.bodies[wid] = env["body"]
+        self.duties, self.transitions, self.acceptances = {}, {}, {}
+        self.refused = {}
+        for wid, body in sorted(self.bodies.items(), key=lambda kv: (kv[1]["ts"], kv[0])):
+            self._admit(wid, body)
+
+    def _admit(self, wid, body):
+        doc = _blob(self.store, body["subject"]["hash"])
+        schema = doc.get("schema") if doc else None
+        kind = (body["decision"], schema)
+        if kind == ("propose", DUTY):
+            why = duty_problem(doc)
+            if why is None and body["actor"]["id"] != doc["holder"]:
+                why = "opened by someone other than the holder"
+            self._file(wid, why, self.duties, doc)
+        elif kind == ("propose", TRANSITION):
+            self._file(wid, transition_problem(doc), self.transitions, (body, doc))
+        elif kind == ("accept", ACCEPTANCE):
+            why = acceptance_problem(doc)
+            if why is None and not all(_resolves(self.store, h) for h in doc.get("support", [])):
+                why = "the acceptor's support does not resolve"
+            self._file(wid, why, self.acceptances, (body, doc))
+
+    def _file(self, wid, why, table, value):
+        if why:
+            self.refused[wid] = why
+        else:
+            table[wid] = value
+
+    def accepted_by(self, duty_id, t_id, index, evidence):
+        """Actors whose acceptance binds exactly this duty, transition, mapping and evidence."""
+        return {body["actor"]["id"] for body, a in self.acceptances.values()
+                if a["duty"] == duty_id and a["transition"] == t_id and a["mapping"] == index
+                and sorted(a["evidence"]) == sorted(evidence)}
+
+    def support(self, duty_id, t_id, index):
+        return {body["actor"]["id"]: a["support"] for body, a in self.acceptances.values()
+                if a["duty"] == duty_id and a["transition"] == t_id and a["mapping"] == index and "support" in a}
+
+
+def _judge_transfer(view, did, d, state, actor, t_id, i, m):
+    """DELEGATED and SUBSTITUTED. The outgoing holder files it, and the incoming
+    actor accepts this exact mapping; a substitution also needs the creditor or
+    release_by (review WL02: nobody acquires a duty they did not accept)."""
+    if actor != state["holder"]:
+        return "OVERCLAIMED", "only the holder transfers or delegates"
+    accepted = view.accepted_by(did, t_id, i, m["evidence"])
+    missing = []
+    if m["to"] not in accepted:
+        missing.append(f"{m['to']} (incoming)")
+    if m["disposition"] == "SUBSTITUTED" and not accepted & (set(d["owed_to"]) | set(d["release_by"])):
+        missing.append("the creditor or release_by")
+    return ("PENDING", "waiting for " + ", ".join(missing)) if missing else ("ADMITTED", "")
+
+
+def _shape_problem(d, m):
+    disp = m["disposition"]
+    if d["shape"] == "recurring" and "instance" not in m:
+        return "a recurring duty is closed per instance"
+    if disp == "OBSERVED" and d["shape"] != "invariant":
+        return "only an invariant duty is observed"
+    if disp != "OBSERVED" and d["shape"] == "invariant":
+        return "an invariant duty is observed, not discharged"
+    return None
+
+
+def _unmet_children(d, done):
+    """F5: a parent's closure condition may NAME child duties; it is evaluated,
+    never inferred from `serves` or from whichever children exist."""
+    unmet = [c for c in d.get("closure_requires", []) if done.get(c) != "DISCHARGED"]
+    return ("UNMET_CONDITION", "named child duties not discharged: " + ", ".join(u[:12] for u in unmet)) \
+        if unmet else None
+
+
+def _judge_closure(view, did, d, state, actor, t, i, t_id, m, done):
+    """DISCHARGED, DECLARED_IMPOSSIBLE, OBSERVED."""
+    disp, claimed = m["disposition"], t["did"]["basis"]
+    if actor not in {state["holder"]} | state["delegates"]:
+        return "OVERCLAIMED", "filed by someone who does not hold the duty"
+    if [disp, claimed] not in d["admits"]:
+        return "OVERCLAIMED", f"{disp} on {claimed} is not admitted by this duty"
+    if claimed not in VALIDATED_BASES:
+        return "UNVERIFIED_BASIS", f"{claimed} is claimed; this profile cannot validate it, and a label is not the act"
+    if not m["evidence"]:
+        return "MISSING_EVIDENCE", "an attestation names the evidence it attests"
+    shape = _shape_problem(d, m)
+    if shape:
+        return "OVERCLAIMED", shape
+    if disp == "DISCHARGED":
+        unmet = _unmet_children(d, done)
+        if unmet:
+            return unmet
+    missing = set(d["acceptance"]) - view.accepted_by(did, t_id, i, m["evidence"])
+    if missing:
+        return "PENDING", "waiting for " + ", ".join(sorted(missing))
+    return "ADMITTED", ""
+
+
+def _judge(view, did, d, state, t_id, tbody, t, i, m, done):
+    """Is mapping `m` of transition `t_id` admitted for duty `did`? One verdict from VERDICTS."""
+    actor = tbody["actor"]["id"]
+    disp = m["disposition"]
+    if not all(_resolves(view.store, h) for h in m["evidence"]):
+        return "MISSING_EVIDENCE", "cited evidence is not in the view, or its bytes do not match"
+    if disp == "RELEASED":
+        return ("ADMITTED", "") if actor in set(d["owed_to"]) | set(d["release_by"]) else \
+            ("OVERCLAIMED", "not authorized to release")
+    if disp == "ABANDONED":
+        return "OVERCLAIMED", "an obligation cannot be abandoned by its holder"
+    if disp in ("DELEGATED", "SUBSTITUTED"):
+        return _judge_transfer(view, did, d, state, actor, t_id, i, m)
+    return _judge_closure(view, did, d, state, actor, t, i, t_id, m, done)
+
+
+def _apply(d, state, acc, tbody, t_id, t, m):
+    disp = m["disposition"]
+    if disp == "DELEGATED":
+        state["delegates"].add(m["to"])
+    elif disp == "SUBSTITUTED":
+        state["holder"], state["delegates"] = m["to"], set()
+    elif disp == "OBSERVED":
+        acc["observations"].append((tbody["ts"], m["holds"], t_id))
+    elif d["shape"] == "recurring" and disp == "DISCHARGED":
+        acc["instances"].setdefault(m["instance"], t_id)
+    else:
+        acc["closures"].append((disp, t_id, tbody["actor"]["id"], t["scope"].get("subject")))
+
+
+def _recurring(d, out, instances, as_of):
+    out["disposition"] = "RECURRING"
+    start, every = d["period"]["start"], d["period"]["every"]
+    report = {}
+    n = 0
+    while start + n * every <= as_of:
+        end = start + (n + 1) * every
+        if n in instances:
+            report[str(n)] = "COVERED"
+        else:
+            report[str(n)] = "LAPSED" if end <= as_of else "OPEN"
+        n += 1
+    out["instances"] = report
+    if "LAPSED" in report.values():
+        out["flags"].append("LAPSED")
+
+
+def _invariant(d, out, observations, as_of):
+    out["disposition"] = "STANDING"
+    fresh = [o for o in observations if as_of - o[0] <= d["freshness"]]
+    if not fresh:
+        out["flags"].append("UNOBSERVED")
+    elif not max(fresh)[1]:
+        out["flags"].append("BREACHED")
+    out["observed"] = [{"ts": o[0], "holds": o[1], "transition": o[2]} for o in observations]
+
+
+def _settle_disposition(out, closures):
+    kinds = sorted({c[0] for c in closures})
+    if len(kinds) > 1:
+        out["flags"].append("CONTESTED")
+        out["disposition"] = None
+        out["dispositions"] = kinds
+    elif kinds:
+        out["disposition"] = kinds[0]
+        chosen = [c for c in closures if c[0] == kinds[0]]
+        # The assessed basis says what was validated: whose attestation, or whose release.
+        label = "RELEASE_BY" if kinds[0] == "RELEASED" else "ACTOR_ATTESTATION"
+        out["assessed_basis"] = sorted({f"{label}:{c[2]}" for c in chosen})
+        out["closure_scope"] = sorted({c[3] for c in chosen if c[3]})
+    out["closed_by"] = [c[1] for c in closures]
+
+
+def _applicability(out, current):
+    """F2: a closure is applicable to the revision it was ESTABLISHED on, not the
+    revision the defect was found on; anything else is UNASSESSED, never invalid."""
+    if current is None:
+        return "NOT_ASKED"
+    scopes = out.get("closure_scope") if out["closed_by"] else [out["scope"]]
+    return "CURRENT" if any(s in current for s in scopes or []) else "UNASSESSED"
+
+
+def _assess_duty(view, did, d, as_of, current, done):
+    out = {"kind": d["kind"], "shape": d["shape"], "holder": d["holder"], "owed_to": d["owed_to"],
+           "scope": d["scope"]["subject"], "disposition": "OPEN", "assessed_basis": [], "flags": [],
+           "closed_by": [], "candidates": [], "delegates": [], "acceptance": d["acceptance"],
+           "release_by": d["release_by"]}
+    if d["kind"] not in IMPLEMENTED_KINDS:
+        out["disposition"] = "NOT_IMPLEMENTED"
+        return out
+    state = {"holder": d["holder"], "delegates": set()}
+    acc = {"closures": [], "instances": {}, "observations": []}
+    for t_id, (tbody, t) in sorted(view.transitions.items(), key=lambda kv: (kv[1][0]["ts"], kv[0])):
+        for i, m in enumerate(t["closes"]):
+            if m["duty"] != did:
+                continue
+            verdict, why = _judge(view, did, d, state, t_id, tbody, t, i, m, done)
+            cand = {"transition": t_id, "mapping": i, "disposition": m["disposition"],
+                    "claimed_basis": t["did"]["basis"], "verdict": verdict, "why": why}
+            support = view.support(did, t_id, i)
+            if support:
+                cand["acceptor_support"] = support      # F4: the acceptor's own references, resolved
+            out["candidates"].append(cand)
+            if verdict == "ADMITTED":
+                _apply(d, state, acc, tbody, t_id, t, m)
+    out["holder"], out["delegates"] = state["holder"], sorted(state["delegates"])
+    _settle_disposition(out, acc["closures"])
+    if d["shape"] == "recurring" and out["disposition"] == "OPEN":
+        _recurring(d, out, acc["instances"], as_of)
+    if d["shape"] == "invariant" and out["disposition"] == "OPEN":
+        _invariant(d, out, acc["observations"], as_of)
+    verdicts = {c["verdict"] for c in out["candidates"]}
+    for verdict, flag in (("PENDING", "PENDING_ACCEPTANCE"), ("OVERCLAIMED", "OVERCLAIMED_CANDIDATE"),
+                          ("UNVERIFIED_BASIS", "UNVERIFIED_CANDIDATE")):
+        if verdict in verdicts:
+            out["flags"].append(flag)
+    out["applicability"] = _applicability(out, current)
+    return out
+
+
+def _orphan_and_missing(view, report):
+    for did, d in view.duties.items():
+        r = report[did]
+        parents = d["serves"]
+        if not parents:
+            continue                    # a root duty is never orphaned (review R2)
+        if any(p not in report for p in parents):
+            r["flags"].append("MISSING")
+            continue
+        if all(report[p]["disposition"] in ENDED for p in parents):
+            r["flags"].append("ORPHANED")
+
+
+def _assess_all(view, as_of, current):
+    """Children named by closure_requires are assessed before their parent; a
+    cycle leaves the condition unmet instead of recursing."""
+    report, done, busy = {}, {}, set()
+
+    def visit(did):
+        if did in report or did in busy:
+            return
+        busy.add(did)
+        for c in view.duties[did].get("closure_requires", []):
+            if c in view.duties:
+                visit(c)
+        report[did] = _assess_duty(view, did, view.duties[did], as_of, current, done)
+        done[did] = report[did]["disposition"]
+        busy.discard(did)
+
+    for did in sorted(view.duties):
+        visit(did)
+    return report
+
+
+def _questions(view):
+    """F3: questions opened by transitions and taken on by no duty, with where they came from."""
+    taken = {d["answers"] for d in view.duties.values() if "answers" in d}
+    out = []
+    for t_id, (tbody, t) in sorted(view.transitions.items()):
+        for q in t["opened"]:
+            if q not in taken:
+                out.append({"question": q, "opened_by": t_id, "actor": tbody["actor"]["id"],
+                            "scope": t["scope"].get("subject")})
+    return out
+
+
+def assess(store_root, trust_path, as_of, current=None):
+    """Assess every duty in ONE snapshot of the store, under the recipient's trust
+    snapshot, at `as_of`. `current`, if given, is the set of subjects the recipient
+    treats as current (F2, review R5)."""
+    trust_bytes = Path(trust_path).read_bytes()
+    with tempfile.TemporaryDirectory() as tmp:
+        store, store_sha = _snapshot(store_root, Path(tmp) / "store")
+        snap_trust = Path(tmp) / "trust.json"
+        with snap_trust.open("wb") as f:
+            f.write(trust_bytes)
+        store_ok, bad = _integrity(store, snap_trust)
+        ids = store_ids(store)
+        valid = [w for w in ids if w not in bad] if store_ok else []
+        view = _View(store, valid, as_of)
+        report = _assess_all(view, as_of, current)
+        _orphan_and_missing(view, report)
+        dangling = sorted({m["duty"] for _, t in view.transitions.values() for m in t["closes"]
+                           if m["duty"] not in view.duties})
+        for r in report.values():
+            unknown = (set(r["flags"]) - FLAGS) | ({c["verdict"] for c in r["candidates"]} - VERDICTS)
+            if unknown:
+                raise ValueError(f"value outside its vocabulary: {sorted(unknown)}")
+        return {"schema": REPORT,
+                "view": {"store_snapshot_sha256": store_sha,
+                         "trust_sha256": hashlib.sha256(trust_bytes).hexdigest(),
+                         "as_of": as_of, "evaluator": EVALUATOR, "validated_bases": sorted(VALIDATED_BASES),
+                         "completeness": "UNATTESTED", "store_integrity": "VERIFIED" if store_ok else "INVALID"},
+                "duties": report, "invalid_records": sorted(set(ids) - set(valid)),
+                "refused_events": view.refused, "missing_duties": dangling,
+                "unowned_questions": _questions(view),
+                "questions_taken": {did: d["answers"] for did, d in view.duties.items() if "answers" in d}}
+
+
+def frontier(rep, actor):
+    """The actor's present (0010): duties it holds, is delegated, is owed, may
+    release or must accept, that are open or flagged. Unowned questions are never
+    in anyone's frontier; `questions()` shows them without making them anyone's."""
+    out = []
+    for did, r in sorted(rep["duties"].items()):
+        involved = (actor == r["holder"] or actor in r["delegates"] or actor in r["owed_to"]
+                    or actor in r["release_by"] or actor in r["acceptance"])
+        if not involved:
+            continue
+        # A closed duty leaves the frontier unless a flag still asks for action; an
+        # overclaimed candidate on a closed duty is history, kept in the report.
+        open_like = r["disposition"] in ("OPEN", "RECURRING", "STANDING", None)
+        live = open_like or bool(set(r["flags"]) - {"OVERCLAIMED_CANDIDATE", "UNVERIFIED_CANDIDATE"})
+        if live:
+            out.append({"duty": did, "disposition": r["disposition"], "flags": sorted(set(r["flags"])),
+                        "question": rep["questions_taken"].get(did)})
+    return out
+
+
+def questions(rep, scope=None):
+    """F3: the shared, read-only view of unowned questions, optionally for one scope.
+    Listing a question here gives nobody a duty and nobody persistence authority."""
+    return [q for q in rep["unowned_questions"] if scope is None or q["scope"] == scope]
+
+
+def reliance(rep, did):
+    """F2: may a current action rely on this duty's closure? RELIABLE only for an
+    uncontested DISCHARGED whose closure was established on a current revision;
+    absence from someone's frontier is not this answer."""
+    r = rep["duties"].get(did)
+    if r is None:
+        return "MISSING"
+    if r["disposition"] != "DISCHARGED":
+        return "NOT_CLOSED"
+    return "RELIABLE" if r["applicability"] == "CURRENT" else "UNASSESSED"
