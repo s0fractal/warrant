@@ -107,6 +107,14 @@ CHECKS = [
      ["python3", "tests/proof_attestation_vectors.py"], None),
     ("WRT-020 profile: decision vs the policy it cites (BOUND/CONTRADICTED/UNBOUND/OPAQUE); verify still blind",
      ["python3", "tests/policy_binding.py"], None),
+    ("redesign P3/P4 draft: typed decision assessment and settlement consequences (N38-N60)",
+     ["python3", "tests/assessment_test.py"], None),
+    ("redesign P3/P4 draft: every assessment mutant is killed by its own case",
+     ["python3", "tests/assessment_mutants.py"], None),
+    ("redesign P6 draft: one current writer, historical pack, envelope snapshot, offline demo (N66-N68)",
+     ["python3", "tests/redesign_p6_test.py"], None),
+    ("N70: dropping a required check from this harness is red and named",
+     ["python3", "tests/check_omission_control.py"], None),
     ("KNOWN GAP pinned: DENY_ALL policy + replayed unrelated reason + accept verifies clean (PY/GO/RS)",
      ["python3", "tests/countermodel_policy_binding.py"], "rs"),
     ("keygen creates a new 0600 file and never overwrites or follows a symlink (PY = RS)",
@@ -444,6 +452,25 @@ HEAVY_FIRST = (
 )
 
 
+# N70 (redesign test matrix): a required check that is dropped from CHECKS must
+# turn the run red BY NAME, not make it shorter and still "clean". Each entry is
+# a script some claim rests on; the harness refuses to run without it.
+REQUIRED_SCRIPTS = [
+    "tests/assessment_test.py",
+    "tests/assessment_mutants.py",
+    "tests/redesign_p6_test.py",
+    "tests/policy_binding.py",
+    "tools/proof_attestation.py",
+    "tests/proof_attestation_vectors.py",
+    "tests/check_omission_control.py",
+]
+
+
+def missing_required(checks):
+    invoked = {a for _, argv, _ in checks for a in argv}
+    return [s for s in REQUIRED_SCRIPTS if s not in invoked]
+
+
 def default_jobs():
     return max(1, min(4, os.cpu_count() or 1))
 
@@ -453,12 +480,20 @@ def main():
     ap.add_argument("--allow-unrun", action="store_true",
                     help="exit 0 when a check could not run; it is still named")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--required-only", action="store_true",
+                    help="only check that every required script is still in CHECKS (N70)")
     ap.add_argument("--jobs", type=int, default=default_jobs(),
                     help="parallel checks (default: min(4, cpus)); 1 reproduces "
                          "the sequential order")
     args = ap.parse_args()
     if args.jobs < 1:
         ap.error("--jobs must be >= 1")
+
+    missing = missing_required(CHECKS)
+    for script in missing:
+        print(f"FAIL   harness omits a required check: {script} (N70: dropping it must be red)")
+    if args.required_only:
+        return 1 if missing else 0
 
     if args.list:
         for name, argv, needs in CHECKS:
@@ -475,7 +510,7 @@ def main():
     env.pop("SIGMA_GLYPH", None)
     env.pop("WARRANT_SIGMA_DIFFERENTIAL", None)
 
-    failed, unrun, passed = [], [], 0
+    failed, unrun, passed = [f"harness omits {s}" for s in missing], [], 0
     runnable = []
     for name, argv, needs in CHECKS:
         if needs and not NEEDS[needs][0]():
