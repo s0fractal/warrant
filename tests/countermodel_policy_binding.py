@@ -14,7 +14,8 @@ Warrant pins the policy bytes, replays the reason, binds the signer
 construction offers holds; the headline "the decision was allowed by its policy"
 is false. Monday named the missing invariants: policy -> computation binding,
 evidence -> facts binding, result -> decision binding. THREAT-MODEL A6 says the
-same thing in prose ("Whatever the policy says"); WRT-010 is the open design.
+same thing in prose ("Whatever the policy says"); WRT-020 is the open design
+(its profile reports this store OPAQUE: a prose policy cannot be checked).
 
 This test PASSES while the gap is open. When a binding mechanism lands, the
 verifier should refuse this store, this test should fail, and it should be turned

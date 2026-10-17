@@ -105,6 +105,8 @@ CHECKS = [
      ["python3", "tools/proof_attestation.py", "--check"], None),
     ("Creusot attestation check refuses changed inputs, foreign keys and broken evidence",
      ["python3", "tests/proof_attestation_vectors.py"], None),
+    ("WRT-020 profile: decision vs the policy it cites (BOUND/CONTRADICTED/UNBOUND/OPAQUE); verify still blind",
+     ["python3", "tests/policy_binding.py"], None),
     ("KNOWN GAP pinned: DENY_ALL policy + replayed unrelated reason + accept verifies clean (PY/GO/RS)",
      ["python3", "tests/countermodel_policy_binding.py"], "rs"),
     ("keygen creates a new 0600 file and never overwrites or follows a symlink (PY = RS)",
