@@ -43,6 +43,7 @@ _orig_run = subprocess.run
 
 # Verbs whose output is random by construction: compared on exit status only.
 _RANDOM = {"keygen"}
+_FILINGS = {"propose", "accept", "reject", "supersede"}
 _WRITERS = {"init", "blob", "policy", "propose", "accept", "reject", "supersede",
             "resign", "keygen"}
 
@@ -165,6 +166,17 @@ def run(*popenargs, **kw):
     rkw = {k: v for k, v in kw.items() if k in ("cwd", "env", "input", "timeout",
                                                 "text", "encoding", "errors",
                                                 "universal_newlines")}
+    if (cmd in _FILINGS and py.returncode == 0
+            and not any(a == "--ts" or a.startswith("--ts=") for a in rs_args)):
+        # Without --ts both CLIs stamp "now", and the two runs can straddle a
+        # second boundary: different ts, different WarrantID, a false
+        # divergence (seen in CI on supersede). Rust gets the ts the reference
+        # actually wrote, so the comparison is of the record, not the clock.
+        wid = _as_text(py.stdout).strip()
+        rec_path = Path(cwd, store, "records", wid + ".json")
+        if len(wid) == 64 and rec_path.is_file():
+            ts = json.loads(rec_path.read_text())["body"]["ts"]
+            rs_args = rs_args[:cidx + 1] + ["--ts", str(ts)] + rs_args[cidx + 1:]
     try:
         rs = _orig_run([_RS] + rs_args, capture_output=True, **rkw)
         rs_out = _as_text(rs.stdout)
