@@ -35,7 +35,7 @@ MUTANTS = [
     ("L03", "loops.py", "no acceptance is required",
      [('    if missing:\n        return "PENDING"', '    if False:\n        return "PENDING"')]),
     ("L04", "loops.py", "any basis discharges",
-     [('    if [disp, claimed] not in d["admits"]:', '    if False:')]),
+     [('    if [admit_as, claimed] not in d["admits"]:', '    if False:')]),
     ("L05", "loops.py", "an acceptance is not bound to its transition",
      [('                if a["duty"] == duty_id and a["transition"] == t_id and a["mapping"] == index\n'
        '                and sorted',
@@ -132,7 +132,7 @@ MUTANTS = [
      [('    return [q for q in rep["unowned_questions"] if scope is None or q["scope"] == scope]',
        '    return list(rep["unowned_questions"])')]),
     ("L36", "loops.py", "a parent closes without the children its condition names (F5)",
-     [('    if disp == "DISCHARGED":\n        unmet = _unmet_children(d, done)',
+     [('    if admit_as == "DISCHARGED":\n        unmet = _unmet_children(d, done)',
        '    if False:\n        unmet = _unmet_children(d, done)')]),
 ]
 

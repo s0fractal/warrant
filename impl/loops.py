@@ -48,7 +48,7 @@ BASES = {"ATTESTED", "RUNNER_ATTESTED", "RECIPIENT_REEXECUTED", "REPLAYED"}
 VALIDATED_BASES = {"ATTESTED"}
 CLOSING = {"DISCHARGED", "DECLARED_IMPOSSIBLE", "RELEASED"}
 ADMITTABLE = {"DISCHARGED", "DECLARED_IMPOSSIBLE", "OBSERVED"}
-DISPOSITIONS = CLOSING | {"ABANDONED", "DELEGATED", "SUBSTITUTED", "OBSERVED"}
+DISPOSITIONS = CLOSING | {"ABANDONED", "DELEGATED", "SUBSTITUTED", "OBSERVED", "REVALIDATED"}
 ENDED = {"RELEASED", "ABANDONED", "DECLARED_IMPOSSIBLE"}
 FLAGS = {"CONTESTED", "ORPHANED", "LAPSED", "BREACHED", "UNOBSERVED", "MISSING", "UNVERIFIED_CANDIDATE",
          "PENDING_ACCEPTANCE", "OVERCLAIMED_CANDIDATE"}
@@ -57,7 +57,7 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")    # a git SHA-1 or a blob hash
 EVALUATOR = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 PROFILE = "warrant.loops-profile@draft-2"
-TRIGGER_DISPOSITIONS = {"DISCHARGED", "DECLARED_IMPOSSIBLE"}
+TRIGGER_DISPOSITIONS = {"DISCHARGED", "DECLARED_IMPOSSIBLE", "REVALIDATED"}
 RELIANCE = {"ELIGIBLE", "STALE", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSING"}
 
 DUTY_FIELDS = {"schema", "kind", "shape", "holder", "owed_to", "statement", "scope", "serves",
@@ -66,7 +66,7 @@ DUTY_OPTIONAL = {"period", "freshness", "answers", "closure_requires", "computat
 TRANSITION_FIELDS = {"schema", "relied_on", "addresses", "did", "established", "closes", "opened",
                      "not_established", "scope"}
 MAPPING_FIELDS = {"duty", "disposition", "evidence"}
-MAPPING_OPTIONAL = {"instance", "to", "holds", "triggers"}
+MAPPING_OPTIONAL = {"instance", "to", "holds", "triggers", "revalidates"}
 ACCEPTANCE_FIELDS = {"schema", "duty", "transition", "mapping", "evidence"}
 ACCEPTANCE_OPTIONAL = {"support"}
 
@@ -229,6 +229,14 @@ def transition_problem(t):
             return "to"
         if (m["disposition"] == "OBSERVED") != ("holds" in m) or ("holds" in m and type(m["holds"]) is not bool):
             return "holds"
+        # A revalidation names exactly the earlier closures it revalidates; nothing else does.
+        if (m["disposition"] == "REVALIDATED") != ("revalidates" in m):
+            return "revalidates"
+        if "revalidates" in m and not (_hexes(m["revalidates"]) and m["revalidates"]
+                                       and len(set(m["revalidates"])) == len(m["revalidates"])):
+            return "revalidates"
+        if m["disposition"] == "REVALIDATED" and "instance" in m:
+            return "a recurring instance is not revalidated"
         if "triggers" in m:
             why = TR.triggers_problem(m["triggers"])
             if why:
@@ -412,12 +420,14 @@ def _unmet_children(d, done):
 
 
 def _judge_closure(view, did, d, state, actor, t, i, t_id, m, done):
-    """DISCHARGED, DECLARED_IMPOSSIBLE, OBSERVED."""
+    """DISCHARGED, DECLARED_IMPOSSIBLE, OBSERVED, and REVALIDATED, which is admitted
+    exactly as a discharge on the same basis would be."""
     disp, claimed = m["disposition"], t["did"]["basis"]
+    admit_as = "DISCHARGED" if disp == "REVALIDATED" else disp
     if actor not in {state["holder"]} | state["delegates"]:
         return "OVERCLAIMED", "filed by someone who does not hold the duty"
-    if [disp, claimed] not in d["admits"]:
-        return "OVERCLAIMED", f"{disp} on {claimed} is not admitted by this duty"
+    if [admit_as, claimed] not in d["admits"]:
+        return "OVERCLAIMED", f"{admit_as} on {claimed} is not admitted by this duty"
     if claimed == "REPLAYED":
         # WRT-022 S2: the recipient re-runs the receipt's computation with a pinned
         # verifier, in this view; the receipt's word is never the basis.
@@ -433,7 +443,7 @@ def _judge_closure(view, did, d, state, actor, t, i, t_id, m, done):
     shape = _shape_problem(d, m)
     if shape:
         return "OVERCLAIMED", shape
-    if disp == "DISCHARGED":
+    if admit_as == "DISCHARGED":
         unmet = _unmet_children(d, done)
         if unmet:
             return unmet
@@ -456,6 +466,13 @@ def _judge(view, did, d, state, t_id, tbody, t, i, m, done):
         return "OVERCLAIMED", "an obligation cannot be abandoned by its holder"
     if disp in ("DELEGATED", "SUBSTITUTED"):
         return _judge_transfer(view, did, d, state, actor, t_id, i, m)
+    if disp == "REVALIDATED":
+        # It revalidates closures that are admitted, for this duty, earlier in
+        # admission order; it never creates a closure of its own.
+        if not state["admitted"]:
+            return "OVERCLAIMED", "nothing admitted to revalidate"
+        if not set(m["revalidates"]) <= state["admitted"]:
+            return "OVERCLAIMED", "revalidates something that is not an admitted closure of this duty"
     return _judge_closure(view, did, d, state, actor, t, i, t_id, m, done)
 
 
@@ -469,9 +486,15 @@ def _apply(d, state, acc, tbody, t_id, t, m, label):
         acc["observations"].append((tbody["ts"], m["holds"], t_id))
     elif d["shape"] == "recurring" and disp == "DISCHARGED":
         acc["instances"].setdefault(m["instance"], t_id)
+    elif disp == "REVALIDATED":
+        acc["revalidations"].append((t_id, tbody["actor"]["id"], t["scope"].get("subject"),
+                                     m.get("triggers", []), label, m["revalidates"]))
+        state["admitted"].add(t_id)
     else:
         acc["closures"].append((disp, t_id, tbody["actor"]["id"], t["scope"].get("subject"),
                                 m.get("triggers", []), label))
+        if disp == "DISCHARGED":
+            state["admitted"].add(t_id)
 
 
 def _recurring(d, out, instances, as_of):
@@ -501,7 +524,7 @@ def _invariant(d, out, observations, as_of):
     out["observed"] = [{"ts": o[0], "holds": o[1], "transition": o[2]} for o in observations]
 
 
-def _settle_disposition(out, closures):
+def _settle_disposition(out, closures, revalidations=()):
     kinds = sorted({c[0] for c in closures})
     if len(kinds) > 1:
         out["flags"].append("CONTESTED")
@@ -515,8 +538,18 @@ def _settle_disposition(out, closures):
         # valid in this view only); anything else is the actor's attestation or release.
         label = "RELEASE_BY" if kinds[0] == "RELEASED" else "ACTOR_ATTESTATION"
         out["assessed_basis"] = sorted({c[5] or f"{label}:{c[2]}" for c in chosen})
-        out["closure_scope"] = sorted({c[3] for c in chosen if c[3]})
-        out["declared_triggers"] = [{"closure": c[1], "trigger": tr} for c in chosen for tr in c[4]]
+        # Revalidation: an admitted REVALIDATED supersedes, for PRESENT eligibility only,
+        # the earlier closures it names. Their trigger results stay in the report as
+        # history (current: false); nothing is erased (WRT-022 rev 2 §4.2).
+        superseded = {x for rv in revalidations for x in rv[5]} if kinds[0] == "DISCHARGED" else set()
+        items = [(c[1], c[3], c[4]) for c in chosen]
+        if kinds[0] == "DISCHARGED":
+            items += [(rv[0], rv[2], rv[3]) for rv in revalidations]
+            out["revalidations"] = [{"transition": rv[0], "revalidates": rv[5],
+                                     "assessed_basis": rv[4] or f"ACTOR_ATTESTATION:{rv[1]}"} for rv in revalidations]
+        out["closure_scope"] = sorted({sc for tid, sc, _ in items if sc and tid not in superseded})
+        out["declared_triggers"] = [{"closure": tid, "trigger": tr, "current": tid not in superseded}
+                                    for tid, _, trs in items for tr in trs]
     out["closed_by"] = [c[1] for c in closures]
 
 
@@ -537,8 +570,8 @@ def _assess_duty(view, did, d, as_of, current, done):
     if d["kind"] not in IMPLEMENTED_KINDS:
         out["disposition"] = "NOT_IMPLEMENTED"
         return out
-    state = {"holder": d["holder"], "delegates": set()}
-    acc = {"closures": [], "instances": {}, "observations": []}
+    state = {"holder": d["holder"], "delegates": set(), "admitted": set()}
+    acc = {"closures": [], "instances": {}, "observations": [], "revalidations": []}
     for t_id, (tbody, t) in sorted(view.transitions.items(), key=lambda kv: (kv[1][0]["ts"], kv[0])):
         for i, m in enumerate(t["closes"]):
             if m["duty"] != did:
@@ -553,7 +586,7 @@ def _assess_duty(view, did, d, as_of, current, done):
             if verdict == "ADMITTED":
                 _apply(d, state, acc, tbody, t_id, t, m, view.labels.get((t_id, i)))
     out["holder"], out["delegates"] = state["holder"], sorted(state["delegates"])
-    _settle_disposition(out, acc["closures"])
+    _settle_disposition(out, acc["closures"], acc["revalidations"])
     if d["shape"] == "recurring" and out["disposition"] == "OPEN":
         _recurring(d, out, acc["instances"], as_of)
     if d["shape"] == "invariant" and out["disposition"] == "OPEN":
@@ -656,10 +689,12 @@ def _evaluate_triggers(view, report, workspace):
             result, detail = TR.evaluate(item["trigger"], lambda h: _blob(view.store, h), workspace, dispositions)
             if result not in TR.RESULTS:
                 raise ValueError(f"trigger result outside its vocabulary: {result}")
-            r["triggers"].append({"closure": item["closure"], **item["trigger"], "result": result, "detail": detail})
+            r["triggers"].append({"closure": item["closure"], **item["trigger"], "result": result, "detail": detail,
+                                  "current": item["current"]})
         if r["disposition"] == "DISCHARGED":
-            r["trigger_coverage"] = "NO_DECLARED_TRIGGERS" if not r["triggers"] else \
-                {k: sum(t["result"] == k for t in r["triggers"]) for k in sorted(TR.RESULTS)}
+            cur = [t for t in r["triggers"] if t["current"]]
+            r["trigger_coverage"] = "NO_DECLARED_TRIGGERS" if not cur else \
+                {k: sum(t["result"] == k for t in cur) for k in sorted(TR.RESULTS)}
 
 
 def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=None):
@@ -760,15 +795,18 @@ def reliance_detail(rep, did, use=None):
         uses = (rep.get("profile") or {}).get("uses", {})
         if use not in uses:
             return dict(out, state="UNASSESSED", causes=[f"use {use!r} is not in the recipient profile"])
-        if uses[use]["requires_declared_triggers"] and not r["triggers"]:
-            return dict(out, state="UNASSESSED", causes=[f"use {use!r} requires declared triggers"])
-    fired = [f"{t['kind']}: {t['detail']}" for t in r["triggers"] if t["result"] == "FIRED"]
+    # Present eligibility reads only the CURRENT closures' triggers: those no admitted
+    # revalidation superseded. Superseded results remain in r["triggers"] as history.
+    cur = [t for t in r["triggers"] if t.get("current", True)]
+    if use is not None and uses[use]["requires_declared_triggers"] and not cur:
+        return dict(out, state="UNASSESSED", causes=[f"use {use!r} requires declared triggers"])
+    fired = [f"{t['kind']}: {t['detail']}" for t in cur if t["result"] == "FIRED"]
     if fired:
         return dict(out, state="STALE", causes=fired)
-    unknown = [f"{t['kind']}: {t['detail']}" for t in r["triggers"] if t["result"] == "UNEVALUABLE"]
+    unknown = [f"{t['kind']}: {t['detail']}" for t in cur if t["result"] == "UNEVALUABLE"]
     if unknown:
         return dict(out, state="UNASSESSED", causes=unknown)
-    scoped = any(t["kind"] == "subject_changed" and t["result"] == "NOT_FIRED" for t in r["triggers"])
+    scoped = any(t["kind"] == "subject_changed" and t["result"] == "NOT_FIRED" for t in cur)
     if r["applicability"] != "CURRENT" and not scoped:
         return dict(out, state="UNASSESSED",
                     causes=["no revision basis: not established on a current revision, and no scoped subject trigger"])
