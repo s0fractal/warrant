@@ -3,67 +3,28 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "warrant-verify"
-version = "0.12.0"
-description = "Verify what an AI agent decided — signed, hash-addressed decision records with reasons you can re-run on your own machine."
+# Warrant 2 (SPEC.md). A new distribution name on purpose: `warrant-verify`
+# (<= 0.12.0) is the retired 0.x generation and keeps its own meaning.
+name = "warrant-loops"
+version = "2.0.0.dev0"
+description = "Record transitions of work with their residual, close loops exactly, and hand the next agent a capsule instead of a transcript."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "s0fractal" }]
-keywords = [
-    "ai-agents", "agent-provenance", "audit-trail", "eu-ai-act",
-    "verifiable", "sigstore", "decision-record", "compliance",
-]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Legal Industry",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Topic :: Security :: Cryptography",
-]
 dependencies = ["cryptography>=41"]
 
 [project.urls]
 Homepage = "https://github.com/s0fractal/warrant"
 Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
-"Evidence Pack format" = "https://github.com/s0fractal/warrant/blob/master/EVIDENCE-PACK.md"
 
-# Four console commands. The distribution is `warrant-verify` (the bare name
-# `warrant` is taken on PyPI); the import module and the verifier CLI stay
-# `warrant`.
-#
-# The two MCP commands are DIFFERENT PROGRAMS and the names have to carry that:
-#   warrant-mcp         the sealing PROXY. Wraps someone else's MCP server and
-#                       seals the tool-calls passing through it. Takes the
-#                       downstream server command after `--`.
-#   warrant-mcp-server  the MCP SERVER. The agent connects to it and files its
-#                       own decisions. Takes no downstream command.
-# `warrant-mcp-server` is the name LISTINGS.md proposed before either existed as
-# a shipped command, and it is deliberately not an abbreviation of the other:
-# `allow_abbrev=False` on both parsers means neither answers to the other's
-# prefix, and `--help` on each says which one you started.
 [project.scripts]
-warrant = "warrant:main"
-warrant-mcp = "warrant_mcp:main"
-warrant-mcp-server = "warrant_mcp_server:main"
-warrant-anchor = "warrant_anchor:main"
+warrant = "warrant.cli:main"
 
 [tool.setuptools]
-# Flat modules under impl/: the reference implementation, the bundled Σ-GLYPH
-# Book I oracle (so ski@v1 reasons re-run offline, no separate clone), the MCP
-# sealing proxy, the MCP decision server, the ski@v1 policy-predicate authoring
-# library, the WPL -> ski@v1 compiler an author actually writes against, and the
-# RFC 6962 Merkle batching/anchoring tool.
-# `warrant_mcp_table` is stargate's fixed table runtime, byte for byte; nothing
-# loads it until warrant_mcp pins its digest (tests/mcp_seal.py J checks the bytes).
-#
-# `package-dir = {"" = "impl"}` is why `warrant_mcp_server.py` lives in `impl/`
-# and not in `integrations/mcp-server/` where it was written: setuptools has one
-# root for the flat namespace, so a module outside `impl/` cannot ship at all.
-# One bundled Σ-GLYPH evaluator per ADMITTED runtime tag (SPEC §13.1):
-# sigma_glyph_v05 is ski@v1 (Book I v0.5). Reserved candidates do not ship in
-# the wheel before a body version can invoke them. impl/warrant.py pins it.
-py-modules = ["warrant", "sigma_glyph_v05", "warrant_mcp", "warrant_mcp_table",
-              "warrant_mcp_server", "ski_policy", "policy_lang", "warrant_anchor"]
-package-dir = { "" = "impl" }
+packages = ["warrant"]
+
+[tool.setuptools.package-data]
+# The pinned Sigma provider is data: it is executed only from checked bytes,
+# never imported into the assessing process (warrant/compute.py).
+warrant = ["provider/*.py", "provider/PIN.json"]

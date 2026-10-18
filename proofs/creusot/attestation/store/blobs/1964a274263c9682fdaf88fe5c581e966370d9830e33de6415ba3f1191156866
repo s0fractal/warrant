@@ -1,1 +1,0 @@
-cd proofs/creusot && cargo creusot && python3 mutants.py

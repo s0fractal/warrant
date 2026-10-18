@@ -1,6 +1,0 @@
-{
-  "profile": [],
-  "proofs": {
-    "Coma": { "vc_both_empty": { "prover": "alt-ergo", "time": 0.012 } }
-  }
-}

@@ -1,6 +1,0 @@
-{
-  "profile": [],
-  "proofs": {
-    "Coma": { "vc_snoc_split": { "prover": "alt-ergo", "time": 0.02 } }
-  }
-}

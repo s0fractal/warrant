@@ -1,9 +1,0 @@
-{
-  "repository": "https://github.com/s0fractal/sigma-glyph",
-  "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
-  "status": "sigma-resume kernel merged as sigma-glyph #62; vendored for WRT-022 S2 replay receipts; checkout-only, not shipped in the wheel",
-  "files": {
-    "sigma_glyph.py": "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4",
-    "sigma_resume.py": "575a198d47519f56cb8cf75458d5d9754492433f98650d1ddf1f3580a363e858"
-  }
-}

@@ -1,2 +1,0 @@
-fact spend_total_cents: int = 4900
-check spend_total_cents <= 15000
