@@ -30,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import warrant as W  # noqa: E402
 import triggers as TR  # noqa: E402  (WRT-022 S1)
+import replay as RP    # noqa: E402  (WRT-022 S2)
 
 DUTY = "warrant.duty@draft-2"
 TRANSITION = "warrant.transition@draft-2"
@@ -61,7 +62,7 @@ RELIANCE = {"ELIGIBLE", "STALE", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSI
 
 DUTY_FIELDS = {"schema", "kind", "shape", "holder", "owed_to", "statement", "scope", "serves",
                "admits", "acceptance", "release_by"}
-DUTY_OPTIONAL = {"period", "freshness", "answers", "closure_requires"}
+DUTY_OPTIONAL = {"period", "freshness", "answers", "closure_requires", "computation"}
 TRANSITION_FIELDS = {"schema", "relied_on", "addresses", "did", "established", "closes", "opened",
                      "not_established", "scope"}
 MAPPING_FIELDS = {"duty", "disposition", "evidence"}
@@ -82,7 +83,7 @@ def blob_id(doc):
 
 def duty(holder, owed_to, statement, scope_subject, admits, acceptance=(), release_by=(),
          serves=(), kind="obligation", shape="one_shot", period=None, freshness=None, answers=None,
-         closure_requires=None):
+         closure_requires=None, computation=None):
     d = {"schema": DUTY, "kind": kind, "shape": shape, "holder": holder, "owed_to": list(owed_to),
          "statement": statement, "scope": {"subject": scope_subject}, "serves": list(serves),
          "admits": [list(p) for p in admits], "acceptance": list(acceptance),
@@ -95,6 +96,8 @@ def duty(holder, owed_to, statement, scope_subject, admits, acceptance=(), relea
         d["answers"] = answers
     if closure_requires is not None:
         d["closure_requires"] = list(closure_requires)
+    if computation is not None:
+        d["computation"] = dict(computation)
     return d
 
 
@@ -184,6 +187,10 @@ def duty_problem(d):
         return "answers"
     if "closure_requires" in d and not (_hexes(d["closure_requires"]) and d["closure_requires"]):
         return "closure_requires"
+    if "computation" in d:
+        why = RP.computation_problem(d["computation"])
+        if why:
+            return why
     return None
 
 
@@ -328,6 +335,7 @@ class _View:
             if env["body"]["ts"] <= as_of:          # the view ends at as_of
                 self.bodies[wid] = env["body"]
         self.duties, self.transitions, self.acceptances = {}, {}, {}
+        self.labels = {}          # (transition, mapping) -> validated replay label (S2)
         self.refused = {}
         for wid, body in sorted(self.bodies.items(), key=lambda kv: (kv[1]["ts"], kv[0])):
             self._admit(wid, body)
@@ -407,7 +415,14 @@ def _judge_closure(view, did, d, state, actor, t, i, t_id, m, done):
         return "OVERCLAIMED", "filed by someone who does not hold the duty"
     if [disp, claimed] not in d["admits"]:
         return "OVERCLAIMED", f"{disp} on {claimed} is not admitted by this duty"
-    if claimed not in VALIDATED_BASES:
+    if claimed == "REPLAYED":
+        # WRT-022 S2: the recipient re-runs the receipt's computation with a pinned
+        # verifier, in this view; the receipt's word is never the basis.
+        label, why = RP.validate(view.store, lambda h: _blob(view.store, h), d.get("computation"), m["evidence"])
+        if label is None:
+            return "UNVERIFIED_BASIS", f"REPLAYED is claimed and not validated here: {why}"
+        view.labels[(t_id, i)] = label
+    elif claimed not in VALIDATED_BASES:
         return "UNVERIFIED_BASIS", f"{claimed} is claimed; this profile cannot validate it, and a label is not the act"
     if not m["evidence"]:
         return "MISSING_EVIDENCE", "an attestation names the evidence it attests"
@@ -440,7 +455,7 @@ def _judge(view, did, d, state, t_id, tbody, t, i, m, done):
     return _judge_closure(view, did, d, state, actor, t, i, t_id, m, done)
 
 
-def _apply(d, state, acc, tbody, t_id, t, m):
+def _apply(d, state, acc, tbody, t_id, t, m, label):
     disp = m["disposition"]
     if disp == "DELEGATED":
         state["delegates"].add(m["to"])
@@ -452,7 +467,7 @@ def _apply(d, state, acc, tbody, t_id, t, m):
         acc["instances"].setdefault(m["instance"], t_id)
     else:
         acc["closures"].append((disp, t_id, tbody["actor"]["id"], t["scope"].get("subject"),
-                                m.get("triggers", [])))
+                                m.get("triggers", []), label))
 
 
 def _recurring(d, out, instances, as_of):
@@ -492,8 +507,10 @@ def _settle_disposition(out, closures):
         out["disposition"] = kinds[0]
         chosen = [c for c in closures if c[0] == kinds[0]]
         # The assessed basis says what was validated: whose attestation, or whose release.
+        # Validated replays carry their own label (REPLAYED:<runtime>:<pinned verifier>,
+        # valid in this view only); anything else is the actor's attestation or release.
         label = "RELEASE_BY" if kinds[0] == "RELEASED" else "ACTOR_ATTESTATION"
-        out["assessed_basis"] = sorted({f"{label}:{c[2]}" for c in chosen})
+        out["assessed_basis"] = sorted({c[5] or f"{label}:{c[2]}" for c in chosen})
         out["closure_scope"] = sorted({c[3] for c in chosen if c[3]})
         out["declared_triggers"] = [{"closure": c[1], "trigger": tr} for c in chosen for tr in c[4]]
     out["closed_by"] = [c[1] for c in closures]
@@ -530,7 +547,7 @@ def _assess_duty(view, did, d, as_of, current, done):
                 cand["acceptor_support"] = support      # F4: the acceptor's own references, resolved
             out["candidates"].append(cand)
             if verdict == "ADMITTED":
-                _apply(d, state, acc, tbody, t_id, t, m)
+                _apply(d, state, acc, tbody, t_id, t, m, view.labels.get((t_id, i)))
     out["holder"], out["delegates"] = state["holder"], sorted(state["delegates"])
     _settle_disposition(out, acc["closures"])
     if d["shape"] == "recurring" and out["disposition"] == "OPEN":
@@ -578,6 +595,19 @@ def _assess_all(view, as_of, current):
     for did in sorted(view.duties):
         visit(did)
     return report
+
+
+def _crossings(view):
+    """S2: every crossing a transition cites, with its state or the reason it is refused.
+    Being listed here gives a crossing no credit; only a validated replay does."""
+    out = {}
+    for _, t in view.transitions.values():
+        for h in set(t["did"]["evidence"]):
+            doc = _blob(view.store, h)
+            if isinstance(doc, dict) and doc.get("schema") == RP.CROSSING:
+                why = RP.crossing_problem(doc)
+                out[h] = f"REFUSED: {why}" if why else RP.state(doc)
+    return dict(sorted(out.items()))
 
 
 def _questions(view):
@@ -656,6 +686,7 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
         v = {"store_snapshot_sha256": store_sha,
              "trust_sha256": hashlib.sha256(trust_bytes).hexdigest(),
              "as_of": as_of, "evaluator": EVALUATOR, "trigger_evaluator": TR.EVALUATOR,
+             "replay_evaluator": RP.EVALUATOR,
              "validated_bases": sorted(VALIDATED_BASES),
              "current": sorted(current) if current is not None else None,
              "workspace": ws.identity() if ws is not None else None,
@@ -665,7 +696,7 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
         return {"schema": REPORT, "view": v, "profile": profile,
                 "duties": report, "invalid_records": sorted(set(ids) - set(valid)),
                 "refused_events": view.refused, "missing_duties": dangling,
-                "unowned_questions": _questions(view),
+                "unowned_questions": _questions(view), "crossings": _crossings(view),
                 "questions_taken": {did: d["answers"] for did, d in view.duties.items() if "answers" in d}}
 
 
