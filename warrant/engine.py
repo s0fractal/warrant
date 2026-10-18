@@ -720,7 +720,10 @@ def _duty_needs(rep, did, r, actor):
             if p["state"] in ("OPEN", "LAPSED"):
                 yield {"duty": did, "need": f"period {n} {p['state']}", "statement": r["statement"]}
     for c in r["candidates"]:
-        if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []):
+        # A candidate whose results an accepted transition superseded is history,
+        # not acceptance work (Codex, signed-acceptances handoff 2026-10-18).
+        superseded = rep["results"].get(c["transition"], {}).get("superseded_by")
+        if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []) and not superseded:
             yield {"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"]}
     if holds and r["disposition"] == "DISCHARGED":
         for use in rep["profile"]["uses"]:

@@ -336,6 +336,20 @@ def handoff_cases():
     check("F2", rep["duties"][parent]["requires"] == [child] and rep["unbound_actors"] == ["nobody-bound"],
           "the report shows requires, and an acceptor without a key", (rep["duties"][parent]["requires"], rep["unbound_actors"]))
 
+    # F3: after a replacement closure and its results are accepted, the superseded
+    # closure is no longer offered for acceptance (it stays in the report)
+    w = World()
+    d = w.duty()
+    old = w.close(d)
+    new = w.act(HOLDER, [R.item(d, "discharge", [w.evidence("v2")])], supersedes=[old])
+    w.accept(OWNER, new, 0)
+    w.accept(OWNER, new, None)
+    rep = w.assess(prof=E.profile(results_by=[OWNER]))
+    offered = [x for x in E.frontier(rep, OWNER) if x.get("need") == "accept"]
+    check("F3", rep["duties"][d]["disposition"] == "DISCHARGED" and not offered
+          and any(c["transition"] == old for c in rep["duties"][d]["candidates"]),
+          "a superseded closure is history, not acceptance work", offered)
+
 
 def main():
     attest_cases()

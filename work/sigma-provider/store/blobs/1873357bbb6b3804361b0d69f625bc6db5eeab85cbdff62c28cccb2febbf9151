@@ -1,0 +1,20 @@
+== install from merged master, fresh venv
+pip install "warrant-loops[compute] @ git+https://github.com/s0fractal/warrant@c8467b44d6bd5e05cb870b96813ac3c8877a311a"
+PROVIDER: ALL PASS (14/14)
+scenario 1: ok
+scenario 2: ok
+scenario 3: ok
+scenario 4: ok
+scenario 5: ok
+all scenarios: ok
+== CI on merged masters
+warrant c8467b4 sigma-provider success
+warrant c8467b4 ci success
+sigma 28b74f1 Dependabot Updates success
+sigma 28b74f1 Dependabot Updates success
+sigma 28b74f1 candidate-artifact success
+sigma 28b74f1 proofs success
+sigma 28b74f1 x1-cross-repo success
+sigma 28b74f1 conformance success
+sigma 28b74f1 pages-build-deployment success
+== merges: sigma #64 -> 28b74f17c3f405a045ed0394c467bd9fa2690eb5, warrant #140 -> c8467b44d6bd5e05cb870b96813ac3c8877a311a
