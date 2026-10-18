@@ -173,7 +173,7 @@ CHECKS = [
     ("WRT-022 S1 triggers: one on-target mutant per rule",
      ["python3", "tests/triggers_mutants.py"], None),
     # WRT-022 S2: crossings and replay receipts the recipient re-verifies.
-    ("WRT-022 S2 replay: ski@v1 and sigma-resume receipts, crossings, pins (X01-X21)",
+    ("WRT-022 S2 replay: ski@v1 and sigma-resume receipts, crossings, pins (X01-X22)",
      ["python3", "tests/replay_test.py"], None),
     ("WRT-022 S2 replay: one on-target mutant per rule",
      ["python3", "tests/replay_mutants.py"], None),

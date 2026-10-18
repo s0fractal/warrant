@@ -67,6 +67,8 @@ MUTANTS = [
     ("X20", "loops.py", "the verifier observation is not in the assessment identity (S2-03)",
      [('             "replay_evaluator": RP.EVALUATOR, "replay_verifiers": view.verifiers,',
        '             "replay_evaluator": RP.EVALUATOR,')]),
+    ("X22", "replay.py", "the worker runs from the mutable original path, not the capture (S2-04)",
+     [('str(Path(exec_dir) / "replay_sigma_worker.py")', 'str(WORKER)')]),
     ("X21", "replay.py", "the worker's own bytes are not bound (S2-02)",
      [('    "replay_sigma_worker.py": ', '    "_not_bound_": ')]),
 ]

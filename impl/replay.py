@@ -151,21 +151,38 @@ def environment_problem(doc):
     return None
 
 
-def _digest(p):
+def _read(p):
     try:
-        return hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() and not p.is_symlink() else "MISSING"
+        return p.read_bytes() if p.is_file() and not p.is_symlink() else None
     except OSError:
-        return "MISSING"
+        return None
 
 
-def observe():
-    """What the verifiers on this host actually are, read once per assessment. It
-    goes into the assessment identity (review S2-03): a drifted, missing or
-    re-pinned verifier changes the id, as it can change the verdict."""
-    base = Path(WORKER).parent
+def capture(dst):
+    """Read the sigma-resume verifier ONCE into the private directory `dst`, and
+    return (observation, dst). The digests are of the captured bytes, and the
+    captured bytes are what _sigma executes (review S2-04): a file replaced after
+    this call is never the code that runs, and the observation that goes into the
+    assessment identity (S2-03) is the code that ran. Only the committed source
+    files are copied; no bytecode cache travels with them.
+
+    The ski@v1 entry is an observation only: warrant's own loader hashes and then
+    imports its pinned evaluator (warrant.py, _import_sigma), outside this slice."""
+    base, dst = Path(WORKER).parent, Path(dst)
+    sigma = {}
+    for rel in sorted(SIGMA_VERIFIER):
+        data = _read(base / rel)
+        if data is None:
+            sigma[rel] = "MISSING"
+            continue
+        (dst / rel).parent.mkdir(parents=True, exist_ok=True)
+        (dst / rel).write_bytes(data)
+        sigma[rel] = hashlib.sha256(data).hexdigest()
     ski = W.bundled_sigma_path("ski@v1")
-    return {"sigma-resume": {rel: _digest(base / rel) for rel in sorted(SIGMA_VERIFIER)},
-            "ski@v1": {ski.name: _digest(ski)} if ski is not None else {"ski@v1": "MISSING"}}
+    data = _read(ski) if ski is not None else None
+    return ({"sigma-resume": sigma,
+             "ski@v1": {ski.name if ski is not None else "ski@v1":
+                        hashlib.sha256(data).hexdigest() if data is not None else "MISSING"}}, dst)
 
 
 def _sigma_unpinned(observed):
@@ -195,7 +212,7 @@ def _ski(store, r, comp):
     return f"REPLAYED:ski@v1:{pin[:16]}", None
 
 
-def _sigma(store, r, comp, blob, observed):
+def _sigma(store, r, comp, blob, observed, exec_dir):
     if (r["input_term_hash"], r["environment"]) != (comp["input_term_hash"], comp["environment"]):
         return None, "the receipt replays another computation than the duty requires"
     why = _sigma_unpinned(observed)
@@ -206,7 +223,9 @@ def _sigma(store, r, comp, blob, observed):
     if why:
         return None, why
     req = json.dumps({"store": str(store.root), "receipt": r})
-    p = subprocess.run([sys.executable, "-I", str(WORKER)], input=req, capture_output=True, text=True, check=False)
+    # The captured worker, never the mutable original path; -B writes no bytecode.
+    p = subprocess.run([sys.executable, "-I", "-B", str(Path(exec_dir) / "replay_sigma_worker.py")], input=req,
+                       capture_output=True, text=True, check=False)
     try:
         res = json.loads(p.stdout)
     except ValueError:
@@ -226,11 +245,11 @@ def _sigma(store, r, comp, blob, observed):
     return f"REPLAYED:sigma-resume:{SIGMA_RESUME_PIN[:16]}", None
 
 
-def validate(store, blob, computation, evidence, accepted_targets, observed):
+def validate(store, blob, computation, evidence, accepted_targets, observed, exec_dir):
     """May this mapping be discharged on the basis REPLAYED, in this view?
     Returns (label, None) or (None, reason). `blob(h)` reads a canonical JSON blob.
     `accepted_targets` are the crossing targets THIS recipient's profile accepts;
-    `observed` is this assessment's verifier observation (observe())."""
+    `observed` and `exec_dir` are this assessment's verifier capture (capture())."""
     if computation is None:
         return None, "the duty names no computation, so no replay can discharge it"
     crossings = [d for d in (blob(h) for h in evidence) if isinstance(d, dict) and d.get("schema") == CROSSING]
@@ -254,4 +273,4 @@ def validate(store, blob, computation, evidence, accepted_targets, observed):
         return None, "the receipt is for another runtime"
     if r["runtime"] == "ski@v1":
         return _ski(store, r, computation)
-    return _sigma(store, r, computation, blob, observed)
+    return _sigma(store, r, computation, blob, observed, exec_dir)

@@ -338,6 +338,7 @@ class _View:
         self.labels = {}          # (transition, mapping) -> validated replay label (S2)
         self.crossing_targets = []  # crossing targets the recipient's profile accepts (S2-01)
         self.verifiers = {}         # this assessment's verifier observation (S2-03)
+        self.verifier_dir = None    # the captured bytes that observation is of, and that run (S2-04)
         self.refused = {}
         for wid, body in sorted(self.bodies.items(), key=lambda kv: (kv[1]["ts"], kv[0])):
             self._admit(wid, body)
@@ -421,7 +422,7 @@ def _judge_closure(view, did, d, state, actor, t, i, t_id, m, done):
         # WRT-022 S2: the recipient re-runs the receipt's computation with a pinned
         # verifier, in this view; the receipt's word is never the basis.
         label, why = RP.validate(view.store, lambda h: _blob(view.store, h), d.get("computation"), m["evidence"],
-                                 view.crossing_targets, view.verifiers)
+                                 view.crossing_targets, view.verifiers, view.verifier_dir)
         if label is None:
             return "UNVERIFIED_BASIS", f"REPLAYED is claimed and not validated here: {why}"
         view.labels[(t_id, i)] = label
@@ -682,7 +683,7 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
         valid = [w for w in ids if w not in bad] if store_ok else []
         view = _View(store, valid, as_of)
         view.crossing_targets = list((profile or {}).get("crossing_targets", []))
-        view.verifiers = RP.observe()
+        view.verifiers, view.verifier_dir = RP.capture(Path(tmp) / "verifier")
         report = _assess_all(view, as_of, current)
         _orphan_and_missing(view, report)
         _evaluate_triggers(view, report, ws)

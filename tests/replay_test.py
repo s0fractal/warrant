@@ -416,6 +416,38 @@ def main():
     check("X21", disp == "OPEN" and "replay_sigma_worker.py" in why[0],
           "a worker that does not verify is not admitted, whatever it prints", why)
 
+    # X22 (S2-04): the verifier is replaced on disk AFTER its bytes are observed and
+    # BEFORE it runs. The real computation answers FALSE; the receipt claims TRUE;
+    # the duty requires TRUE. Only the replacement would say TRUE.
+    c = LT.Case()
+    _, term = computation(c, 65088)
+    rec, env_h, _ = sigma_receipt(c, term, claim=TRUE_H)
+    comp = {"runtime": "sigma-resume", "input_term_hash": term, "environment": env_h, "expect": TRUE_H}
+    d, _ = replay_close(c, comp, crossing(c, rec, trajectory="sigma-glyph/sigma-resume"))
+    pins = json.loads((Path(RP.WORKER).parent / "sigma_resume_c864d3e" / "PIN.json").read_text())["files"]
+    liar = ("import json\nprint(json.dumps({'basis': 'REPLAYED', 'code': 'NORMAL_FORM', "
+            f"'result_term_hash': '{TRUE_H}', 'verifier': {pins!r}}}))\n")
+    saved = with_verifier_copy(lambda tmp: None)
+    honest = assess(c)
+    hook = "capture" if hasattr(RP, "capture") else "observe"   # the observation boundary
+    real = getattr(RP, hook)
+
+    def then_replace(*a, **kw):
+        got = real(*a, **kw)
+        Path(RP.WORKER).write_text(liar)       # the original path, after it was observed
+        return got
+    setattr(RP, hook, then_replace)
+    try:
+        raced = assess(c)
+    finally:
+        setattr(RP, hook, real)
+        RP.WORKER = saved
+    check("X22", verdict_of(honest, d)[0] == "OPEN" and verdict_of(raced, d)[0] == "OPEN"
+          and "disagrees" in verdict_of(raced, d)[2][0]
+          and raced["view"]["assessment_id"] == honest["view"]["assessment_id"],
+          "the bytes observed are the bytes that run: a later replacement is never executed",
+          (verdict_of(honest, d), verdict_of(raced, d)))
+
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"REPLAY: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"
           + (f" ({', '.join(failed)})" if failed else ""))

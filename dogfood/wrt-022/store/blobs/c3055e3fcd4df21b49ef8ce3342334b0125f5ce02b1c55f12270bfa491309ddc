@@ -1,0 +1,36 @@
+# WRT-022 S2 re-review at 71514c0
+
+Candidate: 71514c04a3c96cc49633d8b239f9d82183dcb897.
+Verdict: AMEND for one reproduced remaining boundary error, S2-04. The three original static counterexamples are addressed; no need to redesign the entire package integration for this fix.
+
+## Original findings
+
+- S2-01: recipient-owned crossing_targets now gates replay credit; X18 covers accepted, foreign and absent recipient acceptance.
+- S2-02: parent-side comparison now includes both kernels and the worker, with worker-reported kernel identities checked. X19 and X21 reject static drift and a static counterfeit worker.
+- S2-03: observed verifier digests and MISSING values now change assessment_id; X20 checks unchanged, drifted and missing files.
+
+These improvements are correct for files that remain unchanged between observation and use. The remaining issue concerns that time boundary.
+
+## S2-04 [P2] Observed verifier bytes are not the bytes subsequently executed
+
+Locations: impl/loops.py (view.verifiers = RP.observe before _assess_all); impl/replay.py observe(), _sigma() (subprocess.run reopens WORKER by path).
+
+The parent records a digest of the current worker/kernels, then _sigma trusts that observation and executes the mutable original filesystem path. The worker checks its kernel sources similarly and imports them later. No private execution snapshot ties the parent's admitted observation to the code Python actually opens.
+
+The deterministic regression uses an ordinary FALSE-producing WPL computation (amount=65088). The receipt claims TRUE and the duty requires TRUE. Honest execution correctly yields OPEN / UNVERIFIED_BASIS. The reproduction copies the exact verifier to a temporary directory, then uses the existing observe() boundary as a scheduling hook: immediately AFTER the real observe hashes the genuine files, the local temporary worker is replaced with the same kind of success-printing worker X21 already models. No comparison is disabled and the store/profile/receipt/claimed result stay unchanged. The later subprocess runs the replacement and returns DISCHARGED / ADMITTED / REPLAYED under the genuine recorded digest. assessment_id remains identical to the honest refusal's ID.
+
+This requires local file replacement (e.g. a concurrent update or deliberately changed local verifier); receipt bytes alone cannot replace files. It is a correctness/provenance issue within the existing X21 contract, not a claim of remote access or exclusive agent custody.
+
+### Minimal closure condition
+
+For this sigma path, capture the worker and both kernels into a private execution directory; verify the captured bytes against receiver-owned commitments; execute/import only those captured bytes. Construct the assessment's verifier identity from this same capture or a typed capture refusal. Avoid copying unverified bytecode caches. Merely rehashing the original paths earlier, or asking the worker to repeat the expected pin strings, does not bind execution. A properly equivalent immutable execution mechanism is also acceptable; no requirement to preserve vendoring as the long-term packaging scheme.
+
+Regression: replace the original source path after capture/observation and before execution. Either the genuine captured verifier still executes (FALSE; closure OPEN), or a typed refusal occurs; it must never credit the replacement's claimed TRUE. Keep an honest positive case. A targeted mutant that executes the original mutable path should fail that regression. Also retain drift-before-capture and missing-file identity controls.
+
+## Verification and limits
+
+Observed on this candidate: replay 21/21 tests pass; replay mutants 20/20 killed on their named cases; loops 38/38; triggers 18/18. RESULTS.json records the independent time-boundary counterexample. repro-verifier-snapshot.py accepts the exact candidate export path and touches only temporary verifier copies and signed fixture stores, with fixture keys.
+
+Full local check.py, Rust/Go conformance, old loop/trigger mutation campaigns and CI were not rerun. This is a bounded re-review of S2 changes, not an audit of all dependencies or S3-S8. Existing S1 tests remain green, but this review does not issue a new current S1 closure mapping. Package ownership and transport may be redesigned separately; immutably binding the verifier to the assessment remains the contract either way.
+
+No candidate source modified; no push, CI trigger, acceptance or merge.
