@@ -57,6 +57,28 @@ def observation_cases():
           and fresh["duties"][d]["disposition"] == stale["duties"][d]["disposition"] == "DISCHARGED",
           "fresh within fresh_for, stale after it; the closure itself stays", (E.reliance(fresh, d, "act"), E.reliance(stale, d, "act")))
 
+    # B5 (R138-01, Codex review of 1235d1e): only an observation that met the
+    # condition refreshes a closure. A fresh record cited alongside a stale good one
+    # -- by a stranger, by the filer itself, with another probe, or with another
+    # result -- leaves it STALE; a fresh matching observation refreshes it, and it
+    # goes stale again after fresh_for.
+    w = World()
+    d, probe = observe_duty(w, fresh_for=100)
+    good = observe(w, probe, at=500)
+    w.close(d, basis="OBSERVED", evidence=[good], at=510)
+    other = w.blob({"argv": ["false"]})
+    stale = []
+    for k, (actor, pr, result) in enumerate(((STRANGER, probe, "ok"), (HOLDER, probe, "ok"),
+                                             (OBSERVER, other, "ok"), (OBSERVER, probe, "503"))):
+        o = observe(w, pr, result=result, actor=actor, at=940 + k)
+        w.close(d, basis="OBSERVED", evidence=[good, o], at=950 + k)
+        stale.append(E.reliance(w.assess(as_of=1000), d, "act")["state"])
+    fresh = observe(w, probe, at=980)
+    w.close(d, basis="OBSERVED", evidence=[fresh], at=990)
+    now, later = E.reliance(w.assess(as_of=1000), d, "act")["state"], E.reliance(w.assess(as_of=1200), d, "act")["state"]
+    check("B5", stale == ["STALE"] * 4 and (now, later) == ("ELIGIBLE", "STALE"),
+          "only observations that met the condition count for freshness", (stale, now, later))
+
 
 def schedule_cases():
     # Q1: one period covered, one lapsed, one open; nothing covers another period

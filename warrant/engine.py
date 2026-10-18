@@ -61,6 +61,7 @@ class View:
         self.duties = self.by_type["duty"]
         self.transitions = self.by_type["transition"]
         self.missing = set()
+        self.matched = {}       # (transition, item) -> window ends of the observations that met its condition
 
     def pos(self, rid):
         return (self.recs[rid]["at"], rid)
@@ -241,7 +242,7 @@ WRONG_BASIS = {"attest": "{} is not the basis this condition admits",
                "compute": "a computation is met by the recipient's own replay"}
 
 
-def _basis(view, d, m, t, filer, window):
+def _basis(view, d, m, t, filer, window, key):
     """V("ADMITTED", label=...) if the item's basis meets the duty's condition."""
     basis = t["body"]["basis"]
     kind, cond = next(iter(d["condition"].items()))
@@ -254,6 +255,7 @@ def _basis(view, d, m, t, filer, window):
         return V("ADMITTED", label=f"ATTESTED:{filer}")
     if kind == "observe":
         good, why = _observations(view, m, cond, filer, window)
+        view.matched[key] = [rec["body"]["window"][1] for _, rec in good]
         return V("ADMITTED", label="OBSERVED:" + ",".join(sorted({rec["actor"] for _, rec in good}))) if good \
             else V("UNMET_CONDITION", why)
     return _replayed(view, cond, m)
@@ -292,7 +294,7 @@ def _judge_closure(view, d, t_id, t, i, m, holders, done, admitted):
     why = _shape_problem(d, m, t, window, admitted)
     if why:
         return V("OVERCLAIMED", why)
-    v = _basis(view, d, m, t, filer, window)
+    v = _basis(view, d, m, t, filer, window, (t_id, i))
     if v[0] != "ADMITTED":
         return v
     label = v[2]
@@ -454,8 +456,11 @@ def _disposition(view, out, d, closures, revals, periods):
                                 for tid, _, m in rows for tr in m.get("triggers", [])]
     out["closure_subjects"] = sorted({t["body"]["subject"] for tid, t, _ in rows
                                       if tid not in superseded and t["body"]["subject"]})
-    obs = [view.by_type["observation"][h]["body"]["window"][1] for tid, _, m in rows if tid not in superseded
-           for h in m["evidence"] if h in view.by_type["observation"]]
+    # Freshness counts only the observations that met the condition (R138-01):
+    # another observer's, the filer's own, another probe's or another result's
+    # record cited alongside does not refresh a closure.
+    obs = [end for tid, t, m in rows if tid not in superseded
+           for end in view.matched.get((tid, t["body"]["closes"].index(m)), [])]
     out["observed_until"] = max(obs) if obs else None
 
 

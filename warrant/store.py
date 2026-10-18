@@ -155,6 +155,9 @@ def _authenticate(rid, data, trust):
     try:
         R._fields(env, ("record", "sig"), what="stored record")
         R._fields(env["sig"], ("key", "ed25519"), what="sig")
+        R._hex(env["sig"]["key"], "sig key")            # types before lookup (R138-02)
+        R._need(isinstance(env["sig"]["ed25519"], str) and K.HEX128.match(env["sig"]["ed25519"]) is not None,
+                "sig ed25519 must be 128 hex characters")
         R.check(env["record"])
     except R.Invalid as e:
         return f"invalid: {e}", None

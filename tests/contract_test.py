@@ -253,6 +253,28 @@ def unknown_cases():
     check("N5", rep["duties"][d]["disposition"] == "OPEN" and len(rep["invalid_records"]) == 1,
           "an acceptance signed with another actor's key is invalid and counts for nothing", rep["invalid_records"])
 
+    # N6 (R138-02, Codex review of 1235d1e): a malformed signature member is an
+    # invalid record; it never aborts the assessment of the rest of the store.
+    from warrant import canon, loads
+    w = World()
+    control = w.act(HOLDER, [], established=["a valid record"])
+    bad = {}
+    for k, (field, value) in enumerate((("key", []), ("key", {}), ("key", None), ("key", "zz"),
+                                        ("ed25519", 7), ("ed25519", "00"))):
+        rid = w.act(HOLDER, [], established=[f"to be broken {k}"])
+        p = w.store.root / "records" / f"{rid}.json"
+        env = loads(p.read_bytes())
+        env["sig"][field] = value
+        p.write_bytes(canon(env))
+        bad[rid] = field
+    try:
+        rep = w.assess()
+        ok6 = set(bad) <= set(rep["invalid_records"]) and control in rep["results"] and not set(bad) & set(rep["results"])
+        det6 = rep["invalid_records"]
+    except (TypeError, ValueError, AttributeError) as e:
+        ok6, det6 = False, f"assessment aborted: {type(e).__name__}: {e}"
+    check("N6", ok6, "malformed signature members are invalid records; the rest is assessed", det6)
+
 
 def W_ev(w, t):
     from warrant import loads

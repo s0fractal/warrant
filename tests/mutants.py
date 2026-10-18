@@ -94,6 +94,13 @@ MUTANTS = [
     ("M30", "engine.py", "a superseded closure still carries its challenges",
      [('    yield _challenged(rep, _counting_challenges(rep, set(r["current_closures"]), r))', '    yield _challenged(rep, _counting_challenges(rep, set(r["closed_by"]), r))')],
      "conditions_test", ["K3"]),
+    ("M31", "engine.py", "freshness counts any observation cited by a closure (R138-01)",
+     [('           for end in view.matched.get((tid, t["body"]["closes"].index(m)), [])]',
+       '           for h in m["evidence"] if h in view.by_type["observation"]\n           for end in [view.by_type["observation"][h]["body"]["window"][1]]]')],
+     "conditions_test", ["B5"]),
+    ("M32", "store.py", "signature members are used before their types are checked (R138-02)",
+     [('        R._hex(env["sig"]["key"], "sig key")            # types before lookup (R138-02)\n', '')],
+     "contract_test", ["N6"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
