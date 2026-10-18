@@ -719,8 +719,14 @@ def _duty_needs(rep, did, r, actor):
         for n, p in sorted(r["periods"].items(), key=lambda kv: int(kv[0])):
             if p["state"] in ("OPEN", "LAPSED"):
                 yield {"duty": did, "need": f"period {n} {p['state']}", "statement": r["statement"]}
+    # A pending closure is no longer acceptance work only when THIS duty is closed
+    # by an admitted item of a transition that superseded it. Results supersession
+    # alone admits nothing on this duty (Codex W141-01).
+    closed_by_admitted = {c["transition"] for c in r["candidates"] if c["verdict"] == "ADMITTED"} \
+        if r["disposition"] in ("DISCHARGED", "IMPOSSIBLE", "RELEASED") else set()
     for c in r["candidates"]:
-        if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []):
+        replaced = set(rep["results"].get(c["transition"], {}).get("superseded_by", [])) & closed_by_admitted
+        if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []) and not replaced:
             yield {"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"]}
     if holds and r["disposition"] == "DISCHARGED":
         for use in rep["profile"]["uses"]:
