@@ -85,7 +85,7 @@ def _result(state_bytes):
 def op_start(args, blobs):
     env = _env(args, blobs)
     _, cid = _root(args, env)
-    doc, ck_id, sb = R.start(cid, bytes.fromhex(args["input"]))
+    doc, _, sb = R.start(cid, bytes.fromhex(args["input"]))
     return {"checkpoint": base64.b64encode(R._canon(doc)).decode(), "state": base64.b64encode(sb).decode(),
             "outcome": "STARTED"}
 
@@ -113,7 +113,7 @@ def op_verify(args, blobs):
     out = []
     for ck, st in args["chain"]:
         sb = base64.b64decode(st)
-        basis, code, actions = R.verify(root, env, base64.b64decode(ck), sb, cache=cache)
+        basis, code, _ = R.verify(root, env, base64.b64decode(ck), sb, cache=cache)
         r = {"basis": basis, "code": code}
         if basis == R.REPLAYED and code == R.NORMAL_FORM:
             r["result"] = _result(sb)

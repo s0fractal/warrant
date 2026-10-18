@@ -11,9 +11,50 @@ class NotCanonical(ValueError):
     """Bytes or values outside the encoding of SPEC §2."""
 
 
+def _scalar(v):
+    """The JCS text of a scalar, or None if `v` is not one."""
+    if v is None:
+        return "null"
+    if v is True:
+        return "true"
+    if v is False:
+        return "false"
+    if isinstance(v, int):
+        if not -MAX_INT <= v <= MAX_INT:
+            raise NotCanonical("integer outside ±(2^53-1)")
+        return str(v)
+    if isinstance(v, str):
+        _check_text(v)
+        return json.dumps(v, ensure_ascii=False)
+    return None
+
+
+def _push_container(stack, v, depth):
+    """Push the tokens of a list or object, last first."""
+    if isinstance(v, list):
+        stack.append(("s", "]", 0))
+        for i in range(len(v) - 1, -1, -1):
+            stack.append(("v", v[i], depth + 1))
+            if i:
+                stack.append(("s", ",", 0))
+        stack.append(("s", "[", 0))
+        return
+    if not (isinstance(v, dict) and all(isinstance(k, str) for k in v)):
+        raise NotCanonical(f"not a JSON value of this domain: {type(v).__name__}")
+    keys = sorted(v, key=lambda k: k.encode("utf-16-be", "surrogatepass"))
+    stack.append(("s", "}", 0))
+    for i in range(len(keys) - 1, -1, -1):
+        _check_text(keys[i])
+        stack.extend((("v", v[keys[i]], depth + 1), ("s", ":", 0), ("s", json.dumps(keys[i], ensure_ascii=False), 0)))
+        if i:
+            stack.append(("s", ",", 0))
+    stack.append(("s", "{", 0))
+
+
 def canon(value):
     """RFC 8785 bytes. Object members are ordered by UTF-16 code units; integers
-    outside ±(2^53-1), floats and lone surrogates are refused."""
+    outside ±(2^53-1), floats and lone surrogates are refused. Iterative, so
+    nesting depth is bounded by MAX_DEPTH, not by the interpreter's stack."""
     out = []
     stack = [("v", value, 0)]
     while stack:
@@ -23,39 +64,11 @@ def canon(value):
             continue
         if depth > MAX_DEPTH:
             raise NotCanonical("nested too deep")
-        if v is None:
-            out.append("null")
-        elif v is True:
-            out.append("true")
-        elif v is False:
-            out.append("false")
-        elif isinstance(v, int):
-            if not -MAX_INT <= v <= MAX_INT:
-                raise NotCanonical("integer outside ±(2^53-1)")
-            out.append(str(v))
-        elif isinstance(v, str):
-            _check_text(v)
-            out.append(json.dumps(v, ensure_ascii=False))
-        elif isinstance(v, list):
-            stack.append(("s", "]", 0))
-            for i in range(len(v) - 1, -1, -1):
-                stack.append(("v", v[i], depth + 1))
-                if i:
-                    stack.append(("s", ",", 0))
-            stack.append(("s", "[", 0))
-        elif isinstance(v, dict):
-            if not all(isinstance(k, str) for k in v):
-                raise NotCanonical("object member names must be strings")
-            keys = sorted(v, key=lambda k: k.encode("utf-16-be", "surrogatepass"))
-            stack.append(("s", "}", 0))
-            for i in range(len(keys) - 1, -1, -1):
-                _check_text(keys[i])
-                stack.extend((("v", v[keys[i]], depth + 1), ("s", ":", 0), ("s", json.dumps(keys[i], ensure_ascii=False), 0)))
-                if i:
-                    stack.append(("s", ",", 0))
-            stack.append(("s", "{", 0))
+        text = _scalar(v)
+        if text is not None:
+            out.append(text)
         else:
-            raise NotCanonical(f"not a JSON value of this domain: {type(v).__name__}")
+            _push_container(stack, v, depth)
     return "".join(out).encode("utf-8")
 
 

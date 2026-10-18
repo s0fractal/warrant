@@ -94,29 +94,22 @@ class Snapshot:
     @classmethod
     def read(cls, root):
         root = Path(root)
-        records, blobs, misfiled = {}, {}, []
+        found = {"records": {}, "blobs": {}}
+        misfiled = []
         for kind in ("records", "blobs"):
             folder = root / kind
-            if not folder.is_dir():
-                continue
-            for p in sorted(folder.iterdir()):
-                if p.is_symlink() or not p.is_file():
-                    misfiled.append(f"{kind}/{p.name}: not a regular file")
-                    continue
-                if p.stat().st_size > MAX_FILE:
-                    misfiled.append(f"{kind}/{p.name}: larger than admitted")
-                    continue
-                data = p.read_bytes()
-                if kind == "blobs":
-                    if p.name == C.digest(data):
-                        blobs[p.name] = data
-                    else:
-                        misfiled.append(f"blobs/{p.name}: name is not its hash")
-                elif p.name.endswith(".json") and R.HEX64.match(p.name[:-5]):
-                    records[p.name[:-5]] = data
+            for p in sorted(folder.iterdir()) if folder.is_dir() else ():
+                why = _file_problem(kind, p)
+                if why:
+                    misfiled.append(f"{kind}/{p.name}: {why}")
                 else:
-                    misfiled.append(f"records/{p.name}: not a record file name")
-        return cls(records, blobs, misfiled)
+                    data = p.read_bytes()
+                    key = p.name if kind == "blobs" else p.name[:-5]
+                    if kind == "blobs" and key != C.digest(data):
+                        misfiled.append(f"blobs/{p.name}: name is not its hash")
+                    else:
+                        found[kind][key] = data
+        return cls(found["records"], found["blobs"], misfiled)
 
     def blob(self, h):
         return self.blobs.get(h) if isinstance(h, str) else None
@@ -142,6 +135,16 @@ class Snapshot:
             else:
                 good[rid] = rec
         return good, bad
+
+
+def _file_problem(kind, p):
+    if p.is_symlink() or not p.is_file():
+        return "not a regular file"
+    if p.stat().st_size > MAX_FILE:
+        return "larger than admitted"
+    if kind == "records" and not (p.name.endswith(".json") and R.HEX64.match(p.name[:-5])):
+        return "not a record file name"
+    return None
 
 
 def _authenticate(rid, data, trust):

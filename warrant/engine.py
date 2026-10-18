@@ -106,19 +106,22 @@ def grant_state(view, gid, at, depth=0):
     pst, why = grant_state(view, g["parent"], rec["at"], depth + 1)      # the parent at the CHILD's position
     if pst != "VALID":
         return ("BROKEN_CHAIN" if pst in ("BROKEN_CHAIN", "UNGROUNDED", "NOT_YET") else pst, f"parent {g['parent'][:12]}: {why}")
-    prec = view.by_type["grant"][g["parent"]]
-    p = prec["body"]
-    if rec["actor"] != p["grantee"]:
-        return "NOT_ATTENUATED", "the grantor is not the parent's grantee"
+    why = _attenuation_problem(rec["actor"], g, view.by_type["grant"][g["parent"]]["body"])
+    return ("NOT_ATTENUATED", why) if why else ("VALID", "attenuated")
+
+
+def _attenuation_problem(grantor, g, p):
+    if grantor != p["grantee"]:
+        return "the grantor is not the parent's grantee"
     if not set(g["acts"]) <= set(p["delegable"]):
-        return "NOT_ATTENUATED", "acts the parent did not make delegable"
+        return "acts the parent did not make delegable"
     if not set(g["delegable"]) <= set(p["delegable"]):
-        return "NOT_ATTENUATED", "delegable beyond the parent's"
+        return "delegable beyond the parent's"
     if not set(g["duties"]) <= set(p["duties"]):
-        return "NOT_ATTENUATED", "duties beyond the parent's"
+        return "duties beyond the parent's"
     if p["expires"] is not None and (g["expires"] is None or g["expires"] > p["expires"]):
-        return "NOT_ATTENUATED", "expires later than the parent"
-    return "VALID", "attenuated"
+        return "expires later than the parent"
+    return None
 
 
 def authorized(view, actor, act, duty_id, at):
@@ -212,42 +215,48 @@ def _observations(view, m, cond, filer, window):
     return good, why
 
 
-def _basis(view, did, d, t_id, t, m, filer, window):
-    """(label, None) if the item's basis meets the duty's condition, else (None, verdict, why)."""
-    basis = t["body"]["basis"]
-    kind, cond = next(iter(d["condition"].items()))
-    if m["act"] == "impossible" and kind != "compute":
-        if basis != "ATTESTED":
-            return None, "OVERCLAIMED", "an impossibility is attested"
-        return f"ATTESTED:{filer}", None
-    if kind == "attest":
-        if basis != "ATTESTED":
-            return None, "OVERCLAIMED", f"{basis} is not the basis this condition admits"
-        return f"ATTESTED:{filer}", None
-    if kind == "observe":
-        if basis != "OBSERVED":
-            return None, "OVERCLAIMED", "this condition is met by an observation, not by the filer's word"
-        good, why = _observations(view, m, cond, filer, window)
-        if not good:
-            return None, "UNMET_CONDITION", why
-        return "OBSERVED:" + ",".join(sorted({rec["actor"] for _, rec in good})), None
-    if basis != "REPLAYED":
-        return None, "OVERCLAIMED", "a computation is met by the recipient's own replay"
-    docs = [view.snap.json_blob(h) for h in m["evidence"]]
+def V(verdict, why="", label=None, waiting=None):
+    """One candidate's verdict: always the same four fields."""
+    return verdict, why, label, waiting
+
+
+def _replayed(view, cond, m):
     want = "cycle" if m["act"] == "impossible" else "receipt"
-    docs = [x for x in docs if isinstance(x, dict) and x.get(want) == "sigma-resume"]
+    docs = [x for x in (view.snap.json_blob(h) for h in m["evidence"]) if isinstance(x, dict) and x.get(want) == "sigma-resume"]
     if len(docs) != 1:
-        return None, "MISSING_EVIDENCE", f"a REPLAYED item cites exactly one {want}"
+        return V("MISSING_EVIDENCE", f"a REPLAYED item cites exactly one {want}")
     if view.provider is None:
-        return None, "UNVERIFIED", "no provider in this view"
+        return V("UNVERIFIED", "no provider in this view")
     fn = P.replay_cycle if want == "cycle" else P.replay
     try:
         label, why = fn(view.provider, view.snap, cond, docs[0], view.profile["targets"])
     except P.ProviderError as e:
-        return None, "UNVERIFIED", str(e)
-    if label is None:
-        return None, "UNVERIFIED", why
-    return label, None
+        return V("UNVERIFIED", str(e))
+    return V("ADMITTED", label=label) if label else V("UNVERIFIED", why)
+
+
+BASIS_OF = {"attest": "ATTESTED", "observe": "OBSERVED", "compute": "REPLAYED"}
+WRONG_BASIS = {"attest": "{} is not the basis this condition admits",
+               "observe": "this condition is met by an observation, not by the filer's word",
+               "compute": "a computation is met by the recipient's own replay"}
+
+
+def _basis(view, d, m, t, filer, window):
+    """V("ADMITTED", label=...) if the item's basis meets the duty's condition."""
+    basis = t["body"]["basis"]
+    kind, cond = next(iter(d["condition"].items()))
+    if m["act"] == "impossible" and kind != "compute":
+        return V("ADMITTED", label=f"ATTESTED:{filer}") if basis == "ATTESTED" else \
+            V("OVERCLAIMED", "an impossibility is attested")
+    if basis != BASIS_OF[kind]:
+        return V("OVERCLAIMED", WRONG_BASIS[kind].format(basis))
+    if kind == "attest":
+        return V("ADMITTED", label=f"ATTESTED:{filer}")
+    if kind == "observe":
+        good, why = _observations(view, m, cond, filer, window)
+        return V("ADMITTED", label="OBSERVED:" + ",".join(sorted({rec["actor"] for _, rec in good}))) if good \
+            else V("UNMET_CONDITION", why)
+    return _replayed(view, cond, m)
 
 
 def _period_window(d, m):
@@ -258,38 +267,140 @@ def _period_window(d, m):
     return [s["start"] + n * s["every"], s["start"] + (n + 1) * s["every"]]
 
 
-def _judge_closure(view, did, d, t_id, t, i, m, holders, done, admitted):
+def _shape_problem(d, m, t, window, admitted):
+    """A reason this item cannot close this duty whatever its evidence, or None."""
+    sched = d["schedule"]
+    if m["act"] == "discharge" and (sched is None) != ("period" not in m):
+        return "a scheduled duty is discharged per period, and only a scheduled one"
+    if m["act"] in ("impossible", "revalidate") and sched is not None:
+        return f"{m['act']} is not defined for a scheduled duty here"
+    if window and t["at"] < window[0]:
+        return "a period cannot be discharged before it starts"
+    if m["act"] == "revalidate" and not admitted:
+        return "nothing admitted to revalidate"
+    if m["act"] == "revalidate" and not set(m["revalidates"]) <= set(admitted):
+        return "revalidates something that is not an admitted closure of this duty"
+    return None
+
+
+def _judge_closure(view, d, t_id, t, i, m, holders, done, admitted):
     filer = t["actor"]
     holder, delegates = holders.at(view.pos(t_id))
     if filer != holder and filer not in delegates:
-        return "OVERCLAIMED", "filed by someone who did not hold the duty at that position", None
-    sched = d["schedule"]
-    if m["act"] == "discharge" and (sched is None) != ("period" not in m):
-        return "OVERCLAIMED", "a scheduled duty is discharged per period, and only a scheduled one", None
-    if m["act"] in ("impossible", "revalidate") and sched is not None:
-        return "OVERCLAIMED", f"{m['act']} is not defined for a scheduled duty here", None
+        return V("OVERCLAIMED", "filed by someone who did not hold the duty at that position")
     window = _period_window(d, m) if "period" in m else None
-    if window and t["at"] < window[0]:
-        return "OVERCLAIMED", "a period cannot be discharged before it starts", None
-    if m["act"] == "revalidate":
-        if not admitted:
-            return "OVERCLAIMED", "nothing admitted to revalidate", None
-        if not set(m["revalidates"]) <= set(admitted):
-            return "OVERCLAIMED", "revalidates something that is not an admitted closure of this duty", None
-    label, *rest = _basis(view, did, d, t_id, t, m, filer, window)
-    if label is None:
-        return rest[0], rest[1], None
-    if m["act"] in ("discharge", "revalidate"):
-        unmet = [c for c in d["requires"] if done.get(c) != "DISCHARGED"]
-        if unmet:
-            return "UNMET_CONDITION", "required duties not discharged: " + ", ".join(u[:12] for u in unmet), None
+    why = _shape_problem(d, m, t, window, admitted)
+    if why:
+        return V("OVERCLAIMED", why)
+    v = _basis(view, d, m, t, filer, window)
+    if v[0] != "ADMITTED":
+        return v
+    label = v[2]
+    unmet = [c for c in d["requires"] if done.get(c) != "DISCHARGED"] if m["act"] in ("discharge", "revalidate") else []
+    if unmet:
+        return V("UNMET_CONDITION", "required duties not discharged: " + ", ".join(u[:12] for u in unmet))
     got = set(view.accepted_at(t_id, i, m["evidence"]))
     missing = sorted(set(d["accept_by"]) - got)
     if m["act"] == "impossible" and label.startswith("ATTESTED") and not set(d["owed_to"]) & got:
         missing += [a for a in d["owed_to"] if a not in missing]
     if missing:
-        return "PENDING", "waiting for " + ", ".join(missing), None, missing
-    return "ADMITTED", "", label
+        return V("PENDING", "waiting for " + ", ".join(missing), waiting=missing)
+    return V("ADMITTED", label=label)
+
+
+def _transfers(view, d, items, holders, verdicts):
+    """Delegations and substitutions, applied in order of effect position: the filer
+    must hold the duty both when it files and when the transfer takes effect."""
+    transfers = []
+    for t_id, t, i, m in items:
+        if m["act"] in ("delegate", "substitute"):
+            eff, missing = _transfer_effect(view, d, t_id, i, m)
+            transfers.append((eff or (float("inf"), ""), t_id, t, i, m, missing))
+    for eff, t_id, t, i, m, missing in sorted(transfers, key=lambda x: (x[0], view.pos(x[1]), x[3])):
+        verdicts[(t_id, i)] = _transfer(view, d, holders, eff, t_id, t, m, missing)
+
+
+def _transfer(view, d, holders, eff, t_id, t, m, missing):
+    h_file, _ = holders.at(view.pos(t_id))
+    if t["actor"] != h_file:
+        return V("OVERCLAIMED", "only the holder at that position transfers or delegates")
+    if missing:
+        waiting = [x.split(" (")[0] for x in missing if not x.startswith("one of")] or list(d["owed_to"])
+        return V("PENDING", "waiting for " + ", ".join(missing), waiting=waiting)
+    h_eff, dl = holders.at(eff)
+    if h_eff != t["actor"]:
+        return V("OVERCLAIMED", "the filer no longer held the duty when the transfer would take effect")
+    if m["act"] == "delegate":
+        holders.add(eff, h_eff, set(dl) | {m["to"]})
+    else:
+        holders.add(eff, m["to"], set())
+    return V("ADMITTED")
+
+
+def _release(view, did, d, t_id, t):
+    if t["actor"] in set(d["owed_to"]) | set(d["release_by"]):
+        return V("ADMITTED", label=f"RELEASE:{t['actor']}")
+    gid, why = authorized(view, t["actor"], "release", did, view.pos(t_id)[0])
+    if gid:
+        return V("ADMITTED", f"by grant {gid[:12]}", f"RELEASE_BY_GRANT:{gid[:12]}")
+    return V("OVERCLAIMED", f"not authorized to release: {why}")
+
+
+def _closures(view, did, d, items, holders, done, verdicts):
+    """Releases and closures; revalidations last, in their own admission order (RV-01)."""
+    admitted = {}           # transition id -> admission position, of admitted discharges/revalidations
+    first = [x for x in items if x[3]["act"] not in ("delegate", "substitute", "revalidate")]
+    reval = sorted((x for x in items if x[3]["act"] == "revalidate"),
+                   key=lambda x: _admission_pos(view, d, x[0], x[2], x[3]) or (float("inf"), x[0]))
+    for t_id, t, i, m in first + reval:
+        if not all(view.resolves(h) for h in m["evidence"]):
+            verdicts[(t_id, i)] = V("MISSING_EVIDENCE", "cited evidence is not in the view")
+        elif m["act"] == "release":
+            verdicts[(t_id, i)] = _release(view, did, d, t_id, t)
+        else:
+            v = _judge_closure(view, d, t_id, t, i, m, holders, done, admitted)
+            if v[0] == "ADMITTED" and m["act"] == "revalidate":
+                v = _revalidation_order(view, d, t_id, i, m, admitted) or v
+            if v[0] == "ADMITTED" and m["act"] in ("discharge", "revalidate"):
+                admitted[t_id] = _admission_pos(view, d, t_id, i, m)
+            verdicts[(t_id, i)] = v
+
+
+def _revalidation_order(view, d, t_id, i, m, admitted):
+    mine = _admission_pos(view, d, t_id, i, m)
+    late = [x for x in m["revalidates"] if admitted[x] >= mine]
+    if late:
+        return V("OVERCLAIMED", "revalidates a closure not admitted before it (admission order): "
+                 + ", ".join(x[:12] for x in late))
+    return None
+
+
+def _candidates(view, out, items, verdicts):
+    """The report rows, and the admitted closures sorted by kind."""
+    closures, periods, revals = [], {}, []
+    for t_id, t, i, m in items:
+        verdict, why, label, waiting = verdicts[(t_id, i)]
+        cand = {"transition": t_id, "item": i, "act": m["act"], "filer": t["actor"], "basis": t["body"]["basis"],
+                "verdict": verdict, "why": why}
+        if waiting:
+            cand["waiting_for"] = waiting
+        sup = view.support(t_id, i)
+        if sup:
+            cand["acceptor_support"] = sup
+        out["candidates"].append(cand)
+        if verdict != "ADMITTED":
+            continue
+        if m["act"] == "revalidate":
+            revals.append((t_id, t, m, label))
+        elif m["act"] in ("discharge", "impossible", "release") and "period" in m:
+            periods.setdefault(m["period"], (t_id, label))
+        elif m["act"] in ("discharge", "impossible", "release"):
+            closures.append((m["act"], t_id, t, m, label))
+    return closures, periods, revals
+
+
+FLAG_OF = (("PENDING", "PENDING_ACCEPTANCE"), ("OVERCLAIMED", "OVERCLAIMED_CANDIDATE"),
+           ("UNVERIFIED", "UNVERIFIED_CANDIDATE"), ("UNMET_CONDITION", "UNMET_CANDIDATE"))
 
 
 def _assess_duty(view, did, rec, done):
@@ -302,86 +413,13 @@ def _assess_duty(view, did, rec, done):
     items = _items(view, did)
     holders = Holders(d["holder"])
     verdicts = {}
-    # 1. Transfers, in order of their effect position: the filer must hold the duty
-    #    both when it files and when the transfer takes effect.
-    transfers = []
-    for t_id, t, i, m in items:
-        if m["act"] in ("delegate", "substitute"):
-            eff, missing = _transfer_effect(view, d, t_id, i, m)
-            transfers.append((eff or (float("inf"), ""), t_id, t, i, m, missing))
-    for eff, t_id, t, i, m, missing in sorted(transfers, key=lambda x: (x[0], view.pos(x[1]), x[3])):
-        h_file, _ = holders.at(view.pos(t_id))
-        if t["actor"] != h_file:
-            verdicts[(t_id, i)] = ("OVERCLAIMED", "only the holder at that position transfers or delegates", None)
-            continue
-        if missing:
-            verdicts[(t_id, i)] = ("PENDING", "waiting for " + ", ".join(missing), None,
-                                   [x.split(" (")[0] for x in missing if not x.startswith("one of")] or list(d["owed_to"]))
-            continue
-        h_eff, dl = holders.at(eff)
-        if h_eff != t["actor"]:
-            verdicts[(t_id, i)] = ("OVERCLAIMED", "the filer no longer held the duty when the transfer would take effect", None)
-            continue
-        if m["act"] == "delegate":
-            holders.add(eff, h_eff, set(dl) | {m["to"]})
-        else:
-            holders.add(eff, m["to"], set())
-        verdicts[(t_id, i)] = ("ADMITTED", "", None)
-    # 2. Releases and closures; revalidations last, in their own admission order.
-    admitted = {}           # transition id -> admission position, of admitted discharges/revalidations
-    first = [x for x in items if x[3]["act"] not in ("delegate", "substitute", "revalidate")]
-    reval = sorted((x for x in items if x[3]["act"] == "revalidate"),
-                   key=lambda x: _admission_pos(view, d, x[0], x[2], x[3]) or (float("inf"), x[0]))
-    for t_id, t, i, m in first + reval:
-        if not all(view.resolves(h) for h in m["evidence"]):
-            verdicts[(t_id, i)] = ("MISSING_EVIDENCE", "cited evidence is not in the view", None)
-            continue
-        if m["act"] == "release":
-            if t["actor"] in set(d["owed_to"]) | set(d["release_by"]):
-                verdicts[(t_id, i)] = ("ADMITTED", "", f"RELEASE:{t['actor']}")
-            else:
-                gid, why = authorized(view, t["actor"], "release", did, view.pos(t_id)[0])
-                verdicts[(t_id, i)] = ("ADMITTED", f"by grant {gid[:12]}", f"RELEASE_BY_GRANT:{gid[:12]}") if gid \
-                    else ("OVERCLAIMED", f"not authorized to release: {why}", None)
-            continue
-        v = _judge_closure(view, did, d, t_id, t, i, m, holders, done, admitted)
-        if v[0] == "ADMITTED" and m["act"] == "revalidate":
-            mine = _admission_pos(view, d, t_id, i, m)
-            late = [x for x in m["revalidates"] if not admitted[x] < mine]
-            if late:
-                v = ("OVERCLAIMED", "revalidates a closure not admitted before it (admission order): "
-                     + ", ".join(x[:12] for x in late), None)
-        if v[0] == "ADMITTED" and m["act"] in ("discharge", "revalidate"):
-            admitted[t_id] = _admission_pos(view, d, t_id, i, m)
-        verdicts[(t_id, i)] = v
-    # 3. Report.
-    closures, periods, revals = [], {}, []
-    for t_id, t, i, m in items:
-        verdict, why, label, *waiting = verdicts[(t_id, i)]
-        cand = {"transition": t_id, "item": i, "act": m["act"], "filer": t["actor"], "basis": t["body"]["basis"],
-                "verdict": verdict, "why": why}
-        if waiting:
-            cand["waiting_for"] = waiting[0]
-        sup = view.support(t_id, i)
-        if sup:
-            cand["acceptor_support"] = sup
-        out["candidates"].append(cand)
-        if verdict != "ADMITTED":
-            continue
-        if m["act"] == "revalidate":
-            revals.append((t_id, t, m, label))
-        elif m["act"] in ("discharge", "impossible", "release"):
-            if "period" in m:
-                periods.setdefault(m["period"], (t_id, label))
-            else:
-                closures.append((m["act"], t_id, t, m, label))
+    _transfers(view, d, items, holders, verdicts)
+    _closures(view, did, d, items, holders, done, verdicts)
+    closures, periods, revals = _candidates(view, out, items, verdicts)
     h, dl = holders.at((float("inf"), ""))
     out["holder"], out["delegates"] = h, sorted(dl)
     _disposition(view, out, d, closures, revals, periods)
-    for verdict, flag in (("PENDING", "PENDING_ACCEPTANCE"), ("OVERCLAIMED", "OVERCLAIMED_CANDIDATE"),
-                          ("UNVERIFIED", "UNVERIFIED_CANDIDATE"), ("UNMET_CONDITION", "UNMET_CANDIDATE")):
-        if any(c["verdict"] == verdict for c in out["candidates"]):
-            out["flags"].append(flag)
+    out["flags"] += [flag for verdict, flag in FLAG_OF if any(c["verdict"] == verdict for c in out["candidates"])]
     return out
 
 
@@ -392,10 +430,7 @@ def _disposition(view, out, d, closures, revals, periods):
     kinds = sorted({KIND_OF[c[0]] for c in closures})
     if d["schedule"] is not None:
         out["periods"] = _periods(view, d, periods, out)
-        if "RELEASED" in kinds:
-            out["disposition"] = "RELEASED"
-        else:
-            out["disposition"] = "SCHEDULED"
+        out["disposition"] = "RELEASED" if "RELEASED" in kinds else "SCHEDULED"
         out["closed_by"] = [c[1] for c in closures] + [v[0] for v in periods.values()]
         return
     out["closed_by"] = [c[1] for c in closures]
@@ -419,14 +454,8 @@ def _disposition(view, out, d, closures, revals, periods):
                                 for tid, _, m in rows for tr in m.get("triggers", [])]
     out["closure_subjects"] = sorted({t["body"]["subject"] for tid, t, _ in rows
                                       if tid not in superseded and t["body"]["subject"]})
-    obs = []
-    for tid, _, m in rows:
-        if tid in superseded:
-            continue
-        for h in m["evidence"]:
-            rec = view.by_type["observation"].get(h)
-            if rec is not None:
-                obs.append(rec["body"]["window"][1])
+    obs = [view.by_type["observation"][h]["body"]["window"][1] for tid, _, m in rows if tid not in superseded
+           for h in m["evidence"] if h in view.by_type["observation"]]
     out["observed_until"] = max(obs) if obs else None
 
 
@@ -487,7 +516,7 @@ def _results(view):
     return out
 
 
-def _challenges(view, duties, results):
+def _challenges(view, results):
     out = {}
     for cid, c in sorted(view.by_type["challenge"].items()):
         b = c["body"]
@@ -511,10 +540,8 @@ def _evaluate_triggers(view, duties, results, workspace):
         return result, detail
 
     for r in duties.values():
-        for item in r.pop("declared_triggers", []):
-            result, detail = run(item["trigger"])
-            r["triggers"].append({"closure": item["closure"], **item["trigger"], "result": result, "detail": detail,
-                                  "current": item["current"]})
+        r["triggers"] += [dict({"closure": item["closure"]}, **item["trigger"], **dict(zip(("result", "detail"), run(item["trigger"]))),
+                               current=item["current"]) for item in r.pop("declared_triggers", [])]
         if r["disposition"] == "DISCHARGED":
             cur = [t for t in r["triggers"] if t["current"]]
             r["trigger_coverage"] = "NONE_DECLARED" if not cur else {k: sum(t["result"] == k for t in cur) for k in TR.RESULTS}
@@ -555,7 +582,7 @@ def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=No
             if m["duty"] not in view.duties:
                 view.missing.add(m["duty"])
     results = _results(view)
-    challenges = _challenges(view, duties, results)
+    challenges = _challenges(view, results)
     _evaluate_triggers(view, duties, results, ws)
     for r in duties.values():
         bad = {c["verdict"] for c in r["candidates"]} - set(VERDICTS)
@@ -591,93 +618,103 @@ def _revision_basis(subjects, triggers, current):
     return any(t["kind"] == "subject_changed" and t["result"] == "NOT_FIRED" for t in triggers)
 
 
-def _trigger_state(out, cur, use_need):
+def _trigger_state(cur, use_need):
     if use_need and not cur:
-        return dict(out, state="UNASSESSED", causes=["the use requires declared triggers; none are current"])
+        return "UNASSESSED", ["the use requires declared triggers; none are current"]
     fired = [f"{t['kind']}: {t['detail']}" for t in cur if t["result"] == "FIRED"]
     if fired:
-        return dict(out, state="STALE", causes=fired)
+        return "STALE", fired
     unknown = [f"{t['kind']}: {t['detail']}" for t in cur if t["result"] == "UNEVALUABLE"]
     if unknown:
-        return dict(out, state="UNASSESSED", causes=unknown)
+        return "UNASSESSED", unknown
     return None
 
 
+def _challenged(rep, ids):
+    return ("CHALLENGED", [f"challenge {c[:12]}: {rep['challenges'][c]['statement']}" for c in ids]) if ids else None
+
+
+def _duty_checks(rep, r, use):
+    """The reliance checks of a duty, in order; each returns (state, causes) or None."""
+    cur = [t for t in r["triggers"] if t["current"]]
+    yield ("CONTESTED", []) if r["disposition"] == "CONTESTED" else None
+    yield ("NOT_CLOSED", [f"disposition {r['disposition']}"]) if r["disposition"] != "DISCHARGED" else None
+    yield _unknown_use(rep, use)
+    yield _challenged(rep, _counting_challenges(rep, set(r["current_closures"]), r))
+    yield _trigger_state(cur, rep["profile"]["uses"][use]["requires_triggers"])
+    yield _freshness(rep, r)
+    subjects = r["closure_subjects"] or ([r["subject"]] if r["subject"] else [])
+    yield None if _revision_basis(subjects, cur, set(rep["view"]["current"])) else \
+        ("UNASSESSED", ["no revision basis: not established on a current revision, "
+                        "and no subject_changed trigger evaluated NOT_FIRED"])
+
+
+def _result_checks(rep, r, use):
+    """The reliance checks of a transition's results, in order."""
+    need = set(rep["profile"]["accept_by"]["results"])
+    yield ("SUPERSEDED", [f"superseded by {', '.join(x[:12] for x in r['superseded_by'])}"]) if r["superseded_by"] else None
+    yield None if need else ("UNASSESSED", ["the profile names nobody whose acceptance closes results"])
+    yield None if r["accepted"] else ("NOT_CLOSED", ["results not accepted by " + ", ".join(sorted(need - set(r["accepted_by"])))])
+    yield _unknown_use(rep, use)
+    counts = set(rep["profile"]["challengers"]) | need
+    yield _challenged(rep, [c for c in r["challenges"] if rep["challenges"][c]["actor"] in counts])
+    yield _trigger_state(r["triggers"], rep["profile"]["uses"][use]["requires_triggers"])
+    yield None if _revision_basis([r["subject"]] if r["subject"] else [], r["triggers"], set(rep["view"]["current"])) \
+        else ("UNASSESSED", ["no revision basis"])
+
+
+def _unknown_use(rep, use):
+    return None if use in rep["profile"]["uses"] else ("UNASSESSED", [f"use {use!r} is not in the recipient profile"])
+
+
+def _freshness(rep, r):
+    if r.get("observed_until") is None or not r.get("fresh_for"):
+        return None
+    if rep["view"]["as_of"] - r["observed_until"] <= r["fresh_for"]:
+        return None
+    return "STALE", [f"last observation ended at {r['observed_until']}, older than {r['fresh_for']}s"]
+
+
 def reliance(rep, target, use):
-    """May a present action rely on duty or transition `target` for `use`? (SPEC §4.4)"""
+    """May a present action rely on duty or transition `target` for `use`? (SPEC §4.4)
+    The first check that fails decides; checks run lazily, in the order of SPEC §4.4."""
     out = {"target": target, "use": use, "assessment_id": rep["assessment_id"], "causes": []}
-    uses = rep["profile"]["uses"]
-    current = set(rep["view"]["current"])
     if target in rep["duties"]:
-        r = rep["duties"][target]
-        if r["disposition"] == "CONTESTED":
-            return dict(out, state="CONTESTED")
-        if r["disposition"] != "DISCHARGED":
-            return dict(out, state="NOT_CLOSED", causes=[f"disposition {r['disposition']}"])
-        if use not in uses:
-            return dict(out, state="UNASSESSED", causes=[f"use {use!r} is not in the recipient profile"])
-        ch = _counting_challenges(rep, set(r["current_closures"]), r)
-        if ch:
-            return dict(out, state="CHALLENGED", causes=[f"challenge {c[:12]}: {rep['challenges'][c]['statement']}" for c in ch])
-        cur = [t for t in r["triggers"] if t["current"]]
-        st = _trigger_state(out, cur, uses[use]["requires_triggers"])
-        if st:
-            return st
-        if r.get("observed_until") is not None and r.get("fresh_for"):
-            if rep["view"]["as_of"] - r["observed_until"] > r["fresh_for"]:
-                return dict(out, state="STALE", causes=[f"last observation ended at {r['observed_until']}, older than {r['fresh_for']}s"])
-        subjects = r["closure_subjects"] or ([r["subject"]] if r["subject"] else [])
-        if not _revision_basis(subjects, cur, current):
-            return dict(out, state="UNASSESSED", causes=["no revision basis: not established on a current revision, "
-                                                         "and no subject_changed trigger evaluated NOT_FIRED"])
-        return dict(out, state="ELIGIBLE")
-    if target in rep["results"]:
-        r = rep["results"][target]
-        if r["superseded_by"]:
-            return dict(out, state="SUPERSEDED", causes=[f"superseded by {', '.join(x[:12] for x in r['superseded_by'])}"])
-        if not rep["profile"]["accept_by"]["results"]:
-            return dict(out, state="UNASSESSED", causes=["the profile names nobody whose acceptance closes results"])
-        if not r["accepted"]:
-            return dict(out, state="NOT_CLOSED", causes=["results not accepted by " +
-                                                          ", ".join(sorted(set(rep["profile"]["accept_by"]["results"]) - set(r["accepted_by"])))])
-        if use not in uses:
-            return dict(out, state="UNASSESSED", causes=[f"use {use!r} is not in the recipient profile"])
-        counts = set(rep["profile"]["challengers"]) | set(rep["profile"]["accept_by"]["results"])
-        ch = [c for c in r["challenges"] if rep["challenges"][c]["actor"] in counts]
-        if ch:
-            return dict(out, state="CHALLENGED", causes=[f"challenge {c[:12]}: {rep['challenges'][c]['statement']}" for c in ch])
-        st = _trigger_state(out, r["triggers"], uses[use]["requires_triggers"])
-        if st:
-            return st
-        if not _revision_basis([r["subject"]] if r["subject"] else [], r["triggers"], current):
-            return dict(out, state="UNASSESSED", causes=["no revision basis"])
-        return dict(out, state="ELIGIBLE")
-    return dict(out, state="MISSING")
+        checks = _duty_checks(rep, rep["duties"][target], use)
+    elif target in rep["results"]:
+        checks = _result_checks(rep, rep["results"][target], use)
+    else:
+        return dict(out, state="MISSING")
+    for found in checks:
+        if found:
+            return dict(out, state=found[0], causes=found[1])
+    return dict(out, state="ELIGIBLE")
+
+
+def _duty_needs(rep, did, r, actor):
+    holds = actor == r["holder"] or actor in r["delegates"]
+    if holds and r["disposition"] == "OPEN":
+        yield {"duty": did, "need": "close", "statement": r["statement"]}
+    if holds and r["disposition"] == "SCHEDULED":
+        for n, p in sorted(r["periods"].items(), key=lambda kv: int(kv[0])):
+            if p["state"] in ("OPEN", "LAPSED"):
+                yield {"duty": did, "need": f"period {n} {p['state']}", "statement": r["statement"]}
+    for c in r["candidates"]:
+        if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []):
+            yield {"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"]}
+    if holds and r["disposition"] == "DISCHARGED":
+        for use in rep["profile"]["uses"]:
+            rl = reliance(rep, did, use)
+            if rl["state"] in ("STALE", "CHALLENGED", "UNASSESSED"):
+                yield {"duty": did, "need": f"revalidate ({rl['state']} for {use})", "causes": rl["causes"]}
 
 
 def frontier(rep, actor):
     """What is open for `actor` in this view. Unowned questions are never in it."""
-    out = []
-    for did, r in sorted(rep["duties"].items()):
-        holds = actor == r["holder"] or actor in r["delegates"]
-        if holds and r["disposition"] == "OPEN":
-            out.append({"duty": did, "need": "close", "statement": r["statement"]})
-        if holds and r["disposition"] == "SCHEDULED":
-            for n, p in sorted(r["periods"].items(), key=lambda kv: int(kv[0])):
-                if p["state"] in ("OPEN", "LAPSED"):
-                    out.append({"duty": did, "need": f"period {n} {p['state']}", "statement": r["statement"]})
-        for c in r["candidates"]:
-            if c["verdict"] == "PENDING" and actor in c.get("waiting_for", []):
-                out.append({"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"]})
-        if holds and r["disposition"] == "DISCHARGED":
-            for use in rep["profile"]["uses"]:
-                rl = reliance(rep, did, use)
-                if rl["state"] in ("STALE", "CHALLENGED", "UNASSESSED"):
-                    out.append({"duty": did, "need": f"revalidate ({rl['state']} for {use})", "causes": rl["causes"]})
-    for t_id, r in sorted(rep["results"].items()):
-        if actor in rep["profile"]["accept_by"]["results"] and actor not in r["accepted_by"] and not r["superseded_by"] \
-                and r["established"]:
-            out.append({"transition": t_id, "need": "accept results"})
+    out = [n for did, r in sorted(rep["duties"].items()) for n in _duty_needs(rep, did, r, actor)]
+    if actor in rep["profile"]["accept_by"]["results"]:
+        out += [{"transition": t_id, "need": "accept results"} for t_id, r in sorted(rep["results"].items())
+                if actor not in r["accepted_by"] and not r["superseded_by"] and r["established"]]
     return out
 
 
