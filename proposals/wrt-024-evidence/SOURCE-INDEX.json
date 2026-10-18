@@ -1,0 +1,605 @@
+{
+  "research_date": "2026-10-18",
+  "sources": [
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "AGENTS.md",
+      "sha256": "1c8f8781ab753c8fdc24730774c59bd0dd44fc929bf294abab16236f2ddcf04c",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:AGENTS.md",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/AGENTS.md"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "SPEC.md",
+      "sha256": "084f4af6f95fe8127d2b5973087ec0f197a7cd2e191bd85d8688e75d0ff3ae75",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:SPEC.md",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/SPEC.md"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "pyproject.toml",
+      "sha256": "33b9a268cfa9ee1fe66b40bc4a1206a1eef8a9b06a84237d09084e2cd3f74b87",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:pyproject.toml",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/pyproject.toml"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "impl-rs/Cargo.toml",
+      "sha256": "978610bbac374fa6d55fc27946527ac3f0e41b7528e928a524d3a9bc27fd2955",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:impl-rs/Cargo.toml",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/impl-rs/Cargo.toml"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "impl-rs/src/ski.rs",
+      "sha256": "4cf8c9bfff2869199b3d028209a4bf93cba43209fc0a253f9d12cb3f9f2cd860",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:impl-rs/src/ski.rs",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/impl-rs/src/ski.rs"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "impl/warrant.py",
+      "sha256": "549368cea17ac7fd74599e1ab15fd005ef4d48edd2349dd1444f44792a0498b1",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:impl/warrant.py",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/impl/warrant.py"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "impl/sigma_glyph_v05.py",
+      "sha256": "80299d6869e7c93ece3455db32c0a6a1346a8b7162e6ef0954a4bd425497bab5",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:impl/sigma_glyph_v05.py",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/impl/sigma_glyph_v05.py"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "impl/sigma_glyph_v06.py",
+      "sha256": "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:impl/sigma_glyph_v06.py",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/impl/sigma_glyph_v06.py"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "trust/ski-runtime-evaluators.json",
+      "sha256": "33ca2a4a043f2f8519731d737aa5f8083a4735fb5453653ad564e61092dba715",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:trust/ski-runtime-evaluators.json",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/trust/ski-runtime-evaluators.json"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "trust/sigma-glyph-anchor-trust.json",
+      "sha256": "a724d3a2c68264082e3785d6e301d73fe69d80b149d5e370640f73432ec22d73",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:trust/sigma-glyph-anchor-trust.json",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/trust/sigma-glyph-anchor-trust.json"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": ".github/workflows/ci.yml",
+      "sha256": "78d53edf5e5617acd2a912aca6c3df9a8df81036150d2ba7202788b56d48894d",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:.github/workflows/ci.yml",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/.github/workflows/ci.yml"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": ".github/workflows/wrt-005.yml",
+      "sha256": "531766849c1e9abaf0a62f65703edee556cbeb18862f54d09245d2c5a2c6ab4f",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:.github/workflows/wrt-005.yml",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/.github/workflows/wrt-005.yml"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": ".github/workflows/x1-cross-repo.yml",
+      "sha256": "c2a4d5c6804c06f16edd6d52a12cb7f56b465424330336e4e940131e2f27040b",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:.github/workflows/x1-cross-repo.yml",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/.github/workflows/x1-cross-repo.yml"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": ".github/workflows/publish.yml",
+      "sha256": "0fbbc3a89bb48716696b655c6577e5b96e3e880cddebc3ffb4a4d7793415d65a",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:.github/workflows/publish.yml",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/.github/workflows/publish.yml"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "tools/x1_cross_repo.sh",
+      "sha256": "3b17f9f88714fdd913f2e81d39aedc80d0b6696dc81fb6101f79736077fce68e",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:tools/x1_cross_repo.sh",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/tools/x1_cross_repo.sh"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "tools/x1_negative_control.sh",
+      "sha256": "6c55eba5737fb47b64ba0464f23e963200309749d204bce607e519f4b2a6d47d",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:tools/x1_negative_control.sh",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/tools/x1_negative_control.sh"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "tools/book1_coverage.py",
+      "sha256": "6536c72518723172bfc50f7f23292c392c9353d7bc035c9ec369513d502bd97a",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:tools/book1_coverage.py",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/tools/book1_coverage.py"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "tools/vendor_primitives.py",
+      "sha256": "9fbc5e36535883711aa6a4bd980b6da12c4860b248c6dbdc38be22529ce48535",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:tools/vendor_primitives.py",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/tools/vendor_primitives.py"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "tests/primitives_pack.py",
+      "sha256": "0ac6a6bcccf8eaf40156bcdc4891ff6c36e554a6bb30a9c87d47d6807be84970",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:tests/primitives_pack.py",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/tests/primitives_pack.py"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "third_party/primitives/PIN.json",
+      "sha256": "64105aea2a6379689ed10ad70b4df1aa53358a8fa8c7bc5ae05e7bea2ac6d35b",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:third_party/primitives/PIN.json",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/third_party/primitives/PIN.json"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "demos/redesign-refund/vendor/sigma/PIN.json",
+      "sha256": "7ddca3e8c3d828f137ff39837310c245bbf18734409b59b93dd44ee619792041",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:demos/redesign-refund/vendor/sigma/PIN.json",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/demos/redesign-refund/vendor/sigma/PIN.json"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "proposals/WRT-006-ski-v1-implementation-substitution.md",
+      "sha256": "f779351e86933aa7a577616aff2a76d305a506a9541855c906940bc313e37bb4",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:proposals/WRT-006-ski-v1-implementation-substitution.md",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/proposals/WRT-006-ski-v1-implementation-substitution.md"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "proposals/WRT-007-per-tag-evaluator-dependency.md",
+      "sha256": "d053205002f44b5fe14ef26362af7f2698865d8443bd3e5686e2d1d28eaf5c8a",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:proposals/WRT-007-per-tag-evaluator-dependency.md",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/proposals/WRT-007-per-tag-evaluator-dependency.md"
+    },
+    {
+      "slice": "W",
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "path": "proposals/WRT-022-authority-falsifiers-crossings.md",
+      "sha256": "6137fd33a7dd51ba319b2f467e160aa47058ff918962e0ad79dfbf33f8b34b37",
+      "availability": "remote-master-snapshot",
+      "git_object": "de0fc912fdfb0bf519a1b0fefca137c13120e354:proposals/WRT-022-authority-falsifiers-crossings.md",
+      "source_url": "https://github.com/s0fractal/warrant/blob/de0fc912fdfb0bf519a1b0fefca137c13120e354/proposals/WRT-022-authority-falsifiers-crossings.md"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "AGENTS.md",
+      "sha256": "851c375b7c190fddaeaf494cd06d4c121895098f0bec368751fbb6cbc384af00",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:AGENTS.md",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/AGENTS.md"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "pyproject.toml",
+      "sha256": "1bf994f712150e04cfeef03ea9bbb91e3c64b4cd4b6645e9383d3eb67986f8a7",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:pyproject.toml",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/pyproject.toml"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "impl/sigma_glyph.py",
+      "sha256": "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:impl/sigma_glyph.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/impl/sigma_glyph.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "impl/sigma_resume.py",
+      "sha256": "575a198d47519f56cb8cf75458d5d9754492433f98650d1ddf1f3580a363e858",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:impl/sigma_resume.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/impl/sigma_resume.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "impl/sigma_federation.py",
+      "sha256": "0554c84f76280263d62faa72fc82dda7d4793b9eff046fd14631259538cce7d9",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:impl/sigma_federation.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/impl/sigma_federation.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "spec/ANCHORS.txt",
+      "sha256": "6415c455444a50876ef75f54c185f1c8f052278a9057814a792bea784b32163c",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:spec/ANCHORS.txt",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/spec/ANCHORS.txt"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": ".github/workflows/ci.yml",
+      "sha256": "4ed2052a35d4db144c235a6d88c8381dca7c240a4bdb1e9821a249ecccc38e5d",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:.github/workflows/ci.yml",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/.github/workflows/ci.yml"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": ".github/workflows/x1-cross-repo.yml",
+      "sha256": "c2a4d5c6804c06f16edd6d52a12cb7f56b465424330336e4e940131e2f27040b",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:.github/workflows/x1-cross-repo.yml",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/.github/workflows/x1-cross-repo.yml"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": ".github/workflows/publish.yml",
+      "sha256": "412069f8e7dc68d9d6e190bc62e168bcc7c796a307b7dfd496e94bb0def75e9d",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:.github/workflows/publish.yml",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/.github/workflows/publish.yml"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": ".github/workflows/candidate-artifact.yml",
+      "sha256": "05a1ebe85fe8aecee503effb7087b43773936e7dad38a30a584dfa50e5dd7490",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:.github/workflows/candidate-artifact.yml",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/.github/workflows/candidate-artifact.yml"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/x1_cross_repo.sh",
+      "sha256": "3b17f9f88714fdd913f2e81d39aedc80d0b6696dc81fb6101f79736077fce68e",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/x1_cross_repo.sh",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/x1_cross_repo.sh"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/x1_negative_control.sh",
+      "sha256": "6c55eba5737fb47b64ba0464f23e963200309749d204bce607e519f4b2a6d47d",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/x1_negative_control.sh",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/x1_negative_control.sh"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/book1_coverage.py",
+      "sha256": "6536c72518723172bfc50f7f23292c392c9353d7bc035c9ec369513d502bd97a",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/book1_coverage.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/book1_coverage.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/test-all.sh",
+      "sha256": "b9bdbc02dcf94ff5ef646cc4dd37caa600cd9d54aa0222d246cc2d26a3b2d4e1",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/test-all.sh",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/test-all.sh"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/read_warrant_pin.sh",
+      "sha256": "56e522b27edcedb7ab12dbb01fbf1aa67f124fe76ee1d6e889098c29669133b8",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/read_warrant_pin.sh",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/read_warrant_pin.sh"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/warrant_gate.py",
+      "sha256": "409c8ceb1204af3e720e97242e2948c7d0cca487b1628b542bc89abf31cdd5b3",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/warrant_gate.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/warrant_gate.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/anchor_governance.py",
+      "sha256": "7f1df185fee25e871d9821ec1e2466a4cffae8ab5e014852c7ef687dea9cdf8f",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/anchor_governance.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/anchor_governance.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/verify_anchors.py",
+      "sha256": "c3c1b51fd6b0a2d9f80c3f93935d8caeb5649ae3e1b0bfcc020a80d65f8901dd",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/verify_anchors.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/verify_anchors.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/candidate_artifact.py",
+      "sha256": "94889eb21d1085130ce6e2749d5a5582b89a25ee1c15c832a029925528d56108",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/candidate_artifact.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/candidate_artifact.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/candidate_install_check.py",
+      "sha256": "72bfb41bc71cd4742785b90c91242fdf71276a158cddbc19d9073f265eec462b",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/candidate_install_check.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/candidate_install_check.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tools/evidence_view.py",
+      "sha256": "8cd23d87282cfa2397663d5d04de066c0d522d82fa14d60f2c564336b7c60026",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tools/evidence_view.py",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tools/evidence_view.py"
+    },
+    {
+      "slice": "S",
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "path": "tests/spec_conformance/vectors.json",
+      "sha256": "8ea03000e5f352f8f87234b68806d554dfbeb7ed0d0b33c2da28dca2eda399f2",
+      "availability": "remote-master-snapshot",
+      "git_object": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b:tests/spec_conformance/vectors.json",
+      "source_url": "https://github.com/s0fractal/sigma-glyph/blob/c864d3ee01a2fe46c528bd6e9552438e64df5f6b/tests/spec_conformance/vectors.json"
+    },
+    {
+      "slice": "P",
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "path": "README.md",
+      "sha256": "f8bb1df8507e4ff4b301a633fbb0184f03862347d7a8839c6f77fc9715ae103e",
+      "availability": "remote-master-snapshot",
+      "git_object": "040d1a777310c8819ad861d38f6fd7f9ef5beb48:README.md",
+      "source_url": "https://github.com/s0fractal/primitives/blob/040d1a777310c8819ad861d38f6fd7f9ef5beb48/README.md"
+    },
+    {
+      "slice": "P",
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "path": "catalog.json",
+      "sha256": "74d355acfef56b2c6b2c3ea4547010fd62d4362c3102354f99514a020f8938aa",
+      "availability": "remote-master-snapshot",
+      "git_object": "040d1a777310c8819ad861d38f6fd7f9ef5beb48:catalog.json",
+      "source_url": "https://github.com/s0fractal/primitives/blob/040d1a777310c8819ad861d38f6fd7f9ef5beb48/catalog.json"
+    },
+    {
+      "slice": "P",
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "path": "run.py",
+      "sha256": "3dcc0aaee8c7887ed5371e61a113969953639fd092ed671f76cc99d49e1cae44",
+      "availability": "remote-master-snapshot",
+      "git_object": "040d1a777310c8819ad861d38f6fd7f9ef5beb48:run.py",
+      "source_url": "https://github.com/s0fractal/primitives/blob/040d1a777310c8819ad861d38f6fd7f9ef5beb48/run.py"
+    },
+    {
+      "slice": "P",
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "path": "MANIFEST.sha256",
+      "sha256": "d73bb63d53baa201636a193874e20bd932ed1d2917ddd7297ef81328a24db841",
+      "availability": "remote-master-snapshot",
+      "git_object": "040d1a777310c8819ad861d38f6fd7f9ef5beb48:MANIFEST.sha256",
+      "source_url": "https://github.com/s0fractal/primitives/blob/040d1a777310c8819ad861d38f6fd7f9ef5beb48/MANIFEST.sha256"
+    },
+    {
+      "slice": "P",
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "path": ".github/workflows/ci.yml",
+      "sha256": "602ff03b2f3fd0157abede6a81ff146843ece1c331b3a1f2dd87ab10734ee4dd",
+      "availability": "remote-master-snapshot",
+      "git_object": "040d1a777310c8819ad861d38f6fd7f9ef5beb48:.github/workflows/ci.yml",
+      "source_url": "https://github.com/s0fractal/primitives/blob/040d1a777310c8819ad861d38f6fd7f9ef5beb48/.github/workflows/ci.yml"
+    },
+    {
+      "slice": "P",
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "path": "tools/import_warrant.py",
+      "sha256": "183fce060c21a76fd0dceb157de6e359a39f042cc77156f9c68de5dac9561747",
+      "availability": "remote-master-snapshot",
+      "git_object": "040d1a777310c8819ad861d38f6fd7f9ef5beb48:tools/import_warrant.py",
+      "source_url": "https://github.com/s0fractal/primitives/blob/040d1a777310c8819ad861d38f6fd7f9ef5beb48/tools/import_warrant.py"
+    },
+    {
+      "slice": "P",
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "path": "tools/check.py",
+      "sha256": "2ad50954d2362817cd81a1c17b53c22a5129d90eedbaf8c172b225f9658f830e",
+      "availability": "remote-master-snapshot",
+      "git_object": "040d1a777310c8819ad861d38f6fd7f9ef5beb48:tools/check.py",
+      "source_url": "https://github.com/s0fractal/primitives/blob/040d1a777310c8819ad861d38f6fd7f9ef5beb48/tools/check.py"
+    },
+    {
+      "slice": "C2",
+      "repository": "warrant",
+      "commit": "71514c04a3c96cc49633d8b239f9d82183dcb897",
+      "path": "pyproject.toml",
+      "sha256": "33b9a268cfa9ee1fe66b40bc4a1206a1eef8a9b06a84237d09084e2cd3f74b87",
+      "availability": "local-unpublished",
+      "git_object": "71514c04a3c96cc49633d8b239f9d82183dcb897:pyproject.toml",
+      "source_url": null
+    },
+    {
+      "slice": "C2",
+      "repository": "warrant",
+      "commit": "71514c04a3c96cc49633d8b239f9d82183dcb897",
+      "path": "impl/loops.py",
+      "sha256": "4305059cb98788cdce019bff0e81160f1be1f48a5c84280a2dcd84dfbb8bce12",
+      "availability": "local-unpublished",
+      "git_object": "71514c04a3c96cc49633d8b239f9d82183dcb897:impl/loops.py",
+      "source_url": null
+    },
+    {
+      "slice": "C2",
+      "repository": "warrant",
+      "commit": "71514c04a3c96cc49633d8b239f9d82183dcb897",
+      "path": "impl/replay.py",
+      "sha256": "83d1c77b7815b97146d9d83e5e65e32ec77b11844ffbb2041dc2a1273ce0951f",
+      "availability": "local-unpublished",
+      "git_object": "71514c04a3c96cc49633d8b239f9d82183dcb897:impl/replay.py",
+      "source_url": null
+    },
+    {
+      "slice": "C2",
+      "repository": "warrant",
+      "commit": "71514c04a3c96cc49633d8b239f9d82183dcb897",
+      "path": "impl/replay_sigma_worker.py",
+      "sha256": "db6d924369f64d5b6c00860466d76000bf9c49723aecf6f4c9b2bb343d5b513d",
+      "availability": "local-unpublished",
+      "git_object": "71514c04a3c96cc49633d8b239f9d82183dcb897:impl/replay_sigma_worker.py",
+      "source_url": null
+    },
+    {
+      "slice": "C2",
+      "repository": "warrant",
+      "commit": "71514c04a3c96cc49633d8b239f9d82183dcb897",
+      "path": "impl/sigma_resume_c864d3e/PIN.json",
+      "sha256": "809764dddbcc78f9338e09da372aecc69b4e8a1576e4e923b96b4192d5b6767e",
+      "availability": "local-unpublished",
+      "git_object": "71514c04a3c96cc49633d8b239f9d82183dcb897:impl/sigma_resume_c864d3e/PIN.json",
+      "source_url": null
+    },
+    {
+      "slice": "C2",
+      "repository": "warrant",
+      "commit": "71514c04a3c96cc49633d8b239f9d82183dcb897",
+      "path": "impl/sigma_resume_c864d3e/sigma_glyph.py",
+      "sha256": "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4",
+      "availability": "local-unpublished",
+      "git_object": "71514c04a3c96cc49633d8b239f9d82183dcb897:impl/sigma_resume_c864d3e/sigma_glyph.py",
+      "source_url": null
+    },
+    {
+      "slice": "C2",
+      "repository": "warrant",
+      "commit": "71514c04a3c96cc49633d8b239f9d82183dcb897",
+      "path": "impl/sigma_resume_c864d3e/sigma_resume.py",
+      "sha256": "575a198d47519f56cb8cf75458d5d9754492433f98650d1ddf1f3580a363e858",
+      "availability": "local-unpublished",
+      "git_object": "71514c04a3c96cc49633d8b239f9d82183dcb897:impl/sigma_resume_c864d3e/sigma_resume.py",
+      "source_url": null
+    }
+  ]
+}

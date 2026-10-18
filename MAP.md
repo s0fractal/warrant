@@ -53,6 +53,8 @@ present on a ref the reviewer was not looking at.
 | `WRT-020` | this repo, `origin/master` | `proposals/WRT-020-policy-binding.md` | `README.md` |
 | `WRT-021` | this repo, `origin/master` | `demos/wrt-021-dogfood/run.py` | `proposals/WRT-021-open-loops.md` |
 | `WRT-022` | this repo, `origin/master` | `proposals/WRT-022-authority-falsifiers-crossings.md` | `proposals/WRT-022-authority-falsifiers-crossings.md` |
+| `WRT-023` | local `wrt-023/effects-gates` (unpublished) | `b87ec4cf73f9a1a8282975bfa83acae65e678029:proposals/WRT-023-effects-and-frontier-gates.md` | `proposals/WRT-024-contract-boundaries-and-provider-artifacts.md` |
+| `WRT-024` | local `docs/sigma-warrant-decoupling` (DRAFT) | `proposals/WRT-024-contract-boundaries-and-provider-artifacts.md` | `proposals/wrt-024-evidence/SOURCE-INDEX.json` |
 
 ## Known identifier collisions
 

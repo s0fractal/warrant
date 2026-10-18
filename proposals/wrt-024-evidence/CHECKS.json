@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-18",
+  "scope": "Research and document checks only; no new runtime implementation tested.",
+  "checks": [
+    {
+      "repository": "primitives",
+      "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+      "command": "python3 tools/check.py",
+      "result": "ALL PASS"
+    },
+    {
+      "repository": "warrant",
+      "commit": "de0fc912fdfb0bf519a1b0fefca137c13120e354",
+      "command": "python3 tools/vendor_primitives.py --check",
+      "result": "vendored copy matches its pin"
+    },
+    {
+      "repository": "sigma-glyph",
+      "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+      "command": "python3 tests/spec_conformance/run_reference.py",
+      "result": "ALL PASS (148/148 observable assertions)"
+    },
+    {
+      "command": "collect.py --warrant <repo> --sigma <repo> --primitives <repo> --out <dir>",
+      "result": "60 source files resolved; four X1 mirrors byte-identical; S2 vendor matches Sigma source; resume absent from declared Sigma wheel modules"
+    },
+    {
+      "command": "python3 tools/repo_map.py --check-map",
+      "result": "32/32 citations mapped; 0 unresolved; 0 malformed/duplicate; 0 canonical drift"
+    },
+    {
+      "command": "git diff --check; JSON parsing; collector syntax; local markdown link check",
+      "result": "PASS"
+    }
+  ]
+}

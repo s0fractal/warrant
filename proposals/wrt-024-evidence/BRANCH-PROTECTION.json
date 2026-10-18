@@ -1,0 +1,27 @@
+{
+  "read_at_utc": "2026-10-18T00:48:37.842213+00:00",
+  "method": "gh api repos/s0fractal/<repo>/branches/master/protection; selected fields only",
+  "repositories": {
+    "warrant": {
+      "required_contexts": [
+        "test",
+        "cross-repo"
+      ],
+      "strict": false,
+      "approving_review_count": 0,
+      "rule_change_performed": false
+    },
+    "sigma-glyph": {
+      "required_contexts": [
+        "test",
+        "lean",
+        "SonarCloud Code Analysis",
+        "GitGuardian Security Checks",
+        "cross-repo"
+      ],
+      "strict": true,
+      "approving_review_count": null,
+      "rule_change_performed": false
+    }
+  }
+}

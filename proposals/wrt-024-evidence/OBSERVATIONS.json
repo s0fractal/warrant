@@ -1,0 +1,45 @@
+{
+  "mirrors_equal": {
+    "tools/x1_cross_repo.sh": true,
+    "tools/x1_negative_control.sh": true,
+    "tools/book1_coverage.py": true,
+    ".github/workflows/x1-cross-repo.yml": true
+  },
+  "warrant_v06_equals_sigma_head_glyph": true,
+  "s2_vendor_equals_sigma": {
+    "sigma_glyph.py": true,
+    "sigma_resume.py": true
+  },
+  "sigma_modules": [
+    "sigma_glyph",
+    "sigma_wave",
+    "sigma_federation"
+  ],
+  "sigma_dependencies": [],
+  "warrant_modules": [
+    "warrant",
+    "sigma_glyph_v05",
+    "warrant_mcp",
+    "warrant_mcp_table",
+    "warrant_mcp_server",
+    "ski_policy",
+    "policy_lang",
+    "warrant_anchor"
+  ],
+  "warrant_dependencies": [
+    "cryptography>=41"
+  ],
+  "warrant_primitives_pin": {
+    "repository": "https://github.com/s0fractal/primitives",
+    "commit": "040d1a777310c8819ad861d38f6fd7f9ef5beb48",
+    "manifest_sha256": "d73bb63d53baa201636a193874e20bd932ed1d2917ddd7297ef81328a24db841"
+  },
+  "primitives_class_names": [
+    "blob-hash",
+    "canon",
+    "sig-message",
+    "verify-sig",
+    "p256-decode"
+  ],
+  "note": "Source inspection only; no public package download or wheel execution claimed."
+}
