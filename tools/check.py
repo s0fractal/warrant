@@ -184,7 +184,7 @@ CHECKS = [
     ("WRT-022 revalidation: one on-target mutant per rule",
      ["python3", "tests/revalidation_mutants.py"], None),
     # WRT-022 S3: minimal grants -- explicit roots and attenuation.
-    ("WRT-022 S3 grants: roots, attenuation, expiry, position, scope (G01-G16)",
+    ("WRT-022 S3 grants: roots, attenuation, expiry, position, scope (G01-G17)",
      ["python3", "tests/grants_test.py"], None),
     ("WRT-022 S3 grants: one on-target mutant per rule",
      ["python3", "tests/grants_mutants.py"], None),

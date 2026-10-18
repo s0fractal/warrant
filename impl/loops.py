@@ -829,6 +829,7 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
              "trust_sha256": hashlib.sha256(trust_bytes).hexdigest(),
              "as_of": as_of, "evaluator": EVALUATOR, "trigger_evaluator": TR.EVALUATOR,
              "replay_evaluator": RP.EVALUATOR, "replay_verifiers": view.verifiers,
+             "grant_evaluator": GR.EVALUATOR,
              "validated_bases": sorted(VALIDATED_BASES),
              "current": sorted(current) if current is not None else None,
              "workspace": ws.identity() if ws is not None else None,

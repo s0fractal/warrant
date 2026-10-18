@@ -26,7 +26,9 @@ view at or before that position, it has not expired there, and either
 Revocation, conflicting grants, quotas, `open_for`, `reassign`, `runner` and
 `migrate_profile` are later slices; S3 validates and wires `release` only.
 """
+import hashlib
 import re
+from pathlib import Path
 
 GRANT = "warrant.grant@draft-2"
 ACTS = {"release", "contest", "adjudicate", "enrol"}
@@ -34,6 +36,9 @@ FIELDS = {"schema", "grantor", "grantee", "acts", "delegable", "duties", "expire
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 MAX_CHAIN = 16
 STATES = {"VALID", "UNGROUNDED", "EXPIRED", "NOT_YET", "NOT_ATTENUATED", "BROKEN_CHAIN"}
+# This evaluator decides admission, so its identity is part of every assessment's
+# identity (review GR-01), like loops', triggers' and replay's.
+EVALUATOR = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 def _strs_sorted_unique(v, member=None):

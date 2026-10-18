@@ -205,6 +205,38 @@ def main():
     check("G16", rep["grants"] == {root: "VALID", loose: "UNGROUNDED"},
           "grants are reported with their state", rep["grants"])
 
+    # G17 (GR-01): the grant evaluator decides admission, so it is in the assessment's
+    # identity. Fresh interpreters over ONE signed store: the same grants.py gives the
+    # same id; a grants.py that drops the delegable rule (and so RELEASES) gives another.
+    import shutil
+    import subprocess
+    import tempfile
+    c = LT.Case()
+    d = c.open()
+    root = grant(c, CODEX, OWNER, ["release"], [], [d])
+    grant(c, OWNER, CLAUDE, ["release"], [], [d], parent=root)
+    release(c, d, CLAUDE)
+    here = Path(GR.__file__).parent
+    copies = []
+    for k, edit in enumerate((False, False, True)):
+        tmp = Path(tempfile.mkdtemp(prefix=f"grant-eval-{k}-"))
+        src = (here / "grants.py").read_text()
+        if edit:
+            src = src.replace('    if not set(g["acts"]) <= set(p["delegable"]):', '    if False:')
+        (tmp / "grants.py").write_text(src)
+        shutil.copy(Path(L.__file__), tmp / "loops.py")
+        copies.append(tmp)
+    probe = ("import json, sys; sys.path.insert(0, sys.argv[1]); sys.path.insert(1, sys.argv[2]); import loops as L; "
+             "r = L.assess(sys.argv[3], sys.argv[4], 10**6, profile=json.loads(sys.argv[5])); "
+             "print(json.dumps([r['view']['assessment_id'], r['duties'][sys.argv[6]]['disposition']]))")
+    runs = []
+    for tmp in copies:
+        p = subprocess.run([sys.executable, "-c", probe, str(tmp), str(ROOT / "impl"), str(c.S.root), str(c.trust),
+                            json.dumps(profile([root])), d], capture_output=True, text=True, check=False)
+        runs.append(json.loads(p.stdout) if p.returncode == 0 else ["crash", p.stderr[-200:]])
+    check("G17", runs[0] == runs[1] and runs[0][1] == "OPEN" and runs[2][1] == "RELEASED" and runs[2][0] != runs[0][0],
+          "a different grant evaluator is a different assessment", runs)
+
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"GRANTS: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"
           + (f" ({', '.join(failed)})" if failed else ""))

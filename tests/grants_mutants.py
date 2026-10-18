@@ -38,6 +38,8 @@ MUTANTS = [
     ("G14", "grants.py", "acts are tested for membership before type",
      [('    if not (_strs_sorted_unique(g["acts"], lambda a: a in ACTS) and g["acts"]):',
        '    if not (set(g["acts"]) <= ACTS and g["acts"]):')]),
+    ("G17", "loops.py", "the grant evaluator is not in the assessment identity (GR-01)",
+     [('             "grant_evaluator": GR.EVALUATOR,\n', '')]),
     ("G15", "grants.py", "the parent is judged at the act's position, not the child's",
      [('        pst, why = self.state(g["parent"], ts, depth + 1)', '        pst, why = self.state(g["parent"], at, depth + 1)')]),
 ]
