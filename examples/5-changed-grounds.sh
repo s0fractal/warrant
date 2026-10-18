@@ -32,7 +32,7 @@ echo "3. the code is fixed, revalidated at the new revision, and accepted"
 printf 'def parse(s):\n    if not s.strip():\n        raise ValueError\n    return s.strip()\n' > "$REPO/parse.py"; git -C "$REPO" commit -qam three; C3=$(git -C "$REPO" rev-parse HEAD)
 BASE3=$(warrant manifest --store "$S" --repo "$REPO" --rev "$C3" parse.py | get blob)
 EV3=$(printf 'review of parse.py at %s\n' "$C3" | warrant blob --store "$S" - | get blob)
-RV=$(as claude file --type transition --at 1400 "{\"basis\":\"ATTESTED\",\"evidence\":[\"$EV3\"],\"relied_on\":[\"$TR\"],\"established\":[\"parse('') and parse('  ') raise\"],\"residual\":[],\"opened\":[],\"closes\":[{\"duty\":\"$D\",\"act\":\"revalidate\",\"evidence\":[\"$EV3\"],\"revalidates\":[\"$TR\"],\"resolves\":[\"$CH\"],\"triggers\":[{\"kind\":\"subject_changed\",\"baseline\":\"$BASE3\"}]}],\"subject\":\"$C3\",\"supersedes\":[],\"triggers\":[]}" | get record)
+RV=$(as claude file --type transition --at 1400 "{\"basis\":\"ATTESTED\",\"evidence\":[\"$EV3\"],\"relied_on\":[\"$TR\"],\"established\":[\"parse('') and parse('  ') raise\"],\"residual\":[],\"opened\":[],\"closes\":[{\"duty\":\"$D\",\"act\":\"revalidate\",\"evidence\":[\"$EV3\"],\"revalidates\":[\"$TR\"],\"triggers\":[{\"kind\":\"subject_changed\",\"baseline\":\"$BASE3\"}]}],\"subject\":\"$C3\",\"supersedes\":[],\"triggers\":[]}" | get record)
 as codex accept --at 1500 "$RV" --item 0 >/dev/null
 expect "after revalidation" "$(view reliance "$C3" "$D" | get state)" ELIGIBLE
 echo "  the capsule keeps the fired trigger as history:"

@@ -412,8 +412,8 @@ def _disposition(view, out, d, closures, revals, periods):
         revals = []
     superseded = {x for r in revals for x in r[2]["revalidates"]}
     rows = [(c[1], c[2], c[3]) for c in chosen] + [(r[0], r[1], r[2]) for r in revals]
-    out["revalidations"] = [{"transition": r[0], "revalidates": r[2]["revalidates"], "resolves": r[2].get("resolves", []),
-                             "assessed_basis": r[3]} for r in revals]
+    out["revalidations"] = [{"transition": r[0], "revalidates": r[2]["revalidates"], "assessed_basis": r[3]}
+                            for r in revals]
     out["current_closures"] = [tid for tid, _, _ in rows if tid not in superseded]
     out["declared_triggers"] = [{"closure": tid, "trigger": tr, "current": tid not in superseded}
                                 for tid, _, m in rows for tr in m.get("triggers", [])]
@@ -574,13 +574,13 @@ def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=No
 # ---------------------------------------------------------------- reading a report
 
 def _counting_challenges(rep, closures, duty=None):
-    """Challenges that count against these closures and are not resolved."""
+    """Challenges that count against these closures. A challenge against a closure
+    that an admitted revalidation superseded no longer counts: that closure is not
+    current any more, and the revalidation needed the same acceptances."""
     counts = set(rep["profile"]["challengers"])
     if duty is not None:
         counts |= set(duty["owed_to"]) | set(duty["accept_by"])
-    resolved = {x for r in (duty or {}).get("revalidations", []) for x in r["resolves"]}
-    return sorted(cid for cid, c in rep["challenges"].items()
-                  if c["target"] in closures and c["actor"] in counts and cid not in resolved)
+    return sorted(cid for cid, c in rep["challenges"].items() if c["target"] in closures and c["actor"] in counts)
 
 
 def _revision_basis(subjects, triggers, current):

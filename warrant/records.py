@@ -149,7 +149,7 @@ def _item(m, evidence):
     _enum(m.get("act"), ACTS, "act")
     act = m["act"]
     optional = {"discharge": ("period", "triggers"), "impossible": ("triggers",), "release": (),
-                "delegate": (), "substitute": (), "revalidate": ("resolves", "triggers")}[act]
+                "delegate": (), "substitute": (), "revalidate": ("triggers",)}[act]
     required = ("duty", "act", "evidence") + {"delegate": ("to",), "substitute": ("to",),
                                                "revalidate": ("revalidates",)}.get(act, ())
     _fields(m, required, optional, what=f"{act} item")
@@ -162,8 +162,6 @@ def _item(m, evidence):
         _actor(m["to"], "to")
     if "revalidates" in m:
         _hexes(m["revalidates"], "revalidates", nonempty=True)
-    if "resolves" in m:
-        _hexes(m["resolves"], "resolves")
     if "triggers" in m:
         _list(m["triggers"], "triggers", _trigger, nonempty=False)
 
@@ -241,6 +239,8 @@ def check(record):
     _actor(record["actor"], "actor")
     _int(record["at"], "at", 0)
     BODIES[record["type"]](record["body"], record["actor"])
+    if record["type"] == "observation":
+        _need(record["body"]["window"][1] <= record["at"], "an observation cannot be filed before it ended")
     C.canon(record)
 
 

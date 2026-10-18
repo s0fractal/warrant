@@ -11,11 +11,12 @@ are not style — breaking them corrupts the thing this project exists to protec
    agent or a one-off contributor.
 
 2. **Never assert review or roster authority in a commit.** A trailer like
-   `Reviewed-by: <X> (2-of-3 roster)` is **false provenance**. Real adoption is a
-   **threshold warrant signed by roster keys** (see `proposals/GOV-anchors*` /
-   the trust-config and threshold-policy machinery), recorded in `.warrants/` —
-   **not** a commit message. An agent is not a roster member and cannot self-grant
-   that authority.
+   `Reviewed-by: <X> (2-of-3 roster)` is **false provenance**. Adoption is an act
+   signed by the actual roster keys — **not** a commit message. The historical
+   threshold adoptions are the Warrant 0.x records in `.warrants/` (they verify
+   with `warrant-verify` 0.12.0 against `trust-config.json`); Warrant 2 has no
+   threshold mechanism (SPEC §9), and inventing one is a governance decision. An
+   agent is not a roster member and cannot self-grant that authority.
 
 3. **An "independent gate" means adversarial counter-vector hunting by a fresh
    reviewer — NOT running the green test suites.** Green suites are *necessary but
@@ -52,9 +53,9 @@ are not style — breaking them corrupts the thing this project exists to protec
    - **Evidence:** signatures, accepted runner attestations, fresh executions
      and deterministic replays are distinct bases. Use the basis admitted by
      the applicable policy; never upgrade one into another. Existing PRs,
-     reproducible artifacts and reports may carry this evidence. WRT-021 is a
-     draft: do not pretend its checker exists or make an unimplemented format
-     a prerequisite for ordinary work.
+     reproducible artifacts and reports may carry this evidence. WRT-021 is
+     superseded by Warrant 2 (`SPEC.md`), whose checker exists: use it where it
+     helps, and do not make it a prerequisite for ordinary work.
    - **Scope and stopping:** distinguish findings that block this action from
      unassigned questions and future research. Record residuals. Do not restart
      a settled review without a relevant new reason; after a candidate changes,
@@ -70,13 +71,13 @@ are not style — breaking them corrupts the thing this project exists to protec
 
 6. **A counterexample is recorded, not staged as red CI.** When a test shows a
    rule broken, the test and the fix land in the same change, and CI stays
-   green. The red goes into the record instead: in the rule's contract
-   (`contracts/<ID>.json`, a `decisions[]` entry whose `counterexample` names
-   the commit it was observed on, the witness, what was observed and what was
-   expected), and in the commit message. Show that a new check can fail by
-   mutating what it guards and watching it go red. Changing a contracted SPEC
-   sentence requires a new decision in its contract; accepted decisions are
-   never rewritten (`tools/contract.py`, `CONTRACTS.md`). Method taken from
+   green. The red goes into the record instead: the regression case names the
+   defect it catches, and the commit message names the commit it was observed
+   on, what was observed and what was expected. Show that a new check can fail
+   by mutating what it guards (`tests/mutants.py`) and watching it go red. A
+   change to a SPEC rule says why in its commit; earlier decisions are never
+   rewritten. The 0.x JSON contracts (`contracts/`, `tools/contract.py`) closed
+   with SPEC v0.4; `HISTORY.md` records what each one became. Method taken from
    sokol-core (ADR-0023/0024).
 
 The retired autonomy-envelope experiment and the lessons preserved from it are

@@ -1,321 +1,53 @@
-name: conformance
-on: [push, pull_request]
+name: ci
 
+# Warrant 2. The job id `test` is a required status check on master; keep it.
+#
+# What runs: the package installed from this checkout into a clean virtualenv,
+# the contract tests and mutants against those installed bytes, the five
+# scenarios through the installed `warrant` command, and the Claude Code plugin
+# bridge against the published warrant-verify 0.12.0 it uses.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
 
-# ONE pin of the sibling repo, for the whole workflow. Symmetric to sigma-glyph's
-# $WARRANT_PIN. A pin is what makes the conformance gate reproducible; it is not a
-# substitute for testing against the sibling's HEAD, which is what
-# tools/x1_cross_repo.sh does.
-#
-# WHAT THE PIN MEANS: a VERIFIED COMPATIBLE BASELINE — the sibling commit whose
-# consumed surfaces this repo has been checked against — not "the sibling's
-# latest". Being behind HEAD is the normal state and is not a defect.
-#
-# REFRESH ONLY when a surface this workflow consumes actually changes: Book I
-# vectors or the evaluator, the ski@v1 runtime contract, the verify-report
-# boundary, or the anchor-trust roster. Do NOT refresh because X1 reports drift;
-# X1's drift report is context for a human, never a trigger. Treating "behind
-# HEAD" as the trigger is a ping-pong generator, because merging the pin bump
-# itself moves this repo's HEAD and so obliges the sibling to bump in reply,
-# forever, over commits that changed nothing either side consumes.
-#
-# A refresh commit MUST cite the old and new sibling commits, name the consumed
-# surface that changed, and include the conformance outputs run at the new pin.
-env:
-  # tools/check.py skips its X1 canary only on the events where
-  # x1-cross-repo.yml runs it instead (its `on:` is push/pull_request to
-  # master). Any other event keeps X1 inside the aggregate, so no event loses
-  # coverage. tests/check_runner.py holds this expression to those triggers.
-  X1_COVERED_BY_WORKFLOW: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.base_ref == 'master') }}
-  SIGMA_PIN: c5ab2ab218bbeaaf4d80d2e49be2cc7b48fb7f37
+permissions:
+  contents: read
 
 jobs:
-  rust:
-    # The Rust implementation (impl-rs, published as the `warrant-verify` crate)
-    # held to the reference byte for byte. Its own job so it runs beside `test`
-    # rather than after it. Python 3.14, not `test`'s 3.12: the reference's
-    # parse-error wording is its interpreter's (3.13 changed it), and the Rust
-    # implementation reproduces the current one -- tests/rs_parity.py refuses an
-    # older interpreter rather than calling its wording a Rust divergence.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: '3.14' }
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version: '1.22' }
-      - run: >-
-          python3 -m pip install --only-binary=:all:
-          'cryptography==45.0.7'
-      - name: Build Go and Rust implementations
-        run: |
-          (cd impl-go && go build -o warrant-go .)
-          (cd impl-rs && cargo build --release --locked)
-      - name: "Rust crate: format, lint, unit + integration tests"
-        run: |
-          cd impl-rs
-          cargo fmt --check
-          cargo clippy --release --locked --all-targets -- -D warnings
-          cargo test --release --locked
-      # `rust-version` in Cargo.toml is a promise to everyone who installs the
-      # crate; this is what keeps it one.
-      - name: "Rust crate: builds and tests on its declared rust-version"
-        run: |
-          cd impl-rs
-          MSRV=$(python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['package']['rust-version'])")
-          rustup toolchain install "$MSRV" --profile minimal
-          cargo +"$MSRV" test --locked --target-dir target/msrv
-      - name: "Rust: settlement grade on the conformance pack (all vectors, no UNRUN)"
-        run: python3 conformance/run.py --candidate "./impl-rs/target/release/warrant-rs probe" --claim settlement
-      - name: "Rust: settlement-grade verification of the repo's own store + selftest"
-        run: |
-          ./impl-rs/target/release/warrant-rs verify --settlement --trust-config trust-config.json
-          ./impl-rs/target/release/warrant-rs selftest
-      - name: "Three-way agreement at both grades (PY/GO/RS)"
-        run: python3 tests/verify_three_way.py
-      - name: "WRT-015 pre-rotation: a retired key cannot rotate (PY/GO/RS, R13)"
-        run: python3 tests/r13_retired_key_denial.py
-      - name: "WRT-014: an adoption meets the adopting jurisdiction's threshold (PY/GO/RS)"
-        run: python3 tests/wrt014_adoption.py
-      - name: "Python and Go: same findings (level, subject) on fuzzed settlement stores"
-        run: python3 tests/go_findings_parity.py 80
-      - name: "Reference defects found by the Rust port: no crash, PY=RS(=GO)"
-        run: python3 tests/reference_defects_2026_10.py
-      - name: "Conformance runner: PY/GO/RS reach settlement; base-only control"
-        run: python3 tests/conformance_runner.py
-      - name: "Rust = reference, byte for byte (shadowed harnesses + settlement fuzz)"
-        run: python3 tests/rs_parity.py --stores 80
-      # What `cargo publish` would upload, built and tested from the packaged
-      # files alone -- so a missing `include` fails here, not on crates.io.
-      - name: "Crate packages and builds from its own files"
-        run: cd impl-rs && cargo package --locked
-
   test:
-    # Codex v0.3 hardening audit P2-c: for a repo centered on reproducible
-    # settlement, dependencies should be immutable. Every action in this repo is
-    # now pinned by commit SHA with the version in a trailing comment; the SHAs
-    # were resolved from each upstream repository, not guessed, and each is the
-    # commit the mutable tag pointed at when it was pinned. Read the comment as
-    # a label, never as the authority — the SHA is what runs. `cryptography` is
-    # bounded, and CI runs in strict mode so a skipped ski@v1 case fails.
-    #
-    # The cost is real and now half-watched: `.github/dependabot.yml` opens a
-    # weekly pull request when a pinned action has a newer release, rewriting
-    # both the SHA and the trailing comment. It notifies; it does not review and
-    # it does not merge, so the bump is still deliberate and still a human's —
-    # the same way SIGMA_PIN above is bumped. SIGMA_PIN itself is NOT in that
-    # config's scope and does not want to be: it is a verified-compatible
-    # baseline, not a version to chase, and x1-cross-repo.yml is already its
-    # canary.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with: { python-version: '3.12' }
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with: { go-version: '1.22' }
-      - run: >-
-          python3 -m pip install --only-binary=:all:
-          'cryptography==45.0.7' 'build==1.5.0'
-          'setuptools==84.0.0' 'wheel==0.48.0' 'PyYAML==6.0.2'
-      # The governance workflow (agent-gate.yml) was once unparseable YAML and
-      # every run failed with no job. This step is MANDATORY — not run through
-      # tools/check.py --allow-unrun, where a missing PyYAML would let it pass
-      # as UNRUN — so a workflow that stops parsing fails CI here, loudly.
-      - name: Workflows parse (mandatory — the governance gate cannot silently break)
-        run: python3 tools/lint_workflows.py
-      # The aggregate's scheduler is itself a thing that can be wrong: --jobs 1
-      # must launch the original order, the pool must launch every check once
-      # with serial ones never overlapping, and the X1 skip must fire only on
-      # the events x1-cross-repo.yml covers. Instrumented children, no real work.
-      - name: The aggregate's scheduler launches what it says it launches
-        run: python3 tests/check_runner.py
-      # CI has no sibling checkout, so it cannot re-resolve cross-repo citations.
-      # It demands instead that every citation be ACCOUNTED FOR in the committed
-      # MAP.md: cite a document nobody has located and the row is missing and
-      # this fails. The first draft of this step ran `--check || true`, a step
-      # that cannot fail -- the exact covering-less-than-it-claims shape the rest
-      # of this file exists to catch, nearly added by the person catching it.
-      - name: Reference map (every cited document is located in MAP.md)
-        run: python3 tools/repo_map.py --check-map
-      # Contracts (tools/contract.py): a SPEC MUST sentence, its witnesses, and the
-      # decisions behind it. History is append-only against the base this change
-      # lands on, so the base is fetched here; a check that silently compared a
-      # contract with itself would be the label-wider-than-predicate failure.
-      - name: Contracts hold, and no accepted decision was rewritten
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-          else
-            BASE="${{ github.event.before }}"
-          fi
-          # A new branch's first push has no `before` (all zeros): compare with
-          # master, which is what the branch will land on.
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            git fetch -q --depth=1 origin master
-            BASE=$(git rev-parse FETCH_HEAD)
-          else
-            git fetch -q --depth=1 origin "$BASE"
-          fi
-          echo "contracts history base: $BASE"
-          python3 tools/contract.py check --base "$BASE"
-      # The single entry point a reader is told to run. CI runs it too, so the
-      # command in llms.txt cannot rot into something only the workflow does --
-      # and an UNRUN check fails here rather than passing quietly.
-      # A same-owner paired PR may test its sibling candidate; everything else
-      # tests against the sibling's master HEAD. The first draft exported
-      # github.head_ref on EVERY same-owner PR, and tools/x1_cross_repo.sh
-      # (mirrored byte-for-byte with sigma-glyph, and strict about an explicit
-      # ref on purpose) then tried to clone a sigma-glyph branch that only
-      # existed here -- an ordinary one-sided PR turned the aggregate red
-      # (PR #55). The existence probe is the same rule x1-cross-repo.yml
-      # applies inline; tests/x1_sibling_ref.sh holds this file to it.
-      - name: Resolve X1 sibling ref (paired candidate only if the sibling branch exists)
-        env:
-          X1_EVENT_NAME: ${{ github.event_name }}
-          X1_PR_HEAD_OWNER: ${{ github.event.pull_request.head.repo.owner.login }}
-          X1_PR_HEAD_REF: ${{ github.head_ref }}
-        run: |
-          REF="$(bash tools/x1_sibling_ref.sh)"
-          echo "X1_SIBLING_REF=$REF" >> "$GITHUB_ENV"
-      # The retirement records re-digest each retired subject from the git
-      # object at the before revision; a shallow checkout cannot resolve it,
-      # and the checker refuses rather than skipping. Give it the history.
-      - name: Full history for the retirement records (before revisions must resolve)
-        run: git fetch --no-tags --unshallow || git fetch --no-tags
-      - name: One command (tools/check.py, UNRUN is not a pass)
-        run: python3 tools/check.py --allow-unrun
-      - name: Conformance (SPEC s8 vectors, byte-exact)
-        run: python3 impl/warrant.py conformance examples
-      - name: Selftest (live round-trip + tamper detection)
-        run: python3 impl/warrant.py selftest
-      - name: Package smoke test (built wheel -> `warrant` CLI, bundled oracle, offline, any cwd)
-        run: |
-          python3 -m build --wheel --no-isolation --outdir /tmp/warrant-wheel
-          # The wheel name follows pyproject's version; a literal here broke the
-          # 0.10.0 release branch the moment the version moved.
-          VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          WHEEL="/tmp/warrant-wheel/warrant_verify-${VERSION}-py3-none-any.whl"
-          echo "WARRANT_WHEEL=$WHEEL" >> "$GITHUB_ENV"
-          python3 -m pip install --no-deps "$WHEEL"
-          ( cd /tmp && warrant selftest )
-          ( cd /tmp && warrant conformance "$GITHUB_WORKSPACE/examples" | grep -q "CONFORMANCE: ALL PASS" )
-      - name: Evidence-pack guard (demo packs verify; ski re-executes; no private keys shipped)
-        run: python3 tests/evidence_pack.py
-      # The same wheel the smoke test installed, replayed the way a stranger
-      # would: fresh venv, cwd outside the checkout, nothing importable from
-      # impl/, evaluator digest checked before anything runs. Per-record vector
-      # plus the fail-closed controls (evaluator failure without fallback, root
-      # and nested CAS identity). Exit 3 is a typed refusal, not a pass.
-      - name: Evidence-pack replay (built wheel, clean venv, per-record vector + fail-closed controls)
-        run: WARRANT_REPLAY_WHEEL="$WARRANT_WHEEL" bash demos/air-canada/replay-clean.sh
-      - name: MCP sealing proxy (classifier, sealer, stdio round-trip -> verifiable pack)
-        run: python3 tests/mcp_seal.py
-      - name: ski@v1 policy predicates (truth table, real re-execution, warrant integration)
-        run: python3 tests/ski_policy.py
-      - name: Witness profile bindings (offline, no external stamping)
-        run: |
-          python3 tests/witness.py
-          python3 tests/witness_bindings.py
-          python3 tests/witness_binding_mutations.py
-      - name: Merkle anchoring (RFC 6962 structure, inclusion proofs, store integration)
-        run: python3 tests/anchor.py
+        with:
+          python-version: '3.11'
 
-      - name: in-toto / DSSE projection (binding, PAE signature, tamper controls)
-        run: python3 tools/intoto.py selftest
+      - name: Install the package into a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/v"
+          "$RUNNER_TEMP/v/bin/pip" install --quiet .
+          SITE=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)')
+          test -f "$SITE/warrant/provider/sigma_resume.py"
+          echo "WARRANT_IMPL=$SITE" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/v/bin" >> "$GITHUB_PATH"
 
-      - name: Agent gate isolation (a change must not be able to approve itself)
-        run: python3 tests/gate_isolation.py
-      # Pin semantics and the refresh rule are at the top of this file.
-      - name: ski@v1 runtime conformance (SPEC s8.2, oracle = sigma-glyph pinned)
+      - name: Contract, computation, conditions and primitives (installed bytes)
+        working-directory: tests
         run: |
-          git clone -q https://github.com/s0fractal/sigma-glyph /tmp/sigma-glyph
-          git -C /tmp/sigma-glyph checkout -q "$SIGMA_PIN"
-          # Running warrant's ski@v1 against the PINNED SIBLING (an evaluator that
-          # differs byte-wise from the bundled, provenance-bound one) is a
-          # cross-repo DIFFERENTIAL — an unpinned oracle. It must be requested
-          # explicitly: without WARRANT_SIGMA_DIFFERENTIAL=1 the re-executor
-          # refuses an unpinned evaluator, and settlement refuses it regardless.
-          SIGMA_GLYPH=/tmp/sigma-glyph/impl WARRANT_SIGMA_DIFFERENTIAL=1 \
-            python3 impl/warrant.py conformance examples | grep -q "ski: re-run -> pass"
-      - name: Build Go implementation
-        run: cd impl-go && go build -o warrant-go .
-      - name: Go conformance (second implementation)
-        run: ./impl-go/warrant-go conformance examples
-      - name: Go ski@v1 CAS identity (foreign key refused; Python mirror)
-        run: cd impl-go && go test ./... -run TestSigmaCASIdentity -count=1
-      # Exit status alone would accept the historical false pass: this command
-      # once printed "ALL PASS (33/33 eval)" and exited 0 while skipping the 8
-      # object and 8 deserialize vectors entirely. So the expected summary is
-      # DERIVED from the pinned vector file — and matched with -x, ANCHORED to a
-      # whole line. A substring match is forgeable: the producer prints one line
-      # per vector and a vector's id is data, so an id equal to the expected text
-      # satisfies a substring check while the real summary says something else.
-      - name: Book I coverage assertion behaves (rejection matrix)
-        run: python3 tools/book1_coverage.py --selftest
-      - name: Go sigma-glyph conformance, exact coverage (pinned vectors)
-        shell: bash
+          for t in contract compute conditions primitives; do python "${t}_test.py"; done
+
+      - name: Mutants (each critical rule must fail its own case)
+        run: WARRANT_IMPL= python tests/mutants.py
+
+      - name: Scenarios through the installed `warrant` command
+        working-directory: ${{ runner.temp }}
+        run: bash "$GITHUB_WORKSPACE/examples/run-all.sh"
+
+      - name: Claude Code plugin bridge (Warrant 0.x format, published warrant-verify 0.12.0)
         run: |
-          set -euo pipefail
-          V=/tmp/sigma-glyph/tests/spec_conformance/vectors.json
-          echo "expecting: $(python3 tools/book1_coverage.py "$V")"
-          # --check, not grep: the rule is POSITIONAL (the summary must be the
-          # transcript's last line) because a vector id may contain newlines and
-          # can otherwise forge a standalone line anywhere above it. pipefail
-          # binds the producer's own exit status into the same decision.
-          ./impl-go/warrant-go sigma-conformance "$V" | tee /dev/stderr \
-            | python3 tools/book1_coverage.py --check "$V"
-      - name: Go selftest (schema and verification edges)
-        run: ./impl-go/warrant-go selftest examples
-      - name: Go verifies warrant store layout
-        run: ./impl-go/warrant-go verify .warrants
-      - name: Build Rust implementation (third impl)
-        run: cd impl-rs && cargo build --release --locked
-      - name: Rust conformance (§8 WarrantIDs + signatures + §8.3 negatives; from-scratch SHA-256/Ed25519)
-        run: ./impl-rs/target/release/warrant-rs conformance examples
-      - name: Rust Ed25519 selftest (RFC 8032 TV1 + field/SHA-512)
-        run: ./impl-rs/target/release/warrant-rs edtest
-      - name: Ed25519 differential (Rust vs Python cryptography, multi-key)
-        run: python3 tests/ed25519_differential.py --n 200
-      # SIGMA_GLYPH here points at the pinned sibling (unpinned vs the bundled
-      # evaluator), so this cross-repo/cross-impl differential — settlement math
-      # included — is requested explicitly with WARRANT_SIGMA_DIFFERENTIAL=1. In
-      # production (no such flag) an unpinned override is refused, and settlement
-      # refuses it outright.
-      - name: "Cross-implementation agreement: differential (PY/GO/RS) + negative + settlement (strict)"
-        run: WARRANT_REQUIRE_SIGMA=1 SIGMA_GLYPH=/tmp/sigma-glyph/impl WARRANT_SIGMA_DIFFERENTIAL=1 ./tests/agree_check.sh
-      - name: Hostile-store hardening (cycles, malformed JSON, unverified ski; Python/Go agree)
-        run: python3 tests/hostile.py
-      # Three seeds, ~120 s each, independent processes: run them side by side
-      # and fail closed if ANY seed diverges (every log is printed either way,
-      # so a divergence still names its seed and iteration).
-      - name: "Differential fuzzer (randomized PY/GO agreement over canon/verify, multi-seed)"
-        shell: bash
-        run: |
-          set -uo pipefail
-          pids=(); seeds=(1337 4242 20240717)
-          for s in "${seeds[@]}"; do
-            python3 tests/fuzz_differential.py --iters 400 --seed "$s" > "fuzz-$s.log" 2>&1 &
-            pids+=($!)
-          done
-          fail=0
-          for i in "${!pids[@]}"; do
-            wait "${pids[$i]}" || { echo "seed ${seeds[$i]}: exit $?"; fail=1; }
-          done
-          for s in "${seeds[@]}"; do echo "=== seed $s"; cat "fuzz-$s.log"; done
-          rm -f fuzz-*.log
-          exit "$fail"
-      - name: Settlement-grade verification of the repo's own store
-        run: |
-          python3 impl/warrant.py verify --settlement --trust-config trust-config.json
-          ./impl-go/warrant-go verify --settlement --trust-config trust-config.json .warrants
-      # Catches docs that promise a subcommand or flag this tree does not have.
-      # The publish workflow runs the same check against the built wheel, which
-      # is where the promise actually reaches a stranger.
-      # The matching rule gets its own rejection matrix, for the same reason the
-      # coverage assertion did: a flag check that matches substrings accepts a
-      # documented `--js` because the CLI offers `--json`.
-      - name: Documented CLI surface exists
-        run: |
-          python3 tools/check_release_surface.py --selftest
-          python3 tools/check_release_surface.py
+          python -m venv "$RUNNER_TEMP/old"
+          "$RUNNER_TEMP/old/bin/pip" install --quiet 'warrant-verify==0.12.0'
+          WARRANT_PLUGIN_CLI="$RUNNER_TEMP/old/bin/warrant" python integrations/claude-code-plugin/test_plugin.py

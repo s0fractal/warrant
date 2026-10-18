@@ -115,11 +115,10 @@ def authority_cases():
     w.close(d, actor=CODEX, act="release")
     prof = E.profile(grant_roots=[root])
     rep = w.assess(prof=prof)
-    no_root = w.assess()
     check("U4", rep["grants"][child] == "NOT_ATTENUATED" and last(rep, d)["verdict"] == "OVERCLAIMED",
           "a grant beyond its parent's delegable acts is refused", (rep["grants"], verdicts(rep, d)))
     w.close(d, actor=STRANGER, act="release")
-    rep = w.assess(prof=prof)
+    rep, no_root = w.assess(prof=prof), w.assess()
     check("U5", rep["duties"][d]["disposition"] == "RELEASED" and last(no_root, d)["verdict"] == "OVERCLAIMED",
           "a root the recipient accepted authorizes; the same root unaccepted does not",
           (verdicts(rep, d), rep["grants"]))

@@ -81,7 +81,7 @@ release_by  list of actors who may release it (owed_to may always release)
 condition   one of:
   {"attest": {}}
   {"observe": {"observers": [actor…], "probe": hex64, "expect": string, "fresh_for": int|null}}
-  {"compute": {"runtime": "sigma-resume", "input": hex64, "environment": hex64, "expect": hex64}}
+  {"compute": {"runtime": <runtime id, §7>, "input": hex64, "environment": hex64, "expect": hex64}}
 schedule    null | {"start": int, "every": int > 0}
 requires    list of duty ids that MUST be discharged before this one
 serves      list of duty ids this one serves (a purpose link; it grants nothing)
@@ -119,7 +119,6 @@ evidence     list of hex64, a subset of the transition's evidence
 period       int, required iff the duty has a schedule and act is discharge
 to           actor, required iff act is delegate or substitute
 revalidates  non-empty list of transition ids, required iff act is revalidate
-resolves     list of challenge ids (revalidate only)
 triggers     list of triggers (§5) (discharge, impossible, revalidate only)
 ```
 
@@ -146,6 +145,8 @@ raw      list of hex64: captured outputs
 ```
 
 ### 3.5 grant
+
+The grantor is the record's actor.
 
 ```
 grantee    actor
@@ -188,12 +189,13 @@ record or blob that is not in the view is reported as missing, never as absence.
 | act | filer | also needs |
 | --- | --- | --- |
 | discharge, impossible, revalidate | the holder or a delegate **at the item's position** | condition met (§4.2), required acceptances |
-| delegate | the holder at its position | acceptance by `to` |
-| substitute | the holder at its position | acceptance by `to` and by one of owed_to ∪ release_by |
+| delegate | the holder at its position and at its effect position | acceptance by `to` |
+| substitute | the holder at its position and at its effect position | acceptance by `to` and by one of owed_to ∪ release_by |
 | release | an actor in owed_to ∪ release_by, or the grantee of a valid grant (§4.5) | — |
 
 A transfer takes effect at its **effect position**: the latest of its own position
-and the earliest qualifying acceptances. Holder and delegates at a position are
+and the earliest qualifying acceptances. Transfers are applied in order of effect
+position. Holder and delegates at a position are
 those after every admitted transfer whose effect position is not after it. A
 later transfer neither authorizes an earlier filing nor invalidates an earlier
 admitted one. `serves`, a key binding, or being named in a duty grant no authority.
@@ -222,7 +224,14 @@ and the earliest acceptance position of each required acceptor. Filing early and
 being accepted late admits late.
 
 `impossible` is admitted under the same rules, except for 6; for a `compute`
-condition its basis is a replayed cycle (§7). `release` is admitted per §4.1.
+condition its basis is a replayed cycle (§7), otherwise `ATTESTED`, and then it
+also needs the acceptance of at least one owed_to actor. `release` is admitted
+per §4.1.
+
+For a scheduled duty, an item discharges one period `n` (window
+`[start + n·every, start + (n+1)·every)`); its transition MUST NOT be earlier than
+the window's start, and an observation it relies on MUST lie inside the window.
+`impossible` and `revalidate` are not defined for scheduled duties.
 
 A candidate that is not admitted has a verdict, kept in the report:
 `PENDING` (an acceptance is missing), `OVERCLAIMED` (wrong filer, wrong basis,
@@ -232,7 +241,8 @@ be validated here). None of them closes anything.
 ### 4.3 Disposition
 
 A one-off duty is `OPEN`, `DISCHARGED`, `IMPOSSIBLE`, `RELEASED`, or `CONTESTED`
-when admitted closures disagree. A scheduled duty has, for every period n whose
+when admitted closures disagree. A scheduled duty is `SCHEDULED` (or `RELEASED`)
+and has, for every period n whose
 start `start + n·every ≤ as_of`: `COVERED` (a discharge for n is admitted),
 `OPEN` (the period has not ended) or `LAPSED` (it ended uncovered). A discharge of
 one period covers no other.
@@ -251,7 +261,9 @@ closure or a transition's results for a named use. States:
   established on a current revision, or covered by a `subject_changed` trigger
   that evaluated NOT_FIRED;
 - `STALE` — a current trigger FIRED, or an observation is older than `fresh_for`;
-- `CHALLENGED` — a challenge counts (§4.6) and no admitted revalidation resolves it;
+- `CHALLENGED` — a challenge by an actor who counts (§4.6) targets a current
+  closure. A revalidation of that closure, admitted with the same acceptances,
+  supersedes it, and the challenge stays in the record;
 - `SUPERSEDED` — the transition's results were replaced (§4.7);
 - `UNASSESSED` — something needed could not be evaluated here (a trigger is
   UNEVALUABLE, the use is not in the profile, the use requires declared triggers
@@ -318,9 +330,13 @@ access to a key do not create authority.
 
 ## 7. Computation
 
-The only admitted runtime is `sigma-resume`: Σ-GLYPH resumable Book I reduction,
-provided by the pinned kernel in `warrant/provider/` (source: s0fractal/sigma-glyph
-at the commit in its `PIN.json`). Its file digests are part of the evaluator
+The only provider is `sigma-resume`: Σ-GLYPH resumable reduction, provided by the
+pinned kernel in `warrant/provider/` (source: s0fractal/sigma-glyph at the commit
+in its `PIN.json`). Runtime ids are the kernel's own:
+`sigma-book1-0.6.0/hash-thunk/leftmost-outermost` (Book I) and
+`sigma-resume-draft/ski+Y+M+W/hash-thunk/leftmost-outermost` (a draft profile with
+Y, M, W, under which cycles exist). An environment is the blob
+`{"sigma-environment": [sorted node hashes]}`. Its file digests are part of the evaluator
 identity. Execution captures the pinned bytes once, checks them, and executes
 exactly those bytes in a separate interpreter (`-I -B`, no files reopened); the
 process boundary isolates module names, it is not an OS sandbox.
@@ -341,7 +357,7 @@ replayed. Replay verifies the whole chain; a verified-replay cache keyed by
 verifier identity changes cost, never the answer or the task.
 
 An `impossible` item for a `compute` condition cites a **cycle** blob
-`{"cycle": "sigma-resume", "target", "input", "environment", "witness": hex64}`;
+`{"cycle": "sigma-resume", "target", "input", "environment", "witness": hex64, "lost": []}`;
 the recipient verifies the witness. It establishes that this root, under this
 runtime and environment, does not reach a normal form. It says nothing about
 other uses of the term.

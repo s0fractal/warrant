@@ -1,13 +1,14 @@
 cff-version: 1.2.0
-title: "Warrant: signed, hash-addressed decision records for AI agents"
+title: "Warrant: transitions of work, exact closures and what remains open"
 abstract: >-
-  A record format for agent decisions. Each record states what was decided, under
-  which policy pinned by the hash of its exact bytes, because of which reasons,
-  on which evidence — signed by the actor and addressed by its own hash. Reasons
-  may be deterministic bounded computations that any reader re-executes offline,
-  so a decision's justification can be checked without trusting whoever produced
-  the log. Includes settlement semantics, key-state with threshold governance,
-  and three implementations that agree byte-exact on every conformance vector.
+  An agent protocol for recording transitions of work with their residual. A
+  transition says what was done, on what basis, what it established, which exact
+  conditions it closes, which questions it opens and what it leaves
+  unestablished. Assessment of one immutable view answers whether a present use
+  may rely on a closure, what is open for whom, and what the next session needs.
+  Computation conditions are credited only by the recipient's own replay with a
+  pinned Sigma-GLYPH kernel. Warrant 0.x (signed decision records with re-runnable
+  reasons) is preserved at the tag history/warrant-0.x-2026-10-18.
 message: "If you use or evaluate this work, please cite it."
 type: software
 license: MIT
@@ -20,10 +21,9 @@ authors:
 keywords:
   - provenance
   - AI agents
-  - accountability
+  - obligations
   - content-addressed
   - Ed25519
-  - EU AI Act
   - verifiable computation
 references:
   - type: article
@@ -34,11 +34,10 @@ references:
     year: 2026
     doi: "10.5281/zenodo.22172098"
     notes: >-
-      The write-up of this format (paper version 1.0.0, deposited 2026-08-30
-      from commit d83984f; preprint, not peer reviewed).
+      Describes Warrant 0.x (paper 1.0.0 from commit d83984f; 1.1.0 is
+      10.5281/zenodo.23414323). Preprint, not peer reviewed.
   - type: software
-    title: "Sigma-GLYPH: a portable deterministic check engine"
+    title: "Sigma-GLYPH"
     repository-code: "https://github.com/s0fractal/sigma-glyph"
     notes: >-
-      Supplies the ski@v1 check runtime; its Book I determinism, totality and
-      memory bound are mechanised in Lean 4.
+      Supplies the sigma-resume kernel that Warrant 2 pins (commit c864d3e).

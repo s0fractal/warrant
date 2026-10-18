@@ -1,331 +1,97 @@
 # Warrant
 
-**When a machine says something was allowed, can you check why — without
-trusting the machine that allowed it?**
+Warrant records transitions of work: what was done, on what basis, what it
+established, which exact conditions it closed, which questions it opened, and
+what it leaves unestablished. The next agent reads a short capsule instead of a
+transcript, and cannot credit the work with more than its grounds support.
 
-Warrant is a small, signed, content-addressed decision record. It names what was
-decided, the exact policy bytes in force, the reasons and evidence, the actor,
-and the decisions that came before it. An executable reason can be re-run by the
-reader instead of trusted as a log entry.
+Review is one use. Ordinary decisions, running services, periodic obligations
+and reproducible computations are others.
 
-```json
-{
-  "decision": "reject",
-  "subject": {"hash": "d5cf37…", "note": "PR-42"},
-  "under": ["cb3a0a…"],
-  "because": [
-    {"kind": "check", "check": "05d234…", "runtime": "cmd@v1",
-     "verdict": "fail", "transcript": "9dc0c3…"},
-    {"kind": "prose", "text": "policy clause 1: coverage drops"}
-  ],
-  "evidence": ["9dc0c3…"],
-  "actor": {"id": "agent-b@vendor2"},
-  "prior": ["00f79f…"],
-  "ts": 1751677200
-}
-```
+- Contract: [SPEC.md](SPEC.md)
+- What the rebuild retired, and where the previous generation lives: [HISTORY.md](HISTORY.md)
 
-The canonical body hash is the record's identity. Changing the decision,
-policy reference, reason, evidence or prior edge changes that identity. The
-signature says which key signed the body; whether that key belongs to the named
-actor is a separate trust-configuration question. A rejection is a durable
-record, not an absence.
-
-**What a clean verification does not show: that the reason implements the
-policy.** Warrant pins the policy bytes and re-runs the reason, but nothing binds
-one to the other. A record filed under a `DENY_ALL` policy, with a re-executed
-`ski@v1` reason that computes something unrelated, and an `accept`, verifies with
-0 errors in all three implementations, even at settlement grade with
-`--require-bound` ([`tests/countermodel_policy_binding.py`](tests/countermodel_policy_binding.py)).
-Nor that the decision is the one the policy answered: an `accept` whose reason is
-the policy's own compilation, replaying to *false*, also verifies clean. The
-missing links, policy → computation → decision, are open design work
-([WRT-020](proposals/WRT-020-policy-binding.md), with a read-only profile that
-reports them); whether the facts are true is
-[WRT-010](proposals/WRT-010-fact-provenance.md).
-
-Warrant is not an agent framework, blockchain or observability system. It is one
-file format and five filing verbs, designed to be boring.
-
-The format is written up in *The Reason Runs Again*
-([10.5281/zenodo.22172098](https://doi.org/10.5281/zenodo.22172098), paper
-v1.0.0, 2026-08-30 — deposited, not peer reviewed; see
-[`papers/`](papers/README.md)).
-
-## Try it
-
-**[Open the browser lab](https://s0fractal.github.io/warrant/)** — inspect a signed
-repository example, re-run its portable reason locally, change its bytes, or
-open your own store. The browser runs the Rust core compiled to WebAssembly;
-the report keeps the same schema as the CLI. Its local limits and build identity
-are shown on the page. See [`web/README.md`](web/README.md) for implementation
-and deployment details.
+## Install
 
 ```bash
-pipx install warrant-verify   # or: pip install warrant-verify
-
-warrant init
-warrant keygen --out me.key
-printf 'demo diff\n' > diff.patch
-printf 'clause 1: no coverage drop\n' > policy.txt
-printf '#!/bin/sh\necho coverage 71%%; exit 1\n' > check.sh && chmod +x check.sh
-
-POL=$(warrant policy add policy.txt)
-P=$(warrant propose --subject diff.patch --under "$POL" \
-      --reason "utility functions needed" --actor me@host --key me.key)
-./check.sh > run1.txt
-R=$(warrant reject "$P" --check check.sh --verdict fail --transcript run1.txt \
-      --reason "clause 1: coverage drop" --actor me@host --key me.key)
-printf '#!/bin/sh\necho coverage 84%%; exit 0\n' > check.sh
-./check.sh > run2.txt
-A=$(warrant accept "$R" --check check.sh --verdict pass --transcript run2.txt \
-      --actor me@host --key me.key)
-
-warrant why "$A"
-warrant verify
+pip install ./                # from a checkout; Python ≥ 3.10, depends on `cryptography`
 ```
 
-Every file used above is created above. The final warnings say that the key-to-
-actor binding is unverified until a trust configuration supplies that authority;
-a valid signature is not silently promoted into a valid identity claim. Supplying
-it is two commands — *you* decide which key speaks for `me@host`, and which
-record the chain starts from:
+This installs one command, `warrant`, and the package `warrant`. There is no
+release of this generation yet. The package published as `warrant-verify` (≤ 0.12.0)
+is the retired 0.x generation.
+
+## Start here
+
+Two agents, one condition, one transition, one exact acceptance, one capsule:
 
 ```bash
-warrant trust add --actor me@host --key me.key     # writes trust.json
-warrant trust root "$P"
-warrant verify --settlement --trust-config trust.json   # 0 errors, 0 warnings
-warrant verify --settlement --trust-config trust.json --require-bound   # same, and an actor's own unbound key would be an ERR (WRT-018)
+W=$(mktemp -d); S=$W/store; T=$W/trust.json
+warrant init --store $S
+for a in claude codex; do warrant key --out $W/$a.key; warrant trust --trust $T --actor $a --key $W/$a.key; done
+
+# claude takes on a condition that codex must accept
+warrant file --store $S --key $W/claude.key --actor claude --type duty '{"statement":"parse() rejects empty input","holder":"claude","owed_to":["codex"],"accept_by":["codex"],"release_by":[],"condition":{"attest":{}},"schedule":null,"requires":[],"serves":[],"answers":null,"subject":null}'
+# -> {"record": "<DUTY>"}
+
+# claude records the work, with what it does not establish and a new question
+warrant file --store $S --key $W/claude.key --actor claude --type transition '{"basis":"ATTESTED","evidence":[],"relied_on":[],"established":["parse(\"\") raises ValueError"],"residual":["non-ASCII input not examined"],"opened":[{"text":"reject whitespace-only input too?","scope":null}],"closes":[{"duty":"<DUTY>","act":"discharge","evidence":[]}],"subject":null,"supersedes":[],"triggers":[]}'
+# -> {"record": "<TRANSITION>"}
+
+warrant frontier --store $S --trust $T codex          # codex owes an acceptance
+warrant accept --store $S --key $W/codex.key --actor codex <TRANSITION> --item 0
+warrant capsule --store $S --trust $T <DUTY>          # result, basis, limits, when to revisit, evidence ids
+warrant questions --store $S --trust $T               # the open question: nobody's duty yet
 ```
 
-The transcripts matter. Without them the accept carries no new evidence and no
-new outcome fingerprint, and settlement grade reports it as a re-litigation that
-cites nothing new — a filer who writes a different word is not a new reason
-(THREAT-MODEL SA-1). warrant never runs `check.sh` itself: a `cmd@v1` verdict
-is the filer's claim, bound to the script and transcript bytes; only `ski@v1`
-reasons are re-executed by the verifier.
+The same loop, with assertions, is `examples/1-work-loop.sh`.
 
-The `warrant-verify` distribution installs four commands:
+## Scenarios
 
-- `warrant` — file, inspect and verify decisions;
-- `warrant-mcp-server` — let an MCP client file its own decisions;
-- `warrant-mcp` — seal calls passing through another MCP server;
-- `warrant-anchor` — batch WarrantIDs into a Merkle anchor.
+Each script uses only the installed `warrant` command and checks what it
+claims. Run them all with `bash examples/run-all.sh`.
 
-`ski@v1` reasons replay offline through one bundled Σ-GLYPH Book I v0.5
-evaluator, pinned by digest and checked before import. Reserved `ski@v2` is not
-admitted by any body version and ships no executable candidate bytes.
+| Script | Shows |
+| --- | --- |
+| `1-work-loop.sh` | condition → transition with evidence and residual → exact acceptance → capsule and frontier; a new question leaves the result standing |
+| `2-service.sh` | "the endpoint answers ok": the holder's "done" is refused; a named observer's probe record closes it; two hours later it is stale |
+| `3-periodic.sh` | one period covered, one lapsed, one open; a past discharge covers no other period; every answer names its time |
+| `4-computation.sh` | pause → resume → result, replayed by the recipient with the pinned Sigma kernel; a verified cycle makes `M M` impossible, while `K I (M M)` still computes |
+| `5-changed-grounds.sh` | a changed file makes relying on a closure STALE; a counterexample makes it CHALLENGED; history stays DISCHARGED; an accepted revalidation restores it |
 
-The longer walkthrough, including negative controls, is
-[`docs/try-this-in-fifteen-minutes.md`](docs/try-this-in-fifteen-minutes.md).
+## The model in one table
 
-## Hardware keys (P-256)
+| Record | Says |
+| --- | --- |
+| `duty` | a condition someone owes someone: attest, observe, or compute; optionally scheduled |
+| `transition` | work done: basis, evidence, established, residual, opened questions, exact closures |
+| `accept` | acceptance of one exact closure item (or of a transition's results) |
+| `observation` | what an observer saw, when, with which probe |
+| `grant` | permission to release named duties, attenuable |
+| `challenge` | a counterexample against a closure or a result |
 
-A key that lives in phone hardware (Secure Enclave, StrongBox) signs ECDSA P-256,
-not Ed25519. Warrant accepts both (WRT-019): Python, Go and Rust verify both; the
-Python CLI also makes a software P-256 key to try it with. A hardware signer files
-the same entry shape (`alg: ecdsa-p256-sha256`, compressed key, 64-byte low-S `r‖s`):
+Assessment is a pure function of one view: the store's bytes read once, the
+recipient's trust file and profile, a time, and the current revision. It
+answers `reliance` (ELIGIBLE, STALE, CHALLENGED, SUPERSEDED, UNASSESSED,
+NOT_CLOSED, ...), `frontier`, `questions` and `capsule`. A key authenticates; it
+does not authorize. A computation is credited only by the recipient's own replay.
+
+## Checks
 
 ```bash
-warrant keygen --alg p256 --out phone.key        # never overwrites an existing file
+for t in contract compute conditions primitives; do python3 tests/${t}_test.py; done
+python3 tests/mutants.py        # every critical rule has a mutant that must fail its own case
+bash examples/run-all.sh        # needs `warrant` on PATH
 ```
 
-## In Claude Code
+Green checks are not an independent review (AGENTS.md rule 3).
 
-A plugin witnesses the permission decisions Claude Code makes about your agent's
-tool calls: auto-mode denials, and calls that were asked about and then ran. It
-keeps them as signed records in a local store and never takes part in the
-decision itself.
+## Limits
 
-```text
-/plugin install warrant --marketplace s0fractal/warrant
-```
+Not in this version: threshold adoption, key rotation, P-256, policy
+compilation, grants for acts other than release, goals as a distinct kind, and
+any independent implementation besides this Python one. The process boundary
+around the Sigma kernel isolates module names; it is not an OS sandbox. A view
+cannot prove its own completeness, and every report says so.
 
-Then `/warrant:decisions` lists what was refused, what ran after asking, and
-which asks have no observed outcome. See
-[`integrations/claude-code-plugin/`](integrations/claude-code-plugin/README.md)
-for what a record proves and what it cannot see.
-
-## Machine boundary
-
-For CI, MCP or an agent framework, verify an initialized store with
-`--store-mode --json`:
-
-```sh
-warrant --store ./evidence-pack/.warrants verify --store-mode --json | jq -e '.ok'
-warrant-go verify --store-mode --json ./evidence-pack/.warrants | jq -e '.ok'
-```
-
-```json
-{"report":"warrant.verify-report@v0","grade":"base","ok":true,
- "records":3,"errors":0,"warnings":1,
- "findings":[{"level":"WARN","subject":"<WarrantID>","message":"..."}]}
-```
-
-`--store-mode` is part of the safe predicate: a missing or uninitialized store
-fails closed instead of looking like an empty successful verification. Python
-takes the store through the global `--store`; Go takes it positionally.
-
-Consumers may rely on these boundaries:
-
-- `ok == (errors == 0)`, and the error/warning counts equal the corresponding
-  findings;
-- `warrant.verify-report@v0` is closed: seven top-level fields and
-  `{level, subject, message}` findings;
-- Python and Go agree on normative fields and `(level, subject)` pairs; `message`
-  is human prose and may differ;
-- `grade` distinguishes `base` from `settlement`;
-- the report is unsigned and carries **no Warrant authority**.
-
-`warrant why <WarrantID> --json` emits the same walk `why` prints as one
-`warrant.why@v0` object — every record visited, its status (`verified`,
-`verify_failed`, `missing`) and its whole body — with `why`'s exit status. It is
-a convenience, **not** a SPEC surface: `verified` there means the name recomputes
-and the record carries a valid signature by its actor, not that the key is
-trusted; ask `verify --settlement` for that.
-
-The normative contract is [`SPEC.md` §11](SPEC.md#11-verification-report--warrantverify-reportv0),
-with [`schemas/verify-report-v0.schema.json`](schemas/verify-report-v0.schema.json)
-alongside. `tools/check_release_surface.py` fails CI and publishing when the
-documented CLI surface is absent from the checkout or built wheel.
-
-## Re-execute a real specimen
-
-The Air Canada specimen is an authored reconstruction of the decision record
-the airline did not have; it is not evidence produced by Air Canada.
-
-```bash
-pipx install warrant-verify==0.9.0
-curl -LO https://github.com/s0fractal/warrant/releases/download/v0.8.0/air-canada-pack.zip
-echo '74b36f1d5c7777ea9a3ee240e32f992483a3cd2c0dda0c7d065229c49f1a8249  air-canada-pack.zip' | shasum -a 256 -c
-unzip air-canada-pack.zip
-warrant --store air-canada-pack/.warrants verify
-warrant --store air-canada-pack/.warrants check b423b6a82c3451bfbd75563b39e6391093a64db57941d9247a61a6c620bd997f
-```
-
-The last command re-executes the content-addressed, ATP-bounded reason locally;
-it does not merely read the filed verdict. The pinned asset, source specimen and
-portable layout are documented in [`demos/air-canada/`](demos/air-canada/),
-[`EVIDENCE-PACK.md`](EVIDENCE-PACK.md) and [`PUBLISHING.md`](PUBLISHING.md).
-
-## Integrate it
-
-As a GitHub Actions gate:
-
-```yaml
-- uses: s0fractal/warrant@v0.6.0
-  with:
-    store: ./evidence-pack
-    version: '0.6.0'
-```
-
-Pin `0.6.0` or newer for domain-separated signatures. The action checks the
-required capability, emits the machine report and fails on verification errors;
-see [`action.yml`](action.yml).
-
-From an MCP client:
-
-<!-- mcp-name: io.github.s0fractal/warrant -->
-
-```bash
-warrant-mcp-server --store /abs/path/.warrants
-claude mcp add warrant -- warrant-mcp-server --store /abs/path/.warrants
-```
-
-The server exposes filing, store verification and reason inspection with fresh
-`ski@v1` replay. It is deliberately distinct from `warrant-mcp`, the sealing
-proxy for somebody else's downstream MCP server. See
-[`integrations/mcp-server/`](integrations/mcp-server/) and
-[`integrations/mcp/`](integrations/mcp/).
-
-## Contract map
-
-| Surface | Authority |
-|---|---|
-| Record format, canonicalization, signatures, replay, settlement and trust config | [`SPEC.md`](SPEC.md) |
-| JSON schemas | [`schemas/`](schemas/) — derivative; SPEC remains normative |
-| Portable `.warrants/` bundle | [`EVIDENCE-PACK.md`](EVIDENCE-PACK.md) |
-| Writing WPL checks | [`docs/authoring-checks.md`](docs/authoring-checks.md) |
-| WPL design boundary | [`docs/policy-language-choice.md`](docs/policy-language-choice.md) |
-| Threat model | [`THREAT-MODEL.md`](THREAT-MODEL.md) |
-| External implementation contract | [`conformance/`](conformance/) |
-| Releases and artifacts | [`PUBLISHING.md`](PUBLISHING.md) and [`CHANGELOG.md`](CHANGELOG.md) |
-
-The Python reference implements the five filing verbs and settlement. Go is an
-independent verify/settle implementation. Rust (`impl-rs/`, the `warrant-verify`
-crate) is a from-scratch, dependency-free implementation of the whole `warrant`
-CLI — filing, settlement grade, `ski@v1` re-execution, Ed25519 signing and
-verification — held to the reference's output byte for byte by
-`tests/rs_parity.py`. All three were produced within one author/model lineage:
-agreement is conformance evidence, not independent custody or adoption.
-
-```bash
-python3 impl/warrant.py conformance examples
-python3 impl/warrant.py selftest
-(cd impl-go && go build -o warrant-go .)
-./impl-go/warrant-go conformance examples
-(cd impl-rs && cargo build --release)
-./impl-rs/target/release/warrant-rs conformance examples
-python3 tests/differential.py
-```
-
-A fourth JavaScript candidate was created without Warrant implementation source
-and reached the complete base grade under a self-certified iterative local-model
-experiment. Its settlement grade is unimplemented. This establishes bounded
-implementability against that frozen corpus, not external custody, adoption or
-correctness beyond it; see [`needs/README.md`](needs/README.md).
-
-To test another implementation without executing ours:
-
-```bash
-python3 conformance/run.py --candidate "./your-verifier probe"   # 166 vectors
-python3 conformance/run.py --candidate "./your-verifier probe" --self-check
-```
-
-The runner checks the candidate's typed answer. 83
-of the 166 vectors are MUST-REJECT, and the pack reports `base` and `settlement`
-separately. Details and digest verification are in
-[`conformance/README.md`](conformance/README.md).
-
-## Breaking signature boundary
-
-Since release `0.6.0`, signatures cover the domain-separated message
-
-```text
-"warrant-sig-v1:" || WarrantID_raw
-```
-
-rather than the bare WarrantID. There is no dual-accept window. Pre-0.6.0
-signatures therefore do not verify under the current protocol. Where the old
-signing key is available, migrate only signatures — WarrantIDs and body links do
-not change:
-
-```bash
-warrant resign --key mykey.key --dry-run
-warrant resign --key mykey.key
-```
-
-## Settlement
-
-Settlement is a separate verification grade defined by SPEC §5.1, §7, §9 and
-§12. It derives key state and active roots from explicit trust configuration,
-replays settlement-active reasons, and requires new evidence or a new outcome
-fingerprint to reopen a subject. Prose alone never reopens settlement.
-
-```bash
-python3 impl/warrant.py verify --settlement --trust-config trust.json
-python3 impl/warrant.py settle <settling-wid> candidate-body.json
-./impl-go/warrant-go verify --settlement --trust-config trust.json <store>
-python3 tests/settlement.py
-```
-
-An unusable requested trust configuration fails closed; it does not fall back to
-a clean base-grade report. `genesis.json` is advisory unless explicitly pinned
-by the verifier.
-
-The only known format consumer is the sibling `sigma-glyph` repository. It is a
-working same-author integration, not outside adoption. Published software,
-protocol adoption, green CI, self-review and independent validation remain
-different claims.
-
-License: MIT.
+Licensed MIT. See [TRADEMARK.md](TRADEMARK.md) for the name.

@@ -1,5 +1,7 @@
 # Model actors in this project
 
+> Status: written for Warrant 0.x. Its mechanisms (threshold adoption, `tools/settle.py`, key state) are historical since the Warrant 2 rebuild (`HISTORY.md`); its positioning of model actors as delegates still holds.
+
 ## The position, stated once
 
 A model actor here is a **delegated, bounded actor operating under a root of
