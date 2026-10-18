@@ -21,6 +21,25 @@ This installs one command, `warrant`, and the package `warrant`. There is no
 release of this generation yet. The package published as `warrant-verify` (≤ 0.12.0)
 is the retired 0.x generation.
 
+### Compute
+
+Attest and observe need nothing else. `compute` conditions are replayed by the
+Sigma provider, the `sigma_provider` module of the `sigma-glyph` wheel. That
+wheel is not on PyPI in this version; install it from the exact commit Warrant
+names in `pyproject.toml`:
+
+```bash
+pip install "./[compute]"                    # warrant + sigma-glyph from that commit
+# or, offline, from a wheelhouse built once:
+pip wheel --no-deps -w wheelhouse "git+https://github.com/s0fractal/sigma-glyph@<commit>"
+pip install --no-index wheelhouse/sigma_glyph-*.whl ./
+warrant compute --store S provider           # the provider's identity
+```
+
+A recipient accepts a provider by putting that identity in its profile's
+`providers`; without an accepted, installed provider every REPLAYED basis is
+UNVERIFIED.
+
 ## Start here
 
 Two agents, one condition, one transition, one exact acceptance, one capsule:

@@ -10,7 +10,7 @@ from . import compute as P
 from . import records as R
 from . import triggers as TR
 
-PROFILE_FIELDS = ("uses", "accept_by", "targets", "grant_roots", "challengers")
+PROFILE_FIELDS = ("uses", "accept_by", "targets", "grant_roots", "challengers", "providers")
 VERDICTS = ("ADMITTED", "PENDING", "OVERCLAIMED", "MISSING_EVIDENCE", "UNMET_CONDITION", "UNVERIFIED")
 RELIANCE = ("ELIGIBLE", "STALE", "CHALLENGED", "SUPERSEDED", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSING")
 START = (-1, "")
@@ -37,14 +37,16 @@ def profile_problem(prof):
         R._list(prof["targets"], "targets", R._text)
         R._hexes(prof["grant_roots"], "grant_roots")
         R._actors(prof["challengers"], "challengers")
+        R._hexes(prof["providers"], "providers")
     except R.Invalid as e:
         return str(e)
     return None
 
 
-def profile(uses=None, results_by=(), targets=(), grant_roots=(), challengers=()):
+def profile(uses=None, results_by=(), targets=(), grant_roots=(), challengers=(), providers=()):
     return {"uses": dict(uses or {"act": {"requires_triggers": False}}), "accept_by": {"results": list(results_by)},
-            "targets": list(targets), "grant_roots": list(grant_roots), "challengers": list(challengers)}
+            "targets": list(targets), "grant_roots": list(grant_roots), "challengers": list(challengers),
+            "providers": list(providers)}
 
 
 # ---------------------------------------------------------------- the view
@@ -228,6 +230,8 @@ def _replayed(view, cond, m):
         return V("MISSING_EVIDENCE", f"a REPLAYED item cites exactly one {want}")
     if view.provider is None:
         return V("UNVERIFIED", "no provider in this view")
+    if view.provider.id not in view.profile["providers"]:
+        return V("UNVERIFIED", f"provider {view.provider.id[:16]} is not one this recipient accepts")
     fn = P.replay_cycle if want == "cycle" else P.replay
     try:
         label, why = fn(view.provider, view.snap, cond, docs[0], view.profile["targets"])

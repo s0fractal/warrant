@@ -2,10 +2,12 @@ name: ci
 
 # Warrant 2. The job id `test` is a required status check on master; keep it.
 #
-# What runs: the package installed from this checkout into a clean virtualenv,
-# the contract tests and mutants against those installed bytes, the five
-# scenarios through the installed `warrant` command, and the Claude Code plugin
-# bridge against the published warrant-verify 0.12.0 it uses.
+# Two installs, both from local files:
+#   base     warrant alone: attest and observe work, compute refuses honestly;
+#   compute  warrant + the sigma-glyph wheel built from the commit pyproject.toml
+#            names (the [compute] extra), from a wheelhouse, with --no-index.
+# The tests and mutants run against the installed bytes; the scenarios run
+# through the installed `warrant` command from outside the checkout.
 on:
   push:
     branches: [master]
@@ -18,19 +20,38 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
 
-      - name: Install the package into a clean environment
+      - name: Wheelhouse (warrant from this checkout, sigma-glyph from the pinned commit)
         run: |
+          set -euo pipefail
+          COMMIT=$(python -c 'import re; print(re.search(r"sigma-glyph@([0-9a-f]{40})", open("pyproject.toml").read()).group(1))')
+          python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" . "git+https://github.com/s0fractal/sigma-glyph@$COMMIT"
+          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41'
+          ls "$RUNNER_TEMP/wh"
+
+      - name: Base install has no provider, and says so
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/base"
+          "$RUNNER_TEMP/base/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" warrant-loops
+          ! "$RUNNER_TEMP/base/bin/python" -c 'import sigma_provider' 2>/dev/null
+          cd "$RUNNER_TEMP" && "$RUNNER_TEMP/base/bin/warrant" init --store s >/dev/null
+          out=$("$RUNNER_TEMP/base/bin/warrant" compute --store s provider 2>&1 || true)
+          echo "$out" | grep -q "no Sigma provider installed"
+
+      - name: Compute install (warrant + sigma-glyph wheel, no index)
+        run: |
+          set -euo pipefail
           python -m venv "$RUNNER_TEMP/v"
-          "$RUNNER_TEMP/v/bin/pip" install --quiet .
+          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" warrant-loops sigma-glyph
+          "$RUNNER_TEMP/v/bin/python" -m sigma_provider | tail -1
           SITE=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)')
-          test -f "$SITE/warrant/provider/sigma_resume.py"
           echo "WARRANT_IMPL=$SITE" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/v/bin" >> "$GITHUB_PATH"
 

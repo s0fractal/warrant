@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Scenario 4: a computation. Pause -> resume -> result, closed by the recipient's
-# own replay with the pinned Sigma kernel; a verified cycle that makes one
+# own replay with the installed, accepted Sigma provider; a verified cycle that makes one
 # computation impossible without condemning the term elsewhere.
 source "$(dirname "$0")/lib.sh"
 actor claude; actor owner
+# Computation needs the Sigma provider (the sigma-glyph wheel that ships
+# sigma_provider). The recipient accepts it by the identity of its bytes.
+PROVIDER=$(warrant compute --store "$S" provider | get provider)
+echo "  provider: $PROVIDER"
 P="$WORK/profile.json"
-echo '{"uses":{"act":{"requires_triggers":false}},"accept_by":{"results":[]},"targets":["owner/compute"],"grant_roots":[],"challengers":[]}' > "$P"
+echo '{"uses":{"act":{"requires_triggers":false}},"accept_by":{"results":[]},"targets":["owner/compute"],"grant_roots":[],"challengers":[],"providers":["'"$PROVIDER"'"]}' > "$P"
 view=(--store "$S" --trust "$T" --profile "$P" --as-of 5000)
 compute_duty() { # INPUT ENV RUNTIME EXPECT
   as claude file --type duty --at 1000 "{\"statement\":\"compute $1\",\"holder\":\"claude\",\"owed_to\":[\"owner\"],\"accept_by\":[],\"release_by\":[],\"condition\":{\"compute\":{\"runtime\":\"$3\",\"input\":\"$1\",\"environment\":\"$2\",\"expect\":\"$4\"}},\"schedule\":null,\"requires\":[],\"serves\":[],\"answers\":null,\"subject\":null}" | get record
