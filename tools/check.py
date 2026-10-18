@@ -362,6 +362,10 @@ CHECKS = [
     # immutable, so its evaluator is fixed and checked BEFORE import).
     ("ski runtimes: admitted evaluator pinned and refused-before-import on drift",
      ["python3", "tests/ski_runtime_evaluators.py"], None),
+    ("ski runtimes: the evaluator loader executes exactly the bytes it hashed (R1-R4)",
+     ["python3", "tests/sigma_loader_read_once.py"], None),
+    ("ski runtimes: one on-target mutant per loader rule",
+     ["python3", "tests/sigma_loader_mutants.py"], None),
     # WRT-013 stage S1 (draft registration). A draft that quietly moved a
     # validity surface would be worse than no draft, so the inertness is
     # asserted by execution: ski@v2 and body 0.3 stay rejected (Python, and Go
