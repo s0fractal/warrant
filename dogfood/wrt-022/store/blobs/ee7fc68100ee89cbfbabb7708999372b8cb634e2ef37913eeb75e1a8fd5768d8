@@ -1,0 +1,38 @@
+# Re-review: RV-01/GR-01 fixed; one new ordering regression RV-02
+
+Code revisions: revalidation 568da2c; store ed6c9f5; S3 99867583622fe52cde5be76dabdee56337699386. Full resolved IDs are in SOURCE.json.
+
+Verdict: AMEND the revalidation candidate for RV-02. GR-01's S3 identity fix is ACCEPTED within that bounded scope; the full stacked S3 candidate inherits RV-02 and is not approved for merge/closure here. No additional grant attenuation or identity finding is open in this review.
+
+## Prior findings closed
+
+RV-01: accepted_at() identifies the earliest exact-bound acceptance for every required acceptor. The admission position includes the mapping's own transition and those acceptances, with record-ID tie-breaking. The original delayed-acceptance repro now correctly leaves the premature revalidation OVERCLAIMED / reliance STALE; V11 and genuinely later V12 pass.
+
+GR-01: grants.EVALUATOR is included in the assessment view and identity. The original fresh-interpreter repro now gives different assessment IDs when only the grant evaluator's behavior changes. G17 checks stability and separation; its targeted mutation is killed. The terminology for obsolete trigger declarations now correctly distinguishes current reevaluation from a recorded past observed result.
+
+## RV-02 [P2] The second pass checks authority after future holder changes
+
+Location: impl/loops.py _assess_duty(), specifically `for ... in first + reval`, and the call into _judge_closure() using the mutated shared state.
+
+All non-REVALIDATED mappings are applied first, including later SUBSTITUTED and DELEGATED mappings. Revalidations are then checked against the final holder/delegate state, rather than the state applicable at each revalidation's declared position. Fixing the order among revalidations does not make future transfers valid authority for an earlier action.
+
+Independent signed-fixture counterexample, with predecessor admission order already valid:
+
+- Claude initially holds a duty owed to Codex. Original closure is admitted at 11 and has a FIRED trigger.
+- Owner files a revalidation at 20, accepted by Codex at 21. Owner is not holder or delegate at either position; the correct result is OVERCLAIMED.
+- Only later, a substitution is filed at 50; Owner consents at 51 and creditor Codex consents at 52.
+- On the candidate, the same earlier Owner revalidation changes from OVERCLAIMED to ADMITTED in the enlarged view; it hides the old fired trigger and produces ELIGIBLE. The earlier implementation at 84b878e correctly leaves it OVERCLAIMED even after the transfer.
+
+The mirror control is equally important: let Claude, the then-current holder, file/obtain acceptance for the revalidation at 20/21. It is ADMITTED before the later substitution. The candidate changes it to OVERCLAIMED after that unrelated later transfer, making reliance STALE. The previous implementation preserves its admission. Thus this is a regression introduced by the two-pass restructuring, not a request for revocation, S4 or a new authority system.
+
+Expected: judge holder/delegate authority using the applicable state at the mapping's defined action/admission position, while enforcing the effective predecessor admission order fixed by RV-01. Later transfer/consent must neither retrospectively authorize a non-holder nor invalidate the then-holder's admitted action. Reconstruct the appropriate prefix state, or use an equivalent position-aware event evaluation; avoid checking against the end-of-view state. Add both witnesses and a genuinely later incoming-holder positive control. A targeted mutant that uses final holder/delegates should fail the new regression. Keep V11/V12 and existing transfer/consent tests green.
+
+No independent physical-time guarantee is being requested. The witness uses only the declared event positions already used by this model, with wide timestamp gaps; record-ID tie semantics cannot account for the observed result.
+
+## Evidence and limitations
+
+Observed exact-candidate tests: revalidation 12 PASS and mutations 8/8 killed on target; grants 17 PASS and mutations 13/13 on target. The new witness is outside these cases. repro-holder-order.py runs against either export. holder-new.json records the candidate, holder-old.json the previous 84b878e; both use real signed fixture records and temporary stores. rv01-fixed.json and gr01-fixed.json independently rerun the previous reviewer witnesses on the corrected candidates.
+
+The two real current S1/S2 mappings remain pending; this round signs review evidence only. Their own actors do not exhibit this fixture's substitution, but the current revalidation mechanism needs its bounded regression fix before implementation acceptance. No actual mapping acceptance, revalidation-duty closure, or S3-duty closure was signed here. A new source fix requires a current declared dependency slice for subsequent real revalidation; keep existing signed records unchanged.
+
+Not rerun: full check.py/Go/Rust/CI and all older mutation campaigns. No whole-protocol security review, S4-S8 implementation review, new authority registry, or decision about package extraction is implied. Producer worktrees, code, pushes, task/threads, protection, merges and releases were not changed.

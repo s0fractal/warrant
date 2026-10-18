@@ -1,0 +1,33 @@
+{
+  "before": {
+    "grants_sha256": "b28879acc863a3cd7eb57dcff9b7157344067c8269e6183b3e3651c43fc5a1cc",
+    "assessment_id": "ce01990a4c63045735aeaca17c5fb5a48eb7902bffb7c5fdb3e8306c0b1b8085",
+    "disposition": "OPEN",
+    "candidates": [
+      {
+        "transition": "82efb777f420d08d204d5a4e33991eccf1458838bd534ad50bc761404f7ddf17",
+        "mapping": 0,
+        "disposition": "RELEASED",
+        "claimed_basis": "ATTESTED",
+        "verdict": "OVERCLAIMED",
+        "why": "not authorized to release: b9912cae7d42: NOT_ATTENUATED (acts the parent did not make delegable)"
+      }
+    ]
+  },
+  "after_evaluator_rule_changed": {
+    "grants_sha256": "8bfbaf313765d723d1ce87ece269fd93036cb4f0028e40867c68cfbcf175aa58",
+    "assessment_id": "d17644ce7f0447a4e1f91a1bde7584bb52f65924d8f6a957cc2f54855243473a",
+    "disposition": "RELEASED",
+    "candidates": [
+      {
+        "transition": "82efb777f420d08d204d5a4e33991eccf1458838bd534ad50bc761404f7ddf17",
+        "mapping": 0,
+        "disposition": "RELEASED",
+        "claimed_basis": "ATTESTED",
+        "verdict": "ADMITTED",
+        "why": "by grant b9912cae7d42"
+      }
+    ]
+  },
+  "same_assessment_id": false
+}

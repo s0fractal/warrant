@@ -37,6 +37,12 @@ MUTANTS = [
     ("V11", "loops.py", "a predecessor's admission position is its filing position (RV-01)",
      [('    pos = (tbody["ts"], t_id)\n    got = view.accepted_at(did, t_id, i, m["evidence"])\n    for actor in d["acceptance"]:',
        '    pos = (tbody["ts"], t_id)\n    got = view.accepted_at(did, t_id, i, m["evidence"])\n    for actor in d["acceptance"] if m["disposition"] == "REVALIDATED" else ():')]),
+    ("V13", "loops.py", "revalidations are judged against the final holder and delegates (RV-02)",
+     [('            state["holder"], state["delegates"] = h, set(dl)\n', '')]),
+    ("V16", "loops.py", "a transfer takes effect at its filing, not at its last required consent",
+     [('    pos = max((tbody["ts"], t_id), got.get(m["to"], (tbody["ts"], t_id)))',
+       '    pos = (tbody["ts"], t_id)'),
+      ('    if m["disposition"] == "SUBSTITUTED" and creditors:', '    if False:')]),
 ]
 
 

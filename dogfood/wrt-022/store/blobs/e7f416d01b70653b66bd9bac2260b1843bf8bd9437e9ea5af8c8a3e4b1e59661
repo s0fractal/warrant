@@ -1,0 +1,22 @@
+{
+  "revalidation_code": "568da2c428e35e7094b30bcf4440f77a84c03ea8",
+  "revalidation_store": "ed6c9f5d8947961a6db0c2d3995c57ed785a0cd0",
+  "S3": "99867583622fe52cde5be76dabdee56337699386",
+  "verdicts": {
+    "revalidation": "AMEND RV-02",
+    "S3": "AMEND inherited RV-02; GR-01 fix ACCEPT"
+  },
+  "findings_closed": [
+    "RV-01",
+    "GR-01"
+  ],
+  "findings_open": [
+    "RV-02"
+  ],
+  "observed_tests": {
+    "revalidation": 12,
+    "revalidation_mutants_killed_on_target": 8,
+    "grants": 17,
+    "grants_mutants_killed_on_target": 13
+  }
+}

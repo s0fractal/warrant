@@ -503,6 +503,18 @@ def _admission_pos(view, did, d, t_id, tbody, i, m):
     return pos
 
 
+def _transfer_pos(view, did, d, t_id, tbody, i, m):
+    """The position at which an admitted transfer took effect: the latest of its own
+    transition, the incoming actor's earliest consent and, for a substitution, the
+    earliest consent by the creditor or release_by (each as (ts, record id))."""
+    got = view.accepted_at(did, t_id, i, m["evidence"])
+    pos = max((tbody["ts"], t_id), got.get(m["to"], (tbody["ts"], t_id)))
+    creditors = [got[a] for a in set(d["owed_to"]) | set(d["release_by"]) if a in got]
+    if m["disposition"] == "SUBSTITUTED" and creditors:
+        pos = max(pos, min(creditors))
+    return pos
+
+
 def _revalidation_order(view, did, d, state, t_id, tbody, i, m):
     """RV-01: a revalidation that is otherwise admissible is admitted only if every
     closure it names has an admission position strictly before its own."""
@@ -618,7 +630,20 @@ def _assess_duty(view, did, d, as_of, current, done):
     first = [x for x in mine if x[4]["disposition"] != "REVALIDATED"]
     reval = sorted((x for x in mine if x[4]["disposition"] == "REVALIDATED"),
                    key=lambda x: _admission_pos(view, did, d, x[0], x[1], x[3], x[4]) or (float("inf"), x[0]))
+    # RV-02: who holds the duty is a function of position. The first pass records the
+    # holder and delegates after each admitted transfer, at that transfer's admission
+    # position; a revalidation is judged against the holder at its OWN position, so a
+    # later transfer neither authorizes an earlier non-holder nor un-admits the then
+    # holder's revalidation.
+    timeline = [((-1, ""), d["holder"], frozenset())]
+    final = None
     for t_id, tbody, t, i, m in first + reval:
+        if m["disposition"] == "REVALIDATED":
+            if final is None:
+                final = (state["holder"], set(state["delegates"]))
+            at = (tbody["ts"], t_id)
+            _, h, dl = max((e for e in timeline if e[0] <= at), key=lambda e: e[0])
+            state["holder"], state["delegates"] = h, set(dl)
         verdict, why = _judge(view, did, d, state, t_id, tbody, t, i, m, done)
         if verdict == "ADMITTED" and m["disposition"] == "REVALIDATED":
             verdict, why = _revalidation_order(view, did, d, state, t_id, tbody, i, m)
@@ -632,6 +657,11 @@ def _assess_duty(view, did, d, as_of, current, done):
             if m["disposition"] in ("DISCHARGED", "REVALIDATED"):
                 state["admitted"][t_id] = _admission_pos(view, did, d, t_id, tbody, i, m)
             _apply(d, state, acc, tbody, t_id, t, m, view.labels.get((t_id, i)))
+            if m["disposition"] in ("DELEGATED", "SUBSTITUTED"):
+                timeline.append((_transfer_pos(view, did, d, t_id, tbody, i, m), state["holder"],
+                                 frozenset(state["delegates"])))
+    if final is not None:
+        state["holder"], state["delegates"] = final
     out["holder"], out["delegates"] = state["holder"], sorted(state["delegates"])
     _settle_disposition(out, acc["closures"], acc["revalidations"])
     if d["shape"] == "recurring" and out["disposition"] == "OPEN":

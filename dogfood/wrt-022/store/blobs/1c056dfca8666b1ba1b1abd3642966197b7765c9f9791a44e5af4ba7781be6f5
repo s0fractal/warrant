@@ -1,0 +1,42 @@
+{
+  "future_holder_revalidates_early": {
+    "actor": "owner@local",
+    "original_admission_at": 11,
+    "revalidation_admission_candidate_at": 21,
+    "substitution_filed_at": 50,
+    "incoming_acceptance_at": 51,
+    "creditor_acceptance_at": 52,
+    "before_transfer": {
+      "holder": "claude@local",
+      "revalidation_verdict": "OVERCLAIMED",
+      "why": "filed by someone who does not hold the duty",
+      "reliance": "STALE"
+    },
+    "after_transfer": {
+      "holder": "owner@local",
+      "revalidation_verdict": "OVERCLAIMED",
+      "why": "filed by someone who does not hold the duty",
+      "reliance": "STALE"
+    }
+  },
+  "then_holder_revalidates_early": {
+    "actor": "claude@local",
+    "original_admission_at": 11,
+    "revalidation_admission_candidate_at": 21,
+    "substitution_filed_at": 50,
+    "incoming_acceptance_at": 51,
+    "creditor_acceptance_at": 52,
+    "before_transfer": {
+      "holder": "claude@local",
+      "revalidation_verdict": "ADMITTED",
+      "why": "",
+      "reliance": "ELIGIBLE"
+    },
+    "after_transfer": {
+      "holder": "owner@local",
+      "revalidation_verdict": "ADMITTED",
+      "why": "",
+      "reliance": "ELIGIBLE"
+    }
+  }
+}

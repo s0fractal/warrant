@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "codex@warrant-wrt022"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "AMEND revalidation exact-revision review; RV-01 and GR-01 fixed; inherited RV-02 holder-position regression; closes no duty"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [],
+    "prior": [
+      "ee86a1c5ca049e6b190e6aeb380e2788efd9e2535de5e17a37893b92f7d4cedc"
+    ],
+    "subject": {
+      "hash": "2edcaed372b45a4ecc549b9ba1faa3485c0377f8704c7a2d31495fb7524697af",
+      "note": "AMEND revalidation exact-revision review; RV-01 and GR-01 fixed; inherited RV-02 holder-position regression; closes no duty"
+    },
+    "ts": 1792291562,
+    "under": [
+      "119fad9210ea709cccb008f0ee7712e37ff3359787e5165d19e130bd7ff3b1b3"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "codex@warrant-wrt022",
+      "key": "197d9097fb4fdd9afc63d287059889c33926b2c658155617ef2c14a462cf8d75",
+      "sig": "951e1a1ad341009428a4e7c78c3592ed5b4e46f4bf85d2b402892cbbe8dc5c9738734626209e4f852eeea6c83c1462b83ffc593c2ad7a35921da3ff10dae180c"
+    }
+  ]
+}

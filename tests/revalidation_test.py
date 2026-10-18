@@ -222,6 +222,46 @@ def main():
     check("V12", L.reliance(rep, d) == "ELIGIBLE" and [x[1] for x in rv] == ["OVERCLAIMED", "ADMITTED"],
           "a revalidation admitted after its predecessor supersedes it", cand(rep, d))
 
+    # V13-V16 (RV-02): authority is judged at the revalidation's own position. The
+    # original closure is admitted at 11; a revalidation is filed at `at` (accepted
+    # at at+1); Claude substitutes the duty to OWNER at 50, consented by OWNER at 51
+    # and by the creditor CODEX at 52, so the transfer takes effect at 52.
+    def holder_case(actor, at, disposition="SUBSTITUTED"):
+        c = LT.Case()
+        open_dep, done_dep = dep(c, False), dep(c, True)
+        d = c.open()
+        old = close(c, d, trig(open_dep), ts=10)
+        rv = None
+        if at < 50:
+            rv = revalidate(c, d, [old], trig(done_dep), actor=actor, ts=at)
+        tr = c.act(LT.CLAUDE, [L.mapping(d, disposition, [c.evidence], to=LT.OWNER)], ts=50)
+        c.accept(LT.OWNER, d, tr)
+        if disposition == "SUBSTITUTED":
+            c.accept(LT.CODEX, d, tr)
+        if at >= 50:
+            rv = revalidate(c, d, [old], trig(done_dep), actor=actor, ts=at)
+        rep = L.assess(c.S.root, c.trust, 100, current={LT.SHA_NEW})
+        x = next(x for x in rep["duties"][d]["candidates"] if x["transition"] == rv)
+        return rep["duties"][d]["holder"], x["verdict"], L.reliance(rep, d)
+
+    got = holder_case(LT.OWNER, 20)
+    check("V13", got == (LT.OWNER, "OVERCLAIMED", "STALE"),
+          "a later substitution does not authorize an earlier non-holder's revalidation", got)
+    got = holder_case(LT.CLAUDE, 20)
+    check("V14", got == (LT.OWNER, "ADMITTED", "ELIGIBLE"),
+          "a later substitution does not un-admit the then-holder's revalidation", got)
+    got = holder_case(LT.OWNER, 60)
+    check("V15", got == (LT.OWNER, "ADMITTED", "ELIGIBLE"),
+          "the incoming holder's revalidation after the transfer takes effect is admitted", got)
+    got = holder_case(LT.OWNER, 51)
+    check("V16", got == (LT.OWNER, "OVERCLAIMED", "STALE"),
+          "a transfer takes effect at its last required consent, not at its filing", got)
+    got = holder_case(LT.OWNER, 20, "DELEGATED")[1:]
+    later = holder_case(LT.OWNER, 60, "DELEGATED")[1:]
+    check("V17", got == ("OVERCLAIMED", "STALE") and later == ("ADMITTED", "ELIGIBLE"),
+          "a later delegation does not authorize an earlier revalidation; after it, the delegate's is admitted",
+          (got, later))
+
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"REVALIDATION: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"
           + (f" ({', '.join(failed)})" if failed else ""))
