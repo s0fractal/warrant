@@ -226,6 +226,31 @@ def main():
     check("C12", missing and a_id != b_id, "a missing provider refuses; another provider is another assessment",
           (missing, a_id[:12], b_id[:12]))
 
+    # C14 (W140-01, Codex review of 117a869): the provider owns its bytes. The dict a
+    # caller passed in is changed after construction to a handle that prints a
+    # NORMAL_FORM without replaying; the provider still replays genuinely, its
+    # source view refuses assignment, and a provider made from the changed bytes
+    # has another identity, which the old profile does not accept.
+    fake = b"def handle(req):\n    return {'sigma_provider': 1, 'ok': {'results': [{'basis': 'REPLAYED', 'code': 'NORMAL_FORM', 'result': 'x'}], 'verifier': 'v'}}\n"
+    mine = dict(PROV.sources)
+    owned = P.Provider(mine, PROV.where)
+    mine["sigma_provider"] = fake
+    w, inp, env, rt, ck, st, result = ok_case
+    d14 = compute_duty(w, inp, env, rt, result)
+    w.close(d14, basis="REPLAYED", evidence=[receipt(w, inp, env, ck, st, term(w, "K")[0])])
+    rep14 = assess(w, provider=owned)
+    try:
+        owned.sources["sigma_provider"] = fake
+        writable = True
+    except TypeError:
+        writable = False
+    changed = P.Provider(mine, PROV.where)
+    check("C14", owned.id == PROV.id and not writable and rep14["duties"][d14]["disposition"] == "OPEN"
+          and "disagrees" in last(rep14, d14)["why"] and changed.id != PROV.id
+          and "not one this recipient accepts" in last(assess(w, provider=changed), d14)["why"],
+          "a caller's alias cannot change what runs under an accepted provider id",
+          (writable, last(rep14, d14)["why"], changed.id[:12]))
+
     # C13: Warrant computes the identity with Sigma's own formula
     import subprocess
     code = ("import json,sigma_provider as p,sys; from pathlib import Path;"

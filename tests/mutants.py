@@ -114,6 +114,8 @@ MUTANTS = [
      "contract_test", ["F1"]),
     ("M37", "engine.py", "actors without a key are not reported",
      [('            "unbound_actors": sorted(named - bound),', '            "unbound_actors": [],')], "contract_test", ["F2"]),
+    ("M38", "compute.py", "the provider keeps the caller's dict (W140-01)",
+     [("        self.sources = types.MappingProxyType(own)", "        self.sources = sources")], "compute_test", ["C14"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

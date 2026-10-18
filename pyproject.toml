@@ -19,7 +19,7 @@ dependencies = ["cryptography>=41"]
 # wheel). It is not on PyPI in this version: install it from the exact commit, or
 # from a wheel built from it (README "Compute"). Without it, attest and observe
 # work and every REPLAYED basis is UNVERIFIED.
-compute = ["sigma-glyph @ git+https://github.com/s0fractal/sigma-glyph@fadcfb5610118f40f0ac4ba088f999ab22d2f527"]
+compute = ["sigma-glyph @ git+https://github.com/s0fractal/sigma-glyph@9c386c22b852ea99b1d0932dd3fcab111b27e0fd"]
 
 [project.urls]
 Homepage = "https://github.com/s0fractal/warrant"

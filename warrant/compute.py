@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 from . import jcs as C
@@ -66,9 +67,13 @@ def _locate(root):
 
 class Provider:
     def __init__(self, sources, where):
-        self.sources = sources            # module -> bytes, exactly what will run
+        # A private copy, exposed read-only: the identity, the acceptance check and
+        # every execution read this one snapshot, so a caller who kept the dict it
+        # passed in cannot change what runs under the accepted id (W140-01).
+        own = {n: bytes(sources[n]) for n in MODULES}
+        self.sources = types.MappingProxyType(own)
         self.where = str(where)
-        self.id = identity_of(sources)
+        self.id = identity_of(own)
         self.identity = {"provider": self.id, "boot": C.digest(BOOT.encode()),
                          "files": {f"{n}.py": C.digest(b) for n, b in sorted(sources.items())}}
 
