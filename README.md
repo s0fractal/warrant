@@ -65,6 +65,18 @@ warrant questions --store $S --trust $T               # the open question: nobod
 
 The same loop, with assertions, is `examples/1-work-loop.sh`.
 
+A duty or transition body may omit its structural members; `warrant file` fills
+them with empty values (`[]`, `null`; a transition's `evidence` becomes exactly
+what its items cite), so the short body files the same record as the full one.
+The meaning is never filled: a missing `statement`, `holder`, `owed_to`,
+`accept_by`, `condition`, `basis`, `established`, `residual` or `closes` is
+refused. `--id` prints only the new record id:
+
+```bash
+D=$(warrant file --id --store $S --key $W/claude.key --actor claude --type duty \
+  '{"statement":"parse() rejects empty input","holder":"claude","owed_to":["codex"],"accept_by":["codex"],"condition":{"attest":{}}}')
+```
+
 ## Scenarios
 
 Each script uses only the installed `warrant` command and checks what it

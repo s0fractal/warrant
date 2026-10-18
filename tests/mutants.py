@@ -105,6 +105,10 @@ MUTANTS = [
     ("M32", "store.py", "signature members are used before their types are checked (R138-02)",
      [('        R._hex(env["sig"]["key"], "sig key")            # types before lookup (R138-02)\n', '')],
      "contract_test", ["N6"]),
+    ("M34", "cli.py", "`warrant file` files the body as given, without its structural members",
+     [('    body = fill(a.type, _read_json(a.body))', '    body = _read_json(a.body)')], "cli_test", ["F1", "T1"]),
+    ("M35", "cli.py", "a transition's evidence is not derived from its items",
+     [('    if rtype == "transition" and "evidence" not in body and', '    if False and')], "cli_test", ["T1"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

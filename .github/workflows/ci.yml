@@ -58,7 +58,7 @@ jobs:
       - name: Contract, computation, conditions and primitives (installed bytes)
         working-directory: tests
         run: |
-          for t in contract compute conditions primitives; do python "${t}_test.py"; done
+          for t in contract compute conditions primitives cli; do python "${t}_test.py"; done
 
       - name: Mutants (each critical rule must fail its own case)
         run: WARRANT_IMPL= python tests/mutants.py
