@@ -79,14 +79,41 @@ def cmd_blob(a):
     _out({"blob": h})
 
 
+# Structural members `warrant file` fills when a body omits them. Only empty
+# values: nothing here states a meaning. Semantic members (a duty's statement,
+# holder, owed_to, accept_by, condition; a transition's basis, established,
+# residual, closes) are never filled, so their absence is still refused.
+STRUCTURAL = {
+    "duty": {"release_by": [], "schedule": None, "requires": [], "serves": [], "answers": None, "subject": None},
+    "transition": {"relied_on": [], "opened": [], "subject": None, "supersedes": [], "triggers": []},
+}
+
+
+def fill(rtype, body):
+    """`body` with omitted structural members filled; given members are kept as they are.
+    A transition that omits `evidence` carries exactly the evidence its items cite."""
+    if rtype not in STRUCTURAL or not isinstance(body, dict):
+        return body
+    out = {k: v for k, v in STRUCTURAL[rtype].items() if k not in body}
+    if rtype == "transition" and "evidence" not in body and isinstance(body.get("closes"), list):
+        out["evidence"] = sorted({h for m in body["closes"] if isinstance(m, dict)
+                                  for h in (m.get("evidence") if isinstance(m.get("evidence"), list) else [])})
+    out.update(body)
+    return out
+
+
 def cmd_file(a):
     s = Store(a.store).init()
-    body = _read_json(a.body)
+    body = fill(a.type, _read_json(a.body))
     try:
         r = R.record(a.type, a.actor, _now(a.at), body)
     except R.Invalid as e:
         raise SystemExit(f"invalid {a.type}: {e}")
-    _out({"record": s.put_record(r, _key(a.key)), "type": a.type})
+    rid = s.put_record(r, _key(a.key))
+    if a.id:
+        sys.stdout.write(rid + "\n")
+    else:
+        _out({"record": rid, "type": a.type})
 
 
 def cmd_accept(a):
@@ -141,7 +168,10 @@ def _env_blobs(s, env_h):
 
 
 def _call(op, args, blobs=None):
-    out = P.Provider.capture().call(op, args, blobs)
+    try:
+        out = P.Provider.capture().call(op, args, blobs)
+    except P.ProviderError as e:
+        raise SystemExit(f"provider: {e}")
     if "refused" in out:
         raise SystemExit(f"provider refused: {out['refused']}")
     return out
@@ -150,11 +180,17 @@ def _call(op, args, blobs=None):
 def cmd_compute(a):
     s = Store(a.store).init()
     runtime = {"book1": P.BOOK1, "rich": P.RICH}[a.runtime]
+    if a.op == "provider":
+        try:
+            p = P.Provider.capture()
+        except P.ProviderError as e:
+            raise SystemExit(f"provider: {e}")
+        return _out({"provider": p.id, "where": p.where, "files": p.identity["files"]})
     if a.op == "term":
         out = _call("term", {"expr": a.expr})
         nodes = [s.put_blob(base64.b64decode(b)) for b in out["nodes"].values()]
         env_h = s.put_json(P.environment_doc(nodes))
-        return _out({"input": out["term"], "environment": env_h, "runtime": runtime, "nodes": len(nodes)})
+        return _out({"input": out["input"], "environment": env_h, "runtime": runtime, "nodes": len(nodes)})
     hashes, blobs = _env_blobs(s, a.environment)
     base = {"runtime": runtime, "input": a.input, "hashes": hashes}
     if a.op == "start":
@@ -175,8 +211,8 @@ def cmd_compute(a):
         raise SystemExit(f"unknown compute op {a.op}")
     ck = s.put_blob(base64.b64decode(out["checkpoint"]))
     st = s.put_blob(base64.b64decode(out["state"]))
-    res = {"outcome": out["outcome"], "checkpoint": ck, "state": st, "result": out.get("result")}
-    if out["outcome"] == "NORMAL_FORM" and a.target:
+    res = {"outcome": out.get("outcome", "STARTED"), "checkpoint": ck, "state": st, "result": out.get("result")}
+    if out.get("outcome") == "NORMAL_FORM" and a.target:
         res["receipt"] = s.put_json({"receipt": "sigma-resume", "target": a.target, "input": a.input,
                                      "environment": a.environment, "checkpoint": ck, "state": st,
                                      "claimed": out["result"], "lost": []})
@@ -264,9 +300,12 @@ def build_parser():
     p.add_argument("file", nargs="?", default="-")
     p.add_argument("--json")
     p.set_defaults(fn=cmd_blob)
-    p = sub.add_parser("file", help="sign and file a record body (SPEC §3)")
+    p = sub.add_parser("file", help="sign and file a record body (SPEC §3); a duty or transition body may omit "
+                                    "its structural members (empty lists, nulls; a transition's evidence is "
+                                    "then the evidence its items cite)")
     signer(p)
     p.add_argument("--type", required=True, choices=R.TYPES)
+    p.add_argument("--id", action="store_true", help="print only the new record id")
     p.add_argument("body", help="JSON body, a file, or -")
     p.set_defaults(fn=cmd_file)
     p = sub.add_parser("accept", help="accept one exact item of a transition, or its results")
@@ -286,9 +325,9 @@ def build_parser():
     p.add_argument("--rev", required=True)
     p.add_argument("paths", nargs="+")
     p.set_defaults(fn=cmd_manifest)
-    p = sub.add_parser("compute", help="sigma-resume producer steps: term, start, advance, cycle")
+    p = sub.add_parser("compute", help="the installed Sigma provider: provider (its identity), term, start, advance, cycle")
     store(p)
-    p.add_argument("op", choices=("term", "start", "advance", "cycle"))
+    p.add_argument("op", choices=("provider", "term", "start", "advance", "cycle"))
     p.add_argument("--runtime", choices=("book1", "rich"), default="book1")
     p.add_argument("--expr")
     p.add_argument("--input")

@@ -21,7 +21,7 @@ one current path, and deletion of the superseded implementations.
 | WRT-010 `fact_provenance`, WRT-020 `policy_binding`, REDESIGN-1 `assessment` (three linkers of policy, facts and decision) | retired | one mechanism: a duty's condition (attest / observe / compute) judged in one view |
 | WPL (`policy_lang`), `ski_policy` | retired | a `compute` condition names its term, environment and answer |
 | WRT-021/022 drafts (`loops`, `triggers`, `replay`, `grants`) | folded in | `warrant/engine.py`, `warrant/triggers.py`, `warrant/compute.py`; RV-01, RV-02, S2-01..04, GR-01 counterexamples carried as tests |
-| Four copies of Σ-GLYPH code (v05, v06, `sigma_resume_c864d3e`, the demo vendor copy) | retired | one pinned provider, `warrant/provider/` (sigma-glyph `c864d3e`) |
+| Four copies of Σ-GLYPH code (v05, v06, `sigma_resume_c864d3e`, the demo vendor copy) | retired | the installed `sigma-glyph` wheel's `sigma_provider`, accepted by identity in the recipient profile. Warrant 2.0.0.dev0 briefly bundled one copy in `warrant/provider/` (c864d3e); that copy is retired too |
 | Subprocess `warrant verify` over a temporary copy of the store | retired | `Snapshot`: bytes read once, assessed in memory |
 | Threshold (k-of-n) adoption, key state, pre-rotation, revocation (WRT-014/015/017), P-256 (WRT-019) | retired | not in Warrant 2 (SPEC §9) |
 | Go, Rust (`warrant-verify` crate), WASM, JS, web verifier | retired, published versions stay | Python reference only |

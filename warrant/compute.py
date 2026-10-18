@@ -1,22 +1,30 @@
-"""The Sigma provider (SPEC §7): one pinned sigma-resume kernel, executed from the
-exact bytes whose digests were checked.
+"""The Sigma provider adapter (SPEC §7). Sigma owns evaluation, resume, replay and
+cycles; this module maps Warrant's data to the installed `sigma_provider` and back.
 
-`Provider.capture()` reads the provider files once. The kernel files must match
-PIN.json; the worker is Warrant's own code and is part of the engine identity.
-Every call starts `python -I -B -c BOOT` and hands it those captured bytes on
-stdin, so no file is reopened between the check and the execution. The separate
-interpreter keeps the kernel's module names out of the assessing process; it is
-not an OS sandbox."""
+The provider is the `sigma-glyph` distribution's three modules `sigma_glyph`,
+`sigma_resume` and `sigma_provider`, found where the import system would find
+them (never the current directory) and never imported into this process.
+`Provider.capture()` reads their bytes once; `identity` is computed from those
+bytes with the formula `sigma_provider.identity_of` documents. Every call starts
+`python -I -B -c BOOT` and hands it the captured bytes on stdin, so the bytes
+whose identity was computed are the bytes that run. The separate interpreter
+keeps the kernel's module names out of the assessing process; it is not an OS
+sandbox. Whether a recipient accepts this provider is its profile's choice
+(`providers`), never the provider's own report."""
 import base64
+import hashlib
+import importlib.machinery
 import json
+import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 from . import jcs as C
 
-HERE = Path(__file__).resolve().parent / "provider"
-ORDER = ("sigma_glyph", "sigma_resume", "worker")
+MODULES = ("sigma_glyph", "sigma_resume", "sigma_provider")
+PROTOCOL = 1
 BOOK1 = "sigma-book1-0.6.0/hash-thunk/leftmost-outermost"
 RICH = "sigma-resume-draft/ski+Y+M+W/hash-thunk/leftmost-outermost"
 
@@ -24,53 +32,80 @@ BOOT = (
     "import base64,json,sys,types\n"
     "req=json.loads(sys.stdin.buffer.read())\n"
     "for n in req['order']:\n"
-    "    m=types.ModuleType(n); m.__file__='<pinned '+n+'>'; sys.modules[n]=m\n"
+    "    m=types.ModuleType(n); m.__file__='<captured '+n+'>'; sys.modules[n]=m\n"
     "    exec(compile(base64.b64decode(req['modules'][n]),m.__file__,'exec'),m.__dict__)\n"
-    "sys.stdout.write(json.dumps(sys.modules['worker'].main(req['call']),sort_keys=True))\n"
+    "sys.stdout.write(json.dumps(sys.modules['sigma_provider'].handle(req['call']),sort_keys=True))\n"
 )
 
 
 class ProviderError(Exception):
-    """The provider could not be captured or did not answer; never an answer."""
+    """No provider, or one that did not answer: never an answer."""
+
+
+def identity_of(sources):
+    """sigma_provider.identity_of, computed here from the captured bytes."""
+    files = {f"{n}.py": hashlib.sha256(sources[n]).hexdigest() for n in MODULES}
+    doc = {"provider": "sigma-resume", "files": files}
+    return hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _search_path():
+    cwd = Path.cwd().resolve()
+    return [p for p in sys.path if p and Path(p).resolve() != cwd]
+
+
+def _locate(root):
+    """{module: path}: one directory holding all three modules."""
+    if root is not None:
+        return {n: Path(root) / f"{n}.py" for n in MODULES}
+    spec = importlib.machinery.PathFinder.find_spec("sigma_provider", _search_path())
+    if spec is None or not spec.origin:
+        raise ProviderError("no Sigma provider installed (pip install the sigma-glyph wheel that ships sigma_provider)")
+    here = Path(spec.origin).parent
+    return {n: here / f"{n}.py" for n in MODULES}
 
 
 class Provider:
-    def __init__(self, sources, pin):
-        self.sources = sources            # name -> bytes, exactly what will run
-        self.pin = pin
-        self.identity = {"pin": pin["commit"], "files": {n: C.digest(b) for n, b in sorted(sources.items())},
-                         "boot": C.digest(BOOT.encode())}
+    def __init__(self, sources, where):
+        # A private copy, exposed read-only: the identity, the acceptance check and
+        # every execution read this one snapshot, so a caller who kept the dict it
+        # passed in cannot change what runs under the accepted id (W140-01).
+        own = {n: bytes(sources[n]) for n in MODULES}
+        self.sources = types.MappingProxyType(own)
+        self.where = str(where)
+        self.id = identity_of(own)
+        self.identity = {"provider": self.id, "boot": C.digest(BOOT.encode()),
+                         "files": {f"{n}.py": C.digest(b) for n, b in sorted(sources.items())}}
 
     @classmethod
-    def capture(cls, root=HERE):
-        root = Path(root)
-        pin = json.loads((root / "PIN.json").read_bytes())
+    def capture(cls, root=None):
+        paths = _locate(root)
         sources = {}
-        for name in ORDER:
-            p = root / f"{name}.py"
+        for n, p in paths.items():
             if p.is_symlink() or not p.is_file():
-                raise ProviderError(f"provider file missing: {name}.py")
-            sources[name] = p.read_bytes()
-        for fname, want in pin["files"].items():
-            got = C.digest(sources[fname[:-3]])
-            if got != want:
-                raise ProviderError(f"provider not pinned: {fname}")
-        return cls(sources, pin)
+                raise ProviderError(f"provider module missing: {n}.py in {p.parent}")
+            sources[n] = p.read_bytes()
+        return cls(sources, paths["sigma_provider"].parent)
 
     def call(self, op, args, blobs=None, timeout=600):
-        req = {"order": list(ORDER), "modules": {n: base64.b64encode(self.sources[n]).decode() for n in ORDER},
-               "call": {"op": op, "args": args,
+        """One protocol request. Returns the provider's `ok` value, or
+        {"refused": reason}; a crash or garbage is ProviderError."""
+        req = {"order": list(MODULES), "modules": {n: base64.b64encode(self.sources[n]).decode() for n in MODULES},
+               "call": {"sigma_provider": PROTOCOL, "op": op, "args": args,
                         "blobs": {h: base64.b64encode(b).decode() for h, b in (blobs or {}).items()}}}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
         try:
             p = subprocess.run([sys.executable, "-I", "-B", "-c", BOOT], input=json.dumps(req).encode(),
-                               capture_output=True, timeout=timeout, check=False)
+                               capture_output=True, timeout=timeout, check=False, env=env)
         except subprocess.TimeoutExpired:
             raise ProviderError("provider timed out") from None
         try:
             out = json.loads(p.stdout)
         except ValueError:
             raise ProviderError(f"provider failed (exit {p.returncode}): {p.stderr.decode(errors='replace')[-300:]}") from None
-        return out
+        if not (isinstance(out, dict) and out.get("sigma_provider") == PROTOCOL and ("ok" in out) != ("refused" in out)):
+            raise ProviderError("provider answered outside its protocol")
+        return {"refused": str(out["refused"])} if "refused" in out else out["ok"]
 
 
 def environment_doc(hashes):
@@ -153,7 +188,7 @@ def replay(provider, snapshot, condition, doc, targets):
         return None, "the recipient's replay disagrees with the receipt"
     if r["result"] != condition["expect"]:
         return None, "the replayed result is not the one the condition requires"
-    return f"REPLAYED:sigma-resume:{provider.identity['files']['sigma_resume'][:16]}", None
+    return f"REPLAYED:sigma-resume:{provider.id[:16]}", None
 
 
 def replay_cycle(provider, snapshot, condition, doc, targets):
@@ -176,4 +211,4 @@ def replay_cycle(provider, snapshot, condition, doc, targets):
                                          "witness": base64.b64encode(w).decode()}, blobs)
     if out.get("code") != "CYCLE_PROVEN":
         return None, f"cycle not proven: {out.get('code') or out.get('refused')}"
-    return f"CYCLE:sigma-resume:{provider.identity['files']['sigma_resume'][:16]}", None
+    return f"CYCLE:sigma-resume:{provider.id[:16]}", None

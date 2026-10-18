@@ -14,6 +14,13 @@ license = { text = "MIT" }
 authors = [{ name = "s0fractal" }]
 dependencies = ["cryptography>=41"]
 
+[project.optional-dependencies]
+# `compute` conditions need the Sigma provider (sigma_provider in the sigma-glyph
+# wheel). It is not on PyPI in this version: install it from the exact commit, or
+# from a wheel built from it (README "Compute"). Without it, attest and observe
+# work and every REPLAYED basis is UNVERIFIED.
+compute = ["sigma-glyph @ git+https://github.com/s0fractal/sigma-glyph@9c386c22b852ea99b1d0932dd3fcab111b27e0fd"]
+
 [project.urls]
 Homepage = "https://github.com/s0fractal/warrant"
 Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
@@ -23,8 +30,3 @@ warrant = "warrant.cli:main"
 
 [tool.setuptools]
 packages = ["warrant"]
-
-[tool.setuptools.package-data]
-# The pinned Sigma provider is data: it is executed only from checked bytes,
-# never imported into the assessing process (warrant/compute.py).
-warrant = ["provider/*.py", "provider/PIN.json"]

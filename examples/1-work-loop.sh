@@ -5,7 +5,7 @@
 source "$(dirname "$0")/lib.sh"
 actor claude; actor codex
 P="$WORK/profile.json"
-echo '{"uses":{"act":{"requires_triggers":false}},"accept_by":{"results":["codex"]},"targets":[],"grant_roots":[],"challengers":[]}' > "$P"
+echo '{"uses":{"act":{"requires_triggers":false}},"accept_by":{"results":["codex"]},"targets":[],"grant_roots":[],"challengers":[],"providers":[]}' > "$P"
 view=(--store "$S" --trust "$T" --profile "$P" --as-of 2000)
 
 echo "1. claude takes on a condition that codex must accept"

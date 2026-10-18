@@ -21,6 +21,25 @@ This installs one command, `warrant`, and the package `warrant`. There is no
 release of this generation yet. The package published as `warrant-verify` (≤ 0.12.0)
 is the retired 0.x generation.
 
+### Compute
+
+Attest and observe need nothing else. `compute` conditions are replayed by the
+Sigma provider, the `sigma_provider` module of the `sigma-glyph` wheel. That
+wheel is not on PyPI in this version; install it from the exact commit Warrant
+names in `pyproject.toml`:
+
+```bash
+pip install "./[compute]"                    # warrant + sigma-glyph from that commit
+# or, offline, from a wheelhouse built once:
+pip wheel --no-deps -w wheelhouse "git+https://github.com/s0fractal/sigma-glyph@<commit>"
+pip install --no-index wheelhouse/sigma_glyph-*.whl ./
+warrant compute --store S provider           # the provider's identity
+```
+
+A recipient accepts a provider by putting that identity in its profile's
+`providers`; without an accepted, installed provider every REPLAYED basis is
+UNVERIFIED.
+
 ## Start here
 
 Two agents, one condition, one transition, one exact acceptance, one capsule:
@@ -45,6 +64,18 @@ warrant questions --store $S --trust $T               # the open question: nobod
 ```
 
 The same loop, with assertions, is `examples/1-work-loop.sh`.
+
+A duty or transition body may omit its structural members; `warrant file` fills
+them with empty values (`[]`, `null`; a transition's `evidence` becomes exactly
+what its items cite), so the short body files the same record as the full one.
+The meaning is never filled: a missing `statement`, `holder`, `owed_to`,
+`accept_by`, `condition`, `basis`, `established`, `residual` or `closes` is
+refused. `--id` prints only the new record id:
+
+```bash
+D=$(warrant file --id --store $S --key $W/claude.key --actor claude --type duty \
+  '{"statement":"parse() rejects empty input","holder":"claude","owed_to":["codex"],"accept_by":["codex"],"condition":{"attest":{}}}')
+```
 
 ## Scenarios
 

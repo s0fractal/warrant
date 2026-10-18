@@ -3,13 +3,11 @@ name: sigma-provider
 # The Warrant ↔ Sigma boundary (SPEC §7). The job id `cross-repo` is a required
 # status check on master; keep it.
 #
-# Warrant 0.x ran a HEAD-against-HEAD matrix here (X1) with four files mirrored
-# byte for byte in both repositories. Warrant 2 consumes exactly one Sigma
-# artifact: the sigma-resume kernel pinned in warrant/provider/PIN.json. This job
-# checks that contract at the pinned commit, never at sigma-glyph's HEAD:
-#   1. the vendored kernel bytes are the files of sigma-glyph at that commit;
-#   2. sigma-glyph's own resume tests pass at that commit (its UNRUNs are named);
-#   3. Warrant's computation tests pass through the provider, installed.
+# One artifact-consumer scenario, at the exact sigma-glyph commit pyproject.toml
+# names, never sigma-glyph HEAD: the sigma-glyph wheel built from that commit,
+# installed beside warrant in a fresh environment, runs its own provider
+# self-test; warrant's computation tests and the computation scenario then use
+# it through the installed `warrant` command.
 on:
   push:
     branches: [master]
@@ -29,36 +27,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Fetch sigma-glyph at the pinned commit
+      - name: Install warrant and the pinned sigma-glyph wheel
         run: |
           set -euo pipefail
-          PIN=$(python -c 'import json; print(json.load(open("warrant/provider/PIN.json"))["commit"])')
-          git init -q "$RUNNER_TEMP/sigma"
-          git -C "$RUNNER_TEMP/sigma" fetch -q --depth 1 https://github.com/s0fractal/sigma-glyph "$PIN"
-          git -C "$RUNNER_TEMP/sigma" checkout -q FETCH_HEAD
-          test "$(git -C "$RUNNER_TEMP/sigma" rev-parse HEAD)" = "$PIN"
-          echo "pinned sigma-glyph: $PIN"
+          COMMIT=$(python -c 'import re; print(re.search(r"sigma-glyph@([0-9a-f]{40})", open("pyproject.toml").read()).group(1))')
+          echo "sigma-glyph commit: $COMMIT"
+          python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" . "git+https://github.com/s0fractal/sigma-glyph@$COMMIT"
+          python -m venv "$RUNNER_TEMP/v"
+          "$RUNNER_TEMP/v/bin/pip" install --quiet "$RUNNER_TEMP"/wh/*.whl
+          echo "$RUNNER_TEMP/v/bin" >> "$GITHUB_PATH"
 
-      - name: The vendored kernel is sigma-glyph's, byte for byte, and matches the pin
+      - name: The provider's own self-test, installed
+        working-directory: ${{ runner.temp }}
         run: |
-          set -euo pipefail
-          for f in sigma_glyph.py sigma_resume.py; do
-            cmp "warrant/provider/$f" "$RUNNER_TEMP/sigma/impl/$f"
-            want=$(python -c "import json; print(json.load(open('warrant/provider/PIN.json'))['files']['$f'])")
-            got=$(sha256sum "warrant/provider/$f" | cut -d' ' -f1)
-            test "$got" = "$want"
-            echo "ok  $f $got"
-          done
-
-      - name: sigma-glyph's own resume tests at the pin
-        working-directory: ${{ runner.temp }}/sigma
-        run: |
-          python tests/resume_test.py | tee "$RUNNER_TEMP/resume.log"
-          grep -q "^SIGMA-RESUME: [0-9]* PASS, 0 FAIL" "$RUNNER_TEMP/resume.log"
+          python -m sigma_provider | tee /dev/stderr | grep -q "^PROVIDER: ALL PASS"
 
       - name: Warrant computation tests through the installed provider
+        working-directory: tests
         run: |
-          python -m venv "$RUNNER_TEMP/v"
-          "$RUNNER_TEMP/v/bin/pip" install --quiet .
-          cd tests && WARRANT_IMPL=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)') \
-            "$RUNNER_TEMP/v/bin/python" compute_test.py
+          WARRANT_IMPL=$(python -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)') python compute_test.py
+
+      - name: The computation scenario through the installed command
+        working-directory: ${{ runner.temp }}
+        run: bash "$GITHUB_WORKSPACE/examples/4-computation.sh"

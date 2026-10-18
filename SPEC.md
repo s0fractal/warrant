@@ -295,6 +295,7 @@ targets      list of crossing targets the recipient accepts a receipt into
 grant_roots  list of grant ids the recipient accepts as roots
 challengers  list of actors whose challenges count (owed_to and accept_by of the
              duty concerned always count)
+providers    list of provider identities (§7) whose replays the recipient accepts
 ```
 
 ### 4.7 Supersession
@@ -330,16 +331,25 @@ access to a key do not create authority.
 
 ## 7. Computation
 
-The only provider is `sigma-resume`: Σ-GLYPH resumable reduction, provided by the
-pinned kernel in `warrant/provider/` (source: s0fractal/sigma-glyph at the commit
-in its `PIN.json`). Runtime ids are the kernel's own:
+Σ-GLYPH owns evaluation, resume, replay and cycles; Warrant owns the condition,
+the recipient's acceptance and the credit. The provider is the `sigma-glyph`
+distribution's modules `sigma_glyph`, `sigma_resume` and `sigma_provider`
+(installed from a wheel; Warrant does not ship them). Its **identity** is
+SHA-256 over the canonical JSON `{"provider": "sigma-resume", "files":
+{"<module>.py": sha256(bytes)}}` of the three modules, the formula
+`sigma_provider.identity_of` documents. A replay counts only if the identity of
+the bytes that ran is in the recipient's `providers` (§4.6); a provider's report
+about itself grants nothing. Runtime ids are the kernel's own:
 `sigma-book1-0.6.0/hash-thunk/leftmost-outermost` (Book I) and
 `sigma-resume-draft/ski+Y+M+W/hash-thunk/leftmost-outermost` (a draft profile with
 Y, M, W, under which cycles exist). An environment is the blob
-`{"sigma-environment": [sorted node hashes]}`. Its file digests are part of the evaluator
-identity. Execution captures the pinned bytes once, checks them, and executes
-exactly those bytes in a separate interpreter (`-I -B`, no files reopened); the
-process boundary isolates module names, it is not an OS sandbox.
+`{"sigma-environment": [sorted node hashes]}`. The provider identity is part of
+the assessment identity. Execution reads the provider's module bytes once,
+computes the identity from them, and executes exactly those bytes in a separate
+interpreter (`-I -B`, the bytes passed on stdin, no file reopened), through the
+`sigma_provider` request protocol. The process boundary isolates module names;
+it is not an OS sandbox. Without an installed provider every REPLAYED basis is
+`UNVERIFIED`.
 
 A REPLAYED item cites one **receipt** blob:
 

@@ -18,7 +18,7 @@ TARGET = "warrant-test"
 def term(w, expr, runtime=P.BOOK1):
     out = PROV.call("term", {"expr": expr})
     nodes = [w.store.put_blob(base64.b64decode(b)) for b in out["nodes"].values()]
-    return out["term"], w.blob(P.environment_doc(nodes)), runtime
+    return out["input"], w.blob(P.environment_doc(nodes)), runtime
 
 
 def run(w, inp, env, runtime, credits, hashes=None):
@@ -46,8 +46,9 @@ def compute_duty(w, inp, env, runtime, expect):
     return w.duty({"compute": {"runtime": runtime, "input": inp, "environment": env, "expect": expect}}, accept_by=())
 
 
-def assess(w, targets=(TARGET,), provider=PROV):
-    return w.assess(prof=E.profile(targets=targets), provider=provider)
+def assess(w, targets=(TARGET,), provider=PROV, providers=None):
+    accepted = [PROV.id] if providers is None else providers
+    return w.assess(prof=E.profile(targets=targets, providers=accepted), provider=provider)
 
 
 def last(rep, d):
@@ -167,7 +168,8 @@ def main():
     for h in inner:
         (part / "blobs" / h).unlink()
     from warrant.store import Snapshot
-    rep_missing = E.assess(Snapshot.read(part), w.trust, 10_000, E.profile(targets=[TARGET]), provider=PROV)
+    rep_missing = E.assess(Snapshot.read(part), w.trust, 10_000, E.profile(targets=[TARGET], providers=[PROV.id]),
+                           provider=PROV)
     inpY, envY, _ = term(w, "Y I")          # Y is not a Book I primitive: a reference outside this environment
     outcomes, ckY, stY, _ = run(w, inpY, envY, P.BOOK1, [100])
     why_missing = last(rep_missing, d)["why"]
@@ -176,26 +178,85 @@ def main():
           "missing allowed bytes are a local UNVERIFIED; a reference outside the environment is the kernel's answer",
           (outcomes, why_missing))
 
-    # C10: the provider runs the bytes it checked
+    # C10: the bytes whose identity was computed are the bytes that run. A copy of
+    # the installed provider is captured, then its files on disk are replaced (the
+    # kernel by one that exits, the provider by one that prints success): the
+    # captured provider still replays genuinely. A drifted copy has another identity.
     tmp = Path(tempfile.mkdtemp()) / "provider"
-    shutil.copytree(P.HERE, tmp)
-    (tmp / "sigma_resume.py").write_bytes((tmp / "sigma_resume.py").read_bytes() + b"\n# drift\n")
-    try:
-        P.Provider.capture(tmp)
-        refused = False
-    except P.ProviderError:
-        refused = True
-    shutil.copytree(P.HERE, tmp, dirs_exist_ok=True)
+    tmp.mkdir()
+    for n in P.MODULES:
+        (tmp / f"{n}.py").write_bytes(PROV.sources[n])
     cap = P.Provider.capture(tmp)
-    (tmp / "sigma_resume.py").write_bytes(b"raise SystemExit('swapped after the check')\n")
-    (tmp / "worker.py").write_bytes(b"def main(req):\n    return {'results': [{'basis': 'REPLAYED', 'code': 'NORMAL_FORM', 'result': 'x'}]}\n")
+    (tmp / "sigma_resume.py").write_bytes(b"raise SystemExit('swapped after the capture')\n")
+    (tmp / "sigma_provider.py").write_bytes(b"def handle(req):\n    return {'sigma_provider': 1, 'ok': {'results': [{'basis': 'REPLAYED', 'code': 'NORMAL_FORM', 'result': 'x'}]}}\n")
+    drifted = P.Provider.capture(tmp)
     w, inp, env, rt, ck, st, result = ok_case
-    out = cap.call("verify", {"runtime": rt, "input": inp, "hashes": w.store.snapshot().json_blob(env)["sigma-environment"],
-                              "chain": [[base64.b64encode(w.store.snapshot().blobs[ck]).decode(),
-                                         base64.b64encode(w.store.snapshot().blobs[st]).decode()]]},
-                   {h: w.store.snapshot().blobs[h] for h in w.store.snapshot().json_blob(env)["sigma-environment"]})
-    check("C10", refused and out["results"][0].get("result") == result,
-          "drifted kernel bytes are refused; bytes swapped after capture are not what runs", (refused, out))
+    snap = w.store.snapshot()
+    hs = snap.json_blob(env)["sigma-environment"]
+    try:
+        out = cap.call("verify", {"runtime": rt, "input": inp, "hashes": hs,
+                                  "chain": [[base64.b64encode(snap.blobs[ck]).decode(), base64.b64encode(snap.blobs[st]).decode()]]},
+                       {h: snap.blobs[h] for h in hs})
+    except P.ProviderError as e:
+        out = {"results": [{"error": str(e)[:120]}]}
+    check("C10", cap.id == PROV.id and drifted.id != PROV.id and out.get("results", [{}])[0].get("result") == result,
+          "captured bytes run; bytes swapped later neither run nor keep the identity", (out, drifted.id[:12]))
+
+    # C11: the recipient accepts providers by identity; an unaccepted one, or the
+    # drifted copy above, is UNVERIFIED, never admitted
+    d11 = compute_duty(w, inp, env, rt, result)
+    w.close(d11, basis="REPLAYED", evidence=[receipt(w, inp, env, ck, st, result)])
+    not_accepted = assess(w, providers=[])
+    forged = assess(w, provider=drifted)
+    check("C11", "not one this recipient accepts" in last(not_accepted, d11)["why"]
+          and "not one this recipient accepts" in last(forged, d11)["why"]
+          and not_accepted["duties"][d11]["disposition"] == forged["duties"][d11]["disposition"] == "OPEN",
+          "a provider the recipient did not accept, or a changed one, closes nothing",
+          (last(not_accepted, d11)["why"], last(forged, d11)["why"]))
+
+    # C12: no provider installed is a refusal, and the provider's identity is part
+    # of the assessment's identity
+    empty = Path(tempfile.mkdtemp())
+    try:
+        P.Provider.capture(empty)
+        missing = False
+    except P.ProviderError:
+        missing = True
+    a_id, b_id = assess(w)["assessment_id"], assess(w, provider=drifted)["assessment_id"]
+    check("C12", missing and a_id != b_id, "a missing provider refuses; another provider is another assessment",
+          (missing, a_id[:12], b_id[:12]))
+
+    # C14 (W140-01, Codex review of 117a869): the provider owns its bytes. The dict a
+    # caller passed in is changed after construction to a handle that prints a
+    # NORMAL_FORM without replaying; the provider still replays genuinely, its
+    # source view refuses assignment, and a provider made from the changed bytes
+    # has another identity, which the old profile does not accept.
+    fake = b"def handle(req):\n    return {'sigma_provider': 1, 'ok': {'results': [{'basis': 'REPLAYED', 'code': 'NORMAL_FORM', 'result': 'x'}], 'verifier': 'v'}}\n"
+    mine = dict(PROV.sources)
+    owned = P.Provider(mine, PROV.where)
+    mine["sigma_provider"] = fake
+    w, inp, env, rt, ck, st, result = ok_case
+    d14 = compute_duty(w, inp, env, rt, result)
+    w.close(d14, basis="REPLAYED", evidence=[receipt(w, inp, env, ck, st, term(w, "K")[0])])
+    rep14 = assess(w, provider=owned)
+    try:
+        owned.sources["sigma_provider"] = fake
+        writable = True
+    except TypeError:
+        writable = False
+    changed = P.Provider(mine, PROV.where)
+    check("C14", owned.id == PROV.id and not writable and rep14["duties"][d14]["disposition"] == "OPEN"
+          and "disagrees" in last(rep14, d14)["why"] and changed.id != PROV.id
+          and "not one this recipient accepts" in last(assess(w, provider=changed), d14)["why"],
+          "a caller's alias cannot change what runs under an accepted provider id",
+          (writable, last(rep14, d14)["why"], changed.id[:12]))
+
+    # C13: Warrant computes the identity with Sigma's own formula
+    import subprocess
+    code = ("import json,sigma_provider as p,sys; from pathlib import Path;"
+            "d=Path(p.__file__).parent; print(p.identity_of({n: (d/n).read_bytes() for n in p.FILES}))")
+    theirs = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tempfile.gettempdir()).stdout.strip()
+    check("C13", theirs == PROV.id, "the provider identity agrees with sigma_provider.identity_of", (theirs, PROV.id))
     return finish("COMPUTE")
 
 

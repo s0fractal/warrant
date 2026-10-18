@@ -1,0 +1,1 @@
+{"uses":{"merge":{"requires_triggers":true},"continue":{"requires_triggers":false}},"accept_by":{"results":["codex"]},"targets":["warrant/compute"],"grant_roots":[],"challengers":["owner"],"providers":[]}
