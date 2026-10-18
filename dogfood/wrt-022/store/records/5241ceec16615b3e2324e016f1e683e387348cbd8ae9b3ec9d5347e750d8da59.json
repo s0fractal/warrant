@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "codex@warrant-wrt022"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "AMEND revalidation exact-revision review; RV-01 / GR-01 reproduced in scoped report; closes no duty"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [],
+    "prior": [
+      "ee86a1c5ca049e6b190e6aeb380e2788efd9e2535de5e17a37893b92f7d4cedc"
+    ],
+    "subject": {
+      "hash": "8916e2566163379a320c570e9a6d71488eea6590e643d7f6c7236f748342f7a5",
+      "note": "AMEND revalidation exact-revision review; RV-01 / GR-01 reproduced in scoped report; closes no duty"
+    },
+    "ts": 1792290169,
+    "under": [
+      "119fad9210ea709cccb008f0ee7712e37ff3359787e5165d19e130bd7ff3b1b3"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "codex@warrant-wrt022",
+      "key": "197d9097fb4fdd9afc63d287059889c33926b2c658155617ef2c14a462cf8d75",
+      "sig": "4413dac6b5b4ff532bbb47a334daf2aee4436f48efdc2943c32f564db9307012113a7de5ba751401f1d7ccc444940da5ab7126b8b1f5eb671c2371c3d557280c"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+# Revalidation and S3 — local contract review
+
+Revalidation code: 03935073d6388922519059d62c00ee31ed0a768b.
+Revalidation store: 84b878e1053a4cef75ca5207512924b838de61c2.
+S3 candidate: 9b2df05dbb6a6dd2503662001cffca22c463d91d.
+Verdicts: AMEND revalidation for RV-01; AMEND S3 for GR-01, with the unresolved revalidation base inherited. No current revalidation mapping acceptance signed in this round.
+
+## RV-01 [P2] Earlier transition order is not earlier admission order
+
+Locations: impl/loops.py _View.accepted_by(), _assess_duty(), _judge(REVALIDATED).
+
+The admission guard checks state.admitted while iterating transitions by (transition timestamp, ID), but accepted_by reads all acceptance records in the assessment's view without the relevant admission-position cutoff. An original transition filed early but accepted much later is therefore treated as admitted before an intervening revalidation.
+
+Counterexample (all genuine fixture signatures, declared positions within the same store):
+
+1. Original closure filed at 20, not accepted yet. Its declared dependency is still OPEN, so its trigger FIRED when it is eventually admitted.
+2. REVALIDATED names that closure at 30, with its own required acceptance at 31. It replaces the trigger with one on a discharged dependency.
+3. At as_of=40 the original is PENDING and REVALIDATED is OVERCLAIMED, nothing admitted to revalidate.
+4. Only at 60 is the original closure first accepted.
+5. At as_of=100 the same old revalidation is now ADMITTED, marks the original fired trigger current:false, and makes reliance ELIGIBLE, despite neither its filing nor its own recorded acceptance being later than the original's admission.
+
+This does not test physical clock authenticity; it tests the candidate's claimed ordering rule using its own declared event positions. V10 covers a later *transition* timestamp but not this delayed required acceptance.
+
+Expected: establish and compare effective admission positions, including required acceptances and other admission prerequisites, rather than using a filed transition's timestamp as a proxy. A revalidation must not become an already-accepted later revalidation merely because the predecessor is accepted in a future event. Define the ordering policy explicitly, including tie-breaking. A freshly authorized later revalidation/acceptance can then be admitted after its prerequisites. Add delayed-acceptance refusal, a genuinely later positive control, and a mutant removing the effective-position check. Processing a complete snapshot may derive present facts, but that alone is not the documented guarantee that the revalidated closure was admitted earlier.
+
+## GR-01 [P2] grants.py changes authorization without changing assessment_id
+
+Location: impl/loops.py assess() view identity, after introducing import grants as GR.
+
+The new grant evaluator determines release admission, but the view includes no grants evaluator commitment. loops.py's own source digest cannot identify the behavior of a different imported source file.
+
+Counterexample: a correctly rooted grant permits release but makes no act delegable; a child nevertheless delegates release. On the candidate the child is NOT_ATTENUATED and the release is OVERCLAIMED, duty OPEN. In a temporary copy change only grants.py's rule enforcing child acts within parent.delegable. Fresh interpreter assessments over the identical signed store/trust/profile/as_of now give RELEASED / ADMITTED. The grants.py digests differ, but assessment_id is identical. No loop/record/profile/worker input changed.
+
+This is an assessment identity/caching/provenance error, not a claim that the unchanged candidate's attenuation rule itself accepts that bad child. G05 correctly rejects the child, and its mutant correctly fails G05. Neither checks the identity contract across grant-evaluator revisions.
+
+Expected: include the actual selected grant evaluator identity in the assessment view and commitment, consistently with existing loop/trigger/replay evaluator commitments. If the evaluator is later supplied as an artifact, bind that artifact rather than a hand-maintained substitute value. Add same-evaluator identity stability and changed-evaluator identity separation controls, with a targeted mutant removing that binding. No additional authority registry or Sigma packaging redesign is needed for this fix.
+
+## Useful clarification, not a new blocker
+
+Superseded trigger *declarations* are preserved and evaluated in the current view. The resulting current:false entry is not a frozen copy of what a previous assessment observed: its referenced dependency may since have changed. Call it historical declaration/current reevaluation, or point to an explicitly recorded past assessment when claiming the prior observed result. This does not require a new historical store to fix the two findings above.
+
+## Checks, real mappings and boundaries
+
+Observed on the exact candidates: revalidation tests 10/10 and mutants 7/7; grants tests 16/16 and mutants 12/12. All are green. repro-revalidation-order.py and revalidation-order.json reproduce RV-01 on 84b878e. repro-grants-identity.py and grants-identity.json reproduce GR-01 on 9b2df05 with real signed fixtures and temporary source copies. No real actor private keys are used in the reproductions.
+
+Read the real S1/S2 REVALIDATED recording helper and its declared slices. The pending real mappings do not themselves exhibit the delayed-acceptance fixture, but their new evaluator still needs the bounded correction before this review approves it as the current mechanism. This round records review evidence only; it does not sign their acceptances, close the revalidation implementation duty, or close S3. A fix touching loops.py requires an explicit new/current slice for revalidation; do not pretend an older subject_changed baseline covers changed bytes.
+
+Not rerun: full check.py/Go/Rust/CI and all older mutation campaigns. No full security audit, revocation/conflict/quota/open_for implementation or S4-S8 review is claimed. No producer source or worktree was changed, no push/PR/merge/release was performed, and no task/thread was messaged or archived. Recipient roots, attenuation and act-time expiry otherwise passed the named tests; these findings do not expand S3 into later planned features.

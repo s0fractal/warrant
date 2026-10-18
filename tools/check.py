@@ -179,7 +179,7 @@ CHECKS = [
      ["python3", "tests/replay_mutants.py"], None),
     # Revalidation: an accepted later mapping restores present eligibility after a
     # trigger fired, without erasing the fired trigger's history.
-    ("WRT-022 revalidation: superseding is explicit, ordered and accepted (V01-V10)",
+    ("WRT-022 revalidation: superseding is explicit, ordered and accepted (V01-V12)",
      ["python3", "tests/revalidation_test.py"], None),
     ("WRT-022 revalidation: one on-target mutant per rule",
      ["python3", "tests/revalidation_mutants.py"], None),

@@ -380,6 +380,19 @@ class _View:
                 if a["duty"] == duty_id and a["transition"] == t_id and a["mapping"] == index
                 and sorted(a["evidence"]) == sorted(evidence)}
 
+    def accepted_at(self, duty_id, t_id, index, evidence):
+        """{actor: position} of the EARLIEST acceptance by each actor that binds exactly
+        this duty, transition, mapping and evidence. A position is (ts, record id)."""
+        out = {}
+        for wid, (body, a) in self.acceptances.items():
+            if (a["duty"], a["transition"], a["mapping"]) == (duty_id, t_id, index) and \
+                    sorted(a["evidence"]) == sorted(evidence):
+                pos = (body["ts"], wid)
+                actor = body["actor"]["id"]
+                if actor not in out or pos < out[actor]:
+                    out[actor] = pos
+        return out
+
     def support(self, duty_id, t_id, index):
         return {body["actor"]["id"]: a["support"] for body, a in self.acceptances.values()
                 if a["duty"] == duty_id and a["transition"] == t_id and a["mapping"] == index and "support" in a}
@@ -471,9 +484,34 @@ def _judge(view, did, d, state, t_id, tbody, t, i, m, done):
         # admission order; it never creates a closure of its own.
         if not state["admitted"]:
             return "OVERCLAIMED", "nothing admitted to revalidate"
-        if not set(m["revalidates"]) <= state["admitted"]:
+        if not set(m["revalidates"]) <= set(state["admitted"]):
             return "OVERCLAIMED", "revalidates something that is not an admitted closure of this duty"
     return _judge_closure(view, did, d, state, actor, t, i, t_id, m, done)
+
+
+def _admission_pos(view, did, d, t_id, tbody, i, m):
+    """The position at which a mapping became admissible: the latest of its own
+    transition and the earliest acceptance by each actor the duty requires, each as
+    (ts, record id); None while a required acceptance is missing. Ties are broken by
+    record id, so the order is total and the same in every view of the same records."""
+    pos = (tbody["ts"], t_id)
+    got = view.accepted_at(did, t_id, i, m["evidence"])
+    for actor in d["acceptance"]:
+        if actor not in got:
+            return None
+        pos = max(pos, got[actor])
+    return pos
+
+
+def _revalidation_order(view, did, d, state, t_id, tbody, i, m):
+    """RV-01: a revalidation that is otherwise admissible is admitted only if every
+    closure it names has an admission position strictly before its own."""
+    mine = _admission_pos(view, did, d, t_id, tbody, i, m)
+    late = [x for x in m["revalidates"] if not (state["admitted"].get(x) and state["admitted"][x] < mine)]
+    if late:
+        return "OVERCLAIMED", "revalidates a closure not admitted before it (admission order): " + \
+            ", ".join(x[:12] for x in late)
+    return "ADMITTED", ""
 
 
 def _apply(d, state, acc, tbody, t_id, t, m, label):
@@ -489,12 +527,10 @@ def _apply(d, state, acc, tbody, t_id, t, m, label):
     elif disp == "REVALIDATED":
         acc["revalidations"].append((t_id, tbody["actor"]["id"], t["scope"].get("subject"),
                                      m.get("triggers", []), label, m["revalidates"]))
-        state["admitted"].add(t_id)
     else:
         acc["closures"].append((disp, t_id, tbody["actor"]["id"], t["scope"].get("subject"),
                                 m.get("triggers", []), label))
-        if disp == "DISCHARGED":
-            state["admitted"].add(t_id)
+
 
 
 def _recurring(d, out, instances, as_of):
@@ -539,8 +575,9 @@ def _settle_disposition(out, closures, revalidations=()):
         label = "RELEASE_BY" if kinds[0] == "RELEASED" else "ACTOR_ATTESTATION"
         out["assessed_basis"] = sorted({c[5] or f"{label}:{c[2]}" for c in chosen})
         # Revalidation: an admitted REVALIDATED supersedes, for PRESENT eligibility only,
-        # the earlier closures it names. Their trigger results stay in the report as
-        # history (current: false); nothing is erased (WRT-022 rev 2 §4.2).
+        # the earlier closures it names. Their trigger DECLARATIONS stay in the report and
+        # are re-evaluated in this view (current: false); that is not a frozen record of
+        # what an earlier assessment observed. Nothing is erased (WRT-022 rev 2 §4.2).
         superseded = {x for rv in revalidations for x in rv[5]} if kinds[0] == "DISCHARGED" else set()
         items = [(c[1], c[3], c[4]) for c in chosen]
         if kinds[0] == "DISCHARGED":
@@ -570,21 +607,31 @@ def _assess_duty(view, did, d, as_of, current, done):
     if d["kind"] not in IMPLEMENTED_KINDS:
         out["disposition"] = "NOT_IMPLEMENTED"
         return out
-    state = {"holder": d["holder"], "delegates": set(), "admitted": set()}
+    state = {"holder": d["holder"], "delegates": set(), "admitted": {}}
     acc = {"closures": [], "instances": {}, "observations": [], "revalidations": []}
-    for t_id, (tbody, t) in sorted(view.transitions.items(), key=lambda kv: (kv[1][0]["ts"], kv[0])):
-        for i, m in enumerate(t["closes"]):
-            if m["duty"] != did:
-                continue
-            verdict, why = _judge(view, did, d, state, t_id, tbody, t, i, m, done)
-            cand = {"transition": t_id, "mapping": i, "disposition": m["disposition"],
-                    "claimed_basis": t["did"]["basis"], "verdict": verdict, "why": why}
-            support = view.support(did, t_id, i)
-            if support:
-                cand["acceptor_support"] = support      # F4: the acceptor's own references, resolved
-            out["candidates"].append(cand)
-            if verdict == "ADMITTED":
-                _apply(d, state, acc, tbody, t_id, t, m, view.labels.get((t_id, i)))
+    mine = [(t_id, tbody, t, i, m) for t_id, (tbody, t) in sorted(view.transitions.items(),
+                                                                   key=lambda kv: (kv[1][0]["ts"], kv[0]))
+            for i, m in enumerate(t["closes"]) if m["duty"] == did]
+    # Revalidations are judged after everything else, in the order of their OWN
+    # admission positions (review RV-01): a revalidation is admitted only if every
+    # closure it names was admitted strictly before it, by admission position.
+    first = [x for x in mine if x[4]["disposition"] != "REVALIDATED"]
+    reval = sorted((x for x in mine if x[4]["disposition"] == "REVALIDATED"),
+                   key=lambda x: _admission_pos(view, did, d, x[0], x[1], x[3], x[4]) or (float("inf"), x[0]))
+    for t_id, tbody, t, i, m in first + reval:
+        verdict, why = _judge(view, did, d, state, t_id, tbody, t, i, m, done)
+        if verdict == "ADMITTED" and m["disposition"] == "REVALIDATED":
+            verdict, why = _revalidation_order(view, did, d, state, t_id, tbody, i, m)
+        cand = {"transition": t_id, "mapping": i, "disposition": m["disposition"],
+                "claimed_basis": t["did"]["basis"], "verdict": verdict, "why": why}
+        support = view.support(did, t_id, i)
+        if support:
+            cand["acceptor_support"] = support      # F4: the acceptor's own references, resolved
+        out["candidates"].append(cand)
+        if verdict == "ADMITTED":
+            if m["disposition"] in ("DISCHARGED", "REVALIDATED"):
+                state["admitted"][t_id] = _admission_pos(view, did, d, t_id, tbody, i, m)
+            _apply(d, state, acc, tbody, t_id, t, m, view.labels.get((t_id, i)))
     out["holder"], out["delegates"] = state["holder"], sorted(state["delegates"])
     _settle_disposition(out, acc["closures"], acc["revalidations"])
     if d["shape"] == "recurring" and out["disposition"] == "OPEN":

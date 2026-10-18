@@ -1,0 +1,55 @@
+{
+  "closure_filed_at": 20,
+  "closure_first_accepted_at": 60,
+  "revalidation_filed_at": 30,
+  "revalidation_accepted_at": 31,
+  "at40": {
+    "state": "OPEN",
+    "candidates": [
+      [
+        "DISCHARGED",
+        "PENDING",
+        "waiting for codex@local"
+      ],
+      [
+        "REVALIDATED",
+        "OVERCLAIMED",
+        "nothing admitted to revalidate"
+      ]
+    ]
+  },
+  "at100": {
+    "state": "DISCHARGED",
+    "reliance": "ELIGIBLE",
+    "candidates": [
+      [
+        "DISCHARGED",
+        "ADMITTED",
+        ""
+      ],
+      [
+        "REVALIDATED",
+        "ADMITTED",
+        ""
+      ]
+    ],
+    "triggers": [
+      {
+        "closure": "f37bb8dcb0101e66d881fb4460b6d13241c4975cbc54a9fcd0db2aee2ac05ec3",
+        "duty": "f7ae3fec690f730487dd7337fabf55281f3fd832fc1d2f688af798ca4bcd80e8",
+        "kind": "duty_not_discharged",
+        "result": "FIRED",
+        "detail": "duty is OPEN",
+        "current": false
+      },
+      {
+        "closure": "f184a2fde630deeb380576ccb122437068fdb421ad3f8e055bffef8d32dca81d",
+        "duty": "8415e82ea417fec44af6eb5083defdf8ad733e58bddfc10f8a26835fa4348904",
+        "kind": "duty_not_discharged",
+        "result": "NOT_FIRED",
+        "detail": "DISCHARGED",
+        "current": true
+      }
+    ]
+  }
+}

@@ -193,8 +193,34 @@ def main():
     rep = assess(c)
     rv = [x for x in cand(rep, d) if x[0] == "REVALIDATED"]
     check("V10", L.reliance(rep, d) == "STALE" and len(rv) == 1 and rv[0][1] == "OVERCLAIMED"
-          and "not an admitted closure" in rv[0][2],
+          and "not admitted before it" in rv[0][2],
           "a revalidation cannot name a closure admitted after it", cand(rep, d))
+
+    # V11 (RV-01): filing order is not admission order. The original closure is filed
+    # at 20 but its required acceptance comes only at 60; a revalidation filed at 30
+    # and accepted at 31 names it. At 100 the revalidation must still not count.
+    c = LT.Case()
+    open_dep, done_dep = dep(c, False), dep(c, True)
+    d = c.open()
+    t0 = L.transition("ATTESTED", [c.evidence], scope_subject=LT.SHA_NEW,
+                      closes=[L.mapping(d, "DISCHARGED", [c.evidence], triggers=trig(open_dep))])
+    orig = c.record("propose", c.blob(t0), LT.CLAUDE, prior=[d], ts=20)
+    revalidate(c, d, [orig], trig(done_dep), ts=30)              # accepted at 31
+    c.ts = 59
+    c.accept(LT.CODEX, d, orig)                                  # the original's acceptance, at 60
+    rep = assess(c)
+    rv = [x for x in cand(rep, d) if x[0] == "REVALIDATED"]
+    check("V11", rep["duties"][d]["disposition"] == "DISCHARGED" and L.reliance(rep, d) == "STALE"
+          and rv and rv[0][1] == "OVERCLAIMED" and "admission order" in rv[0][2],
+          "a revalidation admitted before its predecessor's acceptance never supersedes it", cand(rep, d))
+
+    # V12: the genuinely later revalidation of the same closure is admitted
+    c.ts = 69
+    revalidate(c, d, [orig], trig(done_dep), ts=70)              # filed 70, accepted 71
+    rep = assess(c)
+    rv = [x for x in cand(rep, d) if x[0] == "REVALIDATED"]
+    check("V12", L.reliance(rep, d) == "ELIGIBLE" and [x[1] for x in rv] == ["OVERCLAIMED", "ADMITTED"],
+          "a revalidation admitted after its predecessor supersedes it", cand(rep, d))
 
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"REVALIDATION: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"

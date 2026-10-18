@@ -1,0 +1,15 @@
+{
+  "revalidation_code": "03935073d6388922519059d62c00ee31ed0a768b",
+  "revalidation_store": "84b878e1053a4cef75ca5207512924b838de61c2",
+  "S3": "9b2df05dbb6a6dd2503662001cffca22c463d91d",
+  "verdicts": {
+    "revalidation": "AMEND",
+    "S3": "AMEND"
+  },
+  "observed_tests": {
+    "revalidation": 10,
+    "revalidation_mutants_killed_on_target": 7,
+    "grants": 16,
+    "grants_mutants_killed_on_target": 12
+  }
+}

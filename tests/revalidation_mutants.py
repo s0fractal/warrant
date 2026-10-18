@@ -20,7 +20,7 @@ MUTANTS = [
     ("V01", "loops.py", "a revalidation supersedes nothing: fired triggers stay current",
      [('"current": tid not in superseded}', '"current": True}')]),
     ("V03", "loops.py", "a revalidation may name any transition",
-     [('        if not set(m["revalidates"]) <= state["admitted"]:', '        if False:')]),
+     [('        if not set(m["revalidates"]) <= set(state["admitted"]):', '        if False:')]),
     ("V04", "loops.py", "a revalidation is judged without any admitted closure",
      [('        if not state["admitted"]:\n            return "OVERCLAIMED", "nothing admitted to revalidate"\n', '')]),
     ("V07", "loops.py", "a revalidation supersedes every closure, named or not",
@@ -32,8 +32,11 @@ MUTANTS = [
      [('    if [admit_as, claimed] not in d["admits"]:',
        '    if disp != "REVALIDATED" and [admit_as, claimed] not in d["admits"]:')]),
     ("V10", "loops.py", "a revalidation may name a closure admitted after it",
-     [('        if not set(m["revalidates"]) <= state["admitted"]:',
-       '        if not set(m["revalidates"]) <= set(view.transitions):')]),
+     [('        if verdict == "ADMITTED" and m["disposition"] == "REVALIDATED":\n            verdict, why = _revalidation_order(',
+       '        if False:\n            verdict, why = _revalidation_order(')]),
+    ("V11", "loops.py", "a predecessor's admission position is its filing position (RV-01)",
+     [('    pos = (tbody["ts"], t_id)\n    got = view.accepted_at(did, t_id, i, m["evidence"])\n    for actor in d["acceptance"]:',
+       '    pos = (tbody["ts"], t_id)\n    got = view.accepted_at(did, t_id, i, m["evidence"])\n    for actor in d["acceptance"] if m["disposition"] == "REVALIDATED" else ():')]),
 ]
 
 
