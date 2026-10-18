@@ -1,0 +1,10 @@
+{
+  "provider": "sigma-resume",
+  "repository": "https://github.com/s0fractal/sigma-glyph",
+  "commit": "c864d3ee01a2fe46c528bd6e9552438e64df5f6b",
+  "files": {
+    "sigma_glyph.py": "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4",
+    "sigma_resume.py": "575a198d47519f56cb8cf75458d5d9754492433f98650d1ddf1f3580a363e858"
+  },
+  "status": "the only Sigma provider of Warrant 2: these bytes, executed only after their digests are checked, in a separate interpreter that receives them over stdin"
+}
