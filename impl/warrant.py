@@ -605,15 +605,23 @@ def load_draft_sigma(tag=DRAFT_SKI_TAG):
     return _import_sigma(path, unpinned=False, expected_sha=ent[1])
 
 
-def _import_sigma(path, unpinned, expected_sha=None):
+def _import_sigma(path, unpinned, expected_sha=None, data=None):
     """Import an evaluator module from `path`. When `expected_sha` is given the
     file's bytes are hashed FIRST and a mismatch returns None without executing
-    a single line of it (a moved module must never run under a frozen tag)."""
+    a single line of it (a moved module must never run under a frozen tag).
+
+    The bytes are read ONCE (or passed in as `data` by a caller that already read
+    them), and the module is built from exactly those bytes: the file is never
+    re-opened between the hash and the execution, so a file replaced in between
+    cannot run under the digest that was checked (the hash-then-import gap; same
+    class as WRT-022 review S2-04). No bytecode cache is read or written."""
     import importlib.util
-    if not path.exists():
-        return None
+    if data is None:
+        if not path.exists():
+            return None
+        data = path.read_bytes()
     if expected_sha is not None:
-        got = hashlib.sha256(path.read_bytes()).hexdigest()
+        got = hashlib.sha256(data).hexdigest()
         if got != expected_sha:
             if not getattr(_import_sigma, "_warned_moved", False):
                 print(f"warning: bundled evaluator {path.name} does not match its "
@@ -622,9 +630,13 @@ def _import_sigma(path, unpinned, expected_sha=None):
                       file=sys.stderr)
                 _import_sigma._warned_moved = True
             return None
-    spec = importlib.util.spec_from_file_location(path.stem, path)
+    spec = importlib.util.spec_from_loader(path.stem, loader=None, origin=str(path))
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod.__file__ = str(path)
+    # NOSONAR below: dynamic execution is the loader's job; it runs only `data`, the
+    # bytes whose digest was just checked against the pin (or an explicit, flagged
+    # $SIGMA_GLYPH override), never a second read of the file.
+    exec(compile(data, str(path), "exec"), mod.__dict__)  # noqa: S102  # NOSONAR
     # A settlement-grade re-execution must be able to say WHICH evaluator ran.
     # The bundled module is the one this package shipped and pinned above;
     # anything else is unpinned.
@@ -659,8 +671,8 @@ def load_sigma(tag=DEFAULT_SKI_TAG):
     set to bytes that differ from the tag's bundled evaluator, the loaded module
     is flagged `WARRANT_SIGMA_UNPINNED` and a diagnostic is printed, so an
     override can never be silently taken as bounded, settlement-grade execution.
-    An override byte-identical to the bundled module is, by definition, still
-    the pinned engine and is treated as such.
+    An override whose bytes hash to the tag's pinned digest is, by definition,
+    still the pinned engine and is treated as such.
 
     An EXPLICIT `$SIGMA_GLYPH` that is missing or cannot be imported is an
     operator error, NOT a licence to fall back to the bundled engine and test it
@@ -672,20 +684,22 @@ def load_sigma(tag=DEFAULT_SKI_TAG):
     ent = SKI_EVALUATORS.get(tag)
     if ent is None:
         return None                           # unregistered tag: no evaluator
-    bundled = bundled_sigma_path(tag)
     override = os.environ.get("SIGMA_GLYPH")
     if override:
         op = Path(override) / "sigma_glyph.py"
         if not op.exists():
             return None                       # explicit override absent: no fallback
         try:
-            same = (bundled.exists()
-                    and op.read_bytes() == bundled.read_bytes())
-            mod = _import_sigma(op, unpinned=not same)
+            # Read the override ONCE: whether it is the pinned engine is decided on
+            # the same bytes that are then executed, and against the tag's pinned
+            # DIGEST rather than a second file read that could itself be swapped.
+            data = op.read_bytes()
+            same = hashlib.sha256(data).hexdigest() == ent[1]
+            mod = _import_sigma(op, unpinned=not same, data=data)
         except Exception as ex:
             # An explicit override whose sigma_glyph.py EXISTS but is unreadable or
             # raises during import is still a bounded refusal — never a traceback,
-            # and never a silent bundled fallback. exec_module() lets the module's
+            # and never a silent bundled fallback. Executing the module lets its
             # own exception through, so catch it HERE, at the override boundary.
             if not getattr(load_sigma, "_warned_broken", False):
                 print(f"warning: SIGMA_GLYPH override could not be loaded "
