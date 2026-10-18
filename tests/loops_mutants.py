@@ -54,8 +54,8 @@ MUTANTS = [
        '            if _kids and all(report[k]["disposition"] == "DISCHARGED" for k in _kids):\n'
        '                report[_p]["disposition"] = "DISCHARGED"')]),
     ("L10", "loops.py", "anyone releases",
-     [('        return ("ADMITTED", "") if actor in set(d["owed_to"]) | set(d["release_by"]) else \\',
-       '        return ("ADMITTED", "") if True else \\')]),
+     [('        if actor in set(d["owed_to"]) | set(d["release_by"]):\n            return "ADMITTED", ""',
+       '        if True:\n            return "ADMITTED", ""')]),
     ("L11", "loops.py", "the holder abandons an obligation",
      [('        return "OVERCLAIMED", "an obligation cannot be abandoned by its holder"', '        return "ADMITTED", ""')]),
     ("L12", "loops.py", "anyone delegates",

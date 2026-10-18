@@ -31,6 +31,7 @@ sys.path.insert(0, str(HERE))
 import warrant as W  # noqa: E402
 import triggers as TR  # noqa: E402  (WRT-022 S1)
 import replay as RP    # noqa: E402  (WRT-022 S2)
+import grants as GR    # noqa: E402  (WRT-022 S3)
 
 DUTY = "warrant.duty@draft-2"
 TRANSITION = "warrant.transition@draft-2"
@@ -347,6 +348,8 @@ class _View:
         self.crossing_targets = []  # crossing targets the recipient's profile accepts (S2-01)
         self.verifiers = {}         # this assessment's verifier observation (S2-03)
         self.verifier_dir = None    # the captured bytes that observation is of, and that run (S2-04)
+        self.grant_records = {}     # grant record -> (ts, grant) (S3)
+        self.grants = GR.Grants({}, ())
         self.refused = {}
         for wid, body in sorted(self.bodies.items(), key=lambda kv: (kv[1]["ts"], kv[0])):
             self._admit(wid, body)
@@ -362,6 +365,14 @@ class _View:
             self._file(wid, why, self.duties, doc)
         elif kind == ("propose", TRANSITION):
             self._file(wid, transition_problem(doc), self.transitions, (body, doc))
+        elif kind == ("propose", GR.GRANT):
+            why = GR.grant_problem(doc)
+            if why is None and body["actor"]["id"] != doc["grantor"]:
+                why = "a grant is signed by its grantor"
+            if why:
+                self.refused[wid] = why
+            else:
+                self.grant_records[wid] = (body["ts"], doc)
         elif kind == ("accept", ACCEPTANCE):
             why = acceptance_problem(doc)
             if why is None and not all(_resolves(self.store, h) for h in doc.get("support", [])):
@@ -473,8 +484,12 @@ def _judge(view, did, d, state, t_id, tbody, t, i, m, done):
     if not all(_resolves(view.store, h) for h in m["evidence"]):
         return "MISSING_EVIDENCE", "cited evidence is not in the view, or its bytes do not match"
     if disp == "RELEASED":
-        return ("ADMITTED", "") if actor in set(d["owed_to"]) | set(d["release_by"]) else \
-            ("OVERCLAIMED", "not authorized to release")
+        if actor in set(d["owed_to"]) | set(d["release_by"]):
+            return "ADMITTED", ""
+        # S3: a grant from an accepted root, attenuated at every edge, valid at the
+        # release's own position. A key binding alone authorizes nothing.
+        gid, why = GR.authorized(view.grants, actor, "release", did, tbody["ts"])
+        return ("ADMITTED", f"by grant {gid[:12]}") if gid else ("OVERCLAIMED", f"not authorized to release: {why}")
     if disp == "ABANDONED":
         return "OVERCLAIMED", "an obligation cannot be abandoned by its holder"
     if disp in ("DELEGATED", "SUBSTITUTED"):
@@ -739,9 +754,13 @@ def _questions(view):
 def profile_problem(prof):
     """None if `prof` is a well-formed recipient profile, else the reason. A profile
     names the uses a recipient may rely on closures for, and what each use needs."""
-    if not (isinstance(prof, dict) and {"schema", "uses"} <= set(prof) <= {"schema", "uses", "crossing_targets"}
+    if not (isinstance(prof, dict) and {"schema", "uses"} <= set(prof) <= {"schema", "uses", "crossing_targets",
+                                                                           "grant_roots"}
             and prof["schema"] == PROFILE):
         return "profile fields"
+    gr = prof.get("grant_roots", [])
+    if not (isinstance(gr, list) and all(isinstance(g, str) and HEX64.match(g) for g in gr) and len(set(gr)) == len(gr)):
+        return "grant_roots"
     ct = prof.get("crossing_targets", [])
     if not (isinstance(ct, list) and all(isinstance(t, str) and t for t in ct) and len(set(ct)) == len(ct)):
         return "crossing_targets"
@@ -795,6 +814,7 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
         valid = [w for w in ids if w not in bad] if store_ok else []
         view = _View(store, valid, as_of)
         view.crossing_targets = list((profile or {}).get("crossing_targets", []))
+        view.grants = GR.Grants(view.grant_records, (profile or {}).get("grant_roots", []))
         view.verifiers, view.verifier_dir = RP.capture(Path(tmp) / "verifier")
         report = _assess_all(view, as_of, current)
         _orphan_and_missing(view, report)
@@ -819,6 +839,7 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
                 "duties": report, "invalid_records": sorted(set(ids) - set(valid)),
                 "refused_events": view.refused, "missing_duties": dangling,
                 "unowned_questions": _questions(view), "crossings": _crossings(view),
+                "grants": {g: view.grants.state(g, as_of)[0] for g in sorted(view.grant_records)},
                 "questions_taken": {did: d["answers"] for did, d in view.duties.items() if "answers" in d}}
 
 
