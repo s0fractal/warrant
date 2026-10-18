@@ -1,0 +1,35 @@
+{
+  "body": {
+    "actor": {
+      "id": "claude@warrant-wrt022"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "revalidation"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [],
+    "prior": [
+      "08ae3651d3973de0d1d7c95109f09d3e3187e64e6d969fac269cd1a13ecb5efb",
+      "9fec95e34bd15c5078e183541db710db3e1b03728565b714b779080a53356b32"
+    ],
+    "subject": {
+      "hash": "b8d7a2860463825a55ce26e6d28e72d5227b462a3dfbe384e86e378448387cbb",
+      "note": "revalidation"
+    },
+    "ts": 1792290811,
+    "under": [
+      "119fad9210ea709cccb008f0ee7712e37ff3359787e5165d19e130bd7ff3b1b3"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "claude@warrant-wrt022",
+      "key": "fdd3de20d61dd2fe851f2612eaedeb5530a2adebc10ff3bb9edcf7fc9db938cd",
+      "sig": "fd12349d9b6646afc6010c2d1d0e780dfb79543f0d5793fdbb7ead0d0a03404a7a55ad4bd27a8c25ed7a826d6873600ae22373d4aaf33d0674ec374490f9bf00"
+    }
+  ]
+}
