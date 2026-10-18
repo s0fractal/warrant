@@ -5,13 +5,11 @@ OFF_TARGET, a crash is CRASH; neither counts as killed.
 
     python3 tests/triggers_mutants.py
 """
-import json
-import os
-import subprocess
 import sys
-import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mutant_runner import campaign  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = {f: (ROOT / "impl" / f).read_text() for f in ("triggers.py", "loops.py")}
@@ -86,39 +84,12 @@ MUTANTS = [
 ]
 
 
-def run(target, fname, pairs):
-    srcs = dict(SOURCES)
-    for old, new in pairs:
-        if srcs[fname].count(old) != 1:
-            return "BAD_MUTANT", f"pattern occurs {srcs[fname].count(old)} times: {old[:60]!r}"
-        srcs[fname] = srcs[fname].replace(old, new)
-    with tempfile.TemporaryDirectory() as tmp:
-        for f, text in srcs.items():
-            (Path(tmp) / f).write_text(text)
-        res = Path(tmp) / "results.json"
-        env = dict(os.environ, TRIGGERS_IMPL=tmp, TRIGGERS_RESULTS=str(res))
-        subprocess.run([sys.executable, str(ROOT / "tests" / "triggers_test.py")], env=env,
-                       capture_output=True, text=True, check=False)
-        if not res.exists():
-            return "CRASH", ""
-        results = json.loads(res.read_text())
-    failed = sorted(k for k, v in results.items() if v == "FAIL")
-    if results.get(target) == "FAIL":
-        return "KILLED", ",".join(failed)
-    return ("OFF_TARGET" if failed else "SURVIVED"), ",".join(failed)
-
-
-def main():
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
-        outcomes = list(pool.map(lambda mt: run(mt[0], mt[1], mt[3]), MUTANTS))
-    verdicts = []
-    for (target, fname, what, _), (v, detail) in zip(MUTANTS, outcomes):
-        verdicts.append(v)
-        print(f"{v:10} {target} {fname}: {what}" + (f"  [{detail}]" if detail else ""))
-    killed = verdicts.count("KILLED")
-    print(f"TRIGGER MUTANTS: {killed}/{len(MUTANTS)} killed on target")
-    return 0 if killed == len(MUTANTS) else 1
+def prepare(tmp, srcs):
+    for f, text in srcs.items():
+        (tmp / f).write_text(text)
+    return {"TRIGGERS_IMPL": str(tmp)}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(campaign("TRIGGER MUTANTS", MUTANTS, SOURCES, prepare, ROOT / "tests" / "triggers_test.py",
+                      "TRIGGERS_RESULTS"))
