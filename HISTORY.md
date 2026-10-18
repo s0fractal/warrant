@@ -30,6 +30,8 @@ one current path, and deletion of the superseded implementations.
 | `tools/check.py`, `doc_counts.py`, `contract.py`, X1 mirror scripts, agent gate, 25 other tools | retired | `tests/` and five scenarios in `examples/` |
 | `contracts/*.json` (rule 6) | closed with SPEC v0.4 | SIG-E1 (cofactorless Ed25519) is kept: `tests/vectors/ed25519-edge.json`. SIG-P1, KEY-B1/C1/P1/R1 and ADOPT-T1 bound rules that no longer exist |
 | Experiments, demos, needs, dogfood stores | historical | — |
+| Papers, proposals (WRT-001..022, REDESIGN-1, GOV-001), reviews, prior-art, standards notes, docs, 0.x root documents (ARCHITECT, THREAT-MODEL, EVIDENCE-PACK, PUBLISHING, LISTINGS, MAP, CONTRACTS, PRIOR-ART), `llms.txt`, `action.yml` | historical, at the tag | SPEC.md, README.md, HISTORY.md, SECURITY.md. Deposited papers keep their DOIs |
+| Workflows `wrt-005`, `pages`, `publish`, `agent-gate` | retired | `ci.yml` (`test`) and `x1-cross-repo.yml` (`cross-repo`) |
 
 ## Work open at the rebuild
 

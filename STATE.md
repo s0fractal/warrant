@@ -21,9 +21,12 @@ Goal: owner's GOAL-FOR-CLAUDE.md (2026-10-18), Warrant 2 rebuild.
 
 ## Next slice
 
-contract + engine + provider + CLI done locally; next: scenarios (examples/),
-deletion of the superseded generation, CI, docs, mutants, review.
+Done locally and in PR #138: contract, engine, provider, CLI, scenarios,
+deletion of the 0.x generation (148 tracked files remain, 81 of them the
+historical `.warrants/` governance records), CI on the two required job ids.
+Next: independent review (Codex) of the PR head, fix findings, merge.
 
 ## Blockers
 
-- sigma-glyph's required `cross-repo` check clones warrant master and checks byte-mirrored X1 files that the rebuild removes. A sigma-glyph PR that pins X1 to the historical tag needs the sigma owner's merge.
+- Independent review of the PR head has not happened yet.
+- sigma-glyph's required `cross-repo` check clones warrant master and checks the X1 files mirrored byte for byte; after #138 merges it fails until sigma-glyph pins X1 to `history/warrant-0.x-2026-10-18` and retires step E. A sigma-glyph change; the auto-mode classifier refused it to Claude as a CI bypass, so it is the owner's.

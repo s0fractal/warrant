@@ -81,7 +81,8 @@ are not style — breaking them corrupts the thing this project exists to protec
    sokol-core (ADR-0023/0024).
 
 The retired autonomy-envelope experiment and the lessons preserved from it are
-indexed in `history/AUTONOMY-ENVELOPE-0.1-RETIREMENT.md`. Its policy is not an
+indexed in `history/AUTONOMY-ENVELOPE-0.1-RETIREMENT.md` at the tag
+`history/warrant-0.x-2026-10-18`. Its policy is not an
 active source of authority.
 
 ## Precedent (why this file exists)
