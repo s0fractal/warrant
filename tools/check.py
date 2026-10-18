@@ -161,7 +161,7 @@ CHECKS = [
     ("WRT-010 fact provenance (binding, citation paths, mutations, demo)",
      ["python3", "tests/fact_provenance.py"], "sigma"),
     # WRT-021 draft-2 (obligation slice): a profile, nothing verify decides changes.
-    ("WRT-021 loops: duties, transitions, acceptance, view (L01-L36)",
+    ("WRT-021 loops: duties, transitions, acceptance, view (L01-L38)",
      ["python3", "tests/loops_test.py"], None),
     ("WRT-021 loops: one on-target mutant per rule",
      ["python3", "tests/loops_mutants.py"], None),
@@ -172,6 +172,11 @@ CHECKS = [
      ["python3", "tests/triggers_test.py"], None),
     ("WRT-022 S1 triggers: one on-target mutant per rule",
      ["python3", "tests/triggers_mutants.py"], None),
+    # WRT-022 S2: crossings and replay receipts the recipient re-verifies.
+    ("WRT-022 S2 replay: ski@v1 and sigma-resume receipts, crossings, pins (X01-X22)",
+     ["python3", "tests/replay_test.py"], None),
+    ("WRT-022 S2 replay: one on-target mutant per rule",
+     ["python3", "tests/replay_mutants.py"], None),
     ("WRT-022 dogfood store: real agent-signed events verify, none refused",
      ["python3", "dogfood/wrt-022/events.py", "check"], None),
     ("evidence PDF pack (portable extraction refusal controls)",

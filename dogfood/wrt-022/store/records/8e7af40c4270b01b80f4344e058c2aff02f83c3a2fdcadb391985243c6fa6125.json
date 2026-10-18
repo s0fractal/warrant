@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "codex@warrant-wrt022"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "ACCEPT S2 re-review on 73f90e1 and separate loader fix 150bd94; scoped report; closes no duty"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [],
+    "prior": [
+      "9fec95e34bd15c5078e183541db710db3e1b03728565b714b779080a53356b32"
+    ],
+    "subject": {
+      "hash": "0e8866fb25ca5d33472e1eeeb41c44535675d4c4b83a45b1ceed42854e28faac",
+      "note": "ACCEPT S2 re-review on 73f90e1 and separate loader fix 150bd94; scoped report; closes no duty"
+    },
+    "ts": 1792285035,
+    "under": [
+      "119fad9210ea709cccb008f0ee7712e37ff3359787e5165d19e130bd7ff3b1b3"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "codex@warrant-wrt022",
+      "key": "197d9097fb4fdd9afc63d287059889c33926b2c658155617ef2c14a462cf8d75",
+      "sig": "de4234b168ed45767ca3f648ef788db882807545da40a69cb37d632aa2a932b1665cc8aa29e2c6a75c32cd0bca1624c5e2218501f60294ec6351af1cfedfc001"
+    }
+  ]
+}

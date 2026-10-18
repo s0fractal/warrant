@@ -1,0 +1,32 @@
+# Loader and S2 exact-revision review
+
+## Verdicts
+
+- **ACCEPT** loader fix at `150bd9400831645a02964a0ed0ff97d91ae17cfc` (base `de0fc912fdfb0bf519a1b0fefca137c13120e354`).
+- **ACCEPT** bounded S2 implementation at `73f90e1ece815ec8932a50d517d89634dd16df32`; S2-04 is addressed. Previous S2-01..03 fixes remain present. This does not accept unrelated future changes or claim CI/merge/publication.
+
+No unresolved blocking finding was found in the reviewed changes. The core loader and the sigma-resume capture are separate source changes; both need to reach the eventual combined implementation. The isolated combined-source smoke test described below is compatibility evidence, not an invented Git commit or a complete integration release gate.
+
+## Loader
+
+The pinned path now hashes and executes the same immutable byte string. The override reads once, classifies those bytes against SKI_EVALUATORS, and passes the same bytes into module construction. Comparing to the registered digest fixes the drifted-bundle/identical-override ambiguity. __file__ is preserved; module execution does not invoke the source loader or its bytecode cache. A divergent explicitly requested override may still execute as UNPINNED for deliberate non-crediting development; the existing settlement and direct-execution restrictions remain.
+
+R1/R2/R4 were rerun against the previous de0fc91 implementation: all three fail on their own assertions, R3 passes. At 150bd94 R1-R4 pass and all four mutations are killed on target. Existing tests/ski_runtime_evaluators.py and tests/sigma_cas_identity.py pass, including pre-import drift refusal, actual ski specimen replay, CAS identity, and rejection of an unpinned override even with the differential flag under settlement.
+
+Additional independent counterexample/control: a genuine source file plus a timestamp-valid bytecode cache containing an extra marker. The old loader executes the cached marker under the genuine source digest; the new loader executes only the genuine bytes and ignores that cache. See repro-bytecode.py and bytecode-old.json / bytecode-fixed.json. This is fixed by the same change; it is not a new unresolved finding or a demand for an additional implementation slice.
+
+## S2 capture
+
+capture() reads the worker and two kernels into the per-assessment private directory, derives observed digests from those bytes, and _sigma executes that captured worker. Imports resolve into its captured vendor directory. Existing package cache files are not copied; -B avoids writing caches. The comparison against receiver-owned pins still runs before execution. The snapshot lifetime encloses the assessment and is removed afterwards.
+
+The independent S2-04 reproduction now gives OPEN/UNVERIFIED_BASIS both before and after replacing the original worker after capture, with the genuine FALSE computation and dishonest TRUE receipt. The genuine captured worker is executed and reports disagreement. Equal assessment IDs here are correct because both runs use the same captured verifier and have the same result. See repro-s2-snapshot.py / s2-snapshot.json.
+
+Observed candidate checks: X01-X22 22 PASS; replay mutants 21/21 killed on their named cases; loops 38 PASS; triggers 18 PASS. A temporary export combining S2 with exactly the loader candidate's impl/warrant.py also passes X01-X22 (combined-replay.log). This demonstrates that these source fixes coexist, while the final combined Git/PR head must still receive its affected checks and required CI.
+
+## Scope, remaining events and limitations
+
+Read the loader implementation, all its call sites, loader cases/mutations, sigma capture/execution integration and X22. The S2 re-review is bounded to the previously named contract findings and affected integration; it does not restart a whole kernel audit or decide WRT-024 packaging. Full check.py, Go/Rust builds and the 44/26 older mutation campaigns were not rerun by Codex. Their producer-reported results are not substituted for these observed checks. These local candidates were not pushed; no CI or PR merge was performed.
+
+S2 duty remains OPEN until its holder files a precise closing mapping and Codex accepts that mapping. This report is current ACCEPT review evidence, not a fabricated acceptance of a transition that does not yet exist. S1's historical closure remains valid; its old subject trigger is still STALE for changed implementation inputs. Passing the S1 regression suite does not rewrite that historical trigger or automatically issue a current revalidation record.
+
+Recommended order: land the core loader fix through its ordinary PR/checks, integrate that change into the S2 candidate without altering the accepted sigma capture semantics, file the scoped S2 closing transition with the current review and dependency manifest, then obtain the exact acceptance and final-head CI. Preserve the distinction between the two source fixes and their final merge state.

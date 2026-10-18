@@ -111,7 +111,7 @@ MUTANTS = [
      [('        live = open_like or bool(set(r["flags"]) - {"OVERCLAIMED_CANDIDATE", "UNVERIFIED_CANDIDATE"})',
        '        live = open_like or bool(r["flags"])')]),
     ("L29", "loops.py", "a claimed basis is taken as validated (WL01)",
-     [('    if claimed not in VALIDATED_BASES:', '    if False:')]),
+     [('    elif claimed not in VALIDATED_BASES:', '    elif False:')]),
     ("L30", "loops.py", "cited evidence need not be in the view (WL01)",
      [('    if not all(_resolves(view.store, h) for h in m["evidence"]):', '    if False:')]),
     ("L30", "loops.py", "evidence bytes need not match their address (WL01)",
