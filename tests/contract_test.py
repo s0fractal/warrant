@@ -350,6 +350,29 @@ def handoff_cases():
           and any(c["transition"] == old for c in rep["duties"][d]["candidates"]),
           "a superseded closure is history, not acceptance work", offered)
 
+    # F4 (W141-01, Codex review of 0c3b034): replacing a transition's RESULTS does
+    # not make its pending closure obsolete. A replacement that closes nothing, one
+    # that closes another duty, and one whose results are accepted but whose own
+    # item is not: in each, the old item is still the owner's acceptance work.
+    def still_offered(variant):
+        w = World()
+        d = w.duty()
+        other = w.duty(statement="other")
+        old = w.close(d)
+        if variant == "results-only":
+            new = w.act(HOLDER, [], established=["v2"], supersedes=[old])
+        elif variant == "other-duty":
+            new = w.act(HOLDER, [R.item(other, "discharge", [w.evidence("o")])], supersedes=[old])
+            w.accept(OWNER, new, 0)
+        else:
+            new = w.act(HOLDER, [R.item(d, "discharge", [w.evidence("v2")])], supersedes=[old])
+        w.accept(CODEX, new, None)
+        rep = w.assess(prof=E.profile(results_by=[CODEX]))
+        return rep["duties"][d]["disposition"] == "OPEN" and any(
+            x.get("need") == "accept" and x.get("transition") == old for x in E.frontier(rep, OWNER))
+    got = {v: still_offered(v) for v in ("results-only", "other-duty", "item-unaccepted")}
+    check("F4", all(got.values()), "results supersession alone never hides a pending closure from its acceptor", got)
+
 
 def main():
     attest_cases()

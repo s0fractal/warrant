@@ -117,8 +117,12 @@ MUTANTS = [
     ("M38", "compute.py", "the provider keeps the caller's dict (W140-01)",
      [("        self.sources = types.MappingProxyType(own)", "        self.sources = sources")], "compute_test", ["C14"]),
     ("M39", "engine.py", "superseded closures are still offered for acceptance",
-     [('and actor in (c.get("waiting_for") or []) and not superseded:', 'and actor in (c.get("waiting_for") or []):')],
+     [('and actor in (c.get("waiting_for") or []) and not replaced:', 'and actor in (c.get("waiting_for") or []):')],
      "contract_test", ["F3"]),
+    ("M40", "engine.py", "results supersession alone hides a pending closure (W141-01)",
+     [('        replaced = set(rep["results"].get(c["transition"], {}).get("superseded_by", [])) & closed_by_admitted',
+       '        replaced = set(rep["results"].get(c["transition"], {}).get("superseded_by", []))')],
+     "contract_test", ["F4"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
