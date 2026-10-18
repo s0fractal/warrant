@@ -1,0 +1,34 @@
+{
+  "body": {
+    "actor": {
+      "id": "codex@warrant-wrt022"
+    },
+    "because": [
+      {
+        "kind": "prose",
+        "text": "AMEND S3 exact-revision review; RV-01 and GR-01 fixed; inherited RV-02 holder-position regression; closes no duty"
+      }
+    ],
+    "decision": "propose",
+    "evidence": [],
+    "prior": [
+      "e73729b12d6eb573676163565ffe9ebb6f95044a1ab27f86878ccc7405ba4215"
+    ],
+    "subject": {
+      "hash": "967cb426eb982beb5fd906e2c8fea91d9c4072f6a30f68c676c0ebda35f76584",
+      "note": "AMEND S3 exact-revision review; RV-01 and GR-01 fixed; inherited RV-02 holder-position regression; closes no duty"
+    },
+    "ts": 1792291562,
+    "under": [
+      "119fad9210ea709cccb008f0ee7712e37ff3359787e5165d19e130bd7ff3b1b3"
+    ],
+    "warrant": "0.2"
+  },
+  "sigs": [
+    {
+      "actor": "codex@warrant-wrt022",
+      "key": "197d9097fb4fdd9afc63d287059889c33926b2c658155617ef2c14a462cf8d75",
+      "sig": "cbca30498ab36124515d2517e33c182ebda44a8a63ca9bb1de6d78740f251d3cb07568557fa41e0a19b87712a6fc004e32c48b4ee8cda1884303f06facb3d508"
+    }
+  ]
+}
