@@ -1,0 +1,65 @@
+{
+  "loader_candidate": "150bd9400831645a02964a0ed0ff97d91ae17cfc",
+  "S2_candidate": "73f90e1ece815ec8932a50d517d89634dd16df32",
+  "loader_verdict": "ACCEPT",
+  "S2_verdict": "ACCEPT",
+  "observed": {
+    "loader_tests": "4/4",
+    "loader_mutants": "4/4 on target",
+    "old_loader_tests": "R1/R2/R4 FAIL; R3 PASS",
+    "ski_runtime_evaluators": "PASS",
+    "sigma_cas_identity": "PASS",
+    "S2_replay_tests": "22/22",
+    "S2_replay_mutants": "21/21 on target",
+    "S2_loop_tests": "38/38",
+    "S2_trigger_tests": "18/18",
+    "combined_source_replay": "22/22"
+  },
+  "bytecode": {
+    "old": {
+      "module_loaded": true,
+      "unexpected_cached_code_executed": true,
+      "source_file_preserved": true
+    },
+    "fixed": {
+      "module_loaded": true,
+      "unexpected_cached_code_executed": false,
+      "source_file_preserved": true
+    }
+  },
+  "S2_counterexample": {
+    "actual_computation_outcome": "NORMAL_FORM",
+    "honest_result": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
+    "required_result": "bc0c2fe26e44e2aed8ce500a74963bc270fd4a49ec0c2e4837ce7a64bb0a486c",
+    "before": [
+      "OPEN",
+      [
+        "UNVERIFIED_BASIS"
+      ],
+      [
+        "REPLAYED is claimed and not validated here: the recipient's replay disagrees with the receipt"
+      ]
+    ],
+    "after": [
+      "OPEN",
+      [
+        "UNVERIFIED_BASIS"
+      ],
+      [
+        "REPLAYED is claimed and not validated here: the recipient's replay disagrees with the receipt"
+      ]
+    ],
+    "assessed_basis": [],
+    "same_assessment_id": true,
+    "observed_worker": "db6d924369f64d5b6c00860466d76000bf9c49723aecf6f4c9b2bb343d5b513d",
+    "worker_expected_pin": "db6d924369f64d5b6c00860466d76000bf9c49723aecf6f4c9b2bb343d5b513d",
+    "scope": "temporary local file replacement between observation and execution; not a remote-only exploit"
+  },
+  "not_run": [
+    "full check.py",
+    "Go/Rust builds",
+    "older loop/trigger mutation campaigns",
+    "CI"
+  ],
+  "merge_performed": false
+}
