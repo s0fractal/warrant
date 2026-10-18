@@ -17,3 +17,11 @@ Short observations while recording this work with the current CLI. Not a tracker
    public key is his to provide, so the reviewer's first step is outside Warrant.
 7. A subject revision must be the full 40-hex SHA; short SHAs from `git log` are
    refused by the schema (correctly) and had to be expanded by hand.
+8. (handoff) The holder's frontier said `close` for duties whose closures were
+   filed and only waited for codex. Now it says `awaiting acceptance by codex`.
+9. (handoff) Nothing in a report said that codex had no key in trust.json, so
+   no acceptance by codex could count. Reports now list `unbound_actors`.
+10. (handoff) `assess` did not show a duty's `requires`; it does now.
+11. (handoff) T2's residual "GitHub CI not run" was stale when the new session
+    read it. A residual is a snapshot; the packet's refresh step covers records,
+    not the outside world.

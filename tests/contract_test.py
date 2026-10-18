@@ -321,6 +321,22 @@ def question_cases():
           "an opened question leaves the result standing and is in nobody's frontier", (q, E.frontier(rep, HOLDER)))
 
 
+def handoff_cases():
+    # F1-F2: what a new session needs from the report (2026-10-18 handoff experiment):
+    # the holder's frontier names whom a filed closure waits for; the report names
+    # the duty's requires, and the actors who cannot sign in this view.
+    w = World()
+    child = w.duty(statement="child")
+    parent = w.duty(statement="parent", requires=[child], accept_by=("nobody-bound",))
+    w.close(child)
+    rep = w.assess()
+    needs = {x["duty"]: x["need"] for x in E.frontier(rep, HOLDER)}
+    check("F1", needs[child] == f"awaiting acceptance by {OWNER}" and needs[parent] == "close",
+          "a filed closure waiting for acceptance is not shown as work to do", needs)
+    check("F2", rep["duties"][parent]["requires"] == [child] and rep["unbound_actors"] == ["nobody-bound"],
+          "the report shows requires, and an acceptor without a key", (rep["duties"][parent]["requires"], rep["unbound_actors"]))
+
+
 def main():
     attest_cases()
     exact_acceptance_cases()
@@ -332,6 +348,7 @@ def main():
     unknown_cases()
     supersession_cases()
     question_cases()
+    handoff_cases()
     return finish("CONTRACT")
 
 

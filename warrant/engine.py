@@ -415,6 +415,7 @@ def _assess_duty(view, did, rec, done):
            "release_by": d["release_by"], "condition": next(iter(d["condition"])), "subject": d["subject"],
            "schedule": d["schedule"], "disposition": "OPEN", "closed_by": [], "assessed_basis": [],
            "candidates": [], "flags": [], "triggers": [], "revalidations": [],
+           "requires": d["requires"], "serves": d["serves"],
            "fresh_for": d["condition"].get("observe", {}).get("fresh_for")}
     items = _items(view, did)
     holders = Holders(d["holder"])
@@ -600,7 +601,13 @@ def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=No
     ident = {"snapshot": snapshot.digest, "trust": trust.digest, "profile": C.doc_id(prof), "as_of": as_of,
              "current": sorted(current), "workspace": ws.identity() if ws else None,
              "engine": engine_identity(), "provider": provider.identity if provider else None}
+    named = {a for rec in view.duties.values() for f in ("holder", "owed_to", "accept_by", "release_by")
+             for a in ([rec["body"][f]] if isinstance(rec["body"][f], str) else rec["body"][f])}
+    bound = {actor for actor, _ in trust.keys.values()}
     return {"warrant": "report/2", "assessment_id": C.doc_id(ident), "view": dict(ident, completeness="UNATTESTED"),
+            # Actors the duties name who have no key in this trust: nothing they
+            # sign can count in this view (found in the 2026-10-18 handoff).
+            "unbound_actors": sorted(named - bound),
             "profile": prof, "duties": duties, "results": results, "challenges": challenges,
             "grants": {g: grant_state(view, g, as_of)[0] for g in sorted(view.by_type["grant"])},
             "questions": _questions(view, duties), "invalid_records": view.invalid,
@@ -703,7 +710,11 @@ def reliance(rep, target, use):
 def _duty_needs(rep, did, r, actor):
     holds = actor == r["holder"] or actor in r["delegates"]
     if holds and r["disposition"] == "OPEN":
-        yield {"duty": did, "need": "close", "statement": r["statement"]}
+        # A filed closure waiting only for acceptances is not work to redo: say
+        # whom it waits for (found in the 2026-10-18 handoff experiment).
+        waiting = sorted({a for c in r["candidates"] if c["verdict"] == "PENDING" for a in c.get("waiting_for") or []})
+        need = f"awaiting acceptance by {', '.join(waiting)}" if waiting else "close"
+        yield {"duty": did, "need": need, "statement": r["statement"]}
     if holds and r["disposition"] == "SCHEDULED":
         for n, p in sorted(r["periods"].items(), key=lambda kv: int(kv[0])):
             if p["state"] in ("OPEN", "LAPSED"):

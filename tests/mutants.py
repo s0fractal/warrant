@@ -109,6 +109,11 @@ MUTANTS = [
      [('    body = fill(a.type, _read_json(a.body))', '    body = _read_json(a.body)')], "cli_test", ["F1", "T1"]),
     ("M35", "cli.py", "a transition's evidence is not derived from its items",
      [('    if rtype == "transition" and "evidence" not in body and', '    if False and')], "cli_test", ["T1"]),
+    ("M36", "engine.py", "a closure waiting for acceptance is shown as work to do",
+     [("        need = f\"awaiting acceptance by {', '.join(waiting)}\" if waiting else \"close\"", '        need = "close"')],
+     "contract_test", ["F1"]),
+    ("M37", "engine.py", "actors without a key are not reported",
+     [('            "unbound_actors": sorted(named - bound),', '            "unbound_actors": [],')], "contract_test", ["F2"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
