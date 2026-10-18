@@ -68,7 +68,7 @@ def main():
             result = G.term_hash(term).hex()
     except (R.InvalidEncoding, ValueError, KeyError, TypeError) as e:
         return out(refused=f"receipt not decodable: {type(e).__name__}")
-    return out(basis=basis, code=code, result_term_hash=result, verifier=PINS["sigma_resume.py"])
+    return out(basis=basis, code=code, result_term_hash=result, verifier=PINS)
 
 
 if __name__ == "__main__":

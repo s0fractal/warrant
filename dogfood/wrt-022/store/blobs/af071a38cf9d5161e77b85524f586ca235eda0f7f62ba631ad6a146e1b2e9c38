@@ -1,0 +1,38 @@
+# WRT-022 S2 — contract review with counterexamples
+
+Candidate: 01a25e22a73565e5f86a5cb850c41650cf82c8bd (local, unpublished).
+Verdict: AMEND. Three reproducible correctness/identity findings. No implementation acceptance or merge.
+
+## S2-01 [P2] Credit is not bound to the recipient's target profile
+
+Location: impl/replay.py:187-209; impl/loops.py:418-424.
+
+A crossing's target_profile is validated only as a nonempty string. validate() is not passed the actual recipient profile or accepted profile identity. Change a well-formed crossing's target_profile to `unaccepted-other-recipient`, supply the actual receiver's read profile to L.assess, and the same signed duty still becomes DISCHARGED / ELIGIBLE. Successful replay establishes the required computational result, but does not establish acceptance of a translation into the actual target profile. This violates the crossing's declared source-to-target boundary in WRT-022 §4.5.
+
+Expected: retain a foreign crossing as visible without credit unless its target profile is explicitly accepted by this recipient. Bind a stable receiver-selected identity (or explicit accepted identity mapping), rather than trusting a producer string. This needs no full S5 profile-lineage implementation. Add same-target positive control and foreign/missing-target refusal controls, plus a mutant that removes the recipient comparison.
+
+## S2-02 [P2] The parent's verifier pin omits the glyph kernel
+
+Location: impl/replay.py:174-184; impl/replay_sigma_worker.py:20-21,72.
+
+The worker checks both sigma_resume.py and sigma_glyph.py. The assessing parent admits only the reported sigma_resume.py digest. In exactly the re-pinned-worker scenario already modelled by X17, change sigma_glyph.py (even appending a comment suffices to change its digest) and update only that file's worker-side pin. The parent still accepts DISCHARGED with REPLAYED:sigma-resume:575a198d47519f56, although the glyph evaluator is no longer the registered bytes. X17 protects the resume component but not this second indispensable component.
+
+Expected: parent acceptance binds the complete admitted verifier identity: resume kernel, glyph kernel and trusted worker boundary. Compare against receiver-owned commitments; do not let the worker redefine its allowed kernel by reporting only one unchanged component. Cover drift/re-pin for each component with honest positive controls and targeted mutation. This is a provenance/correctness finding under the existing X17 scenario, not a claim of remote code execution or independent key custody.
+
+## S2-03 [P2] Different replay verdicts share one assessment_id
+
+Location: impl/loops.py:686-695; impl/replay.py:39,166-175.
+
+The view commits to replay.py bytes, but not to the actual worker/kernel availability and integrity observation. Keep store, trust, as_of, recipient profile and current inputs fixed. First assess the valid sigma receipt: DISCHARGED. Then append a comment to the local copied sigma_resume.py, leaving the worker and its expected pins unchanged. Assessment now returns OPEN / UNVERIFIED_BASIS (`verifier not pinned: sigma_resume.py`), yet assessment_id is identical. This directly breaks S1's identity contract and can alias cached/report-indexed judgments.
+
+Expected: bind the verifier integrity/availability observations that actually governed this assessment (including typed refused/unavailable states) into its identity, consistently with the verifier used for execution. Include successful execution, drift refusal, missing verifier and unchanged-operand controls. Hashing only the expected pin or a declared source revision cannot distinguish these cases.
+
+## Reproduction and evidence
+
+Run `python3 repro.py /path/to/exact/candidate` from this package. It creates only temporary git-independent fixture stores and temporary evaluator copies; it uses fixture actor keys, not real agent keys. RESULTS.json records the three failures and one useful negative control.
+
+Negative control: a byte-divergent SIGMA_GLYPH override with WARRANT_SIGMA_DIFFERENTIAL=1 is excluded by the ordinary assessment's settlement precheck. The initial suspicion that this allowed ordinary assessment credit was NOT confirmed and is not a finding. Do not remove that precheck.
+
+Observed runs on this candidate: replay X01-X17 17 PASS; replay mutants 16/16 killed on target; loops L01-L38 38 PASS; triggers T01-T18 18 PASS. The new counterexamples are outside those cases. Prior loop/trigger mutation campaigns, full Go/Rust/check.py, CI and whole-repository security were not rerun in this bounded review. S3-S8 are not reviewed as implementations. The two vendored modules and worker integration were read for this contract; no new review of the full sigma kernel is claimed.
+
+No producer checkout was modified, nothing pushed, and no CI triggered. S2 remains unaccepted; the pre-existing S1 historical closure is not erased by implementation changes. S1's STALE status correctly requests current revalidation and is not itself a new defect.

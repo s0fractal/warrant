@@ -42,6 +42,16 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 REV = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 WORKER = HERE / "replay_sigma_worker.py"
 SIGMA_RESUME_PIN = "575a198d47519f56cb8cf75458d5d9754492433f98650d1ddf1f3580a363e858"
+SIGMA_GLYPH_PIN = "f4d9990d40f07c8cfd3aa10512c2195a0a04e8dc78bc955c0f53dfe737d3feb4"
+# The assessing side's own commitment to the WHOLE sigma-resume verifier: the
+# worker that runs it and both kernel files (review S2-02). Paths are relative to
+# the worker's directory. The worker re-checks the kernel pins before import; it
+# cannot redefine what is admitted here by reporting one unchanged component.
+SIGMA_VERIFIER = {
+    "replay_sigma_worker.py": "db6d924369f64d5b6c00860466d76000bf9c49723aecf6f4c9b2bb343d5b513d",
+    "sigma_resume_c864d3e/sigma_resume.py": SIGMA_RESUME_PIN,
+    "sigma_resume_c864d3e/sigma_glyph.py": SIGMA_GLYPH_PIN,
+}
 EVALUATOR = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
@@ -141,6 +151,35 @@ def environment_problem(doc):
     return None
 
 
+def _digest(p):
+    try:
+        return hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() and not p.is_symlink() else "MISSING"
+    except OSError:
+        return "MISSING"
+
+
+def observe():
+    """What the verifiers on this host actually are, read once per assessment. It
+    goes into the assessment identity (review S2-03): a drifted, missing or
+    re-pinned verifier changes the id, as it can change the verdict."""
+    base = Path(WORKER).parent
+    ski = W.bundled_sigma_path("ski@v1")
+    return {"sigma-resume": {rel: _digest(base / rel) for rel in sorted(SIGMA_VERIFIER)},
+            "ski@v1": {ski.name: _digest(ski)} if ski is not None else {"ski@v1": "MISSING"}}
+
+
+def _sigma_unpinned(observed):
+    # Kernel files first, then the worker: the reason names the first component
+    # that is not the committed one, so each lock is observable on its own.
+    for rel, want in sorted(SIGMA_VERIFIER.items(), key=lambda kv: (kv[0] == "replay_sigma_worker.py", kv[0])):
+        got = observed["sigma-resume"].get(rel, "MISSING")
+        if got == "MISSING":
+            return f"verifier missing: {rel}"
+        if got != want:
+            return f"verifier not pinned: {rel}"
+    return None
+
+
 def _ski(store, r, comp):
     if r["check"] != comp["check"]:
         return None, "the receipt replays another computation than the duty requires"
@@ -156,9 +195,12 @@ def _ski(store, r, comp):
     return f"REPLAYED:ski@v1:{pin[:16]}", None
 
 
-def _sigma(store, r, comp, blob):
+def _sigma(store, r, comp, blob, observed):
     if (r["input_term_hash"], r["environment"]) != (comp["input_term_hash"], comp["environment"]):
         return None, "the receipt replays another computation than the duty requires"
+    why = _sigma_unpinned(observed)
+    if why:
+        return None, why
     env = blob(r["environment"])
     why = environment_problem(env) if env is not None else "environment manifest not in view"
     if why:
@@ -171,8 +213,8 @@ def _sigma(store, r, comp, blob):
         return None, f"sigma-resume verifier failed (exit {p.returncode})"
     if "refused" in res:
         return None, res["refused"]
-    if res.get("verifier") != SIGMA_RESUME_PIN:
-        return None, "verifier not pinned"
+    if res.get("verifier") != {"sigma_resume.py": SIGMA_RESUME_PIN, "sigma_glyph.py": SIGMA_GLYPH_PIN}:
+        return None, "verifier not pinned: the worker reports other kernel bytes"
     if res["basis"] != "REPLAYED":
         return None, f"not replayed: {res['code']}"
     if res["code"] != "NORMAL_FORM":
@@ -184,9 +226,11 @@ def _sigma(store, r, comp, blob):
     return f"REPLAYED:sigma-resume:{SIGMA_RESUME_PIN[:16]}", None
 
 
-def validate(store, blob, computation, evidence):
+def validate(store, blob, computation, evidence, accepted_targets, observed):
     """May this mapping be discharged on the basis REPLAYED, in this view?
-    Returns (label, None) or (None, reason). `blob(h)` reads a canonical JSON blob."""
+    Returns (label, None) or (None, reason). `blob(h)` reads a canonical JSON blob.
+    `accepted_targets` are the crossing targets THIS recipient's profile accepts;
+    `observed` is this assessment's verifier observation (observe())."""
     if computation is None:
         return None, "the duty names no computation, so no replay can discharge it"
     crossings = [d for d in (blob(h) for h in evidence) if isinstance(d, dict) and d.get("schema") == CROSSING]
@@ -199,6 +243,10 @@ def validate(store, blob, computation, evidence):
     st = state(doc)
     if st != "TRANSLATED":
         return None, f"crossing is {st}: no credit"
+    # A replay establishes the result; it does not establish that THIS recipient
+    # accepts a translation into the crossing's target (review S2-01).
+    if doc["target_profile"] not in accepted_targets:
+        return None, f"crossing into {doc['target_profile']!r} is not accepted by this recipient"
     r = doc.get("replay")
     if r is None:
         return None, "the crossing carries no replay receipt"
@@ -206,4 +254,4 @@ def validate(store, blob, computation, evidence):
         return None, "the receipt is for another runtime"
     if r["runtime"] == "ski@v1":
         return _ski(store, r, computation)
-    return _sigma(store, r, computation, blob)
+    return _sigma(store, r, computation, blob, observed)

@@ -54,8 +54,21 @@ MUTANTS = [
        '    if not (isinstance(hs, list) and hs and all(_hex(h) for h in hs)):')]),
     ("X16", "replay.py", "the first of several crossings is used",
      [('    if len(crossings) != 1:', '    if not crossings:')]),
-    ("X17", "replay.py", "the assessing side trusts whatever digest the worker reports",
-     [('    if res.get("verifier") != SIGMA_RESUME_PIN:', '    if False:')]),
+    ("X17", "replay.py", "the assessing side does not bind the resume kernel",
+     [('    "sigma_resume_c864d3e/sigma_resume.py": SIGMA_RESUME_PIN,\n', ''),
+      ('    if res.get("verifier") != {"sigma_resume.py": SIGMA_RESUME_PIN, "sigma_glyph.py": SIGMA_GLYPH_PIN}:',
+       '    if res.get("verifier", {}).get("sigma_glyph.py") != SIGMA_GLYPH_PIN:')]),
+    ("X18", "replay.py", "a crossing into any target gets credit (S2-01)",
+     [('    if doc["target_profile"] not in accepted_targets:', '    if False:')]),
+    ("X19", "replay.py", "the assessing side does not bind the glyph kernel (S2-02)",
+     [('    "sigma_resume_c864d3e/sigma_glyph.py": SIGMA_GLYPH_PIN,\n', ''),
+      ('    if res.get("verifier") != {"sigma_resume.py": SIGMA_RESUME_PIN, "sigma_glyph.py": SIGMA_GLYPH_PIN}:',
+       '    if res.get("verifier", {}).get("sigma_resume.py") != SIGMA_RESUME_PIN:')]),
+    ("X20", "loops.py", "the verifier observation is not in the assessment identity (S2-03)",
+     [('             "replay_evaluator": RP.EVALUATOR, "replay_verifiers": view.verifiers,',
+       '             "replay_evaluator": RP.EVALUATOR,')]),
+    ("X21", "replay.py", "the worker's own bytes are not bound (S2-02)",
+     [('    "replay_sigma_worker.py": ', '    "_not_bound_": ')]),
 ]
 
 

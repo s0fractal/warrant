@@ -336,6 +336,8 @@ class _View:
                 self.bodies[wid] = env["body"]
         self.duties, self.transitions, self.acceptances = {}, {}, {}
         self.labels = {}          # (transition, mapping) -> validated replay label (S2)
+        self.crossing_targets = []  # crossing targets the recipient's profile accepts (S2-01)
+        self.verifiers = {}         # this assessment's verifier observation (S2-03)
         self.refused = {}
         for wid, body in sorted(self.bodies.items(), key=lambda kv: (kv[1]["ts"], kv[0])):
             self._admit(wid, body)
@@ -418,7 +420,8 @@ def _judge_closure(view, did, d, state, actor, t, i, t_id, m, done):
     if claimed == "REPLAYED":
         # WRT-022 S2: the recipient re-runs the receipt's computation with a pinned
         # verifier, in this view; the receipt's word is never the basis.
-        label, why = RP.validate(view.store, lambda h: _blob(view.store, h), d.get("computation"), m["evidence"])
+        label, why = RP.validate(view.store, lambda h: _blob(view.store, h), d.get("computation"), m["evidence"],
+                                 view.crossing_targets, view.verifiers)
         if label is None:
             return "UNVERIFIED_BASIS", f"REPLAYED is claimed and not validated here: {why}"
         view.labels[(t_id, i)] = label
@@ -625,8 +628,12 @@ def _questions(view):
 def profile_problem(prof):
     """None if `prof` is a well-formed recipient profile, else the reason. A profile
     names the uses a recipient may rely on closures for, and what each use needs."""
-    if not (isinstance(prof, dict) and set(prof) == {"schema", "uses"} and prof["schema"] == PROFILE):
+    if not (isinstance(prof, dict) and {"schema", "uses"} <= set(prof) <= {"schema", "uses", "crossing_targets"}
+            and prof["schema"] == PROFILE):
         return "profile fields"
+    ct = prof.get("crossing_targets", [])
+    if not (isinstance(ct, list) and all(isinstance(t, str) and t for t in ct) and len(set(ct)) == len(ct)):
+        return "crossing_targets"
     uses = prof["uses"]
     if not (isinstance(uses, dict) and uses and all(isinstance(k, str) and k for k in uses)):
         return "profile uses"
@@ -674,6 +681,8 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
         ids = store_ids(store)
         valid = [w for w in ids if w not in bad] if store_ok else []
         view = _View(store, valid, as_of)
+        view.crossing_targets = list((profile or {}).get("crossing_targets", []))
+        view.verifiers = RP.observe()
         report = _assess_all(view, as_of, current)
         _orphan_and_missing(view, report)
         _evaluate_triggers(view, report, ws)
@@ -686,7 +695,7 @@ def assess(store_root, trust_path, as_of, current=None, workspace=None, profile=
         v = {"store_snapshot_sha256": store_sha,
              "trust_sha256": hashlib.sha256(trust_bytes).hexdigest(),
              "as_of": as_of, "evaluator": EVALUATOR, "trigger_evaluator": TR.EVALUATOR,
-             "replay_evaluator": RP.EVALUATOR,
+             "replay_evaluator": RP.EVALUATOR, "replay_verifiers": view.verifiers,
              "validated_bases": sorted(VALIDATED_BASES),
              "current": sorted(current) if current is not None else None,
              "workspace": ws.identity() if ws is not None else None,

@@ -109,8 +109,35 @@ def verdict_of(rep, d):
     return r["disposition"], [x["verdict"] for x in r["candidates"]], [x["why"] for x in r["candidates"]]
 
 
-def assess(c):
-    return L.assess(c.S.root, c.trust, LT.T_END, current={LT.SHA_NEW})
+# The recipient's profile: it names the crossing targets it accepts (review S2-01).
+ACCEPTS = {"schema": L.PROFILE, "uses": {"read": {"requires_declared_triggers": False}},
+           "crossing_targets": ["loops-test"]}
+
+
+def assess(c, profile=ACCEPTS):
+    return L.assess(c.S.root, c.trust, LT.T_END, current={LT.SHA_NEW}, profile=profile)
+
+
+def sigma_case():
+    """A valid sigma-resume closure: (case, duty)."""
+    c = LT.Case()
+    _, term = computation(c, 12000)
+    rec, env_h, _ = sigma_receipt(c, term)
+    comp = {"runtime": "sigma-resume", "input_term_hash": term, "environment": env_h, "expect": TRUE_H}
+    d, _ = replay_close(c, comp, crossing(c, rec, trajectory="sigma-glyph/sigma-resume"))
+    return c, d
+
+
+def with_verifier_copy(edit):
+    """Run `edit(tmp)` on a private copy of the worker and kernel, point RP.WORKER at
+    it, and return a context restorer."""
+    tmp = Path(tempfile.mkdtemp(prefix="replay-copy-"))
+    shutil.copytree(Path(RP.WORKER).parent / "sigma_resume_c864d3e", tmp / "sigma_resume_c864d3e")
+    shutil.copy(RP.WORKER, tmp)
+    edit(tmp)
+    saved = RP.WORKER
+    RP.WORKER = tmp / "replay_sigma_worker.py"
+    return saved
 
 
 def main():
@@ -319,8 +346,75 @@ def main():
         disp, v, why = verdict_of(assess(c), d)
     finally:
         RP.WORKER = saved
-    check("X17", disp == "OPEN" and "verifier not pinned" in why[0],
+    check("X17", disp == "OPEN" and "verifier not pinned: sigma_resume_c864d3e/sigma_resume.py" in why[0],
           "a worker re-pinned to moved bytes is not admitted by the assessing side", why)
+
+    # X18 (S2-01): credit only for a crossing into a target THIS recipient accepts
+    c = LT.Case()
+    chk, _ = computation(c, 12000)
+    rcpt = ski_receipt(c, chk)
+    foreign = c.blob(dict(json.loads((c.S.blobs / crossing(c, rcpt)).read_text()),
+                          target_profile="unaccepted-other-recipient"))
+    d_f, _ = replay_close(c, {"runtime": "ski@v1", "check": chk, "expect": TRUE_H}, foreign)
+    d_ok, _ = replay_close(c, {"runtime": "ski@v1", "check": chk, "expect": TRUE_H}, crossing(c, rcpt))
+    rep = assess(c)
+    no_profile = assess(c, profile=None)
+    check("X18", verdict_of(rep, d_f)[0] == "OPEN" and "not accepted by this recipient" in verdict_of(rep, d_f)[2][0]
+          and verdict_of(rep, d_ok)[0] == "DISCHARGED" and verdict_of(no_profile, d_ok)[0] == "OPEN",
+          "a foreign or unaccepted target gives no credit; the accepted one does",
+          (verdict_of(rep, d_f), verdict_of(no_profile, d_ok)))
+
+    # X19 (S2-02): the glyph kernel is part of the pinned verifier, worker re-pin or not
+    c, d = sigma_case()
+
+    def drift_glyph(tmp):
+        import hashlib
+        g = tmp / "sigma_resume_c864d3e" / "sigma_glyph.py"
+        before = hashlib.sha256(g.read_bytes()).hexdigest()
+        with g.open("a") as f:
+            f.write("\n# moved\n")
+        w = (tmp / "replay_sigma_worker.py").read_text().replace(before, hashlib.sha256(g.read_bytes()).hexdigest())
+        (tmp / "replay_sigma_worker.py").write_text(w)
+    saved = with_verifier_copy(drift_glyph)
+    try:
+        disp, v, why = verdict_of(assess(c), d)
+    finally:
+        RP.WORKER = saved
+    check("X19", disp == "OPEN" and "verifier not pinned: sigma_resume_c864d3e/sigma_glyph.py" in why[0],
+          "a moved glyph kernel is refused even with the worker re-pinned", why)
+
+    # X20 (S2-03): the assessment identity changes whenever the verifier observation does
+    c, d = sigma_case()
+    good1, good2 = assess(c), assess(c)
+    saved = with_verifier_copy(lambda tmp: (tmp / "sigma_resume_c864d3e" / "sigma_resume.py").open("a").write("\n#\n"))
+    try:
+        drifted = assess(c)
+    finally:
+        RP.WORKER = saved
+    saved = with_verifier_copy(lambda tmp: (tmp / "sigma_resume_c864d3e" / "sigma_resume.py").unlink())
+    try:
+        missing = assess(c)
+    finally:
+        RP.WORKER = saved
+    ids = [x["view"]["assessment_id"] for x in (good1, good2, drifted, missing)]
+    check("X20", ids[0] == ids[1] and len(set(ids[1:])) == 3
+          and verdict_of(good1, d)[0] == "DISCHARGED" and verdict_of(drifted, d)[0] == "OPEN"
+          and "verifier missing" in verdict_of(missing, d)[2][0],
+          "same verifier, same id; drifted or missing verifier, different ids", ids)
+
+    # X21 (S2-02): the worker itself is part of the verifier. A worker that prints a
+    # well-formed success without verifying anything is refused by its digest.
+    c, d = sigma_case()
+    pins = json.loads((Path(RP.WORKER).parent / "sigma_resume_c864d3e" / "PIN.json").read_text())["files"]
+    liar = ("import json\nprint(json.dumps({'basis': 'REPLAYED', 'code': 'NORMAL_FORM', "
+            f"'result_term_hash': '{TRUE_H}', 'verifier': {pins!r}}}))\n")
+    saved = with_verifier_copy(lambda tmp: (tmp / "replay_sigma_worker.py").write_text(liar))
+    try:
+        disp, v, why = verdict_of(assess(c), d)
+    finally:
+        RP.WORKER = saved
+    check("X21", disp == "OPEN" and "replay_sigma_worker.py" in why[0],
+          "a worker that does not verify is not admitted, whatever it prints", why)
 
     failed = sorted(k for k, v in results.items() if v == "FAIL")
     print(f"REPLAY: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"
