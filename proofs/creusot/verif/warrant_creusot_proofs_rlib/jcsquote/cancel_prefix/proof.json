@@ -1,6 +1,0 @@
-{
-  "profile": [],
-  "proofs": {
-    "Coma": { "vc_cancel_prefix": { "prover": "alt-ergo", "time": 0.015 } }
-  }
-}

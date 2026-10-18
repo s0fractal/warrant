@@ -1,531 +1,387 @@
-# Warrant Format — Specification v0.4
+# Warrant 2 — Specification
 
-**Status:** DRAFT. Key words MUST / MUST NOT / SHOULD / MAY per RFC 2119.
-**Versioning:** a body declares its format in the `warrant` field (`"0.1"` or `"0.2"`). Validators MUST validate a body against the rules of its declared version; unknown versions make the record invalid. v0.2 added exactly one thing: the `ski@v1` check runtime (§3.1). **v0.3 adds no body schema at all** — it specifies settlement semantics (§7), multi-root stores (§9), and key state (§5.1): document-level rules that activate only through v0.3 policy blobs and verifier configuration. **v0.4 adds no body schema either, and is nevertheless a BREAKING change**: it replaces the §5 signature message with a domain-separated one (`warrant-sig-v1`). Bodies, WarrantIDs and body versions are untouched — a migrated record has the same `warrant` value and the same WarrantID as before — but a v0.4 verifier and a v0.3 verifier reject each other's signatures, in both directions and by design. There is no version field that distinguishes them, because the discriminator is the signature itself: exactly one of the two messages verifies, never both (§5, §8.5). Every v0.1/v0.2 record remains schema-valid under its declared version, and v0.3 rules MUST NOT turn any of them into a schema error. (Adopted from GOV-001 rev 4 after a three-family adversarial gate: Codex, Gemini 3.1 Pro, DeepSeek v4 Pro — see `proposals/` and `reviews/`.)
-**Design rule:** two independent implementations MUST agree on every WarrantID and every verification outcome. Anything that cannot meet that bar stays out of this document.
+**Status:** current. This document replaces the record format of Warrant 0.x
+(SPEC v0.4, settlement, `ski@v1` reasons, threshold policies, key state). That
+generation is historical: it is preserved at the git tag
+`history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
+replaced it. Key words MUST / MUST NOT / SHOULD / MAY per RFC 2119.
 
-## 1. Model
+The reference implementation is the Python package in `warrant/`. It is the only
+implementation of this document. Earlier Go, Rust, WASM and JS implementations
+implement Warrant 0.x and are not implementations of this document.
 
-A **warrant** is an immutable, signed, content-addressed record of one decision. Records form a DAG via `prior`. All referenced artifacts (policies, checks, evidence, subjects) are blobs addressed by `SHA-256(bytes)`, stored in any content-addressed store (files, git objects, S3 — out of scope).
+## 1. Purpose
 
-## 2. Body
+Warrant records transitions of work so that the next agent can use what was done
+without rereading a conversation, and without crediting it with more than its
+grounds support. A transition says what was done, on what basis, what it
+established, which exact conditions it closes, which questions it opens and what
+it leaves unestablished. Assessment answers, for one fixed view: which conditions
+are closed, by whom and on what basis; what a given use may rely on now; and what
+is still open, for whom.
 
-The body is a JSON object with exactly these fields (unknown fields MUST make the record invalid):
+Review is one application. So are ordinary decisions, running services, periodic
+obligations and reproducible computations.
 
-| Field | Type | Req | Meaning |
-| --- | --- | --- | --- |
-| `warrant` | string | MUST | Format version, `"0.1"` or `"0.2"` |
-| `decision` | string | MUST | `"propose"` \| `"accept"` \| `"reject"` \| `"supersede"` |
-| `subject` | object | MUST | `{"hash": <hex64>, "note": <string, optional, ≤200 Unicode code points>}` — the thing decided |
-| `under` | array | MUST | ≥1 hex64 hashes of the policy blobs in force |
-| `because` | array | MUST* | Reasons (§3). *`reject` and `supersede` MUST have ≥1; `accept` SHOULD have ≥1; MAY be `[]` only for `propose` |
-| `evidence` | array | MUST | ≥0 hex64 hashes of input blobs the decision relied on |
-| `actor` | object | MUST | `{"id": <nonempty string>}` — stable actor identifier |
-| `prior` | array | MUST | ≥0 WarrantIDs this record responds to or follows |
-| `ts` | integer | MUST | Unix seconds, UTC, in the inclusive range `0..9007199254740991` (2^53−1 — see the integer domain rule below) |
+## 2. Encoding
 
-All hashes are lowercase hex, 64 chars. All numbers in a body MUST be integers (no floats anywhere — this keeps canonicalization trivial and exact).
+- **JSON values.** Objects with string keys, arrays, strings, booleans, `null` and
+  integers in −(2^53−1)..2^53−1. No floats. Strings MUST NOT contain lone
+  surrogates. Every object named below has a closed set of members: an unknown
+  member, a missing required member, or a value of the wrong JSON type makes the
+  record invalid. Type is checked before membership in any enumeration.
+- **Canonical bytes** are RFC 8785 (JCS) over that domain: members ordered by
+  UTF-16 code units, no whitespace. `canon(x)` denotes them.
+- **Hashes** are lowercase hex SHA-256, 64 characters. A **blob** is any byte
+  string, addressed by `sha256(bytes)`.
+- **Time** is integer Unix seconds.
 
-**Integer domain (MUST).** Every integer anywhere in a body, in any schema blob, and in any other JSON this format canonicalizes MUST lie in the inclusive range **−9007199254740991 .. 9007199254740991** (±(2^53−1)). A body carrying an integer outside that range is schema-invalid. Implementations MUST NOT silently clamp, wrap, or truncate numeric fields.
+## 3. Records
 
-**Why this bound and not int64.** §4 defines a WarrantID as SHA-256 over the RFC 8785 (JCS) serialization of the body. RFC 8785 §3.2.2.3 serializes numbers the way ECMAScript's `Number.prototype.toString` does — through an IEEE-754 double. Above 2^53−1 that mapping is lossy, so the canonical bytes stop being a function of the value:
-
-```
-ts = 9223372036854775807            (int64 max — valid under the previous rule)
-  exact-integer implementation  ->  9223372036854775807
-  any conforming JCS            ->  9223372036854776000
-```
-
-Two conforming implementations, one logical record, two WarrantIDs. This rule read `0..2^63-1` until an external review observed that the schema admitted a domain the declared canonicalization cannot carry — the document cited RFC 8785 and RFC 7493 while contradicting both, and RFC 7493 §2.2 warns about precisely this, recommending strings for anything wider.
-
-**Why narrowing rather than wrapping.** Wrapping at 2^53 would map two different values onto one canonical byte string, and therefore onto one WarrantID, in a format whose identity *is* that hash — a collision introduced on purpose. It would also break §6's requirement that `ts` be non-decreasing along each `prior` edge, which stops being well-defined once `ts` can wrap. Extending the canonical form to carry wider integers as decimal strings was considered and rejected: it buys range no Unix timestamp needs, at the cost of a second number syntax in every implementation and every vector. 2^53−1 seconds is the year 285428751.
-
-**Where this rule actually binds.** The body schema admits exactly one integer — `ts` — because every other field is a string, a hex64, or an array or object of those, and the unknown-field rule (recursive, below) forbids adding one. So for bodies the global statement and the `ts` clause coincide, and an implementation checking only `ts` is observably correct on every schema-valid body. The rule earns its keep on **blobs**: a threshold policy's `min_sigs` and any integer a future schema blob admits are canonicalized by the same JCS and carry the same hazard. Both reference implementations now walk every integer at both boundaries rather than checking `ts` and relying on `min_sigs > len(actors)` to reject the rest — that indirect bound rejects the same values, which is precisely what made depending on it wrong: the stated rule and the enforced rule were two different rules agreeing by coincidence, and a reimplementer would have written the stated one.
-
-**Cost of the change: none measured.** Every JSON file in this repository and its two siblings was scanned; no record, blob, vector or fixture carried an integer outside the new range. The only occurrence was `schemas/warrant-body.schema.json`'s own former `maximum`. No WarrantID moves and nothing needs re-signing — which is true today and would not have been true after 1.0.
-
-**The unknown-field rule is recursive (MUST).** It applies not only to the body but to every object the schema names: `subject` (exactly `hash`, optional `note`), `actor` (exactly `id`), and each reason object (§3). An unknown member anywhere in that tree makes the record invalid. Leaving nested strictness implicit is a silent verifier split: one implementation accepts an extra key another rejects, while both compute the same WarrantID.
-
-**`actor.id` MUST be a nonempty string.** (Spec gap closed 2026-07-30: this table said `<string>` while all three implementations rejected `""` — Python, Go and Rust each answer `actor must be {id: <nonempty string>}`. Three implementations agreeing is not authority to write a spec from code, so it is recorded here as what it was: the document was silent where an implementer had to guess, and the guess they would have made — `""` is a string, therefore valid — would have produced a record every existing verifier rejects. `§6`'s rule that a valid signature by `body.actor.id` must exist gives the requirement its meaning: an empty actor id names nobody.)
-
-**String lengths are measured in Unicode code points (MUST), never bytes or UTF-16 units.** `subject.note` is ≤200 code points. Byte-length and code-point-length disagree for any non-ASCII string — exactly the silent split the integers-only rule guards against for numbers.
-
-## 3. Reasons
-
-Each element of `because` is one of:
+A record is
 
 ```json
-{ "kind": "prose", "text": "<string>" }
-
-{ "kind": "check", "check": "<hex64>", "runtime": "cmd@v1",
-  "verdict": "pass" | "fail", "transcript": "<hex64, optional>" }
+{"warrant": "2", "type": "<type>", "actor": "<actor id>", "at": <int>, "body": {...}}
 ```
 
-- `check` — hash of the check blob (script, test command, etc.).
-- `runtime` — execution profile. `cmd@v1`: the check blob is executed as a command in an isolated container; exit 0 = `pass`, nonzero = `fail`. `ski@v1` (§3.1): available in `"0.2"` bodies; in `"0.1"` bodies it remains reserved and MUST be rejected. Any other `runtime` value makes the record invalid (MUST): a validator MUST reject an unknown runtime rather than accept-and-warn, so a forward-dated runtime cannot mean "valid" to one implementation and "invalid" to another.
-- `verdict` is the actor's claim; anyone MAY re-run the check against the evidence and file their own warrant if they get a different verdict.
-- `transcript` — hash of the check's output blob, so the claimed verdict is inspectable.
-
-### 3.1. `ski@v1` — portable deterministic budget-bounded checks (v0.2)
-
-The check blob is I-JSON (JCS-canonical, integers only — hashed like any blob):
-
-```json
-{ "ski": 1, "term": "<hex64 NodeHash>", "atp": <uint32>, "expect": "<hex64 NodeHash>" }
-```
-
-Verification re-runs the reduction and compares hashes:
-
-1. Evaluate `eval(term, atp)` per **Σ-GLYPH Book I v0.5** (hash-thunk machine, size-priced ATP): https://github.com/s0fractal/sigma-glyph — anchored spec, two independent implementations, machine conformance vectors. The URL is a convenience, not the trust anchor: an implementation MUST pin the Book I ruleset it evaluates against by version and content (the vendored/bundled oracle it ships, or a pinned spec-document hash), so `ski@v1` semantics cannot be changed under it by an edit or force-push to a repository. `ski@v1` names Book I **v0.5** specifically; a later Book I is a different runtime tag.
-2. The warrant blob store IS the Σ-GLYPH CAS: every object the evaluation demands MUST resolve among the store's blobs (Σ-GLYPH genesis axioms are intrinsic and need no blobs).
-3. Verdict: `pass` iff the result's NodeHash equals `expect`, else `fail`. Canonical DISSONANCE outcomes are nodes with fixed hashes, so expecting a failure mode needs no special casing — `expect` covers it uniformly.
-
-Why this runtime exists: `cmd@v1` proves a claim to whoever trusts the container; `ski@v1` proves it to **anyone with the blobs** — bit-exact across implementations, terminating by construction, with work and *materialized semantic state* bounded by `atp` (Σ-GLYPH's `size − 1 ≤ spent` invariant). That bound is semantic: it does not bound the verifier process's peak memory (RSS), wall-clock time, or the host work of admitting, storing and parsing inputs, so a verifier still enforces its own re-execution budget (below) and whatever local resource fences its runtime needs, and a breached local limit is reported as **unverified**, never as a verdict (Python: a `max_*` limit raises `ResourceFault`; Go: an iterative evaluator bounded by the re-execution budget alone). Re-verifying a stranger's ski@v1 reason is therefore far safer than re-running a stranger's shell script — not safe by construction. Tools SHOULD treat `ski@v1` as the strongest reason kind: re-runnable without trust.
-
-**Re-execution budget.** `atp` is a `uint32`, so a single reason may legally demand up to ~4.3×10⁹ ATP of work and memory. Termination is guaranteed, but a verifier that re-runs arbitrary strangers' checks MUST bound the work it will spend: it MAY refuse to re-execute a reason whose `atp` exceeds a locally-configured budget, and MUST then report the reason as **unverified** (the §6 severity below) — never as `pass`/`fail`, and never as a silent skip. A refusal is not a verdict. Interoperating verifiers SHOULD share a default budget so they agree by default; two verifiers configured with different budgets MAY disagree on whether a given over-budget reason was re-executed, and that divergence is a deliberate local-policy choice, not a schema split. (The reference implementations default to 100,000,000 ATP, overridable by configuration.) **Resource fences are local policy in the same sense.** Besides the budget, a verifier bounds re-execution with local fences on materialized state (the reference implementations: node depth 4096, 1,000,000 materialized nodes, 1,000,000 store fetches, checked at the same cadence). A check that trips a fence MUST be reported as **unverified**, exactly like an over-budget check: never `pass`, never `fail`, never a silent skip. Two verifiers with different fences MAY disagree on whether such a check was re-executed; they MUST NOT disagree in any other way. Interoperating verifiers SHOULD use the reference fences so that they agree by default.
-
-**Protocol rule (MUST):** a `reject` whose every reason is `prose` is valid but MUST be marked by tools as *unverifiable*; tools SHOULD prefer at least one `check` reason. Rhetoric is legal; it just doesn't count as proof.
-
-**One evaluator per tag (MUST).** Because a runtime tag is immutable (§13.1), an implementation that ships an evaluator for a `ski@vN` tag MUST bind that tag to exactly one evaluator, identified by the digest of its bytes, and MUST verify that digest **before** loading it; a tag with no bound evaluator, or a bound module whose bytes do not match, MUST make the tag's reasons *unverified* (§6) — never a fallback to another tag's evaluator. The reference implementation records its bindings in `trust/ski-runtime-evaluators.json` and enforces them in `impl/warrant.py` (`SKI_EVALUATORS`).
-
-### 3.2. `ski@v2` — Σ-GLYPH Book I 0.6.0 (reserved candidate; DRAFT REGISTRATION, NOT IN FORCE)
-
-> **STATUS (MUST read before implementing anything below).** `ski@v2` is **reserved and admitted in no body version**. The text of this section is a **draft registration** — the contract a future admission change will register, written down so implementations can be built and reviewed against it instead of against a diff. It is **not in force**: a conforming verifier today MUST reject any record carrying `runtime: "ski@v2"`, in every body version, exactly as it rejects any unregistered runtime (§3, §13.1), and MUST reject a body declaring `"warrant": "0.3"`. Nothing in this section makes a record valid, and nothing in it may be cited as a registration. The design is `proposals/WRT-013-ski-v2-admission.md`; the admission act is a single later change that satisfies every condition in its §8.
-
-`ski@v2` names evaluation per **Σ-GLYPH Book I 0.6.0** (the anchored `v0.7.0` bundle, adoption warrant `0e634c17…`, published as `sigma-glyph` 0.7.0). `ski@v1` is unchanged by this draft and remains Book I v0.5; its bytes, verdicts, outcome fingerprints and replays do not move.
-
-**Check blob (draft).** I-JSON, JCS-canonical, integers only, hashed like any blob:
-
-```json
-{ "ski": 2, "term": "<hex64 NodeHash>", "atp": <uint32>, "expect": "<hex64 NodeHash>", "exit": "<canonical exit>" }
-```
-
-The member set is exactly these five; a missing or unknown member makes the blob invalid — which is *not* a `fail` verdict. `"ski"` MUST be `2`; a `"ski": 1` document is a `ski@v1` blob and MUST NOT be executed under `ski@v2`, nor the converse. `exit` MUST be one of `"normal_form"`, `"atp_exhausted"`, `"unresolved_reference"` — the three canonical exits of Book I 0.6.0 §3.4.
-
-**Evaluation (draft).** Evaluate `eval(term_hash, atp, content environment)` and obtain `Receipt = { exit, result_hash, atp_spent }`. The content environment IS the Warrant blob store, as in §3.1; Book I 0.6.0 §3.5 applies, so bytes stored under a key they do not hash to are refused and never evaluated. Genesis axioms are intrinsic. An implementation MUST pin the Book I ruleset by the digest of the evaluator bytes it ships (§3.1's one-evaluator-per-tag rule), never by a URL.
-
-**Verdict (draft).** `pass` **iff** `receipt.exit` equals the blob's `exit` **and** `receipt.result_hash` equals `expect`; otherwise `fail`. `atp_spent` is reported and never compared: a claim about the budget consumed is a different proposition from the one the blob states.
-
-**Local outcomes are never verdicts (draft).** Admission refusal, resource fault, an `atp` above the verifier's re-execution budget, a check blob that is missing, mis-addressed, malformed or non-canonical, foreign-keyed bytes at any fetch, a missing or digest-mismatched evaluator, and an unpinned evaluator override each make the reason **`ski@v2 unverified: <reason class>`** — a WARN in base verification and an ERR under settlement-grade verification when the reason participates in a settlement-active record (§6(7)). None of them is `pass`, none is `fail`, and a silent skip is non-conformant.
-
-**Outcome fingerprint (draft, §7).** `{runtime, term, expect, expect_exit, verdict, result_node_hash, exit}`, where `verdict`, `result_node_hash` and `exit` are the **re-run's**, never the filer's claim, and `expect_exit` is the blob's declared exit. `atp_spent` is deliberately excluded: were it a member, novelty would be reachable by editing one integer, re-opening any settled question without bound. The re-run's `exit` is a member because without it one term at two budgets is one outcome although it is two (WRT-013 §2, M5); the claimed `expect_exit` alone does not carry that, which vector 19a isolates.
-
-**Body version (draft).** The admission change introduces body version `0.3`, admitting `cmd@v1`, `ski@v1` and `ski@v2`, with the same field set as `0.2` (§13.2). Until then `0.3` is unspecified and MUST be rejected.
-
-## 4. Canonicalization and identity (MUST)
-
-```
-WarrantID = SHA-256( canonical_json(body) )
-```
-
-`canonical_json` is RFC 8785 (JCS). Because bodies are I-JSON with integers only, this is exactly: UTF-8, object keys sorted, no insignificant whitespace, no float formatting questions. Reference (Python): `json.dumps(body, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')`.
-
-**String escaping is normative (MUST), not left to a library default.** Emit the two-character short escapes `\"` `\\` `\b` `\t` `\n` `\f` `\r`; escape every other code point below U+0020 as `\u00xx` with **lowercase** hex; emit every other character — including `<` `>` `&`, `/`, and all non-ASCII — as raw UTF-8. Do **not** escape `<` `>` `&` (Go's `encoding/json` does this by default: it MUST be disabled), do **not** `\u`-escape U+2028/U+2029, and do **not** use uppercase hex or the `\uXXXX` long form where a short escape applies. These are the classic JCS reimplementation splits; the §8 example vectors don't exercise them, so a conformant implementation MUST also reproduce the escaping battery in **`examples/canon-vectors.json` (§8.4)** — machine-readable vectors, not a test script. (Before 2026-07-30 this clause pointed at `tests/differential.py`, which made a Python file normative and required a third-party implementer to read it; the harness is now the runner and the vectors are the artifact.)
-
-**Key ordering:** JCS sorts object member names by UTF-16 code unit. Every key this schema admits is fixed ASCII, for which UTF-16-unit order, Unicode-code-point order, and UTF-8 byte order coincide — so `sort_keys` (code point) and a bytewise sort are both correct here. Any future version that admits free-form object keys MUST sort by UTF-16 code unit per RFC 8785, not by code point.
-
-**Duplicate member names are invalid (MUST).** Bodies and all schema blobs are I-JSON (RFC 7493): an object with a repeated member name is malformed and MUST be rejected, not silently resolved last-wins. Stock JSON parsers (Python's `json`, Go's `encoding/json`) keep the last occurrence silently; an implementation MUST detect and reject duplicates so a dup-key object cannot mean "malformed" to a strict reimplementation and "last-wins" to a lenient one.
-
-**Unicode normalization is NOT applied (MUST NOT).** Strings are canonicalized and hashed as their exact sequence of Unicode code points; a verifier MUST NOT apply NFC/NFD (or any) normalization, and MUST NOT reject a string for not being normalized. Two strings that differ only by normalization form (e.g. `й` as U+0439 vs. `и`+U+0306) are different content and hash to different WarrantIDs — as a content-addressed system requires. The reference implementations agree byte-exact on both forms (they never normalize). Requiring NFC would force a full Unicode normalization database into every implementation (including the from-scratch ones) and would reject legitimate content; the deliberate choice is to hash exactly what was written. PRODUCERS SHOULD emit NFC so that a string mangled by an *external* system (an editor, a database, a filesystem that silently normalizes) does not later fail to resolve — but that is a producer discipline, not a verifier rule, because such external mangling would break any hash-addressed format and is outside this spec's boundary.
-
-## 5. Envelope and signatures (MUST)
-
-A stored warrant is an envelope:
-
-```json
-{ "body": { ... }, "sigs": [ { "actor": "<id>", "key": "<hex64 Ed25519 pubkey>", "sig": "<hex128>" },
-                            { "actor": "<id>", "alg": "ecdsa-p256-sha256", "key": "<hex66 compressed P-256 pubkey>", "sig": "<hex128>" } ] }
-```
-
-The envelope MUST have exactly the members `body` and `sigs`, and any other member is an error. The unknown-field rule of §2 applies to the **body**, recursively. A signature entry is read for `actor`, `key` and `sig`. Other members of an entry are ignored, because the envelope is outside the hash and anyone may append to it. An entry that is not an object is reported and excluded (§6(3)). All three implementations behave this way.
-
-- **`sig` = Ed25519 signature over a domain-separated message (MUST).** The message is **not** the WarrantID. It is the 15-byte ASCII separator `warrant-sig-v1:` immediately followed by the **32 raw bytes** of the WarrantID:
-
-  ```
-  msg = "warrant-sig-v1:" || WarrantID_raw        15 + 32 = 47 bytes
-  separator bytes (hex) = 77617272616e742d7369672d76313a
-  ```
-
-  Precisely: the separator is the 15 ASCII characters `w a r r a n t - s i g - v 1 :`, with no NUL terminator, no length prefix and no separator between the two parts; the WarrantID is appended as the 32 bytes obtained by hex-decoding it, **not** as its 64 ASCII hex characters. The total is always exactly 47 bytes. Both parts are fixed-length, so the encoding is unambiguous without a length field. Signing and verification are **pure RFC 8032 Ed25519 over that byte string** — **not** Ed25519ctx, **not** Ed25519ph, no pre-hash, no context parameter passed to the primitive. Nothing else is signed: the envelope is not signed, `sigs` is not signed, and the body is signed only through its hash.
-
-  **The pre-0.6.0 construction — the bare 32-byte WarrantID with no separator — MUST NOT verify (MUST NOT).** A verifier MUST NOT accept both messages, under any flag, during any transition: a verifier that accepts the old one has no domain separation, because an attacker simply uses the old one. The two constructions are cleanly disjoint in both directions (`examples/signature-vectors.json`), so there is no dual-accept window and the change is a flag day. A verifier that *recognises* an old signature SHOULD say so rather than reporting only that verification failed (see the report string below); recognising is not accepting.
-
-  **Rationale.** Without a separator the signed message is byte-indistinguishable from any other bare 32-byte SHA-256 digest, so a key that also signs digests in another protocol — DSSE/in-toto payload digests, TUF metadata, Σ-GLYPH NodeHashes, RFC 6962 roots, Git object ids — produces signatures valid in both, in both directions. `warrant-sig-v1` names this protocol inside the bytes the key covers. Ed25519ctx is the orthodox instrument and is deliberately not used: Python's `cryptography` does not expose it, Go reaches it only through `ed25519.Options`, and a from-scratch verifier must implement RFC 8032's `dom2` prefix, so the orthodox choice is the one more likely to split verifiers — the failure this document's design rule ranks highest. `v1` versions the *signature scheme*, not the body: a future change becomes `warrant-sig-v2:` and is again disjoint from everything before it. (This clause implements option A of `proposals/DEC-001-domain-separation.md`; the vectors are §8.5.)
-
-  **Report string (MUST, §7 convention).** A verifier that recognises a signature valid over the bare WarrantID MUST report it with these exact bytes: `signature does not verify (excluded): LEGACY pre-v1 signature construction (signed the bare 32-byte WarrantID; SPEC 5 requires "warrant-sig-v1:" || WarrantID). Re-sign with: warrant resign --key <keyfile>` — an ASCII string, so three implementations and three JSON encoders emit one diagnosis. The signature is still excluded and §6's ERR still applies: this is a diagnosis, not an acceptance.
-
-  **Migration.** The WarrantID is SHA-256 of the canonical *body* and the envelope is not hashed, so re-signing a record rewrites `sig` and nothing else: no WarrantID moves, no `prior` edge breaks, no `under`/`evidence`/`subject` hash stops resolving, no settlement tunnel and no pinned genesis root changes. A record whose signing key is no longer available **cannot** be migrated and MUST be reported as such rather than left to fail as an ordinary bad signature.
-- **Verification acceptance is pinned (MUST):** a verifier MUST reject a signature whose `S` scalar is non-canonical (`S ≥ L`), MUST reject a malformed (non-canonical) public-key or signature-point encoding, and **MUST reject a small-order or non-canonically-encoded public key** before verifying. A small-order public key (the 8 torsion points, e.g. all-zero) lets an all-zero signature verify for a large fraction of messages, and libraries disagree on which such keys they accept — so a crafted envelope would verify under one library and not another ("Taming the many EdDSAs"). The rejection set is a byte-exact blocklist of the 8 canonical torsion encodings plus a non-canonical check (`y ≥ p` after clearing the sign bit), so every implementation agrees by construction; it is a normative negative-conformance vector (§8.3), not a library-dependent heuristic. **The verification equation is cofactorless (MUST):** accept iff `[S]B = R + [k]A` with `k = SHA-512(R ‖ A ‖ M) mod L`, `S < L`, and both `R` and `A` canonically encoded per RFC 8032 §5.1.3 (`y < p`; `x = 0` with the sign bit set is malformed). A verifier MUST NOT use the cofactored equation `[8][S]B = [8]R + [8][k]A`, MUST NOT reduce `S` or a point's `y` before checking, and MUST NOT reject a key merely for having a torsion component (a mixed-torsion key verifies exactly when the cofactorless equation holds). Libraries split on precisely these points ("Taming the many EdDSAs"; ZIP-215), so they are pinned by the §8.5 EDGE vectors rather than left to the library.
-- ≥1 signature MUST be present and MUST include one whose `actor` equals `body.actor.id` and which verifies. If no *valid* signature by `body.actor.id` is present, the record is invalid (§6 ERR).
-- Additional co-signatures MAY be appended without changing the WarrantID (the envelope is not hashed; the body is). **A co-signature that fails to verify is reported and EXCLUDED, not fatal (MUST):** because anyone with store write access can append envelope signatures, a single junk co-signature MUST NOT be able to invalidate a record that still carries a valid signature by `body.actor.id`. An invalid signature is a §6 WARN; only the *absence* of a valid actor signature is an ERR. (For settlement thresholds, §5.1, an invalid signature simply does not count.)
-- **ECDSA P-256 entries (MUST; WRT-019):** an entry whose `alg` is `ecdsa-p256-sha256` is an ECDSA signature with SHA-256 over the same 47-byte message; its `key` MUST be the 33-byte compressed SEC1 point (`02` or `03` then the 32-byte big-endian x, lowercase hex) of a point on P-256 with x < p, and its `sig` MUST be 64 bytes `r ‖ s` (big-endian, lowercase hex) with 1 ≤ r < n and 1 ≤ s ≤ (n − 1)/2; an uncompressed, hybrid or otherwise non-canonical key, a DER or high-S signature, and an entry whose `alg` is absent but whose key is not an Ed25519 key MUST NOT verify. An absent `alg` means `ed25519`, any other `alg` value MUST NOT verify, and the algorithm MUST NOT be inferred from a key's length.
-- Key↔actor binding is out of scope for v0.1 (use your existing PKI/keyring); implementations MUST verify signatures against the stated key and report the binding as unverified if no keyring is configured.
-
-### 5.1. Key state: binding, rotation, thresholds (v0.3)
-
-Key state derives from key-state warrants — **any cache is an implementation detail; the warrants are the truth.** Implementations MAY derive an internal key-state cache; any such cache MUST be purely deterministic from the DAG of key-state warrants. No interchangeable keyring file format is mandated. With key state configured (genesis keys pinned in the verifier's local trust configuration plus derived rotations), verifiers MUST report each signature as `bound` or `unbound`; without it, the v0.2 unverified-binding warning stands. Bound/unbound is a report unless a v0.3 policy explicitly makes bound signatures required for settlement-grade verification. **A reader may require the actor's own binding (MAY; WRT-018):** a settlement-grade verifier MAY offer a required-binding option; with it, a record that has no valid signature by `body.actor.id` made with a key bound at that record's DAG position MUST be reported `ERR: no bound signature by body.actor.id`, every other signature keeps its §5 treatment (reported and excluded, never fatal), and a request for the option without a trust configuration MUST be reported as exactly one `ERR` with subject `settlement`. The option is local verification policy, like the re-execution budget: it changes no body, record, report schema or WarrantID.
-
-**Rotation is a warrant:** an `accept` whose subject is the new key blob. A key blob is the JCS-canonical object `{"actor": <string>, "key": <key>}` or `{"actor": <string>, "key": <key>, "next": <hex64>}`, where `<key>` is a hex64 Ed25519 key or a hex66 compressed P-256 key (WRT-019) and `next` is the lowercase-hex SHA-256 of the raw public-key bytes (32 for Ed25519, 33 for compressed P-256) of the key's successor.
-
-**Pre-rotation (MUST; WRT-015).** Every key state commits in advance to its successor: genesis keys through the trust configuration's `next` (§12), and every later key through the `next` of the key blob that introduced it. A rotation is authorized only if the actor's key state at the rotation's DAG position carries a commitment and `SHA-256(incoming key)` equals it. A key state without a commitment is **terminal**: nothing can rotate away from it. This is in addition to every rule below, not in place of one. Its purpose is that a **retired** key alone can never produce an authorized rotation, at any DAG position. Without it, a leaked retired key could file a rotation at a position where it was still current and make the actor conflicted store-wide, which retroactively unbinds every signature that actor ever made (DeepReview R13; `tests/r13_retired_key_denial.py`). Residual: a holder of a key *and* its committed successor can still file a second rotation at that position, which is a conflict. **Both of those keys may already be retired.** After `a0 → a1 → a2`, a holder of the retired pair `a0` and `a1` can fork at the root (DeepReview of paper 1.1.0). Since WRT-016 that fork is reported on the store and acts only on records whose ancestry contains both sides. The current key `a2`'s records and everything before the fork keep their binding (`case_multihop_residual`). What remains is that the fork's own branch is consistent at its own positions, so a parallel key history is representable. Choosing between histories needs an order that a DAG does not carry (WRT-012).
-
-A rotation MUST include a valid signature by the incoming key as proof of possession and MUST be authorized under the actor/store's current key policy. If that policy has a threshold, the rotation MUST satisfy it using keys already bound before the rotation; the incoming key's proof-of-possession signature does not count toward the threshold. The outgoing key's signature MAY be required by policy for ordinary rotation, but MUST NOT be sufficient authorization when the store has a multi-actor threshold policy. Emergency replacement of a suspected-compromised outgoing key SHOULD be authorized by quorum without requiring the outgoing key. **There is no revocation operation (MUST; WRT-017).** A key leaves use only by a rotation to its committed successor. A `supersede` whose subject is a rotation warrant is an ordinary record: verifiers MUST NOT derive key state from it, and the rotated key stays bound. An actor whose committed successor is lost cannot rotate and is terminal; a threshold policy is the recovery path. (Earlier text specified revocation as a `supersede` of the introducing rotation. No implementation ever derived key state from it, and it was dropped rather than half-kept, because a revocation that the old key could authorize would reopen the attack pre-rotation closes.)
-
-**Ordering:** key validity derives from authorized rotation warrants in **DAG order**, never from wall-clock trust in `ts` alone; a `ts` outside non-decreasing prior order remains a §6 warning and MUST NOT extend or resurrect a key. Only *authorized* key-state warrants can conflict — a record failing current-policy authorization is an invalid record, not a conflict. A key-state warrant is conflicting only if no later authorized warrant for the same actor is its DAG descendant: warrants ordered by the DAG are never a conflict; only maximal, mutually unordered warrants trigger this rule. **A conflict is scoped to the records whose ancestry contains it (MUST; WRT-016):** an actor is conflicted at a record exactly when that record's ancestors include two or more authorized rotations for the actor that are maximal and mutually unordered among those ancestors. At such a record verifiers MUST report `WARN: key-state conflict`, the actor's signatures there are unbound, and the actor's key MUST NOT count toward any quorum until a later warrant whose ancestry orders the conflicting rotations resolves it; if the threshold would become unsatisfiable, it is reduced to exclude the conflicted actor strictly for conflict resolution. A record whose ancestry sees one side only keeps the key state that ancestry gives it. Every conflict anywhere in the store is also reported once per actor with the subject `store`, so a parallel key history is never silent.
-
-**Threshold policy grammar.** A v0.3 threshold policy blob MUST be JCS-canonical JSON:
-
-```json
-{ "warrant_policy": "0.3", "threshold": { "min_sigs": 2, "actors": ["a@x", "b@y", "c@z"] } }
-```
-
-`min_sigs` MUST be a positive integer ≤ `len(actors)`; `actors` MUST be nonempty and unique; unknown fields inside `threshold` make the policy invalid. **For settlement-grade threshold evaluation (including root adoption, §9), a signature counts for an actor only if it is cryptographically valid AND made by a key currently bound to that actor at that warrant's DAG position (§5.1). An actor with no configured key state contributes nothing: unbound claims MUST NOT satisfy a v0.3 threshold.** Records filed under an invalid threshold policy are settlement-inactive and MUST produce `ERR: invalid threshold policy` for settlement-grade verification. Opaque v0.1/v0.2 policy blobs MUST NOT be interpreted as threshold policies.
-
-## 6. Verification (MUST)
-
-`verify(store)` checks, for every envelope: (1) body is schema-valid with no unknown fields (recursively, §2); (2) WarrantID recomputes; (3) signatures are verified individually — an invalid signature is a WARN and is excluded (§5), and the record is an ERR only if no *valid* signature by `body.actor.id` remains; (4) every `prior` resolves to a stored warrant; (5) reference resolution is split by field kind: `prior` MUST resolve to stored warrants; `under`, `evidence`, `check`, `transcript` MUST resolve to **blobs** — a hash present only as a stored record does not resolve them; `subject.hash` resolves to a blob, or MAY resolve to a WarrantID only where a rule explicitly names one (supersede subjects, §7; §9 adoption subjects). A §5.1 **rotation** subject is a *key blob*, so it resolves as an ordinary blob — it is NOT one of the WarrantID cases. Unresolved is a warning, not corruption — blobs may live elsewhere; (6) `ts` is non-decreasing along each `prior` edge (violation = warning).
-
-(7) **Re-execution of `ski@v1` reasons (MUST).** For every `ski@v1` reason, the verifier re-runs the check (§3.1) against the store's blobs and compares the result to the reason's claimed `verdict`. A mismatch (re-run disagrees with the claim) is a WARN — per §3, a false claim is a dispute to be answered by a counter-warrant, not a corruption of *this* record. A reason that **cannot** be re-executed (missing blob, malformed check, oracle unavailable, or `atp` over the local re-execution budget, §3.1) is reported as `ski@v1 unverified` — a stable WARN in base verification, escalated to ERR under settlement-grade verification (§7) when the reason participates in a settlement-active record, because an unexecuted claim cannot be trusted to settle. "Re-ran and matched" and "was not executed" MUST NOT be observationally equivalent — a silent skip is non-conformant. (`cmd@v1` reasons are not re-executed by `verify`; their trust model is the container, not the verifier.)
-
-`why(id)` walks `prior` edges backward, printing decision → reasons → policy anchors, verifying as it goes.
-
-## 7. Settlement (v0.3)
-
-An `accept` or `reject` whose subject is a *question* blob settles it. `supersede` marks an earlier warrant as replaced: its `subject.hash` MUST be the superseded WarrantID (a missing subject is an ERR, §6).
-
-**Tunnel.** A settling warrant's tunnel is **inclusive**: its record set is the settling warrant itself plus the transitive closure of its `prior` edges through stored warrants (a candidate citing the settling warrant's own check is a restatement, not novelty). The blob set is the union of `under`, `evidence`, `subject.hash`, `check`, and `transcript` hashes cited by those records. Verifiers MUST NOT recursively parse arbitrary blobs for additional tunnel links unless a runtime-specific rule explicitly says so. A blob hash that is also the WarrantID of a stored record is still a blob reference unless it appears in `prior` or a field whose rule explicitly names WarrantIDs.
-
-**Foreclosure.** A blob forecloses only the claims some reason in the tunnel actually makes about it: mere presence in an `evidence` array forecloses nothing. An unresolvable blob forecloses nothing (what cannot be read cannot have been reasoned over); a record with unresolvable settlement-critical references is settlement-inactive until they resolve — without changing its WarrantID, base verification result, or the §6 warning status of v0.1/v0.2 records.
-
-**Re-litigation.** A re-litigation warrant MUST carry at least one of: (a) an evidence hash absent from the tunnel's blob set, or (b) a **new demonstrable consequence** of evidence already present — a check, all of whose blobs are resolvable, that re-runs to a previously absent **outcome fingerprint** within the settling tunnel.
-
-Outcome fingerprints: `ski@v1` — `{runtime, term, expect, verdict, result_node_hash}`; `cmd@v1` — `{runtime, sorted evidence hashes, verdict, transcript hash}`, with `transcript` REQUIRED for §7(b) use. (`ski@v2`'s tuple is drafted in §3.2 and is **not in force**; no reason carrying that runtime can reach this rule while the tag is unregistered.) A check whose outcome fingerprint already appears in the tunnel is not new even if the check blob hash differs. Only tunnel reasons supplying all required fields count toward the tunnel's fingerprint set — a reason lacking a required field (e.g. `transcript`) cannot block novelty. (The `evidence` array is not ordered by JCS; the fingerprint sorts hex hashes ascending lexicographically.) Prose MAY explain why a consequence matters, but prose is not part of the novelty test and alone never re-opens settlement.
-
-**Novelty ≠ relevance.** The format layer decides only whether an outcome is new; whether a novel check is *relevant* to the settled subject — or a strawman testing something adjacent — MUST be decided by the active settlement policy, not the core format. Tools SHOULD refuse to file re-litigation warrants carrying neither (a) nor (b); verifiers SHOULD flag them `WARN: re-litigation cites nothing new`. NOTE: because novelty is purely syntactic, a permissive-policy store may accumulate unbounded fingerprint-distinct but irrelevant re-litigations; implementations SHOULD provide configurable limits — a policy choice, not a format requirement.
-
-§7 is itself challengeable under (b): a check demonstrating that the rule forces a wrong settlement is admissible evidence against the rule.
-
-**Report-string convention.** Where this document names verifier report strings (`key-state conflict`, `invalid threshold policy`, `unadopted root`, `genesis.json unverified`, `re-litigation cites nothing new`, and §5's `LEGACY pre-v1 signature construction` diagnosis), the normative text is the message after the verifier's severity and record-identifier columns; CLI output MAY prepend structured fields (severity, abbreviated WarrantID).
-
-## 8. Test vectors (MUST PASS)
-
-Deterministic vectors; full envelopes in `examples/`. Seed for the demo Ed25519 key: ASCII `warrant-demo-seed-000000000000000` (first 32 bytes); pubkey `5e06999f4dd20f375c9292e39f722a77a67a5c5cf8a5fd74bbb35f99dc4a8cc5`.
-
-| Artifact | SHA-256 |
-| --- | --- |
-| `examples/policy.txt` | `cb3a0afe6ee6219867b9c3f9b860080918fe1042f315fe02ff62300f780beb73` |
-| `examples/check.sh` | `05d234bec21803c6fa007d848c1773b9fd05cfdf852d6d09542ed3b127c02b6c` |
-| propose WarrantID | `00f79fca5c9c8de5c08ce3c9f1c928dddfb032134e84321bee4176182ea8cda1` |
-| reject WarrantID | `5f5d4035a4ae04a3eec255105eee7dda7c98daaf9962c92cbbbad38ac21509d8` |
-| accept WarrantID | `bc602a70a11624387066b7ead21e19d3768a4c970d2c8bdcc2f8dedf36afbc78` |
-
-The three example warrants form the chain propose → reject (failing check + clause citation) → accept (passing check), each `prior`-linked, each signature verifying against the WarrantID. An implementation MUST reproduce all five hashes byte-exactly and MUST verify all three signatures.
-
-**The five hashes above are unchanged by the 0.6.0 signature change, and the signatures inside the envelopes are all different.** That sentence is easy to misread, so it is stated twice: `examples/*.warrant.json` were re-signed under §5's `warrant-sig-v1` message, which rewrote every `sigs[].sig` and moved no WarrantID, because the WarrantID is SHA-256 of the canonical body and the envelope is not hashed. An implementation checking itself against a pre-0.6.0 copy of `examples/` will reproduce all five hashes and fail all three signatures.
-
-### 8.2. ski@v1 vectors (v0.2, `examples/ski/`)
-
-A real portable check: *"`C1[λxy.x] S K` reduces to `S` within 20 ATP"* — Σ-GLYPH's TV-10, filed as a warrant whose reason anyone can re-run.
-
-| Artifact / identity | value |
-| --- | --- |
-| SKI term (root NodeHash; 5 APPLY object blobs `*.bin`, genesis I/K/S intrinsic — no leaf blobs needed) | `97a2eedea8d8b3419dac73f1685814e7a7ccd85f232f3d1e085fb1f1917611ad` |
-| `check.json` (JCS bytes: `{"ski":1, "term":…, "atp":20, "expect":H(S)}`) | `0c30960435e9c9302a6a1538682e5864f2a754475369979bd3d635543976b2ad` |
-| accept warrant **WarrantID** (`"warrant":"0.2"`, demo-seed signed) | `8c9267bccbc217db2f3f16e6928acaf062a1c78443b2317985567b238ccfe8a0` |
-
-A v0.2 implementation with a Σ-GLYPH Book I v0.5 oracle MUST re-run the check against the object blobs and obtain `pass` with `result = H(S)` and `atp_spent = 20`. A v0.1 implementation MUST reject the warrant body (ski@v1 reserved) — that rejection is itself conformant.
-
-### 8.3. Negative conformance vectors (MUST REJECT)
-
-The positive vectors above pin what a conforming implementation MUST *accept*; equally normative is what it MUST *reject*. `examples/conformance-negatives.json` is a machine-readable battery every implementation MUST pass:
-
-- **`weak_ed25519_pubkeys`** — signature verification MUST fail for each listed public key, for any message and signature (§5): the 8 canonical small-order torsion encodings, their non-canonical sign-bit variants, and a `y ≥ p` non-canonical key.
-- **`schema_invalid`** — `validate(body)` MUST return ≥1 error for each listed body: a float `ts`, a missing field, an unknown body field, an unknown *nested* field (§2 recursive), a non-hex subject hash, a `reject` with zero reasons, `ski@v1` in a `"0.1"` body, a `note` over 200 code points (§2), and an unknown `runtime` (§3).
-
-Both reference implementations' `conformance` command loads and checks this file. Behaviors that are rejection-of-malformed-*bytes* rather than schema (duplicate member names, trailing content after the JSON value, non-JCS-canonical blobs — §4) are exercised by the cross-implementation harnesses (`tests/hostile.py`, `tests/fuzz_differential.py`) since they concern the parse layer, not a body value; a third implementation MUST agree there too.
-
-### 8.4. Canonicalization vectors (MUST REPRODUCE, `examples/canon-vectors.json`)
-
-The §8/§8.2 vectors pin *records*; §8.3 pins what MUST be rejected. `examples/canon-vectors.json` pins the **§4 canonicalization surface** those never reach: a `warrant.canon-vectors@v0` document whose `cases` array carries, for each case, an input `body`, the canonical bytes as `canon_hex`, and the resulting `warrant_id`.
-
-For every case, an implementation MUST produce `canonical_json(body)` equal byte-for-byte to `canon_hex` and a WarrantID equal to `warrant_id`. The battery covers every control code point U+0000–U+001F (the `\b`/`\f` short-form trap that split Go's `encoding/json`), `<` `>` `&` `/` and U+2028/U+2029 emitted **raw** (§4), NFC vs NFD as distinct content, astral-plane code points, C1/DEL, control characters in `actor.id` and in a prose reason, a 9007199254740991 `ts`, the 200/201-code-point `note` boundary (the byte-vs-code-point split), key-order insensitivity, and a free-key object whose `Z`, `a`, U+10000 and U+E000 members distinguish UTF-16 code-unit order from both locale collation and Unicode scalar-value order. The free-key object is outside the Warrant body schema but inside the independently specified canonicalization class: `schema_valid: false` records that boundary rather than borrowing body-validity credit.
-
-The bodies are stored with `\uXXXX` transport escaping so the file is pure ASCII; that escaping is a property of *this file*, not of canonical output — canonical output is what `canon_hex` says.
-
-`tests/differential.py` is the harness that drives each implementation's `canon` command over these vectors; it compares implementations against each other **and** against the pinned bytes, so a drift shared by all of them is still a failure. Running it is not required for conformance; reproducing the vectors is.
-
-### 8.5. Signature-construction vectors (MUST PASS, `examples/signature-vectors.json`)
-
-§8 pins what a body hashes to; §8.3 pins what MUST be rejected; this pins **the bytes a key signs** (§5). It is a separate battery because every way of building the §5 message wrong still reproduces all five §8 WarrantIDs correctly — an implementation can pass every other vector in this document and still be unable to verify anybody else's signature.
-
-A `warrant.signature-vectors@v0` document with three arrays:
-
-- **`message`** — for each `warrant_id`, the exact `message_hex` an implementation MUST construct: 47 bytes, the separator's 15 bytes then the WarrantID's 32.
-- **`accept`** — `{warrant_id, key, sig}` triples that MUST verify. These are the signatures committed in `examples/`, so this array also pins that those files are not stale.
-- **`reject`** — triples that MUST NOT verify: the pre-v1 bare-WarrantID construction for each vector; the separator and digest concatenated in the wrong order; the separator followed by the WarrantID's ASCII hex rather than its bytes; the separator without its trailing colon; the separator alone; a `warrant-sig-v2:` separator that does not exist; and — the vector that names the hazard §5 exists to close — **a signature made over the bare SHA-256 digest of unrelated content, offered as a Warrant signature for the record whose WarrantID equals that digest.** A pre-0.6.0 verifier accepted that signature. A conforming one MUST NOT.
-
-All three reference implementations load this file from their `conformance` command. `tools/signature_vectors.py` regenerates it; every signature in it derives from §8's published demo seed, so a reader can reproduce the file from this document alone.
-
-The `EDGE:` entries pin the verification equation of §5, not the message: a signature with `S + L` in place of `S`; a small-order `R`, and the same `R` written non-canonically (`y = p`), each with `S = k·a`; and a mixed-torsion key `A + T8` with one signature honestly made for it where `[k]T8 ≠ O` (MUST NOT verify) and one where `[k]T8 = O` (MUST verify). Every negative EDGE entry verifies under a cofactored or reducing verifier, so such a verifier fails the battery instead of passing it. `tools/ed25519_edge.py` builds them from the §8 demo seed and its selftest checks that each one separates the two rules as labelled.
-
-### 8.6. The conformance pack (how a third party checks an implementation)
-
-§8–§8.5 pin the vectors. This section pins the **artifact that runs them against
-an implementation that is not ours**, because until it existed the only way to
-exercise the vectors was to clone this repository and run its Python — which asks
-a third-party implementer to trust the thing they are trying to check, and left
-the trademark policy (`TRADEMARK.md`) conditioned on a test nobody outside could
-perform.
-
-The pack is `conformance/` in this repository, distributed as a tarball attached
-to releases. It carries the vectors of §8–§8.5 with their expectations, a runner,
-and a negative control. The runner drives an implementation through the
-`warrant-conformance/1` CLI contract (`conformance/CONTRACT.md`): one JSON
-request on stdin, one JSON response on stdout, exit 0 whenever an answer was
-produced. **The runner does not import, link against, or execute a reference
-implementation**, and the expected value is never sent to the candidate.
-
-Conformance is reported at a **grade**, matching the split this document already
-makes between §6 verification and §7 settlement:
-
-| grade | classes |
-| --- | --- |
-| base | `canon`, `validate`, `blob-hash`, `sig-message`, `verify-sig`, `parse`, `verify-store` |
-| settlement | base, plus `ski-run` and settlement-grade `verify-store` (§12.3 fail-closed trust) |
-
-A candidate declares the grade it claims and is tested at exactly that grade. An
-implementation that claims base and reaches base is conformant at base grade;
-`impl-rs` is deliberately such an implementation. A vector the candidate declines
-is reported UNRUN — a distinct outcome from pass and from fail — and withholds
-the grade. Running the pack is not required for conformance; **reproducing the
-vectors is**. The pack is how a third party demonstrates that they have.
-
-**Pack integrity.** Every file is listed in `MANIFEST.sha256`, and the pack
-digest is SHA-256 of that manifest:
-
-| artifact | SHA-256 |
-| --- | --- |
-| conformance pack 1.5.0 candidate (`MANIFEST.sha256`) | `65281ce3e4d014c851f3bb9a8d42603a729e2dcc4d2cf6a282b057fb139d9d64` |
-
-Verify with `python3 run.py --verify-pack` and compare against the line above at
-the spec revision you are implementing. Because this document is versioned and
-tagged (§14.3), that comparison holds wherever the tarball came from — a mirror,
-a fork, a colleague's copy. The runner refuses to produce a result from a pack
-whose manifest does not match.
-
-## 9. Multi-root stores (v0.3)
-
-A store is a DAG. A **root** is a record with empty `prior`. A root is **well-signed** if its filing signature is valid (and bound, where key state is configured). A root is eligible to become settlement-active only if it is well-signed and schema-valid under §6; a trusted-but-broken root is still reported under §6 but MUST be excluded from settlement and foreclosure calculations until repaired. Given eligibility, a root is **settlement-active** only if either (1) it is listed in the verifier's local trust configuration as a genesis root for this store, or (2) it is adopted by a settlement-active root through an `accept` warrant whose `subject.hash` is the WarrantID of the root to be adopted and whose signatures satisfy the adopting root's current settlement policy, including any threshold rule. **That policy is the adopting jurisdiction's, not the adoption's (MUST; WRT-014):** the adoption MUST satisfy every threshold policy in the `under` of each settlement-active root it descends from, in addition to the policies it cites itself, which its filer chooses and which therefore cannot weaken the jurisdiction's rule. Verifiers MAY verify inactive roots for local integrity but MUST exclude them from settlement and foreclosure calculations and MUST report `WARN: unadopted root`.
-
-**Adoption is scoped:** adopting root A makes root B settlement-active for A's jurisdiction only. Two roots that never reference each other are separate jurisdictions sharing a blob store — by design.
-
-**Portable jurisdiction:** stores SHOULD contain `genesis.json` in the store root — JCS-canonical `{"roots": ["<WarrantID>", ...]}`. The file is **advisory**; verifiers MUST NOT treat it as a trust anchor — it is mutable, unsigned, and editable by anyone with store write access. Before using its listed roots as settlement-active, a verifier MUST independently verify its authenticity (typically a pinned hash in local trust configuration, or explicit user acceptance). If present but unverified: `WARN: genesis.json unverified`, and its contents MUST NOT be used for settlement.
-
-## 10. Non-goals
-
-Consensus, ordering across actors, blob transport, privacy/encryption, PKI beyond §5.1's key-state warrants, and any opinion about how agents *make* decisions. Warrant records decisions; it does not take them.
-
----
-
-*Sections 11–14 were added on 2026-07-30 and are appended rather than interleaved so that every existing cross-reference to §1–§10 keeps its number. They specify surfaces that already existed and were interoperated against — a report contract, a trust-configuration file, a runtime tag set — but were specified in a README, in two implementations, or nowhere.*
-
-## 11. Verification report — `warrant.verify-report@v0`
-
-A verifier MAY expose its result as a machine-readable **verification report**. Emitting one is OPTIONAL (a conformant verifier may have a text interface only — `impl-rs` does). **Emitting the tag `warrant.verify-report@v0` is what is normative:** a producer that prints that string commits to everything in this section, and a consumer that reads that string may rely on it.
-
-A report is **not a Warrant**: it is unsigned, has no WarrantID, is not stored, and carries no settlement authority. It is the verifier's answer about a store at a moment, not a record of a decision. Nothing in this section changes what `verify` (§6) *decides*; it fixes only how that answer is serialized. (Until 2026-07-30 the contract lived in `README.md` and both implementations' source called it "non-normative", meaning "not part of the record format". That was true and was read as "not specified", which is why a consumer had to read a README to integrate.)
-
-### 11.1. Shape (MUST)
-
-Exactly these seven top-level members, no others:
-
-```json
-{"report":"warrant.verify-report@v0","grade":"base","ok":true,
- "records":3,"errors":0,"warnings":1,
- "findings":[{"level":"WARN","subject":"<WarrantID>","message":"..."}]}
-```
-
-| Member | Type | Meaning |
+Its id is `sha256(canon(record))`. It is stored as the canonical bytes of
+`{"record": <record>, "sig": {"key": <hex64 key id>, "ed25519": <hex128>}}` in
+`records/<id>.json`. The signature is Ed25519 (RFC 8032, cofactorless; small-order
+and non-canonical public keys rejected) over the 47 bytes
+`"warrant-sig-v1:" || id_raw`, where `id_raw` is the 32-byte id. A key id is the
+SHA-256 of the 32-byte public key.
+
+A record is **authentic** iff its stored bytes are canonical, its id matches, and
+its signature verifies under a key that the recipient's trust file binds to the
+record's `actor`. A trust file binds keys to actors; it authenticates and
+authorizes nothing else (§6).
+
+There are six types. They are distinct so that a claim, a permission, an
+execution observation and an acceptance can never be read as one another.
+
+| type | body says | filed by |
 | --- | --- | --- |
-| `report` | string | Exactly `"warrant.verify-report@v0"` |
-| `grade` | string | `"base"` or `"settlement"` — the verification grade that was **requested** (§6 vs §7/§5.1/§9), not a claim about what succeeded |
-| `ok` | boolean | `errors == 0`, and nothing else |
-| `records` | integer | Number of records considered, **including records that could not be loaded** |
-| `errors` | integer | Number of `ERR` findings |
-| `warnings` | integer | Number of `WARN` findings |
-| `findings` | array | Every `ERR` and `WARN` event, each an object of exactly `level`, `subject`, `message` |
+| `duty` | a condition someone owes someone | its holder |
+| `transition` | work done: basis, results, closures, questions, residual | whoever did it |
+| `accept` | acceptance of one exact closure, or of a transition's results | the accepting party |
+| `observation` | what an observer saw, when, how, within which bounds | the observer |
+| `grant` | permission to perform a named act on named duties | the grantor |
+| `challenge` | a counterexample against a transition's closure or results | anyone |
 
-- `level` MUST be `"ERR"` or `"WARN"`. `INFO` and any other level MUST NOT appear: a report carries the two severities §6 defines and nothing else.
-- `subject` MUST be the full 64-character lowercase-hex WarrantID of the record the finding is about, or one of the reserved non-hash subjects **`"store"`** (a finding about the store as a whole, e.g. the fail-closed no-store report of §11.3) and **`"settlement"`** (a finding about the requested settlement context as a whole, e.g. an unusable trust configuration). Consumers MUST NOT assume `subject` is hex64. Further reserved subjects are registered under §13.3.
-- `message` is human-oriented prose. It is **NOT normative** and **MAY differ between conformant implementations** for the same input. A consumer MUST NOT branch on it. (It differs today: an unloadable record is `unloadable record: malformed JSON` in Python and `invalid character 'b'` in Go.)
-- **Counts bind findings (MUST):** `errors` MUST equal the number of `ERR` findings and `warnings` MUST equal the number of `WARN` findings, in every report, always. A consumer MAY recompute both and MUST be permitted to reject a report where they disagree — that is a producer defect, not an ambiguity to tolerate.
-- **`ok` binds errors (MUST):** `ok == (errors == 0)`. `ok` is a statement about §6 errors only. A report MAY be `ok:true` with many warnings — including `binding unverified`, which is what an unconfigured keyring produces (§5.1). `ok:true` is not "this store is trustworthy"; it is "this verifier found no §6 error at the requested grade".
+`prior` edges do not exist: every relation is a typed field below.
 
-### 11.2. Serialization and process contract (MUST)
+### 3.1 duty
 
-- The report MUST be exactly **one JSON value on stdout**, occupying exactly **one physical line**. In particular U+2028 and U+2029 inside a `message` or an `actor.id`-derived `subject` MUST NOT be emitted as raw line separators in a way that splits the output — a consumer reading one line MUST get the whole report. (Both implementations pass this vector; §4's raw-emission rule is about *canonical body bytes*, not about this transport.)
-- In report mode the verifier MUST NOT write human text to stdout, and MUST NOT write diagnostics to stderr: a preflight failure is expressed as the report itself (§11.3), never as a stderr message with no report.
-- Exit status MUST be `0` if and only if `ok` is `true`, and MUST equal the exit status the same invocation produces in text mode.
-- The counts in the report MUST equal the counts the same invocation reports in text mode. The report is a rendering of one verification, never a second derivation of it.
-- Findings MUST be emitted in an order that is **deterministic and stable**: re-running the same verifier over the same store MUST produce a byte-identical report. Two *different* implementations MUST agree on `report`, `grade`, `ok`, `records`, `errors`, `warnings` and on the **multiset of `(level, subject)` pairs**; they are NOT required to agree on finding order or on any `message`. That, and not byte-equality of the whole object, is the interoperable surface.
-
-### 11.3. Store mode and failing closed (MUST)
-
-A report is only interoperable when the verifier has been asked to treat its argument as a **store** (`--store-mode` in both reference CLIs). In store mode:
-
-- A path that is not an initialized store — missing, a `records/` that is not a directory, a `blobs/` with no `records/` — MUST produce `ok:false`, `records:0`, `errors:1`, `warnings:0`, and exactly one finding at level `ERR` with subject `store`. It MUST NOT be treated as an empty successful verification. This is what makes `.ok` a safe predicate: without it, "there was nothing to verify" and "everything verified" are the same JSON.
-- An **initialized but empty** store is a successful verification: `ok:true`, `records:0`, `errors:0`.
-
-**Known divergence (not resolved by this text).** *Without* `--store-mode`, the Go CLI retains a legacy flat-directory mode: on an uninitialized directory it emits `ok:true, records:0` while Python emits the fail-closed `ok:false` report — the same tag carrying opposite verdicts about the same path in two conformant implementations. That is disclosed in `README.md`, but the §5 design rule ("two independent implementations MUST agree on every verification outcome") does not carve out a legacy mode. The correct repair is for legacy flat mode to emit no `warrant.verify-report@v0` object at all, since flat mode is not a store verification; that is a behaviour change to a released surface and is recorded here as an open defect rather than legislated away. Consumers MUST pass `--store-mode`.
-
-### 11.4. Versioning and extension (MUST)
-
-`warrant.verify-report@v0` is a **closed schema**. Unknown top-level members and unknown finding members are not permitted, and a strict consumer MAY reject a report that carries any. Consequently:
-
-- A producer MUST NOT add a field to `@v0`, ever, including an "obviously harmless" one. Any additional field, any additional finding member, any additional `level`, and any change to the meaning of an existing member ships under a **new report tag** (`warrant.verify-report@v1`), registered per §13.3.
-- A consumer MUST gate on the exact `report` tag it understands and MUST NOT pattern-match a prefix.
-- A producer MAY emit a `@v1` report only when the consumer asked for it; the tag a consumer did not ask for is not a compatible substitute for the one it did.
-
-`schemas/verify-report-v0.schema.json` is the JSON Schema for this section (§14.2). Where schema and prose disagree, this prose is normative.
-
-## 12. Trust configuration (`trust-config.json`)
-
-§5.1 states that no interchangeable keyring format is mandated, and that remains true of *key state*, whose truth is the DAG of key-state warrants. But a verifier still needs somewhere to put the two things that cannot come from inside the store — which keys start bound, and which roots are settlement-active — and both reference implementations already read the identical file. Two implementations agreeing on a file format is an interop surface whether or not a document admits it, so this section specifies the file they read. It is **local verifier configuration, not protocol state**: it is unsigned, is never hashed into a WarrantID, and MUST NOT be shipped as authority. Supplying one is OPTIONAL; a verifier MAY offer a different mechanism, or none. Reading a file that claims this shape is what is specified.
-
-### 12.1. Shape (MUST)
-
-JSON object with a **closed** member set — an unknown member makes the configuration invalid:
-
-```json
-{ "actors": { "<actor-id>": ["<hex64 Ed25519 pubkey | hex66 compressed P-256 pubkey>", "..."] },
-  "genesis_roots": ["<hex64 WarrantID>", "..."],
-  "genesis_json_sha256": "<hex64>",
-  "next": { "<actor-id>": "<hex64 SHA-256 of the successor public key>" } }
+```
+statement   string ≤ 400 code points
+holder      actor; MUST equal the record's actor
+owed_to     non-empty list of actors
+accept_by   list of actors whose acceptance a closure needs
+release_by  list of actors who may release it (owed_to may always release)
+condition   one of:
+  {"attest": {}}
+  {"observe": {"observers": [actor…], "probe": hex64, "expect": string, "fresh_for": int|null}}
+  {"compute": {"runtime": <runtime id, §7>, "input": hex64, "environment": hex64, "expect": hex64}}
+schedule    null | {"start": int, "every": int > 0}
+requires    list of duty ids that MUST be discharged before this one
+serves      list of duty ids this one serves (a purpose link; it grants nothing)
+answers     null | question reference (§3.2)
+subject     null | hex40|hex64: the exact revision or blob the duty is about
 ```
 
-| Member | Req | Meaning |
+A duty whose condition is `attest` MUST name at least one `accept_by` actor other
+than the holder: an attestation that nobody else must accept would close itself.
+
+### 3.2 transition
+
+```
+basis        "ATTESTED" | "OBSERVED" | "REPLAYED"
+evidence     list of hex64: blobs or record ids the transition relies on as evidence
+relied_on    list of record ids of earlier transitions whose results it uses
+established  list of strings: what this transition establishes
+residual     list of strings: what it explicitly does not establish
+opened       list of {"text": string, "scope": null|string}: new questions
+closes       list of items (below)
+subject      null | hex40|hex64: the revision the results were established on
+supersedes   list of transition ids whose results these replace
+triggers     list of triggers (§5) on the transition's own results
+```
+
+A **question reference** is `<transition id>:<index into opened>`. Opening a
+question assigns it to nobody.
+
+An **item** closes, transfers or revalidates one duty:
+
+```
+duty         duty id
+act          "discharge" | "impossible" | "release" | "delegate" | "substitute" | "revalidate"
+evidence     list of hex64, a subset of the transition's evidence
+period       int, required iff the duty has a schedule and act is discharge
+to           actor, required iff act is delegate or substitute
+revalidates  non-empty list of transition ids, required iff act is revalidate
+triggers     list of triggers (§5) (discharge, impossible, revalidate only)
+```
+
+### 3.3 accept
+
+```
+transition   transition id
+item         int index into closes, or null to accept the transition's results
+evidence     the exact evidence list of that item (or of the transition, for null)
+support      list of hex64: the acceptor's own references
+```
+
+An acceptance binds exactly one (transition, item, evidence set). An acceptance of
+another transition, another item or another evidence set is not this one.
+
+### 3.4 observation
+
+```
+target   string: what was observed (service, endpoint, artifact)
+probe    hex64: blob describing the method (request, command, criterion)
+window   [from, to]: when the observation ran, from ≤ to ≤ the record's at
+result   string: what was observed, verbatim
+raw      list of hex64: captured outputs
+```
+
+### 3.5 grant
+
+The grantor is the record's actor.
+
+```
+grantee    actor
+acts       non-empty sorted list from {"release"}
+delegable  sorted subset of acts the grantee may grant on
+duties     non-empty sorted list of duty ids
+expires    int | null (exclusive)
+parent     null | grant id this one attenuates
+```
+
+### 3.6 challenge
+
+```
+target     transition id
+item       int | null
+statement  string
+evidence   list of hex64
+```
+
+## 4. Assessment
+
+An assessment is a pure function of one **view**: the snapshot (the set of record
+and blob bytes, read once), the recipient's trust file, the recipient's profile
+(§4.6), the time `as_of`, the set of revisions the recipient treats as current,
+the recipient's workspace (repository and commit, for §5) and the identity of the
+evaluating code and provider (§7). Records with `at > as_of` are not in the view.
+Unauthentic or malformed records are listed and excluded; they never abort the
+assessment and never count.
+
+The **assessment id** is the SHA-256 of the canonical description of all those
+operands. Changing any operand that can change a verdict changes it; moving the
+same bytes to another directory does not. A snapshot cannot attest its own
+completeness: every report states `completeness: UNATTESTED`, and a reference to a
+record or blob that is not in the view is reported as missing, never as absence.
+
+**Position** of a record is `(at, id)`; positions are totally ordered.
+
+### 4.1 Who may file an item
+
+| act | filer | also needs |
 | --- | --- | --- |
-| `actors` | MAY | Object mapping a **nonempty** actor id string to an array of public keys **genesis-bound** to that actor: hex64 Ed25519 or hex66 compressed P-256 (WRT-019). Array MAY be empty. |
-| `genesis_roots` | MAY | Array of hex64 WarrantIDs the operator pins as settlement-active roots for this store (§9(1)). |
-| `genesis_json_sha256` | MAY | hex64 SHA-256 of the exact `genesis.json` bytes the operator has accepted (§9). |
-| `next` | MAY | Object mapping an actor id **listed in `actors`** to the hex64 SHA-256 of the raw public-key bytes (32 for Ed25519, 33 for compressed P-256) that actor's first rotation MUST introduce (§5.1, pre-rotation). An actor without an entry is terminal at genesis: no rotation away from its genesis keys is ever authorized. |
+| discharge, impossible, revalidate | the holder or a delegate **at the item's position** | condition met (§4.2), required acceptances |
+| delegate | the holder at its position and at its effect position | acceptance by `to` |
+| substitute | the holder at its position and at its effect position | acceptance by `to` and by one of owed_to ∪ release_by |
+| release | an actor in owed_to ∪ release_by, or the grantee of a valid grant (§4.5) | — |
 
-All three members are optional; `{}` is valid and means "no local trust", which is not the same as "no trust configuration supplied" (§12.3).
+A transfer takes effect at its **effect position**: the latest of its own position
+and the earliest qualifying acceptances. Transfers are applied in order of effect
+position. Holder and delegates at a position are
+those after every admitted transfer whose effect position is not after it. A
+later transfer neither authorizes an earlier filing nor invalidates an earlier
+admitted one. `serves`, a key binding, or being named in a duty grant no authority.
 
-### 12.2. Parsing and validation (MUST)
+### 4.2 When a closure is admitted
 
-- The file MUST be parsed in the same I-JSON domain as every other trust-bearing input (§4): duplicate member names, trailing content after the JSON value, invalid UTF-8 and unpaired surrogate escapes MUST be rejected. A trust input parsed more leniently than a record is a way to make two verifiers disagree about who is bound.
-- Validation is **closed and recursive**: an unknown top-level member, a non-object `actors`, an empty actor id, a non-array key list, or any element of `genesis_roots` that is not hex64, or any element of `actors[*]` that is neither hex64 nor a hex66 string beginning `02`/`03`, or a non-hex64 `genesis_json_sha256`, or a `next` that is not an object, names an actor absent from `actors`, or holds a non-hex64 value, makes the configuration invalid. (Nested types are named explicitly because they were the actual split: `{"actors":[]}` and `{"actors":{"a":1}}` once crashed one implementation while the other returned zero errors.)
-- The file MUST NOT be canonicalized, hashed, or otherwise treated as content-addressed; it is not a blob.
+An item `discharge` (or `revalidate`) for duty D is **admitted** iff:
 
-### 12.3. Fail-closed semantics (MUST)
+1. its filer may file it (§4.1);
+2. every evidence hash resolves in the view to bytes with that hash;
+3. the transition's basis matches D's condition:
+   - `attest`: basis `ATTESTED`;
+   - `observe`: basis `OBSERVED`, and the item's evidence names an observation
+     record in the view, by an actor in `observers` who is not the filer, whose
+     `probe` equals the condition's, whose `result` equals `expect`, and — for a
+     scheduled duty — whose window lies inside the period;
+   - `compute`: basis `REPLAYED`, and the recipient's own replay (§7) of the receipt
+     the item cites reproduces `expect`;
+4. every duty in D's `requires` is DISCHARGED in this view;
+5. every actor in `accept_by` has accepted exactly this item (§3.3);
+6. for `revalidate`: every transition in `revalidates` is an admitted closure of D
+   whose **admission position** is strictly before this item's admission position.
 
-If a settlement-grade verification is **requested** with a trust configuration that is missing, unreadable, malformed, or schema-invalid, the verifier MUST report exactly one `ERR` with subject `settlement`, MUST NOT continue into a partial base-grade verification, and MUST NOT silently fall open to "no trust configured". A requested settlement verification that could not construct its trust did not happen, and MUST NOT be reported as one that found nothing wrong.
+The **admission position** of an item is the latest of its transition's position
+and the earliest acceptance position of each required acceptor. Filing early and
+being accepted late admits late.
 
-If **no** trust configuration is supplied, key↔actor binding is reported as unverified (§5.1, §5 last bullet) — a WARN, never an ERR, and never a silent pass.
+`impossible` is admitted under the same rules, except for 6; for a `compute`
+condition its basis is a replayed cycle (§7), otherwise `ATTESTED`, and then it
+also needs the acceptance of at least one owed_to actor. `release` is admitted
+per §4.1.
 
-`genesis_json_sha256` gates §9's advisory `genesis.json`: the file's bytes are read once, digested, and used only if the digest matches; otherwise `WARN: genesis.json unverified` and its contents MUST NOT be used. A `genesis.json` whose pinned digest matches but whose `roots` member is absent or not an array contributes no roots and MUST NOT be an error — a hostile shape behind a matching digest must be a bounded no-op in every implementation.
+For a scheduled duty, an item discharges one period `n` (window
+`[start + n·every, start + (n+1)·every)`); its transition MUST NOT be earlier than
+the window's start, and an observation it relies on MUST lie inside the window.
+`impossible` and `revalidate` are not defined for scheduled duties.
 
-`schemas/trust-config.schema.json` is the JSON Schema for this section (§14.2).
+A candidate that is not admitted has a verdict, kept in the report:
+`PENDING` (an acceptance is missing), `OVERCLAIMED` (wrong filer, wrong basis,
+order), `MISSING_EVIDENCE`, `UNMET_CONDITION`, `UNVERIFIED` (the basis could not
+be validated here). None of them closes anything.
 
-## 13. Registries
+### 4.3 Disposition
 
-Three of this format's extension points are closed sets today: a new value requires editing this document, which means a new runtime cannot be tried without a spec change. This section says how each set grows and what a registration must contain. **There is no registry operator.** Until one exists (a neutral IANA-style registry is out of scope for a DRAFT spec by one maintainer), a registration is a pull request against this repository containing the fields below, and the registry is the tables in this document. Saying that plainly is the point: an unstaffed registry described as if it were staffed is worse than none.
+A one-off duty is `OPEN`, `DISCHARGED`, `IMPOSSIBLE`, `RELEASED`, or `CONTESTED`
+when admitted closures disagree. A scheduled duty is `SCHEDULED` (or `RELEASED`)
+and has, for every period n whose
+start `start + n·every ≤ as_of`: `COVERED` (a discharge for n is admitted),
+`OPEN` (the period has not ended) or `LAPSED` (it ended uncovered). A discharge of
+one period covers no other.
 
-### 13.1. Reason-runtime tags (`because[].runtime`)
+Admitted closures are history. Nothing later — a challenge, a fired trigger, a
+supersession, a revalidation — rewrites a disposition or erases a closure.
 
-Policy: **Specification Required** in the IETF sense — a registration MUST cite a stable, publicly readable document sufficient for an independent implementer, and MUST NOT be granted for a private or unstable one. A runtime tag is a promise about *verification*, so the bar is what a second implementer needs.
+### 4.4 Reliance
 
-| Tag | Body versions | Status | Defined in |
-| --- | --- | --- | --- |
-| `cmd@v1` | `0.1`, `0.2` | current | §3 |
-| `ski@v1` | `0.2` | current | §3.1 (Σ-GLYPH Book I **v0.5**) |
-| `ski@v2` | *none yet* (`0.3` reserved, §13.2) | reserved candidate; **draft registration text in §3.2, NOT IN FORCE** — not registered, not admitted | §3.2 (Σ-GLYPH Book I **0.6.0**, bundle v0.7.0) |
+`reliance(target, use)` answers whether a present action may rely on a duty's
+closure or a transition's results for a named use. States:
 
-A registration MUST supply: the tag, the body versions it is valid in, whether a verifier is expected to re-execute it (§6(7)) and with what budget unit, the exact outcome-fingerprint tuple for §7 novelty, the pinning rule for whatever ruleset it evaluates (as §3.1 requires of `ski@v1`), and a normative negative vector set (§8.3).
+- `ELIGIBLE` — closed (a DISCHARGED duty; or a transition whose results every
+  required acceptor accepted, §4.6), not superseded, no current trigger FIRED or
+  UNEVALUABLE, no standing challenge, fresh (`fresh_for`), and a revision basis:
+  established on a current revision, or covered by a `subject_changed` trigger
+  that evaluated NOT_FIRED;
+- `STALE` — a current trigger FIRED, or an observation is older than `fresh_for`;
+- `CHALLENGED` — a challenge by an actor who counts (§4.6) targets a current
+  closure. A revalidation of that closure, admitted with the same acceptances,
+  supersedes it, and the challenge stays in the record;
+- `SUPERSEDED` — the transition's results were replaced (§4.7);
+- `UNASSESSED` — something needed could not be evaluated here (a trigger is
+  UNEVALUABLE, the use is not in the profile, the use requires declared triggers
+  and none are current, no revision basis);
+- `NOT_CLOSED`, `CONTESTED`, `MISSING`.
 
-A **reserved candidate row is not a registration** and carries no compatibility credit. It MAY pin candidate semantics and evaluator bytes so implementations can prepare without redefining an immutable tag, but verifiers MUST treat it as unregistered until one change supplies every item above and admits it only through a new body version. A **draft registration** (§3.2's status block) is that preparation written out in full: it is still not a registration, it moves no validity surface, and the presence of draft text MUST NOT cause any implementation to accept the tag.
+Only current closures count: those no admitted revalidation names. A revalidation
+supersedes, for present reliance only, the closures it names; their triggers stay
+in the report as history with `current: false`. An empty trigger list is neutral:
+it is reported as `NONE_DECLARED`, never as "cannot be falsified".
 
-Rules that hold regardless of registration:
+### 4.5 Grants
 
-- Tags are `name@vN`. **A tag is immutable.** A semantic change — including evaluating a later revision of the same external ruleset — is a NEW tag, never a redefinition. `ski@v1` names Book I v0.5; Book I v0.6 would be `ski@v2`.
-- An unregistered `runtime` value makes the record invalid (§3, MUST). Unknown-means-invalid is what stops a forward-dated runtime from meaning "valid" to one verifier and "invalid" to another, and it is the reason this registry has to exist at all.
-- Adding a tag to a body version that already exists is a change to that version's validity surface, so a new tag MUST be introduced in a **new body version** (as `ski@v1` was introduced in `0.2` and remains reserved-and-rejected in `0.1`).
-- Experimental and private-use tags MUST use the prefix `x-` (e.g. `x-mycorp-wasm@v1`). Records carrying an `x-` tag are not interoperable by construction and MUST NOT be used in a store intended to be verified by anyone else. A registered tag MUST NOT begin with `x-`.
+A grant is **valid** at a position iff its record is in the view at or before it,
+it has not expired there, and either it is a root that the recipient's profile
+lists in `grant_roots`, or it attenuates a parent valid at the child's own
+position: the child's grantor is the parent's grantee, its acts are within the
+parent's `delegable`, its `delegable` within both, its duties within the parent's,
+and it expires no later. A grant record not signed by its grantor is invalid.
 
-### 13.2. Body format versions (`warrant`)
+### 4.6 Profile
 
-| Value | Status | Adds |
-| --- | --- | --- |
-| `0.1` | current | base schema (§2, §3) |
-| `0.2` | current | `ski@v1` runtime (§3.1) |
-| `0.3` | **reserved — not specified** (draft rules in §3.2, NOT IN FORCE) | `ski@v2` runtime (§3.2). No implementation accepts a `0.3` body until this row is completed with its §8 vectors; until then `ski@v2` is reserved-and-rejected in `0.1`, `0.2` **and** in any body claiming `0.3`, like any unregistered runtime |
+The recipient's profile is its own choice, never inferred from records:
 
-Policy: maintainer action recorded in `CHANGELOG.md` (§14.3), with the §8 vectors extended in the same change. A new body version MUST NOT invalidate any record valid under an earlier one (§4 of the version preamble), and MUST state, for every runtime tag in §13.1, whether it is admitted or reserved-and-rejected. Document-level versions that add no body schema (as v0.3 did) do NOT consume a `warrant` value.
+```
+uses         {name: {"requires_triggers": bool}}
+accept_by    {"results": [actor…]}: whose acceptance closes a transition's results
+targets      list of crossing targets the recipient accepts a receipt into
+grant_roots  list of grant ids the recipient accepts as roots
+challengers  list of actors whose challenges count (owed_to and accept_by of the
+             duty concerned always count)
+```
 
-### 13.3. Report tags and reserved report subjects
+### 4.7 Supersession
 
-Report tags (`warrant.verify-report@vN`, §11) are registered here. Policy: **Specification Required**, same bar as §13.1, plus a published JSON Schema (§14.2) and a statement of what changed from the previous tag.
+A transition may supersede earlier transitions' results. The superseded results
+remain historically valid as of their time; reliance on them is `SUPERSEDED`. A
+superseding transition counts only while it is itself admitted as results
+(accepted per the profile) and present: if C supersedes B and B superseded A, and
+C is absent, B is current — A never returns without a record that says so. A
+supersession that names a transition not in the view is reported missing.
 
-| Tag | Status | Defined in |
-| --- | --- | --- |
-| `warrant.verify-report@v0` | current | §11 |
+## 5. Triggers
 
-Reserved non-hash `subject` values (§11.1) are registered here; a new one MUST be added by the same process, because a consumer distinguishing "a finding about a record" from "a finding about the run" does so by this list.
+Each trigger evaluates in one view to exactly one of `FIRED`, `NOT_FIRED`,
+`UNEVALUABLE`. Unknown never reads as `NOT_FIRED`.
 
-| Subject | Meaning |
-| --- | --- |
-| `store` | the store as a whole (§11.3) |
-| `settlement` | the requested settlement context as a whole (§12.3) |
+- `{"kind": "subject_changed", "baseline": hex64}` — the baseline blob is a
+  manifest `{"selector": [path…], "entries": {path: {"mode", "sha256"}}}` of
+  explicit, sorted, repository-relative file paths (no globs, directories,
+  symlinks or submodules). FIRED if any entry differs at the workspace commit,
+  NOT_FIRED if none does, UNEVALUABLE if the workspace, a path or the manifest
+  cannot be read.
+- `{"kind": "duty_not_discharged", "duty": id}` — FIRED if that duty is OPEN,
+  RELEASED or IMPOSSIBLE; NOT_FIRED if DISCHARGED; otherwise UNEVALUABLE.
 
-Any other machine-readable document tag this project defines (`warrant.canon-vectors@v0`, §8.4; `conformance_negatives`, §8.3; `evidence_pack`, `EVIDENCE-PACK.md`) follows the same rule: closed schema, new tag for any additive change, never a new field inside an existing tag.
+## 6. Authority, keys and competence
 
-## 14. Media type and schemas
+A key binding says who signed. A grant (§4.5) or the duty itself (holder,
+owed_to, release_by, accept_by) says who may act. Nothing says who is competent:
+competence is not assessed. Delegation by a holder admits closures by the
+delegate; it cannot widen what the holder could do. Generated claims, green CI or
+access to a key do not create authority.
 
-### 14.1. IANA considerations — `application/warrant+json` (DRAFT REGISTRATION, NOT FILED)
+## 7. Computation
 
-**Status: this registration has NOT been submitted to IANA.** No expert review has been requested, no `application/warrant+json` registration exists, and until one does, the media type MUST be treated as unregistered. It is written out here so that the shape of the commitment is on the record before anyone depends on it, and so a future submission does not silently change the format to fit a form. Producers MAY use it on a private network today; nothing SHOULD depend on it being registered.
+The only provider is `sigma-resume`: Σ-GLYPH resumable reduction, provided by the
+pinned kernel in `warrant/provider/` (source: s0fractal/sigma-glyph at the commit
+in its `PIN.json`). Runtime ids are the kernel's own:
+`sigma-book1-0.6.0/hash-thunk/leftmost-outermost` (Book I) and
+`sigma-resume-draft/ski+Y+M+W/hash-thunk/leftmost-outermost` (a draft profile with
+Y, M, W, under which cycles exist). An environment is the blob
+`{"sigma-environment": [sorted node hashes]}`. Its file digests are part of the evaluator
+identity. Execution captures the pinned bytes once, checks them, and executes
+exactly those bytes in a separate interpreter (`-I -B`, no files reopened); the
+process boundary isolates module names, it is not an OS sandbox.
 
-Registration template (RFC 6838 §5.6, structured suffix per RFC 6839):
+A REPLAYED item cites one **receipt** blob:
 
-- **Type name:** application
-- **Subtype name:** warrant+json
-- **Required parameters:** none
-- **Optional parameters:** `version` — the value of the body's `warrant` member (e.g. `version="0.2"`). Absent means the recipient MUST read the member itself. The parameter is a routing convenience and is NOT authoritative: where the parameter and the member disagree, the member wins, because only the member is inside the hash.
-- **Encoding considerations:** binary; UTF-8 per RFC 8259 and RFC 7493 (I-JSON). Content is exchanged as the exact bytes; any re-encoding, re-indentation, BOM insertion, or Unicode normalization changes the WarrantID and MUST NOT be performed by intermediaries (§4).
-- **Security considerations:** those of RFC 8259, RFC 7493 and RFC 8785, plus: a warrant is a *claim* until verified per §6; `ok` from a verifier is not a statement that the claim is true, only that the record is well-formed and signed. Signature acceptance is pinned (§5) — small-order and non-canonical Ed25519 public keys MUST be rejected. Consumers MUST NOT execute a `cmd@v1` check blob merely because it arrived in a record (its trust model is a container the recipient chose); `ski@v1` re-execution is bounded in work and materialized semantic state by `atp` (§3.1), which is what makes it the only reason kind reasonable to re-run from an untrusted source; the bound is semantic, so the verifier's own resource fences and re-execution budget still apply. Recursive `prior` resolution over attacker-supplied data MUST be bounded. The format carries no confidentiality: everything in a body, including `subject.note` and prose reasons, is intended to be readable and quotable by anyone holding it.
-- **Interoperability considerations:** unknown members make a record invalid (§2, recursively). Duplicate member names MUST be rejected (§4). Recipients MUST NOT round-trip through a JSON library that reorders, re-escapes, HTML-escapes, or normalizes, and MUST NOT assume a lenient parser's last-wins behaviour.
-- **Published specification:** this document (`SPEC.md`), cited by the versioned permalink convention of §14.3.
-- **Applications that use this media type:** decision-record stores for AI agents and CI systems; audit and evidence-pack tooling.
-- **Fragment identifier considerations:** none defined. A WarrantID is not a fragment identifier.
-- **Additional information:** magic numbers — none. File extension — `.warrant.json` (records are conventionally stored as `<WarrantID>.json`). Macintosh file type code — none.
-- **Person & email address to contact for further information / Intended usage / Restrictions on usage / Author / Change controller:** the maintainer of `https://github.com/s0fractal/warrant`; intended usage COMMON; no usage restrictions; change controller the same, pending any transfer recorded in the change log.
+```
+{"receipt": "sigma-resume", "target": string, "input": hex64, "environment": hex64,
+ "checkpoint": hex64, "state": hex64, "claimed": hex64, "lost": [string…]}
+```
 
-Two shapes deliberately do **not** get a media type here: the envelope (§5) is carried under the same type as the body it wraps, and the verification report (§11) is a tool output, not an interchange format — if it ever needs one it will be `application/warrant-report+json` under a report tag, registered per §13.3.
+The recipient admits it iff `target` is in its profile's `targets`, `lost` is
+empty, `(input, environment)` equal the duty's condition, the receipt's bytes are
+in the view, and its own replay from the root yields `NORMAL_FORM` with result
+hash equal to both `claimed` and the condition's `expect`. A paused computation
+(`PAUSED`) is not an answer; it may be resumed later and the final checkpoint
+replayed. Replay verifies the whole chain; a verified-replay cache keyed by
+verifier identity changes cost, never the answer or the task.
 
-### 14.2. JSON Schemas (`schemas/`)
+An `impossible` item for a `compute` condition cites a **cycle** blob
+`{"cycle": "sigma-resume", "target", "input", "environment", "witness": hex64, "lost": []}`;
+the recipient verifies the witness. It establishes that this root, under this
+runtime and environment, does not reach a normal form. It says nothing about
+other uses of the term.
 
-Published, versioned JSON Schema (draft 2020-12) files:
+Outcomes that are about the host — bytes the environment names but that are not
+delivered (`EVIDENCE_UNAVAILABLE`), resource limits — are `UNVERIFIED`, never an
+answer. A reference outside the fixed environment is the kernel answer
+`BLOCKED_REFERENCE`, distinct from missing bytes.
 
-| File | Covers |
-| --- | --- |
-| `schemas/warrant-body.schema.json` | the body, §2–§3.1, both `0.1` and `0.2` |
-| `schemas/warrant-envelope.schema.json` | the stored envelope, §5 |
-| `schemas/verify-report-v0.schema.json` | `warrant.verify-report@v0`, §11 |
-| `schemas/trust-config.schema.json` | trust configuration, §12 |
-| `schemas/evidence-pack-manifest.schema.json` | `manifest.json`, `EVIDENCE-PACK.md` |
+## 8. Next-session capsule
 
-The schemas are **derivative and secondary**. Where a schema and this document disagree, this document is normative and the schema is a defect. Passing a schema is necessary and NOT sufficient for conformance: JSON Schema cannot express canonicalization (§4), signature acceptance (§5), re-execution (§6(7)), or settlement (§7), and a validator that only ran a schema would accept a record no verifier here would. `tools/schema_check.py` checks the schemas against the `examples/` corpus in both directions — every positive vector MUST validate, and every §8.3 negative vector MUST NOT — so a schema that has drifted from the vectors fails rather than reassuring.
+`capsule(target)` returns, for one duty or transition in one assessment: the
+result (established statements, disposition), its basis (assessed basis, acceptors,
+observations, replays), its limits (residual, scope, subject, completeness), the
+conditions under which it must be revisited (triggers with their current results,
+challenges, freshness) and the ids of its evidence, which are fetched on demand.
+`frontier(actor)` lists what is open for that actor: duties it holds or is
+delegated, periods lapsed or open, acceptances it owes, challenges against its
+closures. Unowned questions are listed by `questions()` and are in nobody's
+frontier.
 
-### 14.3. Citing a version of this document
+## 9. Limits
 
-This specification has, until now, been citable only as "SPEC.md", which is a moving target: the sentence a reader quotes and the sentence in force can differ by a force-push. That is an odd property for a format whose whole argument is that a policy must be pinned by the hash of its exact bytes.
-
-The convention, from 2026-07-30:
-
-- **`CHANGELOG.md`** (Keep-a-Changelog shape, this repository's root) is the record of what changed in each release, reconstructed from git history for everything before it existed. Protocol-visible changes are marked; a release with no protocol-visible change says so.
-- **Cite this document by commit, not by branch.** The stable citation form is
-  `https://github.com/s0fractal/warrant/blob/<full-40-char-commit-sha>/SPEC.md#<anchor>`.
-  A `blob/master/SPEC.md` link is a convenience for a reader and MUST NOT be used where the exact text matters — in a `under` policy blob, a conformance claim (`TRADEMARK.md`), an audit report, or a registration.
-- **Pin by hash where a hash is available.** `SHA-256` of the exact `SPEC.md` bytes is the strongest citation and is what a `ski@v1`-style pinning rule (§3.1) expects of any ruleset it evaluates against. A tagged release commit is the second-strongest; a branch name is not a citation.
-- **A release tag is `vMAJOR.MINOR.PATCH` on the tooling**, which is *not* the protocol version. Four numbers coexist deliberately: the body version (`warrant`, §13.2), the document version in this file's title, the report tag (§13.3), and the package version. `CHANGELOG.md` states, per release, which of them moved. Conflating them is the single most common misreading of this project's status.
+Not in this version, and refused rather than approximated: threshold (k-of-n)
+adoption, key rotation and revocation, P-256 signatures, `cmd@v1` and `ski@v1`
+checks, policy compilation (WPL), settlement tunnels, goals/commitments as
+distinct kinds, grants for acts other than `release`, revocation of grants.

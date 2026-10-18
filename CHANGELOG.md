@@ -25,7 +25,19 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
-## Unreleased
+## 2.0.0.dev0 — Warrant 2 (unreleased)
+
+**[protocol] A new generation, incompatible by design** (owner mandate,
+2026-10-18). SPEC.md is replaced: six typed records (duty, transition, accept,
+observation, grant, challenge), assessment of one immutable snapshot, reliance,
+frontier and capsule. The Python package `warrant` (distribution
+`warrant-loops`, command `warrant`) is the only implementation. The pinned
+sigma-resume kernel (sigma-glyph `c864d3e`) is the only computation provider.
+Everything below this entry describes Warrant 0.x, which is preserved at the tag
+`history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
+replaced it.
+
+## Unreleased (0.x, not released before the rebuild)
 
 - **The shared primitives are held to [s0fractal/primitives](https://github.com/s0fractal/primitives).**
   That repository states the behaviour of SHA-256, RFC 8785, the signature

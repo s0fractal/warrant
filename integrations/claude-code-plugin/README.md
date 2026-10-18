@@ -49,8 +49,9 @@ expected:
 | a person denies the dialog | nothing (no hook fires) | shown as an **open ask**: denied by hand, interrupted or still open |
 
 Each record's subject binds the harness's `tool_use_id` and `session_id`, which
-Claude Code also writes into its own telemetry. `tools/otel_audit.py` joins the
-two ([`docs/telemetry-correlation.md`](../../docs/telemetry-correlation.md)).
+Claude Code also writes into its own telemetry. The joining tool
+(`tools/otel_audit.py`, `docs/telemetry-correlation.md`) is preserved at the
+tag `history/warrant-0.x-2026-10-18`.
 
 ## Why unprompted executions, and why only a hash
 

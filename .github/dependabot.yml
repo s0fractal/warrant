@@ -19,11 +19,7 @@
 #
 #   * It does not review. It does not merge. A Dependabot PR is a notification
 #     with a diff attached, nothing more.
-#   * Merging one unread is its own hazard, larger here than in most repos:
-#     `publish.yml` holds `id-token: write` and mints an OIDC token PyPI accepts
-#     as this repository's identity. Anything running in that job can use it. An
-#     unreviewed bump of `pypa/gh-action-pypi-publish` is a supply-chain change
-#     to the job that publishes this package. Read the upstream diff between the
+#   * Merging one unread is its own hazard: read the upstream diff between the
 #     old and new SHA before merging, every time.
 #   * It does not verify that the new SHA is the commit the new tag points at,
 #     nor that the tag was not moved. Dependabot trusts the upstream ref

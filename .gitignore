@@ -1,36 +1,8 @@
 __pycache__/
 *.pyc
-impl-go/warrant-go
-
-# Rust build artifacts (regenerable; the binary is not committed)
-impl-rs/target/
-impl-wasm/target/
-web/dist/
-
-# Go build cache (regenerable; must never be committed)
-impl-go/.gocache/
-.gocache/
-
-# Python packaging build artifacts (pip install . / build)
 /build/
 *.egg-info/
 dist/
-
-# warrant-mcp commerce demo: pack is generated fresh by run.sh (live timestamps)
-demos/mcp-commerce/pack/
 scratchpad/
-
-# The gate's own scratch store and its report are build outputs.
-.warrant/store/
-gate-report.md
-gate-store.zip
-
-# Local secrets (never commit) — e.g. SONAR_TOKEN
 .env
 .env.*
-
-# JavaScript registry artifacts (built from the checked-in Rust and TS sources)
-js/generated/
-js/dist/
-js/LICENSE
-js/*.tgz

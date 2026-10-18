@@ -1,8 +1,0 @@
-{
-  "profile": [],
-  "proofs": {
-    "Coma": {
-      "vc_const_P256_N_BE_def": { "prover": "alt-ergo", "time": 0.013 }
-    }
-  }
-}

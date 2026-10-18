@@ -32,86 +32,28 @@ through GitHub's advisory flow, which this repository supports.
 
 ## What is in scope
 
-The things this project asks you to trust:
+The things Warrant 2 asks you to trust (SPEC.md):
 
-- **The verifier being wrong.** A store that should fail verification and does
-  not; two implementations disagreeing on a verification outcome or a WarrantID.
-  This is the highest-value class here — see the severity ladder below.
-- **Forging provenance.** Any way to make a record, a policy, an evidence blob or
-  a chain read as verified when it is not: swapped bytes at a content address,
-  a signature that counts when it should not, an unbound key satisfying a
-  threshold, a re-litigation admitted without new evidence.
-- **The settlement algebra** (SPEC §7) and **key state** (§5.1): unbounded
-  re-opening, censorship of a legitimate record, a subject locked out of
-  resolving its own state.
-- **`ski@v1` re-execution**: a check that reports pass without running, or whose
-  re-run disagrees with what the verifier records.
-- **Supply chain of the published package**: anything about the PyPI artefact
-  that a reader of `PUBLISHING.md` would not expect.
+- **Admission being wrong.** A closure admitted without its required acceptance,
+  by someone who did not hold the duty at that position, on a basis its
+  condition does not admit, or out of admission order; an acceptance of another
+  item or evidence set counting.
+- **Reliance being wrong.** ELIGIBLE where a trigger fired or was unevaluable,
+  where a counting challenge stands, where an observation is stale, or without a
+  revision basis.
+- **Authority.** A key binding, `serves`, or a delegation authorizing more than
+  SPEC §4.1/§4.5 allow; a grant beyond its parent.
+- **Computation.** A replay credited for another task, another answer or a target
+  the recipient did not accept; bytes executed that are not the pinned ones.
+- **Identity.** Two different views with one assessment id, or one view with two.
 
 ## What is out of scope
 
-Not because it does not matter, but because it is a **stated boundary of the
-threat model** rather than a defect. The boundary is defined in one place —
-`THREAT-MODEL.md` → "Security assumptions and non-goals" — as eleven scoped
-assumptions (`SA-1` … `SA-11`) and six explicit non-goals (`NG-1` … `NG-6`), each
-with its reasoning. That document is the source of truth; this list is a pointer
-to the ones a reporter hits most often:
-
-- **`cmd@v1` verdicts are trusted by specification** (SA-1). SPEC §7 states the
-  verifier does not re-execute them; their trust model is the container.
-- **Key↔actor binding is outside the format** (SA-2). At base grade an unbound
-  signature is a WARN, not an error.
-- **`genesis.json` is advisory** (§9, A9) and mutable by anyone with store write
-  access. Tampering it produces `WARN: genesis.json unverified` and its contents
-  are not used. That is the specified behaviour.
-- **`native_decide` is in the Lean trusted base** for part of the proof chain,
-  which puts the compiler there too (SA-8).
-- **Resource exhaustion on a store you already control** (NG-5).
-- **Findings that require write access to a store to then claim that store is
-  untrustworthy** (NG-6), unless the point is that a *reader* cannot tell.
-
-A report showing that any of these is *worse than stated* is in scope and is the
-most valuable thing this project receives; one restating it is not.
-
-## The consolidated threat model
-
-`THREAT-MODEL.md` (DRAFT, 2026-07-30) carries the single attacker-capability
-matrix — given an attacker who can write to the store, control the blob
-transport, co-sign, hold an unbound key, or author the policy: what still holds,
-and what they get — followed by the assumptions and non-goals that bound it. The
-in/out-of-scope lists here remain the process; that document is the model they
-rest on.
-
-## Severity, as this project ranks it
-
-The ladder used in `reviews/` and in the gate policy:
-
-- **P0** — two conforming verifiers can disagree on a WarrantID or a verification
-  outcome; or something forged reads as verified.
-- **P1** — the specification is silent where an implementer must guess.
-- **P2** — clarity, structure, misleading output.
-- **P3** — roadmap.
-
-## A finding is a reproduction
-
-Not a rule for you, an offer: a report that runs is acted on immediately, and a
-report that does not has to be re-derived before anything can happen. If you can
-send a script that exits non-zero on the defect and zero once it is fixed, it
-becomes a permanent regression test with your name on it.
-
-Every fix in this repository's history carries a negative control — the fix is
-removed and the attack is shown to come back — so a reproduction is what the
-process is built to consume.
-
-## Verify anything first
-
-```bash
-python3 tools/check.py     # 100 checks, one verdict; UNRUN is not a pass
-```
-
-If a document and a command disagree, the command is right. Several reports
-against this project have been artefacts of reading a feature branch, an archived
-evidence blob, or truncated output rather than the thing itself; `MAP.md` says
-which ref holds what, and `THREAT-MODEL.md`'s assumptions and non-goals list the
-known boundaries so you do not spend a pass rediscovering them.
+- The process boundary around the Sigma kernel isolates module names; it is not
+  an OS sandbox. A local attacker who can write the installed package can change
+  what runs; the assessment id then names different engine bytes.
+- A view cannot prove its own completeness; reports say `UNATTESTED`.
+- Competence of actors is not assessed (SPEC §6).
+- The retired Warrant 0.x generation (`HISTORY.md`): report issues in the
+  published `warrant-verify` ≤ 0.12.0 here too, but fixes go to that line only if
+  the owner decides to maintain it.

@@ -20,8 +20,11 @@ WHAT IS ASSERTED
      with mode, success and a hash of the response; the output is never
      stored. SessionStart recalls recent denials as labelled data and prints
      nothing when there are none. The command classifier holds a table.
-  8. The manifests parse; the vendored warrant_approval.py is byte-identical
-     to integrations/approval/warrant_approval.py.
+  8. The manifests parse.
+
+The plugin records and verifies in the Warrant 0.x format. Its CLI is the
+published `warrant-verify` 0.12.0, named by WARRANT_PLUGIN_CLI (CI installs it
+in its own environment); this repository no longer carries that implementation.
 """
 import json
 import os
@@ -34,7 +37,10 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 WITNESS = HERE / "scripts" / "witness.py"
 DECISIONS = HERE / "scripts" / "decisions.py"
-CLI = str(ROOT / "impl" / "warrant.py")
+CLI = os.environ.get("WARRANT_PLUGIN_CLI")
+if not CLI:
+    print("UNRUN: set WARRANT_PLUGIN_CLI to a warrant-verify 0.12.0 `warrant` executable")
+    sys.exit(3)
 ok = True
 
 
@@ -238,9 +244,6 @@ def main():
         except ValueError:
             parsed = False
         check(f"{p.relative_to(ROOT)} parses", parsed)
-    check("vendored warrant_approval.py is byte-identical to the boundary module",
-          (HERE / "scripts" / "warrant_approval.py").read_bytes()
-          == (ROOT / "integrations" / "approval" / "warrant_approval.py").read_bytes())
 
     print(f"\nCLAUDE-CODE-PLUGIN: {'ALL PASS' if ok else 'FAILURES PRESENT'}")
     return 0 if ok else 1
