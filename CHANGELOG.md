@@ -37,6 +37,16 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### Who closes a duty, said where it is read
+
+A duty capsule now names `owed_to`, `accept_by` and `waiting_for`: whose
+acceptance a filed closure still waits for. An `accept` item in an actor's
+frontier carries the item's `waiting_for` and `last_acceptance`, which says
+whether this acceptance is the last one. A results acceptance owed under the
+profile is marked `under: profile accept_by.results`. These are projection
+fields only; no admission or reliance rule changed. They fix the confusion seen
+in the 2026-10-19 fresh-context run (contract case F5; mutants M42 and M43).
+
 ### One environment identity with Sigma
 
 **[protocol]** A computation environment is now Sigma's own manifest,

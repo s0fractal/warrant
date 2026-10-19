@@ -373,6 +373,30 @@ def handoff_cases():
     got = {v: still_offered(v) for v in ("results-only", "other-duty", "item-unaccepted")}
     check("F4", all(got.values()), "results supersession alone never hides a pending closure from its acceptor", got)
 
+    # F5: who closes a duty is in its capsule, and an acceptor's frontier item says
+    # whose acceptance it still waits for and whether this one is the last (the
+    # 2026-10-19 fresh-context run guessed that its own accept "may not close" it)
+    w = World()
+    d = w.duty(owed_to=(OWNER,), accept_by=(OWNER, CODEX))
+    t = w.close(d)
+    rep = w.assess()
+    first = [x for x in E.frontier(rep, OWNER) if x.get("need") == "accept"]
+    cap = E.capsule(rep, d)
+    w.accept(CODEX, t, 0)
+    rep2 = w.assess()
+    last = [x for x in E.frontier(rep2, OWNER) if x.get("need") == "accept"]
+    cap2 = E.capsule(rep2, d)
+    w.accept(OWNER, t, 0)
+    rep3 = w.assess()
+    check("F5", cap["accept_by"] == [OWNER, CODEX] and cap["owed_to"] == [OWNER]
+          and cap["waiting_for"] == sorted([OWNER, CODEX])
+          and first and first[0]["waiting_for"] == sorted([OWNER, CODEX]) and first[0]["last_acceptance"] is False
+          and last and last[0]["waiting_for"] == [OWNER] and last[0]["last_acceptance"] is True
+          and cap2["waiting_for"] == [OWNER] and rep3["duties"][d]["disposition"] == "DISCHARGED"
+          and E.capsule(rep3, d)["waiting_for"] == [],
+          "a capsule names who closes the duty; an acceptor knows whether its accept is the last one",
+          (cap.get("waiting_for"), first, last))
+
 
 def main():
     attest_cases()

@@ -132,6 +132,20 @@ release is exposed.
 | `tests/agent_mutants.py` | A01-A27, each killed on its named case |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 
+## Measured cost of the provider (2026-10-19)
+
+Each `compute` operation and each replayed receipt inside an assessment starts
+the Sigma provider in a fresh interpreter (`-I -B`, module bytes on stdin).
+This was measured on the acceptance run (`examples/agent/acceptance.py --door
+python`, Apple Silicon, Python 3.15):
+- 7 provider calls, about 31 ms each (term, start, resume, verify alike);
+- 0.22 s of a 1.1 s run.
+
+No verdict cache is kept. The cost grows with the number of computation
+receipts an assessment replays, at about 31 ms each, so it matters only for
+stores holding hundreds of them. A cache, if added, must be local to the
+receiver and keyed by the provider identity and the exact bytes.
+
 ## Not solved here
 
 A set signed incomplete from the start, with the receiver's expectation on

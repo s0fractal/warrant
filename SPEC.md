@@ -386,9 +386,13 @@ result (established statements, disposition), its basis (assessed basis, accepto
 observations, replays), its limits (residual, scope, subject, completeness), the
 conditions under which it must be revisited (triggers with their current results,
 challenges, freshness) and the ids of its evidence, which are fetched on demand.
-`frontier(actor)` lists what is open for that actor: duties it holds or is
-delegated, periods lapsed or open, acceptances it owes, challenges against its
-closures. Unowned questions are listed by `questions()` and are in nobody's
+For a duty it also names who it is owed to, whose acceptance closes it
+(`accept_by`) and whose acceptance a filed closure still waits for
+(`waiting_for`). `frontier(actor)` lists what is open for that actor: duties it
+holds or is delegated, periods lapsed or open, acceptances it owes (each with
+the item's `waiting_for` and whether this acceptance is the last one,
+`last_acceptance`), results acceptances it owes under the profile's
+`accept_by.results` (marked `under`), and challenges against its closures. Unowned questions are listed by `questions()` and are in nobody's
 frontier.
 
 ## 9. Limits
