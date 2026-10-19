@@ -85,8 +85,7 @@ class Raw:
         return None
 
     def close(self):
-        self.p.stdin.close()
-        try:
+        try:                       # communicate() closes stdin itself (EOF ends the server)
             out, err = self.p.communicate(timeout=10)
         except subprocess.TimeoutExpired:
             self.p.kill()
