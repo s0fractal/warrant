@@ -74,8 +74,12 @@ def main():
         "op": "inspect", "workspace": "rcv", "manifest": pkg["manifest"], "payload": pkg["payload"],
         "expected_manifest": digest})
     raw_digest = inspect(rcv, pkg, ids, expectation=digest)
+    # a local context has no delivery: an expectation there is refused, not silently ignored
+    ctx_exp = rcv.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": [],
+                                   "expectation": "src-cut"})
     check("H04", r["delivery"]["relation"] == "UNPINNED" and r["use"]["state"] == "HOLD"
-          and smuggled.get("error") == "BAD_REQUEST" and raw_digest.get("error") == "UNKNOWN_EXPECTATION",
+          and smuggled.get("error") == "BAD_REQUEST" and raw_digest.get("error") == "UNKNOWN_EXPECTATION"
+          and ctx_exp.get("error") == "BAD_REQUEST",
           "a manifest digest from the sender is never the receiver's expectation",
           (r["delivery"]["relation"], smuggled, raw_digest))
 

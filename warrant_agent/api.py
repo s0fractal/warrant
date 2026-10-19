@@ -124,7 +124,9 @@ def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget):
 # ---------------------------------------------------------------- operations
 
 def context(cfg, req):
-    _closed(req, ("workspace", "actor", "targets", "use"), ("expectation", "limits", "agent_api"))
+    # A context is a LOCAL_CAPTURE: there is no delivery to hold an expectation
+    # against, so `expectation` is refused here rather than accepted and ignored.
+    _closed(req, ("workspace", "actor", "targets", "use"), ("limits", "agent_api"))
     ws = cfg.workspace(req["workspace"])
     ws.permit("context")
     need(isinstance(req["actor"], str) and req["actor"], "BAD_REQUEST", "actor")

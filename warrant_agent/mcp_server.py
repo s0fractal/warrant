@@ -43,10 +43,8 @@ def build(cfg):
     @server.tool(name="warrant_context", description="Assess the receiver's frozen view of a workspace and return "
                  "compact capsules, frontier, unowned questions, delivery and the use decision.")
     def warrant_context(workspace: str, actor: str, use: str, targets: list[dict[str, str]],
-                        expectation: str | None = None, context_bytes: int | None = None) -> dict[str, Any]:
+                        context_bytes: int | None = None) -> dict[str, Any]:
         req = {"workspace": workspace, "actor": actor, "use": use, "targets": targets}
-        if expectation is not None:
-            req["expectation"] = expectation
         if context_bytes is not None:
             req["limits"] = {"context_bytes": context_bytes}
         return run("context", req)
