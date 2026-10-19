@@ -4,8 +4,8 @@ name: ci
 #
 # Two installs, both from local files:
 #   base     warrant alone: attest and observe work, compute refuses honestly;
-#   compute  warrant + the sigma-glyph wheel built from the commit pyproject.toml
-#            names (the [compute] extra) + the pinned MCP SDK (the [mcp] extra),
+#   compute  warrant + the sigma-glyph release pyproject.toml names (the
+#            [compute] extra, PyPI) + the pinned MCP SDK (the [mcp] extra),
 #            from a wheelhouse, with --no-index.
 # The tests and mutants run against the installed bytes; the scenarios run
 # through the installed `warrant` command from outside the checkout.
@@ -28,12 +28,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Wheelhouse (warrant from this checkout, sigma-glyph from the pinned commit)
+      - name: Wheelhouse (warrant from this checkout, sigma-glyph from the pinned release)
         run: |
           set -euo pipefail
-          COMMIT=$(python -c 'import re; print(re.search(r"sigma-glyph@([0-9a-f]{40})", open("pyproject.toml").read()).group(1))')
-          python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" . "git+https://github.com/s0fractal/sigma-glyph@$COMMIT"
-          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0'
+          SIGMA=$(python -c 'import re; print(re.search(r"sigma-glyph==([0-9][0-9.]*)", open("pyproject.toml").read()).group(1))')
+          python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" .
+          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0' "sigma-glyph==$SIGMA"
           ls "$RUNNER_TEMP/wh"
 
       - name: Base install has no provider, and says so

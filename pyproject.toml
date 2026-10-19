@@ -16,10 +16,11 @@ dependencies = ["cryptography>=41"]
 
 [project.optional-dependencies]
 # `compute` conditions need the Sigma provider (sigma_provider in the sigma-glyph
-# wheel). It is not on PyPI in this version: install it from the exact commit, or
-# from a wheel built from it (README "Compute"). Without it, attest and observe
-# work and every REPLAYED basis is UNVERIFIED.
-compute = ["sigma-glyph @ git+https://github.com/s0fractal/sigma-glyph@f3fd1dd6ad967d92002d6a4b1063468c66df305b"]
+# distribution, released on PyPI as 0.8.0). Its provider identity is
+# 0caff793d00dd798fa0af89517674c2ca562e1d517e7c969cc40617778c776c5; CI checks the installed bytes against it, since a version
+# pin alone does not name bytes. Without it, attest and observe work and every
+# REPLAYED basis is UNVERIFIED.
+compute = ["sigma-glyph==0.8.0"]
 # The thin stdio MCP front end of warrant_agent (`warrant-agent-mcp`), on the
 # official Python SDK at one exact version.
 mcp = ["mcp==2.3.0"]

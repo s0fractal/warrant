@@ -37,6 +37,15 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### Sigma from PyPI, checked by identity
+
+The `[compute]` extra is `sigma-glyph==0.8.0` from PyPI instead of a git commit
+pin. CI downloads that release into its no-index wheelhouse, and the
+`sigma-provider` workflow checks that the installed provider's identity is
+`0caff793…`, the bytes Codex reviewed in sigma-glyph #65 and #67, because a
+version pin alone does not name bytes. The provider bytes are the same as at
+the previous pin `f3fd1dd`, so no recipient's accepted provider changes.
+
 ### Who closes a duty, said where it is read
 
 A duty capsule now names `owed_to`, `accept_by` and `waiting_for`: whose
