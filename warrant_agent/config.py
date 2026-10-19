@@ -59,6 +59,11 @@ class Workspace:
              "expectation is not a configured handle of this workspace")
         return dict(self.expectations[handle], handle=handle)
 
+    def expectation_digest(self, handle):
+        """The identity of the CURRENT definition behind a handle, or None if the handle is gone."""
+        e = self.expectations.get(handle)
+        return None if e is None else C.doc_id(e)
+
     def use_policy(self, use):
         need(isinstance(use, str) and use in self.uses, "BAD_REQUEST", f"use {use!r} is not configured")
         return self.uses[use]

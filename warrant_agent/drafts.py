@@ -15,6 +15,21 @@ from . import views
 from .errors import AgentError, need
 
 
+def _hex64(v):
+    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+
+
+def _draft(ws, draft_id):
+    """The draft file of THIS workspace: the id is a full hex64 address before any
+    path is built, and the stored draft must name this workspace."""
+    need(_hex64(draft_id), "BAD_REQUEST", "draft_id is a hex64 address")
+    path = ws.state / "drafts" / f"{draft_id}.json"
+    need(path.is_file(), "NOT_FOUND", "no such draft")
+    d = views.read_json(path)
+    need(d.get("workspace") == ws.name and d.get("draft_id") == draft_id, "NOT_FOUND", "no such draft")
+    return path, d
+
+
 def _signer(ws):
     need(ws.signer is not None, "NO_SIGNER", "this workspace has no configured signer")
     actor, keyfile = ws.signer
@@ -26,6 +41,7 @@ def _accept_body(meta_vdir, body):
     missing evidence set is the exact evidence of that item in the frozen view."""
     need(isinstance(body, dict) and set(body) <= {"transition", "item", "evidence", "support"}
          and "transition" in body and "item" in body, "BAD_REQUEST", "accept is {transition, item, evidence?, support?}")
+    need(_hex64(body["transition"]), "BAD_REQUEST", "transition is a hex64 record id")
     if "evidence" in body:
         return R.accept(body["transition"], body["item"], body["evidence"], body.get("support", []))
     p = meta_vdir / "records" / f"{body['transition']}.json"
@@ -71,10 +87,7 @@ def prepare(ws, based_on, request_id, rtype, body):
 
 def commit(ws, draft_id):
     ws.permit("commit")
-    need(isinstance(draft_id, str) and len(draft_id) == 64, "BAD_REQUEST", "draft_id")
-    path = ws.state / "drafts" / f"{draft_id}.json"
-    need(path.is_file(), "NOT_FOUND", "no such draft")
-    d = views.read_json(path)
+    path, d = _draft(ws, draft_id)
     actor, key = _signer(ws)
     dst = ws.store / "records" / f"{d['record_id']}.json"
     if dst.is_file():
@@ -95,9 +108,7 @@ def commit(ws, draft_id):
 def status(ws, kind, target):
     need(isinstance(target, str) and target, "BAD_REQUEST", "target")
     if kind == "draft":
-        path = ws.state / "drafts" / f"{target}.json"
-        need(path.is_file(), "NOT_FOUND", "no such draft")
-        d = views.read_json(path)
+        _, d = _draft(ws, target)
         return {k: d[k] for k in ("draft_id", "record_id", "actor", "at", "status", "basis_assessment_id")}
     path = ws.state / "imports" / f"{C.digest(target.encode())}.json"
     need(path.is_file(), "NOT_FOUND", "no such operation")

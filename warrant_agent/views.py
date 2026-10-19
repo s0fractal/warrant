@@ -142,6 +142,18 @@ def load(ws, token):
     return meta, read_json(vdir / "report.json"), vdir
 
 
+def expectation_now(ws, delivery):
+    """The receiver's CURRENT definition of the expectation a delivery was inspected
+    against: CURRENT, CHANGED or REMOVED (None when no expectation was used)."""
+    handle = delivery.get("expectation")
+    if handle is None:
+        return None
+    now = ws.expectation_digest(handle)
+    state = "REMOVED" if now is None else "CURRENT" if now == delivery.get("expectation_definition") else "CHANGED"
+    return {"handle": handle, "state": state, "definition": now}
+
+
 def observation(ws, meta):
     """What is known locally now, apart from the frozen report."""
-    return {"newer_known": live_digest(ws) != meta["live_snapshot"], "incomplete_imports": incomplete_imports(ws)}
+    return {"newer_known": live_digest(ws) != meta["live_snapshot"], "incomplete_imports": incomplete_imports(ws),
+            "expectation": expectation_now(ws, meta["delivery"])}

@@ -243,6 +243,42 @@ def more_handoff():
     check("H12", too_big.get("error") == "RESOURCE_LIMIT" and in_big.get("error") == "RESOURCE_LIMIT",
           "a bundle over the limit is refused on both sides", (too_big, in_big))
 
+    # H13 (W142-01): the receiver moves its own expectation handle to a newer cut.
+    # The old view keeps its historical assessment, but the current use holds with a
+    # new decision id, and the old staged package is not promoted under the new
+    # definition; removing the handle holds too; restoring the old definition, or
+    # re-inspecting against the new one, is current again.
+    src13, rcv13 = world()
+    ids13 = reviewed_work(src13, challenge=False)
+    pkg13, old13 = pkg_and_digest(src13, ids13, "before-challenge")
+    rcv13.expect("current", old13, source="src", exporter="producer")
+    before = ok(inspect(rcv13, pkg13, ids13, expectation="current"))
+    cx13 = src13.blob(b"newly available counterexample")
+    src13.file("challenge", "auditor", 140, R.challenge(ids13["transition"], "new counting challenge", [cx13], 0))
+    newpkg13, new13 = pkg_and_digest(src13, ids13, "after-challenge")
+    rcv13.expect("current", new13, source="src", exporter="producer")        # controller update + reload
+    after = ok(rcv13.call("read", {"workspace": "rcv", "view_token": before["view_token"], "kind": "context"}))
+    late = rcv13.call("handoff", {"workspace": "rcv", "op": "import", "staged_id": before["data"]["staged_id"],
+                                  "request_id": "late-import"})
+    current = ok(inspect(rcv13, newpkg13, ids13, expectation="current"))
+    del rcv13.doc["workspaces"]["rcv"]["expectations"]["current"]
+    rcv13.reload()
+    removed = ok(rcv13.call("read", {"workspace": "rcv", "view_token": before["view_token"], "kind": "context"}))
+    rcv13.expect("current", old13, source="src", exporter="producer")        # the original definition, again
+    restored = ok(rcv13.call("read", {"workspace": "rcv", "view_token": before["view_token"], "kind": "context"}))
+    check("H13", before["use"]["state"] == "WITHIN_POLICY" and after["assessment_id"] == before["assessment_id"]
+          and after["observation"]["expectation"]["state"] == "CHANGED" and after["use"]["state"] == "HOLD"
+          and after["use"]["decision_id"] != before["use"]["decision_id"]
+          and late.get("error") == "IMPORT_BLOCKED"
+          and current["observation"]["expectation"]["state"] == "CURRENT"
+          and current["data"]["capsules"][0]["reliance"] == "CHALLENGED"
+          and removed["observation"]["expectation"]["state"] == "REMOVED" and removed["use"]["state"] == "HOLD"
+          and restored["observation"]["expectation"]["state"] == "CURRENT"
+          and restored["use"]["decision_id"] == before["use"]["decision_id"],
+          "a changed or removed receiver expectation holds current use and blocks a stale promotion; "
+          "the historical assessment is kept",
+          (after["use"], late.get("error"), removed["observation"]["expectation"]))
+
 
 def more_views():
     import time

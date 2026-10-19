@@ -205,6 +205,7 @@ def inspect(ws, manifest, payload, expectation=None, declaration=None):
     for i, b in good["blobs"].items():
         views._write(sdir / "blobs" / i, b)
     delivery = {"relation": relation, "manifest": mhash, "expectation": expect["handle"] if expect else None,
+                "expectation_definition": ws.expectation_digest(expect["handle"]) if expect else None,
                 "source": manifest["source"], "declared_snapshot": manifest["capture"]["snapshot"],
                 "exporter": exporter, "missing": missing, "mismatched": sorted(mismatched),
                 "source_completeness": "UNATTESTED", "reasons": reasons}
@@ -229,13 +230,27 @@ def import_(ws, staged_id, request_id):
         need(journal["staged_id"] == staged_id, "CONFLICT", "request_id was used for another import")
         if journal["status"] == "COMPLETE":
             return journal
-    rel = staged["delivery"]["relation"]
+    delivery = staged["delivery"]
+    rel = delivery["relation"]
     allowed = tuple(ws.uses.get("import", {}).get("delivery", PROMOTE_DEFAULT))
     if rel not in allowed:
         raise AgentError("IMPORT_BLOCKED", f"delivery {rel} is not one this workspace imports", allowed=list(allowed))
+    # The relation was computed against the expectation as it was at inspection;
+    # a promotion now must hold under the receiver's CURRENT definition of it.
+    if delivery["expectation"] is not None and \
+            ws.expectation_digest(delivery["expectation"]) != delivery["expectation_definition"]:
+        raise AgentError("IMPORT_BLOCKED", f"the receiver's expectation {delivery['expectation']!r} changed or was "
+                         "removed since this package was inspected; inspect it again", expectation=delivery["expectation"])
     snap = Snapshot.read(sdir)
+    manifest = staged["manifest"]
+    declared = {r["id"]: r["envelope"] for r in manifest["records"]}
     for h, b in snap.blobs.items():
         need(C.digest(b) == h, "CONFLICT", "staged bytes changed since inspection")
+    for rid, b in snap.records.items():
+        need(declared.get(rid) == C.digest(b), "CONFLICT", "staged record bytes are not the declared envelope")
+    if rel == "MATCH_EXPECTED_SET":
+        need(set(snap.records) == set(declared) and set(snap.blobs) == set(manifest["blobs"]), "CONFLICT",
+             "the staged set is not exactly the declared set")
     trust = ws.trust()
     invalid = {rid: why for rid, data in snap.records.items() for why, _ in [_authenticate(rid, data, trust)] if why}
     if invalid:

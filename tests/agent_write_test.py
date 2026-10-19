@@ -110,6 +110,40 @@ def main():
     check("W08", c8.get("error") == "SIGNER_CHANGED"
           and not (rev.ws.store / "records" / f"{p8['data']['record_id']}.json").exists(),
           "a draft is signed only by the principal it was prepared for", c8)
+
+    # W09 (W142-02): draft and record addresses are hex64 before any path; a draft is
+    # read and committed only in the workspace that prepared it
+    import os
+    import shutil
+    s9, r9 = world()
+    v9 = ok(s9.call("context", {"workspace": "src", "actor": "producer", "use": "continue", "targets": []}))
+    d9 = ok(s9.call("prepare", {"workspace": "src", "based_on": v9["view_token"], "request_id": "private",
+                                "type": "challenge", "body": {"target": "ab" * 32, "item": 0,
+                                                              "statement": "restricted", "evidence": []}}))["data"]
+    s9.doc["workspaces"]["src"]["operations"] = []
+    s9.reload()
+    direct = s9.call("read", {"workspace": "src", "kind": "draft", "target": d9["draft_id"]})
+    rel = os.path.relpath(s9.ws.state / "drafts" / d9["draft_id"], r9.ws.state / "drafts")
+    tries = [r9.call("read", {"workspace": "rcv", "kind": "draft", "target": t})
+             for t in (rel, str(s9.ws.state / "drafts" / d9["draft_id"]), d9["draft_id"][:63], "Z" * 64)]
+    other = r9.call("commit", {"workspace": "rcv", "draft_id": d9["draft_id"]})
+    # a draft file planted in another workspace's directory is not that workspace's draft
+    shutil.copy(s9.ws.state / "drafts" / f"{d9['draft_id']}.json", r9.ws.state / "drafts")
+    planted_read = r9.call("read", {"workspace": "rcv", "kind": "draft", "target": d9["draft_id"]})
+    planted_commit = r9.call("commit", {"workspace": "rcv", "draft_id": d9["draft_id"]})
+    vr = ok(r9.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))
+    bad_accept = r9.call("prepare", {"workspace": "rcv", "based_on": vr["view_token"], "request_id": "acc",
+                                     "type": "accept", "body": {"transition": "../../" + "ab" * 29, "item": 0}})
+    own = ok(r9.call("prepare", {"workspace": "rcv", "based_on": vr["view_token"], "request_id": "own",
+                                 "type": "challenge", "body": {"target": "cd" * 32, "item": 0,
+                                                               "statement": "mine", "evidence": []}}))["data"]
+    own_status = ok(r9.call("read", {"workspace": "rcv", "kind": "draft", "target": own["draft_id"]}))["data"]
+    check("W09", direct.get("error") == "NOT_PERMITTED" and [t.get("error") for t in tries] == ["BAD_REQUEST"] * 4
+          and other.get("error") == "NOT_FOUND" and planted_read.get("error") == "NOT_FOUND"
+          and planted_commit.get("error") == "NOT_FOUND" and bad_accept.get("error") == "BAD_REQUEST"
+          and own_status["status"] == "PREPARED",
+          "addresses are checked before paths; a draft belongs to its own workspace; own status still reads",
+          ([t.get("error") for t in tries], other.get("error"), planted_read.get("error"), bad_accept.get("error")))
     return finish("AGENT-WRITE")
 
 
