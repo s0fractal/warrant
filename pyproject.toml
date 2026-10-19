@@ -27,6 +27,7 @@ Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
 
 [project.scripts]
 warrant = "warrant.cli:main"
+warrant-agent = "warrant_agent.cli:main"
 
 [tool.setuptools]
-packages = ["warrant"]
+packages = ["warrant", "warrant_agent"]
