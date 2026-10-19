@@ -27,15 +27,14 @@ is the retired 0.x generation.
 ### Compute
 
 Attest and observe need nothing else. `compute` conditions are replayed by the
-Sigma provider, the `sigma_provider` module of the `sigma-glyph` wheel. That
-wheel is not on PyPI in this version; install it from the exact commit Warrant
-names in `pyproject.toml`:
+Sigma provider, the `sigma_provider` module of the `sigma-glyph` distribution
+(PyPI `0.8.0`, provider identity `0caff793…`):
 
 ```bash
-pip install "./[compute]"                    # warrant + sigma-glyph from that commit
+pip install "./[compute]"                    # warrant + sigma-glyph==0.8.0 from PyPI
 # or, offline, from a wheelhouse built once:
-pip wheel --no-deps -w wheelhouse "git+https://github.com/s0fractal/sigma-glyph@<commit>"
-pip install --no-index wheelhouse/sigma_glyph-*.whl ./
+pip download --no-deps -d wheelhouse 'sigma-glyph==0.8.0'
+pip install --no-index -f wheelhouse ./ sigma-glyph
 warrant compute --store S provider           # the provider's identity
 ```
 

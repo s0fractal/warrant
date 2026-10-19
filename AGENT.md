@@ -11,7 +11,7 @@ take the same request objects and return the same result objects.
 | stdio MCP | `warrant-agent-mcp --config C.json` | `warrant-loops[mcp]` (official SDK, `mcp==2.3.0`) |
 
 Computation needs the Sigma provider (`warrant-loops[compute]`, the exact
-sigma-glyph commit in `pyproject.toml`). This is not a new record type, not a
+sigma-glyph release in `pyproject.toml`, PyPI 0.8.0). This is not a new record type, not a
 SPEC extension and not an extension of MCP. `agent_api` is the interface
 version; it is not Warrant `"2"`, not `sigma_provider:1` and not an MCP revision.
 
