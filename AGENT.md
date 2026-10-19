@@ -74,9 +74,11 @@ promotion also re-checks every staged record against the manifest's envelope
 digest and, for a MATCH, that the staged set is exactly the declared set, and
 that an exporter the expectation names still verifies under the receiver's
 CURRENT trust. `observation.trust_current` is false when the trust file changed
-after the view was captured; a `fresh` use then holds. An unfinished import
-stops holding the workspace once every object it staged is in the live store
-with the same bytes (for example through a later, larger import).
+after the view was captured; a `fresh` use then holds, and so does any use of
+a delivery that rested on an exporter's declaration. An unfinished import stops
+holding the workspace once every object its manifest declares is in the live
+store with the declared bytes (for example through a later, larger import); the
+staging directory is not consulted for that set.
 
 Draft ids and record ids in requests are full hex64 addresses before any path
 is built, and a draft is readable and committable only in the workspace that
@@ -127,7 +129,7 @@ release is exposed.
 | `tests/agent_write_test.py` | W01-W09 |
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10 |
 | `tests/agent_mcp_test.py` | M01-M05, cancellation |
-| `tests/agent_mutants.py` | A01-A25, each killed on its named case |
+| `tests/agent_mutants.py` | A01-A27, each killed on its named case |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 
 ## Not solved here

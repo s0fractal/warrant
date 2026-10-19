@@ -56,17 +56,22 @@ def live_digest(ws):
 
 
 def _landed(ws, journal):
-    """An unfinished import whose every staged object is now in the live store with
-    the same bytes (for example through a later, larger import) leaves nothing
-    half-promoted: the store is as that import would have left it."""
-    sdir = ws.state / "staging" / journal.get("staged_id", "")
-    if not journal.get("staged_id") or not (sdir / "staged.json").is_file():
+    """An unfinished import whose every DECLARED object (record envelope digests and
+    blob hashes of its manifest) is now in the live store with those exact bytes,
+    for example through a later, larger import, leaves nothing half-promoted. The
+    staging directory is not consulted for the set: it may have been cleaned."""
+    spath = ws.state / "staging" / journal.get("staged_id", "") / "staged.json"
+    if not journal.get("staged_id") or not spath.is_file():
         return False
-    for kind in ("records", "blobs"):
-        for f in (sdir / kind).iterdir() if (sdir / kind).is_dir() else ():
-            dst = ws.store / kind / f.name
-            if not dst.is_file() or dst.read_bytes() != f.read_bytes():
-                return False
+    manifest = read_json(spath)["manifest"]
+    for r in manifest["records"]:
+        dst = ws.store / "records" / f"{_addr(r['id'])}.json"
+        if not dst.is_file() or C.digest(dst.read_bytes()) != r["envelope"]:
+            return False
+    for h in manifest["blobs"]:
+        dst = ws.store / "blobs" / _addr(h)
+        if not dst.is_file() or C.digest(dst.read_bytes()) != h:
+            return False
     return True
 
 

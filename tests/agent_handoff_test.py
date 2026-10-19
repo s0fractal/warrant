@@ -338,6 +338,40 @@ def more_expectation():
     ok(r_c.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": v_c2["data"]["staged_id"],
                             "request_id": "c2"}))
     freed = ok(r_c.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))
+    # (e) an interrupted import whose staging objects were cleaned away keeps holding:
+    #     "landed" is judged from the declared manifest, not from what is left in staging
+    import shutil
+    s_e, r_e = world()
+    ids_e = reviewed_work(s_e, challenge=False)
+    pkg_e, d_e = pkg_and_digest(s_e, ids_e)
+    r_e.expect("cur", d_e, source="src")
+    v_e = ok(inspect(r_e, pkg_e, ids_e, "cur"))
+    handoff._FAULT_AFTER = 1
+    try:
+        r_e.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": v_e["data"]["staged_id"],
+                             "request_id": "e"})
+    except RuntimeError:
+        pass
+    finally:
+        handoff._FAULT_AFTER = None
+    for kind in ("records", "blobs"):
+        shutil.rmtree(r_e.ws.state / "staging" / v_e["data"]["staged_id"] / kind, ignore_errors=True)
+    cleaned = ok(r_e.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))
+    # (f) with fresh: false, an exporter-based delivery still holds when the exporter's trust goes
+    s_f, r_f = world()
+    ids_f = reviewed_work(s_f, challenge=False)
+    (s_f.base / "auditor.key").write_text(s_f.keys["auditor"].seed_hex())
+    s_f.doc["workspaces"]["src"]["signer"] = {"actor": "auditor", "key": str(s_f.base / "auditor.key")}
+    s_f.reload()
+    uses_f = r_f.doc["workspaces"]["rcv"]["uses"]                      # shared default: copy, never mutate
+    r_f.doc["workspaces"]["rcv"]["uses"] = dict(uses_f, **{"continue": dict(uses_f["continue"], fresh=False)})
+    pkg_f, d_f = pkg_and_digest(s_f, ids_f)
+    r_f.expect("cur", d_f, source="src", exporter="auditor")
+    v_f = ok(inspect(r_f, pkg_f, ids_f, "cur"))
+    (r_f.base / "trust.json").write_bytes(C.canon(Trust.document(
+        [(a, k.public) for a, k in r_f.keys.items() if a != "auditor"])))
+    r_f.reload()
+    f_read = ok(r_f.call("read", {"workspace": "rcv", "view_token": v_f["view_token"], "kind": "context"}))
     # (d) an operator float in the definition does not break inspection
     s_d, r_d = world()
     ids_d = reviewed_work(s_d, challenge=False)
@@ -352,11 +386,14 @@ def more_expectation():
           and b_imp.get("error") == "IMPORT_BLOCKED"
           and held["use"]["state"] == "HOLD" and freed["use"]["state"] == "WITHIN_POLICY"
           and not freed["observation"]["incomplete_imports"]
-          and v_d.get("ok", {}).get("delivery", {}).get("relation") == "MATCH_EXPECTED_SET",
+          and v_d.get("ok", {}).get("delivery", {}).get("relation") == "MATCH_EXPECTED_SET"
+          and cleaned["use"]["state"] == "HOLD" and v_f["use"]["state"] == "WITHIN_POLICY"
+          and f_read["use"]["state"] == "HOLD",
           "source and exporter are part of the expectation; current trust holds a stale exporter match; a journal "
           "whose bytes all landed later frees the workspace; operator floats are allowed",
           (a_read["use"]["state"], a_imp.get("error"), b_read["use"]["state"], b_imp.get("error"),
-           held["use"]["state"], freed["use"]["reasons"], v_d.get("error")))
+           held["use"]["state"], freed["use"]["reasons"], v_d.get("error"), cleaned["use"]["state"],
+           f_read["use"]["state"]))
 
 
 def more_views():
