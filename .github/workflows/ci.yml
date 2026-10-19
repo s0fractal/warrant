@@ -74,6 +74,18 @@ jobs:
       - name: Cross-host local controls and frozen round-1 artifact replay
         run: python examples/cross-host/selftest.py
 
+      - name: Frozen dependency-audit wheel inputs and binding controls
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/dependency-audit-tools"
+          "$RUNNER_TEMP/dependency-audit-tools/bin/pip" install --quiet 'packaging==26.3'
+          AUDIT_PY="$RUNNER_TEMP/dependency-audit-tools/bin/python"
+          AUDIT_KIT=examples/dependency-audit
+          AUDIT_PIN=fd1fda658ad9a8214c98cb2b12da0670597a01540e40f22108448f8e0e41d648
+          "$AUDIT_PY" "$AUDIT_KIT/audit.py" fetch --manifest "$AUDIT_KIT/fixture/manifest.json" \
+            --manifest-sha256 "$AUDIT_PIN" --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
+          "$AUDIT_PY" "$AUDIT_KIT/selftest.py" --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
+
       - name: Scenarios through the installed `warrant` command
         working-directory: ${{ runner.temp }}
         run: bash "$GITHUB_WORKSPACE/examples/run-all.sh"
