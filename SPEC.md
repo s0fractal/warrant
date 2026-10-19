@@ -342,8 +342,10 @@ the bytes that ran is in the recipient's `providers` (§4.6); a provider's repor
 about itself grants nothing. Runtime ids are the kernel's own:
 `sigma-book1-0.6.0/hash-thunk/leftmost-outermost` (Book I) and
 `sigma-resume-draft/ski+Y+M+W/hash-thunk/leftmost-outermost` (a draft profile with
-Y, M, W, under which cycles exist). An environment is the blob
-`{"sigma-environment": [sorted node hashes]}`. The provider identity is part of
+Y, M, W, under which cycles exist). An environment is the blob of Sigma's own manifest
+`{"schema": "sigma-resume.environment@draft-1", "hashes": [sorted lowercase node hashes]}`
+in canonical JSON, so its blob address is `sigma_resume`'s `environment_id` for
+the same hash set. The provider identity is part of
 the assessment identity. Execution reads the provider's module bytes once,
 computes the identity from them, and executes exactly those bytes in a separate
 interpreter (`-I -B`, the bytes passed on stdin, no file reopened), through the

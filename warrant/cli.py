@@ -163,7 +163,7 @@ def _env_blobs(s, env_h):
     doc = snap.json_blob(env_h)
     if doc is None or P.environment_problem(doc):
         raise SystemExit("not a sigma environment manifest in this store")
-    hashes = doc["sigma-environment"]
+    hashes = P.environment_hashes(doc)
     return hashes, {h: snap.blobs[h] for h in hashes if h in snap.blobs}
 
 

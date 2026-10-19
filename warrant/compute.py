@@ -108,14 +108,25 @@ class Provider:
         return {"refused": str(out["refused"])} if "refused" in out else out["ok"]
 
 
+# Sigma's own environment manifest: its canonical bytes hash to sigma_resume's
+# environment_id, so one hash set has one identity on both sides.
+ENV_SCHEMA = "sigma-resume.environment@draft-1"
+
+
 def environment_doc(hashes):
-    return {"sigma-environment": sorted(set(hashes))}
+    return {"schema": ENV_SCHEMA, "hashes": sorted(set(hashes))}
+
+
+def environment_hashes(doc):
+    return doc["hashes"]
 
 
 def environment_problem(doc):
-    if not (isinstance(doc, dict) and set(doc) == {"sigma-environment"} and isinstance(doc["sigma-environment"], list)
-            and all(isinstance(h, str) and len(h) == 64 for h in doc["sigma-environment"])
-            and doc["sigma-environment"] == sorted(set(doc["sigma-environment"]))):
+    if not (isinstance(doc, dict) and set(doc) == {"schema", "hashes"} and doc["schema"] == ENV_SCHEMA
+            and isinstance(doc["hashes"], list)
+            and all(isinstance(h, str) and len(h) == 64 and all(c in "0123456789abcdef" for c in h)
+                    for h in doc["hashes"])
+            and doc["hashes"] == sorted(set(doc["hashes"]))):
         return "not a sigma environment manifest"
     return None
 
@@ -153,7 +164,7 @@ def _env_and_blobs(snapshot, env_hash):
     why = environment_problem(doc)
     if why:
         return None, None, why
-    hashes = doc["sigma-environment"]
+    hashes = environment_hashes(doc)
     return hashes, {h: snapshot.blobs[h] for h in hashes if h in snapshot.blobs}, None
 
 
