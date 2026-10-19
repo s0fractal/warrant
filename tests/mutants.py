@@ -126,6 +126,11 @@ MUTANTS = [
     ("M41", "compute.py", "an environment is addressed by Warrant's own manifest, not Sigma's environment_id",
      [('    return {"schema": ENV_SCHEMA, "hashes": sorted(set(hashes))}', '    return {"hashes": sorted(set(hashes)), "schema": "warrant"}')],
      "compute_test", ["C15"]),
+    ("M42", "engine.py", "an acceptor is told its accept is the last one whoever else is still missing",
+     [('"last_acceptance": c["waiting_for"] == [actor]}', '"last_acceptance": True}')], "contract_test", ["F5"]),
+    ("M43", "engine.py", "a duty capsule does not say whose acceptance a closure waits for",
+     [('                   waiting_for=sorted({a for c in r["candidates"] if c["verdict"] == "PENDING"',
+       '                   waiting_for=sorted({a for c in [] if c["verdict"] == "PENDING"')], "contract_test", ["F5"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

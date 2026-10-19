@@ -727,7 +727,11 @@ def _duty_needs(rep, did, r, actor):
     for c in r["candidates"]:
         replaced = set(rep["results"].get(c["transition"], {}).get("superseded_by", [])) & closed_by_admitted
         if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []) and not replaced:
-            yield {"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"]}
+            # Whose acceptance this item still waits for, and whether this one is the
+            # last: a reader must not have to guess that its own accept closes the duty
+            # (found in the 2026-10-19 fresh-context run).
+            yield {"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"],
+                   "waiting_for": list(c["waiting_for"]), "last_acceptance": c["waiting_for"] == [actor]}
     if holds and r["disposition"] == "DISCHARGED":
         for use in rep["profile"]["uses"]:
             rl = reliance(rep, did, use)
@@ -739,7 +743,8 @@ def frontier(rep, actor):
     """What is open for `actor` in this view. Unowned questions are never in it."""
     out = [n for did, r in sorted(rep["duties"].items()) for n in _duty_needs(rep, did, r, actor)]
     if actor in rep["profile"]["accept_by"]["results"]:
-        out += [{"transition": t_id, "need": "accept results"} for t_id, r in sorted(rep["results"].items())
+        out += [{"transition": t_id, "need": "accept results", "under": "profile accept_by.results"}
+                for t_id, r in sorted(rep["results"].items())
                 if actor not in r["accepted_by"] and not r["superseded_by"] and r["established"]]
     return out
 
@@ -756,6 +761,9 @@ def capsule(rep, target, use="act"):
     if target in rep["duties"]:
         r = rep["duties"][target]
         cap.update(kind="duty", statement=r["statement"], disposition=r["disposition"], holder=r["holder"],
+                   owed_to=r["owed_to"], accept_by=r["accept_by"],
+                   waiting_for=sorted({a for c in r["candidates"] if c["verdict"] == "PENDING"
+                                       for a in c.get("waiting_for") or []}),
                    basis=r["assessed_basis"], closed_by=r["closed_by"], periods=r.get("periods"),
                    revalidate_when=[{k: t[k] for k in t if k != "closure"} for t in r["triggers"] if t["current"]],
                    challenges=_counting_challenges(rep, set(r.get("current_closures", [])), r),
