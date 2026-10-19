@@ -1,0 +1,42 @@
+# Exact-head review request: warrant-agent handoff (S1–S4) and Sigma checked resume (S2)
+
+From Claude, 2026-10-19. Goal: `../warrant-agent-handoff-design/GOAL-FOR-CLAUDE.md`.
+Please review each head below exactly and answer ACCEPT or AMEND per PR. A finding should come with a reproducer or a counterexample.
+
+## Heads
+
+| PR | Repo | Head | Base |
+| --- | --- | --- | --- |
+| s0fractal/sigma-glyph#65 | sigma-glyph `provider/checked-resume` | `22742b577d521f8e95c96a8832d0d99bf3dc566b` | master `28b74f1` |
+| s0fractal/warrant#142 | warrant `agent/handoff` | `b954bd05cd4a674452723fede6785c011ce0f6a0` | master `c81c327` |
+
+Merge order is Sigma first, then Warrant. The Warrant `[compute]` extra pins `22742b5`. If Sigma changes after review, the pin moves to the merged commit and the Warrant head moves with it.
+
+## Where to look first (the boundaries the goal names)
+
+1. **Receiver authority.** The expectation comes only from configuration (`warrant_agent/config.py` `expectation`, `handoff.inspect`). The view assesses the receiver's own trust and profile (`views.capture`). Nothing in a request chooses the signer, a path, a URL or code.
+2. **Frozen view.** Bytes are captured once. A worker subprocess assesses them under `assess_seconds`, and the operands in the report are checked against the captured ones (`views.capture`). No deadline means no report (V08).
+3. **Delivery.** Records are checked by manifest envelope digest, missing declared bytes are detected, and payload items are bare hex ids (no paths, no duplicates). Import is journaled STARTED → add-only → COMPLETE. Use holds while an import is incomplete (H11). Records that do not authenticate block promotion (H09).
+4. **Exact write.** A draft fixes actor, key and `at`. Commit recognizes an existing envelope before signing anything, so a retry after restart returns the same record. A signer change gives SIGNER_CHANGED (W02, W04, W08).
+5. **Compute.** The store is read once (S10). A foreign checkpoint is continued only by the provider's `resume`. The profile is never edited (S08). A hard stop stores nothing (S07).
+6. **MCP.** `warrant_agent/mcp_server.py`: six static tools, refusals as tool errors, wire-only stdout.
+7. **Sigma `resume`.** `impl/sigma_provider.py` `_op_resume`: verify, then refuse, terminate, defer or advance. Raw advance is never reached without REPLAYED.
+
+## Evidence (reproduce)
+
+```bash
+# warrant, from the head, in a venv with ./[compute,mcp]
+for t in agent_handoff agent_write agent_compute agent_mcp; do python tests/${t}_test.py; done   # 20/20, 8/8, 6/6, 6/6
+python tests/agent_mutants.py                                                                  # 15/15 killed on target
+for d in python cli mcp; do python examples/agent/acceptance.py --door $d; done                # 4/4 each
+# sigma-glyph, from the head
+python tests/provider_resume_test.py          # 10/10, plus 3/3 mutants
+```
+
+## Measured, and not established
+
+- MCP `mcp==2.3.0`. With a raw client, a handshake at 2024-11-05, 2025-03-26, 2025-06-18 or 2025-11-25 is negotiated at the version asked for. An unknown revision is countered with 2025-11-25. SDK `discover()` negotiates 2026-07-28.
+- **Live MCP host smoke: NOT RUN.** The auto-mode classifier refused the headless Claude Code launch from my session ("Create Unsafe Agents"). The owner runs the prepared command.
+- **Fresh-context run:** a same-model subagent on the same machine with a shared disk; it is not an independent model. Results go in `S5-RESULT.md` here when complete.
+- **Residual H03** is kept on purpose: a signed partial inventory MATCHes, and completeness stays UNATTESTED.
+- Custody: one Mac. Claude's key signs only Claude's records. Nothing here is signed for Codex or the owner.
