@@ -271,17 +271,92 @@ def more_handoff():
     rcv13.expect("current", old13, source="src", exporter="producer")        # the original definition, again
     restored = ok(rcv13.call("read", {"workspace": "rcv", "view_token": before["view_token"], "kind": "context"}))
     check("H13", before["use"]["state"] == "WITHIN_POLICY" and after["assessment_id"] == before["assessment_id"]
-          and after["observation"]["expectation"]["state"] == "CHANGED" and after["use"]["state"] == "HOLD"
+          and (after["observation"].get("expectation") or {}).get("state") == "CHANGED" and after["use"]["state"] == "HOLD"
           and after["use"]["decision_id"] != before["use"]["decision_id"]
           and late.get("error") == "IMPORT_BLOCKED"
-          and current["observation"]["expectation"]["state"] == "CURRENT"
+          and (current["observation"].get("expectation") or {}).get("state") == "CURRENT"
           and current["data"]["capsules"][0]["reliance"] == "CHALLENGED"
-          and removed["observation"]["expectation"]["state"] == "REMOVED" and removed["use"]["state"] == "HOLD"
-          and restored["observation"]["expectation"]["state"] == "CURRENT"
+          and (removed["observation"].get("expectation") or {}).get("state") == "REMOVED" and removed["use"]["state"] == "HOLD"
+          and (restored["observation"].get("expectation") or {}).get("state") == "CURRENT"
           and restored["use"]["decision_id"] == before["use"]["decision_id"],
           "a changed or removed receiver expectation holds current use and blocks a stale promotion; "
           "the historical assessment is kept",
           (after["use"], late.get("error"), removed["observation"]["expectation"]))
+    more_expectation()
+
+
+def more_expectation():
+    """H14: the parts of a receiver expectation other than its digest, and recovery."""
+    from agent_world import C, R, Trust
+    # (a) the same manifest digest, another source in the definition: holds and blocks
+    s_a, r_a = world()
+    ids_a = reviewed_work(s_a, challenge=False)
+    pkg_a, d_a = pkg_and_digest(s_a, ids_a)
+    r_a.expect("cur", d_a, source="src")
+    v_a = ok(inspect(r_a, pkg_a, ids_a, "cur"))
+    r_a.expect("cur", d_a, source="elsewhere")
+    a_read = ok(r_a.call("read", {"workspace": "rcv", "view_token": v_a["view_token"], "kind": "context"}))
+    a_imp = r_a.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": v_a["data"]["staged_id"],
+                                 "request_id": "a"})
+    # (b) the named exporter is no longer in the receiver's trust: the old view holds,
+    #     the stale MATCH package is not promoted
+    s_b, r_b = world()
+    ids_b = reviewed_work(s_b, challenge=False)
+    (s_b.base / "auditor.key").write_text(s_b.keys["auditor"].seed_hex())
+    s_b.doc["workspaces"]["src"]["signer"] = {"actor": "auditor", "key": str(s_b.base / "auditor.key")}
+    s_b.reload()
+    pkg_b, d_b = pkg_and_digest(s_b, ids_b)
+    r_b.expect("cur", d_b, source="src", exporter="auditor")
+    v_b = ok(inspect(r_b, pkg_b, ids_b, "cur"))
+    (r_b.base / "trust.json").write_bytes(C.canon(Trust.document(
+        [(a, k.public) for a, k in r_b.keys.items() if a != "auditor"])))
+    r_b.reload()
+    b_read = ok(r_b.call("read", {"workspace": "rcv", "view_token": v_b["view_token"], "kind": "context"}))
+    b_imp = r_b.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": v_b["data"]["staged_id"],
+                                 "request_id": "b"})
+    # (c) an import interrupted, the handle moved to a larger cut that is then imported:
+    #     the stale journal does not hold the workspace forever
+    from agent_world import handoff
+    s_c, r_c = world()
+    ids_c = reviewed_work(s_c, challenge=False)
+    pkg_c, d_c = pkg_and_digest(s_c, ids_c, "c1")
+    r_c.expect("cur", d_c, source="src")
+    v_c = ok(inspect(r_c, pkg_c, ids_c, "cur"))
+    handoff._FAULT_AFTER = 2
+    try:
+        r_c.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": v_c["data"]["staged_id"],
+                             "request_id": "c1"})
+    except RuntimeError:
+        pass
+    finally:
+        handoff._FAULT_AFTER = None
+    held = ok(r_c.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))
+    s_c.file("transition", "producer", 170, R.transition("ATTESTED", established=["newer"]))
+    pkg_c2, d_c2 = pkg_and_digest(s_c, ids_c, "c2")
+    r_c.expect("cur", d_c2, source="src")
+    v_c2 = ok(inspect(r_c, pkg_c2, ids_c, "cur"))
+    ok(r_c.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": v_c2["data"]["staged_id"],
+                            "request_id": "c2"}))
+    freed = ok(r_c.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))
+    # (d) an operator float in the definition does not break inspection
+    s_d, r_d = world()
+    ids_d = reviewed_work(s_d, challenge=False)
+    pkg_d, d_d = pkg_and_digest(s_d, ids_d)
+    r_d.expect("cur", d_d, source="src", review_by=1.5)
+    v_d = inspect(r_d, pkg_d, ids_d, "cur")
+    check("H14", a_read["use"]["state"] == "HOLD"
+          and (a_read["observation"].get("expectation") or {}).get("state") == "CHANGED"
+          and a_imp.get("error") == "IMPORT_BLOCKED"
+          and v_b["delivery"]["relation"] == "MATCH_EXPECTED_SET" and b_read["use"]["state"] == "HOLD"
+          and b_read["use"]["decision_id"] != v_b["use"]["decision_id"] and b_read["observation"].get("trust_current") is False
+          and b_imp.get("error") == "IMPORT_BLOCKED"
+          and held["use"]["state"] == "HOLD" and freed["use"]["state"] == "WITHIN_POLICY"
+          and not freed["observation"]["incomplete_imports"]
+          and v_d.get("ok", {}).get("delivery", {}).get("relation") == "MATCH_EXPECTED_SET",
+          "source and exporter are part of the expectation; current trust holds a stale exporter match; a journal "
+          "whose bytes all landed later frees the workspace; operator floats are allowed",
+          (a_read["use"]["state"], a_imp.get("error"), b_read["use"]["state"], b_imp.get("error"),
+           held["use"]["state"], freed["use"]["reasons"], v_d.get("error")))
 
 
 def more_views():

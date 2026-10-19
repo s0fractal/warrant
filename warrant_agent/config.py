@@ -62,7 +62,8 @@ class Workspace:
     def expectation_digest(self, handle):
         """The identity of the CURRENT definition behind a handle, or None if the handle is gone."""
         e = self.expectations.get(handle)
-        return None if e is None else C.doc_id(e)
+        # JSON, not JCS: the operator's configuration may carry floats (as the config digest does)
+        return None if e is None else C.digest(json.dumps(e, sort_keys=True, separators=(",", ":")).encode())
 
     def use_policy(self, use):
         need(isinstance(use, str) and use in self.uses, "BAD_REQUEST", f"use {use!r} is not configured")

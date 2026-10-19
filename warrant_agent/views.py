@@ -55,11 +55,26 @@ def live_digest(ws):
     return Snapshot.read(ws.store).digest
 
 
+def _landed(ws, journal):
+    """An unfinished import whose every staged object is now in the live store with
+    the same bytes (for example through a later, larger import) leaves nothing
+    half-promoted: the store is as that import would have left it."""
+    sdir = ws.state / "staging" / journal.get("staged_id", "")
+    if not journal.get("staged_id") or not (sdir / "staged.json").is_file():
+        return False
+    for kind in ("records", "blobs"):
+        for f in (sdir / kind).iterdir() if (sdir / kind).is_dir() else ():
+            dst = ws.store / kind / f.name
+            if not dst.is_file() or dst.read_bytes() != f.read_bytes():
+                return False
+    return True
+
+
 def incomplete_imports(ws):
     out = []
     for p in sorted((ws.state / "imports").glob("*.json")):
         doc = read_json(p)
-        if doc.get("status") != "COMPLETE":
+        if doc.get("status") != "COMPLETE" and not _landed(ws, doc):
             out.append(p.stem)
     return out
 
@@ -156,4 +171,5 @@ def expectation_now(ws, delivery):
 def observation(ws, meta):
     """What is known locally now, apart from the frozen report."""
     return {"newer_known": live_digest(ws) != meta["live_snapshot"], "incomplete_imports": incomplete_imports(ws),
+            "trust_current": base64.b64encode(ws.trust_bytes()).decode() == meta["trust"],
             "expectation": expectation_now(ws, meta["delivery"])}

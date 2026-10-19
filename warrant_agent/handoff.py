@@ -210,6 +210,7 @@ def inspect(ws, manifest, payload, expectation=None, declaration=None):
                 "exporter": exporter, "missing": missing, "mismatched": sorted(mismatched),
                 "source_completeness": "UNATTESTED", "reasons": reasons}
     views.write_json(sdir / "staged.json", {"staged_id": staged_id, "manifest": manifest, "delivery": delivery,
+                                            "declaration": declaration,
                                             "received_at": int(time.time())})
     meta = views.capture(ws, extra=good, delivery=delivery)
     return staged_id, meta
@@ -238,9 +239,14 @@ def import_(ws, staged_id, request_id):
     # The relation was computed against the expectation as it was at inspection;
     # a promotion now must hold under the receiver's CURRENT definition of it.
     if delivery["expectation"] is not None and \
-            ws.expectation_digest(delivery["expectation"]) != delivery["expectation_definition"]:
+            ws.expectation_digest(delivery["expectation"]) != delivery.get("expectation_definition"):
         raise AgentError("IMPORT_BLOCKED", f"the receiver's expectation {delivery['expectation']!r} changed or was "
                          "removed since this package was inspected; inspect it again", expectation=delivery["expectation"])
+    # The exporter the expectation names must still verify under the receiver's CURRENT trust.
+    want = (ws.expectation(delivery["expectation"]) or {}).get("exporter") if delivery["expectation"] else None
+    if want and _declaration_actor(ws, staged.get("declaration"), delivery["manifest"]) != want:
+        raise AgentError("IMPORT_BLOCKED", f"no declaration of this manifest by {want!r} verifies under the "
+                         "receiver's current trust; inspect it again")
     snap = Snapshot.read(sdir)
     manifest = staged["manifest"]
     declared = {r["id"]: r["envelope"] for r in manifest["records"]}

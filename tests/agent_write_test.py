@@ -131,6 +131,14 @@ def main():
     shutil.copy(s9.ws.state / "drafts" / f"{d9['draft_id']}.json", r9.ws.state / "drafts")
     planted_read = r9.call("read", {"workspace": "rcv", "kind": "draft", "target": d9["draft_id"]})
     planted_commit = r9.call("commit", {"workspace": "rcv", "draft_id": d9["draft_id"]})
+    # a draft of THIS workspace stored under another id's name is not that id's draft
+    own0 = ok(r9.call("prepare", {"workspace": "rcv", "based_on": ok(r9.call("context", {
+        "workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))["view_token"],
+        "request_id": "own0", "type": "challenge", "body": {"target": "ef" * 32, "item": 0, "statement": "x",
+                                                             "evidence": []}}))["data"]
+    alias = "0" * 64
+    shutil.copy(r9.ws.state / "drafts" / f"{own0['draft_id']}.json", r9.ws.state / "drafts" / f"{alias}.json")
+    aliased = r9.call("read", {"workspace": "rcv", "kind": "draft", "target": alias})
     vr = ok(r9.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))
     bad_accept = r9.call("prepare", {"workspace": "rcv", "based_on": vr["view_token"], "request_id": "acc",
                                      "type": "accept", "body": {"transition": "../../" + "ab" * 29, "item": 0}})
@@ -141,6 +149,7 @@ def main():
     check("W09", direct.get("error") == "NOT_PERMITTED" and [t.get("error") for t in tries] == ["BAD_REQUEST"] * 4
           and other.get("error") == "NOT_FOUND" and planted_read.get("error") == "NOT_FOUND"
           and planted_commit.get("error") == "NOT_FOUND" and bad_accept.get("error") == "BAD_REQUEST"
+          and aliased.get("error") == "NOT_FOUND"
           and own_status["status"] == "PREPARED",
           "addresses are checked before paths; a draft belongs to its own workspace; own status still reads",
           ([t.get("error") for t in tries], other.get("error"), planted_read.get("error"), bad_accept.get("error")))

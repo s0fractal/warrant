@@ -43,6 +43,8 @@ def decide(ws, meta, report, use, targets, observed):
                            + (f" ({'; '.join(st['causes'])})" if st["causes"] else ""))
     if policy.get("fresh", True) and observed["newer_known"]:
         reasons.append("newer local events are known than this view; refresh before use")
+    if policy.get("fresh", True) and not observed["trust_current"]:
+        reasons.append("the receiver's trust changed since this view; refresh before use")
     exp = observed.get("expectation")
     if exp is not None and exp["state"] != "CURRENT":
         reasons.append(f"the receiver's expectation {exp['handle']!r} is {exp['state']} since this delivery was "
