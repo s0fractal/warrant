@@ -1,0 +1,26 @@
+program 74e3443fb17cfd3bb3b35f104c982ab57336379f68972d45859627df5720a95a  (C1 size 1507)
+OK   SYN-pos-indirect: Sigma True == reference True == expected True
+       atp=643209 wall=0.122s input=61b735d8d7e3dd8a
+OK   SYN-neg-present-unreached: Sigma False == reference False == expected False
+       atp=722712 wall=0.135s input=65a34cda8c061ada
+OK   SYN-pos-via-extra: Sigma True == reference True == expected True
+       atp=518337 wall=0.105s input=67091d4a53a79102
+OK   SYN-pos-cycle: Sigma True == reference True == expected True
+       atp=1853405 wall=0.303s input=bb75535deaf44da8
+OK   SYN-neg-cycle: Sigma False == reference False == expected False
+       atp=2104778 wall=0.34s input=7f33a1ab1d09c394
+OK   SYN-neg-target-absent: Sigma False == reference False == expected False
+       atp=31705 wall=0.014s input=78427e0bc0735877
+OK   reordered/respelled/duplicated edges -> identical input identity
+OK   changed edge: new identity, Sigma FALSE == reference
+OK   changed root/target binding: new R/T identity, Sigma FALSE == reference
+OK   const-TRUE encoder: program identity differs from P and answers do not track the reference
+OK   const-FALSE encoder: program identity differs from P and answers do not track the reference
+OK   refused, not FALSE: edge to a missing node -> MISSING_NODE
+OK   refused, not FALSE: root outside inventory -> MISSING_NODE
+OK   refused, not FALSE: duplicate node after normalisation -> DUPLICATE_NODE
+OK   refused, not FALSE: no root -> NO_ROOT
+OK   refused, not FALSE: over the node limit -> LIMIT_NODES
+OK   refused, not FALSE: unknown field -> MALFORMED
+OK   insufficient budget -> atp_exhausted, no verdict
+SELFTEST: ALL PASS
