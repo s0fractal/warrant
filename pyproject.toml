@@ -19,7 +19,10 @@ dependencies = ["cryptography>=41"]
 # wheel). It is not on PyPI in this version: install it from the exact commit, or
 # from a wheel built from it (README "Compute"). Without it, attest and observe
 # work and every REPLAYED basis is UNVERIFIED.
-compute = ["sigma-glyph @ git+https://github.com/s0fractal/sigma-glyph@9c386c22b852ea99b1d0932dd3fcab111b27e0fd"]
+compute = ["sigma-glyph @ git+https://github.com/s0fractal/sigma-glyph@f3fd1dd6ad967d92002d6a4b1063468c66df305b"]
+# The thin stdio MCP front end of warrant_agent (`warrant-agent-mcp`), on the
+# official Python SDK at one exact version.
+mcp = ["mcp==2.3.0"]
 
 [project.urls]
 Homepage = "https://github.com/s0fractal/warrant"
@@ -27,6 +30,8 @@ Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
 
 [project.scripts]
 warrant = "warrant.cli:main"
+warrant-agent = "warrant_agent.cli:main"
+warrant-agent-mcp = "warrant_agent.mcp_server:main"
 
 [tool.setuptools]
-packages = ["warrant"]
+packages = ["warrant", "warrant_agent"]

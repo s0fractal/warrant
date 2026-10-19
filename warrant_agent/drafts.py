@@ -1,0 +1,115 @@
+"""prepare / commit of exact record bytes under the configured signer (PROPOSAL §7,
+CONTRACT C.4-C.5). A draft freezes the record (actor, at, body); commit signs
+exactly that record. Ed25519 signatures are deterministic, so a retried commit
+reproduces the same envelope; an existing envelope under the record id is
+recognized before anything is signed again."""
+import time
+
+from warrant import jcs as C
+from warrant import records as R
+from warrant.cli import fill
+from warrant.keys import Key
+from warrant.store import Store, _authenticate
+
+from . import views
+from .errors import AgentError, need
+
+
+def _hex64(v):
+    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+
+
+def _draft(ws, draft_id):
+    """The draft file of THIS workspace: the id is a full hex64 address before any
+    path is built, and the stored draft must name this workspace."""
+    need(_hex64(draft_id), "BAD_REQUEST", "draft_id is a hex64 address")
+    path = ws.state / "drafts" / f"{draft_id}.json"
+    need(path.is_file(), "NOT_FOUND", "no such draft")
+    d = views.read_json(path)
+    need(d.get("workspace") == ws.name and d.get("draft_id") == draft_id, "NOT_FOUND", "no such draft")
+    return path, d
+
+
+def _signer(ws):
+    need(ws.signer is not None, "NO_SIGNER", "this workspace has no configured signer")
+    actor, keyfile = ws.signer
+    return actor, Key.from_seed_hex(keyfile.read_text())
+
+
+def _accept_body(meta_vdir, body):
+    """The typed accept convenience: {transition, item, evidence?, support?}; a
+    missing evidence set is the exact evidence of that item in the frozen view."""
+    need(isinstance(body, dict) and set(body) <= {"transition", "item", "evidence", "support"}
+         and "transition" in body and "item" in body, "BAD_REQUEST", "accept is {transition, item, evidence?, support?}")
+    need(_hex64(body["transition"]), "BAD_REQUEST", "transition is a hex64 record id")
+    if "evidence" in body:
+        return R.accept(body["transition"], body["item"], body["evidence"], body.get("support", []))
+    p = meta_vdir / "records" / f"{body['transition']}.json"
+    need(p.is_file(), "NOT_FOUND", "the transition is not in this view")
+    t = C.loads(p.read_bytes())["record"]["body"]
+    item = body["item"]
+    need(item is None or (type(item) is int and 0 <= item < len(t["closes"])), "BAD_REQUEST", "no such item")
+    ev = t["evidence"] if item is None else t["closes"][item]["evidence"]
+    return R.accept(body["transition"], item, ev, body.get("support", []))
+
+
+def prepare(ws, based_on, request_id, rtype, body):
+    ws.permit("prepare")
+    need(isinstance(request_id, str) and 0 < len(request_id) <= 128, "BAD_REQUEST", "request_id")
+    need(isinstance(rtype, str) and rtype in R.TYPES, "BAD_REQUEST", f"type is one of {list(R.TYPES)}")
+    need(isinstance(body, dict), "BAD_REQUEST", "body is an object")
+    actor, key = _signer(ws)
+    draft_id = C.doc_id({"workspace": ws.name, "request_id": request_id})
+    path = ws.state / "drafts" / f"{draft_id}.json"
+    inputs = C.doc_id({"based_on": based_on, "type": rtype, "body": body})
+    if path.is_file():
+        d = views.read_json(path)
+        need(d["inputs"] == inputs, "CONFLICT", "request_id was prepared with other inputs")
+        return d
+    meta, report, vdir = views.load(ws, based_on)
+    full = _accept_body(vdir, body) if rtype == "accept" else fill(rtype, body)
+    try:
+        rec = R.record(rtype, actor, int(time.time()), full)
+    except R.Invalid as e:
+        raise AgentError("BAD_REQUEST", f"invalid {rtype}: {e}") from None
+    rid = R.record_id(rec)
+    preview = {"type": rtype, "shape": "valid"}
+    if rtype == "accept":
+        t = report["results"].get(full["transition"])
+        preview.update(accepts={"transition": full["transition"], "item": full["item"], "evidence": full["evidence"]},
+                       transition_in_view=t is not None)
+    d = {"draft_id": draft_id, "request_id": request_id, "workspace": ws.name, "inputs": inputs, "actor": actor,
+         "key": key.id, "at": rec["at"], "record": rec, "record_id": rid,
+         "basis_assessment_id": report["assessment_id"], "preview": preview, "status": "PREPARED"}
+    views.write_json(path, d)
+    return d
+
+
+def commit(ws, draft_id):
+    ws.permit("commit")
+    path, d = _draft(ws, draft_id)
+    actor, key = _signer(ws)
+    dst = ws.store / "records" / f"{d['record_id']}.json"
+    if dst.is_file():
+        why, rec = _authenticate(d["record_id"], dst.read_bytes(), ws.trust())
+        if why or rec != d["record"]:
+            raise AgentError("CONFLICT", "the store holds other bytes under this record id")
+    else:
+        if (actor, key.id) != (d["actor"], d["key"]):
+            raise AgentError("SIGNER_CHANGED", "the configured signer is not the one this draft was prepared for")
+        Store(ws.store).init().put_record(d["record"], key)
+    if d["status"] != "COMMITTED":
+        d["status"] = "COMMITTED"
+        views.write_json(path, d)
+    return {"draft_id": draft_id, "record_id": d["record_id"], "status": "COMMITTED",
+            "basis_assessment_id": d["basis_assessment_id"]}
+
+
+def status(ws, kind, target):
+    need(isinstance(target, str) and target, "BAD_REQUEST", "target")
+    if kind == "draft":
+        _, d = _draft(ws, target)
+        return {k: d[k] for k in ("draft_id", "record_id", "actor", "at", "status", "basis_assessment_id")}
+    path = ws.state / "imports" / f"{C.digest(target.encode())}.json"
+    need(path.is_file(), "NOT_FOUND", "no such operation")
+    return views.read_json(path)

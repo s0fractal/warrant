@@ -1,0 +1,1 @@
+warrant agent/handoff code head 3e288ab: W142-01/02 fixed (48b3c32) plus same-model adversarial review fixes (82501cd, 3e288ab); H01-H14 22/22, W01-W09 9/9, compute 6/6, MCP 6/6, mutants A01-A27 27/27 on target, acceptance python/cli/mcp 4/4; CI test+cross-repo green

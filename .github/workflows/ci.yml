@@ -5,7 +5,8 @@ name: ci
 # Two installs, both from local files:
 #   base     warrant alone: attest and observe work, compute refuses honestly;
 #   compute  warrant + the sigma-glyph wheel built from the commit pyproject.toml
-#            names (the [compute] extra), from a wheelhouse, with --no-index.
+#            names (the [compute] extra) + the pinned MCP SDK (the [mcp] extra),
+#            from a wheelhouse, with --no-index.
 # The tests and mutants run against the installed bytes; the scenarios run
 # through the installed `warrant` command from outside the checkout.
 on:
@@ -32,7 +33,7 @@ jobs:
           set -euo pipefail
           COMMIT=$(python -c 'import re; print(re.search(r"sigma-glyph@([0-9a-f]{40})", open("pyproject.toml").read()).group(1))')
           python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" . "git+https://github.com/s0fractal/sigma-glyph@$COMMIT"
-          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41'
+          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0'
           ls "$RUNNER_TEMP/wh"
 
       - name: Base install has no provider, and says so
@@ -49,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv "$RUNNER_TEMP/v"
-          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" warrant-loops sigma-glyph
+          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-loops[mcp]' sigma-glyph
           "$RUNNER_TEMP/v/bin/python" -m sigma_provider | tail -1
           SITE=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)')
           echo "WARRANT_IMPL=$SITE" >> "$GITHUB_ENV"
@@ -60,12 +61,24 @@ jobs:
         run: |
           for t in contract compute conditions primitives cli; do python "${t}_test.py"; done
 
+      - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
+        working-directory: tests
+        run: |
+          for t in agent_handoff agent_write agent_compute agent_mcp; do python "${t}_test.py"; done
+
       - name: Mutants (each critical rule must fail its own case)
-        run: WARRANT_IMPL= python tests/mutants.py
+        run: |
+          WARRANT_IMPL= python tests/mutants.py
+          WARRANT_IMPL= python tests/agent_mutants.py
 
       - name: Scenarios through the installed `warrant` command
         working-directory: ${{ runner.temp }}
         run: bash "$GITHUB_WORKSPACE/examples/run-all.sh"
+
+      - name: Agent acceptance run through Python, CLI and stdio MCP (installed wheels, outside the checkout)
+        working-directory: ${{ runner.temp }}
+        run: |
+          for d in python cli mcp; do python "$GITHUB_WORKSPACE/examples/agent/acceptance.py" --door "$d"; done
 
       - name: Claude Code plugin bridge (Warrant 0.x format, published warrant-verify 0.12.0)
         run: |
