@@ -1,0 +1,176 @@
+{
+  "hashes": {
+    "SUMMARY.json": "20daf2e61f356a9b6f1fdc323450dd0bd1ec55d740193a7546be972d16484791",
+    "wire.jsonl": "7bccc6ba95ccb374987dd1e3c96456e316df91e088e2bf4932c7871e67311f71"
+  },
+  "methods": [
+    "server/discover",
+    "subscriptions/listen",
+    "server/discover",
+    "prompts/list",
+    "resources/list",
+    "tools/list",
+    "tools/call"
+  ],
+  "tool": {
+    "name": "warrant_context",
+    "arguments": {
+      "workspace": "rcv",
+      "actor": "receiver",
+      "use": "continue",
+      "targets": [
+        {
+          "kind": "duty",
+          "id": "aac548fe815f66073cd7f30d95d3ce36bedc8df0d639eed47551e294e560b295"
+        },
+        {
+          "kind": "duty",
+          "id": "9e3005617684d058643284092ccb5b19e3e3d841de4fec6f5373d594617334ae"
+        }
+      ]
+    },
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {
+        "name": "claude-code",
+        "title": "Claude Code",
+        "version": "2.1.300",
+        "description": "Anthropic's agentic coding tool",
+        "websiteUrl": "https://claude.com/claude-code"
+      },
+      "io.modelcontextprotocol/clientCapabilities": {
+        "roots": {
+          "listChanged": true
+        },
+        "elicitation": {
+          "form": {},
+          "url": {}
+        }
+      },
+      "claudecode/toolUseId": "toolu_01NG7GHRg9QTEautL2CbJfXH",
+      "progressToken": 4
+    }
+  },
+  "result": {
+    "content": [
+      {
+        "text": "{\n  \"agent_api\": \"warrant-agent/1\",\n  \"view_token\": \"2ccace2b5e4daf31d7e9bdaacef0d6f6\",\n  \"assessment_id\": \"42779e3c8a39215802d875213f652c13296a2d0e0bf9e3bdf10c316193cff4be\",\n  \"adapter_id\": \"5a44aa01fe30d8f4781ec65f414d56fc60ea5816978f6bb9aa557b631d60cdc1\",\n  \"data\": {\n    \"capsules\": [\n      {\n        \"capsule\": \"warrant/2\",\n        \"assessment_id\": \"42779e3c8a39215802d875213f652c13296a2d0e0bf9e3bdf10c316193cff4be\",\n        \"target\": \"aac548fe815f66073cd7f30d95d3ce36bedc8df0d639eed47551e294e560b295\",\n        \"use\": \"continue\",\n        \"reliance\": \"CHALLENGED\",\n        \"revisit_because\": [\n          \"challenge 672dd0aebd3b: abs(-2) returns -4 on the 32-bit path\"\n        ],\n        \"completeness\": \"UNATTESTED\",\n        \"kind\": \"duty\",\n        \"statement\": \"abs(-2) == 2 is implemented\",\n        \"disposition\": \"DISCHARGED\",\n        \"holder\": \"producer\",\n        \"basis\": [\n          \"ATTESTED:producer\"\n        ],\n        \"closed_by\": [\n          \"f32ff9d8d6d84bd9084cc47caa0d36cf25e0ff9274be650f8839e151495af6ef\"\n        ],\n        \"periods\": null,\n        \"revalidate_when\": [],\n        \"challenges\": [\n          \"672dd0aebd3b5e7f7a547f4fd3b1e320177edb15be2a9286f97ac73143cd0851\"\n        ],\n        \"evidence\": [\n          \"f7445040f6f77ef24aab087ca1ea4bbeba7e2ff8429d42d12c0b776fbf337f2c\"\n        ],\n        \"limits\": [\n          \"only -2 was tried\"\n        ]\n      },\n      {\n        \"capsule\": \"warrant/2\",\n        \"assessment_id\": \"42779e3c8a39215802d875213f652c13296a2d0e0bf9e3bdf10c316193cff4be\",\n        \"target\": \"9e3005617684d058643284092ccb5b19e3e3d841de4fec6f5373d594617334ae\",\n        \"use\": \"continue\",\n        \"reliance\": \"NOT_CLOSED\",\n        \"revisit_because\": [\n          \"disposition OPEN\"\n        ],\n        \"completeness\": \"UNATTESTED\",\n        \"kind\": \"duty\",\n        \"statement\": \"hand over a resumable computation of S K K (K I)\",\n        \"disposition\": \"OPEN\",\n        \"holder\": \"producer\",\n        \"basis\": [],\n        \"closed_by\": [],\n        \"periods\": null,\n        \"revalidate_when\": [],\n        \"challenges\": [],\n        \"evidence\": [],\n        \"limits\": []\n      }\n    ],\n    \"frontier\": [\n      {\n        \"duty\": \"9e3005617684d058643284092ccb5b19e3e3d841de4fec6f5373d594617334ae\",\n        \"need\": \"accept\",\n        \"transition\": \"0985674bbbae0b98f4b008c0301fd953f7548bf3da2e50f5a6f3a50656c4563a\",\n        \"item\": 0\n      }\n    ],\n    \"questions\": [],\n    \"boundary\": {\n      \"completeness\": \"UNATTESTED\",\n      \"invalid_records\": 0,\n      \"missing\": [],\n      \"unbound_actors\": [],\n      \"evidence_is_untrusted_data\": true\n    }\n  },\n  \"delivery\": {\n    \"relation\": \"LOCAL_CAPTURE\",\n    \"source_completeness\": \"UNATTESTED\"\n  },\n  \"observation\": {\n    \"newer_known\": false,\n    \"incomplete_imports\": []\n  },\n  \"page\": {\n    \"included\": 3,\n    \"total\": 3,\n    \"offset\": 0,\n    \"truncated\": false,\n    \"cursor\": null\n  },\n  \"use\": {\n    \"name\": \"continue\",\n    \"policy\": \"f76b2fc81b3027fa3ed5913553b1b9e960519c523cd3b39ae9a816650e45fc98\",\n    \"decision_id\": \"1f4f4f842cefb18420545c984e5fe18632748829c7295d26038407bdac124746\",\n    \"state\": \"HOLD\",\n    \"reasons\": [\n      \"duty aac548fe815f: reliance CHALLENGED (challenge 672dd0aebd3b: abs(-2) returns -4 on the 32-bit path)\",\n      \"duty 9e3005617684: reliance NOT_CLOSED (disposition OPEN)\"\n    ]\n  }\n}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "resultType": "complete",
+    "structuredContent": {
+      "agent_api": "warrant-agent/1",
+      "view_token": "2ccace2b5e4daf31d7e9bdaacef0d6f6",
+      "assessment_id": "42779e3c8a39215802d875213f652c13296a2d0e0bf9e3bdf10c316193cff4be",
+      "adapter_id": "5a44aa01fe30d8f4781ec65f414d56fc60ea5816978f6bb9aa557b631d60cdc1",
+      "data": {
+        "capsules": [
+          {
+            "capsule": "warrant/2",
+            "assessment_id": "42779e3c8a39215802d875213f652c13296a2d0e0bf9e3bdf10c316193cff4be",
+            "target": "aac548fe815f66073cd7f30d95d3ce36bedc8df0d639eed47551e294e560b295",
+            "use": "continue",
+            "reliance": "CHALLENGED",
+            "revisit_because": [
+              "challenge 672dd0aebd3b: abs(-2) returns -4 on the 32-bit path"
+            ],
+            "completeness": "UNATTESTED",
+            "kind": "duty",
+            "statement": "abs(-2) == 2 is implemented",
+            "disposition": "DISCHARGED",
+            "holder": "producer",
+            "basis": [
+              "ATTESTED:producer"
+            ],
+            "closed_by": [
+              "f32ff9d8d6d84bd9084cc47caa0d36cf25e0ff9274be650f8839e151495af6ef"
+            ],
+            "periods": null,
+            "revalidate_when": [],
+            "challenges": [
+              "672dd0aebd3b5e7f7a547f4fd3b1e320177edb15be2a9286f97ac73143cd0851"
+            ],
+            "evidence": [
+              "f7445040f6f77ef24aab087ca1ea4bbeba7e2ff8429d42d12c0b776fbf337f2c"
+            ],
+            "limits": [
+              "only -2 was tried"
+            ]
+          },
+          {
+            "capsule": "warrant/2",
+            "assessment_id": "42779e3c8a39215802d875213f652c13296a2d0e0bf9e3bdf10c316193cff4be",
+            "target": "9e3005617684d058643284092ccb5b19e3e3d841de4fec6f5373d594617334ae",
+            "use": "continue",
+            "reliance": "NOT_CLOSED",
+            "revisit_because": [
+              "disposition OPEN"
+            ],
+            "completeness": "UNATTESTED",
+            "kind": "duty",
+            "statement": "hand over a resumable computation of S K K (K I)",
+            "disposition": "OPEN",
+            "holder": "producer",
+            "basis": [],
+            "closed_by": [],
+            "periods": null,
+            "revalidate_when": [],
+            "challenges": [],
+            "evidence": [],
+            "limits": []
+          }
+        ],
+        "frontier": [
+          {
+            "duty": "9e3005617684d058643284092ccb5b19e3e3d841de4fec6f5373d594617334ae",
+            "need": "accept",
+            "transition": "0985674bbbae0b98f4b008c0301fd953f7548bf3da2e50f5a6f3a50656c4563a",
+            "item": 0
+          }
+        ],
+        "questions": [],
+        "boundary": {
+          "completeness": "UNATTESTED",
+          "invalid_records": 0,
+          "missing": [],
+          "unbound_actors": [],
+          "evidence_is_untrusted_data": true
+        }
+      },
+      "delivery": {
+        "relation": "LOCAL_CAPTURE",
+        "source_completeness": "UNATTESTED"
+      },
+      "observation": {
+        "newer_known": false,
+        "incomplete_imports": []
+      },
+      "page": {
+        "included": 3,
+        "total": 3,
+        "offset": 0,
+        "truncated": false,
+        "cursor": null
+      },
+      "use": {
+        "name": "continue",
+        "policy": "f76b2fc81b3027fa3ed5913553b1b9e960519c523cd3b39ae9a816650e45fc98",
+        "decision_id": "1f4f4f842cefb18420545c984e5fe18632748829c7295d26038407bdac124746",
+        "state": "HOLD",
+        "reasons": [
+          "duty aac548fe815f: reliance CHALLENGED (challenge 672dd0aebd3b: abs(-2) returns -4 on the 32-bit path)",
+          "duty 9e3005617684: reliance NOT_CLOSED (disposition OPEN)"
+        ]
+      }
+    },
+    "_meta": {
+      "io.modelcontextprotocol/serverInfo": {
+        "name": "warrant-agent",
+        "version": "warrant-agent/1"
+      }
+    }
+  },
+  "server_jsonrpc": true
+}

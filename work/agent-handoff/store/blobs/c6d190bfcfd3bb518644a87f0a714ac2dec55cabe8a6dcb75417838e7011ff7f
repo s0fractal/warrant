@@ -1,0 +1,23 @@
+ok    H01 integrity MATCH does not remove CHALLENGED; the use holds
+ok    H02 missing declared bytes hold the use although the partial view says ELIGIBLE
+ok    H03 a correctly signed partial set matches its own commitment; completeness is still UNATTESTED (known boundary)
+ok    H04 a manifest digest from the sender is never the receiver's expectation
+ok    V01 the same view answers the same; the newer event is an observation that changes the decision id
+ok    H05 a consistent older cut is not the expected one
+ok    H06 changed bytes under a record id are refused before promotion
+ok    H07 the manifest's envelope digest catches another envelope; local bytes stay
+ok    H08 no path leaves the store, no duplicate is taken, a foreign address is a mismatch
+ok    H09 receiver configuration is unchanged; the unbound record blocks promotion and stays staged
+ok    H10 the local challenge survives the import and keeps the closure CHALLENGED
+ok    H11 an interrupted import holds use until a retry completes it without duplicates
+ok    H12 a bundle over the limit is refused on both sides
+ok    H13 a changed or removed receiver expectation holds current use and blocks a stale promotion; the historical assessment is kept
+ok    H14 source and exporter are part of the expectation; current trust holds a stale exporter match; a journal whose bytes all landed later frees the workspace; operator floats are allowed
+ok    V02 the view owns its bytes; mutating the request afterwards changes nothing
+ok    V03 an unknown or expired view is an explicit refusal
+ok    V04 truncation is visible, the cursor reaches every item, and it belongs to its own view
+ok    V05 each receiver assesses with its own profile
+ok    V06 newer known events change the decision, not the historical assessment
+ok    V07 evidence text is returned as data and changes no configuration or record
+ok    V08 no report and no view when the deadline passes
+AGENT-HANDOFF: 22 PASS / 0 FAIL

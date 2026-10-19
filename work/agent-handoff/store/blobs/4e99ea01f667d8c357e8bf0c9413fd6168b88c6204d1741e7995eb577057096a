@@ -1,0 +1,10 @@
+ok    W01 an accept of another item or evidence set is filed but credits nothing
+ok    W02 a repeated prepare returns the same frozen draft
+ok    W03 a request id names one draft
+ok    W04 a retried commit returns the committed record and files nothing new
+ok    W05 status says what happened; nothing is rolled back
+ok    W06 no request member selects a signer or a key
+ok    W07 recording a challenge is not gated by the use policy
+ok    W08 a draft is signed only by the principal it was prepared for
+ok    W09 addresses are checked before paths; a draft belongs to its own workspace; own status still reads
+AGENT-WRITE: 9 PASS / 0 FAIL

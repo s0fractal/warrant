@@ -1,0 +1,29 @@
+# Codex acceptance of the bounded agent-handoff goal
+
+2026-10-19. G1 ACCEPT, G4 ACCEPT within its recorded scope, G0 ACCEPT after verifying G1–G5. This supplies exact signed acceptance records for add-only import. It does not report a change to the repository store before that import.
+
+## G1: fresh narrow review
+
+Reviewed the full code delta bdf4c7e..3e288ab in warrant_agent, including the consumers of each new guard. The adapter bytes in 3e288ab, merged bbcc57e1ac3882a7793b627279671e52966a5b5f and store commit 451f67f02d5d2349e5d54d7e7bba4af82b025549 are identical. A fresh non-editable wheel install of bbcc57e matches all 20 core/adapter Python files. Adapter identity: e40a006b36df71c259e490cde3e9be43769048c1ba6e7e6cff77ef1df7d34f09.
+
+The original reproduce.py was copied unchanged with its original fixtures and executed against that install. W142-01 and W142-02 both give reproduced:false. The former preserves the assessment but changes the decision to HOLD and refuses import with IMPORT_BLOCKED; the latter refuses the traversal with BAD_REQUEST. Its process exit 1 means the old vulnerabilities did not reproduce; that script exits zero only if both vulnerabilities reproduce.
+
+Fresh adversarial probes in probes.py checked: changing a definition under fresh:false; removed-definition import; exporter key rebinding while payload signers remain trusted; staged envelope replacement; missing/extra staged records and blobs; partial versus completely landed imports; wrong live blob and envelope bytes; malformed/trailing-newline draft addresses; expectation supplied to context. All 18 passed. In particular, staged envelope/set attacks give CONFLICT before promotion. These probes supplement source review and are separate from the existing suites.
+
+Independent execution: installed H/V 22/22, write 9/9, MCP 6/6; exact-source mutants A17–A27 11/11 KILLED on target. No new blocking counterexample found within the reviewed delta. The two same-model passes described in PR142 comment 6259192615 were read as prior attributed evidence, not substituted for this review. This is a fresh Codex review in this chat, without subagents.
+
+## G4: measured host evidence
+
+Reparsed the original wire.jsonl and host stdout/exit. Verified discovery at 2026-07-28, tools/list, a warrant_context request and matching successful structured result with isError:false, server stdout JSON-RPC, host exit 0, Claude Code 2.1.300, model claude-opus-5-5 and reported USD0.069586. Recomputed SUMMARY.json SHA256 20daf2e61f356a9b6f1fdc323450dd0bd1ec55d740193a7546be972d16484791 and wire.jsonl SHA256 7bccc6ba95ccb374987dd1e3c96456e316df91e088e2bf4932c7871e67311f71; they equal the exact transition evidence and stored blob bytes.
+
+The duty asks for a thin server, client harness and one measured host smoke. This recorded smoke satisfies that bounded obligation together with the independently rerun corrected-adapter MCP suite. ACCEPT does not assert a fresh live-host run on merged code. Retained limitations: original host used bdf4c7e / adapter 5a44aa01, read-only context/read scope, another agent ran it on the owner's machine; no live-host write/compute exercise or independent key custody. The changed MCP function surface removes the unused context expectation argument, and the captured host call did not supply it.
+
+## G0 and delivery
+
+The G0 transition is accepted with its exact submitted evidence after G1/G4 acceptances are present in the validation copy and all five required duties assess DISCHARGED. G2/G3/G5 acceptances are existing records, not newly manufactured review. The result remains the bounded ATTESTED delivery with H03 signed partial inventory unresolved and the recorded S5 same-model/shared-machine and tool-capability-confound limitations.
+
+GitHub readback confirms Sigma65, Warrant142 and Warrant143 merged at the recorded merge IDs and their relevant test/cross-repo checks succeeded. This is not an all-checks-green claim: PR142 Sonar failed and PR143 GitGuardian failed. No new merge/release is performed here; historical merge evidence is separate from this acceptance.
+
+store/ contains only six new Codex accept records (item0 plus results for each transition) and support blobs. acceptances.json maps their exact identities. validation-store/ is the base store exported from 451f67f plus this delta, not a live-store replacement. assessment.json and VERDICTS.json are the checker output. Import only new content-addressed files, verify identities/signatures/blob hashes, and never overwrite different bytes.
+
+No production checkout, configuration, trust or existing store has been changed. The operator's current checkout is older than the target; no claim about its working-tree goal state is made. A complete review of unrelated changes, a fresh full core/compute matrix and a fresh live host run were not performed.
