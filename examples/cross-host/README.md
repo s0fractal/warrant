@@ -1,8 +1,10 @@
 # Two-host handoff smoke
 
-Status: prepared for an external receiver. Local simulation passed; an external
-execution and its return replay are **PENDING**. This file does not assert that
-the remote host ran anything.
+Status: round 1 returned public artifacts through the operator. Their hashes and
+signatures matched, and the returned computation passed local replay. External
+execution and the six remote controls are **RECEIVER-REPORTED**, not machine
+attested. See [round-1/README.md](round-1/README.md) for exact identities, artifacts
+and the reproduction command.
 
 The frozen `packet.json` holds a signed producer duty, its attested PAUSED
 handoff, and the exact blobs of `S K K (K I)` after credit 2. The expected normal
@@ -86,4 +88,6 @@ python examples/cross-host/selftest.py
 ```
 
 This executes both roles on one host and catches altered packet pins and
-reply-to-receipt metadata substitution. It is not a two-host result.
+reply-to-receipt metadata substitution. It also checks the exact round-1 file
+hashes and replays the frozen returned artifact. These are local executions;
+they do not independently establish what happened on the receiver's host.
