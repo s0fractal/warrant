@@ -71,6 +71,9 @@ jobs:
           WARRANT_IMPL= python tests/mutants.py
           WARRANT_IMPL= python tests/agent_mutants.py
 
+      - name: Cross-host local controls and frozen round-1 artifact replay
+        run: python examples/cross-host/selftest.py
+
       - name: Scenarios through the installed `warrant` command
         working-directory: ${{ runner.temp }}
         run: bash "$GITHUB_WORKSPACE/examples/run-all.sh"
