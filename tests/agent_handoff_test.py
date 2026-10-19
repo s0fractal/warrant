@@ -255,8 +255,8 @@ def more_views():
                                "target": ids["transition"]}))
     again = ok(rcv.call("read", {"workspace": "rcv", "view_token": r["view_token"], "kind": "context"}))
     check("V02", rec["data"]["complete"] and again["assessment_id"] == r["assessment_id"]
-          and again["delivery"]["source"] == "src",
-          "the view owns its bytes; mutating the request afterwards changes nothing", again["delivery"]["source"])
+          and again["delivery"].get("source") == "src",
+          "the view owns its bytes; mutating the request afterwards changes nothing", again["delivery"].get("source"))
 
     # V03: unknown and expired tokens are refused, never replaced by another view
     unknown = rcv.call("read", {"workspace": "rcv", "view_token": "0" * 32, "kind": "context"})
@@ -278,10 +278,13 @@ def more_views():
                                   "limits": {"context_bytes": 600}}))
     seen, page = list(ctx["data"]["frontier"]), ctx["page"]
     while page["cursor"]:
-        nxt = ok(src.call("read", {"workspace": "src", "view_token": ctx["view_token"], "kind": "context",
-                                   "cursor": page["cursor"], "max_bytes": 600}))
-        seen += nxt["data"]["frontier"]
-        page = nxt["page"]
+        nxt = src.call("read", {"workspace": "src", "view_token": ctx["view_token"], "kind": "context",
+                                "cursor": page["cursor"], "max_bytes": 600})
+        if "ok" not in nxt:
+            seen.append({"error": nxt.get("error")})
+            break
+        seen += nxt["ok"]["data"]["frontier"]
+        page = nxt["ok"]["page"]
     foreign = src.call("read", {"workspace": "src", "view_token": ok(src.call("context", {
         "workspace": "src", "actor": "producer", "use": "continue", "targets": []}))["view_token"],
         "kind": "context", "cursor": ctx["page"]["cursor"]})

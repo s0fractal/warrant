@@ -49,6 +49,8 @@ def main():
     req = {"workspace": "src", "based_on": after["view_token"], "request_id": "w2", "type": "accept",
            "body": {"transition": t2, "item": 0}}
     first = ok(rev.call("prepare", req))
+    import time
+    time.sleep(1.1)          # a new draft would now carry another `at`
     restarted = Config.load(rev.base / "config.json")
     from warrant_agent import api
     second = ok(api.call(restarted, "prepare", req))
