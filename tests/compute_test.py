@@ -4,6 +4,7 @@
     python3 tests/compute_test.py
 """
 import base64
+import json
 import shutil
 import sys
 import tempfile
@@ -24,7 +25,7 @@ def term(w, expr, runtime=P.BOOK1):
 def run(w, inp, env, runtime, credits, hashes=None):
     """Producer: start, then advance once per credit. Returns the final (outcome, ckpt, state, result)."""
     snap = w.store.snapshot()
-    hs = hashes if hashes is not None else snap.json_blob(env)["sigma-environment"]
+    hs = hashes if hashes is not None else snap.json_blob(env)["hashes"]
     blobs = {h: snap.blobs[h] for h in hs if h in snap.blobs}
     base = {"runtime": runtime, "input": inp, "hashes": hs}
     out = PROV.call("start", base, blobs)
@@ -119,7 +120,7 @@ def main():
 
     # C6: a verified-replay cache changes cost, not the answer or the task
     snap = w.store.snapshot()
-    hs = snap.json_blob(env)["sigma-environment"]
+    hs = snap.json_blob(env)["hashes"]
     blobs = {h: snap.blobs[h] for h in hs}
     _, pck, pst, _ = run(w, inp, env, rt, [2])
     chain = [[base64.b64encode(snap.blobs[x] if x in snap.blobs else w.store.snapshot().blobs[x]).decode()
@@ -133,7 +134,7 @@ def main():
     w = World()
     inp, env, rt = term(w, "M M", P.RICH)
     snap = w.store.snapshot()
-    hs = snap.json_blob(env)["sigma-environment"]
+    hs = snap.json_blob(env)["hashes"]
     found = PROV.call("find_cycle", {"runtime": rt, "input": inp, "hashes": hs, "max_steps": 50},
                       {h: snap.blobs[h] for h in hs})
     wit = w.store.put_blob(base64.b64decode(found["witness"]))
@@ -160,7 +161,7 @@ def main():
     inp, env, rt = term(w, "S K K (K I)")
     _, ck, st, result = run(w, inp, env, rt, [100])
     snap = w.store.snapshot()
-    inner = [h for h in snap.json_blob(env)["sigma-environment"] if h != inp]
+    inner = [h for h in snap.json_blob(env)["hashes"] if h != inp]
     d = compute_duty(w, inp, env, rt, result)
     w.close(d, basis="REPLAYED", evidence=[receipt(w, inp, env, ck, st, result)])
     part = Path(tempfile.mkdtemp()) / "store"
@@ -192,7 +193,7 @@ def main():
     drifted = P.Provider.capture(tmp)
     w, inp, env, rt, ck, st, result = ok_case
     snap = w.store.snapshot()
-    hs = snap.json_blob(env)["sigma-environment"]
+    hs = snap.json_blob(env)["hashes"]
     try:
         out = cap.call("verify", {"runtime": rt, "input": inp, "hashes": hs,
                                   "chain": [[base64.b64encode(snap.blobs[ck]).decode(), base64.b64encode(snap.blobs[st]).decode()]]},
@@ -257,6 +258,16 @@ def main():
             "d=Path(p.__file__).parent; print(p.identity_of({n: (d/n).read_bytes() for n in p.FILES}))")
     theirs = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tempfile.gettempdir()).stdout.strip()
     check("C13", theirs == PROV.id, "the provider identity agrees with sigma_provider.identity_of", (theirs, PROV.id))
+
+    # C15: an environment's blob address is Sigma's own environment_id for the same hash set
+    w15 = World()
+    _, env15, _ = term(w15, "S K K (K I)")
+    hs15 = P.environment_hashes(w15.store.snapshot().json_blob(env15))
+    code = ("import json,sys,sigma_resume as r;"
+            "print(r.Environment([bytes.fromhex(h) for h in json.load(sys.stdin)], {}).environment_id)")
+    sigma_env = subprocess.run([sys.executable, "-c", code], input=json.dumps(hs15), capture_output=True, text=True,
+                               cwd=tempfile.gettempdir()).stdout.strip()
+    check("C15", sigma_env == env15, "an environment blob is addressed by sigma_resume's environment_id", (sigma_env, env15))
     return finish("COMPUTE")
 
 

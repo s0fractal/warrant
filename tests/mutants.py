@@ -123,6 +123,9 @@ MUTANTS = [
      [('        replaced = set(rep["results"].get(c["transition"], {}).get("superseded_by", [])) & closed_by_admitted',
        '        replaced = set(rep["results"].get(c["transition"], {}).get("superseded_by", []))')],
      "contract_test", ["F4"]),
+    ("M41", "compute.py", "an environment is addressed by Warrant's own manifest, not Sigma's environment_id",
+     [('    return {"schema": ENV_SCHEMA, "hashes": sorted(set(hashes))}', '    return {"hashes": sorted(set(hashes)), "schema": "warrant"}')],
+     "compute_test", ["C15"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

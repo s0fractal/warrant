@@ -37,6 +37,14 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### One environment identity with Sigma
+
+**[protocol]** A computation environment is now Sigma's own manifest,
+`{"schema": "sigma-resume.environment@draft-1", "hashes": [...]}`, in place of
+`{"sigma-environment": [...]}`. Its blob address therefore equals
+`sigma_resume`'s `environment_id` for the same hash set (compute case C15;
+mutant M41). Warrant does not read environment blobs in the old form.
+
 ### warrant_agent (warrant-agent/1)
 
 Handing work between agents: frozen receiver views, a bounded transfer
