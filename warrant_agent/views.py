@@ -26,6 +26,14 @@ from warrant.store import Snapshot, Trust
 from .errors import AgentError, need
 
 TOKEN = re.compile(r"^[0-9a-f]{32}$")
+ADDRESS = re.compile(r"^[0-9a-f]{64}$")
+SOURCE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+def _addr(name, pattern=ADDRESS):
+    """A file name inside a view is a content address (or a provider module name), never a path."""
+    need(pattern.match(name) is not None, "BAD_REQUEST", "not a content address")
+    return name
 
 
 def _write(path, data):
@@ -77,11 +85,11 @@ def capture(ws, extra=None, delivery=None, as_of=None):
     token = secrets.token_hex(16)
     vdir = ws.state / "views" / token
     for rid, data in records.items():
-        _write(vdir / "records" / f"{rid}.json", data)
+        _write(vdir / "records" / f"{_addr(rid)}.json", data)
     for h, data in blobs.items():
-        _write(vdir / "blobs" / h, data)
+        _write(vdir / "blobs" / _addr(h), data)
     for n, data in (sources or {}).items():
-        _write(vdir / "provider" / f"{n}.py", data)
+        _write(vdir / "provider" / f"{_addr(n, SOURCE)}.py", data)
     now = int(time.time())
     meta = {"token": token, "workspace": ws.name, "created": now, "expires": None,
             "as_of": int(as_of if as_of is not None else now), "current": sorted(ws.current),

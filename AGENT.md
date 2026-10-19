@@ -109,7 +109,7 @@ release is exposed.
 | `tests/agent_write_test.py` | W01-W08 |
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10 |
 | `tests/agent_mcp_test.py` | M01-M05, cancellation |
-| `tests/agent_mutants.py` | A01-A15, each killed on its named case |
+| `tests/agent_mutants.py` | A01-A16, each killed on its named case |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 
 ## Not solved here

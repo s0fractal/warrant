@@ -106,7 +106,7 @@ def _files(root):
 
 def more_handoff():
     import base64
-    from agent_world import R, handoff
+    from agent_world import R, handoff, views
 
     # H05: an older, internally consistent cut while a newer one is expected
     src, rcv = world()
@@ -154,12 +154,19 @@ def more_handoff():
            dict(pkg["payload"], blobs=pkg["payload"]["blobs"] + pkg["payload"]["blobs"][:1]),
            dict(pkg["payload"], blobs=[{"id": "ab" * 32, "bytes_base64": "eA=="}] + pkg["payload"]["blobs"][1:])]
     outs = [inspect(rcv, pkg, ids, "cut3", payload=p) for p in bad]
+    # the view itself also refuses a name that is not a content address, whoever hands it one
+    try:
+        views.capture(rcv.ws, extra={"records": {}, "blobs": {"../../evil-view": b"x"}})
+        direct = "WRITTEN"
+    except views.AgentError as e:
+        direct = e.code
     after = [f for f in _files(rcv.base) if not f.startswith("state/")]
     check("H08", outs[0].get("error") == "BAD_REQUEST" and outs[1].get("error") == "BAD_REQUEST"
           and outs[2]["ok"]["delivery"]["relation"] == "CONTENT_MISMATCH"
-          and after == [f for f in before if not f.startswith("state/")] and not (rcv.base.parent / "evil").exists(),
+          and after == [f for f in before if not f.startswith("state/")] and not (rcv.base.parent / "evil").exists()
+          and direct == "BAD_REQUEST" and not list(rcv.base.rglob("evil-view")),
           "no path leaves the store, no duplicate is taken, a foreign address is a mismatch",
-          [o.get("error") or o["ok"]["delivery"]["relation"] for o in outs])
+          ([o.get("error") or o["ok"]["delivery"]["relation"] for o in outs], direct))
 
     # H09: a sender's trust/profile travel only as data; an unbound signer is not an actor
     src9, rcv9 = world()

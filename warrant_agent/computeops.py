@@ -68,8 +68,8 @@ def _call(ws, provider, op, args, blobs):
 
 def _environment(snap, h):
     doc = snap.json_blob(h)
-    need(doc is not None and P.environment_problem(doc) is None, "NOT_FOUND",
-         "the environment manifest is not in this store")
+    if doc is None or P.environment_problem(doc) is not None:
+        raise AgentError("NOT_FOUND", "the environment manifest is not in this store")
     hashes = doc["sigma-environment"]
     return hashes, {x: snap.blobs[x] for x in hashes if x in snap.blobs}
 

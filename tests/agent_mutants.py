@@ -63,6 +63,9 @@ MUTANTS = [
        "                return _r(op_, args_, blobs_, timeout=timeout)\n"
        "            provider.call = _late\n")],
      "agent_compute_test", ["S10"]),
+    ("A16", "views.py", "a view writes any name it is handed",
+     [("    need(pattern.match(name) is not None, \"BAD_REQUEST\", \"not a content address\")\n", "")],
+     "agent_handoff_test", ["H08"]),
     ("A14", "mcp_server.py", "a refusal is returned as an ordinary result",
      [("        raise ToolError(json.dumps(out, sort_keys=True))\n", "        return out\n")], "agent_mcp_test", ["M02"]),
     ("A15", "mcp_server.py", "the server writes a banner to stdout",
