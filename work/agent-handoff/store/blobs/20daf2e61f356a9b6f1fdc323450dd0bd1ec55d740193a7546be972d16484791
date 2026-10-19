@@ -1,0 +1,37 @@
+{
+  "host": "Claude Code 2.1.300",
+  "scope": "synthetic readonly context/read; no signer; no builtins",
+  "result": "PASS",
+  "host_error": null,
+  "session_id": "a06d8cb4-f7b3-4ee8-809c-b1cfb8299867",
+  "assessment_id": "42779e3c8a39215802d875213f652c13296a2d0e0bf9e3bdf10c316193cff4be",
+  "decision_id": "1f4f4f842cefb18420545c984e5fe18632748829c7295d26038407bdac124746",
+  "use_state": "HOLD",
+  "capsules": [
+    {
+      "target": "aac548fe815f66073cd7f30d95d3ce36bedc8df0d639eed47551e294e560b295",
+      "disposition": "DISCHARGED",
+      "reliance": "CHALLENGED"
+    },
+    {
+      "target": "9e3005617684d058643284092ccb5b19e3e3d841de4fec6f5373d594617334ae",
+      "disposition": "OPEN",
+      "reliance": "NOT_CLOSED"
+    }
+  ],
+  "api_usage_input_tokens": 4,
+  "api_usage_output_tokens": 871,
+  "reported_cost_usd": 0.06958600000000001,
+  "wire_messages": 14,
+  "all_server_stdout_messages_json": true,
+  "tool_calls": 1,
+  "methods_sent": [
+    "server/discover",
+    "subscriptions/listen",
+    "server/discover",
+    "prompts/list",
+    "resources/list",
+    "tools/list",
+    "tools/call"
+  ]
+}
