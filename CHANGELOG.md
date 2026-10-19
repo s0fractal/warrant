@@ -37,6 +37,18 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### warrant_agent (warrant-agent/1)
+
+Handing work between agents: frozen receiver views, a bounded transfer
+(manifest + payload + optional signed declaration), inspection only against a
+receiver-configured expectation, a journaled add-only import, a local use
+decision, exact prepare/commit under the configured signer, and computation
+continued only through the Sigma provider's checked `resume`. It has three
+front ends over one backend: the Python API, `warrant-agent`, and
+`warrant-agent-mcp` (stdio, `mcp==2.3.0`, extra `[mcp]`). No record type and no
+SPEC rule changes. The `[compute]` pin moves to the sigma-glyph commit that
+adds `resume`. See AGENT.md.
+
 ## Unreleased (0.x, not released before the rebuild)
 
 - **The shared primitives are held to [s0fractal/primitives](https://github.com/s0fractal/primitives).**

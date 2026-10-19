@@ -10,6 +10,7 @@ and reproducible computations are others.
 
 - Contract: [SPEC.md](SPEC.md)
 - What the rebuild retired, and where the previous generation lives: [HISTORY.md](HISTORY.md)
+- Handing work to another agent (Python API, CLI, stdio MCP): [AGENT.md](AGENT.md)
 
 ## Install
 
@@ -17,7 +18,9 @@ and reproducible computations are others.
 pip install ./                # from a checkout; Python ≥ 3.10, depends on `cryptography`
 ```
 
-This installs one command, `warrant`, and the package `warrant`. There is no
+This installs the commands `warrant` and `warrant-agent` and the packages
+`warrant` and `warrant_agent`; `pip install "./[mcp]"` adds `warrant-agent-mcp`
+on the official MCP SDK ([AGENT.md](AGENT.md)). There is no
 release of this generation yet. The package published as `warrant-verify` (≤ 0.12.0)
 is the retired 0.x generation.
 
@@ -113,6 +116,9 @@ does not authorize. A computation is credited only by the recipient's own replay
 for t in contract compute conditions primitives; do python3 tests/${t}_test.py; done
 python3 tests/mutants.py        # every critical rule has a mutant that must fail its own case
 bash examples/run-all.sh        # needs `warrant` on PATH
+for t in agent_handoff agent_write agent_compute agent_mcp; do python3 tests/${t}_test.py; done
+python3 tests/agent_mutants.py  # needs [compute,mcp]
+python3 examples/agent/acceptance.py --door mcp   # also python, cli
 ```
 
 Green checks are not an independent review (AGENTS.md rule 3).
