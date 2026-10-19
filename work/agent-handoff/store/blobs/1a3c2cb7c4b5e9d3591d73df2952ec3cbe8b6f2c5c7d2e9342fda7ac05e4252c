@@ -1,0 +1,12 @@
+KILLED      A17 api.py: a changed receiver expectation does not hold current use  [H13,H14]
+KILLED      A18 handoff.py: import trusts the relation computed at inspection  [H13,H14]
+KILLED      A19 drafts.py: a draft id is any string  [W09]
+KILLED      A20 drafts.py: a draft file is read whatever workspace it names  [W09]
+KILLED      A21 drafts.py: a draft file is read whatever id it names  [W09]
+KILLED      A22 handoff.py: import does not re-check the exporter under the current trust  [H14]
+KILLED      A23 api.py: a changed receiver trust does not hold a fresh use  [H14]
+KILLED      A24 views.py: an unfinished import holds the workspace even after its bytes all landed  [H14]
+KILLED      A26 api.py: an exporter-based delivery holds on a trust change only for fresh uses  [H14]
+KILLED      A27 views.py: an unfinished import counts as landed from whatever is left in staging  [H11,H14]
+KILLED      A25 config.py: only the manifest digest identifies an expectation  [H14]
+AGENT MUTANTS: 11/11 killed on target

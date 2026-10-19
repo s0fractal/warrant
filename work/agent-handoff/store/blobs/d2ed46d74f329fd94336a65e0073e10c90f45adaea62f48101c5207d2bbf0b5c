@@ -1,0 +1,25 @@
+{
+  "adapter": "e40a006b36df71c259e490cde3e9be43769048c1ba6e7e6cff77ef1df7d34f09",
+  "matching_files": [
+    "warrant/store.py",
+    "warrant/jcs.py",
+    "warrant/triggers.py",
+    "warrant/records.py",
+    "warrant/__init__.py",
+    "warrant/keys.py",
+    "warrant/engine.py",
+    "warrant/cli.py",
+    "warrant/compute.py",
+    "warrant_agent/_assess_worker.py",
+    "warrant_agent/config.py",
+    "warrant_agent/handoff.py",
+    "warrant_agent/computeops.py",
+    "warrant_agent/__init__.py",
+    "warrant_agent/api.py",
+    "warrant_agent/cli.py",
+    "warrant_agent/drafts.py",
+    "warrant_agent/errors.py",
+    "warrant_agent/views.py",
+    "warrant_agent/mcp_server.py"
+  ]
+}

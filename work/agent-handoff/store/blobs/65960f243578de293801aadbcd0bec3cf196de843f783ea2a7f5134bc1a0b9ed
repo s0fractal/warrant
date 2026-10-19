@@ -1,0 +1,73 @@
+{
+  "installed_warrant": "/private/tmp/warrant-g1-env/lib/python3.15/site-packages/warrant/__init__.py",
+  "cases": [
+    {
+      "finding": "W142-01",
+      "old_manifest": "e58d29a62c2e2036d66e5e12e27c8e58d675714dafa54afa46953b809806e27a",
+      "current_expected_manifest": "e7b0336a020fe4558e2cceb24c90f95af1a8bbb40189327e4f1497cf30a40a04",
+      "before_use": {
+        "name": "continue",
+        "policy": "f76b2fc81b3027fa3ed5913553b1b9e960519c523cd3b39ae9a816650e45fc98",
+        "decision_id": "067eb054feb95bcc545493fc6f5e69ea26ee78307b16797c75fa46336d441bf9",
+        "state": "WITHIN_POLICY",
+        "reasons": []
+      },
+      "after_use": {
+        "name": "continue",
+        "policy": "f76b2fc81b3027fa3ed5913553b1b9e960519c523cd3b39ae9a816650e45fc98",
+        "decision_id": "6cf55d7e3fb3799477dd11c1c0581708fbcb1252c607c402295a42d5078a7de3",
+        "state": "HOLD",
+        "reasons": [
+          "the receiver's expectation 'current' is CHANGED since this delivery was inspected; inspect the package again"
+        ]
+      },
+      "after_delivery": {
+        "declared_snapshot": "d3038b2f056f5eab72ac1a988481b9432cb1d939cd4c26ccb274047c2912fee9",
+        "expectation": "current",
+        "expectation_definition": "72b4d508e7d3c9999c09590f4325a483e118857dfe9b1d66fcebc022fd13dd6f",
+        "exporter": "producer",
+        "manifest": "e58d29a62c2e2036d66e5e12e27c8e58d675714dafa54afa46953b809806e27a",
+        "mismatched": [],
+        "missing": [],
+        "reasons": [],
+        "relation": "MATCH_EXPECTED_SET",
+        "source": "src",
+        "source_completeness": "UNATTESTED"
+      },
+      "after_observation": {
+        "newer_known": false,
+        "incomplete_imports": [],
+        "trust_current": true,
+        "expectation": {
+          "handle": "current",
+          "state": "CHANGED",
+          "definition": "6fa4f9da828b4484a87972f8a7bdf868bb9737828f12e8e413b30488eaf2f087"
+        }
+      },
+      "import_old_after_config_update": {
+        "error": "IMPORT_BLOCKED",
+        "message": "the receiver's expectation 'current' changed or was removed since this package was inspected; inspect it again",
+        "details": {
+          "expectation": "current"
+        }
+      },
+      "current_full_view_reliance": "CHALLENGED",
+      "same_assessment_id": true,
+      "same_decision_id": false,
+      "reproduced": false
+    },
+    {
+      "finding": "W142-02",
+      "direct_read": {
+        "error": "NOT_PERMITTED",
+        "message": "operation 'read' is not permitted for workspace 'src'"
+      },
+      "request_target": "../../../../src/state/src/drafts/e1857246a464b77006fd63fbd6dae45944d93c723a802ebe0a1a0aff1a190326",
+      "cross_workspace_read": {
+        "error": "BAD_REQUEST",
+        "message": "draft_id is a hex64 address"
+      },
+      "reproduced": false
+    }
+  ]
+}
