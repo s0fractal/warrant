@@ -63,6 +63,11 @@ MUTANTS = [
        "                return _r(op_, args_, blobs_, timeout=timeout)\n"
        "            provider.call = _late\n")],
      "agent_compute_test", ["S10"]),
+    ("A14", "mcp_server.py", "a refusal is returned as an ordinary result",
+     [("        raise ToolError(json.dumps(out, sort_keys=True))\n", "        return out\n")], "agent_mcp_test", ["M02"]),
+    ("A15", "mcp_server.py", "the server writes a banner to stdout",
+     [("    server.run(\"stdio\")\n", "    print(\"warrant-agent-mcp ready\", flush=True)\n    server.run(\"stdio\")\n")],
+     "agent_mcp_test", ["M03"]),
 ]
 
 
@@ -80,10 +85,10 @@ def run_one(mid, fname, what, edits, test, targets):
         p.write_text(src)
         res = tmp / "results.json"
         env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
-        subprocess.run([sys.executable, str(ROOT / "tests" / f"{test}.py")], env=env, capture_output=True,
-                       cwd=ROOT / "tests", timeout=1800, check=False)
+        run = subprocess.run([sys.executable, str(ROOT / "tests" / f"{test}.py")], env=env, capture_output=True,
+                             text=True, cwd=ROOT / "tests", timeout=1800, check=False)
         if not res.exists():
-            return "CRASH", "no results"
+            return "CRASH", "no results: " + " | ".join(run.stderr.strip().splitlines()[-3:])
         failed = sorted(k for k, v in json.loads(res.read_text()).items() if v == "FAIL")
         if set(failed) & set(targets):
             return "KILLED", ",".join(failed)

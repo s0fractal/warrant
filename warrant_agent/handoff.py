@@ -9,12 +9,10 @@ A manifest digest carried by a package is never an expectation; expectations
 come from the receiver's configuration. MATCH_EXPECTED_SET means only "this is the
 selected set"; completeness stays UNATTESTED."""
 import base64
-import json
 import re
 import time
 
 from warrant import jcs as C
-from warrant import keys as K
 from warrant import records as R
 from warrant.keys import Key
 from warrant.store import Snapshot, Store, _authenticate

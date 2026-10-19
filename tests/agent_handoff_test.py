@@ -106,7 +106,7 @@ def _files(root):
 
 def more_handoff():
     import base64
-    from agent_world import R, handoff, views
+    from agent_world import R, handoff
 
     # H05: an older, internally consistent cut while a newer one is expected
     src, rcv = world()
@@ -203,7 +203,7 @@ def more_handoff():
     staged = ok(inspect(rcv11, pkg11, ids11, "cut"))["data"]["staged_id"]
     handoff._FAULT_AFTER = 2
     try:
-        crashed = rcv11.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": staged, "request_id": "i11"})
+        rcv11.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": staged, "request_id": "i11"})
         crash_seen = False
     except RuntimeError:
         crash_seen = True
@@ -263,7 +263,7 @@ def more_views():
     rcv.doc["workspaces"]["rcv"]["limits"] = {"view_ttl": 1}
     rcv.reload()
     short = ok(rcv.call("context", {"workspace": "rcv", "actor": "receiver", "use": "continue", "targets": []}))
-    time.sleep(1.2)
+    time.sleep(2.1)                       # a view lives at least view_ttl whole seconds, at most one more
     expired = rcv.call("read", {"workspace": "rcv", "view_token": short["view_token"], "kind": "context"})
     rcv.doc["workspaces"]["rcv"]["limits"] = {}
     rcv.reload()

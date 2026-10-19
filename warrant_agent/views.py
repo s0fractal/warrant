@@ -8,6 +8,7 @@ read of the view uses the stored report and the captured bytes, never the live
 store. A view token selects a view; it grants nothing."""
 import base64
 import json
+import math
 import os
 import re
 import secrets
@@ -82,7 +83,7 @@ def capture(ws, extra=None, delivery=None, as_of=None):
     for n, data in (sources or {}).items():
         _write(vdir / "provider" / f"{n}.py", data)
     now = int(time.time())
-    meta = {"token": token, "workspace": ws.name, "created": now, "expires": now + int(ws.limits["view_ttl"]),
+    meta = {"token": token, "workspace": ws.name, "created": now, "expires": None,
             "as_of": int(as_of if as_of is not None else now), "current": sorted(ws.current),
             "repo": [str(ws.repo[0]), commit] if ws.repo else None, "snapshot": frozen.digest,
             "live_snapshot": live.digest, "trust": base64.b64encode(trust_bytes).decode(),
@@ -101,6 +102,9 @@ def capture(ws, extra=None, delivery=None, as_of=None):
     if (assessed["snapshot"], assessed["trust"], got_provider) != (frozen.digest, Trust(C.loads(trust_bytes)).digest, want_provider):
         shutil.rmtree(vdir, ignore_errors=True)
         raise AgentError("NO_ASSESSMENT", "the assessed operands are not the captured ones")
+    # The handle's lifetime starts when the view is ready and is at least view_ttl whole seconds.
+    meta["expires"] = math.ceil(time.time()) + int(ws.limits["view_ttl"])
+    write_json(vdir / "meta.json", meta)
     return meta
 
 
@@ -125,7 +129,7 @@ def load(ws, token):
     meta = read_json(vdir / "meta.json")
     if meta["workspace"] != ws.name:
         raise AgentError("VIEW_UNKNOWN", "no such view in this workspace; open a new context")
-    if int(time.time()) >= meta["expires"]:
+    if meta["expires"] is None or time.time() >= meta["expires"]:
         raise AgentError("VIEW_EXPIRED", "the view expired; open a new context")
     return meta, read_json(vdir / "report.json"), vdir
 
