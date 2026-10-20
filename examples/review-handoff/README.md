@@ -105,3 +105,12 @@ fresh-process acknowledgment retry, open work after candidate/blocked/inconclusi
 responses, wrong operator pin, changed task/submission metadata, damaged delivery,
 and absence of private seeds/producer-local task paths from decoded wire payloads.
 These are local controls, not a claim that Claude received or executed anything.
+
+## Completed review exchange
+
+[Round 2](round-2/README.md) carries a signed AMEND update, imported into the
+existing receiver workspace. [Round 3](round-3/README.md) carries the original
+reviewer's exact candidate acceptance and a `conclude` command for receiver-side
+readback. The local control includes explicit acceptance, refusal when another
+candidate tries to inherit it, and repeated import. No candidate is accepted by
+`verify` or `submit`; only a separately signed reviewer acceptance closes work.

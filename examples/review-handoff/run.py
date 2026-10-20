@@ -277,20 +277,62 @@ def update(a):
                       'receiver_duty': state['duty'], 'reviewer_acceptance': 'NOT_GIVEN'}, indent=2))
 
 
+def conclude(a):
+    """Read back the reviewer's exact signed acceptance of a local candidate."""
+    packet = pinned(a.packet, a.pin)
+    candidate_raw = bounded(a.candidate)
+    candidate = C.loads(candidate_raw)
+    p = Party(a.work)
+    state = C.loads(bounded(p.root / 'task-state.json'))
+    need(p.name == 'claude-68' and packet['format'] == FORMAT
+         and packet['stage'] == 'REVIEW_ACCEPTANCE' and packet['actor'] == 'codex-review'
+         and packet['task'] == state['task'] and packet['duty'] == state['duty']
+         and packet['packet_sha256'] == state['packet_sha256']
+         and packet['receiver_public'] == p.key.public
+         and packet['reply_sha256'] == C.digest(candidate_raw)
+         and candidate['public'] == p.key.public and candidate['task'] == state['task']
+         and candidate['duty'] == state['duty'] and candidate['stage'] == 'SUBMISSION'
+         and candidate['transition'] == packet['accepted_transition'], 'acceptance for another candidate')
+    trust = C.loads(bounded(p.root / 'trust.json'))
+    need(any(k['actor'] == 'codex-review' and k['public'] == packet['public'] for k in trust['keys']),
+         'reviewer key changed')
+    snap, good = p.import_(packet['package'], state['duty'], packet['actor'])
+    tr = good[packet['accepted_transition']]
+    acc = good[packet['acceptance']]
+    review = snap.json_blob(packet['review'])
+    need(tr['type'] == 'transition' and tr['actor'] == 'claude-68'
+         and tr['body']['closes'][0]['duty'] == state['duty']
+         and tr['body']['closes'][0]['act'] == 'discharge'
+         and acc['type'] == 'accept' and acc['actor'] == 'codex-review'
+         and acc['body']['transition'] == candidate['transition'] and acc['body']['item'] == 0
+         and acc['body']['evidence'] == tr['body']['closes'][0]['evidence']
+         and packet['review'] in acc['body']['support']
+         and review is not None and review['verdict'] == 'ACCEPT'
+         and review['task'] == state['task'] and review['reply_sha256'] == packet['reply_sha256'],
+         'unsigned or unbound acceptance')
+    caps = p.context(state['duty'])['data']['capsules']
+    cap = next(c for c in caps if c['target'] == state['duty'])
+    need(cap['disposition'] == 'DISCHARGED', 'acceptance did not discharge the work duty')
+    print(json.dumps({'receiver_duty': state['duty'], 'disposition': cap['disposition'],
+                      'acceptance': packet['acceptance'], 'review': review,
+                      'private_key_exported': False}, indent=2))
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('mode', choices=['produce', 'receive', 'submit', 'verify', 'update'])
+    ap.add_argument('mode', choices=['produce', 'receive', 'submit', 'verify', 'update', 'conclude'])
     ap.add_argument('--work', type=Path, required=True)
     ap.add_argument('--task', type=Path)
     ap.add_argument('--packet', type=Path)
     ap.add_argument('--pin')
     ap.add_argument('--output', type=Path)
+    ap.add_argument('--candidate', type=Path)
     ap.add_argument('--report', type=Path)
     ap.add_argument('--artifact', type=Path, action='append', default=[])
     ap.add_argument('--status', choices=['candidate', 'blocked', 'inconclusive'], default='candidate')
     args = ap.parse_args()
     try:
-        {'produce': produce, 'receive': receive, 'submit': submit, 'verify': verify, 'update': update}[args.mode](args)
+        {'produce': produce, 'receive': receive, 'submit': submit, 'verify': verify, 'update': update, 'conclude': conclude}[args.mode](args)
     except (ValueError, OSError, KeyError, TypeError) as exc:
         print(json.dumps({'status': 'REFUSED', 'detail': str(exc)}), file=sys.stderr)
         sys.exit(2)

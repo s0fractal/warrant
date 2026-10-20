@@ -81,6 +81,33 @@ def main():
             call('submit','--work',receiver,'--report',submitted,'--status',status,'--output',reply)
             out=call('verify','--work',sender,'--packet',reply,'--pin',C.digest(reply.read_bytes()))
             assert json.loads(out.stdout)['work_disposition'] != 'DISCHARGED'
+        # Only an explicit reviewer acceptance of the exact candidate closes work.
+        candidate_file = root/'candidate-original.json'
+        candidate_file.write_bytes(C.canon(original))
+        candidate_pin = C.digest(candidate_file.read_bytes())
+        review = producer.store.put_json({'verdict': 'ACCEPT', 'task': sent['task'],
+                                         'reply_sha256': candidate_pin})
+        context = producer.context(original['duty'])
+        request = dict(based_on=context['view_token'], request_id='explicit-review-accept', type='accept',
+                       body={'transition': original['transition'], 'item': 0, 'support': [review]})
+        draft = producer.ok('prepare', **request)['data']
+        acceptance = producer.ok('commit', draft_id=draft['draft_id'])['data']['record_id']
+        closing = {'format': H.FORMAT, 'stage': 'REVIEW_ACCEPTANCE', 'actor': 'codex-review',
+                   'public': producer.key.public, 'receiver_public': original['public'],
+                   'task': sent['task'], 'packet_sha256': pin, 'duty': original['duty'],
+                   'reply_sha256': candidate_pin, 'accepted_transition': original['transition'],
+                   'acceptance': acceptance, 'review': review, 'package': producer.export(original['duty'])}
+        closing_file = root/'acceptance.json'; closing_file.write_bytes(C.canon(closing))
+        closing_pin = C.digest(closing_file.read_bytes())
+        # Another public response from the same receiver cannot inherit acceptance.
+        call('conclude','--work',receiver,'--packet',closing_file,'--pin',closing_pin,
+             '--candidate',reply,ok=False)
+        out = call('conclude','--work',receiver,'--packet',closing_file,'--pin',closing_pin,
+                   '--candidate',candidate_file)
+        assert json.loads(out.stdout)['disposition'] == 'DISCHARGED'
+        out2 = call('conclude','--work',receiver,'--packet',closing_file,'--pin',closing_pin,
+                    '--candidate',candidate_file)
+        assert json.loads(out2.stdout)['acceptance'] == acceptance
         # Neither a private signing seed nor a producer-local task path is exported.
         wire = b''.join(base64.b64decode(item['bytes_base64'], validate=True)
                         for file in [packet, ack, reply]
@@ -90,7 +117,7 @@ def main():
         for party in [sender,receiver]:
             assert (party/'private.key').read_bytes() not in wire
         print('REVIEW-HANDOFF: local roundtrip PASS; wrong pin/task/submission/missing bytes refused; '
-              'fresh-process retry stable; work remains unaccepted; blocked/inconclusive stay open; signed updates retain duty and refuse wrong task/key; no keys exported')
+              'fresh-process retry stable; work stays open until exact explicit acceptance; blocked/inconclusive stay open; signed updates retain duty and refuse wrong task/key; no keys exported')
 
 
 if __name__ == '__main__':
