@@ -141,10 +141,18 @@ python`, Apple Silicon, Python 3.15):
 - 7 provider calls, about 31 ms each (term, start, resume, verify alike);
 - 0.22 s of a 1.1 s run.
 
-No verdict cache is kept. The cost grows with the number of computation
-receipts an assessment replays, at about 31 ms each, so it matters only for
-stores holding hundreds of them. A cache, if added, must be local to the
-receiver and keyed by the provider identity and the exact bytes.
+The cost grows with the number of computation receipts an assessment replays
+and with their size: the dependency-audit receipts of `examples/dependency-audit`
+cost about 14 s each on the round-1 hosts, and every `context`, `inspect` and
+`prepare` opens a view that replays every receipt in the store. Since
+2026-10-20 the workspace keeps a **replay cache** under `<state>/replay-cache`
+(SPEC §7: it changes cost, never the answer or the task). It is the receiver's
+own, keyed by the provider identity and the exact chain (runtime, input,
+environment, checkpoint, state); an entry is consulted only when every byte the
+uncached replay would read is in the view, only REPLAYED results are kept, and
+the cache is not part of the assessment identity. The `warrant` CLI takes
+`--replay-cache DIR` for the same purpose. `tests/compute_test.py` C16-C18 and
+mutants M44-M45 pin this down.
 
 ## Not solved here
 

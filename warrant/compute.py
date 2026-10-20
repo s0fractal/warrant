@@ -157,6 +157,55 @@ def cycle_problem(doc):
     return None
 
 
+class ReplayCache:
+    """A receiver-local cache of the provider's own verified replays (SPEC §7).
+
+    Keyed by the provider identity and the exact chain it verified (runtime,
+    input, environment, checkpoint, state), it changes cost, never an answer:
+    an entry is consulted only when every byte the uncached replay would read is
+    in the view, and only REPLAYED results are kept, so a cached verdict equals
+    the verdict the provider would give again on the same bytes. The directory
+    is the receiver's own, like its keys and profile; it is never shipped."""
+    SCHEMA = "warrant-replay-cache/1"
+    FIELDS = ("provider", "runtime", "input", "environment", "checkpoint", "state")
+
+    def __init__(self, root):
+        self.root = Path(root)
+        self.hits = 0
+
+    @classmethod
+    def key_of(cls, fields):
+        return C.doc_id({k: fields[k] for k in cls.FIELDS})
+
+    def _path(self, fields):
+        return self.root / fields["provider"] / (self.key_of(fields) + ".json")
+
+    def get(self, fields):
+        path = self._path(fields)
+        if not path.is_file():
+            return None
+        try:
+            doc = json.loads(path.read_bytes())
+        except ValueError:
+            return None
+        if not (isinstance(doc, dict) and doc.get("replay_cache") == self.SCHEMA
+                and all(doc.get(k) == fields[k] for k in self.FIELDS)
+                and isinstance(doc.get("result"), dict) and doc["result"].get("basis") == "REPLAYED"):
+            return None
+        self.hits += 1
+        return doc["result"]
+
+    def put(self, fields, result):
+        if not (isinstance(result, dict) and result.get("basis") == "REPLAYED"):
+            return
+        path = self._path(fields)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + f".tmp{os.getpid()}")
+        tmp.write_text(json.dumps({"replay_cache": self.SCHEMA, **{k: fields[k] for k in self.FIELDS},
+                                   "result": result}, sort_keys=True))
+        os.replace(tmp, path)
+
+
 def _env_and_blobs(snapshot, env_hash):
     doc = snapshot.json_blob(env_hash)
     if doc is None:
@@ -168,9 +217,10 @@ def _env_and_blobs(snapshot, env_hash):
     return hashes, {h: snapshot.blobs[h] for h in hashes if h in snapshot.blobs}, None
 
 
-def replay(provider, snapshot, condition, doc, targets):
+def replay(provider, snapshot, condition, doc, targets, cache=None):
     """(label, None) if the recipient's own replay admits receipt `doc` for the
-    `compute` condition, else (None, reason)."""
+    `compute` condition, else (None, reason). `cache` is a ReplayCache of this
+    recipient's earlier replays by this provider, or None."""
     why = receipt_problem(doc)
     if why:
         return None, why
@@ -186,11 +236,19 @@ def replay(provider, snapshot, condition, doc, targets):
     ck, st = snapshot.blob(doc["checkpoint"]), snapshot.blob(doc["state"])
     if ck is None or st is None:
         return None, "receipt bytes not in view"
-    out = provider.call("verify", {"runtime": condition["runtime"], "input": doc["input"], "hashes": hashes,
-                                   "chain": [[base64.b64encode(ck).decode(), base64.b64encode(st).decode()]]}, blobs)
-    if "refused" in out:
-        return None, f"not replayed: {out['refused']}"
-    r = out["results"][0]
+    fields = {"provider": provider.id, "runtime": condition["runtime"], "input": doc["input"],
+              "environment": doc["environment"], "checkpoint": doc["checkpoint"], "state": doc["state"]}
+    # The cache stands in for a replay only when that replay would have had every byte.
+    complete = cache is not None and all(h in blobs for h in hashes)
+    r = cache.get(fields) if complete else None
+    if r is None:
+        out = provider.call("verify", {"runtime": condition["runtime"], "input": doc["input"], "hashes": hashes,
+                                       "chain": [[base64.b64encode(ck).decode(), base64.b64encode(st).decode()]]}, blobs)
+        if "refused" in out:
+            return None, f"not replayed: {out['refused']}"
+        r = out["results"][0]
+        if complete:
+            cache.put(fields, r)
     if r["basis"] != "REPLAYED":
         return None, f"not replayed: {r['code']}"
     if r["code"] != "NORMAL_FORM":
@@ -202,7 +260,8 @@ def replay(provider, snapshot, condition, doc, targets):
     return f"REPLAYED:sigma-resume:{provider.id[:16]}", None
 
 
-def replay_cycle(provider, snapshot, condition, doc, targets):
+def replay_cycle(provider, snapshot, condition, doc, targets, cache=None):
+    # Cycle witnesses are verified every time; the cache covers receipts only.
     why = cycle_problem(doc)
     if why:
         return None, why

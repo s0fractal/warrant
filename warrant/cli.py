@@ -235,7 +235,8 @@ def _report(a):
     except P.ProviderError as e:
         print(f"warning: provider unavailable, replays are UNVERIFIED: {e}", file=sys.stderr)
         provider = None
-    return E.assess(snap, trust, _now(a.as_of), prof, current=a.current or [], workspace=ws, provider=provider)
+    return E.assess(snap, trust, _now(a.as_of), prof, current=a.current or [], workspace=ws, provider=provider,
+                    replay_cache=a.replay_cache)
 
 
 def cmd_assess(a):
@@ -281,6 +282,7 @@ def build_parser():
         p.add_argument("--as-of", type=int, help="end of the view (default: now)")
         p.add_argument("--current", action="append", help="a revision the recipient treats as current")
         p.add_argument("--workspace", help="REPO@REV for subject_changed triggers")
+        p.add_argument("--replay-cache", help="directory of this recipient's earlier verified replays (cost only)")
 
     p = sub.add_parser("init", help="create a store")
     store(p)

@@ -1,5 +1,9 @@
 """Frozen receiver views (PROPOSAL §4, CONTRACT C.1-C.2).
 
+The worker reads the view directory and, for cost only, the workspace's
+replay cache (`<state>/replay-cache`): the receiver's own earlier verified
+replays by the same provider over the same bytes (SPEC §7).
+
 A view owns copies of every operand that can change a verdict: the store's
 record and blob bytes, the receiver's trust bytes and profile, as_of, current
 revisions, the workspace commit and the accepted provider's module bytes. The
@@ -116,6 +120,8 @@ def capture(ws, extra=None, delivery=None, as_of=None):
             "repo": [str(ws.repo[0]), commit] if ws.repo else None, "snapshot": frozen.digest,
             "live_snapshot": live.digest, "trust": base64.b64encode(trust_bytes).decode(),
             "profile": profile, "provider": bool(sources),
+            # The receiver's own verified replays, reused across views (cost only).
+            "replay_cache": str(ws.state / "replay-cache"),
             "delivery": delivery or {"relation": "LOCAL_CAPTURE", "source_completeness": "UNATTESTED"}}
     write_json(vdir / "meta.json", meta)
     try:
