@@ -55,6 +55,7 @@ TARGET = "dependency-audit/predicate"
 EXPERIMENT = "warrant-dependency-audit-handoff/1"
 INSTANCE = "warrant-dependency-audit-instance/1"
 CASES = ("base", "compute", "transitive-prohibited")
+PACKET, REPLY, PROFILE, TRUST = "packet.json", "reply.json", "profile.json", "trust.json"
 USES = {"continue": {"delivery": ["MATCH_EXPECTED_SET", "LOCAL_CAPTURE"],
                      "reliance": ["ELIGIBLE"], "fresh": True},
         "import": {"delivery": ["MATCH_EXPECTED_SET"]}}
@@ -202,11 +203,11 @@ class Party:
         self.store = Store(self.root / "store").init()
         self.profile = E.profile(uses={"continue": {"requires_triggers": False}},
                                  targets=[TARGET], providers=list(providers))
-        write(self.root / "profile.json", self.profile)
-        write(self.root / "trust.json", Trust.document([(name, self.key.public), *peers]))
+        write(self.root / PROFILE, self.profile)
+        write(self.root / TRUST, Trust.document([(name, self.key.public), *peers]))
         self.doc = {"agent_api": "warrant-agent/1", "state": str(self.root / "state"),
                     "workspaces": {name: {"store": str(self.root / "store"),
-                        "trust": str(self.root / "trust.json"), "profile": str(self.root / "profile.json"),
+                        "trust": str(self.root / TRUST), "profile": str(self.root / PROFILE),
                         "signer": {"actor": name, "key": str(keypath)}, "source_name": name,
                         "uses": USES, "expectations": {}, "limits": {}}}}
         self.save()
@@ -265,7 +266,7 @@ class Party:
         need(seen["delivery"]["relation"] == "MATCH_EXPECTED_SET", "DELIVERY", seen["delivery"])
         self.ok("handoff", op="import", staged_id=seen["data"]["staged_id"], request_id=request_id)
         snap = self.store.snapshot()
-        good, bad = snap.authentic(Trust.load(self.root / "trust.json"))
+        good, bad = snap.authentic(Trust.load(self.root / TRUST))
         need(not bad and not snap.misfiled, "AUTHENTIC", (bad, snap.misfiled))
         return seen, snap, good
 
@@ -282,7 +283,7 @@ class Party:
         return first["record_id"]
 
     def set_providers(self, providers):
-        write(self.root / "profile.json", dict(self.profile, providers=list(providers)))
+        write(self.root / PROFILE, dict(self.profile, providers=list(providers)))
 
 
 # ----------------------------------------------------------------- producer
@@ -559,18 +560,18 @@ def selftest(a):
           "oracle_wall_s" not in C.canon(inst).decode() and C.doc_id(inst) == C.doc_id(instance_of(ev, wl)))
     check("supplied workload with other timing still binds", application(pin, "base", a.wheelhouse, dict(
         wl, admission=dict(wl["admission"], oracle_wall_s=0.0)))[2] == inst)
-    pkt, rep = base / "packet.json", base / "reply.json"
+    pkt, rep = base / PACKET, base / REPLY
     cases = [a.case] if a.case else list(CASES)
     prod = produce(argparse.Namespace(work=base / "producer", packet=pkt, manifest_sha256=pin,
                                       wheelhouse=a.wheelhouse, cases=cases))
     check("producer paused every case", set(prod["cases"]) == set(cases))
     bad_pin = code_of(lambda: receive(argparse.Namespace(
         work=base / "receiver-bad-pin", packet=pkt, packet_sha256="0" * 64, manifest_sha256=pin,
-        accept_provider=PROVIDER, wheelhouse=a.wheelhouse, reply=base / "none.json", base64=False)))
+        accept_provider=PROVIDER, wheelhouse=a.wheelhouse, reply=base / "unused-reply.json", base64=False)))
     check("wrong packet pin refuses before any import", bad_pin == "PACKET_PIN")
     other_inst = code_of(lambda: receive(argparse.Namespace(
         work=base / "receiver-other-instance", packet=pkt, packet_sha256=prod["packet_sha256"],
-        manifest_sha256="1" * 64, accept_provider=PROVIDER, wheelhouse=a.wheelhouse, reply=base / "none.json",
+        manifest_sha256="1" * 64, accept_provider=PROVIDER, wheelhouse=a.wheelhouse, reply=base / "unused-reply.json",
         base64=False)))
     check("packet for another frozen instance refuses", other_inst == "MANIFEST_PIN")
     # a packet whose instance blob was swapped for one with the same term and answer but another graph binding
@@ -585,7 +586,7 @@ def selftest(a):
     write(tpkt, tampered)
     forged_code = code_of(lambda: receive(argparse.Namespace(
         work=base / "receiver-forged", packet=tpkt, packet_sha256=C.digest(tpkt.read_bytes()), manifest_sha256=pin,
-        accept_provider=PROVIDER, wheelhouse=a.wheelhouse, reply=base / "none.json", base64=False)))
+        accept_provider=PROVIDER, wheelhouse=a.wheelhouse, reply=base / "unused-reply.json", base64=False)))
     check("swapped instance bytes are caught at delivery, never replayed", forged_code == "DELIVERY")
     report = receive(argparse.Namespace(work=base / "receiver", packet=pkt, packet_sha256=prod["packet_sha256"],
                                         manifest_sha256=pin, accept_provider=PROVIDER, wheelhouse=a.wheelhouse,
@@ -614,10 +615,10 @@ def selftest(a):
     frozen = HERE / "round-1"
     if frozen.is_dir() and not a.case:
         pins = dict(line.split()[::-1] for line in (frozen / "SHA256SUMS").read_text().splitlines())
-        for name in ("packet.json", "reply.json"):
+        for name in (PACKET, REPLY):
             check(f"round-1 {name} has its recorded digest", C.digest((frozen / name).read_bytes()) == pins[name])
-        summary = verify(argparse.Namespace(work=base / "verifier-round-1", packet=frozen / "packet.json",
-                                            reply=frozen / "reply.json", reply_sha256=pins["reply.json"],
+        summary = verify(argparse.Namespace(work=base / "verifier-round-1", packet=frozen / PACKET,
+                                            reply=frozen / REPLY, reply_sha256=pins[REPLY],
                                             manifest_sha256=pin, wheelhouse=a.wheelhouse))
         check("round-1 returned receipts replay locally and bind to locally rebuilt instances",
               all(v["local_replay"] == "PASS" for v in summary["cases"].values())
