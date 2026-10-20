@@ -1,4 +1,63 @@
-# Dependency policy on Sigma-Glyph 0.8.0: amendment 1
+# Dependency policy on Sigma-Glyph 0.8.0: amendment 2
+
+## Amendment 2: answer to the review of `7fc7407`
+
+The second review arrived as a signed update (warrant `3ae2745`, `round-2/update.json`).
+Its new finding: `resume_run(evidence, workload_doc)` reused a supplied workload
+without binding it to the current evidence.
+
+**Reproduced on `7fc7407`.** Rename the absent `mcp` vertex to `mcq` and rehash
+consistently: the run still completed PAUSED → REPLAYED → NORMAL_FORM FALSE. It
+reported the old `34f860ef…` and `matches_admission: true`, while the actual
+workload ID was `caf0b33d…`. The review's own probe is in
+`amend-2/review2-probe-on-7fc7407.json`.
+
+**Fix.**
+- `bind_workload()` always regenerates the workload from the current evidence
+  before any provider call.
+- A supplied workload must equal the regenerated one field for field. Only the
+  host timing `oracle_wall_s` is ignored. That covers the binding, the term and
+  environment identities, the encoder source, provider, runtime and cost model,
+  and the admission, total, credit and expected result.
+- On any mismatch the run is refused with `WORKLOAD_MISMATCH`. No success-shaped
+  workload ID is returned.
+
+**Regressions.** There are 14 new checks; the self-test is now 48/48
+(`amend-2/selftest.out`):
+- The rebound evidence has an equal term, answer and ATP, but a different
+  binding and workload ID.
+- A stale workload for rebound evidence is refused.
+- An altered value is refused for each of: expected result, pause credit, total,
+  program, `environment_id`, encoder source, provider, runtime, `workload_id`
+  alone, and a non-workload document.
+- A matching supplied workload whose timing alone differs runs normally.
+- Rebound evidence without a supplied workload runs under its own new ID.
+
+`amend-2/stale-workload-probe.json` is the same probe on the fix: refused.
+
+**Re-recorded** in `amend-2/workload-*.json` and `amend-2/resume-*.json`. The
+encoder ID is now `warrant-dep-policy/amend-2`, so the workload IDs change. ATP,
+inputs and verdicts are unchanged.
+
+| case | workload_id | total ATP | verdict | resume |
+| --- | --- | ---: | --- | --- |
+| base | `141a1d8b…` | 5,376,851 | TRUE | PAUSED → REPLAYED → NORMAL_FORM |
+| compute | `88c05b12…` | 5,220,225 | TRUE | PAUSED → REPLAYED → NORMAL_FORM |
+| transitive-prohibited | `778f3997…` | 740,920 | FALSE | PAUSED → REPLAYED → NORMAL_FORM |
+
+**Public handoff bytes.** `handoff/ack.json` and `handoff/reply.json` are the exact
+round-1 files, not reserialized:
+- `ack.json`: `8c910428…565b`
+- `reply.json`: `d5be98ce…2fa7`
+
+The amendment-2 reply is published separately as `handoff/reply-2.json`.
+
+The sections below record amendment 1. Its measurements are kept unchanged in
+`amend-1/`.
+
+---
+
+# Amendment 1 (kept for the record)
 
 Status: CANDIDATE for [sigma-glyph#68](https://github.com/s0fractal/sigma-glyph/issues/68),
 answering the AMEND review of the draft `acd8307`, which was delivered as a signed

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dependency-policy workload for Sigma-Glyph 0.8.0 (Book I, C1 -> SKI): amendment 1.
+"""Dependency-policy workload for Sigma-Glyph 0.8.0 (Book I, C1 -> SKI): amendment 2.
 
 For s0fractal/sigma-glyph#68 over the frozen #150 input (warrant 67e0031, manifest
 7d722e26…). Input is the `warrant-dependency-input-evidence/1` document that
@@ -36,7 +36,7 @@ import time
 
 import sigma_glyph as G  # the installed provider's kernel (sigma-glyph 0.8.0)
 
-ENCODER_ID = "warrant-dep-policy/amend-1"
+ENCODER_ID = "warrant-dep-policy/amend-2"
 SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 PROVIDER_ID = "0caff793d00dd798fa0af89517674c2ca562e1d517e7c969cc40617778c776c5"
 MANIFEST_SHA256 = "7d722e2664dc57f1618b3bd7c47d3ffbb77d775f770315a8ebc1dcf0b6645653"
@@ -333,11 +333,32 @@ def workload(evidence):
     return doc
 
 
+def _comparable(w):
+    """A workload without its host timing: everything that must match exactly."""
+    w = copy.deepcopy(w)
+    w.get("admission", {}).pop("oracle_wall_s", None)
+    return w
+
+
+def bind_workload(evidence, workload_doc=None):
+    """The workload for THIS evidence, regenerated here. A supplied workload is only
+    a claim: it must equal the regenerated one field for field (identities, binding,
+    admission, credit, expected result) or the run is refused. Never reuse it."""
+    fresh = workload(evidence)
+    if workload_doc is not None:
+        if not isinstance(workload_doc, dict) or _comparable(workload_doc) != _comparable(fresh):
+            raise Refused("WORKLOAD_MISMATCH", "supplied workload is not the one this evidence and "
+                          f"encoder produce (supplied {str(workload_doc.get('workload_id'))[:16] if isinstance(workload_doc, dict) else None}, "
+                          f"current {fresh['workload_id'][:16]})")
+    return fresh
+
+
 def resume_run(evidence, workload_doc=None):
-    """PAUSED prefix at the frozen pause credit, then a checked resume (REPLAYED)."""
+    """PAUSED prefix at the frozen pause credit, then a checked resume (REPLAYED).
+    The workload is always regenerated from `evidence` before any provider call."""
     import sigma_provider as SP
     import sigma_resume as RS
-    w = workload_doc or workload(evidence)
+    w = bind_workload(evidence, workload_doc)
     if w["admission"]["state"] != "ADMITTED":
         return {"state": "INCONCLUSIVE", "reason": "not admitted; no pause credit derived"}
     ev, _ = evaluation_of(evidence)
@@ -466,6 +487,45 @@ def selftest(evidence_dir):
                  w1["terms"]["input"] == w0["terms"]["input"] and w1["admission"]["verdict"] == w0["admission"]["verdict"]
                  and w1["input_binding"]["graph_sha256"] != w0["input_binding"]["graph_sha256"]
                  and w1["workload_id"] != w0["workload_id"])
+    # 4b. a supplied workload is bound to the current evidence before any provider call
+    #     (review 2): same numeric term/answer/ATP, different application binding
+    tp = cases["transitive-prohibited"]
+    w_tp = workload(tp)
+    changed = _rebind(_renamed(tp, "mcp", "mcq"))
+    w_ch = workload(changed)
+    ok &= _check("rebound evidence: equal term/answer/ATP, different input binding and workload_id",
+                 w_ch["terms"] == w_tp["terms"] and w_ch["admission"]["total_atp"] == w_tp["admission"]["total_atp"]
+                 and w_ch["admission"]["verdict"] == w_tp["admission"]["verdict"]
+                 and w_ch["input_binding_id"] != w_tp["input_binding_id"] and w_ch["workload_id"] != w_tp["workload_id"])
+    tampered = {
+        "stale workload for rebound evidence": (changed, w_tp),
+        "altered expected_result": (tp, _with(w_tp, ["admission", "expected_result"], G.K_H.hex())),
+        "altered pause credit": (tp, _with(w_tp, ["admission", "pause_credit"], 1)),
+        "altered total_atp": (tp, _with(w_tp, ["admission", "total_atp"], w_tp["admission"]["total_atp"] + 1)),
+        "altered program": (tp, _with(w_tp, ["terms", "program"], "0" * 64)),
+        "altered environment_id": (tp, _with(w_tp, ["environment_id"], "0" * 64)),
+        "altered encoder source": (tp, _with(w_tp, ["encoder_source_sha256"], "0" * 64)),
+        "altered provider": (tp, _with(w_tp, ["provider"], "0" * 64)),
+        "altered runtime": (tp, _with(w_tp, ["runtime"], "other")),
+        "altered workload_id only": (tp, _with(w_tp, ["workload_id"], "0" * 64)),
+        "not a workload": (tp, ["x"]),
+    }
+    for nm, (evd, wdoc) in tampered.items():
+        try:
+            resume_run(evd, wdoc)          # must refuse before any provider operation
+            got = "accepted"
+        except Refused as e:
+            got = e.code
+        ok &= _check(f"supplied workload refused, no success-shaped id: {nm} -> WORKLOAD_MISMATCH",
+                     got == "WORKLOAD_MISMATCH", got)
+    good = resume_run(tp, dict(w_tp, admission=dict(w_tp["admission"], oracle_wall_s=123.0)))
+    ok &= _check("matching supplied workload (timing aside): PAUSED -> REPLAYED -> NORMAL_FORM FALSE under its own id",
+                 good["workload_id"] == w_tp["workload_id"] and good["first"]["outcome"] == "PAUSED"
+                 and good["resume"]["basis"] == "REPLAYED" and good["resume"]["verdict"] is False
+                 and good["matches_admission"], good)
+    good2 = resume_run(changed)
+    ok &= _check("rebound evidence without a supplied workload runs under its own NEW id",
+                 good2["workload_id"] == w_ch["workload_id"] != w_tp["workload_id"] and good2["matches_admission"], good2)
     # 5. constant-verdict programs: other identity, and blind to a changed edge
     ev_b, _ = evaluation_of(base)
     cut = dict(ev_b, edges=[[0, 3], [1, 0]])                  # cut warrant-loops -> cryptography
