@@ -611,7 +611,19 @@ def selftest(a):
                                                          reply_sha256=C.digest(spath.read_bytes()),
                                                          manifest_sha256=pin, wheelhouse=a.wheelhouse)))
         check("a receipt of another case under this case's duty is refused in readback", code == "RECEIPT")
-    print(f"DEPENDENCY-AUDIT HANDOFF: {len(passed)} controls PASS (local roles only; remote execution not claimed)")
+    frozen = HERE / "round-1"
+    if frozen.is_dir() and not a.case:
+        pins = dict(line.split()[::-1] for line in (frozen / "SHA256SUMS").read_text().splitlines())
+        for name in ("packet.json", "reply.json"):
+            check(f"round-1 {name} has its recorded digest", C.digest((frozen / name).read_bytes()) == pins[name])
+        summary = verify(argparse.Namespace(work=base / "verifier-round-1", packet=frozen / "packet.json",
+                                            reply=frozen / "reply.json", reply_sha256=pins["reply.json"],
+                                            manifest_sha256=pin, wheelhouse=a.wheelhouse))
+        check("round-1 returned receipts replay locally and bind to locally rebuilt instances",
+              all(v["local_replay"] == "PASS" for v in summary["cases"].values())
+              and summary["host_reported"]["platform"] == "linux")
+    print(f"DEPENDENCY-AUDIT HANDOFF: {len(passed)} controls PASS (local roles and frozen round-1 readback; "
+          "remote execution not attested)")
 
 
 if __name__ == "__main__":
