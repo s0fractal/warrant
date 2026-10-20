@@ -101,7 +101,10 @@ jobs:
               --case "$c" --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels" > "$EVIDENCE/kit-evidence-$c.json"
           done
           python work/dependency-audit-sigma/reach.py selftest "$EVIDENCE"
-          python examples/dependency-audit/handoff.py selftest --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
+          # The local roundtrip runs the cheapest case here (the runner evaluates Sigma ~5x slower
+          # than the hosts of round 1); the frozen round-1 readback replays all three cases.
+          python examples/dependency-audit/handoff.py selftest --case transitive-prohibited \
+            --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
 
       - name: Scenarios through the installed `warrant` command
         working-directory: ${{ runner.temp }}

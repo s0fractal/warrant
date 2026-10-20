@@ -270,9 +270,9 @@ class Party:
         need(not bad and not snap.misfiled, "AUTHENTIC", (bad, snap.misfiled))
         return seen, snap, good
 
-    def accept(self, duty, transition, request_id):
+    def accept(self, duty, transition, request_id, view=None):
         """Accept item 0 of `transition` exactly; a fresh-process retry returns the same record."""
-        view = self.context(duty)
+        view = view or self.context(duty)
         req = dict(based_on=view["view_token"], request_id=request_id, type="accept",
                    body={"transition": transition, "item": 0})
         first = self.data("commit", draft_id=self.data("prepare", **req)["draft_id"])
@@ -335,8 +335,10 @@ def produce(a):
 
 # ----------------------------------------------------------------- receiver
 
-def binding_controls(pin, wheelhouse, sent_instance, workload):
-    """Refusals that must happen before any duty is filed. Each returns a code."""
+def binding_controls(pin, wheelhouse, sent_instance, workload, local_instance):
+    """Refusals that must happen before any duty is filed. Each returns a code.
+    `local_instance` is this host's rebuilt instance for the case; the sent-field
+    controls compare against it without re-evaluating the term."""
     case = sent_instance["case"]
     cache = Path(wheelhouse).resolve()
     sel = next(a for a in C.loads((HERE / "fixture" / "manifest.json").read_bytes())["artifacts"]
@@ -353,8 +355,7 @@ def binding_controls(pin, wheelhouse, sent_instance, workload):
             shutil.rmtree(tmp, ignore_errors=True)
 
     def altered(key, value):
-        _, _, local = application(pin, case, wheelhouse)
-        same_instance(dict(sent_instance, **{key: value}), local)
+        same_instance(dict(sent_instance, **{key: value}), local_instance)
 
     need(wheel.is_file(), "MISSING_WHEEL", str(wheel))
     return {
@@ -419,7 +420,7 @@ def receive(a):
         t = p.data("compute", op="term", expr=ski_of(ev))
         need(t["input"] == inst["input"] and t["environment"] == inst["environment"], "IDENTITY", "door term")
         # 2. refusals before any duty: same computed answer under a wrong binding stays unaccepted
-        bc = binding_controls(a.manifest_sha256, a.wheelhouse, inst, wl)
+        bc = binding_controls(a.manifest_sha256, a.wheelhouse, inst, wl, inst)
         need(bc == EXPECTED_BINDING, "CONTROL", bc)
         controls[case] = dict(bc)
         # 3. checked resume of the foreign prefix under this receiver's provider
@@ -452,22 +453,26 @@ def receive(a):
             residual=["the instance binding is this host's reconstruction, not a machine attestation",
                       "source/index completeness stays UNATTESTED"],
             subject=inst["manifest_sha256"]))
-        cap = p.capsule(bd)
-        need(cap["disposition"] == "DISCHARGED", "CLOSURE", cap)
         p.set_providers([])
         un = p.capsule(bd)
         controls[case]["unaccepted_provider"] = un["disposition"]
         need(un["disposition"] != "DISCHARGED", "CONTROL", un)
         p.set_providers([PROVIDER])
+        # one assessment per case: every receipt in the store is replayed by each one
+        view = p.context(bd, c["duty"])
+        caps = {x["target"]: x for x in view["data"]["capsules"]}
+        need(caps[bd]["disposition"] == "DISCHARGED", "CLOSURE", caps[bd])
         # 5. exact acceptance of the producer's handoff item, stable under a fresh-process retry
-        acc = p.accept(c["duty"], c["transition"], "accept-" + case)
-        need(p.capsule(c["duty"])["disposition"] == "DISCHARGED", "ACCEPT", "handoff not discharged")
+        acc = p.accept(c["duty"], c["transition"], "accept-" + case, view)
         results[case] = {"instance": c["instance"], "verdict": verdict, "result": result["segment"]["result"],
                          "receipt": result["receipt"], "duty": bd, "transition": closure, "acceptance": acc,
                          "checkpoint": result["segment"]["checkpoint"], "state": result["segment"]["state"],
                          "credit": remaining, "total_atp": inst["total_atp"],
                          "wall_ms": {"rebuild_and_controls": int((t1 - t0) * 1000), "resume_incl_replay": int((t2 - t1) * 1000)}}
         own.append(bd)
+    final = {x["target"]: x for x in p.context(*own, *duties)["data"]["capsules"]}
+    need(all(final[d]["disposition"] == "DISCHARGED" for d in own + duties), "ACCEPT",
+         {d[:16]: final[d]["disposition"] for d in own + duties})
     report = {"experiment": EXPERIMENT, "packet_sha256": a.packet_sha256, "manifest_sha256": a.manifest_sha256,
               "receiver_public": p.key.public, "provider": PROVIDER, "encoder_source_sha256": ENCODER_SOURCE,
               "host": {"platform": sys.platform, "python": sys.version.split()[0], "machine": os.uname().machine},
@@ -521,13 +526,16 @@ def verify(a):
         need(acc["actor"] == "receiver" and acc["type"] == "accept" and acc["body"]["transition"] == c["transition"]
              and acc["body"]["item"] == 0 and acc["body"]["evidence"] == good[c["transition"]]["body"]["evidence"],
              "ACCEPT", "acceptance is for another handoff or evidence set")
-        cap = p.capsule(r["duty"])
+        need(verdict_of(r["result"]) == r["verdict"], "RESULT", "reported verdict disagrees with the result hash")
+        out[case] = {"verdict": r["verdict"], "receipt": r["receipt"], "duty": r["duty"], "handoff": c["duty"]}
+    # one assessment: this host replays every returned receipt once, under its own provider and profile
+    caps = {x["target"]: x for x in p.context(*own, *[c["duty"] for c in packet["cases"].values()])["data"]["capsules"]}
+    for case, o in out.items():
+        cap = caps[o.pop("duty")]
         need(cap["disposition"] == "DISCHARGED" and any(x.startswith("REPLAYED:sigma-resume:") for x in cap["basis"]),
              "REPLAY", cap)
-        need(p.capsule(c["duty"])["disposition"] == "DISCHARGED", "ACCEPT", "producer handoff not discharged in readback")
-        need(verdict_of(r["result"]) == r["verdict"], "RESULT", "reported verdict disagrees with the result hash")
-        out[case] = {"local_replay": "PASS", "verdict": r["verdict"], "disposition": cap["disposition"],
-                     "basis": cap["basis"], "receipt": r["receipt"]}
+        need(caps[o.pop("handoff")]["disposition"] == "DISCHARGED", "ACCEPT", "producer handoff not discharged in readback")
+        o.update(local_replay="PASS", disposition=cap["disposition"], basis=cap["basis"])
     summary = {"delivery": seen["delivery"]["relation"], "cases": out,
                "controls_reported": {k: v for k, v in report["controls"].items()},
                "host_reported": report["host"],
@@ -613,7 +621,7 @@ def selftest(a):
                                                          manifest_sha256=pin, wheelhouse=a.wheelhouse)))
         check("a receipt of another case under this case's duty is refused in readback", code == "RECEIPT")
     frozen = HERE / "round-1"
-    if frozen.is_dir() and not a.case:
+    if frozen.is_dir():
         pins = dict(line.split()[::-1] for line in (frozen / "SHA256SUMS").read_text().splitlines())
         for name in (PACKET, REPLY):
             check(f"round-1 {name} has its recorded digest", C.digest((frozen / name).read_bytes()) == pins[name])
@@ -639,7 +647,7 @@ if __name__ == "__main__":
                     help="the operator's pin of the frozen #150 manifest (default: the kit's own file)")
     ap.add_argument("--wheelhouse", type=Path, required=True)
     ap.add_argument("--accept-provider")
-    ap.add_argument("--case", choices=CASES, help="selftest: one case only")
+    ap.add_argument("--case", choices=CASES, help="selftest: local roundtrip on one case only (the frozen round-1 readback stays complete)")
     ap.add_argument("--cases", nargs="+", choices=CASES, default=list(CASES))
     ap.add_argument("--base64", action="store_true", help="receive: also print the reply as zlib+base64")
     args = ap.parse_args()
