@@ -1,0 +1,98 @@
+{
+  "delivery": "MATCH_EXPECTED_SET",
+  "cases": {
+    "base": {
+      "verdict": true,
+      "receipt": "25ea9f49f46bc01a7edb764b5b0828635bccfdf2455b44b06fdd6bf1b4eefe9e",
+      "local_replay": "PASS",
+      "disposition": "DISCHARGED",
+      "basis": [
+        "REPLAYED:sigma-resume:0caff793d00dd798"
+      ]
+    },
+    "compute": {
+      "verdict": true,
+      "receipt": "6b46eedb27e33f566217b3d2d7b0fc3cfbe5cf72a8fc86c081dc02e2a1750ead",
+      "local_replay": "PASS",
+      "disposition": "DISCHARGED",
+      "basis": [
+        "REPLAYED:sigma-resume:0caff793d00dd798"
+      ]
+    },
+    "transitive-prohibited": {
+      "verdict": false,
+      "receipt": "22d62dbbcdf6d08a08a01ae49ffcf051bac2c735ca017f7eaa0010e3878397bb",
+      "local_replay": "PASS",
+      "disposition": "DISCHARGED",
+      "basis": [
+        "REPLAYED:sigma-resume:0caff793d00dd798"
+      ]
+    }
+  },
+  "controls_reported": {
+    "base": {
+      "changed_wheel": "WHEEL_DIGEST",
+      "forged_expected_result": "WORKLOAD_MISMATCH",
+      "forged_graph_binding_same_answer": "BINDING",
+      "forged_workload_id": "WORKLOAD_MISMATCH",
+      "insufficient_budget": [
+        "PAUSED",
+        false
+      ],
+      "missing_wheel": "MISSING_WHEEL",
+      "other_encoder": "BINDING",
+      "stale_source_revision": "BINDING",
+      "unaccepted_provider": "OPEN",
+      "wrong_environment": "BINDING",
+      "wrong_operator_pin": "MANIFEST_PIN",
+      "wrong_root": "BINDING",
+      "wrong_root_resume": "REFUSED"
+    },
+    "compute": {
+      "changed_wheel": "WHEEL_DIGEST",
+      "forged_expected_result": "WORKLOAD_MISMATCH",
+      "forged_graph_binding_same_answer": "BINDING",
+      "forged_workload_id": "WORKLOAD_MISMATCH",
+      "insufficient_budget": [
+        "PAUSED",
+        false
+      ],
+      "missing_wheel": "MISSING_WHEEL",
+      "other_encoder": "BINDING",
+      "stale_source_revision": "BINDING",
+      "unaccepted_provider": "OPEN",
+      "wrong_environment": "BINDING",
+      "wrong_operator_pin": "MANIFEST_PIN",
+      "wrong_root": "BINDING",
+      "wrong_root_resume": "REFUSED"
+    },
+    "damaged_delivery": [
+      "MISSING_DECLARED_BYTES",
+      "IMPORT_BLOCKED"
+    ],
+    "transitive-prohibited": {
+      "changed_wheel": "WHEEL_DIGEST",
+      "forged_expected_result": "WORKLOAD_MISMATCH",
+      "forged_graph_binding_same_answer": "BINDING",
+      "forged_workload_id": "WORKLOAD_MISMATCH",
+      "insufficient_budget": [
+        "PAUSED",
+        false
+      ],
+      "missing_wheel": "MISSING_WHEEL",
+      "other_encoder": "BINDING",
+      "stale_source_revision": "BINDING",
+      "unaccepted_provider": "OPEN",
+      "wrong_environment": "BINDING",
+      "wrong_operator_pin": "MANIFEST_PIN",
+      "wrong_root": "BINDING",
+      "wrong_root_resume": "REFUSED"
+    }
+  },
+  "host_reported": {
+    "machine": "aarch64",
+    "platform": "linux",
+    "python": "3.12.3"
+  },
+  "residual": "remote execution and the receiver's controls remain receiver-reported; source/index completeness UNATTESTED"
+}

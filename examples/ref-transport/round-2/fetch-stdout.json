@@ -1,0 +1,14 @@
+{
+  "me": "producer",
+  "deliveries": [
+    {
+      "state": "PINNED",
+      "principal": "owner",
+      "kind": "reply",
+      "from": "receiver",
+      "sha256": "4cb63fd129d4eb3772826a6e2e197cf1313cb4ca74c440f0fc00d8bc159cc6e9",
+      "delivered": true,
+      "file": "/Users/s0fractal/Projects/.worktrees/round-2/inbox/4cb63fd129d4eb3772826a6e2e197cf1313cb4ca74c440f0fc00d8bc159cc6e9.json"
+    }
+  ]
+}

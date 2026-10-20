@@ -77,6 +77,9 @@ jobs:
       - name: Signed review task handoff and unaccepted candidate controls
         run: python examples/review-handoff/selftest.py
 
+      - name: Ref transport with owner-signed pins (local bare remote, ephemeral keys)
+        run: python examples/ref-transport/carry.py selftest
+
       - name: Frozen dependency-audit wheel inputs and binding controls
         run: |
           set -euo pipefail
