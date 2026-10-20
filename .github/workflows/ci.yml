@@ -74,6 +74,9 @@ jobs:
       - name: Cross-host local controls and frozen round-1 artifact replay
         run: python examples/cross-host/selftest.py
 
+      - name: Signed review task handoff and unaccepted candidate controls
+        run: python examples/review-handoff/selftest.py
+
       - name: Frozen dependency-audit wheel inputs and binding controls
         run: |
           set -euo pipefail
