@@ -348,7 +348,20 @@ def selftest(a):
     check("a pin signed for another receiver is not a pin for this one",
           rows[0]["state"] == "PIN_FOR_ANOTHER_DELIVERY" and not rows[0]["delivered"])
     shutil.rmtree(base, ignore_errors=True)
-    print(f"REF-TRANSPORT: {len(passed)} controls PASS (local bare remote, ephemeral keys; no Warrant semantics claimed)")
+    frozen = Path(__file__).resolve().parent / "round-2"
+    if frozen.is_dir():
+        sums = dict(line.split()[::-1] for line in (frozen / "SHA256SUMS").read_text().splitlines())
+        check("round-2 frozen files have their recorded digests",
+              all(sha256((frozen / name).read_bytes()) == h for name, h in sums.items()))
+        for pin_dir in sorted(frozen.glob("pins/*")):
+            data, sig = (pin_dir / "pin.json").read_bytes(), (pin_dir / "pin.json.sig").read_bytes()
+            doc = json.loads(data)
+            packet = frozen / ("reply.json" if doc["kind"] == "reply" else "packet.json")
+            check(f"round-2 owner pin verifies offline and names the frozen {doc['kind']}: {doc['sha256'][:12]}",
+                  verify_pin(frozen / "allowed_signers", data, sig) == "owner"
+                  and sha256(packet.read_bytes()) == doc["sha256"] and pin_dir.name.startswith(f"{doc['to']}--{doc['sha256']}"))
+    print(f"REF-TRANSPORT: {len(passed)} controls PASS (local bare remote with ephemeral keys, plus the frozen "
+          "round-2 pins verified offline; no Warrant semantics claimed)")
 
 
 if __name__ == "__main__":

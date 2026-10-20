@@ -1,0 +1,4 @@
+Linux 6.8.0-147-generic aarch64
+Python 3.12.3
+PRETTY_NAME="Ubuntu 24.04.5 LTS"
+01b5e5619f982a75b6a6673ad1944b657c4cd77a

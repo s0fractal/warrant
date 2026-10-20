@@ -1,0 +1,7 @@
+{
+  "ref": "refs/warrant/out/receiver/producer/4cb63fd129d4eb3772826a6e2e197cf1313cb4ca74c440f0fc00d8bc159cc6e9",
+  "commit": "2d974b686e68f291a1dfb48aabd8e8f005444f2d",
+  "sha256": "4cb63fd129d4eb3772826a6e2e197cf1313cb4ca74c440f0fc00d8bc159cc6e9",
+  "size": 1524506,
+  "pin_needed": "refs/warrant/pins/producer/4cb63fd129d4eb3772826a6e2e197cf1313cb4ca74c440f0fc00d8bc159cc6e9.<signer fingerprint>"
+}
