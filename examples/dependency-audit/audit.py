@@ -49,7 +49,7 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def load(path):
+def loads(raw):
     def pairs(items):
         out = {}
         for key, value in items:
@@ -58,7 +58,7 @@ def load(path):
         return out
     def no_number(value):
         raise Refused("JSON", "float/non-finite number")
-    return json.loads(Path(path).read_bytes(), object_pairs_hook=pairs,
+    return json.loads(raw, object_pairs_hook=pairs,
                       parse_float=no_number, parse_constant=no_number)
 
 
@@ -134,9 +134,7 @@ def read_wheel(path, artifact):
     return meta, tags
 
 
-def schema(doc):
-    fields(doc, ["schema", "source", "tools", "contract_sha256", "target", "artifacts", "cases"])
-    need(doc["schema"] == SCHEMA, "SCHEMA", "version")
+def source_schema(doc):
     fields(doc["source"], ["repository", "commit", "source_date_epoch", "package_files", "observations_sha256"])
     need(doc["source"]["repository"] == "https://github.com/s0fractal/warrant"
          and re.fullmatch(r"[a-f0-9]{40}", doc["source"]["commit"]) is not None,
@@ -148,8 +146,9 @@ def schema(doc):
     need(isinstance(files, dict) and 0 < len(files) <= 128 and all(
         isinstance(n, str) and n.startswith(("warrant/", "warrant_agent/")) and ".." not in Path(n).parts
         and isinstance(h, str) and HEX.fullmatch(h) for n, h in files.items()), "SOURCE", "package file map")
-    fields(doc["tools"], ["packaging", "collector_sha256", "audit_sha256", "build"])
-    need(doc["tools"]["packaging"] == packaging.__version__ == "26.3", "TOOLCHAIN", "packaging must be 26.3")
+
+
+def target_schema(doc):
     fields(doc["target"], ["marker_environment", "wheel_tags"])
     env = doc["target"]["marker_environment"]
     fields(env, ENV_KEYS)
@@ -158,45 +157,62 @@ def schema(doc):
     tags = doc["target"]["wheel_tags"]
     need(isinstance(tags, list) and 0 < len(tags) <= 2048 and all(isinstance(t, str) and len(t) < 128 for t in tags)
          and tags == sorted(set(tags)), "LIMIT", "wheel tags")
+
+
+def artifact_schema(a):
+    fields(a, ["sha256", "filename", "size", "name", "version", "metadata_sha256", "metadata_file", "origin"])
+    for key in ["sha256", "metadata_sha256"]:
+        need(isinstance(a[key], str) and HEX.fullmatch(a[key]), "SCHEMA", key)
+    need(isinstance(a["filename"], str) and Path(a["filename"]).name == a["filename"]
+         and a["filename"].isascii(), "PATH", "wheel basename")
+    need(type(a["size"]) is int and 0 < a["size"] <= MAX_WHEEL, "LIMIT", "wheel size")
+    need(a["name"] == canonicalize_name(a["name"], validate=True) and a["version"] == str(Version(a["version"])),
+         "INVENTORY", "canonical name/version")
+    origin = a["origin"]
+    need(isinstance(origin, dict) and origin.get("kind") in ["pypi", "candidate", "synthetic"], "ORIGIN", "kind")
+    fields(origin, ["kind", "url", "pypi_json"] if origin["kind"] == "pypi" else ["kind", "file"])
+    if origin["kind"] == "pypi":
+        u = urllib.parse.urlsplit(origin["url"])
+        need(u.scheme == "https" and u.hostname == "files.pythonhosted.org" and not u.username
+             and not u.query and not u.fragment, "ORIGIN", "pinned public wheel URL")
+        need(origin["pypi_json"] == f"https://pypi.org/pypi/{a['name']}/{a['version']}/json", "ORIGIN", "PyPI version URL")
+
+
+def case_schema(case, ids):
+    fields(case, ["id", "kind", "artifact_ids", "root", "extras", "forbidden", "required", "graph", "graph_sha256", "reference"])
+    need(case["kind"] in ["real-install", "synthetic-control"], "CASE", "kind")
+    selected = case["artifact_ids"]
+    need(isinstance(selected, list) and 0 < len(selected) <= 16 and len(selected) == len(set(selected))
+         and set(selected) <= ids, "INVENTORY", "case selection")
+    for key in ["extras", "forbidden", "required"]:
+        value = case[key]
+        need(isinstance(value, list) and len(value) <= 4 and all(isinstance(x, str) and x == canonicalize_name(x, validate=True)
+             for x in value) and value == sorted(set(value)), "CASE", key)
+    need(not set(case["forbidden"]) & set(case["required"]), "CASE", "inconsistent policy")
+    need(case["root"] == canonicalize_name(case["root"], validate=True), "CASE", "root")
+
+
+def schema(doc):
+    fields(doc, ["schema", "source", "tools", "contract_sha256", "target", "artifacts", "cases"])
+    need(doc["schema"] == SCHEMA, "SCHEMA", "version")
+    source_schema(doc)
+    fields(doc["tools"], ["packaging", "collector_sha256", "audit_sha256", "build"])
+    need(doc["tools"]["packaging"] == packaging.__version__ == "26.3", "TOOLCHAIN", "packaging must be 26.3")
+    target_schema(doc)
     arts, cases = doc["artifacts"], doc["cases"]
     need(isinstance(arts, list) and 0 < len(arts) <= 32 and isinstance(cases, list) and 0 < len(cases) <= 8,
          "LIMIT", "artifact/case inventory")
     ids = set()
     for a in arts:
-        fields(a, ["sha256", "filename", "size", "name", "version", "metadata_sha256", "metadata_file", "origin"])
-        for key in ["sha256", "metadata_sha256"]:
-            need(isinstance(a[key], str) and HEX.fullmatch(a[key]), "SCHEMA", key)
+        artifact_schema(a)
         need(a["sha256"] not in ids, "INVENTORY", "duplicate artifact")
         ids.add(a["sha256"])
-        need(isinstance(a["filename"], str) and Path(a["filename"]).name == a["filename"]
-             and a["filename"].isascii(), "PATH", "wheel basename")
-        need(type(a["size"]) is int and 0 < a["size"] <= MAX_WHEEL, "LIMIT", "wheel size")
-        need(a["name"] == canonicalize_name(a["name"], validate=True) and a["version"] == str(Version(a["version"])),
-             "INVENTORY", "canonical name/version")
-        origin = a["origin"]
-        need(isinstance(origin, dict) and origin.get("kind") in ["pypi", "candidate", "synthetic"], "ORIGIN", "kind")
-        fields(origin, ["kind", "url", "pypi_json"] if origin["kind"] == "pypi" else ["kind", "file"])
-        if origin["kind"] == "pypi":
-            u = urllib.parse.urlsplit(origin["url"])
-            need(u.scheme == "https" and u.hostname == "files.pythonhosted.org" and not u.username
-                 and not u.query and not u.fragment, "ORIGIN", "pinned public wheel URL")
-            need(origin["pypi_json"] == f"https://pypi.org/pypi/{a['name']}/{a['version']}/json", "ORIGIN", "PyPI version URL")
     need(sum(a["size"] for a in arts) <= 64 * 1024 * 1024, "LIMIT", "total wheel bytes")
     names = set()
     for case in cases:
-        fields(case, ["id", "kind", "artifact_ids", "root", "extras", "forbidden", "required", "graph", "graph_sha256", "reference"])
+        case_schema(case, ids)
         need(isinstance(case["id"], str) and case["id"] not in names, "CASE", "unique id")
         names.add(case["id"])
-        need(case["kind"] in ["real-install", "synthetic-control"], "CASE", "kind")
-        selected = case["artifact_ids"]
-        need(isinstance(selected, list) and 0 < len(selected) <= 16 and len(selected) == len(set(selected))
-             and set(selected) <= ids, "INVENTORY", "case selection")
-        for key in ["extras", "forbidden", "required"]:
-            value = case[key]
-            need(isinstance(value, list) and len(value) <= 4 and all(isinstance(x, str) and x == canonicalize_name(x, validate=True)
-                 for x in value) and value == sorted(set(value)), "CASE", key)
-        need(not set(case["forbidden"]) & set(case["required"]), "CASE", "inconsistent policy")
-        need(case["root"] == canonicalize_name(case["root"], validate=True), "CASE", "root")
 
 
 def inventory(doc, case):
@@ -213,6 +229,19 @@ def inventory(doc, case):
     return out
 
 
+def active_dependencies(name, meta, requested, metas, env):
+    for req in meta["requirements"]:
+        enabled = req.marker is None or any(
+            req.marker.evaluate(environment=dict(env, extra=e), context="metadata")
+            for e in ["", *sorted(requested)])
+        if not enabled:
+            continue
+        dep = canonicalize_name(req.name, validate=True)
+        need(dep in metas, "MISSING_DEPENDENCY", f"{name} -> {dep}")
+        need(req.specifier.contains(metas[dep]["version"], prereleases=True), "VERSION", f"{name}: {req}")
+        yield dep, {canonicalize_name(e, validate=True) for e in req.extras}
+
+
 def reconstruct(doc, case, raw_metadata):
     selected = inventory(doc, case)
     metas = {n: metadata(raw_metadata[a["sha256"]]) for n, a in selected.items()}
@@ -227,20 +256,16 @@ def reconstruct(doc, case, raw_metadata):
         name = queue.pop(0)
         m, requested = metas[name], active[name]
         need(requested <= set(m["extras"]), "EXTRA", f"unknown extra for {name}")
-        for req in m["requirements"]:
-            enabled = req.marker is None or any(req.marker.evaluate(environment=dict(env, extra=e), context="metadata")
-                                                for e in ["", *sorted(requested)])
-            if not enabled:
-                continue
-            dep = canonicalize_name(req.name, validate=True)
-            need(dep in metas, "MISSING_DEPENDENCY", f"{name} -> {dep}")
-            need(req.specifier.contains(metas[dep]["version"], prereleases=True), "VERSION", f"{name}: {req}")
+        for dep, extra in active_dependencies(name, m, requested, metas, env):
             edges.add((name, dep))
-            extra = {canonicalize_name(e, validate=True) for e in req.extras}
             if dep not in active or not extra <= active[dep]:
                 active.setdefault(dep, set()).update(extra)
                 queue.append(dep)
     need(set(active) == set(selected), "ORPHAN_INVENTORY", "selected wheels must exactly equal the reachable closure")
+    return graph_from_closure(case, selected, metas, active, edges)
+
+
+def graph_from_closure(case, selected, metas, active, edges):
     names = sorted(set(selected) | set(case["forbidden"]) | set(case["required"]))
     need(len(names) <= 16 and len(edges) <= 64, "LIMIT", "graph vertices/edges")
     index = {n: i for i, n in enumerate(names)}
@@ -297,6 +322,24 @@ def fetch(doc, root, cache):
         path.write_bytes(raw)
 
 
+def verify_provenance(doc, a, wheel):
+    if a["origin"]["kind"] == "candidate":
+        with zipfile.ZipFile(wheel) as z:
+            files = {n: digest(z.read(n)) for n in z.namelist()
+                     if n.startswith(("warrant/", "warrant_agent/")) and not n.endswith("/")}
+        need(files == doc["source"]["package_files"], "SOURCE", "candidate package files")
+    if a["name"] == "sigma-glyph":
+        with zipfile.ZipFile(wheel) as z:
+            files = {}
+            for name in ["sigma_glyph.py", "sigma_resume.py", "sigma_provider.py"]:
+                need(z.getinfo(name).file_size <= 1024 * 1024, "LIMIT", "provider source size")
+                files[name] = digest(z.read(name))
+        identity = digest(canon({"provider": "sigma-resume", "files": files}))
+        need(a["version"] == "0.8.0" and identity == PROVIDER, "PROVIDER", "reviewed source bytes")
+        return identity
+    return None
+
+
 def verify(doc, root, cache, *, metadata_only=False):
     schema(doc)
     for field, path in [("audit_sha256", Path(__file__)), ("collector_sha256", root.parent / "collect.py")]:
@@ -314,19 +357,8 @@ def verify(doc, root, cache, *, metadata_only=False):
             wheel = artifact_path(root, cache, a)
             observed, _ = read_wheel(wheel, a)
             need(observed == meta, "METADATA_DIGEST", "cached metadata differs from wheel")
-            if a["origin"]["kind"] == "candidate":
-                with zipfile.ZipFile(wheel) as z:
-                    files = {n: digest(z.read(n)) for n in z.namelist()
-                             if n.startswith(("warrant/", "warrant_agent/")) and not n.endswith("/")}
-                need(files == doc["source"]["package_files"], "SOURCE", "candidate package files")
-            if a["name"] == "sigma-glyph":
-                with zipfile.ZipFile(wheel) as z:
-                    files = {}
-                    for name in ["sigma_glyph.py", "sigma_resume.py", "sigma_provider.py"]:
-                        need(z.getinfo(name).file_size <= 1024 * 1024, "LIMIT", "provider source size")
-                        files[name] = digest(z.read(name))
-                identity = digest(canon({"provider": "sigma-resume", "files": files}))
-                need(a["version"] == "0.8.0" and identity == PROVIDER, "PROVIDER", "reviewed source bytes")
+            identity = verify_provenance(doc, a, wheel)
+            if identity is not None:
                 provider_ids.append(identity)
         raw_metas[a["sha256"]] = meta
     outcomes = []
@@ -354,7 +386,7 @@ def main():
     try:
         raw = read_bounded(args.manifest, 1024 * 1024)
         need(digest(raw) == args.manifest_sha256, "MANIFEST_PIN", "operator pin mismatch")
-        doc = load(args.manifest)
+        doc = loads(raw)
         need(canon(doc) == raw, "JSON", "noncanonical application manifest")
         schema(doc)
         root, cache = args.manifest.parent.resolve(), args.wheelhouse.resolve()
@@ -363,7 +395,7 @@ def main():
         out = verify(doc, root, cache, metadata_only=args.mode == "metadata-only")
         print(json.dumps(out, sort_keys=True, indent=2))
         return 0
-    except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile, UnicodeError) as e:
+    except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile) as e:
         print(json.dumps({"status": "REFUSED", "code": getattr(e, "code", "MALFORMED"), "detail": str(e)}))
         return 2
 

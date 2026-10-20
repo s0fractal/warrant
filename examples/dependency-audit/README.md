@@ -75,7 +75,7 @@ The native base and compute venvs each ran pip install with `--only-binary=:all:
 hashes to PyPI version JSON entries, then checked downloaded bytes. It also
 compared every bundled candidate package file against Git blobs at the source SHA.
 
-`collect.py` accepts those two original reports, source repository and candidate
+The collector checks source blobs in its own repository. `collect.py` accepts those two original reports and candidate
 wheel, writes a **new** fixture directory and refuses to overwrite one. Repeating
 today's pip resolution is a new experiment, not reproduction of the frozen one.
 Raw acquisition reports remain host-local because they include local file URLs;

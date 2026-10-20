@@ -1,8 +1,8 @@
 # Local validation of the input stage
 
-2026-10-19. These are local executions; the external application round has not run.
+2026-10-20. These are local executions; the external application round has not run.
 
-- Manifest pin: `fd1fda658ad9a8214c98cb2b12da0670597a01540e40f22108448f8e0e41d648`.
+- Manifest pin: `7d722e2664dc57f1618b3bd7c47d3ffbb77d775f770315a8ebc1dcf0b6645653`.
 - Candidate source: `698afa9c5e27f9f30ea065c3b8f86bc2b682912a`.
 - Real candidate wheel SHA-256: `47c896fc1b2adb290c8b28791d585b3316ee49e6e872b26b7ffa659c7ab55e09`.
 - Two local wheel builds with the recorded toolchain/SOURCE_DATE_EPOCH matched
@@ -21,17 +21,20 @@
 | compute | 6 | 4 | TRUE |
 | transitive-prohibited (synthetic) | 4 | 2 | FALSE |
 
-`selftest.py --wheelhouse <cache>`: **32 controls PASS**, including indirect
+`selftest.py --wheelhouse <cache>`: **33 controls PASS**, including indirect
 reachability, extras propagation, cycle termination, marker-environment changes,
 version mismatches, duplicate keys/headers/edges, unknown members/extras, missing
 dependencies and orphan inventory, forged graph with unchanged TRUE answer,
 changed/missing wheel, rehashed same-version provider substitution, arbitrary URL,
 source-package mismatch, bad operator pin and unchanged-answer/different-context
-binding. A discovered host-path portability defect (macOS `/var` cache aliases)
+binding, plus replacing a manifest file after its pinned snapshot was read.
+SonarCloud-triggered refactoring removes the manifest reread and binds the
+collector to its own checkout. Artifact bytes and all three graph identities
+remain unchanged. A discovered host-path portability defect (macOS `/var` cache aliases)
 was corrected by canonicalizing the operator root while still rejecting symlinks
 inside it; its regression is included.
 
-The same 32 controls passed after copying the entire kit/cache outside the source
+The same 33 controls passed after copying the entire kit/cache outside the source
 checkout into a fresh Python 3.12 venv containing only `packaging==26.3` (besides
 pip), with socket connections disabled through that venv's `sitecustomize.py`.
 No Warrant or Sigma import was available or required. A separate empty-cache

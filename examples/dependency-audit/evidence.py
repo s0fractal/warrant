@@ -11,7 +11,7 @@ import audit as A
 def prepare(manifest, operator_pin, case_id, wheelhouse):
     raw = A.read_bounded(manifest, 1024 * 1024)
     A.need(A.digest(raw) == operator_pin, "MANIFEST_PIN", "operator's exact instance")
-    doc = A.load(manifest)
+    doc = A.loads(raw)
     A.need(A.canon(doc) == raw, "JSON", "canonical instance")
     verified = A.verify(doc, manifest.parent.resolve(), wheelhouse.resolve())
     cases = [c for c in doc["cases"] if c["id"] == case_id]

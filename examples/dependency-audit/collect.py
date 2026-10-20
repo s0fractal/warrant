@@ -41,11 +41,43 @@ def synthetic(name, requirements):
     return out.getvalue(), name.replace("-", "_") + "-2.0.0.dev0-py3-none-any.whl"
 
 
+def verify_source(package_files):
+    for path, h in package_files.items():
+        original = subprocess.check_output(["git", "show", f"{SOURCE}:{path}"],
+                                           cwd=Path(__file__).resolve().parents[2])
+        A.need(A.digest(original) == h, "SOURCE", path)
+
+
+def collect_report(name, reports, env, candidate_id, cache, add):
+    report = json.loads((reports / f"{name}-report.json").read_bytes())
+    A.need(report["environment"] == env, "ENVIRONMENT", "pip report differs from collector environment")
+    chosen = []
+    for item in report["install"]:
+        n, v = canonicalize_name(item["metadata"]["name"]), item["metadata"]["version"]
+        if n == "warrant-loops":
+            A.need(item["download_info"]["archive_info"]["hashes"]["sha256"] == candidate_id, "SOURCE", "report candidate")
+            chosen.append(candidate_id)
+            continue
+        url = item["download_info"]["url"]
+        sha = item["download_info"]["archive_info"]["hashes"]["sha256"]
+        api = f"https://pypi.org/pypi/{n}/{v}/json"
+        pypi = json.loads(public_bytes(api, 4 * 1024 * 1024))
+        matches = [f for f in pypi["urls"] if f["url"] == url and f["digests"]["sha256"] == sha]
+        A.need(len(matches) == 1, "ORIGIN", "pip report must match PyPI version JSON")
+        entry = matches[0]
+        A.need(urllib.parse.urlsplit(url).hostname == "files.pythonhosted.org" and url.startswith("https://"), "ORIGIN", url)
+        filename = entry["filename"]
+        wheelpath = cache / sha / filename
+        data = wheelpath.read_bytes() if wheelpath.exists() else public_bytes(url, A.MAX_WHEEL)
+        A.need(A.digest(data) == sha and len(data) == entry["size"], "WHEEL_DIGEST", filename)
+        chosen.append(add(data, filename, {"kind": "pypi", "url": url, "pypi_json": api}))
+    return sorted(chosen)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--reports", type=Path, required=True, help="directory with base-report.json and compute-report.json")
     p.add_argument("--candidate", type=Path, required=True)
-    p.add_argument("--source", type=Path, required=True)
     p.add_argument("--observations", type=Path, required=True)
     p.add_argument("--fixture", type=Path, required=True)
     p.add_argument("--wheelhouse", type=Path, required=True)
@@ -89,34 +121,10 @@ def main():
     with zipfile.ZipFile(candidate) as z:
         package_files = {n: A.digest(z.read(n)) for n in z.namelist()
                          if n.startswith(("warrant/", "warrant_agent/")) and not n.endswith("/")}
-    for path, h in package_files.items():
-        original = subprocess.check_output(["git", "-C", str(a.source), "show", f"{SOURCE}:{path}"])
-        A.need(A.digest(original) == h, "SOURCE", path)
+    verify_source(package_files)
     env = default_environment()
     for name in ["base", "compute"]:
-        report = json.loads((a.reports / f"{name}-report.json").read_bytes())
-        A.need(report["environment"] == env, "ENVIRONMENT", "pip report differs from collector environment")
-        chosen = []
-        for item in report["install"]:
-            n, v = canonicalize_name(item["metadata"]["name"]), item["metadata"]["version"]
-            if n == "warrant-loops":
-                A.need(item["download_info"]["archive_info"]["hashes"]["sha256"] == candidate_id, "SOURCE", "report candidate")
-                chosen.append(candidate_id)
-                continue
-            url = item["download_info"]["url"]
-            sha = item["download_info"]["archive_info"]["hashes"]["sha256"]
-            api = f"https://pypi.org/pypi/{n}/{v}/json"
-            pypi = json.loads(public_bytes(api, 4 * 1024 * 1024))
-            matches = [f for f in pypi["urls"] if f["url"] == url and f["digests"]["sha256"] == sha]
-            A.need(len(matches) == 1, "ORIGIN", "pip report must match PyPI version JSON")
-            entry = matches[0]
-            A.need(urllib.parse.urlsplit(url).hostname == "files.pythonhosted.org" and url.startswith("https://"), "ORIGIN", url)
-            filename = entry["filename"]
-            wheelpath = cache / sha / filename
-            data = wheelpath.read_bytes() if wheelpath.exists() else public_bytes(url, A.MAX_WHEEL)
-            A.need(A.digest(data) == sha and len(data) == entry["size"], "WHEEL_DIGEST", filename)
-            chosen.append(add(data, filename, {"kind": "pypi", "url": url, "pypi_json": api}))
-        selected[name] = sorted(chosen)
+        selected[name] = collect_report(name, a.reports, env, candidate_id, cache, add)
     sig = [h for h in selected["compute"] if artifacts[h]["name"] == "sigma-glyph"]
     A.need(len(sig) == 1 and artifacts[sig[0]]["version"] == "0.8.0", "VERSION", "Sigma pin")
     synthetic_ids = []

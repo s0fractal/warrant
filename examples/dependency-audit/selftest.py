@@ -9,6 +9,7 @@ import sys
 import tempfile
 import shutil
 import zipfile
+from unittest.mock import patch
 
 import audit as A
 import evidence
@@ -57,7 +58,7 @@ def main(cache):
     manifest = root / "manifest.json"
     pin = (root / "manifest.sha256").read_text().strip()
     check("frozen manifest pin", A.digest(manifest.read_bytes()) == pin)
-    doc = A.load(manifest)
+    doc = A.loads(manifest.read_bytes())
     baseline = A.verify(doc, root, cache)
     check("full wheel bytes verified, not Sigma execution", baseline["binding"] == "WHEEL_BYTES_VERIFIED" and baseline["sigma_execution"] == "NOT_RUN")
     check("real cases positive, transitive control negative", [c["reference"]["predicate"] for c in baseline["cases"]] == [True, True, False])
@@ -108,9 +109,9 @@ def main(cache):
         check("operator cache root resolves host aliases", A.verify(doc, root, alias)["binding"] == "WHEEL_BYTES_VERIFIED")
         wrong_json = tmp / "wrong.json"
         wrong_json.write_text('{"a":1,"a":2}')
-        refuses("duplicate JSON keys", "JSON", lambda: A.load(wrong_json))
+        refuses("duplicate JSON keys", "JSON", lambda: A.loads(wrong_json.read_bytes()))
         wrong_json.write_text('{"a":1.0}')
-        refuses("JSON floats", "JSON", lambda: A.load(wrong_json))
+        refuses("JSON floats", "JSON", lambda: A.loads(wrong_json.read_bytes()))
         a = next(a for a in doc["artifacts"] if a["origin"]["kind"] == "candidate")
         original = A.artifact_path(root, cache, a)
         changed = tmp / a["filename"]
@@ -153,6 +154,20 @@ def main(cache):
             other_ev = evidence.prepare(other, other_pin, "base", cache)
             check("same computed answer, different target binding", ev["reference_only"] == other_ev["reference_only"] and ev["binding_id"] != other_ev["binding_id"])
             refuses("old pin cannot authorize another observation", "MANIFEST_PIN", lambda: evidence.prepare(other, pin, "base", cache))
+            pinned_bytes = manifest.read_bytes()
+            other.write_bytes(pinned_bytes)
+            read_original = A.read_bounded
+
+            def replace_after_read(path, *args):
+                raw = read_original(path, *args)
+                if path == other:
+                    other.write_bytes(A.canon(changed_doc))
+                return raw
+
+            with patch.object(A, "read_bounded", side_effect=replace_after_read):
+                snapshot_ev = evidence.prepare(other, pin, "base", cache)
+            check("manifest replacement cannot change the pinned snapshot",
+                  snapshot_ev["binding_id"] == ev["binding_id"])
         finally:
             other.unlink(missing_ok=True)
     print(f"DEPENDENCY-AUDIT: {len(passed)} controls PASS; Sigma execution/term binding and application acceptance NOT_RUN")
