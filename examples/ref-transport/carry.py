@@ -26,6 +26,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,7 @@ import time
 from pathlib import Path
 
 NAMESPACE = "warrant-pin"
+PRINCIPAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$")
 PIN_SCHEMA = "warrant-ref-pin/1"
 MAX_PACKET = 16 * 1024 * 1024
 
@@ -140,10 +142,12 @@ def sign_pin(signer_key, doc):
 
 def verify_pin(allowed_signers, data, sig):
     """The principal in `allowed_signers` whose key signed `data` in our namespace, or None."""
+    # A principal is a plain token: it becomes a command argument, so file content
+    # that is not one is skipped rather than handed to ssh-keygen (Sonar S6350).
     principals = []
     for line in Path(allowed_signers).read_text().splitlines():
         parts = line.split()
-        if len(parts) >= 3 and not line.startswith("#"):
+        if len(parts) >= 3 and not line.startswith("#") and PRINCIPAL.match(parts[0]):
             principals.append(parts[0])
     with tempfile.TemporaryDirectory() as d:
         s = Path(d) / "pin.sig"
