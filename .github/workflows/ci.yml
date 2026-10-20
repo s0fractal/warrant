@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           SIGMA=$(python -c 'import re; print(re.search(r"sigma-glyph==([0-9][0-9.]*)", open("pyproject.toml").read()).group(1))')
           python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" .
-          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0' "sigma-glyph==$SIGMA"
+          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0' "sigma-glyph==$SIGMA" 'packaging==26.3'
           ls "$RUNNER_TEMP/wh"
 
       - name: Base install has no provider, and says so
@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv "$RUNNER_TEMP/v"
-          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-loops[mcp]' sigma-glyph
+          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-loops[mcp]' sigma-glyph 'packaging==26.3'
           "$RUNNER_TEMP/v/bin/python" -m sigma_provider | tail -1
           SITE=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)')
           echo "WARRANT_IMPL=$SITE" >> "$GITHUB_ENV"
@@ -88,6 +88,20 @@ jobs:
           "$AUDIT_PY" "$AUDIT_KIT/audit.py" fetch --manifest "$AUDIT_KIT/fixture/manifest.json" \
             --manifest-sha256 "$AUDIT_PIN" --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
           "$AUDIT_PY" "$AUDIT_KIT/selftest.py" --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
+
+      - name: Dependency-audit application handoff (reviewed encoder, both roles, binding controls, local readback)
+        run: |
+          set -euo pipefail
+          AUDIT_KIT=examples/dependency-audit
+          AUDIT_PIN=7d722e2664dc57f1618b3bd7c47d3ffbb77d775f770315a8ebc1dcf0b6645653
+          EVIDENCE="$RUNNER_TEMP/dependency-audit-evidence"
+          mkdir -p "$EVIDENCE"
+          for c in base compute transitive-prohibited; do
+            python "$AUDIT_KIT/evidence.py" --manifest "$AUDIT_KIT/fixture/manifest.json" --manifest-sha256 "$AUDIT_PIN" \
+              --case "$c" --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels" > "$EVIDENCE/kit-evidence-$c.json"
+          done
+          python work/dependency-audit-sigma/reach.py selftest "$EVIDENCE"
+          python examples/dependency-audit/handoff.py selftest --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
 
       - name: Scenarios through the installed `warrant` command
         working-directory: ${{ runner.temp }}

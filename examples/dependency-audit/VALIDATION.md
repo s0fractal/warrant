@@ -45,3 +45,27 @@ Sigma graph evaluation, term/environment binding, foreign resume of this workloa
 Warrant application acceptance, external performance and remote execution remain
 **NOT_RUN**. Native-source/install correspondence is a collector observation;
 source/index completeness stays UNATTESTED.
+
+## Application handoff stage (#151), local roles
+
+2026-10-20, `handoff.py selftest`, Apple Silicon, Python 3.15, sigma-glyph 0.8.0
+from PyPI, encoder `work/dependency-audit-sigma/reach.py` at `2348215116e8…`.
+**12 controls PASS**: reviewed-encoder binding (other bytes refuse), deterministic
+timing-free instance, producer pause of all three cases, wrong packet pin, packet
+for another frozen instance, swapped instance blob caught at delivery, receiver
+verdicts equal the frozen references, every binding control with its expected
+code, producer-side readback with its own replay, and a receipt of another case
+refused in readback. Per case the receiver also records `damaged_delivery`,
+`wrong_root_resume = REFUSED`, `insufficient_budget = [PAUSED, no receipt]` and
+`unaccepted_provider = OPEN`.
+
+| Case | ATP (pause / total) | Rebuild + binding controls | Resume incl. replay | Verdict |
+|---|---:|---:|---:|---|
+| base | 2,688,425 / 5,376,851 | 18.3 s | 14.2 s | TRUE |
+| compute | 2,610,112 / 5,220,225 | 17.7 s | 13.8 s | TRUE |
+| transitive-prohibited | 370,460 / 740,920 | 3.9 s | 2.1 s | FALSE |
+
+ATP is canonical; wall times are this host's and include the capped admission
+run, ten binding refusals (two of them full kit re-verifications on a copied
+cache), two refused/paused resumes and the provider's own replay. Both roles ran
+on one host: this establishes the protocol and the refusals, not remote execution.
