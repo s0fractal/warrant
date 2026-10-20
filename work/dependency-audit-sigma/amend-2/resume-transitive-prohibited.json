@@ -1,0 +1,23 @@
+{
+  "computation_id": "554f361555859fc891df486c5e1f0776000d6a6cba3ed42aba4527224018d4b6",
+  "first": {
+    "checkpoint_sha256": "62daa92addcf02966f85e2ff4159aa069a209b30c14697204cf58d9eb1141c10",
+    "credit": 370460,
+    "outcome": "PAUSED",
+    "spent": 370083,
+    "wall_s": 2.82
+  },
+  "input": "094ad18b6544a956790eebda086f10c92e74605c9216aa79f20ed48f26ffa79e",
+  "matches_admission": true,
+  "resume": {
+    "basis": "REPLAYED",
+    "outcome": "NORMAL_FORM",
+    "peak_semantic_size": 25931,
+    "result": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
+    "spent_total": 740920,
+    "status": "ADVANCED",
+    "verdict": false,
+    "wall_s_incl_replay": 5.29
+  },
+  "workload_id": "778f39979e446c6138bf91a6f6c4b1184c84871411bf98f493813309f3db27c1"
+}

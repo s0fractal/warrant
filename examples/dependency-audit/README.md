@@ -95,3 +95,64 @@ receiver and preserve the separate whole-instance binding. The Warrant wrapper
 must still bind the encoder, actual term/environment/expected normal form and
 target, record observations and independent acceptance, and verify the returned
 artifact. No existing trust/profile/release settings are changed by this kit.
+
+## Application handoff (warrant #151)
+
+`handoff.py` carries the frozen audit through Warrant 2 as signed records, with
+the reviewed Sigma encoder from `work/dependency-audit-sigma/reach.py` (exact
+bytes `2348215116e8…`, the amendment Codex accepted for sigma-glyph#68). Run it
+from a venv that has `warrant-loops[compute]` and `packaging==26.3` installed;
+every agent operation goes through the installed `warrant-agent` CLI.
+
+An **instance** is the application binding of one case: manifest pin, source
+commit, contract/collector identities, graph and evaluation digests, encoder
+identity, provider, runtime, program/input/environment identities, the expected
+normal form, total ATP and pause credit. It carries no host timing. The producer
+pauses each case at its pause credit and files an attested handoff duty whose
+evidence is the instance, the input evidence, the public workload, the checkpoint,
+the state and the environment manifest:
+
+```sh
+python "$KIT/handoff.py" produce --work /new/private/producer --packet packet.json \
+  --manifest-sha256 "$PIN" --wheelhouse "$CACHE"
+```
+
+The receiver obtains the packet digest, the manifest pin and the provider
+identity from the operator, never from the packet, and rebuilds the instance on
+its own host from the exact wheel bytes and the encoder before anything else:
+
+```sh
+python "$KIT/handoff.py" receive --work /new/private/receiver --packet packet.json \
+  --packet-sha256 <operator pin> --manifest-sha256 "$PIN" \
+  --accept-provider 0caff793d00dd798fa0af89517674c2ca562e1d517e7c969cc40617778c776c5 \
+  --wheelhouse "$CACHE" --reply reply.json [--base64]
+```
+
+Receive refuses before any duty is filed when the sent instance is not what this
+host rebuilds (`BINDING`: forged graph digest, other environment, other root, stale
+source revision, other encoder), when a wheel changed or is missing
+(`WHEEL_DIGEST`, `MISSING_WHEEL`), when the operator pin is wrong (`MANIFEST_PIN`),
+or when the sender's workload claims another expected result or id
+(`WORKLOAD_MISMATCH`). A matching computed answer under a wrong binding is therefore
+never credited. It then continues the foreign checkpoint through the provider's
+checked `resume` (a wrong root is `REFUSED`; an insufficient budget pauses with
+no receipt), files its own `compute` duty and a REPLAYED closure citing the
+receipt, checks that removing the provider from its profile removes the credit,
+and accepts the producer's handoff item exactly; a fresh-process retry returns the
+same acceptance record. The reply carries the receiver's signed records and blobs.
+
+The producer side reads the reply back, rebuilds the instance again, checks that
+the receiver's compute condition names it, that the receipt extends the sent
+checkpoint, that the closure and acceptance are bound to the exact items, and
+replays the receipt itself:
+
+```sh
+python "$KIT/handoff.py" verify --work /new/private/verifier --packet packet.json \
+  --reply reply.json --reply-sha256 <digest from the receiver's message> \
+  --manifest-sha256 "$PIN" --wheelhouse "$CACHE"
+```
+
+`python "$KIT/handoff.py" selftest --wheelhouse "$CACHE"` runs both roles on one
+host for all three cases plus packet and reply substitution controls. Local
+roles establish no remote execution; a receiver's report and signature do not
+attest the machine it ran on, and source/index completeness stays UNATTESTED.
