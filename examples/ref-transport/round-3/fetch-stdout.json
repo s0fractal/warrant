@@ -1,0 +1,14 @@
+{
+  "me": "producer",
+  "deliveries": [
+    {
+      "state": "PINNED",
+      "principal": "owner",
+      "kind": "reply",
+      "from": "github-runner",
+      "sha256": "186235335a8c93546577958e12dae5b0dc894dc24616fe968ab3a49d88710fff",
+      "delivered": true,
+      "file": "/Users/s0fractal/Projects/.worktrees/round-3/inbox/186235335a8c93546577958e12dae5b0dc894dc24616fe968ab3a49d88710fff.json"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "ref": "refs/warrant/out/producer/github-runner/15f2d3d6283834cd13fb56f49aa492fcd4f9660415ccc559de624d1cb7847af9",
+  "commit": "0b8a5d6971e286459de9f422b9e32de2b7d26bd6",
+  "sha256": "15f2d3d6283834cd13fb56f49aa492fcd4f9660415ccc559de624d1cb7847af9",
+  "size": 1129455,
+  "pin_needed": "refs/warrant/pins/github-runner/15f2d3d6283834cd13fb56f49aa492fcd4f9660415ccc559de624d1cb7847af9.<signer fingerprint>"
+}
