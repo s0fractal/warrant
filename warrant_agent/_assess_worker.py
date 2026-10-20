@@ -21,7 +21,7 @@ def main(vdir):
         provider = P.Provider(sources, vdir / "provider")
     workspace = tuple(meta["repo"]) if meta["repo"] else None
     rep = E.assess(Snapshot.read(vdir), trust, meta["as_of"], meta["profile"], current=meta["current"],
-                   workspace=workspace, provider=provider)
+                   workspace=workspace, provider=provider, replay_cache=meta.get("replay_cache"))
     tmp = vdir / "report.json.tmp"
     tmp.write_text(json.dumps(rep, sort_keys=True))
     tmp.replace(vdir / "report.json")

@@ -52,8 +52,9 @@ def profile(uses=None, results_by=(), targets=(), grant_roots=(), challengers=()
 # ---------------------------------------------------------------- the view
 
 class View:
-    def __init__(self, snapshot, trust, as_of, prof, provider):
+    def __init__(self, snapshot, trust, as_of, prof, provider, cache=None):
         self.snap, self.as_of, self.profile, self.provider = snapshot, as_of, prof, provider
+        self.cache = cache      # the recipient's ReplayCache, or None: cost, never an answer
         good, self.invalid = snapshot.authentic(trust)
         self.recs = {rid: r for rid, r in good.items() if r["at"] <= as_of}
         self.later = sorted(rid for rid, r in good.items() if r["at"] > as_of)
@@ -234,7 +235,7 @@ def _replayed(view, cond, m):
         return V("UNVERIFIED", f"provider {view.provider.id[:16]} is not one this recipient accepts")
     fn = P.replay_cycle if want == "cycle" else P.replay
     try:
-        label, why = fn(view.provider, view.snap, cond, docs[0], view.profile["targets"])
+        label, why = fn(view.provider, view.snap, cond, docs[0], view.profile["targets"], cache=view.cache)
     except P.ProviderError as e:
         return V("UNVERIFIED", str(e))
     return V("ADMITTED", label=label) if label else V("UNVERIFIED", why)
@@ -573,15 +574,19 @@ def _questions(view, duties):
     return out
 
 
-def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None):
+def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None):
     """Assess one view. `current` is the set of revisions the recipient treats as
     current; `workspace` is (repository path, commit) for subject_changed triggers;
-    `provider` is a captured compute.Provider (None: replays are UNVERIFIED)."""
+    `provider` is a captured compute.Provider (None: replays are UNVERIFIED);
+    `replay_cache` is a directory of this recipient's earlier verified replays
+    (SPEC §7: it changes cost, never the answer or the task; not part of the
+    assessment identity)."""
     why = profile_problem(prof)
     if why:
         raise ValueError(f"profile: {why}")
     ws = TR.Workspace(*workspace) if workspace is not None else None
-    view = View(snapshot, trust, as_of, prof, provider)
+    view = View(snapshot, trust, as_of, prof, provider,
+                cache=P.ReplayCache(replay_cache) if replay_cache is not None else None)
     duties = _assess_duties(view)
     for did, r in duties.items():
         for x in view.duties[did]["body"]["requires"] + view.duties[did]["body"]["serves"]:

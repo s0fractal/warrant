@@ -268,6 +268,51 @@ def main():
     sigma_env = subprocess.run([sys.executable, "-c", code], input=json.dumps(hs15), capture_output=True, text=True,
                                cwd=tempfile.gettempdir()).stdout.strip()
     check("C15", sigma_env == env15, "an environment blob is addressed by sigma_resume's environment_id", (sigma_env, env15))
+    # C16-C18: a receiver-local cache of verified replays (SPEC §7) changes cost, never the answer
+    class Counting(P.Provider):
+        """The pinned provider, counting its verify calls; `drift` appends a comment to
+        one module so the identity differs while the provider still works."""
+        def __init__(self, drift=b""):
+            src = dict(PROV.sources)
+            src["sigma_provider"] = src["sigma_provider"] + drift
+            super().__init__(src, PROV.where)
+            self.calls = 0
+
+        def call(self, op, args, blobs=None, timeout=600):
+            self.calls += op == "verify"
+            return super().call(op, args, blobs, timeout)
+
+    w = World()
+    inp, env, rt = term(w, "S K K (K I)")
+    _, ck, st, result = run(w, inp, env, rt, [100])
+    d = compute_duty(w, inp, env, rt, result)
+    w.close(d, basis="REPLAYED", evidence=[receipt(w, inp, env, ck, st, result)])
+    cache = str(Path(tempfile.mkdtemp()) / "replay-cache")
+    prov = Counting()
+    prof = E.profile(targets=[TARGET], providers=[prov.id])
+    cold = E.assess(w.store.snapshot(), w.trust, 10_000, prof, provider=prov, replay_cache=cache)
+    n_cold = prov.calls
+    warm = E.assess(w.store.snapshot(), w.trust, 10_000, prof, provider=prov, replay_cache=cache)
+    check("C16", n_cold == 1 and prov.calls == 1 and cold["assessment_id"] == warm["assessment_id"]
+          and cold["duties"][d]["disposition"] == warm["duties"][d]["disposition"] == "DISCHARGED"
+          and verdicts(cold, d) == verdicts(warm, d),
+          "the second assessment replays nothing and reports the same verdicts under the same identity",
+          (n_cold, prov.calls, verdicts(warm, d)))
+    part = Path(tempfile.mkdtemp()) / "store"
+    shutil.copytree(w.store.root, part)
+    for h in [h for h in w.store.snapshot().json_blob(env)["hashes"] if h != inp]:
+        (part / "blobs" / h).unlink()
+    from warrant.store import Snapshot
+    lacking = E.assess(Snapshot.read(part), w.trust, 10_000, prof, provider=prov, replay_cache=cache)
+    check("C17", lacking["duties"][d]["disposition"] == "OPEN" and "EVIDENCE_UNAVAILABLE" in last(lacking, d)["why"]
+          and prov.calls == 2,
+          "a cached replay never stands in for bytes the view lacks: the provider is asked, and says what it would say",
+          (verdicts(lacking, d), prov.calls))
+    other = Counting(drift=b"\n# a drifted copy\n")
+    prof2 = E.profile(targets=[TARGET], providers=[other.id])
+    rep2 = E.assess(w.store.snapshot(), w.trust, 10_000, prof2, provider=other, replay_cache=cache)
+    check("C18", other.id != prov.id and other.calls == 1 and rep2["duties"][d]["disposition"] == "DISCHARGED",
+          "the cache is keyed by the provider identity: another provider replays for itself", (other.calls, verdicts(rep2, d)))
     return finish("COMPUTE")
 
 
