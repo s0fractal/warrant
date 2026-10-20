@@ -1,0 +1,6 @@
+Metadata-Version: 2.3
+Name: warrant-loops
+Version: 2.0.0.dev0
+Requires-Dist: audit-bridge==2.0.0.dev0
+
+Synthetic metadata-only control. Never install.

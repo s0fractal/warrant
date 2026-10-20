@@ -1,0 +1,2 @@
+# Preserve exact third-party wheel METADATA, including terminal blank lines.
+fixture/metadata/*.txt -whitespace

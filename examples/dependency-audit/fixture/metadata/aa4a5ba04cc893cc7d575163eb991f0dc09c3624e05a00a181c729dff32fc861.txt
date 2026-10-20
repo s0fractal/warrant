@@ -1,0 +1,6 @@
+Metadata-Version: 2.3
+Name: audit-bridge
+Version: 2.0.0.dev0
+Requires-Dist: sigma-glyph==0.8.0
+
+Synthetic metadata-only control. Never install.
