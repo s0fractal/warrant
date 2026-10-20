@@ -45,7 +45,11 @@ jobs:
       - name: Install warrant from this checkout with the pinned sigma-glyph release
         run: |
           set -euo pipefail
-          python -m pip install --quiet '.[compute]' 'packaging==26.3'
+          # Exact versions, wheels only (Sonar S8541/S8544): the sigma-glyph release
+          # pyproject.toml names, and the kit's parsing dependency.
+          SIGMA=$(python -c 'import re; print(re.search(r"sigma-glyph==([0-9][0-9.]*)", open("pyproject.toml").read()).group(1))')
+          python -m pip install --quiet --only-binary :all: "sigma-glyph==$SIGMA" 'packaging==26.3' 'cryptography==50.0.2'
+          python -m pip install --quiet --no-deps --no-build-isolation .
           python -m sigma_provider | tail -1
           python -c 'import warrant.compute as P; p=P.Provider.capture(); assert p.id == "'"$PROVIDER"'", p.id; print("provider", p.id)'
 
