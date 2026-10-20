@@ -1,0 +1,49 @@
+{
+  "admission": {
+    "cap_atp": 10000000,
+    "exit": "normal_form",
+    "expected_result": "bc0c2fe26e44e2aed8ce500a74963bc270fd4a49ec0c2e4837ce7a64bb0a486c",
+    "oracle_wall_s": 0.801,
+    "pause_credit": 2610112,
+    "state": "ADMITTED",
+    "total_atp": 5220225,
+    "verdict": true
+  },
+  "computation_id": "e667690e78ce1b08f3a2e9d9d2e9ed2e56b93501e99406d74885f712be4ca894",
+  "cost_model": "atp/size-priced/adr-001+adr-003",
+  "encoder": "warrant-dep-policy/amend-1",
+  "encoder_source_sha256": "87a45c497896685ebf193b54b5c4f1c93c9a45f491c21394ee3670f141fa4e67",
+  "env_nodes": 349,
+  "environment_id": "16668b794f6774833654586b0462d1448f1b39d1d62133ddc746bdd6b3b85761",
+  "input_binding": {
+    "artifact_ids": [
+      "308fe8159618017826aadc98f09e82b7c186163b70406731e95db2080636e327",
+      "51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80",
+      "b457bc40c465f751a2ceae0a58922d87a4ce1295051fd6373210cbbe6a3eb3e5",
+      "f81b3b8f3d4e343550fa4baa0e479bba9f2d29ce9c2e9b51d1ce1718d7442fcf",
+      "fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb"
+    ],
+    "audit_sha256": "cfba275c345690ee4e06fd640f130c3a91a431bb45b5f1f46c6f057e21fef278",
+    "case": "compute",
+    "case_kind": "real-install",
+    "contract_sha256": "4a204ea9e573f72be39391b69a3fb76d917035255d5f21763bfbdc7376a317ea",
+    "evaluation_sha256": "ff8e44cd486f6aea191a0de4fa501ba6c125aebee936e12efaaf50bcdd015899",
+    "graph_sha256": "b6cf293f9c1236405e2bac958d949f57ca68afc01c06e830f5a1434b7bdf0751",
+    "manifest_sha256": "7d722e2664dc57f1618b3bd7c47d3ffbb77d775f770315a8ebc1dcf0b6645653",
+    "source_commit": "698afa9c5e27f9f30ea065c3b8f86bc2b682912a",
+    "target_sha256": "3844aff12b1de435eabd5116392f5f855aee405cc8f5e2537470799018443911"
+  },
+  "input_binding_id": "7bd47ae503a9bf12dbe3bca243e8edf09cd0d9dbad82ff7e1b52d6e8c0ca96d2",
+  "provider": "0caff793d00dd798fa0af89517674c2ca562e1d517e7c969cc40617778c776c5",
+  "runtime": "sigma-book1-0.6.0/hash-thunk/leftmost-outermost",
+  "schema": "warrant-dep-policy-workload/1",
+  "terms": {
+    "C": "d2fa2a55ae446c5530e352d928b0de64993e5e45176760ba76a86033426fa967",
+    "F": "1336e65f881ab2b130fae779fdac74ee08e925888731f02b77e2760def693fcf",
+    "Q": "d936ad0ec8e226f9ca950dfb77722dd14ae228c29540be124da37559040fff88",
+    "R": "24ca04b3f5a34f52b4f441c69ae6ee4c15add4b61641a295e9d94dd46a023d5e",
+    "input": "e47d0552b9ae4a6307cfb63f2a8fd680f0e979a19cf20e0de4b063d74dd63b6f",
+    "program": "4f8cd91909ecf4885cc58a6862afc7544822f14f4f091592a2cf4434f9ebcd7e"
+  },
+  "workload_id": "eff62e085092cac8bbb151c8a35eb2b2fcc2968469394f698f7cf6fa8ed9af94"
+}
