@@ -1,0 +1,29 @@
+{
+  "old_workload_id": "34f860effb238714dc8f8910fcf650b51fe2242cc95f8d663d69904bcf66bee6",
+  "actual_input_workload_id": "caf0b33dc73529d32bf276ff86e986c5e682931a618998330aa4d9bc75a225d0",
+  "input_binding_changed": true,
+  "result": {
+    "workload_id": "34f860effb238714dc8f8910fcf650b51fe2242cc95f8d663d69904bcf66bee6",
+    "input": "094ad18b6544a956790eebda086f10c92e74605c9216aa79f20ed48f26ffa79e",
+    "computation_id": "554f361555859fc891df486c5e1f0776000d6a6cba3ed42aba4527224018d4b6",
+    "first": {
+      "outcome": "PAUSED",
+      "spent": 370083,
+      "credit": 370460,
+      "checkpoint_sha256": "62daa92addcf02966f85e2ff4159aa069a209b30c14697204cf58d9eb1141c10",
+      "wall_s": 1.04
+    },
+    "resume": {
+      "status": "ADVANCED",
+      "basis": "REPLAYED",
+      "outcome": "NORMAL_FORM",
+      "result": "65cd957fee7ec9fb310bc9d9712cec1726c78f8026fda679ac8f237938a32098",
+      "verdict": false,
+      "spent_total": 740920,
+      "peak_semantic_size": 25931,
+      "wall_s_incl_replay": 1.95
+    },
+    "matches_admission": true
+  },
+  "wrong_workload_accepted": true
+}
