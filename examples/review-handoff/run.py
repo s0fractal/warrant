@@ -248,9 +248,38 @@ def verify(a):
                       'reviewer_acceptance': 'NOT_GIVEN'}, indent=2))
 
 
+def update(a):
+    """Import a signed review update into the existing receiver-owned workspace."""
+    packet = pinned(a.packet, a.pin)
+    p = Party(a.work)
+    state = C.loads(bounded(p.root / 'task-state.json'))
+    need(p.name == 'claude-68' and packet['format'] == FORMAT
+         and packet['stage'] == 'REVIEW_UPDATE' and packet['actor'] == 'codex-review'
+         and packet['task'] == state['task'] and packet['duty'] == state['producer_duty']
+         and packet['packet_sha256'] == state['packet_sha256'], 'update for another handoff')
+    trust = C.loads(bounded(p.root / 'trust.json'))
+    need(any(k['actor'] == 'codex-review' and k['public'] == packet['public'] for k in trust['keys']),
+         'reviewer key changed')
+    snap, good = p.import_(packet['package'], packet['duty'], packet['actor'])
+    tr = good[packet['transition']]
+    doc = snap.json_blob(packet['update'])
+    need(tr['type'] == 'transition' and tr['actor'] == 'codex-review'
+         and tr['body']['basis'] == 'ATTESTED' and not tr['body']['closes']
+         and doc is not None and doc['task'] == state['task']
+         and doc['packet_sha256'] == state['packet_sha256'], 'unbound review update')
+    evidence = sorted({packet['update'], *doc['attachments'].values()})
+    need(tr['body']['evidence'] == evidence, 'unsigned update attachments')
+    for h in evidence:
+        raw = snap.blob(h)
+        need(raw is not None, 'missing update evidence')
+        (p.root / 'inbox' / h).write_bytes(raw)
+    print(json.dumps({'review_update': doc, 'inbox': str(p.root / 'inbox'),
+                      'receiver_duty': state['duty'], 'reviewer_acceptance': 'NOT_GIVEN'}, indent=2))
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('mode', choices=['produce', 'receive', 'submit', 'verify'])
+    ap.add_argument('mode', choices=['produce', 'receive', 'submit', 'verify', 'update'])
     ap.add_argument('--work', type=Path, required=True)
     ap.add_argument('--task', type=Path)
     ap.add_argument('--packet', type=Path)
@@ -261,7 +290,7 @@ if __name__ == '__main__':
     ap.add_argument('--status', choices=['candidate', 'blocked', 'inconclusive'], default='candidate')
     args = ap.parse_args()
     try:
-        {'produce': produce, 'receive': receive, 'submit': submit, 'verify': verify}[args.mode](args)
+        {'produce': produce, 'receive': receive, 'submit': submit, 'verify': verify, 'update': update}[args.mode](args)
     except (ValueError, OSError, KeyError, TypeError) as exc:
         print(json.dumps({'status': 'REFUSED', 'detail': str(exc)}), file=sys.stderr)
         sys.exit(2)

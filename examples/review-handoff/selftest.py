@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from warrant import jcs as C
+import run as H
 
 RUN = Path(__file__).with_name('run.py')
 
@@ -35,6 +36,29 @@ def main():
         call('receive','--work',receiver,'--packet',packet,'--pin',pin,'--output',ack)
         assert (receiver/'private.key').stat().st_mode & 0o777 == 0o600
         call('verify','--work',sender,'--packet',ack,'--pin',C.digest(ack.read_bytes()))
+        # Review updates reuse the established reviewer key and receiver work duty.
+        producer = H.Party(sender)
+        sent = C.loads(packet.read_bytes())
+        update_doc = {'task': sent['task'], 'packet_sha256': pin, 'attachments': {'review': h},
+                      'verdict': 'AMEND'}
+        update_id = producer.store.put_json(update_doc)
+        evidence = sorted({update_id, h})
+        transition = producer.file('transition', H.R.transition('ATTESTED', evidence,
+                                    established=['synthetic review update']))
+        update_packet = {'format': H.FORMAT, 'stage': 'REVIEW_UPDATE', 'actor': 'codex-review',
+                         'public': producer.key.public, 'task': sent['task'], 'packet_sha256': pin,
+                         'duty': sent['duty'], 'update': update_id, 'transition': transition,
+                         'package': producer.export(sent['duty'])}
+        update_file = root/'update.json'; update_file.write_bytes(C.canon(update_packet))
+        state_before = (receiver/'task-state.json').read_bytes()
+        call('update','--work',receiver,'--packet',update_file,'--pin',C.digest(update_file.read_bytes()))
+        assert (receiver/'task-state.json').read_bytes() == state_before
+        wrong_update = copy.deepcopy(update_packet); wrong_update['public'] = '00'*32
+        update_file.write_bytes(C.canon(wrong_update))
+        call('update','--work',receiver,'--packet',update_file,'--pin',C.digest(update_file.read_bytes()),ok=False)
+        wrong_update = copy.deepcopy(update_packet); wrong_update['task'] = '00'*32
+        update_file.write_bytes(C.canon(wrong_update))
+        call('update','--work',receiver,'--packet',update_file,'--pin',C.digest(update_file.read_bytes()),ok=False)
         submitted = root/'submission.md';submitted.write_text('Synthetic candidate, no real amendment')
         call('submit','--work',receiver,'--report',submitted,'--output',reply)
         checked = call('verify','--work',sender,'--packet',reply,'--pin',C.digest(reply.read_bytes()))
@@ -66,7 +90,7 @@ def main():
         for party in [sender,receiver]:
             assert (party/'private.key').read_bytes() not in wire
         print('REVIEW-HANDOFF: local roundtrip PASS; wrong pin/task/submission/missing bytes refused; '
-              'fresh-process retry stable; work remains unaccepted; blocked/inconclusive stay open; no keys exported')
+              'fresh-process retry stable; work remains unaccepted; blocked/inconclusive stay open; signed updates retain duty and refuse wrong task/key; no keys exported')
 
 
 if __name__ == '__main__':
