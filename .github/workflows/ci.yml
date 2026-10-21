@@ -68,6 +68,7 @@ jobs:
 
       - name: Mutants (each critical rule must fail its own case)
         run: |
+          python tests/mutants.py --selftest
           WARRANT_IMPL= python tests/mutants.py
           WARRANT_IMPL= python tests/agent_mutants.py
 
