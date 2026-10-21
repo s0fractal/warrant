@@ -1,0 +1,1 @@
+{"because":null,"duty":"7ec094a6faaba82febb314b69347def5bfbbc25d31275b495e117bb16939f2d8","id":"SPEC-5-1","kind":"normative","mutants":["M105"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"5","source":"SPEC.md","text":"Each trigger evaluates in one view to exactly one of `FIRED`, `NOT_FIRED`, `UNEVALUABLE`.","witnesses":["assessment_test:R22"]}

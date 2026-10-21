@@ -1,0 +1,1 @@
+`{"kind": "duty_not_discharged", "duty": id}` — FIRED if that duty is OPEN, RELEASED or IMPOSSIBLE; NOT_FIRED if DISCHARGED; otherwise UNEVALUABLE.

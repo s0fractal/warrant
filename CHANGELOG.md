@@ -37,6 +37,16 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### SPEC §4.5–§6 as claim records (pilot W2)
+
+The sentences of SPEC §4.5 Grants, §4.6 Profile, §4.7 Supersession, §5
+Triggers and §6 Authority are claim records too, filed the same way: 25
+sentences, 23 backed, 0 unbacked, 2 informative (the fences of the profile
+block). Assessment cases R14–R28 and mutants M90–M120 are new; `subject_changed`
+triggers had no case before R23–R24. Two claims were superseded within the
+change to correct their stated limits (SPEC-4.5-1, SPEC-5-3). The engine, the
+record shapes and SPEC.md are unchanged.
+
 ### SPEC §4.1–§4.4 as claim records (pilot W)
 
 The normative sentences of SPEC §4.1–§4.4 are Warrant 2 records in the

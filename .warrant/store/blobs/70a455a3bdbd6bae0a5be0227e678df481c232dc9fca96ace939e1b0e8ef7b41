@@ -1,0 +1,1 @@
+Each trigger evaluates in one view to exactly one of `FIRED`, `NOT_FIRED`, `UNEVALUABLE`.

@@ -114,7 +114,7 @@ does not authorize. A computation is credited only by the recipient's own replay
 ```bash
 for t in contract compute conditions assessment primitives; do python3 tests/${t}_test.py; done
 python3 tests/mutants.py        # every critical rule has a mutant that must fail its own case
-python3 tools/claims.py check   # SPEC §4.1-§4.4 claims against SPEC.md, the tests and the view
+python3 tools/claims.py check   # SPEC §4.1-§6 claims against SPEC.md, the tests and the view
 python3 tools/claims.py --selftest
 bash examples/run-all.sh        # needs `warrant` on PATH
 for t in agent_handoff agent_write agent_compute agent_mcp; do python3 tests/${t}_test.py; done
@@ -126,7 +126,7 @@ Green checks are not an independent review (AGENTS.md rule 3).
 
 ## Changing a normative sentence
 
-The normative sentences of SPEC §4.1–§4.4 are claims filed as Warrant 2 records
+The normative sentences of SPEC §4.1–§6 are claims filed as Warrant 2 records
 in this repository's own store, `.warrant/store/`. **The records are the source;
 [SPEC-CLAIMS.md](SPEC-CLAIMS.md) is a view generated from them**, and CI refuses
 it when it says anything else. Each claim is a `duty` whose statement is the

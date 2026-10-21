@@ -1,0 +1,1 @@
+{"because":null,"duty":"7115e81d9074c2f67cdfcfa07bf2f0fa2370d3b44306eb8938249517cf8728dd","id":"SPEC-4.6-5","kind":"normative","mutants":["M20"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.6","source":"SPEC.md","text":"targets list of crossing targets the recipient accepts a receipt into","witnesses":["compute_test:C3"]}
