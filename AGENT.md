@@ -27,7 +27,9 @@ version; it is not Warrant `"2"`, not `sigma_provider:1` and not an MCP revision
    "uses": {"continue": {"delivery": ["MATCH_EXPECTED_SET", "LOCAL_CAPTURE"], "reliance": ["ELIGIBLE"], "fresh": true},
             "import": {"delivery": ["MATCH_EXPECTED_SET"]}},
    "limits": {"context_bytes": 16384, "transfer_bytes": 16777216, "assess_seconds": 120,
-              "provider_seconds": 600, "read_bytes": 65536, "view_ttl": 86400},
+              "provider_seconds": 600, "read_bytes": 65536, "view_ttl": 86400,
+              "snapshot_records": 100000, "snapshot_blobs": 100000, "snapshot_bytes": 1073741824,
+              "requires_edges": 1000000, "duty_periods": 10000, "report_periods": 100000},
    "operations": ["context", "read", "handoff", "prepare", "commit", "compute"]}}}
 ```
 
@@ -37,6 +39,12 @@ names the providers it accepts; computing never adds one. On a shared machine
 this is an application boundary, not OS isolation: an agent with a shell on
 the same keys and configuration is not contained by it, and shared custody is
 not independent custody.
+
+The last six limits are the engine's admission limits (SPEC §9), shown at
+their defaults. A store or view beyond one is refused as `RESOURCE_LIMIT` with
+`details: {limit, value, bound}` before it is assessed; no view is kept and no
+verdict is produced. A malformed one (unknown name, not a positive integer) is
+refused when the configuration loads.
 
 ## Operations
 

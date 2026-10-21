@@ -12,9 +12,9 @@ import base64
 
 from warrant import compute as P
 from warrant import jcs as C
-from warrant.store import Snapshot, Store
+from warrant.store import Store
 
-from . import AGENT_API, adapter_id
+from . import AGENT_API, adapter_id, views
 from .errors import AgentError, need
 
 RUNTIMES = {"book1": P.BOOK1, "rich": P.RICH, P.BOOK1: P.BOOK1, P.RICH: P.RICH}
@@ -86,7 +86,7 @@ def run(cfg, req):
     provider = _provider()
     accepted = provider.id in ws.profile().get("providers", [])
     store = Store(ws.store).init()
-    snap = Snapshot.read(ws.store)          # read once; every byte below comes from this capture
+    snap = views.read_snapshot(ws, ws.store)    # read once; every byte below comes from this capture
     data = {"op": op, "provider": provider.id, "provider_accepted_by_profile": accepted}
     if op == "provider":
         data["files"] = provider.identity["files"]

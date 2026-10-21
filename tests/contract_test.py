@@ -9,6 +9,7 @@ import sys
 from world import (CODEX, HOLDER, OBSERVER, OWNER, SHA_NEW, SHA_OLD, STRANGER, E, R, W, World, check, finish,
                    verdicts)
 from warrant import jcs as C
+from warrant import limits as L
 from warrant.store import Snapshot, Trust
 
 
@@ -464,6 +465,101 @@ def depth_cases():
     # content address); their handling is unchanged and covered by the traversal itself.
 
 
+def _refusal(fn):
+    """(limit, value, bound) of the LimitExceeded `fn` raises, or what it returned."""
+    try:
+        out = fn()
+    except L.LimitExceeded as e:
+        return (e.limit, e.value, e.bound) if isinstance(e, ValueError) else "not a ValueError"
+    return f"no refusal: {type(out).__name__}"
+
+
+def limits_cases():
+    # L1: one scheduled duty with start 0, every 1 gave 100001 period entries at
+    # as_of 100000 at b64c007 (Codex F2); the default duty_periods refuses it as a
+    # typed error before any period is listed. A reasonable schedule is assessed.
+    w = World()
+    d = w.duty(schedule={"start": 0, "every": 1}, at=0)
+    refused = _refusal(lambda: w.assess(as_of=100_000))
+    w2 = World()
+    d2 = w2.duty(schedule={"start": 1000, "every": 100}, at=1000)
+    t2 = w2.close(d2, period=0, at=1010)
+    w2.accept(OWNER, t2, at=1020)
+    periods = w2.assess(as_of=1150)["duties"][d2]["periods"]
+    check("L1", refused == ("duty_periods", 100_001, L.DEFAULTS["duty_periods"])
+          and periods == {"0": {"state": "COVERED", "by": t2, "basis": f"ATTESTED:{HOLDER}"},
+                          "1": {"state": "OPEN"}},
+          "a duty with 100001 periods is refused; a reasonable schedule gets COVERED and OPEN periods",
+          (refused, periods, d))
+    # L2: report_periods bounds the sum over duties; limits are overridable per call,
+    # and a value equal to its bound is admitted
+    w = World()
+    for k in range(2):
+        w.duty(schedule={"start": 0, "every": 10}, statement=f"periodic {k}", at=0)
+    over = _refusal(lambda: E.assess(w.store.snapshot(), w.trust, 59, E.profile(), limits={"report_periods": 11}))
+    rep = E.assess(w.store.snapshot(), w.trust, 59, E.profile(), limits={"report_periods": 12})
+    check("L2", over == ("report_periods", 12, 11) and sum(len(r["periods"]) for r in rep["duties"].values()) == 12,
+          "the periods of all duties together are bounded; at the bound the report is whole", over)
+    # L3: a store over the byte limit is refused by Snapshot.read before assessment,
+    # and an in-memory snapshot over it by assess
+    w = World()
+    w.duty()
+    w.evidence("x" * 5000)
+    root = w.store.root
+    size = sum(p.stat().st_size for k in ("records", "blobs") for p in (root / k).iterdir())
+    read = _refusal(lambda: Snapshot.read(root, limits={"snapshot_bytes": 4000}))
+    snap = Snapshot.read(root)
+    mem = _refusal(lambda: E.assess(snap, w.trust, 10_000, E.profile(), limits={"snapshot_bytes": size - 1}))
+    whole = E.assess(snap, w.trust, 10_000, E.profile(), limits={"snapshot_bytes": size})
+    check("L3", read and read[0] == "snapshot_bytes" and mem == ("snapshot_bytes", size, size - 1)
+          and len(whole["duties"]) == 1, "a store over the byte limit is refused before assessment", (read, mem))
+    # L4: a file whose size alone exceeds the remaining budget is not read at all
+    import pathlib
+    opened, real = [], pathlib.Path.read_bytes
+    pathlib.Path.read_bytes = lambda p: opened.append(p.name) or real(p)
+    try:
+        got = _refusal(lambda: Snapshot.read(root, limits={"snapshot_bytes": 4000}))
+    finally:
+        pathlib.Path.read_bytes = real
+    big = C.digest(("x" * 5000).encode())
+    check("L4", got and got[0] == "snapshot_bytes" and big not in opened,
+          "the read stops before the file that would exceed the byte limit", (got, opened))
+    # L5: the number of records and blobs is bounded, in a directory and in memory
+    w = World()
+    for k in range(5):
+        w.duty(statement=f"duty {k}")
+    w.evidence("one")
+    w.evidence("two")
+    snap = w.store.snapshot()
+    got = (_refusal(lambda: Snapshot.read(w.store.root, limits={"snapshot_records": 4})),
+           _refusal(lambda: Snapshot.read(w.store.root, limits={"snapshot_blobs": 1})),
+           _refusal(lambda: E.assess(snap, w.trust, 10_000, E.profile(), limits={"snapshot_records": 4})),
+           _refusal(lambda: E.assess(snap, w.trust, 10_000, E.profile(), limits={"snapshot_blobs": 1})))
+    check("L5", got == (("snapshot_records", 5, 4), ("snapshot_blobs", 2, 1), ("snapshot_records", 5, 4),
+                        ("snapshot_blobs", 2, 1)) and len(Snapshot.read(w.store.root, limits={"snapshot_records": 5,
+                                                                                              "snapshot_blobs": 2}).records) == 5,
+          "records and blobs are counted against their limits", got)
+    # L6: the dependency traversal's work (requires edges) is bounded before it starts
+    snap, trust, as_of, ids = _chain(10)
+    over = _refusal(lambda: E.assess(snap, trust, as_of, E.profile(), limits={"requires_edges": 8}))
+    rep = E.assess(snap, trust, as_of, E.profile(), limits={"requires_edges": 9})
+    check("L6", over == ("requires_edges", 9, 8) and len(rep["duties"]) == 10,
+          "requires edges are counted against their limit", over)
+    # L7: a malformed override is an argument error, not a limit; limits are not an operand
+    bad = []
+    for lim in ({"no_such_limit": 1}, {"duty_periods": 0}, {"duty_periods": "10"}, {"duty_periods": True}):
+        try:
+            E.assess(snap, trust, as_of, E.profile(), limits=lim)
+            bad.append("accepted")
+        except L.LimitExceeded:
+            bad.append("LimitExceeded")
+        except ValueError:
+            bad.append("ValueError")
+    same = E.assess(snap, trust, as_of, E.profile())["assessment_id"] == rep["assessment_id"]
+    check("L7", bad == ["ValueError"] * 4 and same,
+          "a malformed limit is refused as an argument; the limits do not change the assessment id", (bad, same))
+
+
 def main():
     attest_cases()
     exact_acceptance_cases()
@@ -477,6 +573,7 @@ def main():
     question_cases()
     handoff_cases()
     depth_cases()
+    limits_cases()
     return finish("CONTRACT")
 
 

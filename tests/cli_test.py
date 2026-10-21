@@ -115,10 +115,34 @@ def id_cases():
     check("I2", rid_of(out2) is not None and "type" in json.loads(out2), "without --id the output stays JSON", out2)
 
 
+def limit_cases():
+    # L1: an admission limit (SPEC §9) is a refusal with exit 3 and no report on
+    # stdout; --limit raises it and the same view is assessed
+    s = Session()
+    out, err = s.file("duty", dict(SHORT_DUTY, schedule={"start": 0, "every": 1}), "--id")
+    trust = s.w.dir / "trust.json"
+    trust.write_bytes(W.canon(s.w.trust.document([(a, k.public) for a, k in s.w.keys.items()])))
+    base = ["assess", "--store", str(s.w.dir / "store"), "--trust", str(trust), "--as-of", "20000"]
+    runs = []
+    for extra in ([], ["--limit", "duty_periods=20001"]):
+        buf, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            try:
+                code = cli.main(base + extra)
+            except Exception as e:      # noqa: BLE001 (a traceback is not a refusal)
+                code = repr(e)
+        runs.append((code, buf.getvalue(), err.getvalue()))
+    (c1, o1, e1), (c2, o2, _) = runs
+    check("L1", c1 == 3 and o1 == "" and "RESOURCE_LIMIT duty_periods" in e1 and c2 == 0
+          and len(json.loads(o2)["duties"][out.strip()]["periods"]) == 20001,
+          "an admission limit exits 3 with no report; --limit raises it", (err, c1, o1[:80], e1, c2))
+
+
 def main():
     duty_cases()
     transition_cases()
     id_cases()
+    limit_cases()
     return finish("CLI")
 
 

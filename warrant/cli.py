@@ -16,6 +16,7 @@ from pathlib import Path
 from . import jcs as C
 from . import compute as P
 from . import engine as E
+from . import limits as L
 from . import records as R
 from . import triggers as TR
 from .keys import Key
@@ -221,9 +222,23 @@ def cmd_compute(a):
 
 # ---------------------------------------------------------------- reading
 
+def _limits(a):
+    out = {}
+    for item in a.limit:
+        name, _, value = item.partition("=")
+        if not value.isdigit():
+            raise SystemExit(f"--limit {item!r}: NAME=N")
+        out[name] = int(value)
+    try:
+        return L.resolve(out)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
+
+
 def _report(a):
     s = Store(a.store)
-    snap = s.snapshot()
+    lim = _limits(a)
+    snap = s.snapshot(limits=lim)
     trust = Trust.load(a.trust)
     prof = _read_json(a.profile) if a.profile else E.profile()
     ws = None
@@ -236,7 +251,7 @@ def _report(a):
         print(f"warning: provider unavailable, replays are UNVERIFIED: {e}", file=sys.stderr)
         provider = None
     return E.assess(snap, trust, _now(a.as_of), prof, current=a.current or [], workspace=ws, provider=provider,
-                    replay_cache=a.replay_cache)
+                    replay_cache=a.replay_cache, limits=lim)
 
 
 def cmd_assess(a):
@@ -283,6 +298,8 @@ def build_parser():
         p.add_argument("--current", action="append", help="a revision the recipient treats as current")
         p.add_argument("--workspace", help="REPO@REV for subject_changed triggers")
         p.add_argument("--replay-cache", help="directory of this recipient's earlier verified replays (cost only)")
+        p.add_argument("--limit", action="append", default=[], metavar="NAME=N",
+                       help="override an admission limit (SPEC §9), e.g. duty_periods=50000")
 
     p = sub.add_parser("init", help="create a store")
     store(p)
@@ -358,7 +375,12 @@ def build_parser():
 
 def main(argv=None):
     a = build_parser().parse_args(argv)
-    a.fn(a)
+    try:
+        a.fn(a)
+    except L.LimitExceeded as e:
+        # An operational refusal (SPEC §9), never a report: nothing was assessed.
+        print(f"warrant: RESOURCE_LIMIT {e}", file=sys.stderr)
+        return 3
     return 0
 
 
