@@ -139,17 +139,21 @@ def run_one(mid, fname, what, edits, test, targets):
 
 
 def main():
-    pick = set(sys.argv[1:])
-    killed = total = 0
-    for m in MUTANTS:
-        if pick and m[0] not in pick:
-            continue
-        total += 1
-        outcome, detail = run_one(*m)
-        killed += outcome == "KILLED"
-        print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
-    print(f"AGENT MUTANTS: {killed}/{total} killed on target")
-    return 0 if killed == total else 1
+    # Parallel like tests/mutants.py (--jobs N, default: the CPU count); each mutant has its
+    # own package copy and results file, output keeps the MUTANTS order.
+    import concurrent.futures
+    import os
+    argv = sys.argv[1:]
+    jobs = int(argv[argv.index("--jobs") + 1]) if "--jobs" in argv else (os.cpu_count() or 2)
+    pick = {a for a in argv if not a.startswith("--") and not a.isdigit()}
+    chosen = [m for m in MUTANTS if not pick or m[0] in pick]
+    killed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        for m, (outcome, detail) in zip(chosen, pool.map(lambda m: run_one(*m), chosen)):
+            killed += outcome == "KILLED"
+            print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
+    print(f"AGENT MUTANTS: {killed}/{len(chosen)} killed on target (jobs={jobs})")
+    return 0 if killed == len(chosen) else 1
 
 
 if __name__ == "__main__":
