@@ -532,6 +532,27 @@ def more_views():
     src.reload()
     check("V10", bad == "BAD_REQUEST", "a malformed engine limit is a configuration error", bad)
 
+    # V11: the worker reads only a view directory capture made (Sonar S8707 on #159):
+    # a relative path, another directory, a symlink to a real view and a symlinked
+    # meta.json are refused before anything is read
+    import os
+    from warrant_agent import _assess_worker as WK
+    real = (src.ws.state / "views" / fine["ok"]["view_token"]).resolve()
+    link = real.parent / ("f" * 32)
+    os.symlink(real, link)
+    other = real.parent / ("e" * 32)
+    other.mkdir()
+    os.symlink(real / "meta.json", other / "meta.json")
+    refused = []
+    for cand in (os.path.relpath(real), str(src.ws.state.resolve()), str(link), str(other)):
+        try:
+            WK.view_dir(cand)
+            refused.append(False)
+        except SystemExit:
+            refused.append(True)
+    check("V11", refused == [True] * 4 and WK.view_dir(str(real)) == real,
+          "the worker refuses any path but a view directory", refused)
+
 
 if __name__ == "__main__":
     sys.exit(main())

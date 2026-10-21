@@ -159,7 +159,7 @@ def capture(ws, extra=None, delivery=None, as_of=None):
 def _assess(vdir, deadline):
     paths = [str(Path(__file__).resolve().parents[1]), str(Path(P.__file__).resolve().parents[1])]
     code = ("import sys; sys.path[:0] = %r; from warrant_agent._assess_worker import main; main(%r)"
-            % (paths, str(vdir)))
+            % (paths, str(vdir.resolve())))
     try:
         p = subprocess.run([sys.executable, "-B", "-c", code], capture_output=True, timeout=deadline, check=False)
     except subprocess.TimeoutExpired:
