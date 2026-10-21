@@ -426,7 +426,7 @@ def _grouped(witnesses):
     for w in witnesses:
         t, _, c = w.partition(":")
         groups.setdefault(t, []).append(c)
-    return [(t, sorted(cs, key=lambda c: (re.sub(r"[0-9].*", "", c), int(re.sub(r"^[A-Z]+|[a-z]+$", "", c) or 0), c)))
+    return [(t, sorted(cs, key=lambda c: (re.sub(r"[0-9].*", "", c), int(re.sub(r"(?:^[A-Z]+)|(?:[a-z]+$)", "", c) or 0), c)))
             for t, cs in sorted(groups.items())]
 
 
