@@ -24,6 +24,7 @@ from pathlib import Path
 
 from warrant import compute as P
 from warrant import jcs as C
+from warrant import limits as L
 from warrant import triggers as TR
 from warrant.store import Snapshot, Trust
 
@@ -55,8 +56,21 @@ def read_json(path):
     return json.loads(Path(path).read_bytes())
 
 
+def refusal(e):
+    """An engine admission limit as the typed refusal: never a semantic result."""
+    return AgentError("RESOURCE_LIMIT", str(e), limit=e.limit, value=e.value, bound=e.bound)
+
+
+def read_snapshot(ws, root):
+    """Snapshot.read under the workspace's admission limits."""
+    try:
+        return Snapshot.read(root, limits=ws.assessment_limits())
+    except L.LimitExceeded as e:
+        raise refusal(e) from None
+
+
 def live_digest(ws):
-    return Snapshot.read(ws.store).digest
+    return read_snapshot(ws, ws.store).digest
 
 
 def _landed(ws, journal):
@@ -92,7 +106,7 @@ def capture(ws, extra=None, delivery=None, as_of=None):
     """Freeze the operands, assess once, return the view meta. `extra` is
     {"records": {id: bytes}, "blobs": {hash: bytes}} added to the live store's
     bytes (an inspection of a staged package); live bytes are never replaced."""
-    live = Snapshot.read(ws.store)
+    live = read_snapshot(ws, ws.store)
     records, blobs = dict(live.records), dict(live.blobs)
     for rid, data in (extra or {}).get("records", {}).items():
         records.setdefault(rid, bytes(data))
@@ -119,7 +133,7 @@ def capture(ws, extra=None, delivery=None, as_of=None):
             "as_of": int(as_of if as_of is not None else now), "current": sorted(ws.current),
             "repo": [str(ws.repo[0]), commit] if ws.repo else None, "snapshot": frozen.digest,
             "live_snapshot": live.digest, "trust": base64.b64encode(trust_bytes).decode(),
-            "profile": profile, "provider": bool(sources),
+            "profile": profile, "provider": bool(sources), "limits": ws.assessment_limits(),
             # The receiver's own verified replays, reused across views (cost only).
             "replay_cache": str(ws.state / "replay-cache"),
             "delivery": delivery or {"relation": "LOCAL_CAPTURE", "source_completeness": "UNATTESTED"}}
@@ -145,11 +159,14 @@ def capture(ws, extra=None, delivery=None, as_of=None):
 def _assess(vdir, deadline):
     paths = [str(Path(__file__).resolve().parents[1]), str(Path(P.__file__).resolve().parents[1])]
     code = ("import sys; sys.path[:0] = %r; from warrant_agent._assess_worker import main; main(%r)"
-            % (paths, str(vdir)))
+            % (paths, str(vdir.resolve())))
     try:
         p = subprocess.run([sys.executable, "-B", "-c", code], capture_output=True, timeout=deadline, check=False)
     except subprocess.TimeoutExpired:
         raise AgentError("NO_ASSESSMENT", f"assessment exceeded the host deadline of {deadline}s") from None
+    if (vdir / "refusal.json").is_file():
+        r = read_json(vdir / "refusal.json")
+        raise refusal(L.LimitExceeded(r["limit"], r["value"], r["bound"]))
     if p.returncode != 0 or not (vdir / "report.json").is_file():
         raise AgentError("NO_ASSESSMENT", "the assessment worker produced no report",
                          stderr=p.stderr.decode(errors="replace")[-400:])

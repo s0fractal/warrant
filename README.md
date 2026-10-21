@@ -128,6 +128,8 @@ Not in this version: threshold adoption, key rotation, P-256, policy
 compilation, grants for acts other than release, goals as a distinct kind, and
 any independent implementation besides this Python one. The process boundary
 around the Sigma kernel isolates module names; it is not an OS sandbox. A view
-cannot prove its own completeness, and every report says so.
+cannot prove its own completeness, and every report says so. An assessment
+has aggregate admission limits (records, bytes, `requires` edges, periods;
+SPEC §9): beyond one it is refused, never answered in part.
 
 Licensed MIT. See [TRADEMARK.md](TRADEMARK.md) for the name.

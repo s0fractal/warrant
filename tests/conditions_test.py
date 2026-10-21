@@ -131,6 +131,43 @@ def challenge_cases():
     rep = w.assess()
     check("K3", E.reliance(rep, d, "act")["state"] == "ELIGIBLE" and ch in rep["challenges"],
           "an accepted revalidation of the challenged closure restores reliance; the challenge stays in the record", E.reliance(rep, d, "act"))
+    # K4: an evidence-weighted challenge counts whoever filed it: a stranger re-ran the duty's own
+    # probe later and saw something else (SPEC §4.4). The recipient lists no challengers.
+    w4 = World()
+    d4, probe4 = observe_duty(w4)
+    ok = observe(w4, probe4)                                  # the observer saw "ok"
+    t4 = w4.close(d4, basis="OBSERVED", evidence=[ok])
+    bad = observe(w4, probe4, result="503", actor=STRANGER)   # a stranger re-ran the probe, later
+    ch4 = w4.file("challenge", STRANGER, R.challenge(t4, "the probe says 503 now", [bad], 0))
+    rep4 = w4.assess()
+    check("K4", rep4["duties"][d4]["disposition"] == "DISCHARGED" and E.reliance(rep4, d4, "act")["state"] == "CHALLENGED"
+          and rep4["challenges"][ch4]["counter_observation"]["observation"] == bad,
+          "a stranger's challenge counts when it carries a fresher counter-observation of the same probe", E.reliance(rep4, d4, "act"))
+    # K5: what does not make a stranger's challenge count: another probe, the expected result,
+    # an older window, the closure's own filer as observer, no observation, an attested duty
+    def stranger_challenge(label, build):
+        w5 = World()
+        d5, probe5 = observe_duty(w5)
+        t5 = w5.close(d5, basis="OBSERVED", evidence=[observe(w5, probe5)])
+        ev = build(w5, probe5)
+        w5.file("challenge", STRANGER, R.challenge(t5, label, ev, 0))
+        rep5 = w5.assess()
+        return E.reliance(rep5, d5, "act")["state"]
+    states = {
+        "other probe": stranger_challenge("other probe", lambda w5, pr: [observe(w5, w5.blob({"argv": ["true"]}), result="503", actor=STRANGER)]),
+        "expected result": stranger_challenge("expected result", lambda w5, pr: [observe(w5, pr, result="ok", actor=STRANGER)]),
+        "older window": stranger_challenge("older window", lambda w5, pr: [observe(w5, pr, result="503", actor=STRANGER, window=[1, 2])]),
+        "filer as observer": stranger_challenge("filer as observer", lambda w5, pr: [observe(w5, pr, result="503", actor=HOLDER)]),
+        "no observation": stranger_challenge("no observation", lambda w5, pr: [w5.evidence("just words")]),
+    }
+    w6 = World()
+    d6 = w6.duty()                                            # attest: no mechanical counter
+    t6 = w6.close(d6)
+    w6.accept(OWNER, t6)
+    w6.file("challenge", STRANGER, R.challenge(t6, "I disagree", [observe(w6, w6.blob({"argv": ["x"]}), result="503", actor=STRANGER)], 0))
+    states["attested duty"] = E.reliance(w6.assess(), d6, "act")["state"]
+    check("K5", all(v == "ELIGIBLE" for v in states.values()),
+          "a stranger's challenge without a fresher counter-observation of the same probe does not count", states)
 
 
 def main():

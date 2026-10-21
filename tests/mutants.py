@@ -94,7 +94,8 @@ MUTANTS = [
      [('        elif window and not (window[0] <= o["window"][0] and o["window"][1] < window[1]):', '        elif False:')],
      "conditions_test", ["Q3"]),
     ("M29", "engine.py", "any actor's challenge counts",
-     [('if c["target"] in closures and c["actor"] in counts)', 'if c["target"] in closures)')], "conditions_test", ["K2"]),
+     [('if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))',
+       'if c["target"] in closures)')], "conditions_test", ["K2"]),
     ("M30", "engine.py", "a superseded closure still carries its challenges",
      [('    yield _challenged(rep, _counting_challenges(rep, set(r["current_closures"]), r))', '    yield _challenged(rep, _counting_challenges(rep, set(r["closed_by"]), r))')],
      "conditions_test", ["K3"]),
@@ -128,6 +129,15 @@ MUTANTS = [
      "compute_test", ["C15"]),
     ("M42", "engine.py", "an acceptor is told its accept is the last one whoever else is still missing",
      [('"last_acceptance": c["waiting_for"] == [actor]}', '"last_acceptance": True}')], "contract_test", ["F5"]),
+    ("M46", "engine.py", "an evidence-weighted challenge still needs a listed challenger",
+     [('if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))',
+       'if c["target"] in closures and c["actor"] in counts)')], "conditions_test", ["K4"]),
+    ("M47", "engine.py", "any cited observation is counter-evidence, whatever its probe or result",
+     [('        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:\n            continue\n', '')],
+     "conditions_test", ["K5"]),
+    ("M48", "engine.py", "a counter-observation older than the one that met the condition counts",
+     [('        if latest is not None and o["window"][1] < latest:\n            continue\n', '')],
+     "conditions_test", ["K5"]),
     ("M44", "compute.py", "a cached replay stands in for bytes the view lacks",
      [('    complete = cache is not None and all(h in blobs for h in hashes)', '    complete = cache is not None')],
      "compute_test", ["C17"]),
@@ -136,6 +146,57 @@ MUTANTS = [
        '    FIELDS = ("runtime", "input", "environment", "checkpoint", "state")'),
       ('        return self.root / fields["provider"] / (self.key_of(fields) + ".json")',
        '        return self.root / (self.key_of(fields) + ".json")')], "compute_test", ["C18"]),
+    ("M46", "engine.py", "requires are followed by recursion, as at b64c007 (Codex F1)",
+     [("""        busy = {root}
+        stack = [(root, iter(view.duties[root]["body"]["requires"]))]
+        while stack:
+            did, children = stack[-1]
+            for c in children:
+                if c in view.duties and c not in report and c not in busy:
+                    busy.add(c)
+                    stack.append((c, iter(view.duties[c]["body"]["requires"])))
+                    break
+            else:
+                stack.pop()
+                busy.discard(did)
+                report[did] = _assess_duty(view, did, view.duties[did], done)
+                done[did] = report[did]["disposition"]
+    return report""", """        _visit(view, root, report, done, set())
+    return report
+
+
+def _visit(view, did, report, done, busy):
+    if did in report or did in busy:
+        return
+    busy.add(did)
+    for c in view.duties[did]["body"]["requires"]:
+        if c in view.duties:
+            _visit(view, c, report, done, busy)
+    report[did] = _assess_duty(view, did, view.duties[did], done)
+    done[did] = report[did]["disposition"]
+    busy.discard(did)""")], "contract_test", ["D2"]),
+    ("M47", "engine.py", "the requires traversal stops descending at a fixed depth",
+     [('                if c in view.duties and c not in report and c not in busy:',
+       '                if c in view.duties and c not in report and c not in busy and len(stack) < 500:')],
+     "contract_test", ["D3"]),
+    ("M48", "engine.py", "a scheduled duty's periods are not bounded (Codex F2)",
+     [('            L.admit(lim, "duty_periods", n)\n', '')], "contract_test", ["L1"]),
+    ("M49", "engine.py", "the periods of a whole report are not bounded",
+     [('    L.admit(lim, "report_periods", total)\n', '')], "contract_test", ["L2"]),
+    ("M50", "engine.py", "the requires traversal's work is not bounded",
+     [('    L.admit(lim, "requires_edges", sum(len(r["body"]["requires"]) for r in view.duties.values()))\n', '')],
+     "contract_test", ["L6"]),
+    ("M51", "store.py", "a store is read whole whatever its total size (Codex F2)",
+     [('                    L.admit(lim, "snapshot_bytes", size + p.stat().st_size)\n', ''),
+      ('                    L.admit(lim, "snapshot_bytes", size)\n', '')], "contract_test", ["L3"]),
+    ("M52", "store.py", "a file is read before its size is admitted",
+     [('                    L.admit(lim, "snapshot_bytes", size + p.stat().st_size)\n', '')], "contract_test", ["L4"]),
+    ("M53", "engine.py", "an in-memory snapshot is assessed whatever its size",
+     [('    snapshot.admit(lim)\n', '')], "contract_test", ["L3", "L5"]),
+    ("M54", "store.py", "the files of a store are not counted",
+     [('                L.admit(lim, f"snapshot_{kind}", len(entries))\n', '')], "contract_test", ["L5"]),
+    ("M55", "cli.py", "an admission limit escapes the command as a traceback",
+     [('    except L.LimitExceeded as e:\n', '    except KeyboardInterrupt as e:\n')], "cli_test", ["L1"]),
     ("M43", "engine.py", "a duty capsule does not say whose acceptance a closure waits for",
      [('                   waiting_for=sorted({a for c in r["candidates"] if c["verdict"] == "PENDING"',
        '                   waiting_for=sorted({a for c in [] if c["verdict"] == "PENDING"')], "contract_test", ["F5"]),

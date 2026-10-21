@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import jcs as C
 from . import compute as P
+from . import limits as L
 from . import records as R
 from . import triggers as TR
 
@@ -470,6 +471,26 @@ def _disposition(view, out, d, closures, revals, periods):
     out["observed_until"] = max(obs) if obs else None
 
 
+def period_count(schedule, as_of):
+    """Period entries of a schedule at as_of: every n with start + n·every ≤ as_of."""
+    return 0 if as_of < schedule["start"] else (as_of - schedule["start"]) // schedule["every"] + 1
+
+
+def _admit(view, lim):
+    """Refuse a view whose assessment would exceed an admission limit, before the
+    work: requires edges the traversal follows, period entries per duty and per
+    report (SPEC §9). At b64c007 one duty with start 0, every 1 gave 100001 period
+    entries at as_of 100000 (Codex F2)."""
+    L.admit(lim, "requires_edges", sum(len(r["body"]["requires"]) for r in view.duties.values()))
+    total = 0
+    for rec in view.duties.values():
+        if rec["body"]["schedule"] is not None:
+            n = period_count(rec["body"]["schedule"], view.as_of)
+            L.admit(lim, "duty_periods", n)
+            total += n
+    L.admit(lim, "report_periods", total)
+
+
 def _periods(view, d, periods, out):
     s = d["schedule"]
     report = {}
@@ -489,21 +510,28 @@ def _periods(view, d, periods, out):
 # ---------------------------------------------------------------- whole view
 
 def _assess_duties(view):
-    report, done, busy = {}, {}, set()
-
-    def visit(did):
-        if did in report or did in busy:
-            return
-        busy.add(did)
-        for c in view.duties[did]["body"]["requires"]:
-            if c in view.duties:
-                visit(c)
-        report[did] = _assess_duty(view, did, view.duties[did], done)
-        done[did] = report[did]["disposition"]
-        busy.discard(did)
-
-    for did in sorted(view.duties):
-        visit(did)
+    """Every duty after the duties it requires, depth first in sorted order. A duty
+    on the current path (a cycle) is not waited for: its dependant is assessed
+    without it, so the requirement is unmet. An explicit stack, not recursion: a
+    valid chain of 3000 requires overflowed Python's stack at b64c007 (Codex F1)."""
+    report, done = {}, {}
+    for root in sorted(view.duties):
+        if root in report:
+            continue
+        busy = {root}
+        stack = [(root, iter(view.duties[root]["body"]["requires"]))]
+        while stack:
+            did, children = stack[-1]
+            for c in children:
+                if c in view.duties and c not in report and c not in busy:
+                    busy.add(c)
+                    stack.append((c, iter(view.duties[c]["body"]["requires"])))
+                    break
+            else:
+                stack.pop()
+                busy.discard(did)
+                report[did] = _assess_duty(view, did, view.duties[did], done)
+                done[did] = report[did]["disposition"]
     return report
 
 
@@ -527,6 +555,35 @@ def _results(view):
     return out
 
 
+def _counter_observation(view, b):
+    """An evidence-weighted challenge (SPEC §4.4): the challenge cites an observation of the
+    duty's own probe, by anyone but the closure's filer, that saw something other than
+    `expect`, no earlier than the latest observation that met the condition. Who filed the
+    challenge does not matter: the probe ran again and disagreed. Only `observe` conditions
+    have such counter-evidence; a compute closure is settled by the recipient's own replay,
+    and an attested one has no mechanical counter."""
+    t = view.transitions[b["target"]]
+    items = t["body"]["closes"]
+    if not (type(b["item"]) is int and 0 <= b["item"] < len(items)):
+        return None
+    d = view.duties.get(items[b["item"]]["duty"])
+    if d is None or "observe" not in d["body"]["condition"]:
+        return None
+    cond = d["body"]["condition"]["observe"]
+    latest = max(view.matched.get((b["target"], b["item"]), []), default=None)
+    for h in b["evidence"]:
+        rec = view.by_type["observation"].get(h)
+        if rec is None or rec["actor"] == t["actor"]:
+            continue
+        o = rec["body"]
+        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:
+            continue
+        if latest is not None and o["window"][1] < latest:
+            continue
+        return {"observation": h, "actor": rec["actor"], "result": o["result"], "window": o["window"]}
+    return None
+
+
 def _challenges(view, results):
     out = {}
     for cid, c in sorted(view.by_type["challenge"].items()):
@@ -535,7 +592,8 @@ def _challenges(view, results):
             view.missing.add(b["target"])
             continue
         out[cid] = {"actor": c["actor"], "at": c["at"], "target": b["target"], "item": b["item"],
-                    "statement": b["statement"], "evidence": b["evidence"]}
+                    "statement": b["statement"], "evidence": b["evidence"],
+                    "counter_observation": _counter_observation(view, b) if b["item"] is not None else None}
         if b["item"] is None:
             results[b["target"]]["challenges"].append(cid)
     return out
@@ -574,19 +632,24 @@ def _questions(view, duties):
     return out
 
 
-def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None):
+def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None, limits=None):
     """Assess one view. `current` is the set of revisions the recipient treats as
     current; `workspace` is (repository path, commit) for subject_changed triggers;
     `provider` is a captured compute.Provider (None: replays are UNVERIFIED);
     `replay_cache` is a directory of this recipient's earlier verified replays
     (SPEC §7: it changes cost, never the answer or the task; not part of the
-    assessment identity)."""
+    assessment identity); `limits` overrides the admission limits (limits.DEFAULTS;
+    operational, not an operand: exceeding one raises limits.LimitExceeded and
+    nothing is assessed)."""
     why = profile_problem(prof)
     if why:
         raise ValueError(f"profile: {why}")
+    lim = L.resolve(limits)
+    snapshot.admit(lim)
     ws = TR.Workspace(*workspace) if workspace is not None else None
     view = View(snapshot, trust, as_of, prof, provider,
                 cache=P.ReplayCache(replay_cache) if replay_cache is not None else None)
+    _admit(view, lim)
     duties = _assess_duties(view)
     for did, r in duties.items():
         for x in view.duties[did]["body"]["requires"] + view.duties[did]["body"]["serves"]:
@@ -628,7 +691,9 @@ def _counting_challenges(rep, closures, duty=None):
     counts = set(rep["profile"]["challengers"])
     if duty is not None:
         counts |= set(duty["owed_to"]) | set(duty["accept_by"])
-    return sorted(cid for cid, c in rep["challenges"].items() if c["target"] in closures and c["actor"] in counts)
+    # An evidence-weighted challenge counts whoever filed it (SPEC §4.4).
+    return sorted(cid for cid, c in rep["challenges"].items()
+                  if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))
 
 
 def _revision_basis(subjects, triggers, current):

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import jcs as C
 from . import keys as K
+from . import limits as L
 from . import records as R
 
 MAX_FILE = 64 * 1024 * 1024
@@ -41,8 +42,8 @@ class Store:
             _write(p, data)
         return rid
 
-    def snapshot(self):
-        return Snapshot.read(self.root)
+    def snapshot(self, limits=None):
+        return Snapshot.read(self.root, limits=limits)
 
 
 def _write(path, data):
@@ -91,19 +92,37 @@ class Snapshot:
         # Content, not location: the same bytes in another directory give the same digest.
         self.digest = C.digest("\n".join(listing).encode())
 
+    def admit(self, limits):
+        """Refuse a snapshot beyond the admission limits (limits.LimitExceeded)."""
+        L.admit(limits, "snapshot_records", len(self.records))
+        L.admit(limits, "snapshot_blobs", len(self.blobs))
+        L.admit(limits, "snapshot_bytes", sum(map(len, self.records.values())) + sum(map(len, self.blobs.values())))
+
     @classmethod
-    def read(cls, root):
+    def read(cls, root, limits=None):
+        """Read a store once. Beyond an admission limit (`limits` overrides
+        limits.DEFAULTS) it raises limits.LimitExceeded before reading further:
+        64 MiB per file is no bound on the whole (Codex F2)."""
+        lim = L.resolve(limits)
         root = Path(root)
         found = {"records": {}, "blobs": {}}
         misfiled = []
+        size = 0
         for kind in ("records", "blobs"):
             folder = root / kind
-            for p in sorted(folder.iterdir()) if folder.is_dir() else ():
+            entries = []
+            for p in folder.iterdir() if folder.is_dir() else ():
+                entries.append(p)
+                L.admit(lim, f"snapshot_{kind}", len(entries))
+            for p in sorted(entries):
                 why = _file_problem(kind, p)
                 if why:
                     misfiled.append(f"{kind}/{p.name}: {why}")
                 else:
+                    L.admit(lim, "snapshot_bytes", size + p.stat().st_size)
                     data = p.read_bytes()
+                    size += len(data)
+                    L.admit(lim, "snapshot_bytes", size)
                     key = p.name if kind == "blobs" else p.name[:-5]
                     if kind == "blobs" and key != C.digest(data):
                         misfiled.append(f"blobs/{p.name}: name is not its hash")
