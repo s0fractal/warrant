@@ -1,0 +1,1 @@
+{"because":null,"duty":null,"id":"SPEC-4.2-1","kind":"informative","mutants":[],"previous":null,"reason":"lead-in of the list; each condition is its own claim (SPEC-4.2-2, -3, -5 to -10)","schema":"warrant-claims/claim@1","section":"4.2","source":"SPEC.md","text":"An item `discharge` (or `revalidate`) for duty D is **admitted** iff:","witnesses":[]}

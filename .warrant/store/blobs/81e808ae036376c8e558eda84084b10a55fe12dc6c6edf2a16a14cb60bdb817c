@@ -1,0 +1,1 @@
+{"because":null,"duty":"9206c1328fa6cce998c5eba64970156363afa2286504e996a2a780b3de48588d","id":"SPEC-4.4-10","kind":"normative","mutants":["M30"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.4","source":"SPEC.md","text":"Only current closures count: those no admitted revalidation names.","witnesses":["conditions_test:K3","contract_test:O2"]}

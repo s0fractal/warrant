@@ -112,8 +112,10 @@ does not authorize. A computation is credited only by the recipient's own replay
 ## Checks
 
 ```bash
-for t in contract compute conditions primitives; do python3 tests/${t}_test.py; done
+for t in contract compute conditions assessment primitives; do python3 tests/${t}_test.py; done
 python3 tests/mutants.py        # every critical rule has a mutant that must fail its own case
+python3 tools/claims.py check   # SPEC §4.1-§4.4 claims against SPEC.md, the tests and the view
+python3 tools/claims.py --selftest
 bash examples/run-all.sh        # needs `warrant` on PATH
 for t in agent_handoff agent_write agent_compute agent_mcp; do python3 tests/${t}_test.py; done
 python3 tests/agent_mutants.py  # needs [compute,mcp]
@@ -121,6 +123,41 @@ python3 examples/agent/acceptance.py --door mcp   # also python, cli
 ```
 
 Green checks are not an independent review (AGENTS.md rule 3).
+
+## Changing a normative sentence
+
+The normative sentences of SPEC §4.1–§4.4 are claims filed as Warrant 2 records
+in this repository's own store, `.warrant/store/`. **The records are the source;
+[SPEC-CLAIMS.md](SPEC-CLAIMS.md) is a view generated from them**, and CI refuses
+it when it says anything else. Each claim is a `duty` whose statement is the
+sentence, discharged by an ATTESTED `transition` whose evidence names the
+witness cases (`tests/<file>_test.py`) and the mutants (`tests/mutants.py`) that
+back it. `.warrant/claims.json` pins which sentences of which sections must be
+claimed; `.warrant/trust.json` holds the claim authors' public keys (seeds stay
+out of git). A change to a rule is made like this:
+
+1. Edit SPEC.md.
+2. Add the witness case and the mutant that burns it, in the same change
+   (AGENTS.md rule 6).
+3. File the claim, signed by an author key:
+   `tools/claims.py add` for a new sentence (`--witness file_test:CASE --mutant MNN`,
+   or `--informative REASON` for a sentence that states no rule),
+   `tools/claims.py supersede --because ...` for a changed one,
+   `tools/claims.py retire --because ... --counter ID` for one that leaves.
+4. `tools/claims.py project` to regenerate SPEC-CLAIMS.md, then `tools/claims.py check`.
+5. Say the because in the commit message as well.
+
+`check` refuses: a quoted sentence that is not in its section of SPEC.md
+(compared modulo line wrapping); text of a pinned section that no claim quotes;
+a pinned sentence with no claim; a normative sentence with no witness case or
+no mutant (UNBACKED); a cited case or mutant that does not exist, a mutant id
+defined twice, or a mutant that targets none of the cited cases; a record file
+not named by its id, non-canonical or unauthentic; a standing challenge against a
+current claim; a projection that differs from the regenerated one; and,
+against the base revision, a record that was deleted or changed, or a claim
+that disappeared without a record that supersedes or retires it. Nothing is
+deleted: a retired claim stays in the store with its counter-evidence.
+`tools/claims.py --selftest` burns each of these refusals on a copy.
 
 ## Limits
 

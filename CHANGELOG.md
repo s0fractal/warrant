@@ -37,6 +37,24 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### SPEC §4.1–§4.4 as claim records (pilot W)
+
+The normative sentences of SPEC §4.1–§4.4 are Warrant 2 records in the
+repository's own store `.warrant/store/` (a `duty` per sentence, discharged by
+an ATTESTED `transition` whose evidence names its witness cases and mutants).
+`SPEC-CLAIMS.md` is generated from them by `tools/claims.py project`; CI runs
+`tools/claims.py check --base <base>` and `--selftest` after the mutants. 47
+sentences: 42 backed, 0 unbacked, 5 informative. The sentences that had no
+witness or no mutant at `b64c007` got assessment cases R1–R13 and mutants
+M60–M89; the engine was unchanged. No record type, SPEC rule or record shape
+changed.
+
+#160's mutants M46–M48 (evidence-weighted challenge) are now M56–M58: #159 had
+used the same three ids, so at `4ce6f92` `tests/mutants.py M46` ran two
+mutants. `tests/mutants.py` now refuses an id defined twice, and
+`tools/claims.py check` refuses a claim citing one. M59 burns K5's attested
+half.
+
 ### Deep requires chains, and admission limits
 
 `requires` is followed with an explicit stack: at `b64c007` a valid chain of

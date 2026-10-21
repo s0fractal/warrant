@@ -1,0 +1,1 @@
+{"because":null,"duty":"1928c253debdb5e9e3308e27678d0ec51f5251c1fd5471ece1ce8d0af1dd62d5","id":"SPEC-4.4-7","kind":"normative","mutants":["M15"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.4","source":"SPEC.md","text":"`SUPERSEDED` — the transition's results were replaced (§4.7);","witnesses":["contract_test:S1","contract_test:S2"]}

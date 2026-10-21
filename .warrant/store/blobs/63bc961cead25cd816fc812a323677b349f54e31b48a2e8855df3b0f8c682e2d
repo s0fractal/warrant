@@ -1,0 +1,1 @@
+`observe`: basis `OBSERVED`, and the item's evidence names an observation record in the view, by an actor in `observers` who is not the filer, whose `probe` equals the condition's, whose `result` equals `expect`, and — for a scheduled duty — whose window lies inside the period;

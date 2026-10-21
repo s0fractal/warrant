@@ -1,0 +1,1 @@
+{"because":null,"duty":"39d77966877c8c39a026d16f1867740ae50d9a139a0b5c3742904bccb6a431ca","id":"SPEC-4.3-3","kind":"normative","mutants":["M85"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.3","source":"SPEC.md","text":"A discharge of one period covers no other.","witnesses":["conditions_test:Q1"]}
