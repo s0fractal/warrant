@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Rules of SPEC §4.1-§4.4 that had no witness case of their own before the
+"""Rules of SPEC §4.1-§6 that had no witness case of their own before the
 claim records (`.warrant/store`, `tools/claims.py`): each case is one sentence
 of the SPEC, cited by its claim, with the mutant in tests/mutants.py that burns it.
+R1-R13 are §4.1-§4.4 (pilot W); R14-R28 are §4.5-§6 (pilot W2).
 
     python3 tests/assessment_test.py
 """
 import hashlib
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
-from world import CODEX, HOLDER, OWNER, E, R, World, check, finish, verdicts
+from world import CODEX, HOLDER, OWNER, SHA_OLD, STRANGER, E, R, World, check, finish, verdicts
+from warrant import triggers as TR
+from warrant.store import Snapshot
 
 
 def last(rep, d):
@@ -221,10 +229,353 @@ def disposition_cases():
           "the revalidated closure's fired trigger stays as history and no longer decides reliance", got)
 
 
+def release(w, d, actor, at, label="release"):
+    return w.close(d, actor=actor, act="release", evidence=[w.evidence(label)], at=at)
+
+
+def grant_cases():
+    # R14 (§4.5): a grant counts only from its own position on: a release filed before
+    # the root grant that would authorize it is refused; one filed after it is admitted
+    w = World()
+    d = w.duty()
+    root = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [d]), at=300)
+    early = release(w, d, STRANGER, 200, "early")
+    late = release(w, d, STRANGER, 400, "late")
+    rep = w.assess(prof=E.profile(grant_roots=[root]))
+    got = (verdict_of(rep, d, early)["verdict"], "NOT_YET" in verdict_of(rep, d, early)["why"],
+           verdict_of(rep, d, late)["verdict"], rep["duties"][d]["disposition"])
+    check("R14", got == ("OVERCLAIMED", True, "ADMITTED", "RELEASED"),
+          "a grant does not authorize an act filed before the grant itself", got)
+
+    # R15 (§4.5): a grant has not expired at the act's position; `expires` is exclusive
+    w = World()
+    d1, d2 = w.duty(statement="one"), w.duty(statement="two")
+    g = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [d1, d2], expires=300), at=150)
+    before = release(w, d1, STRANGER, 299)
+    at_end = release(w, d2, STRANGER, 300)
+    rep = w.assess(prof=E.profile(grant_roots=[g]))
+    got = (verdict_of(rep, d1, before)["verdict"], verdict_of(rep, d2, at_end)["verdict"],
+           "EXPIRED" in verdict_of(rep, d2, at_end)["why"], rep["grants"][g])
+    check("R15", got == ("ADMITTED", "OVERCLAIMED", True, "EXPIRED"),
+          "a grant authorizes before its expiry and not at it", got)
+
+    # R16 (§4.5): a child grant needs its parent valid at the CHILD's own position: a child
+    # filed before its parent, or naming a parent not in the view, is a broken chain even
+    # once the parent exists; the same child filed after the parent authorizes
+    w = World()
+    d1, d2 = w.duty(statement="one"), w.duty(statement="two")
+    parent = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [d1, d2], delegable=["release"]), at=300)
+    before = w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d1], parent=parent), at=200)
+    orphan = w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d1], parent="ab" * 32), at=360)
+    after = w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d2], parent=parent), at=350)
+    r1, r2 = release(w, d1, CODEX, 400, "one"), release(w, d2, CODEX, 401, "two")
+    rep = w.assess(prof=E.profile(grant_roots=[parent]))
+    got = guarded(lambda: ({k: rep["grants"][g] for k, g in (("before", before), ("orphan", orphan), ("after", after))},
+                           verdict_of(rep, d1, r1)["verdict"], verdict_of(rep, d2, r2)["verdict"]))
+    check("R16", got == ({"before": "BROKEN_CHAIN", "orphan": "BROKEN_CHAIN", "after": "VALID"}, "OVERCLAIMED", "ADMITTED"),
+          "a parent is judged at its child's position, and must be in the view", got)
+
+    # R17 (§4.5): an attenuation is filed by the parent's grantee, names only the parent's
+    # duties, and expires no later than the parent; the control child does all three
+    w = World()
+    d1, d2, d3 = w.duty(statement="one"), w.duty(statement="two"), w.duty(statement="three")
+    p = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [d1, d2], delegable=["release"], expires=5000))
+    kids = {
+        "control": w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d1], parent=p, expires=4000)),
+        "grantor": w.file("grant", CODEX, R.grant(HOLDER, ["release"], [d1], parent=p, expires=4000)),
+        "duties": w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d1, d3], parent=p, expires=4000)),
+        "later": w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d2], parent=p, expires=6000)),
+        "never": w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d2], parent=p)),
+    }
+    rep = w.assess(as_of=1000, prof=E.profile(grant_roots=[p]))
+    got = {k: rep["grants"][g] for k, g in kids.items()}
+    check("R17", got == {"control": "VALID", "grantor": "NOT_ATTENUATED", "duties": "NOT_ATTENUATED",
+                         "later": "NOT_ATTENUATED", "never": "NOT_ATTENUATED"},
+          "a child beyond its parent's grantee, duties or expiry is not an attenuation", got)
+
+    # R18 (§4.5): a grant record signed by a key bound to another actor than its grantor
+    # is invalid, even when the recipient lists its id as a root; the same grant signed
+    # by its grantor authorizes
+    w = World()
+    d1, d2 = w.duty(statement="one"), w.duty(statement="two")
+    forged = w.store.put_record(R.record("grant", OWNER, w.tick(), R.grant(STRANGER, ["release"], [d1])), w.keys[CODEX])
+    real = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [d2]))
+    r1, r2 = release(w, d1, STRANGER, 400, "one"), release(w, d2, STRANGER, 401, "two")
+    rep = w.assess(prof=E.profile(grant_roots=[forged, real]))
+    got = (forged in rep["invalid_records"], forged in rep["grants"], verdict_of(rep, d1, r1)["verdict"],
+           verdict_of(rep, d2, r2)["verdict"])
+    check("R18", got == (True, False, "OVERCLAIMED", "ADMITTED"),
+          "a grant not signed by its grantor is invalid; signed by it, it authorizes", got)
+
+
+def profile_cases():
+    # R19 (§4.6): the profile's accept_by.results names whose acceptance closes a
+    # transition's results: a stranger's acceptance does not; the named acceptor's does;
+    # a profile that names nobody leaves results unassessed
+    w = World()
+    t = w.act(HOLDER, [], established=["the API is v2"])
+    w.accept(STRANGER, t, None)
+    prof = E.profile(results_by=[OWNER])
+    stranger_only = E.reliance(w.assess(prof=prof), t, "act")["state"]
+    w.accept(OWNER, t, None)
+    named = E.reliance(w.assess(prof=prof), t, "act")["state"]
+    nobody = E.reliance(w.assess(), t, "act")["state"]
+    got = (stranger_only, named, nobody)
+    check("R19", got == ("NOT_CLOSED", "ELIGIBLE", "UNASSESSED"),
+          "only an acceptor the profile names closes results", got)
+
+    # R20 (§4.6): with no challengers listed, a challenge by the duty's owed_to actor counts,
+    # and so does one by its accept_by actor (here two different actors); a stranger's does not
+    def challenged_by(actor):
+        w = World()
+        d = w.duty(owed_to=(OWNER,), accept_by=(CODEX,))
+        t = w.close(d)
+        w.accept(CODEX, t)
+        w.file("challenge", actor, R.challenge(t, f"{actor} disagrees", [w.evidence("repro")], 0))
+        return E.reliance(w.assess(), d, "act")["state"]
+    got = {a: challenged_by(a) for a in (OWNER, CODEX, STRANGER)}
+    check("R20", got == {OWNER: "CHALLENGED", CODEX: "CHALLENGED", STRANGER: "ELIGIBLE"},
+          "owed_to and accept_by of the duty always count as challengers; a stranger does not", got)
+
+
+def supersession_cases():
+    # R21 (§4.7): A <- B <- C, all accepted as results: A and B are superseded, C is current;
+    # as of A's own time A was relied on; in a view where C is absent, B is current and A
+    # stays superseded (A never returns without a record that says so)
+    w = World()
+    prof = E.profile(results_by=[OWNER])
+    a = w.act(HOLDER, [], established=["the API is v1"], at=200)
+    w.accept(OWNER, a, None, at=201)
+    b = w.act(HOLDER, [], established=["the API is v2"], supersedes=[a], at=300)
+    w.accept(OWNER, b, None, at=301)
+    c = w.act(HOLDER, [], established=["the API is v3"], supersedes=[b], at=400)
+    acc_c = w.accept(OWNER, c, None, at=401)
+
+    def states(rep):
+        return tuple(E.reliance(rep, x, "act")["state"] for x in (a, b, c))
+    full = states(w.assess(prof=prof))
+    then = E.reliance(w.assess(as_of=250, prof=prof), a, "act")["state"]
+    part = w.dir / "without-c"
+    shutil.copytree(w.store.root, part)
+    for rid in (c, acc_c):
+        (part / "records" / f"{rid}.json").unlink()
+    without_c = states(E.assess(Snapshot.read(part), w.trust, 10_000, prof))
+    got = (full, then, without_c)
+    check("R21", got == (("SUPERSEDED", "SUPERSEDED", "ELIGIBLE"), "ELIGIBLE", ("SUPERSEDED", "ELIGIBLE", "MISSING")),
+          "a superseded result was valid in its time; without C, B is current and A does not return", got)
+
+
+# ---------------------------------------------------------------- triggers (SPEC §5)
+
+GIT = ["git", "-c", "user.name=warrant-test", "-c", "user.email=test@invalid", "-c", "commit.gpgsign=false"]
+
+
+def git(repo, *args):
+    return subprocess.run([*GIT, "-C", str(repo), *args], capture_output=True, check=True, text=True).stdout.strip()
+
+
+def commit(repo, files, symlinks=(), gitlinks=(), executable=(), remove=()):
+    """Write `files` {path: text}, symlinks {path: target}, gitlinks {path: commit},
+    mark `executable` and delete `remove`; commit everything; return the commit id."""
+    for path, text in files.items():
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(text)
+    for path, target in dict(symlinks).items():
+        os.symlink(target, repo / path)
+    for path in executable:
+        os.chmod(repo / path, 0o755)
+    for path in remove:
+        (repo / path).unlink()
+    git(repo, "add", "-A")
+    for path, oid in dict(gitlinks).items():
+        git(repo, "update-index", "--add", "--cacheinfo", f"160000,{oid},{path}")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "fixture")
+    return git(repo, "rev-parse", "HEAD")
+
+
+def baseline(w, selector, entries):
+    """A baseline manifest built by hand (never by the package under test):
+    entries {path: (mode, bytes)}."""
+    return w.blob({"selector": list(selector),
+                   "entries": {p: {"mode": m, "sha256": hashlib.sha256(data).hexdigest()} for p, (m, data) in entries.items()}})
+
+
+def changed(w, h):
+    return [{"kind": "subject_changed", "baseline": h}]
+
+
+def trigger_results(rep, ts):
+    return {k: rep["results"][t]["triggers"][0]["result"] for k, t in ts.items()}
+
+
+def trigger_cases():
+    # R22 (§5): every trigger evaluates to one of FIRED, NOT_FIRED, UNEVALUABLE, all three
+    # occurring here; a duty in a state the trigger does not name (CONTESTED) is
+    # UNEVALUABLE, never its own state passed through (the engine refuses a result outside
+    # the vocabulary, so a mutant that passes one through fails this case)
+    def r22():
+        w = World()
+        open_d, done = w.duty(statement="open"), w.duty(statement="done")
+        w.accept(OWNER, w.close(done))
+        contested = w.duty(statement="contested")
+        w.accept(OWNER, w.close(contested))
+        w.close(contested, actor=OWNER, act="release")
+        on = {"open": open_d, "done": done, "contested": contested, "absent": "cd" * 32}
+        ts = {k: w.act(HOLDER, [], established=[k], triggers=[{"kind": "duty_not_discharged", "duty": x}])
+              for k, x in on.items()}
+        manifest = baseline(w, ["b.txt"], {"b.txt": ("100644", b"beta\n")})
+        ts["no workspace"] = w.act(HOLDER, [], established=["subject"], triggers=changed(w, manifest))
+        rep = w.assess()
+        res = trigger_results(rep, ts)
+        return res, set(res.values()) == set(TR.RESULTS)
+    got = guarded(r22)
+    check("R22", got == ({"open": "FIRED", "done": "NOT_FIRED", "contested": "UNEVALUABLE", "absent": "UNEVALUABLE",
+                          "no workspace": "UNEVALUABLE"}, True),
+          "each trigger evaluates to exactly one of FIRED, NOT_FIRED, UNEVALUABLE", got)
+
+    repo = Path(tempfile.mkdtemp(prefix="warrant-trigger-"))
+    git(repo, "init", "-q")
+    first = commit(repo, {"a.txt": "alpha\n", "b.txt": "beta\n", "c.sh": "echo c\n", "d.txt": "delta\n",
+                          "sub/inner.txt": "inner\n"}, symlinks={"link": "a.txt"})
+    second = commit(repo, {"a.txt": "alpha, changed\n"}, executable=["c.sh"], remove=["d.txt"], gitlinks={"mod": first})
+    plain = "100644"
+
+    # R23 (§5): a baseline names explicit, sorted, repository-relative file paths: an unsorted
+    # selector, a path out of the repository, a glob, a directory, a symlink and a submodule
+    # are all UNEVALUABLE; the control (one plain file, unchanged) is NOT_FIRED
+    def r23():
+        w = World()
+        b = (plain, b"beta\n")
+        base = {
+            "control": baseline(w, ["b.txt"], {"b.txt": b}),
+            "unsorted": baseline(w, ["b.txt", "a.txt"], {"a.txt": (plain, b"alpha, changed\n"), "b.txt": b}),
+            "outside": baseline(w, ["../b.txt"], {"../b.txt": b}),
+            "glob": baseline(w, ["*.txt"], {"*.txt": b}),
+            "directory": baseline(w, ["sub"], {"sub": (plain, b"inner\n")}),
+            "symlink": baseline(w, ["link"], {"link": (plain, b"a.txt")}),
+            "submodule": baseline(w, ["mod"], {"mod": (plain, first.encode())}),
+        }
+        ts = {k: w.act(HOLDER, [], established=[k], triggers=changed(w, h)) for k, h in base.items()}
+        return trigger_results(w.assess(workspace=(repo, second)), ts)
+    got = guarded(r23)
+    want = dict({k: "UNEVALUABLE" for k in ("unsorted", "outside", "glob", "directory", "symlink", "submodule")},
+                control="NOT_FIRED")
+    check("R23", got == want, "only explicit, sorted, repository-relative file paths are evaluated", got)
+
+    # R24 (§5): against the workspace commit, a changed file (content or mode) FIRES, an
+    # unchanged one does not, and a deleted path, an absent or unreadable baseline, an
+    # unreadable revision and a missing workspace are UNEVALUABLE. A FIRED trigger makes
+    # its result STALE; a NOT_FIRED subject_changed gives a result established on an old
+    # revision its revision basis.
+    def r24():
+        w = World()
+        base = {
+            "content": baseline(w, ["a.txt"], {"a.txt": (plain, b"alpha\n")}),
+            "unchanged": baseline(w, ["b.txt"], {"b.txt": (plain, b"beta\n")}),
+            "mode": baseline(w, ["c.sh"], {"c.sh": (plain, b"echo c\n")}),
+            "deleted": baseline(w, ["d.txt"], {"d.txt": (plain, b"delta\n")}),
+            "absent baseline": "ef" * 32,
+            "not a manifest": w.blob({"selector": ["b.txt"]}),
+        }
+        prof = E.profile(results_by=[OWNER])
+        ts = {}
+        for k, h in base.items():
+            ts[k] = w.act(HOLDER, [], established=[k], subject=SHA_OLD, triggers=changed(w, h))
+            w.accept(OWNER, ts[k], None)
+        rep = w.assess(prof=prof, workspace=(repo, second))
+        res = trigger_results(rep, ts)
+        rel = {k: E.reliance(rep, ts[k], "act")["state"] for k in ("content", "unchanged")}
+        res["no workspace"] = trigger_results(w.assess(prof=prof), ts)["unchanged"]
+        res["unknown revision"] = trigger_results(w.assess(prof=prof, workspace=(repo, "f" * 40)), ts)["unchanged"]
+        return res, rel
+    got = guarded(r24)
+    want = ({"content": "FIRED", "unchanged": "NOT_FIRED", "mode": "FIRED", "deleted": "UNEVALUABLE",
+             "absent baseline": "UNEVALUABLE", "not a manifest": "UNEVALUABLE", "no workspace": "UNEVALUABLE",
+             "unknown revision": "UNEVALUABLE"}, {"content": "STALE", "unchanged": "ELIGIBLE"})
+    check("R24", got == want, "subject_changed fires on a changed entry, and is UNEVALUABLE when anything cannot be read", got)
+    shutil.rmtree(repo, ignore_errors=True)
+
+    # R25 (§5): duty_not_discharged FIRES for an OPEN, RELEASED or IMPOSSIBLE duty, does not
+    # for a DISCHARGED one, and is UNEVALUABLE otherwise: CONTESTED, SCHEDULED, absent
+    def r25():
+        w = World()
+        on = {k: w.duty(statement=k) for k in ("OPEN", "RELEASED", "IMPOSSIBLE", "DISCHARGED", "CONTESTED")}
+        on["SCHEDULED"] = w.duty(statement="scheduled", schedule={"start": 1000, "every": 1000})
+        w.close(on["RELEASED"], actor=OWNER, act="release")
+        w.accept(OWNER, w.close(on["IMPOSSIBLE"], act="impossible"))
+        w.accept(OWNER, w.close(on["DISCHARGED"]))
+        w.accept(OWNER, w.close(on["CONTESTED"]))
+        w.close(on["CONTESTED"], actor=OWNER, act="release")
+        on["absent"] = "cd" * 32
+        ts = {k: w.act(HOLDER, [], established=[k], triggers=[{"kind": "duty_not_discharged", "duty": x}])
+              for k, x in on.items()}
+        rep = w.assess()
+        disp = {k: rep["duties"][x]["disposition"] for k, x in on.items() if k != "absent"}
+        return disp == {k: k for k in disp}, trigger_results(rep, ts)
+    got = guarded(r25)
+    want = (True, {"OPEN": "FIRED", "RELEASED": "FIRED", "IMPOSSIBLE": "FIRED", "DISCHARGED": "NOT_FIRED",
+                   "CONTESTED": "UNEVALUABLE", "SCHEDULED": "UNEVALUABLE", "absent": "UNEVALUABLE"})
+    check("R25", got == want, "duty_not_discharged: FIRED, NOT_FIRED or UNEVALUABLE by the duty's disposition", got)
+
+
+def authority_cases():
+    # R26 (§6): the duty says who may act: an actor in release_by (not owed_to) may release
+    # it; a stranger may not
+    w = World()
+    d1 = w.duty(statement="one", release_by=(CODEX,))
+    d2 = w.duty(statement="two", release_by=(CODEX,))
+    by_named = release(w, d1, CODEX, 300)
+    by_stranger = release(w, d2, STRANGER, 301)
+    rep = w.assess()
+    got = (verdict_of(rep, d1, by_named)["verdict"], rep["duties"][d1]["disposition"],
+           verdict_of(rep, d2, by_stranger)["verdict"], rep["duties"][d2]["disposition"])
+    check("R26", got == ("ADMITTED", "RELEASED", "OVERCLAIMED", "OPEN"), "release_by may release; a stranger may not", got)
+
+    # R27 (§6): competence is not assessed: a holder whose closure of one duty stands
+    # challenged, and whose filing on another was overclaimed, has its closure of a third
+    # duty admitted and relied on like anyone's
+    w = World()
+    challenged = w.duty(statement="challenged", owed_to=(CODEX,), accept_by=(CODEX,))
+    t = w.close(challenged)
+    w.accept(CODEX, t)
+    w.file("challenge", CODEX, R.challenge(t, "it fails on empty input", [w.evidence("repro")], 0))
+    over = w.duty(statement="overclaimed")
+    w.accept(OWNER, w.close(over, basis="OBSERVED"))
+    fresh = w.duty(statement="unrelated")
+    w.accept(OWNER, w.close(fresh, evidence=[w.evidence("fresh")]))
+    rep = w.assess()
+    got = guarded(lambda: (E.reliance(rep, challenged, "act")["state"], last(rep, over)["verdict"],
+                           rep["duties"][fresh]["disposition"], E.reliance(rep, fresh, "act")["state"]))
+    check("R27", got == ("CHALLENGED", "OVERCLAIMED", "DISCHARGED", "ELIGIBLE"),
+          "a filer's record on other duties does not weigh on this one", got)
+
+    # R28 (§6): delegation cannot widen what the holder could do: once the holder has passed
+    # the duty on, its delegate's closure is refused like the holder's own
+    w = World()
+    d = w.duty()
+    dl = w.close(d, act="delegate", to=CODEX, at=200)
+    w.accept(CODEX, dl, at=201)
+    sub = w.close(d, act="substitute", to=STRANGER, at=300)
+    w.accept(STRANGER, sub, at=301)
+    w.accept(OWNER, sub, at=302)
+    c = w.close(d, actor=CODEX, at=400)
+    w.accept(OWNER, c, at=401)
+    rep = w.assess()
+    got = (rep["duties"][d]["holder"], rep["duties"][d]["delegates"], verdict_of(rep, d, c)["verdict"],
+           rep["duties"][d]["disposition"])
+    check("R28", got == (STRANGER, [], "OVERCLAIMED", "OPEN"),
+          "a delegate acts only while its delegator holds the duty", got)
+
+
 def main():
     transfer_cases()
     admission_cases()
     disposition_cases()
+    grant_cases()
+    profile_cases()
+    supersession_cases()
+    trigger_cases()
+    authority_cases()
     return finish("ASSESSMENT")
 
 
