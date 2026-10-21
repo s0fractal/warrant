@@ -261,9 +261,17 @@ closure or a transition's results for a named use. States:
   established on a current revision, or covered by a `subject_changed` trigger
   that evaluated NOT_FIRED;
 - `STALE` — a current trigger FIRED, or an observation is older than `fresh_for`;
-- `CHALLENGED` — a challenge by an actor who counts (§4.6) targets a current
-  closure. A revalidation of that closure, admitted with the same acceptances,
-  supersedes it, and the challenge stays in the record;
+- `CHALLENGED` — a challenge targets a current closure and either its actor
+  counts (§4.6) or it is **evidence-weighted**: the duty's condition is `observe`
+  and the challenge's evidence names an observation record, by any actor other
+  than the closure's filer, whose `probe` equals the condition's, whose `result`
+  differs from `expect`, and whose window ends no earlier than the latest
+  observation that met the condition. Who filed such a challenge does not
+  matter: the probe ran again and disagreed. A `compute` closure is settled by
+  the recipient's own replay and admits no counter-evidence; an `attest` closure
+  has no mechanical counter and stays actor-weighted. A revalidation of the
+  challenged closure, admitted with the same acceptances, supersedes it, and the
+  challenge stays in the record;
 - `SUPERSEDED` — the transition's results were replaced (§4.7);
 - `UNASSESSED` — something needed could not be evaluated here (a trigger is
   UNEVALUABLE, the use is not in the profile, the use requires declared triggers
@@ -294,7 +302,8 @@ accept_by    {"results": [actor…]}: whose acceptance closes a transition's res
 targets      list of crossing targets the recipient accepts a receipt into
 grant_roots  list of grant ids the recipient accepts as roots
 challengers  list of actors whose challenges count (owed_to and accept_by of the
-             duty concerned always count)
+             duty concerned always count; an evidence-weighted challenge, §4.4,
+             counts whoever filed it)
 providers    list of provider identities (§7) whose replays the recipient accepts
 ```
 
