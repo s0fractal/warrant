@@ -527,6 +527,35 @@ def _results(view):
     return out
 
 
+def _counter_observation(view, b):
+    """An evidence-weighted challenge (SPEC §4.4): the challenge cites an observation of the
+    duty's own probe, by anyone but the closure's filer, that saw something other than
+    `expect`, no earlier than the latest observation that met the condition. Who filed the
+    challenge does not matter: the probe ran again and disagreed. Only `observe` conditions
+    have such counter-evidence; a compute closure is settled by the recipient's own replay,
+    and an attested one has no mechanical counter."""
+    t = view.transitions[b["target"]]
+    items = t["body"]["closes"]
+    if not (type(b["item"]) is int and 0 <= b["item"] < len(items)):
+        return None
+    d = view.duties.get(items[b["item"]]["duty"])
+    if d is None or "observe" not in d["body"]["condition"]:
+        return None
+    cond = d["body"]["condition"]["observe"]
+    latest = max(view.matched.get((b["target"], b["item"]), []), default=None)
+    for h in b["evidence"]:
+        rec = view.by_type["observation"].get(h)
+        if rec is None or rec["actor"] == t["actor"]:
+            continue
+        o = rec["body"]
+        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:
+            continue
+        if latest is not None and o["window"][1] < latest:
+            continue
+        return {"observation": h, "actor": rec["actor"], "result": o["result"], "window": o["window"]}
+    return None
+
+
 def _challenges(view, results):
     out = {}
     for cid, c in sorted(view.by_type["challenge"].items()):
@@ -535,7 +564,8 @@ def _challenges(view, results):
             view.missing.add(b["target"])
             continue
         out[cid] = {"actor": c["actor"], "at": c["at"], "target": b["target"], "item": b["item"],
-                    "statement": b["statement"], "evidence": b["evidence"]}
+                    "statement": b["statement"], "evidence": b["evidence"],
+                    "counter_observation": _counter_observation(view, b) if b["item"] is not None else None}
         if b["item"] is None:
             results[b["target"]]["challenges"].append(cid)
     return out
@@ -628,7 +658,9 @@ def _counting_challenges(rep, closures, duty=None):
     counts = set(rep["profile"]["challengers"])
     if duty is not None:
         counts |= set(duty["owed_to"]) | set(duty["accept_by"])
-    return sorted(cid for cid, c in rep["challenges"].items() if c["target"] in closures and c["actor"] in counts)
+    # An evidence-weighted challenge counts whoever filed it (SPEC §4.4).
+    return sorted(cid for cid, c in rep["challenges"].items()
+                  if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))
 
 
 def _revision_basis(subjects, triggers, current):
