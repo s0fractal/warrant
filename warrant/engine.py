@@ -489,21 +489,28 @@ def _periods(view, d, periods, out):
 # ---------------------------------------------------------------- whole view
 
 def _assess_duties(view):
-    report, done, busy = {}, {}, set()
-
-    def visit(did):
-        if did in report or did in busy:
-            return
-        busy.add(did)
-        for c in view.duties[did]["body"]["requires"]:
-            if c in view.duties:
-                visit(c)
-        report[did] = _assess_duty(view, did, view.duties[did], done)
-        done[did] = report[did]["disposition"]
-        busy.discard(did)
-
-    for did in sorted(view.duties):
-        visit(did)
+    """Every duty after the duties it requires, depth first in sorted order. A duty
+    on the current path (a cycle) is not waited for: its dependant is assessed
+    without it, so the requirement is unmet. An explicit stack, not recursion: a
+    valid chain of 3000 requires overflowed Python's stack at b64c007 (Codex F1)."""
+    report, done = {}, {}
+    for root in sorted(view.duties):
+        if root in report:
+            continue
+        busy = {root}
+        stack = [(root, iter(view.duties[root]["body"]["requires"]))]
+        while stack:
+            did, children = stack[-1]
+            for c in children:
+                if c in view.duties and c not in report and c not in busy:
+                    busy.add(c)
+                    stack.append((c, iter(view.duties[c]["body"]["requires"])))
+                    break
+            else:
+                stack.pop()
+                busy.discard(did)
+                report[did] = _assess_duty(view, did, view.duties[did], done)
+                done[did] = report[did]["disposition"]
     return report
 
 

@@ -6,8 +6,10 @@
 """
 import sys
 
-from world import (CODEX, HOLDER, OBSERVER, OWNER, SHA_NEW, SHA_OLD, STRANGER, E, R, World, check, finish,
+from world import (CODEX, HOLDER, OBSERVER, OWNER, SHA_NEW, SHA_OLD, STRANGER, E, R, W, World, check, finish,
                    verdicts)
+from warrant import jcs as C
+from warrant.store import Snapshot, Trust
 
 
 def last(rep, did):
@@ -398,6 +400,70 @@ def handoff_cases():
           (cap.get("waiting_for"), first, last))
 
 
+def _chain(n, extra=(), close=(), accept=()):
+    """n duties, each requiring the previous one (and `extra(i, ids)`), signed in
+    memory; duties whose index is in `close` are discharged, in `accept` accepted."""
+    keys = {HOLDER: W.Key.generate(), OWNER: W.Key.generate()}
+    trust = Trust(Trust.document([(a, k.public) for a, k in keys.items()]))
+    records, blobs, ids, at = {}, {}, [], 0
+
+    def put(rtype, actor, body):
+        nonlocal at
+        at += 1
+        rid, raw = R.sign(R.record(rtype, actor, at, body), keys[actor])
+        records[rid] = raw
+        return rid
+
+    for i in range(n):
+        req = ids[-1:] + (extra(i, ids) if extra else [])
+        ids.append(put("duty", HOLDER, R.duty(HOLDER, f"dependency {i}", [OWNER], {"attest": {}},
+                                              accept_by=[OWNER], requires=req)))
+    for i in sorted(close):
+        ev = C.digest(f"evidence {i}".encode())
+        blobs[ev] = f"evidence {i}".encode()
+        t = put("transition", HOLDER, R.transition("ATTESTED", [ev], closes=[R.item(ids[i], "discharge", [ev])]))
+        if i in accept:
+            put("accept", OWNER, R.accept(t, 0, [ev]))
+    return Snapshot(records, blobs), trust, at + 1, ids
+
+
+def depth_cases():
+    # D1: positive control (Codex F1, Appendix A): 100 chained attested duties assess whole
+    snap, trust, as_of, ids = _chain(100)
+    rep = E.assess(snap, trust, as_of, E.profile())
+    check("D1", len(rep["duties"]) == 100 and not rep["invalid_records"] and not rep["missing"]
+          and not rep["unbound_actors"], "a 100-duty requires chain is assessed whole",
+          (len(rep["duties"]), rep["missing"]))
+    # D2: the same chain 3000 long raised RecursionError at b64c007 (Codex F1); a
+    # valid view is assessed whole whatever the depth of its requires
+    snap, trust, as_of, ids = _chain(3000)
+    try:
+        rep = E.assess(snap, trust, as_of, E.profile())
+        got = (len(rep["duties"]), len(rep["invalid_records"]), len(rep["missing"]))
+    except RecursionError as e:
+        got = f"RecursionError: {e}"
+    check("D2", got == (3000, 0, 0), "a 3000-duty requires chain is assessed whole", got)
+    # D3: a deep DAG (each duty requires the two before it) keeps the order semantics
+    # at depth: every duty is judged after what it requires. All 3000 are discharged
+    # and accepted except duty 2000's acceptance: below it DISCHARGED, above it the
+    # discharges are UNMET_CONDITION. A duty judged before its requires (a capped or
+    # reordered traversal) shows OPEN below 2000.
+    n = 3000
+    snap, trust, as_of, ids = _chain(n, extra=lambda i, ids: ids[-2:-1], close=range(n),
+                                     accept=set(range(n)) - {2000})
+    try:
+        rep = E.assess(snap, trust, as_of, E.profile())
+        disp = [rep["duties"][d]["disposition"] for d in ids]
+        top = rep["duties"][ids[-1]]["candidates"][-1]["verdict"]
+    except RecursionError as e:
+        disp, top = [], f"RecursionError: {e}"
+    check("D3", disp[:2000] == ["DISCHARGED"] * 2000 and disp[2000:] == ["OPEN"] * (n - 2000)
+          and top == "UNMET_CONDITION", "a deep requires DAG is judged in dependency order",
+          (disp.index("OPEN") if "OPEN" in disp else None, disp.count("DISCHARGED"), top))
+    # Cycles are not constructible from valid records (a duty names its requires by
+    # content address); their handling is unchanged and covered by the traversal itself.
+
+
 def main():
     attest_cases()
     exact_acceptance_cases()
@@ -410,6 +476,7 @@ def main():
     supersession_cases()
     question_cases()
     handoff_cases()
+    depth_cases()
     return finish("CONTRACT")
 
 

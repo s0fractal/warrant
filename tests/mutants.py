@@ -136,6 +136,39 @@ MUTANTS = [
        '    FIELDS = ("runtime", "input", "environment", "checkpoint", "state")'),
       ('        return self.root / fields["provider"] / (self.key_of(fields) + ".json")',
        '        return self.root / (self.key_of(fields) + ".json")')], "compute_test", ["C18"]),
+    ("M46", "engine.py", "requires are followed by recursion, as at b64c007 (Codex F1)",
+     [("""        busy = {root}
+        stack = [(root, iter(view.duties[root]["body"]["requires"]))]
+        while stack:
+            did, children = stack[-1]
+            for c in children:
+                if c in view.duties and c not in report and c not in busy:
+                    busy.add(c)
+                    stack.append((c, iter(view.duties[c]["body"]["requires"])))
+                    break
+            else:
+                stack.pop()
+                busy.discard(did)
+                report[did] = _assess_duty(view, did, view.duties[did], done)
+                done[did] = report[did]["disposition"]
+    return report""", """        _visit(view, root, report, done, set())
+    return report
+
+
+def _visit(view, did, report, done, busy):
+    if did in report or did in busy:
+        return
+    busy.add(did)
+    for c in view.duties[did]["body"]["requires"]:
+        if c in view.duties:
+            _visit(view, c, report, done, busy)
+    report[did] = _assess_duty(view, did, view.duties[did], done)
+    done[did] = report[did]["disposition"]
+    busy.discard(did)""")], "contract_test", ["D2"]),
+    ("M47", "engine.py", "the requires traversal stops descending at a fixed depth",
+     [('                if c in view.duties and c not in report and c not in busy:',
+       '                if c in view.duties and c not in report and c not in busy and len(stack) < 500:')],
+     "contract_test", ["D3"]),
     ("M43", "engine.py", "a duty capsule does not say whose acceptance a closure waits for",
      [('                   waiting_for=sorted({a for c in r["candidates"] if c["verdict"] == "PENDING"',
        '                   waiting_for=sorted({a for c in [] if c["verdict"] == "PENDING"')], "contract_test", ["F5"]),
