@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Each mutant removes one guard of warrant_agent and must make ITS case fail.
 
-    python3 tests/agent_mutants.py [ID ...]
+    python3 tests/agent_mutants.py [--jobs N] [ID ...]
 
 KILLED only when the named case fails; OFF_TARGET, SURVIVED, CRASH and
 BAD_MUTANT are not kills."""
@@ -139,17 +139,8 @@ def run_one(mid, fname, what, edits, test, targets):
 
 
 def main():
-    pick = set(sys.argv[1:])
-    killed = total = 0
-    for m in MUTANTS:
-        if pick and m[0] not in pick:
-            continue
-        total += 1
-        outcome, detail = run_one(*m)
-        killed += outcome == "KILLED"
-        print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
-    print(f"AGENT MUTANTS: {killed}/{total} killed on target")
-    return 0 if killed == total else 1
+    from mutants import run_all
+    return run_all(MUTANTS, "AGENT MUTANTS", sys.argv[1:], run_one, prog="agent_mutants")
 
 
 if __name__ == "__main__":

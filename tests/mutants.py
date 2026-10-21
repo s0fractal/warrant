@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Each mutant undoes one critical rule of the package and must make ITS case fail.
 
-    python3 tests/mutants.py [ID ...]
+    python3 tests/mutants.py [--jobs N] [ID ...]
+    python3 tests/mutants.py --selftest     # the runner itself against fixture runners
 
 KILLED only when a target case fails. A mutant that fails other cases only is
 OFF_TARGET, one that fails nothing SURVIVED, one whose test run produced no
@@ -319,24 +320,112 @@ def run_one(mid, fname, what, edits, test, targets):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def parse_args(argv, ids, prog):
+    """Options and mutant ids are parsed apart, so a worker count can never become a selector
+    (Codex AMEND on 944d085: `--jobs +2` and `--jobs -1` selected nothing and reported 0/0 as
+    success). Any bad value exits 2 before a single mutant runs."""
+    import argparse
+    import os
+    ap = argparse.ArgumentParser(prog=prog, allow_abbrev=False, description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--jobs", type=int, default=os.cpu_count() or 2, metavar="N",
+                    help="parallel workers, an integer >= 1 (default: the CPU count)")
+    ap.add_argument("ids", nargs="*", metavar="ID", help="mutant ids to run (default: all of them)")
+    ns = ap.parse_args(argv)
+    if ns.jobs < 1:
+        ap.error(f"--jobs must be >= 1, got {ns.jobs}")
+    unknown = sorted(set(ns.ids) - set(ids))
+    if unknown:
+        ap.error(f"unknown mutant id(s): {', '.join(unknown)}")
+    return ns
+
+
+def run_all(mutants, label, argv, runner, prog="mutants"):
+    """Run `mutants` in parallel (--jobs N in argv, default: the CPU count): each one already
+    works in its own copy of the package and its own results file, so nothing is shared.
+    Output keeps the given order; ids in argv select mutants. The 2026-10-21 CI run with 89
+    mutants took 21 of the job's 25 minutes in series. Exit 0 only when at least one mutant
+    ran and every one was KILLED; a bad option or id exits 2 (SystemExit from argparse)."""
+    import concurrent.futures
+    ns = parse_args(argv, [m[0] for m in mutants], prog)
+    pick = set(ns.ids)
+    chosen = [m for m in mutants if not pick or m[0] in pick]
+    if not chosen:
+        print(f"{label}: no mutants selected; nothing was checked")
+        return 2
+    killed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=ns.jobs) as pool:
+        for m, (outcome, detail) in zip(chosen, pool.map(lambda m: runner(*m), chosen)):
+            killed += outcome == "KILLED"
+            print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
+    print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={ns.jobs})")
+    return 0 if killed == len(chosen) else 1
+
+
+def selftest():
+    """The controller against fixture runners, and both entry points as subprocesses: a worker
+    count is never a selector, a bad one is refused before any run, and no selection ever
+    succeeds without running something."""
+    import contextlib
+    import io
+    fake = [("F1", "x.py", "fake one", [], "t", ["c"]), ("F2", "x.py", "fake two", [], "t", ["c"])]
+    calls = []
+
+    def survived(*m):
+        calls.append(m[0])
+        return "SURVIVED", ""
+
+    def killed(*m):
+        calls.append(m[0])
+        return "KILLED", "c"
+
+    def run(argv, runner, mutants=fake):
+        calls.clear()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                rc = run_all(mutants, "SELFTEST", argv, runner)
+            except SystemExit as e:
+                rc = e.code
+        return rc, list(calls)
+
+    checks = [
+        ("--jobs 2 runs every mutant and a survivor fails the run", run(["--jobs", "2"], survived) == (1, ["F1", "F2"])),
+        ("--jobs 2 with every mutant killed succeeds", run(["--jobs", "2"], killed) == (0, ["F1", "F2"])),
+        ("--jobs 1 runs in series with the same verdict", run(["--jobs", "1"], killed) == (0, ["F1", "F2"])),
+        ("--jobs +2 is two workers, not a selector", run(["--jobs", "+2"], survived) == (1, ["F1", "F2"])),
+        ("--jobs -1 is refused before any mutant runs", run(["--jobs", "-1"], killed) == (2, [])),
+        ("--jobs 0 is refused", run(["--jobs", "0"], killed) == (2, [])),
+        ("--jobs two is refused", run(["--jobs", "two"], killed) == (2, [])),
+        ("--jobs without a value is refused", run(["--jobs"], killed) == (2, [])),
+        ("--job is not an abbreviation of --jobs", run(["--job", "2"], killed) == (2, [])),
+        ("an unknown id is refused, never an empty success", run(["ZZ"], killed) == (2, [])),
+        ("a known and an unknown id together are refused", run(["F1", "ZZ"], killed) == (2, [])),
+        ("ids select, in matrix order", run(["F2", "F1"], killed) == (0, ["F1", "F2"])),
+        ("an empty matrix is not a success", run([], killed, mutants=[]) == (2, [])),
+    ]
+    for script in ("mutants.py", "agent_mutants.py"):
+        for argv in (["--jobs", "-1"], ["--jobs", "+2", "ZZ"], ["--jobs", "0", "M01"]):
+            p = subprocess.run([sys.executable, str(ROOT / "tests" / script), *argv], capture_output=True, text=True,
+                               cwd=ROOT, timeout=120, check=False)
+            ok = p.returncode == 2 and "killed on target" not in p.stdout and ("--jobs" in p.stderr or "unknown mutant" in p.stderr)
+            checks.append((f"{script} {' '.join(argv)!r}: exit 2 before any run", ok))
+    bad = [name for name, ok in checks if not ok]
+    for name, ok in checks:
+        print(f"{'ok ' if ok else 'BAD'} {name}")
+    print(f"MUTANTS-SELFTEST: {'ALL PASS' if not bad else f'{len(bad)} FAILURES'} ({len(checks)} checks)")
+    return 1 if bad else 0
+
+
 def main():
+    if sys.argv[1:] == ["--selftest"]:
+        return selftest()
     ids = [m[0] for m in MUTANTS]
     twice = sorted({i for i in ids if ids.count(i) > 1})
     if twice:
         # An id names one mutant: a claim or a run that cites it must not get two (4ce6f92).
         print(f"BAD_MUTANT ids used twice: {', '.join(twice)}")
         return 1
-    pick = set(sys.argv[1:])
-    killed = total = 0
-    for m in MUTANTS:
-        if pick and m[0] not in pick:
-            continue
-        total += 1
-        outcome, detail = run_one(*m)
-        killed += outcome == "KILLED"
-        print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
-    print(f"MUTANTS: {killed}/{total} killed on target")
-    return 0 if killed == total else 1
+    return run_all(MUTANTS, "MUTANTS", sys.argv[1:], run_one)
 
 
 if __name__ == "__main__":
