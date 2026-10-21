@@ -1,0 +1,1 @@
+The **admission position** of an item is the latest of its transition's position and the earliest acceptance position of each required acceptor.

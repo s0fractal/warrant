@@ -59,7 +59,7 @@ jobs:
       - name: Contract, computation, conditions and primitives (installed bytes)
         working-directory: tests
         run: |
-          for t in contract compute conditions primitives cli; do python "${t}_test.py"; done
+          for t in contract compute conditions assessment primitives cli; do python "${t}_test.py"; done
 
       - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
         working-directory: tests
@@ -70,6 +70,22 @@ jobs:
         run: |
           WARRANT_IMPL= python tests/mutants.py
           WARRANT_IMPL= python tests/agent_mutants.py
+
+      # After the mutants, so the mutant ids the claims cite have just been exercised.
+      # The base is the PR's base; on a push to master, the pushed commit's first parent.
+      - name: SPEC claims (the records in .warrant/store are the source; SPEC-CLAIMS.md is a view)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$BASE_SHA" ]; then
+            git fetch --quiet --no-tags --depth=1 origin "$BASE_SHA"
+          else
+            git fetch --quiet --no-tags --depth=2 origin "$GITHUB_SHA"
+            BASE_SHA=$(git rev-parse "$GITHUB_SHA^1")
+          fi
+          WARRANT_IMPL= python tools/claims.py check --base "$BASE_SHA"
+          WARRANT_IMPL= python tools/claims.py --selftest
 
       - name: Cross-host local controls and frozen round-1 artifact replay
         run: python examples/cross-host/selftest.py

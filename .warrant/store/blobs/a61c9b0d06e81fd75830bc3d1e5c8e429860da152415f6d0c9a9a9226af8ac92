@@ -1,0 +1,1 @@
+For a scheduled duty, an item discharges one period `n` (window `[start + n·every, start + (n+1)·every)`); its transition MUST NOT be earlier than the window's start, and an observation it relies on MUST lie inside the window.

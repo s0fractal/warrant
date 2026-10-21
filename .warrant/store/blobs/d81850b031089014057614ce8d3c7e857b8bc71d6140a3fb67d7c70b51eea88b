@@ -1,0 +1,1 @@
+{"because":null,"duty":"c44c2d76b18fac49df989efd8ab2dfb7ff14d5401dd35662e825fa3c608c6b47","id":"SPEC-4.3-4","kind":"normative","mutants":["M80"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.3","source":"SPEC.md","text":"Admitted closures are history.","witnesses":["assessment_test:R11","contract_test:F3","contract_test:S1"]}

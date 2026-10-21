@@ -1,0 +1,1 @@
+{"because":null,"duty":"ef40df6c38e8d75d3ffbc0cc2ac7af9ad4c4433a4b3230d2a2a7601fa1868be7","id":"SPEC-4.2-16","kind":"normative","mutants":["M73"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.2","source":"SPEC.md","text":"`impossible` and `revalidate` are not defined for scheduled duties.","witnesses":["assessment_test:R8"]}
