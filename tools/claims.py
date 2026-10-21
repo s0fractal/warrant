@@ -772,7 +772,10 @@ def selftest():
         doc = C.loads(repo.trust_path.read_bytes())
         doc["keys"].append({"actor": AUTHOR, "public": key.public})
         repo.trust_path.write_bytes(C.canon(doc))
-        g = ["-c", "user.name=claims-selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false"]
+        # No automatic gc or maintenance: a detached repack after the commit would move the
+        # fixture's objects while a case is made from it (run 39537906378).
+        g = ["-c", "user.name=claims-selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false",
+             "-c", "gc.auto=0", "-c", "maintenance.auto=false"]
         git(repo, "init", "-q")
         git(repo, "add", "-A")
         git(repo, *g, "commit", "-q", "-m", "base")
@@ -788,7 +791,11 @@ def selftest():
         def case(name, expect, mutate):
             nonlocal failures
             d = work / name
-            shutil.copytree(fix, d, symlinks=True)
+            # A clone through the pack protocol, never a copy of .git's files: copytree, and a
+            # local clone (which copies objects/ too), fail with ENOENT if the fixture is
+            # repacked meanwhile; --no-local reads objects through git, consistently.
+            subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)],
+                           capture_output=True, check=True)
             r = Repo(d)
             mutate(r)
             got = check(r, base)
