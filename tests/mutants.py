@@ -319,6 +319,25 @@ def run_one(mid, fname, what, edits, test, targets):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def run_all(mutants, label, argv, runner):
+    """Run `mutants` in parallel (--jobs N in argv, default: the CPU count): each one already
+    works in its own copy of the package and its own results file, so nothing is shared.
+    Output keeps the given order; ids in argv select mutants. The 2026-10-21 CI run with 89
+    mutants took 21 of the job's 25 minutes in series."""
+    import concurrent.futures
+    import os
+    jobs = int(argv[argv.index("--jobs") + 1]) if "--jobs" in argv else (os.cpu_count() or 2)
+    pick = {a for a in argv if not a.startswith("--") and not a.isdigit()}
+    chosen = [m for m in mutants if not pick or m[0] in pick]
+    killed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        for m, (outcome, detail) in zip(chosen, pool.map(lambda m: runner(*m), chosen)):
+            killed += outcome == "KILLED"
+            print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
+    print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={jobs})")
+    return 0 if killed == len(chosen) else 1
+
+
 def main():
     ids = [m[0] for m in MUTANTS]
     twice = sorted({i for i in ids if ids.count(i) > 1})
@@ -326,22 +345,7 @@ def main():
         # An id names one mutant: a claim or a run that cites it must not get two (4ce6f92).
         print(f"BAD_MUTANT ids used twice: {', '.join(twice)}")
         return 1
-    # Mutants run in parallel (--jobs N, default: the CPU count): each one already works in
-    # its own copy of the package and its own results file, so nothing is shared. Output keeps
-    # the MUTANTS order. The 2026-10-21 run with 89 mutants took 21 of CI's 25 minutes in series.
-    import concurrent.futures
-    import os
-    argv = sys.argv[1:]
-    jobs = int(argv[argv.index("--jobs") + 1]) if "--jobs" in argv else (os.cpu_count() or 2)
-    pick = {a for a in argv if not a.startswith("--") and not a.isdigit()}
-    chosen = [m for m in MUTANTS if not pick or m[0] in pick]
-    killed = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-        for m, (outcome, detail) in zip(chosen, pool.map(lambda m: run_one(*m), chosen)):
-            killed += outcome == "KILLED"
-            print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
-    print(f"MUTANTS: {killed}/{len(chosen)} killed on target (jobs={jobs})")
-    return 0 if killed == len(chosen) else 1
+    return run_all(MUTANTS, "MUTANTS", sys.argv[1:], run_one)
 
 
 if __name__ == "__main__":
