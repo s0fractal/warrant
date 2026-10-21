@@ -1,0 +1,1 @@
+{"because":null,"duty":"e4c263be6ec86f94692c561dcd71c89faf2708e9292fc74cbf76e8e3999ca224","id":"SPEC-4.6-6","kind":"normative","mutants":["M10"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.6","source":"SPEC.md","text":"grant_roots list of grant ids the recipient accepts as roots","witnesses":["contract_test:U5"]}

@@ -1,0 +1,1 @@
+{"because":null,"duty":"df096a1553cd40f67d5715042cbd1560f17f9175cc45d16c224f6c05ff4c44e5","id":"SPEC-4.7-4","kind":"normative","mutants":["M104"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.7","source":"SPEC.md","text":"A supersession that names a transition not in the view is reported missing.","witnesses":["contract_test:S3"]}

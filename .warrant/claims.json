@@ -10,7 +10,12 @@
     "4.1",
     "4.2",
     "4.3",
-    "4.4"
+    "4.4",
+    "4.5",
+    "4.6",
+    "4.7",
+    "5",
+    "6"
   ],
   "sentences": {
     "SPEC-4.1-1": "informative",
@@ -59,7 +64,32 @@
     "SPEC-4.4-11": "normative",
     "SPEC-4.4-12": "normative",
     "SPEC-4.4-13": "normative",
-    "SPEC-4.4-14": "normative"
+    "SPEC-4.4-14": "normative",
+    "SPEC-4.5-1": "normative",
+    "SPEC-4.5-2": "normative",
+    "SPEC-4.6-1": "normative",
+    "SPEC-4.6-2": "informative",
+    "SPEC-4.6-3": "normative",
+    "SPEC-4.6-4": "normative",
+    "SPEC-4.6-5": "normative",
+    "SPEC-4.6-6": "normative",
+    "SPEC-4.6-7": "normative",
+    "SPEC-4.6-8": "normative",
+    "SPEC-4.6-9": "informative",
+    "SPEC-4.7-1": "normative",
+    "SPEC-4.7-2": "normative",
+    "SPEC-4.7-3": "normative",
+    "SPEC-4.7-4": "normative",
+    "SPEC-5-1": "normative",
+    "SPEC-5-2": "normative",
+    "SPEC-5-3": "normative",
+    "SPEC-5-4": "normative",
+    "SPEC-5-5": "normative",
+    "SPEC-6-1": "normative",
+    "SPEC-6-2": "normative",
+    "SPEC-6-3": "normative",
+    "SPEC-6-4": "normative",
+    "SPEC-6-5": "normative"
   },
   "source": "SPEC.md"
 }

@@ -1,0 +1,1 @@
+FIRED if any entry differs at the workspace commit, NOT_FIRED if none does, UNEVALUABLE if the workspace, a path or the manifest cannot be read.

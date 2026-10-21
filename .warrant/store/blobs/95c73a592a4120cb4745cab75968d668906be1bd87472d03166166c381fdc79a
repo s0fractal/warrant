@@ -1,0 +1,1 @@
+{"because":null,"duty":"37be0b87abe9a5dae2b81088b0ebeab6e86dfd17964e6a0c96a6805727d2f496","id":"SPEC-4.5-2","kind":"normative","mutants":["M96"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.5","source":"SPEC.md","text":"A grant record not signed by its grantor is invalid.","witnesses":["assessment_test:R18"]}

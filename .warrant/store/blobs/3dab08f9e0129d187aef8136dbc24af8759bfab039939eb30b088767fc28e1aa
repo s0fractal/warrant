@@ -1,0 +1,1 @@
+{"because":null,"duty":"9b64a94728fbd330da352e2b7c5cce888854c6ff0eccec8505f21ee62727a5db","id":"SPEC-4.6-8","kind":"normative","mutants":["M22"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.6","source":"SPEC.md","text":"providers list of provider identities (§7) whose replays the recipient accepts","witnesses":["compute_test:C11"]}

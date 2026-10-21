@@ -1,0 +1,1 @@
+{"because":null,"duty":"0d2776993d8b0a8bae8f5bcebda8bc36ace25a07a4f2967ce08b68d06c2a2628","id":"SPEC-6-3","kind":"normative","mutants":["M118"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"6","source":"SPEC.md","text":"Nothing says who is competent: competence is not assessed.","witnesses":["assessment_test:R27"]}
