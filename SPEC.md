@@ -410,3 +410,28 @@ Not in this version, and refused rather than approximated: threshold (k-of-n)
 adoption, key rotation and revocation, P-256 signatures, `cmd@v1` and `ski@v1`
 checks, policy compilation (WPL), settlement tunnels, goals/commitments as
 distinct kinds, grants for acts other than `release`, revocation of grants.
+
+**Admission limits.** These are operational limits of an implementation, not
+semantics: they change no record rule, verdict, disposition or reliance state
+(§3–§7), and they are not an operand of the assessment identity (§4). A view
+within every limit is assessed exactly as without limits. A view beyond one is
+refused with a typed resource refusal before the unbounded work: no report, no
+partial report, no truncated period list and no verdict. A recipient that wants
+such a view assessed raises the limit; it never reads a refusal as an answer.
+
+| limit | bounds | default |
+| --- | --- | --- |
+| `snapshot_records` | files under `records/` while a store is read, and records in a snapshot | 100 000 |
+| `snapshot_blobs` | files under `blobs/` while a store is read, and blobs in a snapshot | 100 000 |
+| `snapshot_bytes` | all record and blob bytes of a snapshot together; a store read stops before the file that would exceed it | 1 GiB |
+| `requires_edges` | `requires` entries the dependency traversal follows (the sum over the view's duties) | 1 000 000 |
+| `duty_periods` | period entries of one scheduled duty at `as_of` (§4.3) | 10 000 |
+| `report_periods` | period entries of all scheduled duties of one report | 100 000 |
+
+Each file is also bounded by 64 MiB (§3); that bound is not a bound on the
+store. In the Python implementation the refusal is `warrant.limits.LimitExceeded`
+(a `ValueError`) with the limit, the value and the bound; `engine.assess` and
+`Snapshot.read` take `limits=` overrides, the `warrant` command exits 3, and
+`warrant-agent` takes them from the workspace `limits` and answers
+`RESOURCE_LIMIT`. The dependency traversal is iterative: the depth of a valid
+`requires` chain is bounded only by `requires_edges`.

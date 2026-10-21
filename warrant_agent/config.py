@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from warrant import jcs as C
+from warrant import limits as L
 from warrant.store import Trust
 
 from . import AGENT_API
@@ -16,8 +17,9 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 OPERATIONS = ("context", "read", "handoff", "prepare", "commit", "compute")
 RELATIONS = ("MATCH_EXPECTED_SET", "UNPINNED", "MISSING_DECLARED_BYTES", "CONTENT_MISMATCH", "WRONG_SET",
              "WRONG_SOURCE", "UNVERIFIED_EXPORTER", "LOCAL_CAPTURE")
+# The engine's admission limits (warrant.limits, SPEC §9) are workspace limits too.
 DEFAULT_LIMITS = {"context_bytes": 16 * 1024, "transfer_bytes": 16 * 1024 * 1024, "assess_seconds": 120,
-                  "provider_seconds": 600, "read_bytes": 64 * 1024, "view_ttl": 24 * 3600}
+                  "provider_seconds": 600, "read_bytes": 64 * 1024, "view_ttl": 24 * 3600, **L.DEFAULTS}
 
 
 class Workspace:
@@ -35,10 +37,18 @@ class Workspace:
         self.expectations = dict(doc.get("expectations", {}))
         self.uses = dict(doc.get("uses", {}))
         self.limits = dict(DEFAULT_LIMITS, **doc.get("limits", {}))
+        try:
+            L.resolve(self.assessment_limits())
+        except ValueError as e:
+            raise AgentError("BAD_REQUEST", f"workspace {name!r}: {e}") from None
         self.operations = tuple(doc.get("operations", OPERATIONS))
         self.state = Path(state_root) / name
         for sub in ("views", "staging", "imports", "drafts", "requests", "exports"):
             (self.state / sub).mkdir(parents=True, exist_ok=True)
+
+    def assessment_limits(self):
+        """The engine's admission limits of this workspace (warrant.limits)."""
+        return {k: self.limits[k] for k in L.DEFAULTS}
 
     def permit(self, op):
         need(op in self.operations, "NOT_PERMITTED", f"operation {op!r} is not permitted for workspace {self.name!r}")

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import jcs as C
 from . import compute as P
+from . import limits as L
 from . import records as R
 from . import triggers as TR
 
@@ -470,6 +471,26 @@ def _disposition(view, out, d, closures, revals, periods):
     out["observed_until"] = max(obs) if obs else None
 
 
+def period_count(schedule, as_of):
+    """Period entries of a schedule at as_of: every n with start + n·every ≤ as_of."""
+    return 0 if as_of < schedule["start"] else (as_of - schedule["start"]) // schedule["every"] + 1
+
+
+def _admit(view, lim):
+    """Refuse a view whose assessment would exceed an admission limit, before the
+    work: requires edges the traversal follows, period entries per duty and per
+    report (SPEC §9). At b64c007 one duty with start 0, every 1 gave 100001 period
+    entries at as_of 100000 (Codex F2)."""
+    L.admit(lim, "requires_edges", sum(len(r["body"]["requires"]) for r in view.duties.values()))
+    total = 0
+    for rec in view.duties.values():
+        if rec["body"]["schedule"] is not None:
+            n = period_count(rec["body"]["schedule"], view.as_of)
+            L.admit(lim, "duty_periods", n)
+            total += n
+    L.admit(lim, "report_periods", total)
+
+
 def _periods(view, d, periods, out):
     s = d["schedule"]
     report = {}
@@ -489,21 +510,28 @@ def _periods(view, d, periods, out):
 # ---------------------------------------------------------------- whole view
 
 def _assess_duties(view):
-    report, done, busy = {}, {}, set()
-
-    def visit(did):
-        if did in report or did in busy:
-            return
-        busy.add(did)
-        for c in view.duties[did]["body"]["requires"]:
-            if c in view.duties:
-                visit(c)
-        report[did] = _assess_duty(view, did, view.duties[did], done)
-        done[did] = report[did]["disposition"]
-        busy.discard(did)
-
-    for did in sorted(view.duties):
-        visit(did)
+    """Every duty after the duties it requires, depth first in sorted order. A duty
+    on the current path (a cycle) is not waited for: its dependant is assessed
+    without it, so the requirement is unmet. An explicit stack, not recursion: a
+    valid chain of 3000 requires overflowed Python's stack at b64c007 (Codex F1)."""
+    report, done = {}, {}
+    for root in sorted(view.duties):
+        if root in report:
+            continue
+        busy = {root}
+        stack = [(root, iter(view.duties[root]["body"]["requires"]))]
+        while stack:
+            did, children = stack[-1]
+            for c in children:
+                if c in view.duties and c not in report and c not in busy:
+                    busy.add(c)
+                    stack.append((c, iter(view.duties[c]["body"]["requires"])))
+                    break
+            else:
+                stack.pop()
+                busy.discard(did)
+                report[did] = _assess_duty(view, did, view.duties[did], done)
+                done[did] = report[did]["disposition"]
     return report
 
 
@@ -604,19 +632,24 @@ def _questions(view, duties):
     return out
 
 
-def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None):
+def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None, limits=None):
     """Assess one view. `current` is the set of revisions the recipient treats as
     current; `workspace` is (repository path, commit) for subject_changed triggers;
     `provider` is a captured compute.Provider (None: replays are UNVERIFIED);
     `replay_cache` is a directory of this recipient's earlier verified replays
     (SPEC §7: it changes cost, never the answer or the task; not part of the
-    assessment identity)."""
+    assessment identity); `limits` overrides the admission limits (limits.DEFAULTS;
+    operational, not an operand: exceeding one raises limits.LimitExceeded and
+    nothing is assessed)."""
     why = profile_problem(prof)
     if why:
         raise ValueError(f"profile: {why}")
+    lim = L.resolve(limits)
+    snapshot.admit(lim)
     ws = TR.Workspace(*workspace) if workspace is not None else None
     view = View(snapshot, trust, as_of, prof, provider,
                 cache=P.ReplayCache(replay_cache) if replay_cache is not None else None)
+    _admit(view, lim)
     duties = _assess_duties(view)
     for did, r in duties.items():
         for x in view.duties[did]["body"]["requires"] + view.duties[did]["body"]["serves"]:

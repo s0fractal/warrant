@@ -37,6 +37,26 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### Deep requires chains, and admission limits
+
+`requires` is followed with an explicit stack: at `b64c007` a valid chain of
+3000 duties raised `RecursionError` (Codex review 2026-10-21, F1). Order and
+semantics are unchanged: every in-process assessment of the contract,
+conditions and compute tests gives the recursive walk's report (contract
+cases D1–D3; mutants M46, M47).
+
+An assessment has aggregate admission limits (SPEC §9): records, blobs and
+bytes of the snapshot, `requires` edges, and period entries per scheduled duty
+and per report. They are operational, not semantics, and not an operand of the
+assessment identity. Beyond one, `engine.assess` and `Snapshot.read` raise
+`warrant.limits.LimitExceeded` (a `ValueError`) before the unbounded work, the
+`warrant` command exits 3 (`--limit NAME=N` raises a limit) and
+`warrant-agent` answers `RESOURCE_LIMIT` with the limit, value and bound; the
+workspace `limits` configure them. At `b64c007` one duty with start 0, every 1
+listed 100001 periods at as_of 100000 (F2); it is now refused by
+`duty_periods` (contract L1–L7, cli L1, agent V09–V10; mutants M48–M55,
+A28, A29).
+
 ### Sigma from PyPI, checked by identity
 
 The `[compute]` extra is `sigma-glyph==0.8.0` from PyPI instead of a git commit

@@ -92,7 +92,7 @@ def export(ws, token, roots, request_id):
         prev = views.read_json(rec_path)
         need(prev["view"] == token and prev["roots"] == roots, "CONFLICT", "request_id was used for another export")
         return prev["package"]
-    snap = Snapshot.read(vdir)
+    snap = views.read_snapshot(ws, vdir)
     size = sum(len(b) for b in snap.records.values()) + sum(len(b) for b in snap.blobs.values())
     if size > ws.limits["transfer_bytes"]:
         raise AgentError("RESOURCE_LIMIT", f"the store is {size} bytes; the configured transfer limit is "
@@ -247,7 +247,7 @@ def import_(ws, staged_id, request_id):
     if want and _declaration_actor(ws, staged.get("declaration"), delivery["manifest"]) != want:
         raise AgentError("IMPORT_BLOCKED", f"no declaration of this manifest by {want!r} verifies under the "
                          "receiver's current trust; inspect it again")
-    snap = Snapshot.read(sdir)
+    snap = views.read_snapshot(ws, sdir)
     manifest = staged["manifest"]
     declared = {r["id"]: r["envelope"] for r in manifest["records"]}
     for h, b in snap.blobs.items():
@@ -282,6 +282,6 @@ def import_(ws, staged_id, request_id):
     for kind, name, data in files:
         need((ws.store / kind / name).read_bytes() == data, "IMPORT_INCOMPLETE", f"{kind}/{name[:16]} not promoted")
     journal.update(status="COMPLETE", completed=int(time.time()), objects=len(files),
-                   resulting_snapshot=Snapshot.read(ws.store).digest)
+                   resulting_snapshot=views.read_snapshot(ws, ws.store).digest)
     views.write_json(jpath, journal)
     return journal

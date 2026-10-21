@@ -496,6 +496,63 @@ def more_views():
     check("V08", late.get("error") == "NO_ASSESSMENT" and len(list((src.ws.state / "views").iterdir())) == views_before,
           "no report and no view when the deadline passes", late)
 
+    # V09: an engine admission limit (SPEC §9) from the workspace `limits` is a typed
+    # RESOURCE_LIMIT refusal, never a report or a verdict, and leaves no view: one in
+    # the worker (duty_periods), one before it (snapshot_bytes); in limits, a context
+    src.doc["workspaces"]["src"]["limits"] = {}
+    src.reload()
+    src.file("duty", "producer", 400, R.duty("producer", "nightly", ["reviewer"], {"attest": {}},
+                                             accept_by=["reviewer"], schedule={"start": int(time.time()) - 50, "every": 1}))
+    base = {"workspace": "src", "actor": "producer", "use": "continue", "targets": []}
+    views_before = len(list((src.ws.state / "views").iterdir()))
+    src.doc["workspaces"]["src"]["limits"] = {"duty_periods": 10}
+    src.reload()
+    periods = src.call("context", base)
+    src.doc["workspaces"]["src"]["limits"] = {"snapshot_bytes": 1000}
+    src.reload()
+    size = src.call("context", base)
+    views_after = len(list((src.ws.state / "views").iterdir()))
+    src.doc["workspaces"]["src"]["limits"] = {}
+    src.reload()
+    fine = src.call("context", base)
+    check("V09", periods.get("error") == "RESOURCE_LIMIT" and periods.get("details", {}).get("limit") == "duty_periods"
+          and size.get("error") == "RESOURCE_LIMIT" and size.get("details", {}).get("limit") == "snapshot_bytes"
+          and views_after == views_before and "ok" in fine,
+          "an admission limit is RESOURCE_LIMIT with no view; within limits a context",
+          (periods, size, views_before, views_after, "ok" in fine))
+
+    # V10: a malformed engine limit in the operator's configuration is refused at load
+    src.doc["workspaces"]["src"]["limits"] = {"duty_periods": 0}
+    try:
+        src.reload()
+        bad = "loaded"
+    except Exception as e:      # noqa: BLE001
+        bad = getattr(e, "code", type(e).__name__)
+    src.doc["workspaces"]["src"]["limits"] = {}
+    src.reload()
+    check("V10", bad == "BAD_REQUEST", "a malformed engine limit is a configuration error", bad)
+
+    # V11: the worker reads only a view directory capture made (Sonar S8707 on #159):
+    # a relative path, another directory, a symlink to a real view and a symlinked
+    # meta.json are refused before anything is read
+    import os
+    from warrant_agent import _assess_worker as WK
+    real = (src.ws.state / "views" / fine["ok"]["view_token"]).resolve()
+    link = real.parent / ("f" * 32)
+    os.symlink(real, link)
+    other = real.parent / ("e" * 32)
+    other.mkdir()
+    os.symlink(real / "meta.json", other / "meta.json")
+    refused = []
+    for cand in (os.path.relpath(real), str(src.ws.state.resolve()), str(link), str(other)):
+        try:
+            WK.view_dir(cand)
+            refused.append(False)
+        except SystemExit:
+            refused.append(True)
+    check("V11", refused == [True] * 4 and WK.view_dir(str(real)) == real,
+          "the worker refuses any path but a view directory", refused)
+
 
 if __name__ == "__main__":
     sys.exit(main())
