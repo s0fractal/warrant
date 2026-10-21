@@ -129,15 +129,20 @@ MUTANTS = [
      "compute_test", ["C15"]),
     ("M42", "engine.py", "an acceptor is told its accept is the last one whoever else is still missing",
      [('"last_acceptance": c["waiting_for"] == [actor]}', '"last_acceptance": True}')], "contract_test", ["F5"]),
-    ("M46", "engine.py", "an evidence-weighted challenge still needs a listed challenger",
+    ("M56", "engine.py", "an evidence-weighted challenge still needs a listed challenger",
      [('if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))',
        'if c["target"] in closures and c["actor"] in counts)')], "conditions_test", ["K4"]),
-    ("M47", "engine.py", "any cited observation is counter-evidence, whatever its probe or result",
+    ("M57", "engine.py", "any cited observation is counter-evidence, whatever its probe or result",
      [('        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:\n            continue\n', '')],
      "conditions_test", ["K5"]),
-    ("M48", "engine.py", "a counter-observation older than the one that met the condition counts",
+    ("M58", "engine.py", "a counter-observation older than the one that met the condition counts",
      [('        if latest is not None and o["window"][1] < latest:\n            continue\n', '')],
      "conditions_test", ["K5"]),
+    ("M59", "engine.py", "an attested closure admits counter-evidence: any observation of another result counts against it",
+     [('    if d is None or "observe" not in d["body"]["condition"]:\n        return None\n    cond = d["body"]["condition"]["observe"]',
+       '    if d is None:\n        return None\n    cond = d["body"]["condition"].get("observe")'),
+      ('        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:',
+       '        if cond and (o["probe"] != cond["probe"] or o["result"] == cond["expect"]):')], "conditions_test", ["K5"]),
     ("M44", "compute.py", "a cached replay stands in for bytes the view lacks",
      [('    complete = cache is not None and all(h in blobs for h in hashes)', '    complete = cache is not None')],
      "compute_test", ["C17"]),
@@ -315,6 +320,12 @@ def run_one(mid, fname, what, edits, test, targets):
 
 
 def main():
+    ids = [m[0] for m in MUTANTS]
+    twice = sorted({i for i in ids if ids.count(i) > 1})
+    if twice:
+        # An id names one mutant: a claim or a run that cites it must not get two (4ce6f92).
+        print(f"BAD_MUTANT ids used twice: {', '.join(twice)}")
+        return 1
     pick = set(sys.argv[1:])
     killed = total = 0
     for m in MUTANTS:
