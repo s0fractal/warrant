@@ -3,6 +3,7 @@
 A store is a directory with `records/<id>.json` and `blobs/<sha256>`. A Snapshot
 reads every file exactly once into memory; everything an assessment decides is
 decided from those bytes, never from the directory again."""
+import fcntl
 import os
 from pathlib import Path
 
@@ -12,6 +13,10 @@ from . import limits as L
 from . import records as R
 
 MAX_FILE = 64 * 1024 * 1024
+
+
+class ChainMoved(ValueError):
+    """A record's `prev` is no longer its actor's head in this store (SPEC §3)."""
 
 
 class Store:
@@ -42,8 +47,89 @@ class Store:
             _write(p, data)
         return rid
 
+    def head(self, actor, trust):
+        """(id, at) of `actor`'s chain head in this store, or None before its first chained
+        record. Only records the reader itself admits count (AMEND 1 of #174): authentic
+        under `trust` by the reader's own path (Snapshot.authentic: canonical, named by its
+        id, well-formed, signed by a key bound to `actor`), carrying `prev`, and chained
+        back to a genesis (each link to the actor's own authentic record, not dated after
+        it). An unanchored record is no head: a record extending it would have no ancestors
+        before it, so the actor's own chain authority would stop there. Of those records,
+        the ones no other names as its `prev`, the latest by (at, id). A rejected or
+        unanchored file is never a predecessor; the reader still reports it."""
+        good, _ = Snapshot.read(self.root).authentic(trust)
+        mine = {rid: r for rid, r in good.items() if r["actor"] == actor and "prev" in r}
+        anchored = {}
+        for start in sorted(mine):
+            path, x = [], start
+            while x not in anchored:
+                r = mine.get(x)
+                if r is None:                   # not the actor's own authentic record
+                    anchored[x] = False
+                    break
+                path.append(x)
+                p = r["prev"]
+                if p is None:
+                    anchored[x] = True
+                    break
+                if p in mine and mine[p]["at"] > r["at"]:
+                    anchored[x] = False
+                    break
+                x = p
+            ok = anchored[x]
+            for y in path:
+                anchored.setdefault(y, ok)
+        chain = {rid: r for rid, r in mine.items() if anchored.get(rid)}
+        named = {r["prev"] for r in chain.values()}
+        tips = [(r["at"], rid) for rid, r in chain.items() if rid not in named]
+        return (max(tips)[1], max(tips)[0]) if tips else None
+
+    def append(self, rtype, actor, at, body, key, trust=None):
+        """File a record that extends `actor`'s chain in this store: `prev` is the head under
+        `trust` (default: a trust binding only the signing key to `actor`), read and extended
+        under one lock (see extend). A record dated before its predecessor is refused, not
+        filed unanchored."""
+        trust = trust or _own(actor, key)
+        return self._locked(lambda: self._extend(R.record(rtype, actor, at, body, prev=self._prev(actor, trust)), key, trust))
+
+    def extend(self, r, key, trust=None):
+        """File record `r`, already built, iff its `prev` is still `r`'s actor's head here
+        under `trust` (default: the signing key's own): a compare-and-swap (minds VARS-1 §3:
+        `git update-ref <ref> T_new T_old`), under an exclusive lock on records/, so two
+        writers of one store never name the same head. Raises ChainMoved otherwise; nothing
+        is written."""
+        return self._locked(lambda: self._extend(r, key, trust or _own(r["actor"], key)))
+
+    def _prev(self, actor, trust):
+        head = self.head(actor, trust)
+        return head[0] if head else None
+
+    def _extend(self, r, key, trust):
+        R.check(r)
+        head = self.head(r["actor"], trust)
+        if "prev" not in r or r["prev"] != (head[0] if head else None):
+            raise ChainMoved(f"{r['actor']}'s chain head here is {head[0][:12] if head else 'none'}, "
+                             f"not the record's prev {str(r.get('prev'))[:12]}")
+        if head is not None and r["at"] < head[1]:
+            raise ValueError(f"{r['actor']}'s chain head {head[0][:12]} is at {head[1]}; a record at {r['at']} would precede it")
+        return self.put_record(r, key)
+
+    def _locked(self, fn):
+        self.init()
+        fd = os.open(self.root / "records", os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            return fn()
+        finally:
+            os.close(fd)
+
     def snapshot(self, limits=None):
         return Snapshot.read(self.root, limits=limits)
+
+
+def _own(actor, key):
+    """The trust of a writer that knows only its own key: that key bound to `actor`."""
+    return Trust(Trust.document([(actor, key.public)]))
 
 
 def _write(path, data):

@@ -9,7 +9,7 @@ from warrant import jcs as C
 from warrant import records as R
 from warrant.cli import fill
 from warrant.keys import Key
-from warrant.store import Store, _authenticate
+from warrant.store import ChainMoved, Store, _authenticate
 
 from . import views
 from .errors import AgentError, need
@@ -99,8 +99,13 @@ def prepare(ws, based_on, request_id, rtype, body):
         return d
     _, report, vdir = views.load(ws, views.capture(ws)["token"] if based_on is None else based_on)
     full = _accept_body(vdir, body) if rtype == "accept" else fill(rtype, body)
+    # The signer's chain (SPEC §3): `prev` is its head in the live store, and `at` is never
+    # before the head's; commit refuses the draft if the head has moved by then. The head is
+    # read under the workspace's own trust: a record this workspace's reader rejects is never
+    # a predecessor, and never moves the head (AMEND 1 of #174).
+    head = Store(ws.store).head(actor, ws.trust())
     try:
-        rec = R.record(rtype, actor, int(time.time()), full)
+        rec = R.record(rtype, actor, max(int(time.time()), head[1] if head else 0), full, prev=head[0] if head else None)
     except R.Invalid as e:
         raise AgentError("BAD_REQUEST", f"invalid {rtype}: {e}", template=TEMPLATES[rtype]) from None
     rid = R.record_id(rec)
@@ -128,7 +133,13 @@ def commit(ws, draft_id):
     else:
         if (actor, key.id) != (d["actor"], d["key"]):
             raise AgentError("SIGNER_CHANGED", "the configured signer is not the one this draft was prepared for")
-        Store(ws.store).init().put_record(d["record"], key)
+        try:
+            Store(ws.store).init().extend(d["record"], key, ws.trust())
+        except ChainMoved as e:
+            raise AgentError("CONFLICT", f"the signer's chain moved since this draft was prepared ({e}); "
+                                         "prepare it again", reason="CHAIN_MOVED") from None
+        except ValueError as e:         # a draft dated before the head it names: never filed unanchored
+            raise AgentError("CONFLICT", f"{e}; prepare it again", reason="DATED_BEFORE_HEAD") from None
     if d["status"] != "COMMITTED":
         d["status"] = "COMMITTED"
         views.write_json(path, d)

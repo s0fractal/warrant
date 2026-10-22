@@ -1,0 +1,1 @@
+A writer takes `prev` from its actor's head in the store: of the records the writer's trust authenticates as the actor's and that are chained back to a genesis, the latest one no other names as its `prev`. It reads the head under a lock on `records/` and refuses to date a record before it; a record the reader rejects, or an unanchored one, is never a head.

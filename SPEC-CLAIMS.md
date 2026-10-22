@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 239 · backed 184 · countered 0 · unbacked 6 · informative 49 · retired 0 · records 503 · blobs 510
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 249 · backed 193 · countered 0 · unbacked 6 · informative 50 · retired 0 · records 540 · blobs 547
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -46,7 +46,7 @@ by anyone with an admitted binding, lowers its backing: it counts as backed no l
 | SPEC-2-11 | **Time** is integer Unix seconds. | records_test E9 | M181 | BACKED | OPEN (awaiting codex) | `3788a90a160f` |
 | SPEC-3-1 | A record is | — | — | INFORMATIVE: lead-in of the record block whose content is SPEC-3-3 | — (no duty) | `38f660a140f9` |
 | SPEC-3-2 | ```json | — | — | INFORMATIVE: opening fence of the record block | — (no duty) | `c61470d4f237` |
-| SPEC-3-3 | {"warrant": "2", "type": "<type>", "actor": "<actor id>", "at": <int>, "body": {...}} | records_test E4 K1 | M179 M187 | BACKED | OPEN (awaiting codex) | `db80225680a5` |
+| SPEC-3-3 | {"warrant": "2", "type": "<type>", "actor": "<actor id>", "at": <int>, "prev": <record id or null>, "body": {...}} | records_test E4 K1 K14 | M179 M187 M418 | BACKED | OPEN (awaiting codex) | `9d88944726b2` |
 | SPEC-3-4 | ``` | — | — | INFORMATIVE: closing fence of the record block | — (no duty) | `82b221c07eff` |
 | SPEC-3-5 | Its id is `sha256(canon(record))`. | records_test K2 | M188 | BACKED | OPEN (awaiting codex) | `58a7df50fed1` |
 | SPEC-3-6 | It is stored as the canonical bytes of `{"record": <record>, "sig": {"key": <hex64 key id>, "ed25519": <hex128>}}` in `records/<id>.json`. | contract_test N6 N7; records_test K3 | M171 M189 M190 M32 | BACKED | OPEN (awaiting codex) | `206bebe8c314` |
@@ -66,6 +66,10 @@ by anyone with an admitted binding, lowers its backing: it counts as backed no l
 | SPEC-3-20 | `prior` edges do not exist: every relation is a typed field below. | records_test K11 | M200 | BACKED | OPEN (awaiting codex) | `fa1096960f54` |
 | SPEC-3-21 | An **actor id** is a non-empty string of at most 200 code points, in Unicode Normalization Form C, with no control character (general category Cc) and no white space (Unicode White_Space) at either end. | agent_write_test W10; records_test K12 | A36 A37 M261 M262 M263 M264 M265 M266 | BACKED | OPEN (awaiting codex) | `cc0262ed1e3f` |
 | SPEC-3-22 | An actor may be a person, a model, a program or a rule (for example, a checker named by the hash of its code); Warrant does not assess what an actor is (§6). | records_test K13 | M267 | BACKED | OPEN (awaiting codex) | `655af1cbb754` |
+| SPEC-3-23 | `prev` is the id of the record the same actor filed before this one, or null for the actor's first record: each actor's records form its **chain**. | agent_write_test W11; records_test K14 K15 | A57 M418 M420 | BACKED | OPEN (awaiting codex) | `873eb69cecbd` |
+| SPEC-3-24 | A record without `prev` is **unchained**: it is valid, and no chain orders it; every record filed before chains is one. | assessment_test R41; records_test K14 K15 | M419 M425 | BACKED | OPEN (awaiting codex) | `2d2706c9dae8` |
+| SPEC-3-25 | A writer takes `prev` from its actor's head in the store: of the records the writer's trust authenticates as the actor's and that are chained back to a genesis, the latest one no other names as its `prev`. It reads the head under a lock on `records/` and refuses to date a record before it; a record the reader rejects, or an unanchored one, is never a head. | records_test K15 K16 K17 | M420 M421 M423 M427 M428 | BACKED | OPEN (awaiting codex) | `0a5ff5e79bfb` |
+| SPEC-3-26 | `warrant-agent` prepares a draft on the signer's head under the workspace's trust and commits it only while that head is unchanged, a compare-and-swap; otherwise it answers `CONFLICT` with reason `CHAIN_MOVED` and files nothing. | agent_write_test W11 W12; records_test K15 | A57 A58 A59 A60 M422 M429 | BACKED | OPEN (awaiting codex) | `69980b9cbc0e` |
 | SPEC-3.1-1 | ``` | — | — | INFORMATIVE: opening fence of the duty block whose lines are SPEC-3.1-2 to SPEC-3.1-15 | — (no duty) | `a0d7e2030b63` |
 | SPEC-3.1-2 | statement string ≤ 400 code points | records_test D1 | M201 M202 | BACKED | OPEN (awaiting codex) | `3bc8fadea0fd` |
 | SPEC-3.1-3 | holder actor; MUST equal the record's actor | records_test D2 | M203 | BACKED | OPEN (awaiting codex) | `f10c478fc4b7` |
@@ -144,7 +148,11 @@ by anyone with an admitted binding, lowers its backing: it counts as backed no l
 | SPEC-4-4 | The **assessment id** is the SHA-256 of the canonical description of all those operands. | — | — | UNBACKED | OPEN (no closure filed) | `3eda8b914d3c` |
 | SPEC-4-5 | Changing any operand that can change a verdict changes it; moving the same bytes to another directory does not. | compute_test C12; contract_test I1 | M126 M16 M17 | BACKED | OPEN (awaiting codex) | `147653296942` |
 | SPEC-4-6 | A snapshot cannot attest its own completeness: every report states `completeness: UNATTESTED`, and a reference to a record or blob that is not in the view is reported as missing, never as absence. | contract_test S3 | M104 | BACKED | OPEN (awaiting codex) | `fefa061d662d` |
-| SPEC-4-7 | **Position** of a record is `(at, id)`; positions are totally ordered. | assessment_test R39 | M275 M277 | BACKED | OPEN (awaiting codex) | `ab402e85db05` |
+| SPEC-4-7 | **Position** of a record is `(at, rank, id)`: records with the same `at` are ordered by id, except that a record chained to a predecessor with the same `at` follows it; positions are totally ordered. | assessment_test R39 R48 | M275 M277 M416 | BACKED | OPEN (awaiting codex) | `643d840b804d` |
+| SPEC-4-8 | A record is **chained** to its `prev` iff that record is in the view, was filed by the same actor and is not dated after it; otherwise it is **unanchored**, and the report lists it under `chains` with the reason (a `prev` not in the view is also missing). | assessment_test R42 R44 R45 | M411 M412 M413 | BACKED | OPEN (awaiting codex) | `96bb7d892f34` |
+| SPEC-4-9 | The chain orders an actor's records: one is before another iff it is reached from the other along chained `prev` links. | assessment_test R41 R42 | M417 | BACKED | OPEN (awaiting codex) | `e2184b0c12c0` |
+| SPEC-4-10 | Two records of one actor naming the same `prev` are a **fork**, listed under `chains`; no record is excluded for it, and the chain orders neither branch against the other. | assessment_test R41 R42 R43 | M414 M415 | BACKED | OPEN (awaiting codex) | `5659aef9a81d` |
+| SPEC-4-11 | `at` is what its signer claims: the records witness only each actor's chain, and between two actors' records positions follow the `at`s they claim. | — | — | INFORMATIVE: a limit, not a rule: bounding the order of two actors' records needs a witness outside the records (F43 design option b), which this version does not take | — (no duty) | `e7319b23d1d9` |
 | SPEC-4.1-1 | \| act \| filer \| also needs \| | — | — | INFORMATIVE: column headings of the table whose rows are SPEC-4.1-2 to SPEC-4.1-5 | — (no duty) | `15e38ed4635b` |
 | SPEC-4.1-2 | \| discharge, impossible, revalidate \| the holder or a delegate **at the item's position** \| condition met (§4.2), required acceptances \| | assessment_test R3 R28; contract_test G3 H1 H2 H3 U3 | M01 M281 | BACKED | OPEN (awaiting codex) | `3b4ac1ddf1b7` |
 | SPEC-4.1-3 | \| delegate \| the holder at its position and at its effect position \| acceptance by `to` \| | assessment_test R2; contract_test H5 | M62 | BACKED | OPEN (awaiting codex) | `c1258c8801c4` |
@@ -155,6 +163,8 @@ by anyone with an admitted binding, lowers its backing: it counts as backed no l
 | SPEC-4.1-8 | Holder and delegates at a position are those after every admitted transfer whose effect position is not after it. | contract_test G3 H1 H3 H4 U3 | M01 M02 M120 M281 | BACKED | OPEN (awaiting codex) | `0b0d0c786395` |
 | SPEC-4.1-9 | A later transfer neither authorizes an earlier filing nor invalidates an earlier admitted one. | contract_test H1 H2 | M01 | BACKED | OPEN (awaiting codex) | `9afcc5b28240` |
 | SPEC-4.1-10 | `serves`, a key binding, or being named in a duty grant no authority. | assessment_test R3; contract_test G3 U1 | M11 M64 | BACKED | OPEN (awaiting codex) | `b46fd8ac99e4` |
+| SPEC-4.1-11 | For a filing, its filer's own records are ordered by the chain, not by `at`: an acceptance by `to` makes `to` the holder or a delegate for `to`'s filing only if the acceptance is before that filing in `to`'s chain. | agent_handoff_test H16; assessment_test R40 R41 R44 R45 R46 R48 | M409 M424 | BACKED | OPEN (awaiting codex) | `f161dfc18f96` |
+| SPEC-4.1-12 | An admitted transfer filed by the filer itself is in effect for every filing of the filer that the chain does not order against the transfer. | assessment_test R42 | M410 | BACKED | OPEN (awaiting codex) | `a0fda3a4bdf3` |
 | SPEC-4.2-1 | An item `discharge` (or `revalidate`) for duty D is **admitted** iff: | — | — | INFORMATIVE: lead-in of the list; each condition is its own claim (SPEC-4.2-2, -3, -5 to -10) | — (no duty) | `7cdc0033984f` |
 | SPEC-4.2-2 | its filer may file it (§4.1); | assessment_test R3; contract_test G3 H1 H3 U3 | M01 M64 | BACKED | OPEN (awaiting codex) | `d90770eff412` |
 | SPEC-4.2-3 | every evidence hash resolves in the view to bytes with that hash; | assessment_test R4 | M65 M66 | BACKED | OPEN (awaiting codex) | `7e669724b472` |
@@ -289,7 +299,7 @@ None.
 
 ## Document
 
-SPEC.md is rendered from document version `2724b7558250` (524 parts). Its headings
+SPEC.md is rendered from document version `d99349cd185b` (544 parts). Its headings
 are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold
 only those lines, once each, in order and each on its own line; the rendered SPEC.md must show
 exactly those headings. A title is free text that no witness backs, so a
@@ -326,7 +336,6 @@ rule-shaped title is a review matter; the pin makes every change of one a review
 - SPEC-2-7: RFC 8785 number serialization is exercised for integers only: the domain has no floats
 - SPEC-2-10: any byte string: empty and non-UTF-8 blobs are kept (E8), and no rule restricts blob bytes, so that half has no mutant of its own; M66 burns the address (a blob counts only under its own hash)
 - SPEC-2-11: Unix seconds: the epoch and the unit are an interpretation no record shows; the case checks the integer type (not a boolean, a float or a string)
-- SPEC-3-3: `<actor id>` has no shape in SPEC; the implementation takes a non-empty string of at most 200 code points (records._actor), which no sentence states
 - SPEC-3-7: cofactorless is the verification equation of the library (cryptography/OpenSSL): the five edge vectors (P-edge) witness it and no mutant of this package can change it; removing the weak-key check (M193) is caught by the vendored vector verify-sig/weak-key-00, not by P-edge, whose keys the library rejects on its own
 - SPEC-3-12: the case is the record shape (no body is valid under another type); that the engine reads each record by its `type` is not mutated separately
 - SPEC-3-21: NFC is judged under the implementation's Unicode version (Python unicodedata); a string with unassigned code points may stop being NFC under a later version

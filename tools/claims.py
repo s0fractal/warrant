@@ -2034,7 +2034,8 @@ class Author:
         return max([int(time.time())] + [r["at"] for r in recs.values()])
 
     def put(self, rtype, body, at):
-        return self.store.put_record(R.record(rtype, self.actor, at, body), self.key)
+        # extends the author's chain (SPEC §3), its head read under the checker's own trust
+        return self.store.append(rtype, self.actor, at, body, self.key, self.repo.trust())
 
     def _validate(self, cid, text, kind, witnesses, mutants, reason, unbacked_because, counter, previous):
         m = ID_RE.match(cid)

@@ -459,7 +459,8 @@ class Writer:
         rec = R.record(rtype, self.actor, self.at(), body)
         for doc in blobs:
             self.store.put_json(doc)
-        return self.store.put_record(rec, self.key)
+        # extends the actor's chain (SPEC §3), its head read under the checker's own trust
+        return self.store.append(rtype, self.actor, rec["at"], body, self.key, self.rm.claims.trust())
 
     def goal(self, pairs):
         if not pairs:

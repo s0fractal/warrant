@@ -190,6 +190,17 @@ MUTANTS = [
     ("A37", "api.py", "a context request's actor is any non-empty string, as at 849cbfa",
      [('    need(_is_actor(actor), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")',
        '    need(isinstance(actor, str) and actor, "BAD_REQUEST", "actor")')], "agent_write_test", ["W10"]),
+    # F43: prepare extends the signer's chain; commit is a compare-and-swap on its head (SPEC §3)
+    ("A57", "drafts.py", "prepare files a genesis whatever the signer's head is",
+     [('full, prev=head[0] if head else None)', 'full, prev=None)')], "agent_write_test", ["W11"]),
+    ("A58", "drafts.py", "prepare dates the record now even when the signer's head is dated later",
+     [('max(int(time.time()), head[1] if head else 0)', 'int(time.time())')], "agent_write_test", ["W11"]),
+    ("A59", "drafts.py", "commit files the draft with no check of the signer's head",
+     [('            Store(ws.store).init().extend(d["record"], key, ws.trust())\n', '            Store(ws.store).init().put_record(d["record"], key)\n')],
+     "agent_write_test", ["W11"]),
+    ("A60", "drafts.py", "a moved head is refused untyped",
+     [('                                         "prepare it again", reason="CHAIN_MOVED") from None',
+       '                                         "prepare it again") from None')], "agent_write_test", ["W11"]),
 ]
 
 

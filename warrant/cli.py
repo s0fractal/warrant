@@ -103,14 +103,20 @@ def fill(rtype, body):
     return out
 
 
+def _append(s, rtype, actor, at, body, key):
+    """File a record extending `actor`'s chain in store `s` (SPEC §3: `prev` is its head)."""
+    try:
+        return s.append(rtype, actor, at, body, key)
+    except R.Invalid as e:
+        raise SystemExit(f"invalid {rtype}: {e}")
+    except ValueError as e:
+        raise SystemExit(str(e))
+
+
 def cmd_file(a):
     s = Store(a.store).init()
     body = fill(a.type, _read_json(a.body))
-    try:
-        r = R.record(a.type, a.actor, _now(a.at), body)
-    except R.Invalid as e:
-        raise SystemExit(f"invalid {a.type}: {e}")
-    rid = s.put_record(r, _key(a.key))
+    rid = _append(s, a.type, a.actor, _now(a.at), body, _key(a.key))
     if a.id:
         sys.stdout.write(rid + "\n")
     else:
@@ -124,8 +130,8 @@ def cmd_accept(a):
     env = C.loads(snap.records[a.transition])
     t = env["record"]["body"]
     ev = t["evidence"] if a.item is None else t["closes"][a.item]["evidence"]
-    r = R.record("accept", a.actor, _now(a.at), R.accept(a.transition, a.item, ev, a.support or []))
-    _out({"record": s.put_record(r, _key(a.key)), "type": "accept"})
+    rid = _append(s, "accept", a.actor, _now(a.at), R.accept(a.transition, a.item, ev, a.support or []), _key(a.key))
+    _out({"record": rid, "type": "accept"})
 
 
 def cmd_observe(a):
@@ -144,8 +150,8 @@ def cmd_observe(a):
         result, raw = f"PROBE_FAILED: {type(e).__name__}", []
     t1 = max(t0, int(time.time()))
     body = R.observation(a.target, probe_h, [t0, t1], result, raw)
-    r = R.record("observation", a.actor, _now(a.at) if a.at is not None else t1, body)
-    _out({"record": s.put_record(r, _key(a.key)), "type": "observation", "result": result, "window": [t0, t1]})
+    rid = _append(s, "observation", a.actor, _now(a.at) if a.at is not None else t1, body, _key(a.key))
+    _out({"record": rid, "type": "observation", "result": result, "window": [t0, t1]})
 
 
 def cmd_manifest(a):

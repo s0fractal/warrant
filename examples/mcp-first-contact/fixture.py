@@ -57,7 +57,7 @@ class World:
         self.cfg = Config.load(self.base / "config.json")
 
     def file(self, rtype, actor, body, key=None, at=None):
-        return self.store.put_record(R.record(rtype, actor, at or int(time.time()), body), key or self.keys[actor])
+        return self.store.append(rtype, actor, at or int(time.time()), body, key or self.keys[actor])
 
     def call(self, op, req):
         out = api.call(self.cfg, op, dict(req, workspace=self.name))

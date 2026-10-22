@@ -3,6 +3,7 @@
 `assess()` returns a report: every duty's disposition and candidates, every
 transition's results, grants, challenges, unowned questions and the view's
 identity. `reliance()`, `frontier()`, `questions()` and `capsule()` read a report."""
+import heapq
 from pathlib import Path
 
 from . import jcs as C
@@ -14,8 +15,9 @@ from . import triggers as TR
 PROFILE_FIELDS = ("uses", "accept_by", "targets", "grant_roots", "challengers", "providers")
 VERDICTS = ("ADMITTED", "PENDING", "OVERCLAIMED", "MISSING_EVIDENCE", "UNMET_CONDITION", "UNVERIFIED")
 RELIANCE = ("ELIGIBLE", "STALE", "CHALLENGED", "SUPERSEDED", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSING")
-START = (-1, "")
-END_ID = "\U0010ffff"      # after every record id: (as_of, END_ID) is the end of the view
+END_ID = "\U0010ffff"      # after every record id: (as_of, LAST, END_ID) is the end of the view
+LAST = float("inf")        # after every rank
+NEVER = (float("inf"), 0, "")
 PACKAGE = Path(__file__).resolve().parent
 
 
@@ -67,9 +69,85 @@ class View:
         self.transitions = self.by_type["transition"]
         self.missing = set()
         self.matched = {}       # (transition, item) -> window ends of the observations that met its condition
+        self._chains(set(self.later))
+        self._ranks()
+
+    def _chains(self, later):
+        """Each actor's chain (SPEC §3): `link` holds where a record's `prev` is in the view, by
+        the same actor, and not dated after it; any other `prev` leaves the record unanchored.
+        Two records of one actor naming the same `prev` are a fork: listed, neither excluded."""
+        self.link, self.unanchored, self.unchained, groups = {}, {}, {}, {}
+        for rid, r in sorted(self.recs.items()):
+            if "prev" not in r:
+                self.unchained[r["actor"]] = self.unchained.get(r["actor"], 0) + 1
+                continue
+            groups.setdefault((r["actor"], r["prev"] or ""), []).append(rid)
+            if r["prev"] is None:                   # the actor's first record: a genesis
+                continue
+            q = self.recs.get(r["prev"])
+            if q is None:
+                self.unanchored[rid] = "its prev is dated after this view" if r["prev"] in later else "its prev is not in the view"
+                if r["prev"] not in later:
+                    self.missing.add(r["prev"])
+            elif q["actor"] != r["actor"]:
+                self.unanchored[rid] = "its prev was filed by another actor"
+            elif q["at"] > r["at"]:
+                self.unanchored[rid] = "it is dated before its prev"
+            else:
+                self.link[rid] = r["prev"]
+        self.forks = [{"actor": a, "prev": p or None, "records": ids} for (a, p), ids in sorted(groups.items()) if len(ids) > 1]
+        self.height = {}
+        for start in self.recs:
+            path, x = [], start
+            while x not in self.height and x in self.link:
+                path.append(x)
+                x = self.link[x]
+            h = self.height.setdefault(x, 0)
+            for y in reversed(path):
+                h += 1
+                self.height[y] = h
+
+    def _ranks(self):
+        """The order of the records that share an `at` (SPEC §4): by id, except that a record
+        chained to a predecessor with the same `at` follows it."""
+        self.rank, groups = {}, {}
+        for rid, r in self.recs.items():
+            groups.setdefault(r["at"], []).append(rid)
+        for at, ids in groups.items():
+            kids, ready = {}, []
+            for rid in ids:
+                p = self.link.get(rid)
+                if p is not None and self.recs[p]["at"] == at:
+                    kids.setdefault(p, []).append(rid)
+                else:
+                    ready.append(rid)
+            heapq.heapify(ready)
+            while ready:
+                x = heapq.heappop(ready)
+                self.rank[x] = len(self.rank)
+                for k in kids.get(x, ()):
+                    heapq.heappush(ready, k)
 
     def pos(self, rid):
-        return (self.recs[rid]["at"], rid)
+        return (self.recs[rid]["at"], self.rank[rid], rid)
+
+    def before(self, a, b):
+        """a is a chain ancestor of b: an order the records witness themselves (SPEC §3)."""
+        if a == b or a not in self.height or b not in self.height or self.height[a] >= self.height[b]:
+            return False
+        while self.height[b] > self.height[a]:
+            b = self.link[b]
+        return a == b
+
+    def ordered(self, a, b):
+        """The chain orders a and b (same actor): one is the other or its ancestor."""
+        return a == b or self.before(a, b) or self.before(b, a)
+
+    def accepts_by(self, t_id, index, evidence, actor):
+        """The acceptances by `actor` binding exactly (t_id, index, evidence)."""
+        want = sorted(evidence)
+        return sorted(rid for rid, r in self.by_type["accept"].items() if r["actor"] == actor
+                      and r["body"]["transition"] == t_id and r["body"]["item"] == index and sorted(r["body"]["evidence"]) == want)
 
     def resolves(self, h):
         return h in self.snap.blobs or h in self.recs
@@ -201,17 +279,31 @@ def _transfer_effect(view, d, t_id, i, m):
 
 
 class Holders:
-    """Holder and delegates as a function of position (SPEC §4.1)."""
+    """Holder and delegates as a function of position (SPEC §4.1): the admitted transfers
+    whose effect position is not after it, applied in effect order. For a filing, the
+    filer's own records count in its chain's order, not by the `at` they claim (F43):
+    a transfer to the filer counts only once an acceptance of it by the filer is a chain
+    ancestor of the filing, and a transfer by the filer that the chain does not order
+    against the filing counts as in effect, wherever its position is."""
 
-    def __init__(self, holder):
-        self.timeline = [(START, holder, frozenset())]
+    def __init__(self, view, holder):
+        self.view, self.holder, self.transfers = view, holder, []
 
-    def at(self, pos):
-        _, h, dl = max((e for e in self.timeline if e[0] <= pos), key=lambda e: e[0])
-        return h, dl
+    def at(self, pos, filing=None):
+        h, dl = self.holder, set()
+        x = self.view.recs[filing]["actor"] if filing is not None else None
+        for eff, t_id, act, frm, to, accepts in sorted(self.transfers, key=lambda e: e[0]):
+            on = eff <= pos
+            if x == to != frm:
+                on = on and any(self.view.before(a, filing) for a in accepts)
+            elif x == frm != to and not on:
+                on = not self.view.ordered(t_id, filing)
+            if on:
+                h, dl = (h, dl | {to}) if act == "delegate" else (to, set())
+        return h, frozenset(dl)
 
-    def add(self, pos, holder, delegates):
-        self.timeline.append((pos, holder, frozenset(delegates)))
+    def add(self, eff, t_id, m, accepts):
+        self.transfers.append((eff, t_id, m["act"], self.view.recs[t_id]["actor"], m["to"], accepts))
 
 
 def _observations(view, m, cond, filer, window):
@@ -311,7 +403,7 @@ def _shape_problem(d, m, t, window, admitted):
 
 def _judge_closure(view, d, t_id, t, i, m, holders, done, admitted):
     filer = t["actor"]
-    holder, delegates = holders.at(view.pos(t_id))
+    holder, delegates = holders.at(view.pos(t_id), t_id)
     if filer != holder and filer not in delegates:
         return V("OVERCLAIMED", "filed by someone who did not hold the duty at that position")
     window = _period_window(d, m) if "period" in m else None
@@ -343,24 +435,21 @@ def _transfers(view, d, items, holders, verdicts):
     for t_id, t, i, m in items:
         if m["act"] in ("delegate", "substitute"):
             eff, missing = _transfer_effect(view, d, t_id, i, m)
-            transfers.append((eff or (float("inf"), ""), t_id, t, i, m, missing))
+            transfers.append((eff or NEVER, t_id, t, i, m, missing))
     for eff, t_id, t, i, m, missing in sorted(transfers, key=lambda x: (x[0], view.pos(x[1]), x[3])):
-        verdicts[(t_id, i)] = _transfer(view, holders, eff, t_id, t, m, missing)
+        verdicts[(t_id, i)] = _transfer(view, holders, eff, t_id, t, i, m, missing)
 
 
-def _transfer(view, holders, eff, t_id, t, m, missing):
-    h_file, _ = holders.at(view.pos(t_id))
+def _transfer(view, holders, eff, t_id, t, i, m, missing):
+    h_file, _ = holders.at(view.pos(t_id), t_id)
     if t["actor"] != h_file:
         return V("OVERCLAIMED", "only the holder at that position transfers or delegates")
     if missing:
         return V("PENDING", _waiting_why(missing), waiting=missing)
-    h_eff, dl = holders.at(eff)
+    h_eff, _ = holders.at(eff, t_id)
     if h_eff != t["actor"]:
         return V("OVERCLAIMED", "the filer no longer held the duty when the transfer would take effect")
-    if m["act"] == "delegate":
-        holders.add(eff, h_eff, set(dl) | {m["to"]})
-    else:
-        holders.add(eff, m["to"], set())
+    holders.add(eff, t_id, m, view.accepts_by(t_id, i, m["evidence"], m["to"]))
     return V("ADMITTED")
 
 
@@ -381,7 +470,7 @@ def _closures(view, did, d, items, holders, done, verdicts):
     admitted = {}           # transition id -> admission position, of admitted discharges/revalidations
     first = [x for x in items if x[3]["act"] not in ("delegate", "substitute", "revalidate")]
     reval = sorted((x for x in items if x[3]["act"] == "revalidate"),
-                   key=lambda x: _admission_pos(view, d, x[0], x[2], x[3]) or (float("inf"), x[0]))
+                   key=lambda x: _admission_pos(view, d, x[0], x[2], x[3]) or (LAST, 0, x[0]))
     for t_id, t, i, m in first + reval:
         if not all(view.resolves(h) for h in m["evidence"]):
             verdicts[(t_id, i)] = V("MISSING_EVIDENCE", "cited evidence is not in the view")
@@ -445,12 +534,12 @@ def _assess_duty(view, did, rec, done):
            "requires": d["requires"], "serves": d["serves"],
            "fresh_for": d["condition"].get("observe", {}).get("fresh_for")}
     items = _items(view, did)
-    holders = Holders(d["holder"])
+    holders = Holders(view, d["holder"])
     verdicts = {}
     _transfers(view, d, items, holders, verdicts)
     _closures(view, did, d, items, holders, done, verdicts)
     closures, periods, revals = _candidates(view, out, items, verdicts)
-    h, dl = holders.at((float("inf"), ""))
+    h, dl = holders.at(NEVER)
     out["holder"], out["delegates"] = h, sorted(dl)
     _disposition(view, out, d, closures, revals, periods)
     out["flags"] += [flag for verdict, flag in FLAG_OF if any(c["verdict"] == verdict for c in out["candidates"])]
@@ -705,9 +794,11 @@ def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=No
             # sign can count in this view (found in the 2026-10-18 handoff).
             "unbound_actors": sorted(named - bound),
             "profile": prof, "duties": duties, "results": results, "challenges": challenges,
-            "grants": {g: grant_state(view, g, (as_of, END_ID))[0] for g in sorted(view.by_type["grant"])},
+            "grants": {g: grant_state(view, g, (as_of, LAST, END_ID))[0] for g in sorted(view.by_type["grant"])},
             "questions": _questions(view, duties), "invalid_records": view.invalid,
-            "later_records": view.later, "misfiled": snapshot.misfiled, "missing": sorted(view.missing)}
+            "later_records": view.later, "misfiled": snapshot.misfiled, "missing": sorted(view.missing),
+            # Each actor's chain (SPEC §3): what the records order themselves, and what they do not.
+            "chains": {"forks": view.forks, "unanchored": view.unanchored, "unchained": view.unchained}}
 
 
 # ---------------------------------------------------------------- reading a report
