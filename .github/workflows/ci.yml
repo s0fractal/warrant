@@ -59,7 +59,7 @@ jobs:
       - name: Contract, computation, conditions and primitives (installed bytes)
         working-directory: tests
         run: |
-          for t in contract compute conditions assessment primitives records cli roadmap circle; do python "${t}_test.py"; done
+          for t in contract compute conditions assessment primitives records cli roadmap circle why; do python "${t}_test.py"; done
 
       - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
         working-directory: tests
