@@ -422,8 +422,9 @@ def _visit(view, did, report, done, busy):
     ("M132", "compute.py", "a receipt's member set is not checked",
      [('    if not (isinstance(doc, dict) and set(doc) == RECEIPT_FIELDS and doc["receipt"] == "sigma-resume"):',
        '    if not (isinstance(doc, dict) and doc["receipt"] == "sigma-resume"):')], "compute_test", ["C23"]),
-    ("M133", "compute.py", "a receipt's hashes are not checked",
-     [('    if not all(isinstance(doc[k], str) and len(doc[k]) == 64 for k in ("input", "environment", "checkpoint", "state", "claimed")):\n        return "receipt hashes"\n', '')],
+    ("M133", "compute.py", "a receipt's hash members are checked for length only, as at 808c011 (Codex AMEND on #164)",
+     [('    if not all(_hex64(doc[k]) for k in ("input", "environment", "checkpoint", "state", "claimed")):',
+       '    if not all(isinstance(doc[k], str) and len(doc[k]) == 64 for k in ("input", "environment", "checkpoint", "state", "claimed")):')],
      "compute_test", ["C23"]),
     ("M134", "compute.py", "a receipt that reports a loss counts",
      [('    if doc["lost"]:\n        return None, "the receipt reports', '    if False:\n        return None, "the receipt reports')],
@@ -516,6 +517,10 @@ def _visit(view, did, report, done, busy):
      [('class LimitExceeded(ValueError):', 'class LimitExceeded(Exception):')], "contract_test", ["L1"]),
     ("M168", "store.py", "a file over 64 MiB is read",
      [('    if p.stat().st_size > MAX_FILE:\n        return "larger than admitted"\n', '')], "assessment_test", ["R35"]),
+    ("M169", "compute.py", "a cycle blob's hash members are checked for length only, as at 808c011 (the mirror of M133)",
+     [('    if not all(_hex64(doc[k]) for k in ("input", "environment", "witness")):',
+       '    if not all(isinstance(doc[k], str) and len(doc[k]) == 64 for k in ("input", "environment", "witness")):')],
+     "compute_test", ["C25"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

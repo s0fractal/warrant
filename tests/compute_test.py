@@ -15,6 +15,9 @@ from world import HOLDER, OWNER, E, P, R, World, check, finish, verdicts
 
 PROV = P.Provider.capture()
 TARGET = "warrant-test"
+# 64-character strings that are not hex64 (SPEC §3: lowercase hex): a non-hex letter,
+# uppercase hex, non-ASCII. Each has the right length, so a length-only check passes it.
+NOT_HEX64 = {"non-hex letter": "g" * 64, "uppercase hex": "A" * 64, "non-ASCII": "\u00e9" * 64}
 
 
 def term(w, expr, runtime=P.BOOK1):
@@ -55,6 +58,14 @@ def assess(w, targets=(TARGET,), provider=PROV, providers=None):
 
 def last(rep, d):
     return rep["duties"][d]["candidates"][-1]
+
+
+def shape_of(predicate, doc):
+    """What a shape predicate says of `doc`; a mutant may make it raise, which is a failure of the case."""
+    try:
+        return predicate(doc)
+    except Exception as e:      # noqa: BLE001
+        return f"raised {type(e).__name__}"
 
 
 def main():
@@ -161,14 +172,31 @@ def main():
     check("C8", rep["duties"][d3]["disposition"] == "OPEN" and "cycle not proven" in last(rep, d3)["why"],
           "a witness for another root proves nothing here", last(rep, d3)["why"])
     # C25 (pilot W3, SPEC §7): a cycle blob is exactly the members SPEC §7 lists; the
-    # genuine M M cycle with one extra member is refused by name, never verified
-    d25 = compute_duty(w, inp, env, rt, "00" * 32)
-    w.close(d25, act="impossible", basis="REPLAYED",
-            evidence=[w.blob({"cycle": "sigma-resume", "target": TARGET, "input": inp, "environment": env,
-                              "witness": wit, "lost": [], "note": "one member too many"})])
-    rep = assess(w)
-    check("C25", rep["duties"][d25]["disposition"] == "OPEN" and last(rep, d25)["why"] == "not a sigma-resume cycle",
-          "a cycle blob with a member SPEC §7 does not list is not verified", verdicts(rep, d25))
+    # genuine M M cycle with one extra member is refused by name, never verified. Its
+    # hash members are hex64 as SPEC §3 defines it: for each of input, environment and
+    # witness a 64-character value that is not lowercase hex is refused by the shape
+    # predicate as "cycle hashes" (the mirror of C23's finding; at 808c011 length only)
+    full25 = {"cycle": "sigma-resume", "target": TARGET, "input": inp, "environment": env, "witness": wit, "lost": []}
+    shapes25 = {"extra member": dict(full25, note="one member too many"), "short witness": dict(full25, witness=wit[:63])}
+    for member in ("input", "environment", "witness"):
+        for name, bad in NOT_HEX64.items():
+            shapes25[f"{member} {name}"] = dict(full25, **{member: bad})
+    want25 = {k: "not a sigma-resume cycle" if k == "extra member" else "cycle hashes" for k in shapes25}
+    direct25 = {k: shape_of(P.cycle_problem, doc) for k, doc in shapes25.items()}
+    ds25 = {}
+    for k, doc in shapes25.items():
+        ds25[k] = compute_duty(w, inp, env, rt, "00" * 32)
+        w.close(ds25[k], act="impossible", basis="REPLAYED", evidence=[w.blob(doc)])
+    try:
+        rep = assess(w)
+        got25 = {k: last(rep, x)["why"] for k, x in ds25.items()}
+        open25 = all(rep["duties"][x]["disposition"] == "OPEN" for x in ds25.values())
+    except Exception as e:      # noqa: BLE001
+        got25, open25 = f"raised {type(e).__name__}: {e}", False
+    check("C25", direct25 == want25 and got25 == want25 and open25 and P.cycle_problem(full25) is None,
+          "a cycle blob with other members, or a hash member that is not lowercase hex64, is refused by its shape",
+          {k: (direct25.get(k), got25.get(k) if isinstance(got25, dict) else got25)
+           for k in shapes25 if direct25.get(k) != want25[k] or not isinstance(got25, dict) or got25.get(k) != want25[k]})
     # C26 (pilot W3, SPEC §7): a cycle says nothing about other uses of the term: the
     # verified cycle of M M, filed as `impossible` for K I (M M), is refused there,
     # and K I (M M) is discharged by its own replay
@@ -405,11 +433,21 @@ def main():
     check("C22", got22 == [("MISSING_EVIDENCE", "OPEN")] * 2, "a REPLAYED item cites exactly one receipt", got22)
 
     # C23: a receipt is exactly the members SPEC §7 lists: a genuine one with an extra
-    # member, without `lost`, or with a claimed hash that is not hex64 is refused by name
+    # member, without `lost`, or with a hash member that is not hex64 is refused by the
+    # shape predicate itself, by name. hex64 is SPEC §3's lowercase hex of 64 characters:
+    # for each of the five hash members a value of the right length made of a non-hex
+    # letter, of uppercase hex, or of non-ASCII characters is refused as "receipt hashes"
+    # (Codex AMEND on #164: at 808c011 the predicate checked the length only, and
+    # those values passed it, to be refused later by the replay or a missing blob)
     full = {"receipt": "sigma-resume", "target": TARGET, "input": inp, "environment": env, "checkpoint": ck,
             "state": st, "claimed": result, "lost": []}
     shapes = {"extra member": dict(full, note="x"), "no lost": {k: v for k, v in full.items() if k != "lost"},
               "short claimed": dict(full, claimed=result[:63])}
+    for member in ("input", "environment", "checkpoint", "state", "claimed"):
+        for name, bad in NOT_HEX64.items():
+            shapes[f"{member} {name}"] = dict(full, **{member: bad})
+    want23 = {k: "not a sigma-resume receipt" if k in ("extra member", "no lost") else "receipt hashes" for k in shapes}
+    direct = {k: shape_of(P.receipt_problem, doc) for k, doc in shapes.items()}
     ds23 = {}
     for k, doc in shapes.items():
         ds23[k] = compute_duty(w, inp, env, rt, result)
@@ -419,8 +457,10 @@ def main():
         got23 = {k: last(rep, x)["why"] for k, x in ds23.items()}
     except Exception as e:      # noqa: BLE001 (a mutant may make the replay raise)
         got23 = f"raised {type(e).__name__}: {e}"
-    check("C23", got23 == {"extra member": "not a sigma-resume receipt", "no lost": "not a sigma-resume receipt",
-                           "short claimed": "receipt hashes"}, "a receipt with other members or bad hashes is refused", got23)
+    check("C23", direct == want23 and got23 == want23 and P.receipt_problem(full) is None,
+          "a receipt with other members, or a hash member that is not lowercase hex64, is refused by its shape",
+          {k: (direct.get(k) if isinstance(direct, dict) else direct, got23.get(k) if isinstance(got23, dict) else got23)
+           for k in shapes if direct.get(k) != want23[k] or not isinstance(got23, dict) or got23.get(k) != want23[k]})
 
     # C24: the receipt's (input, environment) must be the condition's and its bytes in
     # the view. A genuine receipt of S K K (K I) filed for K I, whose duty expects the
