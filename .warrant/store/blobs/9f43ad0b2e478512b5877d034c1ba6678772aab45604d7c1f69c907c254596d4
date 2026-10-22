@@ -1,0 +1,36 @@
+{
+ "harness": "mutants",
+ "matrix": "warrant-mutants/matrix@1",
+ "mutants": {
+  "M300": {
+   "definition": "e3076836d2a53aab00510f091a311adffee32071b7137fa8b200b587b4d21c53",
+   "file": "../tools/roadmap.py",
+   "outcome": "KILLED",
+   "runs": {
+    "roadmap_test": {
+     "P1": "PASS",
+     "P10": "PASS",
+     "P11": "PASS",
+     "P12": "PASS",
+     "P13": "PASS",
+     "P14": "PASS",
+     "P2": "PASS",
+     "P3": "PASS",
+     "P4": "PASS",
+     "P5": "PASS",
+     "P6": "PASS",
+     "P7": "PASS",
+     "P8": "PASS",
+     "P9": "FAIL"
+    }
+   },
+   "targets": [
+    "P9"
+   ],
+   "test": "roadmap_test",
+   "what": "the Forward Attack mark fires when any obligation is DISCHARGED, not all"
+  }
+ },
+ "source": "tree:8604538d9456c6bf44db364b0fe7759120b7d1e8",
+ "tests": "own"
+}
