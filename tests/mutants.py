@@ -2,7 +2,15 @@
 """Each mutant undoes one critical rule of the package and must make ITS case fail.
 
     python3 tests/mutants.py [--jobs N] [ID ...]
+    python3 tests/mutants.py --matrix FILE [--matrix-tests own|all|T1,T2] [--jobs N] [ID ...]
     python3 tests/mutants.py --selftest     # the runner itself against fixture runners
+
+--matrix FILE also writes, for every mutant, every case of every test file it ran
+under that mutant with its result (PASS/FAIL), so `tools/claims.py audit` can ask
+which cases notice a mutant besides its targets. By default each mutant runs its
+own test file only (what the verdict needs, so the matrix costs no extra run);
+--matrix-tests all runs every tests/*_test.py under every mutant, T1,T2 names
+test files (without .py). The verdict is always taken from the own test file.
 
 KILLED only when a target case fails. A mutant that fails other cases only is
 OFF_TARGET, one that fails nothing SURVIVED, one whose test run produced no
@@ -46,7 +54,8 @@ MUTANTS = [
     ("M10", "engine.py", "any grant root is accepted",
      [('if gid in view.profile["grant_roots"] else', 'if True else')], "contract_test", ["U5"]),
     ("M11", "engine.py", "any authenticated actor may release",
-     [('    if t["actor"] in set(d["owed_to"]) | set(d["release_by"]):', '    if True:')], "contract_test", ["U1"]),
+     [('    if t["actor"] in d["owed_to"]:\n', '    return V("ADMITTED", label=f"RELEASE:{t[\'actor\']}")\n    if t["actor"] in d["owed_to"]:\n')],
+     "contract_test", ["U1"]),
     ("M12", "engine.py", "an UNEVALUABLE trigger does not block reliance",
      [('    unknown = [f"{t[\'kind\']}: {t[\'detail\']}" for t in cur if t["result"] == "UNEVALUABLE"]',
        '    unknown = []')], "contract_test", ["N1"]),
@@ -95,10 +104,11 @@ MUTANTS = [
      [('        elif window and not (window[0] <= o["window"][0] and o["window"][1] < window[1]):', '        elif False:')],
      "conditions_test", ["Q3"]),
     ("M29", "engine.py", "any actor's challenge counts",
-     [('if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))',
-       'if c["target"] in closures)')], "conditions_test", ["K2"]),
+     [('        counted = c["actor"] in counts', '        counted = True')], "conditions_test", ["K2"]),
     ("M30", "engine.py", "a superseded closure still carries its challenges",
-     [('    yield _challenged(rep, _counting_challenges(rep, set(r["current_closures"]), r))', '    yield _challenged(rep, _counting_challenges(rep, set(r["closed_by"]), r))')],
+     [('    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))',
+       '    yield _challenged(rep, _counting_challenges(rep, {(c["transition"], c["item"]) for c in r["candidates"]\n'
+       '                                                      if c["verdict"] == "ADMITTED"}, r))')],
      "conditions_test", ["K3"]),
     ("M31", "engine.py", "freshness counts any observation cited by a closure (R138-01)",
      [('           for end in view.matched.get((tid, t["body"]["closes"].index(m)), [])]',
@@ -129,10 +139,9 @@ MUTANTS = [
      [('    return {"schema": ENV_SCHEMA, "hashes": sorted(set(hashes))}', '    return {"hashes": sorted(set(hashes)), "schema": "warrant"}')],
      "compute_test", ["C15"]),
     ("M42", "engine.py", "an acceptor is told its accept is the last one whoever else is still missing",
-     [('"last_acceptance": c["waiting_for"] == [actor]}', '"last_acceptance": True}')], "contract_test", ["F5"]),
+     [('"last_acceptance": all(actor in g for g in c["awaiting"])}', '"last_acceptance": True}')], "contract_test", ["F5"]),
     ("M56", "engine.py", "an evidence-weighted challenge still needs a listed challenger",
-     [('if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))',
-       'if c["target"] in closures and c["actor"] in counts)')], "conditions_test", ["K4"]),
+     [('        weighted = bool(c.get("counter_observation"))', '        weighted = False')], "conditions_test", ["K4"]),
     ("M57", "engine.py", "any cited observation is counter-evidence, whatever its probe or result",
      [('        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:\n            continue\n', '')],
      "conditions_test", ["K5"]),
@@ -214,7 +223,7 @@ def _visit(view, did, report, done, busy):
     ("M61", "engine.py", "the filer need not hold the duty when its transfer takes effect",
      [('    if h_eff != t["actor"]:\n', '    if False:\n')], "assessment_test", ["R1"]),
     ("M62", "engine.py", "a transfer takes effect without the acceptance of `to`",
-     [('    if m["to"] not in got:\n        missing.append(f"{m[\'to\']} (incoming)")\n    else:\n        pos = max(pos, got[m["to"]])',
+     [('    if m["to"] not in got:\n        missing.append([m["to"]])\n    else:\n        pos = max(pos, got[m["to"]])',
        '    if m["to"] in got:\n        pos = max(pos, got[m["to"]])')], "assessment_test", ["R2"]),
     ("M63", "engine.py", "a substitution needs no consent from owed_to or release_by",
      [('    if m["act"] == "substitute":\n        creditors', '    if False:\n        creditors')], "assessment_test", ["R2"]),
@@ -290,12 +299,12 @@ def _visit(view, did, report, done, busy):
      [('        elif o["result"] != cond["expect"]:', '        elif False:')], "conditions_test", ["B2c"]),
     # M90-M120 burn the witnesses of SPEC §4.5-§6 sentences (pilot W2: claims SPEC-4.5-1 to SPEC-6-5).
     ("M90", "engine.py", "a grant authorizes acts filed before the grant itself",
-     [('    if rec["at"] > at:\n        return "NOT_YET", "granted after this position"\n', '')], "assessment_test", ["R14"]),
+     [('    if view.pos(gid) > pos:\n        return "NOT_YET", "granted after this position"\n', '')], "assessment_test", ["R14"]),
     ("M91", "engine.py", "a grant never expires",
-     [('    if g["expires"] is not None and at >= g["expires"]:\n        return "EXPIRED", f"expired at {g[\'expires\']}"\n', '')],
+     [('    if g["expires"] is not None and pos[0] >= g["expires"]:\n        return "EXPIRED", f"expired at {g[\'expires\']}"\n', '')],
      "assessment_test", ["R15"]),
     ("M92", "engine.py", "a parent grant is judged at the act's position, not at its child's",
-     [('    pst, why = grant_state(view, g["parent"], rec["at"], depth + 1)', '    pst, why = grant_state(view, g["parent"], at, depth + 1)')],
+     [('    pst, why = grant_state(view, g["parent"], view.pos(gid), depth + 1)', '    pst, why = grant_state(view, g["parent"], pos, depth + 1)')],
      "assessment_test", ["R16"]),
     ("M93", "engine.py", "anyone may attenuate a grant, not only its grantee",
      [('    if grantor != p["grantee"]:\n        return "the grantor is not the parent\'s grantee"\n', '')], "assessment_test", ["R17"]),
@@ -370,14 +379,13 @@ def _visit(view, did, report, done, busy):
      [('        return "UNEVALUABLE", f"duty state not assessable here: {disp}"', '        return "NOT_FIRED", f"duty state not assessable here: {disp}"')],
      "assessment_test", ["R25"]),
     ("M116", "engine.py", "release_by does not authorize a release",
-     [('    if t["actor"] in set(d["owed_to"]) | set(d["release_by"]):', '    if t["actor"] in set(d["owed_to"]):')],
-     "assessment_test", ["R26"]),
+     [('    if t["actor"] in d["release_by"]:', '    if False:')], "assessment_test", ["R26"]),
     ("M117", "engine.py", "any actor's acceptance stands for the duty's accept_by",
-     [('    missing = sorted(set(d["accept_by"]) - got)', '    missing = [] if got else sorted(d["accept_by"])')],
+     [('    missing = [[a] for a in sorted(set(d["accept_by"]) - got)]', '    missing = [] if got else [[a] for a in sorted(d["accept_by"])]')],
      "contract_test", ["A2"]),
     ("M118", "engine.py", "a filer's challenged record elsewhere weighs on its other closures",
-     [('    yield _challenged(rep, _counting_challenges(rep, set(r["current_closures"]), r))\n',
-       '    yield _challenged(rep, _counting_challenges(rep, set(r["current_closures"]), r))\n'
+     [('    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))\n',
+       '    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))\n'
        '    mine = {rep["results"][x]["actor"] for x in r["current_closures"] if x in rep["results"]}\n'
        '    yield _challenged(rep, sorted(c for c, x in rep["challenges"].items()\n'
        '                                  if rep["results"].get(x["target"], {}).get("actor") in mine))\n')],
@@ -435,7 +443,7 @@ def _visit(view, did, report, done, busy):
     ("M136", "compute.py", "a receipt whose bytes are not in the view is replayed anyway",
      [('    if ck is None or st is None:\n        return None, "receipt bytes not in view"\n', '')], "compute_test", ["C24"]),
     ("M137", "compute.py", "a replay that did not reach a normal form is compared as an answer",
-     [('    if r["code"] != "NORMAL_FORM":\n', '    if False:\n')], "compute_test", ["C4"]),
+     [('    if r["code"] != "NORMAL_FORM":\n', '    if False:\n')], "compute_test", ["C4", "C29"]),
     ("M138", "compute.py", "the replay cache is never consulted",
      [('        self.hits += 1\n        return doc["result"]', '        return None')], "compute_test", ["C16"]),
     ("M139", "compute.py", "a cycle blob's member set is not checked",
@@ -627,7 +635,7 @@ def _visit(view, did, report, done, busy):
     ("M206", "records.py", "release_by is not checked",
      [('    _actors(b["release_by"], "release_by")\n', "")], "records_test", ["D5"]),
     ("M207", "engine.py", "owed_to may release only when it is also in release_by",
-     [('    if t["actor"] in set(d["owed_to"]) | set(d["release_by"]):', '    if t["actor"] in set(d["release_by"]):')],
+     [('    if t["actor"] in d["owed_to"]:\n        return V("ADMITTED", label=f"RELEASE:{t[\'actor\']}")\n', '')],
      "records_test", ["D5"]),
     ("M208", "records.py", "a condition may name several kinds; the first counts",
      [('    _need(isinstance(c, dict) and len(c) == 1, ', '    _need(isinstance(c, dict) and len(c) >= 1, ')], "records_test", ["D6"]),
@@ -745,7 +753,7 @@ def _visit(view, did, report, done, busy):
      [('    _hexes(b["duties"], "duties", nonempty=True, sorted_=True)', '    _hexes(b["duties"], "duties", nonempty=True)')],
      "records_test", ["G5"]),
     ("M253", "engine.py", "a grant still authorizes at its expiry (`expires` inclusive)",
-     [('and at >= g["expires"]:', 'and at > g["expires"]:')], "assessment_test", ["R15"]),
+     [('and pos[0] >= g["expires"]:', 'and pos[0] > g["expires"]:')], "assessment_test", ["R15"]),
     ("M254", "records.py", "expires may be a boolean",
      [('(type(b["expires"]) is int and b["expires"] >= 0)', '(isinstance(b["expires"], int) and b["expires"] >= 0)')],
      "records_test", ["G6"]),
@@ -786,6 +794,57 @@ def _visit(view, did, report, done, busy):
      [('    _text(v, what, limit=MAX_ACTOR)\n',
        '    _text(v, what, limit=MAX_ACTOR)\n    _need(re.fullmatch(r"[A-Za-z0-9_.-]+", v) is not None, f"{what} is not a name")\n')],
      "records_test", ["K13"]),
+    # Gemini deep review 2026-10-22: defects A (challenge scope), B (awaited acceptances), C (grant positions)
+    ("M268", "engine.py", "a challenge counts against every closure of the transition it targets, whatever its item",
+     [('        if (c["target"], c["item"]) not in closures:', '        if c["target"] not in {x[0] for x in closures}:')],
+     "assessment_test", ["R36"]),
+    ("M269", "engine.py", "a challenge of the results (item null) counts against the transition's closures",
+     [('        if (c["target"], c["item"]) not in closures:',
+       '        if (c["target"], c["item"]) not in closures and not (c["item"] is None and c["target"] in {x[0] for x in closures}):')],
+     "assessment_test", ["R36"]),
+    ("M270", "engine.py", "a substitution is shown waiting for `to` only, never for its creditor",
+     [('transfers or delegates")\n    if missing:\n        return V("PENDING", _waiting_why(missing), waiting=missing)',
+       'transfers or delegates")\n    if missing:\n        return V("PENDING", _waiting_why(missing), waiting=missing[:1])')],
+     "assessment_test", ["R37"]),
+    ("M271", "engine.py", "an acceptance is the last one only when its actor is the only one awaited",
+     [('"last_acceptance": all(actor in g for g in c["awaiting"])}', '"last_acceptance": c["waiting_for"] == [actor]}')],
+     "assessment_test", ["R37"]),
+    ("M272", "engine.py", "an attested impossibility waits for every owed_to actor, not for one",
+     [('        missing.append(sorted(set(d["owed_to"])))', '        missing += [[a] for a in sorted(set(d["owed_to"]))]')],
+     "assessment_test", ["R38"]),
+    ("M273", "engine.py", "an awaited actor's id is read up to its first ' ('",
+     [('            cand["waiting_for"] = sorted({a for g in waiting for a in g})',
+       '            cand["waiting_for"] = sorted({a.split(" (")[0] for g in waiting for a in g})')], "assessment_test", ["R38"]),
+    ("M274", "engine.py", "an acceptance another missing one implies is still awaited",
+     [('    return [list(g) for g in gs if not any(set(h) < set(g) for h in gs)]', '    return [list(g) for g in gs]')],
+     "assessment_test", ["R38"]),
+    ("M275", "engine.py", "a grant is valid from its `at`, not from its position (at, id)",
+     [('    if view.pos(gid) > pos:', '    if view.pos(gid)[0] > pos[0]:')], "assessment_test", ["R39"]),
+    ("M276", "engine.py", "a parent grant is judged at the end of its child's `at`, not at the child's position",
+     [('grant_state(view, g["parent"], view.pos(gid), depth + 1)', 'grant_state(view, g["parent"], (view.pos(gid)[0], END_ID), depth + 1)')],
+     "assessment_test", ["R39"]),
+    ("M277", "engine.py", "positions are ordered by `at` alone (SPEC-4-7: the id breaks no tie)",
+     [('        return (self.recs[rid]["at"], rid)', '        return (self.recs[rid]["at"], "")')], "assessment_test", ["R39"]),
+    # The six counters of the Gemini deep review (2026-10-22), as mutants. SPEC-4.1-5's counter is M116's
+    # edit and SPEC-4.2-7's is M137's, byte for byte: those claims cite the existing mutant.
+    ("M278", "engine.py", "a results acceptance is looked up as an acceptance of item 0 (counter against SPEC-3.3-8)",
+     [('b["item"] == index and sorted(b["evidence"]) == want:', 'b["item"] == (0 if index is None else index) and sorted(b["evidence"]) == want:')],
+     "records_test", ["A7"]),
+    ("M279", "engine.py", "an acceptance of item 0 also accepts the transition's results",
+     [('b["item"] == index and sorted(b["evidence"]) == want:', '(b["item"] == index or index is None and b["item"] == 0) and sorted(b["evidence"]) == want:')],
+     "records_test", ["A7"]),
+    ("M280", "engine.py", "an acceptance of the results also accepts item 0",
+     [('b["item"] == index and sorted(b["evidence"]) == want:', '(b["item"] == index or index == 0 and b["item"] is None) and sorted(b["evidence"]) == want:')],
+     "records_test", ["A7"]),
+    ("M281", "engine.py", "only a revalidation must be filed by the holder or a delegate (counter against SPEC-4.1-2)",
+     [('    if filer != holder and filer not in delegates:', '    if m["act"] == "revalidate" and filer != holder and filer not in delegates:')],
+     "contract_test", ["G3"]),
+    ("M282", "engine.py", "a standing challenge does not block reliance (counter against SPEC-4.4-3)",
+     [('    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))', '    yield None')],
+     "conditions_test", ["K1"]),
+    ("M283", "engine.py", "a child grant is not checked for attenuation (counter against SPEC-6-2)",
+     [('    why = _attenuation_problem(rec["actor"], g, view.by_type["grant"][g["parent"]]["body"])', '    why = None')],
+     "contract_test", ["U4"]),
     # The roadmap as records (tools/roadmap.py, tests/roadmap_test.py). Ids from M300 leave
     # M268-M299 to the parallel claims work.
     ("M300", "../tools/roadmap.py", "the Forward Attack mark fires when any obligation is DISCHARGED, not all",
@@ -848,7 +907,32 @@ MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
                [('    if bound[0] != rec["actor"]:\n', '    if False:\n')], "contract_test", ["N5"])
 
 
-def run_one(mid, fname, what, edits, test, targets):
+def run_tests(tmp, tests, timeout=900):
+    """{test file: {case: PASS|FAIL}, or None when it produced no results}: each named test
+    file run against the packages in `tmp` (WARRANT_IMPL), with results of its own."""
+    runs = {}
+    for t in tests:
+        res = tmp / f"results-{t}.json"
+        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
+        subprocess.run([sys.executable, str(ROOT / "tests" / f"{t}.py")], env=env, capture_output=True,
+                       cwd=ROOT / "tests", timeout=timeout, check=False)
+        runs[t] = json.loads(res.read_text()) if res.exists() else None
+    return runs
+
+
+def verdict(runs, test, targets):
+    """(outcome, detail) from the mutant's own test file: KILLED only when a target fails."""
+    if runs.get(test) is None:
+        return "CRASH", "no results"
+    failed = sorted(k for k, v in runs[test].items() if v == "FAIL")
+    if set(failed) & set(targets):
+        return "KILLED", ",".join(failed)
+    return ("OFF_TARGET", ",".join(failed)) if failed else ("SURVIVED", "")
+
+
+def run_one(mid, fname, what, edits, test, targets, also=()):
+    """(outcome, detail, runs): the mutant applied to a copy of the package, its own test
+    file run, then the test files of `also` (for --matrix)."""
     tmp = Path(tempfile.mkdtemp(prefix=f"warrant-{mid}-"))
     try:
         shutil.copytree(PKG, tmp / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
@@ -864,20 +948,11 @@ def run_one(mid, fname, what, edits, test, targets):
         src = p.read_text()
         for old, new in edits:
             if src.count(old) != 1:
-                return "BAD_MUTANT", f"{old[:50]!r} found {src.count(old)} times"
+                return "BAD_MUTANT", f"{old[:50]!r} found {src.count(old)} times", {}
             src = src.replace(old, new)
         p.write_text(src)
-        res = tmp / "results.json"
-        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
-        subprocess.run([sys.executable, str(ROOT / "tests" / f"{test}.py")], env=env, capture_output=True,
-                       cwd=ROOT / "tests", timeout=900, check=False)
-        if not res.exists():
-            return "CRASH", "no results"
-        results = json.loads(res.read_text())
-        failed = sorted(k for k, v in results.items() if v == "FAIL")
-        if set(failed) & set(targets):
-            return "KILLED", ",".join(failed)
-        return ("OFF_TARGET", ",".join(failed)) if failed else ("SURVIVED", "")
+        runs = run_tests(tmp, [test] + [t for t in also if t != test])
+        return (*verdict(runs, test, targets), runs)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -892,14 +967,47 @@ def parse_args(argv, ids, prog):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 2, metavar="N",
                     help="parallel workers, an integer >= 1 (default: the CPU count)")
+    ap.add_argument("--matrix", metavar="FILE", help="also write every case's result under every mutant to FILE")
+    ap.add_argument("--matrix-tests", default="own", metavar="own|all|T1,T2",
+                    help="--matrix: the test files each mutant runs (default: its own only)")
     ap.add_argument("ids", nargs="*", metavar="ID", help="mutant ids to run (default: all of them)")
     ns = ap.parse_args(argv)
     if ns.jobs < 1:
         ap.error(f"--jobs must be >= 1, got {ns.jobs}")
+    known = sorted(p.stem for p in (ROOT / "tests").glob("*_test.py"))
+    if ns.matrix_tests in ("own", "all"):
+        ns.also = [] if ns.matrix_tests == "own" else known
+    else:
+        ns.also = [t for t in ns.matrix_tests.split(",") if t]
+        bad = sorted(set(ns.also) - set(known)) or ([] if ns.also else ["(none)"])
+        if bad:
+            ap.error(f"--matrix-tests: not a test file of tests/: {', '.join(bad)}")
+    if ns.matrix_tests != "own" and not ns.matrix:
+        ap.error("--matrix-tests needs --matrix")
     unknown = sorted(set(ns.ids) - set(ids))
     if unknown:
         ap.error(f"unknown mutant id(s): {', '.join(unknown)}")
     return ns
+
+
+MATRIX = "warrant-mutants/matrix@1"
+
+
+def source_digest(root=ROOT):
+    """SHA-256 over the bytes of warrant/, warrant_agent/ and tests/*.py, by relative path:
+    a matrix answers for exactly the code and the tests it ran."""
+    import hashlib
+    h = hashlib.sha256()
+    files = sorted(p for d in ("warrant", "warrant_agent") for p in (root / d).rglob("*.py") if "__pycache__" not in p.parts)
+    for p in files + sorted((root / "tests").glob("*.py")):
+        h.update(p.relative_to(root).as_posix().encode() + b"\0" + hashlib.sha256(p.read_bytes()).digest())
+    return h.hexdigest()
+
+
+def mutant_digest(m):
+    """The digest of one matrix row's definition: (id, file, what, edits, test, targets)."""
+    import hashlib
+    return hashlib.sha256(json.dumps([m[0], m[1], m[2], [list(e) for e in m[3]], m[4], list(m[5])]).encode()).hexdigest()
 
 
 def run_all(mutants, label, argv, runner, prog="mutants"):
@@ -915,12 +1023,21 @@ def run_all(mutants, label, argv, runner, prog="mutants"):
     if not chosen:
         print(f"{label}: no mutants selected; nothing was checked")
         return 2
-    killed = 0
+    killed, rows = 0, {}
+    call = (lambda m: runner(*m, also=ns.also)) if ns.matrix else (lambda m: runner(*m))
     with concurrent.futures.ThreadPoolExecutor(max_workers=ns.jobs) as pool:
-        for m, (outcome, detail) in zip(chosen, pool.map(lambda m: runner(*m), chosen)):
+        for m, got in zip(chosen, pool.map(call, chosen)):
+            outcome, detail = got[0], got[1]
             killed += outcome == "KILLED"
             print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
+            rows[m[0]] = {"definition": mutant_digest(m), "file": m[1], "what": m[2], "test": m[4],
+                          "targets": list(m[5]), "outcome": outcome, "runs": got[2] if len(got) > 2 else {}}
     print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={ns.jobs})")
+    if ns.matrix:
+        doc = {"matrix": MATRIX, "harness": prog, "tests": ns.matrix_tests, "source": source_digest(),
+               "mutants": rows}
+        Path(ns.matrix).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        print(f"{label}: matrix of {len(rows)} mutants ({ns.matrix_tests}) written to {ns.matrix}")
     return 0 if killed == len(chosen) else 1
 
 
@@ -964,6 +1081,31 @@ def selftest():
         ("a known and an unknown id together are refused", run(["F1", "ZZ"], killed) == (2, [])),
         ("ids select, in matrix order", run(["F2", "F1"], killed) == (0, ["F1", "F2"])),
         ("an empty matrix is not a success", run([], killed, mutants=[]) == (2, [])),
+    ]
+    # --matrix: every case's result under every mutant, the verdict still from the own test file
+    out = Path(tempfile.mkdtemp(prefix="mutants-selftest-")) / "m.json"
+
+    def with_runs(*m, also=()):
+        calls.append((m[0], tuple(also)))
+        return "KILLED", "c", {"t": {"c": "FAIL", "d": "PASS"}, **{a: {"x": "PASS"} for a in also}}
+    rc_m = run(["--jobs", "2", "--matrix", str(out)], with_runs)
+    doc = json.loads(out.read_text()) if out.is_file() else {}
+    rows = doc.get("mutants", {})
+    rc_all = run(["--matrix", str(out), "--matrix-tests", "contract_test,records_test"], with_runs)
+    rows_all = json.loads(out.read_text()).get("mutants", {}) if out.is_file() else {}
+    shutil.rmtree(out.parent, ignore_errors=True)
+    checks += [
+        ("--matrix writes every mutant's runs, case by case", rc_m[0] == 0 and doc.get("matrix") == MATRIX
+         and sorted(rows) == ["F1", "F2"] and rows["F1"]["runs"] == {"t": {"c": "FAIL", "d": "PASS"}}
+         and rows["F1"]["outcome"] == "KILLED" and rows["F1"]["definition"] == mutant_digest(fake[0])
+         and doc.get("source") == source_digest()),
+        ("--matrix-tests names the extra test files each mutant runs",
+         rc_all[0] == 0 and rows_all.get("F2", {}).get("runs", {}).get("records_test") == {"x": "PASS"}
+         and ("F1", ("contract_test", "records_test")) in rc_all[1]),
+        ("--matrix-tests without --matrix is refused", run(["--matrix-tests", "all"], with_runs) == (2, [])),
+        ("--matrix-tests with an unknown test file is refused",
+         run(["--matrix", str(out), "--matrix-tests", "nosuch_test"], with_runs) == (2, [])),
+        ("--matrix-tests with no test file is refused", run(["--matrix", str(out), "--matrix-tests", ","], with_runs) == (2, [])),
     ]
     for script in ("mutants.py", "agent_mutants.py"):
         for argv in (["--jobs", "-1"], ["--jobs", "+2", "ZZ"], ["--jobs", "0", "M01"]):

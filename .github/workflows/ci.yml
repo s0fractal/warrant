@@ -69,8 +69,8 @@ jobs:
       - name: Mutants (each critical rule must fail its own case)
         run: |
           python tests/mutants.py --selftest
-          WARRANT_IMPL= python tests/mutants.py
-          WARRANT_IMPL= python tests/agent_mutants.py
+          WARRANT_IMPL= python tests/mutants.py --matrix "$RUNNER_TEMP/matrix-core.json"
+          WARRANT_IMPL= python tests/agent_mutants.py --matrix "$RUNNER_TEMP/matrix-agent.json"
 
       # After the mutants, so the mutant ids the claims cite have just been exercised.
       # The base is the PR's base; on a push to master, the pushed commit's first parent.
@@ -90,6 +90,17 @@ jobs:
 
       - name: Roadmap (goals and obligations are records in .warrant/store; ROADMAP.md is a view)
         run: WARRANT_IMPL= python tools/roadmap.py check
+
+      # A report, not a refusal: the matrices above hold each mutant's own test file only (no
+      # extra run), so most witnesses are unknown here. The full hunt: tests/mutants.py --matrix F
+      # --matrix-tests all, then audit (tools/claims.py, "audit"). Not a gate, so not on pull
+      # requests (the required job keeps its headroom; the claims selftest burns audit there);
+      # on master a broken matrix or audit still fails this step.
+      - name: SPEC claims blind-spot audit (report)
+        if: github.event_name != 'pull_request'
+        env:
+          TMPDIR: ${{ runner.temp }}      # audit opens matrices only as files in the temp dir
+        run: WARRANT_IMPL= python tools/claims.py audit --matrix "$RUNNER_TEMP/matrix-core.json" --matrix "$RUNNER_TEMP/matrix-agent.json"
 
       - name: Cross-host local controls and frozen round-1 artifact replay
         run: python examples/cross-host/selftest.py

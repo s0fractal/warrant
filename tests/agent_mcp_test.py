@@ -164,9 +164,10 @@ def first_contact_cases(src, rcv, ids, cfg_path, cfg):
     dcl, tcl = caps.get(pd, {}).get("closures", []), caps.get(pt, {}).get("closes", [])
     check("M08", len(cand) == 1 and cand[0]["verdict"] == "PENDING"
           and dcl == [{k: cand[0][k] for k in ("transition", "item", "act", "filer", "basis", "verdict", "why",
-                                                "waiting_for") if k in cand[0]}]
+                                                "waiting_for", "awaiting") if k in cand[0]}]
           and len(tcl) == 1 and tcl[0]["duty"] == pd and tcl[0]["verdict"] == "PENDING" and tcl[0]["why"] == cand[0]["why"]
-          and tcl[0]["waiting_for"] == ["reviewer"] and tcl[0]["duty_disposition"] == "OPEN",
+          and tcl[0]["waiting_for"] == ["reviewer"] and tcl[0]["awaiting"] == [["reviewer"]]
+          and tcl[0]["duty_disposition"] == "OPEN",
           "a pending closure is visible on the duty and on the transition with the engine's verdict and why",
           (dcl, tcl))
 

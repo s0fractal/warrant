@@ -704,6 +704,31 @@ def accept_cases():
     rows.append(("control", w.assess()["duties"][d]["disposition"], "DISCHARGED"))
     ok, bad = table(rows)
     check("A6", ok, "an acceptance of another transition is not this one", bad)
+    # A7: an acceptance of item 0 is not an acceptance of the transition's results (item
+    # null), nor the other way round, with the same evidence list (Gemini deep review
+    # 2026-10-22, counter against SPEC-3.3-8: X1 and A6 never accept a null item)
+    w = World()
+    d = w.duty()
+    ev = [w.evidence("same")]
+    t = w.act(HOLDER, [R.item(d, "discharge", ev)], evidence=ev, established=["it holds"])
+    w.accept(OWNER, t, 0)
+    prof = E.profile(results_by=[OWNER])
+    rep = w.assess(prof=prof)
+    w2 = World()
+    d2 = w2.duty()
+    t2 = w2.act(HOLDER, [R.item(d2, "discharge", [w2.evidence("same")])], evidence=[w2.evidence("same")],
+                established=["it holds"])
+    w2.accept(OWNER, t2, None)
+    rep2 = w2.assess(prof=prof)
+    w2.accept(OWNER, t2, 0)
+    rep3 = w2.assess(prof=prof)
+    rows = [("item 0 accepted: the item", rep["duties"][d]["disposition"], "DISCHARGED"),
+            ("item 0 accepted: the results", rep["results"][t]["accepted"], False),
+            ("results accepted: the item", rep2["duties"][d2]["disposition"], "OPEN"),
+            ("results accepted: the results", rep2["results"][t2]["accepted"], True),
+            ("both accepted", (rep3["duties"][d2]["disposition"], rep3["results"][t2]["accepted"]), ("DISCHARGED", True))]
+    ok, bad = table(rows)
+    check("A7", ok, "an acceptance of an item is not one of the results, nor the other way round", bad)
 
 
 def observation_cases():
