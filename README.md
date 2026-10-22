@@ -242,6 +242,27 @@ challenge or a blob that is not a counter blob admits nothing
 (`LOST_BACKING_WITHOUT_COUNTER`); a counter blob that does not replay is
 refused with its reason (`COUNTER_NOT_REPLAYED`).
 
+A counter that replays proves the witnesses blind; the usual answer is to
+re-back the claim, not to downgrade it: turn the patch into a mutant in
+`tests/mutants.py`, cite (or write) the case whose assertion it fails, and
+`supersede` with the same text, the counter as `--counter-file` (stored as
+history in the transition's evidence) and a `--because` naming it. Against the
+new claim the counter no longer replays: a cited witness fails under its patch.
+
+**Hunting blind witnesses before a reviewer does.** `tests/mutants.py --matrix
+M.json --matrix-tests all` (and `tests/agent_mutants.py --matrix A.json
+--matrix-tests agent_handoff_test,...`) records every case's result under every
+mutant; `tools/claims.py audit --matrix M.json --matrix A.json [--counters DIR]`
+then lists, for each BACKED claim, each mutant whose scopes overlap those of the
+claim's mutants, under which some case fails and every witness of the claim
+passes, with the would-be counter blob (it replays when the mutant is confined
+to the claim's scopes). Tier `line`: the mutant edits a line one of the claim's
+mutants edits; tier `function`: only the same function, most often another rule
+of it. CI writes own-file matrices from its mutant run and prints the audit as a
+report; it refuses nothing, since with one test file per mutant most witnesses
+are unknown. Note what the function tier measures: every confined candidate is a
+counter `check` would admit today, because locality is decided per function.
+
 ## Limits
 
 Not in this version: threshold adoption, key rotation, P-256, policy

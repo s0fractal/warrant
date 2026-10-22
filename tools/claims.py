@@ -49,9 +49,19 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
     python3 tools/claims.py retire --key SEED --id SPEC-4.2-3 --because '...' --counter HEX
     python3 tools/claims.py project                      # regenerate SPEC.md and SPEC-CLAIMS.md
     python3 tools/claims.py check [--base REV | --no-base]
+    python3 tools/claims.py audit --matrix M.json [--matrix A.json] [--counters DIR] [--refuse]
     python3 tools/claims.py --selftest                   # every refusal of `check`, burned on a copy
     python3 tools/claims.py migrate --key SEED --because '...'   # once (W5): the first document, from SPEC.md
     python3 tools/claims.py heading --key SEED --section 4.2 --because '...'   # after changing that pin
+
+`audit` hunts the class of defect a counter blob proves, before a reviewer does
+(the six counters of the Gemini deep review, 2026-10-22, were all of it): from a
+matrix written by `tests/mutants.py --matrix` (every case's result under every
+mutant), it names each BACKED claim and each mutant outside the claim's mutants
+whose AST scopes overlap theirs, under which some case fails and every witness of
+the claim passes, and prints the would-be counter. It is a report, not a refusal
+of `check`: an own-file matrix (what CI's mutant run gives for free) leaves most
+witnesses unknown, and the full one costs every suite under every mutant.
 
 A claim's text is whitespace-normalized: runs of whitespace compare as one space.
 Refusals are printed one per line as `REFUSED <CODE> <detail>`.
@@ -1616,6 +1626,169 @@ def default_base(repo):
         return None
 
 
+# ---------------------------------------------------------------- audit (blind witnesses)
+
+MATRIX = "warrant-mutants/matrix@1"
+
+
+def _harness(repo, name):
+    spec = importlib.util.spec_from_file_location(f"claims_audit_{Path(name).stem}", repo.tests / name)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def load_matrices(repo, paths):
+    """({mutant id: matrix row}, [(code, detail)]): the rows of matrices written by
+    `tests/mutants.py --matrix` / `tests/agent_mutants.py --matrix`. A matrix answers only
+    for the code and tests it ran: its source digest must be this checkout's, and a row
+    only for the mutant as defined now (its definition digest), else MATRIX_STALE."""
+    rows, problems = {}, []
+    core = _harness(repo, "mutants.py")
+    here = core.source_digest(repo.root)
+    defs = {}
+    for name, _ in HARNESSES:
+        if (repo.tests / name).is_file():
+            defs.update({m[0]: core.mutant_digest(m) for m in (core if name == "mutants.py" else _harness(repo, name)).MUTANTS})
+    for p in paths:
+        try:
+            doc = json.loads(Path(p).read_text())
+        except (OSError, ValueError) as e:
+            problems.append(("MATRIX_UNREADABLE", f"{p}: {e}"))
+            continue
+        if not isinstance(doc, dict) or doc.get("matrix") != MATRIX or not isinstance(doc.get("mutants"), dict):
+            problems.append(("MATRIX_UNREADABLE", f"{p}: not a {MATRIX} document"))
+            continue
+        if doc.get("source") != here:
+            problems.append(("MATRIX_STALE", f"{p}: written for source {str(doc.get('source'))[:12]}, this checkout is "
+                             f"{here[:12]} (rerun tests/mutants.py --matrix)"))
+            continue
+        for mid, row in sorted(doc["mutants"].items()):
+            if defs.get(mid) != row.get("definition"):
+                problems.append(("MATRIX_STALE", f"{p}: {mid} is defined otherwise now"))
+            else:
+                rows[mid] = row
+    return rows, problems
+
+
+def _mutant_patch(repo, mid):
+    """The unified diff of mutant `mid`'s edits on the file as it is now ('' if they do not apply)."""
+    path, edits = repo.mutant_edits.get(mid, (None, ()))
+    f = repo.root / path if path else None
+    if f is None or not f.is_file():
+        return ""
+    old = new = f.read_text()
+    for o, n in edits:
+        if new.count(o) != 1:
+            return ""
+        new = new.replace(o, n)
+    return "".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"a/{path}", f"b/{path}"))
+
+
+def mutant_lines(repo, mid):
+    """{(path, line)} the old text of mutant `mid`'s edits covers in the file as it is now."""
+    path, edits = repo.mutant_edits.get(mid, (None, ()))
+    f = repo.root / path if path else None
+    if f is None or not f.is_file():
+        return set()
+    src, out = f.read_text(), set()
+    for o, _ in edits:
+        i = src.find(o)
+        if i < 0 or src.count(o) != 1:
+            return set()
+        first = src.count("\n", 0, i) + 1
+        out |= {(path, k) for k in range(first, first + o.rstrip("\n").count("\n") + 1)}
+    return out
+
+
+def audit(repo, rows):
+    """(blind, unknown) over every current BACKED claim and every matrix row (mutant X)
+    whose AST scopes overlap the scopes of the claim's mutants, and under which some case
+    fails (a claim's own mutant is no exception: it is seen, since it fails a cited case,
+    or its claim is blind to it):
+      blind:   every witness the claim cites ran under X and passed: a candidate blind
+               spot. Each entry carries the would-be counter blob (COUNTER): the claim, X's
+               patch, passes = the witnesses, fails = the cases X fails. It replays (check's
+               replay_counter) iff X's scopes are within the claim's (`confined`).
+      unknown: some cited witness's test file did not run under X (an own-file matrix):
+               neither blind nor seen.
+    Each entry's `tier` is "line" when X's edits cover a line that an edit of one of the
+    claim's mutants covers (the same statement, most likely the same rule), else
+    "function" (the same function only: often another rule of it).
+    A witness that fails under X sees it; nothing is reported then."""
+    repo.mutants()
+    model = Model(repo.snapshot(), repo.trust())
+    blind, unknown = [], []
+    scopes, spans = {}, {}
+
+    def scope(mid):
+        if mid not in scopes:
+            scopes[mid] = repo.mutant_scopes(mid)
+        return scopes[mid]
+
+    def span(mid):
+        if mid not in spans:
+            spans[mid] = mutant_lines(repo, mid)
+        return spans[mid]
+    for n in sorted((n for n in model.current.values() if not n.retired and n.backed), key=lambda n: id_key(n.id)):
+        mine = {sc for mid in n.doc["mutants"] for sc in scope(mid)}
+        lines = {x for mid in n.doc["mutants"] for x in span(mid)}
+        for mid, row in sorted(rows.items(), key=lambda kv: (kv[0][0], int(re.sub(r"\D", "", kv[0]) or 0))):
+            if not scope(mid) & mine:
+                continue
+            runs = row.get("runs") or {}
+            fails = sorted(f"{t}:{c}" for t, res in runs.items() if isinstance(res, dict) for c, v in res.items() if v == "FAIL")
+            if not fails:
+                continue
+            seen = {}
+            for w in n.doc["witnesses"]:
+                test, _, case = w.partition(":")
+                res = runs.get(test)
+                seen[w] = res.get(case) if isinstance(res, dict) else None
+            if any(v == "FAIL" for v in seen.values()):
+                continue
+            entry = {"claim": n.id, "transition": n.tid, "mutant": mid, "what": row.get("what", ""),
+                     "scopes": sorted(f"{f}:{q}" for f, q in scopes[mid]), "fails": fails,
+                     "witnesses": n.doc["witnesses"], "confined": scope(mid) <= mine,
+                     "tier": "line" if span(mid) & lines else "function"}
+            if any(v is None for v in seen.values()):
+                unknown.append(dict(entry, not_run=sorted({w.partition(":")[0] for w, v in seen.items() if v is None})))
+                continue
+            entry["counter"] = {"counter": COUNTER, "claim": n.id, "against": n.tid, "patch": _mutant_patch(repo, mid),
+                                "passes": sorted(n.doc["witnesses"]), "fails": fails,
+                                "why": f"mutant {mid} ({row.get('what', '')}) alters code the mutants of {n.id} alter; "
+                                       f"{', '.join(fails)} fail under it and every witness of {n.id} passes"}
+            blind.append(entry)
+    return blind, unknown
+
+
+def cmd_audit(repo, a):
+    rows, problems = load_matrices(repo, a.matrix)
+    for code, detail in problems:
+        print(f"REFUSED {code} {detail}")
+    if problems:
+        return 2
+    blind, unknown = audit(repo, rows)
+    out = Path(a.counters) if a.counters else None
+    if out:
+        out.mkdir(parents=True, exist_ok=True)
+    for b in sorted(blind, key=lambda b: b["tier"] != "line"):
+        print(f"BLIND[{b['tier']}] {b['claim']} {b['transition'][:12]}: {b['mutant']} ({', '.join(b['scopes'])}) {b['what']!r} fails "
+              f"{' '.join(b['fails'])}; every witness passes ({' '.join(b['witnesses'])}); "
+              + ("the would-be counter replays" if b["confined"] else "not confined: as a counter it would be refused"))
+        if out:
+            (out / f"counter-{b['claim']}-{b['mutant']}.json").write_text(json.dumps(b["counter"], indent=1) + "\n")
+    for u in unknown:
+        print(f"UNKNOWN {u['claim']}: {u['mutant']} fails {' '.join(u['fails'])}; "
+              f"witness files not run under it: {' '.join(u['not_run'])}")
+    claims = {b["claim"] for b in blind}
+    line = [b for b in blind if b["tier"] == "line"]
+    print(f"AUDIT: {len(rows)} mutants in the matrix; {len(blind)} candidate blind spots in {len(claims)} claims "
+          f"({sum(b['confined'] for b in blind)} confined; tier line {len(line)} in {len({b['claim'] for b in line})} claims, "
+          f"tier function {len(blind) - len(line)}); {len(unknown)} unknown (witness file not run)")
+    return 1 if a.refuse and blind else 0
+
+
 def cmd_check(repo, a):
     base = None if a.no_base else (a.base or default_base(repo))
     if base is None and not a.no_base:
@@ -1641,6 +1814,120 @@ _CASE_RUNNER = None
 
 def _run_registered_case(i):
     return _CASE_RUNNER(i)
+
+
+def audit_selftest(fix, work, key):
+    """[(name, ok, detail)]: `audit` burned on clones of the selftest fixture `fix`."""
+    out = []
+
+    def clone(tag):
+        d = work / f"audit-{tag}"
+        subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)], capture_output=True, check=True)
+        return Repo(d)
+
+    def found(blind, cid, mid):
+        return [b for b in blind if b["claim"] == cid and b["mutant"] == mid]
+
+    # (1) a backed claim `c` and a mutant `x` outside its mutants whose scopes overlap c's; `y` overlaps nothing of c's
+    r = clone("synthetic")
+    r.mutants()
+    core = _harness(r, "mutants.py")
+    defs = {m[0]: m for name, _ in HARNESSES for m in (core if name == "mutants.py" else _harness(r, name)).MUTANTS}
+    model = Model(r.snapshot(), r.trust())
+    pick = None
+    for n in sorted((n for n in model.current.values() if n.backed and not n.retired), key=lambda n: id_key(n.id)):
+        mine = {sc for mid in n.doc["mutants"] for sc in r.mutant_scopes(mid)}
+        xs = [mid for mid in sorted(defs) if mid not in n.doc["mutants"] and r.mutant_scopes(mid) & mine]
+        ys = [mid for mid in sorted(defs) if r.mutant_scopes(mid) and not r.mutant_scopes(mid) & mine]
+        if mine and xs and ys:
+            pick = (n, xs[0], ys[0])
+            break
+    if pick is None:
+        return [("audit: the fixture has a claim with an overlapping and a disjoint mutant", False, "none found")]
+    c, x, y = pick
+    src = core.source_digest(r.root)
+
+    def matrix(result=lambda w: "PASS", drop=(), source=src, definition=None, killer=True):
+        runs = {}
+        for w in c.doc["witnesses"]:
+            test, _, case = w.partition(":")
+            if test not in drop:
+                runs.setdefault(test, {})[case] = result(w)
+        rows = {}
+        for mid in (x, y):
+            row_runs = json.loads(json.dumps(runs))
+            row_runs.setdefault("zz_test", {})["ZZ_KILLER"] = "FAIL" if killer else "PASS"
+            rows[mid] = {"definition": definition or core.mutant_digest(defs[mid]), "file": defs[mid][1], "what": defs[mid][2],
+                         "test": defs[mid][4], "targets": list(defs[mid][5]), "outcome": "KILLED", "runs": row_runs}
+        p = work / f"matrix-{len(list(work.glob('matrix-*.json')))}.json"
+        p.write_text(json.dumps({"matrix": MATRIX, "harness": "mutants", "tests": "selftest", "source": source, "mutants": rows}))
+        return [str(p)]
+
+    rows, probs = load_matrices(r, matrix())
+    blind, unknown = audit(r, rows)
+    hit = found(blind, c.id, x)
+    out.append(("audit: a claim whose witnesses all pass under an overlapping mutant some case kills is reported",
+                bool(hit) and not probs and hit[0]["counter"]["passes"] == sorted(c.doc["witnesses"])
+                and hit[0]["counter"]["claim"] == c.id and hit[0]["counter"]["against"] == c.tid
+                and hit[0]["counter"]["fails"] == ["zz_test:ZZ_KILLER"], (c.id, x, probs, blind[:2])))
+    out.append(("audit: a mutant whose scopes are disjoint from the claim's mutants' is not reported against it",
+                not found(blind, c.id, y), found(blind, c.id, y)))
+    first = c.doc["witnesses"][0]
+    rows, _ = load_matrices(r, matrix(result=lambda w: "FAIL" if w == first else "PASS"))
+    blind, unknown = audit(r, rows)
+    out.append(("audit: a claim one of whose witnesses fails under the mutant is not reported",
+                not found(blind, c.id, x) and not [u for u in unknown if u["claim"] == c.id and u["mutant"] == x],
+                found(blind, c.id, x)))
+    rows, _ = load_matrices(r, matrix(drop={first.partition(":")[0]}))
+    blind, unknown = audit(r, rows)
+    out.append(("audit: a witness whose test file did not run under the mutant is unknown, not blind",
+                not found(blind, c.id, x) and any(u["claim"] == c.id and u["mutant"] == x for u in unknown),
+                (found(blind, c.id, x), unknown[:1])))
+    rows, _ = load_matrices(r, matrix(result=lambda w: None if w == first else "PASS"))
+    for row in rows.values():
+        row["runs"][first.partition(":")[0]].pop(first.partition(":")[2])
+    blind, unknown = audit(r, rows)
+    out.append(("audit: a witness case absent from its file's results under the mutant is unknown, not blind",
+                not found(blind, c.id, x) and any(u["claim"] == c.id and u["mutant"] == x for u in unknown),
+                (found(blind, c.id, x), unknown[:1])))
+    rows, _ = load_matrices(r, matrix(killer=False))
+    blind, unknown = audit(r, rows)
+    out.append(("audit: a mutant under which no case fails is not reported (its counter would fail nothing)",
+                not found(blind, c.id, x) and not unknown, (found(blind, c.id, x), unknown[:1])))
+    _, probs = load_matrices(r, matrix(source="0" * 64))
+    out.append(("audit: a matrix of another source is refused MATRIX_STALE", [p[0] for p in probs] == ["MATRIX_STALE"], probs))
+    rows, probs = load_matrices(r, matrix(definition="0" * 64))
+    out.append(("audit: a row of a mutant defined otherwise now is refused MATRIX_STALE",
+                not rows and {p[0] for p in probs} == {"MATRIX_STALE"}, probs))
+
+    # (2) end to end: the pre-review SPEC-4.1-5 is blind to M116 (Gemini's counter), the matrix finds it, and
+    # its would-be counter replays; cited with R26 (and still without M116), it is not reported.
+    r = clone("e2e")
+    m = Model(r.snapshot(), r.trust())
+    n = m.current.get("SPEC-4.1-5")
+    if n is None or "M116" not in r.mutants():
+        return out + [("audit e2e: SPEC-4.1-5 and M116 exist in the fixture", False, "missing")]
+    au = Author(r, key, AUTHOR, validate=False)
+    au.claim(n.id, n.doc["text"], ["contract_test:U1", "contract_test:U4", "contract_test:U5"], ["M09", "M10", "M11"],
+             because="selftest: the claim as it stood before the Gemini review", previous=n)
+    mx = work / "matrix-e2e.json"
+    run = subprocess.run([sys.executable, str(r.tests / "mutants.py"), "--jobs", "1", "--matrix", str(mx),
+                          "--matrix-tests", "assessment_test,contract_test", "M116"], cwd=r.root,
+                         env=dict(os.environ, WARRANT_IMPL=""), capture_output=True, text=True, timeout=900)
+    rows, probs = load_matrices(r, [str(mx)])
+    blind, _ = audit(r, rows)
+    hit = found(blind, "SPEC-4.1-5", "M116")
+    planted = Model(r.snapshot(), r.trust()).current["SPEC-4.1-5"]
+    why = _replay_counter(r, hit[0]["counter"], planted) if hit else "not reported"
+    out.append(("audit e2e: the pre-review SPEC-4.1-5 is reported blind to M116, and its would-be counter replays",
+                run.returncode == 0 and not probs and bool(hit) and hit[0]["confined"] and why is None
+                and hit[0]["tier"] == "line" and "assessment_test:R26" in hit[0]["fails"], (run.stdout[-300:], probs, why)))
+    au.claim(n.id, n.doc["text"], ["contract_test:U1", "contract_test:U4", "contract_test:U5", "assessment_test:R26"],
+             ["M09", "M10", "M11"], because="selftest: R26 cited, M116 still not", previous=planted)
+    blind, _ = audit(r, rows)
+    out.append(("audit e2e: cited with R26, which M116 fails, SPEC-4.1-5 is not reported", not found(blind, "SPEC-4.1-5", "M116"),
+                found(blind, "SPEC-4.1-5", "M116")))
+    return out
 
 
 def selftest(jobs=1):
@@ -2247,6 +2534,14 @@ def selftest(jobs=1):
         ran.append("unplaced sentence")
         print(("ok    " if ok else "FAIL  ") + "a new sentence without a position: refused, store unchanged, check passes"
               + ("" if ok else f" | exit {rc}, raised {raised}, store {'changed' if listing() != before else 'unchanged'}"))
+        # Gemini review, part C: `audit` names a claim whose witnesses all pass under a mutant of
+        # its own code that some case kills, and only such a claim. (1) Matrices built here over
+        # the fixture's own mutants; (2) end to end, a real matrix row of M116 against SPEC-4.1-5
+        # as it stood before the review (U1 U4 U5; M09 M10 M11), whose would-be counter must replay.
+        for name, ok, detail in audit_selftest(fix, work, key):
+            failures += not ok
+            ran.append(name)
+            print(("ok    " if ok else "FAIL  ") + name + ("" if ok else f" | {detail}"))
         print(f"CLAIMS SELFTEST: {'OK' if not failures else f'{failures} FAIL'} ({len(ran)} cases)")
         return 1 if failures else 0
     finally:
@@ -2316,6 +2611,11 @@ def main(argv=None):
     p = sub.add_parser("check", help="CI: refuse any disagreement")
     p.add_argument("--base", help="the revision whose claims must survive (default: origin/master)")
     p.add_argument("--no-base", action="store_true")
+    p = sub.add_parser("audit", help="report claims whose witnesses miss a mutant of their own code (blind spots)")
+    p.add_argument("--matrix", action="append", required=True, metavar="FILE",
+                   help="a matrix from tests/mutants.py --matrix or tests/agent_mutants.py --matrix (repeatable)")
+    p.add_argument("--counters", metavar="DIR", help="write each candidate's would-be counter blob there")
+    p.add_argument("--refuse", action="store_true", help="exit 1 when any candidate is found")
     p = sub.add_parser("keygen", help="make an author key: seed outside the repository, public key in the trust")
     p.add_argument("--out", required=True)
     p.add_argument("--actor", default=AUTHOR)
@@ -2332,6 +2632,8 @@ def main(argv=None):
             return 0
         if a.cmd == "check":
             return cmd_check(repo, a)
+        if a.cmd == "audit":
+            return cmd_audit(repo, a)
         {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen,
          "migrate": cmd_migrate, "heading": cmd_heading}[a.cmd](repo, a)
         return 0
