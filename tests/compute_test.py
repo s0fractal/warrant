@@ -5,6 +5,7 @@
 """
 import base64
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -14,6 +15,12 @@ from world import HOLDER, OWNER, E, P, R, World, check, finish, verdicts
 
 PROV = P.Provider.capture()
 TARGET = "warrant-test"
+# 64-character strings that are not hex64 (SPEC §3: lowercase hex): a non-hex letter,
+# uppercase hex, non-ASCII. Each has the right length, so a length-only check passes it.
+NOT_HEX64 = {"non-hex letter": "g" * 64, "uppercase hex": "A" * 64, "non-ASCII": "\u00e9" * 64}
+# Suffixes that make a genuine hex64 65 or 66 characters: `$` in an anchored pattern matches
+# before a final "\n", so "<hex64>\n" passed `.match` before AMEND 2 of #164; "\r\n" is the control.
+TRAILING = {"trailing newline": "\n", "trailing CRLF": "\r\n"}
 
 
 def term(w, expr, runtime=P.BOOK1):
@@ -54,6 +61,14 @@ def assess(w, targets=(TARGET,), provider=PROV, providers=None):
 
 def last(rep, d):
     return rep["duties"][d]["candidates"][-1]
+
+
+def shape_of(predicate, doc):
+    """What a shape predicate says of `doc`; a mutant may make it raise, which is a failure of the case."""
+    try:
+        return predicate(doc)
+    except Exception as e:      # noqa: BLE001
+        return f"raised {type(e).__name__}"
 
 
 def main():
@@ -101,9 +116,13 @@ def main():
     _, pck, pst, _ = run(w, inp, env, rt, [2])
     d2 = compute_duty(w, inp, env, rt, result)
     w.close(d2, basis="REPLAYED", evidence=[receipt(w, inp, env, pck, pst, result)])
-    rep = assess(w)
-    check("C4", "disagrees" in last(rep, d)["why"] and "PAUSED is not an answer" in last(rep, d2)["why"],
-          "the receipt's word is not the result; a pause is not an answer", (last(rep, d)["why"], last(rep, d2)["why"]))
+    try:
+        rep = assess(w)
+        got4 = (last(rep, d)["why"], last(rep, d2)["why"])
+    except Exception as e:      # noqa: BLE001 (a mutant may make the replay raise: a failure of C4)
+        got4 = (f"raised {type(e).__name__}: {e}", "")
+    check("C4", "disagrees" in got4[0] and "PAUSED is not an answer" in got4[1],
+          "the receipt's word is not the result; a pause is not an answer", got4)
 
     # C5: a REPLAYED basis is not an attestation: without a provider it is UNVERIFIED, never admitted
     w, inp, env, rt, ck, st, result = ok_case
@@ -155,6 +174,45 @@ def main():
     rep = assess(w)
     check("C8", rep["duties"][d3]["disposition"] == "OPEN" and "cycle not proven" in last(rep, d3)["why"],
           "a witness for another root proves nothing here", last(rep, d3)["why"])
+    # C25 (pilot W3, SPEC §7): a cycle blob is exactly the members SPEC §7 lists; the
+    # genuine M M cycle with one extra member is refused by name, never verified. Its
+    # hash members are hex64 as SPEC §3 defines it: for each of input, environment and
+    # witness a 64-character value that is not lowercase hex is refused by the shape
+    # predicate as "cycle hashes" (the mirror of C23's finding; at 808c011 length only)
+    full25 = {"cycle": "sigma-resume", "target": TARGET, "input": inp, "environment": env, "witness": wit, "lost": []}
+    shapes25 = {"extra member": dict(full25, note="one member too many"), "short witness": dict(full25, witness=wit[:63])}
+    for member in ("input", "environment", "witness"):
+        for name, bad in NOT_HEX64.items():
+            shapes25[f"{member} {name}"] = dict(full25, **{member: bad})
+        for name, suffix in TRAILING.items():
+            shapes25[f"{member} {name}"] = dict(full25, **{member: full25[member] + suffix})
+    want25 = {k: "not a sigma-resume cycle" if k == "extra member" else "cycle hashes" for k in shapes25}
+    direct25 = {k: shape_of(P.cycle_problem, doc) for k, doc in shapes25.items()}
+    ds25 = {}
+    for k, doc in shapes25.items():
+        ds25[k] = compute_duty(w, inp, env, rt, "00" * 32)
+        w.close(ds25[k], act="impossible", basis="REPLAYED", evidence=[w.blob(doc)])
+    try:
+        rep = assess(w)
+        got25 = {k: last(rep, x)["why"] for k, x in ds25.items()}
+        open25 = all(rep["duties"][x]["disposition"] == "OPEN" for x in ds25.values())
+    except Exception as e:      # noqa: BLE001
+        got25, open25 = f"raised {type(e).__name__}: {e}", False
+    check("C25", direct25 == want25 and got25 == want25 and open25 and P.cycle_problem(full25) is None,
+          "a cycle blob with other members, or a hash member that is not lowercase hex64, is refused by its shape",
+          {k: (direct25.get(k), got25.get(k) if isinstance(got25, dict) else got25)
+           for k in shapes25 if direct25.get(k) != want25[k] or not isinstance(got25, dict) or got25.get(k) != want25[k]})
+    # C26 (pilot W3, SPEC §7): a cycle says nothing about other uses of the term: the
+    # verified cycle of M M, filed as `impossible` for K I (M M), is refused there,
+    # and K I (M M) is discharged by its own replay
+    d26 = compute_duty(w, inp2, env2, rt, res2)
+    w.close(d26, act="impossible", basis="REPLAYED", evidence=[cyc])
+    w.close(d26, basis="REPLAYED", evidence=[receipt(w, inp2, env2, ck2, st2, res2)])
+    rep = assess(w)
+    imp = [c for c in rep["duties"][d26]["candidates"] if c["act"] == "impossible"]
+    check("C26", rep["duties"][d26]["disposition"] == "DISCHARGED" and len(imp) == 1
+          and imp[0]["why"] == "the cycle is for another computation than the condition names",
+          "the cycle of M M does not make K I (M M) impossible", verdicts(rep, d26))
 
     # C9: bytes the environment names but nobody delivered, vs a reference outside the environment
     w = World()
@@ -178,6 +236,30 @@ def main():
           and rep_missing["duties"][d]["disposition"] == "OPEN",
           "missing allowed bytes are a local UNVERIFIED; a reference outside the environment is the kernel's answer",
           (outcomes, why_missing))
+    # C27 (pilot W3, SPEC §7): outcomes about the host are UNVERIFIED, never an answer:
+    # bytes the environment names but the view lacks, and a provider that runs out of
+    # time (a real timeout of the separate interpreter)
+    class Hurried(P.Provider):
+        def call(self, op, args, blobs=None, timeout=600):
+            return super().call(op, args, blobs, timeout=0.001)
+    hurried = Hurried(dict(PROV.sources), PROV.where)
+    rep_hurried = assess(w, provider=hurried)
+    got27 = (last(rep_missing, d)["verdict"], last(rep_hurried, d)["verdict"], last(rep_hurried, d)["why"],
+             rep_hurried["duties"][d]["disposition"])
+    check("C27", got27 == ("UNVERIFIED", "UNVERIFIED", "provider timed out", "OPEN") and "EVIDENCE_UNAVAILABLE" in why_missing,
+          "missing bytes and a provider timeout are UNVERIFIED", got27)
+    # C28 (pilot W3, SPEC §7): a reference outside the environment is the kernel's
+    # answer: a receipt for Y I under Book I is replayed and the replay ends in
+    # BLOCKED_REFERENCE, which is not an answer; missing bytes are not replayed at all
+    dY = compute_duty(w, inpY, envY, P.BOOK1, "00" * 32)
+    w.close(dY, basis="REPLAYED", evidence=[receipt(w, inpY, envY, ckY, stY, "00" * 32)])
+    try:
+        rep = assess(w)
+        got28 = (last(rep, dY)["verdict"], last(rep, dY)["why"], why_missing.startswith("not replayed:"))
+    except Exception as e:      # noqa: BLE001
+        got28 = f"raised {type(e).__name__}: {e}"
+    check("C28", got28 == ("UNVERIFIED", "replayed, but BLOCKED_REFERENCE is not an answer", True),
+          "BLOCKED_REFERENCE is a replayed kernel answer, distinct from bytes not delivered", got28)
 
     # C10: the bytes whose identity was computed are the bytes that run. A copy of
     # the installed provider is captured, then its files on disk are replaced (the
@@ -313,6 +395,101 @@ def main():
     rep2 = E.assess(w.store.snapshot(), w.trust, 10_000, prof2, provider=other, replay_cache=cache)
     check("C18", other.id != prov.id and other.calls == 1 and rep2["duties"][d]["disposition"] == "DISCHARGED",
           "the cache is keyed by the provider identity: another provider replays for itself", (other.calls, verdicts(rep2, d)))
+
+    # C19-C24 (pilot W3): SPEC §7 sentences that had no case of their own before the claim records
+    # C19: execution goes through the sigma_provider request protocol: a module whose
+    # handle answers without the protocol marker is a ProviderError, never an answer
+    loose = dict(PROV.sources)
+    loose["sigma_provider"] = (b"def handle(req):\n    return {'ok': {'results': [{'basis': 'REPLAYED', "
+                               b"'code': 'NORMAL_FORM', 'result': 'x'}]}}\n")
+    try:
+        got19 = P.Provider(loose, PROV.where).call("term", {"expr": "I"})
+    except P.ProviderError as e:
+        got19 = str(e)
+    check("C19", got19 == "provider answered outside its protocol", "an answer outside the request protocol is refused", got19)
+
+    # C20: the separate interpreter runs isolated (-I): a json.py planted in the working
+    # directory is not what the boot code imports
+    plant = Path(tempfile.mkdtemp())
+    (plant / "json.py").write_text("raise SystemExit('a planted json.py was imported')\n")
+    here = os.getcwd()
+    os.chdir(plant)
+    try:
+        got20 = PROV.call("term", {"expr": "I"}).get("input")
+    except P.ProviderError as e:
+        got20 = str(e)[-120:]
+    finally:
+        os.chdir(here)
+    check("C20", isinstance(got20, str) and len(got20) == 64, "a module planted in the working directory does not run",
+          got20)
+
+    # C22: a REPLAYED item cites exactly one receipt: two (one of them genuine) or none
+    # are MISSING_EVIDENCE
+    w = World()
+    inp, env, rt = term(w, "S K K (K I)")
+    _, ck, st, result = run(w, inp, env, rt, [100])
+    d22 = compute_duty(w, inp, env, rt, result)
+    w.close(d22, basis="REPLAYED", evidence=sorted([receipt(w, inp, env, ck, st, result),
+                                                    receipt(w, inp, env, ck, st, result, target="elsewhere")]))
+    d22b = compute_duty(w, inp, env, rt, result)
+    w.close(d22b, basis="REPLAYED", evidence=[w.evidence("not a receipt")])
+    rep = assess(w)
+    got22 = [(last(rep, x)["verdict"], rep["duties"][x]["disposition"]) for x in (d22, d22b)]
+    check("C22", got22 == [("MISSING_EVIDENCE", "OPEN")] * 2, "a REPLAYED item cites exactly one receipt", got22)
+
+    # C23: a receipt is exactly the members SPEC §7 lists: a genuine one with an extra
+    # member, without `lost`, or with a hash member that is not hex64 is refused by the
+    # shape predicate itself, by name. hex64 is SPEC §3's lowercase hex of 64 characters:
+    # for each of the five hash members a value of the right length made of a non-hex
+    # letter, of uppercase hex, or of non-ASCII characters is refused as "receipt hashes"
+    # (Codex AMEND on #164: at 808c011 the predicate checked the length only, and
+    # those values passed it, to be refused later by the replay or a missing blob)
+    full = {"receipt": "sigma-resume", "target": TARGET, "input": inp, "environment": env, "checkpoint": ck,
+            "state": st, "claimed": result, "lost": []}
+    shapes = {"extra member": dict(full, note="x"), "no lost": {k: v for k, v in full.items() if k != "lost"},
+              "short claimed": dict(full, claimed=result[:63])}
+    for member in ("input", "environment", "checkpoint", "state", "claimed"):
+        for name, bad in NOT_HEX64.items():
+            shapes[f"{member} {name}"] = dict(full, **{member: bad})
+        for name, suffix in TRAILING.items():
+            shapes[f"{member} {name}"] = dict(full, **{member: full[member] + suffix})
+    want23 = {k: "not a sigma-resume receipt" if k in ("extra member", "no lost") else "receipt hashes" for k in shapes}
+    direct = {k: shape_of(P.receipt_problem, doc) for k, doc in shapes.items()}
+    ds23 = {}
+    for k, doc in shapes.items():
+        ds23[k] = compute_duty(w, inp, env, rt, result)
+        w.close(ds23[k], basis="REPLAYED", evidence=[w.blob(doc)])
+    try:
+        rep = assess(w)
+        got23 = {k: last(rep, x)["why"] for k, x in ds23.items()}
+    except Exception as e:      # noqa: BLE001 (a mutant may make the replay raise)
+        got23 = f"raised {type(e).__name__}: {e}"
+    check("C23", direct == want23 and got23 == want23 and P.receipt_problem(full) is None,
+          "a receipt with other members, or a hash member that is not lowercase hex64, is refused by its shape",
+          {k: (direct.get(k) if isinstance(direct, dict) else direct, got23.get(k) if isinstance(got23, dict) else got23)
+           for k in shapes if direct.get(k) != want23[k] or not isinstance(got23, dict) or got23.get(k) != want23[k]})
+
+    # C24: the receipt's (input, environment) must be the condition's and its bytes in
+    # the view. A genuine receipt of S K K (K I) filed for K I, whose duty expects the
+    # same result hash, is refused; so is a receipt whose checkpoint is not in the view
+    inp2, env2, _ = term(w, "K I")
+    d24 = compute_duty(w, inp2, env2, rt, result)
+    w.close(d24, basis="REPLAYED", evidence=[receipt(w, inp, env, ck, st, result)])
+    d24b = compute_duty(w, inp, env, rt, result)
+    w.close(d24b, basis="REPLAYED", evidence=[receipt(w, inp, env, "ab" * 32, st, result)])
+    try:
+        rep = assess(w)
+        got24 = [(last(rep, x)["why"], rep["duties"][x]["disposition"]) for x in (d24, d24b)]
+    except Exception as e:      # noqa: BLE001
+        got24 = f"raised {type(e).__name__}: {e}"
+    check("C24", got24 == [("the receipt is for another computation than the condition names", "OPEN"),
+                           ("receipt bytes not in view", "OPEN")],
+          "a receipt for another root, or one whose bytes are not in the view, gives no credit", got24)
+
+    # C21 (last): the process boundary isolates module names: after every replay above,
+    # this assessing process has imported none of the provider's modules
+    got21 = sorted(set(P.MODULES) & set(sys.modules))
+    check("C21", got21 == [], "the provider's modules never enter the assessing process", got21)
     return finish("COMPUTE")
 
 

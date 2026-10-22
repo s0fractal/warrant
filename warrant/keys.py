@@ -9,8 +9,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 SIG_DOMAIN = b"warrant-sig-v1:"
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
-HEX128 = re.compile(r"^[0-9a-f]{128}$")
+# \Z, not $: `$` also matches before a final newline, so a 65-character value with a
+# trailing "\n" passed `.match` (AMEND 2 of #164). The same holds for every anchored
+# pattern in this package and in warrant_agent; records.HEX64 is this object.
+HEX64 = re.compile(r"^[0-9a-f]{64}\Z")
+HEX128 = re.compile(r"^[0-9a-f]{128}\Z")
 
 _P = (1 << 255) - 19
 # Small-order points and the non-canonical encodings of the x=0 torsion points:

@@ -24,15 +24,16 @@ from pathlib import Path
 
 from warrant import compute as P
 from warrant import jcs as C
+from warrant import keys as K
 from warrant import limits as L
 from warrant import triggers as TR
 from warrant.store import Snapshot, Trust
 
 from .errors import AgentError, need
 
-TOKEN = re.compile(r"^[0-9a-f]{32}$")
-ADDRESS = re.compile(r"^[0-9a-f]{64}$")
-SOURCE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+TOKEN = re.compile(r"^[0-9a-f]{32}\Z")        # \Z, not $: `$` admits a trailing newline (AMEND 2 of #164)
+ADDRESS = K.HEX64
+SOURCE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
 
 
 def _addr(name, pattern=ADDRESS):

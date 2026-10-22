@@ -1,0 +1,1 @@
+The dependency traversal is iterative: the depth of a valid `requires` chain is bounded only by `requires_edges`.

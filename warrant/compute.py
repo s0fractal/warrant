@@ -22,6 +22,7 @@ import types
 from pathlib import Path
 
 from . import jcs as C
+from . import records as R
 
 MODULES = ("sigma_glyph", "sigma_resume", "sigma_provider")
 PROTOCOL = 1
@@ -124,11 +125,17 @@ def environment_hashes(doc):
 def environment_problem(doc):
     if not (isinstance(doc, dict) and set(doc) == {"schema", "hashes"} and doc["schema"] == ENV_SCHEMA
             and isinstance(doc["hashes"], list)
-            and all(isinstance(h, str) and len(h) == 64 and all(c in "0123456789abcdef" for c in h)
-                    for h in doc["hashes"])
+            and all(_hex64(h) for h in doc["hashes"])
             and doc["hashes"] == sorted(set(doc["hashes"]))):
         return "not a sigma environment manifest"
     return None
+
+
+def _hex64(v):
+    """A hash member is lowercase hex of exactly 64 characters (SPEC §3; keys.HEX64, anchored
+    with \\Z): not any 64-character string (length only before AMEND 1 of #164), and not
+    65 with a trailing newline (`$` let that through before AMEND 2)."""
+    return isinstance(v, str) and R.HEX64.match(v) is not None
 
 
 RECEIPT_FIELDS = {"receipt", "target", "input", "environment", "checkpoint", "state", "claimed", "lost"}
@@ -138,7 +145,7 @@ CYCLE_FIELDS = {"cycle", "target", "input", "environment", "witness", "lost"}
 def receipt_problem(doc):
     if not (isinstance(doc, dict) and set(doc) == RECEIPT_FIELDS and doc["receipt"] == "sigma-resume"):
         return "not a sigma-resume receipt"
-    if not all(isinstance(doc[k], str) and len(doc[k]) == 64 for k in ("input", "environment", "checkpoint", "state", "claimed")):
+    if not all(_hex64(doc[k]) for k in ("input", "environment", "checkpoint", "state", "claimed")):
         return "receipt hashes"
     if not (isinstance(doc["target"], str) and doc["target"] and isinstance(doc["lost"], list)
             and all(isinstance(x, str) for x in doc["lost"])):
@@ -149,7 +156,7 @@ def receipt_problem(doc):
 def cycle_problem(doc):
     if not (isinstance(doc, dict) and set(doc) == CYCLE_FIELDS and doc["cycle"] == "sigma-resume"):
         return "not a sigma-resume cycle"
-    if not all(isinstance(doc[k], str) and len(doc[k]) == 64 for k in ("input", "environment", "witness")):
+    if not all(_hex64(doc[k]) for k in ("input", "environment", "witness")):
         return "cycle hashes"
     if not (isinstance(doc["target"], str) and doc["target"] and isinstance(doc["lost"], list)
             and all(isinstance(x, str) for x in doc["lost"])):

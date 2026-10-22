@@ -1,0 +1,1 @@
+A replay counts only if the identity of the bytes that ran is in the recipient's `providers` (§4.6); a provider's report about itself grants nothing.

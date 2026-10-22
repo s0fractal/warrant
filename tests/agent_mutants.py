@@ -109,6 +109,21 @@ MUTANTS = [
     ("A15", "mcp_server.py", "the server writes a banner to stdout",
      [("    server.run(\"stdio\")\n", "    print(\"warrant-agent-mcp ready\", flush=True)\n    server.run(\"stdio\")\n")],
      "agent_mcp_test", ["M03"]),
+    # A31-A35 restore the `$` anchors of AMEND 2 of #164 (`$` matches before a final newline)
+    ("A31", "views.py", "a view token may end in a newline",
+     [('TOKEN = re.compile(r"^[0-9a-f]{32}\\Z")', 'TOKEN = re.compile(r"^[0-9a-f]{32}$")')], "agent_handoff_test", ["V12"]),
+    ("A32", "_assess_worker.py", "the worker accepts a view directory whose name ends in a newline",
+     [('TOKEN = re.compile(r"^[0-9a-f]{32}\\Z")', 'TOKEN = re.compile(r"^[0-9a-f]{32}$")')], "agent_handoff_test", ["V12"]),
+    ("A33", "config.py", "a workspace or expectation handle may end in a newline",
+     [('HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\\Z")', 'HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")')],
+     "agent_handoff_test", ["H15"]),
+    ("A34", "handoff.py", "a payload or manifest id uses its own `$`-anchored hex64, as at 1d67124",
+     [("    return isinstance(v, str) and HEX64.match(v) is not None",
+       "    return isinstance(v, str) and __import__(\"re\").match(r\"^[0-9a-f]{64}$\", v) is not None")], "agent_handoff_test", ["H15"]),
+    ("A35", "views.py", "a view file name uses its own `$`-anchored address, as at 1d67124",
+     [('    need(pattern.match(name) is not None, "BAD_REQUEST", "not a content address")',
+       '    need(re.match(pattern.pattern.replace("\\\\Z", "$"), name) is not None, "BAD_REQUEST", "not a content address")')],
+     "agent_handoff_test", ["H15"]),
 ]
 
 

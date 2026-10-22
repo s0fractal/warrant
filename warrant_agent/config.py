@@ -6,14 +6,15 @@ import re
 from pathlib import Path
 
 from warrant import jcs as C
+from warrant import keys as K
 from warrant import limits as L
 from warrant.store import Trust
 
 from . import AGENT_API
 from .errors import AgentError, need
 
-HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
+HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\Z")      # \Z: `$` admits a trailing newline (AMEND 2 of #164)
+HEX64 = K.HEX64
 OPERATIONS = ("context", "read", "handoff", "prepare", "commit", "compute")
 RELATIONS = ("MATCH_EXPECTED_SET", "UNPINNED", "MISSING_DECLARED_BYTES", "CONTENT_MISMATCH", "WRONG_SET",
              "WRONG_SOURCE", "UNVERIFIED_EXPORTER", "LOCAL_CAPTURE")

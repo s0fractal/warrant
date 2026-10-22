@@ -34,6 +34,85 @@ def without(payload, kind, ident):
     return dict(payload, **{kind: [it for it in payload[kind] if it["id"] != ident]})
 
 
+def anchor_cases():
+    # H15 / V12 (AMEND 2 of #164): the agent's handles, content addresses and view tokens are
+    # anchored to the whole string. With `$` and `.match`, "<valid>\n" passed each of these
+    # validators at 1d67124. Each refusal is asserted on its code and structural message;
+    # "\r\n" is the control `$` already refused.
+    import json
+    import shutil
+    from agent_world import views
+    from warrant_agent import _assess_worker as WK
+    from warrant_agent.errors import AgentError
+    src, rcv = world()
+    ids = reviewed_work(src)
+    pkg, digest = pkg_and_digest(src, ids)
+    rcv.expect("src-cut", digest, source="src")
+
+    def reload_error(mutate):
+        saved = json.loads(json.dumps(src.doc))
+        mutate(src.doc)
+        try:
+            src.reload()
+            out = ("loaded", "")
+        except AgentError as e:
+            out = (e.code, e.message)
+        finally:
+            src.doc = saved
+            src.reload()
+        return out
+
+    def addr_error(name):
+        try:
+            views.capture(rcv.ws, extra={"records": {}, "blobs": {name: b"x"}})
+            return ("WRITTEN", "")
+        except AgentError as e:
+            return (e.code, e.message)
+
+    got15, want15 = {}, {}
+    for name, suffix in (("\\n", "\n"), ("\\r\\n", "\r\n")):
+        bad_item = {"id": "ab" * 32 + suffix, "bytes_base64": "eA=="}
+        r = inspect(rcv, pkg, ids, "src-cut", payload=dict(pkg["payload"], blobs=[bad_item] + pkg["payload"]["blobs"]))
+        got15[f"payload id {name}"] = (r.get("error"), r.get("message"))
+        want15[f"payload id {name}"] = ("BAD_REQUEST", "a payload item is {id: hex64, bytes_base64}; ids are content addresses, never paths")
+        got15[f"view address {name}"] = addr_error("ab" * 32 + suffix)
+        want15[f"view address {name}"] = ("BAD_REQUEST", "not a content address")
+        got15[f"workspace name {name}"] = reload_error(lambda doc: doc["workspaces"].__setitem__("src" + suffix, dict(doc["workspaces"]["src"])))
+        want15[f"workspace name {name}"] = ("BAD_REQUEST", "workspace names are local handles")
+        got15[f"expectation handle {name}"] = reload_error(lambda doc: doc["workspaces"]["src"]["expectations"].__setitem__("h" + suffix, {"manifest": "ab" * 32}))
+        got15[f"expectation manifest {name}"] = reload_error(lambda doc: doc["workspaces"]["src"]["expectations"].__setitem__("h", {"manifest": "ab" * 32 + suffix}))
+        for k in ("expectation handle", "expectation manifest"):
+            want15[f"{k} {name}"] = ("BAD_REQUEST", "an expectation is {manifest: hex64, source?, exporter?}")
+    control15 = ("ok" in inspect(rcv, pkg, ids, "src-cut") and reload_error(lambda doc: None) == ("loaded", "")
+                 and not list(rcv.base.rglob("*\n*")))
+    check("H15", got15 == want15 and control15,
+          "a trailing newline after a payload id, a view address, a workspace or expectation handle or a manifest is refused",
+          ({k: (got15[k], want15[k]) for k in want15 if got15.get(k) != want15[k]}, control15))
+
+    ctx = ok(src.call("context", {"workspace": "src", "actor": "producer", "use": "continue", "targets": []}))
+    token = ctx["view_token"]
+    real = (src.ws.state / "views" / token).resolve()
+    got12, want12 = {}, {}
+    for name, suffix in (("\\n", "\n"), ("\\r\\n", "\r\n")):
+        r = src.call("read", {"workspace": "src", "view_token": token + suffix, "kind": "context"})
+        got12[f"view token {name}"] = (r.get("error"), r.get("message"))
+        want12[f"view token {name}"] = ("VIEW_UNKNOWN", "not a view token")
+        # a real view directory copied under a name with the suffix: the worker must refuse it by name
+        twin = real.parent / (token + suffix)
+        shutil.copytree(real, twin)
+        try:
+            got12[f"worker dir {name}"] = str(WK.view_dir(str(twin)))
+        except SystemExit as e:
+            got12[f"worker dir {name}"] = str(e)
+        finally:
+            shutil.rmtree(twin, ignore_errors=True)
+        want12[f"worker dir {name}"] = "the assessment worker reads only a view directory"
+    control12 = "ok" in src.call("read", {"workspace": "src", "view_token": token, "kind": "context"}) and WK.view_dir(str(real)) == real
+    check("V12", got12 == want12 and control12,
+          "a trailing newline after a view token is refused by the API and by the worker",
+          ({k: (got12[k], want12[k]) for k in want12 if got12.get(k) != want12[k]}, control12))
+
+
 def main():
     # H01: a full package with a counting challenge: delivery MATCH, reliance CHALLENGED, use HOLD
     src, rcv = world()
@@ -101,6 +180,7 @@ def main():
           (first["observation"], again["observation"]))
     more_handoff()
     more_views()
+    anchor_cases()
     return finish("AGENT-HANDOFF")
 
 

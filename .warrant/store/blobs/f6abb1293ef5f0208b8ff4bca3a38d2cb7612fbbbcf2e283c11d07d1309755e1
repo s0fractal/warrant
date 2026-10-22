@@ -1,0 +1,1 @@
+{"because":null,"duty":"5735218257c3228d626e5f62bbb267413cceca63925ce455f76c5e5095f76d13","id":"SPEC-9-4","kind":"normative","mutants":["M159"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"9","source":"SPEC.md","text":"A view within every limit is assessed exactly as without limits.","witnesses":["assessment_test:R33","contract_test:L2"]}

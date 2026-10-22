@@ -2,11 +2,13 @@
 """Rules of SPEC §4.1-§6 that had no witness case of their own before the
 claim records (`.warrant/store`, `tools/claims.py`): each case is one sentence
 of the SPEC, cited by its claim, with the mutant in tests/mutants.py that burns it.
-R1-R13 are §4.1-§4.4 (pilot W); R14-R28 are §4.5-§6 (pilot W2).
+R1-R13 are §4.1-§4.4 (pilot W); R14-R28 are §4.5-§6 (pilot W2); R29-R35 are §7-§9
+(pilot W3; the §7 cases that need a provider run are C19-C28 of compute_test.py).
 
     python3 tests/assessment_test.py
 """
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -14,9 +16,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from world import CODEX, HOLDER, OWNER, SHA_OLD, STRANGER, E, R, World, check, finish, verdicts
+from world import CODEX, HOLDER, OWNER, SHA_NEW, SHA_OLD, STRANGER, E, P, R, W, World, check, finish, verdicts
+from warrant import jcs as C
+from warrant import limits as L
 from warrant import triggers as TR
-from warrant.store import Snapshot
+from warrant.store import MAX_FILE, Snapshot, Trust
 
 
 def last(rep, d):
@@ -567,6 +571,172 @@ def authority_cases():
           "a delegate acts only while its delegator holds the duty", got)
 
 
+def runtime_cases():
+    # R29 (§7): Warrant's runtime ids are the kernel's own: the record shape admits
+    # exactly the runtimes the installed sigma_resume defines, Book I and the draft
+    # profile with Y, M, W (asked of sigma_resume in a separate interpreter, never
+    # imported here)
+    code = ("import json,sigma_resume as r;"
+            "print(json.dumps([sorted(r.PROFILES), r.RUNTIME_SEMANTICS_ID, r.RICH_RUNTIME_ID]))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tempfile.gettempdir())
+    theirs = json.loads(out.stdout) if out.returncode == 0 else out.stderr[-200:]
+    mine = [sorted(R.RUNTIMES), P.BOOK1, P.RICH]
+    check("R29", theirs == mine and list(R.RUNTIMES) == [P.BOOK1, P.RICH],
+          "the runtime ids a condition may name are the kernel's own", (theirs, mine))
+
+
+def capsule_cases():
+    # R30 (§8): a capsule, for a duty and for a transition, carries the result, its
+    # basis and acceptors, its limits, the current triggers with their results and the
+    # challenges under which it must be revisited, and its evidence by id only
+    w = World()
+    other = w.duty(statement="other")
+    d = w.duty()
+    ev = w.evidence("the shipped bytes")
+    trig = [{"kind": "duty_not_discharged", "duty": other}]
+    t = w.act(HOLDER, [R.item(d, "discharge", [ev], triggers=trig)], established=["shipped"],
+              residual=["not load-tested"], subject=SHA_NEW, triggers=trig)
+    w.accept(OWNER, t)
+    w.accept(OWNER, t, None)
+    ch = w.file("challenge", CODEX, R.challenge(t, "it fails on empty input", [w.evidence("repro")], None))
+    rep = w.assess(prof=E.profile(challengers=[CODEX], results_by=[OWNER]))
+    dc, tc = E.capsule(rep, d), E.capsule(rep, t)
+    def fired(c):
+        return [(x["kind"], x["duty"], x["result"]) for x in c["revalidate_when"]]
+    got = guarded(lambda: {
+        "duty": (dc["kind"], dc["disposition"], dc["basis"], dc["accept_by"], dc["limits"], fired(dc),
+                 dc["challenges"], dc["evidence"], dc["completeness"]),
+        "transition": (tc["kind"], tc["established"], tc["basis"], tc["accepted_by"], tc["limits"], tc["subject"],
+                       fired(tc), tc["challenges"], tc["evidence"], tc["completeness"]),
+        "bytes": "the shipped bytes" in json.dumps([dc, tc])})
+    want = {"duty": ("duty", "DISCHARGED", [f"ATTESTED:{HOLDER}"], [OWNER], ["not load-tested"],
+                     [("duty_not_discharged", other, "FIRED")], [ch], [ev], "UNATTESTED"),
+            "transition": ("transition", ["shipped"], "ATTESTED", [OWNER], ["not load-tested"], SHA_NEW,
+                           [("duty_not_discharged", other, "FIRED")], [ch], [ev], "UNATTESTED"),
+            "bytes": False}
+    check("R30", got == want, "a capsule names result, basis, limits, revisit conditions and evidence ids", got)
+
+
+def frontier_cases():
+    # R31 (§8): an actor's frontier lists the duties it holds or is delegated, periods
+    # lapsed or open, results acceptances it owes under accept_by.results (marked
+    # `under`), and challenges against its closures
+    w = World()
+    ds = w.duty(statement="weekly", schedule={"start": 1000, "every": 100}, at=1000)
+    dd = w.duty(statement="delegated")
+    w.accept(CODEX, w.close(dd, act="delegate", to=CODEX))
+    dc = w.duty(statement="challenged")
+    tc = w.close(dc)
+    w.accept(OWNER, tc)
+    w.file("challenge", CODEX, R.challenge(tc, "it fails on empty input", [w.evidence("repro")], 0))
+    tr = w.act(HOLDER, [], established=["a result"])
+    rep = w.assess(as_of=1250, prof=E.profile(results_by=[OWNER], challengers=[CODEX]))
+    def needs(actor):
+        return sorted((x.get("duty") or x.get("transition"), x["need"], x.get("under"))
+                      for x in E.frontier(rep, actor))
+    got = guarded(lambda: (needs(HOLDER), needs(CODEX), needs(OWNER)))
+    want = (sorted([(dc, "revalidate (CHALLENGED for act)", None), (dd, "close", None),
+                    (ds, "period 0 LAPSED", None), (ds, "period 1 LAPSED", None), (ds, "period 2 OPEN", None)]),
+            [(dd, "close", None)], [(tr, "accept results", "profile accept_by.results")])
+    check("R31", got == want, "the frontier lists held and delegated duties, periods, results owed and challenges", got)
+
+
+def refusal_cases():
+    # R32 (§9): what this version does not have is refused, never approximated: a
+    # P-256 public key, a key binding with an expiry, a duty with a threshold, a
+    # cmd@v1 or ski@v1 condition, a grant for an act other than release, a grant
+    # with a revocation member. The controls (the same shapes without them) are valid.
+    w = World()
+    d = w.duty()
+    duty = R.duty(HOLDER, "x", [OWNER], {"attest": {}}, accept_by=[OWNER])
+    grant = R.grant(HOLDER, ["release"], [d])
+    ed = W.Key.generate().public
+    def ok(fn):
+        try:
+            fn()
+            return "valid"
+        except ValueError as e:
+            return "refused" if isinstance(e, R.Invalid) else f"ValueError: {e}"
+        except Exception as e:      # noqa: BLE001
+            return f"raised {type(e).__name__}"
+    shapes = {
+        "P-256 key": lambda: Trust(Trust.document([("p", "02" + "ab" * 32)])),
+        "key expiry": lambda: Trust({"warrant": "trust/2", "keys": [{"actor": "p", "public": ed, "until": 500}]}),
+        "threshold": lambda: R.record("duty", HOLDER, 1, dict(duty, threshold=1)),
+        "cmd@v1": lambda: R.record("duty", HOLDER, 1, dict(duty, condition={"cmd@v1": {}})),
+        "ski@v1": lambda: R.record("duty", HOLDER, 1, dict(duty, condition={"ski@v1": {}})),
+        "grant discharge": lambda: R.record("grant", OWNER, 1, R.grant(HOLDER, ["discharge"], [d])),
+        "grant revoked": lambda: R.record("grant", OWNER, 1, dict(grant, revoked=True)),
+    }
+    controls = {"Ed25519 key": lambda: Trust(Trust.document([("p", ed)])),
+                "duty": lambda: R.record("duty", HOLDER, 1, duty),
+                "grant": lambda: R.record("grant", OWNER, 1, grant)}
+    got = ({k: ok(f) for k, f in shapes.items()}, {k: ok(f) for k, f in controls.items()})
+    check("R32", got == ({k: "refused" for k in shapes}, {k: "valid" for k in controls}),
+          "P-256, key expiry, thresholds, cmd@v1/ski@v1, other grant acts and grant revocation are refused", got)
+
+
+def _limits_view():
+    w = World()
+    ds = w.duty(statement="weekly", schedule={"start": 0, "every": 10}, at=0)
+    w.accept(OWNER, w.close(ds, period=0, at=5, evidence=[w.evidence("period 0")]), at=6)
+    child, child2 = w.duty(statement="child"), w.duty(statement="child 2")
+    parent = w.duty(statement="parent", requires=sorted([child, child2]))
+    w.accept(OWNER, w.close(child, evidence=[w.evidence("child")]))
+    w.close(parent, evidence=[w.evidence("parent")])
+    return w, w.store.snapshot()
+
+
+def limit_cases():
+    # R33 (§9): a view within every limit is assessed exactly as without limits: with
+    # each limit set to the view's own count the report is the default one, byte for
+    # byte, under the same identity; one below any of them is refused
+    w, snap = _limits_view()
+    size = sum(map(len, snap.records.values())) + sum(map(len, snap.blobs.values()))
+    exact = {"snapshot_records": len(snap.records), "snapshot_blobs": len(snap.blobs), "snapshot_bytes": size,
+             "requires_edges": 2, "duty_periods": 3, "report_periods": 3}
+    def run():
+        base = E.assess(snap, w.trust, 25, E.profile())
+        tight = E.assess(snap, w.trust, 25, E.profile(), limits=exact)
+        below = {}
+        for k, v in exact.items():
+            try:
+                E.assess(snap, w.trust, 25, E.profile(), limits=dict(exact, **{k: v - 1}))
+                below[k] = "assessed"
+            except L.LimitExceeded as e:
+                below[k] = e.limit
+        return C.canon(base) == C.canon(tight), below
+    got = guarded(run)
+    check("R33", got == (True, {k: k for k in exact}), "at its own counts a view is assessed exactly as by default", got)
+
+    # R34 (§9): the default of each admission limit is the table's
+    check("R34", L.DEFAULTS == {"snapshot_records": 100_000, "snapshot_blobs": 100_000, "snapshot_bytes": 1 << 30,
+                                "requires_edges": 1_000_000, "duty_periods": 10_000, "report_periods": 100_000},
+          "the admission limits default to SPEC §9's table", L.DEFAULTS)
+
+    # R35 (§9, §3): each file is bounded by 64 MiB: a blob file one byte over it, named
+    # by its own hash, is kept out of the snapshot; that bound is not a bound on the
+    # store: two 40 MiB blobs (80 MiB together) are read whole
+    w = World()
+    root = w.store.root
+    over = b"\0" * (MAX_FILE + 1)
+    h_over = C.digest(over)
+    (root / "blobs" / h_over).write_bytes(over)
+    del over
+    snap = Snapshot.read(root)
+    first = (h_over in snap.blobs, [m for m in snap.misfiled if m.startswith(f"blobs/{h_over}")])
+    (root / "blobs" / h_over).unlink()
+    hs = []
+    for k in range(2):
+        data = bytes([k + 1]) * (40 * 1024 * 1024)
+        hs.append(w.store.put_blob(data))
+    del data
+    second = sorted(h for h in Snapshot.read(root).blobs if h in hs) == sorted(hs)
+    shutil.rmtree(w.dir, ignore_errors=True)
+    check("R35", first == (False, [f"blobs/{h_over}: larger than admitted"]) and second,
+          "a file over 64 MiB is kept out; a store over 64 MiB is read", (first, second))
+
+
 def main():
     transfer_cases()
     admission_cases()
@@ -576,6 +746,11 @@ def main():
     supersession_cases()
     trigger_cases()
     authority_cases()
+    runtime_cases()
+    capsule_cases()
+    frontier_cases()
+    refusal_cases()
+    limit_cases()
     return finish("ASSESSMENT")
 
 

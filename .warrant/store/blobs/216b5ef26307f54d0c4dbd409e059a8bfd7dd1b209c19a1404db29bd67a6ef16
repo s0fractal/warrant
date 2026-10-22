@@ -1,0 +1,1 @@
+Execution reads the provider's module bytes once, computes the identity from them, and executes exactly those bytes in a separate interpreter (`-I -B`, the bytes passed on stdin, no file reopened), through the `sigma_provider` request protocol.

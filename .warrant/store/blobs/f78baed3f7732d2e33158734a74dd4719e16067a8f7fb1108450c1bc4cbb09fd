@@ -1,0 +1,1 @@
+| `snapshot_bytes` | all record and blob bytes of a snapshot together; a store read stops before the file that would exceed it | 1 GiB |

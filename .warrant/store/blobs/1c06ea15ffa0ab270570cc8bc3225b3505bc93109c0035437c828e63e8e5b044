@@ -1,0 +1,1 @@
+{"receipt": "sigma-resume", "target": string, "input": hex64, "environment": hex64, "checkpoint": hex64, "state": hex64, "claimed": hex64, "lost": [string…]}
