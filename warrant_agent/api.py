@@ -6,7 +6,7 @@ import json
 
 from warrant import engine as E
 from warrant import jcs as C
-from warrant import records as R
+from warrant import shapes as S
 
 from . import AGENT_API, adapter_id, drafts, handoff, views
 from .errors import AgentError, need
@@ -31,10 +31,6 @@ TARGET_FORMS = ("targets is a list; each target is a record id (hex64) of a duty
                 "{\"id\": id} or {\"kind\": \"duty\"|\"transition\", \"id\": id}")
 
 
-def _hex64(v):
-    return isinstance(v, str) and views.ADDRESS.match(v) is not None
-
-
 def _target_shapes(raw):
     """The request's targets as [(kind or None, id)]; the shape is checked before anything is read."""
     need(isinstance(raw, list), "BAD_REQUEST", TARGET_FORMS)
@@ -42,7 +38,7 @@ def _target_shapes(raw):
     for t in raw:
         if isinstance(t, str):
             t = {"id": t}
-        need(isinstance(t, dict) and set(t) in ({"id"}, {"kind", "id"}) and _hex64(t["id"])
+        need(isinstance(t, dict) and set(t) in ({"id"}, {"kind", "id"}) and S.hex64(t["id"])
              and t.get("kind", "duty") in TARGET_KINDS, "BAD_REQUEST", TARGET_FORMS)
         out.append((t.get("kind"), t["id"]))
     return out
@@ -84,7 +80,7 @@ def _actor(ws, actor):
     if actor is None:
         need(ws.signer is not None, "BAD_REQUEST", "actor: this workspace has no signer to default to")
         return ws.signer[0]
-    need(_is_actor(actor), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")
+    need(S.is_actor(actor), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")
     return actor
 
 
@@ -250,14 +246,6 @@ def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget):
     pg = {"included": len(page), "total": len(items), "offset": start, "truncated": nxt is not None,
           "cursor": _cursor(meta["token"], kind, actor, nxt)}
     return data, pg
-
-
-def _is_actor(v):
-    try:
-        R.check_actor(v)
-        return True
-    except R.Invalid:
-        return False
 
 
 # ---------------------------------------------------------------- operations

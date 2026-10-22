@@ -3,7 +3,6 @@ that a deadline can stop it. It reads only the view directory, and only one that
 views.capture made: the path comes from views._assess, never from argv."""
 import base64
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -11,10 +10,11 @@ from warrant import compute as P
 from warrant import engine as E
 from warrant import jcs as C
 from warrant import limits as L
+from warrant import shapes as S
 from warrant.store import Snapshot, Trust
 
 
-TOKEN = re.compile(r"^[0-9a-f]{32}\Z")       # \Z, not $ (AMEND 2 of #164)
+TOKEN = S.HEX32
 
 
 def view_dir(vdir):

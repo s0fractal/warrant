@@ -7,6 +7,7 @@ import time
 
 from warrant import jcs as C
 from warrant import records as R
+from warrant import shapes as S
 from warrant.cli import fill
 from warrant.keys import Key
 from warrant.store import ChainMoved, Store, _authenticate
@@ -15,14 +16,10 @@ from . import views
 from .errors import AgentError, need
 
 
-def _hex64(v):
-    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
-
-
 def _draft(ws, draft_id):
     """The draft file of THIS workspace: the id is a full hex64 address before any
     path is built, and the stored draft must name this workspace."""
-    need(_hex64(draft_id), "BAD_REQUEST", "draft_id is a hex64 address")
+    need(S.hex64(draft_id), "BAD_REQUEST", "draft_id is a hex64 address")
     path = ws.state / "drafts" / f"{draft_id}.json"
     need(path.is_file(), "NOT_FOUND", "no such draft")
     d = views.read_json(path)
@@ -41,7 +38,7 @@ def _accept_body(meta_vdir, body):
     missing evidence set is the exact evidence of that item in the frozen view."""
     need(isinstance(body, dict) and set(body) <= {"transition", "item", "evidence", "support"}
          and "transition" in body and "item" in body, "BAD_REQUEST", "accept is {transition, item, evidence?, support?}")
-    need(_hex64(body["transition"]), "BAD_REQUEST", "transition is a hex64 record id")
+    need(S.hex64(body["transition"]), "BAD_REQUEST", "transition is a hex64 record id")
     if "evidence" in body:
         return R.accept(body["transition"], body["item"], body["evidence"], body.get("support", []))
     p = meta_vdir / "records" / f"{body['transition']}.json"

@@ -3,16 +3,14 @@
 Every validator checks JSON types before set membership, and refuses unknown or
 missing members, so a record is either exactly one of these shapes or invalid."""
 import re
-import unicodedata
 
 from . import jcs as C
 from . import keys as K
+from . import shapes as S
 
 VERSION = "2"
 TYPES = ("duty", "transition", "accept", "observation", "grant", "challenge")
-HEX64 = K.HEX64                                           # one definition; \Z-anchored (AMEND 2 of #164)
 SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
-QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\Z")  # [0-9], not \d: \d matches non-ASCII digits
 BASES = ("ATTESTED", "OBSERVED", "REPLAYED")
 ACTS = ("discharge", "impossible", "release", "delegate", "substitute", "revalidate")
 GRANT_ACTS = ("release",)
@@ -21,9 +19,6 @@ RUNTIMES = ("sigma-book1-0.6.0/hash-thunk/leftmost-outermost",
 TRIGGER_KINDS = ("subject_changed", "duty_not_discharged")
 MAX_LIST = 256
 MAX_TEXT = 4000
-MAX_ACTOR = 200
-# Unicode White_Space outside Cc (Cc is refused anywhere in an actor id): Zs, Zl, Zp.
-EDGE_SPACE = ("Zs", "Zl", "Zp")
 
 
 class Invalid(ValueError):
@@ -58,7 +53,7 @@ def _enum(v, choices, what):
 
 
 def _hex(v, what):
-    _need(isinstance(v, str) and HEX64.match(v) is not None, f"{what} must be a hex64")
+    _need(S.hex64(v), f"{what} must be a hex64")
 
 
 def _list(v, what, item, unique=True, nonempty=False, sorted_=False):
@@ -73,14 +68,9 @@ def _list(v, what, item, unique=True, nonempty=False, sorted_=False):
 
 
 def _actor(v, what):
-    """An actor id (SPEC §3): a non-empty string of at most 200 code points, in NFC, with no
-    control character (Cc) and no white space at either end. Nothing here asks what the
-    actor is: a person, a model, a program and a rule have ids of the same shape."""
-    _text(v, what, limit=MAX_ACTOR)
-    _need(unicodedata.is_normalized("NFC", v), f"{what} must be in Unicode NFC")
-    _need(not any(unicodedata.category(c) == "Cc" for c in v), f"{what} must not contain a control character")
-    _need(unicodedata.category(v[0]) not in EDGE_SPACE and unicodedata.category(v[-1]) not in EDGE_SPACE,
-          f"{what} must not begin or end with white space")
+    """An actor id (SPEC §3; shapes.actor_problem)."""
+    why = S.actor_problem(v)
+    _need(why is None, f"{what} {why}")
 
 
 def check_actor(v, what="actor"):
@@ -140,7 +130,7 @@ def _duty(b, actor):
         _int(s["every"], "schedule.every", 1)
     _hexes(b["requires"], "requires")
     _hexes(b["serves"], "serves")
-    _need(b["answers"] is None or (isinstance(b["answers"], str) and QREF.match(b["answers"])), "answers must be null or a question reference")
+    _need(b["answers"] is None or S.qref(b["answers"]), "answers must be null or a question reference")
     _subject(b["subject"], "subject")
 
 
@@ -232,7 +222,7 @@ def _grant(b, actor):
     _need(set(b["delegable"]) <= set(b["acts"]), "delegable must be a subset of acts")
     _hexes(b["duties"], "duties", nonempty=True, sorted_=True)
     _need(b["expires"] is None or (type(b["expires"]) is int and b["expires"] >= 0), "expires")
-    _need(b["parent"] is None or (isinstance(b["parent"], str) and HEX64.match(b["parent"])), "parent")
+    _need(b["parent"] is None or S.hex64(b["parent"]), "parent")
 
 
 def _challenge(b, actor):
@@ -255,7 +245,7 @@ def check(record):
     _actor(record["actor"], "actor")
     _int(record["at"], "at", 0)
     if "prev" in record:
-        _need(record["prev"] is None or (isinstance(record["prev"], str) and HEX64.match(record["prev"]) is not None),
+        _need(record["prev"] is None or S.hex64(record["prev"]),
               "prev must be null or a record id")
     BODIES[record["type"]](record["body"], record["actor"])
     if record["type"] == "observation":

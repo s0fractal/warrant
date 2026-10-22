@@ -6,16 +6,15 @@ import re
 from pathlib import Path
 
 from warrant import jcs as C
-from warrant import keys as K
 from warrant import limits as L
 from warrant import records as R
+from warrant import shapes as S
 from warrant.store import Trust
 
 from . import AGENT_API
 from .errors import AgentError, need
 
 HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\Z")      # \Z: `$` admits a trailing newline (AMEND 2 of #164)
-HEX64 = K.HEX64
 OPERATIONS = ("context", "read", "handoff", "prepare", "commit", "compute")
 RELATIONS = ("MATCH_EXPECTED_SET", "UNPINNED", "MISSING_DECLARED_BYTES", "CONTENT_MISMATCH", "WRONG_SET",
              "WRONG_SOURCE", "UNVERIFIED_EXPORTER", "LOCAL_CAPTURE")
@@ -96,7 +95,7 @@ class Config:
         for name, w in doc["workspaces"].items():
             need(HANDLE.match(name) is not None, "BAD_REQUEST", "workspace names are local handles")
             for h, e in w.get("expectations", {}).items():
-                need(HANDLE.match(h) is not None and HEX64.match(e.get("manifest", "")) is not None,
+                need(HANDLE.match(h) is not None and S.hex64(e.get("manifest")),
                      "BAD_REQUEST", "an expectation is {manifest: hex64, source?, exporter?}")
             for u, p in w.get("uses", {}).items():
                 need(set(p) <= {"delivery", "reliance", "fresh"} and all(r in RELATIONS for r in p.get("delivery", [])),

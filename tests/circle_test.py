@@ -137,12 +137,12 @@ class Fix:
 @contextlib.contextmanager
 def replaying(ok):
     """Stub the counter replay: `ok(h, p)` says whether counter blob `h` replays against claim `p`."""
-    real = CL.replay_counter
-    CL.replay_counter = lambda repo, snap, h, p: None if ok(h, p) else "fixture: does not replay"
+    real = CL.counters.replay_counter
+    CL.counters.replay_counter = lambda repo, snap, h, p: None if ok(h, p) else "fixture: does not replay"
     try:
         yield
     finally:
-        CL.replay_counter = real
+        CL.counters.replay_counter = real
 
 
 # ---------------------------------------------------------------- A: bindings

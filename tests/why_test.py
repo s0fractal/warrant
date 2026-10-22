@@ -190,12 +190,12 @@ class Fix:
 @contextlib.contextmanager
 def replaying(blobs):
     """Stub the counter replay: a counter blob replays iff it is in `blobs`."""
-    real = CL.replay_counter
-    CL.replay_counter = lambda repo, snap, h, p: None if h in blobs else "fixture: does not replay"
+    real = CL.counters.replay_counter
+    CL.counters.replay_counter = lambda repo, snap, h, p: None if h in blobs else "fixture: does not replay"
     try:
         yield
     finally:
-        CL.replay_counter = real
+        CL.counters.replay_counter = real
 
 
 def ids(d, key, field):

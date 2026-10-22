@@ -17,6 +17,7 @@ import sys
 from world import CODEX, HOLDER, OBSERVER, OWNER, STRANGER, E, R, W, World, check, finish
 from warrant import jcs as C
 from warrant import keys as K
+from warrant import shapes as S
 from warrant.store import Snapshot, Store, Trust
 
 H1, H2, H3 = "a1" * 32, "b2" * 32, "c3" * 32
@@ -205,7 +206,7 @@ def encoding_cases():
     ok, bad = table(rows)
     check("E6", ok, "canonical bytes: RFC 8785, UTF-16 member order, no whitespace", bad)
     # E7: a hash is lowercase hex SHA-256 of 64 characters, on the shared predicate and in a record
-    rows = [(f"predicate {k}", isinstance(v, str) and R.HEX64.match(v) is not None, False) for k, v in BAD_HEX64.items()]
+    rows = [(f"predicate {k}", S.hex64(v), False) for k, v in BAD_HEX64.items()]
     rows += [(f"evidence {k}", rec("transition", R.transition("ATTESTED", [v])), "invalid") for k, v in BAD_HEX64.items()]
     rows += [("digest", C.digest(b"x"), hashlib.sha256(b"x").hexdigest()),
              ("control", rec("transition", R.transition("ATTESTED", [C.digest(b"x")])), "accepted")]
