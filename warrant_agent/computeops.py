@@ -40,21 +40,26 @@ def _closed(req):
     return op
 
 
+def _int_at_least(low, none_ok=False):
+    return lambda v: (none_ok and v is None) or (type(v) is int and v >= low)
+
+
+# Each member a request may carry: its check and the refusal's message, checked in this order.
+CHECKS = {**{k: (_hex, f"{k} is a hex64 content address") for k in ("input", "environment", "checkpoint", "state")},
+          "runtime": (lambda v: isinstance(v, str) and v in RUNTIMES, "unknown runtime"),
+          "credit": (_int_at_least(0), "credit is an integer >= 0"),
+          "max_actions": (_int_at_least(1, none_ok=True), "max_actions is an integer >= 1"),
+          "max_steps": (_int_at_least(1), "max_steps is an integer >= 1"),
+          **{k: (lambda v: isinstance(v, str) and 0 < len(v) <= 10_000, f"{k} is a term, e.g. \"S K K\"")
+             for k in ("expr", "expect_expr")},
+          "target": (lambda v: isinstance(v, str) and 0 < len(v) <= 200, "target")}
+
+
 def _check_values(req):
     """Each member the request carries has its type and bound."""
-    for k in ("input", "environment", "checkpoint", "state"):
+    for k, (ok, why) in CHECKS.items():
         if k in req:
-            need(_hex(req[k]), "BAD_REQUEST", f"{k} is a hex64 content address")
-    if "runtime" in req:
-        need(isinstance(req["runtime"], str) and req["runtime"] in RUNTIMES, "BAD_REQUEST", "unknown runtime")
-    for k, low in (("credit", 0), ("max_actions", 1), ("max_steps", 1)):
-        if k in req and not (k == "max_actions" and req[k] is None):
-            need(type(req[k]) is int and req[k] >= low, "BAD_REQUEST", f"{k} is an integer >= {low}")
-    for k in ("expr", "expect_expr"):
-        if k in req:
-            need(isinstance(req[k], str) and 0 < len(req[k]) <= 10_000, "BAD_REQUEST", f"{k} is a term, e.g. \"S K K\"")
-    if "target" in req:
-        need(isinstance(req["target"], str) and 0 < len(req["target"]) <= 200, "BAD_REQUEST", "target")
+            need(ok(req[k]), "BAD_REQUEST", why)
 
 
 def _term(ws, provider, store, expr):

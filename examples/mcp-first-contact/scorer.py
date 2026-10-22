@@ -40,6 +40,17 @@ def _result_of(c):
     return {"is_error": bool(c.get("is_error")), "text": body or ""}
 
 
+def _take(kind, c, calls, texts, results):
+    """One content block of an assistant or user event, into its list."""
+    what = (kind, c.get("type"))
+    if what == ("assistant", "tool_use"):
+        calls.append({"id": c.get("id"), "name": c.get("name", ""), "input": c.get("input")})
+    elif what == ("assistant", "text"):
+        texts.append(c.get("text", ""))
+    elif what == ("user", "tool_result"):
+        results[c.get("tool_use_id")] = _result_of(c)
+
+
 def transcript(path):
     """Tool calls, tool results, final text and usage from a stream-json transcript."""
     calls, results, texts, final = [], {}, [], None
@@ -49,12 +60,7 @@ def transcript(path):
             final = ev
             continue
         for c in _content(ev):
-            if kind == "assistant" and c.get("type") == "tool_use":
-                calls.append({"id": c.get("id"), "name": c.get("name", ""), "input": c.get("input")})
-            elif kind == "assistant" and c.get("type") == "text":
-                texts.append(c.get("text", ""))
-            elif kind == "user" and c.get("type") == "tool_result":
-                results[c.get("tool_use_id")] = _result_of(c)
+            _take(kind, c, calls, texts, results)
     for c in calls:
         c["result"] = results.get(c["id"], {"is_error": False, "text": ""})
     text = (final or {}).get("result") or (texts[-1] if texts else "")
