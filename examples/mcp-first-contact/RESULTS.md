@@ -2,7 +2,7 @@
 
 Fresh headless agents with only `warrant-agent-mcp`, three tasks in a user's words, a scorer
 frozen before round 1 (`PLAN.md`, `scorer.py --selftest`). Round 1 ran master's server
-(849cbfa); round 2 ran the server at 46aec98 (`round-*/SERVER`). Same prompts, fixtures,
+(849cbfa); round 2 ran the server at 7cd7cef (`round-*/SERVER` names the `warrant_agent` trees). Same prompts, fixtures,
 flags, scorer and models in both rounds; a fresh fixture (new keys, new store) per run.
 
 ## Round 1 vs round 2
@@ -54,9 +54,9 @@ the scorer's; the table row above is labeled as such.
 
 Refusal counts are from `round-1/refusals.txt` (count, runs).
 
-| Round-1 evidence | Change (commit 46aec98) | Round 2 |
+| Round-1 evidence | Change (commit 7cd7cef) | Round 2 |
 | --- | --- | --- |
-| `use '<x>' is not configured` 22× in 13 runs; agents guessed "verify", "handoff", "work"; nothing named the configured uses. `actor` guessed as "claude", "agent", "reviewer". | `warrant_workspace` (the operator's handles by name: signer actor, uses, `default_use`, expectations, provider); `use`/`actor` optional (first configured use, signer's actor); an unknown use lists the configured ones in `details.configured`. | 0 |
+| `use '<x>' is not configured` 22× in 13 runs; agents guessed "verify", "handoff", "work"; nothing named the configured uses. `actor` guessed as "claude", "agent", "reviewer", and in 4 runs as the account e-mail of the person running the CLI (it is in Claude Code's system prompt). | `warrant_workspace` (the operator's handles by name: signer actor, uses, `default_use`, expectations, provider); `use`/`actor` optional (first configured use, signer's actor); an unknown use lists the configured ones in `details.configured`. | 0 |
 | `targets` (message: just "targets") 17× in 12 runs: `{"id"}`, `{"record"}`, `{"task"}`, `{"ref"}`, `{"target"}`, `{"kind": "task"}`. | Targets by bare id, resolved in the view; another record type refused by name; the refusal states the accepted forms. | 0 |
 | `missing ['view_token']` 11× in 7 runs, `not a view token` 7× in 6 runs (a record id passed as `based_on`). | read, export and prepare without a view token open a new frozen view (returned); prepare without `request_id`. | 0 |
 | T1: 6/6 right answers, 0/6 from Warrant: the two REPLAYED transitions read UNASSESSED and the wrong claim's duty only "OPEN", with no reason anywhere. | Capsules carry every closure attempt with the engine's own verdict and why (`closures` on a duty, `closes` on a transition) and a one-line `reading`. `compute evaluate`: the receiver's own run to a normal form with `same_normal_form` (files and credits nothing). | 6/6 cite the replay disagreement |
@@ -99,6 +99,8 @@ agent mutant killed on it (A41–A53); see AGENT.md.
   `grounded` metric being added before round 1; it is not counted.
 - Cost is the agents' `total_cost_usd` as reported by the CLI: round 1 $2.155, round 2 $1.522,
   smoke $0.007, **$3.68 in all**. The orchestrating session's own usage is not included.
+- Transcripts are kept as the CLI wrote them except one substitution: the account e-mail and
+  name that four round-1 agents used as `actor` are replaced by `<user-email>` / `<user-name>`.
 - The fixtures' worlds (stores, keys, state) are not committed; `fixture.py` rebuilds them,
   `round-*/` keeps every transcript (`*.jsonl`), prompt and score.
 
