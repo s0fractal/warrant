@@ -1,0 +1,39 @@
+name: install from the wheelhouse
+description: >
+  The compute install of every job of ci.yml from the one wheelhouse the `wheels` job built:
+  the files are checked against the digest that job published before anything is installed,
+  so every job tests the same bytes. Expects actions/checkout and actions/setup-python before it.
+inputs:
+  digest:
+    description: SHA-256 of the wheelhouse's SHA256SUMS (the `wheels` job's output)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: wheelhouse
+        path: ${{ runner.temp }}/wh
+
+    - name: The wheelhouse is the one the wheels job built
+      shell: bash
+      env:
+        WANT: ${{ inputs.digest }}
+      run: |
+        set -euo pipefail
+        cd "$RUNNER_TEMP/wh"
+        got=$(sha256sum < SHA256SUMS | cut -d' ' -f1)
+        [ "$got" = "$WANT" ] || { echo "wheelhouse SHA256SUMS is $got, the wheels job published $WANT"; exit 1; }
+        sha256sum --quiet --strict -c SHA256SUMS
+        diff <(ls -A | grep -vx SHA256SUMS | sort) <(sed 's/^[0-9a-f]*  //' SHA256SUMS | sort)
+
+    - name: Compute install (warrant + sigma-glyph wheel, no index)
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m venv "$RUNNER_TEMP/v"
+        "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-graph[mcp]' sigma-glyph 'packaging==26.3'
+        "$RUNNER_TEMP/v/bin/python" -m sigma_provider | tail -1
+        SITE=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)')
+        echo "WARRANT_IMPL=$SITE" >> "$GITHUB_ENV"
+        echo "$RUNNER_TEMP/v/bin" >> "$GITHUB_PATH"

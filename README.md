@@ -123,6 +123,13 @@ python3 tests/agent_mutants.py  # needs [compute,mcp]
 python3 examples/agent/acceptance.py --door mcp   # also python, cli
 ```
 
+Both mutant runners first run each targeted test file once unmutated and refuse
+with BASELINE_RED (exit 2) when a target case already fails there, since every
+mutant on it would read KILLED. CI runs these checks as parallel jobs installed
+from one wheelhouse; the mutants run in parts (`--shard K/N --matrix F`), and
+the required `test` job joins them with `--merge`, which refuses unless every
+mutant of the list was run in exactly one part and killed on its target.
+
 Green checks are not an independent review (AGENTS.md rule 3).
 
 ## Changing a normative sentence

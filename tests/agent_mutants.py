@@ -2,6 +2,9 @@
 """Each mutant removes one guard of warrant_agent and must make ITS case fail.
 
     python3 tests/agent_mutants.py [--jobs N] [ID ...]
+    python3 tests/agent_mutants.py --shard K/N --matrix FILE | --merge OUT FILE ...
+
+The controller is tests/mutants.py's run_all: the same red-baseline guard, shards and merge.
 
 KILLED only when the named case fails; OFF_TARGET, SURVIVED, CRASH and
 BAD_MUTANT are not kills."""
