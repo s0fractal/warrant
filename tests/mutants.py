@@ -762,6 +762,10 @@ def _visit(view, did, report, done, busy):
     ("M259", "records.py", "a challenge's evidence names any strings",
      [('    _text(b["statement"], "statement")\n    _hexes(b["evidence"], "evidence")',
        '    _text(b["statement"], "statement")\n    _list(b["evidence"], "evidence", _text)')], "records_test", ["C4"]),
+    # W5: SPEC §4's lead, and the actor id of SPEC §3
+    ("M260", "engine.py", "records filed after as_of are in the view",
+     [('        self.recs = {rid: r for rid, r in good.items() if r["at"] <= as_of}',
+       '        self.recs = {rid: r for rid, r in good.items()}')], "assessment_test", ["R21"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

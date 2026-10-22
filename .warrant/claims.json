@@ -7,6 +7,7 @@
     "readers"
   ],
   "sections": [
+    "0",
     "1",
     "2",
     "3",
@@ -16,6 +17,7 @@
     "3.4",
     "3.5",
     "3.6",
+    "4",
     "4.1",
     "4.2",
     "4.3",
@@ -30,6 +32,13 @@
     "9"
   ],
   "sentences": {
+    "SPEC-0-1": "informative",
+    "SPEC-0-2": "informative",
+    "SPEC-0-3": "informative",
+    "SPEC-0-4": "informative",
+    "SPEC-0-5": "informative",
+    "SPEC-0-6": "informative",
+    "SPEC-0-7": "informative",
     "SPEC-1-1": "normative",
     "SPEC-1-2": "informative",
     "SPEC-1-3": "informative",
@@ -137,6 +146,13 @@
     "SPEC-3.6-4": "normative",
     "SPEC-3.6-5": "normative",
     "SPEC-3.6-6": "informative",
+    "SPEC-4-1": "normative",
+    "SPEC-4-2": "normative",
+    "SPEC-4-3": "normative",
+    "SPEC-4-4": "normative",
+    "SPEC-4-5": "normative",
+    "SPEC-4-6": "normative",
+    "SPEC-4-7": "normative",
     "SPEC-4.1-1": "informative",
     "SPEC-4.1-2": "normative",
     "SPEC-4.1-3": "normative",
