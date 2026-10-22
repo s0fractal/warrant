@@ -1263,7 +1263,8 @@ def mutant_digest(m):
 # recomputes the same partition and refuses any id that is missing or twice.
 COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "assessment_test": 0.9,
         "primitives_test": 0.1, "records_test": 0.2, "cli_test": 0.3, "roadmap_test": 3.1, "circle_test": 0.9,
-        "agent_handoff_test": 7.0, "agent_write_test": 1.9, "agent_compute_test": 1.9, "agent_mcp_test": 17.0}
+        "agent_handoff_test": 7.0, "agent_write_test": 1.9, "agent_compute_test": 1.9, "agent_mcp_test": 17.0,
+        "why_test": 1.3}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement
 
 
 def shards(mutants, n):
