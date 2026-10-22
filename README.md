@@ -147,8 +147,8 @@ out of git). A change to a rule is made like this:
    `--unbacked-because REASON` for a rule nothing backs yet, or
    `--informative REASON` for a sentence that states no rule),
    `tools/claims.py supersede --because ...` for a changed one (a BACKED claim
-   that loses its backing also needs `--counter` with a challenge against it or
-   a blob of the failing case: losing a proof needs a proof),
+   that loses its backing also needs a counter blob, below: losing a proof needs
+   a proof),
    `tools/claims.py retire --because ... --counter ID` for one that leaves.
 4. `tools/claims.py project` to regenerate SPEC-CLAIMS.md, then `tools/claims.py check`.
 5. Say the because in the commit message as well.
@@ -163,10 +163,39 @@ the cited cases; a record file not named by its id, non-canonical or
 unauthentic; a standing challenge against a current claim; a projection that
 differs from the regenerated one; and, against the base revision, a record that
 was deleted or changed, a claim that disappeared without a record that
-supersedes or retires it, or a claim BACKED at the base and UNBACKED now whose
-losing transition cites no counter-evidence. Nothing is deleted: a retired claim
+supersedes or retires it, or a claim BACKED at the base and UNBACKED now with
+no counter blob that replays (below). Nothing is deleted: a retired claim
 stays in the store with its counter-evidence. `tools/claims.py --selftest` burns
 each of these refusals on a copy.
+
+**A counter blob** is the proof that a BACKED claim's witnesses do not test its
+sentence. It is a JSON file passed as `supersede --counter-file COUNTER.json`
+(add `--challenge` to also file a challenge, carrying it, against the replaced
+claim's discharge item, so that closure cannot later be accepted as if nothing
+had been found):
+
+```json
+{"counter": "warrant-claims/counter@1", "claim": "SPEC-7-1",
+ "against": "<transition id of the BACKED claim>",
+ "patch": "<unified diff of warrant/ or warrant_agent/, paths a/warrant/... b/warrant/...>",
+ "passes": ["compute_test:C5", "compute_test:C11"],
+ "fails": ["compute_test:C4"],
+ "why": "<why the patch makes the sentence false>"}
+```
+
+`check` replays it against the base: it applies the patch to a copy of the
+packages, runs the named test files against the copy, and admits the loss only
+if every case in `passes` passes, every case in `fails` fails, `fails` is not
+empty, and `passes` covers every witness case the BACKED claim cited. The patch
+changes behaviour, yet the claim's witnesses do not notice. `why` is shown, not
+checked. To write one: make the edit that falsifies the sentence in a scratch
+copy, keep it if the cited witnesses still pass and some case fails, and take
+`diff -u` of the edited files with `a/` and `b/` prefixes. Name as few test files
+as you can: each one is run once per check. A claim whose cited case or mutant
+no longer exists has lost its backing on its own and needs no counter blob. A
+challenge or a blob that is not a counter blob admits nothing
+(`LOST_BACKING_WITHOUT_COUNTER`); a counter blob that does not replay is
+refused with its reason (`COUNTER_NOT_REPLAYED`).
 
 ## Limits
 

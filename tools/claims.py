@@ -14,9 +14,11 @@ carrying the sentence, its witness cases (tests/<file>_test.py) and its mutants
 repeats the sentence. A sentence with no witness or no mutant is filed UNBACKED:
 the transition closes nothing and opens the question, and the blob says why it is
 open (`reason`). UNBACKED is an allowed status, listed in SPEC-CLAIMS.md as an open
-question; a claim that was BACKED at the base revision and is UNBACKED now must
-carry counter-evidence (a challenge against the claim it replaced, or a blob of the
-failing case) in the transition that lost the backing. An informative sentence is
+question. A claim that was BACKED at the base revision and is UNBACKED now needs a
+proof of the loss: its backing broke on its own (a cited case or mutant is gone), or
+a transition after it cites a counter blob (warrant-claims/counter@1: a patch under
+which every cited witness still passes and some case fails), directly or through a
+challenge against the replaced claim, and `check` replays that blob. An informative sentence is
 a transition with no duty, its reason in the blob. A supersession is a transition
 whose `supersedes` names the claim it replaces. A retirement is a `challenge`
 carrying the counter-evidence plus a transition superseding the claim. Nothing is
@@ -28,7 +30,7 @@ ever deleted.
     python3 tools/claims.py add --key SEED --id SPEC-1-2 --text '...' --unbacked-because '...'
     python3 tools/claims.py supersede --key SEED --id SPEC-4.2-3 --text '...' --because '...'
     python3 tools/claims.py supersede --key SEED --id SPEC-7-1 --text '...' --because '...' \
-        --unbacked-because '...' --counter-file FAILING_CASE --challenge   # a BACKED claim losing its backing
+        --unbacked-because '...' --counter-file COUNTER.json --challenge   # a BACKED claim losing its backing
     python3 tools/claims.py retire --key SEED --id SPEC-4.2-3 --because '...' --counter HEX
     python3 tools/claims.py project                      # regenerate SPEC-CLAIMS.md
     python3 tools/claims.py check [--base REV | --no-base]
@@ -75,6 +77,8 @@ RETIRE_FIELDS = ("schema", "id", "because", "counter", "challenge", "previous")
 PREVIOUS_FIELDS = ("transition", "duty", "statement_sha256")
 # The mutant harnesses and the id prefix each one owns: an id resolves in exactly one of them.
 HARNESSES = (("mutants.py", "M"), ("agent_mutants.py", "A"))
+COUNTER = "warrant-claims/counter@1"
+COUNTER_FIELDS = ("counter", "claim", "against", "patch", "passes", "fails", "why")
 
 
 class Refused(Exception):
@@ -606,9 +610,9 @@ def check_base(repo, base, snap, model, pins):
     for cid in sorted(then.current, key=id_key):
         was, now = then.current[cid], model.current.get(cid)
         if was.backed and now is not None and not now.retired and now.kind == "normative" and not now.backed:
-            why = lost_backing(model, now)
-            if why:
-                out.append(("LOST_BACKING_WITHOUT_COUNTER", f"{cid} is BACKED at {rev[:12]} and UNBACKED now: {why}"))
+            lost = lost_backing(repo, model, now)
+            if lost:
+                out.append((lost[0], f"{cid} is BACKED at {rev[:12]} and UNBACKED now: {lost[1]}"))
     old_pins = json.loads(files[".warrant/claims.json"]) if ".warrant/claims.json" in files else {"sentences": {}}
     for cid in sorted(set(old_pins["sentences"]) - set(pins["sentences"]), key=id_key):
         n = model.current.get(cid)
@@ -617,44 +621,133 @@ def check_base(repo, base, snap, model, pins):
     return out
 
 
-def lost_backing(model, n):
-    """Why the transition through which claim `n`'s chain lost its backing carries no
-    counter-evidence, or None. That transition is the earliest unbacked one after the
-    last backed claim of the chain; its counter-evidence is an authentic challenge whose
-    target is the backed claim it replaced, or a store blob other than a claim blob and
-    the sentence itself."""
+def lost_backing(repo, model, n):
+    """(code, why) when claim `n`'s chain lost its backing without a proof of the loss, or None.
+
+    The run of UNBACKED claims that ends at `n` follows the last BACKED claim `p` of the
+    chain. The loss is admitted when (a) the backing broke on its own: a witness case or a
+    mutant `p` cites no longer exists or no longer targets a cited case, which `check` sees
+    directly; or (b) a transition of the run cites a counter blob (COUNTER) against `p`,
+    directly or as the evidence of an authentic challenge whose target is `p`, and the blob
+    replays (replay_counter). A challenge, or a blob, that is not such a replay is a thesis,
+    not a proof, and admits nothing."""
+    run = []
     while True:
+        run.append(n)
         prev = n.doc["previous"]
         p = model.nodes.get(prev["transition"]) if prev else None
         if p is None:
-            return "no backed claim precedes it in its chain"
+            return "LOST_BACKING_WITHOUT_COUNTER", "no backed claim precedes it in its chain"
         if p.backed:
             break
         n = p
-    counter = counter_problems(model.snap, model.recs, n.rec["body"]["evidence"], p.tid, p.doc["text"])
-    return None if counter[0] else f"transition {n.tid[:12]} cites no counter-evidence ({counter[1]})"
+    if witness_problems(repo, p.doc["witnesses"], p.doc["mutants"]):
+        return None
+    tried, seen = [], set()
+    for m in reversed(run):
+        for h in m.rec["body"]["evidence"]:
+            for c in counter_candidates(model, h, p):
+                if c in seen:
+                    continue
+                seen.add(c)
+                why = replay_counter(repo, model.snap, c, p)
+                if why is None:
+                    return None
+                tried.append(f"{c[:12]}: {why}")
+    if tried:
+        return "COUNTER_NOT_REPLAYED", "; ".join(tried)
+    return "LOST_BACKING_WITHOUT_COUNTER", (f"no transition from {run[-1].tid[:12]} on cites a counter blob "
+                                            f"({COUNTER}) against {p.tid[:12]}, directly or through a challenge")
 
 
-def counter_problems(snap, recs, evidence, target, text):
-    """([valid counter ids], why none is valid) among `evidence` against the claim transition `target`."""
-    good, seen = [], []
-    for h in evidence:
-        r = recs.get(h)
-        if r is not None:
-            if r["type"] == "challenge" and r["body"]["target"] == target:
-                good.append(h)
-            else:
-                seen.append(f"record {h[:12]} is not a challenge against {target[:12]}")
-            continue
-        data = snap.blob(h)
-        if data is None:
-            seen.append(f"{h[:12]} is neither a record nor a blob of the store")
-            continue
-        doc = snap.json_blob(h)
-        if data == text.encode() or (isinstance(doc, dict) and doc.get("schema") in (CLAIM, RETIRE)):
-            continue
-        good.append(h)
-    return good, "; ".join(seen) or "only the claim blob"
+def counter_candidates(model, h, p):
+    """The blob ids `h` offers as counter-evidence against claim `p`: itself when it is a
+    COUNTER blob, or the COUNTER blobs among the evidence of a challenge `h` against `p`."""
+    r = model.recs.get(h)
+    if r is not None:
+        if r["type"] != "challenge" or r["body"]["target"] != p.tid:
+            return []
+        return [x for x in r["body"]["evidence"] if _is_counter(model.snap, x)]
+    return [h] if _is_counter(model.snap, h) else []
+
+
+def _is_counter(snap, h):
+    doc = snap.json_blob(h)
+    return isinstance(doc, dict) and doc.get("counter") == COUNTER
+
+
+_REPLAYS = {}
+
+
+def replay_counter(repo, snap, h, p):
+    """None if counter blob `h` is a proof against claim `p`, else why not.
+
+    The blob is {"counter": COUNTER, "claim": <id>, "against": <p's transition>, "patch":
+    <unified diff of warrant/ or warrant_agent/>, "passes": [<test>:<case>…], "fails":
+    [<test>:<case>…], "why": <text>}. The patch is applied to a copy of the packages of
+    this checkout and the named test files run against the copy: every case in `passes`
+    must pass and every case in `fails` must fail, and `passes` must cover every witness
+    case `p` cites. The patch changes behaviour, yet the claim's witnesses do not notice:
+    they did not test the sentence. `why` stays a thesis; the replay is what admits the
+    loss. Cached per run by (repository, blob, claim)."""
+    key = (str(repo.root), h, p.tid)
+    if key not in _REPLAYS:
+        _REPLAYS[key] = _replay_counter(repo, snap.json_blob(h), p)
+    return _REPLAYS[key]
+
+
+def _replay_counter(repo, doc, p):
+    if set(doc) != set(COUNTER_FIELDS):
+        return f"members are not {list(COUNTER_FIELDS)}"
+    if doc["claim"] != p.id or doc["against"] != p.tid:
+        return f"it is against {doc['claim']!r} {str(doc['against'])[:12]}, not {p.id} {p.tid[:12]}"
+    cases = [doc["passes"], doc["fails"]]
+    if not all(isinstance(x, list) and all(isinstance(c, str) and TEST_RE.match(c.partition(":")[0]) and c.partition(":")[2]
+                                           for c in x) for x in cases):
+        return "passes and fails must be lists of <test file>:<case>"
+    if not doc["fails"]:
+        return "fails is empty: a patch that breaks nothing proves nothing"
+    if set(doc["passes"]) & set(doc["fails"]):
+        return "a case is in both passes and fails"
+    missing = sorted(set(p.doc["witnesses"]) - set(doc["passes"]))
+    if missing:
+        return f"passes omits cited witnesses {', '.join(missing)}"
+    if not (isinstance(doc["patch"], str) and isinstance(doc["why"], str) and doc["why"]):
+        return "patch must be a string and why a non-empty string"
+    for line in doc["patch"].splitlines():
+        if line.startswith(("--- ", "+++ ")):
+            path = line[4:].split("\t")[0].strip()
+            if path != "/dev/null" and not re.match(r"[ab]/(warrant|warrant_agent)/[A-Za-z0-9_./-]+\Z", path) or ".." in path:
+                return f"the patch touches {path!r}, outside warrant/ and warrant_agent/"
+    tmp = Path(tempfile.mkdtemp(prefix="claims-counter-"))
+    try:
+        for pkg in ("warrant", "warrant_agent"):
+            if (repo.root / pkg).is_dir():
+                shutil.copytree(repo.root / pkg, tmp / pkg, ignore=shutil.ignore_patterns("__pycache__"))
+        if doc["patch"].strip():
+            r = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], cwd=tmp, input=doc["patch"].encode(),
+                               capture_output=True, check=False)
+            if r.returncode:
+                return f"the patch does not apply: {r.stderr.decode().strip()[:200]}"
+        got = {}
+        for test in sorted({c.partition(":")[0] for c in doc["passes"] + doc["fails"]}):
+            if not (repo.tests / f"{test}.py").is_file():
+                return f"tests/{test}.py does not exist"
+            res = tmp / f"results-{test}.json"
+            env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
+            subprocess.run([sys.executable, str((repo.tests / f"{test}.py").resolve())], cwd=repo.tests.resolve(), env=env,
+                           capture_output=True, timeout=900, check=False)
+            if not res.is_file():
+                return f"tests/{test}.py produced no results under the patch"
+            got.update({f"{test}:{k}": v for k, v in json.loads(res.read_text()).items()})
+        absent = [c for c in doc["passes"] + doc["fails"] if c not in got]
+        if absent:
+            return f"no such case ran: {', '.join(absent)}"
+        bad = [f"{c} {got[c]}, not PASS" for c in doc["passes"] if got[c] != "PASS"] + \
+              [f"{c} {got[c]}, not FAIL" for c in doc["fails"] if got[c] != "FAIL"]
+        return "; ".join(bad) or None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ---------------------------------------------------------------- authoring
@@ -701,12 +794,15 @@ class Author:
             raise Refused(f"{cid}: an unbacked sentence needs --unbacked-because (why it is open)")
         if backed and unbacked_because:
             raise Refused(f"{cid}: a backed sentence takes no --unbacked-because")
-        if previous is not None and previous.backed and kind == "normative" and not backed:
-            snap = self.repo.snapshot()
-            good, why = counter_problems(snap, self.model().recs, counter, previous.tid, previous.doc["text"])
-            if not good:
-                raise Refused(f"{cid} is BACKED; losing its backing needs --counter (a challenge against "
-                              f"{previous.tid[:12]} or a blob of the failing case): {why}")
+        if previous is not None and previous.backed and kind == "normative" and not backed \
+                and not witness_problems(self.repo, previous.doc["witnesses"], previous.doc["mutants"]):
+            model = self.model()
+            cands = [c for h in counter for c in counter_candidates(model, h, previous)]
+            whys = [why for c in cands for why in [replay_counter(self.repo, model.snap, c, previous)]]
+            if not cands or all(whys):
+                raise Refused(f"{cid} is BACKED; losing its backing needs a counter blob ({COUNTER}) that replays, "
+                              f"via --counter-file or a challenge carrying it: "
+                              + ("; ".join(whys) if cands else "none given"))
         bad = witness_problems(self.repo, witnesses, mutants) + [
             (c, w) for c, w in self.repo.harness_problems() if any(w.startswith(f"{x} ") for x in mutants)]
         if bad:
@@ -831,17 +927,32 @@ def cmd_supersede(repo, a):
     mut = [m for x in a.mutant for m in x.split(",") if m] or (cur.doc["mutants"] if keep else [])
     counter = list(a.counter)
     if a.counter_file:
-        counter.append(author.store.put_blob(Path(a.counter_file).read_bytes()))
+        counter.append(store_counter_file(author.store, a.counter_file))
     if a.challenge:
         # The dispute goes on record against the claim being replaced (its discharge item,
         # if it has one), so its closure cannot later be accepted as if nothing were found.
         if not counter:
             raise Refused(f"{a.id}: --challenge needs --counter or --counter-file as its evidence")
-        item = 0 if cur.rec["body"]["closes"] else None
-        counter.append(author.put("challenge", R.challenge(cur.tid, a.because, counter, item), author.at()))
+        # Against the last BACKED claim of the chain: its discharge item is the closure in dispute.
+        model, target = author.model(), cur
+        while not target.backed and target.doc["previous"] and target.doc["previous"]["transition"] in model.nodes:
+            target = model.nodes[target.doc["previous"]["transition"]]
+        item = 0 if target.rec["body"]["closes"] else None
+        counter.append(author.put("challenge", R.challenge(target.tid, a.because, counter, item), author.at()))
     tid = author.claim(a.id, a.text, wit, mut, a.informative, a.because, a.residual, previous=cur,
                        unbacked_because=a.unbacked_because, counter=counter)
     print(f"{a.id}: {tid}")
+
+
+def store_counter_file(store, path):
+    """A counter blob file is stored as canonical JSON (so `check` can read it back); any
+    other file as its bytes."""
+    data = Path(path).read_bytes()
+    try:
+        doc = json.loads(data)
+    except ValueError:
+        return store.put_blob(data)
+    return store.put_json(doc) if isinstance(doc, dict) and doc.get("counter") == COUNTER else store.put_blob(data)
 
 
 def cmd_retire(repo, a):
@@ -907,6 +1018,9 @@ def selftest():
         for p in sorted((ROOT / "tests").glob("*.py")):
             shutil.copy2(p, fix / "tests" / p.name)
         shutil.copytree(ROOT / ".warrant", fix / ".warrant")
+        for pkg in ("warrant", "warrant_agent"):     # a counter blob's patch is replayed against them
+            if (ROOT / pkg).is_dir():
+                shutil.copytree(ROOT / pkg, fix / pkg, ignore=shutil.ignore_patterns("__pycache__"))
         repo = Repo(fix)
         key = W.Key.generate()                    # an ephemeral second key for the claim author
         doc = C.loads(repo.trust_path.read_bytes())
@@ -972,8 +1086,47 @@ def selftest():
                                                         [Store(r.store_dir).put_blob(b"selftest: failing case")], 0), au.at())]
             return f
 
-        def failing_case_blob(r, n):
-            return [Store(r.store_dir).put_blob(b"selftest: a case that passes while the sentence is false")]
+        def junk_blob(r, n):
+            return [Store(r.store_dir).put_blob(b"lol\n")]
+
+        # A counter blob against claim `a`: a patch that admits floats (records_test E2 fails)
+        # while every witness `a` cites still passes. Variants break one requirement each.
+        floats_old, floats_new = "    if isinstance(v, int):\n", "    if isinstance(v, float):\n        return repr(v)\n    if isinstance(v, int):\n"
+
+        def counter_doc(r, n, **kv):
+            import difflib
+            src = (r.root / "warrant" / "jcs.py").read_text()
+            patch = "".join(difflib.unified_diff(src.splitlines(True), src.replace(floats_old, floats_new, 1).splitlines(True),
+                                                 "a/warrant/jcs.py", "b/warrant/jcs.py"))
+            doc = {"counter": COUNTER, "claim": n.id, "against": n.tid, "patch": patch,
+                   "passes": sorted(n.doc["witnesses"]), "fails": ["records_test:E2"],
+                   "why": "selftest: floats admitted while the cited witnesses still pass"}
+            doc.update(kv)
+            return doc
+
+        def counter(**kv):
+            def f(r, n):
+                return [Store(r.store_dir).put_json(counter_doc(r, n, **kv))]
+            return f
+
+        def challenge_carrying(**kv):
+            def f(r, n):
+                au = author(r)
+                h = Store(r.store_dir).put_json(counter_doc(r, n, **kv))
+                return [au.put("challenge", R.challenge(n.tid, "selftest: the witnesses pass without the rule", [h], 0), au.at())]
+            return f
+
+        def outside_patch(r, n):
+            doc = counter_doc(r, n)
+            doc["patch"] = doc["patch"].replace("a/warrant/jcs.py", "a/tests/world.py").replace("b/warrant/jcs.py", "b/tests/world.py")
+            return [Store(r.store_dir).put_json(doc)]
+
+        def witness_gone(r):
+            for w in a.doc["witnesses"]:
+                test, _, cid = w.partition(":")
+                pth = r.tests / f"{test}.py"
+                pth.write_text(pth.read_text().replace(f'"{cid}"', f'"{cid}gone"'))
+            rebacked([], [], unbacked_because="selftest: its witness case was removed")(r)
 
         def own_sentence_blob(r, n):
             return [sha(n.doc["text"])]
@@ -1087,10 +1240,27 @@ def selftest():
         case("an UNBACKED claim without a reason", "UNBACKED_WITHOUT_REASON", new_open_question(None))
         case("a BACKED claim superseded UNBACKED without counter-evidence", "LOST_BACKING_WITHOUT_COUNTER",
              rebacked(a.doc["witnesses"], [], unbacked_because="selftest"))
-        case("a BACKED claim superseded UNBACKED citing a challenge against it", None,
+        # AMEND 1: the counter-evidence must be a counter blob that replays, not any blob or challenge
+        case("a BACKED claim superseded UNBACKED citing a counter-file of junk bytes", "LOST_BACKING_WITHOUT_COUNTER",
+             rebacked([], [], unbacked_because="selftest", counter=junk_blob))
+        case("a BACKED claim superseded UNBACKED citing a challenge alone", "LOST_BACKING_WITHOUT_COUNTER",
              rebacked([], [], unbacked_because="selftest", counter=challenge_of(lambda n: n.tid)))
-        case("a BACKED claim superseded UNBACKED citing a blob of the failing case", None,
-             rebacked([], [], unbacked_because="selftest", counter=failing_case_blob))
+        case("a counter blob that replays", None, rebacked([], [], unbacked_because="selftest", counter=counter()))
+        case("a challenge carrying a counter blob that replays", None,
+             rebacked([], [], unbacked_because="selftest", counter=challenge_carrying()))
+        case("a counter blob whose passes omits a cited witness", "COUNTER_NOT_REPLAYED",
+             rebacked([], [], unbacked_because="selftest", counter=counter(passes=[])))
+        case("a counter blob whose fails case passes under the patch", "COUNTER_NOT_REPLAYED",
+             rebacked([], [], unbacked_because="selftest", counter=counter(fails=["records_test:E3"])))
+        case("a counter blob with an empty patch (nothing fails)", "COUNTER_NOT_REPLAYED",
+             rebacked([], [], unbacked_because="selftest", counter=counter(patch="")))
+        case("a counter blob against another claim", "COUNTER_NOT_REPLAYED",
+             rebacked([], [], unbacked_because="selftest", counter=counter(against=b.tid)))
+        case("a counter blob whose patch reaches outside the packages", "COUNTER_NOT_REPLAYED",
+             rebacked([], [], unbacked_because="selftest", counter=outside_patch))
+        case("a challenge carrying a counter blob that does not replay", "COUNTER_NOT_REPLAYED",
+             rebacked([], [], unbacked_because="selftest", counter=challenge_carrying(fails=["records_test:E3"])))
+        case("a BACKED claim superseded UNBACKED after its cited witness case was removed", None, witness_gone)
         case("a BACKED claim superseded UNBACKED citing a challenge against another record", "LOST_BACKING_WITHOUT_COUNTER",
              rebacked([], [], unbacked_because="selftest", counter=challenge_of(lambda n: n.doc["duty"])))
         case("a BACKED claim superseded UNBACKED citing only its own sentence", "LOST_BACKING_WITHOUT_COUNTER",
@@ -1157,8 +1327,8 @@ def main(argv=None):
     p.add_argument("--informative")
     p.add_argument("--unbacked-because", help="why the sentence is open now; the claim keeps no witnesses or mutants")
     p.add_argument("--counter", action="append", default=[],
-                   help="challenge record or blob id already in the store (needed when a BACKED claim loses its backing)")
-    p.add_argument("--counter-file", help="a file to store as a counter-evidence blob")
+                   help="challenge record or counter blob id already in the store (a BACKED claim losing its backing)")
+    p.add_argument("--counter-file", help="a counter blob (warrant-claims/counter@1 JSON) to store and cite")
     p.add_argument("--challenge", action="store_true",
                    help="also file a challenge against the claim being replaced, its evidence the counter-evidence")
     p = authoring(sub.add_parser("retire", help="retire a claim with counter-evidence"))
