@@ -124,6 +124,13 @@ MUTANTS = [
      [('    need(pattern.match(name) is not None, "BAD_REQUEST", "not a content address")',
        '    need(re.match(pattern.pattern.replace("\\\\Z", "$"), name) is not None, "BAD_REQUEST", "not a content address")')],
      "agent_handoff_test", ["H15"]),
+    # W5: the actor id of SPEC §3 in the agent's configuration and requests
+    ("A36", "config.py", "the configured signer need not be an actor id",
+     [('                R.check_actor(signer["actor"], "signer actor")       # SPEC §3: the one shape of an actor id\n',
+       '                pass\n')], "agent_write_test", ["W10"]),
+    ("A37", "api.py", "a context request's actor is any non-empty string, as at 849cbfa",
+     [('    need(_is_actor(req["actor"]), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")',
+       '    need(isinstance(req["actor"], str) and req["actor"], "BAD_REQUEST", "actor")')], "agent_write_test", ["W10"]),
 ]
 
 
