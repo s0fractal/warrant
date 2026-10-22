@@ -1,0 +1,40 @@
+SPEC-7-1 counter-evidence (pilot W4, 2026-10-22): the witnesses C5 and C11 pass while the sentence is false.
+
+Sentence: Σ-GLYPH owns evaluation, resume, replay and cycles; Warrant owns the condition, the recipient's acceptance and the credit.
+Claim superseded: SPEC-7-1 transition 2fe594c2f8ac (BACKED by compute_test C5 C11, mutants M22 M23) at warrant 335e8b1.
+
+Probe: one edit to a copy of warrant/ at 335e8b1 makes Warrant decide the replay's answer itself (the receipt's claimed hash), never calling the Sigma provider; then tests/compute_test.py runs against that copy. Output:
+
+edit: warrant/compute.py replay(): the provider call is replaced by out = {"results": [{"basis": "REPLAYED", "code": "NORMAL_FORM", "result": doc["claimed"]}]}   # Warrant answers itself
+compute_test under the edit: C1=PASS C10=PASS C11=PASS C12=PASS C13=PASS C14=FAIL C15=PASS C16=FAIL C17=FAIL C18=FAIL C19=PASS C2=PASS C20=PASS C21=PASS C22=PASS C23=PASS C24=PASS C25=PASS C26=PASS C27=FAIL C28=FAIL C3=PASS C4=FAIL C5=PASS C6=PASS C7=PASS C8=PASS C9=FAIL
+C5: PASS  C11: PASS
+failing: C14, C16, C17, C18, C27, C28, C4, C9
+
+C5 (no provider: UNVERIFIED; the filer's word: OVERCLAIMED) and C11 (an unaccepted provider closes nothing) both PASS: they test that credit needs an installed, accepted provider, the consequences claimed as SPEC-7-10, SPEC-4.2-7 and SPEC-7-4. The cases that fail (C4 and others) witness other sentences (SPEC-7-15: the receipt's claim is not believed). An implementation with a correct evaluator of its own would pass every case: who owns evaluation is a property of where the evaluating code lives, which no case of this repository observes.
+
+probe.py:
+
+"""SPEC-7-1 counter-evidence probe: does compute_test C5 or C11 fail when Warrant, not Sigma,
+decides the answer? Applies one edit to a temp copy of warrant/ (the replay answer is the
+receipt's own `claimed`, the provider is never called) and runs tests/compute_test.py."""
+import json, os, shutil, subprocess, sys, tempfile
+from pathlib import Path
+ROOT = Path(sys.argv[1]).resolve()
+OLD = '''        out = provider.call("verify", {"runtime": condition["runtime"], "input": doc["input"], "hashes": hashes,
+                                       "chain": [[base64.b64encode(ck).decode(), base64.b64encode(st).decode()]]}, blobs)'''
+NEW = '''        out = {"results": [{"basis": "REPLAYED", "code": "NORMAL_FORM", "result": doc["claimed"]}]}   # Warrant answers itself'''
+tmp = Path(tempfile.mkdtemp())
+shutil.copytree(ROOT / "warrant", tmp / "warrant")
+p = tmp / "warrant" / "compute.py"
+src = p.read_text()
+assert src.count(OLD) == 1
+p.write_text(src.replace(OLD, NEW))
+res = tmp / "results.json"
+run = subprocess.run([sys.executable, str(ROOT / "tests" / "compute_test.py")], cwd=ROOT / "tests",
+                     env=dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res)), capture_output=True, text=True)
+results = json.loads(res.read_text())
+print("edit: warrant/compute.py replay(): the provider call is replaced by", NEW.strip())
+print("compute_test under the edit:", " ".join(f"{k}={v}" for k, v in sorted(results.items())))
+print("C5:", results.get("C5"), " C11:", results.get("C11"))
+print("failing:", ", ".join(sorted(k for k, v in results.items() if v == "FAIL")))
+shutil.rmtree(tmp)

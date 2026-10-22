@@ -1,0 +1,1 @@
+{"because":null,"duty":"2c06bcdb1c8b1382a8f73444914fcdad31f951f2ace1f2796f80be8e4230495f","id":"SPEC-3-8","kind":"normative","mutants":["M194"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3","source":"SPEC.md","text":"A key id is the SHA-256 of the 32-byte public key.","witnesses":["records_test:K5"]}

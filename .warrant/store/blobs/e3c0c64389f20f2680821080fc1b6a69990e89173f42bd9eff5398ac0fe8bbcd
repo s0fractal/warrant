@@ -1,0 +1,1 @@
+{"because":null,"duty":"49e31157151cd1d937d310fa012adc3d3f9e3b8ab52af994d3c73fcbfb13c931","id":"SPEC-3.4-2","kind":"normative","mutants":["M242"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.4","source":"SPEC.md","text":"target string: what was observed (service, endpoint, artifact)","witnesses":["records_test:O1"]}

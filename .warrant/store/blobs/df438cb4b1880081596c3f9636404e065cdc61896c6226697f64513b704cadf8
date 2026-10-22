@@ -1,0 +1,1 @@
+{"because":null,"duty":null,"id":"SPEC-2-8","kind":"informative","mutants":[],"previous":null,"reason":"notation: names the canonical bytes for the sentences that use them","schema":"warrant-claims/claim@1","section":"2","source":"SPEC.md","text":"`canon(x)` denotes them.","witnesses":[]}

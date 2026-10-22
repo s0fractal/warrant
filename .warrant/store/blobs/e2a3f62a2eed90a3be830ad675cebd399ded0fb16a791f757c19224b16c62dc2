@@ -1,0 +1,1 @@
+A duty whose condition is `attest` MUST name at least one `accept_by` actor other than the holder: an attestation that nobody else must accept would close itself.

@@ -1,0 +1,1 @@
+{"because":null,"duty":"6c794dad5d165a06ea22710a73a2a0244e75a2e4a11f0c6bdb98aeef6cd020e5","id":"SPEC-3.1-8","kind":"normative","mutants":["M209"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.1","source":"SPEC.md","text":"{\"attest\": {}}","witnesses":["records_test:D7"]}

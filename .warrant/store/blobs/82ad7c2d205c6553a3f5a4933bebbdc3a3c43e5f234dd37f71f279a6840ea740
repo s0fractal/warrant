@@ -1,0 +1,1 @@
+{"because":null,"duty":"e0d3970232a65885d5def3fb061783ad965f1a1dc8f06af987e4196ec44d4e37","id":"SPEC-2-10","kind":"normative","mutants":["M66"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"2","source":"SPEC.md","text":"A **blob** is any byte string, addressed by `sha256(bytes)`.","witnesses":["assessment_test:R4","records_test:E8"]}

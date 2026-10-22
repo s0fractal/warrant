@@ -1,0 +1,1 @@
+{"because":null,"duty":"adf18dc8d0e65cf27296cc139f5292a556a8109bb3e0e2e330d7b784314da85d","id":"SPEC-3.2-21","kind":"normative","mutants":["M234"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"to actor, required iff act is delegate or substitute","witnesses":["records_test:I5"]}

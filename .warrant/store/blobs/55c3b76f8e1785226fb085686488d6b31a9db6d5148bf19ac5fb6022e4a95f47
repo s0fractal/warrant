@@ -1,0 +1,1 @@
+It is stored as the canonical bytes of `{"record": <record>, "sig": {"key": <hex64 key id>, "ed25519": <hex128>}}` in `records/<id>.json`.

@@ -1,0 +1,1 @@
+{"because":null,"duty":"38aec4f317781f39b0c0bc14ed9524e849973a9c0e6f7cc79d1b6c2a067d22ac","id":"SPEC-3.2-10","kind":"normative","mutants":["M100","M226"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"supersedes list of transition ids whose results these replace","witnesses":["contract_test:S1","records_test:T10"]}

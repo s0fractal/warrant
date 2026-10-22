@@ -1,0 +1,1 @@
+{"because":null,"duty":"84fe21a1a45a50e682636d7bdf3f4e89676fe67367e9ce962aa299cbd6959449","id":"SPEC-3.2-22","kind":"normative","mutants":["M235"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"revalidates non-empty list of transition ids, required iff act is revalidate","witnesses":["records_test:I6"]}

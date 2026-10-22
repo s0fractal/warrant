@@ -1,0 +1,1 @@
+{"because":null,"duty":"b687cf8018c45a728c2576b9e113a63b17eb0085b6fb93dd88e25648d067faaf","id":"SPEC-3.2-2","kind":"normative","mutants":["M220"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"basis \"ATTESTED\" | \"OBSERVED\" | \"REPLAYED\"","witnesses":["records_test:T1"]}
