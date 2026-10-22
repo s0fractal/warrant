@@ -1746,15 +1746,15 @@ GIT_NO_GC = ("-c", "gc.auto=0")             # no automatic gc while a fixture is
 
 
 def confined(arg):
-    """The resolved path of command-line path `arg` (relative to the temporary directory, or
-    absolute) if it lies in the temporary directory, tempfile.gettempdir() ($TMPDIR, else
-    /tmp); Refused otherwise, before it is opened. Matrices and counters live there: an
-    operator who keeps them elsewhere sets TMPDIR for the command (CI: $RUNNER_TEMP)."""
+    """The file a command-line path `arg` names in the temporary directory,
+    tempfile.gettempdir() ($TMPDIR, else /tmp): its base name there. Refused, before anything
+    is opened, when `arg` names another directory: matrices and counters live in $TMPDIR (an
+    operator keeping them elsewhere sets TMPDIR for the command; CI: $RUNNER_TEMP)."""
     base = os.path.realpath(tempfile.gettempdir())
-    real = os.path.realpath(os.path.join(base, arg))
-    if os.path.commonpath((base, real)) != base:
-        raise Refused(f"{arg}: outside the temporary directory {base} (set TMPDIR)")
-    return Path(real)
+    name = os.path.basename(os.path.normpath(arg))
+    if not name or name in (".", "..") or os.path.realpath(os.path.join(base, arg)) != os.path.join(base, name):
+        raise Refused(f"{arg}: not a file name in the temporary directory {base} (set TMPDIR)")
+    return Path(base) / name
 
 
 def _harness(repo, name):
@@ -1798,13 +1798,13 @@ def load_matrices(repo, paths):
     """({mutant id: matrix row}, [(code, detail)]): the rows of matrices written by
     `tests/mutants.py --matrix` / `tests/agent_mutants.py --matrix`. A matrix answers only
     for the code and tests it ran: its source digest must be this checkout's, and a row
-    only for the mutant as defined now (its definition digest), else MATRIX_STALE. Each
-    path is confined() before it is read."""
+    only for the mutant as defined now (its definition digest), else MATRIX_STALE. `paths`
+    come from the caller (cmd_audit confines command-line paths first)."""
     core = _harness(repo, "mutants.py")
     here, defs = core.source_digest(repo.root), _definitions(repo, core)
     rows, problems = {}, []
     for p in paths:
-        got, why = _read_matrix(confined(p), here, defs)
+        got, why = _read_matrix(Path(p), here, defs)
         rows.update(got)
         problems += why
     return rows, problems
@@ -1930,7 +1930,7 @@ def audit(repo, rows):
 
 
 def cmd_audit(repo, a):
-    rows, problems = load_matrices(repo, a.matrix)
+    rows, problems = load_matrices(repo, [confined(m) for m in a.matrix])
     for code, detail in problems:
         print(f"REFUSED {code} {detail}")
     if problems:
@@ -2083,12 +2083,15 @@ def _synthetic_guards(r, c, x, first, run, matrix):
     _, _, rows, probs = run(definition="0" * 64)
     out.append(("audit: a row of a mutant defined otherwise now is refused MATRIX_STALE",
                 not rows and {p[0] for p in probs} == {"MATRIX_STALE"}, probs))
-    try:
-        load_matrices(r, [str(Path(r.root).anchor or "/") + "etc/hosts"])
-        escaped = True
-    except Refused:
-        escaped = False
-    out.append(("audit: a --matrix path outside the repository and the work directories is refused", not escaped, escaped))
+    escaped = []
+    for arg in ("/etc/hosts", "../hosts", "sub/../../hosts", ".."):
+        try:
+            escaped.append((arg, str(confined(arg))))
+        except Refused:
+            pass
+    inside = confined(os.path.join(tempfile.gettempdir(), "m.json"))
+    out.append(("audit: a --matrix or --counters path outside the temporary directory is refused; one in it is kept",
+                not escaped and inside == Path(os.path.realpath(tempfile.gettempdir())) / "m.json", (escaped, inside)))
     return out
 
 

@@ -258,7 +258,7 @@ new claim the counter no longer replays: a cited witness fails under its patch.
 M.json --matrix-tests all` (and `tests/agent_mutants.py --matrix A.json
 --matrix-tests agent_handoff_test,...`) records every case's result under every
 mutant; `tools/claims.py audit --matrix M.json --matrix A.json [--counters DIR]`
-(paths under `$TMPDIR` only) then lists, for each BACKED claim, each mutant whose scopes overlap those of the
+(files directly in `$TMPDIR` only) then lists, for each BACKED claim, each mutant whose scopes overlap those of the
 claim's mutants, under which some case fails and every witness of the claim
 passes, with the would-be counter blob (it replays when the mutant is confined
 to the claim's scopes). Tier `line`: the mutant edits a line one of the claim's
