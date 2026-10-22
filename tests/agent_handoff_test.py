@@ -113,7 +113,45 @@ def anchor_cases():
           ({k: (got12[k], want12[k]) for k in want12 if got12.get(k) != want12[k]}, control12))
 
 
+def chain_handoff_cases():
+    # H16 (SPEC §3, §4.1; F43): a receiver that imports a package with chains reaches the sender's
+    # verdict on the same records. The sender's store holds the F43 attempt: auditor, delegated by
+    # producer, discharges before accepting, accepts, and adds an acceptance dated before the
+    # discharge. Sender and receiver (after export, inspect, import) both say OVERCLAIMED / OPEN,
+    # list the same unanchored acceptance, and agree on every candidate.
+    from agent_world import PROFILE, R
+    from warrant import engine as E
+    from warrant.store import Trust
+    src, rcv = world()
+    d = src.file("duty", "producer", 100, R.duty("producer", "the cache is warm", ["reviewer"], {"attest": {}},
+                                                 accept_by=["reviewer"]))
+    dl = src.file("transition", "producer", 110, R.transition("ATTESTED", [], closes=[R.item(d, "delegate", [], to="auditor")]))
+    ev = src.blob(b"warmed\n")
+    c = src.file("transition", "auditor", 150, R.transition("ATTESTED", [ev], closes=[R.item(d, "discharge", [ev])]))
+    src.file("accept", "auditor", 200, R.accept(dl, 0, []))
+    src.file("accept", "reviewer", 210, R.accept(c, 0, [ev]))
+    late = src.file("accept", "auditor", 120, R.accept(dl, 0, []))     # names its head (dated 200): unanchored
+
+    def judged(party):
+        rep = E.assess(party.store.snapshot(), Trust.load(party.base / "trust.json"), 10_000, PROFILE)
+        return (rep["duties"][d]["disposition"], sorted((x["transition"], x["verdict"]) for x in rep["duties"][d]["candidates"]),
+                rep["chains"])
+    ids = {"duty": d}
+    sender = judged(src)
+    pkg, digest = pkg_and_digest(src, ids, request_id="h16")
+    rcv.expect("cut", digest, source="src")
+    r = ok(inspect(rcv, pkg, ids, "cut"))
+    imp = ok(rcv.call("handoff", {"op": "import", "workspace": "rcv", "staged_id": r["data"]["staged_id"],
+                                  "request_id": "i16"}))
+    receiver = judged(rcv)
+    got = (sender == receiver, sender[0], dict(sender[1])[c], late in sender[2]["unanchored"], imp["data"]["status"],
+           r["data"]["capsules"][0]["disposition"])
+    check("H16", got == (True, "OPEN", "OVERCLAIMED", True, "COMPLETE", "OPEN"),
+          "a receiver importing chained records reaches the sender's verdicts on them", (sender, receiver))
+
+
 def main():
+    chain_handoff_cases()
     # H01: a full package with a counting challenge: delivery MATCH, reliance CHALLENGED, use HOLD
     src, rcv = world()
     ids = reviewed_work(src)

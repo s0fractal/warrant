@@ -459,7 +459,7 @@ class Writer:
         rec = R.record(rtype, self.actor, self.at(), body)
         for doc in blobs:
             self.store.put_json(doc)
-        return self.store.put_record(rec, self.key)
+        return self.store.append(rtype, self.actor, rec["at"], body, self.key)     # extends the actor's chain (SPEC §3)
 
     def goal(self, pairs):
         if not pairs:

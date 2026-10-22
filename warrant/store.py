@@ -3,6 +3,7 @@
 A store is a directory with `records/<id>.json` and `blobs/<sha256>`. A Snapshot
 reads every file exactly once into memory; everything an assessment decides is
 decided from those bytes, never from the directory again."""
+import fcntl
 import os
 from pathlib import Path
 
@@ -12,6 +13,10 @@ from . import limits as L
 from . import records as R
 
 MAX_FILE = 64 * 1024 * 1024
+
+
+class ChainMoved(ValueError):
+    """A record's `prev` is no longer its actor's head in this store (SPEC §3)."""
 
 
 class Store:
@@ -41,6 +46,60 @@ class Store:
         if not p.exists():
             _write(p, data)
         return rid
+
+    def head(self, actor):
+        """(id, at) of `actor`'s chain head in this store, or None before its first chained
+        record: of the actor's records that carry `prev`, those no other one names as its
+        `prev`, the latest by (at, id). Unreadable files are skipped: this chooses what a
+        writer names, it judges nothing (the reader decides, SPEC §3)."""
+        mine = {}
+        folder = self.root / "records"
+        for p in sorted(folder.iterdir()) if folder.is_dir() else ():
+            try:
+                r = C.loads(p.read_bytes())["record"]
+            except (C.NotCanonical, KeyError, TypeError, ValueError, OSError):
+                continue
+            if isinstance(r, dict) and r.get("actor") == actor and "prev" in r and type(r.get("at")) is int:
+                mine[p.name[:-5]] = r
+        named = {r["prev"] for r in mine.values()}
+        tips = [(r["at"], rid) for rid, r in mine.items() if rid not in named]
+        return (max(tips)[1], max(tips)[0]) if tips else None
+
+    def append(self, rtype, actor, at, body, key):
+        """File a record that extends `actor`'s chain in this store: `prev` is the head, read
+        and extended under one lock (see extend). A record dated before its predecessor is
+        refused, not filed unanchored."""
+        return self._locked(lambda: self._extend(R.record(rtype, actor, at, body, prev=self._prev(actor)), key))
+
+    def extend(self, r, key):
+        """File record `r`, already built, iff its `prev` is still `r`'s actor's head here:
+        a compare-and-swap (minds VARS-1 §3: `git update-ref <ref> T_new T_old`), under an
+        exclusive lock on records/, so two writers of one store never name the same head.
+        Raises ChainMoved otherwise; nothing is written."""
+        return self._locked(lambda: self._extend(r, key))
+
+    def _prev(self, actor):
+        head = self.head(actor)
+        return head[0] if head else None
+
+    def _extend(self, r, key):
+        R.check(r)
+        head = self.head(r["actor"])
+        if "prev" not in r or r["prev"] != (head[0] if head else None):
+            raise ChainMoved(f"{r['actor']}'s chain head here is {head[0][:12] if head else 'none'}, "
+                             f"not the record's prev {str(r.get('prev'))[:12]}")
+        if head is not None and r["at"] < head[1]:
+            raise ValueError(f"{r['actor']}'s chain head {head[0][:12]} is at {head[1]}; a record at {r['at']} would precede it")
+        return self.put_record(r, key)
+
+    def _locked(self, fn):
+        self.init()
+        fd = os.open(self.root / "records", os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            return fn()
+        finally:
+            os.close(fd)
 
     def snapshot(self, limits=None):
         return Snapshot.read(self.root, limits=limits)

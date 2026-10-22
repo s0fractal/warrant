@@ -47,7 +47,10 @@ class Party:
         self.reload()
 
     def file(self, rtype, actor, at, body):
-        return self.store.put_record(R.record(rtype, actor, at, body), self.keys[actor])
+        """A fixture record naming `actor`'s head as its prev (SPEC §3). A fixture may date it
+        before a record the agent committed at the current time; it is then unanchored."""
+        head = self.store.head(actor)
+        return self.store.put_record(R.record(rtype, actor, at, body, prev=head[0] if head else None), self.keys[actor])
 
     def blob(self, data):
         return self.store.put_blob(data)

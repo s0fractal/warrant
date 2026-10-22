@@ -402,6 +402,63 @@ def actor_id_cases():
           "a program, a person and a rule act as named actors do", got)
 
 
+def chain_cases():
+    # K14 (§3, F43): `prev` is optional, null or a record id; without it the record is unchained
+    rows = [("no prev (unchained)", rec("duty", DUTY), "accepted"), ("prev null (a genesis)", rec("duty", DUTY, prev=None), "accepted"),
+            ("prev a record id", rec("duty", DUTY, prev=H1), "accepted")]
+    rows += bad_hex_rows("prev", lambda v: rec("duty", DUTY, prev=v), nullable=True)
+    ok, bad = table(rows)
+    check("K14", ok, "prev is absent (unchained), null or a hex64 record id", bad)
+
+    # K15 (§3): a writer extends its actor's chain from the head in the store, under a lock:
+    # the first record names no prev, the next the first; one dated before the head is refused
+    # and nothing is written; a draft whose prev is no longer the head is refused (ChainMoved);
+    # unchained records are no head, and with two tips (a fork) the later one is.
+    from warrant.store import ChainMoved
+    w = World()
+    st, k = w.store, w.keys[HOLDER]
+    st.put_record(R.record("duty", HOLDER, 90, put(DUTY, statement="unchained")), k)     # not a head
+    none_yet = st.head(HOLDER)
+    a = st.append("duty", HOLDER, 100, DUTY, k)
+    b = st.append("transition", HOLDER, 100, TRANSITION, k)
+    n = len(list((st.root / "records").iterdir()))
+    early = outcome(lambda: st.append("transition", HOLDER, 99, CLOSING, k))
+    stale = R.record("transition", HOLDER, 120, CLOSING, prev=a)
+    try:
+        st.extend(stale, k)
+        moved = "filed"
+    except ChainMoved:
+        moved = "ChainMoved"
+    unchanged = len(list((st.root / "records").iterdir())) == n
+    prevs = [C.loads((st.root / "records" / f"{x}.json").read_bytes())["record"]["prev"] for x in (a, b)]
+    tip = st.put_record(R.record("transition", HOLDER, 300, CLOSING, prev=a), k)     # a fork beside b, dated later
+    got = (none_yet, prevs, early, moved, unchanged, st.head(HOLDER))
+    check("K15", got == (None, [None, a], "raised ValueError", "ChainMoved", True, (tip, 300)),
+          "Store.append names the head as prev, refuses to date before it, and extends only from the head", got)
+
+    # K16 (§3): two writers of one store never read the same head: append waits for the lock
+    # another writer holds on records/, and extends the head that writer left
+    import fcntl
+    import os
+    import threading
+    w = World()
+    st, k = w.store, w.keys[HOLDER]
+    a = st.append("duty", HOLDER, 100, DUTY, k)
+    fd = os.open(st.root / "records", os.O_RDONLY)
+    fcntl.flock(fd, fcntl.LOCK_EX)                      # another writer, between reading the head and filing
+    out = {}
+    th = threading.Thread(target=lambda: out.setdefault("id", st.append("transition", HOLDER, 101, TRANSITION, k)))
+    th.start()
+    th.join(0.5)
+    waited = th.is_alive()
+    b = st.put_record(R.record("transition", HOLDER, 100, CLOSING, prev=a), k)     # that writer's record
+    os.close(fd)
+    th.join(10)
+    prev = C.loads((st.root / "records" / f"{out.get('id')}.json").read_bytes())["record"]["prev"] if "id" in out else None
+    check("K16", (waited, prev) == (True, b), "an append waits for another writer's lock and names the head it left",
+          (waited, prev))
+
+
 def bad_hex_rows(label, make, nullable=False):
     """[(label, outcome, "invalid")] for every BAD_HEX64 value put where `make` puts it."""
     return [(f"{label} {k}", make(v), "invalid") for k, v in BAD_HEX64.items() if not (nullable and v is None)]
@@ -832,15 +889,15 @@ def challenge_cases():
 
 
 def main():
-    encoding_cases()
-    record_cases()
-    duty_cases()
-    transition_cases()
-    item_cases()
-    accept_cases()
-    observation_cases()
-    grant_cases()
-    challenge_cases()
+    # The chain cases run first and every later group is guarded: a mutant that makes every
+    # unchained record invalid (M419) fails K14 on its assertion instead of losing the results
+    # file when a later group builds an unchained record.
+    for group in (chain_cases, encoding_cases, record_cases, duty_cases, transition_cases, item_cases, accept_cases,
+                  observation_cases, grant_cases, challenge_cases):
+        try:
+            group()
+        except Exception as e:      # noqa: BLE001
+            check(f"RAISED-{group.__name__}", False, f"{group.__name__} ran to its end", f"{type(e).__name__}: {e}")
     return finish("RECORDS")
 
 

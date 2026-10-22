@@ -19,6 +19,17 @@ def context(p, targets=()):
 
 
 def main():
+    # W11 runs first and the older cases are guarded: a mutant that breaks every commit (A57)
+    # fails W11 on its assertion instead of losing the results file in W01's ok().
+    chain_cases()
+    try:
+        older_cases()
+    except Exception as e:      # noqa: BLE001
+        check("RAISED-older_cases", False, "W01-W10 ran to their end", f"{type(e).__name__}: {e}")
+    return finish("AGENT-WRITE")
+
+
+def older_cases():
     src, rcv = world()
     ids = reviewed_work(src)
     # The reviewer is the signer of a third party that accepts work.
@@ -177,7 +188,34 @@ def main():
           and asks == {"producer": "ok", "prodúcer": "ok", "producer\n": "BAD_REQUEST", "prodúcer\r\n": "BAD_REQUEST",
                        "producer ": "BAD_REQUEST", "": "BAD_REQUEST"},
           "a signer or a request actor that is not an actor id is refused", (loads, asks))
-    return finish("AGENT-WRITE")
+
+
+def chain_cases():
+    # W11 (SPEC §3, F43): prepare names the signer's head as `prev` and never dates the record
+    # before it; commit is a compare-and-swap on that head. Two drafts prepared on one head:
+    # the first commits, the second is refused (CONFLICT, CHAIN_MOVED) and files nothing, so the
+    # chain never forks; prepared again it names the first one.
+    s11, _ = world()
+    import time as _t
+    ahead = int(_t.time()) + 1000          # a head dated after now: the draft's `at` must not precede it
+    h0 = s11.file("transition", "producer", ahead, R.transition("ATTESTED", established=["the head"]))
+    v11 = ok(s11.call("context", {"workspace": "src", "actor": "producer", "use": "continue", "targets": []}))
+
+    def draft(rid, statement):
+        return ok(s11.call("prepare", {"workspace": "src", "based_on": v11["view_token"], "request_id": rid,
+                                       "type": "challenge", "body": {"target": "ab" * 32, "item": 0,
+                                                                     "statement": statement, "evidence": []}}))["data"]
+    one, two = draft("w11a", "first"), draft("w11b", "second")
+    c_one = s11.call("commit", {"workspace": "src", "draft_id": one["draft_id"]})
+    c_two = s11.call("commit", {"workspace": "src", "draft_id": two["draft_id"]})
+    again = draft("w11c", "second")
+    c_again = s11.call("commit", {"workspace": "src", "draft_id": again["draft_id"]})
+    got = ((one["record"]["prev"], two["record"]["prev"], one["at"] >= ahead), "ok" in c_one,
+           (c_two.get("error"), (c_two.get("details") or {}).get("reason")),
+           (s11.ws.store / "records" / f"{two['record_id']}.json").exists(),
+           (again["record"]["prev"], "ok" in c_again))
+    check("W11", got == ((h0, h0, True), True, ("CONFLICT", "CHAIN_MOVED"), False, (one["record_id"], True)),
+          "prepare names the signer's head; commit refuses a draft whose head has moved", got)
 
 
 if __name__ == "__main__":

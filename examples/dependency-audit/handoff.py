@@ -238,7 +238,7 @@ class Party:
         return self.ok(operation, **req)["data"]
 
     def file(self, kind, body):
-        return self.store.put_record(R.record(kind, self.name, int(time.time()), body), self.key)
+        return self.store.append(kind, self.name, int(time.time()), body, self.key)
 
     def context(self, *duties):
         return self.ok("context", actor=self.name, use="continue",

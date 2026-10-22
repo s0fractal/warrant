@@ -11,11 +11,15 @@ echo "  provider: $PROVIDER"
 P="$WORK/profile.json"
 echo '{"uses":{"act":{"requires_triggers":false}},"accept_by":{"results":[]},"targets":["owner/compute"],"grant_roots":[],"challengers":[],"providers":["'"$PROVIDER"'"]}' > "$P"
 view=(--store "$S" --trust "$T" --profile "$P" --as-of 5000)
+# claude's records form one chain (SPEC §3), so each duty and its closure are dated after the
+# previous pair: the duty at AT+1 (it runs in a $(...) subshell), its closure at AT+2.
+AT=1000
 compute_duty() { # INPUT ENV RUNTIME EXPECT
-  as claude file --type duty --at 1000 "{\"statement\":\"compute $1\",\"holder\":\"claude\",\"owed_to\":[\"owner\"],\"accept_by\":[],\"release_by\":[],\"condition\":{\"compute\":{\"runtime\":\"$3\",\"input\":\"$1\",\"environment\":\"$2\",\"expect\":\"$4\"}},\"schedule\":null,\"requires\":[],\"serves\":[],\"answers\":null,\"subject\":null}" | get record
+  as claude file --type duty --at "$((AT + 1))" "{\"statement\":\"compute $1\",\"holder\":\"claude\",\"owed_to\":[\"owner\"],\"accept_by\":[],\"release_by\":[],\"condition\":{\"compute\":{\"runtime\":\"$3\",\"input\":\"$1\",\"environment\":\"$2\",\"expect\":\"$4\"}},\"schedule\":null,\"requires\":[],\"serves\":[],\"answers\":null,\"subject\":null}" | get record
 }
 close() { # DUTY ACT EVIDENCE
-  as claude file --type transition --at 2000 "{\"basis\":\"REPLAYED\",\"evidence\":[\"$3\"],\"relied_on\":[],\"established\":[],\"residual\":[],\"opened\":[],\"closes\":[{\"duty\":\"$1\",\"act\":\"$2\",\"evidence\":[\"$3\"]}],\"subject\":null,\"supersedes\":[],\"triggers\":[]}" >/dev/null
+  AT=$((AT + 2))
+  as claude file --type transition --at "$AT" "{\"basis\":\"REPLAYED\",\"evidence\":[\"$3\"],\"relied_on\":[],\"established\":[],\"residual\":[],\"opened\":[],\"closes\":[{\"duty\":\"$1\",\"act\":\"$2\",\"evidence\":[\"$3\"]}],\"subject\":null,\"supersedes\":[],\"triggers\":[]}" >/dev/null
 }
 
 echo "1. a term, its environment, and a run with too little credit: PAUSED"

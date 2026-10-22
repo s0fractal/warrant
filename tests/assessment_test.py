@@ -743,7 +743,7 @@ def limit_cases():
 
 def _filed_id(w, rtype, actor, at, body):
     """The id a record would get, without filing it (an id is the digest of the record)."""
-    return R.record_id(R.record(rtype, actor, at, body))
+    return R.record_id(R.record(rtype, actor, at, body, prev=w.next_prev(actor)))
 
 
 def _grant_ordered(w, actor, at, body_of, want):
@@ -848,31 +848,199 @@ def gemini_review_cases():
     # the same `at` as a release, with a larger id, is after it and does not authorize it;
     # with a smaller id it does. A child grant at its parent's `at` with a smaller id is
     # before its parent. At b1a6d10 only `at` was compared: both releases were admitted.
-    w = World()
-    da, db = w.duty(statement="after"), w.duty(statement="before")
-    ra = release(w, da, STRANGER, 300, "a")
-    rb = release(w, db, STRANGER, 300, "b")
-    ga = _grant_ordered(w, OWNER, 300, lambda k: R.grant(STRANGER, ["release"], [da], expires=10_000 + k), lambda i: i > ra)
-    gb = _grant_ordered(w, OWNER, 300, lambda k: R.grant(STRANGER, ["release"], [db], expires=10_000 + k), lambda i: i < rb)
-    rep = w.assess(prof=E.profile(grant_roots=[ga, gb]))
-    tie = (verdict_of(rep, da, ra)["verdict"], rep["duties"][da]["disposition"],
-           verdict_of(rep, db, rb)["verdict"], rep["duties"][db]["disposition"])
-    w = World()
-    dc, dd = w.duty(statement="child first"), w.duty(statement="parent first")
-    root = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [dc, dd], delegable=["release"]), at=400)
-    early = _grant_ordered(w, STRANGER, 400, lambda k: R.grant(CODEX, ["release"], [dc], expires=10_000 + k, parent=root),
-                           lambda i: i < root)
-    late = _grant_ordered(w, STRANGER, 400, lambda k: R.grant(CODEX, ["release"], [dd], expires=10_000 + k, parent=root),
-                          lambda i: i > root)
-    rc, rd = release(w, dc, CODEX, 500, "c"), release(w, dd, CODEX, 500, "d")
-    rep = w.assess(prof=E.profile(grant_roots=[root]))
-    chain = (rep["grants"][early], verdict_of(rep, dc, rc)["verdict"], rep["grants"][late], verdict_of(rep, dd, rd)["verdict"])
-    got = (tie, chain)
+    # Since F43 a record chained to a predecessor with the same `at` follows it (SPEC-4-7), so
+    # each pair is filed in a world of its own: no actor files two records at that `at`.
+    def tie(statement, want):
+        w = World()
+        d = w.duty(statement=statement)
+        r = release(w, d, STRANGER, 300, statement)
+        g = _grant_ordered(w, OWNER, 300, lambda k: R.grant(STRANGER, ["release"], [d], expires=20_000 + k),
+                           lambda i: want(i, r))
+        rep = w.assess(prof=E.profile(grant_roots=[g]))
+        return verdict_of(rep, d, r)["verdict"], rep["duties"][d]["disposition"]
+
+    def parent(statement, want):
+        w = World()
+        d = w.duty(statement=statement)
+        root = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [d], delegable=["release"]), at=400)
+        child = _grant_ordered(w, STRANGER, 400, lambda k: R.grant(CODEX, ["release"], [d], expires=20_000 + k, parent=root),
+                               lambda i: want(i, root))
+        r = release(w, d, CODEX, 500, statement)
+        rep = w.assess(prof=E.profile(grant_roots=[root]))
+        return rep["grants"][child], verdict_of(rep, d, r)["verdict"]
+
+    got = (tie("after", lambda i, r: i > r) + tie("before", lambda i, r: i < r),
+           parent("child first", lambda i, root: i < root) + parent("parent first", lambda i, root: i > root))
     check("R39", got == (("OVERCLAIMED", "OPEN", "ADMITTED", "RELEASED"), ("BROKEN_CHAIN", "OVERCLAIMED", "VALID", "ADMITTED")),
           "a grant is valid from its position (at, id) on, not from its `at`", got)
 
 
+def _verdict(rep, d, t):
+    """The verdict of transition t on duty d, or ABSENT when t is not a candidate (a mutant may exclude it)."""
+    return next((c["verdict"] for c in rep["duties"][d]["candidates"] if c["transition"] == t), "ABSENT")
+
+
+def chain_cases():
+    # R40 (§3, §4.1; F43, outside review "Monday", reproduced on 3f2be6a and d67bbf6): HOLDER
+    # delegates at 100; CODEX discharges at 150 without having accepted (OVERCLAIMED), accepts at
+    # 200, OWNER accepts the closure at 210. CODEX then files a second acceptance of the same
+    # delegation dated 110. At d67bbf6 the earliest acceptance counted, the delegation took effect
+    # at 110 and the duty was DISCHARGED: the delegate alone legalized its own earlier filing.
+    w = World()
+    d = w.duty(at=50)
+    dl = w.close(d, act="delegate", to=CODEX, at=100)
+    c = w.close(d, actor=CODEX, at=150)
+    w.accept(CODEX, dl, at=200)
+    w.accept(OWNER, c, at=210)
+    before = w.assess()
+    w.accept(CODEX, dl, at=110)
+    after = w.assess()
+    got = [(r["duties"][d]["disposition"], _verdict(r, d, c), _verdict(r, d, dl))
+           for r in (before, after)]
+    check("R40", got == [("OPEN", "OVERCLAIMED", "ADMITTED")] * 2,
+          "a delegate's acceptance dated before its own earlier filing does not authorize that filing", got)
+
+    # R41 (§4.1, F43 planned): CODEX discharges first and then files ONE acceptance dated 110,
+    # between the delegation and its discharge. Whatever `prev` that acceptance names — CODEX's
+    # head (the discharge: dated before it, unanchored), none (a second genesis: a fork) or no
+    # prev at all (unchained) — the chain does not put it before the discharge, so it authorizes
+    # nothing. CODEX's first record is an unrelated note, so its discharge is one record deeper in
+    # its chain than a second genesis. Control: accepting first, then discharging, is admitted.
+    def planned(prev):
+        w = World()
+        d = w.duty(at=50)
+        dl = w.close(d, act="delegate", to=CODEX, at=100)
+        w.act(CODEX, [], at=120, established=["a note"])
+        c = w.close(d, actor=CODEX, at=150)
+        w.accept(OWNER, c, at=210)
+        w.accept(CODEX, dl, at=110, prev=prev)
+        rep = w.assess()
+        return rep["duties"][d]["disposition"], _verdict(rep, d, c), _verdict(rep, d, dl)
+
+    w = World()
+    d = w.duty(at=50)
+    dl = w.close(d, act="delegate", to=CODEX, at=100)
+    w.accept(CODEX, dl, at=120)
+    c = w.close(d, actor=CODEX, at=150)
+    w.accept(OWNER, c, at=210)
+    rep = w.assess()
+    control = rep["duties"][d]["disposition"], _verdict(rep, d, c)
+    got = ([planned(p) for p in ("head", None, R.UNCHAINED)], control)
+    check("R41", got == ([("OPEN", "OVERCLAIMED", "ADMITTED")] * 3, ("DISCHARGED", "ADMITTED")),
+          "a delegate's acceptance authorizes its filing only from before it in the delegate's chain", got)
+
+    # R42 (§4.1): a closure dated before the holder's own substitution. HOLDER substitutes to
+    # OWNER at 300 (in effect at 301), then files a discharge dated 250: naming its head (the
+    # substitution: dated before it, unanchored), naming the record before the substitution (a
+    # fork) or no prev (unchained). The chain does not put it before the substitution, so the
+    # substitution is in effect for it. Control: the discharge filed before the substitution in
+    # HOLDER's chain is admitted.
+    def backdated(prev):
+        w = World()
+        d = w.duty(at=50, accept_by=(CODEX,))
+        s = w.close(d, act="substitute", to=OWNER, at=300)
+        w.accept(OWNER, s, at=301)
+        c = w.close(d, at=250, prev=d if prev == "fork" else prev)
+        w.accept(CODEX, c, at=400)
+        rep = w.assess()
+        return rep["duties"][d]["disposition"], _verdict(rep, d, c), _verdict(rep, d, s)
+
+    w = World()
+    d = w.duty(at=50, accept_by=(CODEX,))
+    c = w.close(d, at=250)
+    s = w.close(d, act="substitute", to=OWNER, at=300)
+    w.accept(OWNER, s, at=301)
+    w.accept(CODEX, c, at=400)
+    rep = w.assess()
+    control = rep["duties"][d]["disposition"], _verdict(rep, d, c), rep["duties"][d]["holder"]
+    got = ([backdated(p) for p in ("head", "fork", R.UNCHAINED)], control)
+    check("R42", got == ([("OPEN", "OVERCLAIMED", "ADMITTED")] * 3, ("DISCHARGED", "ADMITTED", OWNER)),
+          "a holder's filing the chain does not put before its own transfer is judged with the transfer in effect", got)
+
+    # R43 (§3, §4): a fork is listed and excludes nothing. HOLDER substitutes to OWNER, OWNER
+    # discharges and CODEX accepts; then HOLDER files a record naming the same prev as its
+    # substitution. Excluding both branches would let HOLDER retract its own substitution and
+    # turn OWNER's admitted discharge into OVERCLAIMED; here the substitution stands.
+    w = World()
+    d = w.duty(at=50, accept_by=(CODEX,))
+    s = w.close(d, act="substitute", to=OWNER, at=300)
+    w.accept(OWNER, s, at=301)
+    c = w.close(d, actor=OWNER, at=350)
+    w.accept(CODEX, c, at=360)
+    x = w.act(HOLDER, [], at=400, prev=d, established=["I never handed it over"])
+    rep = w.assess()
+    got = (rep["chains"]["forks"], rep["duties"][d]["holder"], _verdict(rep, d, s),
+           _verdict(rep, d, c), rep["duties"][d]["disposition"])
+    check("R43", got == ([{"actor": HOLDER, "prev": d, "records": sorted([s, x])}], OWNER, "ADMITTED", "ADMITTED", "DISCHARGED"),
+          "two records naming one prev are a listed fork; neither is excluded, so no transfer is retracted", got)
+
+    # R44 (§4): an acceptance whose prev is not in the view is unanchored, listed, and its prev
+    # is reported missing; it orders nothing, so the delegate's earlier discharge stays OVERCLAIMED.
+    ghost = "e" * 64
+    w = World()
+    d = w.duty(at=50)
+    dl = w.close(d, act="delegate", to=CODEX, at=100)
+    c = w.close(d, actor=CODEX, at=150)
+    w.accept(OWNER, c, at=210)
+    a = w.accept(CODEX, dl, at=110, prev=ghost)
+    rep = w.assess()
+    got = (rep["chains"]["unanchored"].get(a), ghost in rep["missing"], _verdict(rep, d, c))
+    check("R44", got == ("its prev is not in the view", True, "OVERCLAIMED"),
+          "a record whose prev is not in the view is unanchored and its prev is missing", got)
+
+    # R45 (§4): an acceptance naming another actor's record (the delegation itself, dated before
+    # the discharge) as its prev is unanchored: a chain is one actor's.
+    w = World()
+    d = w.duty(at=50)
+    dl = w.close(d, act="delegate", to=CODEX, at=100)
+    c = w.close(d, actor=CODEX, at=150)
+    w.accept(OWNER, c, at=210)
+    a = w.accept(CODEX, dl, at=110, prev=dl)
+    rep = w.assess()
+    got = (rep["chains"]["unanchored"].get(a), _verdict(rep, d, c))
+    check("R45", got == ("its prev was filed by another actor", "OVERCLAIMED"),
+          "a record whose prev is another actor's is unanchored", got)
+
+    # R46 (§4.1): replaying an old filing under a new prev. CODEX's discharge c was filed before it
+    # accepted; it accepts late (220), then re-files c's body after that acceptance. Dated as c
+    # (150) the copy is dated before its prev: unanchored, OVERCLAIMED. Dated now (230) it is a new
+    # filing, authorized, and PENDING: OWNER accepted c, not the copy. c stays OVERCLAIMED.
+    w = World()
+    d = w.duty(at=50)
+    dl = w.close(d, act="delegate", to=CODEX, at=100)
+    ev = [w.evidence("work")]
+    c = w.close(d, actor=CODEX, at=150, evidence=ev)
+    w.accept(OWNER, c, at=210)
+    a = w.accept(CODEX, dl, at=220)
+    old = w.close(d, actor=CODEX, at=150, evidence=ev, prev=a)
+    new = w.close(d, actor=CODEX, at=230, evidence=ev, prev=a)
+    rep = w.assess()
+    got = tuple(_verdict(rep, d, t) for t in (c, old, new)) + (rep["duties"][d]["disposition"],)
+    check("R46", got == ("OVERCLAIMED", "OVERCLAIMED", "PENDING", "OPEN"),
+          "an old filing replayed under a new prev is a new filing, from its own position, needing its own acceptance", got)
+
+    # R48 (§4): records with the same `at` are ordered by id, except that a chained record follows
+    # its predecessor. CODEX accepts the delegation and discharges in the same second, the discharge
+    # with the smaller id. At d67bbf6 positions were (at, id): the discharge sorted before the
+    # acceptance that put CODEX in effect, and was OVERCLAIMED.
+    w = World()
+    d = w.duty(at=50)
+    dl = w.close(d, act="delegate", to=CODEX, at=100)
+    a = w.accept(CODEX, dl, at=200)
+    for k in range(1000):
+        h = w.evidence(f"same second {k}")
+        if _filed_id(w, "transition", CODEX, 200, R.transition("ATTESTED", [h], closes=[R.item(d, "discharge", [h])])) < a:
+            break
+    c = w.close(d, actor=CODEX, at=200, evidence=[h])
+    w.accept(OWNER, c, at=210)
+    rep = w.assess()
+    got = (c < a, _verdict(rep, d, c), rep["duties"][d]["disposition"])
+    check("R48", got == (True, "ADMITTED", "DISCHARGED"),
+          "a chained record with the same `at` as its predecessor comes after it, whatever the ids", got)
+
+
 def main():
+    chain_cases()
     transfer_cases()
     admission_cases()
     disposition_cases()

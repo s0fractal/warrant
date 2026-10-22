@@ -249,11 +249,14 @@ BODIES = {"duty": _duty, "transition": _transition, "accept": _accept, "observat
 
 def check(record):
     """Raise Invalid unless `record` is exactly one record shape of SPEC §3."""
-    _fields(record, ("warrant", "type", "actor", "at", "body"), what="record")
+    _fields(record, ("warrant", "type", "actor", "at", "body"), ("prev",), what="record")
     _need(record["warrant"] == VERSION, "record version must be \"2\"")
     _enum(record["type"], TYPES, "type")
     _actor(record["actor"], "actor")
     _int(record["at"], "at", 0)
+    if "prev" in record:
+        _need(record["prev"] is None or (isinstance(record["prev"], str) and HEX64.match(record["prev"]) is not None),
+              "prev must be null or a record id")
     BODIES[record["type"]](record["body"], record["actor"])
     if record["type"] == "observation":
         _need(record["body"]["window"][1] <= record["at"], "an observation cannot be filed before it ended")
@@ -262,8 +265,15 @@ def check(record):
 
 # ---------------------------------------------------------------- construction
 
-def record(rtype, actor, at, body):
+UNCHAINED = object()       # record(..., prev=UNCHAINED): no `prev` member, a record outside every chain
+
+
+def record(rtype, actor, at, body, prev=UNCHAINED):
+    """A record; `prev` is the id of the actor's previous record, None for its first one
+    (SPEC §3). Leaving it out makes an unchained record: valid, but ordered by no chain."""
     r = {"warrant": VERSION, "type": rtype, "actor": actor, "at": at, "body": body}
+    if prev is not UNCHAINED:
+        r["prev"] = prev
     check(r)
     return r
 

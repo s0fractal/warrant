@@ -175,7 +175,7 @@ class Party:
 
     def other_actor(self, actor, rtype, body):
         """Another actor's own signed act, outside this party's door."""
-        return self.store.put_record(R.record(rtype, actor, int(time.time()), body), self.keys[actor])
+        return self.store.append(rtype, actor, int(time.time()), body, self.keys[actor])
 
 
 STEPS = {}
