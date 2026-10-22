@@ -198,9 +198,8 @@ def run_one(mid, fname, what, edits, test, targets, also=()):
     from mutants import verdict
     tmp = Path(tempfile.mkdtemp(prefix=f"warrant-agent-{mid}-"))
     try:
-        from mutants import copy_source
-        copy_source(tmp, "warrant")
-        copy_source(tmp, "warrant_agent")
+        shutil.copytree(ROOT / "warrant", tmp / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(ROOT / "warrant_agent", tmp / "warrant_agent", ignore=shutil.ignore_patterns("__pycache__"))
         p = tmp / "warrant_agent" / fname
         src = p.read_text()
         for old, new in edits:

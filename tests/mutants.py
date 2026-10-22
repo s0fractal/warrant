@@ -1050,24 +1050,6 @@ MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
                [('    if bound[0] != rec["actor"]:\n', '    if False:\n')], "contract_test", ["N5"])
 
 
-# What a mutant's run takes from this checkout. COPIED: the directories run_one (here and in
-# agent_mutants.py) copies, only through copy_source(), so nothing outside them is copied.
-# READ_IN_PLACE: what the test files run from the checkout itself, or read there (the selftest
-# refuses a test file that names another top-level entry). source_digest() covers both, so a
-# matrix's `source` names every byte its runs could have depended on (AMEND 1 of #172: a change
-# to tools/roadmap.py alone left the digest unchanged, and --merge accepted a stale matrix).
-COPIED = ("warrant", "warrant_agent", "tools")
-READ_IN_PLACE = ("tests", "third_party", ".warrant", "trust", "SPEC.md", "SPEC-CLAIMS.md", "WITNESSES.md", "ROADMAP.md")
-SOURCES = COPIED + READ_IN_PLACE
-
-
-def copy_source(tmp, d):
-    """Copy directory `d` of this checkout into `tmp`: only a directory of COPIED."""
-    if d not in COPIED:
-        raise ValueError(f"{d}/ is not in COPIED, so source_digest() would not cover it")
-    shutil.copytree(ROOT / d, tmp / d, ignore=shutil.ignore_patterns("__pycache__"))
-
-
 def run_tests(tmp, tests, timeout=900):
     """{test file: {case: PASS|FAIL}, or None when it produced no results}: each named test
     file run against the packages in `tmp` (WARRANT_IMPL), with results of its own."""
@@ -1096,15 +1078,13 @@ def run_one(mid, fname, what, edits, test, targets, also=()):
     file run, then the test files of `also` (for --matrix)."""
     tmp = Path(tempfile.mkdtemp(prefix=f"warrant-{mid}-"))
     try:
-        copy_source(tmp, "warrant")
+        shutil.copytree(PKG, tmp / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
         if fname.startswith("../"):
             # A tool beside the package (../tools/roadmap.py): its directory is copied whole, so
             # the tool's own imports (tools/claims.py) come from the same copy; the test loads it
             # from $WARRANT_IMPL/tools.
             outside = Path(fname[3:]).parts[0]
-            if outside not in COPIED:
-                return "BAD_MUTANT", f"{fname} is outside COPIED {COPIED}", {}
-            copy_source(tmp, outside)
+            shutil.copytree(ROOT / outside, tmp / outside, ignore=shutil.ignore_patterns("__pycache__"))
             p = tmp / fname[3:]
         else:
             p = tmp / "warrant" / fname
@@ -1164,26 +1144,54 @@ def parse_args(argv, ids, prog):
 MATRIX = "warrant-mutants/matrix@1"
 
 
+class SourceUnknown(Exception):
+    """The root is not the top level of a git checkout, so its sources have no identity."""
+
+
+def _git(root, *args):
+    out = subprocess.run(["git", "--no-optional-locks", "-C", str(root), *args], capture_output=True, check=False)
+    if out.returncode != 0:
+        raise SourceUnknown(f"git {' '.join(args)} in {root}: {out.stderr.decode(errors='replace').strip()}")
+    return out.stdout
+
+
 def source_digest(root=ROOT):
-    """SHA-256 over every file of SOURCES under `root` (all files, not only *.py; no
-    __pycache__), by relative path, and the name of each entry of SOURCES that is absent: a
-    matrix answers for exactly the code, tools, tests and data its runs used. tools/claims.py
-    audit (MATRIX_STALE) and --merge (SHARD_STALE) both compare matrices with this digest."""
+    """The identity of the sources a matrix answers for: the whole tree the git checkout at
+    `root` holds, with no list of folders. Code, tools, tests, records and documents are all
+    sources: which folder a byte lives in says nothing about whether a run depended on it
+    (AMEND 1 of #172: a change to tools/roadmap.py alone left the old digest of warrant/,
+    warrant_agent/ and tests/*.py unchanged, and --merge accepted a stale matrix).
+
+    A clean working tree (no change to a tracked file, no untracked file git does not ignore)
+    is named by its git tree id, "tree:<id>". A dirty one is named "worktree:<sha256>" over the
+    path, mode and bytes of every tracked and every untracked unignored file as it is on disk
+    (a deleted file is absent from it). So any change anywhere, committed or not, gives
+    another identity; files git ignores (caches, build output) are not sources. A dirty tree
+    is not refused: the local `claims.py audit` loop needs matrices of uncommitted work, and the
+    working-tree digest names those bytes as exactly as a tree id names committed ones.
+    --merge (SHARD_STALE), every --matrix of both harnesses (run_all checks the identity did
+    not change during the run) and tools/claims.py audit (MATRIX_STALE) compare through this
+    function only. SourceUnknown when `root` is not the top level of a git checkout."""
     import hashlib
+    root = Path(root).resolve()
+    top = _git(root, "rev-parse", "--show-toplevel").decode().strip()
+    if Path(top).resolve() != root:
+        raise SourceUnknown(f"{root} is not the top level of a git checkout (that is {top})")
+    if not _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all"):
+        return "tree:" + _git(root, "rev-parse", "HEAD^{tree}").decode().strip()
+    tracked = [x for x in _git(root, "ls-files", "-z", "--cached").decode().split("\0") if x]
+    untracked = [x for x in _git(root, "ls-files", "-z", "--others", "--exclude-standard").decode().split("\0") if x]
     h = hashlib.sha256()
-    for name in sorted(SOURCES):
-        top = root / name
-        if top.is_file():
-            files = [top]
-        elif top.is_dir():
-            files = sorted((p for p in top.rglob("*") if p.is_file() and "__pycache__" not in p.relative_to(root).parts),
-                           key=lambda p: p.relative_to(root).as_posix())
+    for rel in sorted(set(tracked) | set(untracked)):
+        f = root / rel
+        if f.is_symlink():
+            mode, data = b"120000", os.readlink(f).encode()
+        elif f.is_file():
+            mode, data = (b"100755" if os.access(f, os.X_OK) else b"100644"), f.read_bytes()
         else:
-            h.update(name.encode() + b"\0absent\0")
-            continue
-        for p in files:
-            h.update(p.relative_to(root).as_posix().encode() + b"\0" + hashlib.sha256(p.read_bytes()).digest())
-    return h.hexdigest()
+            continue                # deleted: its absence from the digest is the change
+        h.update(rel.encode() + b"\0" + mode + b"\0" + hashlib.sha256(data).digest())
+    return "worktree:" + h.hexdigest()
 
 
 def mutant_digest(m):
@@ -1245,17 +1253,19 @@ def baseline_red(chosen, runner, jobs):
     return red
 
 
-def run_all(mutants, label, argv, runner, prog="mutants"):
+def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT):
     """Run `mutants` in parallel (--jobs N in argv, default: the CPU count): each one already
     works in its own copy of the package and its own results file, so nothing is shared.
     Output keeps the given order; ids in argv select mutants. The 2026-10-21 CI run with 89
     mutants took 21 of the job's 25 minutes in series. Before any mutant, each targeted test
     file runs once unmutated; a target case that does not pass there refuses the run with
-    BASELINE_RED (exit 2). Exit 0 only when at least one mutant ran and every one was KILLED;
+    BASELINE_RED (exit 2). With --matrix the source identity (source_digest) is taken before the
+    first run and again before writing: a tree that changed meanwhile, or has no identity, gets
+    no matrix (exit 2). Exit 0 only when at least one mutant ran and every one was KILLED;
     a bad option or id exits 2 (SystemExit from argparse). --merge: see merge()."""
     import concurrent.futures
     if argv[:1] == ["--merge"]:
-        return merge(mutants, label, argv[1:], prog)
+        return merge(mutants, label, argv[1:], prog, root=root)
     ns = parse_args(argv, [m[0] for m in mutants], prog)
     pick = set(ns.ids)
     chosen = [m for m in mutants if not pick or m[0] in pick]
@@ -1265,6 +1275,13 @@ def run_all(mutants, label, argv, runner, prog="mutants"):
     if not chosen:
         print(f"{label}: no mutants selected; nothing was checked")
         return 2
+    before = None
+    if ns.matrix:
+        try:
+            before = source_digest(root)
+        except SourceUnknown as e:
+            print(f"{label}: SOURCE_UNKNOWN, no matrix can name what it ran: {e}")
+            return 2
     red = baseline_red(chosen, runner, ns.jobs)
     for test, env, failing, ids in red:
         where = f"{test}" + (f" (with {env}/)" if env else "")
@@ -1285,7 +1302,12 @@ def run_all(mutants, label, argv, runner, prog="mutants"):
                           "targets": list(m[5]), "outcome": outcome, "runs": got[2] if len(got) > 2 else {}}
     print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={ns.jobs})")
     if ns.matrix:
-        doc = {"matrix": MATRIX, "harness": prog, "tests": ns.matrix_tests, "source": source_digest(),
+        after = source_digest(root)
+        if after != before:
+            print(f"{label}: SOURCE_CHANGED, the tree changed during the run ({before} -> {after}); "
+                  f"no matrix written to {ns.matrix}")
+            return 2
+        doc = {"matrix": MATRIX, "harness": prog, "tests": ns.matrix_tests, "source": after,
                "mutants": rows}
         if ns.shard:
             doc["shard"] = list(ns.shard)
@@ -1312,14 +1334,19 @@ def merge(mutants, label, argv, prog, root=ROOT):
             docs.append((f, json.loads(Path(f).read_text())))
         except (OSError, ValueError) as e:
             problems.append(("SHARD_UNREADABLE", f"{f}: {e}"))
-    src, by_id = source_digest(root), {m[0]: m for m in mutants}
+    try:
+        src = source_digest(root)
+    except SourceUnknown as e:
+        src = None
+        problems.append(("SHARD_SOURCE_UNKNOWN", str(e)))
+    by_id = {m[0]: m for m in mutants}
     if len({json.dumps(d.get("tests")) for _, d in docs}) > 1:
         problems.append(("SHARD_SHAPE", "the files were run with different --matrix-tests"))
     rows, where = {}, {}
     for f, d in docs:
         if d.get("matrix") != MATRIX or d.get("harness") != prog:
             problems.append(("SHARD_NOT_THIS_HARNESS", f"{f}: {d.get('matrix')!r} by {d.get('harness')!r}, not {prog}"))
-        if d.get("source") != src:
+        if src is not None and d.get("source") != src:
             problems.append(("SHARD_STALE", f"{f}: written over other sources than this checkout's"))
         for mid, row in sorted((d.get("mutants") or {}).items()):
             if mid in where:
@@ -1352,82 +1379,141 @@ def merge(mutants, label, argv, prog, root=ROOT):
 
 
 def source_checks():
-    """The fingerprint covers what the runs use (AMEND 1 of #172), checked on a copy of the
-    sources with a genuine KILLED row of M300 (a ../tools/roadmap.py mutant)."""
-    import ast
+    """The source identity is the whole tree (AMEND 1 of #172), checked on a fixture repository
+    made of this checkout's tracked and untracked files, with a genuine KILLED row of M300 (a
+    ../tools/roadmap.py mutant) merged over it."""
     import contextlib
     import io
-    sys.path.insert(0, str(ROOT / "tests"))
-    from agent_mutants import MUTANTS as AGENT
-    outside = {Path(m[1][3:]).parts[0] for m in MUTANTS + AGENT if m[1].startswith("../")}
-    top = {p.name for p in ROOT.iterdir()}
-    named = {}
-    for f in sorted((ROOT / "tests").glob("*.py")):
-        if f.name not in ("mutants.py", "agent_mutants.py"):
-            for n in ast.walk(ast.parse(f.read_text())):
-                if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value in top:
-                    named.setdefault(n.value, set()).add(f.name)
-    probe = Path(tempfile.mkdtemp(prefix="mutants-selftest-copy-"))
-    try:
-        copy_source(probe, "examples")
-        refused = False
-    except ValueError:
-        refused = not (probe / "examples").exists()
-    finally:
-        shutil.rmtree(probe, ignore_errors=True)
-    checks = [
-        ("every directory a mutant copies is in COPIED", outside <= set(COPIED) and {"warrant", "warrant_agent"} <= set(COPIED)),
-        ("copy_source refuses a directory outside COPIED", refused),
-        ("every checkout entry a test file names is in SOURCES", set(named) <= set(SOURCES)),
-    ]
     m300 = next(m for m in MUTANTS if m[0] == "M300")
     got = run_one(*m300)
     work = Path(tempfile.mkdtemp(prefix="mutants-selftest-sources-"))
+    git = ["git", "-c", "user.name=selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false"]
     try:
-        copy = work / "root"
-        for name in SOURCES:
-            if (ROOT / name).is_dir():
-                shutil.copytree(ROOT / name, copy / name, ignore=shutil.ignore_patterns("__pycache__"))
-            elif (ROOT / name).is_file():
-                copy.mkdir(exist_ok=True)
-                shutil.copy2(ROOT / name, copy / name)
+        fix = work / "root"
+        listed = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                                capture_output=True, check=True).stdout.decode().split("\0")
+        for rel in sorted({x for x in listed if x}):
+            if (ROOT / rel).is_file():
+                (fix / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / rel, fix / rel)
+        subprocess.run(["git", "init", "-q", str(fix)], check=True)
+        subprocess.run([*git, "-C", str(fix), "add", "-A"], check=True)
+        subprocess.run([*git, "-C", str(fix), "commit", "-q", "-m", "fixture"], check=True)
+        clean = source_digest(fix)
         row = {"definition": mutant_digest(m300), "file": m300[1], "what": m300[2], "test": m300[4],
                "targets": list(m300[5]), "outcome": got[0], "runs": got[2]}
-        part = work / "part.json"
-        part.write_text(json.dumps({"matrix": MATRIX, "harness": "mutants", "tests": "own", "source": source_digest(copy),
-                                    "mutants": {"M300": row}}))
 
-        def merged():
+        def part(source):
+            f = work / "part.json"
+            f.write_text(json.dumps({"matrix": MATRIX, "harness": "mutants", "tests": "own", "source": source,
+                                     "mutants": {"M300": row}}))
+            return f
+
+        def merged(f):
             out = work / "merged.json"
             out.unlink(missing_ok=True)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = merge([m300], "SOURCES", [str(out), str(part)], "mutants", root=copy)
+                rc = merge([m300], "SOURCES", [str(out), str(f)], "mutants", root=fix)
             return rc, out.is_file(), "SHARD_STALE" in buf.getvalue()
 
-        def changed(rel, edit):
-            f = copy / rel
-            if not f.is_file():
-                return "absent from the copy", rel
-            was = f.read_bytes()
-            f.write_bytes(edit(was))
+        def changed(f, rel, edit, keep=False):
+            """merge `f` after `edit` (bytes -> bytes, or None: delete) on fix/rel, then undo it."""
+            path = fix / rel
+            was = path.read_bytes() if path.is_file() else None
+            mode = path.stat().st_mode if path.is_file() else None
+            new = edit(was)
+            if new is None:
+                path.unlink()
+            elif isinstance(new, int):
+                path.chmod(new)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(new)
             try:
-                return merged()
+                return merged(f)
             finally:
-                f.write_bytes(was)
+                if was is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(was)
+                    path.chmod(mode)
         m300_edit = lambda b: b.replace(m300[3][0][0].encode(), m300[3][0][1].encode())
-        checks += [
+        add = lambda b: b + b"\n"
+        GOOD, STALE = (0, True, False), (1, False, True)
+        f = part(clean)
+        tree = subprocess.run(["git", "-C", str(fix), "rev-parse", "HEAD^{tree}"], capture_output=True,
+                              check=True).stdout.decode().strip()
+        checks = [
             ("a genuine run of M300 is KILLED on P9", got[0] == "KILLED"),
-            ("a copy of SOURCES has the checkout's digest", source_digest(copy) == source_digest()),
-            ("--merge of the genuine row over unchanged sources passes", merged() == (0, True, False)),
-            ("--merge refuses it SHARD_STALE once tools/roadmap.py has M300's own edit, and writes nothing",
-             changed("tools/roadmap.py", m300_edit) == (1, False, True)),
-            ("--merge refuses it SHARD_STALE once tools/claims.py changes", changed("tools/claims.py", lambda b: b + b"\n# x\n") == (1, False, True)),
-            ("--merge refuses it SHARD_STALE once a data file the tests read changes (tests/vectors)",
-             changed("tests/vectors/ed25519-edge.json", lambda b: b + b"\n") == (1, False, True)),
-            ("--merge refuses it SHARD_STALE once the store the tests copy changes (.warrant)",
-             changed(".warrant/claims.json", lambda b: b + b"\n") == (1, False, True)),
+            ("a clean tree is named by its git tree id", clean == "tree:" + tree),
+            ("--merge of the genuine row over the unchanged tree passes", merged(f) == GOOD),
+            ("an uncommitted M300 edit of tools/roadmap.py: SHARD_STALE, nothing written",
+             changed(f, "tools/roadmap.py", m300_edit) == STALE),
+            ("an uncommitted change of tools/claims.py: SHARD_STALE", changed(f, "tools/claims.py", add) == STALE),
+            ("an uncommitted change of .warrant/roles.json: SHARD_STALE", changed(f, ".warrant/roles.json", add) == STALE),
+            ("an uncommitted change of README.md: SHARD_STALE", changed(f, "README.md", add) == STALE),
+            ("a new untracked file anywhere: SHARD_STALE", changed(f, "examples/new-file.txt", lambda b: b"x") == STALE),
+            ("a deleted tracked file: SHARD_STALE", changed(f, "ROADMAP.md", lambda b: None) == STALE),
+            ("a file made executable: SHARD_STALE", changed(f, "README.md", lambda b: 0o755) == STALE),
+            ("a file git ignores is not a source", changed(f, "tests/__pycache__/x.cpython-311.pyc", lambda b: b"x") == GOOD),
+            ("the change undone, the tree merges again", merged(f) == GOOD),
         ]
+        (fix / "README.md").write_bytes((fix / "README.md").read_bytes() + b"\n")
+        subprocess.run([*git, "-C", str(fix), "commit", "-q", "-am", "readme"], check=True)
+        checks.append(("a committed change of README.md (a clean tree, another tree id): SHARD_STALE", merged(f) == STALE))
+        subprocess.run(["git", "-C", str(fix), "reset", "-q", "--hard", "HEAD~1"], check=True)
+        (fix / "tools" / "roadmap.py").write_bytes(m300_edit((fix / "tools" / "roadmap.py").read_bytes()))
+        dirty = source_digest(fix)
+        g = part(dirty)
+        checks += [
+            ("a dirty tree is named by its working-tree digest", dirty.startswith("worktree:") and dirty != clean),
+            ("a matrix of a dirty tree merges over the same bytes", merged(g) == GOOD),
+            ("... and is SHARD_STALE after one more byte anywhere", changed(g, ".warrant/roles.json", add) == STALE),
+            ("... or in README.md", changed(g, "README.md", add) == STALE),
+            ("... or after a new untracked file", changed(g, "examples/new-file.txt", lambda b: b"x") == STALE),
+            ("... or after a tracked file is deleted", changed(g, "ROADMAP.md", lambda b: None) == STALE),
+            ("... or after a file is made executable", changed(g, "README.md", lambda b: 0o755) == STALE),
+            ("... but not after a change to a file git ignores", changed(g, "tests/__pycache__/x.cpython-311.pyc", lambda b: b"x") == GOOD),
+            ("... and SHARD_STALE once the dirty change is undone", changed(g, "tools/roadmap.py", lambda b: (ROOT / "tools" / "roadmap.py").read_bytes()) == STALE),
+        ]
+        fake = [("F1", "x.py", "fake", [], "t", ["c"])]
+
+        def write(argv_root, touch=None):
+            out = work / "written.json"
+            out.unlink(missing_ok=True)
+
+            def runner(*m, also=()):
+                if touch and not m[0].startswith("baseline:"):
+                    touch()
+                return "KILLED", "c", {m[4]: {"c": "FAIL" if not m[0].startswith("baseline:") else "PASS"}}
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc = run_all(fake, "SOURCES", ["--jobs", "1", "--matrix", str(out)], runner, root=argv_root)
+                except Exception as e:      # a crash is not the refusal this checks
+                    rc = f"raised {type(e).__name__}"
+            return rc, json.loads(out.read_text())["source"] if out.is_file() else None
+        roles = fix / ".warrant" / "roles.json"
+        was = roles.read_bytes()
+        checks += [
+            ("--matrix names the tree it ran over", write(fix) == (0, dirty)),
+            ("--matrix writes nothing when the tree changes during the run (SOURCE_CHANGED)",
+             write(fix, touch=lambda: roles.write_bytes(was + b"\n")) == (2, None)),
+            ("--matrix writes nothing over a root with no identity (SOURCE_UNKNOWN)", write(work) == (2, None)),
+        ]
+        roles.write_bytes(was)
+        try:
+            source_digest(fix / "tools")
+            inner = False
+        except SourceUnknown:
+            inner = True
+        checks.append(("a directory inside a checkout has no identity of its own", inner))
+        try:
+            source_digest(work)
+            outside = False
+        except SourceUnknown:
+            outside = True
+        checks.append(("a directory outside any checkout has no identity", outside))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return checks
