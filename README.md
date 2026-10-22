@@ -285,6 +285,26 @@ downgrade would be refused today, as would four of the six Gemini counters
 against their claims as they stood); re-backing such a claim is the remedy, and
 `audit` is what finds it.
 
+**From a statement to its claims.** `tools/claims.py why FILE:LINE [--json]`
+answers which claims, roadmap obligations and goals a statement of `warrant/`,
+`warrant_agent/` or `tools/` serves: the statement owning that line (statement
+granularity as for counters: a simple statement whole, a compound one by its
+header), the mutants of both harnesses whose changed statements include it, the
+claims citing those mutants that are BACKED in the view, the obligations whose
+`serves` or `requires` name those claims' duties, and the goals they answer. A
+claim a replaying counter lowered (COUNTERED) is never backing: `why` names it
+with its challenge and counter, as evidence that the statement's witnesses were
+blind, and `audit` skips it (re-backing is its remedy). Every consumer reads the
+status SPEC-CLAIMS.md shows (`standing` in tools/claims.py). A blank line, a
+comment or a docstring is `NOT_A_STATEMENT`; a statement no cited mutant changes
+is `NO_CLAIM`. A mutant that only inserts code before a statement is shown and
+not counted: it changes no existing statement. `why --uncovered [FILE]` lists
+the statements of `warrant/` and `warrant_agent/` (or of FILE) that no cited
+mutant changes, the functions none of whose statements is covered (largest
+first) and the counts: the map of code that no claim explains, and the input of
+the next re-backing. It reads the files and records as they are; it refuses
+nothing in CI.
+
 ## The circle of witnesses
 
 Who may sign into this store is not decided by anyone. `.warrant/trust.json` is

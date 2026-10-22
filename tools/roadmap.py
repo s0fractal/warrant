@@ -286,13 +286,18 @@ class Model:
         return out
 
     def need(self, did):
-        """What the engine's frontier says the duty's holder must do next, or None."""
+        """What the engine's frontier says the duty's holder must do next, or None. A closure the
+        engine did not admit (UNMET_CONDITION while a prerequisite is open) is filed: the need
+        names its verdict and why, not "no closure filed"."""
         holder = self.rep["duties"][did]["holder"]
         if holder not in self._frontiers:
             self._frontiers[holder] = E.frontier(self.rep, holder)
         for n in self._frontiers[holder]:
             if n.get("duty") == did and n["need"] != "accept":
-                return "no closure filed" if n["need"] == "close" else n["need"]
+                if n["need"] != "close":
+                    return n["need"]
+                filed = [c for c in self.rep["duties"][did]["candidates"] if c["verdict"] not in ("ADMITTED", "PENDING")]
+                return f"closure {filed[-1]['verdict']}: {filed[-1]['why']}" if filed else "no closure filed"
         return None
 
     def answering(self, key):

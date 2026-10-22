@@ -162,6 +162,7 @@ def requires_cases():
     a = r.ok("oblige", "--text", "Counter blobs are accepted from any key.", "--answers", "G1")
     b = r.ok("oblige", "--text", "A witness ledger is derived from the records.", "--answers", "G1", "--requires", a[:10])
     tb = r.ok("done", "--duty", b, "--established", "the ledger is built", "--ref", "s0fractal/warrant#1")
+    filed = state_of(r.path("G1")["obligations"], b)
     r.accept(tb)
     blocked = state_of(r.path("G1")["obligations"], b)
     ta = r.ok("done", "--duty", a, "--established", "counter@1 from any key", "--ref", "s0fractal/warrant#2")
@@ -173,6 +174,11 @@ def requires_cases():
           and [c["duty"] for c in nb["children"]] == [a] and nb["children"][0]["edge"] == "requires",
           "requires blocks: an accepted discharge stays OPEN until the prerequisite is DISCHARGED; the tree shows it",
           (blocked, p))
+    cand = r.model().rep["duties"][b]["candidates"]
+    check("P14", filed[0] == blocked[0] == "OPEN" and filed[1] == blocked[1] != "no closure filed"
+          and a[:12] in filed[1] and [c["verdict"] for c in cand] == ["ADMITTED"],
+          "a discharge filed before its prerequisite is DISCHARGED reads as filed and unmet, naming the prerequisite, "
+          "not as no closure filed; it is admitted once the prerequisite is", (filed, blocked, cand))
     ev = r.model().recs[ta]["body"]["evidence"]
     check("P4", pending == ("OPEN", "awaiting acceptance by codex") and state_of(p["obligations"], a) == ("DISCHARGED", None)
           and r.model().snap.json_blob(ev[0])["refs"] == ["s0fractal/warrant#2"],
@@ -353,7 +359,7 @@ def check_cases():
     r.close()
 
 
-GROUPS = ((goal_cases, ("P1", "P2")), (requires_cases, ("P3", "P4", "P5")), (supersede_cases, ("P6", "P7")),
+GROUPS = ((goal_cases, ("P1", "P2")), (requires_cases, ("P3", "P14", "P4", "P5")), (supersede_cases, ("P6", "P7")),
           (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
           (check_cases, ("P12", "P13")))
 
