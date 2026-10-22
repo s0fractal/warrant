@@ -15,6 +15,8 @@ name: ci
 #   dependency-audit the frozen dependency-audit inputs and the application handoff;
 #   mutants          tests/mutants.py and tests/agent_mutants.py in parts (--shard K/N), each
 #                    part checking its own targets' baseline first and writing its matrix;
+#   replay           claims.py replay --verify: the replay checker's acceptances new since the
+#                    base, re-executed at their commits (G4);
 #   test             --merge of the parts (refused unless every mutant id ran exactly once and
 #                    was killed), then tools/claims.py check against the base, after the mutants.
 # Every job but wheels installs from that wheelhouse, checked against the digest (no index).
@@ -195,6 +197,33 @@ jobs:
           python examples/dependency-audit/handoff.py selftest --case transitive-prohibited \
             --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
 
+  # The replay checker's acceptances new since the base (G4), re-executed: each reported commit is
+  # extracted, its own tools/claimslib/replay.py (hashed first: the checker that signed) replays the
+  # claims there, and a result other than the report's is refused. Needs the history: a report
+  # names a commit, and check reads it too.
+  replay:
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: ./.github/actions/install
+        with:
+          digest: ${{ needs.wheels.outputs.digest }}
+
+      - name: Acceptances by replay new since the base, re-executed at their commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
+          WARRANT_IMPL= python tools/claims.py replay --verify --base "$BASE_SHA" --jobs 4
+
   # Each part runs shards() of its harness (tests/mutants.py: a partition by id, test file and
   # measured cost), first the unmutated baseline of every test file it targets, and writes its
   # ids, outcomes and runs as a matrix. The parts per harness are named only here; `test`
@@ -236,7 +265,7 @@ jobs:
           retention-days: 3
 
   test:
-    needs: [wheels, suites, claims-selftest, examples, dependency-audit, mutants]
+    needs: [wheels, suites, claims-selftest, examples, dependency-audit, mutants, replay]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -252,9 +281,11 @@ jobs:
           got = {j: n["result"] for j, n in needs.items()}
           print("jobs:", ", ".join(f"{j}={r}" for j, r in sorted(got.items())))
           bad = {j: r for j, r in got.items() if r != "success"}
-          sys.exit(f"not every job succeeded: {bad}" if bad or len(got) != 6 else 0)'
+          sys.exit(f"not every job succeeded: {bad}" if bad or len(got) != 7 else 0)'
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0              # check reads the commit each new acceptance by replay names (G4)
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
@@ -282,12 +313,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          if [ -n "$BASE_SHA" ]; then
-            git fetch --quiet --no-tags --depth=1 origin "$BASE_SHA"
-          else
-            git fetch --quiet --no-tags --depth=2 origin "$GITHUB_SHA"
-            BASE_SHA=$(git rev-parse "$GITHUB_SHA^1")
-          fi
+          # The checkout holds the whole history (fetch-depth 0): the base is in it.
+          BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
           WARRANT_IMPL= python tools/claims.py check --base "$BASE_SHA"
 
       # A report, not a refusal: the matrices above hold each mutant's own test file only (no
