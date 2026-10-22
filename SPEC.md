@@ -172,6 +172,10 @@ statement  string
 evidence   list of hex64
 ```
 
+A challenge with an integer `item` concerns the closure of that item of its
+target only; one with `item` null concerns the transition's results, not its
+closures.
+
 ## 4. Assessment
 
 An assessment is a pure function of one **view**: the snapshot (the set of record
@@ -407,7 +411,12 @@ For a duty it also names who it is owed to, whose acceptance closes it
 holds or is delegated, periods lapsed or open, acceptances it owes (each with
 the item's `waiting_for` and whether this acceptance is the last one,
 `last_acceptance`), results acceptances it owes under the profile's
-`accept_by.results` (marked `under`), and challenges against its closures. Unowned questions are listed by `questions()` and are in nobody's
+`accept_by.results` (marked `under`), and challenges against its closures. When
+any one of several actors suffices (a substitution's one of owed_to ∪
+release_by, an attested `impossible`'s one owed_to actor), `waiting_for` names
+each of them and `awaiting` lists each missing acceptance as the actors any one
+of whom gives it; an acceptance that another missing one implies is not listed,
+and `last_acceptance` is true only for an actor named in every missing one. Unowned questions are listed by `questions()` and are in nobody's
 frontier.
 
 ## 9. Limits

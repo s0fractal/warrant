@@ -28,7 +28,7 @@ TERMS = {
     # candidate verdicts (closure attempts)
     "ADMITTED": ("This closure item meets the duty's condition in this view.",
                  "For an attested basis it rests on the named acceptors' signatures, not on a check of the work."),
-    "PENDING": ("The closure item waits for acceptances (`waiting_for`).", "Nothing is credited while it waits."),
+    "PENDING": ("The closure item waits for acceptances (`waiting_for`; `awaiting`: each missing one, as the actors any one of whom gives it).", "Nothing is credited while it waits."),
     "UNVERIFIED": ("A replayed (computation) closure that this receiver could not verify: no accepted provider, "
                    "bytes missing, or its own replay disagreed with the receipt (`why` says which).",
                    NOT_CREDITED + " A disagreeing replay is this receiver's result, not proof of intent."),

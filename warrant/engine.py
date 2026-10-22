@@ -15,6 +15,7 @@ PROFILE_FIELDS = ("uses", "accept_by", "targets", "grant_roots", "challengers", 
 VERDICTS = ("ADMITTED", "PENDING", "OVERCLAIMED", "MISSING_EVIDENCE", "UNMET_CONDITION", "UNVERIFIED")
 RELIANCE = ("ELIGIBLE", "STALE", "CHALLENGED", "SUPERSEDED", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSING")
 START = (-1, "")
+END_ID = "\U0010ffff"      # after every record id: (as_of, END_ID) is the end of the view
 PACKAGE = Path(__file__).resolve().parent
 
 
@@ -95,20 +96,22 @@ class View:
 MAX_CHAIN = 16
 
 
-def grant_state(view, gid, at, depth=0):
+def grant_state(view, gid, pos, depth=0):
+    """The grant's state at position `pos` = (at, id), compared as positions (SPEC §4):
+    a grant filed at the same `at` with a larger id is after `pos` (Gemini review, C)."""
     rec = view.by_type["grant"].get(gid)
     if rec is None:
         return "BROKEN_CHAIN", "grant not in view"
     g = rec["body"]
-    if rec["at"] > at:
+    if view.pos(gid) > pos:
         return "NOT_YET", "granted after this position"
-    if g["expires"] is not None and at >= g["expires"]:
+    if g["expires"] is not None and pos[0] >= g["expires"]:
         return "EXPIRED", f"expired at {g['expires']}"
     if g["parent"] is None:
         return ("VALID", "root") if gid in view.profile["grant_roots"] else ("UNGROUNDED", "a root the recipient has not accepted")
     if depth >= MAX_CHAIN:
         return "BROKEN_CHAIN", "chain too long"
-    pst, why = grant_state(view, g["parent"], rec["at"], depth + 1)      # the parent at the CHILD's position
+    pst, why = grant_state(view, g["parent"], view.pos(gid), depth + 1)      # the parent at the CHILD's position
     if pst != "VALID":
         return ("BROKEN_CHAIN" if pst in ("BROKEN_CHAIN", "UNGROUNDED", "NOT_YET") else pst, f"parent {g['parent'][:12]}: {why}")
     why = _attenuation_problem(rec["actor"], g, view.by_type["grant"][g["parent"]]["body"])
@@ -129,13 +132,13 @@ def _attenuation_problem(grantor, g, p):
     return None
 
 
-def authorized(view, actor, act, duty_id, at):
+def authorized(view, actor, act, duty_id, pos):
     reasons = []
     for gid, rec in sorted(view.by_type["grant"].items()):
         g = rec["body"]
         if g["grantee"] != actor or act not in g["acts"] or duty_id not in g["duties"]:
             continue
-        st, why = grant_state(view, gid, at)
+        st, why = grant_state(view, gid, pos)
         if st == "VALID":
             return gid, None
         reasons.append(f"{gid[:12]}: {st} ({why})")
@@ -165,21 +168,35 @@ def _admission_pos(view, d, t_id, i, m):
     return pos
 
 
+def _awaited(groups):
+    """The acceptances still missing, as actor sets: each group is one acceptance, given by
+    any one actor in it. A group that contains another is dropped: whoever gives the
+    smaller one gives it too (to = an owed_to actor; an acceptor who is also owed_to)."""
+    gs = sorted({tuple(sorted(set(g))) for g in groups})
+    return [list(g) for g in gs if not any(set(h) < set(g) for h in gs)]
+
+
+def _waiting_why(groups):
+    return "waiting for " + "; ".join(g[0] if len(g) == 1 else "one of " + ", ".join(g) for g in groups)
+
+
 def _transfer_effect(view, d, t_id, i, m):
-    """(effect position, None) once every required consent exists, else (None, missing)."""
+    """(effect position, None) once every required consent exists, else (None, missing):
+    the missing consents as actor sets (_awaited), never as text (Gemini review, B)."""
     got = view.accepted_at(t_id, i, m["evidence"])
     missing = []
     pos = view.pos(t_id)
     if m["to"] not in got:
-        missing.append(f"{m['to']} (incoming)")
+        missing.append([m["to"]])
     else:
         pos = max(pos, got[m["to"]])
     if m["act"] == "substitute":
         creditors = [got[a] for a in set(d["owed_to"]) | set(d["release_by"]) if a in got]
         if not creditors:
-            missing.append("one of owed_to or release_by")
+            missing.append(sorted(set(d["owed_to"]) | set(d["release_by"])))
         else:
             pos = max(pos, min(creditors))
+    missing = _awaited(missing)
     return (None, missing) if missing else (pos, None)
 
 
@@ -221,7 +238,8 @@ def _observations(view, m, cond, filer, window):
 
 
 def V(verdict, why="", label=None, waiting=None):
-    """One candidate's verdict: always the same four fields."""
+    """One candidate's verdict: always the same four fields. `waiting`, for PENDING, is the
+    missing acceptances as actor sets (_awaited)."""
     return verdict, why, label, waiting
 
 
@@ -308,11 +326,13 @@ def _judge_closure(view, d, t_id, t, i, m, holders, done, admitted):
     if unmet:
         return V("UNMET_CONDITION", "required duties not discharged: " + ", ".join(u[:12] for u in unmet))
     got = set(view.accepted_at(t_id, i, m["evidence"]))
-    missing = sorted(set(d["accept_by"]) - got)
+    missing = [[a] for a in sorted(set(d["accept_by"]) - got)]
+    # An attested impossibility also needs ONE owed_to actor (SPEC §4.2), not every one.
     if m["act"] == "impossible" and label.startswith("ATTESTED") and not set(d["owed_to"]) & got:
-        missing += [a for a in d["owed_to"] if a not in missing]
+        missing.append(sorted(set(d["owed_to"])))
+    missing = _awaited(missing)
     if missing:
-        return V("PENDING", "waiting for " + ", ".join(missing), waiting=missing)
+        return V("PENDING", _waiting_why(missing), waiting=missing)
     return V("ADMITTED", label=label)
 
 
@@ -325,16 +345,15 @@ def _transfers(view, d, items, holders, verdicts):
             eff, missing = _transfer_effect(view, d, t_id, i, m)
             transfers.append((eff or (float("inf"), ""), t_id, t, i, m, missing))
     for eff, t_id, t, i, m, missing in sorted(transfers, key=lambda x: (x[0], view.pos(x[1]), x[3])):
-        verdicts[(t_id, i)] = _transfer(view, d, holders, eff, t_id, t, m, missing)
+        verdicts[(t_id, i)] = _transfer(view, holders, eff, t_id, t, m, missing)
 
 
-def _transfer(view, d, holders, eff, t_id, t, m, missing):
+def _transfer(view, holders, eff, t_id, t, m, missing):
     h_file, _ = holders.at(view.pos(t_id))
     if t["actor"] != h_file:
         return V("OVERCLAIMED", "only the holder at that position transfers or delegates")
     if missing:
-        waiting = [x.split(" (")[0] for x in missing if not x.startswith("one of")] or list(d["owed_to"])
-        return V("PENDING", "waiting for " + ", ".join(missing), waiting=waiting)
+        return V("PENDING", _waiting_why(missing), waiting=missing)
     h_eff, dl = holders.at(eff)
     if h_eff != t["actor"]:
         return V("OVERCLAIMED", "the filer no longer held the duty when the transfer would take effect")
@@ -346,9 +365,12 @@ def _transfer(view, d, holders, eff, t_id, t, m, missing):
 
 
 def _release(view, did, d, t_id, t):
-    if t["actor"] in set(d["owed_to"]) | set(d["release_by"]):
+    # One statement per rule, so a counter blob's locality can tell them apart (AMEND 1 of #169).
+    if t["actor"] in d["owed_to"]:
         return V("ADMITTED", label=f"RELEASE:{t['actor']}")
-    gid, why = authorized(view, t["actor"], "release", did, view.pos(t_id)[0])
+    if t["actor"] in d["release_by"]:
+        return V("ADMITTED", label=f"RELEASE:{t['actor']}")
+    gid, why = authorized(view, t["actor"], "release", did, view.pos(t_id))
     if gid:
         return V("ADMITTED", f"by grant {gid[:12]}", f"RELEASE_BY_GRANT:{gid[:12]}")
     return V("OVERCLAIMED", f"not authorized to release: {why}")
@@ -391,7 +413,10 @@ def _candidates(view, out, items, verdicts):
         cand = {"transition": t_id, "item": i, "act": m["act"], "filer": t["actor"], "basis": t["body"]["basis"],
                 "verdict": verdict, "why": why}
         if waiting:
-            cand["waiting_for"] = waiting
+            # waiting_for: everyone whose acceptance could still be needed; awaiting: the
+            # missing acceptances, each a list of actors any one of whom gives it.
+            cand["waiting_for"] = sorted({a for g in waiting for a in g})
+            cand["awaiting"] = waiting
         sup = view.support(t_id, i)
         if sup:
             cand["acceptor_support"] = sup
@@ -399,11 +424,11 @@ def _candidates(view, out, items, verdicts):
         if verdict != "ADMITTED":
             continue
         if m["act"] == "revalidate":
-            revals.append((t_id, t, m, label))
+            revals.append((t_id, t, m, label, i))
         elif m["act"] in ("discharge", "impossible", "release") and "period" in m:
             periods.setdefault(m["period"], (t_id, label))
         elif m["act"] in ("discharge", "impossible", "release"):
-            closures.append((m["act"], t_id, t, m, label))
+            closures.append((m["act"], t_id, t, m, label, i))
     return closures, periods, revals
 
 
@@ -459,6 +484,9 @@ def _disposition(view, out, d, closures, revals, periods):
     out["revalidations"] = [{"transition": r[0], "revalidates": r[2]["revalidates"], "assessed_basis": r[3]}
                             for r in revals]
     out["current_closures"] = [tid for tid, _, _ in rows if tid not in superseded]
+    # A challenge targets one closure: a (transition, item) pair (SPEC §3.6, §4.4).
+    items = [(c[1], c[5]) for c in chosen] + [(r[0], r[4]) for r in revals]
+    out["current_items"] = [[tid, i] for tid, i in items if tid not in superseded]
     out["declared_triggers"] = [{"closure": tid, "trigger": tr, "current": tid not in superseded}
                                 for tid, _, m in rows for tr in m.get("triggers", [])]
     out["closure_subjects"] = sorted({t["body"]["subject"] for tid, t, _ in rows
@@ -677,7 +705,7 @@ def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=No
             # sign can count in this view (found in the 2026-10-18 handoff).
             "unbound_actors": sorted(named - bound),
             "profile": prof, "duties": duties, "results": results, "challenges": challenges,
-            "grants": {g: grant_state(view, g, as_of)[0] for g in sorted(view.by_type["grant"])},
+            "grants": {g: grant_state(view, g, (as_of, END_ID))[0] for g in sorted(view.by_type["grant"])},
             "questions": _questions(view, duties), "invalid_records": view.invalid,
             "later_records": view.later, "misfiled": snapshot.misfiled, "missing": sorted(view.missing)}
 
@@ -685,15 +713,24 @@ def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=No
 # ---------------------------------------------------------------- reading a report
 
 def _counting_challenges(rep, closures, duty=None):
-    """Challenges that count against these closures. A challenge against a closure
-    that an admitted revalidation superseded no longer counts: that closure is not
-    current any more, and the revalidation needed the same acceptances."""
+    """Challenges that count against these closures, {(transition, item)}: a challenge
+    names one closure, the item it gives; one with item null concerns the transition's
+    results, not its closures (Gemini review, A). A challenge against a closure that an
+    admitted revalidation superseded no longer counts: that closure is not current any
+    more, and the revalidation needed the same acceptances."""
     counts = set(rep["profile"]["challengers"])
     if duty is not None:
         counts |= set(duty["owed_to"]) | set(duty["accept_by"])
-    # An evidence-weighted challenge counts whoever filed it (SPEC §4.4).
-    return sorted(cid for cid, c in rep["challenges"].items()
-                  if c["target"] in closures and (c["actor"] in counts or c.get("counter_observation")))
+    # One statement per rule, so a counter blob's locality can tell them apart (AMEND 1 of #169).
+    out = []
+    for cid, c in rep["challenges"].items():
+        if (c["target"], c["item"]) not in closures:     # another closure, or the results (item null)
+            continue
+        weighted = bool(c.get("counter_observation"))   # evidence-weighted: whoever filed it (SPEC §4.4)
+        counted = c["actor"] in counts                  # actor-weighted (SPEC §4.6)
+        if weighted or counted:
+            out.append(cid)
+    return sorted(out)
 
 
 def _revision_basis(subjects, triggers, current):
@@ -726,7 +763,7 @@ def _duty_checks(rep, r, use):
     yield ("CONTESTED", []) if r["disposition"] == "CONTESTED" else None
     yield ("NOT_CLOSED", [f"disposition {r['disposition']}"]) if r["disposition"] != "DISCHARGED" else None
     yield _unknown_use(rep, use)
-    yield _challenged(rep, _counting_challenges(rep, set(r["current_closures"]), r))
+    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))
     yield _trigger_state(cur, rep["profile"]["uses"][use]["requires_triggers"])
     yield _freshness(rep, r)
     subjects = r["closure_subjects"] or ([r["subject"]] if r["subject"] else [])
@@ -801,7 +838,8 @@ def _duty_needs(rep, did, r, actor):
             # last: a reader must not have to guess that its own accept closes the duty
             # (found in the 2026-10-19 fresh-context run).
             yield {"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"],
-                   "waiting_for": list(c["waiting_for"]), "last_acceptance": c["waiting_for"] == [actor]}
+                   "waiting_for": list(c["waiting_for"]), "awaiting": c["awaiting"],
+                   "last_acceptance": all(actor in g for g in c["awaiting"])}
     if holds and r["disposition"] == "DISCHARGED":
         for use in rep["profile"]["uses"]:
             rl = reliance(rep, did, use)
@@ -836,7 +874,7 @@ def capsule(rep, target, use="act"):
                                        for a in c.get("waiting_for") or []}),
                    basis=r["assessed_basis"], closed_by=r["closed_by"], periods=r.get("periods"),
                    revalidate_when=[{k: t[k] for k in t if k != "closure"} for t in r["triggers"] if t["current"]],
-                   challenges=_counting_challenges(rep, set(r.get("current_closures", [])), r),
+                   challenges=_counting_challenges(rep, {tuple(x) for x in r.get("current_items", [])}, r),
                    evidence=sorted({h for tid in r["closed_by"] if tid in rep["results"] for h in rep["results"][tid]["evidence"]}),
                    limits=sorted({x for tid in r["closed_by"] if tid in rep["results"] for x in rep["results"][tid]["residual"]}))
     elif target in rep["results"]:

@@ -598,7 +598,11 @@ def capsule_cases():
               residual=["not load-tested"], subject=SHA_NEW, triggers=trig)
     w.accept(OWNER, t)
     w.accept(OWNER, t, None)
-    ch = w.file("challenge", CODEX, R.challenge(t, "it fails on empty input", [w.evidence("repro")], None))
+    # One challenge of the closure (item 0), one of the results (item null): each capsule
+    # names its own. Until the Gemini review (defect A) this case filed only the item-null
+    # challenge and expected it in the duty's capsule too.
+    ch = w.file("challenge", CODEX, R.challenge(t, "it fails on empty input", [w.evidence("repro")], 0))
+    ch_results = w.file("challenge", CODEX, R.challenge(t, "it was not shipped", [w.evidence("repro")], None))
     rep = w.assess(prof=E.profile(challengers=[CODEX], results_by=[OWNER]))
     dc, tc = E.capsule(rep, d), E.capsule(rep, t)
     def fired(c):
@@ -612,7 +616,7 @@ def capsule_cases():
     want = {"duty": ("duty", "DISCHARGED", [f"ATTESTED:{HOLDER}"], [OWNER], ["not load-tested"],
                      [("duty_not_discharged", other, "FIRED")], [ch], [ev], "UNATTESTED"),
             "transition": ("transition", ["shipped"], "ATTESTED", [OWNER], ["not load-tested"], SHA_NEW,
-                           [("duty_not_discharged", other, "FIRED")], [ch], [ev], "UNATTESTED"),
+                           [("duty_not_discharged", other, "FIRED")], [ch_results], [ev], "UNATTESTED"),
             "bytes": False}
     check("R30", got == want, "a capsule names result, basis, limits, revisit conditions and evidence ids", got)
 
@@ -737,6 +741,137 @@ def limit_cases():
           "a file over 64 MiB is kept out; a store over 64 MiB is read", (first, second))
 
 
+def _filed_id(w, rtype, actor, at, body):
+    """The id a record would get, without filing it (an id is the digest of the record)."""
+    return R.record_id(R.record(rtype, actor, at, body))
+
+
+def _grant_ordered(w, actor, at, body_of, want):
+    """File the first grant body_of(k) whose id satisfies `want`; ids are digests, so the
+    order of two records at the same `at` is chosen by varying a field (here: expires)."""
+    for k in range(1000):
+        if want(_filed_id(w, "grant", actor, at, body_of(k))):
+            return w.file("grant", actor, body_of(k), at=at)
+    raise AssertionError("no grant id in the wanted order")
+
+
+def gemini_review_cases():
+    # R36 (§3.6, §4.4; Gemini deep review 2026-10-22, defect A): a challenge targets one
+    # closure, the item it names. At b1a6d10 a challenge of item 0 made the duty closed by
+    # item 1 CHALLENGED too, and a challenge with item null (the transition's results)
+    # made every duty the transition closed CHALLENGED.
+    w = World()
+    d0, d1 = w.duty(statement="zero"), w.duty(statement="one")
+    e0, e1 = w.evidence("e0"), w.evidence("e1")
+    t = w.act(HOLDER, [R.item(d0, "discharge", [e0]), R.item(d1, "discharge", [e1])], established=["both done"])
+    w.accept(OWNER, t, 0)
+    w.accept(OWNER, t, 1)
+    w.accept(OWNER, t, None)
+    on_item = w.file("challenge", OWNER, R.challenge(t, "item 0 is wrong", [], 0))
+    prof = E.profile(results_by=[OWNER])
+    rep = w.assess(prof=prof)
+    item_scoped = guarded(lambda: (E.reliance(rep, d0, "act")["state"], E.reliance(rep, d1, "act")["state"],
+                                   E.capsule(rep, d0)["challenges"], E.capsule(rep, d1)["challenges"],
+                                   E.reliance(rep, t, "act")["state"]))
+    w2 = World()
+    f0, f1 = w2.duty(statement="zero"), w2.duty(statement="one")
+    g0, g1 = w2.evidence("e0"), w2.evidence("e1")
+    t2 = w2.act(HOLDER, [R.item(f0, "discharge", [g0]), R.item(f1, "discharge", [g1])], established=["both done"])
+    w2.accept(OWNER, t2, 0)
+    w2.accept(OWNER, t2, 1)
+    w2.accept(OWNER, t2, None)
+    on_results = w2.file("challenge", OWNER, R.challenge(t2, "the established statement is wrong", [], None))
+    rep2 = w2.assess(prof=prof)
+    results_scoped = guarded(lambda: (E.reliance(rep2, f0, "act")["state"], E.reliance(rep2, f1, "act")["state"],
+                                      E.capsule(rep2, f0)["challenges"], E.reliance(rep2, t2, "act")["state"],
+                                      E.capsule(rep2, t2)["challenges"]))
+    got = (item_scoped, results_scoped)
+    check("R36", got == (("CHALLENGED", "ELIGIBLE", [on_item], [], "ELIGIBLE"),
+                         ("ELIGIBLE", "ELIGIBLE", [], "CHALLENGED", [on_results])),
+          "a challenge counts against the closure of the item it names; item null, against the results only", got)
+
+    # R37 (§4.1, §8; defect B): a substitution waits for `to` AND for one of owed_to ∪
+    # release_by. At b1a6d10 waiting_for named `to` only, its frontier item said
+    # last_acceptance: true while the creditor's acceptance was still missing, and no
+    # creditor saw the acceptance it could give.
+    w = World()
+    d = w.duty(owed_to=(OWNER,), release_by=(STRANGER,))
+    s = w.close(d, act="substitute", to=CODEX)
+
+    def accepts(rep, actor):
+        return [(x["waiting_for"], x["last_acceptance"]) for x in E.frontier(rep, actor) if x.get("need") == "accept"]
+
+    def state(rep):
+        c = last(rep, d)
+        return (c["verdict"], c.get("waiting_for"), c.get("awaiting"),
+                {a: accepts(rep, a) for a in (CODEX, OWNER, STRANGER)}, E.capsule(rep, d)["waiting_for"])
+    before = guarded(lambda: state(w.assess()))
+    w.accept(CODEX, s)
+    middle = guarded(lambda: state(w.assess()))
+    w.accept(STRANGER, s)
+    rep = w.assess()
+    after = (last(rep, d)["verdict"], rep["duties"][d]["holder"], accepts(rep, OWNER))
+    everyone = sorted([CODEX, OWNER, STRANGER])
+    creditors = sorted([OWNER, STRANGER])
+    got = (before, middle, after)
+    want = (("PENDING", everyone, [[CODEX], creditors],
+             {CODEX: [(everyone, False)], OWNER: [(everyone, False)], STRANGER: [(everyone, False)]}, everyone),
+            ("PENDING", creditors, [creditors],
+             {CODEX: [], OWNER: [(creditors, True)], STRANGER: [(creditors, True)]}, creditors),
+            ("ADMITTED", CODEX, []))
+    check("R37", got == want, "a substitution waits for `to` and for one creditor; each sees whether its accept is the last", got)
+
+    # R38 (§3, §4.2, §8; defect B): whose acceptance is awaited is computed from the actor
+    # sets, never parsed from text: an actor id may hold " (" (SPEC-3-21). And the twin of
+    # the substitution: an attested `impossible` needs accept_by and ONE owed_to actor, so
+    # an acceptor in both is the last one alone, and the other owed_to actor is not awaited
+    # at all. At b1a6d10 "ci (nightly)" was awaited as "ci", and the impossible item waited
+    # for every owed_to actor.
+    paren = "ci (nightly)"
+    w = World(actors=(HOLDER, OWNER, CODEX, STRANGER, paren))
+    d = w.duty(owed_to=(OWNER,))
+    w.close(d, act="substitute", to=paren)
+    rep = w.assess()
+    named = guarded(lambda: (last(rep, d).get("waiting_for"), accepts(rep, paren), accepts(rep, "ci")))
+    w = World()
+    d = w.duty(owed_to=(OWNER, CODEX), accept_by=(OWNER,))
+    w.close(d, act="impossible")
+    rep = w.assess()
+    one_of = guarded(lambda: (last(rep, d).get("waiting_for"), last(rep, d).get("awaiting"),
+                              accepts(rep, OWNER), accepts(rep, CODEX)))
+    got = (named, one_of)
+    check("R38", got == ((sorted([paren, OWNER]), [(sorted([paren, OWNER]), False)], []),
+                         ([OWNER], [[OWNER]], [([OWNER], True)], [])),
+          "awaited actors come from the actor sets: an id with ' (' and a one-of owed_to", got)
+
+    # R39 (§4, §4.5; defect C): a grant is valid at a POSITION, (at, id): a grant filed at
+    # the same `at` as a release, with a larger id, is after it and does not authorize it;
+    # with a smaller id it does. A child grant at its parent's `at` with a smaller id is
+    # before its parent. At b1a6d10 only `at` was compared: both releases were admitted.
+    w = World()
+    da, db = w.duty(statement="after"), w.duty(statement="before")
+    ra = release(w, da, STRANGER, 300, "a")
+    rb = release(w, db, STRANGER, 300, "b")
+    ga = _grant_ordered(w, OWNER, 300, lambda k: R.grant(STRANGER, ["release"], [da], expires=10_000 + k), lambda i: i > ra)
+    gb = _grant_ordered(w, OWNER, 300, lambda k: R.grant(STRANGER, ["release"], [db], expires=10_000 + k), lambda i: i < rb)
+    rep = w.assess(prof=E.profile(grant_roots=[ga, gb]))
+    tie = (verdict_of(rep, da, ra)["verdict"], rep["duties"][da]["disposition"],
+           verdict_of(rep, db, rb)["verdict"], rep["duties"][db]["disposition"])
+    w = World()
+    dc, dd = w.duty(statement="child first"), w.duty(statement="parent first")
+    root = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [dc, dd], delegable=["release"]), at=400)
+    early = _grant_ordered(w, STRANGER, 400, lambda k: R.grant(CODEX, ["release"], [dc], expires=10_000 + k, parent=root),
+                           lambda i: i < root)
+    late = _grant_ordered(w, STRANGER, 400, lambda k: R.grant(CODEX, ["release"], [dd], expires=10_000 + k, parent=root),
+                          lambda i: i > root)
+    rc, rd = release(w, dc, CODEX, 500, "c"), release(w, dd, CODEX, 500, "d")
+    rep = w.assess(prof=E.profile(grant_roots=[root]))
+    chain = (rep["grants"][early], verdict_of(rep, dc, rc)["verdict"], rep["grants"][late], verdict_of(rep, dd, rd)["verdict"])
+    got = (tie, chain)
+    check("R39", got == (("OVERCLAIMED", "OPEN", "ADMITTED", "RELEASED"), ("BROKEN_CHAIN", "OVERCLAIMED", "VALID", "ADMITTED")),
+          "a grant is valid from its position (at, id) on, not from its `at`", got)
+
+
 def main():
     transfer_cases()
     admission_cases()
@@ -751,6 +886,7 @@ def main():
     frontier_cases()
     refusal_cases()
     limit_cases()
+    gemini_review_cases()
     return finish("ASSESSMENT")
 
 

@@ -152,7 +152,7 @@ def _page(items, start, budget):
     return out, (nxt if nxt < len(items) else None)
 
 
-CLOSURE = ("transition", "item", "act", "filer", "basis", "verdict", "why", "waiting_for")
+CLOSURE = ("transition", "item", "act", "filer", "basis", "verdict", "why", "waiting_for", "awaiting")
 
 
 def _reading(cap):

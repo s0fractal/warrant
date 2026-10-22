@@ -486,6 +486,33 @@ def main():
                            ("receipt bytes not in view", "OPEN")],
           "a receipt for another root, or one whose bytes are not in the view, gives no credit", got24)
 
+    # C29 (§4.2 3, §7): only a normal form is an answer. A replay that reports PAUSED with a
+    # result equal to `expect` (the counter against SPEC-4.2-7 of the Gemini deep review,
+    # 2026-10-22: without the NORMAL_FORM check C4 only crashed, on a PAUSED replay that
+    # carries no result) gives no credit; the same replay reported as NORMAL_FORM does.
+    w = World()
+    inp, env, rt = term(w, "S K K (K I)")
+    _, ck, st, result = run(w, inp, env, rt, [100])
+    d = compute_duty(w, inp, env, rt, result)
+    w.close(d, basis="REPLAYED", evidence=[receipt(w, inp, env, ck, st, result)])
+
+    class Paused(P.Provider):
+        """The captured provider, whose verify replies say PAUSED, keeping the result."""
+        def call(self, op, args, blobs=None, timeout=600):
+            out = super().call(op, args, blobs, timeout)
+            if op == "verify" and "results" in out:
+                out = dict(out, results=[dict(r, code="PAUSED") for r in out["results"]])
+            return out
+    paused = Paused(dict(PROV.sources), PROV.where)
+    try:
+        rep_p, rep_n = assess(w, provider=paused), assess(w)
+        got29 = (last(rep_p, d)["verdict"], rep_p["duties"][d]["disposition"],
+                 last(rep_n, d)["verdict"], rep_n["duties"][d]["disposition"])
+    except Exception as e:      # noqa: BLE001
+        got29 = f"raised {type(e).__name__}: {e}"
+    check("C29", got29 == ("UNVERIFIED", "OPEN", "ADMITTED", "DISCHARGED"),
+          "a replay that is not a normal form is no answer, even with the expected result", got29)
+
     # C21 (last): the process boundary isolates module names: after every replay above,
     # this assessing process has imported none of the provider's modules
     got21 = sorted(set(P.MODULES) & set(sys.modules))
