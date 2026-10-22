@@ -25,6 +25,7 @@ refuses it when it differs from the records. Nothing here writes SPEC.md.
     python3 tools/roadmap.py oblige --text '...' --answers G1 [--requires DUTY]... [--serves DUTY]...
     python3 tools/roadmap.py done --duty DUTY --established '...' --ref PR [--ref SHA]... [--commit SHA]
     python3 tools/roadmap.py release --duty DUTY --because '...' --actor ACTOR   # by whom it is owed to
+    python3 tools/roadmap.py accept --duty DUTY --actor ACTOR [--transition ID]  # by an acceptor the duty names
     python3 tools/roadmap.py path G1 [--json]
     python3 tools/roadmap.py project            # regenerate ROADMAP.md
     python3 tools/roadmap.py check
@@ -166,6 +167,11 @@ class Model:
                             if self.recs[did]["body"]["answers"] in refs}
         for did in sorted(self.obligations):
             b = self.recs[did]["body"]
+            if (b["owed_to"], b["accept_by"], b["release_by"]) != (cfg["owed_to"], cfg["accept_by"], []):
+                # Open circle: anyone may bind a key; an obligation its filer's own accomplice accepts would close unreviewed.
+                self.problems.append(("OBLIGATION_TERMS", f"obligation {did[:12]} is owed to {b['owed_to']}, accepted by "
+                                      f"{b['accept_by']}, released by {b['release_by']}; .warrant/roadmap.json says owed_to "
+                                      f"{cfg['owed_to']}, accept_by {cfg['accept_by']}, no release_by"))
             for field in ("requires", "serves"):
                 for x in b[field]:
                     if x not in self.rep["duties"]:
@@ -176,6 +182,13 @@ class Model:
                     any((q["scope"] or "").startswith(SCOPE) for q in self.recs[a.split(":")[0]]["body"]["opened"]):
                 self.problems.append(("MISSING_LINK", f"duty {did[:12]} answers {a[:12]}…, not a goal of a vision transition"))
         self._frontiers = {}
+        self._accepts = CL.accept_index(self.recs)
+
+    def accepted_by(self, did):
+        """Who accepted the admitted closures of duty `did` (their exact items)."""
+        r = self.rep["duties"].get(did)
+        return [] if r is None else sorted({a for c in r["candidates"] if c["verdict"] == "ADMITTED"
+                                            for a in CL.acceptors(self.recs, self._accepts, c["transition"], c["item"])})
 
     # -- goal states, from the engine's supersession (SPEC §4.7)
 
@@ -321,7 +334,8 @@ def node(m, did, edge, seen):
     r = m.rep["duties"].get(did)
     if r is None:
         return {"edge": edge, "duty": did, "state": "MISSING", "statement": None, "children": [], "served_by": []}
-    out = {"edge": edge, "duty": did, "state": r["disposition"], "need": m.need(did), "statement": r["statement"],
+    out = {"edge": edge, "duty": did, "state": r["disposition"], "need": m.need(did), "accepted_by": m.accepted_by(did),
+           "statement": r["statement"],
            "claim": m.claim_of.get(did), "goal": m.goal_of(did),
            "serves": [{"duty": s, "claim": m.claim_of.get(s), "goal": m.goal_of(s)} for s in r["serves"]],
            "served_by": [{"duty": s, "state": m.rep["duties"][s]["disposition"], "statement": m.rep["duties"][s]["statement"],
@@ -357,7 +371,8 @@ def _short(did, claim=None, goal=None):
 
 def render_node(n, depth, out):
     pad = "  " * depth
-    state = n["state"] + (f" · {n['need']}" if n.get("need") else "")
+    state = n["state"] + (f" · {n['need']}" if n.get("need") else "") + \
+        (f" · accepted by {', '.join(n['accepted_by'])}" if n.get("accepted_by") else "")
     tail = [_short(n["duty"], n.get("claim"))]
     if n.get("serves"):
         tail.append("serves " + ", ".join(s["claim"] or _short(s["duty"], goal=s["goal"]) for s in n["serves"]))
@@ -409,7 +424,9 @@ def render_view(m):
         "(trust `.warrant/trust.json`, results acceptors from `.warrant/roadmap.json`,",
         "as of the latest record); `· …` is what the engine's frontier asks of the",
         "holder. DISCHARGED needs the acceptance the duty names: a closure filed with",
-        "its evidence and not yet accepted reads OPEN · awaiting acceptance.", "",
+        "its evidence and not yet accepted reads OPEN · awaiting acceptance; once",
+        "accepted (`tools/roadmap.py accept`, signed by the acceptor's own key) it reads",
+        "DISCHARGED · accepted by the acceptor.", "",
     ]
     for key in sorted(m.goals, key=key_n):
         d = path_data(m, key)
@@ -498,6 +515,24 @@ class Writer:
                             residual=[DONE_RESIDUAL], subject=commit)
         return self.file("transition", body, [ev])
 
+    def accept(self, duty, transition=None):
+        """An accept record of exactly the obligation's pending closure, signed by the acceptor."""
+        did = self.m.resolve_duty(duty)
+        if did not in self.m.obligations:
+            raise CL.Refused(f"duty {did[:12]} answers no goal: a SPEC claim is accepted with tools/claims.py accept",
+                             "NOT_AN_OBLIGATION")
+        r = self.m.rep["duties"][did]
+        if self.actor not in r["accept_by"] and self.actor not in r["owed_to"]:
+            raise CL.not_acceptor(self.actor, f"obligation {did[:12]}", r["accept_by"])
+        cands = [c for c in CL.pending_for(self.m.rep, did, self.actor) if transition in (None, c["transition"])]
+        if len(cands) != 1:
+            raise CL.Refused(f"duty {did[:12]} has {len(cands)} closures pending {self.actor}'s acceptance"
+                             + (" (name one with --transition)" if cands else f" ({r['disposition']})"),
+                             "NOT_PENDING" if not cands else "AMBIGUOUS")
+        c = cands[0]
+        ev = self.m.recs[c["transition"]]["body"]["closes"][c["item"]]["evidence"]
+        return self.file("accept", R.accept(c["transition"], c["item"], ev))
+
     def release(self, duty, because):
         did = self.m.resolve_duty(duty)
         b = self.m.recs[did]["body"]
@@ -565,6 +600,9 @@ def main(argv=None):
     p.add_argument("--established", required=True)
     p.add_argument("--ref", action="append", default=[])
     p.add_argument("--commit", help="the revision the result was established on (hex40)")
+    p = signing(sub.add_parser("accept", help="accept an obligation's filed closure (by an acceptor the duty names)"))
+    p.add_argument("--duty", required=True)
+    p.add_argument("--transition", help="the closure's transition, when more than one is pending")
     p = signing(sub.add_parser("release", help="release an obligation (forgiveness, by whom it is owed to)"))
     p.add_argument("--duty", required=True)
     p.add_argument("--because", required=True)
@@ -606,12 +644,15 @@ def main(argv=None):
             rid = w.oblige(a.text, a.answers, a.requires, a.serves)
         elif a.cmd == "done":
             rid = w.done(a.duty, a.established, a.ref, a.commit)
+        elif a.cmd == "accept":
+            rid = w.accept(a.duty, a.transition)
         else:
             rid = w.release(a.duty, a.because)
         print(rid)
         return 0
     except (Refused, CL.Refused, R.Invalid) as e:
-        print(f"REFUSED {e}", file=sys.stderr)
+        code = getattr(e, "code", None)
+        print(f"REFUSED {code + ' ' if code else ''}{e}", file=sys.stderr)
         return 2
 
 

@@ -39,6 +39,11 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
 (unwrapped inside a fence or a table row); a retired one is left out.
 
     python3 tools/claims.py keygen --out SEED            # once per author; the seed stays out of git
+    python3 tools/claims.py bind --key SEED --actor NAME  # bind an existing key, with its proof of possession
+    python3 tools/claims.py accept --key SEED --actor codex --claim SPEC-4.2-3 [--all]
+    python3 tools/claims.py challenge --key SEED --actor NAME --claim SPEC-4.2-3 --because '...' \
+        [--counter-file COUNTER.json]                    # anyone bound; a counter must replay
+    python3 tools/claims.py trust                        # the admitted bindings, as a trust/2 document
     python3 tools/claims.py add --key SEED --stanza STANZAS.json
     python3 tools/claims.py add --key SEED --id SPEC-4.2-9 --text '...' --after SPEC-4.2-8 \
         --witness contract_test:H1 --mutant M01           # a new sentence names its position
@@ -54,6 +59,14 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
     python3 tools/claims.py --selftest                   # every refusal of `check`, burned on a copy
     python3 tools/claims.py migrate --key SEED --because '...'   # once (W5): the first document, from SPEC.md
     python3 tools/claims.py heading --key SEED --section 4.2 --because '...'   # after changing that pin
+
+The open circle of witnesses (README.md): `.warrant/trust.json` holds bindings that
+certify themselves (the key signs {actor, public, purpose}), admitted by `check`
+with no admin, the first binding of an actor winning; `accept` files an acceptance
+signed by an acceptor the duty names; a challenge by anyone bound that carries a
+counter blob which replays lowers the claim's backing (COUNTERED), while only the
+claim's author supersedes or retires it; WITNESSES.md is a ledger derived from the
+records that grants nothing.
 
 `audit` hunts the class of defect a counter blob proves, before a reviewer does
 (the six counters of the Gemini deep review, 2026-10-22, were all of it): from a
@@ -93,6 +106,7 @@ sys.path.insert(0, os.environ.get("WARRANT_IMPL") or str(ROOT))
 import warrant as W                          # noqa: E402
 from warrant import engine as E              # noqa: E402
 from warrant import jcs as C                 # noqa: E402
+from warrant import keys as K                # noqa: E402
 from warrant import records as R             # noqa: E402
 from warrant import store as S               # noqa: E402
 from warrant.store import Snapshot, Store, Trust   # noqa: E402
@@ -135,13 +149,24 @@ GAP_RUN = re.compile(r"^[ \n]+\Z")
 # counted, and refused unless it is the document's own heading part (AMEND 2 of #166).
 ATX_LINE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|\Z)")
 SETEXT_LINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*\Z")
+# Open circle of witnesses: a binding certifies itself (its key signs it); nobody admits anyone.
+BINDINGS = "warrant-claims/bindings@1"       # .warrant/trust.json: {"bindings": BINDINGS, "keys": [...]}
+BINDING = "warrant-claims/binding@1"         # the purpose a proof signs: canon({actor, public, purpose})
+BINDING_FIELDS = ("actor", "public", "proof")
+LOCAL_TRUST = "WARRANT_CLAIMS_TRUST"         # a receiver's own trust/2 file, added to the admitted bindings
+WITNESSES = "WITNESSES.md"
 PREAMBLE = "0"              # the section before the first numbered heading
 WIDTH = 80                  # the fill width of a sentence whose recorded layout no longer applies
 GONE = "\x00"               # placeholder of a retired sentence while SPEC.md is rendered
 
 
 class Refused(Exception):
-    """An authoring command that cannot be carried out; nothing was written."""
+    """An authoring command that cannot be carried out; nothing was written. `code`, when
+    given, names the refusal (printed before the detail; tests read it, never the wording)."""
+
+    def __init__(self, msg, code=None):
+        super().__init__(msg)
+        self.code = code
 
 
 def norm(s):
@@ -173,6 +198,95 @@ def statement_for(cid, text):
     return s if len(s) <= 400 else s[:399] + "…"
 
 
+# ---------------------------------------------------------------- bindings (open circle, part A)
+
+def binding_message(actor, public):
+    """The bytes a binding's proof signs: canon({actor, public, purpose}). It starts with `{`,
+    so it is never the message of a record signature ("warrant-sig-v1:" || id)."""
+    return C.canon({"actor": actor, "public": public, "purpose": BINDING})
+
+
+def binding_proof(key, actor):
+    return key.sign(binding_message(actor, key.public))
+
+
+def admit_bindings(doc, legacy=False):
+    """(admitted [(actor, public)], problems [(code, detail)]) of a bindings document.
+
+    A binding is admitted mechanically, in file order, iff its proof is the signature of its
+    own key over binding_message(actor, public), its actor id has SPEC-3-21's shape, its key
+    is not bound already, and its actor is not bound already to another key: the first
+    binding of an actor wins, and a second key for it would need a record signed by the
+    first, which this tool does not implement (rotation is out of scope), so it is refused.
+    Nobody judges who may join; what a binding grants is only "this key signs as this actor"
+    (SPEC §6). `legacy` reads a trust/2 document (actor, public, no proof) as admitted: only
+    for a base revision written before bindings carried proofs."""
+    if legacy and isinstance(doc, dict) and doc.get("warrant") == "trust/2":
+        try:
+            return [(a, p) for a, p in Trust(doc).keys.values()], []
+        except R.Invalid as e:
+            return [], [("BINDINGS_SHAPE", f".warrant/trust.json: {e}")]
+    if not (isinstance(doc, dict) and set(doc) == {"bindings", "keys"} and doc["bindings"] == BINDINGS
+            and isinstance(doc["keys"], list)):
+        return [], [("BINDINGS_SHAPE", f".warrant/trust.json is not {{\"bindings\": {BINDINGS!r}, \"keys\": [...]}} "
+                                       "(tools/claims.py bind writes it)")]
+    admitted, problems = [], []
+    publics = [k.get("public") for k in doc["keys"] if isinstance(k, dict)]
+    for i, k in enumerate(doc["keys"]):
+        code, why = _binding_problem(k, publics, admitted)
+        if code:
+            problems.append((code, f".warrant/trust.json keys[{i}]: {why}"))
+        else:
+            admitted.append((k["actor"], k["public"]))
+    return admitted, problems
+
+
+def _binding_problem(k, publics, admitted):
+    """(code, why) when entry `k` is not admitted after `admitted`, else (None, None)."""
+    if not (isinstance(k, dict) and set(k) <= set(BINDING_FIELDS) and {"actor", "public"} <= set(k)
+            and isinstance(k["public"], str) and R.HEX64.match(k["public"])):
+        return "BINDING_SHAPE", f"an entry is {{actor, public: hex64, proof: hex128}}, not {str(k)[:120]}"
+    try:
+        R.check_actor(k["actor"])
+    except R.Invalid as e:
+        return "BINDING_ACTOR_SHAPE", f"{str(k['actor'])[:60]!r} is not an actor id (SPEC-3-21): {e}"
+    if "proof" not in k:
+        return "BINDING_UNPROVEN", f"{k['actor']}: no proof; the key's own signature over the binding is needed"
+    msg = binding_message(k["actor"], k["public"])
+    if not K.verify(k["public"], k["proof"], msg):
+        other = [p for p in publics if p != k["public"] and isinstance(p, str) and K.verify(p, k["proof"], msg)]
+        if other:
+            return "BINDING_PROOF_OTHER_KEY", (f"{k['actor']}: the proof is signed by key {K.key_id(other[0])[:12]}, "
+                                               f"not by the key it binds ({K.key_id(k['public'])[:12]})")
+        return "BINDING_PROOF_FORGED", f"{k['actor']}: the proof is not the bound key's signature over this binding"
+    if any(p == k["public"] for _, p in admitted):
+        return "BINDING_KEY_TWICE", f"key {K.key_id(k['public'])[:12]} is bound already"
+    first = next((p for a, p in admitted if a == k["actor"]), None)
+    if first is not None:
+        return "BINDING_ACTOR_TAKEN", (f"{k['actor']} is bound already to key {K.key_id(first)[:12]}; the first "
+                                       "binding wins, and rotation (a record signed by the first key) is not "
+                                       "implemented, so a second key for an actor is refused")
+    return None, None
+
+
+def local_bindings():
+    """[(actor, public)] of the receiver's own trust/2 file named by $WARRANT_CLAIMS_TRUST, if
+    any: a receiver may bind whatever keys it chooses for itself (SPEC §4.6); nothing in the
+    repository can set it, and CI sets none. The claims selftest binds its ephemeral key here."""
+    path = os.environ.get(LOCAL_TRUST)
+    return [] if not path else [(a, p) for a, p in Trust.load(path).keys.values()]
+
+
+def trust_of(bindings):
+    """A Trust of (actor, public) pairs, the first binding of each key kept."""
+    seen, pairs = set(), []
+    for a, p in bindings:
+        if p not in seen:
+            seen.add(p)
+            pairs.append((a, p))
+    return Trust(Trust.document(pairs))
+
+
 # ---------------------------------------------------------------- the repository
 
 class Repo:
@@ -183,6 +297,7 @@ class Repo:
         self.trust_path = self.root / ".warrant" / "trust.json"
         self.pins_path = self.root / ".warrant" / "claims.json"
         self.projection = self.root / "SPEC-CLAIMS.md"
+        self.witnesses = self.root / WITNESSES
         self.tests = self.root / "tests"
         self._mutants = None
 
@@ -193,8 +308,19 @@ class Repo:
         pins["sentences"] = dict(sorted(pins["sentences"].items(), key=lambda kv: id_key(kv[0])))
         self.pins_path.write_text(json.dumps(pins, indent=2, ensure_ascii=False) + "\n")
 
+    def bindings(self):
+        """(admitted [(actor, public)], problems) of .warrant/trust.json (admit_bindings)."""
+        if not self.trust_path.is_file():
+            return [], [("BINDINGS_SHAPE", ".warrant/trust.json does not exist (tools/claims.py bind writes it)")]
+        try:
+            doc = C.loads(self.trust_path.read_bytes())
+        except Exception as e:      # noqa: BLE001 -- an unreadable file admits nothing, and says why
+            return [], [("BINDINGS_SHAPE", f".warrant/trust.json: {type(e).__name__}: {e}")]
+        return admit_bindings(doc)
+
     def trust(self):
-        return Trust.load(self.trust_path)
+        """The trust this checker uses: the admitted bindings, then the receiver's own (local_bindings)."""
+        return trust_of(self.bindings()[0] + local_bindings())
 
     def snapshot(self):
         return Snapshot.read(self.store_dir)
@@ -389,9 +515,9 @@ class Model:
                 continue
             self.nodes[rid] = Node(rid, r, doc)
         for n in list(self.nodes.values()):
-            why = self._link(n)
+            code, why = self._link(n)
             if why:
-                self.problems.append(("STRUCTURE", f"transition {n.tid[:12]} ({n.id}): {why}"))
+                self.problems.append((code, f"transition {n.tid[:12]} ({n.id}): {why}"))
                 del self.nodes[n.tid]
         replaced = {s for n in self.nodes.values() for s in n.rec["body"]["supersedes"]}
         self.by_id = {}
@@ -479,19 +605,25 @@ class Model:
         return None
 
     def _link(self, n):
-        """A replacing claim names, in `previous` and `supersedes`, a claim of the same id."""
+        """(code, why) unless a replacing claim names, in `previous` and `supersedes`, a claim of
+        the same id by the same author; else (None, None)."""
         prev = n.doc["previous"]
         sup = n.rec["body"]["supersedes"]
         if prev is None:
-            return "it supersedes something without saying what it replaces" if sup else None
+            return ("STRUCTURE", "it supersedes something without saying what it replaces") if sup else (None, None)
         if sup != [prev["transition"]]:
-            return "supersedes does not name exactly its previous claim"
+            return "STRUCTURE", "supersedes does not name exactly its previous claim"
         p = self.nodes.get(prev["transition"])
         if p is None or p.id != n.id or p.retired:
-            return "its previous claim is not a live claim transition of the same id"
+            return "STRUCTURE", "its previous claim is not a live claim transition of the same id"
         if prev["duty"] != p.doc["duty"] or prev["statement_sha256"] != sha(p.doc["text"]):
-            return "previous does not repeat the replaced claim's duty and statement hash"
-        return None
+            return "STRUCTURE", "previous does not repeat the replaced claim's duty and statement hash"
+        # Open circle, part C: anyone may bind a key and file a counter, but a claim's lineage
+        # (supersession, retirement) stays with its author: a counter lowers backing, never authorship.
+        if n.rec["actor"] != p.rec["actor"]:
+            return "LINEAGE_NOT_AUTHOR", (f"filed by {n.rec['actor']!r}, and the claim it replaces by {p.rec['actor']!r}: "
+                                          "only a claim's author supersedes or retires it")
+        return None, None
 
     def text_of(self, n):
         """The last sentence a claim chain stated (a retirement states none of its own)."""
@@ -531,6 +663,10 @@ class Document:
             if p is None or p[1] != prev["sha256"]:
                 self.problems.append(("STRUCTURE", f"document transition {rid[:12]}: its previous version is not "
                                                    "a document transition of this store with that blob"))
+                del self.nodes[rid]
+            elif p[0]["actor"] != r["actor"]:
+                self.problems.append(("LINEAGE_NOT_AUTHOR", f"document transition {rid[:12]} by {r['actor']!r} supersedes "
+                                      f"a version by {p[0]['actor']!r}: only the document's author files its next version"))
                 del self.nodes[rid]
         replaced = {s for r, _, _ in self.nodes.values() for s in r["body"]["supersedes"]}
         cur = sorted((rid for rid in self.nodes if rid not in replaced), key=lambda rid: (self.nodes[rid][0]["at"], rid))
@@ -830,30 +966,41 @@ def assessment(snap, trust):
     return E.assess(snap, trust, as_of, E.profile())
 
 
-def disposition(rep, n):
+def disposition(rep, n, accepted=()):
+    """The engine's disposition of claim `n`'s duty, with who accepted its closure (`accepted`)."""
     if n.retired or n.kind == "informative":
         return "— (no duty)"
     r = rep["duties"].get(n.doc["duty"])
     if r is None:
         return "MISSING"
+    by = f"accepted by {', '.join(accepted)}" if accepted else ""
     waiting = sorted({a for c in r["candidates"] if c["verdict"] == "PENDING" for a in c.get("waiting_for") or []})
     if r["disposition"] == "OPEN":
-        return f"OPEN (awaiting {', '.join(waiting)})" if waiting else "OPEN (no closure filed)"
-    return r["disposition"]
+        return f"OPEN (awaiting {', '.join(waiting)}{'; ' + by if by else ''})" if waiting else "OPEN (no closure filed)"
+    return r["disposition"] + (f" ({by})" if by else "")
 
 
 def cell(s):
     return s.replace("|", "\\|")
 
 
-def render(repo):
+def status_of(n, low):
+    """A claim's status in the view: COUNTERED when a replaying counter lowers its backing (`low`)."""
+    return "COUNTERED" if n.id in low else n.status
+
+
+def render(repo, model=None, table=None):
     snap, trust = repo.snapshot(), repo.trust()
-    model, pins = Model(snap, trust), repo.pins()
+    model, pins = model or Model(snap, trust), repo.pins()
+    table = challenge_table(repo, model) if table is None else table
+    low = lowered(table)
     rep = assessment(snap, trust)
+    index = accept_index(model.recs)
     rows = sorted(model.current.values(), key=lambda n: id_key(n.id))
     live = [n for n in rows if not n.retired]
     retired = [n for n in rows if n.retired]
-    count = {s: sum(n.status == s for n in live if n.id in pins["sentences"]) for s in ("BACKED", "UNBACKED", "INFORMATIVE")}
+    count = {s: sum(status_of(n, low) == s for n in live if n.id in pins["sentences"])
+             for s in ("BACKED", "COUNTERED", "UNBACKED", "INFORMATIVE")}
     secs = ", ".join("the preamble" if s == PREAMBLE else f"§{s}" for s in pins["sections"])
     out = [
         "# SPEC claims (generated view)", "",
@@ -864,7 +1011,8 @@ def render(repo):
         "supersede or retire the claim, then regenerate both (README.md, \"Changing a",
         "normative sentence\").", "",
         f"Sections {secs} of SPEC.md · sentences {len(pins['sentences'])} · backed {count['BACKED']} · "
-        f"unbacked {count['UNBACKED']} · informative {count['INFORMATIVE']} · retired {len(retired)} · "
+        f"countered {count['COUNTERED']} · unbacked {count['UNBACKED']} · informative {count['INFORMATIVE']} · "
+        f"retired {len(retired)} · "
         f"records {len(snap.records)} · blobs {len(snap.blobs)}", "",
         "A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`",
         "(ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases",
@@ -872,18 +1020,23 @@ def render(repo):
         "open; it closes nothing and establishes nothing. *Disposition* is Warrant's own",
         "assessment of the claim's duty in this store (trust `.warrant/trust.json`, default",
         f"profile, as of the latest record): a backed claim waits for its acceptor ({', '.join(pins['accept_by'])})",
-        "until an acceptance is filed. Nobody has accepted a claim yet unless this column says DISCHARGED.", "",
+        "until an acceptance is filed (`tools/claims.py accept`, signed by the acceptor's own key); the",
+        "column names who accepted. A claim is COUNTERED when a counter blob that replays (below), filed",
+        "by anyone with an admitted binding, lowers its backing: it counts as backed no longer.", "",
         "| ID | Statement | Witnesses | Mutants | Status | Disposition | Claim |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
+    counted = {x["claim"] for x in table.values() if x["kind"] == COUNTED}
     for n in live:
         wit = "; ".join(f"{t} {' '.join(cs)}" for t, cs in _grouped(n.doc["witnesses"])) or "—"
         mut = " ".join(n.doc["mutants"]) or "—"
-        status = n.status + (" · CHALLENGED" if n.id in model.challenges else "")
+        status = status_of(n, low) + (" · CHALLENGED" if n.id in counted else "")
         if n.kind == "informative":
             status += f": {n.doc['reason']}"
-        out.append(f"| {n.id} | {cell(n.doc['text'])} | {cell(wit)} | {mut} | {cell(status)} | {disposition(rep, n)} | `{n.tid[:12]}` |")
-    opened = [n for n in live if n.status == "UNBACKED"]
+        acc = acceptors(model.recs, index, n.tid, 0) if n.backed else []
+        out.append(f"| {n.id} | {cell(n.doc['text'])} | {cell(wit)} | {mut} | {cell(status)} | {cell(disposition(rep, n, acc))} "
+                   f"| `{n.tid[:12]}` |")
+    opened = [n for n in live if n.status == "UNBACKED" or n.id in low]
     out += ["", "## Open questions", "",
             "A claim that was BACKED and lost its backing cites a counter blob that `check` replayed: under its",
             "patch, which changes only code the claim's own mutants change (compared by AST), at least one case",
@@ -892,8 +1045,21 @@ def render(repo):
             "The reason below is the filer's thesis; the replay is what admitted the loss.", ""]
     if opened:
         out += ["| ID | Statement | Why it is open | Claim |", "| --- | --- | --- | --- |"]
-        out += [f"| {n.id} | {cell(n.doc['text'])} | {cell(n.doc['reason'] or '(no reason given)')} | `{n.tid[:12]}` |"
-                for n in opened]
+        out += [f"| {n.id} | {cell(n.doc['text'])} | {cell(_open_reason(n, low))} | `{n.tid[:12]}` |" for n in opened]
+    else:
+        out.append("None.")
+    out += ["", "## Challenges", "",
+            "Every challenge against a current claim, and what it does here. A counter blob that replays lowers",
+            "the claim's backing whoever filed it (COUNTERED); with none that replays, a challenge by the claim's",
+            "author or by an actor its duty is owed to or accepted by stands until the author answers (`check`",
+            "refuses CHALLENGED); one by anyone else is a thesis: listed here, it lowers and blocks nothing.", ""]
+    if table:
+        out += ["| Claim | Challenge | Filed by | Counters | Effect |", "| --- | --- | --- | --- | --- |"]
+        effect = {LOWERS: "lowers the backing (a counter replays)", COUNTED: "standing: the author must answer",
+                  THESIS: "a thesis: lowers and blocks nothing"}
+        for ch, x in sorted(table.items(), key=lambda kv: (id_key(kv[1]["claim"]), kv[0])):
+            cs = " ".join(f"`{c[:12]}`" + ("" if c in x["replays"] else " (does not replay)") for c in x["counters"]) or "—"
+            out.append(f"| {x['claim']} | `{ch[:12]}` | {cell(x['actor'])} | {cs} | {effect[x['kind']]} |")
     else:
         out.append("None.")
     doc = Document(model)
@@ -921,6 +1087,13 @@ def render(repo):
     return "\n".join(out) + "\n"
 
 
+def _open_reason(n, low):
+    if n.id in low:
+        return "; ".join(f"countered by {x['actor']}: challenge {x['challenge'][:12]}, counter "
+                         f"{', '.join(c[:12] for c in x['replays'])} replays" for x in low[n.id])
+    return n.doc["reason"] or "(no reason given)"
+
+
 def _grouped(witnesses):
     groups = {}
     for w in witnesses:
@@ -944,7 +1117,9 @@ def check(repo, base=None):
     snap, trust = repo.snapshot(), repo.trust()
     for m in snap.misfiled:
         out.append(("RECORD_MISNAMED" if m.startswith("records/") else "BLOB_MISNAMED", m))
+    out += repo.bindings()[1]
     model = Model(snap, trust)
+    table = challenge_table(repo, model)
     for rid, why in sorted(model.bad.items()):
         code = "NOT_CANONICAL" if why.startswith("not canonical") else \
             "RECORD_MISNAMED" if why.startswith("id does not match") else "UNAUTHENTIC"
@@ -959,9 +1134,13 @@ def check(repo, base=None):
         out += [(code, f"{cid}: {why}") for code, why in witness_problems(repo, n.doc["witnesses"], n.doc["mutants"])]
         if n.kind == "normative" and not n.backed and not n.doc["reason"]:
             out.append(("UNBACKED_WITHOUT_REASON", f"{cid}: an unbacked claim must say why it is open (--unbacked-because)"))
-        if cid in model.challenges:
-            out.append(("CHALLENGED", f"{cid}: standing challenge {', '.join(c[:12] for c in model.challenges[cid])}"
+        standing = [ch for ch, x in table.items() if x["claim"] == cid and x["kind"] == COUNTED]
+        if standing:
+            out.append(("CHALLENGED", f"{cid}: standing challenge {', '.join(c[:12] for c in standing)}"
                         " against the current claim; supersede or retire it"))
+        terms = duty_terms(model, n, pins)
+        if terms:
+            out.append(("CLAIM_DUTY_TERMS", f"{cid}: {terms}"))
         if sec in pins["sections"] and cid not in pins["sentences"]:
             out.append(("UNPINNED_CLAIM", f"{cid}: a current claim of §{sec} that .warrant/claims.json does not pin"))
     for cid, kind in sorted(pins["sentences"].items(), key=lambda kv: id_key(kv[0])):
@@ -997,8 +1176,12 @@ def check(repo, base=None):
                         f"{(shown[k] if k < len(shown) else None)!r} vs {(parts[k] if k < len(parts) else None)!r}"))
     if not repo.projection.is_file():
         out.append(("PROJECTION_MISSING", "SPEC-CLAIMS.md does not exist; run tools/claims.py project"))
-    elif repo.projection.read_bytes() != render(repo).encode():     # bytes: read_text() would turn \r\n into \n
+    elif repo.projection.read_bytes() != render(repo, model, table).encode():   # bytes: read_text() turns \r\n into \n
         out.append(("PROJECTION_STALE", "SPEC-CLAIMS.md is not the view of the records; run tools/claims.py project"))
+    if not repo.witnesses.is_file():
+        out.append(("WITNESSES_MISSING", "WITNESSES.md does not exist; run tools/claims.py project"))
+    elif repo.witnesses.read_bytes() != render_witnesses(repo, model, table).encode():
+        out.append(("WITNESSES_STALE", "WITNESSES.md is not the ledger of the records; run tools/claims.py project"))
     if base is not None:
         out += check_base(repo, base, snap, model, pins)
     return out
@@ -1044,8 +1227,10 @@ def check_base(repo, base, snap, model, pins):
             out.append(("RECORD_CHANGED", f"{path} differs from {rev[:12]}"))
     recs = {Path(p).name[:-5]: b for p, b in stored.items() if p.startswith(prefix + "records/") and p.endswith(".json")}
     blobs = {Path(p).name: b for p, b in stored.items() if p.startswith(prefix + "blobs/")}
-    trust = Trust(C.loads(files[".warrant/trust.json"])) if ".warrant/trust.json" in files else repo.trust()
-    then = Model(Snapshot(recs, blobs), trust)
+    was = admit_bindings(C.loads(files[".warrant/trust.json"]), legacy=True)[0] if ".warrant/trust.json" in files else []
+    out += bindings_kept(was, repo.bindings()[0], rev)
+    then = Model(Snapshot(recs, blobs), trust_of(was + local_bindings()))
+    out += new_counters(repo, model, set(recs))
     for cid in sorted(then.current, key=id_key):
         if cid not in model.by_id:
             out.append(("CLAIM_DELETED", f"{cid} is claimed at {rev[:12]} and no record states, supersedes or retires it now"))
@@ -1065,6 +1250,46 @@ def check_base(repo, base, snap, model, pins):
         if n is None or not n.retired:
             out.append(("UNPINNED_WITHOUT_RETIREMENT", f"{cid} is pinned at {rev[:12]}; unpinning it needs its retirement record"))
     return out
+
+
+def bindings_kept(was, now, rev):
+    """BINDING_REMOVED for each binding admitted at the base and not admitted now: the first
+    binding of an actor wins only if a later change can neither drop it nor put another
+    binding of that actor before it (a binding is never deleted, like a record)."""
+    have = set(now)
+    return [("BINDING_REMOVED", f"{a} -> key {K.key_id(p)[:12]} is admitted at {rev[:12]} and not now")
+            for a, p in was if (a, p) not in have]
+
+
+def new_counters(repo, model, before):
+    """COUNTER_NOT_REPLAYED for each challenge new since the base (not in `before`) that carries
+    a counter blob that does not replay against the claim it targets: a counter from anyone is
+    admitted by its replay, and only by it (open circle, part C)."""
+    out = []
+    for rid, r in sorted(model.recs.items()):
+        if r["type"] != "challenge" or rid in before:
+            continue
+        carried = [h for h in r["body"]["evidence"] if _is_counter(model.snap, h)]
+        target = model.nodes.get(r["body"]["target"])
+        for c in carried:
+            why = replay_counter(repo, model.snap, c, target) if target is not None and target.backed else \
+                "its target is not a BACKED claim transition"
+            if why:
+                out.append(("COUNTER_NOT_REPLAYED", f"challenge {rid[:12]} by {r['actor']}: counter {c[:12]}: {why}"))
+    return out
+
+
+def duty_terms(model, n, pins):
+    """Why claim `n`'s duty is not held by its author, owed to and accepted by whom
+    .warrant/claims.json pins, with no release_by; or None. A key anyone may bind must not
+    file a claim that only its own accomplice has to accept."""
+    if n.retired or n.kind != "normative":
+        return None
+    b = model.recs[n.doc["duty"]]["body"]
+    want = (n.rec["actor"], pins["owed_to"], pins["accept_by"], [])
+    got = (b["holder"], b["owed_to"], b["accept_by"], b["release_by"])
+    return None if got == want else (f"its duty has holder {got[0]!r}, owed_to {got[1]}, accept_by {got[2]}, "
+                                     f"release_by {got[3]}; pinned: owed_to {want[1]}, accept_by {want[2]}, no release_by")
 
 
 class BaseTests:
@@ -1396,6 +1621,231 @@ def _replay_counter(repo, doc, p, statements=True):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------- challenges (open circle, part C)
+
+LOWERS, COUNTED, THESIS = "LOWERS", "COUNTED", "THESIS"
+
+
+def counts_against(model, n, actor):
+    """Whether `actor`'s challenge against claim `n` counts with no counter that replays: the
+    claim's author, or an actor its duty is owed to or accepted by (SPEC §4.6: owed_to and
+    accept_by always count). This repository's profile names no other challenger."""
+    if actor == n.rec["actor"]:
+        return True
+    d = model.recs.get(n.doc.get("duty")) if not n.retired else None
+    return d is not None and actor in set(d["body"]["owed_to"]) | set(d["body"]["accept_by"])
+
+
+def challenge_table(repo, model, replay=None):
+    """{challenge id: entry} for each authentic challenge against a current claim, its `kind`:
+      LOWERS   it carries a counter blob against the claim that replays (replay_counter), the
+               claim being BACKED: whoever filed it, the claim's backing is lowered in the view
+               (COUNTERED); a counter needs nobody's permission;
+      COUNTED  no counter of it replays and its filer counts (counts_against): a standing
+               challenge, refused by `check` (CHALLENGED) until the author answers;
+      THESIS   no counter of it replays and its filer does not count: listed, nothing more.
+    `replay(c, n)` (None or why not) defaults to replay_counter; tests pass their own."""
+    replay = replay or (lambda c, n: replay_counter(repo, model.snap, c, n))
+    out = {}
+    for cid, chs in sorted(model.challenges.items()):
+        n = model.current[cid]
+        for ch in chs:
+            actor = model.recs[ch]["actor"]
+            counters = sorted(counter_candidates(model, ch, n))
+            whys = {c: replay(c, n) if n.backed else "the claim is not BACKED: it has no backing to lower"
+                    for c in counters}
+            good = [c for c in counters if whys[c] is None]
+            kind = LOWERS if good else COUNTED if counts_against(model, n, actor) else THESIS
+            out[ch] = {"claim": cid, "transition": n.tid, "actor": actor, "kind": kind, "counters": counters,
+                       "replays": good, "why": "; ".join(f"{c[:12]}: {whys[c]}" for c in counters if whys[c])}
+    return out
+
+
+def lowered(table):
+    """{claim id: [table entries]} of the claims whose backing a replaying counter lowers."""
+    out = {}
+    for ch, x in sorted(table.items()):
+        if x["kind"] == LOWERS:
+            out.setdefault(x["claim"], []).append(dict(x, challenge=ch))
+    return out
+
+
+# ---------------------------------------------------------------- acceptances (open circle, part B)
+
+def accept_index(recs):
+    """{(transition, item): {actor}} of authentic accept records, each under the evidence it
+    names: an acceptance counts only for exactly that (transition, item, evidence set)."""
+    out = {}
+    for r in recs.values():
+        if r["type"] == "accept":
+            b = r["body"]
+            out.setdefault((b["transition"], b["item"], tuple(sorted(b["evidence"]))), set()).add(r["actor"])
+    return out
+
+
+def acceptors(recs, index, tid, item):
+    """The actors who accepted exactly (tid, item and that item's evidence); item None: the
+    transition's results, its whole evidence (SPEC §3.3)."""
+    t = recs.get(tid)
+    if t is None or t["type"] != "transition":
+        return []
+    b = t["body"]
+    if item is None:
+        want = b["evidence"]
+    elif 0 <= item < len(b["closes"]):
+        want = b["closes"][item]["evidence"]
+    else:
+        return []
+    want = tuple(sorted(want))
+    return sorted({a for (t, i, ev), actors in index.items() if t == tid and i == item and ev == want for a in actors})
+
+
+# ---------------------------------------------------------------- the witness ledger (open circle, part D)
+
+def counter_citations(model):
+    """{counter blob: [record ids]}: each COUNTER blob any authentic challenge or transition
+    carries as evidence."""
+    out = {}
+    for rid, r in model.recs.items():
+        if r["type"] in ("challenge", "transition"):
+            for h in r["body"]["evidence"]:
+                if _is_counter(model.snap, h):
+                    out.setdefault(h, []).append(rid)
+    return out
+
+
+def downgrade_counters(model):
+    """{counter blob: claim transition it is against}: the counters a downgrade cites, i.e. a
+    run of UNBACKED claims after the BACKED claim `p` cites them, directly or through a
+    challenge against `p` (the route `check --base` replays when the downgrade is filed)."""
+    out = {}
+    for q in model.nodes.values():
+        if q.retired or q.kind != "normative" or q.backed:
+            continue
+        run, p = [q], None
+        while run[-1].doc["previous"]:
+            prev = model.nodes.get(run[-1].doc["previous"]["transition"])
+            if prev is None or prev.retired:
+                break
+            if prev.backed:
+                p = prev
+                break
+            run.append(prev)
+        if p is None:
+            continue
+        for m in run:
+            for h in m.rec["body"]["evidence"]:
+                for c in counter_candidates(model, h, p):
+                    if model.snap.json_blob(c).get("against") == p.tid:
+                        out[c] = p.tid
+    return out
+
+
+def ledger(model, table, bindings):
+    """{actor: row}: what each actor's records did, counted from the records (and, for counters
+    standing now, from `table`). It grants nothing; no rule reads it. Row:
+      key         key ids of the admitted bindings of the actor
+      authored    claim lineages the actor began (a claim transition with no previous)
+      accepts     accept records the actor filed
+      refuted     the actor's acceptances of a closure later refuted: a claim transition against
+                  which a counter replays now (LOWERS) or a downgrade cites a counter
+                  (downgrade_counters); or a closure a challenge targets that a revalidation names
+      challenges  challenge records the actor filed
+      counters    COUNTER blobs the actor filed (the earliest record citing one is the actor's)
+      now         of those, counters that lower a current claim's backing now
+      downgrade   of those, counters a downgrade cites
+      rebacks     BACKED claim transitions the actor filed that supersede a claim a counter is
+                  against (the answer to a counter: a witness that sees it)"""
+    recs = model.recs
+    rows = {a: {"key": [], "authored": 0, "accepts": [], "refuted": [], "challenges": 0, "counters": [], "now": [],
+                "downgrade": [], "rebacks": []}
+            for a in sorted({r["actor"] for r in recs.values()} | {a for a, _ in bindings})}
+    for a, p in bindings:
+        rows[a]["key"].append(K.key_id(p)[:12])
+    for n in model.nodes.values():
+        if n.doc["previous"] is None:
+            rows[n.rec["actor"]]["authored"] += 1
+    cites = counter_citations(model)
+    downs = downgrade_counters(model)
+    now = {c for x in table.values() if x["kind"] == LOWERS for c in x["replays"]}
+    against = {c: model.snap.json_blob(c).get("against") for c in cites}
+    for c, rids in sorted(cites.items()):
+        first = min(rids, key=lambda rid: (recs[rid]["at"], rid))
+        row = rows[recs[first]["actor"]]
+        row["counters"].append(c)
+        if c in now:
+            row["now"].append(c)
+        if c in downs:
+            row["downgrade"].append(c)
+    refuting = {against[c] for c in now | set(downs)}
+    revalidated = {x for r in recs.values() if r["type"] == "transition" for m in r["body"]["closes"]
+                   if m["act"] == "revalidate" for x in m["revalidates"]}
+    challenged = {(r["body"]["target"], r["body"]["item"]) for r in recs.values() if r["type"] == "challenge"}
+    for rid, r in sorted(recs.items()):
+        if r["type"] == "challenge":
+            rows[r["actor"]]["challenges"] += 1
+        elif r["type"] == "accept":
+            b = r["body"]
+            rows[r["actor"]]["accepts"].append(rid)
+            if b["transition"] in refuting and b["transition"] in model.nodes:
+                rows[r["actor"]]["refuted"].append((rid, b["transition"], "a counter against the accepted claim replays"))
+            elif (b["transition"], b["item"]) in challenged and b["transition"] in revalidated:
+                rows[r["actor"]]["refuted"].append((rid, b["transition"], "the accepted closure was challenged, then revalidated"))
+    countered = set(against.values())
+    for n in model.nodes.values():
+        prev = n.doc["previous"]
+        if n.backed and prev and prev["transition"] in countered:
+            rows[n.rec["actor"]]["rebacks"].append(n.tid)
+    return rows
+
+
+def render_witnesses(repo, model, table):
+    """WITNESSES.md: the ledger (ledger) as a view."""
+    bindings = repo.bindings()[0]
+    rows = ledger(model, table, bindings)
+    out = [
+        "# Witness ledger (generated view)", "",
+        "Generated by `python tools/claims.py project` from the Warrant 2 records in",
+        "`.warrant/store/` and the admitted bindings of `.warrant/trust.json`. **It grants",
+        "nothing, and no rule reads it**: `check`, the engine and every profile ignore this",
+        "file; `check` only refuses it when it is not the rendering of the records (compared",
+        "as bytes). A count says what an actor's signed records did, not who may act: that is",
+        "the duty's and the receiver's profile's (SPEC §4.6, §6).", "",
+        "- **claims authored**: claim lineages the actor began.",
+        "- **acceptances**: accept records the actor filed; **later refuted**: of those, ones",
+        "  accepting a claim against which a counter replays now or a downgrade cites a counter,",
+        "  or a closure that a challenge targets and a revalidation names.",
+        "- **challenges**: challenge records the actor filed.",
+        "- **counters**: counter blobs (`warrant-claims/counter@1`) the actor's record cited",
+        "  first; **lowering now**: of those, ones that replay against a current BACKED claim",
+        "  (its backing is lowered); **cited by a downgrade**: ones a BACKED-to-UNBACKED",
+        "  supersession cites (`check --base` replays those when the downgrade is filed).",
+        "- **re-backs**: BACKED claims the actor filed over a claim a counter is against.", "",
+        "| Actor | Key | Claims authored | Acceptances | Later refuted | Challenges | Counters | Lowering now "
+        "| Cited by a downgrade | Re-backs |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for a, row in rows.items():
+        out.append(f"| {cell(a)} | {' '.join(f'`{k}`' for k in row['key']) or '—'} | {row['authored']} "
+                   f"| {len(row['accepts'])} | {len(row['refuted'])} | {row['challenges']} | {len(row['counters'])} "
+                   f"| {len(row['now'])} | {len(row['downgrade'])} | {len(row['rebacks'])} |")
+    refuted = [(a, x) for a, row in rows.items() for x in row["refuted"]]
+    out += ["", "## Acceptances later refuted", ""]
+    out += [f"- {cell(a)}: accept `{rid[:12]}` of `{tid[:12]}`: {why}" for a, (rid, tid, why) in refuted] or ["None."]
+    out += ["", "## Counters", ""]
+    counters = [(c, a) for a, row in rows.items() for c in row["counters"]]
+    if counters:
+        out += ["| Counter | Filed by | Claim | Against | Lowering now | Cited by a downgrade |",
+                "| --- | --- | --- | --- | --- | --- |"]
+        for c, a in sorted(counters, key=lambda x: (str(model.snap.json_blob(x[0]).get("claim")), x[0])):
+            doc = model.snap.json_blob(c)
+            out.append(f"| `{c[:12]}` | {cell(a)} | {cell(str(doc.get('claim')))} | `{str(doc.get('against'))[:12]}` "
+                       f"| {'yes' if c in rows[a]['now'] else 'no'} | {'yes' if c in rows[a]['downgrade'] else 'no'} |")
+    else:
+        out.append("None.")
+    return "\n".join(out) + "\n"
+
+
 # ---------------------------------------------------------------- authoring
 
 def load_key(repo, path, actor):
@@ -1488,6 +1938,9 @@ class Author:
         """File a document version: an ATTESTED transition whose evidence is the document blob,
         superseding the current version if there is one."""
         doc = Document(self.model())
+        if doc.current is not None and doc.nodes[doc.tid][0]["actor"] != self.actor:
+            raise Refused(f"the document is {doc.nodes[doc.tid][0]['actor']}'s: only its author files its next version",
+                          "LINEAGE_NOT_AUTHOR")
         prev = None if doc.current is None else {"transition": doc.tid, "sha256": doc.nodes[doc.tid][1]}
         h = self.store.put_json({"schema": DOCUMENT, "source": "SPEC.md", "parts": parts, "because": because,
                                  "previous": prev})
@@ -1510,6 +1963,9 @@ class Author:
             raise Refused(f"{cid}: replacing a claim needs --because")
         if previous is not None and previous.retired:
             raise Refused(f"{cid} is retired; a new sentence takes a new id")
+        if previous is not None and previous.rec["actor"] != self.actor:
+            raise Refused(f"{cid} is {previous.rec['actor']}'s claim: only its author supersedes it; a counter is "
+                          "filed as a challenge (tools/claims.py challenge)", "LINEAGE_NOT_AUTHOR")
         placed = self.placement(cid, after, paragraph, because if previous is None else None)
         at = self.at()
         duty = None
@@ -1547,6 +2003,8 @@ class Author:
         cur = self.model().current.get(cid)
         if cur is None or cur.retired:
             raise Refused(f"{cid}: no live claim to retire")
+        if cur.rec["actor"] != self.actor:
+            raise Refused(f"{cid} is {cur.rec['actor']}'s claim: only its author retires it", "LINEAGE_NOT_AUTHOR")
         if not because:
             raise Refused("a retirement needs --because")
         snap = self.repo.snapshot()
@@ -1662,6 +2120,8 @@ def cmd_retire(repo, a):
     cur = author.model().current.get(a.id)
     if cur is None or cur.retired or not a.because:
         raise Refused(f"{a.id}: no live claim to retire, or no --because")   # before the counter-file is stored
+    if cur.rec["actor"] != a.actor:
+        raise Refused(f"{a.id} is {cur.rec['actor']}'s claim: only its author retires it", "LINEAGE_NOT_AUTHOR")
     counter = a.counter or author.store.put_blob(Path(a.counter_file).read_bytes())
     print(f"{a.id}: retired by {author.retire(a.id, a.because, counter)}")
 
@@ -1710,8 +2170,10 @@ def cmd_project(repo):
     doc = Document(model)
     if doc.current is None:
         raise Refused("no document record lays out SPEC.md (tools/claims.py migrate files the first)")
+    table = challenge_table(repo, model)
     repo.spec.write_bytes(render_spec(model, doc.current).encode())
-    repo.projection.write_bytes(render(repo).encode())
+    repo.projection.write_bytes(render(repo, model, table).encode())
+    repo.witnesses.write_bytes(render_witnesses(repo, model, table).encode())
 
 
 def cmd_keygen(repo, a):
@@ -1721,15 +2183,141 @@ def cmd_keygen(repo, a):
     if out.exists():
         raise Refused(f"{out} exists")
     key = W.Key.generate()
+    doc = bound_document(repo, key, a.actor)          # refused before the seed is written
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(key.seed_hex() + "\n")
     out.chmod(0o600)
-    doc = C.loads(repo.trust_path.read_bytes()) if repo.trust_path.is_file() else Trust.document([])
-    doc["keys"].append({"actor": a.actor, "public": key.public})
-    Trust(doc)
+    write_bindings(repo, doc)
+    print(f"{a.actor}: key {key.id} bound in .warrant/trust.json with its proof; seed at {out}")
+
+
+def bound_document(repo, key, actor):
+    """The bindings document with `key` bound to `actor` and its proof (binding_proof): an
+    entry of the same actor and key gets the proof, otherwise one is appended. Refused, with
+    the code `check` would give, when the result would not admit the binding. A trust/2 file
+    (before bindings carried proofs) is read as entries without proofs."""
+    try:
+        R.check_actor(actor)
+    except R.Invalid as e:
+        raise Refused(f"{actor!r} is not an actor id (SPEC-3-21): {e}", "BINDING_ACTOR_SHAPE") from e
+    doc = C.loads(repo.trust_path.read_bytes()) if repo.trust_path.is_file() else {"bindings": BINDINGS, "keys": []}
+    if isinstance(doc, dict) and doc.get("warrant") == "trust/2":
+        doc = {"bindings": BINDINGS, "keys": [dict(k) for k in doc.get("keys", [])]}
+    entry = {"actor": actor, "public": key.public, "proof": binding_proof(key, actor)}
+    keys = [entry if isinstance(k, dict) and k.get("actor") == actor and k.get("public") == key.public else k
+            for k in doc.get("keys", [])]
+    doc = {"bindings": BINDINGS, "keys": keys if entry in keys else keys + [entry]}
+    admitted, problems = admit_bindings(doc)
+    if (actor, key.public) not in admitted:
+        mine = [(c, w) for c, w in problems if f"keys[{doc['keys'].index(entry)}]" in w]
+        code, why = mine[0] if mine else ("BINDINGS_SHAPE", "; ".join(w for _, w in problems))
+        raise Refused(why, code)
+    return doc
+
+
+def write_bindings(repo, doc):
     repo.trust_path.parent.mkdir(parents=True, exist_ok=True)
     repo.trust_path.write_bytes(C.canon(doc))
-    print(f"{a.actor}: key {key.id} bound in .warrant/trust.json; seed at {out}")
+
+
+def cmd_bind(repo, a):
+    """Bind the key of seed --key to --actor with its proof of possession. Nobody admits it:
+    `check` does, mechanically (admit_bindings)."""
+    p = Path(a.key or os.environ.get("WARRANT_CLAIMS_KEY") or "")
+    if not p.is_file():
+        raise Refused("a signing seed is needed: --key PATH or WARRANT_CLAIMS_KEY")
+    key = W.Key.from_seed_hex(p.read_text())
+    write_bindings(repo, bound_document(repo, key, a.actor))
+    print(f"{a.actor}: key {key.id} bound in .warrant/trust.json with its proof")
+
+
+def cmd_trust(repo, a):
+    """Print the trust/2 document of the admitted bindings, for `warrant --trust` (stdout)."""
+    sys.stdout.write(C.canon(Trust.document(repo.bindings()[0])).decode() + "\n")
+
+
+def pending_for(rep, did, actor):
+    """The PENDING candidates of duty `did` whose acceptance `actor` is still awaited."""
+    r = rep["duties"].get(did)
+    return [] if r is None else [c for c in r["candidates"]
+                                  if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or [])]
+
+
+def not_acceptor(actor, what, accept_by):
+    return Refused(f"{actor} is not in the accept_by of {what} ({', '.join(accept_by) or 'nobody'}): an acceptance by "
+                   "anyone else admits nothing (SPEC §4.2, rule 5). A receiver's profile (SPEC §4.6) chooses whose "
+                   "acceptance closes a transition's results and whose challenges count; a duty's closure needs its "
+                   "own accept_by in every profile", "NOT_AN_ACCEPTOR")
+
+
+def accept_targets(repo, model, rep, actor, cids):
+    """[(claim id, transition, evidence)] to accept, all validated before anything is filed. A
+    BACKED claim's closure is filed with it, so it is pending until every acceptor of its duty
+    has accepted: whoever accepted it already has nothing left to accept."""
+    table, out, index = None, [], accept_index(model.recs)
+    for cid in cids:
+        n = model.current.get(cid)
+        if n is None or n.retired:
+            raise Refused(f"{cid}: no current claim", "NOT_A_CLOSURE")
+        if not n.backed:
+            raise Refused(f"{cid} is {n.status}: it closes nothing, so nothing awaits acceptance", "NOT_A_CLOSURE")
+        accept_by = model.recs[n.doc["duty"]]["body"]["accept_by"]
+        if actor not in accept_by:
+            raise not_acceptor(actor, f"{cid}'s duty", accept_by)
+        if actor in acceptors(model.recs, index, n.tid, 0):
+            raise Refused(f"{cid}: {actor} accepted its closure {n.tid[:12]} already "
+                          f"({rep['duties'][n.doc['duty']]['disposition']})", "NOT_PENDING")
+        table = challenge_table(repo, model) if table is None else table
+        low = lowered(table).get(cid)
+        if low:
+            raise Refused(f"{cid}: a counter that replays lowers its backing (challenge {low[0]['challenge'][:12]} by "
+                          f"{low[0]['actor']}); accepting it would accept a refuted closure", "COUNTERED")
+        closes = n.rec["body"]["closes"]
+        out.append((cid, n.tid, closes[0]["evidence"] if closes else []))
+    return out
+
+
+def cmd_accept(repo, a):
+    """File an accept record of exactly each claim's pending closure, signed by --actor's key."""
+    author = Author(repo, load_key(repo, a.key, a.actor), a.actor)
+    model = author.model()
+    rep = assessment(model.snap, repo.trust())
+    cids = list(dict.fromkeys(a.claim))
+    if a.all:
+        low = lowered(challenge_table(repo, model))
+        cids += sorted((n.id for n in model.current.values() if n.backed and not n.retired and n.id not in cids
+                        and n.id not in low
+                        and any(c["transition"] == n.tid for c in pending_for(rep, n.doc["duty"], a.actor))), key=id_key)
+    if not cids:
+        raise Refused("name a claim (--claim ID) or --all", "NOT_A_CLOSURE")
+    targets = accept_targets(repo, model, rep, a.actor, cids)
+    at = author.at()
+    for cid, tid, ev in targets:
+        print(f"{cid}: accepted {tid[:12]} by {author.put('accept', R.accept(tid, 0, ev), at)}")
+
+
+def cmd_challenge(repo, a):
+    """File a challenge against a claim's current transition, signed by --actor's key, carrying
+    --counter-file when given. A counter must replay before anything is written; a challenge
+    with none counts only if its filer does (counts_against)."""
+    author = Author(repo, load_key(repo, a.key, a.actor), a.actor)
+    n = author.model().current.get(a.claim)
+    if n is None or n.retired:
+        raise Refused(f"{a.claim}: no current claim", "NOT_A_CLOSURE")
+    ev = []
+    if a.counter_file:
+        data = counter_file_bytes(a.counter_file)
+        h = C.digest(data)
+        author.pending[h] = data
+        why = replay_counter(repo, author.model().snap, h, n) if n.backed else "the claim is not BACKED"
+        if why:
+            raise Refused(f"{a.claim}: the counter does not replay: {why}", "COUNTER_NOT_REPLAYED")
+        author.store.put_blob(data)
+        author.pending = {}
+        ev = [h]
+    item = 0 if n.rec["body"]["closes"] else None
+    rid = author.put("challenge", R.challenge(n.tid, a.because, ev, item), author.at())
+    print(f"{a.claim}: challenge {rid}")
 
 
 def default_base(repo):
@@ -2147,7 +2735,7 @@ def selftest(jobs=1):
     try:
         fix = work / "base"
         (fix / "tests").mkdir(parents=True)
-        for p in [ROOT / "SPEC.md", ROOT / "SPEC-CLAIMS.md"]:
+        for p in [ROOT / "SPEC.md", ROOT / "SPEC-CLAIMS.md", ROOT / WITNESSES]:
             shutil.copy2(p, fix / p.name)
         for p in sorted((ROOT / "tests").glob("*.py")):
             shutil.copy2(p, fix / "tests" / p.name)
@@ -2156,10 +2744,13 @@ def selftest(jobs=1):
             if (ROOT / pkg).is_dir():
                 shutil.copytree(ROOT / pkg, fix / pkg, ignore=shutil.ignore_patterns("__pycache__"))
         repo = Repo(fix)
-        key = W.Key.generate()                    # an ephemeral second key for the claim author
-        doc = C.loads(repo.trust_path.read_bytes())
-        doc["keys"].append({"actor": AUTHOR, "public": key.public})
-        repo.trust_path.write_bytes(C.canon(doc))
+        # An ephemeral second key for the claim author. The first binding of an actor wins, so it
+        # cannot be one of the repository's bindings: the selftest binds it as a receiver binds
+        # keys for itself (WARRANT_CLAIMS_TRUST), outside the repository, for this process only.
+        key = W.Key.generate()
+        local = work / "local-trust.json"
+        local.write_bytes(C.canon(Trust.document([(AUTHOR, key.public)])))
+        os.environ[LOCAL_TRUST] = str(local)
         # No automatic gc or maintenance: a detached repack after the commit would move the
         # fixture's objects while a case is made from it (run 39537906378).
         g_cfg = ["-c", "user.name=claims-selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false",
@@ -2256,7 +2847,9 @@ def selftest(jobs=1):
             doc = Document(m)
             if doc.current is not None:
                 r.spec.write_bytes(render_spec(m, doc.current).encode())
-            r.projection.write_bytes(render(r).encode())
+            t = challenge_table(r, m)
+            r.projection.write_bytes(render(r, m, t).encode())
+            r.witnesses.write_bytes(render_witnesses(r, m, t).encode())
 
         def spec_text(r):
             return norm(r.spec.read_text())
@@ -2719,6 +3312,176 @@ def selftest(jobs=1):
         case("the document records deleted", "DOCUMENT_MISSING", delete_document)
         case("a claim id with a trailing newline", "STRUCTURE", newline_id)
 
+        # Open circle of witnesses. A: a binding certifies itself; B: acceptance by the named acceptor;
+        # C: a counter from anyone lowers backing, never authorship; D: the ledger is a checked view.
+        def bind_entry(r, actor, k, proof=None, first=False):
+            doc = C.loads(r.trust_path.read_bytes())
+            e = {"actor": actor, "public": k.public, "proof": binding_proof(k, actor) if proof is None else proof}
+            doc["keys"] = [e] + doc["keys"] if first else doc["keys"] + [e]
+            r.trust_path.write_bytes(C.canon(doc))
+
+        def binding(actor="stranger", proof=None, first=False, signer=None):
+            """A newcomer's binding; `signer` signs the proof instead of the bound key (and is bound itself)."""
+            def f(r):
+                k = W.Key.generate()
+                if signer:
+                    s = W.Key.generate()
+                    bind_entry(r, signer, s)
+                    proof_ = s.sign(binding_message(actor, k.public))
+                else:
+                    proof_ = proof
+                bind_entry(r, actor, k, proof_, first)
+                reproject(r)
+            return f
+
+        def raw_claim(r, k, actor, n, text, accept_by=None, cid=None):
+            """A claim transition filed by `actor` with no tool guard: superseding `n` (or new, as `cid`)."""
+            st = Store(r.store_dir)
+            at = author(r).at()
+            pins = r.pins()
+            cid = cid or n.id
+            st.put_blob(text.encode())
+            duty = st.put_record(R.record("duty", actor, at, R.duty(actor, statement_for(cid, text), pins["owed_to"],
+                                                                     {"attest": {}}, accept_by=pins["accept_by"] if accept_by is None
+                                                                     else accept_by, subject=sha(text))), k)
+            prev = None if n is None else {"transition": n.tid, "duty": n.doc["duty"], "statement_sha256": sha(n.doc["text"])}
+            doc = {"schema": CLAIM, "id": cid, "source": "SPEC.md", "section": ID_RE.match(cid).group(1), "text": text,
+                   "kind": "normative", "duty": duty, "witnesses": a.doc["witnesses"], "mutants": a.doc["mutants"],
+                   "reason": None, "because": None if n is None else "selftest: a stranger rewrites it", "previous": prev}
+            h = st.put_json(doc)
+            return st.put_record(R.record("transition", actor, at, R.transition(
+                "ATTESTED", [h], closes=[R.item(duty, "discharge", [h])], established=[text], residual=[BACKED_RESIDUAL],
+                supersedes=[] if n is None else [n.tid])), k)
+
+        def stranger_supersedes(r):
+            k = W.Key.generate()
+            bind_entry(r, "stranger", k)
+            n = Model(r.snapshot(), r.trust()).current[a.id]
+            raw_claim(r, k, "stranger", n, n.doc["text"] + " (as the stranger has it)")
+            reproject(r)
+
+        def stranger_retires(r):
+            k = W.Key.generate()
+            bind_entry(r, "stranger", k)
+            n = Model(r.snapshot(), r.trust()).current[b.id]
+            st, at = Store(r.store_dir), author(r).at()
+            ev = st.put_blob(b"selftest: the stranger wants it gone")
+            ch = st.put_record(R.record("challenge", "stranger", at, R.challenge(n.tid, "selftest", [ev], 0)), k)
+            doc = {"schema": RETIRE, "id": b.id, "because": "selftest: gone", "counter": ev, "challenge": ch,
+                   "previous": {"transition": n.tid, "duty": n.doc["duty"], "statement_sha256": sha(n.doc["text"])}}
+            h = st.put_json(doc)
+            st.put_record(R.record("transition", "stranger", at, R.transition(
+                "ATTESTED", sorted({ev, ch, h}), established=[f"{b.id} is retired"], supersedes=[n.tid])), k)
+            reproject(r)
+
+        def stranger_document(r):
+            k = W.Key.generate()
+            bind_entry(r, "stranger", k)
+            d = Document(Model(r.snapshot(), r.trust()))
+            st = Store(r.store_dir)
+            h = st.put_json({"schema": DOCUMENT, "source": "SPEC.md", "parts": d.current["parts"], "because": "selftest",
+                             "previous": {"transition": d.tid, "sha256": d.nodes[d.tid][1]}})
+            st.put_record(R.record("transition", "stranger", author(r).at(), R.transition(
+                "ATTESTED", [h], residual=[DOCUMENT_RESIDUAL], supersedes=[d.tid])), k)
+            reproject(r)
+
+        def stranger_claim_without_acceptor(r):
+            """The stranger's duty names its own accomplice as acceptor, not the pinned one (records
+            refuse an attested duty with no acceptor besides its holder)."""
+            k = W.Key.generate()
+            bind_entry(r, "stranger", k)
+            cid = f"SPEC-{b.doc['section']}-{id_key(b.id)[1] + 2000}"
+            raw_claim(r, k, "stranger", None, "A rule only my accomplice has to accept.", accept_by=["accomplice"], cid=cid)
+            reproject(r)
+
+        def challenge_by(actor, counter_kv=None, claim=None):
+            """`actor` binds a fresh key in this change and challenges `claim` (default SPEC-3.2-20),
+            carrying a counter (stmt_counter_doc with `counter_kv`) when given."""
+            def f(r):
+                k = W.Key.generate()
+                bind_entry(r, actor, k)
+                n = Model(r.snapshot(), r.trust()).current[(claim or sc).id]
+                ev = [] if counter_kv is None else [Store(r.store_dir).put_json(stmt_counter_doc(r, n, **counter_kv))]
+                Store(r.store_dir).put_record(R.record("challenge", actor, author(r).at(), R.challenge(
+                    n.tid, "selftest: the witnesses pass without the rule", ev, 0)), k)
+                reproject(r)
+            return f
+
+        def lowered_by(actor, cid, kind):
+            def f(r):
+                m = Model(r.snapshot(), r.trust())
+                t = challenge_table(r, m)
+                rows = ledger(m, t, r.bindings()[0])
+                mine = [x for x in t.values() if x["actor"] == actor and x["claim"] == cid]
+                line = next(ln for ln in r.projection.read_text().splitlines() if ln.startswith(f"| {cid} |"))
+                status = line.split(" | ")[4]
+                if kind == LOWERS:
+                    return ([x["kind"] for x in mine] == [LOWERS] and status.startswith("COUNTERED")
+                            and len(rows[actor]["now"]) == 1 and len(rows[actor]["counters"]) == 1)
+                return [x["kind"] for x in mine] == [kind] and status.startswith("BACKED") and not rows[actor]["now"]
+            return f
+
+        def accepted_by_codex(r):
+            k = W.Key.generate()
+            bind_entry(r, "codex", k)
+            seed_c = r.root / ".." / f"{r.root.name}-codex.seed"
+            seed_c.write_text(k.seed_hex() + "\n")
+            import contextlib
+            import io
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                rc = main(["--root", str(r.root), "accept", "--key", str(seed_c), "--actor", "codex", "--claim", a.id])
+            seed_c.unlink()
+            reproject(r)
+            assert rc == 0, rc
+
+        def shows_accepted(r):
+            line = next(ln for ln in r.projection.read_text().splitlines() if ln.startswith(f"| {a.id} |"))
+            rows = ledger(Model(r.snapshot(), r.trust()), {}, r.bindings()[0])
+            return "| DISCHARGED (accepted by codex) |" in line and len(rows["codex"]["accepts"]) == 1
+
+        def legacy_trust(r):
+            doc = C.loads(r.trust_path.read_bytes())
+            r.trust_path.write_bytes(C.canon(Trust.document([(x["actor"], x["public"]) for x in doc["keys"]])))
+
+        def unproven(r):
+            doc = C.loads(r.trust_path.read_bytes())
+            doc["keys"].append({"actor": "stranger", "public": W.Key.generate().public})
+            r.trust_path.write_bytes(C.canon(doc))
+
+        def drop_claude_binding(r):
+            doc = C.loads(r.trust_path.read_bytes())
+            doc["keys"] = [x for x in doc["keys"] if x["actor"] != AUTHOR]
+            r.trust_path.write_bytes(C.canon(doc))
+            binding("stranger")(r)
+
+        case("A: a newcomer binds a fresh key with its proof", None, binding("stranger"))
+        case("A: a binding whose proof is forged", "BINDING_PROOF_FORGED", binding("stranger", proof="00" * 64))
+        case("A: a binding whose proof another key signed", "BINDING_PROOF_OTHER_KEY", binding("victim", signer="mallory"))
+        case("A: a newcomer binds the actor id claude to its own key (collision)", "BINDING_ACTOR_TAKEN", binding(AUTHOR))
+        case("A: an actor id failing SPEC-3-21 (a trailing newline)", "BINDING_ACTOR_SHAPE", binding("stranger\n"))
+        case("A: an actor id failing SPEC-3-21 (white space at an end)", "BINDING_ACTOR_SHAPE", binding(" stranger"))
+        case("A: a binding with no proof", "BINDING_UNPROVEN", unproven)
+        case("A: the trust file as trust/2, without proofs", "BINDINGS_SHAPE", legacy_trust)
+        case("A: claude's binding removed (a newcomer's added instead)", "BINDING_REMOVED", drop_claude_binding)
+        case("A: a newcomer's claude binding put before the one at the base", "BINDING_REMOVED", binding(AUTHOR, first=True))
+        case("B: codex binds and accepts a claim; the view names the acceptor", None, accepted_by_codex, also=shows_accepted)
+        case("C: a newcomer binds in this change and files a counter that replays: admitted, backing lowered", None,
+             challenge_by("stranger", {}), also=lowered_by("stranger", "SPEC-3.2-20", LOWERS))
+        case("C: a newcomer files a counter that does not replay", "COUNTER_NOT_REPLAYED",
+             challenge_by("stranger", {"fails": ["records_test:E3"]}))
+        case("C: a newcomer's challenge without a counter: admitted, lowers and blocks nothing", None,
+             challenge_by("stranger"), also=lowered_by("stranger", "SPEC-3.2-20", THESIS))
+        case("C: the acceptor's challenge without a counter stands", "CHALLENGED", challenge_by("codex"))
+        case("C: a newcomer supersedes claude's claim", "LINEAGE_NOT_AUTHOR", stranger_supersedes)
+        case("C: a newcomer retires claude's claim", "LINEAGE_NOT_AUTHOR", stranger_retires)
+        case("C: a newcomer files the next document version", "LINEAGE_NOT_AUTHOR", stranger_document)
+        case("C: a newcomer files a claim whose duty names its own acceptor", "CLAIM_DUTY_TERMS", stranger_claim_without_acceptor)
+        case("D: WITNESSES.md edited by hand", "WITNESSES_STALE",
+             lambda r: r.witnesses.write_text(r.witnesses.read_text().replace("| claude |", "| claude (trusted) |", 1)))
+        case("D: WITNESSES.md with \\r\\n line ends", "WITNESSES_STALE",
+             lambda r: r.witnesses.write_bytes(r.witnesses.read_bytes().replace(b"\n", b"\r\n")))
+        case("D: WITNESSES.md deleted", "WITNESSES_MISSING", lambda r: r.witnesses.unlink())
+
         def statement_reasons():
             """Reasons, not only codes: the statement rule (AMEND 1 of #169) is what refuses M29 against
             SPEC-3.6-7 and the floats insertion against SPEC-2-2 (each replays without it), M234 against
@@ -2813,6 +3576,7 @@ def selftest(jobs=1):
         print(f"CLAIMS SELFTEST: {'OK' if not failures else f'{failures} FAIL'} ({len(ran)} cases)")
         return 1 if failures else 0
     finally:
+        os.environ.pop(LOCAL_TRUST, None)
         shutil.rmtree(work, ignore_errors=True)
 
 
@@ -2884,9 +3648,24 @@ def main(argv=None):
                    help="a matrix from tests/mutants.py --matrix or tests/agent_mutants.py --matrix (repeatable)")
     p.add_argument("--counters", metavar="DIR", help="write each candidate's would-be counter blob there")
     p.add_argument("--refuse", action="store_true", help="exit 1 when any candidate is found")
-    p = sub.add_parser("keygen", help="make an author key: seed outside the repository, public key in the trust")
+    p = sub.add_parser("keygen", help="make a key: seed outside the repository, its binding and proof in the trust")
     p.add_argument("--out", required=True)
     p.add_argument("--actor", default=AUTHOR)
+    p = sub.add_parser("bind", help="bind your key to your actor id, with the key's proof of possession")
+    p.add_argument("--key", help="seed file of the key to bind (or WARRANT_CLAIMS_KEY)")
+    p.add_argument("--actor", required=True)
+    sub.add_parser("trust", help="print the trust/2 document of the admitted bindings")
+    p = sub.add_parser("accept", help="accept claims' pending closures, signed by an acceptor their duties name")
+    p.add_argument("--key", help="seed file of the acceptor's key (or WARRANT_CLAIMS_KEY)")
+    p.add_argument("--actor", required=True)
+    p.add_argument("--claim", action="append", default=[], help="a claim id (repeatable)")
+    p.add_argument("--all", action="store_true", help="every BACKED claim whose closure awaits --actor, none countered")
+    p = sub.add_parser("challenge", help="challenge a claim, with a counter blob that must replay (any bound key)")
+    p.add_argument("--key", help="seed file of the challenger's key (or WARRANT_CLAIMS_KEY)")
+    p.add_argument("--actor", required=True)
+    p.add_argument("--claim", required=True)
+    p.add_argument("--because", required=True)
+    p.add_argument("--counter-file", help="a counter blob (warrant-claims/counter@1 JSON) against the claim")
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest(a.jobs)
@@ -2903,10 +3682,11 @@ def main(argv=None):
         if a.cmd == "audit":
             return cmd_audit(repo, a)
         {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen,
-         "migrate": cmd_migrate, "heading": cmd_heading}[a.cmd](repo, a)
+         "migrate": cmd_migrate, "heading": cmd_heading, "bind": cmd_bind, "trust": cmd_trust,
+         "accept": cmd_accept, "challenge": cmd_challenge}[a.cmd](repo, a)
         return 0
     except Refused as e:
-        print(f"REFUSED {e}", file=sys.stderr)
+        print(f"REFUSED {e.code + ' ' if e.code else ''}{e}", file=sys.stderr)
         return 2
 
 

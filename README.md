@@ -112,7 +112,7 @@ does not authorize. A computation is credited only by the recipient's own replay
 ## Checks
 
 ```bash
-for t in contract compute conditions assessment primitives records roadmap; do python3 tests/${t}_test.py; done
+for t in contract compute conditions assessment primitives records roadmap circle; do python3 tests/${t}_test.py; done
 python3 tests/mutants.py        # every critical rule has a mutant that must fail its own case
 python3 tools/claims.py check   # SPEC.md and SPEC-CLAIMS.md against the records and the tests
 python3 tools/claims.py --selftest
@@ -153,8 +153,8 @@ rule-shaped title is a review matter; the pin makes every change of one a
 reviewed diff. To change a heading: edit its pin, then `tools/claims.py
 heading --section N --because '...'`.
 `.warrant/claims.json` pins which sentences of which sections must be claimed;
-`.warrant/trust.json` holds the claim authors' public keys (seeds stay out of
-git). **Do not edit SPEC.md**: `check` refuses it (`SPEC_NOT_PROJECTION`). A
+`.warrant/trust.json` holds self-certifying key bindings (below, "The circle of
+witnesses"; seeds stay out of git). **Do not edit SPEC.md**: `check` refuses it (`SPEC_NOT_PROJECTION`). A
 change to a rule is made like this:
 
 1. Add the witness case and the mutant that burns it, in the same change
@@ -273,6 +273,75 @@ sentence turns on cannot be downgraded by a counter at all (SPEC-7-1's recorded
 downgrade would be refused today, as would four of the six Gemini counters
 against their claims as they stood); re-backing such a claim is the remedy, and
 `audit` is what finds it.
+
+## The circle of witnesses
+
+Who may sign into this store is not decided by anyone. `.warrant/trust.json` is
+a list of bindings, `{"bindings": "warrant-claims/bindings@1", "keys": [{"actor",
+"public", "proof"}]}`, and each one certifies itself: `proof` is the bound key's
+Ed25519 signature over the canonical JSON `{"actor", "public", "purpose":
+"warrant-claims/binding@1"}`. `check` admits a binding mechanically, in file
+order, iff the proof verifies under that key (`BINDING_PROOF_FORGED`; signed by
+another key of the file: `BINDING_PROOF_OTHER_KEY`; absent: `BINDING_UNPROVEN`),
+the actor id has SPEC-3-21's shape (`BINDING_ACTOR_SHAPE`), the key binds no
+other actor (`BINDING_KEY_TWICE`), and the actor is not bound already to another
+key: the first binding wins (`BINDING_ACTOR_TAKEN`). A second key for an actor
+would need a record signed by the first one; rotation is not implemented, so it
+is refused. Against the base revision, a binding admitted there must still be
+admitted (`BINDING_REMOVED`): it can be neither dropped nor preceded by another
+binding of its actor. What a binding grants is only "this key signs as this
+actor" (SPEC §6); who may act is the duty's, and whose acceptance or challenge
+counts is each receiver's profile (SPEC §4.6). A receiver may bind keys of its own
+choosing for itself, outside the repository, in a trust/2 file named by
+`$WARRANT_CLAIMS_TRUST` (CI sets none); `tools/claims.py trust` prints the
+admitted bindings as a trust/2 file for `warrant --trust`.
+
+```bash
+python3 tools/claims.py bind --key MY.seed --actor NAME      # your binding, with its proof
+python3 tools/claims.py accept --key MY.seed --actor codex --claim SPEC-4.2-3 [--claim ...] [--all]
+python3 tools/roadmap.py accept --key MY.seed --actor codex --duty 57cf328ea761
+python3 tools/claims.py challenge --key MY.seed --actor NAME --claim SPEC-4.2-3 --because '...' \
+    --counter-file COUNTER.json
+```
+
+**Acceptance.** `accept` files an `accept` record of exactly a claim's closure
+(transition, item 0, its evidence), signed by the acceptor's own key. It is
+refused when the signer is not in the claim duty's `accept_by`
+(`NOT_AN_ACCEPTOR`: an acceptance by anyone else admits nothing, SPEC §4.2 rule
+5, in every profile), when the claim closes nothing (`NOT_A_CLOSURE`), when the
+signer accepted it already (`NOT_PENDING`), or when a counter that replays
+lowers it (`COUNTERED`); one refusal refuses the whole batch. `--all` takes every
+BACKED claim awaiting the signer, none countered. `roadmap.py accept` does the
+same for an obligation's filed closure. SPEC-CLAIMS.md and ROADMAP.md name who
+accepted. Nobody can accept for an acceptor: the record is signed by its key.
+
+**Counters from anyone.** A challenge against a claim's current transition,
+filed by any actor whose binding is admitted (one added in the same change
+included), that carries a counter blob which replays (the rules above) lowers
+the claim's backing: SPEC-CLAIMS.md shows it COUNTERED and lists it among the
+open questions, and it no longer counts as backed. Nobody's permission is
+involved. A new challenge whose counter does not replay is refused
+(`COUNTER_NOT_REPLAYED`). Without a counter that replays, a challenge by the
+claim's author, or by an actor its duty is owed to or accepted by, stands and
+`check` refuses it (`CHALLENGED`) until the author answers; one by anyone else
+is a thesis: listed under "Challenges", it lowers and blocks nothing. A counter
+lowers backing, never authorship: only a claim's author supersedes or retires
+it, and only the document's author files its next version
+(`LINEAGE_NOT_AUTHOR`). A claim's duty is held by its author, owed to and
+accepted by whom `.warrant/claims.json` pins (`CLAIM_DUTY_TERMS`), and an
+obligation's by whom `.warrant/roadmap.json` names (`OBLIGATION_TERMS`), so a
+key anyone may bind cannot file a claim only its own accomplice has to accept.
+The author answers a counter by re-backing the claim (a witness that sees the
+patch) or by a downgrade that cites it.
+
+**The witness ledger.** [WITNESSES.md](WITNESSES.md) is generated by `project`
+from the records and the admitted bindings: per actor, claims authored,
+acceptances filed and those later refuted (a counter against the accepted claim
+replays now or a downgrade cites one, or the accepted closure was challenged
+and then revalidated), challenges, counters filed (credited to the record that
+cited one first), of those lowering a claim now or cited by a downgrade, and
+re-backs. It grants nothing and no rule reads it; `check` refuses it only when
+it is not the rendering (bytes: `WITNESSES_STALE`, `WITNESSES_MISSING`).
 
 ## The roadmap
 
