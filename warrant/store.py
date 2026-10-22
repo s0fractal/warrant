@@ -4,6 +4,9 @@ A store is a directory with `records/<id>.json` and `blobs/<sha256>`. A Snapshot
 reads every file exactly once into memory; everything an assessment decides is
 decided from those bytes, never from the directory again."""
 import fcntl
+import hashlib
+import hmac
+import json
 import os
 from pathlib import Path
 
@@ -20,10 +23,13 @@ class ChainMoved(ValueError):
 
 
 class Store:
-    """A writable store directory. Writing is content-addressed and idempotent."""
+    """A writable store directory. Writing is content-addressed and idempotent. `verdicts`
+    names a directory of the writer's own (Verdicts.at) where a head read remembers its
+    authentication verdicts across processes: cost only (F44)."""
 
-    def __init__(self, root):
+    def __init__(self, root, verdicts=None):
         self.root = Path(root)
+        self.verdicts = verdicts
 
     def init(self):
         (self.root / "records").mkdir(parents=True, exist_ok=True)
@@ -56,8 +62,16 @@ class Store:
         it). An unanchored record is no head: a record extending it would have no ancestors
         before it, so the actor's own chain authority would stop there. Of those records,
         the ones no other names as its `prev`, the latest by (at, id). A rejected or
-        unanchored file is never a predecessor; the reader still reports it."""
-        good, _ = Snapshot.read(self.root).authentic(trust)
+        unanchored file is never a predecessor; the reader still reports it.
+
+        Every record file is read on every call; the verdicts of files whose bytes were
+        authenticated before under this trust come from this process's memory or the
+        writer's own `verdicts` directory (F44): cost, never which records count."""
+        snap = Snapshot.read(self.root, kinds=("records",))
+        index = Verdicts.at(self.verdicts) if self.verdicts is not None else None
+        good, _ = snap.authentic(trust, index)
+        if index is not None:
+            index.flush(snap)
         mine = {rid: r for rid, r in good.items() if r["actor"] == actor and "prev" in r}
         anchored = {}
         for start in sorted(mine):
@@ -88,9 +102,14 @@ class Store:
         """File a record that extends `actor`'s chain in this store: `prev` is the head under
         `trust` (default: a trust binding only the signing key to `actor`), read and extended
         under one lock (see extend). A record dated before its predecessor is refused, not
-        filed unanchored."""
+        filed unanchored. The head is read once: under the lock no writer of this store
+        files, so a second read before filing would find the same head (F44)."""
         trust = trust or _own(actor, key)
-        return self._locked(lambda: self._extend(R.record(rtype, actor, at, body, prev=self._prev(actor, trust)), key, trust))
+
+        def file():
+            head = self.head(actor, trust)
+            return self._extend(R.record(rtype, actor, at, body, prev=head[0] if head else None), key, head)
+        return self._locked(file)
 
     def extend(self, r, key, trust=None):
         """File record `r`, already built, iff its `prev` is still `r`'s actor's head here
@@ -98,15 +117,12 @@ class Store:
         `git update-ref <ref> T_new T_old`), under an exclusive lock on records/, so two
         writers of one store never name the same head. Raises ChainMoved otherwise; nothing
         is written."""
-        return self._locked(lambda: self._extend(r, key, trust or _own(r["actor"], key)))
-
-    def _prev(self, actor, trust):
-        head = self.head(actor, trust)
-        return head[0] if head else None
-
-    def _extend(self, r, key, trust):
         R.check(r)
-        head = self.head(r["actor"], trust)
+        trust = trust or _own(r["actor"], key)
+        return self._locked(lambda: self._extend(r, key, self.head(r["actor"], trust)))
+
+    def _extend(self, r, key, head):
+        """File `r` iff its prev is `head`, the head read under the lock this call holds."""
         if "prev" not in r or r["prev"] != (head[0] if head else None):
             raise ChainMoved(f"{r['actor']}'s chain head here is {head[0][:12] if head else 'none'}, "
                              f"not the record's prev {str(r.get('prev'))[:12]}")
@@ -185,16 +201,17 @@ class Snapshot:
         L.admit(limits, "snapshot_bytes", sum(map(len, self.records.values())) + sum(map(len, self.blobs.values())))
 
     @classmethod
-    def read(cls, root, limits=None):
+    def read(cls, root, limits=None, kinds=("records", "blobs")):
         """Read a store once. Beyond an admission limit (`limits` overrides
         limits.DEFAULTS) it raises limits.LimitExceeded before reading further:
-        64 MiB per file is no bound on the whole (Codex F2)."""
+        64 MiB per file is no bound on the whole (Codex F2). kinds=("records",)
+        leaves the blobs unread: a writer's head is decided by records alone."""
         lim = L.resolve(limits)
         root = Path(root)
         found = {"records": {}, "blobs": {}}
         misfiled = []
         size = 0
-        for kind in ("records", "blobs"):
+        for kind in kinds:
             folder = root / kind
             entries = []
             for p in folder.iterdir() if folder.is_dir() else ():
@@ -229,17 +246,179 @@ class Snapshot:
         except C.NotCanonical:
             return None
 
-    def authentic(self, trust):
+    def authentic(self, trust, index=None):
         """({id: record}, {id: reason}) — records that are canonical, carry their
-        own id, and are signed by a key the trust binds to their actor."""
+        own id, and are signed by a key the trust binds to their actor. Each verdict
+        is _authenticate's on these bytes under this trust, remembered by this process
+        and, with an `index` (Verdicts), by its owner (see _verdict)."""
         good, bad = {}, {}
         for rid, data in sorted(self.records.items()):
-            why, rec = _authenticate(rid, data, trust)
+            why, rec = _verdict(rid, data, trust, index)
             if why:
                 bad[rid] = why
             else:
                 good[rid] = rec
         return good, bad
+
+
+# ---------------------------------------------------------------- remembered verdicts (F44)
+#
+# A record file's verdict is a function of its name, its bytes, the trust it is read under
+# and the code that reads it: _authenticate reads nothing else. So a verdict computed once
+# can stand in for computing it again, exactly when all four are the same. Like the
+# ReplayCache (SPEC §7) it changes cost, never the answer: every file is still read and its
+# bytes hashed on every read, so a new, changed or removed file is seen as such, and a
+# record a remembered verdict admits is parsed from those same bytes.
+
+MISS = object()
+_MEMO = {}              # (trust digest, record id, sha256 of the bytes) -> reason or None
+_MEMO_MAX = 1 << 17     # entries (some 40 MB); this process's own memory, emptied when full
+
+
+def _verdict(rid, data, trust, index=None):
+    """_authenticate(rid, data, trust), from this process's memory or `index` when either
+    holds the verdict for these exact bytes under this exact trust."""
+    k = (trust.digest, rid, hashlib.sha256(data).hexdigest())
+    why = _MEMO.get(k, MISS)
+    if why is MISS and index is not None:
+        why = index.get(k)
+    if why is MISS:
+        why, rec = _authenticate(rid, data, trust)
+    else:
+        # Bytes _authenticate admitted are canonical (SPEC §2), and json reads canonical
+        # bytes as the strict reader does: the same record from the same bytes.
+        rec = None if why else json.loads(data)["record"]
+    if len(_MEMO) >= _MEMO_MAX:
+        _MEMO.clear()
+    _MEMO[k] = why
+    if index is not None:
+        index.add(k, why)
+    return why, rec
+
+
+_CODE = []
+
+
+def code_identity():
+    """The code a verdict was computed by: every file of the package (engine_identity) and
+    the version of the library that verifies signatures."""
+    if not _CODE:
+        import cryptography
+
+        from .engine import engine_identity
+        _CODE.append(C.doc_id({"package": engine_identity(), "cryptography": cryptography.__version__}))
+    return _CODE[0]
+
+
+class Verdicts:
+    """An index of the verdicts its owner has computed (F44): one line per (trust digest,
+    record id, sha256 of the file's bytes, verdict), each MACed, with the package's code
+    identity, under the owner's secret: 32 random bytes in the same directory, made on first
+    use and readable by the owner only. One file per trust digest, read only when a verdict
+    under that trust is looked up. The directory is the owner's, like its keys and its
+    ReplayCache (SPEC §7), outside every store: Snapshot.read does not read it and a handoff
+    does not carry it, and it is never another party's to trust. A line whose MAC or shape is
+    wrong is skipped, so a tampered, forged, stale or truncated index costs a fresh
+    authentication, never a verdict its owner did not compute (a party who can read the
+    secret can forge, as it could write a ReplayCache entry)."""
+    SCHEMA = "warrant-verdicts/1"
+
+    def __init__(self, folder, secret, code):
+        self.folder, self._secret, self.code = folder and Path(folder), secret, code
+        self.parts = {}         # trust digest -> {"entries": {key: verdict}, "lines": n, "new": [key]}
+
+    def path(self, trust_digest):
+        return self.folder / f"{trust_digest}.jsonl" if self.folder else None
+
+    def _part(self, t):
+        part = self.parts.get(t)
+        if part is not None:
+            return part
+        part = self.parts[t] = {"entries": {}, "lines": 0, "new": []}
+        try:
+            data = self.path(t).read_bytes() if self.folder and R.HEX64.match(t) else b""
+        except OSError:
+            data = b""
+        for line in data.split(b"\n"):
+            if not line:
+                continue
+            part["lines"] += 1
+            try:
+                x = json.loads(line)
+            except ValueError:
+                continue
+            # The MAC covers the code identity too: a line another version of the package wrote
+            # (or another owner's secret) does not verify.
+            if not (isinstance(x, list) and len(x) == 7 and x[0] == self.SCHEMA
+                    and all(isinstance(v, str) for v in x[2:5]) and (x[5] is None or isinstance(x[5], str))
+                    and isinstance(x[6], str) and hmac.compare_digest(x[6], self._mac(x[2:6]))):
+                continue
+            part["entries"][tuple(x[2:5])] = x[5]
+        return part
+
+    @classmethod
+    def at(cls, folder):
+        """The index in `folder`, its secret `folder/secret`. A secret of another size is not
+        used, and nothing is read or written: the index then costs nothing and saves nothing."""
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        p = folder / "secret"
+        if not p.exists():
+            tmp = folder / f"secret.tmp{os.getpid()}"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, os.urandom(32))
+            finally:
+                os.close(fd)
+            try:
+                os.link(tmp, p)                 # the first writer's secret wins
+            except FileExistsError:
+                pass
+            finally:
+                os.remove(tmp)
+        secret = p.read_bytes()
+        return cls(folder if len(secret) == 32 else None, secret, code_identity())
+
+    def _mac(self, fields):
+        msg = json.dumps([self.SCHEMA, self.code, *fields], ensure_ascii=True, separators=(",", ":"))
+        return hmac.new(self._secret, msg.encode(), hashlib.sha256).hexdigest()
+
+    def _line(self, k, why):
+        fields = [*k, why]
+        return json.dumps([self.SCHEMA, self.code, *fields, self._mac(fields)], ensure_ascii=True,
+                          separators=(",", ":")) + "\n"
+
+    def get(self, k):
+        return self._part(k[0])["entries"].get(k, MISS)
+
+    def add(self, k, why):
+        part = self._part(k[0])
+        if k not in part["entries"]:
+            part["entries"][k] = why
+            part["new"].append(k)
+
+    def flush(self, snap):
+        """Write what this read added. When most lines of a file name files no longer in `snap`,
+        or were skipped, it is rewritten with the entries for files `snap` holds."""
+        if self.folder is None:
+            return
+        present = {(rid, hashlib.sha256(b).hexdigest()) for rid, b in snap.records.items()}
+        for t, part in self.parts.items():
+            entries, new = part["entries"], part["new"]
+            live = [k for k in entries if k[1:] in present]
+            if not new and part["lines"] <= 2 * len(live) + 64:
+                continue
+            if part["lines"] + len(new) > 2 * len(live) + 64:
+                _write(self.path(t), "".join(self._line(k, entries[k]) for k in live).encode())
+                part["lines"] = len(live)
+            else:
+                fd = os.open(self.path(t), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o666)
+                try:
+                    os.write(fd, "".join(self._line(k, entries[k]) for k in new).encode())
+                finally:
+                    os.close(fd)
+                part["lines"] += len(new)
+            part["new"] = []
 
 
 def _file_problem(kind, p):

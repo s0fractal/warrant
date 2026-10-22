@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 249 · backed 193 · countered 0 · unbacked 6 · informative 50 · retired 0 · records 540 · blobs 547
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 251 · backed 195 · countered 0 · unbacked 6 · informative 50 · retired 0 · records 546 · blobs 553
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -70,6 +70,8 @@ by anyone with an admitted binding, lowers its backing: it counts as backed no l
 | SPEC-3-24 | A record without `prev` is **unchained**: it is valid, and no chain orders it; every record filed before chains is one. | assessment_test R41; records_test K14 K15 | M419 M425 | BACKED | OPEN (awaiting codex) | `2d2706c9dae8` |
 | SPEC-3-25 | A writer takes `prev` from its actor's head in the store: of the records the writer's trust authenticates as the actor's and that are chained back to a genesis, the latest one no other names as its `prev`. It reads the head under a lock on `records/` and refuses to date a record before it; a record the reader rejects, or an unanchored one, is never a head. | records_test K15 K16 K17 | M420 M421 M423 M427 M428 | BACKED | OPEN (awaiting codex) | `0a5ff5e79bfb` |
 | SPEC-3-26 | `warrant-agent` prepares a draft on the signer's head under the workspace's trust and commits it only while that head is unchanged, a compare-and-swap; otherwise it answers `CONFLICT` with reason `CHAIN_MOVED` and files nothing. | agent_write_test W11 W12; records_test K15 | A57 A58 A59 A60 M422 M429 | BACKED | OPEN (awaiting codex) | `69980b9cbc0e` |
+| SPEC-3-27 | A reader or a writer may remember the verdict of authenticating a record file, keyed by the trust's digest, the record's id and the digest of the file's bytes: every file is still read and hashed, and a remembered verdict changes the cost of a read, never which records count. | store_index_test V1 V2 V3 V6 V7 V8 V9 V10 | M430 M431 M432 M433 | BACKED | OPEN (awaiting codex) | `8e5ed5206da1` |
+| SPEC-3-28 | Verdicts kept across processes are their owner's, outside every store: each entry carries a MAC, over its key, its verdict and the identity of the code that computed it, under a secret only the owner reads; an entry that does not verify is ignored, and no snapshot, digest or handoff includes them. | store_index_test V5 V11 V12 V13 V14 V15 V17 | M434 M435 M436 M437 | BACKED | OPEN (awaiting codex) | `85cf4844bd5e` |
 | SPEC-3.1-1 | ``` | — | — | INFORMATIVE: opening fence of the duty block whose lines are SPEC-3.1-2 to SPEC-3.1-15 | — (no duty) | `a0d7e2030b63` |
 | SPEC-3.1-2 | statement string ≤ 400 code points | records_test D1 | M201 M202 | BACKED | OPEN (awaiting codex) | `3bc8fadea0fd` |
 | SPEC-3.1-3 | holder actor; MUST equal the record's actor | records_test D2 | M203 | BACKED | OPEN (awaiting codex) | `f10c478fc4b7` |
@@ -299,7 +301,7 @@ None.
 
 ## Document
 
-SPEC.md is rendered from document version `d99349cd185b` (544 parts). Its headings
+SPEC.md is rendered from document version `300ea18a5b0e` (548 parts). Its headings
 are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold
 only those lines, once each, in order and each on its own line; the rendered SPEC.md must show
 exactly those headings. A title is free text that no witness backs, so a

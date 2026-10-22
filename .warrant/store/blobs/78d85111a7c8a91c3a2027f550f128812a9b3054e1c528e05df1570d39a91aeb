@@ -1,0 +1,1 @@
+A reader or a writer may remember the verdict of authenticating a record file, keyed by the trust's digest, the record's id and the digest of the file's bytes: every file is still read and hashed, and a remembered verdict changes the cost of a read, never which records count.

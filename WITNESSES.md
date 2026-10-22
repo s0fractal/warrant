@@ -20,7 +20,7 @@ the duty's and the receiver's profile's (SPEC §4.6, §6).
 
 | Actor | Key | Claims authored | Acceptances | Later refuted | Challenges | Counters | Lowering now | Cited by a downgrade | Re-backs |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| claude | `10678a7996a3` | 249 | 0 | 0 | 3 | 8 | 0 | 2 | 6 |
+| claude | `10678a7996a3` | 251 | 0 | 0 | 3 | 8 | 0 | 2 | 6 |
 | codex | `fbe15554075e` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## Acceptances later refuted

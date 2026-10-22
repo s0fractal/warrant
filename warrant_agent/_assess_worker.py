@@ -39,7 +39,7 @@ def main(vdir):
     try:
         rep = E.assess(Snapshot.read(vdir, limits=meta["limits"]), trust, meta["as_of"], meta["profile"],
                        current=meta["current"], workspace=workspace, provider=provider,
-                       replay_cache=meta.get("replay_cache"), limits=meta["limits"])
+                       replay_cache=meta.get("replay_cache"), limits=meta["limits"], verdicts=meta.get("verdicts"))
     except L.LimitExceeded as e:
         # A refusal, not a report: views._assess maps it to RESOURCE_LIMIT.
         (vdir / "refusal.json").write_text(json.dumps({"limit": e.limit, "value": e.value, "bound": e.bound}))

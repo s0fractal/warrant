@@ -121,7 +121,6 @@ from warrant import engine as E              # noqa: E402
 from warrant import jcs as C                 # noqa: E402
 from warrant import keys as K                # noqa: E402
 from warrant import records as R             # noqa: E402
-from warrant import store as S               # noqa: E402
 from warrant.store import Snapshot, Store, Trust   # noqa: E402
 
 AUTHOR = "claude"
@@ -547,24 +546,11 @@ class Node:
         return "BACKED" if self.backed else "UNBACKED"
 
 
-_AUTH = {}
-
-
 def authentic(snap, trust):
-    """Snapshot.authentic, memoized per (record id, record bytes, trust bindings): one command
-    builds many Models over the same records, and each signature needs checking once."""
-    tk = hashlib.sha256(repr(sorted(trust.keys.items())).encode()).digest()
-    good, bad = {}, {}
-    for rid, data in sorted(snap.records.items()):
-        k = (rid, hashlib.sha256(data).digest(), tk)
-        if k not in _AUTH:
-            _AUTH[k] = S._authenticate(rid, data, trust)
-        why, rec = _AUTH[k]
-        if why:
-            bad[rid] = why
-        else:
-            good[rid] = rec
-    return good, bad
+    """Snapshot.authentic. One command builds many Models over the same records; the store
+    remembers each verdict per (trust, record id, record bytes), so each signature is checked
+    once (F44; this module kept its own memo before)."""
+    return snap.authentic(trust)
 
 
 class Model:

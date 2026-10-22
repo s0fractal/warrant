@@ -1154,16 +1154,41 @@ def _visit(view, did, report, done, busy):
        '            if b["item"] == index and sorted(b["evidence"]) == want:')], "assessment_test", ["R46"]),
     # AMEND 1 of #174 (Codex P2): a writer's head is only what the reader admits as the actor's own.
     ("M427", "store.py", "the writer's head is read from every envelope, authentic or not",
-     [('        good, _ = Snapshot.read(self.root).authentic(trust)\n',
-       '        good = {rid: C.loads(b)["record"] for rid, b in Snapshot.read(self.root).records.items()}\n')],
+     [('        good, _ = snap.authentic(trust, index)\n',
+       '        good = {rid: C.loads(b)["record"] for rid, b in snap.records.items()}\n')],
      "records_test", ["K17"]),
     ("M428", "store.py", "an unanchored record of the actor is a head",
      [('        chain = {rid: r for rid, r in mine.items() if anchored.get(rid)}\n', '        chain = mine\n')],
      "records_test", ["K17"]),
     ("M429", "store.py", "the writer's head is read from every envelope, authentic or not (warrant-agent)",
-     [('        good, _ = Snapshot.read(self.root).authentic(trust)\n',
-       '        good = {rid: C.loads(b)["record"] for rid, b in Snapshot.read(self.root).records.items()}\n')],
+     [('        good, _ = snap.authentic(trust, index)\n',
+       '        good = {rid: C.loads(b)["record"] for rid, b in snap.records.items()}\n')],
      "agent_write_test", ["W12"]),
+    # F44: a remembered verdict stands in for _authenticate only for the same trust, name, bytes and code.
+    ("M430", "store.py", "a verdict remembered under one trust stands in under another",
+     [('    k = (trust.digest, rid, hashlib.sha256(data).hexdigest())', '    k = ("", rid, hashlib.sha256(data).hexdigest())')],
+     "store_index_test", ["V6"]),
+    ("M431", "store.py", "a verdict remembered for a file stands in after its bytes change",
+     [('    k = (trust.digest, rid, hashlib.sha256(data).hexdigest())', '    k = (trust.digest, rid, "")')],
+     "store_index_test", ["V7"]),
+    ("M432", "store.py", "a verdict remembered for bytes stands in for the same bytes under another name",
+     [('    k = (trust.digest, rid, hashlib.sha256(data).hexdigest())', '    k = (trust.digest, "", hashlib.sha256(data).hexdigest())')],
+     "store_index_test", ["V8"]),
+    ("M433", "store.py", "with an index, a file it has not seen counts as authentic",
+     [('    if why is MISS:\n        why, rec = _authenticate(rid, data, trust)\n    else:\n',
+       '    if why is MISS and not (index is not None and index._part(k[0])["entries"]):\n        why, rec = _authenticate(rid, data, trust)\n'
+       '    else:\n        why = None if why is MISS else why\n')],
+     "store_index_test", ["V9"]),
+    ("M434", "store.py", "an index line counts whatever its MAC",
+     [(' and hmac.compare_digest(x[6], self._mac(x[2:6]))', '')], "store_index_test", ["V11"]),
+    ("M435", "store.py", "an index line's MAC does not cover its verdict",
+     [('hmac.compare_digest(x[6], self._mac(x[2:6]))', 'hmac.compare_digest(x[6], self._mac(x[2:5]))'),
+      ('*fields, self._mac(fields)]', '*fields, self._mac(fields[:3])]')], "store_index_test", ["V12"]),
+    ("M436", "store.py", "an index line's MAC does not cover the code identity it was computed by",
+     [('        msg = json.dumps([self.SCHEMA, self.code, *fields]', '        msg = json.dumps([self.SCHEMA, *fields]')],
+     "store_index_test", ["V14"]),
+    ("M437", "store.py", "a receiver's index secret is a constant, not random",
+     [('                os.write(fd, os.urandom(32))', '                os.write(fd, bytes(32))')], "store_index_test", ["V17"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
@@ -1334,7 +1359,7 @@ def mutant_digest(m):
 COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "assessment_test": 0.9,
         "primitives_test": 0.1, "records_test": 0.2, "cli_test": 0.3, "roadmap_test": 3.1, "circle_test": 0.9,
         "agent_handoff_test": 7.0, "agent_write_test": 1.9, "agent_compute_test": 1.9, "agent_mcp_test": 17.0,
-        "why_test": 1.3}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement
+        "why_test": 1.3, "store_index_test": 1.3}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor
 
 
 def shards(mutants, n):

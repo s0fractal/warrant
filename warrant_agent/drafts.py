@@ -103,7 +103,7 @@ def prepare(ws, based_on, request_id, rtype, body):
     # before the head's; commit refuses the draft if the head has moved by then. The head is
     # read under the workspace's own trust: a record this workspace's reader rejects is never
     # a predecessor, and never moves the head (AMEND 1 of #174).
-    head = Store(ws.store).head(actor, ws.trust())
+    head = Store(ws.store, verdicts=ws.state / "verdicts").head(actor, ws.trust())
     try:
         rec = R.record(rtype, actor, max(int(time.time()), head[1] if head else 0), full, prev=head[0] if head else None)
     except R.Invalid as e:
@@ -134,7 +134,7 @@ def commit(ws, draft_id):
         if (actor, key.id) != (d["actor"], d["key"]):
             raise AgentError("SIGNER_CHANGED", "the configured signer is not the one this draft was prepared for")
         try:
-            Store(ws.store).init().extend(d["record"], key, ws.trust())
+            Store(ws.store, verdicts=ws.state / "verdicts").init().extend(d["record"], key, ws.trust())
         except ChainMoved as e:
             raise AgentError("CONFLICT", f"the signer's chain moved since this draft was prepared ({e}); "
                                          "prepare it again", reason="CHAIN_MOVED") from None

@@ -195,6 +195,19 @@ the cache is not part of the assessment identity. The `warrant` CLI takes
 `--replay-cache DIR` for the same purpose. `tests/compute_test.py` C16-C18 and
 mutants M44-M45 pin this down.
 
+The other cost that grows with the store is authentication: every view and every
+`prepare` checks each record's signature, about 150 µs a record, so 1.5 s at
+10 000 records (F44). Since 2026-10-22 the workspace also keeps its own
+**authentication verdicts** under `<state>/verdicts` (store.Verdicts, SPEC §3).
+A verdict is keyed by the trust digest, the record id, the sha256 of the file's
+bytes and the package's code identity; every file is still read and hashed on
+every view, so a new, changed or removed file is seen, and each index line
+carries a MAC under a random secret in that directory, so a forged, edited or
+moved line is skipped and costs a fresh authentication. The `warrant` CLI takes
+`--verdicts DIR` on `assess` and its read commands and on the signing commands
+(`file`, `accept`, `observe`). `tests/store_index_test.py` V1-V17 and mutants
+M430-M437 pin this down; `tools/bench_store.py` measures it.
+
 ## Not solved here
 
 A set signed incomplete from the start, with the receiver's expectation on
