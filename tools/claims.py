@@ -10,17 +10,25 @@ A claim is a `duty` (holder: the author; owed_to: readers; condition: attest;
 accept_by: the reviewer) whose statement is the sentence, with an ATTESTED
 `transition` that discharges it. The transition's evidence is one claim blob
 carrying the sentence, its witness cases (tests/<file>_test.py) and its mutants
-(tests/mutants.py); its `established` repeats the sentence. A sentence with no
-witness or no mutant is filed UNBACKED: the transition closes nothing and opens
-the question. An informative sentence is a transition with no duty, its reason
-in the blob. A supersession is a transition whose `supersedes` names the claim it
-replaces. A retirement is a `challenge` carrying the counter-evidence plus a
-transition superseding the claim. Nothing is ever deleted.
+(tests/mutants.py, ids M…, or tests/agent_mutants.py, ids A…); its `established`
+repeats the sentence. A sentence with no witness or no mutant is filed UNBACKED:
+the transition closes nothing and opens the question, and the blob says why it is
+open (`reason`). UNBACKED is an allowed status, listed in SPEC-CLAIMS.md as an open
+question; a claim that was BACKED at the base revision and is UNBACKED now must
+carry counter-evidence (a challenge against the claim it replaced, or a blob of the
+failing case) in the transition that lost the backing. An informative sentence is
+a transition with no duty, its reason in the blob. A supersession is a transition
+whose `supersedes` names the claim it replaces. A retirement is a `challenge`
+carrying the counter-evidence plus a transition superseding the claim. Nothing is
+ever deleted.
 
     python3 tools/claims.py keygen --out SEED            # once per author; the seed stays out of git
     python3 tools/claims.py add --key SEED --stanza STANZAS.json
     python3 tools/claims.py add --key SEED --id SPEC-4.2-3 --text '...' --witness contract_test:H1 --mutant M01
+    python3 tools/claims.py add --key SEED --id SPEC-1-2 --text '...' --unbacked-because '...'
     python3 tools/claims.py supersede --key SEED --id SPEC-4.2-3 --text '...' --because '...'
+    python3 tools/claims.py supersede --key SEED --id SPEC-7-1 --text '...' --because '...' \
+        --unbacked-because '...' --counter CHALLENGE_OR_BLOB     # a BACKED claim losing its backing
     python3 tools/claims.py retire --key SEED --id SPEC-4.2-3 --because '...' --counter HEX
     python3 tools/claims.py project                      # regenerate SPEC-CLAIMS.md
     python3 tools/claims.py check [--base REV | --no-base]
@@ -65,6 +73,8 @@ CLAIM_FIELDS = ("schema", "id", "source", "section", "text", "kind", "duty", "wi
                 "reason", "because", "previous")
 RETIRE_FIELDS = ("schema", "id", "because", "counter", "challenge", "previous")
 PREVIOUS_FIELDS = ("transition", "duty", "statement_sha256")
+# The mutant harnesses and the id prefix each one owns: an id resolves in exactly one of them.
+HARNESSES = (("mutants.py", "M"), ("agent_mutants.py", "A"))
 
 
 class Refused(Exception):
@@ -146,15 +156,42 @@ class Repo:
         return None if lines is None else norm(" ".join(lines))
 
     def mutants(self):
-        """{id: (test file, [target cases])} from tests/mutants.py."""
+        """{id: (harness file, test file, [target cases])} from every harness of HARNESSES.
+        Also sets `twice` (an id defined twice in one harness), `collide` (an id defined in
+        more than one harness) and `misprefixed` ({id: harness} for an id without its
+        harness's prefix)."""
         if self._mutants is None:
-            spec = importlib.util.spec_from_file_location("claims_mutants", self.tests / "mutants.py")
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            ids = [m[0] for m in mod.MUTANTS]
-            self.twice = {i for i in ids if ids.count(i) > 1}
-            self._mutants = {m[0]: (m[4], list(m[5])) for m in mod.MUTANTS}
+            out, twice, seen, misprefixed = {}, set(), {}, {}
+            for name, prefix in HARNESSES:
+                path = self.tests / name
+                if not path.is_file():
+                    continue
+                spec = importlib.util.spec_from_file_location(f"claims_{path.stem}", path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                ids = [m[0] for m in mod.MUTANTS]
+                twice |= {i for i in ids if ids.count(i) > 1}
+                for m in mod.MUTANTS:
+                    seen.setdefault(m[0], set()).add(name)
+                    if not m[0].startswith(prefix):
+                        misprefixed[m[0]] = name
+                    out.setdefault(m[0], (name, m[4], list(m[5])))
+            self.twice, self.misprefixed = twice, misprefixed
+            self.collide = {i for i, names in seen.items() if len(names) > 1}
+            self._mutants = out
         return self._mutants
+
+    def harness_problems(self):
+        """(code, detail) for ids that do not resolve in exactly one harness."""
+        try:
+            self.mutants()
+        except Exception as e:      # noqa: BLE001
+            return [("MUTANTS_UNREADABLE", f"{type(e).__name__}: {e}")]
+        prefixes = dict(HARNESSES)
+        return ([("MUTANT_ID_COLLISION", f"{i} is defined in more than one of tests/mutants.py, tests/agent_mutants.py")
+                 for i in sorted(self.collide)]
+                + [("MUTANT_ID_PREFIX", f"{i} is in tests/{h}, whose ids start with {prefixes[h]}")
+                   for i, h in sorted(self.misprefixed.items())])
 
     def has_case(self, test, case):
         p = self.tests / f"{test}.py"
@@ -177,15 +214,26 @@ def witness_problems(repo, witnesses, mutants):
     try:
         known = repo.mutants()
     except Exception as e:      # noqa: BLE001
-        return out + [("MUTANTS_UNREADABLE", f"tests/mutants.py: {type(e).__name__}: {e}")]
+        return out + [("MUTANTS_UNREADABLE", f"{type(e).__name__}: {e}")]
     for mid in mutants:
         if mid not in known:
-            out.append(("UNKNOWN_MUTANT", f"tests/mutants.py has no mutant {mid}"))
+            out.append(("UNKNOWN_MUTANT", f"neither tests/mutants.py nor tests/agent_mutants.py has a mutant {mid}"))
             continue
+        harness, test, targets = known[mid]
         if mid in repo.twice:
-            out.append(("DUPLICATE_MUTANT_ID", f"tests/mutants.py defines {mid} more than once"))
+            out.append(("DUPLICATE_MUTANT_ID", f"tests/{harness} defines {mid} more than once"))
             continue
-        test, targets = known[mid]
+        if mid in repo.collide:
+            out.append(("MUTANT_ID_COLLISION", f"{mid} is defined in more than one harness; it names no one mutant"))
+            continue
+        if mid in repo.misprefixed:
+            out.append(("MUTANT_ID_PREFIX", f"{mid} is in tests/{harness}, whose ids start with {dict(HARNESSES)[harness]}"))
+            continue
+        missing = [t for t in targets if not (TEST_RE.match(test) and repo.has_case(test, t))]
+        if missing or not targets:
+            out.append(("MUTANT_TARGET_UNKNOWN", f"{mid} targets {test} {','.join(missing) or '(nothing)'}, "
+                        "which is not a case of an existing test file"))
+            continue
         if not {(test, t) for t in targets} & cited:
             out.append(("MUTANT_OFF_WITNESS", f"{mid} targets {test} {','.join(targets)}, none of them cited"))
     return out
@@ -289,8 +337,10 @@ class Model:
             if doc["duty"] is not None or not (isinstance(doc["reason"], str) and doc["reason"]) or doc["witnesses"] or doc["mutants"]:
                 return "an informative claim has a reason and no duty, witnesses or mutants"
             return "an informative claim closes and establishes nothing" if b["closes"] or b["established"] else None
-        if doc["kind"] != "normative" or doc["reason"] is not None:
-            return "kind must be normative (no reason) or informative"
+        if doc["kind"] != "normative":
+            return "kind must be normative or informative"
+        if doc["reason"] is not None and (doc["witnesses"] and doc["mutants"] or not (isinstance(doc["reason"], str) and doc["reason"])):
+            return "a backed claim has no reason; an unbacked one says why it is open in a non-empty reason"
         d = self.recs.get(doc["duty"]) if isinstance(doc["duty"], str) else None
         if d is None or d["type"] != "duty":
             return "its duty is not an authentic duty record in the store"
@@ -392,7 +442,9 @@ def render(repo):
         f"unbacked {count['UNBACKED']} · informative {count['INFORMATIVE']} · retired {len(retired)} · "
         f"records {len(snap.records)} · blobs {len(snap.blobs)}", "",
         "A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`",
-        "that must make one of the cited cases fail. *Disposition* is Warrant's own",
+        "(ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases",
+        "fail. An UNBACKED sentence is an open question, listed below with the reason it is",
+        "open; it closes nothing and establishes nothing. *Disposition* is Warrant's own",
         "assessment of the claim's duty in this store (trust `.warrant/trust.json`, default",
         f"profile, as of the latest record): a backed claim waits for its acceptor ({', '.join(pins['accept_by'])})",
         "until an acceptance is filed. Nobody has accepted a claim yet unless this column says DISCHARGED.", "",
@@ -406,6 +458,14 @@ def render(repo):
         if n.kind == "informative":
             status += f": {n.doc['reason']}"
         out.append(f"| {n.id} | {cell(n.doc['text'])} | {cell(wit)} | {mut} | {cell(status)} | {disposition(rep, n)} | `{n.tid[:12]}` |")
+    opened = [n for n in live if n.status == "UNBACKED"]
+    out += ["", "## Open questions", ""]
+    if opened:
+        out += ["| ID | Statement | Why it is open | Claim |", "| --- | --- | --- | --- |"]
+        out += [f"| {n.id} | {cell(n.doc['text'])} | {cell(n.doc['reason'] or '(no reason given)')} | `{n.tid[:12]}` |"
+                for n in opened]
+    else:
+        out.append("None.")
     limits = [(n.id, x) for n in live for x in n.rec["body"]["residual"] if x not in (BACKED_RESIDUAL, UNBACKED_RESIDUAL)]
     if limits:
         out += ["", "## Limits the claims record", ""] + [f"- {cid}: {x}" for cid, x in limits]
@@ -448,6 +508,7 @@ def check(repo, base=None):
             "RECORD_MISNAMED" if why.startswith("id does not match") else "UNAUTHENTIC"
         out.append((code, f"records/{rid}.json: {why}"))
     out += model.problems
+    out += repo.harness_problems()
     pins = repo.pins()
     sections = {s: repo.section(s) for s in pins["sections"]}
     for s, text in sections.items():
@@ -461,8 +522,8 @@ def check(repo, base=None):
         if text is None or n.doc["text"] not in text:
             out.append(("QUOTE_NOT_IN_SPEC", f"{cid}: the sentence is not in SPEC.md §{sec}: {n.doc['text'][:80]!r}"))
         out += [(code, f"{cid}: {why}") for code, why in witness_problems(repo, n.doc["witnesses"], n.doc["mutants"])]
-        if n.kind == "normative" and not n.backed:
-            out.append(("UNBACKED", f"{cid}: a normative sentence with no witness case or no mutant"))
+        if n.kind == "normative" and not n.backed and not n.doc["reason"]:
+            out.append(("UNBACKED_WITHOUT_REASON", f"{cid}: an unbacked claim must say why it is open (--unbacked-because)"))
         if cid in model.challenges:
             out.append(("CHALLENGED", f"{cid}: standing challenge {', '.join(c[:12] for c in model.challenges[cid])}"
                         " against the current claim; supersede or retire it"))
@@ -540,12 +601,58 @@ def check_base(repo, base, snap, model, pins):
     for cid in sorted(then.current, key=id_key):
         if cid not in model.by_id:
             out.append(("CLAIM_DELETED", f"{cid} is claimed at {rev[:12]} and no record states, supersedes or retires it now"))
+    for cid in sorted(then.current, key=id_key):
+        was, now = then.current[cid], model.current.get(cid)
+        if was.backed and now is not None and not now.retired and now.kind == "normative" and not now.backed:
+            why = lost_backing(model, now)
+            if why:
+                out.append(("LOST_BACKING_WITHOUT_COUNTER", f"{cid} is BACKED at {rev[:12]} and UNBACKED now: {why}"))
     old_pins = json.loads(files[".warrant/claims.json"]) if ".warrant/claims.json" in files else {"sentences": {}}
     for cid in sorted(set(old_pins["sentences"]) - set(pins["sentences"]), key=id_key):
         n = model.current.get(cid)
         if n is None or not n.retired:
             out.append(("UNPINNED_WITHOUT_RETIREMENT", f"{cid} is pinned at {rev[:12]}; unpinning it needs its retirement record"))
     return out
+
+
+def lost_backing(model, n):
+    """Why the transition through which claim `n`'s chain lost its backing carries no
+    counter-evidence, or None. That transition is the earliest unbacked one after the
+    last backed claim of the chain; its counter-evidence is an authentic challenge whose
+    target is the backed claim it replaced, or a store blob other than a claim blob and
+    the sentence itself."""
+    while True:
+        prev = n.doc["previous"]
+        p = model.nodes.get(prev["transition"]) if prev else None
+        if p is None:
+            return "no backed claim precedes it in its chain"
+        if p.backed:
+            break
+        n = p
+    counter = counter_problems(model.snap, model.recs, n.rec["body"]["evidence"], p.tid, p.doc["text"])
+    return None if counter[0] else f"transition {n.tid[:12]} cites no counter-evidence ({counter[1]})"
+
+
+def counter_problems(snap, recs, evidence, target, text):
+    """([valid counter ids], why none is valid) among `evidence` against the claim transition `target`."""
+    good, seen = [], []
+    for h in evidence:
+        r = recs.get(h)
+        if r is not None:
+            if r["type"] == "challenge" and r["body"]["target"] == target:
+                good.append(h)
+            else:
+                seen.append(f"record {h[:12]} is not a challenge against {target[:12]}")
+            continue
+        data = snap.blob(h)
+        if data is None:
+            seen.append(f"{h[:12]} is neither a record nor a blob of the store")
+            continue
+        doc = snap.json_blob(h)
+        if data == text.encode() or (isinstance(doc, dict) and doc.get("schema") in (CLAIM, RETIRE)):
+            continue
+        good.append(h)
+    return good, "; ".join(seen) or "only the claim blob"
 
 
 # ---------------------------------------------------------------- authoring
@@ -578,26 +685,41 @@ class Author:
     def put(self, rtype, body, at):
         return self.store.put_record(R.record(rtype, self.actor, at, body), self.key)
 
-    def _validate(self, cid, text, kind, witnesses, mutants, reason):
+    def _validate(self, cid, text, kind, witnesses, mutants, reason, unbacked_because, counter, previous):
         m = ID_RE.match(cid)
         if not m:
             raise Refused(f"{cid!r} is not SPEC-<section>-<n>")
         section = self.repo.section(m.group(1))
         if section is None or text not in section:
             raise Refused(f"{cid}: the sentence is not in SPEC.md §{m.group(1)}: {text[:80]!r}")
-        if kind == "informative" and (witnesses or mutants or not reason):
+        if kind == "informative" and (witnesses or mutants or not reason or unbacked_because):
             raise Refused(f"{cid}: an informative sentence has a reason and cites no witnesses or mutants")
-        bad = witness_problems(self.repo, witnesses, mutants)
+        backed = kind == "normative" and witnesses and mutants
+        if kind == "normative" and not backed and not unbacked_because:
+            raise Refused(f"{cid}: an unbacked sentence needs --unbacked-because (why it is open)")
+        if backed and unbacked_because:
+            raise Refused(f"{cid}: a backed sentence takes no --unbacked-because")
+        if previous is not None and previous.backed and kind == "normative" and not backed:
+            snap = self.repo.snapshot()
+            good, why = counter_problems(snap, self.model().recs, counter, previous.tid, previous.doc["text"])
+            if not good:
+                raise Refused(f"{cid} is BACKED; losing its backing needs --counter (a challenge against "
+                              f"{previous.tid[:12]} or a blob of the failing case): {why}")
+        bad = witness_problems(self.repo, witnesses, mutants) + [
+            (c, w) for c, w in self.repo.harness_problems() if any(w.startswith(f"{x} ") for x in mutants)]
         if bad:
             raise Refused(f"{cid}: " + "; ".join(f"{c} {w}" for c, w in bad))
 
-    def claim(self, cid, text, witnesses=(), mutants=(), reason=None, because=None, residual=(), previous=None):
-        """File one claim: (duty and) transition. `previous` is the Node it replaces, or None."""
+    def claim(self, cid, text, witnesses=(), mutants=(), reason=None, because=None, residual=(), previous=None,
+              unbacked_because=None, counter=()):
+        """File one claim: (duty and) transition. `previous` is the Node it replaces, or None.
+        `reason` makes it informative; `unbacked_because` says why a normative one is open;
+        `counter` (ids already in the store) goes into the transition's evidence."""
         text = norm(text)
         witnesses, mutants = sorted(set(witnesses)), sorted(set(mutants))
         kind = "informative" if reason else "normative"
         if self.validate:
-            self._validate(cid, text, kind, witnesses, mutants, reason)
+            self._validate(cid, text, kind, witnesses, mutants, reason, unbacked_because, counter, previous)
         if previous is not None and not because:
             raise Refused(f"{cid}: replacing a claim needs --because")
         at = self.at()
@@ -614,12 +736,13 @@ class Author:
             raise Refused(f"{cid} is retired; a new sentence takes a new id")
         prev = None if previous is None else {
             "transition": previous.tid, "duty": previous.doc["duty"], "statement_sha256": sha(previous.doc["text"])}
+        backed = kind == "normative" and witnesses and mutants
         doc = {"schema": CLAIM, "id": cid, "source": "SPEC.md", "section": ID_RE.match(cid).group(1), "text": text,
-               "kind": kind, "duty": duty, "witnesses": witnesses, "mutants": mutants, "reason": reason,
+               "kind": kind, "duty": duty, "witnesses": witnesses, "mutants": mutants,
+               "reason": reason if kind == "informative" else None if backed else unbacked_because,
                "because": because if previous is not None else None, "previous": prev}
         h = self.store.put_json(doc)
-        backed = kind == "normative" and witnesses and mutants
-        body = R.transition("ATTESTED", [h],
+        body = R.transition("ATTESTED", sorted({h} | set(counter)),
                             closes=[R.item(duty, "discharge", [h])] if backed else [],
                             established=[text] if backed else [],
                             residual=([BACKED_RESIDUAL] if backed else [UNBACKED_RESIDUAL] if kind == "normative" else [])
@@ -667,13 +790,14 @@ def stanzas(a):
         return data if isinstance(data, list) else [data]
     return [{"id": a.id, "text": a.text, "witnesses": [w for x in a.witness for w in x.split(",") if w],
              "mutants": [m for x in a.mutant for m in x.split(",") if m], "informative": a.informative,
-             "residual": a.residual, "because": a.because}]
+             "residual": a.residual, "because": a.because, "unbacked_because": a.unbacked_because}]
 
 
 def same_claim(n, s):
     extra = [x for x in n.rec["body"]["residual"] if x not in (BACKED_RESIDUAL, UNBACKED_RESIDUAL)]
     return (n.doc["witnesses"], n.doc["mutants"], n.doc["reason"], extra) == \
-        (sorted(set(s.get("witnesses", ()))), sorted(set(s.get("mutants", ()))), s.get("informative"), list(s.get("residual", ())))
+        (sorted(set(s.get("witnesses", ()))), sorted(set(s.get("mutants", ()))),
+         s.get("informative") or s.get("unbacked_because"), list(s.get("residual", ())))
 
 
 def cmd_add(repo, a):
@@ -690,7 +814,8 @@ def cmd_add(repo, a):
         if cur is not None and not s.get("because"):
             raise Refused(f"{s['id']} is already claimed; re-backing it needs --because")
         tid = author.claim(s["id"], s["text"], s.get("witnesses", ()), s.get("mutants", ()), s.get("informative"),
-                           s.get("because"), s.get("residual", ()), previous=cur)
+                           s.get("because"), s.get("residual", ()), previous=cur,
+                           unbacked_because=s.get("unbacked_because"), counter=s.get("counter", ()))
         print(f"{s['id']}: {tid}")
 
 
@@ -699,9 +824,15 @@ def cmd_supersede(repo, a):
     cur = author.model().current.get(a.id)
     if cur is None or cur.retired:
         raise Refused(f"{a.id}: no live claim to supersede")
-    wit = [w for x in a.witness for w in x.split(",") if w] or (cur.doc["witnesses"] if a.informative is None else [])
-    mut = [m for x in a.mutant for m in x.split(",") if m] or (cur.doc["mutants"] if a.informative is None else [])
-    print(f"{a.id}: {author.claim(a.id, a.text, wit, mut, a.informative, a.because, a.residual, previous=cur)}")
+    keep = a.informative is None and a.unbacked_because is None     # otherwise only what is given now
+    wit = [w for x in a.witness for w in x.split(",") if w] or (cur.doc["witnesses"] if keep else [])
+    mut = [m for x in a.mutant for m in x.split(",") if m] or (cur.doc["mutants"] if keep else [])
+    counter = list(a.counter)
+    if a.counter_file:
+        counter.append(author.store.put_blob(Path(a.counter_file).read_bytes()))
+    tid = author.claim(a.id, a.text, wit, mut, a.informative, a.because, a.residual, previous=cur,
+                       unbacked_because=a.unbacked_because, counter=counter)
+    print(f"{a.id}: {tid}")
 
 
 def cmd_retire(repo, a):
@@ -816,11 +947,43 @@ def selftest():
         def reproject(r):
             r.projection.write_text(render(r))
 
-        def rebacked(witnesses, mutants):
+        def rebacked(witnesses, mutants, unbacked_because=None, counter=None):
             def f(r):
                 n = Model(r.snapshot(), r.trust()).current[a.id]
-                author(r).claim(a.id, n.doc["text"], witnesses, mutants, because="selftest", previous=n)
+                ev = counter(r, n) if counter else ()
+                author(r).claim(a.id, n.doc["text"], witnesses, mutants, because="selftest", previous=n,
+                                unbacked_because=unbacked_because, counter=ev)
                 reproject(r)
+            return f
+
+        def challenge_of(target):
+            def f(r, n):
+                au = author(r)
+                return [au.put("challenge", R.challenge(target(n), "selftest: the witness passes without the rule",
+                                                        [Store(r.store_dir).put_blob(b"selftest: failing case")], 0), au.at())]
+            return f
+
+        def failing_case_blob(r, n):
+            return [Store(r.store_dir).put_blob(b"selftest: a case that passes while the sentence is false")]
+
+        def own_sentence_blob(r, n):
+            return [sha(n.doc["text"])]
+
+        def new_open_question(reason):
+            def f(r):
+                text = "An open rule is stated here."
+                spec_edit(b.doc["text"], b.doc["text"] + " " + text)(r)
+                cid = f"SPEC-{b.doc['section']}-{id_key(b.id)[1] + 1000}"
+                author(r).claim(cid, text, unbacked_because=reason)
+                reproject(r)
+            return f
+
+        def edit_harness(name, old, new):
+            def f(r):
+                pth = r.tests / name
+                src = pth.read_text()
+                assert src.count(old) == 1, (name, old)
+                pth.write_text(src.replace(old, new))
             return f
 
         def duplicate_mutant(r):
@@ -897,12 +1060,43 @@ def selftest():
             r.write_pins(p)
             reproject(r)
 
+        def target_unknown(r):
+            pth = r.tests / "agent_mutants.py"
+            src = pth.read_text()
+            i = src.index('("A28", ')
+            j = src.index('"agent_handoff_test", ["V09"]', i)
+            pth.write_text(src[:j] + '"agent_handoff_test", ["V09", "Z99"]' + src[j + len('"agent_handoff_test", ["V09"]'):])
+            rebacked(["agent_handoff_test:V09"], ["A28"])(r)
+
         case("clean copy", None, lambda r: None)
         case("a quoted sentence no longer in SPEC.md", "QUOTE_NOT_IN_SPEC", spec_edit(a.doc["text"], "Something else entirely."))
         case("a cited mutant that does not exist", "UNKNOWN_MUTANT", rebacked(a.doc["witnesses"], ["M999"]))
         case("a cited case that does not exist", "UNKNOWN_CASE", rebacked(["contract_test:Z9"], a.doc["mutants"]))
         case("a mutant that burns none of the cited cases", "MUTANT_OFF_WITNESS", rebacked(["contract_test:A1"], ["M19"]))
-        case("a normative sentence without a mutant", "UNBACKED", rebacked(a.doc["witnesses"], []))
+        # W4: UNBACKED is an allowed open question, with guards
+        case("a new sentence filed UNBACKED with its reason", None, new_open_question("selftest: no case reaches it"))
+        case("an UNBACKED claim without a reason", "UNBACKED_WITHOUT_REASON", new_open_question(None))
+        case("a BACKED claim superseded UNBACKED without counter-evidence", "LOST_BACKING_WITHOUT_COUNTER",
+             rebacked(a.doc["witnesses"], [], unbacked_because="selftest"))
+        case("a BACKED claim superseded UNBACKED citing a challenge against it", None,
+             rebacked([], [], unbacked_because="selftest", counter=challenge_of(lambda n: n.tid)))
+        case("a BACKED claim superseded UNBACKED citing a blob of the failing case", None,
+             rebacked([], [], unbacked_because="selftest", counter=failing_case_blob))
+        case("a BACKED claim superseded UNBACKED citing a challenge against another record", "LOST_BACKING_WITHOUT_COUNTER",
+             rebacked([], [], unbacked_because="selftest", counter=challenge_of(lambda n: n.doc["duty"])))
+        case("a BACKED claim superseded UNBACKED citing only its own sentence", "LOST_BACKING_WITHOUT_COUNTER",
+             rebacked([], [], unbacked_because="selftest", counter=own_sentence_blob))
+        case("a normative sentence without a mutant and without a reason", "UNBACKED_WITHOUT_REASON",
+             rebacked(a.doc["witnesses"], []))
+        # W4: mutants of tests/agent_mutants.py are citable, in their own namespace
+        case("an agent mutant cited with the case it targets", None, rebacked(["agent_handoff_test:V09"], ["A28"]))
+        case("an agent mutant that burns none of the cited cases", "MUTANT_OFF_WITNESS",
+             rebacked(["contract_test:A1"], ["A28"]))
+        case("a mutant id defined in both harnesses", "MUTANT_ID_COLLISION",
+             edit_harness("agent_mutants.py", '("A28", ', f'("{a.doc["mutants"][0]}", '))
+        case("an agent harness id without its prefix", "MUTANT_ID_PREFIX",
+             edit_harness("agent_mutants.py", '("A28", ', '("M9999", '))
+        case("a cited mutant whose target is not a case of an existing test file", "MUTANT_TARGET_UNKNOWN", target_unknown)
         case("a cited mutant id defined twice", "DUPLICATE_MUTANT_ID", duplicate_mutant)
         case("a record file renamed", "RECORD_MISNAMED", rename)
         case("a record rewritten in non-canonical bytes", "NOT_CANONICAL", noncanonical)
@@ -936,12 +1130,14 @@ def main(argv=None):
         return p
 
     p = authoring(sub.add_parser("add", help="author claims from a stanza"))
-    p.add_argument("--stanza", help="JSON stanza or list: {id, text, witnesses, mutants, informative, residual, because}")
+    p.add_argument("--stanza", help="JSON stanza or list: {id, text, witnesses, mutants, informative, unbacked_because, "
+                   "counter, residual, because}")
     p.add_argument("--id")
     p.add_argument("--text")
     p.add_argument("--witness", action="append", default=[], help="<test file>:<case>, repeatable or comma-separated")
     p.add_argument("--mutant", action="append", default=[])
     p.add_argument("--informative", help="the reason this sentence is not normative")
+    p.add_argument("--unbacked-because", help="why this normative sentence is open (no witness or no mutant)")
     p.add_argument("--because")
     p = authoring(sub.add_parser("supersede", help="replace a claim's statement"))
     p.add_argument("--id", required=True)
@@ -950,6 +1146,10 @@ def main(argv=None):
     p.add_argument("--witness", action="append", default=[])
     p.add_argument("--mutant", action="append", default=[])
     p.add_argument("--informative")
+    p.add_argument("--unbacked-because", help="why the sentence is open now; the claim keeps no witnesses or mutants")
+    p.add_argument("--counter", action="append", default=[],
+                   help="challenge record or blob id already in the store (needed when a BACKED claim loses its backing)")
+    p.add_argument("--counter-file", help="a file to store as a counter-evidence blob")
     p = authoring(sub.add_parser("retire", help="retire a claim with counter-evidence"))
     p.add_argument("--id", required=True)
     p.add_argument("--because", required=True)

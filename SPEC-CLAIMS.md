@@ -9,7 +9,9 @@ claim, then regenerate this file (README.md, "Changing a normative sentence").
 Sections §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 114 · backed 103 · unbacked 0 · informative 11 · retired 0 · records 229 · blobs 229
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
-that must make one of the cited cases fail. *Disposition* is Warrant's own
+(ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
+fail. An UNBACKED sentence is an open question, listed below with the reason it is
+open; it closes nothing and establishes nothing. *Disposition* is Warrant's own
 assessment of the claim's duty in this store (trust `.warrant/trust.json`, default
 profile, as of the latest record): a backed claim waits for its acceptor (codex)
 until an acceptance is filed. Nobody has accepted a claim yet unless this column says DISCHARGED.
@@ -130,6 +132,10 @@ until an acceptance is filed. Nobody has accepted a claim yet unless this column
 | SPEC-9-14 | Each file is also bounded by 64 MiB (§3); that bound is not a bound on the store. | assessment_test R35 | M168 | BACKED | OPEN (awaiting codex) | `3de1462edf95` |
 | SPEC-9-15 | In the Python implementation the refusal is `warrant.limits.LimitExceeded` (a `ValueError`) with the limit, the value and the bound; `engine.assess` and `Snapshot.read` take `limits=` overrides, the `warrant` command exits 3, and `warrant-agent` takes them from the workspace `limits` and answers `RESOURCE_LIMIT`. | agent_handoff_test V09; cli_test L1; contract_test L1 L3 | M167 M51 M55 | BACKED | OPEN (awaiting codex) | `e9b186c372b5` |
 | SPEC-9-16 | The dependency traversal is iterative: the depth of a valid `requires` chain is bounded only by `requires_edges`. | contract_test D2 D3 L6 | M46 M47 M50 | BACKED | OPEN (awaiting codex) | `49e4b45d1e33` |
+
+## Open questions
+
+None.
 
 ## Limits the claims record
 
