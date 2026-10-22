@@ -2,7 +2,15 @@
 """Each mutant undoes one critical rule of the package and must make ITS case fail.
 
     python3 tests/mutants.py [--jobs N] [ID ...]
+    python3 tests/mutants.py --matrix FILE [--matrix-tests own|all|T1,T2] [--jobs N] [ID ...]
     python3 tests/mutants.py --selftest     # the runner itself against fixture runners
+
+--matrix FILE also writes, for every mutant, every case of every test file it ran
+under that mutant with its result (PASS/FAIL), so `tools/claims.py audit` can ask
+which cases notice a mutant besides its targets. By default each mutant runs its
+own test file only (what the verdict needs, so the matrix costs no extra run);
+--matrix-tests all runs every tests/*_test.py under every mutant, T1,T2 names
+test files (without .py). The verdict is always taken from the own test file.
 
 KILLED only when a target case fails. A mutant that fails other cases only is
 OFF_TARGET, one that fails nothing SURVIVED, one whose test run produced no
@@ -437,7 +445,7 @@ def _visit(view, did, report, done, busy):
     ("M136", "compute.py", "a receipt whose bytes are not in the view is replayed anyway",
      [('    if ck is None or st is None:\n        return None, "receipt bytes not in view"\n', '')], "compute_test", ["C24"]),
     ("M137", "compute.py", "a replay that did not reach a normal form is compared as an answer",
-     [('    if r["code"] != "NORMAL_FORM":\n', '    if False:\n')], "compute_test", ["C4"]),
+     [('    if r["code"] != "NORMAL_FORM":\n', '    if False:\n')], "compute_test", ["C4", "C29"]),
     ("M138", "compute.py", "the replay cache is never consulted",
      [('        self.hits += 1\n        return doc["result"]', '        return None')], "compute_test", ["C16"]),
     ("M139", "compute.py", "a cycle blob's member set is not checked",
@@ -819,13 +827,58 @@ def _visit(view, did, report, done, busy):
      "assessment_test", ["R39"]),
     ("M277", "engine.py", "positions are ordered by `at` alone (SPEC-4-7: the id breaks no tie)",
      [('        return (self.recs[rid]["at"], rid)', '        return (self.recs[rid]["at"], "")')], "assessment_test", ["R39"]),
+    # The six counters of the Gemini deep review (2026-10-22), as mutants. SPEC-4.1-5's counter is M116's
+    # edit and SPEC-4.2-7's is M137's, byte for byte: those claims cite the existing mutant.
+    ("M278", "engine.py", "a results acceptance is looked up as an acceptance of item 0 (counter against SPEC-3.3-8)",
+     [('b["item"] == index and sorted(b["evidence"]) == want:', 'b["item"] == (0 if index is None else index) and sorted(b["evidence"]) == want:')],
+     "records_test", ["A7"]),
+    ("M279", "engine.py", "an acceptance of item 0 also accepts the transition's results",
+     [('b["item"] == index and sorted(b["evidence"]) == want:', '(b["item"] == index or index is None and b["item"] == 0) and sorted(b["evidence"]) == want:')],
+     "records_test", ["A7"]),
+    ("M280", "engine.py", "an acceptance of the results also accepts item 0",
+     [('b["item"] == index and sorted(b["evidence"]) == want:', '(b["item"] == index or index == 0 and b["item"] is None) and sorted(b["evidence"]) == want:')],
+     "records_test", ["A7"]),
+    ("M281", "engine.py", "only a revalidation must be filed by the holder or a delegate (counter against SPEC-4.1-2)",
+     [('    if filer != holder and filer not in delegates:', '    if m["act"] == "revalidate" and filer != holder and filer not in delegates:')],
+     "contract_test", ["G3"]),
+    ("M282", "engine.py", "a standing challenge does not block reliance (counter against SPEC-4.4-3)",
+     [('    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))', '    yield None')],
+     "conditions_test", ["K1"]),
+    ("M283", "engine.py", "a child grant is not checked for attenuation (counter against SPEC-6-2)",
+     [('    why = _attenuation_problem(rec["actor"], g, view.by_type["grant"][g["parent"]]["body"])', '    why = None')],
+     "contract_test", ["U4"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
                [('    if bound[0] != rec["actor"]:\n', '    if False:\n')], "contract_test", ["N5"])
 
 
-def run_one(mid, fname, what, edits, test, targets):
+def run_tests(tmp, tests, timeout=900):
+    """{test file: {case: PASS|FAIL}, or None when it produced no results}: each named test
+    file run against the packages in `tmp` (WARRANT_IMPL), with results of its own."""
+    runs = {}
+    for t in tests:
+        res = tmp / f"results-{t}.json"
+        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
+        subprocess.run([sys.executable, str(ROOT / "tests" / f"{t}.py")], env=env, capture_output=True,
+                       cwd=ROOT / "tests", timeout=timeout, check=False)
+        runs[t] = json.loads(res.read_text()) if res.exists() else None
+    return runs
+
+
+def verdict(runs, test, targets):
+    """(outcome, detail) from the mutant's own test file: KILLED only when a target fails."""
+    if runs.get(test) is None:
+        return "CRASH", "no results"
+    failed = sorted(k for k, v in runs[test].items() if v == "FAIL")
+    if set(failed) & set(targets):
+        return "KILLED", ",".join(failed)
+    return ("OFF_TARGET", ",".join(failed)) if failed else ("SURVIVED", "")
+
+
+def run_one(mid, fname, what, edits, test, targets, also=()):
+    """(outcome, detail, runs): the mutant applied to a copy of the package, its own test
+    file run, then the test files of `also` (for --matrix)."""
     tmp = Path(tempfile.mkdtemp(prefix=f"warrant-{mid}-"))
     try:
         shutil.copytree(PKG, tmp / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
@@ -833,20 +886,11 @@ def run_one(mid, fname, what, edits, test, targets):
         src = p.read_text()
         for old, new in edits:
             if src.count(old) != 1:
-                return "BAD_MUTANT", f"{old[:50]!r} found {src.count(old)} times"
+                return "BAD_MUTANT", f"{old[:50]!r} found {src.count(old)} times", {}
             src = src.replace(old, new)
         p.write_text(src)
-        res = tmp / "results.json"
-        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
-        subprocess.run([sys.executable, str(ROOT / "tests" / f"{test}.py")], env=env, capture_output=True,
-                       cwd=ROOT / "tests", timeout=900, check=False)
-        if not res.exists():
-            return "CRASH", "no results"
-        results = json.loads(res.read_text())
-        failed = sorted(k for k, v in results.items() if v == "FAIL")
-        if set(failed) & set(targets):
-            return "KILLED", ",".join(failed)
-        return ("OFF_TARGET", ",".join(failed)) if failed else ("SURVIVED", "")
+        runs = run_tests(tmp, [test] + [t for t in also if t != test])
+        return (*verdict(runs, test, targets), runs)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -861,14 +905,47 @@ def parse_args(argv, ids, prog):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 2, metavar="N",
                     help="parallel workers, an integer >= 1 (default: the CPU count)")
+    ap.add_argument("--matrix", metavar="FILE", help="also write every case's result under every mutant to FILE")
+    ap.add_argument("--matrix-tests", default="own", metavar="own|all|T1,T2",
+                    help="--matrix: the test files each mutant runs (default: its own only)")
     ap.add_argument("ids", nargs="*", metavar="ID", help="mutant ids to run (default: all of them)")
     ns = ap.parse_args(argv)
     if ns.jobs < 1:
         ap.error(f"--jobs must be >= 1, got {ns.jobs}")
+    known = sorted(p.stem for p in (ROOT / "tests").glob("*_test.py"))
+    if ns.matrix_tests in ("own", "all"):
+        ns.also = [] if ns.matrix_tests == "own" else known
+    else:
+        ns.also = [t for t in ns.matrix_tests.split(",") if t]
+        bad = sorted(set(ns.also) - set(known)) or ([] if ns.also else ["(none)"])
+        if bad:
+            ap.error(f"--matrix-tests: not a test file of tests/: {', '.join(bad)}")
+    if ns.matrix_tests != "own" and not ns.matrix:
+        ap.error("--matrix-tests needs --matrix")
     unknown = sorted(set(ns.ids) - set(ids))
     if unknown:
         ap.error(f"unknown mutant id(s): {', '.join(unknown)}")
     return ns
+
+
+MATRIX = "warrant-mutants/matrix@1"
+
+
+def source_digest(root=ROOT):
+    """SHA-256 over the bytes of warrant/, warrant_agent/ and tests/*.py, by relative path:
+    a matrix answers for exactly the code and the tests it ran."""
+    import hashlib
+    h = hashlib.sha256()
+    files = sorted(p for d in ("warrant", "warrant_agent") for p in (root / d).rglob("*.py") if "__pycache__" not in p.parts)
+    for p in files + sorted((root / "tests").glob("*.py")):
+        h.update(p.relative_to(root).as_posix().encode() + b"\0" + hashlib.sha256(p.read_bytes()).digest())
+    return h.hexdigest()
+
+
+def mutant_digest(m):
+    """The digest of one matrix row's definition: (id, file, what, edits, test, targets)."""
+    import hashlib
+    return hashlib.sha256(json.dumps([m[0], m[1], m[2], [list(e) for e in m[3]], m[4], list(m[5])]).encode()).hexdigest()
 
 
 def run_all(mutants, label, argv, runner, prog="mutants"):
@@ -884,12 +961,21 @@ def run_all(mutants, label, argv, runner, prog="mutants"):
     if not chosen:
         print(f"{label}: no mutants selected; nothing was checked")
         return 2
-    killed = 0
+    killed, rows = 0, {}
+    call = (lambda m: runner(*m, also=ns.also)) if ns.matrix else (lambda m: runner(*m))
     with concurrent.futures.ThreadPoolExecutor(max_workers=ns.jobs) as pool:
-        for m, (outcome, detail) in zip(chosen, pool.map(lambda m: runner(*m), chosen)):
+        for m, got in zip(chosen, pool.map(call, chosen)):
+            outcome, detail = got[0], got[1]
             killed += outcome == "KILLED"
             print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
+            rows[m[0]] = {"definition": mutant_digest(m), "file": m[1], "what": m[2], "test": m[4],
+                          "targets": list(m[5]), "outcome": outcome, "runs": got[2] if len(got) > 2 else {}}
     print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={ns.jobs})")
+    if ns.matrix:
+        doc = {"matrix": MATRIX, "harness": prog, "tests": ns.matrix_tests, "source": source_digest(),
+               "mutants": rows}
+        Path(ns.matrix).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+        print(f"{label}: matrix of {len(rows)} mutants ({ns.matrix_tests}) written to {ns.matrix}")
     return 0 if killed == len(chosen) else 1
 
 
@@ -933,6 +1019,31 @@ def selftest():
         ("a known and an unknown id together are refused", run(["F1", "ZZ"], killed) == (2, [])),
         ("ids select, in matrix order", run(["F2", "F1"], killed) == (0, ["F1", "F2"])),
         ("an empty matrix is not a success", run([], killed, mutants=[]) == (2, [])),
+    ]
+    # --matrix: every case's result under every mutant, the verdict still from the own test file
+    out = Path(tempfile.mkdtemp(prefix="mutants-selftest-")) / "m.json"
+
+    def with_runs(*m, also=()):
+        calls.append((m[0], tuple(also)))
+        return "KILLED", "c", {"t": {"c": "FAIL", "d": "PASS"}, **{a: {"x": "PASS"} for a in also}}
+    rc_m = run(["--jobs", "2", "--matrix", str(out)], with_runs)
+    doc = json.loads(out.read_text()) if out.is_file() else {}
+    rows = doc.get("mutants", {})
+    rc_all = run(["--matrix", str(out), "--matrix-tests", "contract_test,records_test"], with_runs)
+    rows_all = json.loads(out.read_text()).get("mutants", {}) if out.is_file() else {}
+    shutil.rmtree(out.parent, ignore_errors=True)
+    checks += [
+        ("--matrix writes every mutant's runs, case by case", rc_m[0] == 0 and doc.get("matrix") == MATRIX
+         and sorted(rows) == ["F1", "F2"] and rows["F1"]["runs"] == {"t": {"c": "FAIL", "d": "PASS"}}
+         and rows["F1"]["outcome"] == "KILLED" and rows["F1"]["definition"] == mutant_digest(fake[0])
+         and doc.get("source") == source_digest()),
+        ("--matrix-tests names the extra test files each mutant runs",
+         rc_all[0] == 0 and rows_all.get("F2", {}).get("runs", {}).get("records_test") == {"x": "PASS"}
+         and ("F1", ("contract_test", "records_test")) in rc_all[1]),
+        ("--matrix-tests without --matrix is refused", run(["--matrix-tests", "all"], with_runs) == (2, [])),
+        ("--matrix-tests with an unknown test file is refused",
+         run(["--matrix", str(out), "--matrix-tests", "nosuch_test"], with_runs) == (2, [])),
+        ("--matrix-tests with no test file is refused", run(["--matrix", str(out), "--matrix-tests", ","], with_runs) == (2, [])),
     ]
     for script in ("mutants.py", "agent_mutants.py"):
         for argv in (["--jobs", "-1"], ["--jobs", "+2", "ZZ"], ["--jobs", "0", "M01"]):

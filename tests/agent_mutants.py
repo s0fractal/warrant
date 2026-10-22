@@ -190,7 +190,9 @@ MUTANTS = [
 ]
 
 
-def run_one(mid, fname, what, edits, test, targets):
+def run_one(mid, fname, what, edits, test, targets, also=()):
+    """(outcome, detail, runs), as tests/mutants.py's run_one; `also`: more test files (--matrix)."""
+    from mutants import verdict
     tmp = Path(tempfile.mkdtemp(prefix=f"warrant-agent-{mid}-"))
     try:
         shutil.copytree(ROOT / "warrant", tmp / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
@@ -199,7 +201,7 @@ def run_one(mid, fname, what, edits, test, targets):
         src = p.read_text()
         for old, new in edits:
             if src.count(old) != 1:
-                return "BAD_MUTANT", f"{old[:50]!r} found {src.count(old)} times"
+                return "BAD_MUTANT", f"{old[:50]!r} found {src.count(old)} times", {}
             src = src.replace(old, new)
         p.write_text(src)
         res = tmp / "results.json"
@@ -207,11 +209,10 @@ def run_one(mid, fname, what, edits, test, targets):
         run = subprocess.run([sys.executable, str(ROOT / "tests" / f"{test}.py")], env=env, capture_output=True,
                              text=True, cwd=ROOT / "tests", timeout=1800, check=False)
         if not res.exists():
-            return "CRASH", "no results: " + " | ".join(run.stderr.strip().splitlines()[-3:])
-        failed = sorted(k for k, v in json.loads(res.read_text()).items() if v == "FAIL")
-        if set(failed) & set(targets):
-            return "KILLED", ",".join(failed)
-        return ("OFF_TARGET", ",".join(failed)) if failed else ("SURVIVED", "")
+            return "CRASH", "no results: " + " | ".join(run.stderr.strip().splitlines()[-3:]), {test: None}
+        from mutants import run_tests
+        runs = {test: json.loads(res.read_text()), **run_tests(tmp, [t for t in also if t != test], timeout=1800)}
+        return (*verdict(runs, test, targets), runs)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
