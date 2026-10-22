@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 249 · backed 193 · countered 0 · unbacked 6 · informative 50 · retired 0 · records 536 · blobs 543
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 249 · backed 193 · countered 0 · unbacked 6 · informative 50 · retired 0 · records 540 · blobs 547
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -68,8 +68,8 @@ by anyone with an admitted binding, lowers its backing: it counts as backed no l
 | SPEC-3-22 | An actor may be a person, a model, a program or a rule (for example, a checker named by the hash of its code); Warrant does not assess what an actor is (§6). | records_test K13 | M267 | BACKED | OPEN (awaiting codex) | `655af1cbb754` |
 | SPEC-3-23 | `prev` is the id of the record the same actor filed before this one, or null for the actor's first record: each actor's records form its **chain**. | agent_write_test W11; records_test K14 K15 | A57 M418 M420 | BACKED | OPEN (awaiting codex) | `873eb69cecbd` |
 | SPEC-3-24 | A record without `prev` is **unchained**: it is valid, and no chain orders it; every record filed before chains is one. | assessment_test R41; records_test K14 K15 | M419 M425 | BACKED | OPEN (awaiting codex) | `2d2706c9dae8` |
-| SPEC-3-25 | A writer takes `prev` from its actor's head in the store, under a lock on `records/`, and refuses to date a record before that head. | records_test K15 K16 | M420 M421 M423 | BACKED | OPEN (awaiting codex) | `a9e2b2a4b851` |
-| SPEC-3-26 | `warrant-agent` prepares a draft on the signer's head and commits it only while that head is unchanged, a compare-and-swap; otherwise it answers `CONFLICT` with reason `CHAIN_MOVED` and files nothing. | agent_write_test W11; records_test K15 | A57 A58 A59 A60 M422 | BACKED | OPEN (awaiting codex) | `e0057fbe0e48` |
+| SPEC-3-25 | A writer takes `prev` from its actor's head in the store: of the records the writer's trust authenticates as the actor's and that are chained back to a genesis, the latest one no other names as its `prev`. It reads the head under a lock on `records/` and refuses to date a record before it; a record the reader rejects, or an unanchored one, is never a head. | records_test K15 K16 K17 | M420 M421 M423 M427 M428 | BACKED | OPEN (awaiting codex) | `0a5ff5e79bfb` |
+| SPEC-3-26 | `warrant-agent` prepares a draft on the signer's head under the workspace's trust and commits it only while that head is unchanged, a compare-and-swap; otherwise it answers `CONFLICT` with reason `CHAIN_MOVED` and files nothing. | agent_write_test W11 W12; records_test K15 | A57 A58 A59 A60 M422 M429 | BACKED | OPEN (awaiting codex) | `69980b9cbc0e` |
 | SPEC-3.1-1 | ``` | — | — | INFORMATIVE: opening fence of the duty block whose lines are SPEC-3.1-2 to SPEC-3.1-15 | — (no duty) | `a0d7e2030b63` |
 | SPEC-3.1-2 | statement string ≤ 400 code points | records_test D1 | M201 M202 | BACKED | OPEN (awaiting codex) | `3bc8fadea0fd` |
 | SPEC-3.1-3 | holder actor; MUST equal the record's actor | records_test D2 | M203 | BACKED | OPEN (awaiting codex) | `f10c478fc4b7` |

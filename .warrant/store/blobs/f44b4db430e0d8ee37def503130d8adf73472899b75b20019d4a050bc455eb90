@@ -1,0 +1,1 @@
+`warrant-agent` prepares a draft on the signer's head under the workspace's trust and commits it only while that head is unchanged, a compare-and-swap; otherwise it answers `CONFLICT` with reason `CHAIN_MOVED` and files nothing.

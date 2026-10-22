@@ -66,8 +66,11 @@ code); Warrant does not assess what an actor is (§6).
 the actor's first record: each actor's records form its **chain**. A record
 without `prev` is **unchained**: it is valid, and no chain orders it; every
 record filed before chains is one. A writer takes `prev` from its actor's head
-in the store, under a lock on `records/`, and refuses to date a record before
-that head. `warrant-agent` prepares a draft on the signer's head and commits it
+in the store: of the records the writer's trust authenticates as the actor's and
+that are chained back to a genesis, the latest one no other names as its `prev`.
+It reads the head under a lock on `records/` and refuses to date a record before
+it; a record the reader rejects, or an unanchored one, is never a head. `warrant-agent`
+prepares a draft on the signer's head under the workspace's trust and commits it
 only while that head is unchanged, a compare-and-swap; otherwise it answers
 `CONFLICT` with reason `CHAIN_MOVED` and files nothing.
 
