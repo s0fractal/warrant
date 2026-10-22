@@ -144,7 +144,10 @@ supersedes the last. Its literal gaps hold spaces and line breaks and, at a
 line's start, a list marker or a table rule, never a word. Headings are not
 claims: `.warrant/claims.json` pins each section's heading line (and the
 title, as section 0), and the document may hold only those lines, once each
-and in order. A title is still free text that no witness backs, so a
+and in order, each on a line of its own; and the headings a reader sees in
+the rendered SPEC.md (ATX `#` lines and setext underlines, inside fences too)
+must be exactly those, so no sentence can render as a heading and no heading
+inline. A title is still free text that no witness backs, so a
 rule-shaped title is a review matter; the pin makes every change of one a
 reviewed diff. To change a heading: edit its pin, then `tools/claims.py
 heading --section N --because '...'`.
@@ -180,8 +183,8 @@ its rendering reproduced that file byte for byte; it refuses to run again.
 
 `check` refuses: SPEC.md or SPEC-CLAIMS.md that differs from its rendering; a
 document version that is malformed, has a literal gap with anything but layout
-in it, holds a heading the pins do not name (or a pinned one twice, or out of
-order), places a current claim nowhere or twice, names a claim no record
+in it, holds a heading the pins do not name (or a pinned one twice, out of
+order, or not on a line of its own), renders other headings than its own, places a current claim nowhere or twice, names a claim no record
 states, puts a claim under another section's heading, or lacks a pinned
 section's heading, and two current document versions; a pinned sentence with no
 claim; an UNBACKED claim that does not say why it is open; a cited case or

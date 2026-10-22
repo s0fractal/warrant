@@ -117,6 +117,12 @@ LITERAL_LINE = re.compile(r"^(?: *(?:- |[0-9]{1,3}\. )?|\| ---(?: \| ---)* \|)\Z
 # space at either end. \Z, not $: `$` admits a trailing newline.
 HEADING_LINE = re.compile(r"^#{1,6} [^\x00-\x20\x7f-\x9f](?:[^\x00-\x1f\x7f-\x9f]*[^\x00-\x20\x7f-\x9f])?\Z")
 GAP_RUN = re.compile(r"^[ \n]+\Z")
+# What a Markdown reader takes for a heading line (CommonMark): an ATX heading, up to three
+# spaces then one to six # then a space, a tab or the line's end; a setext underline, a line
+# of = or of - under a non-blank line. Fenced blocks are not exempt: such a line anywhere is
+# counted, and refused unless it is the document's own heading part (AMEND 2 of #166).
+ATX_LINE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|\Z)")
+SETEXT_LINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*\Z")
 PREAMBLE = "0"              # the section before the first numbered heading
 WIDTH = 80                  # the fill width of a sentence whose recorded layout no longer applies
 GONE = "\x00"               # placeholder of a retired sentence while SPEC.md is rendered
@@ -564,12 +570,17 @@ class Document:
             if "heading" in p:
                 line = p["heading"]
                 sec = heading_section(line, headings)
-                if sec is None:
-                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} is neither a numbered heading nor the pinned title"))
-                elif sec not in headings:
-                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} heads §{sec}, which .warrant/claims.json pins no heading for"))
-                elif line != headings[sec]:
-                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} is not the pinned heading of §{sec}, {headings[sec][:80]!r}"))
+                parts = self.current["parts"]
+                before, after = (parts[i - 1] if i else None), (parts[i + 1] if i + 1 < len(parts) else None)
+                if not ((i == 0 or isinstance(before, str) and before.endswith("\n"))
+                        and isinstance(after, str) and after.startswith("\n")):
+                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} does not stand on a line of its own "
+                                "(a literal ending in a line break before it, one starting with a line break after)"))
+                if sec is None or headings.get(sec) != line:      # one predicate: the line is its section's pin
+                    why = ("is neither a numbered heading nor the pinned title" if sec is None else
+                           f"heads §{sec}, which .warrant/claims.json pins no heading for" if sec not in headings else
+                           f"is not the pinned heading of §{sec}, {headings[sec][:80]!r}")
+                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} {why}"))
                 elif sec in headed:
                     out.append(("DOCUMENT_HEADING", f"part {i}: a second heading of §{sec} (the first is part {headed[sec]})"))
                 elif order.get(sec, -1) < last:
@@ -597,6 +608,18 @@ class Document:
             elif s not in headed:
                 out.append(("SECTION_MISSING", f"the document has no heading of §{s}"))
         return out
+
+
+def rendered_headings(text):
+    """The heading lines a Markdown reader sees in `text`: ATX lines as they are, a setext
+    heading as its text line and underline joined by a line break."""
+    lines, out = text.split("\n"), []
+    for k, ln in enumerate(lines):
+        if ATX_LINE.match(ln):
+            out.append(ln)
+        elif SETEXT_LINE.match(ln) and k and lines[k - 1].strip():
+            out.append(lines[k - 1] + "\n" + ln)
+    return out
 
 
 def heading_section(line, headings):
@@ -849,7 +872,8 @@ def render(repo):
         out += ["", "## Document", "",
                 f"SPEC.md is rendered from document version `{doc.tid[:12]}` ({len(doc.current['parts'])} parts). Its headings",
                 "are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold",
-                "only those lines, once each and in order. A title is free text that no witness backs, so a",
+                "only those lines, once each, in order and each on its own line; the rendered SPEC.md must show",
+                "exactly those headings. A title is free text that no witness backs, so a",
                 "rule-shaped title is a review matter; the pin makes every change of one a reviewed diff.", ""]
         out += [f"- `{h}`" for h in heads]
     limits = [(n.id, x) for n in live for x in n.rec["body"]["residual"] if x not in (BACKED_RESIDUAL, UNBACKED_RESIDUAL)]
@@ -931,6 +955,16 @@ def check(repo, base=None):
         elif repo.spec.read_bytes() != want:
             out.append(("SPEC_NOT_PROJECTION", "SPEC.md is not the rendering of the records (edited by hand?); "
                         "run tools/claims.py project"))
+        # The output, not the parts: the headings a reader of the rendered SPEC.md sees are
+        # exactly the document's heading parts, in order (AMEND 2 of #166: a heading part
+        # rendered inline was counted as a heading although SPEC.md showed none).
+        shown = rendered_headings(want.decode())
+        parts = [p["heading"] for p in doc.current["parts"] if isinstance(p, dict) and "heading" in p]
+        if shown != parts:
+            k = next((j for j, (x, y) in enumerate(zip(shown, parts)) if x != y), min(len(shown), len(parts)))
+            out.append(("SPEC_HEADINGS_MISMATCH", f"the rendered SPEC.md shows {len(shown)} heading lines, the document "
+                        f"has {len(parts)} headings; first difference at {k}: "
+                        f"{(shown[k] if k < len(shown) else None)!r} vs {(parts[k] if k < len(parts) else None)!r}"))
     if not repo.projection.is_file():
         out.append(("PROJECTION_MISSING", "SPEC-CLAIMS.md does not exist; run tools/claims.py project"))
     elif repo.projection.read_bytes() != render(repo).encode():     # bytes: read_text() would turn \r\n into \n
@@ -1798,6 +1832,16 @@ def selftest(jobs=1):
             rebacked([], [], unbacked_because="selftest: its witness case was removed earlier")(r)
             return rev
 
+        def retext(cid, text):
+            """Supersede claim `cid` with `text` (no validation), then project."""
+            def f(r):
+                n = Model(r.snapshot(), r.trust()).current[cid]
+                author(r).claim(cid, text, n.doc["witnesses"], n.doc["mutants"], n.doc["reason"] if n.kind == "informative" else None,
+                                because="selftest", previous=n,
+                                unbacked_because=n.doc["reason"] if n.kind == "normative" and not n.backed else None)
+                reproject(r)
+            return f
+
         def head_of(parts, sec):
             return next(k for k, q in enumerate(parts) if isinstance(q, dict) and "heading" in q
                         and HEADING.match(q["heading"]) and HEADING.match(q["heading"]).group(1) == sec)
@@ -2129,6 +2173,16 @@ def selftest(jobs=1):
         case("two pinned headings swapped out of order", "DOCUMENT_HEADING",
              doc_version(lambda ps: [ps[head_of(ps, "3.6")] if k == head_of(ps, "3.5") else
                                      ps[head_of(ps, "3.5")] if k == head_of(ps, "3.6") else q for k, q in enumerate(ps)]))
+        # AMEND 2 of #166 (Codex on 64af5aa): a heading part must render as a heading
+        case("Codex's probe: the gap before §3.1's heading replaced by a space (the heading renders inline)",
+             "DOCUMENT_HEADING", doc_version(lambda ps: [" " if k == head_of(ps, "3.1") - 1 else q for k, q in enumerate(ps)]))
+        case("a heading glued to the previous sentence (no gap at all)", "DOCUMENT_HEADING",
+             doc_version(lambda ps: [q for k, q in enumerate(ps) if k != head_of(ps, "6") - 1]))
+        case("a heading followed by a sentence on the same line", "DOCUMENT_HEADING",
+             doc_version(lambda ps: [" " if k == head_of(ps, "5") + 1 else q for k, q in enumerate(ps)]))
+        case("a sentence that renders as an ATX heading line", "SPEC_HEADINGS_MISMATCH",
+             retext("SPEC-3-4", "## 4.8 Hidden rule: anyone may release"))
+        case("a sentence that renders as a setext underline", "SPEC_HEADINGS_MISMATCH", retext("SPEC-3-4", "---"))
         case("a heading changed through its pin, then `heading --section`", None, heading_through_pin,
              also=lambda r: "## 2. Encoding of values\n" in r.spec.read_text())
         case("a document version whose previous is not a document version", "STRUCTURE", document_bad_previous)

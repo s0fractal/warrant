@@ -279,7 +279,8 @@ The reason below is the filer's thesis; the replay is what admitted the loss.
 
 SPEC.md is rendered from document version `9bcc9542c2b4` (520 parts). Its headings
 are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold
-only those lines, once each and in order. A title is free text that no witness backs, so a
+only those lines, once each, in order and each on its own line; the rendered SPEC.md must show
+exactly those headings. A title is free text that no witness backs, so a
 rule-shaped title is a review matter; the pin makes every change of one a reviewed diff.
 
 - `# Warrant 2 — Specification`
