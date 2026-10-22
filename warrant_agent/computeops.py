@@ -36,6 +36,12 @@ def _closed(req):
     missing = {"workspace", *OPS[op]} - set(req)
     need(not missing, "BAD_REQUEST", f"missing {sorted(missing)}")
     need(not set(req) - allowed, "BAD_REQUEST", f"unknown members {sorted(set(req) - allowed)}")
+    _check_values(req)
+    return op
+
+
+def _check_values(req):
+    """Each member the request carries has its type and bound."""
     for k in ("input", "environment", "checkpoint", "state"):
         if k in req:
             need(_hex(req[k]), "BAD_REQUEST", f"{k} is a hex64 content address")
@@ -49,7 +55,6 @@ def _closed(req):
             need(isinstance(req[k], str) and 0 < len(req[k]) <= 10_000, "BAD_REQUEST", f"{k} is a term, e.g. \"S K K\"")
     if "target" in req:
         need(isinstance(req["target"], str) and 0 < len(req["target"]) <= 200, "BAD_REQUEST", "target")
-    return op
 
 
 def _term(ws, provider, store, expr):

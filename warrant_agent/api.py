@@ -11,6 +11,7 @@ from . import AGENT_API, adapter_id, drafts, handoff, views
 from .errors import AgentError, need
 
 TARGET_KINDS = ("duty", "transition")
+CONTEXT_FILE = "context.json"          # a view's actor, targets and use, written by the call that made it
 TARGET_FORMS = ("targets is a list; each target is a record id (hex64) of a duty or transition, "
                 "{\"id\": id} or {\"kind\": \"duty\"|\"transition\", \"id\": id}")
 
@@ -32,28 +33,27 @@ def _target_shapes(raw):
     return out
 
 
+def _kind_in_view(tid, report, vdir):
+    """A duty or a transition of THIS view; any other id is refused by what it is, never shown as a capsule of
+    something else."""
+    if tid in report["duties"]:
+        return "duty"
+    if tid in report["results"]:
+        return "transition"
+    p = vdir / "records" / f"{tid}.json"
+    if not p.is_file():
+        raise AgentError("NOT_FOUND", f"{tid[:12]} is not a record of this view", target=tid)
+    try:
+        rtype = C.loads(p.read_bytes())["record"]["type"]
+    except (C.NotCanonical, KeyError, TypeError, ValueError):
+        rtype = "unreadable"
+    raise AgentError("BAD_REQUEST", f"{tid[:12]} is a record of type {rtype} in this view, not a duty or a "
+                     "transition; read it with warrant_read", target=tid, type=rtype)
+
+
 def _resolve_targets(shapes, report, vdir):
-    """[{kind, id}]: a target given without its kind is a duty or a transition of THIS view; any other id is
-    refused by what it is, never shown as a capsule of something else. A given kind is kept as given."""
-    out = []
-    for kind, tid in shapes:
-        if kind is None:
-            if tid in report["duties"]:
-                kind = "duty"
-            elif tid in report["results"]:
-                kind = "transition"
-            else:
-                p = vdir / "records" / f"{tid}.json"
-                if p.is_file():
-                    try:
-                        rtype = C.loads(p.read_bytes())["record"]["type"]
-                    except (C.NotCanonical, KeyError, TypeError, ValueError):
-                        rtype = "unreadable"
-                    raise AgentError("BAD_REQUEST", f"{tid[:12]} is a record of type {rtype} in this view, not a duty or a "
-                                     "transition; read it with warrant_read", target=tid, type=rtype)
-                raise AgentError("NOT_FOUND", f"{tid[:12]} is not a record of this view", target=tid)
-        out.append({"kind": kind, "id": tid})
-    return out
+    """[{kind, id}]: a target given without its kind is resolved in the view; a given kind is kept as given."""
+    return [{"kind": kind or _kind_in_view(tid, report, vdir), "id": tid} for kind, tid in shapes]
 
 
 def _use(ws, use):
@@ -254,7 +254,7 @@ def context(cfg, req):
     meta = views.capture(ws)
     meta2, report, vdir = views.load(ws, meta["token"])
     targets = _resolve_targets(shapes, report, vdir)
-    views.write_json(vdir / "context.json", {"actor": actor, "targets": targets, "use": use})
+    views.write_json(vdir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use})
     data, pg = _projection(ws, meta2, report, actor, targets, use, "context", None, budget)
     return _envelope(ws, meta2, report, data, use, targets, pg)
 
@@ -282,7 +282,7 @@ def read(cfg, req):
     need(_int(max_bytes, 1), "BAD_REQUEST", "max_bytes")
     max_bytes = min(max_bytes, ws.limits["read_bytes"])
     if kind == "context":
-        ctx = views.read_json(vdir / "context.json")
+        ctx = views.read_json(vdir / CONTEXT_FILE)
         data, pg = _projection(ws, meta, report, ctx["actor"], ctx["targets"], ctx["use"], "context",
                                req.get("cursor"), max_bytes)
         return _envelope(ws, meta, report, data, ctx["use"], ctx["targets"], pg)
@@ -311,54 +311,69 @@ def _view(ws, token):
     return views.load(ws, views.capture(ws)["token"] if token is None else token)
 
 
-def handoff_op(cfg, req):
-    need(isinstance(req, dict) and req.get("op") in ("export", "inspect", "import"), "BAD_REQUEST",
-         "handoff op is export, inspect or import")
-    op = req["op"]
-    if op == "export":
-        _closed(req, ("op", "workspace"), ("view_token", "roots", "request_id", "agent_api"))
-        ws = cfg.workspace(req["workspace"])
-        ws.permit("handoff")
-        meta, report, vdir = _view(ws, req.get("view_token"))
-        if "roots" in req:
-            roots = _resolve_targets(_target_shapes(req["roots"]), report, vdir)
-        else:                                   # the targets of the context that made the view, if any
-            ctx = vdir / "context.json"
-            roots = views.read_json(ctx)["targets"] if ctx.is_file() else []
-        request_id = req.get("request_id") or f"export:{meta['token']}:{C.doc_id(roots)[:32]}"
-        pkg = handoff.export(ws, meta["token"], roots, request_id)
-        return {"agent_api": AGENT_API, "adapter_id": adapter_id(),
-                "data": {"package": pkg, "manifest_digest": C.doc_id(pkg["manifest"]), "request_id": request_id}}
-    if op == "inspect":
-        _closed(req, ("op", "workspace"), ("package", "manifest", "payload", "expectation", "declaration", "use",
-                                           "targets", "actor", "agent_api"))
-        if "package" in req:                    # the exported object as it was received, in one piece
-            pkg = req["package"]
-            need(isinstance(pkg, dict) and {"manifest", "payload"} <= set(pkg)
-                 and set(pkg) <= {"manifest", "manifest_bytes", "payload", "declaration"}
-                 and not ({"manifest", "payload", "declaration"} & set(req)), "BAD_REQUEST",
-                 "package is the exported object {manifest, payload, declaration?, manifest_bytes?}, given instead of "
-                 "manifest/payload/declaration")
-            req = dict({k: v for k, v in req.items() if k != "package"}, manifest=pkg["manifest"],
-                       payload=pkg["payload"], **({"declaration": pkg["declaration"]} if "declaration" in pkg else {}))
-        need("manifest" in req and "payload" in req, "BAD_REQUEST", "inspect needs package, or manifest and payload")
-        ws = cfg.workspace(req["workspace"])
-        use, actor = _use(ws, req.get("use")), _actor(ws, req.get("actor"))
-        shapes = _target_shapes(req["targets"]) if "targets" in req else None
-        staged_id, meta = handoff.inspect(ws, req["manifest"], req["payload"], req.get("expectation"),
-                                          req.get("declaration"))
-        meta, report, vdir = views.load(ws, meta["token"])
-        if shapes is None:                      # the package's own roots, read from its checked manifest
-            shapes = [(r["kind"], r["id"]) for r in req["manifest"]["roots"]]
-        targets = _resolve_targets(shapes, report, vdir)
-        views.write_json(vdir / "context.json", {"actor": actor, "targets": targets, "use": use})
-        data, pg = _projection(ws, meta, report, actor, targets, use, "context", None, ws.limits["context_bytes"])
-        data["staged_id"] = staged_id
-        return _envelope(ws, meta, report, data, use, targets, pg)
+def _export(cfg, req):
+    _closed(req, ("op", "workspace"), ("view_token", "roots", "request_id", "agent_api"))
+    ws = cfg.workspace(req["workspace"])
+    ws.permit("handoff")
+    meta, report, vdir = _view(ws, req.get("view_token"))
+    if "roots" in req:
+        roots = _resolve_targets(_target_shapes(req["roots"]), report, vdir)
+    else:                                       # the targets of the context that made the view, if any
+        ctx = vdir / CONTEXT_FILE
+        roots = views.read_json(ctx)["targets"] if ctx.is_file() else []
+    request_id = req.get("request_id") or f"export:{meta['token']}:{C.doc_id(roots)[:32]}"
+    pkg = handoff.export(ws, meta["token"], roots, request_id)
+    return {"agent_api": AGENT_API, "adapter_id": adapter_id(),
+            "data": {"package": pkg, "manifest_digest": C.doc_id(pkg["manifest"]), "request_id": request_id}}
+
+
+def _unpack(req):
+    """A package given in one piece (the exported object as it was received) as manifest/payload/declaration."""
+    if "package" not in req:
+        return req
+    pkg = req["package"]
+    need(isinstance(pkg, dict) and {"manifest", "payload"} <= set(pkg)
+         and set(pkg) <= {"manifest", "manifest_bytes", "payload", "declaration"}
+         and not ({"manifest", "payload", "declaration"} & set(req)), "BAD_REQUEST",
+         "package is the exported object {manifest, payload, declaration?, manifest_bytes?}, given instead of "
+         "manifest/payload/declaration")
+    return dict({k: v for k, v in req.items() if k != "package"}, manifest=pkg["manifest"],
+                payload=pkg["payload"], **({"declaration": pkg["declaration"]} if "declaration" in pkg else {}))
+
+
+def _inspect(cfg, req):
+    _closed(req, ("op", "workspace"), ("package", "manifest", "payload", "expectation", "declaration", "use",
+                                       "targets", "actor", "agent_api"))
+    req = _unpack(req)
+    need("manifest" in req and "payload" in req, "BAD_REQUEST", "inspect needs package, or manifest and payload")
+    ws = cfg.workspace(req["workspace"])
+    use, actor = _use(ws, req.get("use")), _actor(ws, req.get("actor"))
+    shapes = _target_shapes(req["targets"]) if "targets" in req else None
+    staged_id, meta = handoff.inspect(ws, req["manifest"], req["payload"], req.get("expectation"),
+                                      req.get("declaration"))
+    meta, report, vdir = views.load(ws, meta["token"])
+    if shapes is None:                          # the package's own roots, read from its checked manifest
+        shapes = [(r["kind"], r["id"]) for r in req["manifest"]["roots"]]
+    targets = _resolve_targets(shapes, report, vdir)
+    views.write_json(vdir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use})
+    data, pg = _projection(ws, meta, report, actor, targets, use, "context", None, ws.limits["context_bytes"])
+    data["staged_id"] = staged_id
+    return _envelope(ws, meta, report, data, use, targets, pg)
+
+
+def _import(cfg, req):
     _closed(req, ("op", "workspace", "staged_id"), ("request_id", "agent_api"))
     ws = cfg.workspace(req["workspace"])
     journal = handoff.import_(ws, req["staged_id"], req.get("request_id") or f"import:{req['staged_id']}")
     return {"agent_api": AGENT_API, "adapter_id": adapter_id(), "data": journal}
+
+
+HANDOFF_OPS = {"export": _export, "inspect": _inspect, "import": _import}
+
+
+def handoff_op(cfg, req):
+    need(isinstance(req, dict) and req.get("op") in HANDOFF_OPS, "BAD_REQUEST", "handoff op is export, inspect or import")
+    return HANDOFF_OPS[req["op"]](cfg, req)
 
 
 def prepare(cfg, req):
@@ -398,11 +413,11 @@ def _summary(rec):
 def _workspace_view(ws):
     """What an agent needs to start: the operator's handles and choices by name, never a path, a key or a URL,
     and an index of the duties and transitions in the live store (untrusted text, not an assessment)."""
+    from warrant import compute as P
     try:
-        from warrant import compute as P
         prov = P.Provider.capture()
         provider = {"installed": True, "id": prov.id, "accepted_by_profile": prov.id in ws.profile().get("providers", [])}
-    except Exception:                         # noqa: BLE001 - absent or broken provider: say so, nothing else
+    except P.ProviderError:                   # absent or broken provider: say so, nothing else
         provider = {"installed": False, "id": None, "accepted_by_profile": False}
     snap = views.read_snapshot(ws, ws.store)
     rows, by_type = [], {}

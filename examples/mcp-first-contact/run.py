@@ -61,7 +61,10 @@ def main():
     ap.add_argument("--work", default=str(Path.home() / "Projects" / ".worktrees" / "mcp-fc-work"))
     ap.add_argument("--python", default=sys.executable)
     a = ap.parse_args()
-    jobs = [(a.round, t, m, i, a.work, a.python) for m in a.models.split(",") for t in a.tasks.split(",")
+    sys.path.insert(0, str(HERE))
+    from paths import confined
+    work = confined(a.work)                     # runs are deleted and rebuilt under it
+    jobs = [(a.round, t, m, i, work, a.python) for m in a.models.split(",") for t in a.tasks.split(",")
             for i in range(1, a.n + 1)]
     with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
         for fut in concurrent.futures.as_completed([ex.submit(one, *j) for j in jobs]):

@@ -106,6 +106,8 @@ class McpDoor:
         args = dict(req)                         # every tool takes the request's members as flat arguments
         if op == "context" and "limits" in args:
             args["context_bytes"] = args.pop("limits")["context_bytes"]
+        if op == "handoff" and "manifest" in args:     # the MCP tool takes a received package in one piece
+            args["package"] = {k: args.pop(k) for k in ("manifest", "payload", "declaration") if k in args}
         tool = self.TOOLS[op]
         fut = concurrent.futures.Future()
         self.loop.call_soon_threadsafe(self.queue.put_nowait, (tool, args, fut))

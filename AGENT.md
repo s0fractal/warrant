@@ -134,7 +134,9 @@ Eight tools: `warrant_workspace`, `warrant_context`, `warrant_read`,
 `warrant_handoff`, `warrant_prepare`, `warrant_commit`, `warrant_compute`,
 `warrant_explain`. Every tool takes the request's members as flat, typed
 arguments with a description each (`warrant_context` takes `context_bytes`
-for `limits.context_bytes`); an argument left out is left out of the request.
+for `limits.context_bytes`; `warrant_handoff` inspect takes the package in one
+piece only, the split form stays in the Python API and the CLI); an argument
+left out is left out of the request.
 The interface version is checked by the backend (`agent_api` in a Python or
 CLI request); MCP tools carry none, the server reports `warrant-agent/1` as
 its version. The server's instructions say where to start and what a result

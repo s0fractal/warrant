@@ -211,19 +211,24 @@ def first_contact_cases(src, rcv, ids, cfg_path, cfg):
     cfg3 = cfg_path.with_name("mcp-config-m11.json")
     cfg3.write_text(json.dumps(doc3))
     p = pkg["package"]
-    r = tool_calls(cfg3, [("warrant_handoff", {"op": "inspect", "workspace": "rcv", "package": p, "expectation": "from-src"}),
-                          ("warrant_handoff", {"op": "inspect", "workspace": "rcv", "manifest": p["manifest"],
-                                               "payload": p["payload"], "declaration": p["declaration"],
-                                               "expectation": "from-src"})])
-    one, parts = r[0].get("ok", {}), r[1].get("ok", {})
+    r = tool_calls(cfg3, [("warrant_handoff", {"op": "inspect", "workspace": "rcv", "package": p, "expectation": "from-src"})])
+    from warrant_agent.config import Config
+    parts = api.call(Config.load(cfg3), "handoff", {"op": "inspect", "workspace": "rcv", "manifest": p["manifest"],
+                                                    "payload": p["payload"], "declaration": p["declaration"],
+                                                    "expectation": "from-src"}).get("ok", {})
+    one = r[0].get("ok", {})
+
+    def verdicts(res):               # the assessment id carries the moment of assessment; the verdicts do not
+        return [(c["target"], c["reliance"], c["disposition"]) for c in res.get("data", {}).get("capsules", [])]
     inv = one.get("data", {}).get("boundary", {}).get("invalid", [])
     check("M11", one and one["data"]["staged_id"] == parts.get("data", {}).get("staged_id")
-          and one["assessment_id"] == parts.get("assessment_id") and one["delivery"]["relation"] == "MATCH_EXPECTED_SET"
+          and verdicts(one) == verdicts(parts) and one["delivery"] == parts.get("delivery")
+          and one["delivery"]["relation"] == "MATCH_EXPECTED_SET"
           and [c["target"] for c in one["data"]["capsules"]] == [r_["id"] for r_ in p["manifest"]["roots"]]
           and [(i["id"], i.get("claims_to_be", {}).get("actor"), i.get("claims_to_be", {}).get("transition"))
                for i in inv] == [(forged, "reviewer", pt)],
           "package in one piece = its parts; capsules default to the package's roots; the forged accept is named",
-          (one.get("delivery", {}).get("relation"), inv))
+          (one.get("delivery", {}).get("relation"), inv, verdicts(one), verdicts(parts)))
 
     # M12: a record is read without a view token from a new view; a context page needs its own view
     r = tool_calls(cfg_path, [("warrant_read", {"workspace": "src", "target": ids["transition"]}),

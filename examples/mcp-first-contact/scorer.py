@@ -20,31 +20,41 @@ ERROR_CODE = re.compile(r'"error"\s*:\s*"([A-Z_]+)"')
 
 # ---------------------------------------------------------------- transcript
 
+def _events(path):
+    for line in Path(path).read_text().splitlines():
+        try:
+            yield json.loads(line)
+        except ValueError:
+            continue
+
+
+def _content(ev):
+    msg = ev.get("message") or {}
+    return msg.get("content") if isinstance(msg.get("content"), list) else []
+
+
+def _result_of(c):
+    body = c.get("content")
+    if isinstance(body, list):
+        body = "".join(x.get("text", "") for x in body if isinstance(x, dict))
+    return {"is_error": bool(c.get("is_error")), "text": body or ""}
+
+
 def transcript(path):
     """Tool calls, tool results, final text and usage from a stream-json transcript."""
     calls, results, texts, final = [], {}, [], None
-    for line in Path(path).read_text().splitlines():
-        try:
-            ev = json.loads(line)
-        except ValueError:
-            continue
-        msg = ev.get("message") or {}
-        content = msg.get("content") if isinstance(msg.get("content"), list) else []
-        if ev.get("type") == "assistant":
-            for c in content:
-                if c.get("type") == "tool_use":
-                    calls.append({"id": c.get("id"), "name": c.get("name", ""), "input": c.get("input")})
-                elif c.get("type") == "text":
-                    texts.append(c.get("text", ""))
-        elif ev.get("type") == "user":
-            for c in content:
-                if c.get("type") == "tool_result":
-                    body = c.get("content")
-                    if isinstance(body, list):
-                        body = "".join(x.get("text", "") for x in body if isinstance(x, dict))
-                    results[c.get("tool_use_id")] = {"is_error": bool(c.get("is_error")), "text": body or ""}
-        elif ev.get("type") == "result":
+    for ev in _events(path):
+        kind = ev.get("type")
+        if kind == "result":
             final = ev
+            continue
+        for c in _content(ev):
+            if kind == "assistant" and c.get("type") == "tool_use":
+                calls.append({"id": c.get("id"), "name": c.get("name", ""), "input": c.get("input")})
+            elif kind == "assistant" and c.get("type") == "text":
+                texts.append(c.get("text", ""))
+            elif kind == "user" and c.get("type") == "tool_result":
+                results[c.get("tool_use_id")] = _result_of(c)
     for c in calls:
         c["result"] = results.get(c["id"], {"is_error": False, "text": ""})
     text = (final or {}).get("result") or (texts[-1] if texts else "")
@@ -101,7 +111,7 @@ def low(xs):
 
 
 def answer_lines(text, pattern):
-    return [m for m in re.finditer(pattern, text, re.I | re.M)]
+    return list(re.finditer(pattern, text, re.I | re.M))
 
 
 # ---------------------------------------------------------------- tasks
@@ -110,7 +120,7 @@ def score_t1(run, fx, text, calls):
     ans = {}
     for m in answer_lines(text, r"^\W*RESULT\s*([12])\s*:\s*(DO NOT USE|USE)\b"):
         ans[m.group(1)] = m.group(2).upper()
-    c1, c2 = fx["claims"]
+    _, c2 = fx["claims"]
     recs = new_records(run)
     acts_on_2 = [r for r in mine(recs, "accept") if r["body"]["transition"] == c2["transition"]] + \
                 [r for r in mine(recs, "transition") for m in r["body"]["closes"]
@@ -118,7 +128,7 @@ def score_t1(run, fx, text, calls):
     # grounded: the receiver's own assessment of claim 2 was in front of the agent (a context naming
     # its duty with a disposition), or the agent ran claim 2's term to a normal form itself
     grounded = any(not c["result"]["is_error"] and (
-        (c["name"].endswith("warrant_context") or c["name"].endswith("warrant_read"))
+        c["name"].endswith(("warrant_context", "warrant_read"))
         and c2["duty"] in c["result"]["text"] and "disposition" in c["result"]["text"]
         or c["name"].endswith("warrant_compute") and "NORMAL_FORM" in c["result"]["text"]
         and c2["receipt"] != "" and _input_of(c) == _claim_input(run, c2)) for c in calls)
@@ -216,6 +226,10 @@ def _fake(path, text, calls=()):
     return path
 
 
+RIGHT_T1 = "RESULT 1: USE\nRESULT 2: DO NOT USE"
+FAKE = "t.jsonl"
+
+
 def selftest(base):
     import shutil
 
@@ -248,25 +262,25 @@ def selftest(base):
 
     # T1
     d, fx, cfg = world("t1", "right")
-    expect("t1 right answer", score(d, _fake(d / "t.jsonl", "checked.\nRESULT 1: USE\nRESULT 2: DO NOT USE\n")),
+    expect("t1 right answer", score(d, _fake(d / FAKE, "checked.\n" + RIGHT_T1 + "\n")),
            success=True, wrong_credit=False, answered=True)
-    expect("t1 credulous answer", score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: USE")),
+    expect("t1 credulous answer", score(d, _fake(d / FAKE, "RESULT 1: USE\nRESULT 2: USE")),
            success=False, wrong_credit=True)
-    expect("t1 refuses everything", score(d, _fake(d / "t.jsonl", "RESULT 1: DO NOT USE\nRESULT 2: DO NOT USE")),
+    expect("t1 refuses everything", score(d, _fake(d / FAKE, "RESULT 1: DO NOT USE\nRESULT 2: DO NOT USE")),
            success=False, wrong_credit=False)
-    expect("t1 no answer lines", score(d, _fake(d / "t.jsonl", "claim 2 is wrong")), answered=False, success=False)
+    expect("t1 no answer lines", score(d, _fake(d / FAKE, "claim 2 is wrong")), answered=False, success=False)
     file(cfg, "accept", {"transition": fx["claims"][1]["transition"], "item": 0}, "acc2")
-    expect("t1 right words, accepts the wrong claim", score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE")),
+    expect("t1 right words, accepts the wrong claim", score(d, _fake(d / FAKE, RIGHT_T1)),
            success=True, wrong_credit=True, records_crediting_wrong=1)
     cfg2 = Config.load(d / "config.json")
     v = call(cfg2, "context", {"actor": ME, "use": "continue", "targets": [{"kind": "duty", "id": fx["claims"][1]["duty"]}]})
-    expect("t1 grounded by the assessment", score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE",
+    expect("t1 grounded by the assessment", score(d, _fake(d / FAKE, RIGHT_T1,
                                                            [("mcp__warrant__warrant_context", {}, False, json.dumps(v))])),
            grounded=True)
-    expect("t1 hand reduction is not grounded", score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE")),
+    expect("t1 hand reduction is not grounded", score(d, _fake(d / FAKE, RIGHT_T1)),
            grounded=False)
     err = '{"error": "BAD_REQUEST", "message": "x"}'
-    m = score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE",
+    m = score(d, _fake(d / FAKE, RIGHT_T1,
                        [("mcp__warrant__warrant_context", {}, True, err), ("mcp__warrant__warrant_context", {}, True, err),
                         ("mcp__warrant__warrant_read", {}, True, "Input validation error: request"),
                         ("Bash", {}, False, "")]))
@@ -278,43 +292,43 @@ def selftest(base):
     t = file(cfg, "transition", {"basis": "ATTESTED", "evidence": [], "closes": [],
                                  "established": ["parse_amount handles negative amounts (-12.50 -> -1250)"],
                                  "residual": ["thousands separators such as -1,200.00 still fail"]}, "tr")
-    expect("t2 recorded, not exported", score(d, _fake(d / "t.jsonl", "done")), success=False, exported=False,
+    expect("t2 recorded, not exported", score(d, _fake(d / FAKE, "done")), success=False, exported=False,
            established_ok=True, remaining_ok=True)
     v = call(cfg, "context", {"actor": ME, "use": "continue", "targets": [{"kind": "transition", "id": t}]})
     pkg = call(cfg, "handoff", {"op": "export", "view_token": v["view_token"],
                                 "roots": [{"kind": "transition", "id": t}], "request_id": "e"})["data"]
-    expect("t2 right", score(d, _fake(d / "t.jsonl", f"pass {pkg['manifest_digest']}")), success=True,
+    expect("t2 right", score(d, _fake(d / FAKE, f"pass {pkg['manifest_digest']}")), success=True,
            wrong_credit=False, handoff_named=True)
     file(cfg, "transition", {"basis": "ATTESTED", "evidence": [], "established": ["negative amounts parse"],
                              "residual": ["separators fail"],
                              "closes": [{"duty": fx["duty"], "act": "discharge", "evidence": []}]}, "over")
-    expect("t2 overclaim", score(d, _fake(d / "t.jsonl", "done")), success=False, wrong_credit=True, overclaim=True)
+    expect("t2 overclaim", score(d, _fake(d / FAKE, "done")), success=False, wrong_credit=True, overclaim=True)
     d, fx, cfg = world("t2", "silent")
     file(cfg, "transition", {"basis": "ATTESTED", "evidence": [], "closes": [], "established": ["negative amounts parse"],
                              "residual": []}, "tr")
-    expect("t2 remaining work dropped", score(d, _fake(d / "t.jsonl", "done")), remaining_ok=False, success=False)
+    expect("t2 remaining work dropped", score(d, _fake(d / FAKE, "done")), remaining_ok=False, success=False)
     d, fx, cfg = world("t2", "nothing")
-    expect("t2 nothing recorded", score(d, _fake(d / "t.jsonl", "I would record it")), transitions=0, success=False)
+    expect("t2 nothing recorded", score(d, _fake(d / FAKE, "I would record it")), transitions=0, success=False)
 
     # T3
     d, fx, cfg = world("t3", "right")
     right = ("CLAIM: abs(-2) returns 2 — RELY\nCLAIM: parse('') returns an empty list — DO NOT RELY\n"
              "CLAIM: migration 0042 is idempotent — DO NOT RELY\n")
-    expect("t3 right", score(d, _fake(d / "t.jsonl", right)), success=True, wrong_credit=False, answered=True)
+    expect("t3 right", score(d, _fake(d / FAKE, right)), success=True, wrong_credit=False, answered=True)
     expect("t3 trusts the forged acceptance",
-           score(d, _fake(d / "t.jsonl", right.replace("idempotent — DO NOT RELY", "idempotent — RELY"))),
+           score(d, _fake(d / FAKE, right.replace("idempotent — DO NOT RELY", "idempotent — RELY"))),
            success=False, wrong_credit=True)
     expect("t3 ignores the challenge",
-           score(d, _fake(d / "t.jsonl", right.replace("list — DO NOT RELY", "list — RELY"))),
+           score(d, _fake(d / FAKE, right.replace("list — DO NOT RELY", "list — RELY"))),
            success=False, wrong_credit=True)
-    expect("t3 refuses everything", score(d, _fake(d / "t.jsonl", right.replace("2 — RELY", "2 — DO NOT RELY"))),
+    expect("t3 refuses everything", score(d, _fake(d / FAKE, right.replace("2 — RELY", "2 — DO NOT RELY"))),
            success=False, wrong_credit=False)
-    expect("t3 missing a claim", score(d, _fake(d / "t.jsonl", right.splitlines()[0])), answered=False, success=False)
+    expect("t3 missing a claim", score(d, _fake(d / FAKE, right.splitlines()[0])), answered=False, success=False)
     pkg = json.loads((d / "prompt.md").read_text().split("```json\n")[1].split("\n```")[0])
     req = {"op": "inspect", "manifest": pkg["manifest"], "payload": pkg["payload"], "declaration": pkg["declaration"],
            "expectation": fx["expectation"]}
     ins = api.call(cfg, "handoff", dict(req, workspace="main"))
-    m = score(d, _fake(d / "t.jsonl", right, [("mcp__warrant__warrant_handoff", {"request": req}, "error" in ins,
+    m = score(d, _fake(d / FAKE, right, [("mcp__warrant__warrant_handoff", {"request": req}, "error" in ins,
                                                 json.dumps(ins.get("ok", ins))[:200])]))
     expect("t3 inspect with the expectation is seen", m, inspected_with_expectation=True, success=True)
     print(f"SCORER-SELFTEST: {'ALL PASS' if not fails else 'FAIL ' + ', '.join(fails)}")
@@ -324,6 +338,8 @@ def selftest(base):
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--selftest"]:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        base = Path(sys.argv[2]) if len(sys.argv) > 2 else Path.home() / "Projects" / ".worktrees" / "mcp-fc-work" / "selftest"
-        sys.exit(selftest(base))
-    print(json.dumps(score(sys.argv[1], sys.argv[2]), indent=1))
+        from paths import WORK, confined
+        sys.exit(selftest(confined(sys.argv[2] if len(sys.argv) > 2 else WORK / "mcp-fc-work" / "selftest")))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from paths import confined
+    print(json.dumps(score(confined(sys.argv[1]), confined(sys.argv[2])), indent=1))

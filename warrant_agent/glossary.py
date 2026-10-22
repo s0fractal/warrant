@@ -2,6 +2,7 @@
 says what the word means here and what it does not establish. Nothing in this
 table comes from a record, a request or the configuration."""
 
+NOT_CREDITED, HOLDS = "Not credited.", "Holds every use."
 TERMS = {
     # reliance of a capsule (SPEC §4.4)
     "ELIGIBLE": ("The receiver's own assessment of this frozen view lets the named use rely on this duty or "
@@ -30,12 +31,12 @@ TERMS = {
     "PENDING": ("The closure item waits for acceptances (`waiting_for`).", "Nothing is credited while it waits."),
     "UNVERIFIED": ("A replayed (computation) closure that this receiver could not verify: no accepted provider, "
                    "bytes missing, or its own replay disagreed with the receipt (`why` says which).",
-                   "Not credited. A disagreeing replay is this receiver's result, not proof of intent."),
+                   NOT_CREDITED + " A disagreeing replay is this receiver's result, not proof of intent."),
     "OVERCLAIMED": ("The item's basis is not one the duty's condition admits (e.g. attested where a replay or an "
-                    "observation is required).", "Not credited."),
+                    "observation is required).", NOT_CREDITED),
     "MISSING_EVIDENCE": ("The item does not cite the evidence its basis needs (e.g. exactly one receipt).",
-                         "Not credited."),
-    "UNMET_CONDITION": ("The cited evidence does not meet the duty's condition.", "Not credited."),
+                         NOT_CREDITED),
+    "UNMET_CONDITION": ("The cited evidence does not meet the duty's condition.", NOT_CREDITED),
     # use decision
     "WITHIN_POLICY": ("Every target and the delivery meet the receiver's local use policy now.",
                       "A local policy decision over the assessment; not a new fact about the work."),
@@ -49,12 +50,12 @@ TERMS = {
                  "A manifest digest inside the package is never an expectation. warrant_workspace lists the "
                  "configured expectation handles."),
     "LOCAL_CAPTURE": ("A view of the receiver's own store, with no transfer.", ""),
-    "MISSING_DECLARED_BYTES": ("Objects the manifest declares are not in the payload.", "Holds every use."),
-    "CONTENT_MISMATCH": ("Delivered bytes do not hash to their ids, or differ from the manifest.", "Holds every use."),
-    "WRONG_SET": ("The manifest is not the one the receiver's expectation names.", "Holds every use."),
-    "WRONG_SOURCE": ("The manifest names another source than the expectation.", "Holds every use."),
+    "MISSING_DECLARED_BYTES": ("Objects the manifest declares are not in the payload.", HOLDS),
+    "CONTENT_MISMATCH": ("Delivered bytes do not hash to their ids, or differ from the manifest.", HOLDS),
+    "WRONG_SET": ("The manifest is not the one the receiver's expectation names.", HOLDS),
+    "WRONG_SOURCE": ("The manifest names another source than the expectation.", HOLDS),
     "UNVERIFIED_EXPORTER": ("No declaration by the expected exporter verifies under the receiver's trust.",
-                            "Holds every use."),
+                            HOLDS),
     "UNATTESTED": ("Completeness of the source is never attested by this layer.", ""),
     "invalid": ("Records in the view that do not authenticate under the receiver's trust (wrong key for the "
                 "named actor, not canonical, wrong id). They take part in nothing.",

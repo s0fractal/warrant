@@ -29,6 +29,7 @@ USES = {"continue": {"delivery": ["MATCH_EXPECTED_SET", "LOCAL_CAPTURE"], "relia
 PROFILE = {"uses": {"continue": {"requires_triggers": False}}, "accept_by": {"results": []}, "targets": [TARGET],
            "grant_roots": [], "challengers": ["auditor"], "providers": []}
 OPERATOR_NOTE = "(Operator note: your Warrant workspace is `main`.)"
+TRUST, PROFILE_FILE = "trust.json", "profile.json"
 
 
 class World:
@@ -39,13 +40,13 @@ class World:
         self.base.mkdir(parents=True, exist_ok=True)
         self.keys = {a: Key.generate() for a in actors}
         self.store = Store(self.base / "store").init()
-        (self.base / "trust.json").write_bytes(C.canon(Trust.document([(a, k.public) for a, k in self.keys.items()])))
-        (self.base / "profile.json").write_text(json.dumps(profile or PROFILE))
+        (self.base / TRUST).write_bytes(C.canon(Trust.document([(a, k.public) for a, k in self.keys.items()])))
+        (self.base / PROFILE_FILE).write_text(json.dumps(profile or PROFILE))
         (self.base / "keys").mkdir(exist_ok=True)
         (self.base / "keys" / f"{signer}.key").write_text(self.keys[signer].seed_hex())
         self.doc = {"agent_api": AGENT_API, "state": str(self.base / "state"),
-                    "workspaces": {name: {"store": str(self.base / "store"), "trust": str(self.base / "trust.json"),
-                                          "profile": str(self.base / "profile.json"),
+                    "workspaces": {name: {"store": str(self.base / "store"), "trust": str(self.base / TRUST),
+                                          "profile": str(self.base / PROFILE_FILE),
                                           "signer": {"actor": signer, "key": str(self.base / "keys" / f"{signer}.key")},
                                           "source_name": name, "uses": USES, "expectations": expectations or {},
                                           "limits": {}}}}
@@ -82,7 +83,7 @@ def t1(base):
     w = World(base, ["agent-b", ME], ME)
     prov = w.call("compute", {"op": "provider"})["provider"]
     prof = dict(PROFILE, providers=[prov])
-    (w.base / "profile.json").write_text(json.dumps(prof))
+    (w.base / PROFILE_FILE).write_text(json.dumps(prof))
     w.save()
     runtime = "sigma-book1-0.6.0/hash-thunk/leftmost-outermost"
     out = {"task": "t1", "provider": prov, "claims": []}
@@ -175,7 +176,7 @@ def t3(base):
     r = World(Path(base), actors, ME, expectations={"from-agent-a": {"manifest": pkg["manifest_digest"],
                                                                      "source": "a"}})
     # the receiver's trust binds every actor to its real key (the sender's world made them)
-    (r.base / "trust.json").write_bytes(C.canon(Trust.document([(x, k.public) for x, k in a.keys.items()])))
+    (r.base / TRUST).write_bytes(C.canon(Trust.document([(x, k.public) for x, k in a.keys.items()])))
     r.save()
     out = {"task": "t3", "claims": claims, "forged_accept": forged, "manifest_digest": pkg["manifest_digest"],
            "expectation": "from-agent-a"}
@@ -212,5 +213,10 @@ def build(task, base):
 
 
 if __name__ == "__main__":
-    build(sys.argv[1], sys.argv[2])
-    print(f"fixture {sys.argv[1]} -> {sys.argv[2]}")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from paths import confined
+    task = sys.argv[1]
+    if task not in TASKS:
+        raise SystemExit(f"task is one of {sorted(TASKS)}")
+    build(task, confined(sys.argv[2]))
+    print(f"fixture {task} -> {sys.argv[2]}")

@@ -54,19 +54,20 @@ def _accept_body(meta_vdir, body):
 
 
 # The smallest body of each type an agent writes, as the refusal of an invalid body shows it.
+ACTOR_SLOT, DUTY_SLOT = "<actor>", "<duty id>"
 TEMPLATES = {
     "transition": {"basis": "ATTESTED", "established": ["what is now true, in one sentence each"],
                    "residual": ["what this does not establish or what is still open"],
                    "closes": "optional: [{duty: <duty id>, act: discharge, evidence: [<blob id>]}] only for duties "
                              "this work completes",
                    "evidence": "optional: [<blob id in the store>]"},
-    "duty": {"holder": "<actor>", "statement": "what is owed", "owed_to": ["<actor>"], "condition": {"attest": {}},
+    "duty": {"holder": ACTOR_SLOT, "statement": "what is owed", "owed_to": [ACTOR_SLOT], "condition": {"attest": {}},
              "accept_by": ["<actor whose acceptance closes it>"]},
     "accept": {"transition": "<transition id>", "item": 0},
     "challenge": {"target": "<transition id>", "item": 0, "statement": "what is wrong", "evidence": []},
-    "observation": {"target": "<duty id>", "probe": "<hex64 the duty's observe condition names>",
+    "observation": {"target": DUTY_SLOT, "probe": "<hex64 the duty's observe condition names>",
                     "window": [0, 1], "result": "<observed value>", "raw": []},
-    "grant": {"grantee": "<actor>", "acts": ["release"], "delegable": [], "duties": ["<duty id>"],
+    "grant": {"grantee": ACTOR_SLOT, "acts": ["release"], "delegable": [], "duties": [DUTY_SLOT],
               "expires": None, "parent": None},
 }
 
@@ -90,7 +91,7 @@ def prepare(ws, based_on, request_id, rtype, body):
         d = views.read_json(path)
         need(d["inputs"] == inputs, "CONFLICT", "request_id was prepared with other inputs")
         return d
-    meta, report, vdir = views.load(ws, views.capture(ws)["token"] if based_on is None else based_on)
+    _, report, vdir = views.load(ws, views.capture(ws)["token"] if based_on is None else based_on)
     full = _accept_body(vdir, body) if rtype == "accept" else fill(rtype, body)
     try:
         rec = R.record(rtype, actor, int(time.time()), full)

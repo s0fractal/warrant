@@ -99,8 +99,13 @@ agent mutant killed on it (A41–A53); see AGENT.md.
   `grounded` metric being added before round 1; it is not counted.
 - Cost is the agents' `total_cost_usd` as reported by the CLI: round 1 $2.155, round 2 $1.522,
   smoke $0.007, **$3.68 in all**. The orchestrating session's own usage is not included.
-- Transcripts are kept as the CLI wrote them except one substitution: the account e-mail and
-  name that four round-1 agents used as `actor` are replaced by `<user-email>` / `<user-name>`.
+- Transcripts are kept as the CLI wrote them except two substitutions: the account e-mail and
+  name that four round-1 agents used as `actor` are replaced by `<user-email>` / `<user-name>`;
+  and every view token (a 32-hex selector of a view in a throwaway world, which grants nothing)
+  is replaced by `<view-NN>` per file by `normalize.py`, because secret scanners read
+  `"view_token": "<hex>"` as a credential (GitGuardian flagged 14 on PR #167). `scorer.py`
+  re-scores every round-1 and round-2 transcript after both substitutions to the committed
+  scores, unchanged.
 - The fixtures' worlds (stores, keys, state) are not committed; `fixture.py` rebuilds them,
   `round-*/` keeps every transcript (`*.jsonl`), prompt and score.
 

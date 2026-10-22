@@ -126,16 +126,14 @@ def build(cfg):
         "op=import: add an inspected package (staged_id) to the store; add-only and idempotent."))
     def warrant_handoff(op: Literal["export", "inspect", "import"], workspace: Workspace,
                         package: Annotated[dict[str, Any] | None, Field(description=(
-                            "inspect: the received package object {manifest, payload, declaration, ...} as it is."))] = None,
+                            "inspect: the received package object {manifest, payload, declaration, ...} as it is "
+                            "(the Python API and the CLI also take manifest/payload/declaration apart)."))] = None,
                         expectation: Annotated[str | None, Field(description=(
                             "inspect: the receiver's configured expectation handle for this delivery."))] = None,
                         targets: Annotated[list[Target] | None, Field(description=(
                             "inspect: capsule targets; the package's roots if omitted."))] = None,
                         use: Annotated[str | None, Field(description="inspect: a configured use.")] = None,
                         actor: Annotated[str | None, Field(description="inspect: whose frontier.")] = None,
-                        manifest: Annotated[dict[str, Any] | None, Field(description="inspect: instead of package.")] = None,
-                        payload: Annotated[dict[str, Any] | None, Field(description="inspect: instead of package.")] = None,
-                        declaration: Annotated[str | None, Field(description="inspect: instead of package.")] = None,
                         view_token: Annotated[str | None, Field(description="export: the view to export.")] = None,
                         roots: Annotated[list[Target] | None, Field(description="export: the duties/transitions "
                                                                                 "the package is about.")] = None,
@@ -143,8 +141,7 @@ def build(cfg):
                         staged_id: Annotated[str | None, Field(description="import: from the inspect result.")] = None
                         ) -> dict[str, Any]:
         return run("handoff", _req(op=op, workspace=workspace, package=package, expectation=expectation,
-                                   targets=targets, use=use, actor=actor, manifest=manifest, payload=payload,
-                                   declaration=declaration, view_token=view_token, roots=roots,
+                                   targets=targets, use=use, actor=actor, view_token=view_token, roots=roots,
                                    request_id=request_id, staged_id=staged_id))
 
     @server.tool(name="warrant_prepare", annotations=local, description=(
