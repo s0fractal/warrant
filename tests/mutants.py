@@ -104,7 +104,7 @@ MUTANTS = [
      [('        elif window and not (window[0] <= o["window"][0] and o["window"][1] < window[1]):', '        elif False:')],
      "conditions_test", ["Q3"]),
     ("M29", "engine.py", "any actor's challenge counts",
-     [('        elif c["actor"] in counts:', '        elif True:')], "conditions_test", ["K2"]),
+     [('        counted = c["actor"] in counts', '        counted = True')], "conditions_test", ["K2"]),
     ("M30", "engine.py", "a superseded closure still carries its challenges",
      [('    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))',
        '    yield _challenged(rep, _counting_challenges(rep, {(c["transition"], c["item"]) for c in r["candidates"]\n'
@@ -141,7 +141,7 @@ MUTANTS = [
     ("M42", "engine.py", "an acceptor is told its accept is the last one whoever else is still missing",
      [('"last_acceptance": all(actor in g for g in c["awaiting"])}', '"last_acceptance": True}')], "contract_test", ["F5"]),
     ("M56", "engine.py", "an evidence-weighted challenge still needs a listed challenger",
-     [('        if c.get("counter_observation"):', '        if False:')], "conditions_test", ["K4"]),
+     [('        weighted = bool(c.get("counter_observation"))', '        weighted = False')], "conditions_test", ["K4"]),
     ("M57", "engine.py", "any cited observation is counter-evidence, whatever its probe or result",
      [('        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:\n            continue\n', '')],
      "conditions_test", ["K5"]),

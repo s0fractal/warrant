@@ -95,6 +95,8 @@ jobs:
       # on master a broken matrix or audit still fails this step.
       - name: SPEC claims blind-spot audit (report)
         if: github.event_name != 'pull_request'
+        env:
+          TMPDIR: ${{ runner.temp }}      # audit opens matrices only under the checkout or the temp dir
         run: WARRANT_IMPL= python tools/claims.py audit --matrix "$RUNNER_TEMP/matrix-core.json" --matrix "$RUNNER_TEMP/matrix-agent.json"
 
       - name: Cross-host local controls and frozen round-1 artifact replay

@@ -1274,9 +1274,11 @@ def replay_counter(repo, snap, h, p):
     return _REPLAYS[key]
 
 
-def _replay_counter(repo, doc, p, statements=True):
-    """replay_counter's work; `statements=False` only for --selftest, to show that the
-    statement rule is what refuses a counter that would replay per function."""
+STATEMENT_REFUSAL = "patch changes statements no single mutant of the claim changes"
+
+
+def _counter_shape(doc, p):
+    """Why counter blob `doc` cannot be a proof against claim `p` before anything runs, or None."""
     if set(doc) != set(COUNTER_FIELDS):
         return f"members are not {list(COUNTER_FIELDS)}"
     if doc["claim"] != p.id or doc["against"] != p.tid:
@@ -1299,6 +1301,76 @@ def _replay_counter(repo, doc, p, statements=True):
             path = line[4:].split("\t")[0].strip()
             if path != "/dev/null" and not re.match(r"[ab]/(warrant|warrant_agent)/[A-Za-z0-9_./-]+\Z", path) or ".." in path:
                 return f"the patch touches {path!r}, outside warrant/ and warrant_agent/"
+    return None
+
+
+def _counter_locality(repo, doc, p, tmp, statements=True):
+    """Why the applied patch (in `tmp`) is not confined to the claim's own code, or None.
+
+    Locality: the patch must alter code that one of the claim's own mutants alters. Those
+    mutants are the repository's statement of which code the sentence is about; a patch
+    elsewhere that breaks some case proves nothing about this claim's witnesses. A scope
+    counts as changed only if its AST changes (no comments, layout or docstrings), and every
+    changed scope must be one the claim's mutants change: no foreign hunk can supply the FAIL
+    while a cosmetic or harmless local edit supplies the locality. AMEND 1 of #169: and its
+    statements must be among those ONE of the claim's mutants changes; per function, 892
+    existing mutants were counters `check` admitted against claims about another rule of the
+    same function (SPEC-3.6-7 by M29)."""
+    files = {m.group(1) for m in re.finditer(r"^\+\+\+ b/(\S+)", doc["patch"], re.M)} | \
+            {m.group(1) for m in re.finditer(r"^--- a/(\S+)", doc["patch"], re.M)}
+    touched, stmts = set(), set()
+    for f in sorted(files):
+        if not f.endswith(".py"):
+            return f"the patch changes {f}, which is not Python source"
+        old = (repo.root / f).read_text() if (repo.root / f).is_file() else ""
+        new = (tmp / f).read_text() if (tmp / f).is_file() else ""
+        try:
+            touched |= changed_scopes(f, old, new)
+            stmts |= changed_statements(f, old, new)
+        except SyntaxError as e:
+            return f"the patch leaves {f} unparseable: {e.msg} (line {e.lineno})"
+    theirs = {sc for mid in p.doc["mutants"] for sc in repo.mutant_scopes(mid)}
+    fmt = lambda ss: ", ".join(f"{f}:{fn}" for f, fn in sorted(ss)) or "none"     # noqa: E731
+    if not touched & theirs:
+        return (f"patch changes no behaviour in the claim's mutants' scopes (patch: {fmt(touched)}; "
+                f"mutants {' '.join(p.doc['mutants'])}: {fmt(theirs)})")
+    if touched - theirs:
+        return (f"patch changes scopes the claim's mutants do not: {fmt(touched - theirs)} "
+                f"(mutants {' '.join(p.doc['mutants'])}: {fmt(theirs)})")
+    if statements and not any(stmts <= repo.mutant_statements(mid) for mid in p.doc["mutants"]):
+        return (f"{STATEMENT_REFUSAL} ({len(stmts)} statement(s) in {fmt(touched)}; "
+                f"mutants {' '.join(p.doc['mutants'])} each change other statements)")
+    return None
+
+
+def _counter_run(repo, doc, tmp):
+    """Why the named cases do not pass and fail as the blob says under the patch, or None."""
+    got = {}
+    for test in sorted({c.partition(":")[0] for c in doc["passes"] + doc["fails"]}):
+        if not (repo.tests / f"{test}.py").is_file():
+            return f"tests/{test}.py does not exist"
+        res = tmp / f"results-{test}.json"
+        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
+        subprocess.run([sys.executable, str((repo.tests / f"{test}.py").resolve())], cwd=repo.tests.resolve(), env=env,
+                       capture_output=True, timeout=900, check=False)
+        if not res.is_file():
+            return f"tests/{test}.py produced no results under the patch"
+        got.update({f"{test}:{k}": v for k, v in json.loads(res.read_text()).items()})
+    absent = [c for c in doc["passes"] + doc["fails"] if c not in got]
+    if absent:
+        return f"no such case ran: {', '.join(absent)}"
+    bad = [f"{c} {got[c]}, not PASS" for c in doc["passes"] if got[c] != "PASS"] + \
+          [f"{c} {got[c]}, not FAIL" for c in doc["fails"] if got[c] != "FAIL"]
+    return "; ".join(bad) or None
+
+
+def _replay_counter(repo, doc, p, statements=True):
+    """replay_counter's work: the blob's shape, the patch applied to a copy of the packages,
+    its locality, then the named cases. `statements=False` only for --selftest, to show that
+    the statement rule is what refuses a counter that would replay per function."""
+    why = _counter_shape(doc, p)
+    if why:
+        return why
     tmp = Path(tempfile.mkdtemp(prefix="claims-counter-"))
     try:
         for pkg in ("warrant", "warrant_agent"):
@@ -1309,56 +1381,7 @@ def _replay_counter(repo, doc, p, statements=True):
                                capture_output=True, check=False)
             if r.returncode:
                 return f"the patch does not apply: {r.stderr.decode().strip()[:200]}"
-        # Locality: the patch must alter code that one of the claim's own mutants alters. Those
-        # mutants are the repository's statement of which code the sentence is about; a patch
-        # elsewhere that breaks some case proves nothing about this claim's witnesses.
-        files = {m.group(1) for m in re.finditer(r"^\+\+\+ b/(\S+)", doc["patch"], re.M)} | \
-                {m.group(1) for m in re.finditer(r"^--- a/(\S+)", doc["patch"], re.M)}
-        # A scope counts as changed only if its AST changes (no comments, layout or docstrings),
-        # and every changed scope must be one the claim's mutants change: no foreign hunk can
-        # supply the FAIL while a cosmetic or harmless local edit supplies the locality.
-        touched, stmts = set(), set()
-        for f in sorted(files):
-            if not f.endswith(".py"):
-                return f"the patch changes {f}, which is not Python source"
-            old = (repo.root / f).read_text() if (repo.root / f).is_file() else ""
-            new = (tmp / f).read_text() if (tmp / f).is_file() else ""
-            try:
-                touched |= changed_scopes(f, old, new)
-                stmts |= changed_statements(f, old, new)
-            except SyntaxError as e:
-                return f"the patch leaves {f} unparseable: {e.msg} (line {e.lineno})"
-        theirs = {sc for mid in p.doc["mutants"] for sc in repo.mutant_scopes(mid)}
-        fmt = lambda ss: ", ".join(f"{f}:{fn}" for f, fn in sorted(ss)) or "none"     # noqa: E731
-        if not touched & theirs:
-            return (f"patch changes no behaviour in the claim's mutants' scopes (patch: {fmt(touched)}; "
-                    f"mutants {' '.join(p.doc['mutants'])}: {fmt(theirs)})")
-        if touched - theirs:
-            return (f"patch changes scopes the claim's mutants do not: {fmt(touched - theirs)} "
-                    f"(mutants {' '.join(p.doc['mutants'])}: {fmt(theirs)})")
-        # AMEND 1 of #169: and its statements must be among those ONE of the claim's mutants
-        # changes. Per function, 892 existing mutants were counters `check` admitted against
-        # claims about another rule of the same function (SPEC-3.6-7 by M29).
-        if statements and not any(stmts <= repo.mutant_statements(mid) for mid in p.doc["mutants"]):
-            return (f"patch changes statements no single mutant of the claim changes ({len(stmts)} statement(s) in "
-                    f"{fmt(touched)}; mutants {' '.join(p.doc['mutants'])} each change other statements)")
-        got = {}
-        for test in sorted({c.partition(":")[0] for c in doc["passes"] + doc["fails"]}):
-            if not (repo.tests / f"{test}.py").is_file():
-                return f"tests/{test}.py does not exist"
-            res = tmp / f"results-{test}.json"
-            env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
-            subprocess.run([sys.executable, str((repo.tests / f"{test}.py").resolve())], cwd=repo.tests.resolve(), env=env,
-                           capture_output=True, timeout=900, check=False)
-            if not res.is_file():
-                return f"tests/{test}.py produced no results under the patch"
-            got.update({f"{test}:{k}": v for k, v in json.loads(res.read_text()).items()})
-        absent = [c for c in doc["passes"] + doc["fails"] if c not in got]
-        if absent:
-            return f"no such case ran: {', '.join(absent)}"
-        bad = [f"{c} {got[c]}, not PASS" for c in doc["passes"] if got[c] != "PASS"] + \
-              [f"{c} {got[c]}, not FAIL" for c in doc["fails"] if got[c] != "FAIL"]
-        return "; ".join(bad) or None
+        return _counter_locality(repo, doc, p, tmp, statements) or _counter_run(repo, doc, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1710,19 +1733,18 @@ def default_base(repo):
 
 MATRIX = "warrant-mutants/matrix@1"
 GIT_NO_GC = ("-c", "gc.auto=0")             # no automatic gc while a fixture is cloned (run 39537906378)
-WORK_ENV = ("WARRANT_CLAIMS_WORK", "RUNNER_TEMP")   # operator directories a matrix or counters may live in
 
 
-def confined(repo, arg):
-    """The resolved path of command-line path `arg` if it lies in the repository, the system
-    temporary directory or a directory named by WORK_ENV; Refused otherwise, before it is opened."""
+def confined(arg):
+    """The resolved path of command-line path `arg` if it lies in this checkout (ROOT) or the
+    temporary directory (tempfile.gettempdir(): $TMPDIR, else /tmp); Refused otherwise, before
+    it is opened. An operator who keeps matrices elsewhere sets TMPDIR for the command."""
     real = os.path.realpath(arg)
-    roots = [repo.root, tempfile.gettempdir()] + [os.environ[v] for v in WORK_ENV if os.environ.get(v)]
-    for root in roots:
+    for root in (ROOT, tempfile.gettempdir()):
         base = os.path.realpath(root)
         if os.path.commonpath([real, base]) == base:
             return Path(real)
-    raise Refused(f"{arg}: outside the repository, the temporary directory and ${' and $'.join(WORK_ENV)}")
+    raise Refused(f"{arg}: outside this checkout and the temporary directory")
 
 
 def _harness(repo, name):
@@ -1772,7 +1794,7 @@ def load_matrices(repo, paths):
     here, defs = core.source_digest(repo.root), _definitions(repo, core)
     rows, problems = {}, []
     for p in paths:
-        got, why = _read_matrix(confined(repo, p), here, defs)
+        got, why = _read_matrix(confined(p), here, defs)
         rows.update(got)
         problems += why
     return rows, problems
@@ -1843,7 +1865,7 @@ def _witness_results(n, runs):
     return out
 
 
-def _audit_entry(repo, facts, n, mid, row, fails):
+def _audit_entry(facts, n, mid, row, fails):
     mine = {sc for m in n.doc["mutants"] for sc in facts.scopes(m)}
     lines = {x for m in n.doc["mutants"] for x in facts.lines(m)}
     st = facts.statements(mid)
@@ -1862,7 +1884,7 @@ def _audit_claim(repo, facts, n, rows, blind, unknown):
         seen = _witness_results(n, row.get("runs") or {}) if fails else {}
         if not fails or "FAIL" in seen.values():
             continue
-        entry = _audit_entry(repo, facts, n, mid, row, fails)
+        entry = _audit_entry(facts, n, mid, row, fails)
         if None in seen.values():
             unknown.append(dict(entry, not_run=sorted({w.partition(":")[0] for w, v in seen.items() if v is None})))
             continue
@@ -1904,7 +1926,7 @@ def cmd_audit(repo, a):
     if problems:
         return 2
     blind, unknown = audit(repo, rows)
-    out = confined(repo, a.counters) if a.counters else None
+    out = confined(a.counters) if a.counters else None
     if out:
         out.mkdir(parents=True, exist_ok=True)
     for b in sorted(blind, key=lambda b: (not b["confined"], b["tier"] != "line")):
@@ -2007,9 +2029,11 @@ def _audit_synthetic(fix, work):
         rows, probs = load_matrices(r, matrix(**kv))
         return (*audit(r, rows), rows, probs)
 
-    def unknown_only(blind, unknown):
-        return not _found(blind, c.id, x) and any(u["claim"] == c.id and u["mutant"] == x for u in unknown)
+    return _synthetic_found(r, c, x, y, run) + _synthetic_guards(r, c, x, first, run, matrix)
 
+
+def _synthetic_found(r, c, x, y, run):
+    """A planted blind claim is reported with its counter; a disjoint mutant is not."""
     out = []
     blind, unknown, _, probs = run()
     hit = _found(blind, c.id, x)
@@ -2019,6 +2043,15 @@ def _audit_synthetic(fix, work):
                 and hit[0]["counter"]["fails"] == ["zz_test:ZZ_KILLER"], (c.id, x, probs, blind[:2])))
     out.append(("audit: a mutant whose scopes are disjoint from the claim's mutants' is not reported against it",
                 not _found(blind, c.id, y), _found(blind, c.id, y)))
+    return out
+
+
+def _synthetic_guards(r, c, x, first, run, matrix):
+    """Each guard of audit and load_matrices, one planted matrix at a time."""
+    def unknown_only(blind, unknown):
+        return not _found(blind, c.id, x) and any(u["claim"] == c.id and u["mutant"] == x for u in unknown)
+
+    out = []
     blind, unknown, _, _ = run(result=lambda w: "FAIL" if w == first else "PASS")
     out.append(("audit: a claim one of whose witnesses fails under the mutant is not reported",
                 not _found(blind, c.id, x) and not [u for u in unknown if u["claim"] == c.id and u["mutant"] == x],
@@ -2080,7 +2113,7 @@ def _audit_e2e(fix, work, key):
             run.returncode == 0 and not probs and bool(hit) and hit[0]["confined"] and why is None
             and "records_test:A7" in hit[0]["fails"], (run.stdout[-300:], probs, why)),
            ("audit e2e: the pre-review SPEC-4.1-5 is blind to M116, not confined, and its counter is refused per statement",
-            bool(hit5) and not hit5[0]["confined"] and bool(why5) and "statements no single mutant" in why5, (hit5[:1], why5))]
+            bool(hit5) and not hit5[0]["confined"] and bool(why5) and STATEMENT_REFUSAL in why5, (hit5[:1], why5))]
     au.claim(n.id, n.doc["text"], ["contract_test:X1", "records_test:A6", "records_test:A7"], ["M05", "M06", "M241"],
              because="selftest: A7 cited, M278 still not", previous=now[s338])
     blind, _ = audit(r, rows)
@@ -2153,6 +2186,7 @@ def selftest(jobs=1):
         # mutants change another statement of _counting_challenges than M29: that counter replayed
         # per function and is refused per statement.
         repo.mutants()
+        m29_fails = ["conditions_test:K2"]
         live_ids = {n.id: n for n in live}
         sc, sw = live_ids.get("SPEC-3.2-20"), live_ids.get("SPEC-3.6-7")
         if sc is None or sw is None or not {"M234", "M29"} <= set(repo.mutant_edits) or not any(
@@ -2521,7 +2555,7 @@ def selftest(jobs=1):
         # AMEND 1 of #169: per function, M29 was a counter against SPEC-3.6-7; per statement it is not
         case("a counter confined to the claim's function but to another statement (SPEC-3.6-7 by M29)", "COUNTER_NOT_REPLAYED",
              rebacked([], [], unbacked_because="selftest", claim=sw,
-                      counter=stmt_counter(mid="M29", fails=["conditions_test:K2"])))
+                      counter=stmt_counter(mid="M29", fails=m29_fails)))
         case("the floats counter: an inserted statement in a function a cited mutant changes", "COUNTER_NOT_REPLAYED",
              rebacked([], [], unbacked_because="selftest", counter=counter()))
         # AMEND 2: the patch must alter code the claim's own mutants alter
@@ -2676,8 +2710,8 @@ def selftest(jobs=1):
             """Reasons, not only codes: the statement rule (AMEND 1 of #169) is what refuses M29 against
             SPEC-3.6-7 and the floats insertion against SPEC-2-2 (each replays without it), M234 against
             SPEC-3.2-20 replays, and a fails case that passes is refused by the replay, not by locality."""
-            why_sw = _replay_counter(repo, stmt_counter_doc(repo, sw, mid="M29", fails=["conditions_test:K2"]), sw)
-            why_sw_off = _replay_counter(repo, stmt_counter_doc(repo, sw, mid="M29", fails=["conditions_test:K2"]), sw,
+            why_sw = _replay_counter(repo, stmt_counter_doc(repo, sw, mid="M29", fails=m29_fails), sw)
+            why_sw_off = _replay_counter(repo, stmt_counter_doc(repo, sw, mid="M29", fails=m29_fails), sw,
                                          statements=False)
             why_sc = _replay_counter(repo, stmt_counter_doc(repo, sc), sc)
             why_fl = _replay_counter(repo, counter_doc(repo, a), a)
@@ -2685,9 +2719,9 @@ def selftest(jobs=1):
             why_e3 = _replay_counter(repo, stmt_counter_doc(repo, sc, fails=["records_test:E3"]), sc)
             return [
                 ("statement rule: M29 against SPEC-3.6-7 is refused for its statements, and replays per function",
-                 bool(why_sw) and "statements no single mutant" in why_sw and why_sw_off is None, (why_sw, why_sw_off)),
+                 bool(why_sw) and STATEMENT_REFUSAL in why_sw and why_sw_off is None, (why_sw, why_sw_off)),
                 ("statement rule: the floats insertion against SPEC-2-2 is refused for its statements, and replays per function",
-                 bool(why_fl) and "statements no single mutant" in why_fl and why_fl_off is None, (why_fl, why_fl_off)),
+                 bool(why_fl) and STATEMENT_REFUSAL in why_fl and why_fl_off is None, (why_fl, why_fl_off)),
                 ("statement rule: M234 against SPEC-3.2-20 (the statement M232 changes) replays", why_sc is None, why_sc),
                 ("statement rule: a fails case that passes is refused by the replay, not by locality",
                  bool(why_e3) and "not FAIL" in why_e3, why_e3)]

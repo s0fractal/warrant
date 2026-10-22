@@ -726,9 +726,9 @@ def _counting_challenges(rep, closures, duty=None):
     for cid, c in rep["challenges"].items():
         if (c["target"], c["item"]) not in closures:     # another closure, or the results (item null)
             continue
-        if c.get("counter_observation"):                 # evidence-weighted: whoever filed it (SPEC §4.4)
-            out.append(cid)
-        elif c["actor"] in counts:                       # actor-weighted (SPEC §4.6)
+        weighted = bool(c.get("counter_observation"))   # evidence-weighted: whoever filed it (SPEC §4.4)
+        counted = c["actor"] in counts                  # actor-weighted (SPEC §4.6)
+        if weighted or counted:
             out.append(cid)
     return sorted(out)
 
