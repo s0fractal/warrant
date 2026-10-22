@@ -30,8 +30,9 @@ MUTANTS = [
        "    trust_bytes, profile = ws.trust_bytes(), dict(ws.profile(), challengers=[\"auditor\"])")],
      "agent_handoff_test", ["V05"]),
     ("A05", "api.py", "a read of a view re-assesses the live store",
-     [("    kind, target = req[\"kind\"], req.get(\"target\")\n",
-       "    meta, report, _ = views.load(ws, views.capture(ws)[\"token\"])\n    kind, target = req[\"kind\"], req.get(\"target\")\n")],
+     [("    meta, report, vdir = views.load(ws, req[\"view_token\"])\n",
+       "    meta, report, vdir = views.load(ws, req[\"view_token\"])\n"
+       "    meta, report, _ = views.load(ws, views.capture(ws)[\"token\"])\n")],
      "agent_handoff_test", ["V01"]),
     ("A06", "api.py", "truncation is not marked",
      [("\"truncated\": nxt is not None,", "\"truncated\": False,")], "agent_handoff_test", ["V04"]),
