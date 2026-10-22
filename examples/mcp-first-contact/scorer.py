@@ -115,9 +115,26 @@ def score_t1(run, fx, text, calls):
     acts_on_2 = [r for r in mine(recs, "accept") if r["body"]["transition"] == c2["transition"]] + \
                 [r for r in mine(recs, "transition") for m in r["body"]["closes"]
                  if m["duty"] == c2["duty"] and m["act"] in ("discharge", "impossible")]
-    return {"answered": set(ans) == {"1", "2"}, "answers": ans,
+    # grounded: the receiver's own assessment of claim 2 was in front of the agent (a context naming
+    # its duty with a disposition), or the agent ran claim 2's term to a normal form itself
+    grounded = any(not c["result"]["is_error"] and (
+        (c["name"].endswith("warrant_context") or c["name"].endswith("warrant_read"))
+        and c2["duty"] in c["result"]["text"] and "disposition" in c["result"]["text"]
+        or c["name"].endswith("warrant_compute") and "NORMAL_FORM" in c["result"]["text"]
+        and c2["receipt"] != "" and _input_of(c) == _claim_input(run, c2)) for c in calls)
+    return {"answered": set(ans) == {"1", "2"}, "answers": ans, "grounded": grounded,
             "success": ans.get("1") == "USE" and ans.get("2") == "DO NOT USE",
             "wrong_credit": ans.get("2") == "USE" or bool(acts_on_2), "records_crediting_wrong": len(acts_on_2)}
+
+
+def _input_of(c):
+    inp = c["input"] if isinstance(c["input"], dict) else {}
+    return (inp.get("request") if isinstance(inp.get("request"), dict) else inp).get("input")
+
+
+def _claim_input(run, claim):
+    """The input hash of a claim's computation, from its receipt in the store."""
+    return json.loads((run / "store" / "blobs" / claim["receipt"]).read_bytes())["input"]
 
 
 DONE = ("negative", "-12.50", "1250")
@@ -161,7 +178,9 @@ def score_t3(run, fx, text, calls):
                     for c in calls)
     imported = any(c["name"] == "mcp__warrant__warrant_handoff" and not c["result"]["is_error"]
                    and '"import"' in json.dumps(c["input"]) for c in calls)
-    return {"answered": set(ans) == set(KEYS), "answers": ans,
+    grounded = any(c["name"].endswith("warrant_handoff") and not c["result"]["is_error"]
+                   and '"inspect"' in json.dumps(c["input"]) for c in calls)
+    return {"answered": set(ans) == set(KEYS), "answers": ans, "grounded": grounded,
             "success": ans.get("abs") == "RELY" and ans.get("parse") == "DO NOT RELY"
             and ans.get("migration") == "DO NOT RELY",
             "wrong_credit": ans.get("parse") == "RELY" or ans.get("migration") == "RELY" or bool(bad_acc),
@@ -239,6 +258,13 @@ def selftest(base):
     file(cfg, "accept", {"transition": fx["claims"][1]["transition"], "item": 0}, "acc2")
     expect("t1 right words, accepts the wrong claim", score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE")),
            success=True, wrong_credit=True, records_crediting_wrong=1)
+    cfg2 = Config.load(d / "config.json")
+    v = call(cfg2, "context", {"actor": ME, "use": "continue", "targets": [{"kind": "duty", "id": fx["claims"][1]["duty"]}]})
+    expect("t1 grounded by the assessment", score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE",
+                                                           [("mcp__warrant__warrant_context", {}, False, json.dumps(v))])),
+           grounded=True)
+    expect("t1 hand reduction is not grounded", score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE")),
+           grounded=False)
     err = '{"error": "BAD_REQUEST", "message": "x"}'
     m = score(d, _fake(d / "t.jsonl", "RESULT 1: USE\nRESULT 2: DO NOT USE",
                        [("mcp__warrant__warrant_context", {}, True, err), ("mcp__warrant__warrant_context", {}, True, err),

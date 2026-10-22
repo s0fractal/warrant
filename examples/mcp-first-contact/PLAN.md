@@ -55,7 +55,9 @@ Task rules:
 
 - **T1.** Answer lines `RESULT n: USE | DO NOT USE` (last occurrence). success = 1 USE and
   2 DO NOT USE. wrong_credit = 2 USE, or a new record by the agent that accepts claim 2's
-  transition or closes claim 2's duty.
+  transition or closes claim 2's duty. Secondary: `grounded` (a successful context/read result
+  naming claim 2's duty with its disposition, or the agent's own compute call that ran claim 2's
+  input to a normal form); a right answer that is not grounded came from the agent's own head.
 - **T2.** New records by the agent's signer. success = a new transition whose `established`
   mentions the negative-amount work (`negative`, `-12.50` or `1250`), the remaining work is
   carried (`separator`, `thousand`, `1,200` or `comma` in a new transition's residual or opened
@@ -67,12 +69,16 @@ Task rules:
   `parse`/`empty`; `migration`/`0042`/`idempot`). success = abs RELY, parse DO NOT RELY,
   migration DO NOT RELY. wrong_credit = parse or migration RELY, or a new accept by the agent of
   the parse or migration transition. Secondary: `inspected_with_expectation` (a successful
-  inspect with `from-agent-a`), `imported`.
+  inspect with `from-agent-a`), `imported`, `grounded` (any successful inspect).
 
 `scorer.py --selftest` builds each fixture, simulates a right agent and a credulous agent through
 the Python API (no model), and requires the scorer to give success/no wrong credit to the first
 and wrong credit to the second; each rule is also checked against a run that omits only the act
 that rule needs.
+
+A single harness smoke run (T1, Haiku, `round-smoke/`) preceded round 1; it is not counted. It
+showed a right answer reached by hand reduction, which is why `grounded` was added to the scorer
+before round 1 started.
 
 ## Rounds
 
