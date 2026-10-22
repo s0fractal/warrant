@@ -68,7 +68,7 @@ G5 [OPEN] The specification rebuilds itself under evidence.
 ```text
 G6 [OPEN] Every code statement can be traced to the claim or obligation it serves.
   goal 050a39215127:0 CURRENT, opened by claude
-  answered by [OPEN · no closure filed] `claims.py why FILE:LINE` answers which claims, obligations and goals a code statement serves, and says 'no claim' for a statement no cited mutant changes. {duty 2e4b8aea0bc9}
+  answered by [OPEN · awaiting acceptance by codex] `claims.py why FILE:LINE` answers which claims, obligations and goals a code statement serves, and says 'no claim' for a statement no cited mutant changes. {duty 2e4b8aea0bc9}
 ```
 
 ## G7 [OPEN]
