@@ -1247,7 +1247,7 @@ class Author:
         if bad:
             raise Refused(f"{cid}: " + "; ".join(f"{c} {w}" for c, w in bad))
 
-    def placement(self, cid, after=None, paragraph=False):
+    def placement(self, cid, after=None, paragraph=False, because=None):
         """The document version that places a new sentence `cid` after claim `after`, as
         (parts, because), or None when `cid` is already placed or no document exists yet
         (before the migration). Raises Refused, writing nothing, when a new sentence names
@@ -1270,7 +1270,7 @@ class Author:
             raise Refused(f"{cid}: --after {after} is in another section")
         k = i[0] + 1
         new = parts[:k] + ["\n\n" if paragraph else " ", {"claim": cid, "layout": None}] + parts[k:]
-        return new, f"{cid} placed after {after}" + (" as a new paragraph" if paragraph else "")
+        return new, f"{cid} placed after {after}" + (" as a new paragraph" if paragraph else "") + (f": {because}" if because else "")
 
     def file_document(self, parts, because, at):
         """File a document version: an ATTESTED transition whose evidence is the document blob,
@@ -1298,7 +1298,7 @@ class Author:
             raise Refused(f"{cid}: replacing a claim needs --because")
         if previous is not None and previous.retired:
             raise Refused(f"{cid} is retired; a new sentence takes a new id")
-        placed = self.placement(cid, after, paragraph)
+        placed = self.placement(cid, after, paragraph, because if previous is None else None)
         at = self.at()
         duty = None
         if kind == "normative":

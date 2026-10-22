@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 235 · backed 179 · unbacked 7 · informative 49 · retired 0 · records 441 · blobs 441
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 237 · backed 181 · unbacked 7 · informative 49 · retired 0 · records 447 · blobs 447
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -62,6 +62,8 @@ until an acceptance is filed. Nobody has accepted a claim yet unless this column
 | SPEC-3-18 | \| `grant` \| permission to perform a named act on named duties \| the grantor \| | — | — | INFORMATIVE: summary row of §3.5, whose lines are claimed there; the grantor is claimed as SPEC-3.5-1 | — (no duty) | `7980ea473da7` |
 | SPEC-3-19 | \| `challenge` \| a counterexample against a transition's closure or results \| anyone \| | — | — | INFORMATIVE: summary row of §3.6, whose lines are claimed there; `anyone` names no rule: which challengers count is §4.4 and §4.6 | — (no duty) | `85159021ac35` |
 | SPEC-3-20 | `prior` edges do not exist: every relation is a typed field below. | records_test K11 | M200 | BACKED | OPEN (awaiting codex) | `fa1096960f54` |
+| SPEC-3-21 | An **actor id** is a non-empty string of at most 200 code points, in Unicode Normalization Form C, with no control character (general category Cc) and no white space (Unicode White_Space) at either end. | agent_write_test W10; records_test K12 | A36 A37 M261 M262 M263 M264 M265 M266 | BACKED | OPEN (awaiting codex) | `cc0262ed1e3f` |
+| SPEC-3-22 | An actor may be a person, a model, a program or a rule (for example, a checker named by the hash of its code); Warrant does not assess what an actor is (§6). | records_test K13 | M267 | BACKED | OPEN (awaiting codex) | `655af1cbb754` |
 | SPEC-3.1-1 | ``` | — | — | INFORMATIVE: opening fence of the duty block whose lines are SPEC-3.1-2 to SPEC-3.1-15 | — (no duty) | `a0d7e2030b63` |
 | SPEC-3.1-2 | statement string ≤ 400 code points | records_test D1 | M201 M202 | BACKED | OPEN (awaiting codex) | `3bc8fadea0fd` |
 | SPEC-3.1-3 | holder actor; MUST equal the record's actor | records_test D2 | M203 | BACKED | OPEN (awaiting codex) | `f10c478fc4b7` |
@@ -275,7 +277,7 @@ The reason below is the filer's thesis; the replay is what admitted the loss.
 
 ## Document
 
-SPEC.md is rendered from document version `1301e5d89ef4` (516 parts). Its headings
+SPEC.md is rendered from document version `9bcc9542c2b4` (520 parts). Its headings
 are part of that signed record and are not claims; a heading states no rule:
 
 - `# Warrant 2 — Specification`
@@ -314,6 +316,8 @@ are part of that signed record and are not claims; a heading states no rule:
 - SPEC-3-9: the id check is observable only for a file signed for the name it is stored under (K6 "re-signed"): a merely renamed file already fails the signature
 - SPEC-3-10: authorizes nothing else: witnessed by U1 (a stranger with a bound key cannot release), as for SPEC-6-1 and SPEC-6-5
 - SPEC-3-12: the case is the record shape (no body is valid under another type); that the engine reads each record by its `type` is not mutated separately
+- SPEC-3-21: NFC is judged under the implementation's Unicode version (Python unicodedata); a string with unassigned code points may stop being NFC under a later version
+- SPEC-3-21: format characters (Cf, e.g. U+200B, U+202E) are allowed anywhere: "claude" followed by U+200B is another actor; only Cc and edge white space are refused
 - SPEC-3.1-9: `[actor…]` and `int|null`: the implementation also refuses an empty observers list and a fresh_for of 0 or less, which SPEC does not state; the case asserts neither
 - SPEC-3.1-11: start: the implementation also refuses a negative start, which SPEC does not state; the case does not assert it
 - SPEC-3.1-13: it grants nothing: G3 witnesses it and has no mutant of its own, since no rule reads `serves` (as SPEC-4.1-10 records)
