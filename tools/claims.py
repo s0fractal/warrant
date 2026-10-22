@@ -1283,6 +1283,11 @@ def _counter_shape(doc, p):
         return f"members are not {list(COUNTER_FIELDS)}"
     if doc["claim"] != p.id or doc["against"] != p.tid:
         return f"it is against {doc['claim']!r} {str(doc['against'])[:12]}, not {p.id} {p.tid[:12]}"
+    return _counter_cases(doc, p)
+
+
+def _counter_cases(doc, p):
+    """Why the blob's passes/fails/patch/why cannot stand, or None."""
     cases = [doc["passes"], doc["fails"]]
     if not all(isinstance(x, list) and all(isinstance(c, str) and TEST_RE.match(c.partition(":")[0]) and c.partition(":")[2]
                                            for c in x) for x in cases):
@@ -1296,7 +1301,12 @@ def _counter_shape(doc, p):
         return f"passes omits cited witnesses {', '.join(missing)}"
     if not (isinstance(doc["patch"], str) and isinstance(doc["why"], str) and doc["why"]):
         return "patch must be a string and why a non-empty string"
-    for line in doc["patch"].splitlines():
+    return _patch_paths(doc["patch"])
+
+
+def _patch_paths(patch):
+    """Why a patch names a file outside warrant/ and warrant_agent/, or None."""
+    for line in patch.splitlines():
         if line.startswith(("--- ", "+++ ")):
             path = line[4:].split("\t")[0].strip()
             if path != "/dev/null" and not re.match(r"[ab]/(warrant|warrant_agent)/[A-Za-z0-9_./-]+\Z", path) or ".." in path:
@@ -1736,15 +1746,15 @@ GIT_NO_GC = ("-c", "gc.auto=0")             # no automatic gc while a fixture is
 
 
 def confined(arg):
-    """The resolved path of command-line path `arg` if it lies in this checkout (ROOT) or the
-    temporary directory (tempfile.gettempdir(): $TMPDIR, else /tmp); Refused otherwise, before
-    it is opened. An operator who keeps matrices elsewhere sets TMPDIR for the command."""
-    real = os.path.realpath(arg)
-    for root in (ROOT, tempfile.gettempdir()):
-        base = os.path.realpath(root)
-        if os.path.commonpath([real, base]) == base:
-            return Path(real)
-    raise Refused(f"{arg}: outside this checkout and the temporary directory")
+    """The resolved path of command-line path `arg` (relative to the temporary directory, or
+    absolute) if it lies in the temporary directory, tempfile.gettempdir() ($TMPDIR, else
+    /tmp); Refused otherwise, before it is opened. Matrices and counters live there: an
+    operator who keeps them elsewhere sets TMPDIR for the command (CI: $RUNNER_TEMP)."""
+    base = os.path.realpath(tempfile.gettempdir())
+    real = os.path.realpath(os.path.join(base, arg))
+    if os.path.commonpath((base, real)) != base:
+        raise Refused(f"{arg}: outside the temporary directory {base} (set TMPDIR)")
+    return Path(real)
 
 
 def _harness(repo, name):
@@ -2029,13 +2039,13 @@ def _audit_synthetic(fix, work):
         rows, probs = load_matrices(r, matrix(**kv))
         return (*audit(r, rows), rows, probs)
 
-    return _synthetic_found(r, c, x, y, run) + _synthetic_guards(r, c, x, first, run, matrix)
+    return _synthetic_found(c, x, y, run) + _synthetic_guards(r, c, x, first, run, matrix)
 
 
-def _synthetic_found(r, c, x, y, run):
+def _synthetic_found(c, x, y, run):
     """A planted blind claim is reported with its counter; a disjoint mutant is not."""
     out = []
-    blind, unknown, _, probs = run()
+    blind, _, _, probs = run()
     hit = _found(blind, c.id, x)
     out.append(("audit: a claim whose witnesses all pass under an overlapping mutant some case kills is reported",
                 bool(hit) and not probs and hit[0]["counter"]["passes"] == sorted(c.doc["witnesses"])
