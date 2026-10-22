@@ -100,8 +100,10 @@ def prepare(ws, based_on, request_id, rtype, body):
     _, report, vdir = views.load(ws, views.capture(ws)["token"] if based_on is None else based_on)
     full = _accept_body(vdir, body) if rtype == "accept" else fill(rtype, body)
     # The signer's chain (SPEC §3): `prev` is its head in the live store, and `at` is never
-    # before the head's; commit refuses the draft if the head has moved by then.
-    head = Store(ws.store).head(actor)
+    # before the head's; commit refuses the draft if the head has moved by then. The head is
+    # read under the workspace's own trust: a record this workspace's reader rejects is never
+    # a predecessor, and never moves the head (AMEND 1 of #174).
+    head = Store(ws.store).head(actor, ws.trust())
     try:
         rec = R.record(rtype, actor, max(int(time.time()), head[1] if head else 0), full, prev=head[0] if head else None)
     except R.Invalid as e:
@@ -132,7 +134,7 @@ def commit(ws, draft_id):
         if (actor, key.id) != (d["actor"], d["key"]):
             raise AgentError("SIGNER_CHANGED", "the configured signer is not the one this draft was prepared for")
         try:
-            Store(ws.store).init().extend(d["record"], key)
+            Store(ws.store).init().extend(d["record"], key, ws.trust())
         except ChainMoved as e:
             raise AgentError("CONFLICT", f"the signer's chain moved since this draft was prepared ({e}); "
                                          "prepare it again", reason="CHAIN_MOVED") from None

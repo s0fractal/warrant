@@ -217,6 +217,41 @@ def chain_cases():
     check("W11", got == ((h0, h0, True), True, ("CONFLICT", "CHAIN_MOVED"), False, (one["record_id"], True)),
           "prepare names the signer's head; commit refuses a draft whose head has moved", got)
 
+    # W12 (SPEC §3; AMEND 1 of #174, Codex P2): a record for the signer that the workspace's reader
+    # rejects (signed by auditor's key) and dates far ahead neither moves the head nor raises the
+    # draft's `at`, and planted between prepare and commit it does not make the commit CHAIN_MOVED.
+    # Control: a genuine commit still moves the head, and a draft prepared before it is refused.
+    from warrant.store import Store, Trust
+    s12, _ = world()
+    now = int(_t.time())
+    h1 = s12.file("transition", "producer", now - 10, R.transition("ATTESTED", established=["the real head"]))
+
+    def forge(at):
+        rid, env = R.sign(R.record("transition", "producer", at, R.transition("ATTESTED", established=[f"forged {at}"]),
+                                   prev=h1), s12.keys["auditor"])
+        (s12.ws.store / "records" / f"{rid}.json").write_bytes(env)
+        return rid
+    v12 = ok(s12.call("context", {"workspace": "src", "actor": "producer", "use": "continue", "targets": []}))
+
+    def draft12(rid, statement):
+        return ok(s12.call("prepare", {"workspace": "src", "based_on": v12["view_token"], "request_id": rid,
+                                       "type": "challenge", "body": {"target": "cd" * 32, "item": 0,
+                                                                     "statement": statement, "evidence": []}}))["data"]
+    f1 = forge(now + 10 ** 6)
+    p1 = draft12("w12a", "after a forged head")
+    f2 = forge(now + 2 * 10 ** 6)                       # planted between prepare and commit
+    c1 = s12.call("commit", {"workspace": "src", "draft_id": p1["draft_id"]})
+    p2, p3 = draft12("w12b", "genuine next"), draft12("w12c", "prepared on the same head")
+    c2 = s12.call("commit", {"workspace": "src", "draft_id": p2["draft_id"]})
+    c3 = s12.call("commit", {"workspace": "src", "draft_id": p3["draft_id"]})
+    trust = Trust.load(s12.base / "trust.json")
+    good, bad = Store(s12.ws.store).snapshot().authentic(trust)
+    got = ((p1["record"]["prev"], p1["at"] < now + 10 ** 6), "ok" in c1, (p2["record"]["prev"], "ok" in c2),
+           (c3.get("error"), (c3.get("details") or {}).get("reason")), sorted(bad) == sorted([f1, f2]),
+           any(r.get("prev") in (f1, f2) for r in good.values()))
+    check("W12", got == ((h1, True), True, (p1["record_id"], True), ("CONFLICT", "CHAIN_MOVED"), True, False),
+          "a record the reader rejects never moves the signer's head or fails a commit", got)
+
 
 if __name__ == "__main__":
     sys.exit(main())

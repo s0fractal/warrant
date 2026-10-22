@@ -418,7 +418,7 @@ def chain_cases():
     w = World()
     st, k = w.store, w.keys[HOLDER]
     st.put_record(R.record("duty", HOLDER, 90, put(DUTY, statement="unchained")), k)     # not a head
-    none_yet = st.head(HOLDER)
+    none_yet = st.head(HOLDER, w.trust)
     a = st.append("duty", HOLDER, 100, DUTY, k)
     b = st.append("transition", HOLDER, 100, TRANSITION, k)
     n = len(list((st.root / "records").iterdir()))
@@ -432,7 +432,7 @@ def chain_cases():
     unchanged = len(list((st.root / "records").iterdir())) == n
     prevs = [C.loads((st.root / "records" / f"{x}.json").read_bytes())["record"]["prev"] for x in (a, b)]
     tip = st.put_record(R.record("transition", HOLDER, 300, CLOSING, prev=a), k)     # a fork beside b, dated later
-    got = (none_yet, prevs, early, moved, unchanged, st.head(HOLDER))
+    got = (none_yet, prevs, early, moved, unchanged, st.head(HOLDER, w.trust))
     check("K15", got == (None, [None, a], "raised ValueError", "ChainMoved", True, (tip, 300)),
           "Store.append names the head as prev, refuses to date before it, and extends only from the head", got)
 
@@ -457,6 +457,44 @@ def chain_cases():
     prev = C.loads((st.root / "records" / f"{out.get('id')}.json").read_bytes())["record"]["prev"] if "id" in out else None
     check("K16", (waited, prev) == (True, b), "an append waits for another writer's lock and names the head it left",
           (waited, prev))
+
+    # K17 (§3; AMEND 1 of #174, Codex P2): only records the reader admits as the actor's own are
+    # a head. Planted, all dated after HOLDER's real head and naming it as prev: a record for
+    # HOLDER signed by STRANGER's bound key, one signed by a key bound to nobody, a genuine
+    # HOLDER record stored under another id's name, and a HOLDER-signed envelope whose prev is
+    # not an id. The reader rejects all four; none is a head; HOLDER's append at an ordinary time
+    # names the real head. HOLDER's own authentic record whose prev is not in the store is no head
+    # either: extending it would leave the new record with no ancestor before it.
+    w = World()
+    st, k = w.store, w.keys[HOLDER]
+    a = st.append("duty", HOLDER, 100, DUTY, k, w.trust)
+    far = 10 ** 10
+
+    def plant(r, key, tamper=None):
+        return stored(w, r, key, tamper)
+    forged = [plant(R.record("transition", HOLDER, far, TRANSITION, prev=a), w.keys[STRANGER]),
+              plant(R.record("transition", HOLDER, far + 1, CLOSING, prev=a), W.Key.generate()),
+              plant(R.record("transition", HOLDER, far + 2, put(TRANSITION, established=["misnamed"]), prev=a), k,
+                    tamper=lambda env, data, rid: (data, "f" * 64)),
+              plant({"warrant": "2", "type": "transition", "actor": HOLDER, "at": far + 3, "prev": "zz", "body": TRANSITION}, k)]
+    loose = plant(R.record("transition", HOLDER, far + 4, put(TRANSITION, established=["loose"]), prev="e" * 64), k)
+    _, rejected = st.snapshot().authentic(w.trust)
+    head = st.head(HOLDER, w.trust)
+    try:                                     # a poisoned head refuses this append (Codex's reproduction)
+        b = st.append("transition", HOLDER, 200, CLOSING, k, w.trust)
+    except ValueError as e:
+        b = f"refused: {e}"
+    try:                                     # the default (the `warrant` CLI): the signing key's own trust
+        c = st.append("transition", HOLDER, 300, put(CLOSING, established=["default trust"]), k)
+    except ValueError as e:
+        c = f"refused: {e}"
+    recs = st.snapshot().authentic(w.trust)[0]
+    rep = w.assess(as_of=2 * far)
+    got = (sorted(rejected) == sorted(forged), head, recs[b]["prev"] if b in recs else b, b in rep["chains"]["unanchored"],
+           rep["chains"]["unanchored"].get(loose), any(r.get("prev") in forged for r in recs.values()),
+           recs[c]["prev"] if c in recs else c)
+    check("K17", got == (True, (a, 100), a, False, "its prev is not in the view", False, b),
+          "a record the reader rejects, or an unanchored one, is never a writer's head", got)
 
 
 def bad_hex_rows(label, make, nullable=False):

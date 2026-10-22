@@ -49,7 +49,7 @@ class Party:
     def file(self, rtype, actor, at, body):
         """A fixture record naming `actor`'s head as its prev (SPEC §3). A fixture may date it
         before a record the agent committed at the current time; it is then unanchored."""
-        head = self.store.head(actor)
+        head = self.store.head(actor, Trust.load(self.base / "trust.json"))
         return self.store.put_record(R.record(rtype, actor, at, body, prev=head[0] if head else None), self.keys[actor])
 
     def blob(self, data):
