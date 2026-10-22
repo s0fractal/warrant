@@ -165,6 +165,21 @@ MUTANTS = [
     ("A53", "computeops.py", "evaluate calls any result the expected one",
      [('same_normal_form=seg.get("outcome") == "NORMAL_FORM" and seg.get("result") == e["input"])',
        'same_normal_form=seg.get("outcome") == "NORMAL_FORM")')], "agent_compute_test", ["S12"]),
+    # A54-A56 restore the unguarded reads of stored record bytes of 7a56a56 (Codex P2 on PR #167)
+    ("A54", "api.py", "an invalid record's bytes are read as a record (as at 7a56a56)",
+     [('        rec = _record_shape((ws.state / "views" / meta["token"] / "records" / f"{rid}.json").read_bytes())\n',
+       '        rec = C.loads((ws.state / "views" / meta["token"] / "records" / f"{rid}.json").read_bytes())["record"]\n'
+       '        rec.get("type")\n')],
+     "agent_mcp_test", ["M15"]),
+    ("A55", "api.py", "the workspace index reads every stored record, authentic or not (as at 7a56a56)",
+     [("    for rid, rec in good.items():\n",
+       "    for rid, rec in ((i, C.loads(d)[\"record\"]) for i, d in snap.records.items() if d[:1] == b\"{\"):\n"
+       "        rec.get(\"type\")\n")],
+     "agent_mcp_test", ["M15"]),
+    ("A56", "api.py", "a target's record type is read from bytes that are not a record",
+     [('    rtype = rec["type"] if rec else "unreadable"\n',
+       '    rtype = C.loads(p.read_bytes())["record"].get("type", "unreadable")\n')],
+     "agent_mcp_test", ["M15"]),
 ]
 
 

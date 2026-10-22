@@ -255,6 +255,42 @@ def first_contact_cases(src, rcv, ids, cfg_path, cfg):
           "the same body without a request id is the same draft; an invalid body is refused with a template",
           (ids3, r[3]))
 
+    # M15: stored bytes that are not a record's shape (Codex P2 on 7a56a56) are listed as invalid, never read
+    # as records: context, workspace and read stay ordinary results, with master's invalid count
+    import hashlib
+    import shutil
+    vec = [b'{"record":[]}', b'[]', b'"x"', b'{"record":{"type":5}}', b'{"record":{"type":"duty"', b'\xff\xfe\x00',
+           b'{"record":null}', b'{"record":{"body":{},"type":[]}}', b'{"record":{"body":null,"type":"duty"}}']
+    doc5 = json.loads(json.dumps(doc))
+    store5 = Path(doc["state"]).with_name("store-m15")
+    shutil.copytree(src.ws.store, store5)
+    doc5["state"] = str(Path(doc["state"]).with_name("mcp-state-m15"))
+    doc5["workspaces"]["src"]["store"] = str(store5)
+    cfg5 = cfg_path.with_name("mcp-config-m15.json")
+    cfg5.write_text(json.dumps(doc5))
+    before = api.call(Config.load(cfg5), "context", {"workspace": "src"})["ok"]["data"]["boundary"]["invalid_records"]
+    bad = []
+    for v in vec:
+        h = hashlib.sha256(v).hexdigest()
+        bad.append(h)
+        (store5 / "records" / f"{h}.json").write_bytes(v)
+    r = tool_calls(cfg5, [("warrant_context", {"workspace": "src", "targets": [ids["duty"]]}),
+                          ("warrant_workspace", {"workspace": "src"}),
+                          ("warrant_read", {"workspace": "src", "target": bad[0]}),
+                          ("warrant_context", {"workspace": "src", "targets": [bad[0]]})])
+    b5 = r[0].get("ok", {}).get("data", {}).get("boundary", {})
+    w5 = (r[1].get("ok", {}).get("data", {}).get("workspaces") or [{}])[0]
+    listed = {i["id"] for i in b5.get("invalid", [])}
+    check("M15", b5.get("invalid_records") == before + len(vec) and listed >= set(bad)
+          and all("claims_to_be" not in i for i in b5.get("invalid", []) if i["id"] in bad)
+          and [c["target"] for c in r[0].get("ok", {}).get("data", {}).get("capsules", [])] == [ids["duty"]]
+          and w5.get("store", {}).get("invalid_records") == before + len(vec)
+          and not {x["id"] for x in w5.get("index", {}).get("rows", [])} & set(bad)
+          and r[2].get("ok", {}).get("data", {}).get("content") == vec[0].decode()
+          and r[3].get("error") == "BAD_REQUEST" and r[3].get("details", {}).get("type") == "unreadable",
+          "malformed stored bytes are listed as invalid by context and counted by workspace; nothing crashes",
+          (b5.get("invalid_records"), before, w5.get("store"), r[2].get("error"), r[3].get("error"), r[3].get("details")))
+
     # M14: explain is static: a known word has its meaning and what it does not establish
     r = tool_calls(cfg_path, [("warrant_explain", {"term": "UNVERIFIED"}), ("warrant_explain", {"term": "nonsense"})])
     k, u = r[0].get("ok", {}).get("data", {}), r[1].get("ok", {}).get("data", {})

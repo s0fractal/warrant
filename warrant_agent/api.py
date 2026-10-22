@@ -12,6 +12,20 @@ from .errors import AgentError, need
 
 TARGET_KINDS = ("duty", "transition")
 CONTEXT_FILE = "context.json"          # a view's actor, targets and use, written by the call that made it
+
+
+def _record_shape(data):
+    """The record inside stored envelope bytes if it has the shape these reports read (an object whose
+    `type` is a string and whose `body` is an object), else None. The bytes are untrusted: they may be
+    exactly what the engine rejected, so nothing below dereferences a record this did not return."""
+    try:
+        env = C.loads(data)
+    except (C.NotCanonical, ValueError, TypeError):
+        return None
+    rec = env.get("record") if isinstance(env, dict) else None
+    if isinstance(rec, dict) and isinstance(rec.get("type"), str) and isinstance(rec.get("body"), dict):
+        return rec
+    return None
 TARGET_FORMS = ("targets is a list; each target is a record id (hex64) of a duty or transition, "
                 "{\"id\": id} or {\"kind\": \"duty\"|\"transition\", \"id\": id}")
 
@@ -43,10 +57,8 @@ def _kind_in_view(tid, report, vdir):
     p = vdir / "records" / f"{tid}.json"
     if not p.is_file():
         raise AgentError("NOT_FOUND", f"{tid[:12]} is not a record of this view", target=tid)
-    try:
-        rtype = C.loads(p.read_bytes())["record"]["type"]
-    except (C.NotCanonical, KeyError, TypeError, ValueError):
-        rtype = "unreadable"
+    rec = _record_shape(p.read_bytes())
+    rtype = rec["type"] if rec else "unreadable"
     raise AgentError("BAD_REQUEST", f"{tid[:12]} is a record of type {rtype} in this view, not a duty or a "
                      "transition; read it with warrant_read", target=tid, type=rtype)
 
@@ -208,15 +220,17 @@ def _parse_cursor(cursor, token, kind, target):
 
 
 def _invalid(ws, meta, rid, why):
-    """An invalid record of the view, with what its bytes claim to be (untrusted: it does not authenticate)."""
+    """An invalid record of the view, with what its bytes claim to be (untrusted: it does not authenticate)
+    when they have a record's shape at all."""
     out = {"id": rid, "why": why}
     try:
-        rec = C.loads((ws.state / "views" / meta["token"] / "records" / f"{rid}.json").read_bytes())["record"]
-        b = rec["body"] if isinstance(rec.get("body"), dict) else {}
-        out["claims_to_be"] = {"type": rec.get("type"), "actor": rec.get("actor"),
+        rec = _record_shape((ws.state / "views" / meta["token"] / "records" / f"{rid}.json").read_bytes())
+    except OSError:
+        rec = None
+    if rec is not None:
+        b = rec["body"]
+        out["claims_to_be"] = {"type": rec["type"], "actor": rec.get("actor") if isinstance(rec.get("actor"), str) else None,
                                **{k: b[k] for k in ("transition", "target", "item") if k in b}}
-    except (OSError, C.NotCanonical, KeyError, TypeError, ValueError):
-        pass
     return out
 
 
@@ -400,14 +414,15 @@ INDEX_ROWS = 50
 
 
 def _summary(rec):
+    """A short text of a duty or transition record (its statement or first established line)."""
     b = rec["body"]
     for k in ("statement", "established"):
-        if isinstance(b.get(k), str):
-            return b[k][:200]
-        if isinstance(b.get(k), list) and b[k]:
-            return str(b[k][0])[:200]
-    return {"accept": "accepts transition {transition}", "challenge": "challenges {target}"}.get(
-        rec["type"], "").format(**{k: str(v)[:12] for k, v in b.items()})
+        v = b.get(k)
+        if isinstance(v, str):
+            return v[:200]
+        if isinstance(v, list) and v:
+            return str(v[0])[:200]
+    return ""
 
 
 def _workspace_view(ws):
@@ -420,23 +435,22 @@ def _workspace_view(ws):
     except P.ProviderError:                   # absent or broken provider: say so, nothing else
         provider = {"installed": False, "id": None, "accepted_by_profile": False}
     snap = views.read_snapshot(ws, ws.store)
+    # only records that authenticate under the receiver's trust are indexed; the rest are counted, never read
+    good, bad = snap.authentic(ws.trust())
     rows, by_type = [], {}
-    for rid, data in snap.records.items():
-        try:
-            rec = C.loads(data)["record"]
-        except (C.NotCanonical, KeyError, TypeError, ValueError):
-            continue
-        by_type[rec.get("type")] = by_type.get(rec.get("type"), 0) + 1
-        if rec.get("type") in TARGET_KINDS:
-            rows.append({"id": rid, "type": rec["type"], "actor": rec.get("actor"), "at": rec.get("at"),
+    for rid, rec in good.items():
+        by_type[rec["type"]] = by_type.get(rec["type"], 0) + 1
+        if rec["type"] in TARGET_KINDS:
+            rows.append({"id": rid, "type": rec["type"], "actor": rec["actor"], "at": rec["at"],
                          "text": _summary(rec)})
-    rows.sort(key=lambda r: (-(r["at"] if isinstance(r["at"], int) else 0), r["id"]))
+    rows.sort(key=lambda r: (-r["at"], r["id"]))
     return {"name": ws.name, "signer": ws.signer[0] if ws.signer else None, "operations": list(ws.operations),
             "uses": ws.uses, "default_use": next(iter(ws.uses), None),
             "expectations": {h: {k: e[k] for k in ("manifest", "source", "exporter") if k in e}
                              for h, e in ws.expectations.items()},
             "provider": provider,
-            "store": {"records": len(snap.records), "blobs": len(snap.blobs), "by_type": by_type},
+            "store": {"records": len(snap.records), "blobs": len(snap.blobs), "by_type": by_type,
+                      "invalid_records": len(bad)},
             "index": {"rows": rows[:INDEX_ROWS], "total": len(rows), "truncated": len(rows) > INDEX_ROWS,
                       "untrusted_data": True, "assessed": False}}
 

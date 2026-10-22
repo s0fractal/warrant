@@ -54,7 +54,8 @@ replaced it.
   `compute evaluate`. No record type, rule or verdict changed.
 - Fixed: an export root of another kind (`{"kind": "record"}`) ended in an `assert` inside
   `handoff.export`, an untyped crash (and no check at all under `-O`); it is now BAD_REQUEST.
-- Tests M06–M14, S11–S12; agent mutants A41–A53, all killed on their cases.
+- Tests M06–M15, S11–S12; agent mutants A41–A56, all killed on their cases. M15/A54–A56: stored bytes
+  that are not a record's shape are listed as invalid and never read as records (Codex P2 on 7a56a56).
 - The distribution is renamed `warrant-loops` → `warrant-graph` (pyproject, CI install lines,
   AGENT.md). Nothing is published. The frozen dependency-audit evidence keeps the old name: it
   describes wheels built at its pinned source commit.

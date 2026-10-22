@@ -62,7 +62,7 @@ actor is the configured signer's.
 
 | op | request | what it does |
 | --- | --- | --- |
-| `workspace` | `{workspace?}` | The operator's configuration by name: workspaces, the signer's actor, permitted operations, use policies and `default_use`, expectation handles (`manifest`, `source`, `exporter`), whether the provider is installed and accepted by the profile, and an `index` of the duties and transitions in the live store (at most 50 rows, newest first, `untrusted_data: true`, `assessed: false`). No path, key or URL. Needs no permission: it shows what the configuration already names. |
+| `workspace` | `{workspace?}` | The operator's configuration by name: workspaces, the signer's actor, permitted operations, use policies and `default_use`, expectation handles (`manifest`, `source`, `exporter`), whether the provider is installed and accepted by the profile, and an `index` of the duties and transitions in the live store that authenticate under the receiver's trust (at most 50 rows, newest first, `untrusted_data: true`, `assessed: false`; the others are only counted, `store.invalid_records`). No path, key or URL. Needs no permission: it shows what the configuration already names. |
 | `context` | `{workspace, actor?, use?, targets?:[id \| {id} \| {kind: duty\|transition, id}], limits?:{context_bytes}}` | Captures the store, trust, profile and provider bytes into a frozen view, assesses it once in a worker under `assess_seconds`, returns `view_token`, `assessment_id`, capsules, frontier, unowned questions, boundary, `delivery`, `use`, `observation`, `page`. `actor` selects whose frontier is read, not who signs. A target without its kind is resolved in the view: a duty or a transition; any other record id is BAD_REQUEST with `details.type`, an id not in the view NOT_FOUND. An unknown use is BAD_REQUEST with `details.configured`. |
 | `read` | `{workspace, view_token?, kind?: record\|blob\|context, target?, cursor?, max_bytes?}` or `{workspace, kind: draft\|operation, target}` | Reads the view's captured bytes (chunked, with `digest`, `complete`, `untrusted_data: true`) or the next context page; or a durable draft/import status, which needs no live view. `kind` defaults to `record`. Without `view_token` a record or blob is read from a new frozen view (returned as `view_token`), never from the live store; a context page or a cursor needs the view that made it. |
 | `handoff` | `{op: export, view_token?, roots?, request_id?}` / `{op: inspect, package \| (manifest, payload, declaration?), expectation?, use?, actor?, targets?}` / `{op: import, staged_id, request_id?}` | Export: manifest of the whole configured store (record envelope digests, blobs, snapshot digest, `completeness: UNATTESTED`), payload `{records\|blobs: [{id, bytes_base64}]}`, optional declaration signed by the configured signer; `view_token` defaults to a new view, `roots` to that view's context targets, `request_id` to one derived from view and roots (returned). A root that is not a duty or transition is BAD_REQUEST. Inspect: stages and assesses the union with the receiver's live store against a receiver-configured expectation; `package` is the exported object in one piece (the same inspection as its parts); capsules default to the manifest's roots. Import: journaled, add-only, idempotent; `request_id` defaults to one derived from `staged_id`. |
@@ -81,7 +81,7 @@ a transition (each item with its `duty`, the duty's `statement` and
 fields. A transition's own `reliance` is about its results (often UNASSESSED);
 whether it closes a duty is decided on the duty, which `closes` shows. The
 boundary names up to 20 `invalid` records (`id`, `why`, and `claims_to_be`:
-type, actor and target read from bytes that do not authenticate). None of this
+type, actor and target read from bytes that do not authenticate, only when those bytes have a record's shape: an object whose `type` is a string and whose `body` is an object; other bytes are listed by id and why alone and never read as a record, M15). None of this
 adds a rule: it is the report the engine already produced, shown.
 
 ### Delivery and use
@@ -168,8 +168,8 @@ release is exposed.
 | `tests/agent_handoff_test.py` | H01-H14, V01-V08 |
 | `tests/agent_write_test.py` | W01-W09 |
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10, S11 (a contradicted receipt closes nothing; both capsules say why), S12 (evaluate) |
-| `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M14 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain) |
-| `tests/agent_mutants.py` | A01-A35, A41-A53, each killed on its named case |
+| `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M15 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain, malformed stored records) |
+| `tests/agent_mutants.py` | A01-A35, A41-A56, each killed on its named case |
 | `examples/mcp-first-contact/` | fresh headless agents on three tasks, frozen scorer, round 1 vs round 2 |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 

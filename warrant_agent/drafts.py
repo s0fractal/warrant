@@ -46,10 +46,16 @@ def _accept_body(meta_vdir, body):
         return R.accept(body["transition"], body["item"], body["evidence"], body.get("support", []))
     p = meta_vdir / "records" / f"{body['transition']}.json"
     need(p.is_file(), "NOT_FOUND", "the transition is not in this view")
-    t = C.loads(p.read_bytes())["record"]["body"]
+    try:                                        # the view's bytes are untrusted: a malformed record is no transition
+        t = C.loads(p.read_bytes())["record"]["body"]
+        closes, evidence = t["closes"], t["evidence"]
+    except (C.NotCanonical, ValueError, KeyError, TypeError):
+        raise AgentError("BAD_REQUEST", "the record is not a well-formed transition") from None
     item = body["item"]
-    need(item is None or (type(item) is int and 0 <= item < len(t["closes"])), "BAD_REQUEST", "no such item")
-    ev = t["evidence"] if item is None else t["closes"][item]["evidence"]
+    need(isinstance(closes, list) and (item is None or (type(item) is int and 0 <= item < len(closes))),
+         "BAD_REQUEST", "no such item")
+    ev = evidence if item is None else closes[item].get("evidence") if isinstance(closes[item], dict) else None
+    need(isinstance(ev, list), "BAD_REQUEST", "the record is not a well-formed transition")
     return R.accept(body["transition"], item, ev, body.get("support", []))
 
 
