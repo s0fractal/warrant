@@ -72,7 +72,15 @@ It reads the head under a lock on `records/` and refuses to date a record before
 it; a record the reader rejects, or an unanchored one, is never a head. `warrant-agent`
 prepares a draft on the signer's head under the workspace's trust and commits it
 only while that head is unchanged, a compare-and-swap; otherwise it answers
-`CONFLICT` with reason `CHAIN_MOVED` and files nothing.
+`CONFLICT` with reason `CHAIN_MOVED` and files nothing. A reader or a writer may
+remember the verdict of authenticating a record file, keyed by the trust's
+digest, the record's id and the digest of the file's bytes: every file is still
+read and hashed, and a remembered verdict changes the cost of a read, never
+which records count. Verdicts kept across processes are their owner's, outside
+every store: each entry carries a MAC, over its key, its verdict and the
+identity of the code that computed it, under a secret only the owner reads; an
+entry that does not verify is ignored, and no snapshot, digest or handoff
+includes them.
 
 There are six types. They are distinct so that a claim, a permission, an
 execution observation and an acceptance can never be read as one another.
