@@ -51,17 +51,20 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
     python3 tools/claims.py check [--base REV | --no-base]
     python3 tools/claims.py --selftest                   # every refusal of `check`, burned on a copy
     python3 tools/claims.py migrate --key SEED --because '...'   # once (W5): the first document, from SPEC.md
+    python3 tools/claims.py heading --key SEED --section 4.2 --because '...'   # after changing that pin
 
 A claim's text is whitespace-normalized: runs of whitespace compare as one space.
 Refusals are printed one per line as `REFUSED <CODE> <detail>`.
 """
 import argparse
 import ast
+import concurrent.futures
 import copy
 import difflib
 import hashlib
 import importlib.util
 import json
+import multiprocessing
 import os
 import re
 import shutil
@@ -79,6 +82,7 @@ import warrant as W                          # noqa: E402
 from warrant import engine as E              # noqa: E402
 from warrant import jcs as C                 # noqa: E402
 from warrant import records as R             # noqa: E402
+from warrant import store as S               # noqa: E402
 from warrant.store import Snapshot, Store, Trust   # noqa: E402
 
 AUTHOR = "claude"
@@ -304,12 +308,32 @@ class Node:
         return "BACKED" if self.backed else "UNBACKED"
 
 
+_AUTH = {}
+
+
+def authentic(snap, trust):
+    """Snapshot.authentic, memoized per (record id, record bytes, trust bindings): one command
+    builds many Models over the same records, and each signature needs checking once."""
+    tk = hashlib.sha256(repr(sorted(trust.keys.items())).encode()).digest()
+    good, bad = {}, {}
+    for rid, data in sorted(snap.records.items()):
+        k = (rid, hashlib.sha256(data).digest(), tk)
+        if k not in _AUTH:
+            _AUTH[k] = S._authenticate(rid, data, trust)
+        why, rec = _AUTH[k]
+        if why:
+            bad[rid] = why
+        else:
+            good[rid] = rec
+    return good, bad
+
+
 class Model:
     """The claims a snapshot holds under a trust, and what is wrong with them."""
 
     def __init__(self, snap, trust):
         self.snap = snap
-        self.recs, self.bad = snap.authentic(trust)
+        self.recs, self.bad = authentic(snap, trust)
         self.problems = []
         self.nodes = {}
         for rid, r in sorted(self.recs.items()):
@@ -521,18 +545,39 @@ class Document:
         return None, None
 
     def problems_with(self, pins):
-        """(code, detail) for references that do not match the claims, and claims left out."""
+        """(code, detail) for headings the pins do not name, references that do not match
+        the claims, and claims left out.
+
+        Headings are pinned (AMEND 1 of #166): `.warrant/claims.json` maps each pinned
+        section to its exact heading line, the preamble ("0") to the document's title. A
+        heading's words are free text that no witness backs, so the document may hold only
+        those lines, each once, in the pinned order; a changed or new heading is a reviewed
+        pin change first, then a document version."""
         out, seen, section = [], {}, PREAMBLE
-        headed = {PREAMBLE}
+        headings = pins.get("headings", {})
+        order = {sec: k for k, sec in enumerate(pins["sections"])}
+        headed, last = {}, -1
         model = self.model
         for i, p in enumerate(self.current["parts"]):
             if isinstance(p, str):
                 continue
             if "heading" in p:
-                m = HEADING.match(p["heading"])
-                if m:
-                    section = m.group(1)
-                    headed.add(section)
+                line = p["heading"]
+                sec = heading_section(line, headings)
+                if sec is None:
+                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} is neither a numbered heading nor the pinned title"))
+                elif sec not in headings:
+                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} heads §{sec}, which .warrant/claims.json pins no heading for"))
+                elif line != headings[sec]:
+                    out.append(("DOCUMENT_HEADING", f"part {i}: {line[:80]!r} is not the pinned heading of §{sec}, {headings[sec][:80]!r}"))
+                elif sec in headed:
+                    out.append(("DOCUMENT_HEADING", f"part {i}: a second heading of §{sec} (the first is part {headed[sec]})"))
+                elif order.get(sec, -1) < last:
+                    out.append(("DOCUMENT_HEADING", f"part {i}: the heading of §{sec} comes after a later section's"))
+                else:
+                    headed[sec] = i
+                    last = order.get(sec, last)
+                    section = sec
                 continue
             cid = p["claim"]
             if cid in seen:
@@ -547,9 +592,17 @@ class Document:
             if not n.retired and cid not in seen:
                 out.append(("CLAIM_NOT_IN_DOCUMENT", f"{cid} is a current claim and no part of the document places it"))
         for s in pins["sections"]:
-            if s not in headed:
+            if s not in headings:
+                out.append(("DOCUMENT_HEADING", f".warrant/claims.json pins §{s} and no heading for it"))
+            elif s not in headed:
                 out.append(("SECTION_MISSING", f"the document has no heading of §{s}"))
         return out
+
+
+def heading_section(line, headings):
+    """The section a heading line heads: its number, PREAMBLE for the pinned title, else None."""
+    m = HEADING.match(line)
+    return m.group(1) if m else (PREAMBLE if line == headings.get(PREAMBLE) else None)
 
 
 def literal_ok(text):
@@ -719,7 +772,7 @@ def parse_spec(text, model):
 # ---------------------------------------------------------------- the view
 
 def assessment(snap, trust):
-    recs, _ = snap.authentic(trust)
+    recs, _ = authentic(snap, trust)
     as_of = max((r["at"] for r in recs.values()), default=0)
     return E.assess(snap, trust, as_of, E.profile())
 
@@ -795,7 +848,9 @@ def render(repo):
         heads = [p["heading"] for p in doc.current["parts"] if isinstance(p, dict) and "heading" in p]
         out += ["", "## Document", "",
                 f"SPEC.md is rendered from document version `{doc.tid[:12]}` ({len(doc.current['parts'])} parts). Its headings",
-                "are part of that signed record and are not claims; a heading states no rule:", ""]
+                "are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold",
+                "only those lines, once each and in order. A title is free text that no witness backs, so a",
+                "rule-shaped title is a review matter; the pin makes every change of one a reviewed diff.", ""]
         out += [f"- `{h}`" for h in heads]
     limits = [(n.id, x) for n in live for x in n.rec["body"]["residual"] if x not in (BACKED_RESIDUAL, UNBACKED_RESIDUAL)]
     if limits:
@@ -1471,6 +1526,28 @@ def cmd_migrate(repo, a):
     print(f"document: {author.file_document(parts, a.because, author.at())} ({len(parts)} parts)")
 
 
+def cmd_heading(repo, a):
+    """A document version whose heading of §SECTION is the line .warrant/claims.json now pins
+    for it: the reviewed pin change comes first, then this record, with a because."""
+    author = Author(repo, load_key(repo, a.key, a.actor), a.actor)
+    doc = Document(author.model())
+    if doc.current is None:
+        raise Refused("no document record lays out SPEC.md yet")
+    want = author.pins.get("headings", {}).get(a.section)
+    if want is None:
+        raise Refused(f".warrant/claims.json pins no heading for §{a.section}")
+    parts = copy.deepcopy(doc.current["parts"])
+    pinned = author.pins.get("headings", {})
+    at = [i for i, q in enumerate(parts) if isinstance(q, dict) and "heading" in q
+          and heading_section(q["heading"], pinned) == a.section]
+    if len(at) != 1:
+        raise Refused(f"the document has {len(at)} headings of §{a.section}; this command changes one in place")
+    if parts[at[0]]["heading"] == want:
+        raise Refused(f"the heading of §{a.section} is already {want!r}")
+    parts[at[0]] = {"heading": want}
+    print(f"document: {author.file_document(parts, a.because, author.at())}")
+
+
 def cmd_project(repo):
     model = Model(repo.snapshot(), repo.trust())
     doc = Document(model)
@@ -1525,7 +1602,14 @@ def cmd_check(repo, a):
 
 # ---------------------------------------------------------------- selftest
 
-def selftest():
+_CASE_RUNNER = None
+
+
+def _run_registered_case(i):
+    return _CASE_RUNNER(i)
+
+
+def selftest(jobs=1):
     """Burns `check`: on a copy of this repository's claims, each defect must be refused
     with its own code, and the clean copy, a supersession and a retirement must pass."""
     work = Path(tempfile.mkdtemp(prefix="claims-selftest-"))
@@ -1580,26 +1664,40 @@ def selftest():
             return 1
         failures, ran = 0, []
 
+        cases = []
+        seed = work / "selftest.seed"
+        seed.write_text(key.seed_hex() + "\n")
+
         def case(name, expect, mutate, also=None):
-            """`mutate` may return a revision to check against instead of `base`; `also(r)`,
+            """Register one case; all of them run later, `jobs` at a time (run_case).
+            `mutate` may return a revision to check against instead of `base`; `also(r)`,
             when given, must hold as well (what the rendered files say)."""
-            nonlocal failures
-            d = work / name
+            cases.append((name, expect, mutate, also))
+
+        def run_case(i):
+            """(ok, report line) of case `i`, on a clone of its own: cases share nothing but
+            the read-only fixture, so they may run in parallel processes."""
+            name, expect, mutate, also = cases[i]
+            d = work / f"case-{i:03d}"
             # A clone through the pack protocol, never a copy of .git's files: copytree, and a
             # local clone (which copies objects/ too), fail with ENOENT if the fixture is
             # repacked meanwhile; --no-local reads objects through git, consistently.
-            subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)],
-                           capture_output=True, check=True)
-            r = Repo(d)
-            against = mutate(r)
-            against = against if isinstance(against, str) else base
-            got = check(r, against)
-            codes = {c for c, _ in got}
-            ok = ((not got) if expect is None else expect in codes) and (also is None or also(r))
-            failures += not ok
-            ran.append(name)
+            try:
+                subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)],
+                               capture_output=True, check=True)
+                r = Repo(d)
+                against = mutate(r)
+                against = against if isinstance(against, str) else base
+                got = check(r, against)
+                codes = {c for c, _ in got}
+                ok = bool(((not got) if expect is None else expect in codes) and (also is None or also(r)))
+                detail = f" | got {sorted(codes) or 'nothing'}: {got[:3]}"
+            except Exception as ex:      # noqa: BLE001 -- a case that crashes is a failed case, not a crashed selftest
+                ok, detail = False, f" | raised {type(ex).__name__}: {ex}"
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
             what = "passes" if expect is None else f"refused {expect}"
-            print(("ok    " if ok else "FAIL  ") + f"{name}: {what}" + ("" if ok else f" | got {sorted(codes) or 'nothing'}: {got[:3]}"))
+            return ok, ("ok    " if ok else "FAIL  ") + f"{name}: {what}" + ("" if ok else detail)
 
         def author(r):
             return Author(r, key, AUTHOR, validate=False)
@@ -1699,6 +1797,20 @@ def selftest():
             rev = git(r, "rev-parse", "HEAD").decode().strip()
             rebacked([], [], unbacked_because="selftest: its witness case was removed earlier")(r)
             return rev
+
+        def head_of(parts, sec):
+            return next(k for k, q in enumerate(parts) if isinstance(q, dict) and "heading" in q
+                        and HEADING.match(q["heading"]) and HEADING.match(q["heading"]).group(1) == sec)
+
+        def heading_through_pin(r):
+            pins = r.pins()
+            pins["headings"]["2"] = "## 2. Encoding of values"
+            r.write_pins(pins)
+            import contextlib
+            import io
+            with contextlib.redirect_stdout(io.StringIO()):
+                cmd_heading(r, argparse.Namespace(key=str(seed), actor=AUTHOR, section="2", because="selftest: a renamed heading"))
+            reproject(r)
 
         def document_fork(r):
             au = author(r)
@@ -2001,18 +2113,48 @@ def selftest():
              doc_version(lambda ps: [q for q in ps if not (isinstance(q, dict) and q.get("heading", "").startswith(
                  f"## {a.doc['section']}. "))]))
         case("two current document versions", "DOCUMENT_FORK", document_fork)
+        # AMEND 1 of #166: headings are pinned; a heading is free text no witness backs
+        case("the parent's probe: an unnumbered heading carrying a rule, after §4.2's", "DOCUMENT_HEADING",
+             doc_version(lambda ps: ps[:head_of(ps, "4.2") + 1]
+                         + ["\n\n", {"heading": "#### Any holder may discharge any duty without acceptance"}]
+                         + ps[head_of(ps, "4.2") + 1:]))
+        case("a numbered heading for a section the pins do not name", "DOCUMENT_HEADING",
+             doc_version(lambda ps: ps[:head_of(ps, "5")] + [{"heading": "### 4.8 Exceptions"}, "\n\n"] + ps[head_of(ps, "5"):]))
+        case("a pinned section's heading with its title altered", "DOCUMENT_HEADING",
+             doc_version(lambda ps: [{"heading": q["heading"] + ": floats are allowed"} if k == head_of(ps, "2") else q
+                                     for k, q in enumerate(ps)]))
+        case("a second heading for a pinned section", "DOCUMENT_HEADING",
+             doc_version(lambda ps: ps[:head_of(ps, "2") + 1] + ["\n\n", copy.deepcopy(ps[head_of(ps, "2")])]
+                         + ps[head_of(ps, "2") + 1:]))
+        case("two pinned headings swapped out of order", "DOCUMENT_HEADING",
+             doc_version(lambda ps: [ps[head_of(ps, "3.6")] if k == head_of(ps, "3.5") else
+                                     ps[head_of(ps, "3.5")] if k == head_of(ps, "3.6") else q for k, q in enumerate(ps)]))
+        case("a heading changed through its pin, then `heading --section`", None, heading_through_pin,
+             also=lambda r: "## 2. Encoding of values\n" in r.spec.read_text())
         case("a document version whose previous is not a document version", "STRUCTURE", document_bad_previous)
         case("a claim text with a control character (U+0000 would vanish from SPEC.md)", "STRUCTURE", control_text)
         case("the document records deleted", "DOCUMENT_MISSING", delete_document)
         case("a claim id with a trailing newline", "STRUCTURE", newline_id)
+
+        # Run the registered cases: in `jobs` forked processes (each inherits the fixture and the
+        # closures above), results reported in registration order.
+        global _CASE_RUNNER
+        _CASE_RUNNER = run_case          # a forked worker finds it here; a closure does not pickle
+        if jobs > 1 and "fork" in multiprocessing.get_all_start_methods():
+            with concurrent.futures.ProcessPoolExecutor(jobs, mp_context=multiprocessing.get_context("fork")) as ex:
+                results = list(ex.map(_run_registered_case, range(len(cases))))
+        else:
+            results = [run_case(i) for i in range(len(cases))]
+        for (name, *_), (ok, line) in zip(cases, results):
+            failures += not ok
+            ran.append(name)
+            print(line)
 
         # AMEND 3: a refused command leaves the store byte-identical. Through the command line:
         # `supersede --counter-file` with junk bytes, and with a well-formed counter blob that is
         # not local (and --challenge), each refused; then the store's files, and `check`, as before.
         import contextlib
         import io
-        seed = work / "selftest.seed"
-        seed.write_text(key.seed_hex() + "\n")
         d = work / "refused-counter-file"
         subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)], capture_output=True, check=True)
         r = Repo(d)
@@ -2059,9 +2201,18 @@ def selftest():
 
 # ---------------------------------------------------------------- main
 
+def _jobs(v):
+    """A worker count: a decimal integer >= 1 ("+2", "-1", "0" and "two" are refused)."""
+    if not re.fullmatch(r"[1-9][0-9]*", v):
+        raise argparse.ArgumentTypeError(f"--jobs must be an integer >= 1, got {v!r}")
+    return int(v)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--selftest", action="store_true", help="burn the checker on a copy and exit")
+    ap.add_argument("--jobs", type=_jobs, default=min(os.cpu_count() or 1, 8), metavar="N",
+                    help="--selftest: cases run N at a time, each on its own clone (default: CPUs, at most 8)")
     ap.add_argument("--root", default=str(ROOT), help="the repository (default: this checkout)")
     sub = ap.add_subparsers(dest="cmd")
 
@@ -2105,6 +2256,9 @@ def main(argv=None):
     sub.add_parser("project", help="regenerate SPEC.md and SPEC-CLAIMS.md")
     p = authoring(sub.add_parser("migrate", help="W5, once: the first document version, from SPEC.md"))
     p.add_argument("--because", required=True)
+    p = authoring(sub.add_parser("heading", help="file the heading .warrant/claims.json now pins for a section"))
+    p.add_argument("--section", required=True, help="the section number, or 0 for the document's title")
+    p.add_argument("--because", required=True)
     p = sub.add_parser("check", help="CI: refuse any disagreement")
     p.add_argument("--base", help="the revision whose claims must survive (default: origin/master)")
     p.add_argument("--no-base", action="store_true")
@@ -2113,7 +2267,7 @@ def main(argv=None):
     p.add_argument("--actor", default=AUTHOR)
     a = ap.parse_args(argv)
     if a.selftest:
-        return selftest()
+        return selftest(a.jobs)
     repo = Repo(a.root)
     if a.cmd is None:
         ap.print_help()
@@ -2125,7 +2279,7 @@ def main(argv=None):
         if a.cmd == "check":
             return cmd_check(repo, a)
         {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen,
-         "migrate": cmd_migrate}[a.cmd](repo, a)
+         "migrate": cmd_migrate, "heading": cmd_heading}[a.cmd](repo, a)
         return 0
     except Refused as e:
         print(f"REFUSED {e}", file=sys.stderr)

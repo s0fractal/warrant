@@ -278,7 +278,9 @@ The reason below is the filer's thesis; the replay is what admitted the loss.
 ## Document
 
 SPEC.md is rendered from document version `9bcc9542c2b4` (520 parts). Its headings
-are part of that signed record and are not claims; a heading states no rule:
+are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold
+only those lines, once each and in order. A title is free text that no witness backs, so a
+rule-shaped title is a review matter; the pin makes every change of one a reviewed diff.
 
 - `# Warrant 2 — Specification`
 - `## 1. Purpose`
