@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""SPEC claims as Warrant 2 records (pilot W).
+"""SPEC claims as Warrant 2 records (pilot W; SPEC.md generated since W5).
 
-The normative sentences of SPEC.md are claims filed as ordinary Warrant 2 records
-in this repository's own store, `.warrant/store/` (records/<id>.json, blobs/<sha256>).
-The records are the source. SPEC-CLAIMS.md is a view generated from them, and
-`check` refuses it when it says anything else.
+The sentences of SPEC.md are claims filed as ordinary Warrant 2 records in this
+repository's own store, `.warrant/store/` (records/<id>.json, blobs/<sha256>).
+The records are the source. SPEC.md and SPEC-CLAIMS.md are views generated from
+them by `project`, and `check` refuses either file when it says anything else:
+nothing in SPEC.md is written by hand.
 
 A claim is a `duty` (holder: the author; owed_to: readers; condition: attest;
 accept_by: the reviewer) whose statement is the sentence, with an ATTESTED
@@ -15,8 +16,9 @@ repeats the sentence. A sentence with no witness or no mutant is filed UNBACKED:
 the transition closes nothing and opens the question, and the blob says why it is
 open (`reason`). UNBACKED is an allowed status, listed in SPEC-CLAIMS.md as an open
 question. A claim that was BACKED at the base revision and is UNBACKED now needs a
-proof of the loss: its backing broke on its own (a cited case or mutant is gone), or
-a transition after it cites a counter blob (warrant-claims/counter@1: a patch that
+proof of the loss: its backing was already broken at the base (a cited case or
+mutant absent there; removing it in the same change as the downgrade is refused),
+or a transition after it cites a counter blob (warrant-claims/counter@1: a patch that
 is confined to the code the claim's own mutants alter (scopes compared by AST), under which every cited witness
 still passes and some case fails), directly or through a challenge against the
 replaced claim, and `check` replays that blob. An informative sentence is
@@ -25,20 +27,33 @@ whose `supersedes` names the claim it replaces. A retirement is a `challenge`
 carrying the counter-evidence plus a transition superseding the claim. Nothing is
 ever deleted.
 
+What SPEC.md holds besides sentences is one more record: the **document**, an
+ATTESTED transition with no duty whose single evidence blob
+(warrant-claims/document@1) lists SPEC.md's parts in order: headings, references
+to claims (each with the whitespace layout it had when filed) and the literal
+gaps between them, which hold only spaces and line breaks and, at a line's start,
+a list marker (`- `, `3. `) or a table rule (`| --- | --- |`). A new version supersedes the
+previous one. A claim renders in its recorded layout while its text is the one
+that layout was taken from; a changed or new sentence is filled to 80 columns
+(unwrapped inside a fence or a table row); a retired one is left out.
+
     python3 tools/claims.py keygen --out SEED            # once per author; the seed stays out of git
     python3 tools/claims.py add --key SEED --stanza STANZAS.json
-    python3 tools/claims.py add --key SEED --id SPEC-4.2-3 --text '...' --witness contract_test:H1 --mutant M01
-    python3 tools/claims.py add --key SEED --id SPEC-1-2 --text '...' --unbacked-because '...'
+    python3 tools/claims.py add --key SEED --id SPEC-4.2-9 --text '...' --after SPEC-4.2-8 \
+        --witness contract_test:H1 --mutant M01           # a new sentence names its position
+    python3 tools/claims.py add --key SEED --id SPEC-1-6 --text '...' --after SPEC-1-5 --paragraph \
+        --unbacked-because '...'
     python3 tools/claims.py supersede --key SEED --id SPEC-4.2-3 --text '...' --because '...'
     python3 tools/claims.py supersede --key SEED --id SPEC-7-1 --text '...' --because '...' \
         --unbacked-because '...' --counter-file COUNTER.json --challenge   # a BACKED claim losing its backing
     python3 tools/claims.py retire --key SEED --id SPEC-4.2-3 --because '...' --counter HEX
-    python3 tools/claims.py project                      # regenerate SPEC-CLAIMS.md
+    python3 tools/claims.py project                      # regenerate SPEC.md and SPEC-CLAIMS.md
     python3 tools/claims.py check [--base REV | --no-base]
     python3 tools/claims.py --selftest                   # every refusal of `check`, burned on a copy
+    python3 tools/claims.py migrate --key SEED --because '...'   # once (W5): the first document, from SPEC.md
 
-A sentence is quoted verbatim modulo line wrapping: runs of whitespace compare as
-one space. Refusals are printed one per line as `REFUSED <CODE> <detail>`.
+A claim's text is whitespace-normalized: runs of whitespace compare as one space.
+Refusals are printed one per line as `REFUSED <CODE> <detail>`.
 """
 import argparse
 import ast
@@ -54,6 +69,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,7 +87,7 @@ PINS_VERSION = "warrant-claims/pins@1"
 ID_RE = re.compile(r"^SPEC-([0-9]+(?:\.[0-9]+)*)-([1-9][0-9]*)\Z")    # \Z: `$` admits a trailing newline
 TEST_RE = re.compile(r"^[a-z][a-z0-9_]*_test\Z")
 HEADING = re.compile(r"^#+ ([0-9]+(?:\.[0-9]+)*)\.? ")
-RESIDUE_OK = set(" |-.0123456789")
+RESIDUE_OK = frozenset(" |-.0123456789")    # layout characters: table rules, list markers, numbers
 BACKED_RESIDUAL = ("this record cites its witness cases and mutants and does not run them; "
                    "CI runs the suites and tests/mutants.py before tools/claims.py check")
 UNBACKED_RESIDUAL = "UNBACKED: no witness case or no mutant cites this sentence yet"
@@ -84,6 +100,22 @@ HARNESSES = (("mutants.py", "M"), ("agent_mutants.py", "A"))
 HARNESS_PACKAGE = {"mutants.py": "warrant", "agent_mutants.py": "warrant_agent"}
 COUNTER = "warrant-claims/counter@1"
 COUNTER_FIELDS = ("counter", "claim", "against", "patch", "passes", "fails", "why")
+# The document (W5): SPEC.md's parts in order. A literal gap carries layout only, never words.
+DOCUMENT = "warrant-claims/document@1"
+DOCUMENT_FIELDS = ("schema", "source", "parts", "because", "previous")
+DOCUMENT_PREVIOUS = ("transition", "sha256")
+DOCUMENT_RESIDUAL = "the document orders and lays out the claims; it states no rule"
+LITERAL_OK = RESIDUE_OK | {"\n"}
+# A literal gap: spaces up to its first line break; after each line break, an indentation
+# and at most a list marker ("- ", "12. "), or a table rule. No digit can touch a sentence.
+LITERAL_LINE = re.compile(r"^(?: *(?:- |[0-9]{1,3}\. )?|\| ---(?: \| ---)* \|)\Z")
+# A heading line: one to six #, a space, a title with no control character and no
+# space at either end. \Z, not $: `$` admits a trailing newline.
+HEADING_LINE = re.compile(r"^#{1,6} [^\x00-\x20\x7f-\x9f](?:[^\x00-\x1f\x7f-\x9f]*[^\x00-\x20\x7f-\x9f])?\Z")
+GAP_RUN = re.compile(r"^[ \n]+\Z")
+PREAMBLE = "0"              # the section before the first numbered heading
+WIDTH = 80                  # the fill width of a sentence whose recorded layout no longer applies
+GONE = "\x00"               # placeholder of a retired sentence while SPEC.md is rendered
 
 
 class Refused(Exception):
@@ -144,25 +176,6 @@ class Repo:
 
     def snapshot(self):
         return Snapshot.read(self.store_dir)
-
-    def section_lines(self, n):
-        """The lines of section `n` of SPEC.md, headings excluded, up to the next heading."""
-        out = None
-        for line in self.spec.read_text().split("\n"):
-            if line.startswith("#"):
-                if out is not None:
-                    break
-                m = HEADING.match(line)
-                if m and m.group(1) == n:
-                    out = []
-                continue
-            if out is not None:
-                out.append(line)
-        return out
-
-    def section(self, n):
-        lines = self.section_lines(n)
-        return None if lines is None else norm(" ".join(lines))
 
     def mutants(self):
         """{id: (harness file, test file, [target cases])} from every harness of HARNESSES.
@@ -351,8 +364,9 @@ class Model:
             return f"claim id {doc['id']!r} is not SPEC-<section>-<n>"
         if doc["section"] != ID_RE.match(doc["id"]).group(1) or doc["source"] != "SPEC.md":
             return "section or source does not match the id"
-        if not (isinstance(doc["text"], str) and doc["text"] and doc["text"] == norm(doc["text"])):
-            return "text must be a non-empty whitespace-normalized string"
+        if not (isinstance(doc["text"], str) and doc["text"] and doc["text"] == norm(doc["text"])
+                and not any(unicodedata.category(c) == "Cc" for c in doc["text"])):
+            return "text must be a non-empty whitespace-normalized string with no control character"
         lists = all(isinstance(doc[k], list) and all(isinstance(x, str) for x in doc[k])
                     and doc[k] == sorted(set(doc[k])) for k in ("witnesses", "mutants"))
         if not lists:
@@ -426,6 +440,282 @@ class Model:
         return n.doc["text"]
 
 
+# ---------------------------------------------------------------- the document (W5)
+
+class Document:
+    """The document records a snapshot holds: transitions whose single evidence blob is
+    a DOCUMENT blob. `current` is the one no other document version supersedes (or None);
+    `problems` lists malformed versions and forks."""
+
+    def __init__(self, model):
+        self.model = model
+        self.nodes, self.problems = {}, []
+        for rid, r in sorted(model.recs.items()):
+            if r["type"] != "transition":
+                continue
+            heads = [h for h in r["body"]["evidence"] for d in [model.snap.json_blob(h)]
+                     if isinstance(d, dict) and d.get("schema") == DOCUMENT]
+            if not heads:
+                continue
+            doc = model.snap.json_blob(heads[0])
+            code, why = self._shape(r, heads, doc)
+            if why:
+                self.problems.append((code, f"document transition {rid[:12]}: {why}"))
+                continue
+            self.nodes[rid] = (r, heads[0], doc)
+        for rid, (r, h, doc) in list(self.nodes.items()):
+            prev = doc["previous"]
+            if prev is None:
+                continue
+            p = self.nodes.get(prev["transition"])
+            if p is None or p[1] != prev["sha256"]:
+                self.problems.append(("STRUCTURE", f"document transition {rid[:12]}: its previous version is not "
+                                                   "a document transition of this store with that blob"))
+                del self.nodes[rid]
+        replaced = {s for r, _, _ in self.nodes.values() for s in r["body"]["supersedes"]}
+        cur = sorted((rid for rid in self.nodes if rid not in replaced), key=lambda rid: (self.nodes[rid][0]["at"], rid))
+        if len(cur) > 1:
+            self.problems.append(("DOCUMENT_FORK", f"{len(cur)} current document versions: "
+                                  + ", ".join(rid[:12] for rid in cur)))
+        self.tid = cur[-1] if cur else None
+        self.current = self.nodes[self.tid][2] if cur else None
+
+    def _shape(self, r, heads, doc):
+        """(code, why) when this transition is not a well-formed document version, else (None, None)."""
+        b = r["body"]
+        if len(heads) != 1 or b["evidence"] != heads:
+            return "STRUCTURE", "a document transition carries its document blob and nothing else as evidence"
+        if b["basis"] != "ATTESTED" or b["closes"] or b["established"] or b["opened"]:
+            return "STRUCTURE", "a document transition is ATTESTED and closes, establishes and opens nothing"
+        if set(doc) != set(DOCUMENT_FIELDS) or doc["source"] != "SPEC.md":
+            return "STRUCTURE", f"document blob members are not {list(DOCUMENT_FIELDS)} with source SPEC.md"
+        prev = doc["previous"]
+        if prev is not None and not (isinstance(prev, dict) and set(prev) == set(DOCUMENT_PREVIOUS)
+                                     and all(isinstance(prev[k], str) for k in DOCUMENT_PREVIOUS)):
+            return "STRUCTURE", "previous must be null or {transition, sha256}"
+        if not (isinstance(doc["because"], str) and doc["because"]):
+            return "STRUCTURE", "every document version says because, in a non-empty string"
+        if b["supersedes"] != ([] if prev is None else [prev["transition"]]):
+            return "STRUCTURE", "supersedes does not name exactly its previous version"
+        parts = doc["parts"]
+        if not (isinstance(parts, list) and parts):
+            return "STRUCTURE", "parts must be a non-empty list"
+        for i, p in enumerate(parts):
+            if isinstance(p, str):
+                if not p:
+                    return "STRUCTURE", f"part {i} is an empty literal"
+                if not literal_ok(p):
+                    return "DOCUMENT_LITERAL", (f"part {i} is the literal {p[:60]!r}: a gap holds spaces and line breaks, "
+                                                "and at a line's start a list marker or a table rule; words are claims")
+            elif isinstance(p, dict) and set(p) == {"heading"}:
+                if not (isinstance(p["heading"], str) and HEADING_LINE.match(p["heading"])):
+                    return "STRUCTURE", f"part {i}: {str(p['heading'])[:60]!r} is not a heading line"
+            elif isinstance(p, dict) and set(p) == {"claim", "layout"}:
+                if not (isinstance(p["claim"], str) and ID_RE.match(p["claim"])):
+                    return "STRUCTURE", f"part {i}: {str(p['claim'])[:60]!r} is not a claim id"
+                why = _layout_shape(p["layout"])
+                if why:
+                    return "STRUCTURE", f"part {i} ({p['claim']}): {why}"
+            else:
+                return "STRUCTURE", f"part {i} is not a literal, {{heading}} or {{claim, layout}}"
+        return None, None
+
+    def problems_with(self, pins):
+        """(code, detail) for references that do not match the claims, and claims left out."""
+        out, seen, section = [], {}, PREAMBLE
+        headed = {PREAMBLE}
+        model = self.model
+        for i, p in enumerate(self.current["parts"]):
+            if isinstance(p, str):
+                continue
+            if "heading" in p:
+                m = HEADING.match(p["heading"])
+                if m:
+                    section = m.group(1)
+                    headed.add(section)
+                continue
+            cid = p["claim"]
+            if cid in seen:
+                out.append(("DOCUMENT_CLAIM_TWICE", f"{cid} is part {seen[cid]} and part {i}"))
+                continue
+            seen[cid] = i
+            if cid not in model.by_id:
+                out.append(("DOCUMENT_UNKNOWN_CLAIM", f"part {i} names {cid}, which no claim record states"))
+            elif ID_RE.match(cid).group(1) != section:
+                out.append(("DOCUMENT_SECTION", f"part {i} puts {cid} under the heading of §{section}"))
+        for cid, n in sorted(model.current.items(), key=lambda kv: id_key(kv[0])):
+            if not n.retired and cid not in seen:
+                out.append(("CLAIM_NOT_IN_DOCUMENT", f"{cid} is a current claim and no part of the document places it"))
+        for s in pins["sections"]:
+            if s not in headed:
+                out.append(("SECTION_MISSING", f"the document has no heading of §{s}"))
+        return out
+
+
+def literal_ok(text):
+    """True iff `text` is a literal gap (LITERAL_LINE)."""
+    first, *lines = text.split("\n")
+    return set(first) <= {" "} and all(LITERAL_LINE.match(ln) for ln in lines)
+
+
+def _layout_shape(layout):
+    if layout is None:
+        return None
+    if not (isinstance(layout, dict) and set(layout) == {"sha256", "gaps"} and isinstance(layout["sha256"], str)
+            and R.HEX64.match(layout["sha256"]) and isinstance(layout["gaps"], list)):
+        return "layout must be null or {sha256: hex64, gaps: [[index, run]…]}"
+    last = -1
+    for g in layout["gaps"]:
+        if not (isinstance(g, list) and len(g) == 2 and type(g[0]) is int and g[0] > last
+                and isinstance(g[1], str) and GAP_RUN.match(g[1]) and g[1] != " "):
+            return "a layout gap is [index, run]: indices ascending, runs of spaces and line breaks other than one space"
+        last = g[0]
+    return None
+
+
+def lay_out(text, layout, before):
+    """The sentence `text` as SPEC.md shows it, after the rendered text `before`: in its
+    recorded layout while `text` is the sentence that layout was taken from (and every
+    gap index falls inside it), else filled (fill)."""
+    words = text.split(" ")
+    if layout is not None and layout["sha256"] == sha(text) and all(i < len(words) - 1 for i, _ in layout["gaps"]):
+        runs = [" "] * (len(words) - 1)
+        for i, run in layout["gaps"]:
+            runs[i] = run
+        return words[0] + "".join(r + w for r, w in zip(runs, words[1:]))
+    return fill(words, before, layout)
+
+
+def fill(words, before, layout=None):
+    """Words joined by single spaces, broken before a word that would pass column WIDTH and
+    continued under the current line's indentation and list marker; never broken inside a
+    fenced block or a table row (a line break there would change what the line says). In a
+    fenced block the recorded run after the first word is kept, so a field line stays aligned."""
+    line = before[before.rfind("\n") + 1:]
+    fenced = sum(ln.startswith("```") for ln in before.split("\n")[:-1]) % 2 == 1
+    if fenced:
+        first = next((r for i, r in (layout or {}).get("gaps", []) if i == 0 and "\n" not in r), " ")
+        return words[0] + (first + " ".join(words[1:]) if len(words) > 1 else "")
+    if line.lstrip(" ").startswith("|"):
+        return " ".join(words)
+    indent = " " * len(re.match(r" *(?:[-*] |[0-9]+\. )?", line).group(0))
+    out, col = words[0], len(line) + len(words[0])
+    for w in words[1:]:
+        if col + 1 + len(w) > WIDTH and col > len(indent):
+            out, col = out + "\n" + indent, len(indent)
+        else:
+            out, col = out + " ", col + 1
+        out, col = out + w, col + len(w)
+    return out
+
+
+def render_spec(model, document):
+    """SPEC.md: the document's parts in order, each claim reference as its current
+    sentence (lay_out); a retired claim is left out (drop_gone)."""
+    s = ""
+    for p in document["parts"]:
+        if isinstance(p, str):
+            s += p
+        elif "heading" in p:
+            s += p["heading"]
+        else:
+            n = model.current.get(p["claim"])
+            s += GONE if n is None or n.retired else lay_out(n.doc["text"], p["layout"], s)
+    return drop_gone(s)
+
+
+def drop_gone(s):
+    """Remove each retired sentence's placeholder. Alone on its line (nothing else there but
+    layout characters), the line goes, and a blank line left doubled becomes one; sharing a
+    line with other text, the placeholder goes with one adjacent space."""
+    while GONE in s:
+        pos = s.index(GONE)
+        ls, le = s.rfind("\n", 0, pos) + 1, s.find("\n", pos)
+        le = len(s) if le < 0 else le
+        rest = s[ls:pos] + s[pos + 1:le]
+        if GONE not in rest and set(rest) <= LITERAL_OK:
+            if le < len(s):
+                s = s[:ls] + s[le + 1:]
+                if s[max(0, ls - 2):ls] == "\n\n" and s[ls:ls + 1] == "\n":
+                    s = s[:ls] + s[ls + 1:]
+            else:
+                s = s[:max(0, ls - 1)]
+                s = s.rstrip("\n") + "\n" if s else s
+        elif s[pos + 1:pos + 2] == " ":
+            s = s[:pos] + s[pos + 2:]
+        elif s[pos - 1:pos] == " ":
+            s = s[:pos - 1] + s[pos + 1:]
+        else:
+            s = s[:pos] + s[pos + 1:]
+    return s
+
+
+def parse_spec(text, model):
+    """Migration only (W5, once): the parts that reproduce `text` from the current claims,
+    or raise Refused. Each section's text is matched against that section's claims, at
+    each point the claim that starts earliest (then the longest, then the lowest id),
+    where only layout characters lie between; every claim must be placed and nothing
+    else may remain. The caller still renders the parts and compares bytes: this
+    reader is trusted with nothing (PATTERNS.md: never parse Markdown to find claims)."""
+    by_sec = {}
+    for n in model.current.values():
+        if not n.retired:
+            by_sec.setdefault(n.doc["section"], []).append(n)
+    parts, section, pos = [], PREAMBLE, 0
+    lines = text.split("\n")
+    chunks, buf, at = [], [], 0          # [(section, body text) | ("#", heading line)]
+    for k, line in enumerate(lines):
+        end = "\n" if k < len(lines) - 1 else ""
+        if line.startswith("#"):
+            chunks.append((section, "".join(buf)))
+            buf = [end]
+            chunks.append(("#", line))
+            m = HEADING.match(line)
+            section = m.group(1) if m else section
+        else:
+            buf.append(line + end)
+    chunks.append((section, "".join(buf)))
+    placed = set()
+    for sec, body in chunks:
+        if sec == "#":
+            if not HEADING_LINE.match(body):
+                raise Refused(f"{body[:60]!r} is not a heading line")
+            parts.append({"heading": body})
+            continue
+        todo = [n for n in by_sec.get(sec, []) if n.id not in placed]
+        pos = 0
+        while True:
+            best = None
+            for n in todo:
+                words = n.doc["text"].split(" ")
+                m = re.compile(r"[ \n]+".join(re.escape(w) for w in words)).search(body, pos)
+                if m is None or not literal_ok(body[pos:m.start()]):
+                    continue
+                key = (m.start(), -len(m.group(0)), id_key(n.id))
+                if best is None or key < best[0]:
+                    best = (key, n, m)
+            if best is None:
+                break
+            _, n, m = best
+            if m.start() > pos:
+                parts.append(body[pos:m.start()])
+            runs = re.findall(r"[ \n]+", m.group(0))
+            gaps = [[i, r] for i, r in enumerate(runs) if r != " "]
+            parts.append({"claim": n.id, "layout": {"sha256": sha(n.doc["text"]), "gaps": gaps}})
+            placed.add(n.id)
+            todo.remove(n)
+            pos = m.end()
+        rest = body[pos:]
+        if not literal_ok(rest):
+            raise Refused(f"§{sec} has text no current claim of §{sec} places: {norm(rest)[:120]!r}")
+        if rest:
+            parts.append(rest)
+    left = sorted((n.id for ns in by_sec.values() for n in ns if n.id not in placed), key=id_key)
+    if left:
+        raise Refused(f"claims not found in SPEC.md: {', '.join(left[:10])}")
+    return parts
+
+
 # ---------------------------------------------------------------- the view
 
 def assessment(snap, trust):
@@ -458,14 +748,15 @@ def render(repo):
     live = [n for n in rows if not n.retired]
     retired = [n for n in rows if n.retired]
     count = {s: sum(n.status == s for n in live if n.id in pins["sentences"]) for s in ("BACKED", "UNBACKED", "INFORMATIVE")}
-    secs = ", ".join(f"§{s}" for s in pins["sections"])
+    secs = ", ".join("the preamble" if s == PREAMBLE else f"§{s}" for s in pins["sections"])
     out = [
         "# SPEC claims (generated view)", "",
         "Generated by `python tools/claims.py project` from the Warrant 2 records in",
         "`.warrant/store/`. **The records are the source; this file is a view.**",
         "`python tools/claims.py check` refuses it when it differs from what the records",
-        "say. Do not edit it by hand: change SPEC.md, then add, supersede or retire the",
-        "claim, then regenerate this file (README.md, \"Changing a normative sentence\").", "",
+        "say. SPEC.md is generated from the same records. Edit neither by hand: add,",
+        "supersede or retire the claim, then regenerate both (README.md, \"Changing a",
+        "normative sentence\").", "",
         f"Sections {secs} of SPEC.md · sentences {len(pins['sentences'])} · backed {count['BACKED']} · "
         f"unbacked {count['UNBACKED']} · informative {count['INFORMATIVE']} · retired {len(retired)} · "
         f"records {len(snap.records)} · blobs {len(snap.blobs)}", "",
@@ -499,6 +790,13 @@ def render(repo):
                 for n in opened]
     else:
         out.append("None.")
+    doc = Document(model)
+    if doc.current is not None:
+        heads = [p["heading"] for p in doc.current["parts"] if isinstance(p, dict) and "heading" in p]
+        out += ["", "## Document", "",
+                f"SPEC.md is rendered from document version `{doc.tid[:12]}` ({len(doc.current['parts'])} parts). Its headings",
+                "are part of that signed record and are not claims; a heading states no rule:", ""]
+        out += [f"- `{h}`" for h in heads]
     limits = [(n.id, x) for n in live for x in n.rec["body"]["residual"] if x not in (BACKED_RESIDUAL, UNBACKED_RESIDUAL)]
     if limits:
         out += ["", "## Limits the claims record", ""] + [f"- {cid}: {x}" for cid, x in limits]
@@ -545,24 +843,17 @@ def check(repo, base=None):
     out += model.problems
     out += repo.harness_problems()
     pins = repo.pins()
-    sections = {s: repo.section(s) for s in pins["sections"]}
-    for s, text in sections.items():
-        if text is None:
-            out.append(("SECTION_MISSING", f"SPEC.md has no section {s}"))
     for cid, n in sorted(model.current.items(), key=lambda kv: id_key(kv[0])):
         if n.retired:
             continue
         sec = n.doc["section"]
-        text = sections.get(sec) if sec in sections else repo.section(sec)
-        if text is None or n.doc["text"] not in text:
-            out.append(("QUOTE_NOT_IN_SPEC", f"{cid}: the sentence is not in SPEC.md §{sec}: {n.doc['text'][:80]!r}"))
         out += [(code, f"{cid}: {why}") for code, why in witness_problems(repo, n.doc["witnesses"], n.doc["mutants"])]
         if n.kind == "normative" and not n.backed and not n.doc["reason"]:
             out.append(("UNBACKED_WITHOUT_REASON", f"{cid}: an unbacked claim must say why it is open (--unbacked-because)"))
         if cid in model.challenges:
             out.append(("CHALLENGED", f"{cid}: standing challenge {', '.join(c[:12] for c in model.challenges[cid])}"
                         " against the current claim; supersede or retire it"))
-        if sec in sections and cid not in pins["sentences"]:
+        if sec in pins["sections"] and cid not in pins["sentences"]:
             out.append(("UNPINNED_CLAIM", f"{cid}: a current claim of §{sec} that .warrant/claims.json does not pin"))
     for cid, kind in sorted(pins["sentences"].items(), key=lambda kv: id_key(kv[0])):
         n = model.current.get(cid)
@@ -572,16 +863,19 @@ def check(repo, base=None):
             out.append(("PINNED_RETIRED", f"{cid}: pinned, but its claim is retired"))
         elif n.kind != kind:
             out.append(("KIND_MISMATCH", f"{cid}: pinned {kind}, claimed {n.kind}"))
-    for s, text in sections.items():
-        if text is None:
-            continue
-        rest = text
-        claimed = [n.doc["text"] for n in model.current.values() if not n.retired and n.doc["section"] == s]
-        for q in sorted(claimed, key=len, reverse=True):
-            rest = rest.replace(q, " ", 1)
-        words = norm("".join(ch if ch not in RESIDUE_OK else " " for ch in rest))
-        if words:
-            out.append(("UNCOVERED_TEXT", f"§{s} has text no current claim quotes: {words[:120]!r}"))
+    # W5: SPEC.md is the document's rendering; nothing in it is written by hand.
+    doc = Document(model)
+    out += doc.problems
+    if doc.current is None:
+        out.append(("DOCUMENT_MISSING", "no document record lays out SPEC.md; see tools/claims.py migrate"))
+    else:
+        out += doc.problems_with(pins)
+        want = render_spec(model, doc.current).encode()
+        if not repo.spec.is_file():
+            out.append(("SPEC_NOT_PROJECTION", "SPEC.md does not exist; run tools/claims.py project"))
+        elif repo.spec.read_bytes() != want:
+            out.append(("SPEC_NOT_PROJECTION", "SPEC.md is not the rendering of the records (edited by hand?); "
+                        "run tools/claims.py project"))
     if not repo.projection.is_file():
         out.append(("PROJECTION_MISSING", "SPEC-CLAIMS.md does not exist; run tools/claims.py project"))
     elif repo.projection.read_text() != render(repo):
@@ -636,12 +930,16 @@ def check_base(repo, base, snap, model, pins):
     for cid in sorted(then.current, key=id_key):
         if cid not in model.by_id:
             out.append(("CLAIM_DELETED", f"{cid} is claimed at {rev[:12]} and no record states, supersedes or retires it now"))
-    for cid in sorted(then.current, key=id_key):
-        was, now = then.current[cid], model.current.get(cid)
-        if was.backed and now is not None and not now.retired and now.kind == "normative" and not now.backed:
-            lost = lost_backing(repo, model, now)
-            if lost:
-                out.append((lost[0], f"{cid} is BACKED at {rev[:12]} and UNBACKED now: {lost[1]}"))
+    at_base = BaseTests(repo, rev)
+    try:
+        for cid in sorted(then.current, key=id_key):
+            was, now = then.current[cid], model.current.get(cid)
+            if was.backed and now is not None and not now.retired and now.kind == "normative" and not now.backed:
+                lost = lost_backing(repo, model, now, at_base)
+                if lost:
+                    out.append((lost[0], f"{cid} is BACKED at {rev[:12]} and UNBACKED now: {lost[1]}"))
+    finally:
+        at_base.close()
     old_pins = json.loads(files[".warrant/claims.json"]) if ".warrant/claims.json" in files else {"sentences": {}}
     for cid in sorted(set(old_pins["sentences"]) - set(pins["sentences"]), key=id_key):
         n = model.current.get(cid)
@@ -650,16 +948,44 @@ def check_base(repo, base, snap, model, pins):
     return out
 
 
-def lost_backing(repo, model, n):
+class BaseTests:
+    """The tests/ directory of the base revision, extracted on first use into a temporary
+    Repo, so a cited case or mutant can be looked up as it was there."""
+
+    def __init__(self, repo, rev):
+        self.repo, self.rev, self.tmp, self._repo = repo, rev, None, None
+
+    def get(self):
+        if self._repo is None:
+            import io
+            import tarfile
+            self.tmp = Path(tempfile.mkdtemp(prefix="claims-base-tests-"))
+            try:
+                data = git(self.repo, "archive", "--format=tar", self.rev, "--", "tests")
+                with tarfile.open(fileobj=io.BytesIO(data)) as t:
+                    t.extractall(self.tmp, filter="data")
+            except subprocess.CalledProcessError:
+                (self.tmp / "tests").mkdir(exist_ok=True)      # no tests/ at the base: every case is absent there
+            self._repo = Repo(self.tmp)
+        return self._repo
+
+    def close(self):
+        if self.tmp is not None:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+def lost_backing(repo, model, n, at_base=None):
     """(code, why) when claim `n`'s chain lost its backing without a proof of the loss, or None.
 
     The run of UNBACKED claims that ends at `n` follows the last BACKED claim `p` of the
     chain. The loss is admitted when (a) the backing broke on its own: a witness case or a
     mutant `p` cites no longer exists or no longer targets a cited case, which `check` sees
-    directly; or (b) a transition of the run cites a counter blob (COUNTER) against `p`,
-    directly or as the evidence of an authentic challenge whose target is `p`, and the blob
-    replays (replay_counter). A challenge, or a blob, that is not such a replay is a thesis,
-    not a proof, and admits nothing."""
+    directly, AND it was already so at the base revision (`at_base`, a BaseTests): a witness
+    removed in the same change as the downgrade is refused (W5; the case would otherwise be
+    renamed away with its mutants and the downgrade pass); or (b) a transition of the run
+    cites a counter blob (COUNTER) against `p`, directly or as the evidence of an authentic
+    challenge whose target is `p`, and the blob replays (replay_counter). A challenge, or a
+    blob, that is not such a replay is a thesis, not a proof, and admits nothing."""
     run = []
     while True:
         run.append(n)
@@ -670,8 +996,13 @@ def lost_backing(repo, model, n):
         if p.backed:
             break
         n = p
-    if witness_problems(repo, p.doc["witnesses"], p.doc["mutants"]):
-        return None
+    broken = witness_problems(repo, p.doc["witnesses"], p.doc["mutants"])
+    if broken:
+        if at_base is not None and witness_problems(at_base.get(), p.doc["witnesses"], p.doc["mutants"]):
+            return None
+        return "WITNESS_REMOVED_WITH_DOWNGRADE", (
+            f"the backing of {p.tid[:12]} breaks in this change ({'; '.join(f'{c} {w}' for c, w in broken)[:200]}) "
+            "and was whole at the base; a downgrade needs a counter blob that replays, not a removed witness")
     tried, seen = [], set()
     for m in reversed(run):
         for h in m.rec["body"]["evidence"]:
@@ -893,9 +1224,8 @@ class Author:
         m = ID_RE.match(cid)
         if not m:
             raise Refused(f"{cid!r} is not SPEC-<section>-<n>")
-        section = self.repo.section(m.group(1))
-        if section is None or text not in section:
-            raise Refused(f"{cid}: the sentence is not in SPEC.md §{m.group(1)}: {text[:80]!r}")
+        if not text or text != norm(text) or any(unicodedata.category(c) == "Cc" for c in text):
+            raise Refused(f"{cid}: a sentence is non-empty text with no control character")
         if kind == "informative" and (witnesses or mutants or not reason or unbacked_because):
             raise Refused(f"{cid}: an informative sentence has a reason and cites no witnesses or mutants")
         backed = kind == "normative" and witnesses and mutants
@@ -917,11 +1247,48 @@ class Author:
         if bad:
             raise Refused(f"{cid}: " + "; ".join(f"{c} {w}" for c, w in bad))
 
+    def placement(self, cid, after=None, paragraph=False):
+        """The document version that places a new sentence `cid` after claim `after`, as
+        (parts, because), or None when `cid` is already placed or no document exists yet
+        (before the migration). Raises Refused, writing nothing, when a new sentence names
+        no position or a position that is not a placed claim of its own section."""
+        doc = Document(self.model())
+        if doc.current is None:
+            return None
+        parts = doc.current["parts"]
+        at = [i for i, p in enumerate(parts) if isinstance(p, dict) and p.get("claim") == cid]
+        if at:
+            if after is not None:
+                raise Refused(f"{cid} is already placed in SPEC.md; it keeps its position")
+            return None
+        if after is None:
+            raise Refused(f"{cid} is a new sentence: name its position (--after <claim id> [--paragraph])")
+        i = [k for k, p in enumerate(parts) if isinstance(p, dict) and p.get("claim") == after]
+        if not i:
+            raise Refused(f"{cid}: --after {after} is not a claim the document places")
+        if ID_RE.match(after) is None or ID_RE.match(after).group(1) != ID_RE.match(cid).group(1):
+            raise Refused(f"{cid}: --after {after} is in another section")
+        k = i[0] + 1
+        new = parts[:k] + ["\n\n" if paragraph else " ", {"claim": cid, "layout": None}] + parts[k:]
+        return new, f"{cid} placed after {after}" + (" as a new paragraph" if paragraph else "")
+
+    def file_document(self, parts, because, at):
+        """File a document version: an ATTESTED transition whose evidence is the document blob,
+        superseding the current version if there is one."""
+        doc = Document(self.model())
+        prev = None if doc.current is None else {"transition": doc.tid, "sha256": doc.nodes[doc.tid][1]}
+        h = self.store.put_json({"schema": DOCUMENT, "source": "SPEC.md", "parts": parts, "because": because,
+                                 "previous": prev})
+        return self.put("transition", R.transition("ATTESTED", [h], residual=[DOCUMENT_RESIDUAL],
+                                                   supersedes=[prev["transition"]] if prev else []), at)
+
     def claim(self, cid, text, witnesses=(), mutants=(), reason=None, because=None, residual=(), previous=None,
-              unbacked_because=None, counter=()):
+              unbacked_because=None, counter=(), after=None, paragraph=False):
         """File one claim: (duty and) transition. `previous` is the Node it replaces, or None.
         `reason` makes it informative; `unbacked_because` says why a normative one is open;
-        `counter` (ids already in the store) goes into the transition's evidence."""
+        `counter` (ids already in the store) goes into the transition's evidence. A sentence
+        the document does not place yet is placed after claim `after` (a new version of the
+        document); everything is validated before anything is written."""
         text = norm(text)
         witnesses, mutants = sorted(set(witnesses)), sorted(set(mutants))
         kind = "informative" if reason else "normative"
@@ -929,6 +1296,9 @@ class Author:
             self._validate(cid, text, kind, witnesses, mutants, reason, unbacked_because, counter, previous)
         if previous is not None and not because:
             raise Refused(f"{cid}: replacing a claim needs --because")
+        if previous is not None and previous.retired:
+            raise Refused(f"{cid} is retired; a new sentence takes a new id")
+        placed = self.placement(cid, after, paragraph)
         at = self.at()
         duty = None
         if kind == "normative":
@@ -939,8 +1309,6 @@ class Author:
                 accept_by = self.pins["accept_by"]
                 duty = self.put("duty", R.duty(self.actor, statement_for(cid, text), self.pins["owed_to"], {"attest": {}},
                                                accept_by=accept_by, subject=sha(text)), at)
-        if previous is not None and previous.retired:
-            raise Refused(f"{cid} is retired; a new sentence takes a new id")
         prev = None if previous is None else {
             "transition": previous.tid, "duty": previous.doc["duty"], "statement_sha256": sha(previous.doc["text"])}
         backed = kind == "normative" and witnesses and mutants
@@ -958,6 +1326,8 @@ class Author:
                             [{"text": f"which witness case and which mutant back {cid}?", "scope": cid}],
                             supersedes=[previous.tid] if previous is not None else [])
         tid = self.put("transition", body, at)
+        if placed:
+            self.file_document(*placed, at)
         self._pin(cid, kind)
         return tid
 
@@ -997,7 +1367,8 @@ def stanzas(a):
         return data if isinstance(data, list) else [data]
     return [{"id": a.id, "text": a.text, "witnesses": [w for x in a.witness for w in x.split(",") if w],
              "mutants": [m for x in a.mutant for m in x.split(",") if m], "informative": a.informative,
-             "residual": a.residual, "because": a.because, "unbacked_because": a.unbacked_because}]
+             "residual": a.residual, "because": a.because, "unbacked_because": a.unbacked_because,
+             "after": a.after, "paragraph": a.paragraph}]
 
 
 def same_claim(n, s):
@@ -1022,7 +1393,8 @@ def cmd_add(repo, a):
             raise Refused(f"{s['id']} is already claimed; re-backing it needs --because")
         tid = author.claim(s["id"], s["text"], s.get("witnesses", ()), s.get("mutants", ()), s.get("informative"),
                            s.get("because"), s.get("residual", ()), previous=cur,
-                           unbacked_because=s.get("unbacked_because"), counter=s.get("counter", ()))
+                           unbacked_because=s.get("unbacked_because"), counter=s.get("counter", ()),
+                           after=s.get("after"), paragraph=bool(s.get("paragraph")))
         print(f"{s['id']}: {tid}")
 
 
@@ -1042,6 +1414,7 @@ def cmd_supersede(repo, a):
     if a.challenge and not counter:
         raise Refused(f"{a.id}: --challenge needs --counter or --counter-file as its evidence")
     # Refuse before anything is written: a refused command leaves the store byte-identical.
+    author.placement(a.id)
     author._validate(a.id, norm(a.text), "informative" if a.informative else "normative", sorted(set(wit)),
                      sorted(set(mut)), a.informative, a.unbacked_because, counter, cur)
     for data in author.pending.values():
@@ -1079,6 +1452,32 @@ def cmd_retire(repo, a):
         raise Refused(f"{a.id}: no live claim to retire, or no --because")   # before the counter-file is stored
     counter = a.counter or author.store.put_blob(Path(a.counter_file).read_bytes())
     print(f"{a.id}: retired by {author.retire(a.id, a.because, counter)}")
+
+
+def cmd_migrate(repo, a):
+    """W5, once: file the first document version, read from the hand-written SPEC.md, only if
+    its rendering reproduces that file byte for byte. Afterwards SPEC.md is generated."""
+    author = Author(repo, load_key(repo, a.key, a.actor), a.actor)
+    model = author.model()
+    if Document(model).current is not None:
+        raise Refused("a document already lays out SPEC.md; SPEC.md is generated from the records now")
+    text = repo.spec.read_text()
+    parts = parse_spec(text, model)
+    got = render_spec(model, {"parts": parts})
+    if got != text:
+        i = next((k for k, (x, y) in enumerate(zip(got, text)) if x != y), min(len(got), len(text)))
+        raise Refused(f"the parts do not reproduce SPEC.md: first difference at character {i}: "
+                      f"{got[max(0, i - 30):i + 30]!r} vs {text[max(0, i - 30):i + 30]!r}")
+    print(f"document: {author.file_document(parts, a.because, author.at())} ({len(parts)} parts)")
+
+
+def cmd_project(repo):
+    model = Model(repo.snapshot(), repo.trust())
+    doc = Document(model)
+    if doc.current is None:
+        raise Refused("no document record lays out SPEC.md (tools/claims.py migrate files the first)")
+    repo.spec.write_text(render_spec(model, doc.current))
+    repo.projection.write_text(render(repo))
 
 
 def cmd_keygen(repo, a):
@@ -1148,11 +1547,11 @@ def selftest():
         repo.trust_path.write_bytes(C.canon(doc))
         # No automatic gc or maintenance: a detached repack after the commit would move the
         # fixture's objects while a case is made from it (run 39537906378).
-        g = ["-c", "user.name=claims-selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false",
-             "-c", "gc.auto=0", "-c", "maintenance.auto=false"]
+        g_cfg = ["-c", "user.name=claims-selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false",
+                 "-c", "gc.auto=0", "-c", "maintenance.auto=false"]
         git(repo, "init", "-q")
         git(repo, "add", "-A")
-        git(repo, *g, "commit", "-q", "-m", "base")
+        git(repo, *g_cfg, "commit", "-q", "-m", "base")
         base = git(repo, "rev-parse", "HEAD").decode().strip()
         model = Model(repo.snapshot(), repo.trust())
         live = sorted((n for n in model.current.values() if n.backed), key=lambda n: id_key(n.id))
@@ -1179,9 +1578,11 @@ def selftest():
         if g is None:
             print("FAIL  selftest: no claim whose mutants all alter one engine.py function")
             return 1
-        failures = 0
+        failures, ran = 0, []
 
-        def case(name, expect, mutate):
+        def case(name, expect, mutate, also=None):
+            """`mutate` may return a revision to check against instead of `base`; `also(r)`,
+            when given, must hold as well (what the rendered files say)."""
             nonlocal failures
             d = work / name
             # A clone through the pack protocol, never a copy of .git's files: copytree, and a
@@ -1190,11 +1591,12 @@ def selftest():
             subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)],
                            capture_output=True, check=True)
             r = Repo(d)
-            mutate(r)
-            got = check(r, base)
+            against = mutate(r) or base
+            got = check(r, against)
             codes = {c for c, _ in got}
-            ok = (not got) if expect is None else expect in codes
+            ok = ((not got) if expect is None else expect in codes) and (also is None or also(r))
             failures += not ok
+            ran.append(name)
             what = "passes" if expect is None else f"refused {expect}"
             print(("ok    " if ok else "FAIL  ") + f"{name}: {what}" + ("" if ok else f" | got {sorted(codes) or 'nothing'}: {got[:3]}"))
 
@@ -1207,7 +1609,26 @@ def selftest():
             return f
 
         def reproject(r):
+            m = Model(r.snapshot(), r.trust())
+            doc = Document(m)
+            if doc.current is not None:
+                r.spec.write_text(render_spec(m, doc.current))
             r.projection.write_text(render(r))
+
+        def spec_text(r):
+            return norm(r.spec.read_text())
+
+        def doc_version(change, because="selftest"):
+            """File a document version whose parts are `change(parts)` of the current ones."""
+            def f(r):
+                au = author(r)
+                parts = copy.deepcopy(Document(Model(r.snapshot(), r.trust())).current["parts"])
+                au.file_document(change(parts), because, au.at())
+                reproject(r)
+            return f
+
+        def part_of(parts, cid):
+            return next(i for i, q in enumerate(parts) if isinstance(q, dict) and q.get("claim") == cid)
 
         def rebacked(witnesses, mutants, unbacked_because=None, counter=None, claim=None):
             def f(r):
@@ -1265,6 +1686,36 @@ def selftest():
             doc["patch"] = doc["patch"].replace("a/warrant/jcs.py", "a/tests/world.py").replace("b/warrant/jcs.py", "b/tests/world.py")
             return [Store(r.store_dir).put_json(doc)]
 
+        def witness_gone_at_base(r):
+            """The witness case is renamed away in a commit of its own, which becomes the base;
+            the downgrade comes after it."""
+            for w in a.doc["witnesses"]:
+                test, _, cid = w.partition(":")
+                pth = r.tests / f"{test}.py"
+                pth.write_text(pth.read_text().replace(f'"{cid}"', f'"{cid}gone"'))
+            git(r, "add", "-A")
+            git(r, *g_cfg, "commit", "-q", "-m", "the witness leaves first")
+            rev = git(r, "rev-parse", "HEAD").decode().strip()
+            rebacked([], [], unbacked_because="selftest: its witness case was removed earlier")(r)
+            return rev
+
+        def document_fork(r):
+            au = author(r)
+            d = Document(Model(r.snapshot(), r.trust()))
+            prev = {"transition": d.tid, "sha256": d.nodes[d.tid][1]}
+            for k in (1, 2):
+                h = au.store.put_json({"schema": DOCUMENT, "source": "SPEC.md", "parts": d.current["parts"],
+                                       "because": f"selftest fork {k}", "previous": prev})
+                au.put("transition", R.transition("ATTESTED", [h], residual=[DOCUMENT_RESIDUAL],
+                                                  supersedes=[d.tid]), au.at() + k)
+            reproject(r)
+
+        def delete_document(r):
+            m = Model(r.snapshot(), r.trust())
+            for rid in Document(m).nodes:
+                (r.store_dir / "records" / f"{rid}.json").unlink()
+            reproject(r)
+
         def witness_gone(r):
             for w in a.doc["witnesses"]:
                 test, _, cid = w.partition(":")
@@ -1278,9 +1729,8 @@ def selftest():
         def new_open_question(reason):
             def f(r):
                 text = "An open rule is stated here."
-                spec_edit(b.doc["text"], b.doc["text"] + " " + text)(r)
                 cid = f"SPEC-{b.doc['section']}-{id_key(b.id)[1] + 1000}"
-                author(r).claim(cid, text, unbacked_because=reason)
+                author(r).claim(cid, text, unbacked_because=reason, after=b.id)
                 reproject(r)
             return f
 
@@ -1330,18 +1780,38 @@ def selftest():
         def add_sentence(r):
             spec_edit(b.doc["text"], b.doc["text"] + " An unclaimed rule appears here.")(r)
 
+        amended = a.doc["text"] + " (as amended)"
+
         def supersede(r):
-            new = a.doc["text"] + " (as amended)"
-            spec_edit(a.doc["text"], new)(r)
             n = Model(r.snapshot(), r.trust()).current[a.id]
-            author(r).claim(a.id, new, n.doc["witnesses"], n.doc["mutants"], because="selftest amendment", previous=n)
+            author(r).claim(a.id, amended, n.doc["witnesses"], n.doc["mutants"], because="selftest amendment", previous=n)
             reproject(r)
 
+        def supersede_rendered(r):
+            t = spec_text(r)
+            return norm(amended) in t and t.count(norm(a.doc["text"])) == t.count(norm(amended))
+
         def retire(r):
-            spec_edit(b.doc["text"], "")(r)
-            ev = Store(r.store_dir).put_blob(b"selftest: the sentence was removed from SPEC.md")
-            author(r).retire(b.id, "selftest: removed from SPEC.md", ev)
+            ev = Store(r.store_dir).put_blob(b"selftest: the sentence leaves SPEC.md")
+            author(r).retire(b.id, "selftest: the sentence leaves SPEC.md", ev)
             reproject(r)
+
+        def retire_rendered(r):
+            m = Model(r.snapshot(), r.trust())
+            history = [n for n in m.by_id[b.id] if not n.retired]
+            return (norm(b.doc["text"]) not in spec_text(r) and m.current[b.id].retired and history
+                    and all((r.store_dir / "records" / f"{n.tid}.json").is_file() for n in history)
+                    and cell(b.doc["text"]) in r.projection.read_text().split("## Retired", 1)[1])
+
+        inserted = "A new sentence is inserted here."
+        new_id = f"SPEC-{a.doc['section']}-{id_key(a.id)[1] + 1000}"
+
+        def insert(r):
+            author(r).claim(new_id, inserted, unbacked_because="selftest: placed, not yet backed", after=a.id)
+            reproject(r)
+
+        def insert_rendered(r):
+            return norm(a.doc["text"] + " " + inserted) in spec_text(r)
 
         def unretired_removal(r):
             spec_edit(b.doc["text"], "")(r)
@@ -1375,7 +1845,13 @@ def selftest():
             rebacked(["agent_handoff_test:V09"], ["A28"])(r)
 
         case("clean copy", None, lambda r: None)
-        case("a quoted sentence no longer in SPEC.md", "QUOTE_NOT_IN_SPEC", spec_edit(a.doc["text"], "Something else entirely."))
+        # W5: SPEC.md is the rendering of the records; nothing in it is written by hand
+        case("SPEC.md edited by hand: a sentence changed", "SPEC_NOT_PROJECTION", spec_edit(a.doc["text"], "Something else entirely."))
+        case("SPEC.md edited by hand: layout only (a line break joined)", "SPEC_NOT_PROJECTION",
+             lambda r: r.spec.write_text(r.spec.read_text().replace(".\n", ". ", 1)))
+        case("a supersede + project round trip", None, supersede, also=supersede_rendered)
+        case("a new sentence inserted at a position renders there", None, insert, also=insert_rendered)
+        case("a retired sentence leaves SPEC.md, stays in the store and in SPEC-CLAIMS.md", None, retire, also=retire_rendered)
         case("a cited mutant that does not exist", "UNKNOWN_MUTANT", rebacked(a.doc["witnesses"], ["M999"]))
         case("a cited case that does not exist", "UNKNOWN_CASE", rebacked(["contract_test:Z9"], a.doc["mutants"]))
         case("a mutant that burns none of the cited cases", "MUTANT_OFF_WITNESS", rebacked(["contract_test:A1"], ["M19"]))
@@ -1454,7 +1930,10 @@ def selftest():
              rebacked([], [], unbacked_because="selftest", counter=outside_patch))
         case("a challenge carrying a counter blob that does not replay", "COUNTER_NOT_REPLAYED",
              rebacked([], [], unbacked_because="selftest", counter=challenge_carrying(fails=["records_test:E3"])))
-        case("a BACKED claim superseded UNBACKED after its cited witness case was removed", None, witness_gone)
+        # W5: route 1 is admitted only when the witness was already gone at the base
+        case("a BACKED claim superseded UNBACKED in the change that removes its witness", "WITNESS_REMOVED_WITH_DOWNGRADE",
+             witness_gone)
+        case("a BACKED claim superseded UNBACKED whose witness was already absent at the base", None, witness_gone_at_base)
         case("a BACKED claim superseded UNBACKED citing a challenge against another record", "LOST_BACKING_WITHOUT_COUNTER",
              rebacked([], [], unbacked_because="selftest", counter=challenge_of(lambda n: n.doc["duty"])))
         case("a BACKED claim superseded UNBACKED citing only its own sentence", "LOST_BACKING_WITHOUT_COUNTER",
@@ -1477,11 +1956,34 @@ def selftest():
         case("the projection edited by hand", "PROJECTION_STALE", hand_edit)
         case("a standing challenge against a current claim", "CHALLENGED", challenge)
         case("a pinned sentence unpinned without retirement", "UNPINNED_WITHOUT_RETIREMENT", unpin)
-        case("a new sentence in a pinned section with no claim", "UNCOVERED_TEXT", add_sentence)
-        case("a sentence removed from SPEC.md, its claim not retired", "QUOTE_NOT_IN_SPEC", unretired_removal)
+        case("a new sentence in SPEC.md with no claim", "SPEC_NOT_PROJECTION", add_sentence)
+        case("a sentence removed from SPEC.md, its claim not retired", "SPEC_NOT_PROJECTION", unretired_removal)
+        # W5: the document record's own guards, each with SPEC.md re-rendered so only the guard refuses
+        case("prose smuggled into a document literal", "DOCUMENT_LITERAL",
+             doc_version(lambda ps: ps[:1] + [" Every actor may sign for every other. "] + ps[1:]))
+        case("a digit glued to a sentence by a literal", "DOCUMENT_LITERAL",
+             doc_version(lambda ps: ps[:part_of(ps, b.id) + 1] + ["0"] + ps[part_of(ps, b.id) + 1:]))
+        case("prose smuggled into a layout run", "STRUCTURE", doc_version(
+            lambda ps: [dict(q, layout={"sha256": q["layout"]["sha256"], "gaps": [[0, " and nobody checks "]]})
+                        if isinstance(q, dict) and q.get("claim") == a.id else q for q in ps]))
+        case("a heading line with a trailing newline", "STRUCTURE",
+             doc_version(lambda ps: [{"heading": q["heading"] + "\n"} if isinstance(q, dict) and "heading" in q and k == 0 else q
+                                     for k, q in enumerate(ps)]))
+        case("a document version that leaves out a current claim", "CLAIM_NOT_IN_DOCUMENT",
+             doc_version(lambda ps: ps[:part_of(ps, b.id)] + ps[part_of(ps, b.id) + 1:]))
+        case("a document version that places a claim twice", "DOCUMENT_CLAIM_TWICE",
+             doc_version(lambda ps: ps + [" ", copy.deepcopy(ps[part_of(ps, b.id)])]))
+        case("a document version that names a claim no record states", "DOCUMENT_UNKNOWN_CLAIM",
+             doc_version(lambda ps: ps[:part_of(ps, b.id) + 1] + [" ", {"claim": b.id[:-1] + "9999", "layout": None}]
+                         + ps[part_of(ps, b.id) + 1:]))
+        case("a document version that moves a claim under another section's heading", "DOCUMENT_SECTION",
+             doc_version(lambda ps: [q for q in ps if q != ps[part_of(ps, a.id)]] + [" ", ps[part_of(ps, a.id)]]))
+        case("a document version without a pinned section's heading", "SECTION_MISSING",
+             doc_version(lambda ps: [q for q in ps if not (isinstance(q, dict) and q.get("heading", "").startswith(
+                 f"## {a.doc['section']}. "))]))
+        case("two current document versions", "DOCUMENT_FORK", document_fork)
+        case("the document records deleted", "DOCUMENT_MISSING", delete_document)
         case("a claim id with a trailing newline", "STRUCTURE", newline_id)
-        case("a supersession with because", None, supersede)
-        case("a retirement with counter-evidence", None, retire)
 
         # AMEND 3: a refused command leaves the store byte-identical. Through the command line:
         # `supersede --counter-file` with junk bytes, and with a well-formed counter blob that is
@@ -1511,7 +2013,24 @@ def selftest():
         failures += not ok
         print(("ok    " if ok else "FAIL  ") + "a refused counter-file leaves no blob: refused, store unchanged, check passes"
               + ("" if ok else f" | exit {rcs}, store {'changed' if listing() != before else 'unchanged'}, check {got[:2]}"))
-        print(f"CLAIMS SELFTEST: {'OK' if not failures else f'{failures} FAIL'}")
+        ran.append("refused counter-file")
+        # W5: a new sentence names its position; without one, nothing is written. Through the
+        # command line (`add` with no --after) and through Author.claim, on the same clone.
+        before = listing()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = main(["--root", str(d), "add", "--key", str(seed), "--id", new_id, "--text", inserted,
+                       "--unbacked-because", "selftest: no position given"])
+        try:
+            Author(r, key, AUTHOR, validate=False).claim(new_id, inserted, unbacked_because="selftest")
+            raised = False
+        except Refused:
+            raised = True
+        ok = rc == 2 and raised and listing() == before and not check(r, base)
+        failures += not ok
+        ran.append("unplaced sentence")
+        print(("ok    " if ok else "FAIL  ") + "a new sentence without a position: refused, store unchanged, check passes"
+              + ("" if ok else f" | exit {rc}, raised {raised}, store {'changed' if listing() != before else 'unchanged'}"))
+        print(f"CLAIMS SELFTEST: {'OK' if not failures else f'{failures} FAIL'} ({len(ran)} cases)")
         return 1 if failures else 0
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -1541,6 +2060,8 @@ def main(argv=None):
     p.add_argument("--informative", help="the reason this sentence is not normative")
     p.add_argument("--unbacked-because", help="why this normative sentence is open (no witness or no mutant)")
     p.add_argument("--because")
+    p.add_argument("--after", help="a new sentence's position: the claim it follows, in its own section")
+    p.add_argument("--paragraph", action="store_true", help="start a new paragraph after --after")
     p = authoring(sub.add_parser("supersede", help="replace a claim's statement"))
     p.add_argument("--id", required=True)
     p.add_argument("--text", required=True)
@@ -1560,7 +2081,9 @@ def main(argv=None):
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--counter", help="record or blob id of the counter-evidence, already in the store")
     g.add_argument("--counter-file", help="a file to store as the counter-evidence blob")
-    sub.add_parser("project", help="regenerate SPEC-CLAIMS.md")
+    sub.add_parser("project", help="regenerate SPEC.md and SPEC-CLAIMS.md")
+    p = authoring(sub.add_parser("migrate", help="W5, once: the first document version, from SPEC.md"))
+    p.add_argument("--because", required=True)
     p = sub.add_parser("check", help="CI: refuse any disagreement")
     p.add_argument("--base", help="the revision whose claims must survive (default: origin/master)")
     p.add_argument("--no-base", action="store_true")
@@ -1576,11 +2099,12 @@ def main(argv=None):
         return 2
     try:
         if a.cmd == "project":
-            repo.projection.write_text(render(repo))
+            cmd_project(repo)
             return 0
         if a.cmd == "check":
             return cmd_check(repo, a)
-        {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen}[a.cmd](repo, a)
+        {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen,
+         "migrate": cmd_migrate}[a.cmd](repo, a)
         return 0
     except Refused as e:
         print(f"REFUSED {e}", file=sys.stderr)

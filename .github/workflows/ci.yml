@@ -74,7 +74,7 @@ jobs:
 
       # After the mutants, so the mutant ids the claims cite have just been exercised.
       # The base is the PR's base; on a push to master, the pushed commit's first parent.
-      - name: SPEC claims (the records in .warrant/store are the source; SPEC-CLAIMS.md is a view)
+      - name: SPEC claims (the records in .warrant/store are the source; SPEC.md and SPEC-CLAIMS.md are views)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
