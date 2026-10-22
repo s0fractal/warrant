@@ -1,0 +1,48 @@
+ok    B1 a binding whose proof is its own key's signature over {actor, public, purpose} is admitted, in order; a record its key signs is authentic
+ok    B2 a forged proof binds nothing
+ok    B3 a proof signed by another key of the file binds nothing, and says whose it is
+ok    B4 the first binding of an actor wins; a second key for it is refused (rotation is out of scope)
+ok    B5 an actor id failing SPEC-3-21 binds nothing (\Z, white space, empty, length, NFC, control); 200 code points do
+ok    B6 one key binds one actor
+ok    B7 an entry without a proof, a trust/2 file and a malformed entry admit nothing; trust/2 is read only as a base
+ok    B8 a record signature, a proof without the purpose, or one for another actor id proves no binding
+ok    B9 bind appends the key's own proof, again is idempotent; another actor's id or a bad id is refused, nothing written
+ok    B10 bind turns a trust/2 entry into one with its proof; a binding admitted at the base and not now is refused
+ok    B11 check refuses a binding it does not admit, and the trust it uses leaves it out
+ok    B12 a receiver's own trust file ($WARRANT_CLAIMS_TRUST) adds its bindings to the trust it uses, not to the repository's bindings
+ok    R1 a name with a role binds only its pinned key; a reserved one and a collective one bind nothing; a name with no role is first-come
+ok    R2 the parent's reproduction: a squatter's key cannot bind codex (pinned) nor accept as codex; written by hand the binding is refused
+ok    R2b a squatter's codex binding alone is refused for the pin, and codex has no key in the trust
+ok    R3 a role is a key, null or collective; anything else is refused, by check too
+ok    R4 every name .warrant/claims.json or .warrant/roadmap.json gives a role must be pinned in roles.json
+ok    R5 against the base, a pin that contradicts an admitted binding (another key, reserved, collective) is refused
+ok    R6 the owner's path: keygen --no-bind, pin the reserved role (a reviewed diff), bind; pin refuses a collective role and a role whose admitted binding has another key
+ok    R7 nobody signs as readers, so its being owed_to (which always counts) lets no thesis refuse check
+ok    K1 accept files codex's acceptance of exactly the claim's closure; the view names the acceptor
+ok    K2 a stranger or the holder is no acceptor; an accepted, unbacked or unknown claim is not pending; a batch with one refusal writes nothing
+ok    K3 an actor whose key is not admitted files nothing
+ok    K4 a claim a replaying counter lowers is not accepted, and --all leaves it out
+ok    K5 a counter that does not replay does not stop the acceptance
+ok    K7 with two acceptors, one who accepted has nothing left to accept; the other's acceptance discharges
+ok    K6 roadmap accept: only the named acceptor, of the filed closure; the path shows who accepted
+ok    L1 a supersession by another actor than the claim's author is refused and does not become current
+ok    L2 a retirement by another actor than the claim's author is refused
+ok    L3 the document's next version is its author's; the tool refuses another author's supersede, retire and document version before writing
+ok    L4 challenge files a stranger's counter only if it replays; refused, it writes no blob
+ok    L11 retire by another actor than the claim's author is refused before its counter-evidence is stored
+ok    L5 a counter that replays lowers whoever filed it; with none, the author's or acceptor's challenge counts, a stranger's is a thesis; a counter against an UNBACKED claim lowers nothing
+ok    L6 check refuses CHALLENGED only for a challenge that counts: not for a lowering counter, not for a thesis
+ok    L7 a challenge new since the base must carry counters that replay against a BACKED claim; one at the base is not replayed again
+ok    L8 the view's status of a lowered claim is COUNTERED
+ok    L9 a claim's duty must be owed to and accepted by whom the pins name (a stranger's own claim with them passes)
+ok    L10 an obligation not owed to and accepted by whom .warrant/roadmap.json names is refused
+ok    W1 claims authored counts the lineages an actor began, not its supersessions
+ok    W2 acceptances count the accept records an actor filed
+ok    W3 an acceptance is refuted when a counter replays now against the claim, a downgrade cites one, or the closure was challenged and then revalidated; not when it was only challenged, or nothing replayed
+ok    W4 challenges count the challenge records an actor filed
+ok    W5 a counter is the filer's whose record cited it first (claude citing codex's counter later takes nothing)
+ok    W6 lowering now: a counter that replays against a current claim; cited by a downgrade: one a BACKED-to-UNBACKED supersession cites
+ok    W7 a re-back is a BACKED claim over a claim a counter is against (an amendment over an uncountered one is not)
+ok    W8 WITNESSES.md renders each count of the ledger, with the bound key
+ok    W9 check refuses a missing WITNESSES.md and one that differs from the rendering by a byte (\r\n)
+CIRCLE: 47 PASS / 0 FAIL

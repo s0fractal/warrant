@@ -1,0 +1,7 @@
+Real counter replay: None
+Challenge kind: LOWERS
+Current displayed status: COUNTERED
+Countered claim removed from Why.cited: True
+Fixed why output: warrant/records.py 167 backing= ['SPEC-3.2-18', 'SPEC-3.2-21', 'SPEC-3.2-23'] countered= ['SPEC-3.2-20']
+Fixed why output: warrant/engine.py 299 backing= [] countered= ['SPEC-3.2-20']
+REGRESSION PROBE: PASS

@@ -1,0 +1,15 @@
+ok    P1 a goal is a question a vision transition opens, scoped roadmap:<key>; it is unowned and OPEN
+ok    P2 an obligation is a duty held by its filer whose answers names the goal; the goal is then owned
+ok    P3 requires blocks: an accepted discharge stays OPEN until the prerequisite is DISCHARGED; the tree shows it
+ok    P14 a discharge filed before its prerequisite is DISCHARGED reads as filed and unmet, naming the prerequisite, not as no closure filed; it is admitted once the prerequisite is
+ok    P4 done files a discharge citing an evidence blob; it is OPEN awaiting the acceptor, then DISCHARGED
+ok    P5 release is forgiveness by whom the duty is owed to; the holder cannot release or re-close, a stranger cannot discharge, a discharge names evidence
+ok    P6 a goal is reformulated by a superseding transition: pending until accepted, then the old formulation is REFORMULATED, its obligations stay under the goal, the other goals are opened again unchanged
+ok    P7 path prints the goal, its formulations, each obligation, under it its prerequisites, and the duties that serve a node with the goal they answer
+ok    P8 ROADMAP.md is the view of the records: check refuses it edited (CRLF too), missing, or behind a new record
+ok    P9 a goal still open whose obligations are all DISCHARGED is marked (Forward Attack); one open, one released or the goal shown met (accepted) is not
+ok    P11 met supersedes the vision transition, establishes the goal's text and opens the other goals again
+ok    P10 nothing of the roadmap renders into SPEC.md; a SPEC claim is named by its claim id and linked by its duty
+ok    P12 check refuses a fork, a dropped goal, met without its text, a dangling link and a bad key
+ok    P13 commands refuse a bad key (\Z, not $), a multi-line text, a reopened goal, an unknown goal or duty; nothing is written
+ROADMAP: 14 PASS / 0 FAIL

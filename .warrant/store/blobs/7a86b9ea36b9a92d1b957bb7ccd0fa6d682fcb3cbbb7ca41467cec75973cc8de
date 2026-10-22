@@ -1,0 +1,7 @@
+KILLED      M334 ../tools/claims.py: accept --all takes a countered claim too (and the batch is refused)  [K4]
+KILLED      M404 ../tools/claims.py: why counts a COUNTERED claim as backing (Node.status, not the view's standing)  [Y12,Y13,Y8]
+KILLED      M405 ../tools/claims.py: why drops a COUNTERED claim silently instead of naming it with its counter  [Y12,Y13]
+KILLED      M406 ../tools/claims.py: audit hunts blind witnesses of a COUNTERED claim as if it were BACKED  [Y15]
+KILLED      M407 ../tools/claims.py: --uncovered does not name the COUNTERED claim of an uncovered statement  [Y13]
+KILLED      M408 ../tools/claims.py: why follows a COUNTERED claim's duty to the obligations serving it  [Y12]
+MUTANTS: 6/6 killed on target (jobs=4)

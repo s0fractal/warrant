@@ -1,0 +1,133 @@
+ok    clean copy: passes
+ok    SPEC.md edited by hand: a sentence changed: refused SPEC_NOT_PROJECTION
+ok    SPEC.md edited by hand: layout only (a line break joined): refused SPEC_NOT_PROJECTION
+ok    SPEC.md with \r\n line ends: refused SPEC_NOT_PROJECTION
+ok    SPEC-CLAIMS.md with \r\n line ends: refused PROJECTION_STALE
+ok    a supersede + project round trip: passes
+ok    a new sentence inserted at a position renders there: passes
+ok    a retired sentence leaves SPEC.md, stays in the store and in SPEC-CLAIMS.md: passes
+ok    a cited mutant that does not exist: refused UNKNOWN_MUTANT
+ok    a cited case that does not exist: refused UNKNOWN_CASE
+ok    a mutant that burns none of the cited cases: refused MUTANT_OFF_WITNESS
+ok    a new sentence filed UNBACKED with its reason: passes
+ok    an UNBACKED claim without a reason: refused UNBACKED_WITHOUT_REASON
+ok    a BACKED claim superseded UNBACKED without counter-evidence: refused LOST_BACKING_WITHOUT_COUNTER
+ok    a BACKED claim superseded UNBACKED citing a counter-file of junk bytes: refused LOST_BACKING_WITHOUT_COUNTER
+ok    a BACKED claim superseded UNBACKED citing a challenge alone: refused LOST_BACKING_WITHOUT_COUNTER
+ok    a counter blob that replays (its patch changes only a statement a cited mutant changes): passes
+ok    a counter confined to the claim's function but to another statement (SPEC-3.6-7 by M29): refused COUNTER_NOT_REPLAYED
+ok    the floats counter: an inserted statement in a function a cited mutant changes: refused COUNTER_NOT_REPLAYED
+ok    a counter patch in a module the claim's mutants do not touch: refused COUNTER_NOT_REPLAYED
+ok    a counter patch in another function of the same file: refused COUNTER_NOT_REPLAYED
+ok    Codex's shape: a foreign float break plus a comment inside the mutant's function: refused COUNTER_NOT_REPLAYED
+ok    a foreign break plus a whitespace-only line inside the mutant's function: refused COUNTER_NOT_REPLAYED
+ok    a foreign break plus a docstring-only change inside the mutant's function: refused COUNTER_NOT_REPLAYED
+ok    a foreign hunk plus a behaviour-neutral AST change inside the mutant's function: refused COUNTER_NOT_REPLAYED
+ok    a patch whose only change is AST-equal inside the mutant's function: refused COUNTER_NOT_REPLAYED
+ok    a challenge carrying a counter blob that replays: passes
+ok    a counter blob whose passes omits a cited witness: refused COUNTER_NOT_REPLAYED
+ok    a counter blob whose fails case passes under the patch: refused COUNTER_NOT_REPLAYED
+ok    a counter blob with an empty patch (nothing fails): refused COUNTER_NOT_REPLAYED
+ok    a counter blob against another claim: refused COUNTER_NOT_REPLAYED
+ok    a counter blob whose patch reaches outside the packages: refused COUNTER_NOT_REPLAYED
+ok    a challenge carrying a counter blob that does not replay: refused COUNTER_NOT_REPLAYED
+ok    a BACKED claim superseded UNBACKED in the change that removes its witness: refused WITNESS_REMOVED_WITH_DOWNGRADE
+ok    a BACKED claim superseded UNBACKED whose witness was already absent at the base: passes
+ok    a BACKED claim superseded UNBACKED citing a challenge against another record: refused LOST_BACKING_WITHOUT_COUNTER
+ok    a BACKED claim superseded UNBACKED citing only its own sentence: refused LOST_BACKING_WITHOUT_COUNTER
+ok    a normative sentence without a mutant and without a reason: refused UNBACKED_WITHOUT_REASON
+ok    an agent mutant cited with the case it targets: passes
+ok    an agent mutant that burns none of the cited cases: refused MUTANT_OFF_WITNESS
+ok    a mutant id defined in both harnesses: refused MUTANT_ID_COLLISION
+ok    an agent harness id without its prefix: refused MUTANT_ID_PREFIX
+ok    a cited mutant whose target is not a case of an existing test file: refused MUTANT_TARGET_UNKNOWN
+ok    a cited mutant id defined twice: refused DUPLICATE_MUTANT_ID
+ok    a record file renamed: refused RECORD_MISNAMED
+ok    a record rewritten in non-canonical bytes: refused NOT_CANONICAL
+ok    a claim deleted without a retiring record: refused CLAIM_DELETED
+ok    the projection edited by hand: refused PROJECTION_STALE
+ok    a standing challenge against a current claim: refused CHALLENGED
+ok    a pinned sentence unpinned without retirement: refused UNPINNED_WITHOUT_RETIREMENT
+ok    a new sentence in SPEC.md with no claim: refused SPEC_NOT_PROJECTION
+ok    a sentence removed from SPEC.md, its claim not retired: refused SPEC_NOT_PROJECTION
+ok    prose smuggled into a document literal: refused DOCUMENT_LITERAL
+ok    a digit glued to a sentence by a literal: refused DOCUMENT_LITERAL
+ok    prose smuggled into a layout run: refused STRUCTURE
+ok    a heading line with a trailing newline: refused STRUCTURE
+ok    a document version that leaves out a current claim: refused CLAIM_NOT_IN_DOCUMENT
+ok    a document version that places a claim twice: refused DOCUMENT_CLAIM_TWICE
+ok    a document version that names a claim no record states: refused DOCUMENT_UNKNOWN_CLAIM
+ok    a document version that moves a claim under another section's heading: refused DOCUMENT_SECTION
+ok    a document version without a pinned section's heading: refused SECTION_MISSING
+ok    two current document versions: refused DOCUMENT_FORK
+ok    the parent's probe: an unnumbered heading carrying a rule, after §4.2's: refused DOCUMENT_HEADING
+ok    a numbered heading for a section the pins do not name: refused DOCUMENT_HEADING
+ok    a pinned section's heading with its title altered: refused DOCUMENT_HEADING
+ok    a second heading for a pinned section: refused DOCUMENT_HEADING
+ok    two pinned headings swapped out of order: refused DOCUMENT_HEADING
+ok    Codex's probe: the gap before §3.1's heading replaced by a space (the heading renders inline): refused DOCUMENT_HEADING
+ok    a heading glued to the previous sentence (no gap at all): refused DOCUMENT_HEADING
+ok    a heading followed by a sentence on the same line: refused DOCUMENT_HEADING
+ok    a sentence that renders as an ATX heading line: refused SPEC_HEADINGS_MISMATCH
+ok    a sentence that renders as a setext underline: refused SPEC_HEADINGS_MISMATCH
+ok    a heading changed through its pin, then `heading --section`: passes
+ok    a document version whose previous is not a document version: refused STRUCTURE
+ok    a claim text with a control character (U+0000 would vanish from SPEC.md): refused STRUCTURE
+ok    the document records deleted: refused DOCUMENT_MISSING
+ok    a claim id with a trailing newline: refused STRUCTURE
+ok    A: a newcomer binds a fresh key with its proof: passes
+ok    A: a binding whose proof is forged: refused BINDING_PROOF_FORGED
+ok    A: a binding whose proof another key signed: refused BINDING_PROOF_OTHER_KEY
+ok    A: a newcomer binds the actor id claude to its own key (pinned role): refused BINDING_ROLE_KEY
+ok    A: two newcomers bind one unpinned name, the second with another key: refused BINDING_ACTOR_TAKEN
+ok    A: an actor id failing SPEC-3-21 (a trailing newline): refused BINDING_ACTOR_SHAPE
+ok    A: an actor id failing SPEC-3-21 (white space at an end): refused BINDING_ACTOR_SHAPE
+ok    A: a binding with no proof: refused BINDING_UNPROVEN
+ok    A: the trust file as trust/2, without proofs: refused BINDINGS_SHAPE
+ok    A: claude's binding removed (a newcomer's added instead): refused BINDING_REMOVED
+ok    A: a newcomer's claude binding put before the one at the base: refused BINDING_ROLE_KEY
+ok    A1: a squatter binds codex with its own key and accepts: refused, nothing accepted: refused BINDING_ROLE_KEY
+ok    A1: a squatter binds s0fractal (reserved): refused BINDING_ROLE_RESERVED
+ok    A1: anyone binds readers (a collective role): refused BINDING_ROLE_COLLECTIVE
+ok    A1: codex binds with the key its pin names (a reviewed pin change in the same change): passes
+ok    A1: a pin change that contradicts claude's admitted binding: refused ROLE_PIN_CONFLICT
+ok    A1: a role named in .warrant/claims.json and missing from .warrant/roles.json: refused ROLE_UNPINNED
+ok    A1: a role pinned to something that is not a key, null or collective: refused ROLES_SHAPE
+ok    B: codex binds and accepts a claim; the view names the acceptor: passes
+ok    C: a newcomer binds in this change and files a counter that replays: admitted, backing lowered: passes
+ok    C: a newcomer files a counter that does not replay: refused COUNTER_NOT_REPLAYED
+ok    C: a newcomer's challenge without a counter: admitted, lowers and blocks nothing: passes
+ok    C: the acceptor's challenge without a counter stands: refused CHALLENGED
+ok    C: a newcomer supersedes claude's claim: refused LINEAGE_NOT_AUTHOR
+ok    C: a newcomer retires claude's claim: refused LINEAGE_NOT_AUTHOR
+ok    C: a newcomer files the next document version: refused LINEAGE_NOT_AUTHOR
+ok    C: a newcomer files a claim whose duty names its own acceptor: refused CLAIM_DUTY_TERMS
+ok    D: WITNESSES.md edited by hand: refused WITNESSES_STALE
+ok    D: WITNESSES.md with \r\n line ends: refused WITNESSES_STALE
+ok    D: WITNESSES.md deleted: refused WITNESSES_MISSING
+ok    a refused counter-file leaves no blob: refused, store unchanged, check passes
+ok    a new sentence without a position: refused, store unchanged, check passes
+ok    statement rule: M29 against SPEC-3.6-7 is refused for its statements, and replays per function
+ok    statement rule: the floats insertion against SPEC-2-2 is refused for its statements, and replays per function
+ok    statement rule: M234 against SPEC-3.2-20 (the statement M232 changes) replays
+ok    statement rule: a fails case that passes is refused by the replay, not by locality
+ok    audit: a claim whose witnesses all pass under an overlapping mutant some case kills is reported
+ok    audit: a mutant whose scopes are disjoint from the claim's mutants' is not reported against it
+ok    audit: a claim one of whose witnesses fails under the mutant is not reported
+ok    audit: a witness whose test file did not run under the mutant is unknown, not blind
+ok    audit: a witness case absent from its file's results under the mutant is unknown, not blind
+ok    audit: a mutant under which no case fails is not reported (its counter would fail nothing)
+ok    audit: a matrix of another source is refused MATRIX_STALE
+ok    audit: a row of a mutant defined otherwise now is refused MATRIX_STALE
+ok    audit: a --matrix or --counters path outside the temporary directory is refused; one in it is kept
+ok    audit e2e: the pre-review SPEC-3.3-8 is reported blind to M278, and its would-be counter replays
+ok    audit e2e: the pre-review SPEC-4.1-5 is blind to M116, not confined, and its counter is refused per statement
+ok    audit e2e: cited with A7, which M278 fails, SPEC-3.3-8 is not reported
+ok    why: a statement a cited mutant changes maps to its claim, the obligation naming the claim's duty, and that obligation's goal
+ok    why: every statement of warrant/ and warrant_agent/ is found again from its first line
+ok    why: --uncovered lists exactly the statements no cited mutant changes, each answered NO_CLAIM
+ok    why: a comment line of warrant/engine.py is not a statement
+ok    why: a file outside warrant/, warrant_agent/ and tools/ is refused WHY_FILE
+ok    why countered: SPEC-3.2-20 lowered by a replaying counter is named with that counter at each of its statements and is backing at none
+ok    why countered: a statement SPEC-3.2-20 alone covered is uncovered now, listed with the COUNTERED claim
+CLAIMS SELFTEST: OK (132 cases)
