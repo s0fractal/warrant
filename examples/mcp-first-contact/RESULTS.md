@@ -2,7 +2,7 @@
 
 Fresh headless agents with only `warrant-agent-mcp`, three tasks in a user's words, a scorer
 frozen before round 1 (`PLAN.md`, `scorer.py --selftest`). Round 1 ran master's server
-(849cbfa); round 2 ran the server at 7cd7cef (`round-*/SERVER` names the `warrant_agent` trees). Same prompts, fixtures,
+(849cbfa); round 2 ran the server at a7e35f1 (`round-*/SERVER` names the `warrant_agent` trees). Same prompts, fixtures,
 flags, scorer and models in both rounds; a fresh fixture (new keys, new store) per run.
 
 ## Round 1 vs round 2
@@ -54,7 +54,7 @@ the scorer's; the table row above is labeled as such.
 
 Refusal counts are from `round-1/refusals.txt` (count, runs).
 
-| Round-1 evidence | Change (commit 7cd7cef) | Round 2 |
+| Round-1 evidence | Change (commit a7e35f1) | Round 2 |
 | --- | --- | --- |
 | `use '<x>' is not configured` 22× in 13 runs; agents guessed "verify", "handoff", "work"; nothing named the configured uses. `actor` guessed as "claude", "agent", "reviewer", and in 4 runs as the account e-mail of the person running the CLI (it is in Claude Code's system prompt). | `warrant_workspace` (the operator's handles by name: signer actor, uses, `default_use`, expectations, provider); `use`/`actor` optional (first configured use, signer's actor); an unknown use lists the configured ones in `details.configured`. | 0 |
 | `targets` (message: just "targets") 17× in 12 runs: `{"id"}`, `{"record"}`, `{"task"}`, `{"ref"}`, `{"target"}`, `{"kind": "task"}`. | Targets by bare id, resolved in the view; another record type refused by name; the refusal states the accepted forms. | 0 |
@@ -105,7 +105,9 @@ agent mutant killed on it (A41–A53); see AGENT.md.
   is replaced by `<view-NN>` per file by `normalize.py`, because secret scanners read
   `"view_token": "<hex>"` as a credential (GitGuardian flagged 14 on PR #167). `scorer.py`
   re-scores every round-1 and round-2 transcript after both substitutions to the committed
-  scores, unchanged.
+  scores, unchanged. The branch's history was then rewritten with the same substitution on the
+  owner's decision (old head 623b367, final tree identical), so no commit carries a view token; the
+  server commit of round 2 is a7e35f1 since then (its `warrant_agent` tree is the one SERVER names).
 - The fixtures' worlds (stores, keys, state) are not committed; `fixture.py` rebuilds them,
   `round-*/` keeps every transcript (`*.jsonl`), prompt and score.
 
