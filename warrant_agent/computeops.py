@@ -12,6 +12,7 @@ import base64
 
 from warrant import compute as P
 from warrant import jcs as C
+from warrant import shapes as S
 from warrant.store import Store
 
 from . import AGENT_API, adapter_id, views
@@ -23,10 +24,6 @@ OPS = {"provider": (), "term": ("expr",), "evaluate": ("expr",), "start": ("runt
        "cycle": ("runtime", "input", "environment", "max_steps")}
 OPTIONAL = {"resume": ("max_actions", "target"), "cycle": ("target",), "evaluate": ("expect_expr", "credit", "runtime")}
 EVALUATE_CREDIT = 10_000
-
-
-def _hex(v):
-    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
 
 
 def _closed(req):
@@ -45,7 +42,7 @@ def _int_at_least(low, none_ok=False):
 
 
 # Each member a request may carry: its check and the refusal's message, checked in this order.
-CHECKS = {**{k: (_hex, f"{k} is a hex64 content address") for k in ("input", "environment", "checkpoint", "state")},
+CHECKS = {**{k: (S.hex64, f"{k} is a hex64 content address") for k in ("input", "environment", "checkpoint", "state")},
           "runtime": (lambda v: isinstance(v, str) and v in RUNTIMES, "unknown runtime"),
           "credit": (_int_at_least(0), "credit is an integer >= 0"),
           "max_actions": (_int_at_least(1, none_ok=True), "max_actions is an integer >= 1"),

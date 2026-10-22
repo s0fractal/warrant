@@ -4,6 +4,7 @@ import re
 import subprocess
 
 from . import jcs as C
+from . import shapes as S
 
 RESULTS = ("FIRED", "NOT_FIRED", "UNEVALUABLE")
 FILE_MODES = ("100644", "100755")
@@ -78,7 +79,7 @@ def manifest_problem(doc):
         return "manifest entries must name exactly the selector"
     for e in ents.values():
         if not (isinstance(e, dict) and set(e) == {"mode", "sha256"} and isinstance(e["mode"], str)
-                and e["mode"] in FILE_MODES and isinstance(e["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", e["sha256"])):
+                and e["mode"] in FILE_MODES and S.hex64(e["sha256"])):
             return "manifest entry"
     return None
 

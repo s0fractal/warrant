@@ -66,7 +66,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
+HEX64 = re.compile(r"^[0-9a-f]{64}\Z")      # \Z, not $: `$` admits a trailing newline (warrant #164)
 
 
 class ApprovalError(Exception):

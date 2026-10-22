@@ -13,7 +13,8 @@ import time
 
 from warrant import jcs as C
 from warrant import records as R
-from warrant.keys import HEX64, Key
+from warrant import shapes as S
+from warrant.keys import Key
 from warrant.store import Snapshot, Store, _authenticate
 
 from . import views
@@ -25,30 +26,26 @@ PROMOTE_DEFAULT = ("MATCH_EXPECTED_SET",)
 _FAULT_AFTER = None          # tests only: simulate a crash after N promotion writes
 
 
-def _hex(v):
-    return isinstance(v, str) and HEX64.match(v) is not None
-
-
 def manifest_problem(m):
     if not (isinstance(m, dict) and set(m) == MANIFEST_FIELDS and m["warrant_handoff"] == "1"
             and m["selection"] == "ENTIRE_CONFIGURED_STORE" and m["completeness"] == "UNATTESTED"):
         return "manifest fields"
     cap = m["capture"]
-    if not (isinstance(cap, dict) and set(cap) == {"snapshot", "captured_at", "assessed_as_of"} and _hex(cap["snapshot"])
+    if not (isinstance(cap, dict) and set(cap) == {"snapshot", "captured_at", "assessed_as_of"} and S.hex64(cap["snapshot"])
             and type(cap["captured_at"]) is int and type(cap["assessed_as_of"]) is int):
         return "manifest capture"
-    if not (isinstance(m["source"], str) and m["source"] and _hex(m["sender_assessment"])):
+    if not (isinstance(m["source"], str) and m["source"] and S.hex64(m["sender_assessment"])):
         return "manifest source"
     if not (isinstance(m["roots"], list) and all(isinstance(r, dict) and set(r) == {"kind", "id"}
-                                                 and r["kind"] in ("duty", "transition") and _hex(r["id"]) for r in m["roots"])):
+                                                 and r["kind"] in ("duty", "transition") and S.hex64(r["id"]) for r in m["roots"])):
         return "manifest roots"
     recs = m["records"]
-    if not (isinstance(recs, list) and all(isinstance(r, dict) and set(r) == {"id", "envelope"} and _hex(r["id"])
-                                           and _hex(r["envelope"]) for r in recs)):
+    if not (isinstance(recs, list) and all(isinstance(r, dict) and set(r) == {"id", "envelope"} and S.hex64(r["id"])
+                                           and S.hex64(r["envelope"]) for r in recs)):
         return "manifest records"
     if [r["id"] for r in recs] != sorted({r["id"] for r in recs}) or len({r["id"] for r in recs}) != len(recs):
         return "manifest records must be sorted and unique"
-    if not (isinstance(m["blobs"], list) and all(_hex(b) for b in m["blobs"]) and m["blobs"] == sorted(set(m["blobs"]))):
+    if not (isinstance(m["blobs"], list) and all(S.hex64(b) for b in m["blobs"]) and m["blobs"] == sorted(set(m["blobs"]))):
         return "manifest blobs must be sorted, unique hex64"
     return None
 
@@ -62,7 +59,7 @@ def _payload_items(payload, limit):
         items = payload[kind]
         need(isinstance(items, list), "BAD_REQUEST", f"payload {kind} must be a list")
         for it in items:
-            need(isinstance(it, dict) and set(it) == {"id", "bytes_base64"} and _hex(it["id"])
+            need(isinstance(it, dict) and set(it) == {"id", "bytes_base64"} and S.hex64(it["id"])
                  and isinstance(it["bytes_base64"], str), "BAD_REQUEST",
                  "a payload item is {id: hex64, bytes_base64}; ids are content addresses, never paths")
             need(it["id"] not in out[kind], "BAD_REQUEST", f"duplicate {kind} id {it['id'][:12]}")
@@ -219,7 +216,7 @@ def inspect(ws, manifest, payload, expectation=None, declaration=None):
 
 def import_(ws, staged_id, request_id):
     ws.permit("handoff")
-    need(_hex(staged_id), "BAD_REQUEST", "staged_id")
+    need(S.hex64(staged_id), "BAD_REQUEST", "staged_id")
     need(isinstance(request_id, str) and 0 < len(request_id) <= 128, "BAD_REQUEST", "request_id")
     sdir = ws.state / "staging" / staged_id
     need((sdir / "staged.json").is_file(), "NOT_FOUND", "no such staged package")

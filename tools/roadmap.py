@@ -52,6 +52,7 @@ import claims as CL                          # noqa: E402  (read only: Repo, Mod
 from warrant import engine as E              # noqa: E402
 from warrant import jcs as C                 # noqa: E402
 from warrant import records as R             # noqa: E402
+from warrant import shapes as S              # noqa: E402
 from warrant.store import Store              # noqa: E402
 
 CONFIG = "warrant-roadmap/config@1"
@@ -63,7 +64,6 @@ EVIDENCE_FIELDS = ("schema", "duty", "refs")
 SCOPE = "roadmap:"
 KEY_RE = re.compile(r"^G[1-9][0-9]{0,3}\Z")          # \Z: `$` admits a trailing newline
 HEXPREFIX = re.compile(r"^[0-9a-f]{8,64}\Z")
-REF_RE = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\Z")
 VISION_RESIDUAL = ("a goal proves nothing: it sets the direction of path search; it is shown met only by a "
                    "superseding transition that establishes it")
 DONE_RESIDUAL = "the evidence blob names pull requests and commits; this record does not replay them"
@@ -105,20 +105,12 @@ class Roadmap:
         if not isinstance(cfg, dict) or set(cfg) != set(CONFIG_FIELDS) or cfg["roadmap"] != CONFIG:
             raise Refused(f".warrant/roadmap.json members are {list(CONFIG_FIELDS)}, roadmap {CONFIG!r}")
         for k in CONFIG_FIELDS[1:]:
-            if not (isinstance(cfg[k], list) and all(check_actor_ok(a) for a in cfg[k])):
+            if not (isinstance(cfg[k], list) and all(S.is_actor(a) for a in cfg[k])):
                 raise Refused(f".warrant/roadmap.json: {k} is a list of actor ids")
         return cfg
 
     def model(self):
         return Model(self.claims.snapshot(), self.claims.trust(), self.config(), self.claims.roles()[0])
-
-
-def check_actor_ok(a):
-    try:
-        R.check_actor(a)
-        return True
-    except R.Invalid:
-        return False
 
 
 class Form:
@@ -327,7 +319,7 @@ class Model:
         """A key (its current formulation) or the reference of a current formulation."""
         if KEY_RE.match(ref or ""):
             return self.current(ref)
-        if REF_RE.match(ref or "") and ref in self.forms:
+        if S.qref(ref) and ref in self.forms:
             f = self.forms[ref]
             if f.state != CURRENT:
                 raise Refused(f"{ref[:12]}… is {f.state}, not a current goal")

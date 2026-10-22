@@ -14,6 +14,7 @@ from . import jcs as C
 from . import keys as K
 from . import limits as L
 from . import records as R
+from . import shapes as S
 
 MAX_FILE = 64 * 1024 * 1024
 
@@ -336,7 +337,7 @@ class Verdicts:
             return part
         part = self.parts[t] = {"entries": {}, "lines": 0, "new": []}
         try:
-            data = self.path(t).read_bytes() if self.folder and R.HEX64.match(t) else b""
+            data = self.path(t).read_bytes() if self.folder and S.hex64(t) else b""
         except OSError:
             data = b""
         for line in data.split(b"\n"):
@@ -426,7 +427,7 @@ def _file_problem(kind, p):
         return "not a regular file"
     if p.stat().st_size > MAX_FILE:
         return "larger than admitted"
-    if kind == "records" and not (p.name.endswith(".json") and R.HEX64.match(p.name[:-5])):
+    if kind == "records" and not (p.name.endswith(".json") and S.hex64(p.name[:-5])):
         return "not a record file name"
     return None
 
@@ -440,7 +441,7 @@ def _authenticate(rid, data, trust):
         R._fields(env, ("record", "sig"), what="stored record")
         R._fields(env["sig"], ("key", "ed25519"), what="sig")
         R._hex(env["sig"]["key"], "sig key")            # types before lookup (R138-02)
-        R._need(isinstance(env["sig"]["ed25519"], str) and K.HEX128.match(env["sig"]["ed25519"]) is not None,
+        R._need(S.hex128(env["sig"]["ed25519"]),
                 "sig ed25519 must be 128 hex characters")
         R.check(env["record"])
     except R.Invalid as e:

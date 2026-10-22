@@ -234,6 +234,12 @@ def main():
              "cat x | grep test": None, "python3 -c 'print(1)'": None, "x" * 70000: None}
     wrong = {k[:40]: (classify_command(k), v) for k, v in table.items() if classify_command(k) != v}
     check("command classifier: 20 cases, consequential / check / nothing", not wrong, wrong)
+    from warrant_approval import HEX64
+    h = "ab" * 32
+    passed = [k for k, v in {"\\n": h + "\n", "\\r\\n": h + "\r\n", "upper": h.upper(), "63": h[:63],
+                             "non-ASCII digits": "\u0661" * 64}.items() if HEX64.match(v)]
+    check("a hash id is exactly 64 lowercase hex digits: a trailing newline does not pass", bool(HEX64.match(h)) and not passed,
+          passed)
 
     # 8. manifests and vendored module
     for p in (HERE / ".claude-plugin" / "plugin.json", HERE / "hooks" / "hooks.json",

@@ -121,6 +121,7 @@ from warrant import engine as E              # noqa: E402
 from warrant import jcs as C                 # noqa: E402
 from warrant import keys as K                # noqa: E402
 from warrant import records as R             # noqa: E402
+from warrant import shapes as S              # noqa: E402
 from warrant.store import Snapshot, Store, Trust   # noqa: E402
 
 AUTHOR = "claude"
@@ -243,7 +244,7 @@ def read_roles(doc):
         except R.Invalid as e:
             problems.append(("ROLES_SHAPE", f".warrant/roles.json: {actor[:60]!r} is not an actor id: {e}"))
             continue
-        if not (v is None or v == COLLECTIVE or (isinstance(v, str) and R.HEX64.match(v))):
+        if not (v is None or v == COLLECTIVE or S.hex64(v)):
             problems.append(("ROLES_SHAPE", f".warrant/roles.json: {actor}: a role is a hex64 public key, null or "
                              f"{COLLECTIVE!r}, not {str(v)[:70]!r}"))
             continue
@@ -253,7 +254,7 @@ def read_roles(doc):
 
 def _role_name(v):
     """A role value for a message: 'key <id>' for a key, else what it is (never raises)."""
-    return f"key {K.key_id(v)[:12]}" if isinstance(v, str) and R.HEX64.match(v) else "collective" if v == COLLECTIVE \
+    return f"key {K.key_id(v)[:12]}" if S.hex64(v) else "collective" if v == COLLECTIVE \
         else "reserved" if v is None else repr(v)[:40]
 
 
@@ -299,7 +300,7 @@ def admit_bindings(doc, legacy=False, roles=None):
 def _binding_problem(k, publics, admitted, roles):
     """(code, why) when entry `k` is not admitted after `admitted`, else (None, None)."""
     if not (isinstance(k, dict) and set(k) <= set(BINDING_FIELDS) and {"actor", "public"} <= set(k)
-            and isinstance(k["public"], str) and R.HEX64.match(k["public"])):
+            and S.hex64(k["public"])):
         return "BINDING_SHAPE", f"an entry is {{actor, public: hex64, proof: hex128}}, not {str(k)[:120]}"
     try:
         R.check_actor(k["actor"])
@@ -422,7 +423,7 @@ class Repo:
                     if not m[0].startswith(prefix):
                         misprefixed[m[0]] = name
                     out.setdefault(m[0], (name, m[4], list(m[5])))
-                    edits.setdefault(m[0], (f"{HARNESS_PACKAGE[name]}/{m[1]}", list(m[3])))
+                    edits.setdefault(m[0], (os.path.normpath(f"{HARNESS_PACKAGE[name]}/{m[1]}"), list(m[3])))
             self.twice, self.misprefixed = twice, misprefixed
             self.collide = {i for i, names in seen.items() if len(names) > 1}
             self._mutants, self.mutant_edits = out, edits
@@ -866,8 +867,8 @@ def literal_ok(text):
 def _layout_shape(layout):
     if layout is None:
         return None
-    if not (isinstance(layout, dict) and set(layout) == {"sha256", "gaps"} and isinstance(layout["sha256"], str)
-            and R.HEX64.match(layout["sha256"]) and isinstance(layout["gaps"], list)):
+    if not (isinstance(layout, dict) and set(layout) == {"sha256", "gaps"} and S.hex64(layout["sha256"])
+            and isinstance(layout["gaps"], list)):
         return "layout must be null or {sha256: hex64, gaps: [[index, run]…]}"
     last = -1
     for g in layout["gaps"]:
