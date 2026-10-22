@@ -850,9 +850,15 @@ class Author:
         self.repo, self.key, self.actor, self.validate = repo, key, actor, validate
         self.store = Store(repo.store_dir).init()
         self.pins = repo.pins()
+        self.pending = {}
 
     def model(self):
-        return Model(self.repo.snapshot(), self.repo.trust())
+        """The store as filed, plus `pending`: blobs a command has read but not yet stored,
+        so a refused command can be validated against them and leave the store unchanged."""
+        snap = self.repo.snapshot()
+        if self.pending:
+            snap = Snapshot(snap.records, {**snap.blobs, **self.pending}, snap.misfiled)
+        return Model(snap, self.repo.trust())
 
     def at(self):
         recs = self.model().recs
@@ -1008,15 +1014,20 @@ def cmd_supersede(repo, a):
     mut = [m for x in a.mutant for m in x.split(",") if m] or (cur.doc["mutants"] if keep else [])
     counter = list(a.counter)
     if a.counter_file:
-        counter.append(store_counter_file(author.store, a.counter_file))
+        data = counter_file_bytes(a.counter_file)
+        author.pending[C.digest(data)] = data         # read, validated, stored only once the claim can be filed
+        counter.append(C.digest(data))
+    if a.challenge and not counter:
+        raise Refused(f"{a.id}: --challenge needs --counter or --counter-file as its evidence")
+    # Refuse before anything is written: a refused command leaves the store byte-identical.
+    author._validate(a.id, norm(a.text), "informative" if a.informative else "normative", sorted(set(wit)),
+                     sorted(set(mut)), a.informative, a.unbacked_because, counter, cur)
+    for data in author.pending.values():
+        author.store.put_blob(data)
+    author.pending = {}
     if a.challenge:
         # The dispute goes on record against the claim being replaced (its discharge item,
         # if it has one), so its closure cannot later be accepted as if nothing were found.
-        if not counter:
-            raise Refused(f"{a.id}: --challenge needs --counter or --counter-file as its evidence")
-        # Refuse before the challenge is written: a refused command files no record.
-        author._validate(a.id, norm(a.text), "informative" if a.informative else "normative", sorted(set(wit)),
-                         sorted(set(mut)), a.informative, a.unbacked_because, counter, cur)
         # Against the last BACKED claim of the chain: its discharge item is the closure in dispute.
         model, target = author.model(), cur
         while not target.backed and target.doc["previous"] and target.doc["previous"]["transition"] in model.nodes:
@@ -1028,19 +1039,22 @@ def cmd_supersede(repo, a):
     print(f"{a.id}: {tid}")
 
 
-def store_counter_file(store, path):
-    """A counter blob file is stored as canonical JSON (so `check` can read it back); any
-    other file as its bytes."""
+def counter_file_bytes(path):
+    """The blob bytes of a counter file: canonical JSON for a counter blob (so `check` can
+    read it back), the file's bytes otherwise."""
     data = Path(path).read_bytes()
     try:
         doc = json.loads(data)
     except ValueError:
-        return store.put_blob(data)
-    return store.put_json(doc) if isinstance(doc, dict) and doc.get("counter") == COUNTER else store.put_blob(data)
+        return data
+    return C.canon(doc) if isinstance(doc, dict) and doc.get("counter") == COUNTER else data
 
 
 def cmd_retire(repo, a):
     author = Author(repo, load_key(repo, a.key, a.actor), a.actor)
+    cur = author.model().current.get(a.id)
+    if cur is None or cur.retired or not a.because:
+        raise Refused(f"{a.id}: no live claim to retire, or no --because")   # before the counter-file is stored
     counter = a.counter or author.store.put_blob(Path(a.counter_file).read_bytes())
     print(f"{a.id}: retired by {author.retire(a.id, a.because, counter)}")
 
@@ -1393,6 +1407,35 @@ def selftest():
         case("a claim id with a trailing newline", "STRUCTURE", newline_id)
         case("a supersession with because", None, supersede)
         case("a retirement with counter-evidence", None, retire)
+
+        # AMEND 3: a refused command leaves the store byte-identical. Through the command line:
+        # `supersede --counter-file` with junk bytes, and with a well-formed counter blob that is
+        # not local (and --challenge), each refused; then the store's files, and `check`, as before.
+        import contextlib
+        import io
+        seed = work / "selftest.seed"
+        seed.write_text(key.seed_hex() + "\n")
+        d = work / "refused-counter-file"
+        subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)], capture_output=True, check=True)
+        r = Repo(d)
+
+        def listing():
+            return sorted((q.relative_to(r.store_dir).as_posix(), q.read_bytes()) for q in r.store_dir.rglob("*") if q.is_file())
+        junk = work / "junk.txt"
+        junk.write_bytes(b"lol\n")
+        nonlocal_counter = work / "nonlocal.json"
+        nonlocal_counter.write_text(json.dumps(counter_doc(r, Model(r.snapshot(), r.trust()).current[e.id])))
+        before, rcs = listing(), []
+        for cid, f, extra in ((a.id, junk, []), (e.id, nonlocal_counter, ["--challenge"])):
+            n = Model(r.snapshot(), r.trust()).current[cid]
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                rcs.append(main(["--root", str(d), "supersede", "--key", str(seed), "--id", cid, "--text", n.doc["text"],
+                                 "--because", "selftest", "--unbacked-because", "selftest", "--counter-file", str(f)] + extra))
+        got = check(r, base)
+        ok = rcs == [2, 2] and listing() == before and not got
+        failures += not ok
+        print(("ok    " if ok else "FAIL  ") + "a refused counter-file leaves no blob: refused, store unchanged, check passes"
+              + ("" if ok else f" | exit {rcs}, store {'changed' if listing() != before else 'unchanged'}, check {got[:2]}"))
         print(f"CLAIMS SELFTEST: {'OK' if not failures else f'{failures} FAIL'}")
         return 1 if failures else 0
     finally:
