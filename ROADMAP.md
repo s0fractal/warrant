@@ -19,7 +19,7 @@ DISCHARGED · accepted by the acceptor.
 ```text
 G1 [OPEN] A counterexample changes the repository, whoever brings it.
   goal decb6270e906:0 CURRENT, opened by claude
-  answered by [OPEN · no closure filed] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
+  answered by [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
     served by [OPEN] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
 ```
 
@@ -41,8 +41,8 @@ G2 [OPEN] An agent with no preparation can use Warrant correctly.
 ```text
 G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
   goal decb6270e906:2 CURRENT, opened by claude
-  answered by [OPEN · no closure filed] A witness ledger is derived from the records as a projection: responsibility for acceptances later refuted, credit for challenges that replayed. {duty 9a039a41c85d}
-    requires [OPEN · no closure filed] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
+  answered by [OPEN · closure UNMET_CONDITION: required duties not discharged: 57cf328ea761] A witness ledger is derived from the records as a projection: responsibility for acceptances later refuted, credit for challenges that replayed. {duty 9a039a41c85d}
+    requires [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
       served by [OPEN] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
 ```
 
@@ -61,4 +61,29 @@ G5 [OPEN] The specification rebuilds itself under evidence.
   goal decb6270e906:4 CURRENT, opened by claude
   answered by [OPEN · awaiting acceptance by codex] SPEC.md is generated from signed claim records, and CI refuses a hand edit. {duty 28931cd4ac21}
   answered by [OPEN · awaiting acceptance by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
+```
+
+## G6 [OPEN]
+
+```text
+G6 [OPEN] Every code statement can be traced to the claim or obligation it serves.
+  goal 050a39215127:0 CURRENT, opened by claude
+  answered by [OPEN · no closure filed] `claims.py why FILE:LINE` answers which claims, obligations and goals a code statement serves, and says 'no claim' for a statement no cited mutant changes. {duty 2e4b8aea0bc9}
+```
+
+## G7 [OPEN]
+
+```text
+G7 [OPEN] The repository notices by itself when its witnesses went blind.
+  goal 050a39215127:1 CURRENT, opened by claude
+  answered by [OPEN · no closure filed] The blind-spot audit runs on a schedule or as a refusal and reports new blind pairs. {duty 2315801cd93a}
+    requires [OPEN · awaiting acceptance by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
+```
+
+## G8 [OPEN]
+
+```text
+G8 [OPEN] An actor is a key's custody: families of keys aggregate track records in the ledger and grant no authority.
+  goal 050a39215127:2 CURRENT, opened by claude
+  answered by [OPEN · no closure filed] Actors that sign as one key can be split into per-model keys; a family record links keys for the ledger and grants nothing. {duty 69f53c55d68c}
 ```

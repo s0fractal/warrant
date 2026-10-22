@@ -1034,6 +1034,9 @@ def _visit(view, did, report, done, busy):
      [("    if roles.get(a.actor) == COLLECTIVE:\n", "    if False:\n")], "circle_test", ["R6"]),
     ("M385", "../tools/claims.py", "pin takes a role from its admitted binding",
      [("    if other:\n        raise Refused(f\"{a.actor} is bound to key", "    if False:\n        raise Refused(f\"{a.actor} is bound to key")], "circle_test", ["R6"]),
+    ("M403", "../tools/roadmap.py", "a discharge filed and not admitted (prerequisite open) reads as no closure filed",
+     [("                return f\"closure {filed[-1]['verdict']}: {filed[-1]['why']}\" if filed else \"no closure filed\"",
+       "                return \"no closure filed\"")], "roadmap_test", ["P14"]),
     # `claims.py why` (tools/claims.py, tests/why_test.py): a statement -> mutants -> claims -> obligations -> goals.
     ('M386', '../tools/claims.py', 'a statement only an uncited mutant changes counts as covered',
      [('        return any(mid in self.cited for mid in self.changes.get((path, i), ()))', '        return any(True for mid in self.changes.get((path, i), ()))')], "why_test", ['Y8']),
