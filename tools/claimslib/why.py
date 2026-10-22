@@ -75,6 +75,10 @@ class Why:
             index = {"BACKED": self.cited, "COUNTERED": self.countering}.get(status[n.id])
             for mid in n.doc["mutants"] if index is not None else ():
                 index.setdefault(mid, []).append(n)
+        self.lineage = {}           # claim id -> {duty id}: every duty its lineage had (a duty is never superseded)
+        for n in model.nodes.values():
+            if not n.retired and n.doc["duty"]:
+                self.lineage.setdefault(n.id, set()).add(n.doc["duty"])
         self.changes = {}           # (path, unit index) -> {mutant id}: the mutants that change unit i
         self.inserts = {}           # (path, unit index) -> {mutant id}: those inserting before it (shown, not counted)
         for mid in sorted(known):
@@ -125,7 +129,7 @@ class Why:
                                                                     "counters": x["replays"]} for x in self.low[n.id]]})
                     c["via"] = sorted(set(c["via"]) | {mid}, key=_mid_key)
         for c in claims.values():
-            for ln in self.links.get(c["duty"], []):
+            for ln in (x for d in sorted(self.lineage.get(c["claim"], {c["duty"]})) for x in self.links.get(d, [])):
                 o = obligations.setdefault(ln["obligation"], dict(ln, claims=[]))
                 if c["claim"] not in o["claims"]:
                     o["claims"].append(c["claim"])

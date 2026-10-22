@@ -8,7 +8,7 @@ from .base import AUTHOR, Refused, ROOT
 from .repo import Repo
 from .check import cmd_check
 from .author import (cmd_accept, cmd_add, cmd_bind, cmd_challenge, cmd_heading, cmd_keygen, cmd_migrate, cmd_pin,
-                     cmd_project, cmd_retire, cmd_supersede, cmd_trust)
+                     cmd_project, cmd_rehome, cmd_replay, cmd_retire, cmd_supersede, cmd_trust)
 from .audit import cmd_audit
 from .why import cmd_why
 
@@ -106,6 +106,15 @@ def main(argv=None):
     p.add_argument("--claim", required=True)
     p.add_argument("--because", required=True)
     p.add_argument("--counter-file", help="a counter blob (warrant-claims/counter@1 JSON) against the claim")
+    p = authoring(sub.add_parser("rehome", help="G4: supersede each BACKED claim onto a duty the adopted checker accepts"))
+    p.add_argument("--because", required=True)
+    p = sub.add_parser("replay", help="the replay checker: accept BACKED claims by replaying their witnesses and mutants")
+    p.add_argument("--key", help="seed file of the checker's key (or WARRANT_CLAIMS_KEY)")
+    p.add_argument("--claim", action="append", default=[], help="a claim id (repeatable); default: every one awaiting it")
+    p.add_argument("--jobs", dest="rjobs", type=_jobs, default=min(os.cpu_count() or 1, 8), metavar="N",
+                   help="test files and mutants run N at a time")
+    p.add_argument("--verify", action="store_true", help="re-execute the checker acceptances new since --base instead")
+    p.add_argument("--base", help="--verify: the revision before them (default: origin/master)")
     a = ap.parse_args(argv)
     if a.selftest:
         from .selftest import selftest      # it imports this module's main
@@ -124,9 +133,11 @@ def main(argv=None):
             return cmd_audit(repo, a)
         if a.cmd == "why":
             return cmd_why(repo, a)
+        if a.cmd == "replay":
+            return cmd_replay(repo, a)
         {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen,
          "migrate": cmd_migrate, "heading": cmd_heading, "bind": cmd_bind, "trust": cmd_trust,
-         "accept": cmd_accept, "challenge": cmd_challenge, "pin": cmd_pin}[a.cmd](repo, a)
+         "accept": cmd_accept, "challenge": cmd_challenge, "pin": cmd_pin, "rehome": cmd_rehome}[a.cmd](repo, a)
         return 0
     except Refused as e:
         print(f"REFUSED {e.code + ' ' if e.code else ''}{e}", file=sys.stderr)

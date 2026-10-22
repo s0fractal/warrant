@@ -20,9 +20,11 @@ from .base import (AUTHOR, BACKED_RESIDUAL, CLAIM, COUNTER, id_key, ID_RE, norm,
 from .bindings import bound_document, COLLECTIVE, read_roles, ROLES, write_bindings
 from .repo import witness_problems
 from .model import accept_index, acceptors, Model
-from . import counters
+from . import by_replay, counters
+from . import replay as RP
 from .counters import challenge_table, counter_candidates, counter_file_bytes, lowered, standing
 from .document import DOCUMENT, Document, DOCUMENT_RESIDUAL, heading_section, parse_spec, render_spec
+from .check import default_base
 from .views import assessment, render, render_witnesses
 
 
@@ -148,17 +150,18 @@ class Author:
         placed = self.placement(cid, after, paragraph, because if previous is None else None)
         at = self.at()
         duty = None
+        backed = kind == "normative" and witnesses and mutants
         if kind == "normative":
-            if previous is not None and previous.kind == "normative" and previous.doc["text"] == text:
+            accept_by = self.acceptors(backed)
+            if previous is not None and previous.kind == "normative" and previous.doc["text"] == text \
+                    and self.model().recs[previous.doc["duty"]]["body"]["accept_by"] == accept_by:
                 duty = previous.doc["duty"]
             else:
                 self.store.put_blob(text.encode())
-                accept_by = self.pins["accept_by"]
                 duty = self.put("duty", R.duty(self.actor, statement_for(cid, text), self.pins["owed_to"], {"attest": {}},
                                                accept_by=accept_by, subject=sha(text)), at)
         prev = None if previous is None else {
             "transition": previous.tid, "duty": previous.doc["duty"], "statement_sha256": sha(previous.doc["text"])}
-        backed = kind == "normative" and witnesses and mutants
         doc = {"schema": CLAIM, "id": cid, "source": "SPEC.md", "section": ID_RE.match(cid).group(1), "text": text,
                "kind": kind, "duty": duty, "witnesses": witnesses, "mutants": mutants,
                "reason": reason if kind == "informative" else None if backed else unbacked_because,
@@ -177,6 +180,14 @@ class Author:
             self.file_document(*placed, at)
         self._pin(cid, kind)
         return tid
+
+    def acceptors(self, backed):
+        """The accept_by of a new claim duty: the last checker .warrant/claims.json adopts for a
+        BACKED claim (G4: its closure is accepted by replay), the pinned accept_by otherwise. A
+        supersession keeps its claim's duty only when that duty already names this acceptor: a
+        duty is never superseded, so a lineage moves to the checker on its next supersession."""
+        checkers = self.pins.get("checkers", [])
+        return [checkers[-1]] if backed and checkers else list(self.pins["accept_by"])
 
     def retire(self, cid, because, counter):
         cur = self.model().current.get(cid)
@@ -481,3 +492,65 @@ def cmd_challenge(repo, a):
     item = 0 if n.rec["body"]["closes"] else None
     rid = author.put("challenge", R.challenge(n.tid, a.because, ev, item), author.at())
     print(f"{a.claim}: challenge {rid}")
+
+
+def cmd_rehome(repo, a):
+    """G4's migration, once per adopted checker: every current BACKED claim of --actor whose duty
+    does not name the last checker .warrant/claims.json adopts gets a supersession with the same
+    sentence, witnesses, mutants and residuals, and a new duty that names the checker. A duty is
+    never superseded: the old one stays in the store, OPEN, as history, and the views follow the
+    lineage's current duty."""
+    author = Author(repo, load_key(repo, a.key, a.actor), a.actor)
+    if not author.pins.get("checkers"):
+        raise Refused(".warrant/claims.json adopts no checker (`checkers`)", "NO_CHECKER")
+    want, model = author.acceptors(True), author.model()
+    status, _ = standing(repo, model)
+    todo = [n for n in sorted(model.current.values(), key=lambda n: id_key(n.id))
+            if status[n.id] == "BACKED" and n.rec["actor"] == a.actor and model.recs[n.doc["duty"]]["body"]["accept_by"] != want]
+    for n in todo:
+        extra = [x for x in n.rec["body"]["residual"] if x not in (BACKED_RESIDUAL, UNBACKED_RESIDUAL)]
+        tid = author.claim(n.id, n.doc["text"], n.doc["witnesses"], n.doc["mutants"], because=a.because, residual=extra,
+                           previous=n)
+        print(f"{n.id}: {tid}")
+    print(f"REHOMED {len(todo)} claims onto duties accepted by {want[0]}")
+
+
+def cmd_replay(repo, a):
+    """The replay checker (replay.py): accept --claim IDs, or every current BACKED claim whose duty
+    names this checker and awaits it, by replaying their witnesses and mutants at HEAD; with
+    --verify, re-execute instead the acceptances new since --base (by_replay.verify). Exit 1 when
+    anything is refused."""
+    model = Model(repo.snapshot(), repo.trust())
+    if a.verify:
+        base = a.base or default_base(repo)
+        if base is None:
+            raise Refused("no --base given and origin/master is not available", "BASE_UNREADABLE")
+        problems = by_replay.verify(repo, model, base, a.rjobs)
+        for code, detail in problems:
+            print(f"REFUSED {code} {detail}")
+        print(f"REPLAY VERIFY: {len(by_replay.accepts(model))} checker acceptances; those new since {base[:12]} "
+              f"re-executed; {'OK' if not problems else f'{len(problems)} refused'}")
+        return 1 if problems else 0
+    me = RP.actor()
+    key = load_key(repo, a.key, me)
+    status, _ = standing(repo, model)
+    if a.claim:
+        unknown = [c for c in a.claim if c not in model.current]
+        if unknown:
+            raise Refused(f"no current claim {', '.join(unknown)}", "NOT_A_CLOSURE")
+        nodes = [model.current[c] for c in dict.fromkeys(a.claim)]
+    else:
+        done = {r["body"]["transition"] for r in model.recs.values() if r["type"] == "accept" and r["actor"] == me}
+        nodes = [n for n in sorted(model.current.values(), key=lambda n: id_key(n.id)) if status[n.id] == "BACKED"
+                 and me in model.recs[n.doc["duty"]]["body"]["accept_by"] and n.tid not in done]
+    try:
+        filed, refused = RP.run(repo.root, Store(repo.store_dir), repo.trust(), key, [n.tid for n in nodes], a.rjobs)
+    except RP.Refusal as e:
+        raise Refused(str(e), e.code) from e
+    ids = {n.tid: n.id for n in nodes}
+    for tid, rid in filed:
+        print(f"{ids[tid]}: accepted by replay {rid[:12]}")
+    for tid, e in refused:
+        print(f"REFUSED {e.code} {ids[tid]}: {e}")
+    print(f"REPLAY: {len(filed)} accepted by {me[:28]}…, {len(refused)} refused")
+    return 1 if refused else 0

@@ -132,7 +132,9 @@ class Model:
         self.problems = []
         cm = CL.Model(snap, trust)
         self.claim_duty = {cid: n.doc["duty"] for cid, n in cm.current.items() if not n.retired and n.doc["duty"]}
-        self.claim_of = {d: cid for cid, d in self.claim_duty.items()}
+        # Every duty a claim's lineage ever had names that claim: a duty is never superseded, so an
+        # obligation serving a claim's earlier duty serves the claim (G4 re-homed lineages).
+        self.claim_of = {n.doc["duty"]: n.id for n in cm.nodes.values() if not n.retired and n.doc["duty"]}
         self.forms, self.owned, self._revs = {}, {}, {}
         for q in E.questions(self.rep, owned=True):
             if not (q["scope"] or "").startswith(SCOPE):

@@ -8,7 +8,10 @@ as bytes). A count says what an actor's signed records did, not who may act: tha
 the duty's and the receiver's profile's (SPEC §4.6, §6).
 
 - **claims authored**: claim lineages the actor began.
-- **acceptances**: accept records the actor filed; **later refuted**: of those, ones
+- **acceptances**: accept records the actor filed. An actor named `checker sha256:…` is the
+  replay checker (G4), a program named by the hash of its code: each of its acceptances is a
+  replay of one claim's witnesses and mutants at one git tree, carried as its report, not a review.
+  **later refuted**: of the acceptances, ones
   accepting a claim against which a counter replays now or a downgrade cites a counter,
   or a closure that a challenge targets and a revalidation names.
 - **challenges**: challenge records the actor filed.

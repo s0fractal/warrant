@@ -7,6 +7,7 @@ from pathlib import Path
 from warrant import jcs as C
 from warrant.store import Snapshot
 
+from . import by_replay
 from .base import AUTHOR, git, id_key
 from .bindings import admit_bindings, bindings_kept, local_bindings, pin_conflicts, read_roles, trust_of, unpinned
 from .repo import witness_problems
@@ -29,7 +30,8 @@ def check(repo, base=None):
     out += repo.bindings()[1]
     roles, why = repo.roles()
     pins_ = repo.pins()
-    out += why + unpinned(roles, [AUTHOR] + pins_["owed_to"] + pins_["accept_by"], ".warrant/claims.json")
+    out += why + unpinned(roles, [AUTHOR] + pins_["owed_to"] + pins_["accept_by"] + pins_.get("checkers", []),
+                          ".warrant/claims.json")
     model = Model(snap, trust)
     table = challenge_table(repo, model)
     for rid, why in sorted(model.bad.items()):
@@ -39,6 +41,7 @@ def check(repo, base=None):
     out += model.problems
     out += repo.harness_problems()
     pins = repo.pins()
+    out += by_replay.problems(repo, model, pins)
     for cid, n in sorted(model.current.items(), key=lambda kv: id_key(kv[0])):
         if n.retired:
             continue
@@ -143,6 +146,7 @@ def check_base(repo, base, snap, model, pins):
     out += conflicts + bindings_kept([(a, p) for a, p in was if not (a in roles and roles[a] != p)], repo.bindings()[0], rev)
     then = Model(Snapshot(recs, blobs), trust_of(was + local_bindings()))
     out += new_counters(repo, model, set(recs))
+    out += by_replay.new_problems(repo, model, set(recs))
     for cid in sorted(then.current, key=id_key):
         if cid not in model.by_id:
             out.append(("CLAIM_DELETED", f"{cid} is claimed at {rev[:12]} and no record states, supersedes or retires it now"))
@@ -167,14 +171,18 @@ def check_base(repo, base, snap, model, pins):
 def duty_terms(model, n, pins):
     """Why claim `n`'s duty is not held by its author, owed to and accepted by whom
     .warrant/claims.json pins, with no release_by; or None. A key anyone may bind must not
-    file a claim that only its own accomplice has to accept."""
+    file a claim that only its own accomplice has to accept. The acceptor is the pinned
+    `accept_by`, or, for a BACKED claim only, one checker the pins adopt (`checkers`, G4): a
+    replay can accept what witnesses and mutants back, never a thesis."""
     if n.retired or n.kind != "normative":
         return None
     b = model.recs[n.doc["duty"]]["body"]
-    want = (n.rec["actor"], pins["owed_to"], pins["accept_by"], [])
+    acceptors = [pins["accept_by"]] + ([[c] for c in pins.get("checkers", [])] if n.backed else [])
     got = (b["holder"], b["owed_to"], b["accept_by"], b["release_by"])
-    return None if got == want else (f"its duty has holder {got[0]!r}, owed_to {got[1]}, accept_by {got[2]}, "
-                                     f"release_by {got[3]}; pinned: owed_to {want[1]}, accept_by {want[2]}, no release_by")
+    if got[0] == n.rec["actor"] and got[1] == pins["owed_to"] and got[2] in acceptors and got[3] == []:
+        return None
+    return (f"its duty has holder {got[0]!r}, owed_to {got[1]}, accept_by {got[2]}, release_by {got[3]}; pinned: "
+            f"owed_to {pins['owed_to']}, accept_by one of {acceptors}, no release_by")
 
 
 def default_base(repo):

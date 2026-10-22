@@ -6,6 +6,7 @@ import re
 from warrant import engine as E
 from warrant import keys as K
 
+from . import by_replay
 from .base import BACKED_RESIDUAL, id_key, PREAMBLE, UNBACKED_RESIDUAL
 from .model import accept_index, acceptors, authentic, Model
 from .counters import challenge_table, COUNTED, counter_citations, downgrade_counters, LOWERS, standing, THESIS
@@ -18,15 +19,26 @@ def assessment(snap, trust):
     return E.assess(snap, trust, as_of, E.profile())
 
 
-def disposition(rep, n, accepted=()):
-    """The engine's disposition of claim `n`'s duty, with who accepted its closure (`accepted`)."""
+def acceptor_name(a, report=None):
+    """How the views name an acceptor: a checker by what it checked, never as a reviewer (G4)."""
+    if not by_replay.is_checker(a):
+        return a
+    h = a[len(by_replay.RP.PREFIX):][:12]
+    if report is None:
+        return f"the replay checker {h}"
+    return f"replay of its witnesses and mutants at tree {report['tree'][:12]} (checker {h})"
+
+
+def disposition(rep, n, accepted=(), report=None):
+    """The engine's disposition of claim `n`'s duty, with who accepted its closure (`accepted`);
+    `report`, the replay report of a checker's acceptance, names what that acceptance checked."""
     if n.retired or n.kind == "informative":
         return "— (no duty)"
     r = rep["duties"].get(n.doc["duty"])
     if r is None:
         return "MISSING"
-    by = f"accepted by {', '.join(accepted)}" if accepted else ""
-    waiting = sorted({a for c in r["candidates"] if c["verdict"] == "PENDING" for a in c.get("waiting_for") or []})
+    by = f"accepted by {', '.join(acceptor_name(a, report) for a in accepted)}" if accepted else ""
+    waiting = sorted({acceptor_name(a) for c in r["candidates"] if c["verdict"] == "PENDING" for a in c.get("waiting_for") or []})
     if r["disposition"] == "OPEN":
         return f"OPEN (awaiting {', '.join(waiting)}{'; ' + by if by else ''})" if waiting else "OPEN (no closure filed)"
     return r["disposition"] + (f" ({by})" if by else "")
@@ -43,6 +55,7 @@ def render(repo, model=None, table=None):
     status, low = standing(repo, model, table)
     rep = assessment(snap, trust)
     index = accept_index(model.recs)
+    replays = by_replay.replayed(model)
     rows = sorted(model.current.values(), key=lambda n: id_key(n.id))
     live = [n for n in rows if not n.retired]
     retired = [n for n in rows if n.retired]
@@ -66,10 +79,15 @@ def render(repo, model=None, table=None):
         "fail. An UNBACKED sentence is an open question, listed below with the reason it is",
         "open; it closes nothing and establishes nothing. *Disposition* is Warrant's own",
         "assessment of the claim's duty in this store (trust `.warrant/trust.json`, default",
-        f"profile, as of the latest record): a backed claim waits for its acceptor ({', '.join(pins['accept_by'])})",
-        "until an acceptance is filed (`tools/claims.py accept`, signed by the acceptor's own key); the",
-        "column names who accepted. A claim is COUNTERED when a counter blob that replays (below), filed",
-        "by anyone with an admitted binding, lowers its backing: it counts as backed no longer.", "",
+        "profile, as of the latest record): a backed claim waits for the acceptor its duty names until an",
+        "acceptance is filed, signed by the acceptor's own key; the column names who accepted. A claim",
+        "filed under a replay checker (`checkers` in `.warrant/claims.json`, G4) is accepted by",
+        "`tools/claims.py replay`: the checker, an actor named by the hash of its code, replays the",
+        "claim's witnesses and mutants at one git tree and accepts only if every witness passes and every",
+        "mutant is killed by a cited case. Such an acceptance is named for what it checked; it is not a",
+        f"review. Other claims wait for {', '.join(pins['accept_by'])} (`tools/claims.py accept`). A claim",
+        "is COUNTERED when a counter blob that replays (below), filed by anyone with an admitted binding,",
+        "lowers its backing: it counts as backed no longer.", "",
         "| ID | Statement | Witnesses | Mutants | Status | Disposition | Claim |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
@@ -81,7 +99,8 @@ def render(repo, model=None, table=None):
         if n.kind == "informative":
             shown += f": {n.doc['reason']}"
         acc = acceptors(model.recs, index, n.tid, 0) if n.backed else []
-        out.append(f"| {n.id} | {cell(n.doc['text'])} | {cell(wit)} | {mut} | {cell(shown)} | {cell(disposition(rep, n, acc))} "
+        dis = disposition(rep, n, acc, replays.get(n.tid))
+        out.append(f"| {n.id} | {cell(n.doc['text'])} | {cell(wit)} | {mut} | {cell(shown)} | {cell(dis)} "
                    f"| `{n.tid[:12]}` |")
     opened = [n for n in live if n.status == "UNBACKED" or n.id in low]
     out += ["", "## Open questions", "",
@@ -223,7 +242,10 @@ def render_witnesses(repo, model, table):
         "as bytes). A count says what an actor's signed records did, not who may act: that is",
         "the duty's and the receiver's profile's (SPEC §4.6, §6).", "",
         "- **claims authored**: claim lineages the actor began.",
-        "- **acceptances**: accept records the actor filed; **later refuted**: of those, ones",
+        "- **acceptances**: accept records the actor filed. An actor named `checker sha256:…` is the",
+        "  replay checker (G4), a program named by the hash of its code: each of its acceptances is a",
+        "  replay of one claim's witnesses and mutants at one git tree, carried as its report, not a review.",
+        "  **later refuted**: of the acceptances, ones",
         "  accepting a claim against which a counter replays now or a downgrade cites a counter,",
         "  or a closure that a challenge targets and a revalidation names.",
         "- **challenges**: challenge records the actor filed.",

@@ -14,10 +14,15 @@ A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants
 fail. An UNBACKED sentence is an open question, listed below with the reason it is
 open; it closes nothing and establishes nothing. *Disposition* is Warrant's own
 assessment of the claim's duty in this store (trust `.warrant/trust.json`, default
-profile, as of the latest record): a backed claim waits for its acceptor (codex)
-until an acceptance is filed (`tools/claims.py accept`, signed by the acceptor's own key); the
-column names who accepted. A claim is COUNTERED when a counter blob that replays (below), filed
-by anyone with an admitted binding, lowers its backing: it counts as backed no longer.
+profile, as of the latest record): a backed claim waits for the acceptor its duty names until an
+acceptance is filed, signed by the acceptor's own key; the column names who accepted. A claim
+filed under a replay checker (`checkers` in `.warrant/claims.json`, G4) is accepted by
+`tools/claims.py replay`: the checker, an actor named by the hash of its code, replays the
+claim's witnesses and mutants at one git tree and accepts only if every witness passes and every
+mutant is killed by a cited case. Such an acceptance is named for what it checked; it is not a
+review. Other claims wait for codex (`tools/claims.py accept`). A claim
+is COUNTERED when a counter blob that replays (below), filed by anyone with an admitted binding,
+lowers its backing: it counts as backed no longer.
 
 | ID | Statement | Witnesses | Mutants | Status | Disposition | Claim |
 | --- | --- | --- | --- | --- | --- | --- |

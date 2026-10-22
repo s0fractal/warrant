@@ -92,7 +92,7 @@ Refusals are printed one per line as `REFUSED <CODE> <detail>`.
 
 The code is one module per responsibility (tools/claimslib/): base, bindings, statements,
 repo, model, counters, document, views, check, author, audit, why, report_selftest,
-selftest, cli.
+selftest, cli; the replay checker (G4) is replay, its acceptances as `check` reads them by_replay.
 tools/claims.py is the command, and `import claims` (tools/ on the path) gives every name below.
 """
 import os
@@ -117,3 +117,4 @@ from .why import *           # noqa: E402,F401,F403
 from .report_selftest import *   # noqa: E402,F401,F403
 from .selftest import *      # noqa: E402,F401,F403
 from .cli import *           # noqa: E402,F401,F403
+from . import by_replay, replay   # noqa: E402,F401  (modules: replay.replay is a function of its own)
