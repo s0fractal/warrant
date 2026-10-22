@@ -878,7 +878,7 @@ def check(repo, base=None):
                         "run tools/claims.py project"))
     if not repo.projection.is_file():
         out.append(("PROJECTION_MISSING", "SPEC-CLAIMS.md does not exist; run tools/claims.py project"))
-    elif repo.projection.read_text() != render(repo):
+    elif repo.projection.read_bytes() != render(repo).encode():     # bytes: read_text() would turn \r\n into \n
         out.append(("PROJECTION_STALE", "SPEC-CLAIMS.md is not the view of the records; run tools/claims.py project"))
     if base is not None:
         out += check_base(repo, base, snap, model, pins)
@@ -1476,8 +1476,8 @@ def cmd_project(repo):
     doc = Document(model)
     if doc.current is None:
         raise Refused("no document record lays out SPEC.md (tools/claims.py migrate files the first)")
-    repo.spec.write_text(render_spec(model, doc.current))
-    repo.projection.write_text(render(repo))
+    repo.spec.write_bytes(render_spec(model, doc.current).encode())
+    repo.projection.write_bytes(render(repo).encode())
 
 
 def cmd_keygen(repo, a):
@@ -1591,7 +1591,8 @@ def selftest():
             subprocess.run(["git", "-c", "gc.auto=0", "clone", "-q", "--no-local", str(fix), str(d)],
                            capture_output=True, check=True)
             r = Repo(d)
-            against = mutate(r) or base
+            against = mutate(r)
+            against = against if isinstance(against, str) else base
             got = check(r, against)
             codes = {c for c, _ in got}
             ok = ((not got) if expect is None else expect in codes) and (also is None or also(r))
@@ -1612,8 +1613,8 @@ def selftest():
             m = Model(r.snapshot(), r.trust())
             doc = Document(m)
             if doc.current is not None:
-                r.spec.write_text(render_spec(m, doc.current))
-            r.projection.write_text(render(r))
+                r.spec.write_bytes(render_spec(m, doc.current).encode())
+            r.projection.write_bytes(render(r).encode())
 
         def spec_text(r):
             return norm(r.spec.read_text())
@@ -1708,6 +1709,20 @@ def selftest():
                                        "because": f"selftest fork {k}", "previous": prev})
                 au.put("transition", R.transition("ATTESTED", [h], residual=[DOCUMENT_RESIDUAL],
                                                   supersedes=[d.tid]), au.at() + k)
+            reproject(r)
+
+        def document_bad_previous(r):
+            au = author(r)
+            d = Document(Model(r.snapshot(), r.trust()))
+            h = au.store.put_json({"schema": DOCUMENT, "source": "SPEC.md", "parts": d.current["parts"],
+                                   "because": "selftest", "previous": {"transition": a.tid, "sha256": d.nodes[d.tid][1]}})
+            au.put("transition", R.transition("ATTESTED", [h], residual=[DOCUMENT_RESIDUAL], supersedes=[a.tid]), au.at())
+            reproject(r)
+
+        def control_text(r):
+            n = Model(r.snapshot(), r.trust()).current[a.id]
+            author(r).claim(a.id, n.doc["text"].replace(" ", " \x00", 1), n.doc["witnesses"], n.doc["mutants"],
+                            because="selftest", previous=n)
             reproject(r)
 
         def delete_document(r):
@@ -1849,6 +1864,10 @@ def selftest():
         case("SPEC.md edited by hand: a sentence changed", "SPEC_NOT_PROJECTION", spec_edit(a.doc["text"], "Something else entirely."))
         case("SPEC.md edited by hand: layout only (a line break joined)", "SPEC_NOT_PROJECTION",
              lambda r: r.spec.write_text(r.spec.read_text().replace(".\n", ". ", 1)))
+        case("SPEC.md with \\r\\n line ends", "SPEC_NOT_PROJECTION",
+             lambda r: r.spec.write_bytes(r.spec.read_bytes().replace(b"\n", b"\r\n")))
+        case("SPEC-CLAIMS.md with \\r\\n line ends", "PROJECTION_STALE",
+             lambda r: r.projection.write_bytes(r.projection.read_bytes().replace(b"\n", b"\r\n")))
         case("a supersede + project round trip", None, supersede, also=supersede_rendered)
         case("a new sentence inserted at a position renders there", None, insert, also=insert_rendered)
         case("a retired sentence leaves SPEC.md, stays in the store and in SPEC-CLAIMS.md", None, retire, also=retire_rendered)
@@ -1982,6 +2001,8 @@ def selftest():
              doc_version(lambda ps: [q for q in ps if not (isinstance(q, dict) and q.get("heading", "").startswith(
                  f"## {a.doc['section']}. "))]))
         case("two current document versions", "DOCUMENT_FORK", document_fork)
+        case("a document version whose previous is not a document version", "STRUCTURE", document_bad_previous)
+        case("a claim text with a control character (U+0000 would vanish from SPEC.md)", "STRUCTURE", control_text)
         case("the document records deleted", "DOCUMENT_MISSING", delete_document)
         case("a claim id with a trailing newline", "STRUCTURE", newline_id)
 
