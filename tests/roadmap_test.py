@@ -12,6 +12,7 @@ by wording, so a mutant is killed only when a rule stops holding.
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import shutil
 import sys
@@ -67,6 +68,13 @@ class Repo:
                 if not (spec and a == "claude")]
         doc = {"bindings": CL.BINDINGS, "keys": bound + mine}
         (self.dir / ".warrant" / "trust.json").write_bytes(C.canon(doc))
+        # The roles the configuration names are pinned (AMEND 1 of #170): to the test keys, and in
+        # spec mode claude to the key this store's records are signed with (its own binding).
+        roles = {a: k.public for a, k in self.keys.items() if a != "stranger"}
+        if spec:
+            roles["claude"] = next(e["public"] for e in bound if e["actor"] == "claude")
+        roles["readers"] = CL.COLLECTIVE
+        (self.dir / ".warrant" / "roles.json").write_text(json.dumps({"roles": CL.ROLES, "actors": roles}))
         (self.dir / ".warrant" / "roadmap.json").write_text(CONFIG)
         self.rm = RM.Roadmap(self.dir)
         self.store = Store(self.dir / ".warrant" / "store")

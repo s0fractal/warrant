@@ -80,9 +80,15 @@ class Fix:
             p.write_text(k.seed_hex() + "\n")
             self.seeds[a] = str(p)
         self.write_trust([entry(a, k) for a, k in self.keys.items()])
+        # Roles (AMEND 1 of #170): the configured names are pinned; `stranger` has no role (first-come).
+        self.write_roles({"claude": self.keys["claude"].public, "codex": self.keys["codex"].public,
+                          "s0fractal": self.keys["s0fractal"].public, "readers": CL.COLLECTIVE})
         self.repo = CL.Repo(self.dir)
         self.store = Store(self.repo.store_dir)
         self.t = int(time.time())
+
+    def write_roles(self, actors):
+        (self.dir / ".warrant" / "roles.json").write_text(json.dumps({"roles": CL.ROLES, "actors": actors}))
 
     def write_trust(self, keys):
         (self.dir / ".warrant" / "trust.json").write_bytes(C.canon({"bindings": CL.BINDINGS, "keys": keys}))
@@ -241,6 +247,104 @@ def binding_cases():
     check("B12", "guest" in with_local and "guest" not in without and ("guest", guest.public) not in listed,
           "a receiver's own trust file ($WARRANT_CLAIMS_TRUST) adds its bindings to the trust it uses, not to the "
           "repository's bindings", (with_local, without))
+    f.close()
+
+
+# ---------------------------------------------------------------- A, AMEND 1 of #170: names with roles
+
+def role_cases():
+    k1, k2, k3 = W.Key.generate(), W.Key.generate(), W.Key.generate()
+    roles = {"codex": k1.public, "s0fractal": None, "readers": CL.COLLECTIVE}
+    doc = {"bindings": CL.BINDINGS, "keys": [entry("codex", k2), entry("s0fractal", k2), entry("readers", k3),
+                                             entry("codex", k1), entry("newcomer", k3)]}
+    adm, probs = CL.admit_bindings(doc, roles=roles)
+    check("R1", adm == [("codex", k1.public), ("newcomer", k3.public)]
+          and codes(probs) == ["BINDING_ROLE_KEY", "BINDING_ROLE_RESERVED", "BINDING_ROLE_COLLECTIVE"],
+          "a name with a role binds only its pinned key; a reserved one and a collective one bind nothing; a name "
+          "with no role is first-come", probs)
+
+    f = Fix()
+    squatter = W.Key.generate()
+    seed = f.base / "squatter.seed"
+    seed.write_text(squatter.seed_hex() + "\n")
+    f.claim("SPEC-1-1")
+    f.write_trust([entry(a, k) for a, k in f.keys.items() if a != "codex"])     # codex has not bound yet
+    before = f.files()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        rcs = [CL.main(["--root", str(f.dir), "bind", "--key", str(seed), "--actor", "codex"]),
+               CL.main(["--root", str(f.dir), "accept", "--key", str(seed), "--actor", "codex", "--claim", "SPEC-1-1"])]
+    unchanged = f.files() == before
+    f.write_trust([entry(a, k) for a, k in f.keys.items()] + [entry("codex", squatter)])
+    by_hand = codes(f.repo.bindings()[1])
+    keys_now = {p for a, p in f.repo.bindings()[0] if a == "codex"}
+    check("R2", rcs == [2, 2] and unchanged and by_hand == ["BINDING_ROLE_KEY"]
+          and keys_now == {f.keys["codex"].public},
+          "the parent's reproduction: a squatter's key cannot bind codex (pinned) nor accept as codex; written by hand "
+          "the binding is refused", (rcs, by_hand))
+    f.write_trust([entry(a, k) for a, k in f.keys.items() if a != "codex"] + [entry("codex", squatter)])
+    alone = codes(f.repo.bindings()[1])
+    check("R2b", alone == ["BINDING_ROLE_KEY"] and "codex" not in {a for a, _ in f.repo.trust().keys.values()},
+          "a squatter's codex binding alone is refused for the pin, and codex has no key in the trust", alone)
+    f.write_trust([entry(a, k) for a, k in f.keys.items()])
+
+    shapes = [{"codex": "anyone"}, {"codex": 1}, {"x\n": None}]
+    got = [codes(CL.read_roles({"roles": CL.ROLES, "actors": a})[1]) for a in shapes]
+    good = CL.read_roles({"roles": CL.ROLES, "actors": {"a": k1.public, "b": None, "c": CL.COLLECTIVE}})
+    (f.dir / ".warrant" / "roles.json").write_text(json.dumps({"roles": CL.ROLES, "actors": {"codex": "anyone"}}))
+    at_check = codes(CL.check(f.repo))
+    check("R3", got == [["ROLES_SHAPE"]] * 3 and good == ({"a": k1.public, "b": None, "c": CL.COLLECTIVE}, [])
+          and "ROLES_SHAPE" in at_check
+          and codes(CL.read_roles({"roles": "x", "actors": {}})[1]) == ["ROLES_SHAPE"],
+          "a role is a key, null or collective; anything else is refused, by check too", got)
+
+    f.write_roles({"claude": f.keys["claude"].public, "s0fractal": None, "readers": CL.COLLECTIVE})
+    unpinned_claims = [d.split(" names ")[1].split(",")[0] for c, d in CL.check(f.repo) if c == "ROLE_UNPINNED"]
+    unpinned_roadmap = [c for c, _ in RM.Roadmap(f.dir).model().problems if c == "ROLE_UNPINNED"]
+    f.write_roles({"claude": f.keys["claude"].public, "codex": f.keys["codex"].public, "readers": CL.COLLECTIVE})
+    unpinned_owner = [d for c, d in RM.Roadmap(f.dir).model().problems if c == "ROLE_UNPINNED"]
+    check("R4", unpinned_claims == ["'codex'"] and unpinned_roadmap == ["ROLE_UNPINNED"] and len(unpinned_owner) == 1
+          and "'s0fractal'" in unpinned_owner[0],
+          "every name .warrant/claims.json or .warrant/roadmap.json gives a role must be pinned in roles.json",
+          (unpinned_claims, unpinned_roadmap, unpinned_owner))
+    f.write_roles({"claude": f.keys["claude"].public, "codex": f.keys["codex"].public,
+                   "s0fractal": f.keys["s0fractal"].public, "readers": CL.COLLECTIVE})
+
+    was = [("claude", k1.public), ("newcomer", k3.public)]
+    conflicts = [CL.pin_conflicts(was, r, "0" * 40) for r in
+                 ({"claude": k2.public}, {"claude": None}, {"claude": CL.COLLECTIVE}, {"claude": k1.public}, {})]
+    check("R5", [codes(c) for c in conflicts] == [["ROLE_PIN_CONFLICT"]] * 3 + [[], []],
+          "against the base, a pin that contradicts an admitted binding (another key, reserved, collective) is refused",
+          conflicts)
+
+    f.write_roles({"claude": f.keys["claude"].public, "codex": f.keys["codex"].public, "s0fractal": None,
+                   "readers": CL.COLLECTIVE})
+    f.write_trust([entry(a, k) for a, k in f.keys.items() if a != "s0fractal"])
+    owner = f.base / "owner.seed"
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        trust_before = (f.dir / ".warrant" / "trust.json").read_bytes()
+        gen = CL.main(["--root", str(f.dir), "keygen", "--out", str(owner), "--actor", "s0fractal", "--no-bind"])
+        unbound = (f.dir / ".warrant" / "trust.json").read_bytes() == trust_before
+        reserved = CL.main(["--root", str(f.dir), "bind", "--key", str(owner), "--actor", "s0fractal"])
+        pinned = CL.main(["--root", str(f.dir), "pin", "--key", str(owner), "--actor", "s0fractal"])
+        bound = CL.main(["--root", str(f.dir), "bind", "--key", str(owner), "--actor", "s0fractal"])
+        roles_before = (f.dir / ".warrant" / "roles.json").read_bytes()
+        collective = CL.main(["--root", str(f.dir), "pin", "--key", str(owner), "--actor", "readers"])
+        conflict = CL.main(["--root", str(f.dir), "pin", "--key", str(owner), "--actor", "codex"])
+        roles_same = (f.dir / ".warrant" / "roles.json").read_bytes() == roles_before
+    owner_key = W.Key.from_seed_hex(owner.read_text())
+    check("R6", [gen, reserved, pinned, bound, collective, conflict] == [0, 2, 0, 0, 2, 2] and unbound and roles_same
+          and ("s0fractal", owner_key.public) in f.repo.bindings()[0],
+          "the owner's path: keygen --no-bind, pin the reserved role (a reviewed diff), bind; pin refuses a collective "
+          "role and a role whose admitted binding has another key", [gen, reserved, pinned, bound, collective, conflict])
+
+    rk = W.Key.generate()
+    f.write_trust([entry(a, k) for a, k in f.keys.items()] + [entry("readers", rk)])
+    f.claim("SPEC-1-2")
+    n = f.node("SPEC-1-2")
+    f.store.put_record(R.record("challenge", "readers", f.at(), R.challenge(n.tid, "every reader objects", [], 0)), rk)
+    got = codes(CL.check(f.repo))
+    check("R7", "CHALLENGED" not in got and "UNAUTHENTIC" in got and "BINDING_ROLE_COLLECTIVE" in got,
+          "nobody signs as readers, so its being owed_to (which always counts) lets no thesis refuse check", got)
     f.close()
 
 
@@ -557,6 +661,7 @@ def ledger_cases():
 
 
 GROUPS = ((binding_cases, ("B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12")),
+          (role_cases, ("R1", "R2", "R2b", "R3", "R4", "R5", "R6", "R7")),
           (accept_cases, ("K1", "K2", "K3", "K4", "K5", "K6", "K7")),
           (lineage_cases, ("L1", "L2", "L3", "L4", "L11")),
           (challenge_cases, ("L5", "L6", "L7", "L8", "L9", "L10")),

@@ -110,7 +110,7 @@ class Roadmap:
         return cfg
 
     def model(self):
-        return Model(self.claims.snapshot(), self.claims.trust(), self.config())
+        return Model(self.claims.snapshot(), self.claims.trust(), self.config(), self.claims.roles()[0])
 
 
 def check_actor_ok(a):
@@ -132,7 +132,7 @@ class Form:
 class Model:
     """The goals and obligations a snapshot holds under a trust, assessed once."""
 
-    def __init__(self, snap, trust, cfg):
+    def __init__(self, snap, trust, cfg, roles=None):
         self.snap, self.cfg = snap, cfg
         self.recs, _ = CL.authentic(snap, trust)
         as_of = max((r["at"] for r in self.recs.values()), default=0)
@@ -183,6 +183,8 @@ class Model:
                 self.problems.append(("MISSING_LINK", f"duty {did[:12]} answers {a[:12]}…, not a goal of a vision transition"))
         self._frontiers = {}
         self._accepts = CL.accept_index(self.recs)
+        self.problems += CL.unpinned(roles or {}, cfg["owed_to"] + cfg["accept_by"] + cfg["results_accept_by"],
+                                     ".warrant/roadmap.json")
 
     def accepted_by(self, did):
         """Who accepted the admitted closures of duty `did` (their exact items)."""

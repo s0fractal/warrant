@@ -289,7 +289,34 @@ key: the first binding wins (`BINDING_ACTOR_TAKEN`). A second key for an actor
 would need a record signed by the first one; rotation is not implemented, so it
 is refused. Against the base revision, a binding admitted there must still be
 admitted (`BINDING_REMOVED`): it can be neither dropped nor preceded by another
-binding of its actor. What a binding grants is only "this key signs as this
+binding of its actor.
+
+First-come holds only for a name nobody has given a role. A name the
+repository's own configuration gives one (the claims' author, an acceptor, a
+creditor: every actor `.warrant/claims.json` or `.warrant/roadmap.json` names,
+or the refusal is `ROLE_UNPINNED`) is pinned in `.warrant/roles.json`, the way
+a receiver's profile pins the keys it trusts. The pin is one of three values:
+
+- a public key: a binding of that actor is admitted with exactly that key,
+  else `BINDING_ROLE_KEY`;
+- `null`, reserved: not bindable until a pin names its key,
+  `BINDING_ROLE_RESERVED`;
+- `"collective"`: a role no key signs as, never bindable,
+  `BINDING_ROLE_COLLECTIVE`.
+
+Today `claude` and `codex` are pinned to their keys, `s0fractal` is reserved,
+and `readers` is collective. `readers` is owed every claim (the public that
+reads the spec), so its challenges would always count (SPEC §4.6); since no key
+signs as it, none can exist. Who a role is changes only by a diff of
+`roles.json` (`tools/claims.py pin`). Against the base, a pin that contradicts a
+binding admitted there is refused (`ROLE_PIN_CONFLICT`), since a binding is
+never removed. Taking a reserved role is three steps:
+
+1. `keygen --out SEED --actor NAME --no-bind`;
+2. `pin --key SEED --actor NAME`;
+3. `bind --key SEED --actor NAME`.
+
+What a binding grants is only "this key signs as this
 actor" (SPEC §6); who may act is the duty's, and whose acceptance or challenge
 counts is each receiver's profile (SPEC §4.6). A receiver may bind keys of its own
 choosing for itself, outside the repository, in a trust/2 file named by

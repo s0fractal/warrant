@@ -44,6 +44,7 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
     python3 tools/claims.py challenge --key SEED --actor NAME --claim SPEC-4.2-3 --because '...' \
         [--counter-file COUNTER.json]                    # anyone bound; a counter must replay
     python3 tools/claims.py trust                        # the admitted bindings, as a trust/2 document
+    python3 tools/claims.py pin --key SEED --actor NAME   # pin a role's key in .warrant/roles.json (reviewed)
     python3 tools/claims.py add --key SEED --stanza STANZAS.json
     python3 tools/claims.py add --key SEED --id SPEC-4.2-9 --text '...' --after SPEC-4.2-8 \
         --witness contract_test:H1 --mutant M01           # a new sentence names its position
@@ -62,7 +63,9 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
 
 The open circle of witnesses (README.md): `.warrant/trust.json` holds bindings that
 certify themselves (the key signs {actor, public, purpose}), admitted by `check`
-with no admin, the first binding of an actor winning; `accept` files an acceptance
+with no admin, the first binding of an actor winning, except that a name the
+configuration gives a role is pinned in `.warrant/roles.json` (a key, reserved, or
+collective; AMEND 1); `accept` files an acceptance
 signed by an acceptor the duty names; a challenge by anyone bound that carries a
 counter blob which replays lowers the claim's backing (COUNTERED), while only the
 claim's author supersedes or retires it; WITNESSES.md is a ledger derived from the
@@ -154,6 +157,8 @@ BINDINGS = "warrant-claims/bindings@1"       # .warrant/trust.json: {"bindings":
 BINDING = "warrant-claims/binding@1"         # the purpose a proof signs: canon({actor, public, purpose})
 BINDING_FIELDS = ("actor", "public", "proof")
 LOCAL_TRUST = "WARRANT_CLAIMS_TRUST"         # a receiver's own trust/2 file, added to the admitted bindings
+ROLES = "warrant-claims/roles@1"             # .warrant/roles.json: the actors the configuration gives a role
+COLLECTIVE = "collective"                    # a role no key signs as (readers): never bindable
 WITNESSES = "WITNESSES.md"
 PREAMBLE = "0"              # the section before the first numbered heading
 WIDTH = 80                  # the fill width of a sentence whose recorded layout no longer applies
@@ -210,17 +215,58 @@ def binding_proof(key, actor):
     return key.sign(binding_message(actor, key.public))
 
 
-def admit_bindings(doc, legacy=False):
+def read_roles(doc):
+    """({actor: public hex | None | COLLECTIVE}, problems) of a roles document (.warrant/roles.json).
+
+    AMEND 1 of #170: a name the repository's own configuration gives a role (an acceptor, a
+    creditor, the claims' author) is not first-come. Its key is pinned here, as a receiver's
+    profile pins the keys it trusts: a hex64 public key (a binding of that actor is admitted
+    with exactly that key), null (reserved: not bindable until a pin names its key) or
+    "collective" (a role no key signs as, such as `readers`: never bindable). Every other
+    name stays first-come. Changing who a role is, is a diff of this reviewed file."""
+    if not (isinstance(doc, dict) and set(doc) == {"roles", "actors"} and doc["roles"] == ROLES
+            and isinstance(doc["actors"], dict)):
+        return {}, [("ROLES_SHAPE", f".warrant/roles.json is not {{\"roles\": {ROLES!r}, \"actors\": {{...}}}}")]
+    roles, problems = {}, []
+    for actor, v in doc["actors"].items():
+        try:
+            R.check_actor(actor)
+        except R.Invalid as e:
+            problems.append(("ROLES_SHAPE", f".warrant/roles.json: {actor[:60]!r} is not an actor id: {e}"))
+            continue
+        if not (v is None or v == COLLECTIVE or (isinstance(v, str) and R.HEX64.match(v))):
+            problems.append(("ROLES_SHAPE", f".warrant/roles.json: {actor}: a role is a hex64 public key, null or "
+                             f"{COLLECTIVE!r}, not {str(v)[:70]!r}"))
+            continue
+        roles[actor] = v
+    return roles, problems
+
+
+def _role_name(v):
+    """A role value for a message: 'key <id>' for a key, else what it is (never raises)."""
+    return f"key {K.key_id(v)[:12]}" if isinstance(v, str) and R.HEX64.match(v) else "collective" if v == COLLECTIVE \
+        else "reserved" if v is None else repr(v)[:40]
+
+
+def unpinned(roles, names, where):
+    """ROLE_UNPINNED for each actor a configuration file names that .warrant/roles.json does not."""
+    return [("ROLE_UNPINNED", f"{where} names {a!r}, and .warrant/roles.json gives it no role: a name with a role "
+             "is pinned (a key, null for reserved, or collective), never first-come")
+            for a in sorted(set(names) - set(roles))]
+
+
+def admit_bindings(doc, legacy=False, roles=None):
     """(admitted [(actor, public)], problems [(code, detail)]) of a bindings document.
 
     A binding is admitted mechanically, in file order, iff its proof is the signature of its
-    own key over binding_message(actor, public), its actor id has SPEC-3-21's shape, its key
-    is not bound already, and its actor is not bound already to another key: the first
-    binding of an actor wins, and a second key for it would need a record signed by the
-    first, which this tool does not implement (rotation is out of scope), so it is refused.
-    Nobody judges who may join; what a binding grants is only "this key signs as this actor"
-    (SPEC §6). `legacy` reads a trust/2 document (actor, public, no proof) as admitted: only
-    for a base revision written before bindings carried proofs."""
+    own key over binding_message(actor, public), its actor id has SPEC-3-21's shape, its
+    actor's role (`roles`, read_roles) admits that key, its key is not bound already, and its
+    actor is not bound already to another key: the first binding of a name with no role
+    wins, and a second key for it would need a record signed by the first, which this tool
+    does not implement (rotation is out of scope), so it is refused. Nobody judges who may
+    join; what a binding grants is only "this key signs as this actor" (SPEC §6). `legacy`
+    reads a trust/2 document (actor, public, no proof) as admitted: only for a base revision
+    written before bindings carried proofs."""
     if legacy and isinstance(doc, dict) and doc.get("warrant") == "trust/2":
         try:
             return [(a, p) for a, p in Trust(doc).keys.values()], []
@@ -233,7 +279,7 @@ def admit_bindings(doc, legacy=False):
     admitted, problems = [], []
     publics = [k.get("public") for k in doc["keys"] if isinstance(k, dict)]
     for i, k in enumerate(doc["keys"]):
-        code, why = _binding_problem(k, publics, admitted)
+        code, why = _binding_problem(k, publics, admitted, roles or {})
         if code:
             problems.append((code, f".warrant/trust.json keys[{i}]: {why}"))
         else:
@@ -241,7 +287,7 @@ def admit_bindings(doc, legacy=False):
     return admitted, problems
 
 
-def _binding_problem(k, publics, admitted):
+def _binding_problem(k, publics, admitted, roles):
     """(code, why) when entry `k` is not admitted after `admitted`, else (None, None)."""
     if not (isinstance(k, dict) and set(k) <= set(BINDING_FIELDS) and {"actor", "public"} <= set(k)
             and isinstance(k["public"], str) and R.HEX64.match(k["public"])):
@@ -259,6 +305,15 @@ def _binding_problem(k, publics, admitted):
             return "BINDING_PROOF_OTHER_KEY", (f"{k['actor']}: the proof is signed by key {K.key_id(other[0])[:12]}, "
                                                f"not by the key it binds ({K.key_id(k['public'])[:12]})")
         return "BINDING_PROOF_FORGED", f"{k['actor']}: the proof is not the bound key's signature over this binding"
+    role = roles.get(k["actor"], k["public"])
+    if role != k["public"]:                 # one rule; the code only says which kind of role refused it
+        if role == COLLECTIVE:
+            return "BINDING_ROLE_COLLECTIVE", f"{k['actor']} is a collective role in .warrant/roles.json: no key signs as it"
+        if role is None:
+            return "BINDING_ROLE_RESERVED", (f"{k['actor']} is reserved in .warrant/roles.json: it is bindable once a "
+                                             "reviewed pin names its key")
+        return "BINDING_ROLE_KEY", (f"{k['actor']}: .warrant/roles.json pins {_role_name(role)}, this binding is of "
+                                    f"key {K.key_id(k['public'])[:12]}")
     if any(p == k["public"] for _, p in admitted):
         return "BINDING_KEY_TWICE", f"key {K.key_id(k['public'])[:12]} is bound already"
     first = next((p for a, p in admitted if a == k["actor"]), None)
@@ -296,6 +351,7 @@ class Repo:
         self.store_dir = self.root / ".warrant" / "store"
         self.trust_path = self.root / ".warrant" / "trust.json"
         self.pins_path = self.root / ".warrant" / "claims.json"
+        self.roles_path = self.root / ".warrant" / "roles.json"
         self.projection = self.root / "SPEC-CLAIMS.md"
         self.witnesses = self.root / WITNESSES
         self.tests = self.root / "tests"
@@ -308,15 +364,26 @@ class Repo:
         pins["sentences"] = dict(sorted(pins["sentences"].items(), key=lambda kv: id_key(kv[0])))
         self.pins_path.write_text(json.dumps(pins, indent=2, ensure_ascii=False) + "\n")
 
+    def roles(self):
+        """(roles, problems) of .warrant/roles.json (read_roles); none given, no name has a role."""
+        if not self.roles_path.is_file():
+            return {}, []
+        try:
+            doc = json.loads(self.roles_path.read_text())
+        except ValueError as e:
+            return {}, [("ROLES_SHAPE", f".warrant/roles.json: {e}")]
+        return read_roles(doc)
+
     def bindings(self):
-        """(admitted [(actor, public)], problems) of .warrant/trust.json (admit_bindings)."""
+        """(admitted [(actor, public)], problems) of .warrant/trust.json (admit_bindings), under
+        the roles of .warrant/roles.json."""
         if not self.trust_path.is_file():
             return [], [("BINDINGS_SHAPE", ".warrant/trust.json does not exist (tools/claims.py bind writes it)")]
         try:
             doc = C.loads(self.trust_path.read_bytes())
         except Exception as e:      # noqa: BLE001 -- an unreadable file admits nothing, and says why
             return [], [("BINDINGS_SHAPE", f".warrant/trust.json: {type(e).__name__}: {e}")]
-        return admit_bindings(doc)
+        return admit_bindings(doc, roles=self.roles()[0])
 
     def trust(self):
         """The trust this checker uses: the admitted bindings, then the receiver's own (local_bindings)."""
@@ -1118,6 +1185,9 @@ def check(repo, base=None):
     for m in snap.misfiled:
         out.append(("RECORD_MISNAMED" if m.startswith("records/") else "BLOB_MISNAMED", m))
     out += repo.bindings()[1]
+    roles, why = repo.roles()
+    pins_ = repo.pins()
+    out += why + unpinned(roles, [AUTHOR] + pins_["owed_to"] + pins_["accept_by"], ".warrant/claims.json")
     model = Model(snap, trust)
     table = challenge_table(repo, model)
     for rid, why in sorted(model.bad.items()):
@@ -1227,8 +1297,12 @@ def check_base(repo, base, snap, model, pins):
             out.append(("RECORD_CHANGED", f"{path} differs from {rev[:12]}"))
     recs = {Path(p).name[:-5]: b for p, b in stored.items() if p.startswith(prefix + "records/") and p.endswith(".json")}
     blobs = {Path(p).name: b for p, b in stored.items() if p.startswith(prefix + "blobs/")}
-    was = admit_bindings(C.loads(files[".warrant/trust.json"]), legacy=True)[0] if ".warrant/trust.json" in files else []
-    out += bindings_kept(was, repo.bindings()[0], rev)
+    was_roles = read_roles(json.loads(files[".warrant/roles.json"]))[0] if ".warrant/roles.json" in files else {}
+    was = admit_bindings(C.loads(files[".warrant/trust.json"]), legacy=True, roles=was_roles)[0] \
+        if ".warrant/trust.json" in files else []
+    roles = repo.roles()[0]
+    conflicts = pin_conflicts(was, roles, rev)
+    out += conflicts + bindings_kept([(a, p) for a, p in was if not (a in roles and roles[a] != p)], repo.bindings()[0], rev)
     then = Model(Snapshot(recs, blobs), trust_of(was + local_bindings()))
     out += new_counters(repo, model, set(recs))
     for cid in sorted(then.current, key=id_key):
@@ -1259,6 +1333,14 @@ def bindings_kept(was, now, rev):
     have = set(now)
     return [("BINDING_REMOVED", f"{a} -> key {K.key_id(p)[:12]} is admitted at {rev[:12]} and not now")
             for a, p in was if (a, p) not in have]
+
+
+def pin_conflicts(was, roles, rev):
+    """ROLE_PIN_CONFLICT for each binding admitted at the base that a role pin now contradicts:
+    a binding is never removed (BINDING_REMOVED), so a pin may not take its name from it."""
+    return [("ROLE_PIN_CONFLICT", f"{a} is bound to key {K.key_id(p)[:12]} at {rev[:12]}; .warrant/roles.json now says "
+             f"{_role_name(roles[a])}")
+            for a, p in was if a in roles and roles[a] != p]
 
 
 def new_counters(repo, model, before):
@@ -2183,12 +2265,37 @@ def cmd_keygen(repo, a):
     if out.exists():
         raise Refused(f"{out} exists")
     key = W.Key.generate()
-    doc = bound_document(repo, key, a.actor)          # refused before the seed is written
+    doc = None if a.no_bind else bound_document(repo, key, a.actor)     # refused before the seed is written
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(key.seed_hex() + "\n")
     out.chmod(0o600)
+    if doc is None:
+        print(f"{a.actor}: public key {key.public} (key {key.id}), not bound; seed at {out}")
+        return
     write_bindings(repo, doc)
     print(f"{a.actor}: key {key.id} bound in .warrant/trust.json with its proof; seed at {out}")
+
+
+def cmd_pin(repo, a):
+    """Pin --actor's role to the public key of seed --key in .warrant/roles.json (a reviewed
+    config change: who a role is). Refused for a collective role, or when an admitted binding
+    of the actor has another key (ROLE_PIN_CONFLICT)."""
+    p = Path(a.key or os.environ.get("WARRANT_CLAIMS_KEY") or "")
+    if not p.is_file():
+        raise Refused("a seed is needed: --key PATH (its public key is pinned; the seed stays where it is)")
+    key = W.Key.from_seed_hex(p.read_text())
+    doc = json.loads(repo.roles_path.read_text()) if repo.roles_path.is_file() else {"roles": ROLES, "actors": {}}
+    roles, problems = read_roles(doc)
+    if problems:
+        raise Refused("; ".join(w for _, w in problems), "ROLES_SHAPE")
+    if roles.get(a.actor) == COLLECTIVE:
+        raise Refused(f"{a.actor} is a collective role: no key signs as it", "BINDING_ROLE_COLLECTIVE")
+    other = [pub for act, pub in repo.bindings()[0] if act == a.actor and pub != key.public]
+    if other:
+        raise Refused(f"{a.actor} is bound to key {K.key_id(other[0])[:12]}", "ROLE_PIN_CONFLICT")
+    doc["actors"][a.actor] = key.public
+    repo.roles_path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+    print(f"{a.actor}: role pinned to key {key.id} in .warrant/roles.json")
 
 
 def bound_document(repo, key, actor):
@@ -2207,7 +2314,7 @@ def bound_document(repo, key, actor):
     keys = [entry if isinstance(k, dict) and k.get("actor") == actor and k.get("public") == key.public else k
             for k in doc.get("keys", [])]
     doc = {"bindings": BINDINGS, "keys": keys if entry in keys else keys + [entry]}
-    admitted, problems = admit_bindings(doc)
+    admitted, problems = admit_bindings(doc, roles=repo.roles()[0])
     if (actor, key.public) not in admitted:
         mine = [(c, w) for c, w in problems if f"keys[{doc['keys'].index(entry)}]" in w]
         code, why = mine[0] if mine else ("BINDINGS_SHAPE", "; ".join(w for _, w in problems))
@@ -3314,7 +3421,15 @@ def selftest(jobs=1):
 
         # Open circle of witnesses. A: a binding certifies itself; B: acceptance by the named acceptor;
         # C: a counter from anyone lowers backing, never authorship; D: the ledger is a checked view.
-        def bind_entry(r, actor, k, proof=None, first=False):
+        def set_role(r, actor, value):
+            doc = json.loads(r.roles_path.read_text())
+            doc["actors"][actor] = value
+            r.roles_path.write_text(json.dumps(doc, indent=2) + "\n")
+
+        def bind_entry(r, actor, k, proof=None, first=False, pin=False):
+            """Append (or put first) `actor`'s binding of key `k`; `pin` also pins its role to `k`."""
+            if pin:
+                set_role(r, actor, k.public)
             doc = C.loads(r.trust_path.read_bytes())
             e = {"actor": actor, "public": k.public, "proof": binding_proof(k, actor) if proof is None else proof}
             doc["keys"] = [e] + doc["keys"] if first else doc["keys"] + [e]
@@ -3394,12 +3509,12 @@ def selftest(jobs=1):
             raw_claim(r, k, "stranger", None, "A rule only my accomplice has to accept.", accept_by=["accomplice"], cid=cid)
             reproject(r)
 
-        def challenge_by(actor, counter_kv=None, claim=None):
+        def challenge_by(actor, counter_kv=None, claim=None, pin=False):
             """`actor` binds a fresh key in this change and challenges `claim` (default SPEC-3.2-20),
             carrying a counter (stmt_counter_doc with `counter_kv`) when given."""
             def f(r):
                 k = W.Key.generate()
-                bind_entry(r, actor, k)
+                bind_entry(r, actor, k, pin=pin)
                 n = Model(r.snapshot(), r.trust()).current[(claim or sc).id]
                 ev = [] if counter_kv is None else [Store(r.store_dir).put_json(stmt_counter_doc(r, n, **counter_kv))]
                 Store(r.store_dir).put_record(R.record("challenge", actor, author(r).at(), R.challenge(
@@ -3422,8 +3537,9 @@ def selftest(jobs=1):
             return f
 
         def accepted_by_codex(r):
+            """codex's pin names the fixture's key (the reviewed config diff), then codex binds and accepts."""
             k = W.Key.generate()
-            bind_entry(r, "codex", k)
+            bind_entry(r, "codex", k, pin=True)
             seed_c = r.root / ".." / f"{r.root.name}-codex.seed"
             seed_c.write_text(k.seed_hex() + "\n")
             import contextlib
@@ -3438,6 +3554,36 @@ def selftest(jobs=1):
             line = next(ln for ln in r.projection.read_text().splitlines() if ln.startswith(f"| {a.id} |"))
             rows = ledger(Model(r.snapshot(), r.trust()), {}, r.bindings()[0])
             return "| DISCHARGED (accepted by codex) |" in line and len(rows["codex"]["accepts"]) == 1
+
+        squat = {}
+
+        def squatter_takes_codex(r):
+            """The parent's reproduction on fad382f: a fresh key binds `codex` through the CLI and
+            accepts a claim. The binding is written by hand here (bind refuses it now)."""
+            k = W.Key.generate()
+            bind_entry(r, "codex", k)
+            seed_s = r.root / ".." / f"{r.root.name}-squatter.seed"
+            seed_s.write_text(k.seed_hex() + "\n")
+            import contextlib
+            import io
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                squat[r.root.name] = (main(["--root", str(r.root), "bind", "--key", str(seed_s), "--actor", "codex"]),
+                                      main(["--root", str(r.root), "accept", "--key", str(seed_s), "--actor", "codex",
+                                            "--claim", a.id]))
+            seed_s.unlink()
+            reproject(r)
+
+        def squatter_refused(r):
+            m = Model(r.snapshot(), r.trust())
+            return squat.get(r.root.name) == (2, 2) and not [x for x in m.recs.values() if x["type"] == "accept"]
+
+        def pin_against_claude(r):
+            set_role(r, AUTHOR, W.Key.generate().public)
+
+        def drop_role(r):
+            doc = json.loads(r.roles_path.read_text())
+            del doc["actors"]["codex"]
+            r.roles_path.write_text(json.dumps(doc) + "\n")
 
         def legacy_trust(r):
             doc = C.loads(r.trust_path.read_bytes())
@@ -3457,13 +3603,26 @@ def selftest(jobs=1):
         case("A: a newcomer binds a fresh key with its proof", None, binding("stranger"))
         case("A: a binding whose proof is forged", "BINDING_PROOF_FORGED", binding("stranger", proof="00" * 64))
         case("A: a binding whose proof another key signed", "BINDING_PROOF_OTHER_KEY", binding("victim", signer="mallory"))
-        case("A: a newcomer binds the actor id claude to its own key (collision)", "BINDING_ACTOR_TAKEN", binding(AUTHOR))
+        case("A: a newcomer binds the actor id claude to its own key (pinned role)", "BINDING_ROLE_KEY", binding(AUTHOR))
+        case("A: two newcomers bind one unpinned name, the second with another key", "BINDING_ACTOR_TAKEN",
+             lambda r: (binding("newcomer")(r), binding("newcomer")(r)))
         case("A: an actor id failing SPEC-3-21 (a trailing newline)", "BINDING_ACTOR_SHAPE", binding("stranger\n"))
         case("A: an actor id failing SPEC-3-21 (white space at an end)", "BINDING_ACTOR_SHAPE", binding(" stranger"))
         case("A: a binding with no proof", "BINDING_UNPROVEN", unproven)
         case("A: the trust file as trust/2, without proofs", "BINDINGS_SHAPE", legacy_trust)
         case("A: claude's binding removed (a newcomer's added instead)", "BINDING_REMOVED", drop_claude_binding)
-        case("A: a newcomer's claude binding put before the one at the base", "BINDING_REMOVED", binding(AUTHOR, first=True))
+        case("A: a newcomer's claude binding put before the one at the base", "BINDING_ROLE_KEY", binding(AUTHOR, first=True))
+        # AMEND 1 of #170 (parent's reproduction on fad382f): a name with a role is pinned, not first-come
+        case("A1: a squatter binds codex with its own key and accepts: refused, nothing accepted", "BINDING_ROLE_KEY",
+             squatter_takes_codex, also=squatter_refused)
+        case("A1: a squatter binds s0fractal (reserved)", "BINDING_ROLE_RESERVED", binding("s0fractal"))
+        case("A1: anyone binds readers (a collective role)", "BINDING_ROLE_COLLECTIVE", binding("readers"))
+        case("A1: codex binds with the key its pin names (a reviewed pin change in the same change)", None,
+             lambda r: (bind_entry(r, "codex", W.Key.generate(), pin=True), reproject(r)))
+        case("A1: a pin change that contradicts claude's admitted binding", "ROLE_PIN_CONFLICT", pin_against_claude)
+        case("A1: a role named in .warrant/claims.json and missing from .warrant/roles.json", "ROLE_UNPINNED", drop_role)
+        case("A1: a role pinned to something that is not a key, null or collective", "ROLES_SHAPE",
+             lambda r: set_role(r, "codex", "anyone"))
         case("B: codex binds and accepts a claim; the view names the acceptor", None, accepted_by_codex, also=shows_accepted)
         case("C: a newcomer binds in this change and files a counter that replays: admitted, backing lowered", None,
              challenge_by("stranger", {}), also=lowered_by("stranger", "SPEC-3.2-20", LOWERS))
@@ -3471,7 +3630,7 @@ def selftest(jobs=1):
              challenge_by("stranger", {"fails": ["records_test:E3"]}))
         case("C: a newcomer's challenge without a counter: admitted, lowers and blocks nothing", None,
              challenge_by("stranger"), also=lowered_by("stranger", "SPEC-3.2-20", THESIS))
-        case("C: the acceptor's challenge without a counter stands", "CHALLENGED", challenge_by("codex"))
+        case("C: the acceptor's challenge without a counter stands", "CHALLENGED", challenge_by("codex", pin=True))
         case("C: a newcomer supersedes claude's claim", "LINEAGE_NOT_AUTHOR", stranger_supersedes)
         case("C: a newcomer retires claude's claim", "LINEAGE_NOT_AUTHOR", stranger_retires)
         case("C: a newcomer files the next document version", "LINEAGE_NOT_AUTHOR", stranger_document)
@@ -3651,6 +3810,10 @@ def main(argv=None):
     p = sub.add_parser("keygen", help="make a key: seed outside the repository, its binding and proof in the trust")
     p.add_argument("--out", required=True)
     p.add_argument("--actor", default=AUTHOR)
+    p.add_argument("--no-bind", action="store_true", help="only write the seed and print the public key (to pin it first)")
+    p = sub.add_parser("pin", help="pin a role's key in .warrant/roles.json (a reviewed change of who the role is)")
+    p.add_argument("--key", help="seed file whose public key is pinned (or WARRANT_CLAIMS_KEY)")
+    p.add_argument("--actor", required=True)
     p = sub.add_parser("bind", help="bind your key to your actor id, with the key's proof of possession")
     p.add_argument("--key", help="seed file of the key to bind (or WARRANT_CLAIMS_KEY)")
     p.add_argument("--actor", required=True)
@@ -3683,7 +3846,7 @@ def main(argv=None):
             return cmd_audit(repo, a)
         {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen,
          "migrate": cmd_migrate, "heading": cmd_heading, "bind": cmd_bind, "trust": cmd_trust,
-         "accept": cmd_accept, "challenge": cmd_challenge}[a.cmd](repo, a)
+         "accept": cmd_accept, "challenge": cmd_challenge, "pin": cmd_pin}[a.cmd](repo, a)
         return 0
     except Refused as e:
         print(f"REFUSED {e.code + ' ' if e.code else ''}{e}", file=sys.stderr)
