@@ -37,6 +37,19 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### SPEC §7–§9 as claim records (pilot W3)
+
+The sentences of SPEC §7 Computation, §8 Next-session capsule and §9 Limits
+(with the admission-limits table rows) are claim records too: 42 sentences, 38
+backed, 0 unbacked, 4 informative (the fences of the receipt block, the
+run-in heading "Admission limits." and the table's column headings).
+Computation cases C19–C28, assessment cases R29–R35 and mutants M121–M168 are
+new. SPEC-7-1 was re-backed within the change (its first record cited
+nothing, which `check` refuses). SPEC-4.4-3 is superseded: its residual said a
+revision basis through a `subject_changed` trigger that evaluated NOT_FIRED had
+no witness; R24 witnesses it and M121 burns it. The engine, the record shapes
+and SPEC.md are unchanged.
+
 ### SPEC §4.5–§6 as claim records (pilot W2)
 
 The sentences of SPEC §4.5 Grants, §4.6 Profile, §4.7 Supersession, §5

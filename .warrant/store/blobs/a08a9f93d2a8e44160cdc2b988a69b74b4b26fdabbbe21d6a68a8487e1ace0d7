@@ -1,0 +1,1 @@
+The recipient admits it iff `target` is in its profile's `targets`, `lost` is empty, `(input, environment)` equal the duty's condition, the receipt's bytes are in the view, and its own replay from the root yields `NORMAL_FORM` with result hash equal to both `claimed` and the condition's `expect`.

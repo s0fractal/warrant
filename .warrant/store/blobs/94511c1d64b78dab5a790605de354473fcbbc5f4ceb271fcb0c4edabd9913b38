@@ -1,0 +1,1 @@
+{"because":null,"duty":"70e242f589ef4959ef1dead57776da29f6d58f57a82c5e8296091d55fc0d2d46","id":"SPEC-7-9","kind":"normative","mutants":["M129"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"7","source":"SPEC.md","text":"The process boundary isolates module names; it is not an OS sandbox.","witnesses":["compute_test:C21"]}

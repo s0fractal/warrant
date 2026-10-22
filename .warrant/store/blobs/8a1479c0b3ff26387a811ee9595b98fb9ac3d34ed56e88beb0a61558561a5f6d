@@ -1,0 +1,1 @@
+| `snapshot_blobs` | files under `blobs/` while a store is read, and blobs in a snapshot | 100 000 |

@@ -1,0 +1,1 @@
+In the Python implementation the refusal is `warrant.limits.LimitExceeded` (a `ValueError`) with the limit, the value and the bound; `engine.assess` and `Snapshot.read` take `limits=` overrides, the `warrant` command exits 3, and `warrant-agent` takes them from the workspace `limits` and answers `RESOURCE_LIMIT`.

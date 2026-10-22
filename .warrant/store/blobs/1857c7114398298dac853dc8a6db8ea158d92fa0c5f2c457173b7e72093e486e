@@ -1,0 +1,1 @@
+{"because":null,"duty":"98b0b21edbd95a03516e40987324b1d96f78c97c27e1c72432d6563f66a5ab20","id":"SPEC-8-4","kind":"normative","mutants":["M152"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"8","source":"SPEC.md","text":"Unowned questions are listed by `questions()` and are in nobody's frontier.","witnesses":["contract_test:Q1"]}

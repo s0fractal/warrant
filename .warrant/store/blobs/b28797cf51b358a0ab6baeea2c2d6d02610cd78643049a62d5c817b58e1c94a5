@@ -1,0 +1,1 @@
+{"because":null,"duty":"f2b8779d449b97bdec6f64c15ce4eeaf213779b28913b99d02d47d5cb43ff22c","id":"SPEC-7-7","kind":"normative","mutants":["M126"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"7","source":"SPEC.md","text":"The provider identity is part of the assessment identity.","witnesses":["compute_test:C12"]}
