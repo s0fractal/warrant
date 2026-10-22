@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv "$RUNNER_TEMP/base"
-          "$RUNNER_TEMP/base/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" warrant-loops
+          "$RUNNER_TEMP/base/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" warrant-graph
           ! "$RUNNER_TEMP/base/bin/python" -c 'import sigma_provider' 2>/dev/null
           cd "$RUNNER_TEMP" && "$RUNNER_TEMP/base/bin/warrant" init --store s >/dev/null
           out=$("$RUNNER_TEMP/base/bin/warrant" compute --store s provider 2>&1 || true)
@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv "$RUNNER_TEMP/v"
-          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-loops[mcp]' sigma-glyph 'packaging==26.3'
+          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-graph[mcp]' sigma-glyph 'packaging==26.3'
           "$RUNNER_TEMP/v/bin/python" -m sigma_provider | tail -1
           SITE=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)')
           echo "WARRANT_IMPL=$SITE" >> "$GITHUB_ENV"
