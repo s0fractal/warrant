@@ -112,3 +112,6 @@ python3 scorer.py --selftest                 # 19 cases, needs the Sigma provide
 python3 run.py 2 --jobs 3                    # 18 runs; skips runs already scored
 python3 summarize.py 2
 ```
+
+The CLI puts the account's e-mail in the agent's system prompt and agents may echo it (round 1
+did, as `actor`): grep the transcripts for account data before committing them.
