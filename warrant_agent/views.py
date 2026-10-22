@@ -137,6 +137,8 @@ def capture(ws, extra=None, delivery=None, as_of=None):
             "profile": profile, "provider": bool(sources), "limits": ws.assessment_limits(),
             # The receiver's own verified replays, reused across views (cost only).
             "replay_cache": str(ws.state / "replay-cache"),
+            # ... and its own authentication verdicts (store.Verdicts.at, F44; cost only).
+            "verdicts": str(ws.state / "verdicts"),
             "delivery": delivery or {"relation": "LOCAL_CAPTURE", "source_completeness": "UNATTESTED"}}
     write_json(vdir / "meta.json", meta)
     try:

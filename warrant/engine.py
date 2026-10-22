@@ -10,6 +10,7 @@ from . import jcs as C
 from . import compute as P
 from . import limits as L
 from . import records as R
+from . import store as S
 from . import triggers as TR
 
 PROFILE_FIELDS = ("uses", "accept_by", "targets", "grant_roots", "challengers", "providers")
@@ -56,10 +57,10 @@ def profile(uses=None, results_by=(), targets=(), grant_roots=(), challengers=()
 # ---------------------------------------------------------------- the view
 
 class View:
-    def __init__(self, snapshot, trust, as_of, prof, provider, cache=None):
+    def __init__(self, snapshot, trust, as_of, prof, provider, cache=None, verdicts=None):
         self.snap, self.as_of, self.profile, self.provider = snapshot, as_of, prof, provider
         self.cache = cache      # the recipient's ReplayCache, or None: cost, never an answer
-        good, self.invalid = snapshot.authentic(trust)
+        good, self.invalid = snapshot.authentic(trust, verdicts)
         self.recs = {rid: r for rid, r in good.items() if r["at"] <= as_of}
         self.later = sorted(rid for rid, r in good.items() if r["at"] > as_of)
         self.by_type = {t: {} for t in R.TYPES}
@@ -749,23 +750,28 @@ def _questions(view, duties):
     return out
 
 
-def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None, limits=None):
+def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None, limits=None,
+           verdicts=None):
     """Assess one view. `current` is the set of revisions the recipient treats as
     current; `workspace` is (repository path, commit) for subject_changed triggers;
     `provider` is a captured compute.Provider (None: replays are UNVERIFIED);
     `replay_cache` is a directory of this recipient's earlier verified replays
     (SPEC §7: it changes cost, never the answer or the task; not part of the
-    assessment identity); `limits` overrides the admission limits (limits.DEFAULTS;
-    operational, not an operand: exceeding one raises limits.LimitExceeded and
-    nothing is assessed)."""
+    assessment identity); `verdicts` is a directory of this recipient's earlier
+    authentication verdicts (store.Verdicts.at, F44: cost only in the same way);
+    `limits` overrides the admission limits (limits.DEFAULTS; operational, not an
+    operand: exceeding one raises limits.LimitExceeded and nothing is assessed)."""
     why = profile_problem(prof)
     if why:
         raise ValueError(f"profile: {why}")
     lim = L.resolve(limits)
     snapshot.admit(lim)
     ws = TR.Workspace(*workspace) if workspace is not None else None
+    index = S.Verdicts.at(verdicts) if verdicts is not None else None
     view = View(snapshot, trust, as_of, prof, provider,
-                cache=P.ReplayCache(replay_cache) if replay_cache is not None else None)
+                cache=P.ReplayCache(replay_cache) if replay_cache is not None else None, verdicts=index)
+    if index is not None:
+        index.flush(snapshot)
     _admit(view, lim)
     duties = _assess_duties(view)
     for did, r in duties.items():

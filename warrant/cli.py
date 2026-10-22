@@ -103,6 +103,11 @@ def fill(rtype, body):
     return out
 
 
+def _store(a):
+    """The store a signer writes, with its own verdicts directory if it names one (F44)."""
+    return Store(a.store, verdicts=a.verdicts).init()
+
+
 def _append(s, rtype, actor, at, body, key):
     """File a record extending `actor`'s chain in store `s` (SPEC §3: `prev` is its head)."""
     try:
@@ -114,7 +119,7 @@ def _append(s, rtype, actor, at, body, key):
 
 
 def cmd_file(a):
-    s = Store(a.store).init()
+    s = _store(a)
     body = fill(a.type, _read_json(a.body))
     rid = _append(s, a.type, a.actor, _now(a.at), body, _key(a.key))
     if a.id:
@@ -125,7 +130,7 @@ def cmd_file(a):
 
 def cmd_accept(a):
     """Accept one exact item (or a transition's results) as it is filed."""
-    s = Store(a.store).init()
+    s = _store(a)
     snap = s.snapshot()
     env = C.loads(snap.records[a.transition])
     t = env["record"]["body"]
@@ -136,7 +141,7 @@ def cmd_accept(a):
 
 def cmd_observe(a):
     """Run a probe once and file what was observed, when, and how."""
-    s = Store(a.store).init()
+    s = _store(a)
     probe = _read_json(a.probe)
     if not (isinstance(probe, dict) and isinstance(probe.get("argv"), list) and probe["argv"]):
         raise SystemExit("a probe is {\"argv\": [...], ...}: the command this observer runs")
@@ -257,7 +262,7 @@ def _report(a):
         print(f"warning: provider unavailable, replays are UNVERIFIED: {e}", file=sys.stderr)
         provider = None
     return E.assess(snap, trust, _now(a.as_of), prof, current=a.current or [], workspace=ws, provider=provider,
-                    replay_cache=a.replay_cache, limits=lim)
+                    replay_cache=a.replay_cache, limits=lim, verdicts=a.verdicts)
 
 
 def cmd_assess(a):
@@ -295,6 +300,7 @@ def build_parser():
         p.add_argument("--key", required=True, help="file holding the signer's Ed25519 seed (hex)")
         p.add_argument("--actor", required=True)
         p.add_argument("--at", type=int, help="record time (default: now)")
+        p.add_argument("--verdicts", help="directory of this signer's earlier authentication verdicts (cost only)")
 
     def view(p):
         store(p)
@@ -304,6 +310,7 @@ def build_parser():
         p.add_argument("--current", action="append", help="a revision the recipient treats as current")
         p.add_argument("--workspace", help="REPO@REV for subject_changed triggers")
         p.add_argument("--replay-cache", help="directory of this recipient's earlier verified replays (cost only)")
+        p.add_argument("--verdicts", help="directory of this recipient's earlier authentication verdicts (cost only)")
         p.add_argument("--limit", action="append", default=[], metavar="NAME=N",
                        help="override an admission limit (SPEC §9), e.g. duty_periods=50000")
 
