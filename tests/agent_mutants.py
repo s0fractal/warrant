@@ -2,6 +2,9 @@
 """Each mutant removes one guard of warrant_agent and must make ITS case fail.
 
     python3 tests/agent_mutants.py [--jobs N] [ID ...]
+    python3 tests/agent_mutants.py --shard K/N --matrix FILE | --merge OUT FILE ...
+
+The controller is tests/mutants.py's run_all: the same red-baseline guard, shards and merge.
 
 KILLED only when the named case fails; OFF_TARGET, SURVIVED, CRASH and
 BAD_MUTANT are not kills."""
@@ -205,7 +208,8 @@ def run_one(mid, fname, what, edits, test, targets, also=()):
             src = src.replace(old, new)
         p.write_text(src)
         res = tmp / "results.json"
-        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
+        from mutants import NO_BYTECODE
+        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res), PYTHONDONTWRITEBYTECODE=NO_BYTECODE)
         run = subprocess.run([sys.executable, str(ROOT / "tests" / f"{test}.py")], env=env, capture_output=True,
                              text=True, cwd=ROOT / "tests", timeout=1800, check=False)
         if not res.exists():
@@ -218,6 +222,7 @@ def run_one(mid, fname, what, edits, test, targets, also=()):
 
 
 def main():
+    sys.dont_write_bytecode = True      # importing tests/mutants.py must not write tests/__pycache__ (NO_BYTECODE)
     from mutants import run_all
     return run_all(MUTANTS, "AGENT MUTANTS", sys.argv[1:], run_one, prog="agent_mutants")
 

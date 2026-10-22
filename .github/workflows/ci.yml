@@ -1,14 +1,25 @@
 name: ci
 
-# Warrant 2. The job id `test` is a required status check on master; keep it.
+# Warrant 2. The check named `test` is required on master; it is the last job below, which
+# needs every other job and fails unless each one succeeded and the mutant parts together ran
+# every mutant once and killed it on target. Keep its name.
 #
-# Two installs, both from local files:
-#   base     warrant alone: attest and observe work, compute refuses honestly;
-#   compute  warrant + the sigma-glyph release pyproject.toml names (the
-#            [compute] extra, PyPI) + the pinned MCP SDK (the [mcp] extra),
-#            from a wheelhouse, with --no-index.
-# The tests and mutants run against the installed bytes; the scenarios run
-# through the installed `warrant` command from outside the checkout.
+# Jobs, all on ubuntu-latest:
+#   wheels           builds the wheelhouse once (warrant from this checkout, sigma-glyph from the
+#                    pinned release, the pinned MCP SDK) and publishes its digest;
+#   suites           base install, the installed-bytes suites, the mutant runner's selftest,
+#                    the roadmap check;
+#   claims-selftest  tools/claims.py --selftest;
+#   examples         cross-host, review handoff, ref transport, scenarios, agent acceptance,
+#                    the Claude Code plugin bridge;
+#   dependency-audit the frozen dependency-audit inputs and the application handoff;
+#   mutants          tests/mutants.py and tests/agent_mutants.py in parts (--shard K/N), each
+#                    part checking its own targets' baseline first and writing its matrix;
+#   test             --merge of the parts (refused unless every mutant id ran exactly once and
+#                    was killed), then tools/claims.py check against the base, after the mutants.
+# Every job but wheels installs from that wheelhouse, checked against the digest (no index).
+# The tests and mutants run against the installed bytes; the scenarios run through the
+# installed `warrant` command from outside the checkout.
 on:
   push:
     branches: [master]
@@ -19,9 +30,11 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  wheels:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
+    outputs:
+      digest: ${{ steps.wh.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -29,12 +42,37 @@ jobs:
           python-version: '3.11'
 
       - name: Wheelhouse (warrant from this checkout, sigma-glyph from the pinned release)
+        id: wh
         run: |
           set -euo pipefail
           SIGMA=$(python -c 'import re; print(re.search(r"sigma-glyph==([0-9][0-9.]*)", open("pyproject.toml").read()).group(1))')
           python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" .
           python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0' "sigma-glyph==$SIGMA" 'packaging==26.3'
-          ls "$RUNNER_TEMP/wh"
+          cd "$RUNNER_TEMP/wh"
+          sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" .
+          cat SHA256SUMS
+          echo "digest=$(sha256sum < SHA256SUMS | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheelhouse
+          path: ${{ runner.temp }}/wh
+          if-no-files-found: error
+          retention-days: 3
+
+  suites:
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: ./.github/actions/install
+        with:
+          digest: ${{ needs.wheels.outputs.digest }}
 
       - name: Base install has no provider, and says so
         run: |
@@ -46,16 +84,6 @@ jobs:
           out=$("$RUNNER_TEMP/base/bin/warrant" compute --store s provider 2>&1 || true)
           echo "$out" | grep -q "no Sigma provider installed"
 
-      - name: Compute install (warrant + sigma-glyph wheel, no index)
-        run: |
-          set -euo pipefail
-          python -m venv "$RUNNER_TEMP/v"
-          "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-graph[mcp]' sigma-glyph 'packaging==26.3'
-          "$RUNNER_TEMP/v/bin/python" -m sigma_provider | tail -1
-          SITE=$("$RUNNER_TEMP/v/bin/python" -c 'import pathlib, warrant; print(pathlib.Path(warrant.__file__).parent.parent)')
-          echo "WARRANT_IMPL=$SITE" >> "$GITHUB_ENV"
-          echo "$RUNNER_TEMP/v/bin" >> "$GITHUB_PATH"
-
       - name: Contract, computation, conditions and primitives (installed bytes)
         working-directory: tests
         run: |
@@ -66,41 +94,40 @@ jobs:
         run: |
           for t in agent_handoff agent_write agent_compute agent_mcp; do python "${t}_test.py"; done
 
-      - name: Mutants (each critical rule must fail its own case)
-        run: |
-          python tests/mutants.py --selftest
-          WARRANT_IMPL= python tests/mutants.py --matrix "$RUNNER_TEMP/matrix-core.json"
-          WARRANT_IMPL= python tests/agent_mutants.py --matrix "$RUNNER_TEMP/matrix-agent.json"
-
-      # After the mutants, so the mutant ids the claims cite have just been exercised.
-      # The base is the PR's base; on a push to master, the pushed commit's first parent.
-      - name: SPEC claims (the records in .warrant/store are the source; SPEC.md and SPEC-CLAIMS.md are views)
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          if [ -n "$BASE_SHA" ]; then
-            git fetch --quiet --no-tags --depth=1 origin "$BASE_SHA"
-          else
-            git fetch --quiet --no-tags --depth=2 origin "$GITHUB_SHA"
-            BASE_SHA=$(git rev-parse "$GITHUB_SHA^1")
-          fi
-          WARRANT_IMPL= python tools/claims.py check --base "$BASE_SHA"
-          WARRANT_IMPL= python tools/claims.py --selftest
+      - name: Mutant runner selftest (the controller, its red-baseline guard, shards and merge)
+        run: python tests/mutants.py --selftest
 
       - name: Roadmap (goals and obligations are records in .warrant/store; ROADMAP.md is a view)
         run: WARRANT_IMPL= python tools/roadmap.py check
 
-      # A report, not a refusal: the matrices above hold each mutant's own test file only (no
-      # extra run), so most witnesses are unknown here. The full hunt: tests/mutants.py --matrix F
-      # --matrix-tests all, then audit (tools/claims.py, "audit"). Not a gate, so not on pull
-      # requests (the required job keeps its headroom; the claims selftest burns audit there);
-      # on master a broken matrix or audit still fails this step.
-      - name: SPEC claims blind-spot audit (report)
-        if: github.event_name != 'pull_request'
-        env:
-          TMPDIR: ${{ runner.temp }}      # audit opens matrices only as files in the temp dir
-        run: WARRANT_IMPL= python tools/claims.py audit --matrix "$RUNNER_TEMP/matrix-core.json" --matrix "$RUNNER_TEMP/matrix-agent.json"
+  claims-selftest:
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: ./.github/actions/install
+        with:
+          digest: ${{ needs.wheels.outputs.digest }}
+
+      - name: SPEC claims selftest (the checker against planted defects)
+        run: WARRANT_IMPL= python tools/claims.py --selftest
+
+  examples:
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: ./.github/actions/install
+        with:
+          digest: ${{ needs.wheels.outputs.digest }}
 
       - name: Cross-host local controls and frozen round-1 artifact replay
         run: python examples/cross-host/selftest.py
@@ -110,6 +137,34 @@ jobs:
 
       - name: Ref transport with owner-signed pins (local bare remote, ephemeral keys)
         run: python examples/ref-transport/carry.py selftest
+
+      - name: Scenarios through the installed `warrant` command
+        working-directory: ${{ runner.temp }}
+        run: bash "$GITHUB_WORKSPACE/examples/run-all.sh"
+
+      - name: Agent acceptance run through Python, CLI and stdio MCP (installed wheels, outside the checkout)
+        working-directory: ${{ runner.temp }}
+        run: |
+          for d in python cli mcp; do python "$GITHUB_WORKSPACE/examples/agent/acceptance.py" --door "$d"; done
+
+      - name: Claude Code plugin bridge (Warrant 0.x format, published warrant-verify 0.12.0)
+        run: |
+          python -m venv "$RUNNER_TEMP/old"
+          "$RUNNER_TEMP/old/bin/pip" install --quiet 'warrant-verify==0.12.0'
+          WARRANT_PLUGIN_CLI="$RUNNER_TEMP/old/bin/warrant" python integrations/claude-code-plugin/test_plugin.py
+
+  dependency-audit:
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: ./.github/actions/install
+        with:
+          digest: ${{ needs.wheels.outputs.digest }}
 
       - name: Frozen dependency-audit wheel inputs and binding controls
         run: |
@@ -140,17 +195,108 @@ jobs:
           python examples/dependency-audit/handoff.py selftest --case transitive-prohibited \
             --wheelhouse "$RUNNER_TEMP/dependency-audit-wheels"
 
-      - name: Scenarios through the installed `warrant` command
-        working-directory: ${{ runner.temp }}
-        run: bash "$GITHUB_WORKSPACE/examples/run-all.sh"
+  # Each part runs shards() of its harness (tests/mutants.py: a partition by id, test file and
+  # measured cost), first the unmutated baseline of every test file it targets, and writes its
+  # ids, outcomes and runs as a matrix. The parts per harness are named only here; `test`
+  # merges whatever parts arrive and refuses unless their union is the whole list, once.
+  mutants:
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {harness: mutants, part: 1, of: 4}
+          - {harness: mutants, part: 2, of: 4}
+          - {harness: mutants, part: 3, of: 4}
+          - {harness: mutants, part: 4, of: 4}
+          - {harness: agent_mutants, part: 1, of: 2}
+          - {harness: agent_mutants, part: 2, of: 2}
+    name: mutants (${{ matrix.harness }} ${{ matrix.part }}/${{ matrix.of }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: ./.github/actions/install
+        with:
+          digest: ${{ needs.wheels.outputs.digest }}
 
-      - name: Agent acceptance run through Python, CLI and stdio MCP (installed wheels, outside the checkout)
-        working-directory: ${{ runner.temp }}
+      - name: Mutants, one part (each critical rule must fail its own case)
         run: |
-          for d in python cli mcp; do python "$GITHUB_WORKSPACE/examples/agent/acceptance.py" --door "$d"; done
+          WARRANT_IMPL= python tests/${{ matrix.harness }}.py --shard ${{ matrix.part }}/${{ matrix.of }} \
+            --matrix "$RUNNER_TEMP/${{ matrix.harness }}-${{ matrix.part }}.json"
 
-      - name: Claude Code plugin bridge (Warrant 0.x format, published warrant-verify 0.12.0)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: matrix-${{ matrix.harness }}-${{ matrix.part }}
+          path: ${{ runner.temp }}/${{ matrix.harness }}-${{ matrix.part }}.json
+          if-no-files-found: error
+          retention-days: 3
+
+  test:
+    needs: [wheels, suites, claims-selftest, examples, dependency-audit, mutants]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # A skipped required check would read as passed: this job always runs and refuses here.
+      - name: Every job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          python -m venv "$RUNNER_TEMP/old"
-          "$RUNNER_TEMP/old/bin/pip" install --quiet 'warrant-verify==0.12.0'
-          WARRANT_PLUGIN_CLI="$RUNNER_TEMP/old/bin/warrant" python integrations/claude-code-plugin/test_plugin.py
+          echo "$NEEDS" | python3 -c '
+          import json, sys
+          needs = json.load(sys.stdin)
+          got = {j: n["result"] for j, n in needs.items()}
+          print("jobs:", ", ".join(f"{j}={r}" for j, r in sorted(got.items())))
+          bad = {j: r for j, r in got.items() if r != "success"}
+          sys.exit(f"not every job succeeded: {bad}" if bad or len(got) != 6 else 0)'
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: ./.github/actions/install
+        with:
+          digest: ${{ needs.wheels.outputs.digest }}
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: matrix-*
+          path: ${{ runner.temp }}/parts
+          merge-multiple: true
+
+      - name: The mutant parts together ran every mutant once, each killed on target
+        run: |
+          set -euo pipefail
+          ls -l "$RUNNER_TEMP/parts"
+          WARRANT_IMPL= python tests/mutants.py --merge "$RUNNER_TEMP/matrix-core.json" "$RUNNER_TEMP"/parts/mutants-*.json
+          WARRANT_IMPL= python tests/agent_mutants.py --merge "$RUNNER_TEMP/matrix-agent.json" "$RUNNER_TEMP"/parts/agent_mutants-*.json
+
+      # After the mutants, so the mutant ids the claims cite have just been exercised.
+      # The base is the PR's base; on a push to master, the pushed commit's first parent.
+      - name: SPEC claims (the records in .warrant/store are the source; SPEC.md and SPEC-CLAIMS.md are views)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$BASE_SHA" ]; then
+            git fetch --quiet --no-tags --depth=1 origin "$BASE_SHA"
+          else
+            git fetch --quiet --no-tags --depth=2 origin "$GITHUB_SHA"
+            BASE_SHA=$(git rev-parse "$GITHUB_SHA^1")
+          fi
+          WARRANT_IMPL= python tools/claims.py check --base "$BASE_SHA"
+
+      # A report, not a refusal: the matrices above hold each mutant's own test file only (no
+      # extra run), so most witnesses are unknown here. The full hunt: tests/mutants.py --matrix F
+      # --matrix-tests all, then audit (tools/claims.py, "audit"). Not a gate, so not on pull
+      # requests (the claims selftest burns audit there); on master a broken matrix or audit
+      # still fails this step.
+      - name: SPEC claims blind-spot audit (report)
+        if: github.event_name != 'pull_request'
+        env:
+          TMPDIR: ${{ runner.temp }}      # audit opens matrices only as files in the temp dir
+        run: WARRANT_IMPL= python tools/claims.py audit --matrix "$RUNNER_TEMP/matrix-core.json" --matrix "$RUNNER_TEMP/matrix-agent.json"

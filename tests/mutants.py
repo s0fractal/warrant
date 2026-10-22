@@ -3,6 +3,8 @@
 
     python3 tests/mutants.py [--jobs N] [ID ...]
     python3 tests/mutants.py --matrix FILE [--matrix-tests own|all|T1,T2] [--jobs N] [ID ...]
+    python3 tests/mutants.py --shard K/N --matrix FILE [--jobs N]
+    python3 tests/mutants.py --merge OUT FILE ...   # the parts of a sharded run, checked
     python3 tests/mutants.py --selftest     # the runner itself against fixture runners
 
 --matrix FILE also writes, for every mutant, every case of every test file it ran
@@ -11,6 +13,14 @@ which cases notice a mutant besides its targets. By default each mutant runs its
 own test file only (what the verdict needs, so the matrix costs no extra run);
 --matrix-tests all runs every tests/*_test.py under every mutant, T1,T2 names
 test files (without .py). The verdict is always taken from the own test file.
+
+--shard K/N runs part K of a partition of all the mutants (shards(): by id, test file and
+measured cost); --merge OUT joins the parts' matrices into one and refuses unless every
+mutant of the list was run in exactly one of them and killed on target (see merge()).
+
+Before any mutant, every test file the selected mutants target runs once unmutated, in the
+copy the mutants use; a target case that fails there refuses the whole run as BASELINE_RED
+(exit 2), since every mutant on it would read KILLED.
 
 KILLED only when a target case fails. A mutant that fails other cases only is
 OFF_TARGET, one that fails nothing SURVIVED, one whose test run produced no
@@ -1090,13 +1100,20 @@ MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
                [('    if bound[0] != rec["actor"]:\n', '    if False:\n')], "contract_test", ["N5"])
 
 
+# A run writes no bytecode into the tree whose identity (source_digest) its matrix names,
+# whatever the caller's environment: the test files import tests/world.py and friends from the
+# checkout, and a __pycache__ git does not ignore (claims.py's fixture has no .gitignore) would
+# change the identity during the run (CI run 39788553711; locally PYTHONDONTWRITEBYTECODE=1 hid it).
+NO_BYTECODE = "1"
+
+
 def run_tests(tmp, tests, timeout=900):
     """{test file: {case: PASS|FAIL}, or None when it produced no results}: each named test
     file run against the packages in `tmp` (WARRANT_IMPL), with results of its own."""
     runs = {}
     for t in tests:
         res = tmp / f"results-{t}.json"
-        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
+        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res), PYTHONDONTWRITEBYTECODE=NO_BYTECODE)
         subprocess.run([sys.executable, str(ROOT / "tests" / f"{t}.py")], env=env, capture_output=True,
                        cwd=ROOT / "tests", timeout=timeout, check=False)
         runs[t] = json.loads(res.read_text()) if res.exists() else None
@@ -1154,9 +1171,17 @@ def parse_args(argv, ids, prog):
     ap.add_argument("--matrix-tests", default="own", metavar="own|all|T1,T2",
                     help="--matrix: the test files each mutant runs (default: its own only)")
     ap.add_argument("ids", nargs="*", metavar="ID", help="mutant ids to run (default: all of them)")
+    ap.add_argument("--shard", metavar="K/N", help="run only part K of N of the mutants (see shards())")
     ns = ap.parse_args(argv)
     if ns.jobs < 1:
         ap.error(f"--jobs must be >= 1, got {ns.jobs}")
+    if ns.shard is not None:
+        k, _, n = ns.shard.partition("/")
+        if not (k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)) or k != str(int(k)) or n != str(int(n)):
+            ap.error(f"--shard must be K/N with 1 <= K <= N, got {ns.shard!r}")
+        if ns.ids:
+            ap.error("--shard runs a part of all the mutants; it takes no ids")
+        ns.shard = (int(k), int(n))
     known = sorted(p.stem for p in (ROOT / "tests").glob("*_test.py"))
     if ns.matrix_tests in ("own", "all"):
         ns.also = [] if ns.matrix_tests == "own" else known
@@ -1176,15 +1201,54 @@ def parse_args(argv, ids, prog):
 MATRIX = "warrant-mutants/matrix@1"
 
 
+class SourceUnknown(Exception):
+    """The root is not the top level of a git checkout, so its sources have no identity."""
+
+
+def _git(root, *args):
+    out = subprocess.run(["git", "--no-optional-locks", "-C", str(root), *args], capture_output=True, check=False)
+    if out.returncode != 0:
+        raise SourceUnknown(f"git {' '.join(args)} in {root}: {out.stderr.decode(errors='replace').strip()}")
+    return out.stdout
+
+
 def source_digest(root=ROOT):
-    """SHA-256 over the bytes of warrant/, warrant_agent/ and tests/*.py, by relative path:
-    a matrix answers for exactly the code and the tests it ran."""
+    """The identity of the sources a matrix answers for: the whole tree the git checkout at
+    `root` holds, with no list of folders. Code, tools, tests, records and documents are all
+    sources: which folder a byte lives in says nothing about whether a run depended on it
+    (AMEND 1 of #172: a change to tools/roadmap.py alone left the old digest of warrant/,
+    warrant_agent/ and tests/*.py unchanged, and --merge accepted a stale matrix).
+
+    A clean working tree (no change to a tracked file, no untracked file git does not ignore)
+    is named by its git tree id, "tree:<id>". A dirty one is named "worktree:<sha256>" over the
+    path, mode and bytes of every tracked and every untracked unignored file as it is on disk
+    (a deleted file is absent from it). So any change anywhere, committed or not, gives
+    another identity; files git ignores (caches, build output) are not sources. A dirty tree
+    is not refused: the local `claims.py audit` loop needs matrices of uncommitted work, and the
+    working-tree digest names those bytes as exactly as a tree id names committed ones.
+    --merge (SHARD_STALE), every --matrix of both harnesses (run_all checks the identity did
+    not change during the run) and tools/claims.py audit (MATRIX_STALE) compare through this
+    function only. SourceUnknown when `root` is not the top level of a git checkout."""
     import hashlib
+    root = Path(root).resolve()
+    top = _git(root, "rev-parse", "--show-toplevel").decode().strip()
+    if Path(top).resolve() != root:
+        raise SourceUnknown(f"{root} is not the top level of a git checkout (that is {top})")
+    if not _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all"):
+        return "tree:" + _git(root, "rev-parse", "HEAD^{tree}").decode().strip()
+    tracked = [x for x in _git(root, "ls-files", "-z", "--cached").decode().split("\0") if x]
+    untracked = [x for x in _git(root, "ls-files", "-z", "--others", "--exclude-standard").decode().split("\0") if x]
     h = hashlib.sha256()
-    files = sorted(p for d in ("warrant", "warrant_agent") for p in (root / d).rglob("*.py") if "__pycache__" not in p.parts)
-    for p in files + sorted((root / "tests").glob("*.py")):
-        h.update(p.relative_to(root).as_posix().encode() + b"\0" + hashlib.sha256(p.read_bytes()).digest())
-    return h.hexdigest()
+    for rel in sorted(set(tracked) | set(untracked)):
+        f = root / rel
+        if f.is_symlink():
+            mode, data = b"120000", os.readlink(f).encode()
+        elif f.is_file():
+            mode, data = (b"100755" if os.access(f, os.X_OK) else b"100644"), f.read_bytes()
+        else:
+            continue                # deleted: its absence from the digest is the change
+        h.update(rel.encode() + b"\0" + mode + b"\0" + hashlib.sha256(data).digest())
+    return "worktree:" + h.hexdigest()
 
 
 def mutant_digest(m):
@@ -1193,18 +1257,97 @@ def mutant_digest(m):
     return hashlib.sha256(json.dumps([m[0], m[1], m[2], [list(e) for e in m[3]], m[4], list(m[5])]).encode()).hexdigest()
 
 
-def run_all(mutants, label, argv, runner, prog="mutants"):
+# Seconds of one run of each test file on the CI runner (ubuntu-latest, 4 vCPU; PR #170, run
+# 39769980930), plus about half a second to copy the package. They only balance the shards: a
+# wrong or missing number makes one shard slower, it never drops a mutant, since --merge
+# recomputes the same partition and refuses any id that is missing or twice.
+COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "assessment_test": 0.9,
+        "primitives_test": 0.1, "records_test": 0.2, "cli_test": 0.3, "roadmap_test": 3.1, "circle_test": 0.9,
+        "agent_handoff_test": 7.0, "agent_write_test": 1.9, "agent_compute_test": 1.9, "agent_mcp_test": 17.0,
+        "why_test": 1.3}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement
+
+
+def shards(mutants, n):
+    """`mutants` in n parts, a function of the ids, their test files and COST only: the
+    costliest first (ties in list order), each to the part with the least cost so far (ties to
+    the lowest part). Each part keeps the list order. Every mutant is in exactly one part."""
+    load, parts = [0.0] * n, [[] for _ in range(n)]
+    for i, m in sorted(enumerate(mutants), key=lambda x: (-(COST.get(x[1][4], 1.0) + 0.5), x[0])):
+        k = min(range(n), key=lambda j: (load[j], j))
+        load[k] += COST.get(m[4], 1.0) + 0.5
+        parts[k].append(i)
+    return [[mutants[i] for i in sorted(p)] for p in parts]
+
+
+def _environment(m):
+    """What a mutant's run copies besides the package: the directory of a tool beside it."""
+    return Path(m[1][3:]).parts[0] if m[1].startswith("../") else ""
+
+
+def baseline_red(chosen, runner, jobs):
+    """Each test file the chosen mutants target, run once unmutated through the same runner
+    (so in the same copied environment, no edits): [(test, environment, failing target cases or
+    None when the run gave no results, ids of the mutants that target those cases)]. A red target makes
+    every mutant on it read KILLED (primitives#5), so a red one refuses the whole run."""
+    import concurrent.futures
+    groups = {}
+    for m in chosen:
+        groups.setdefault((m[4], _environment(m)), []).append(m)
+    keys = sorted(groups)
+
+    def base(key):
+        ms = groups[key]
+        targets = sorted({t for m in ms for t in m[5]})
+        got = runner(f"baseline:{key[0]}", ms[0][1], "unmutated", [], key[0], targets)
+        runs = got[2] if len(got) > 2 else {}
+        return targets, runs.get(key[0])
+
+    red = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        for key, (targets, cases) in zip(keys, pool.map(base, keys)):
+            failing = None if cases is None else [t for t in targets if cases.get(t) == "FAIL"]
+            if failing is None or failing:
+                red.append((*key, failing, [m[0] for m in groups[key] if failing is None or set(m[5]) & set(failing)]))
+    return red
+
+
+def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT):
     """Run `mutants` in parallel (--jobs N in argv, default: the CPU count): each one already
     works in its own copy of the package and its own results file, so nothing is shared.
     Output keeps the given order; ids in argv select mutants. The 2026-10-21 CI run with 89
-    mutants took 21 of the job's 25 minutes in series. Exit 0 only when at least one mutant
-    ran and every one was KILLED; a bad option or id exits 2 (SystemExit from argparse)."""
+    mutants took 21 of the job's 25 minutes in series. Before any mutant, each targeted test
+    file runs once unmutated; a target case that does not pass there refuses the run with
+    BASELINE_RED (exit 2). With --matrix the source identity (source_digest) is taken before the
+    first run and again before writing: a tree that changed meanwhile, or has no identity, gets
+    no matrix (exit 2). Exit 0 only when at least one mutant ran and every one was KILLED;
+    a bad option or id exits 2 (SystemExit from argparse). --merge: see merge()."""
     import concurrent.futures
+    if argv[:1] == ["--merge"]:
+        return merge(mutants, label, argv[1:], prog, root=root)
     ns = parse_args(argv, [m[0] for m in mutants], prog)
     pick = set(ns.ids)
     chosen = [m for m in mutants if not pick or m[0] in pick]
+    if ns.shard:
+        chosen = shards(mutants, ns.shard[1])[ns.shard[0] - 1]
+        label = f"{label} shard {ns.shard[0]}/{ns.shard[1]}"
     if not chosen:
         print(f"{label}: no mutants selected; nothing was checked")
+        return 2
+    before = None
+    if ns.matrix:
+        try:
+            before = source_digest(root)
+        except SourceUnknown as e:
+            print(f"{label}: SOURCE_UNKNOWN, no matrix can name what it ran: {e}")
+            return 2
+    red = baseline_red(chosen, runner, ns.jobs)
+    for test, env, failing, ids in red:
+        where = f"{test}" + (f" (with {env}/)" if env else "")
+        what = "gave no results" if failing is None else f"fails {','.join(failing)}"
+        print(f"BASELINE_RED {where} unmutated {what}; targeted by {' '.join(ids)}")
+    if red:
+        print(f"{label}: BASELINE_RED, no mutant was run: a target case that fails without a mutant "
+              "would read as a kill")
         return 2
     killed, rows = 0, {}
     call = (lambda m: runner(*m, also=ns.also)) if ns.matrix else (lambda m: runner(*m))
@@ -1217,11 +1360,240 @@ def run_all(mutants, label, argv, runner, prog="mutants"):
                           "targets": list(m[5]), "outcome": outcome, "runs": got[2] if len(got) > 2 else {}}
     print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={ns.jobs})")
     if ns.matrix:
-        doc = {"matrix": MATRIX, "harness": prog, "tests": ns.matrix_tests, "source": source_digest(),
+        after = source_digest(root)
+        if after != before:
+            print(f"{label}: SOURCE_CHANGED, the tree changed during the run ({before} -> {after}); "
+                  f"no matrix written to {ns.matrix}")
+            return 2
+        doc = {"matrix": MATRIX, "harness": prog, "tests": ns.matrix_tests, "source": after,
                "mutants": rows}
+        if ns.shard:
+            doc["shard"] = list(ns.shard)
         Path(ns.matrix).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
         print(f"{label}: matrix of {len(rows)} mutants ({ns.matrix_tests}) written to {ns.matrix}")
     return 0 if killed == len(chosen) else 1
+
+
+def merge(mutants, label, argv, prog, root=ROOT):
+    """--merge OUT PART.json ...: the matrices of the parts of one run (--shard K/N --matrix),
+    checked against this checkout and joined into one matrix OUT as an unsharded run writes it.
+    Refused (exit 1, OUT not written) unless every file is a matrix of this harness over these
+    sources with one --matrix-tests, no id is in two files, no id is outside the list, every id of
+    the list is in one, every row is the current definition of its mutant, and every outcome is
+    KILLED as verdict() recomputes it from the row's own runs. So OUT means: every mutant of the
+    list was run once and killed on its target; which part ran it is not part of the claim."""
+    if len(argv) < 2:
+        print(f"usage: {prog}.py --merge OUT PART.json [PART.json ...]", file=sys.stderr)
+        return 2
+    out, files = argv[0], argv[1:]
+    problems, docs = [], []
+    for f in files:
+        try:
+            docs.append((f, json.loads(Path(f).read_text())))
+        except (OSError, ValueError) as e:
+            problems.append(("SHARD_UNREADABLE", f"{f}: {e}"))
+    try:
+        src = source_digest(root)
+    except SourceUnknown as e:
+        src = None
+        problems.append(("SHARD_SOURCE_UNKNOWN", str(e)))
+    by_id = {m[0]: m for m in mutants}
+    if len({json.dumps(d.get("tests")) for _, d in docs}) > 1:
+        problems.append(("SHARD_SHAPE", "the files were run with different --matrix-tests"))
+    rows, where = {}, {}
+    for f, d in docs:
+        if d.get("matrix") != MATRIX or d.get("harness") != prog:
+            problems.append(("SHARD_NOT_THIS_HARNESS", f"{f}: {d.get('matrix')!r} by {d.get('harness')!r}, not {prog}"))
+        if src is not None and d.get("source") != src:
+            problems.append(("SHARD_STALE", f"{f}: written over other sources than this checkout's"))
+        for mid, row in sorted((d.get("mutants") or {}).items()):
+            if mid in where:
+                problems.append(("SHARD_DUPLICATE_ID", f"{mid} in {where[mid]} and {f}"))
+                continue
+            where[mid] = f
+            m = by_id.get(mid)
+            if m is None:
+                problems.append(("SHARD_UNKNOWN_ID", f"{f}: {mid} is not a mutant of {prog}.py"))
+                continue
+            if row.get("definition") != mutant_digest(m):
+                problems.append(("SHARD_STALE", f"{f}: {mid} is not the current definition"))
+            got = verdict(row.get("runs") or {}, m[4], m[5])[0]
+            if row.get("outcome") != "KILLED" or got != "KILLED":
+                problems.append(("SHARD_NOT_KILLED", f"{f}: {mid} is {row.get('outcome')}, its runs give {got}"))
+            rows[mid] = row
+    missing = [m[0] for m in mutants if m[0] not in where]
+    if missing:
+        problems.append(("SHARD_MISSING_ID", f"{len(missing)} not run: {' '.join(missing)}"))
+    for code, why in problems:
+        print(f"{code:<22} {why}")
+    if problems:
+        print(f"{label} MERGE: REFUSED ({len(problems)} problems); {out} not written")
+        return 1
+    doc = {"matrix": MATRIX, "harness": prog, "tests": docs[0][1]["tests"], "source": src, "mutants": rows}
+    Path(out).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+    print(f"{label} MERGE: {len(rows)}/{len(mutants)} mutants, each run once in one of {len(docs)} files and "
+          f"killed on target; matrix written to {out}")
+    return 0
+
+
+def source_checks():
+    """The source identity is the whole tree (AMEND 1 of #172), checked on a fixture repository
+    made of this checkout's tracked and untracked files, with a genuine KILLED row of M300 (a
+    ../tools/roadmap.py mutant) merged over it."""
+    import contextlib
+    import io
+    m300 = next(m for m in MUTANTS if m[0] == "M300")
+    got = run_one(*m300)
+    work = Path(tempfile.mkdtemp(prefix="mutants-selftest-sources-"))
+    git = ["git", "-c", "user.name=selftest", "-c", "user.email=selftest@invalid", "-c", "commit.gpgsign=false"]
+    try:
+        fix = work / "root"
+        listed = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                                capture_output=True, check=True).stdout.decode().split("\0")
+        for rel in sorted({x for x in listed if x}):
+            if (ROOT / rel).is_file():
+                (fix / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / rel, fix / rel)
+        subprocess.run(["git", "init", "-q", str(fix)], check=True)
+        subprocess.run([*git, "-C", str(fix), "add", "-A"], check=True)
+        subprocess.run([*git, "-C", str(fix), "commit", "-q", "-m", "fixture"], check=True)
+        clean = source_digest(fix)
+        row = {"definition": mutant_digest(m300), "file": m300[1], "what": m300[2], "test": m300[4],
+               "targets": list(m300[5]), "outcome": got[0], "runs": got[2]}
+
+        def part(source):
+            f = work / "part.json"
+            f.write_text(json.dumps({"matrix": MATRIX, "harness": "mutants", "tests": "own", "source": source,
+                                     "mutants": {"M300": row}}))
+            return f
+
+        def merged(f):
+            out = work / "merged.json"
+            out.unlink(missing_ok=True)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = merge([m300], "SOURCES", [str(out), str(f)], "mutants", root=fix)
+            return rc, out.is_file(), "SHARD_STALE" in buf.getvalue()
+
+        def changed(f, rel, edit, keep=False):
+            """merge `f` after `edit` (bytes -> bytes, or None: delete) on fix/rel, then undo it."""
+            path = fix / rel
+            was = path.read_bytes() if path.is_file() else None
+            mode = path.stat().st_mode if path.is_file() else None
+            new = edit(was)
+            if new is None:
+                path.unlink()
+            elif isinstance(new, int):
+                path.chmod(new)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(new)
+            try:
+                return merged(f)
+            finally:
+                if was is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(was)
+                    path.chmod(mode)
+        m300_edit = lambda b: b.replace(m300[3][0][0].encode(), m300[3][0][1].encode())
+        add = lambda b: b + b"\n"
+        GOOD, STALE = (0, True, False), (1, False, True)
+        f = part(clean)
+        tree = subprocess.run(["git", "-C", str(fix), "rev-parse", "HEAD^{tree}"], capture_output=True,
+                              check=True).stdout.decode().strip()
+        checks = [
+            ("a genuine run of M300 is KILLED on P9", got[0] == "KILLED"),
+            ("a clean tree is named by its git tree id", clean == "tree:" + tree),
+            ("--merge of the genuine row over the unchanged tree passes", merged(f) == GOOD),
+            ("an uncommitted M300 edit of tools/roadmap.py: SHARD_STALE, nothing written",
+             changed(f, "tools/roadmap.py", m300_edit) == STALE),
+            ("an uncommitted change of tools/claims.py: SHARD_STALE", changed(f, "tools/claims.py", add) == STALE),
+            ("an uncommitted change of .warrant/roles.json: SHARD_STALE", changed(f, ".warrant/roles.json", add) == STALE),
+            ("an uncommitted change of README.md: SHARD_STALE", changed(f, "README.md", add) == STALE),
+            ("a new untracked file anywhere: SHARD_STALE", changed(f, "examples/new-file.txt", lambda b: b"x") == STALE),
+            ("a deleted tracked file: SHARD_STALE", changed(f, "ROADMAP.md", lambda b: None) == STALE),
+            ("a file made executable: SHARD_STALE", changed(f, "README.md", lambda b: 0o755) == STALE),
+            ("a file git ignores is not a source", changed(f, "tests/__pycache__/x.cpython-311.pyc", lambda b: b"x") == GOOD),
+            ("the change undone, the tree merges again", merged(f) == GOOD),
+        ]
+        (fix / "README.md").write_bytes((fix / "README.md").read_bytes() + b"\n")
+        subprocess.run([*git, "-C", str(fix), "commit", "-q", "-am", "readme"], check=True)
+        checks.append(("a committed change of README.md (a clean tree, another tree id): SHARD_STALE", merged(f) == STALE))
+        subprocess.run(["git", "-C", str(fix), "reset", "-q", "--hard", "HEAD~1"], check=True)
+        (fix / "tools" / "roadmap.py").write_bytes(m300_edit((fix / "tools" / "roadmap.py").read_bytes()))
+        dirty = source_digest(fix)
+        g = part(dirty)
+        checks += [
+            ("a dirty tree is named by its working-tree digest", dirty.startswith("worktree:") and dirty != clean),
+            ("a matrix of a dirty tree merges over the same bytes", merged(g) == GOOD),
+            ("... and is SHARD_STALE after one more byte anywhere", changed(g, ".warrant/roles.json", add) == STALE),
+            ("... or in README.md", changed(g, "README.md", add) == STALE),
+            ("... or after a new untracked file", changed(g, "examples/new-file.txt", lambda b: b"x") == STALE),
+            ("... or after a tracked file is deleted", changed(g, "ROADMAP.md", lambda b: None) == STALE),
+            ("... or after a file is made executable", changed(g, "README.md", lambda b: 0o755) == STALE),
+            ("... but not after a change to a file git ignores", changed(g, "tests/__pycache__/x.cpython-311.pyc", lambda b: b"x") == GOOD),
+            ("... and SHARD_STALE once the dirty change is undone", changed(g, "tools/roadmap.py", lambda b: (ROOT / "tools" / "roadmap.py").read_bytes()) == STALE),
+        ]
+        fake = [("F1", "x.py", "fake", [], "t", ["c"])]
+
+        def write(argv_root, touch=None):
+            out = work / "written.json"
+            out.unlink(missing_ok=True)
+
+            def runner(*m, also=()):
+                if touch and not m[0].startswith("baseline:"):
+                    touch()
+                return "KILLED", "c", {m[4]: {"c": "FAIL" if not m[0].startswith("baseline:") else "PASS"}}
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc = run_all(fake, "SOURCES", ["--jobs", "1", "--matrix", str(out)], runner, root=argv_root)
+                except Exception as e:      # a crash is not the refusal this checks
+                    rc = f"raised {type(e).__name__}"
+            return rc, json.loads(out.read_text())["source"] if out.is_file() else None
+        roles = fix / ".warrant" / "roles.json"
+        was = roles.read_bytes()
+        checks += [
+            ("--matrix names the tree it ran over", write(fix) == (0, dirty)),
+            ("--matrix writes nothing when the tree changes during the run (SOURCE_CHANGED)",
+             write(fix, touch=lambda: roles.write_bytes(was + b"\n")) == (2, None)),
+            ("--matrix writes nothing over a root with no identity (SOURCE_UNKNOWN)", write(work) == (2, None)),
+        ]
+        roles.write_bytes(was)
+        subprocess.run(["git", "-C", str(fix), "checkout", "-q", "--", "."], check=True)     # M300's text back
+        (fix / ".gitignore").unlink()
+        subprocess.run([*git, "-C", str(fix), "commit", "-q", "-am", "no ignore rules"], check=True)
+        bare = source_digest(fix)
+        mx = work / "real.json"
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}
+        env["WARRANT_IMPL"] = ""
+        real = subprocess.run([sys.executable, str(fix / "tests" / "mutants.py"), "--jobs", "1", "--matrix", str(mx), "M300"],
+                              cwd=fix, env=env, capture_output=True, text=True, timeout=600, check=False)
+        checks.append(("a real --matrix run in a tree that ignores nothing, by a caller that writes bytecode, "
+                       "leaves the tree as it was and names it",
+                       real.returncode == 0 and mx.is_file() and json.loads(mx.read_text())["source"] == bare
+                       and source_digest(fix) == bare and bare.startswith("tree:")))
+        mx.unlink(missing_ok=True)
+        real = subprocess.run([sys.executable, str(fix / "tests" / "agent_mutants.py"), "--jobs", "1", "--matrix", str(mx), "A19"],
+                              cwd=fix, env=env, capture_output=True, text=True, timeout=600, check=False)
+        checks.append(("... and so does a real --matrix run of tests/agent_mutants.py",
+                       real.returncode == 0 and mx.is_file() and json.loads(mx.read_text())["source"] == bare
+                       and source_digest(fix) == bare))
+        try:
+            source_digest(fix / "tools")
+            inner = False
+        except SourceUnknown:
+            inner = True
+        checks.append(("a directory inside a checkout has no identity of its own", inner))
+        try:
+            source_digest(work)
+            outside = False
+        except SourceUnknown:
+            outside = True
+        checks.append(("a directory outside any checkout has no identity", outside))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return checks
 
 
 def selftest():
@@ -1241,14 +1613,36 @@ def selftest():
         calls.append(m[0])
         return "KILLED", "c"
 
-    def run(argv, runner, mutants=fake):
+    based = []
+
+    def green(mid, fname, what, edits, test, targets):
+        return "SURVIVED", "", {test: {t: "PASS" for t in targets}}
+
+    printed = []
+
+    def run(argv, runner, mutants=fake, base=green, prog="mutants"):
+        """rc and the mutants run, in list order; `base` answers the unmutated runs (ids
+        baseline:<test>). The workers call the runners in whatever order the thread pool starts
+        them (Python 3.13 on 14 cores: F1 F3 F2 F4 for four), so `calls` is the set of runs put
+        in list order, and the order of the verdicts is checked on the output (`printed`)."""
         calls.clear()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        based.clear()
+        printed.clear()
+        out = io.StringIO()
+
+        def both(*m, **kw):
+            if m[0].startswith("baseline:"):
+                based.append((m[0], m[1], tuple(m[3])))
+                return base(*m)
+            return runner(*m, **kw)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
             try:
-                rc = run_all(mutants, "SELFTEST", argv, runner)
+                rc = run_all(mutants, "SELFTEST", argv, both, prog=prog)
             except SystemExit as e:
                 rc = e.code
-        return rc, list(calls)
+        printed.extend(out.getvalue().splitlines())
+        order = {m[0]: i for i, m in enumerate(mutants)}
+        return rc, sorted(calls, key=lambda c: order.get(c[0] if isinstance(c, tuple) else c, -1))
 
     checks = [
         ("--jobs 2 runs every mutant and a survivor fails the run", run(["--jobs", "2"], survived) == (1, ["F1", "F2"])),
@@ -1262,7 +1656,8 @@ def selftest():
         ("--job is not an abbreviation of --jobs", run(["--job", "2"], killed) == (2, [])),
         ("an unknown id is refused, never an empty success", run(["ZZ"], killed) == (2, [])),
         ("a known and an unknown id together are refused", run(["F1", "ZZ"], killed) == (2, [])),
-        ("ids select, in matrix order", run(["F2", "F1"], killed) == (0, ["F1", "F2"])),
+        ("ids select, and the verdicts print in matrix order",
+         run(["F2", "F1"], killed) == (0, ["F1", "F2"]) and [x.split()[1] for x in printed if x.startswith("KILLED")] == ["F1", "F2"]),
         ("an empty matrix is not a success", run([], killed, mutants=[]) == (2, [])),
     ]
     # --matrix: every case's result under every mutant, the verdict still from the own test file
@@ -1290,6 +1685,118 @@ def selftest():
          run(["--matrix", str(out), "--matrix-tests", "nosuch_test"], with_runs) == (2, [])),
         ("--matrix-tests with no test file is refused", run(["--matrix", str(out), "--matrix-tests", ","], with_runs) == (2, [])),
     ]
+    # The red baseline (primitives#5): a target case that fails unmutated refuses the run
+    def red(mid, fname, what, edits, test, targets):
+        return "KILLED", "c", {test: {"c": "FAIL", "d": "PASS"}}
+
+    def other_red(mid, fname, what, edits, test, targets):
+        return "OFF_TARGET", "d", {test: {"c": "PASS", "d": "FAIL"}}
+
+    def no_results(mid, fname, what, edits, test, targets):
+        return "CRASH", "no results", {test: None}
+    spread = fake + [("F3", "../tools/y.py", "fake three", [], "t", ["c"]), ("F4", "x.py", "fake four", [], "u", ["e"])]
+    rc_green = run([], killed, mutants=spread)
+    based_green = sorted(based)
+    checks += [
+        ("a failing target case unmutated is refused BASELINE_RED before any mutant runs",
+         run(["--jobs", "2"], killed, base=red) == (2, [])),
+        ("a red baseline is refused even when every mutant would read KILLED", run([], killed, base=red)[0] == 2),
+        ("a targeted test file that gives no results unmutated is refused", run([], killed, base=no_results) == (2, [])),
+        ("a failing case no chosen mutant targets does not refuse", run([], killed, base=other_red) == (0, ["F1", "F2"])),
+        ("BASELINE_RED names the failing target cases and only the mutants that target them",
+         baseline_red([("F1", "x.py", "", [], "t", ["c"]), ("F2", "x.py", "", [], "t", ["d"])], red, 1)
+         == [("t", "", ["c"], ["F1"])]),
+        ("a green baseline proceeds to every mutant", rc_green == (0, ["F1", "F2", "F3", "F4"])),
+        ("the baseline runs each test file once per copied environment, unmutated",
+         based_green == [("baseline:t", "../tools/y.py", ()), ("baseline:t", "x.py", ()), ("baseline:u", "x.py", ())]),
+        ("only the test files of the selected mutants get a baseline",
+         run(["F4"], killed, mutants=spread) == (0, ["F4"]) and based == [("baseline:u", "x.py", ())]),
+    ]
+    # --shard K/N: a deterministic partition, each mutant in one part; --merge proves the union
+    many = [(f"F{i}", "x.py", f"fake {i}", [], ["t", "u", "contract_test"][i % 3], ["c"]) for i in range(1, 12)]
+    parts = shards(many, 3)
+    checks += [
+        ("shards() puts every mutant in exactly one part",
+         sorted(m[0] for p in parts for m in p) == sorted(m[0] for m in many) and all(parts)),
+        ("shards() is a function of the list", parts == shards(list(many), 3)),
+        ("shards() balances COST: the costly files are spread",
+         max(sum(m[4] == "contract_test" for m in p) for p in parts) - min(sum(m[4] == "contract_test" for m in p) for p in parts) <= 1),
+        ("shards() places the costliest first: one costly and two cheap in two parts leave the costly one alone",
+         [[m[0] for m in q] for q in shards([("F1", "x.py", "", [], "t", ["c"]), ("F2", "x.py", "", [], "t", ["c"]),
+                                             ("F3", "x.py", "", [], "contract_test", ["c"])], 2)] == [["F3"], ["F1", "F2"]]),
+        ("--shard 0/3 is refused", run(["--shard", "0/3"], killed, mutants=many) == (2, [])),
+        ("--shard 4/3 is refused", run(["--shard", "4/3"], killed, mutants=many) == (2, [])),
+        ("--shard 1/03 is refused", run(["--shard", "1/03"], killed, mutants=many) == (2, [])),
+        ("--shard with ids is refused", run(["--shard", "1/3", "F1"], killed, mutants=many) == (2, [])),
+    ]
+    sd = Path(tempfile.mkdtemp(prefix="mutants-selftest-shards-"))
+
+    def own_runs(*m, also=()):
+        calls.append((m[0], tuple(also)))
+        return "KILLED", "c", {m[4]: {"c": "FAIL", "d": "PASS"}}
+    for k in (1, 2, 3):
+        rc_k = run(["--shard", f"{k}/3", "--matrix", str(sd / f"s{k}.json")], own_runs, mutants=many)
+        checks.append((f"--shard {k}/3 runs exactly its part", rc_k == (0, [(m[0], ()) for m in parts[k - 1]])))
+    checks.append(("a shard's baseline covers only its own part's test files",
+                   sorted({b[0] for b in based}) == sorted({f"baseline:{m[4]}" for m in parts[2]})))
+
+    def merged(names, prog="mutants", tamper=None):
+        files = [str(sd / n) for n in names]
+        if tamper:
+            d = json.loads((sd / names[0]).read_text())
+            tamper(d)
+            (sd / "x.json").write_text(json.dumps(d))
+            files[0] = str(sd / "x.json")
+        out = sd / "merged.json"
+        out.unlink(missing_ok=True)
+        rc = run(["--merge", str(out), *files], killed, mutants=many, prog=prog)[0]
+        return rc, json.loads(out.read_text()) if out.is_file() else None
+
+    def flip(d):
+        d["mutants"][sorted(d["mutants"])[0]]["outcome"] = "SURVIVED"
+
+    def lie(d):
+        mid = sorted(d["mutants"])[0]
+        d["mutants"][mid]["runs"] = {"t": {"c": "PASS"}, "u": {"c": "PASS"}, "contract_test": {"c": "PASS"}}
+
+    def drop(d):
+        d["mutants"].pop(sorted(d["mutants"])[0])
+
+    def redefine(d):
+        d["mutants"][sorted(d["mutants"])[0]]["definition"] = "0" * 64
+
+    def resource(d):
+        d["source"] = "0" * 64
+    def alien(d):
+        d["mutants"]["F99"] = dict(next(iter(d["mutants"].values())))
+    rc_ok, doc_ok = merged(["s1.json", "s2.json", "s3.json"])
+    if doc_ok:
+        (sd / "merged-all.json").write_text(json.dumps(doc_ok))
+    checks += [
+        ("--merge of all parts writes one matrix of every mutant, without a shard",
+         rc_ok == 0 and sorted(doc_ok["mutants"]) == sorted(m[0] for m in many) and "shard" not in doc_ok
+         and doc_ok["matrix"] == MATRIX and doc_ok["source"] == source_digest()),
+        ("--merge refuses a missing part", merged(["s1.json", "s3.json"]) == (1, None)),
+        ("--merge refuses a part given twice", merged(["s1.json", "s2.json", "s3.json", "s2.json"]) == (1, None)),
+        ("--merge refuses a part without one of its ids", merged(["s1.json", "s2.json", "s3.json"], tamper=drop) == (1, None)),
+        ("--merge refuses an id outside the list", merged(["s1.json", "s2.json", "s3.json"], tamper=alien) == (1, None)),
+        ("--merge refuses parts run with different --matrix-tests",
+         merged(["s1.json", "s2.json", "s3.json"], tamper=lambda d: d.update(tests="all")) == (1, None)),
+        ("--merge of one unsharded matrix of every mutant is the same claim", merged(["merged-all.json"])[0] == 0),
+        ("--merge refuses an outcome that is not KILLED", merged(["s1.json", "s2.json", "s3.json"], tamper=flip) == (1, None)),
+        ("--merge refuses KILLED that the row's own runs do not give",
+         merged(["s1.json", "s2.json", "s3.json"], tamper=lie) == (1, None)),
+        ("--merge refuses a row of another definition", merged(["s1.json", "s2.json", "s3.json"], tamper=redefine) == (1, None)),
+        ("--merge refuses a part over other sources", merged(["s1.json", "s2.json", "s3.json"], tamper=resource) == (1, None)),
+        ("--merge refuses the parts for another harness", merged(["s1.json", "s2.json", "s3.json"], prog="agent_mutants") == (1, None)),
+    ]
+    shutil.rmtree(sd, ignore_errors=True)
+    # the real runner: an unmutated copy of a cheap test file reports its cases, all PASS
+    mine = [m for m in MUTANTS if m[4] == "records_test"][:2]
+    checks.append(("the real baseline runs an unmutated copy and reads it green",
+                   baseline_red(mine, run_one, 2) == [] and run_one("baseline:records_test", mine[0][1], "unmutated", [],
+                                                                     "records_test", mine[0][5])[2]["records_test"]))
+    checks += source_checks()
     for script in ("mutants.py", "agent_mutants.py"):
         for argv in (["--jobs", "-1"], ["--jobs", "+2", "ZZ"], ["--jobs", "0", "M01"]):
             p = subprocess.run([sys.executable, str(ROOT / "tests" / script), *argv], capture_output=True, text=True,
