@@ -37,6 +37,32 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### SPEC.md generated from the records; actor id shape; route 1 tightened (W5)
+
+SPEC.md is no longer written by hand. `tools/claims.py project` renders it, with
+SPEC-CLAIMS.md, from the records, and `check` refuses a SPEC.md that differs
+(`SPEC_NOT_PROJECTION`). What SPEC.md holds besides sentences (headings, order,
+line breaks, list markers, table rules) is one more signed record, the document
+(`warrant-claims/document@1`), superseded version by version; its literal gaps
+cannot hold a word or a digit next to a sentence. The preamble and the lead of
+§4, which no pilot had pinned, are now claims (SPEC-0-1..7 informative; SPEC-4-1..7,
+three of them open questions). The first document version was read once from
+SPEC.md at 849cbfa and reproduces it byte for byte. Authoring is reversed:
+`supersede --text … --because …` or `add … --after ID`, then `project`.
+
+**[protocol]** SPEC §3 gains SPEC-3-21 and SPEC-3-22, the first spec change made
+through the records: an actor id is a non-empty string of at most 200 code
+points, in NFC, with no control character and no white space at either end, and
+an actor may be a person, a model, a program or a rule; Warrant does not assess
+what an actor is. `warrant.records` refuses other actor ids everywhere an actor is
+named (the record, its lists, trust bindings, the profile); `warrant_agent`
+refuses them in its configured signer and in requests. Records whose actor ends
+in a newline, valid before, are invalid now.
+
+A BACKED claim that turns UNBACKED because a cited case or mutant is gone is
+admitted only if it was already gone at the base revision
+(`WITNESS_REMOVED_WITH_DOWNGRADE` otherwise).
+
 ### SPEC §1–§3 as claim records; UNBACKED as an open question (pilot W4)
 
 `tools/claims.py check` no longer refuses an UNBACKED claim: it is an open

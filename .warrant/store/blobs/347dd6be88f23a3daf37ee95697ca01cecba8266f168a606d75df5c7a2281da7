@@ -1,0 +1,1 @@
+A snapshot cannot attest its own completeness: every report states `completeness: UNATTESTED`, and a reference to a record or blob that is not in the view is reported as missing, never as absence.

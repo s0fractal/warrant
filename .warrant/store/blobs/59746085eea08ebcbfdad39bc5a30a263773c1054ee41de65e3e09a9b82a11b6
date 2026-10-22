@@ -1,0 +1,1 @@
+An assessment is a pure function of one **view**: the snapshot (the set of record and blob bytes, read once), the recipient's trust file, the recipient's profile (§4.6), the time `as_of`, the set of revisions the recipient treats as current, the recipient's workspace (repository and commit, for §5) and the identity of the evaluating code and provider (§7).

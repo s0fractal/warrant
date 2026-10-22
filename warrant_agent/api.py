@@ -6,6 +6,7 @@ import json
 
 from warrant import engine as E
 from warrant import jcs as C
+from warrant import records as R
 
 from . import AGENT_API, adapter_id, drafts, handoff, views
 from .errors import AgentError, need
@@ -124,6 +125,14 @@ def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget):
     return data, pg
 
 
+def _is_actor(v):
+    try:
+        R.check_actor(v)
+        return True
+    except R.Invalid:
+        return False
+
+
 # ---------------------------------------------------------------- operations
 
 def context(cfg, req):
@@ -132,7 +141,7 @@ def context(cfg, req):
     _closed(req, ("workspace", "actor", "targets", "use"), ("limits", "agent_api"))
     ws = cfg.workspace(req["workspace"])
     ws.permit("context")
-    need(isinstance(req["actor"], str) and req["actor"], "BAD_REQUEST", "actor")
+    need(_is_actor(req["actor"]), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")
     targets = req["targets"]
     need(isinstance(targets, list) and all(isinstance(t, dict) and set(t) == {"kind", "id"} and t["kind"] in TARGET_KINDS
                                            and isinstance(t["id"], str) for t in targets), "BAD_REQUEST", "targets")
@@ -209,6 +218,7 @@ def handoff_op(cfg, req):
         staged_id, meta = handoff.inspect(ws, req["manifest"], req["payload"], req.get("expectation"),
                                           req.get("declaration"))
         meta, report, vdir = views.load(ws, meta["token"])
+        need("actor" not in req or _is_actor(req["actor"]), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")
         actor = req.get("actor", ws.signer[0] if ws.signer else "")
         views.write_json(vdir / "context.json", {"actor": actor, "targets": targets, "use": use})
         data, pg = _projection(ws, meta, report, actor, targets, use, "context", None, ws.limits["context_bytes"])

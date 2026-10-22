@@ -342,6 +342,64 @@ def record_cases():
     rows += [(t, rec(t, put(body, prior=[H1]), ACTOR_OF[t]), "invalid") for t, body in BASES.items()]
     ok, bad = table(rows)
     check("K11", ok, "prior edges do not exist", bad)
+    actor_id_cases()
+
+
+# W5: an actor id has one canonical shape, whatever the actor is.
+GOOD_ACTORS = {
+    "claude": "claude", "codex": "codex", "readers": "readers", "owner": "owner",
+    "a person, non-ASCII, inner space": "Сергій Глова", "a model": "claude-opus-5-5",
+    "a program by the hash of its code": "checker sha256:" + hashlib.sha256(b"def check(view): ...").hexdigest(),
+    "a rule": "rule §4.2: release on expiry", "one code point": "x", "NFC é": "é",
+    "200 code points": "a" * 200, "200 non-BMP code points": "\U0001F600" * 200,
+}
+BAD_ACTORS = {
+    "empty": "", "201 code points": "a" * 201, "trailing \\n": "claude\n", "trailing \\r\\n": "claude\r\n",
+    "leading \\n": "\nclaude", "leading space": " claude", "trailing space": "claude ",
+    "trailing no-break space (Zs)": "claude ", "leading ideographic space (Zs)": "　claude",
+    "trailing line separator (Zl)": "claude ", "trailing paragraph separator (Zp)": "claude ",
+    "inner NUL (Cc)": "cla\x00ude", "inner tab (Cc)": "cla\tude", "inner NEL (Cc)": "cla\x85ude",
+    "NFD é": "é", "Angstrom sign (NFC is U+00C5)": "Å", "integer": 5, "null": None, "list": ["claude"],
+}
+
+
+def actor_id_cases():
+    # K12: an actor id is a non-empty string of at most 200 code points, in NFC, with no
+    # control character and no white space at either end; the shape holds wherever an actor
+    # is named (the record's actor, a list of actors, a trust binding)
+    def trust_with(a):
+        try:
+            Trust(Trust.document([(a, W.Key.generate().public)]))
+            return "accepted"
+        except (R.Invalid, C.NotCanonical):
+            return "invalid"
+        except Exception as e:      # noqa: BLE001
+            return f"raised {type(e).__name__}"
+    rows = []
+    for k, v in list(GOOD_ACTORS.items()) + list(BAD_ACTORS.items()):
+        want = "accepted" if k in GOOD_ACTORS else "invalid"
+        rows += [(f"record actor {k}", rec("duty", put(DUTY, holder=v, owed_to=[STRANGER], accept_by=[STRANGER]), actor=v), want),
+                 (f"owed_to {k}", rec("duty", put(DUTY, owed_to=[v])), want),
+                 (f"trust actor {k}", trust_with(v), want)]
+    ok, bad = table(rows)
+    check("K12", ok, "an actor id: ≤ 200 code points, NFC, no Cc, no white space at either end", bad)
+    # K13: Warrant does not assess what an actor is: a duty held by a program (named by the
+    # hash of its code), owed to a person and accepted by a rule closes exactly as one among
+    # "claude", "owner" and "codex" does
+    def closes(holder, owner, acceptor):
+        try:
+            w = World(actors=(holder, owner, acceptor))
+            d = w.duty(holder=holder, owed_to=(owner,), accept_by=(acceptor,))
+            w.accept(acceptor, w.close(d, actor=holder))
+            rep = w.assess()
+        except (R.Invalid, C.NotCanonical):
+            return "refused", None
+        return rep["duties"][d]["disposition"], len(rep["invalid_records"])
+    kinds = (GOOD_ACTORS["a program by the hash of its code"], GOOD_ACTORS["a person, non-ASCII, inner space"],
+             GOOD_ACTORS["a rule"])
+    got = {"names": closes(HOLDER, OWNER, CODEX), "kinds": closes(*kinds)}
+    check("K13", got == {"names": ("DISCHARGED", 0), "kinds": ("DISCHARGED", 0)},
+          "a program, a person and a rule act as named actors do", got)
 
 
 def bad_hex_rows(label, make, nullable=False):
@@ -369,7 +427,8 @@ def duty_cases():
     # D3: owed_to is a non-empty list of actors
     rows = [(k, rec("duty", put(DUTY, owed_to=v)), want) for k, v, want in (
         ("[]", [], "invalid"), ("a string", OWNER, "invalid"), ("[5]", [5], "invalid"), ("[null]", [None], "invalid"),
-        ("one", [OWNER], "accepted"), ("non-ASCII and \\n", ["ówner\n"], "accepted"))]
+        ("one", [OWNER], "accepted"), ("non-ASCII", ["ówner"], "accepted"),
+        ("trailing \\n (W5: actor id shape)", ["ówner\n"], "invalid"))]
     ok, bad = table(rows)
     check("D3", ok, "owed_to is a non-empty list of actors", bad)
     # D4: accept_by is a list of actors (an observe duty may name none)
@@ -582,7 +641,8 @@ def item_cases():
     # I5: to is an actor on delegate and substitute, and only there
     rows = [(k, item(**kv), want) for k, kv, want in (
         ("delegate without to", {"act": "delegate"}, "invalid"), ("substitute without to", {"act": "substitute"}, "invalid"),
-        ("delegate to 5", {"act": "delegate", "to": 5}, "invalid"), ("delegate to", {"act": "delegate", "to": "códex\n"}, "accepted"),
+        ("delegate to 5", {"act": "delegate", "to": 5}, "invalid"), ("delegate to", {"act": "delegate", "to": "códex"}, "accepted"),
+        ("delegate to \\n (W5: actor id shape)", {"act": "delegate", "to": "códex\n"}, "invalid"),
         ("discharge to", {"to": CODEX}, "invalid"), ("release to", {"act": "release", "to": CODEX}, "invalid"),
         ("revalidate to", {"act": "revalidate", "revalidates": [H3], "to": CODEX}, "invalid"))]
     ok, bad = table(rows)
@@ -693,7 +753,8 @@ def grant_cases():
         return rec("grant", put(GRANT, **kv), OWNER)
     # G2: grantee is an actor
     rows = [(k, g(grantee=v), want) for k, v, want in (
-        ("5", 5, "invalid"), ("null", None, "invalid"), ("[s]", [STRANGER], "invalid"), ("non-ASCII \\n", "stränger\n", "accepted"))]
+        ("5", 5, "invalid"), ("null", None, "invalid"), ("[s]", [STRANGER], "invalid"), ("non-ASCII", "stränger", "accepted"),
+        ("trailing \\n (W5: actor id shape)", "stränger\n", "invalid"))]
     ok, bad = table(rows)
     check("G2", ok, "grantee is an actor", bad)
     # G3: acts is a non-empty sorted list from {release}

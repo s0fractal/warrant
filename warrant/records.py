@@ -3,6 +3,7 @@
 Every validator checks JSON types before set membership, and refuses unknown or
 missing members, so a record is either exactly one of these shapes or invalid."""
 import re
+import unicodedata
 
 from . import jcs as C
 from . import keys as K
@@ -20,6 +21,9 @@ RUNTIMES = ("sigma-book1-0.6.0/hash-thunk/leftmost-outermost",
 TRIGGER_KINDS = ("subject_changed", "duty_not_discharged")
 MAX_LIST = 256
 MAX_TEXT = 4000
+MAX_ACTOR = 200
+# Unicode White_Space outside Cc (Cc is refused anywhere in an actor id): Zs, Zl, Zp.
+EDGE_SPACE = ("Zs", "Zl", "Zp")
 
 
 class Invalid(ValueError):
@@ -69,7 +73,19 @@ def _list(v, what, item, unique=True, nonempty=False, sorted_=False):
 
 
 def _actor(v, what):
-    _text(v, what, limit=200)
+    """An actor id (SPEC §3): a non-empty string of at most 200 code points, in NFC, with no
+    control character (Cc) and no white space at either end. Nothing here asks what the
+    actor is: a person, a model, a program and a rule have ids of the same shape."""
+    _text(v, what, limit=MAX_ACTOR)
+    _need(unicodedata.is_normalized("NFC", v), f"{what} must be in Unicode NFC")
+    _need(not any(unicodedata.category(c) == "Cc" for c in v), f"{what} must not contain a control character")
+    _need(unicodedata.category(v[0]) not in EDGE_SPACE and unicodedata.category(v[-1]) not in EDGE_SPACE,
+          f"{what} must not begin or end with white space")
+
+
+def check_actor(v, what="actor"):
+    """Raise Invalid unless `v` is an actor id (SPEC §3)."""
+    _actor(v, what)
 
 
 def _hexes(v, what, **kw):

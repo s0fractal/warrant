@@ -1,0 +1,1 @@
+{"because":null,"duty":null,"id":"SPEC-0-5","kind":"informative","mutants":[],"previous":null,"reason":"names the code the claims' witnesses and mutants run against; states no rule a record or an assessment can break","schema":"warrant-claims/claim@1","section":"0","source":"SPEC.md","text":"The reference implementation is the Python package in `warrant/`.","witnesses":[]}
