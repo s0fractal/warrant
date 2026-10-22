@@ -185,21 +185,24 @@ had been found):
 
 `check` replays it against the base: it applies the patch to a copy of the
 packages, runs the named test files against the copy, and admits the loss only
-if the patch alters at least one function (or module-level code) that one of
-the BACKED claim's cited mutants alters, every case in `passes` passes, every
-case in `fails` fails, `fails` is not empty, and `passes` covers every witness
-case the claim cited. A function is the innermost `def` (qualified by its
-classes) of a changed line; the mutants' functions are computed the same way,
-from their own (old, new) edits applied to the file. The claim's mutants are the
+if the patch is confined to the scopes the BACKED claim's cited mutants change
+(it changes at least one of them and no other), every case in `passes` passes,
+every case in `fails` fails, `fails` is not empty, and `passes` covers every
+witness case the claim cited. A scope is a function (qualified by its classes)
+or a file's module-level code, and it counts as changed only if its AST changes:
+a comment, whitespace or a docstring changes nothing. The mutants' scopes are
+computed the same way, from their own (old, new) edits applied to the file. So
+the FAIL comes from the change in the claim's own code, never from a foreign
+hunk next to a cosmetic local one. The claim's mutants are the
 repository's own statement of which code the sentence is about, so what the
 replay proves is: under this patch, which alters the same code the claim's own
 mutants alter, at least one case fails and every witness of the claim passes;
 the witnesses are blind to a change in the code the sentence is about. `why` is
-shown, not checked. To write one: make the edit that falsifies the sentence in
-a function one of the claim's mutants alters, in a scratch copy, keep it if the
-cited witnesses still pass and some case fails, and take `diff -u` of the edited
-files with `a/` and `b/` prefixes. Name as few test files
-as you can: each one is run once per check. A claim whose cited case or mutant
+shown, not checked. To write one: in a scratch copy, make the edit that
+falsifies the sentence inside the functions the claim's mutants alter and
+nowhere else; keep it if the cited witnesses still pass and some case fails;
+take `diff -u` of the edited files with `a/` and `b/` prefixes. Name as few test
+files as you can: each one is run once per check. A claim whose cited case or mutant
 no longer exists has lost its backing on its own and needs no counter blob. A
 challenge or a blob that is not a counter blob admits nothing
 (`LOST_BACKING_WITHOUT_COUNTER`); a counter blob that does not replay is

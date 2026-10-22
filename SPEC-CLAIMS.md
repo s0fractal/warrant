@@ -243,8 +243,9 @@ until an acceptance is filed. Nobody has accepted a claim yet unless this column
 ## Open questions
 
 A claim that was BACKED and lost its backing cites a counter blob that `check` replayed: under its
-patch, which alters the same code the claim's own mutants alter, at least one case fails and every
-witness of the claim passes. The witnesses are blind to a change in the code the sentence is about.
+patch, which changes only code the claim's own mutants change (compared by AST), at least one case
+fails and every witness of the claim passes. The witnesses are blind to a change in the code the
+sentence is about.
 The reason below is the filer's thesis; the replay is what admitted the loss.
 
 | ID | Statement | Why it is open | Claim |

@@ -17,7 +17,7 @@ open (`reason`). UNBACKED is an allowed status, listed in SPEC-CLAIMS.md as an o
 question. A claim that was BACKED at the base revision and is UNBACKED now needs a
 proof of the loss: its backing broke on its own (a cited case or mutant is gone), or
 a transition after it cites a counter blob (warrant-claims/counter@1: a patch that
-alters code one of the claim's own mutants alters, under which every cited witness
+is confined to the code the claim's own mutants alter (scopes compared by AST), under which every cited witness
 still passes and some case fails), directly or through a challenge against the
 replaced claim, and `check` replays that blob. An informative sentence is
 a transition with no duty, its reason in the blob. A supersession is a transition
@@ -42,6 +42,7 @@ one space. Refusals are printed one per line as `REFUSED <CODE> <detail>`.
 """
 import argparse
 import ast
+import copy
 import difflib
 import hashlib
 import importlib.util
@@ -215,7 +216,10 @@ class Repo:
             if new.count(o) != 1:
                 return set()
             new = new.replace(o, n)
-        return changed_scopes(path, old, new)
+        try:
+            return changed_scopes(path, old, new)
+        except SyntaxError:
+            return set()
 
     def has_case(self, test, case):
         p = self.tests / f"{test}.py"
@@ -485,8 +489,9 @@ def render(repo):
     opened = [n for n in live if n.status == "UNBACKED"]
     out += ["", "## Open questions", "",
             "A claim that was BACKED and lost its backing cites a counter blob that `check` replayed: under its",
-            "patch, which alters the same code the claim's own mutants alter, at least one case fails and every",
-            "witness of the claim passes. The witnesses are blind to a change in the code the sentence is about.",
+            "patch, which changes only code the claim's own mutants change (compared by AST), at least one case",
+            "fails and every witness of the claim passes. The witnesses are blind to a change in the code the",
+            "sentence is about.",
             "The reason below is the filer's thesis; the replay is what admitted the loss.", ""]
     if opened:
         out += ["| ID | Statement | Why it is open | Claim |", "| --- | --- | --- | --- |"]
@@ -700,45 +705,51 @@ def _is_counter(snap, h):
     return isinstance(doc, dict) and doc.get("counter") == COUNTER
 
 
-def _defs(src):
-    """[(first line, last line, qualified name)] of every function in `src`, or None if it does not parse."""
-    try:
-        tree = ast.parse(src)
-    except SyntaxError:
-        return None
-    out = []
+def _strip_docstring(body):
+    first = body[0] if body else None
+    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+        return body[1:]
+    return body
 
-    def walk(node, prefix):
-        for ch in ast.iter_child_nodes(node):
-            if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                name = prefix + ch.name
-                if not isinstance(ch, ast.ClassDef):
-                    out.append((ch.lineno, ch.end_lineno, name))
-                walk(ch, name + ".")
-    walk(tree, "")
+
+def _hollow(node, prefix, out):
+    """A copy of `node` with docstrings removed and every function inside it replaced by a
+    marker; each function's own hollow dump goes into `out` under its qualified name."""
+    node = copy.copy(node)
+    for field, value in ast.iter_fields(node):
+        if isinstance(value, list):
+            if field == "body" and isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                value = _strip_docstring(value)
+            new = []
+            for v in value:
+                if isinstance(v, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    q = prefix + v.name
+                    out[q] = ast.dump(_hollow(v, q + ".", out))
+                    new.append(ast.Expr(ast.Name(id=f"<def {q}>", ctx=ast.Load())))
+                elif isinstance(v, ast.ClassDef):
+                    new.append(_hollow(v, prefix + v.name + ".", out))
+                else:
+                    new.append(_hollow(v, prefix, out) if isinstance(v, ast.AST) else v)
+            setattr(node, field, new)
+        elif isinstance(value, ast.AST):
+            setattr(node, field, _hollow(value, prefix, out))
+    return node
+
+
+def scope_dumps(src):
+    """{scope: dump}: each function (qualified by its classes) and `<module>` (everything
+    outside functions, classes' other statements included), as ast.dump without positions,
+    comments, layout or docstrings. Raises SyntaxError if `src` does not parse."""
+    out = {}
+    out["<module>"] = ast.dump(_hollow(ast.parse(src), "", out))
     return out
-
-
-def _scope_of(defs, line):
-    inside = [d for d in defs or () if d[0] <= line <= d[1]]
-    return max(inside)[2] if inside else "<module>"
 
 
 def changed_scopes(path, old, new):
-    """{(path, function)}: the innermost function (qualified by its classes; `<module>` outside
-    any) of every line that differs between `old` and `new`, located in the old text for a
-    removed or replaced line, in the new text for an added or replacing one, and at the
-    insertion point for a pure insertion."""
-    a, b = old.splitlines(), new.splitlines()
-    da, db = _defs(old), _defs(new)
-    out = set()
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
-        if tag == "equal":
-            continue
-        lines_a = range(i1 + 1, i2 + 1) if i2 > i1 else [max(i1, 1)]
-        out |= {(path, _scope_of(da, n)) for n in lines_a}
-        out |= {(path, _scope_of(db, n)) for n in range(j1 + 1, j2 + 1)}
-    return out
+    """{(path, scope)} whose AST differs between `old` and `new` (scope_dumps): a comment,
+    whitespace or a docstring changes no scope. Raises SyntaxError if `new` does not parse."""
+    a, b = scope_dumps(old) if old else {}, scope_dumps(new)
+    return {(path, k) for k in set(a) | set(b) if a.get(k) != b.get(k)}
 
 
 _REPLAYS = {}
@@ -800,16 +811,27 @@ def _replay_counter(repo, doc, p):
         # elsewhere that breaks some case proves nothing about this claim's witnesses.
         files = {m.group(1) for m in re.finditer(r"^\+\+\+ b/(\S+)", doc["patch"], re.M)} | \
                 {m.group(1) for m in re.finditer(r"^--- a/(\S+)", doc["patch"], re.M)}
+        # A scope counts as changed only if its AST changes (no comments, layout or docstrings),
+        # and every changed scope must be one the claim's mutants change: no foreign hunk can
+        # supply the FAIL while a cosmetic or harmless local edit supplies the locality.
         touched = set()
         for f in sorted(files):
+            if not f.endswith(".py"):
+                return f"the patch changes {f}, which is not Python source"
             old = (repo.root / f).read_text() if (repo.root / f).is_file() else ""
             new = (tmp / f).read_text() if (tmp / f).is_file() else ""
-            touched |= changed_scopes(f, old, new)
+            try:
+                touched |= changed_scopes(f, old, new)
+            except SyntaxError as e:
+                return f"the patch leaves {f} unparseable: {e.msg} (line {e.lineno})"
         theirs = {sc for mid in p.doc["mutants"] for sc in repo.mutant_scopes(mid)}
+        fmt = lambda ss: ", ".join(f"{f}:{fn}" for f, fn in sorted(ss)) or "none"     # noqa: E731
         if not touched & theirs:
-            fmt = lambda ss: ", ".join(f"{f}:{fn}" for f, fn in sorted(ss)) or "none"     # noqa: E731
-            return (f"patch changes no scope that the claim's mutants change (patch: {fmt(touched)}; "
+            return (f"patch changes no behaviour in the claim's mutants' scopes (patch: {fmt(touched)}; "
                     f"mutants {' '.join(p.doc['mutants'])}: {fmt(theirs)})")
+        if touched - theirs:
+            return (f"patch changes scopes the claim's mutants do not: {fmt(touched - theirs)} "
+                    f"(mutants {' '.join(p.doc['mutants'])}: {fmt(theirs)})")
         got = {}
         for test in sorted({c.partition(":")[0] for c in doc["passes"] + doc["fails"]}):
             if not (repo.tests / f"{test}.py").is_file():
@@ -1147,6 +1169,16 @@ def selftest():
         if e is None:
             print("FAIL  selftest: no claim backed by records_test whose mutants live outside jcs.py")
             return 1
+        # `g`: a claim whose mutants all live in one function of engine.py (SPEC-4.1-6, M02 in
+        # engine._transfer_effect, when present): the target of Codex's reproduction on 0590956.
+        def one_engine_scope(n):
+            scs = {sc for mid in n.doc["mutants"] for sc in repo.mutant_scopes(mid)}
+            return len(scs) == 1 and next(iter(scs))[0] == "warrant/engine.py" and next(iter(scs))[1] != "<module>"
+        g = next((n for n in live if n.id == "SPEC-4.1-6" and one_engine_scope(n)), None) or \
+            next((n for n in live if n.doc["mutants"] and one_engine_scope(n)), None)
+        if g is None:
+            print("FAIL  selftest: no claim whose mutants all alter one engine.py function")
+            return 1
         failures = 0
 
         def case(name, expect, mutate):
@@ -1365,6 +1397,49 @@ def selftest():
         case("a counter patch in another function of the same file", "COUNTER_NOT_REPLAYED",
              rebacked([], [], unbacked_because="selftest",
                       counter=counter(edit=(surrogates_old, surrogates_new), fails=["records_test:E3"])))
+        # AMEND 4: a scope changes only if its AST does, and every changed scope must be the claim's
+        # mutants' (Codex on 0590956: a comment in M02's function let a foreign JCS break through).
+        def scope_edit(r, how):
+            """A diff that changes `g`'s mutant function in the fixture as `how` says."""
+            (path, qual), = {sc for mid in g.doc["mutants"] for sc in r.mutant_scopes(mid)}
+            src = (r.root / path).read_text()
+            node = next(x for x in ast.walk(ast.parse(src)) if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and x.name == qual.split(".")[-1])
+            lines = src.splitlines(True)
+            at = node.body[0].lineno - 1
+            indent = lines[at][:len(lines[at]) - len(lines[at].lstrip())]
+            doc = isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant) \
+                and isinstance(node.body[0].value.value, str)
+            if how == "docstring" and doc:
+                lines[at] = lines[at].replace('"""', '"""Selftest. ', 1)
+            else:
+                lines.insert(at, indent + {"comment": "# selftest marker: no behavioural change", "blank": "   ",
+                                           "docstring": '"""Selftest docstring."""', "assign": "_selftest_unused = 1"}[how] + "\n")
+            return "".join(difflib.unified_diff(src.splitlines(True), lines, f"a/{path}", f"b/{path}"))
+
+        def foreign_break(r):
+            """Codex's foreign hunk: jcs admits floats (records_test E2 fails)."""
+            src = (r.root / "warrant" / "jcs.py").read_text()
+            new = src.replace(floats_old, floats_new, 1).replace("parse_constant=_constant, parse_float=_float)",
+                                                                  "parse_constant=_constant)", 1)
+            return "".join(difflib.unified_diff(src.splitlines(True), new.splitlines(True), "a/warrant/jcs.py", "b/warrant/jcs.py"))
+
+        def g_counter(how, foreign=True):
+            def f(r, n):
+                doc = {"counter": COUNTER, "claim": n.id, "against": n.tid,
+                       "patch": (foreign_break(r) if foreign else "") + scope_edit(r, how),
+                       "passes": sorted(n.doc["witnesses"]), "fails": ["records_test:E2"], "why": "selftest"}
+                return [Store(r.store_dir).put_json(doc)]
+            return f
+
+        for name, how, foreign in (
+                ("Codex's shape: a foreign float break plus a comment inside the mutant's function", "comment", True),
+                ("a foreign break plus a whitespace-only line inside the mutant's function", "blank", True),
+                ("a foreign break plus a docstring-only change inside the mutant's function", "docstring", True),
+                ("a foreign hunk plus a behaviour-neutral AST change inside the mutant's function", "assign", True),
+                ("a patch whose only change is AST-equal inside the mutant's function", "comment", False)):
+            case(name, "COUNTER_NOT_REPLAYED",
+                 rebacked([], [], unbacked_because="selftest", counter=g_counter(how, foreign), claim=g))
         case("a challenge carrying a counter blob that replays", None,
              rebacked([], [], unbacked_because="selftest", counter=challenge_carrying()))
         case("a counter blob whose passes omits a cited witness", "COUNTER_NOT_REPLAYED",
