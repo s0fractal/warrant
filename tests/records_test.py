@@ -1,0 +1,762 @@
+#!/usr/bin/env python3
+"""SPEC §2 Encoding and §3 Records, one case per sentence or field line (pilot W4).
+
+A refusal is asserted by its type only (records.Invalid, jcs.NotCanonical, or an
+invalid record in the store's own listing), never by its message, so a mutant is
+killed only when a refused value becomes accepted or the refusal stops being one
+(a crash where the store should list an invalid record and go on). Every
+string-shape rule gets a trailing "\\n", a "\\r\\n" and non-ASCII vectors; free-text
+members get the same values as accepted controls.
+
+    python3 tests/records_test.py
+"""
+import copy
+import hashlib
+import sys
+
+from world import CODEX, HOLDER, OBSERVER, OWNER, STRANGER, E, R, W, World, check, finish
+from warrant import jcs as C
+from warrant import keys as K
+from warrant.store import Snapshot, Store, Trust
+
+H1, H2, H3 = "a1" * 32, "b2" * 32, "c3" * 32
+SHA40 = "d4" * 20
+
+# Values a hex64 member must refuse: wrong case, length and alphabet, non-ASCII digits
+# (`\d` matches them), and whitespace around a valid value.
+BAD_HEX64 = {
+    "upper": H1.upper(), "mixed": "A" + H1[1:], "63": H1[:63], "65": H1 + "a", "non-hex": "g" * 64,
+    "arabic-indic digits": "١" * 64, "fullwidth digits": "０" * 64, "trailing \\n": H1 + "\n",
+    "trailing \\r\\n": H1 + "\r\n", "63 + \\n": H1[:63] + "\n", "leading space": " " + H1[:63], "empty": "",
+    "integer": 5, "null": None, "list": [H1],
+}
+
+
+def outcome(fn):
+    """"accepted", "invalid" (a refusal of SPEC §2/§3), or the exception that is neither."""
+    try:
+        fn()
+        return "accepted"
+    except (R.Invalid, C.NotCanonical):
+        return "invalid"
+    except Exception as e:      # noqa: BLE001
+        return f"raised {type(e).__name__}"
+
+
+def rec(rtype, body, actor=HOLDER, at=100, **top):
+    r = {"warrant": "2", "type": rtype, "actor": actor, "at": at, "body": body}
+    r.update(top)
+    return outcome(lambda: (R.check(r), C.canon(r)))
+
+
+def put(body, **kv):
+    b = copy.deepcopy(body)
+    b.update(kv)
+    return b
+
+
+def drop(body, key):
+    b = copy.deepcopy(body)
+    del b[key]
+    return b
+
+
+DUTY = R.duty(HOLDER, "do the thing", [OWNER], {"attest": {}}, accept_by=[OWNER])
+OBS_DUTY = R.duty(HOLDER, "watch it", [OWNER], {"observe": {"observers": [OBSERVER], "probe": H1, "expect": "ok",
+                                                            "fresh_for": None}})
+TRANSITION = R.transition("ATTESTED", [H1])
+CLOSING = R.transition("ATTESTED", [H1], closes=[R.item(H2, "discharge", [H1])])
+ACCEPT = R.accept(H3, 0, [H1])
+OBSERVATION = R.observation("service", H1, [10, 20], "ok", [H2])
+GRANT = R.grant(STRANGER, ["release"], [H2])
+CHALLENGE = R.challenge(H3, "a counterexample", [H1], 0)
+BASES = {"duty": DUTY, "transition": CLOSING, "accept": ACCEPT, "observation": OBSERVATION, "grant": GRANT,
+         "challenge": CHALLENGE}
+ACTOR_OF = {"duty": HOLDER, "transition": HOLDER, "accept": OWNER, "observation": OBSERVER, "grant": OWNER,
+            "challenge": STRANGER}
+
+
+def table(rows):
+    """[(label, got, want)] -> (all as wanted, the rows that are not)."""
+    bad = [(label, got, want) for label, got, want in rows if got != want]
+    return not bad, bad
+
+
+def item_transition(m, evidence=(H1,)):
+    return R.transition("ATTESTED", list(evidence), closes=[m])
+
+
+def stored(w, r, key, tamper=None):
+    """Write a signed envelope for `r` by hand (no shape check), optionally tampered; its id."""
+    rid = C.doc_id(r)
+    env = {"record": r, "sig": {"key": key.id, "ed25519": key.sign(K.sig_message(rid))}}
+    data = C.canon(env)
+    name = rid
+    if tamper:
+        data, name = tamper(env, data, rid)
+    (w.store.root / "records" / f"{name}.json").write_bytes(data)
+    return name
+
+
+def listing(w):
+    """The store's own verdict on every record: ({id: reason} of invalid ones) or the exception."""
+    try:
+        good, bad = w.store.snapshot().authentic(w.trust)
+        return good, bad
+    except Exception as e:      # noqa: BLE001
+        return None, f"raised {type(e).__name__}: {e}"
+
+
+# ---------------------------------------------------------------- SPEC §2
+
+def encoding_cases():
+    big = 2**53 - 1
+    # E1: the JSON domain: objects with string keys, arrays, strings, booleans, null and
+    # integers within ±(2^53-1); one beyond either bound, and a non-string key, are refused
+    rows = [
+        ("every kind", outcome(lambda: C.canon({"o": {}, "a": [1, "s", True, False, None]})), "accepted"),
+        ("2^53-1", outcome(lambda: C.canon(big)), "accepted"),
+        ("-(2^53-1)", outcome(lambda: C.canon(-big)), "accepted"),
+        ("2^53", outcome(lambda: C.canon(big + 1)), "invalid"),
+        ("-(2^53)", outcome(lambda: C.canon(-big - 1)), "invalid"),
+        ("read 2^53", outcome(lambda: C.loads(b"9007199254740992")), "invalid"),
+        ("read -(2^53)", outcome(lambda: C.loads(b"-9007199254740992")), "invalid"),
+        ("read 2^53-1", outcome(lambda: C.loads(b"9007199254740991")), "accepted"),
+        ("integer key", outcome(lambda: C.canon({1: "x"})), "invalid"),
+        ("boolean key", outcome(lambda: C.canon({True: "x"})), "invalid"),
+        ("record at 2^53", rec("duty", DUTY, at=big + 1), "invalid"),
+    ]
+    ok, bad = table(rows)
+    check("E1", ok, "JSON values: string keys, integers within ±(2^53-1)", bad)
+    # E2: no floats, written or read, integral or not
+    rows = [
+        ("write 1.5", outcome(lambda: C.canon(1.5)), "invalid"),
+        ("write 2.0", outcome(lambda: C.canon({"a": 2.0})), "invalid"),
+        ("read 1.5", outcome(lambda: C.loads(b"1.5")), "invalid"),
+        ("read 2.0", outcome(lambda: C.loads(b'{"a":2.0}')), "invalid"),
+        ("read 1e2", outcome(lambda: C.loads(b"1e2")), "invalid"),
+        ("record at 100.0", rec("duty", DUTY, at=100.0), "invalid"),
+    ]
+    ok, bad = table(rows)
+    check("E2", ok, "no floats", bad)
+    # E3: no lone surrogates, in values or keys, written or read; a pair is one character;
+    # a stored record carrying one is listed invalid and the rest of the store is read
+    w = World()
+    good = w.duty(statement="a valid duty")
+    lone = stored(w, R.record("duty", HOLDER, 101, put(DUTY, statement="x")), w.keys[HOLDER],
+                  tamper=lambda env, data, rid: (data.replace(b'"x"', b'"\\ud800"'), rid))
+    got_good, got_bad = listing(w)
+    rows = [
+        ("value", outcome(lambda: C.canon("a\ud800")), "invalid"),
+        ("low half", outcome(lambda: C.canon("\udc00b")), "invalid"),
+        ("key", outcome(lambda: C.canon({"\ud83d": 1})), "invalid"),
+        ("read escape", outcome(lambda: C.loads(b'"\\ud800"')), "invalid"),
+        ("pair as one character", outcome(lambda: C.canon("\U0001f600")), "accepted"),
+        ("record statement", rec("duty", put(DUTY, statement="\udfff")), "invalid"),
+        ("stored record listed invalid, the rest read",
+         (got_good is not None and good in got_good and lone in got_bad), True),
+    ]
+    ok, bad = table(rows)
+    check("E3", ok, "strings never contain lone surrogates", (bad, got_bad))
+    # E4: closed member sets: an unknown member, a missing required member, or a value of
+    # the wrong JSON type makes the record invalid, for the record and every body; a
+    # stored record missing a member is listed invalid and the store is still read
+    wrong = {str: 5, list: "x", dict: [], int: "1", bool: "true", type(None): []}
+    rows = [("record + unknown", rec("duty", DUTY, extra=1), "invalid")]
+    for k in ("warrant", "type", "actor", "at", "body"):
+        r = {"warrant": "2", "type": "duty", "actor": HOLDER, "at": 100, "body": DUTY}
+        del r[k]
+        rows.append((f"record - {k}", outcome(lambda r=r: R.check(r)), "invalid"))
+    rows += [("record at true", rec("duty", DUTY, at=True), "invalid"), ("record at \"100\"", rec("duty", DUTY, at="100"), "invalid")]
+    for rtype, body in BASES.items():
+        actor = ACTOR_OF[rtype]
+        rows.append((f"{rtype} + unknown", rec(rtype, put(body, unknown=None), actor), "invalid"))
+        for k, v in body.items():
+            rows.append((f"{rtype} - {k}", rec(rtype, drop(body, k), actor), "invalid"))
+            rows.append((f"{rtype}.{k} wrong type", rec(rtype, put(body, **{k: wrong[type(v)]}), actor), "invalid"))
+    for k in ("duty", "act", "evidence"):
+        rows.append((f"item - {k}", rec("transition", item_transition(drop(R.item(H2, "discharge", [H1]), k))), "invalid"))
+    rows += [("item period true", rec("transition", item_transition(R.item(H2, "discharge", [H1], period=True))), "invalid"),
+             ("accept item true", rec("accept", put(ACCEPT, item=True), OWNER), "invalid"),
+             ("grant expires true", rec("grant", put(GRANT, expires=True), OWNER), "invalid")]
+    w = World()
+    good = w.duty(statement="a valid duty")
+    missing = stored(w, {"warrant": "2", "type": "duty", "actor": HOLDER, "at": 101, "body": drop(DUTY, "subject")},
+                     w.keys[HOLDER])
+    got_good, got_bad = listing(w)
+    rows.append(("stored, a member missing: listed invalid, the rest read",
+                 got_good is not None and good in got_good and missing in got_bad, True))
+    rows += [(f"{rtype} control", rec(rtype, body, ACTOR_OF[rtype]), "accepted") for rtype, body in BASES.items()]
+    ok, bad = table(rows)
+    check("E4", ok, "closed member sets: unknown, missing and wrong-typed members are invalid", bad)
+    # E6: canonical bytes are RFC 8785: members by UTF-16 code units (U+1F600 is D83D DE00,
+    # before U+FB01), no whitespace, JCS string escapes, UTF-8 otherwise; other bytes are refused
+    rows = [
+        ("UTF-16 order", C.canon({"ﬁ": 1, "\U0001f600": 2, "a": 3}),
+         '{"a":3,"\U0001f600":2,"ﬁ":1}'.encode()),
+        ("no whitespace", C.canon({"b": [1, {"c": None}], "a": True}), b'{"a":true,"b":[1,{"c":null}]}'),
+        ("escapes", C.canon("q\"\\/\n\t\b\f\r\x1fé "), '"q\\"\\\\/\\n\\t\\b\\f\\r\\u001fé "'.encode()),
+        ("read with a space", outcome(lambda: C.loads(b'{"a": 1}')), "invalid"),
+        ("read out of order", outcome(lambda: C.loads(b'{"b":1,"a":2}')), "invalid"),
+        ("read \\u00e9 escaped", outcome(lambda: C.loads(b'"\\u00e9"')), "invalid"),
+        ("read code-point order", outcome(lambda: C.loads('{"ﬁ":1,"\U0001f600":2}'.encode())), "invalid"),
+        ("read UTF-16 order", outcome(lambda: C.loads('{"\U0001f600":2,"ﬁ":1}'.encode())), "accepted"),
+    ]
+    ok, bad = table(rows)
+    check("E6", ok, "canonical bytes: RFC 8785, UTF-16 member order, no whitespace", bad)
+    # E7: a hash is lowercase hex SHA-256 of 64 characters, on the shared predicate and in a record
+    rows = [(f"predicate {k}", isinstance(v, str) and R.HEX64.match(v) is not None, False) for k, v in BAD_HEX64.items()]
+    rows += [(f"evidence {k}", rec("transition", R.transition("ATTESTED", [v])), "invalid") for k, v in BAD_HEX64.items()]
+    rows += [("digest", C.digest(b"x"), hashlib.sha256(b"x").hexdigest()),
+             ("control", rec("transition", R.transition("ATTESTED", [C.digest(b"x")])), "accepted")]
+    ok, bad = table(rows)
+    check("E7", ok, "hashes are lowercase hex SHA-256, 64 characters", bad)
+    # E8: a blob is any byte string, empty or not UTF-8, kept under sha256(bytes) and only there
+    w = World()
+    datas = [b"", b"\xff\xfe\x00", "é\n".encode()]
+    hs = [w.store.put_blob(d) for d in datas]
+    (w.store.root / "blobs" / H1).write_bytes(b"not the bytes of H1")
+    snap = w.store.snapshot()
+    rows = [("addresses", hs, [hashlib.sha256(d).hexdigest() for d in datas]),
+            ("kept", [snap.blob(h) for h in hs], datas),
+            ("misnamed kept out", H1 in snap.blobs, False)]
+    ok, bad = table(rows)
+    check("E8", ok, "a blob is any byte string, addressed by sha256(bytes)", bad)
+    # E9: time is an integer: not a boolean, a float or a string
+    rows = [(k, rec("duty", DUTY, at=v), want) for k, v, want in (
+        ("0", 0, "accepted"), ("2^53-1", 2**53 - 1, "accepted"), ("true", True, "invalid"), ("false", False, "invalid"),
+        ("100.0", 100.0, "invalid"), ("\"100\"", "100", "invalid"), ("null", None, "invalid"))]
+    rows += [("observation window true", rec("observation", put(OBSERVATION, window=[True, 20]), OBSERVER), "invalid"),
+             ("schedule start true", rec("duty", put(DUTY, schedule={"start": True, "every": 10})), "invalid")]
+    ok, bad = table(rows)
+    check("E9", ok, "time is integer seconds", bad)
+
+
+# ---------------------------------------------------------------- SPEC §3
+
+def record_cases():
+    # K1: the record object: version "2", one of the types, an actor string, an integer time, a body
+    rows = [(k, rec(t, DUTY, **({} if v is None else {"warrant": v})), want) for k, t, v, want in (
+        ("version 2 (integer)", "duty", 2, "invalid"), ("version \"3\"", "duty", "3", "invalid"),
+        ("version \"2\\n\"", "duty", "2\n", "invalid"), ("version fullwidth", "duty", "２", "invalid"),
+        ("type Duty", "Duty", None, "invalid"), ("type duty\\n", "duty\n", None, "invalid"),
+        ("control", "duty", None, "accepted"))]
+    rows += [("actor 5", rec("duty", put(DUTY, holder=5), actor=5), "invalid"),
+             ("actor non-ASCII", rec("duty", put(DUTY, holder="ówner"), actor="ówner"), "accepted"),
+             ("body a list", rec("duty", []), "invalid")]
+    ok, bad = table(rows)
+    check("K1", ok, "a record is {warrant: \"2\", type, actor, at, body}", bad)
+    # K2: the id is sha256 of the canonical bytes, written here by hand
+    r = R.record("challenge", HOLDER, 1, R.challenge(H3, "xé", []))
+    by_hand = ('{"actor":"claude","at":1,"body":{"evidence":[],"item":null,"statement":"xé","target":"'
+               + H3 + '"},"type":"challenge","warrant":"2"}').encode()
+    rows = [("id", R.record_id(r), hashlib.sha256(by_hand).hexdigest())]
+    w = World()
+    rid = w.store.put_record(r, w.keys[HOLDER])
+    rows.append(("stored under it", rid, hashlib.sha256(by_hand).hexdigest()))
+    ok, bad = table(rows)
+    check("K2", ok, "a record's id is sha256(canon(record))", bad)
+    # K3: stored as canon({"record", "sig": {"key", "ed25519"}}) in records/<id>.json; any
+    # other envelope member, or a sig member of another shape, is an invalid record
+    w = World()
+    key = w.keys[HOLDER]
+    r = R.record("duty", HOLDER, 101, DUTY)
+    rid = w.store.put_record(r, key)
+    data = (w.store.root / "records" / f"{rid}.json").read_bytes()
+    want = C.canon({"record": r, "sig": {"key": key.id, "ed25519": key.sign(K.sig_message(rid))}})
+
+    def envelope(fn):
+        def t(env, data, rid):
+            env = copy.deepcopy(env)
+            fn(env)
+            return C.canon(env), rid
+        return t
+    extra = stored(w, R.record("duty", HOLDER, 102, put(DUTY, statement="two")), key,
+                   envelope(lambda e: e.update(note="x")))
+    sig_extra = stored(w, R.record("duty", HOLDER, 103, put(DUTY, statement="three")), key,
+                       envelope(lambda e: e["sig"].update(note="x")))
+    sig_nl = stored(w, R.record("duty", HOLDER, 104, put(DUTY, statement="four")), key,
+                    envelope(lambda e: e["sig"].update(ed25519=e["sig"]["ed25519"] + "\n")))
+    sig_upper = stored(w, R.record("duty", HOLDER, 105, put(DUTY, statement="five")), key,
+                       envelope(lambda e: e["sig"].update(key=e["sig"]["key"].upper())))
+    good, bad_ = listing(w)
+    rows = [("bytes", data, want), ("good", sorted(good or {}), [rid]),
+            ("invalid", sorted(bad_) if isinstance(bad_, dict) else bad_, sorted([extra, sig_extra, sig_nl, sig_upper]))]
+    ok, bad = table(rows)
+    check("K3", ok, "stored as the canonical envelope in records/<id>.json", bad)
+    # K4: the signature is Ed25519 over the 47 bytes "warrant-sig-v1:" || id_raw, checked
+    # here with the library directly, not through keys.sig_message
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    msg = b"warrant-sig-v1:" + bytes.fromhex(rid)
+    env = C.loads(data)
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(key.public)).verify(bytes.fromhex(env["sig"]["ed25519"]), msg)
+        direct = True
+    except Exception:       # noqa: BLE001
+        direct = False
+    rows = [("47 bytes", len(K.sig_message(rid)), 47), ("message", K.sig_message(rid), msg), ("verifies directly", direct, True)]
+    ok, bad = table(rows)
+    check("K4", ok, "the signature covers exactly \"warrant-sig-v1:\" || id_raw", bad)
+    # K5: a key id is sha256 of the 32 raw public key bytes, not of their hex text
+    raw = bytes.fromhex(key.public)
+    rows = [("raw", len(raw), 32), ("key id", key.id, hashlib.sha256(raw).hexdigest()),
+            ("envelope key", env["sig"]["key"], hashlib.sha256(raw).hexdigest()),
+            ("trust", sorted(Trust(Trust.document([(HOLDER, key.public)])).keys), [hashlib.sha256(raw).hexdigest()])]
+    ok, bad = table(rows)
+    check("K5", ok, "a key id is the SHA-256 of the 32-byte public key", bad)
+    # K6: authentic iff canonical bytes, matching id, and a signature that verifies under a key
+    # the trust binds to the record's actor; each failure alone makes it unauthentic
+    w = World()
+    key = w.keys[HOLDER]
+    control = w.duty(statement="control")
+    import json as _json
+    spaced = stored(w, R.record("duty", HOLDER, 102, put(DUTY, statement="spaced")), key,
+                    lambda env, data, rid: (_json.dumps(env, sort_keys=True).encode(), rid))
+    renamed = stored(w, R.record("duty", HOLDER, 103, put(DUTY, statement="renamed")), key,
+                     lambda env, data, rid: (data, H2))
+    # signed by the bound key for the name it is stored under: only the id check refuses it
+    resigned = stored(w, R.record("duty", HOLDER, 106, put(DUTY, statement="re-signed")), key,
+                      lambda env, data, rid: (C.canon(put(env, sig={"key": key.id, "ed25519": key.sign(K.sig_message(H3))})), H3))
+    other_msg = R.record("duty", HOLDER, 104, put(DUTY, statement="other message"))
+    forged = stored(w, other_msg, key, lambda env, data, rid: (C.canon(put(env, sig={"key": key.id, "ed25519": key.sign(
+        K.sig_message(H1))})), rid))
+    unbound = stored(w, R.record("duty", HOLDER, 105, put(DUTY, statement="unbound")), W.Key.generate())
+    good, bad_ = listing(w)
+    rows = [("authentic", sorted(good or {}), [control]),
+            ("unauthentic", sorted(bad_) if isinstance(bad_, dict) else bad_, sorted([spaced, renamed, resigned, forged, unbound]))]
+    ok, bad = table(rows)
+    check("K6", ok, "authentic iff canonical, id matches, signature verifies under a key bound to the actor", bad)
+    # K8: exactly six types; any other name is invalid
+    rows = [(t, rec(t, BASES[t], ACTOR_OF[t]), "accepted") for t in BASES]
+    rows += [(t, rec(t, TRANSITION), "invalid") for t in ("claim", "note", "Transition", "transition\n", "prior")]
+    rows.append(("names", R.TYPES, ("duty", "transition", "accept", "observation", "grant", "challenge")))
+    ok, bad = table(rows)
+    check("K8", ok, "there are six types", bad)
+    # K9: no body is valid under another type: a claim, a permission, an observation and an
+    # acceptance cannot be read as one another
+    rows = [(f"{b} as {t}", rec(t, body, ACTOR_OF[b]), "invalid") for b, body in BASES.items() for t in BASES if t != b]
+    ok, bad = table(rows)
+    check("K9", ok, "a body of one type is invalid under every other", bad)
+    # K11: no `prior` member anywhere: relations are the typed fields
+    rows = [("record", rec("duty", DUTY, prior=[H1]), "invalid")]
+    rows += [(t, rec(t, put(body, prior=[H1]), ACTOR_OF[t]), "invalid") for t, body in BASES.items()]
+    ok, bad = table(rows)
+    check("K11", ok, "prior edges do not exist", bad)
+
+
+def bad_hex_rows(label, make, nullable=False):
+    """[(label, outcome, "invalid")] for every BAD_HEX64 value put where `make` puts it."""
+    return [(f"{label} {k}", make(v), "invalid") for k, v in BAD_HEX64.items() if not (nullable and v is None)]
+
+
+def duty_cases():
+    # D1: statement is a string of at most 400 code points: not bytes, not UTF-16 units
+    rows = [(k, rec("duty", put(DUTY, statement=v)), want) for k, v, want in (
+        ("400 ASCII", "a" * 400, "accepted"), ("401 ASCII", "a" * 401, "invalid"),
+        ("400 two-byte", "é" * 400, "accepted"), ("400 astral", "\U0001f600" * 400, "accepted"),
+        ("401 astral", "\U0001f600" * 401, "invalid"), ("399 + \\n", "a" * 399 + "\n", "accepted"),
+        ("400 + \\n", "a" * 400 + "\n", "invalid"), ("398 + \\r\\n", "a" * 398 + "\r\n", "accepted"),
+        ("integer", 400, "invalid"))]
+    ok, bad = table(rows)
+    check("D1", ok, "statement ≤ 400 code points", bad)
+    # D2: the holder is the record's actor, exactly
+    rows = [(f"{h!r} by {a!r}", rec("duty", put(DUTY, holder=h), actor=a), want) for h, a, want in (
+        (HOLDER, HOLDER, "accepted"), (HOLDER + "\n", HOLDER, "invalid"), (HOLDER, HOLDER + "\r\n", "invalid"),
+        ("Claude", HOLDER, "invalid"), ("claudé", "claude", "invalid"), ("ówner", "ówner", "accepted"),
+        (OWNER, HOLDER, "invalid"))]
+    ok, bad = table(rows)
+    check("D2", ok, "holder MUST equal the record's actor", bad)
+    # D3: owed_to is a non-empty list of actors
+    rows = [(k, rec("duty", put(DUTY, owed_to=v)), want) for k, v, want in (
+        ("[]", [], "invalid"), ("a string", OWNER, "invalid"), ("[5]", [5], "invalid"), ("[null]", [None], "invalid"),
+        ("one", [OWNER], "accepted"), ("non-ASCII and \\n", ["ówner\n"], "accepted"))]
+    ok, bad = table(rows)
+    check("D3", ok, "owed_to is a non-empty list of actors", bad)
+    # D4: accept_by is a list of actors (an observe duty may name none)
+    rows = [(k, rec("duty", put(OBS_DUTY, accept_by=v)), want) for k, v, want in (
+        ("[]", [], "accepted"), ("a string", OWNER, "invalid"), ("[5]", [5], "invalid"), ("[[owner]]", [[OWNER]], "invalid"),
+        ("two", [OWNER, CODEX], "accepted"))]
+    ok, bad = table(rows)
+    check("D4", ok, "accept_by is a list of actors", bad)
+    # D5: release_by is a list of actors; owed_to may always release, release_by may, others not
+    rows = [(k, rec("duty", put(DUTY, release_by=v)), want) for k, v, want in (
+        ("a string", CODEX, "invalid"), ("[5]", [5], "invalid"), ("[]", [], "accepted"), ("one", [CODEX], "accepted"))]
+    w = World()
+    d1 = w.duty(statement="one")
+    d2 = w.duty(statement="two", release_by=(CODEX,))
+    d3 = w.duty(statement="three", release_by=(CODEX,))
+    w.close(d1, actor=OWNER, act="release")
+    w.close(d2, actor=OWNER, act="release")
+    w.close(d3, actor=STRANGER, act="release")
+    rep = w.assess()
+    rows.append(("dispositions", [rep["duties"][d]["disposition"] for d in (d1, d2, d3)], ["RELEASED", "RELEASED", "OPEN"]))
+    ok, bad = table(rows)
+    check("D5", ok, "release_by is a list of actors; owed_to may always release", bad)
+    # D6: condition is exactly one of the three kinds
+    rows = [(k, rec("duty", put(DUTY, condition=v)), want) for k, v, want in (
+        ("{}", {}, "invalid"), ("two kinds", {"attest": {}, "observe": OBS_DUTY["condition"]["observe"]}, "invalid"),
+        ("Attest", {"Attest": {}}, "invalid"), ("attest\\n", {"attest\n": {}}, "invalid"), ("a list", [{"attest": {}}], "invalid"),
+        ("attest", {"attest": {}}, "accepted"))]
+    ok, bad = table(rows)
+    check("D6", ok, "condition is one of attest, observe, compute", bad)
+    # D7: attest is the empty object
+    rows = [(k, rec("duty", put(DUTY, condition={"attest": v})), want) for k, v, want in (
+        ("a member", {"by": OWNER}, "invalid"), ("[]", [], "invalid"), ("null", None, "invalid"), ("{}", {}, "accepted"))]
+    ok, bad = table(rows)
+    check("D7", ok, "{\"attest\": {}}", bad)
+    # D8: observe: observers, a hex64 probe, a string expect, fresh_for int|null
+    base = OBS_DUTY["condition"]["observe"]
+
+    def obs(**kv):
+        return rec("duty", put(OBS_DUTY, condition={"observe": put(base, **kv)}))
+    rows = bad_hex_rows("probe", lambda v: obs(probe=v))
+    rows += [(k, obs(**kv), want) for k, kv, want in (
+        ("observers a string", {"observers": OBSERVER}, "invalid"), ("observers [5]", {"observers": [5]}, "invalid"),
+        ("expect 5", {"expect": 5}, "invalid"), ("expect null", {"expect": None}, "invalid"),
+        ("expect empty", {"expect": ""}, "accepted"), ("expect \\n and non-ASCII", {"expect": "é\n"}, "accepted"),
+        ("fresh_for 10", {"fresh_for": 10}, "accepted"), ("fresh_for true", {"fresh_for": True}, "invalid"),
+        ("fresh_for \"10\"", {"fresh_for": "10"}, "invalid"), ("control", {}, "accepted"))]
+    rows += [("missing fresh_for", rec("duty", put(OBS_DUTY, condition={"observe": drop(base, "fresh_for")})), "invalid"),
+             ("unknown member", obs(window=[1, 2]), "invalid")]
+    ok, bad = table(rows)
+    check("D8", ok, "observe condition members", bad)
+    # D9: compute: a runtime id of §7 and three hex64 members
+    cbase = {"runtime": R.RUNTIMES[0], "input": H1, "environment": H2, "expect": H3}
+
+    def comp(**kv):
+        return rec("duty", put(DUTY, condition={"compute": put(cbase, **kv)}))
+    rows = [row for k in ("input", "environment", "expect") for row in bad_hex_rows(k, lambda v, k=k: comp(**{k: v}))]
+    rows += [(k, comp(runtime=v), want) for k, v, want in (
+        ("runtime unknown", "sigma/other", "invalid"), ("runtime + \\n", R.RUNTIMES[0] + "\n", "invalid"),
+        ("runtime 5", 5, "invalid"), ("runtime draft", R.RUNTIMES[1], "accepted"))]
+    rows.append(("control", comp(), "accepted"))
+    ok, bad = table(rows)
+    check("D9", ok, "compute condition members", bad)
+    # D10: schedule is null or {start: int, every: int > 0}
+    rows = [(k, rec("duty", put(DUTY, schedule=v)), want) for k, v, want in (
+        ("null", None, "accepted"), ("start 0 every 1", {"start": 0, "every": 1}, "accepted"),
+        ("every 0", {"start": 0, "every": 0}, "invalid"), ("every -1", {"start": 0, "every": -1}, "invalid"),
+        ("every true", {"start": 0, "every": True}, "invalid"), ("every \"10\"", {"start": 0, "every": "10"}, "invalid"),
+        ("start \"0\"", {"start": "0", "every": 10}, "invalid"), ("no every", {"start": 0}, "invalid"),
+        ("unknown member", {"start": 0, "every": 1, "until": 9}, "invalid"), ("a list", [0, 10], "invalid"))]
+    ok, bad = table(rows)
+    check("D10", ok, "schedule null | {start: int, every: int > 0}", bad)
+    # D11-D12: requires and serves are lists of duty ids
+    for cid, k in (("D11", "requires"), ("D12", "serves")):
+        rows = bad_hex_rows(k, lambda v, k=k: rec("duty", put(DUTY, **{k: [v]})))
+        rows += [(f"{k} a string", rec("duty", put(DUTY, **{k: H1})), "invalid"),
+                 (f"{k} control", rec("duty", put(DUTY, **{k: [H1, H2]})), "accepted")]
+        ok, bad = table(rows)
+        check(cid, ok, f"{k} is a list of duty ids", bad)
+    # D13: answers is null or <transition id>:<index>: ASCII digits, no leading zero
+    rows = [(k, rec("duty", put(DUTY, answers=v)), want) for k, v, want in (
+        ("null", None, "accepted"), (":0", H1 + ":0", "accepted"), (":12", H1 + ":12", "accepted"),
+        (":00", H1 + ":00", "invalid"), (":01", H1 + ":01", "invalid"), (":-1", H1 + ":-1", "invalid"),
+        (": arabic-indic 1", H1 + ":١", "invalid"), (":1 arabic-indic 2", H1 + ":1٢", "invalid"),
+        (":0\\n", H1 + ":0\n", "invalid"), (":0\\r\\n", H1 + ":0\r\n", "invalid"), ("upper id", H1.upper() + ":0", "invalid"),
+        ("no index", H1 + ":", "invalid"), ("no colon", H1, "invalid"), ("two indexes", H1 + ":0:1", "invalid"),
+        ("63 hex", H1[:63] + ":0", "invalid"), ("integer", 0, "invalid"))]
+    ok, bad = table(rows)
+    check("D13", ok, "answers is null or a question reference", bad)
+    # D14: subject is null or hex40 or hex64
+    ok, bad = table(subject_rows(lambda v: rec("duty", put(DUTY, subject=v))))
+    check("D14", ok, "a duty's subject is null | hex40 | hex64", bad)
+
+
+def subject_rows(make):
+    rows = [(k, make(v), want) for k, v, want in (
+        ("null", None, "accepted"), ("hex40", SHA40, "accepted"), ("hex64", H1, "accepted"),
+        ("hex41", SHA40 + "a", "invalid"), ("hex39", SHA40[:39], "invalid"), ("hex63", H1[:63], "invalid"),
+        ("hex50", H1[:50], "invalid"), ("upper hex40", SHA40.upper(), "invalid"), ("hex40 + \\n", SHA40 + "\n", "invalid"),
+        ("hex40 + \\r\\n", SHA40 + "\r\n", "invalid"), ("arabic-indic 40", "١" * 40, "invalid"))]
+    return rows + bad_hex_rows("hex64", make, nullable=True)
+
+
+def transition_cases():
+    # T1: basis is one of three exact names
+    rows = [(repr(v), rec("transition", put(TRANSITION, basis=v)), want) for v, want in (
+        ("ATTESTED", "accepted"), ("OBSERVED", "accepted"), ("REPLAYED", "accepted"), ("attested", "invalid"),
+        ("ATTESTED\n", "invalid"), ("ATTESTED\r\n", "invalid"), ("ATTESTED ", "invalid"), ("АTTESTED", "invalid"),
+        ("CLAIMED", "invalid"), (1, "invalid"), (None, "invalid"))]
+    ok, bad = table(rows)
+    check("T1", ok, "basis ATTESTED | OBSERVED | REPLAYED", bad)
+    # T2: evidence is a list of hex64
+    rows = bad_hex_rows("evidence", lambda v: rec("transition", put(TRANSITION, evidence=[v])))
+    rows += [("a string", rec("transition", put(TRANSITION, evidence=H1)), "invalid"),
+             ("control", rec("transition", put(TRANSITION, evidence=[H1, H2])), "accepted")]
+    ok, bad = table(rows)
+    check("T2", ok, "evidence is a list of hex64", bad)
+    # T4-T5: established and residual are lists of strings
+    for cid, k in (("T4", "established"), ("T5", "residual")):
+        rows = [(f"{k} {n}", rec("transition", put(TRANSITION, **{k: v})), want) for n, v, want in (
+            ("[5]", [5], "invalid"), ("a string", "done", "invalid"), ("[[x]]", [["x"]], "invalid"), ("[null]", [None], "invalid"),
+            ("\\n and non-ASCII", ["été\n", "two\r\n"], "accepted"))]
+        ok, bad = table(rows)
+        check(cid, ok, f"{k} is a list of strings", bad)
+    # T6: opened is a list of {text: string, scope: null|string}
+    rows = [(k, rec("transition", put(TRANSITION, opened=[v])), want) for k, v, want in (
+        ("scope null", {"text": "why?", "scope": None}, "accepted"), ("scope string", {"text": "why?\n", "scope": "é"}, "accepted"),
+        ("scope 5", {"text": "why?", "scope": 5}, "invalid"), ("scope []", {"text": "why?", "scope": []}, "invalid"),
+        ("no scope", {"text": "why?"}, "invalid"), ("text 5", {"text": 5, "scope": None}, "invalid"),
+        ("unknown member", {"text": "why?", "scope": None, "owner": OWNER}, "invalid"), ("a string", "why?", "invalid"))]
+    ok, bad = table(rows)
+    check("T6", ok, "opened is a list of {text, scope}", bad)
+    # T7: closes is a list of items
+    rows = [(k, rec("transition", put(TRANSITION, closes=v)), want) for k, v, want in (
+        ("a string", "x", "invalid"), ("[5]", [5], "invalid"), ("[{}]", [{}], "invalid"), ("[[item]]", [[R.item(H2, "discharge", [H1])]], "invalid"),
+        ("one item", [R.item(H2, "discharge", [H1])], "accepted"))]
+    ok, bad = table(rows)
+    check("T7", ok, "closes is a list of items", bad)
+    # T9: a transition's subject is null or hex40 or hex64
+    ok, bad = table(subject_rows(lambda v: rec("transition", put(TRANSITION, subject=v))))
+    check("T9", ok, "a transition's subject is null | hex40 | hex64", bad)
+    # T10: supersedes is a list of transition ids
+    rows = bad_hex_rows("supersedes", lambda v: rec("transition", put(TRANSITION, supersedes=[v])))
+    rows.append(("control", rec("transition", put(TRANSITION, supersedes=[H2])), "accepted"))
+    ok, bad = table(rows)
+    check("T10", ok, "supersedes is a list of transition ids", bad)
+    # T11: triggers is a list of the triggers of §5
+    rows = [(k, rec("transition", put(TRANSITION, triggers=v)), want) for k, v, want in (
+        ("subject_changed", [{"kind": "subject_changed", "baseline": H1}], "accepted"),
+        ("duty_not_discharged", [{"kind": "duty_not_discharged", "duty": H1}], "accepted"),
+        ("unknown kind", [{"kind": "always_fine", "duty": H1}], "invalid"),
+        ("wrong operand", [{"kind": "subject_changed", "duty": H1}], "invalid"),
+        ("unknown member", [{"kind": "subject_changed", "baseline": H1, "path": "x"}], "invalid"),
+        ("baseline \\n", [{"kind": "subject_changed", "baseline": H1 + "\n"}], "invalid"),
+        ("duty upper", [{"kind": "duty_not_discharged", "duty": H1.upper()}], "invalid"),
+        ("[5]", [5], "invalid"), ("a string", "subject_changed", "invalid"))]
+    ok, bad = table(rows)
+    check("T11", ok, "triggers is a list of §5 triggers", bad)
+    # T12: a question reference is <transition id>:<index into opened>
+    w = World()
+    t = w.act(HOLDER, [], opened=[{"text": "first?", "scope": None}, {"text": "second?", "scope": None}])
+    d0 = w.duty(statement="answer the first", answers=f"{t}:0")
+    w.duty(statement="answer none", answers=f"{t}:2")
+    qs = {q["question"]: q["taken_by"] for q in E.questions(w.assess(), owned=True)}
+    rows = [("references", sorted(qs), [f"{t}:0", f"{t}:1"]), ("taken", (qs.get(f"{t}:0"), qs.get(f"{t}:1")), ([d0], []))]
+    ok, bad = table(rows)
+    check("T12", ok, "a question reference is <transition id>:<index into opened>", bad)
+
+
+def item_cases():
+    def item(**kv):
+        return rec("transition", item_transition(put(R.item(H2, "discharge", [H1]), **kv)))
+    # I1: an item names one duty by id
+    rows = bad_hex_rows("duty", lambda v: item(duty=v))
+    rows += [("a list", item(duty=[H2]), "invalid"), ("control", item(), "accepted")]
+    ok, bad = table(rows)
+    check("I1", ok, "an item's duty is a duty id", bad)
+    # I2: act is one of six exact names
+    acts = {"discharge": {}, "impossible": {}, "release": {}, "delegate": {"to": CODEX}, "substitute": {"to": CODEX},
+            "revalidate": {"revalidates": [H3]}}
+    rows = [(a, item(act=a, **kv), "accepted") for a, kv in acts.items()]
+    rows += [(repr(a), item(act=a), "invalid") for a in ("close", "Discharge", "discharge\n", "discharge\r\n", "dıscharge", 1, None)]
+    ok, bad = table(rows)
+    check("I2", ok, "act is one of discharge, impossible, release, delegate, substitute, revalidate", bad)
+    # I3: an item's evidence is a subset of its transition's
+    rows = [(k, rec("transition", R.transition("ATTESTED", ev, closes=[R.item(H2, "discharge", iev)])), want)
+            for k, ev, iev, want in (("subset", [H1, H3], [H1], "accepted"), ("equal", [H1], [H1], "accepted"),
+                                     ("empty", [H1], [], "accepted"), ("outside", [H1], [H3], "invalid"),
+                                     ("partly outside", [H1], [H1, H3], "invalid"), ("none carried", [], [H1], "invalid"))]
+    ok, bad = table(rows)
+    check("I3", ok, "item evidence is a subset of the transition's evidence", bad)
+    # I4: period is an integer on a discharge, and a scheduled duty is discharged per period,
+    # an unscheduled one never
+    rows = [(k, item(**kv), want) for k, kv, want in (
+        ("discharge period 0", {"period": 0}, "accepted"), ("impossible period", {"act": "impossible", "period": 0}, "invalid"),
+        ("release period", {"act": "release", "period": 0}, "invalid"), ("period \"0\"", {"period": "0"}, "invalid"),
+        ("period null", {"period": None}, "invalid"))]
+    w = World()
+    plain = w.duty(statement="plain")
+    sched = w.duty(statement="scheduled", schedule={"start": 100, "every": 100}, at=100)
+    a = w.close(plain, period=0, at=150)
+    b = w.close(sched, at=150)
+    c = w.close(sched, period=0, at=160)
+    for t in (a, b, c):
+        w.accept(OWNER, t)
+    rep = w.assess(as_of=180)
+    v = {c_["transition"]: c_["verdict"] for d in (plain, sched) for c_ in rep["duties"][d]["candidates"]}
+    rows.append(("admitted", (v[a] == "ADMITTED", v[b] == "ADMITTED", v[c] == "ADMITTED"), (False, False, True)))
+    ok, bad = table(rows)
+    check("I4", ok, "period: an integer, required iff the duty is scheduled and the act is discharge", (bad, v))
+    # I5: to is an actor on delegate and substitute, and only there
+    rows = [(k, item(**kv), want) for k, kv, want in (
+        ("delegate without to", {"act": "delegate"}, "invalid"), ("substitute without to", {"act": "substitute"}, "invalid"),
+        ("delegate to 5", {"act": "delegate", "to": 5}, "invalid"), ("delegate to", {"act": "delegate", "to": "códex\n"}, "accepted"),
+        ("discharge to", {"to": CODEX}, "invalid"), ("release to", {"act": "release", "to": CODEX}, "invalid"),
+        ("revalidate to", {"act": "revalidate", "revalidates": [H3], "to": CODEX}, "invalid"))]
+    ok, bad = table(rows)
+    check("I5", ok, "to: an actor, required iff delegate or substitute", bad)
+    # I6: revalidates is a non-empty list of transition ids, on revalidate only
+    rows = bad_hex_rows("revalidates", lambda v: item(act="revalidate", revalidates=[v]))
+    rows += [(k, item(**kv), want) for k, kv, want in (
+        ("[]", {"act": "revalidate", "revalidates": []}, "invalid"), ("missing", {"act": "revalidate"}, "invalid"),
+        ("on discharge", {"revalidates": [H3]}, "invalid"), ("control", {"act": "revalidate", "revalidates": [H3]}, "accepted"))]
+    ok, bad = table(rows)
+    check("I6", ok, "revalidates: non-empty, required iff revalidate", bad)
+    # I7: an item's triggers on discharge, impossible and revalidate only
+    tr = [{"kind": "duty_not_discharged", "duty": H3}]
+    rows = [(a, item(act=a, triggers=tr, **kv), want) for a, kv, want in (
+        ("discharge", {}, "accepted"), ("impossible", {}, "accepted"), ("revalidate", {"revalidates": [H3]}, "accepted"),
+        ("release", {}, "invalid"), ("delegate", {"to": CODEX}, "invalid"), ("substitute", {"to": CODEX}, "invalid"))]
+    rows.append(("bad trigger", item(triggers=[{"kind": "duty_not_discharged", "duty": H3 + "\n"}]), "invalid"))
+    ok, bad = table(rows)
+    check("I7", ok, "item triggers: discharge, impossible, revalidate only", bad)
+
+
+def accept_cases():
+    # A1: transition is a transition id
+    rows = bad_hex_rows("transition", lambda v: rec("accept", put(ACCEPT, transition=v), OWNER))
+    rows.append(("control", rec("accept", ACCEPT, OWNER), "accepted"))
+    ok, bad = table(rows)
+    check("A1", ok, "an acceptance names a transition id", bad)
+    # A2: item is a non-negative integer index, or null
+    rows = [(repr(v), rec("accept", put(ACCEPT, item=v), OWNER), want) for v, want in (
+        (0, "accepted"), (3, "accepted"), (None, "accepted"), (-1, "invalid"), (True, "invalid"), (False, "invalid"),
+        ("0", "invalid"), ([0], "invalid"))]
+    ok, bad = table(rows)
+    check("A2", ok, "item: int index into closes, or null", bad)
+    # A3: a results acceptance (item null) binds the transition's exact evidence list
+    w = World()
+    t = w.act(HOLDER, [], evidence=[w.evidence("one"), w.evidence("two")], established=["it holds"])
+    t2 = w.act(HOLDER, [], evidence=[w.evidence("three")], established=["so does this"])
+    w.accept(OWNER, t, None, evidence=[w.evidence("one")])
+    w.accept(OWNER, t2, None)
+    rep = w.assess(prof=E.profile(results_by=[OWNER]))
+    rows = [("other evidence set", rep["results"][t]["accepted"], False), ("exact", rep["results"][t2]["accepted"], True)]
+    ok, bad = table(rows)
+    check("A3", ok, "a results acceptance binds the transition's exact evidence", bad)
+    # A4: support is a list of hex64
+    rows = bad_hex_rows("support", lambda v: rec("accept", put(ACCEPT, support=[v]), OWNER))
+    rows.append(("control", rec("accept", put(ACCEPT, support=[H2]), OWNER), "accepted"))
+    ok, bad = table(rows)
+    check("A4", ok, "support is a list of hex64", bad)
+    # A6: an acceptance of another transition, with the same item index and evidence, is not this one
+    w = World()
+    d = w.duty()
+    ev = [w.evidence("same")]
+    t = w.close(d, evidence=ev)
+    other = w.act(HOLDER, [], evidence=ev, established=["unrelated"])
+    w.accept(OWNER, other, 0, evidence=ev)
+    rep = w.assess()
+    rows = [("disposition", rep["duties"][d]["disposition"], "OPEN")]
+    w.accept(OWNER, t, 0)
+    rows.append(("control", w.assess()["duties"][d]["disposition"], "DISCHARGED"))
+    ok, bad = table(rows)
+    check("A6", ok, "an acceptance of another transition is not this one", bad)
+
+
+def observation_cases():
+    def obs(at=100, **kv):
+        return rec("observation", put(OBSERVATION, **kv), OBSERVER, at=at)
+    # O1: target is a string
+    rows = [(k, obs(target=v), want) for k, v, want in (
+        ("5", 5, "invalid"), ("null", None, "invalid"), ("[s]", ["service"], "invalid"),
+        ("\\n and non-ASCII", "sérvice\n", "accepted"))]
+    ok, bad = table(rows)
+    check("O1", ok, "target is a string", bad)
+    # O2: probe is a hex64
+    rows = bad_hex_rows("probe", lambda v: obs(probe=v)) + [("control", obs(), "accepted")]
+    ok, bad = table(rows)
+    check("O2", ok, "probe is a hex64", bad)
+    # O3: window [from, to], from ≤ to ≤ the record's at
+    rows = [(k, obs(at=at, window=v), want) for k, at, v, want in (
+        ("from = to = at", 20, [20, 20], "accepted"), ("from < to < at", 100, [10, 20], "accepted"),
+        ("from > to", 100, [21, 20], "invalid"), ("to > at", 19, [10, 20], "invalid"), ("one", 100, [10], "invalid"),
+        ("three", 100, [1, 2, 3], "invalid"), ("strings", 100, ["10", "20"], "invalid"), ("an object", 100, {"from": 1, "to": 2}, "invalid"))]
+    ok, bad = table(rows)
+    check("O3", ok, "window [from, to], from ≤ to ≤ at", bad)
+    # O4: result is a string, compared verbatim: a trailing newline or another case is another result
+    rows = [(k, obs(result=v), want) for k, v, want in (("5", 5, "invalid"), ("null", None, "invalid"), ("empty", "", "accepted"))]
+    w = World()
+    probe = w.evidence("GET /health")
+    got = {}
+    for k, result in (("exact", "ok"), ("\\n", "ok\n"), ("\\r\\n", "ok\r\n"), ("case", "OK"), ("space", " ok"), ("non-ASCII", "оk")):
+        d = w.duty(condition={"observe": {"observers": [OBSERVER], "probe": probe, "expect": "ok", "fresh_for": None}},
+                   statement=f"watch {k}", accept_by=())
+        o = w.file("observation", OBSERVER, R.observation("health", probe, [w.t, w.t], result))
+        w.close(d, basis="OBSERVED", evidence=[o])
+        got[k] = d
+    rep = w.assess()
+    disp = {k: rep["duties"][d]["disposition"] for k, d in got.items()}
+    rows.append(("dispositions", disp, {k: "DISCHARGED" if k == "exact" else "OPEN" for k in got}))
+    ok, bad = table(rows)
+    check("O4", ok, "result is a string, taken verbatim", bad)
+    # O5: raw is a list of hex64
+    rows = bad_hex_rows("raw", lambda v: obs(raw=[v])) + [("control", obs(raw=[H1, H2]), "accepted")]
+    ok, bad = table(rows)
+    check("O5", ok, "raw is a list of hex64", bad)
+
+
+def grant_cases():
+    def g(**kv):
+        return rec("grant", put(GRANT, **kv), OWNER)
+    # G2: grantee is an actor
+    rows = [(k, g(grantee=v), want) for k, v, want in (
+        ("5", 5, "invalid"), ("null", None, "invalid"), ("[s]", [STRANGER], "invalid"), ("non-ASCII \\n", "stränger\n", "accepted"))]
+    ok, bad = table(rows)
+    check("G2", ok, "grantee is an actor", bad)
+    # G3: acts is a non-empty sorted list from {release}
+    rows = [(k, g(acts=v), want) for k, v, want in (
+        ("[]", [], "invalid"), ("discharge", ["discharge"], "invalid"), ("twice", ["release", "release"], "invalid"),
+        ("release\\n", ["release\n"], "invalid"), ("a string", "release", "invalid"), ("release", ["release"], "accepted"))]
+    ok, bad = table(rows)
+    check("G3", ok, "acts: non-empty sorted list from {release}", bad)
+    # G4: delegable is a sorted list of acts within acts
+    rows = [(k, g(delegable=v), want) for k, v, want in (
+        ("[]", [], "accepted"), ("release", ["release"], "accepted"), ("discharge", ["discharge"], "invalid"),
+        ("release\\n", ["release\n"], "invalid"), ("twice", ["release", "release"], "invalid"), ("a string", "release", "invalid"))]
+    ok, bad = table(rows)
+    check("G4", ok, "delegable: a sorted subset of acts", bad)
+    # G5: duties is a non-empty sorted list of duty ids
+    rows = bad_hex_rows("duties", lambda v: g(duties=[v]))
+    rows += [(k, g(duties=v), want) for k, v, want in (
+        ("[]", [], "invalid"), ("unsorted", [H2, H1], "invalid"), ("twice", [H1, H1], "invalid"), ("sorted", [H1, H2], "accepted"))]
+    ok, bad = table(rows)
+    check("G5", ok, "duties: non-empty sorted list of duty ids", bad)
+    # G6: expires is an integer or null
+    rows = [(repr(v), g(expires=v), want) for v, want in ((None, "accepted"), (300, "accepted"), ("300", "invalid"),
+                                                         (True, "invalid"), ([300], "invalid"))]
+    ok, bad = table(rows)
+    check("G6", ok, "expires: int | null", bad)
+    # G7: parent is null or a grant id
+    rows = bad_hex_rows("parent", lambda v: g(parent=v), nullable=True)
+    rows += [("null", g(parent=None), "accepted"), ("id", g(parent=H3), "accepted")]
+    ok, bad = table(rows)
+    check("G7", ok, "parent: null | grant id", bad)
+
+
+def challenge_cases():
+    def c(**kv):
+        return rec("challenge", put(CHALLENGE, **kv), STRANGER)
+    rows = bad_hex_rows("target", lambda v: c(target=v)) + [("control", c(), "accepted")]
+    ok, bad = table(rows)
+    check("C1", ok, "a challenge's target is a transition id", bad)
+    rows = [(repr(v), c(item=v), want) for v, want in ((None, "accepted"), (0, "accepted"), (7, "accepted"), (-1, "invalid"),
+                                                     (True, "invalid"), ("0", "invalid"))]
+    ok, bad = table(rows)
+    check("C2", ok, "a challenge's item: int | null", bad)
+    rows = [(k, c(statement=v), want) for k, v, want in (("5", 5, "invalid"), ("null", None, "invalid"), ("[s]", ["x"], "invalid"),
+                                                         ("\\n and non-ASCII", "fails on é\n", "accepted"))]
+    ok, bad = table(rows)
+    check("C3", ok, "a challenge's statement is a string", bad)
+    rows = bad_hex_rows("evidence", lambda v: c(evidence=[v])) + [("control", c(evidence=[H1, H2]), "accepted")]
+    ok, bad = table(rows)
+    check("C4", ok, "a challenge's evidence is a list of hex64", bad)
+
+
+def main():
+    encoding_cases()
+    record_cases()
+    duty_cases()
+    transition_cases()
+    item_cases()
+    accept_cases()
+    observation_cases()
+    grant_cases()
+    challenge_cases()
+    return finish("RECORDS")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
