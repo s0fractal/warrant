@@ -1,0 +1,37 @@
+{
+ "task": "t3",
+ "answered": true,
+ "answers": {
+  "abs": "RELY",
+  "parse": "DO NOT RELY",
+  "migration": "DO NOT RELY"
+ },
+ "grounded": true,
+ "success": true,
+ "wrong_credit": false,
+ "inspected_with_expectation": true,
+ "imported": false,
+ "tool_calls": 3,
+ "per_tool": {
+  "warrant_workspace": 1,
+  "warrant_handoff": 2
+ },
+ "tool_errors": 1,
+ "error_codes": [
+  "warrant_handoff:SCHEMA"
+ ],
+ "repeated_errors": 0,
+ "other_tools": 0,
+ "last_result_error": false,
+ "cost_usd": 0.4416059,
+ "duration_s": 158.567,
+ "turns": 4,
+ "output_tokens": 28649,
+ "input_tokens": 114442,
+ "budget_stop": false,
+ "stuck": false,
+ "run": "t3-sonnet-1",
+ "model": "sonnet",
+ "exit": 0,
+ "stderr": ""
+}

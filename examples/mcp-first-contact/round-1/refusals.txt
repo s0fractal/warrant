@@ -1,0 +1,24 @@
+count  runs  refusal message (normalized), round 1
+   22    13  use '<x>' is not configured
+   17    12  targets
+   11     7  missing ['view_token']
+    9     5  missing ['environment', 'input', 'runtime']
+    7     6  not a view token
+    6     3  missing ['environment', 'input', 'max_steps', 'runtime']
+    6     4  invalid observation: <body>
+    6     2  <tool_use_error>InputValidationError: mcp__warrant__warrant_handoff was called w
+    6     6  missing ['manifest', 'payload']
+    6     6  unknown members ['manifest_bytes']
+    5     4  missing ['expr']
+    4     3  invalid duty: <body>
+    4     1  invalid transition: <body>
+    3     2  no such draft
+    2     1  unknown members ['checkpoint', 'state']
+    2     1  no such operation
+    2     1  missing ['max_steps']
+    2     1  Error executing tool warrant_handoff
+    1     1  use \
+    1     1  draft_id is a hex64 address
+    1     1  missing ['request_id', 'roots', 'view_token']
+    1     1  roots are [{kind, id}]
+    1     1  missing ['payload']

@@ -46,18 +46,49 @@ def _accept_body(meta_vdir, body):
         return R.accept(body["transition"], body["item"], body["evidence"], body.get("support", []))
     p = meta_vdir / "records" / f"{body['transition']}.json"
     need(p.is_file(), "NOT_FOUND", "the transition is not in this view")
-    t = C.loads(p.read_bytes())["record"]["body"]
+    try:                                        # the view's bytes are untrusted: a malformed record is no transition
+        t = C.loads(p.read_bytes())["record"]["body"]
+        closes, evidence = t["closes"], t["evidence"]
+    except (C.NotCanonical, ValueError, KeyError, TypeError):
+        raise AgentError("BAD_REQUEST", "the record is not a well-formed transition") from None
     item = body["item"]
-    need(item is None or (type(item) is int and 0 <= item < len(t["closes"])), "BAD_REQUEST", "no such item")
-    ev = t["evidence"] if item is None else t["closes"][item]["evidence"]
+    need(isinstance(closes, list) and (item is None or (type(item) is int and 0 <= item < len(closes))),
+         "BAD_REQUEST", "no such item")
+    ev = evidence if item is None else closes[item].get("evidence") if isinstance(closes[item], dict) else None
+    need(isinstance(ev, list), "BAD_REQUEST", "the record is not a well-formed transition")
     return R.accept(body["transition"], item, ev, body.get("support", []))
+
+
+# The smallest body of each type an agent writes, as the refusal of an invalid body shows it.
+ACTOR_SLOT, DUTY_SLOT = "<actor>", "<duty id>"
+TEMPLATES = {
+    "transition": {"basis": "ATTESTED", "established": ["what is now true, in one sentence each"],
+                   "residual": ["what this does not establish or what is still open"],
+                   "closes": "optional: [{duty: <duty id>, act: discharge, evidence: [<blob id>]}] only for duties "
+                             "this work completes",
+                   "evidence": "optional: [<blob id in the store>]"},
+    "duty": {"holder": ACTOR_SLOT, "statement": "what is owed", "owed_to": [ACTOR_SLOT], "condition": {"attest": {}},
+             "accept_by": ["<actor whose acceptance closes it>"]},
+    "accept": {"transition": "<transition id>", "item": 0},
+    "challenge": {"target": "<transition id>", "item": 0, "statement": "what is wrong", "evidence": []},
+    "observation": {"target": DUTY_SLOT, "probe": "<hex64 the duty's observe condition names>",
+                    "window": [0, 1], "result": "<observed value>", "raw": []},
+    "grant": {"grantee": ACTOR_SLOT, "acts": ["release"], "delegable": [], "duties": [DUTY_SLOT],
+              "expires": None, "parent": None},
+}
 
 
 def prepare(ws, based_on, request_id, rtype, body):
     ws.permit("prepare")
-    need(isinstance(request_id, str) and 0 < len(request_id) <= 128, "BAD_REQUEST", "request_id")
     need(isinstance(rtype, str) and rtype in R.TYPES, "BAD_REQUEST", f"type is one of {list(R.TYPES)}")
-    need(isinstance(body, dict), "BAD_REQUEST", "body is an object")
+    need(isinstance(body, dict), "BAD_REQUEST", "body is an object", template=TEMPLATES[rtype])
+    if rtype == "transition" and "closes" not in body:
+        body = dict(body, closes=[], **({} if "evidence" in body else {"evidence": []}))
+    if request_id is None:
+        # Without a request id the draft is named by what it would file: the same type and body give the
+        # same draft (a retry), whatever view a later call would have captured.
+        request_id = "auto:" + C.doc_id({"type": rtype, "body": body})
+    need(isinstance(request_id, str) and 0 < len(request_id) <= 128, "BAD_REQUEST", "request_id")
     actor, key = _signer(ws)
     draft_id = C.doc_id({"workspace": ws.name, "request_id": request_id})
     path = ws.state / "drafts" / f"{draft_id}.json"
@@ -66,12 +97,12 @@ def prepare(ws, based_on, request_id, rtype, body):
         d = views.read_json(path)
         need(d["inputs"] == inputs, "CONFLICT", "request_id was prepared with other inputs")
         return d
-    meta, report, vdir = views.load(ws, based_on)
+    _, report, vdir = views.load(ws, views.capture(ws)["token"] if based_on is None else based_on)
     full = _accept_body(vdir, body) if rtype == "accept" else fill(rtype, body)
     try:
         rec = R.record(rtype, actor, int(time.time()), full)
     except R.Invalid as e:
-        raise AgentError("BAD_REQUEST", f"invalid {rtype}: {e}") from None
+        raise AgentError("BAD_REQUEST", f"invalid {rtype}: {e}", template=TEMPLATES[rtype]) from None
     rid = R.record_id(rec)
     preview = {"type": rtype, "shape": "valid"}
     if rtype == "accept":

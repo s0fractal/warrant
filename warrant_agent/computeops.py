@@ -18,10 +18,11 @@ from . import AGENT_API, adapter_id, views
 from .errors import AgentError, need
 
 RUNTIMES = {"book1": P.BOOK1, "rich": P.RICH, P.BOOK1: P.BOOK1, P.RICH: P.RICH}
-OPS = {"provider": (), "term": ("expr",), "start": ("runtime", "input", "environment"),
+OPS = {"provider": (), "term": ("expr",), "evaluate": ("expr",), "start": ("runtime", "input", "environment"),
        "resume": ("runtime", "input", "environment", "checkpoint", "state", "credit"),
        "cycle": ("runtime", "input", "environment", "max_steps")}
-OPTIONAL = {"resume": ("max_actions", "target"), "cycle": ("target",)}
+OPTIONAL = {"resume": ("max_actions", "target"), "cycle": ("target",), "evaluate": ("expect_expr", "credit", "runtime")}
+EVALUATE_CREDIT = 10_000
 
 
 def _hex(v):
@@ -35,17 +36,36 @@ def _closed(req):
     missing = {"workspace", *OPS[op]} - set(req)
     need(not missing, "BAD_REQUEST", f"missing {sorted(missing)}")
     need(not set(req) - allowed, "BAD_REQUEST", f"unknown members {sorted(set(req) - allowed)}")
-    for k in ("input", "environment", "checkpoint", "state"):
-        if k in req:
-            need(_hex(req[k]), "BAD_REQUEST", f"{k} is a hex64 content address")
-    if "runtime" in req:
-        need(isinstance(req["runtime"], str) and req["runtime"] in RUNTIMES, "BAD_REQUEST", "unknown runtime")
-    for k, low in (("credit", 0), ("max_actions", 1), ("max_steps", 1)):
-        if k in req and not (k == "max_actions" and req[k] is None):
-            need(type(req[k]) is int and req[k] >= low, "BAD_REQUEST", f"{k} is an integer >= {low}")
-    if "target" in req:
-        need(isinstance(req["target"], str) and 0 < len(req["target"]) <= 200, "BAD_REQUEST", "target")
+    _check_values(req)
     return op
+
+
+def _int_at_least(low, none_ok=False):
+    return lambda v: (none_ok and v is None) or (type(v) is int and v >= low)
+
+
+# Each member a request may carry: its check and the refusal's message, checked in this order.
+CHECKS = {**{k: (_hex, f"{k} is a hex64 content address") for k in ("input", "environment", "checkpoint", "state")},
+          "runtime": (lambda v: isinstance(v, str) and v in RUNTIMES, "unknown runtime"),
+          "credit": (_int_at_least(0), "credit is an integer >= 0"),
+          "max_actions": (_int_at_least(1, none_ok=True), "max_actions is an integer >= 1"),
+          "max_steps": (_int_at_least(1), "max_steps is an integer >= 1"),
+          **{k: (lambda v: isinstance(v, str) and 0 < len(v) <= 10_000, f"{k} is a term, e.g. \"S K K\"")
+             for k in ("expr", "expect_expr")},
+          "target": (lambda v: isinstance(v, str) and 0 < len(v) <= 200, "target")}
+
+
+def _check_values(req):
+    """Each member the request carries has its type and bound."""
+    for k, (ok, why) in CHECKS.items():
+        if k in req:
+            need(ok(req[k]), "BAD_REQUEST", why)
+
+
+def _term(ws, provider, store, expr):
+    out = _call(ws, provider, "term", {"expr": expr}, {})
+    nodes = [store.put_blob(base64.b64decode(b)) for b in out["nodes"].values()]
+    return {"input": out["input"], "environment": store.put_json(P.environment_doc(nodes))}
 
 
 def _provider():
@@ -91,11 +111,28 @@ def run(cfg, req):
     if op == "provider":
         data["files"] = provider.identity["files"]
     elif op == "term":
-        need(isinstance(req["expr"], str) and len(req["expr"]) <= 10_000, "BAD_REQUEST", "expr")
-        out = _call(ws, provider, "term", {"expr": req["expr"]}, {})
-        nodes = [store.put_blob(base64.b64decode(b)) for b in out["nodes"].values()]
-        data.update(input=out["input"], environment=store.put_json(P.environment_doc(nodes)),
-                    runtimes=sorted({P.BOOK1, P.RICH}))
+        data.update(_term(ws, provider, store, req["expr"]), runtimes=sorted({P.BOOK1, P.RICH}))
+    elif op == "evaluate":
+        # The receiver's own run, term -> start -> resume, under a credit: it files nothing and credits
+        # nothing; Warrant credit for a filed claim is only the assessment's replay of its receipt.
+        runtime = RUNTIMES[req.get("runtime", "book1")]
+        t = _term(ws, provider, store, req["expr"])
+        hashes, blobs = _environment(views.read_snapshot(ws, ws.store), t["environment"])
+        args = {"runtime": runtime, "input": t["input"], "hashes": hashes}
+        s0 = _call(ws, provider, "start", args, blobs)
+        out = _call(ws, provider, "resume", dict(args, checkpoint=s0["checkpoint"], state=s0["state"],
+                                                 credit=req.get("credit", EVALUATE_CREDIT)), blobs)
+        seg = out.get("segment") or {}
+        data.update(expr=req["expr"], runtime=runtime, input=t["input"], environment=t["environment"],
+                    status=out["status"], outcome=seg.get("outcome"), result=seg.get("result"),
+                    meaning="the installed provider's own run on this receiver; it files and credits nothing")
+        if seg.get("checkpoint"):
+            data["checkpoint"] = store.put_blob(base64.b64decode(seg["checkpoint"]))
+            data["state"] = store.put_blob(base64.b64decode(seg["state"]))
+        if "expect_expr" in req:
+            e = _term(ws, provider, store, req["expect_expr"])
+            data.update(expect_expr=req["expect_expr"], expect_input=e["input"],
+                        same_normal_form=seg.get("outcome") == "NORMAL_FORM" and seg.get("result") == e["input"])
     else:
         runtime = RUNTIMES[req["runtime"]]
         hashes, blobs = _environment(snap, req["environment"])

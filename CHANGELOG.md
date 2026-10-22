@@ -31,11 +31,34 @@ right.
 2026-10-18). SPEC.md is replaced: six typed records (duty, transition, accept,
 observation, grant, challenge), assessment of one immutable snapshot, reliance,
 frontier and capsule. The Python package `warrant` (distribution
-`warrant-loops`, command `warrant`) is the only implementation. The pinned
+`warrant-graph`, named `warrant-loops` until the MCP first-contact entry above;
+command `warrant`) is the only implementation. The pinned
 sigma-resume kernel (sigma-glyph `c864d3e`) is the only computation provider.
 Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
+
+### MCP first contact: measured, improved, re-measured; distribution `warrant-graph`
+
+- `examples/mcp-first-contact/`: three problem-first tasks (a claimed computation with one wrong
+  result; record and hand over partial work; a received package with a challenged and a forged
+  item), operator fixtures, a frozen scorer with a self-test, fresh headless agents (Sonnet and
+  Haiku, n = 3 each) against master's server and against the changed one. RESULTS.md has the
+  numbers and the caveats.
+- warrant-agent/1, driven by round 1: `workspace` and `explain` operations; flat typed MCP
+  arguments with descriptions and server instructions; optional `use`/`actor`/`targets` (the
+  operator's first configured use, the signer's actor), targets by bare id; capsules carry every
+  closure attempt with the engine's verdict and why, and the boundary names invalid records;
+  read without a view token reads a new frozen view; export defaults; inspect takes the package
+  in one piece and defaults capsules to its roots; prepare without `based_on`/`request_id`;
+  `compute evaluate`. No record type, rule or verdict changed.
+- Fixed: an export root of another kind (`{"kind": "record"}`) ended in an `assert` inside
+  `handoff.export`, an untyped crash (and no check at all under `-O`); it is now BAD_REQUEST.
+- Tests M06–M15, S11–S12; agent mutants A41–A56, all killed on their cases. M15/A54–A56: stored bytes
+  that are not a record's shape are listed as invalid and never read as records (Codex P2 on 7a56a56).
+- The distribution is renamed `warrant-loops` → `warrant-graph` (pyproject, CI install lines,
+  AGENT.md). Nothing is published. The frozen dependency-audit evidence keeps the old name: it
+  describes wheels built at its pinned source commit.
 
 ### SPEC.md generated from the records; actor id shape; route 1 tightened (W5)
 

@@ -1,0 +1,44 @@
+{
+ "task": "t1",
+ "answered": true,
+ "answers": {
+  "1": "USE",
+  "2": "DO NOT USE"
+ },
+ "grounded": true,
+ "success": true,
+ "wrong_credit": false,
+ "records_crediting_wrong": 0,
+ "tool_calls": 16,
+ "per_tool": {
+  "warrant_read": 2,
+  "warrant_compute": 11,
+  "warrant_context": 3
+ },
+ "tool_errors": 9,
+ "error_codes": [
+  "warrant_read:BAD_REQUEST",
+  "warrant_read:BAD_REQUEST",
+  "warrant_context:BAD_REQUEST",
+  "warrant_context:BAD_REQUEST",
+  "warrant_context:BAD_REQUEST",
+  "warrant_compute:BAD_REQUEST",
+  "warrant_compute:BAD_REQUEST",
+  "warrant_compute:BAD_REQUEST",
+  "warrant_compute:BAD_REQUEST"
+ ],
+ "repeated_errors": 6,
+ "other_tools": 0,
+ "last_result_error": false,
+ "cost_usd": 0.0811999,
+ "duration_s": 39.159,
+ "turns": 17,
+ "output_tokens": 2874,
+ "input_tokens": 80555,
+ "budget_stop": false,
+ "stuck": false,
+ "run": "t1-sonnet-1",
+ "model": "sonnet",
+ "exit": 0,
+ "stderr": ""
+}

@@ -6,11 +6,11 @@ take the same request objects and return the same result objects.
 
 | Front end | Entry | Install |
 | --- | --- | --- |
-| Python | `warrant_agent.api.call(Config.load(path), op, request)` | `warrant-loops` |
-| CLI | `warrant-agent --config C.json <op> [REQUEST.json \| - \| '{...}']` (exit 0 result, 2 typed refusal) | `warrant-loops` |
-| stdio MCP | `warrant-agent-mcp --config C.json` | `warrant-loops[mcp]` (official SDK, `mcp==2.3.0`) |
+| Python | `warrant_agent.api.call(Config.load(path), op, request)` | `warrant-graph` |
+| CLI | `warrant-agent --config C.json <op> [REQUEST.json \| - \| '{...}']` (exit 0 result, 2 typed refusal) | `warrant-graph` |
+| stdio MCP | `warrant-agent-mcp --config C.json` | `warrant-graph[mcp]` (official SDK, `mcp==2.3.0`) |
 
-Computation needs the Sigma provider (`warrant-loops[compute]`, the exact
+Computation needs the Sigma provider (`warrant-graph[compute]`, the exact
 sigma-glyph release in `pyproject.toml`, PyPI 0.8.0). This is not a new record type, not a
 SPEC extension and not an extension of MCP. `agent_api` is the interface
 version; it is not Warrant `"2"`, not `sigma_provider:1` and not an MCP revision.
@@ -55,14 +55,34 @@ VIEW_UNKNOWN, VIEW_EXPIRED, CURSOR_MISMATCH, NOT_FOUND, CONFLICT,
 RESOURCE_LIMIT, NO_ASSESSMENT, IMPORT_INCOMPLETE, IMPORT_BLOCKED,
 SIGNER_CHANGED, NO_SIGNER, PROVIDER, REFUSED. Unknown members are refused.
 
+Members marked `?` may be left out; the default is the one named in the row.
+Defaults are taken from the operator's configuration or from the view, never
+invented: the default use is the workspace's first configured use, the default
+actor is the configured signer's.
+
 | op | request | what it does |
 | --- | --- | --- |
-| `context` | `{workspace, actor, use, targets:[{kind: duty\|transition, id}], limits?:{context_bytes}}` | Captures the store, trust, profile and provider bytes into a frozen view, assesses it once in a worker under `assess_seconds`, returns `view_token`, `assessment_id`, capsules, frontier, unowned questions, boundary, `delivery`, `use`, `observation`, `page`. `actor` selects whose frontier is read, not who signs. |
-| `read` | `{workspace, view_token, kind: record\|blob\|context, target?, cursor?, max_bytes?}` or `{workspace, kind: draft\|operation, target}` | Reads the view's captured bytes (chunked, with `digest`, `complete`, `untrusted_data: true`) or the next context page; or a durable draft/import status, which needs no live view. |
-| `handoff` | `{op: export, view_token, roots, request_id}` / `{op: inspect, manifest, payload, declaration?, expectation?, use?, actor?, targets?}` / `{op: import, staged_id, request_id}` | Export: manifest of the whole configured store (record envelope digests, blobs, snapshot digest, `completeness: UNATTESTED`), payload `{records|blobs: [{id, bytes_base64}]}`, optional declaration signed by the configured signer. Inspect: stages and assesses the union with the receiver's live store against a receiver-configured expectation. Import: journaled, add-only, idempotent. |
-| `prepare` | `{workspace, based_on: view_token, request_id, type, body}` | Freezes one exact record (actor and key from configuration, `at` = first durable prepare). Same request id and inputs: the same draft. Other inputs: CONFLICT. `accept` takes `{transition, item, evidence?, support?}`; evidence defaults to the item's exact evidence in the view. Nothing is signed. |
+| `workspace` | `{workspace?}` | The operator's configuration by name: workspaces, the signer's actor, permitted operations, use policies and `default_use`, expectation handles (`manifest`, `source`, `exporter`), whether the provider is installed and accepted by the profile, and an `index` of the duties and transitions in the live store that authenticate under the receiver's trust (at most 50 rows, newest first, `untrusted_data: true`, `assessed: false`; the others are only counted, `store.invalid_records`). No path, key or URL. Needs no permission: it shows what the configuration already names. |
+| `context` | `{workspace, actor?, use?, targets?:[id \| {id} \| {kind: duty\|transition, id}], limits?:{context_bytes}}` | Captures the store, trust, profile and provider bytes into a frozen view, assesses it once in a worker under `assess_seconds`, returns `view_token`, `assessment_id`, capsules, frontier, unowned questions, boundary, `delivery`, `use`, `observation`, `page`. `actor` selects whose frontier is read, not who signs; a given `actor` (here and in inspect) must be an actor id (`warrant.records.check_actor`, SPEC §3), else BAD_REQUEST. A target without its kind is resolved in the view: a duty or a transition; any other record id is BAD_REQUEST with `details.type`, an id not in the view NOT_FOUND. An unknown use is BAD_REQUEST with `details.configured`. |
+| `read` | `{workspace, view_token?, kind?: record\|blob\|context, target?, cursor?, max_bytes?}` or `{workspace, kind: draft\|operation, target}` | Reads the view's captured bytes (chunked, with `digest`, `complete`, `untrusted_data: true`) or the next context page; or a durable draft/import status, which needs no live view. `kind` defaults to `record`. Without `view_token` a record or blob is read from a new frozen view (returned as `view_token`), never from the live store; a context page or a cursor needs the view that made it. |
+| `handoff` | `{op: export, view_token?, roots?, request_id?}` / `{op: inspect, package \| (manifest, payload, declaration?), expectation?, use?, actor?, targets?}` / `{op: import, staged_id, request_id?}` | Export: manifest of the whole configured store (record envelope digests, blobs, snapshot digest, `completeness: UNATTESTED`), payload `{records\|blobs: [{id, bytes_base64}]}`, optional declaration signed by the configured signer; `view_token` defaults to a new view, `roots` to that view's context targets, `request_id` to one derived from view and roots (returned). A root that is not a duty or transition is BAD_REQUEST. Inspect: stages and assesses the union with the receiver's live store against a receiver-configured expectation; `package` is the exported object in one piece (the same inspection as its parts); capsules default to the manifest's roots. Import: journaled, add-only, idempotent; `request_id` defaults to one derived from `staged_id`. |
+| `prepare` | `{workspace, type, body, based_on?: view_token, request_id?}` | Freezes one exact record (actor and key from configuration, `at` = first durable prepare). Same request id and inputs: the same draft. Other inputs: CONFLICT. Without `based_on` the record is checked against a new view; without `request_id` the draft is named by type and body, so the same body is the same draft. A transition without `closes` closes nothing (`closes: []`, `evidence: []`). `accept` takes `{transition, item, evidence?, support?}`; evidence defaults to the item's exact evidence in the view. An invalid body is BAD_REQUEST with `details.template`, the smallest body of that type. Nothing is signed. |
 | `commit` | `{workspace, draft_id}` | Signs and files exactly the draft. A retry after response loss or restart returns the same record; other bytes under the id: CONFLICT; another configured signer: SIGNER_CHANGED. |
-| `compute` | `{workspace, op: provider\|term\|start\|resume\|cycle, ...hex64 addresses, credit?, max_actions?, max_steps?, target?}` | Runs the installed provider on bytes read once from the receiver's store; new bytes go back as blobs. A foreign checkpoint is continued only by the provider's checked `resume` (verify from the receiver's root, then advance). Reports `provider_accepted_by_profile`; files nothing. |
+| `compute` | `{workspace, op: provider\|term\|evaluate\|start\|resume\|cycle, ...hex64 addresses, expr?, expect_expr?, credit?, max_actions?, max_steps?, target?}` | Runs the installed provider on bytes read once from the receiver's store; new bytes go back as blobs. A foreign checkpoint is continued only by the provider's checked `resume` (verify from the receiver's root, then advance). `evaluate {expr, expect_expr?, credit? (10000), runtime? (book1)}` is term, start and resume in one call: `outcome`, `result`, and with `expect_expr` `same_normal_form` (true only at a NORMAL_FORM whose result is that term's input address). Reports `provider_accepted_by_profile`; files nothing and credits nothing. |
+| `explain` | `{term}` | The static meaning of a reliance state, verdict, delivery relation or refusal code and what it does not establish (`warrant_agent/glossary.py`); an unknown term lists the known ones. |
+
+### Capsules
+
+Each capsule is the engine's (`warrant.engine.capsule`) plus three members
+taken from the same report: `closures` on a duty (every closure attempt:
+`transition, item, act, filer, basis, verdict, why, waiting_for?`), `closes` on
+a transition (each item with its `duty`, the duty's `statement` and
+`duty_disposition`, `verdict`, `why`), and `reading`, one line over those
+fields. A transition's own `reliance` is about its results (often UNASSESSED);
+whether it closes a duty is decided on the duty, which `closes` shows. The
+boundary names up to 20 `invalid` records (`id`, `why`, and `claims_to_be`:
+type, actor and target read from bytes that do not authenticate, only when those bytes have a record's shape: an object whose `type` is a string and whose `body` is an object; other bytes are listed by id and why alone and never read as a record, M15). None of this
+adds a rule: it is the report the engine already produced, shown.
 
 ### Delivery and use
 
@@ -110,12 +130,24 @@ the historical assessment id.
 
 ## MCP
 
-Six tools: `warrant_context`, `warrant_read`, `warrant_handoff`,
-`warrant_prepare`, `warrant_commit`, `warrant_compute`. Tool descriptions are
-static; nothing from a record or evidence becomes a tool, a schema, a
-configuration or a signer. A refusal is a tool error whose text is the
-refusal's JSON; a semantic verdict such as CHALLENGED or HOLD is an ordinary
-result. stdout carries MCP messages only.
+Eight tools: `warrant_workspace`, `warrant_context`, `warrant_read`,
+`warrant_handoff`, `warrant_prepare`, `warrant_commit`, `warrant_compute`,
+`warrant_explain`. Every tool takes the request's members as flat, typed
+arguments with a description each (`warrant_context` takes `context_bytes`
+for `limits.context_bytes`; `warrant_handoff` inspect takes the package in one
+piece only, the split form stays in the Python API and the CLI); an argument
+left out is left out of the request.
+The interface version is checked by the backend (`agent_api` in a Python or
+CLI request); MCP tools carry none, the server reports `warrant-agent/1` as
+its version. The server's instructions say where to start and what a result
+does not establish; read-only tools are annotated `readOnlyHint`. Tool
+descriptions are static; nothing from a record or evidence becomes a tool, a
+schema, a configuration or a signer. A refusal is a tool error whose text is
+the refusal's JSON; a semantic verdict such as CHALLENGED or HOLD is an
+ordinary result. stdout carries MCP messages only.
+
+These choices were measured with fresh agents before and after
+(`examples/mcp-first-contact/RESULTS.md`).
 
 Measured with `mcp==2.3.0` (`tests/agent_mcp_test.py`, raw JSON-RPC client and
 the SDK client):
@@ -135,9 +167,10 @@ release is exposed.
 | --- | --- |
 | `tests/agent_handoff_test.py` | H01-H14, V01-V08 |
 | `tests/agent_write_test.py` | W01-W09 |
-| `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10 |
-| `tests/agent_mcp_test.py` | M01-M05, cancellation |
-| `tests/agent_mutants.py` | A01-A27, each killed on its named case |
+| `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10, S11 (a contradicted receipt closes nothing; both capsules say why), S12 (evaluate) |
+| `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M15 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain, malformed stored records) |
+| `tests/agent_mutants.py` | A01-A35, A41-A56, each killed on its named case |
+| `examples/mcp-first-contact/` | fresh headless agents on three tasks, frozen scorer, round 1 vs round 2 |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 
 ## Measured cost of the provider (2026-10-19)

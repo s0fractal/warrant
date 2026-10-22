@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 # Warrant 2 (SPEC.md). A new distribution name on purpose: `warrant-verify`
 # (<= 0.12.0) is the retired 0.x generation and keeps its own meaning.
-name = "warrant-loops"
+name = "warrant-graph"
 version = "2.0.0.dev0"
 description = "Record transitions of work with their residual, close loops exactly, and hand the next agent a capsule instead of a transcript."
 readme = "README.md"

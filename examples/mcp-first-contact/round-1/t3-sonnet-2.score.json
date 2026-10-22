@@ -1,0 +1,37 @@
+{
+ "task": "t3",
+ "answered": true,
+ "answers": {
+  "abs": "DO NOT RELY",
+  "migration": "DO NOT RELY",
+  "parse": "DO NOT RELY"
+ },
+ "grounded": true,
+ "success": false,
+ "wrong_credit": false,
+ "inspected_with_expectation": false,
+ "imported": false,
+ "tool_calls": 3,
+ "per_tool": {
+  "warrant_handoff": 3
+ },
+ "tool_errors": 2,
+ "error_codes": [
+  "warrant_handoff:BAD_REQUEST",
+  "warrant_handoff:BAD_REQUEST"
+ ],
+ "repeated_errors": 1,
+ "other_tools": 0,
+ "last_result_error": false,
+ "cost_usd": 0.5216381000000001,
+ "duration_s": 181.658,
+ "turns": 4,
+ "output_tokens": 31940,
+ "input_tokens": 132523,
+ "budget_stop": false,
+ "stuck": false,
+ "run": "t3-sonnet-2",
+ "model": "sonnet",
+ "exit": 0,
+ "stderr": ""
+}

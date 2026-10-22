@@ -1,0 +1,33 @@
+{
+ "task": "t1",
+ "answered": true,
+ "answers": {
+  "1": "USE",
+  "2": "DO NOT USE"
+ },
+ "grounded": true,
+ "success": true,
+ "wrong_credit": false,
+ "records_crediting_wrong": 0,
+ "tool_calls": 3,
+ "per_tool": {
+  "warrant_context": 1,
+  "warrant_compute": 2
+ },
+ "tool_errors": 0,
+ "error_codes": [],
+ "repeated_errors": 0,
+ "other_tools": 0,
+ "last_result_error": false,
+ "cost_usd": 0.061322,
+ "duration_s": 13.841,
+ "turns": 4,
+ "output_tokens": 1014,
+ "input_tokens": 21592,
+ "budget_stop": false,
+ "stuck": false,
+ "run": "t1-sonnet-3",
+ "model": "sonnet",
+ "exit": 0,
+ "stderr": ""
+}
