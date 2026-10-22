@@ -1050,13 +1050,20 @@ MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
                [('    if bound[0] != rec["actor"]:\n', '    if False:\n')], "contract_test", ["N5"])
 
 
+# A run writes no bytecode into the tree whose identity (source_digest) its matrix names,
+# whatever the caller's environment: the test files import tests/world.py and friends from the
+# checkout, and a __pycache__ git does not ignore (claims.py's fixture has no .gitignore) would
+# change the identity during the run (CI run 39788553711; locally PYTHONDONTWRITEBYTECODE=1 hid it).
+NO_BYTECODE = "1"
+
+
 def run_tests(tmp, tests, timeout=900):
     """{test file: {case: PASS|FAIL}, or None when it produced no results}: each named test
     file run against the packages in `tmp` (WARRANT_IMPL), with results of its own."""
     runs = {}
     for t in tests:
         res = tmp / f"results-{t}.json"
-        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res))
+        env = dict(os.environ, WARRANT_IMPL=str(tmp), WARRANT_RESULTS=str(res), PYTHONDONTWRITEBYTECODE=NO_BYTECODE)
         subprocess.run([sys.executable, str(ROOT / "tests" / f"{t}.py")], env=env, capture_output=True,
                        cwd=ROOT / "tests", timeout=timeout, check=False)
         runs[t] = json.loads(res.read_text()) if res.exists() else None
@@ -1502,6 +1509,25 @@ def source_checks():
             ("--matrix writes nothing over a root with no identity (SOURCE_UNKNOWN)", write(work) == (2, None)),
         ]
         roles.write_bytes(was)
+        subprocess.run(["git", "-C", str(fix), "checkout", "-q", "--", "."], check=True)     # M300's text back
+        (fix / ".gitignore").unlink()
+        subprocess.run([*git, "-C", str(fix), "commit", "-q", "-am", "no ignore rules"], check=True)
+        bare = source_digest(fix)
+        mx = work / "real.json"
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}
+        env["WARRANT_IMPL"] = ""
+        real = subprocess.run([sys.executable, str(fix / "tests" / "mutants.py"), "--jobs", "1", "--matrix", str(mx), "M300"],
+                              cwd=fix, env=env, capture_output=True, text=True, timeout=600, check=False)
+        checks.append(("a real --matrix run in a tree that ignores nothing, by a caller that writes bytecode, "
+                       "leaves the tree as it was and names it",
+                       real.returncode == 0 and mx.is_file() and json.loads(mx.read_text())["source"] == bare
+                       and source_digest(fix) == bare and bare.startswith("tree:")))
+        mx.unlink(missing_ok=True)
+        real = subprocess.run([sys.executable, str(fix / "tests" / "agent_mutants.py"), "--jobs", "1", "--matrix", str(mx), "A19"],
+                              cwd=fix, env=env, capture_output=True, text=True, timeout=600, check=False)
+        checks.append(("... and so does a real --matrix run of tests/agent_mutants.py",
+                       real.returncode == 0 and mx.is_file() and json.loads(mx.read_text())["source"] == bare
+                       and source_digest(fix) == bare))
         try:
             source_digest(fix / "tools")
             inner = False
