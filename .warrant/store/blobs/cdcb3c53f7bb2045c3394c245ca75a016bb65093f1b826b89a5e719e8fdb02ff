@@ -1,0 +1,1 @@
+`prev` is the id of the record the same actor filed before this one, or null for the actor's first record: each actor's records form its **chain**.

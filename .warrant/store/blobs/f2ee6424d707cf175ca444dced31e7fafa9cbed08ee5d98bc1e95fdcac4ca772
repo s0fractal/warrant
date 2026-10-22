@@ -1,0 +1,1 @@
+A record is **chained** to its `prev` iff that record is in the view, was filed by the same actor and is not dated after it; otherwise it is **unanchored**, and the report lists it under `chains` with the reason (a `prev` not in the view is also missing).

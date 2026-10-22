@@ -41,7 +41,7 @@ obligations and reproducible computations.
 A record is
 
 ```json
-{"warrant": "2", "type": "<type>", "actor": "<actor id>", "at": <int>, "body": {...}}
+{"warrant": "2", "type": "<type>", "actor": "<actor id>", "at": <int>, "prev": <record id or null>, "body": {...}}
 ```
 
 Its id is `sha256(canon(record))`. It is stored as the canonical bytes of
@@ -61,6 +61,15 @@ Normalization Form C, with no control character (general category Cc) and no
 white space (Unicode White_Space) at either end. An actor may be a person, a
 model, a program or a rule (for example, a checker named by the hash of its
 code); Warrant does not assess what an actor is (§6).
+
+`prev` is the id of the record the same actor filed before this one, or null for
+the actor's first record: each actor's records form its **chain**. A record
+without `prev` is **unchained**: it is valid, and no chain orders it; every
+record filed before chains is one. A writer takes `prev` from its actor's head
+in the store, under a lock on `records/`, and refuses to date a record before
+that head. `warrant-agent` prepares a draft on the signer's head and commits it
+only while that head is unchanged, a compare-and-swap; otherwise it answers
+`CONFLICT` with reason `CHAIN_MOVED` and files nothing.
 
 There are six types. They are distinct so that a claim, a permission, an
 execution observation and an acceptance can never be read as one another.
@@ -192,7 +201,19 @@ same bytes to another directory does not. A snapshot cannot attest its own
 completeness: every report states `completeness: UNATTESTED`, and a reference to a
 record or blob that is not in the view is reported as missing, never as absence.
 
-**Position** of a record is `(at, id)`; positions are totally ordered.
+**Position** of a record is `(at, rank, id)`: records with the same `at` are
+ordered by id, except that a record chained to a predecessor with the same `at`
+follows it; positions are totally ordered.
+
+A record is **chained** to its `prev` iff that record is in the view, was filed
+by the same actor and is not dated after it; otherwise it is **unanchored**, and
+the report lists it under `chains` with the reason (a `prev` not in the view is
+also missing). The chain orders an actor's records: one is before another iff it
+is reached from the other along chained `prev` links. Two records of one actor
+naming the same `prev` are a **fork**, listed under `chains`; no record is
+excluded for it, and the chain orders neither branch against the other. `at` is
+what its signer claims: the records witness only each actor's chain, and between
+two actors' records positions follow the `at`s they claim.
 
 ### 4.1 Who may file an item
 
@@ -209,6 +230,12 @@ position. Holder and delegates at a position are
 those after every admitted transfer whose effect position is not after it. A
 later transfer neither authorizes an earlier filing nor invalidates an earlier
 admitted one. `serves`, a key binding, or being named in a duty grant no authority.
+
+For a filing, its filer's own records are ordered by the chain, not by `at`: an
+acceptance by `to` makes `to` the holder or a delegate for `to`'s filing only if
+the acceptance is before that filing in `to`'s chain. An admitted transfer filed
+by the filer itself is in effect for every filing of the filer that the chain
+does not order against the transfer.
 
 ### 4.2 When a closure is admitted
 
