@@ -6,6 +6,7 @@ import json
 
 from warrant import engine as E
 from warrant import jcs as C
+from warrant import records as R
 
 from . import AGENT_API, adapter_id, drafts, handoff, views
 from .errors import AgentError, need
@@ -83,7 +84,7 @@ def _actor(ws, actor):
     if actor is None:
         need(ws.signer is not None, "BAD_REQUEST", "actor: this workspace has no signer to default to")
         return ws.signer[0]
-    need(isinstance(actor, str) and actor, "BAD_REQUEST", "actor")
+    need(_is_actor(actor), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")
     return actor
 
 
@@ -249,6 +250,14 @@ def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget):
     pg = {"included": len(page), "total": len(items), "offset": start, "truncated": nxt is not None,
           "cursor": _cursor(meta["token"], kind, actor, nxt)}
     return data, pg
+
+
+def _is_actor(v):
+    try:
+        R.check_actor(v)
+        return True
+    except R.Invalid:
+        return False
 
 
 # ---------------------------------------------------------------- operations

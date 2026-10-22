@@ -1,0 +1,1 @@
+{"because":null,"duty":"fed14c18c0e1e2984a0e765dc962ec4ba6d6a2ecb9bd5e8d157afd3df9d5728e","id":"SPEC-4-2","kind":"normative","mutants":["M260"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4","source":"SPEC.md","text":"Records with `at > as_of` are not in the view.","witnesses":["assessment_test:R21"]}

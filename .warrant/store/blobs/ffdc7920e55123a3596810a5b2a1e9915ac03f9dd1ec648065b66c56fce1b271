@@ -1,0 +1,1 @@
+Unauthentic or malformed records are listed and excluded; they never abort the assessment and never count.

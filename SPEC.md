@@ -56,6 +56,12 @@ its signature verifies under a key that the recipient's trust file binds to the
 record's `actor`. A trust file binds keys to actors; it authenticates and
 authorizes nothing else (§6).
 
+An **actor id** is a non-empty string of at most 200 code points, in Unicode
+Normalization Form C, with no control character (general category Cc) and no
+white space (Unicode White_Space) at either end. An actor may be a person, a
+model, a program or a rule (for example, a checker named by the hash of its
+code); Warrant does not assess what an actor is (§6).
+
 There are six types. They are distinct so that a claim, a permission, an
 execution observation and an acceptance can never be read as one another.
 

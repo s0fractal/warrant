@@ -8,6 +8,7 @@ from pathlib import Path
 from warrant import jcs as C
 from warrant import keys as K
 from warrant import limits as L
+from warrant import records as R
 from warrant.store import Trust
 
 from . import AGENT_API
@@ -33,6 +34,11 @@ class Workspace:
         repo = doc.get("repo")
         self.repo = (Path(repo["path"]), repo["rev"]) if repo else None
         signer = doc.get("signer")
+        if signer:
+            try:
+                R.check_actor(signer["actor"], "signer actor")       # SPEC §3: the one shape of an actor id
+            except R.Invalid as e:
+                raise AgentError("BAD_REQUEST", f"workspace {name!r}: {e}") from None
         self.signer = (signer["actor"], Path(signer["key"])) if signer else None
         self.source_name = doc.get("source_name", name)
         self.expectations = dict(doc.get("expectations", {}))

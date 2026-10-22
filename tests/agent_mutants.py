@@ -180,6 +180,13 @@ MUTANTS = [
      [('    rtype = rec["type"] if rec else "unreadable"\n',
        '    rtype = C.loads(p.read_bytes())["record"].get("type", "unreadable")\n')],
      "agent_mcp_test", ["M15"]),
+    # W5: the actor id of SPEC §3 in the agent's configuration and requests
+    ("A36", "config.py", "the configured signer need not be an actor id",
+     [('                R.check_actor(signer["actor"], "signer actor")       # SPEC §3: the one shape of an actor id\n',
+       '                pass\n')], "agent_write_test", ["W10"]),
+    ("A37", "api.py", "a context request's actor is any non-empty string, as at 849cbfa",
+     [('    need(_is_actor(actor), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")',
+       '    need(isinstance(actor, str) and actor, "BAD_REQUEST", "actor")')], "agent_write_test", ["W10"]),
 ]
 
 

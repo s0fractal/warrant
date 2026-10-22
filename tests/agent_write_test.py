@@ -6,6 +6,7 @@
 import sys
 
 from agent_world import Config, R, check, finish, reviewed_work, world
+from warrant_agent.errors import AgentError
 
 
 def ok(res):
@@ -153,6 +154,29 @@ def main():
           and own_status["status"] == "PREPARED",
           "addresses are checked before paths; a draft belongs to its own workspace; own status still reads",
           ([t.get("error") for t in tries], other.get("error"), planted_read.get("error"), bad_accept.get("error")))
+
+    # W10 (W5, SPEC §3 actor id): the configured signer and a request's actor are actor ids;
+    # "producer\n" is not another actor, it is refused, in the configuration and in a request
+    s10, _ = world()
+
+    def load_with(actor):
+        s10.doc["workspaces"]["src"]["signer"]["actor"] = actor
+        try:
+            s10.reload()
+            return "loaded"
+        except AgentError as e:
+            return e.code
+    loads = {a: load_with(a) for a in ("producer", "prodúcer", "producer\n", "producer\r\n", " producer", "prodúcer ")}
+    s10.doc["workspaces"]["src"]["signer"]["actor"] = "producer"
+    s10.reload()
+    asks = {a: ("ok" if "ok" in r else r.get("error"))
+            for a in ("producer", "prodúcer", "producer\n", "prodúcer\r\n", "producer ", "")
+            for r in [s10.call("context", {"workspace": "src", "actor": a, "use": "continue", "targets": []})]}
+    check("W10", loads == {"producer": "loaded", "prodúcer": "loaded", "producer\n": "BAD_REQUEST",
+                           "producer\r\n": "BAD_REQUEST", " producer": "BAD_REQUEST", "prodúcer ": "BAD_REQUEST"}
+          and asks == {"producer": "ok", "prodúcer": "ok", "producer\n": "BAD_REQUEST", "prodúcer\r\n": "BAD_REQUEST",
+                       "producer ": "BAD_REQUEST", "": "BAD_REQUEST"},
+          "a signer or a request actor that is not an actor id is refused", (loads, asks))
     return finish("AGENT-WRITE")
 
 
