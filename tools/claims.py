@@ -933,6 +933,9 @@ def cmd_supersede(repo, a):
         # if it has one), so its closure cannot later be accepted as if nothing were found.
         if not counter:
             raise Refused(f"{a.id}: --challenge needs --counter or --counter-file as its evidence")
+        # Refuse before the challenge is written: a refused command files no record.
+        author._validate(a.id, norm(a.text), "informative" if a.informative else "normative", sorted(set(wit)),
+                         sorted(set(mut)), a.informative, a.unbacked_because, counter, cur)
         # Against the last BACKED claim of the chain: its discharge item is the closure in dispute.
         model, target = author.model(), cur
         while not target.backed and target.doc["previous"] and target.doc["previous"]["transition"] in model.nodes:
