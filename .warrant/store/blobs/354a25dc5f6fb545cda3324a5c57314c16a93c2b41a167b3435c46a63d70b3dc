@@ -1,0 +1,1 @@
+{"because":null,"duty":"799dbfe7fbf4908e77bfdb1a06e60dda1cdfe75bfaaf540df267ab5276b8bfcf","id":"SPEC-3.6-4","kind":"normative","mutants":["M258"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.6","source":"SPEC.md","text":"statement string","witnesses":["records_test:C3"]}

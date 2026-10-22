@@ -1,0 +1,1 @@
+{"because":null,"duty":"d409c6971247bc8b91bc015494ee26aa1ae3cc6fdf4726b1185ea1f0eb11d59b","id":"SPEC-3.3-5","kind":"normative","mutants":["M240"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.3","source":"SPEC.md","text":"support list of hex64: the acceptor's own references","witnesses":["records_test:A4"]}

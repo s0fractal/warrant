@@ -1,0 +1,1 @@
+{"because":null,"duty":null,"id":"SPEC-3-18","kind":"informative","mutants":[],"previous":null,"reason":"summary row of §3.5, whose lines are claimed there; the grantor is claimed as SPEC-3.5-1","schema":"warrant-claims/claim@1","section":"3","source":"SPEC.md","text":"| `grant` | permission to perform a named act on named duties | the grantor |","witnesses":[]}

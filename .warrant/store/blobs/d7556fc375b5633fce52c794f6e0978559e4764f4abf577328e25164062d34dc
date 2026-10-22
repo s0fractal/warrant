@@ -1,0 +1,1 @@
+A record is **authentic** iff its stored bytes are canonical, its id matches, and its signature verifies under a key that the recipient's trust file binds to the record's `actor`.

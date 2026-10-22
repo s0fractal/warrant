@@ -1,0 +1,1 @@
+{"because":null,"duty":"100f7753cfe9b9d903021a3235a84e98344fd30a39e5d617e5e7c0cd85abb7af","id":"SPEC-3.5-6","kind":"normative","mutants":["M252"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.5","source":"SPEC.md","text":"duties non-empty sorted list of duty ids","witnesses":["records_test:G5"]}

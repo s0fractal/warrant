@@ -37,6 +37,25 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### SPEC §1–§3 as claim records; UNBACKED as an open question (pilot W4)
+
+`tools/claims.py check` no longer refuses an UNBACKED claim: it is an open
+question with its reason, listed in SPEC-CLAIMS.md under "Open questions". A
+current UNBACKED claim without a reason is refused, and so is a claim BACKED at
+the base revision that is UNBACKED now unless the transition that lost the
+backing cites counter-evidence (a challenge against the claim it replaced, or a
+blob of the failing case). Mutants of `tests/agent_mutants.py` (ids A…) are
+citable beside `tests/mutants.py` (ids M…); an id in both harnesses, an id
+without its harness's prefix and a mutant whose target is not a case of an
+existing test file are refused. The sentences of SPEC §1 Purpose, §2 Encoding
+and §3 Records (3.1–3.6 with their field blocks and the types table) are claim
+records: 107 sentences, 73 backed, 3 unbacked, 31 informative. New:
+`tests/records_test.py` (68 cases) and mutants M175–M259, each killed by a
+refused value becoming accepted. SPEC-7-1 is superseded as UNBACKED, with a
+challenge carrying the probe in which its former witnesses C5 and C11 pass while
+the sentence is false; SPEC-9-15 now cites A28. The engine, the record shapes
+and SPEC.md are unchanged.
+
 ### SPEC §7–§9 as claim records (pilot W3)
 
 The sentences of SPEC §7 Computation, §8 Next-session capsule and §9 Limits

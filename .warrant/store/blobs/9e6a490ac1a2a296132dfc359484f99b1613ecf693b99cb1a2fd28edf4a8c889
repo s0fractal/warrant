@@ -1,0 +1,1 @@
+{"because":null,"duty":"d62add134422ccafa2908b1d1a49ce7bf4d464972f1d26c9a783a09c595e2296","id":"SPEC-3.2-19","kind":"normative","mutants":["M231"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"evidence list of hex64, a subset of the transition's evidence","witnesses":["records_test:I3"]}

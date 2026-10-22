@@ -1,0 +1,1 @@
+{"because":null,"duty":"2a4e19292aba874e9076d57aed26fa635e6a0ec946733706796b7294a45edd09","id":"SPEC-3.2-8","kind":"normative","mutants":["M225"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"closes list of items (below)","witnesses":["records_test:T7"]}

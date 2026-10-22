@@ -1,0 +1,1 @@
+{"because":null,"duty":"419c8f079dc7675f58b1b8e76771c73f2ec3db8cf850bf4d5941bfb305d7550c","id":"SPEC-3.1-14","kind":"normative","mutants":["M173","M217","M218"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.1","source":"SPEC.md","text":"answers null | question reference (§3.2)","witnesses":["contract_test:N7","records_test:D13"]}

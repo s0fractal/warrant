@@ -1,0 +1,1 @@
+{"because":null,"duty":"3d70016fba9482b3783e081a0810c4971b73447ae1f719a48b9690cae04f20c2","id":"SPEC-3.2-20","kind":"normative","mutants":["M232","M233"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"period int, required iff the duty has a schedule and act is discharge","witnesses":["records_test:I4"]}
