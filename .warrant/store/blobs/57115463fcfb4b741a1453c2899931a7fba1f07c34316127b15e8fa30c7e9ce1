@@ -1,0 +1,3 @@
+KILLED      M300 ../tools/roadmap.py: the Forward Attack mark fires when any obligation is DISCHARGED, not all  [P9]
+MUTANTS: 1/1 killed on target (jobs=1)
+MUTANTS: matrix of 1 mutants (own) written to /Users/s0fractal/Projects/.drafts/warrant-pr172-review-e4c997d/M300.json

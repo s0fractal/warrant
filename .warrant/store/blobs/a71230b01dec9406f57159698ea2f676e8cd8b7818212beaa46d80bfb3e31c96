@@ -1,0 +1,17 @@
+ok    Y1 a covered statement maps to the claims citing its mutant, their obligations and goals
+ok    Y2 a statement two claims cite through one mutant maps to both, and to no obligation of another claim
+ok    Y3 a statement only an UNBACKED claim's mutant changes has no claim
+ok    Y4 a mutant inserting before a statement does not change it
+ok    Y5 the mutant of a superseded claim covers nothing
+ok    Y6 a comment, a docstring or a blank line is not a statement
+ok    Y7 a statement's continuation line is that statement; an obligation that requires its claim is found
+ok    Y8 --uncovered lists the statements no cited mutant changes, and the wholly uncovered functions largest first
+ok    Y9 a file outside the source roots, a missing line or a malformed FILE:LINE is refused
+ok    Y10 an absolute path inside the repository is read; the text answer names the claims, obligation and goal
+ok    Y12 a statement whose only claim is COUNTERED has no backing; the claim is named with its counter, and the obligation serving it is not reached
+ok    Y13 --uncovered lists a statement covered only by a COUNTERED claim, names that claim, and counts it uncovered
+ok    Y14 a stranger's challenge whose counter does not replay (a thesis) leaves the claim backing
+ok    Y15 audit hunts blind witnesses of BACKED claims only: a COUNTERED claim is already shown blind
+ok    Y16 the author's re-backing makes the claim backing again, with its obligation
+ok    Y11 without a roadmap the claims are still answered, with no obligation
+why_test: 16 PASS / 0 FAIL

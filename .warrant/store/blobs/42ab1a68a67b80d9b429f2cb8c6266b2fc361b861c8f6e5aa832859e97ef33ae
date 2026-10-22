@@ -1,0 +1,87 @@
+ok  --jobs 2 runs every mutant and a survivor fails the run
+ok  --jobs 2 with every mutant killed succeeds
+ok  --jobs 1 runs in series with the same verdict
+ok  --jobs +2 is two workers, not a selector
+ok  --jobs -1 is refused before any mutant runs
+ok  --jobs 0 is refused
+ok  --jobs two is refused
+ok  --jobs without a value is refused
+ok  --job is not an abbreviation of --jobs
+ok  an unknown id is refused, never an empty success
+ok  a known and an unknown id together are refused
+ok  ids select, and the verdicts print in matrix order
+ok  an empty matrix is not a success
+ok  --matrix writes every mutant's runs, case by case
+ok  --matrix-tests names the extra test files each mutant runs
+ok  --matrix-tests without --matrix is refused
+ok  --matrix-tests with an unknown test file is refused
+ok  --matrix-tests with no test file is refused
+ok  a failing target case unmutated is refused BASELINE_RED before any mutant runs
+ok  a red baseline is refused even when every mutant would read KILLED
+ok  a targeted test file that gives no results unmutated is refused
+ok  a failing case no chosen mutant targets does not refuse
+ok  BASELINE_RED names the failing target cases and only the mutants that target them
+ok  a green baseline proceeds to every mutant
+ok  the baseline runs each test file once per copied environment, unmutated
+ok  only the test files of the selected mutants get a baseline
+ok  shards() puts every mutant in exactly one part
+ok  shards() is a function of the list
+ok  shards() balances COST: the costly files are spread
+ok  shards() places the costliest first: one costly and two cheap in two parts leave the costly one alone
+ok  --shard 0/3 is refused
+ok  --shard 4/3 is refused
+ok  --shard 1/03 is refused
+ok  --shard with ids is refused
+ok  --shard 1/3 runs exactly its part
+ok  --shard 2/3 runs exactly its part
+ok  --shard 3/3 runs exactly its part
+ok  a shard's baseline covers only its own part's test files
+ok  --merge of all parts writes one matrix of every mutant, without a shard
+ok  --merge refuses a missing part
+ok  --merge refuses a part given twice
+ok  --merge refuses a part without one of its ids
+ok  --merge refuses an id outside the list
+ok  --merge refuses parts run with different --matrix-tests
+ok  --merge of one unsharded matrix of every mutant is the same claim
+ok  --merge refuses an outcome that is not KILLED
+ok  --merge refuses KILLED that the row's own runs do not give
+ok  --merge refuses a row of another definition
+ok  --merge refuses a part over other sources
+ok  --merge refuses the parts for another harness
+ok  the real baseline runs an unmutated copy and reads it green
+ok  a genuine run of M300 is KILLED on P9
+ok  a clean tree is named by its git tree id
+ok  --merge of the genuine row over the unchanged tree passes
+ok  an uncommitted M300 edit of tools/roadmap.py: SHARD_STALE, nothing written
+ok  an uncommitted change of tools/claims.py: SHARD_STALE
+ok  an uncommitted change of .warrant/roles.json: SHARD_STALE
+ok  an uncommitted change of README.md: SHARD_STALE
+ok  a new untracked file anywhere: SHARD_STALE
+ok  a deleted tracked file: SHARD_STALE
+ok  a file made executable: SHARD_STALE
+ok  a file git ignores is not a source
+ok  the change undone, the tree merges again
+ok  a committed change of README.md (a clean tree, another tree id): SHARD_STALE
+ok  a dirty tree is named by its working-tree digest
+ok  a matrix of a dirty tree merges over the same bytes
+ok  ... and is SHARD_STALE after one more byte anywhere
+ok  ... or in README.md
+ok  ... or after a new untracked file
+ok  ... or after a tracked file is deleted
+ok  ... or after a file is made executable
+ok  ... but not after a change to a file git ignores
+ok  ... and SHARD_STALE once the dirty change is undone
+ok  --matrix names the tree it ran over
+ok  --matrix writes nothing when the tree changes during the run (SOURCE_CHANGED)
+ok  --matrix writes nothing over a root with no identity (SOURCE_UNKNOWN)
+ok  a real --matrix run in a tree that ignores nothing, by a caller that writes bytecode, leaves the tree as it was and names it
+ok  ... and so does a real --matrix run of tests/agent_mutants.py
+ok  a directory inside a checkout has no identity of its own
+ok  a directory outside any checkout has no identity
+ok  mutants.py '--jobs -1': exit 2 before any run
+ok  mutants.py '--jobs +2 ZZ': exit 2 before any run
+ok  mutants.py '--jobs 0 M01': exit 2 before any run
+ok  agent_mutants.py '--jobs -1': exit 2 before any run
+ok  agent_mutants.py '--jobs +2 ZZ': exit 2 before any run
+ok  agent_mutants.py '--jobs 0 M01': exit 2 before any run
+MUTANTS-SELFTEST: ALL PASS (86 checks)

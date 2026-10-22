@@ -1,0 +1,24 @@
+import importlib.util,json,pathlib,subprocess,sys,tempfile,contextlib,io
+sys.dont_write_bytecode=True
+root=pathlib.Path(sys.argv[1]);matrix=pathlib.Path(sys.argv[2]);spec=importlib.util.spec_from_file_location('probe_mutants',root/'tests/mutants.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+target=next(x for x in m.MUTANTS if x[0]=='M300')
+with tempfile.TemporaryDirectory(prefix='pr172-source-probe-') as t:
+ t=pathlib.Path(t);r=t/'copy';subprocess.run(['git','clone','--quiet','--no-hardlinks',str(root),str(r)],check=True)
+ original=m.source_digest(r);assert original==json.loads(matrix.read_text())['source']
+ def merge_ok(expect):
+  out=t/'merged.json';out.unlink(missing_ok=True)
+  rc=m.merge([target],'PROBE',[str(out),str(matrix)],'mutants',root=r)
+  assert rc==expect and out.exists()==(expect==0),(rc,out.exists())
+ merge_ok(0)
+ p=r/'tools/roadmap.py';old=p.read_text();assert old.count(target[3][0][0])==1;p.write_text(old.replace(*target[3][0]))
+ assert m.source_digest(r)!=original
+ merge_ok(1)
+ s=importlib.util.spec_from_file_location('mutated',r/'tests/mutants.py');changed=importlib.util.module_from_spec(s);s.loader.exec_module(changed)
+ got=changed.run_one(*target);assert got[0]=='BAD_MUTANT',got
+ print('Actual M300 on changed tool:',got[0])
+ p.write_text(old);merge_ok(0)
+ # Independent dirty-state controls outside the executable directories.
+ readme=r/'README.md';before=readme.read_bytes();readme.write_bytes(before+b'\n')
+ dirty=m.source_digest(r);assert dirty!=original and dirty.startswith('worktree:');merge_ok(1)
+ readme.write_bytes(before);merge_ok(0)
+ print('SOURCE PROBE: PASS; genuine row accepted only over original tree, stale tool and README refused')

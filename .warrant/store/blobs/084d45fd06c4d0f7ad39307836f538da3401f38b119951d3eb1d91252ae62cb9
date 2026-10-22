@@ -1,0 +1,9 @@
+PROBE MERGE: 1/1 mutants, each run once in one of 1 files and killed on target; matrix written to /var/folders/3j/t95dsnsj7wlc35dpwlwpdy8r0000gn/T/pr172-source-probe-wg8yu6ps/merged.json
+SHARD_STALE            /Users/s0fractal/Projects/.drafts/warrant-pr172-review-e4c997d/M300.json: written over other sources than this checkout's
+PROBE MERGE: REFUSED (1 problems); /var/folders/3j/t95dsnsj7wlc35dpwlwpdy8r0000gn/T/pr172-source-probe-wg8yu6ps/merged.json not written
+Actual M300 on changed tool: BAD_MUTANT
+PROBE MERGE: 1/1 mutants, each run once in one of 1 files and killed on target; matrix written to /var/folders/3j/t95dsnsj7wlc35dpwlwpdy8r0000gn/T/pr172-source-probe-wg8yu6ps/merged.json
+SHARD_STALE            /Users/s0fractal/Projects/.drafts/warrant-pr172-review-e4c997d/M300.json: written over other sources than this checkout's
+PROBE MERGE: REFUSED (1 problems); /var/folders/3j/t95dsnsj7wlc35dpwlwpdy8r0000gn/T/pr172-source-probe-wg8yu6ps/merged.json not written
+PROBE MERGE: 1/1 mutants, each run once in one of 1 files and killed on target; matrix written to /var/folders/3j/t95dsnsj7wlc35dpwlwpdy8r0000gn/T/pr172-source-probe-wg8yu6ps/merged.json
+SOURCE PROBE: PASS; genuine row accepted only over original tree, stale tool and README refused
