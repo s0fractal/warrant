@@ -87,6 +87,9 @@ def main():
     bad.update({"index \\n": f"{H64}:0\n", "index \\r\\n": f"{H64}:0\r\n", "leading zero": f"{H64}:01",
                 "double zero": f"{H64}:00", "five digits": f"{H64}:10000", "arabic-indic index": f"{H64}:١",
                 "negative": f"{H64}:-1", "no index": f"{H64}:", "no colon": H64, "space": f"{H64}: 1"})
+    ok, wrong = table(lambda v: S.hex_of(v, 40), ["ab" * 20], hex_vectors("ab" * 20))
+    check("S7", ok and not S.hex_of("ab" * 20, 64) and S.hex_of("", 0), "hex_of(v, n): exactly n lowercase hex "
+          "digits (a git object id), the same vectors at 40", wrong)
     ok, wrong = table(S.qref, [f"{H64}:0", f"{H64}:7", f"{H64}:9999"], bad)
     check("S4", ok, "qref: <hex64>:<index 0-9999 without leading zeros>, the same hex vectors and the index's own", wrong)
     valid = ["claude", "codex", "checker sha256:" + H64, "Ünïcödé", "a" * 200, "\U0001f600" * 200, "a b"]

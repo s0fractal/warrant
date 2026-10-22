@@ -11,6 +11,7 @@ Unicode digit. Hex is lowercase."""
 import re
 import unicodedata
 
+HEX = re.compile(r"^[0-9a-f]*\Z")              # lowercase hex of any length (hex_of gives it one)
 HEX32 = re.compile(r"^[0-9a-f]{32}\Z")        # a view token (warrant_agent.views)
 HEX64 = re.compile(r"^[0-9a-f]{64}\Z")        # a record id, a blob address, an Ed25519 public key
 HEX128 = re.compile(r"^[0-9a-f]{128}\Z")      # an Ed25519 signature
@@ -29,6 +30,11 @@ def hex64(v):
 def hex128(v):
     """True iff `v` is a string of exactly 128 lowercase hex digits."""
     return isinstance(v, str) and HEX128.match(v) is not None
+
+
+def hex_of(v, n):
+    """True iff `v` is a string of exactly `n` lowercase hex digits (a git object id: n = 40 or 64)."""
+    return isinstance(v, str) and len(v) == n and HEX.match(v) is not None
 
 
 def qref(v):

@@ -47,6 +47,7 @@ from pathlib import Path
 
 from warrant import jcs as C
 from warrant import records as R
+from warrant import shapes as S
 
 CHECKER = "warrant-claims/replay@1"
 REPORT = "warrant-claims/replay-report@1"
@@ -57,6 +58,7 @@ CLAIM = "warrant-claims/claim@1"
 # A mutant id's prefix names its harness and the package its file is relative to.
 HARNESSES = {"M": ("mutants.py", "warrant"), "A": ("agent_mutants.py", "warrant_agent")}
 TEST = re.compile(r"[a-z][a-z0-9_]*_test")
+OBJECT_ID = {"sha1": 40, "sha256": 64}      # hex digits of an object id, by the repository's object format
 MUTANT = re.compile(r"[MA][0-9]+")
 PACKAGES = ("warrant", "warrant_agent", "tools")
 
@@ -202,8 +204,37 @@ def _git(root, *args, data=False):
     return out if data else out.decode().strip()
 
 
+def id_length(root):
+    """The hex digits of an object id in the repository at `root` (its object format)."""
+    return OBJECT_ID.get(_git(root, "rev-parse", "--show-object-format"))
+
+
+def is_object_id(name, n):
+    """Whether `name` has the shape of a canonical object id: exactly `n` lowercase hex digits."""
+    return S.hex_of(name, n)
+
+
+def canonical(root, name):
+    """(commit, tree) when `name` is a commit's canonical id in the repository at `root`, with
+    that commit's tree id; Refusal REPLAY_COMMIT_NAME otherwise. A canonical id is the full
+    lowercase hex id of the repository's object format that Git resolves to itself as a commit
+    (minds VARS-1 §3), never a ref, an abbreviation or a revision expression: a tag, HEAD~1, a
+    short id, an annotated tag's own object id, uppercase and a trailing newline are each refused.
+    A name that can move, or resolve otherwise elsewhere, never selects what runs."""
+    n = id_length(root)
+    if not is_object_id(name, n):
+        raise Refusal("REPLAY_COMMIT_NAME", f"{str(name)[:50]!r} is not a full lowercase {n}-digit commit id")
+    r = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", "--end-of-options",
+                        f"{name}^{{commit}}"], capture_output=True, check=False)
+    got = r.stdout.decode().strip() if r.returncode == 0 else None
+    if got != name:
+        raise Refusal("REPLAY_COMMIT_NAME", f"{name[:12]} is not a commit's own id here (it resolves to {got})")
+    return name, _git(root, "rev-parse", "--verify", "--end-of-options", f"{name}^{{tree}}")
+
+
 def extract(root, commit, into):
-    """Extract `commit` of the repository at `root` into the empty directory `into`."""
+    """Extract `commit` (a canonical id: canonical) of the repository at `root` into the empty
+    directory `into`."""
     with tarfile.open(fileobj=io.BytesIO(_git(root, "archive", "--format=tar", commit, data=True))) as t:
         t.extractall(into, filter="data")
 
@@ -220,7 +251,8 @@ def run(root, store, trust, key, tids, jobs=4):
                       "and another byte of it would be another actor")
     if _git(root, "status", "--porcelain=v1", "--untracked-files=all"):
         raise Refusal("REPLAY_DIRTY", "the working tree differs from HEAD: a replay is of a commit's exact tree")
-    commit, tree = _git(root, "rev-parse", "HEAD"), _git(root, "rev-parse", "HEAD^{tree}")
+    # HEAD is read once; the tree is the tree of that commit id, not a second reading of HEAD.
+    commit, tree = canonical(root, _git(root, "rev-parse", "--verify", "HEAD^{commit}"))
     from warrant.store import Snapshot
     snap = Snapshot.read(store.root)
     recs, _ = snap.authentic(trust)

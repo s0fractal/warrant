@@ -15,8 +15,12 @@ signature for what the report says:
                      acceptance is of that claim's discharge item;
     CHECKER_REPORT_FAILS  the report lists exactly the claim's witnesses, each PASS, and exactly
                      its mutants, each KILLED by cited cases;
+    CHECKER_COMMIT_NAME   the report names its commit and tree by canonical ids: full lowercase
+                     hex of the repository's object format (AMEND 1 of #176: a tag that moved
+                     redirected what `--verify` ran);
   acceptances new since the base (the commit is read in this repository's history)
-    CHECKER_COMMIT   the reported commit exists and is an ancestor of HEAD;
+    CHECKER_COMMIT_NAME   the commit id is one Git resolves to itself as a commit (replay.canonical);
+    CHECKER_COMMIT   the reported commit is an ancestor of HEAD;
     CHECKER_OTHER_TREE    the commit's tree is the reported tree, and the claim's transition was
                      in that tree's store: the replay was of the claim's own repository state;
     CHECKER_CODE_MISMATCH the commit's replay.py hashes to the reported checker: the same actor id
@@ -26,9 +30,10 @@ signature for what the report says:
     CHECKER_PIN_STALE the checker new duties are filed under is the one this checkout's replay.py
                      is.
 
-`verify` re-executes: for each acceptance new since the base, the reported commit's own
-replay.py (its bytes hashed first) replays the claim at that commit, and a result other than the
-report's is CHECKER_REPLAY_DIFFERS. That is the only step that runs code. It is
+`verify` re-executes: for each acceptance new since the base whose commit is canonical and has
+the reported tree (both checked before anything runs: it never follows a name), the reported
+commit's own replay.py (its bytes hashed first) replays the claim at that commit, and a result
+other than the report's is CHECKER_REPLAY_DIFFERS. That is the only step that runs code. It is
 `claims.py replay --verify`, a CI job of its own.
 """
 import importlib.util
@@ -91,7 +96,7 @@ def claim_problem(model, rec, rep):
 
 def problems(repo, model, pins):
     """[(code, detail)] of the pins and of every checker acceptance (the module docstring)."""
-    out, adopted = [], pins.get("checkers", [])
+    out, adopted, n = [], pins.get("checkers", []), RP.id_length(repo.root) if accepts(model) else None
     if adopted and adopted[-1] != current_checker(repo):
         out.append(("CHECKER_PIN_STALE", f".warrant/claims.json files new BACKED duties under {adopted[-1][:28]}…, "
                     f"and this checkout's {RP.SELF} is {current_checker(repo)[:28]}…: pin the checker its code is"))
@@ -105,6 +110,10 @@ def problems(repo, model, pins):
             continue
         if r["actor"] not in adopted:
             out.append(("CHECKER_UNPINNED", f"{where}: .warrant/claims.json does not adopt this checker"))
+            continue
+        if not (RP.is_object_id(rep["commit"], n) and RP.is_object_id(rep["tree"], n)):
+            out.append(("CHECKER_COMMIT_NAME", f"{where}: the report names commit {rep['commit'][:50]!r} and tree "
+                        f"{rep['tree'][:50]!r}, not full lowercase {n}-digit ids"))
             continue
         bad = claim_problem(model, r, rep)
         if bad:
@@ -120,18 +129,29 @@ def new_problems(repo, model, before):
             and claim_problem(model, r, rep) is None for c, why in commit_problems(repo, model, rep)]
 
 
+def resolved(repo, rep):
+    """(commit, None) when the report's commit is a canonical id whose tree is the reported tree,
+    else (None, (code, why)). Every reader of a reported commit goes through here first."""
+    try:
+        c, tree = RP.canonical(repo.root, rep["commit"])
+    except RP.Refusal as e:
+        return None, ("CHECKER_COMMIT_NAME", str(e))
+    if tree != rep["tree"]:
+        return None, ("CHECKER_OTHER_TREE", f"commit {c[:12]} has tree {tree[:12]}, the report says {str(rep['tree'])[:12]}")
+    return c, None
+
+
 def commit_problems(repo, model, rep):
     """[(code, why)]: the reported commit against this repository's history."""
-    c = rep["commit"]
+    c, bad = resolved(repo, rep)
+    if bad:
+        return [bad]
     try:
-        tree = git(repo, "rev-parse", "--verify", "--quiet", f"{c}^{{tree}}").decode().strip()
         subprocess.run(["git", "-C", str(repo.root), "merge-base", "--is-ancestor", c, "HEAD"], check=True,
                        capture_output=True)
     except subprocess.CalledProcessError:
         return [("CHECKER_COMMIT", f"commit {c[:12]} is not an ancestor of HEAD in this repository")]
     out = []
-    if tree != rep["tree"]:
-        out.append(("CHECKER_OTHER_TREE", f"commit {c[:12]} has tree {tree[:12]}, the report says {rep['tree'][:12]}"))
 
     def at_commit(path):
         r = subprocess.run(["git", "-C", str(repo.root), "show", f"{c}:{path}"], capture_output=True, check=False)
@@ -153,7 +173,9 @@ def commit_problems(repo, model, rep):
 
 
 def _base_records(repo, base):
-    """The record ids at revision `base`."""
+    """The record ids at revision `base`, an operator's argument (never a report's): resolved once
+    to its commit id, which every later read uses."""
+    base = git(repo, "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}").decode().strip()
     rows = git(repo, "ls-tree", "-r", "--name-only", base, "--", ".warrant/store/records").decode().split()
     return {Path(p).name[:-5] for p in rows if p.endswith(".json")}
 
@@ -161,13 +183,18 @@ def _base_records(repo, base):
 def verify(repo, model, base, jobs=4):
     """[(code, detail)]: each checker acceptance new since `base` whose report the reported
     commit's own replay.py does not reproduce there (CHECKER_REPLAY_DIFFERS), or that cannot be
-    replayed (CHECKER_COMMIT, CHECKER_CODE_MISMATCH)."""
+    replayed (CHECKER_COMMIT_NAME, CHECKER_OTHER_TREE, CHECKER_COMMIT, CHECKER_CODE_MISMATCH).
+    The commit and its tree are checked against the report before anything is extracted or run,
+    here and not only by `check`: a name is never resolved into what runs."""
     before = _base_records(repo, base)
-    todo = {}
+    todo, out = {}, []
     for rid, r, rep in accepts(model):
         if rid not in before and rep is not None and rep["transition"] in model.nodes:
-            todo.setdefault(rep["commit"], []).append((rid, rep))
-    out = []
+            c, bad = resolved(repo, rep)
+            if bad:
+                out.append((bad[0], f"accept {rid[:12]} of {rep['claim']}: {bad[1]}; nothing replayed"))
+            else:
+                todo.setdefault(c, []).append((rid, rep))
     for commit, items in sorted(todo.items()):
         work = Path(tempfile.mkdtemp(prefix="claims-replay-verify-"))
         try:

@@ -30,6 +30,16 @@ engine's disposition, the view's words.
       stays OPEN in the store, and the roadmap and `why` follow the lineage to the claim
   R14 the view names an acceptance by replay for what it checked, never as a review
   R15 a claim's superseded transition is not replayed: only its current one
+  AMEND 1 of #176 (Codex: a report naming its commit by a tag that later moved made `replay
+  --verify` run another tree and say OK). A commit is named by its canonical id, the full
+  lowercase hex id that Git resolves to itself as a commit, never by a ref (minds VARS-1 §3):
+  R16 Codex's reproduction: a report naming a tag is refused by every check, and `--verify`
+      refuses it before running anything, before and after the tag moves; an honest report's
+      canonical id still verifies after a tag at it is moved and deleted
+  R17 a short id          R18 HEAD, HEAD~1, a 40-character tag name
+  R19 an annotated tag's own object id (full lowercase hex, not a commit's id)
+  R20 uppercase hex       R21 a trailing newline at the valid length (39 digits + "\n")
+  R22 a commit whose tree is not the report's tree: `--verify` refuses it before running anything
 
     python3 tests/replay_test.py
 """
@@ -346,11 +356,83 @@ def migration_cases():
           "a claim's superseded transition is not replayed, though its duty is the same: only the current one", got)
 
 
+def naming_cases():
+    """R16-R22: the reported commit is named by its canonical id, or nothing reads it."""
+    f = Fix("tag", GOOD)
+    base = git(f.dir, "rev-parse", "HEAD")
+    tag = "refs/tags/replay-source"
+    git(f.dir, "update-ref", tag, base)
+    f.forge("SPEC-1-1", "checker", CHECKER, commit=tag)
+    f.commit("a report naming a tag")
+    before = (f.codes(), [c for c, _ in BR.verify(f.repo, f.model(), base, jobs=1)])
+    (f.dir / "README.md").write_text("another source tree\n")
+    git(f.dir, "update-ref", tag, f.commit("another tree"))
+    moved = [c for c, _ in BR.verify(f.repo, f.model(), base, jobs=1)]
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = CL.main(["--root", str(f.dir), "replay", "--verify", "--base", base, "--jobs", "1"])
+    h = Fix("tag-honest", GOOD)
+    h_base = git(h.dir, "rev-parse", "HEAD")
+    h.replay("SPEC-1-1")
+    git(h.dir, "update-ref", "refs/tags/at-source", h.commit("accepted"))
+    (h.dir / "README.md").write_text("moved on\n")
+    git(h.dir, "update-ref", "refs/tags/at-source", h.commit("another tree"))
+    after_move = BR.verify(h.repo, h.model(), h_base, jobs=1)
+    git(h.dir, "update-ref", "-d", "refs/tags/at-source")
+    after_delete = BR.verify(h.repo, h.model(), h_base, jobs=1)
+    check("R16", before == (["CHECKER_COMMIT_NAME"], ["CHECKER_COMMIT_NAME"]) and moved == ["CHECKER_COMMIT_NAME"]
+          and rc == 1 and after_move == [] and after_delete == [] and len(h.accepts()) == 1,
+          "a report naming its commit by a tag is refused by every check and never replayed, before or after the "
+          "tag moves; a canonical id verifies whatever happens to tags", (before, moved, rc, after_move, after_delete))
+
+    def named(name, commit=None, tree=None, verify=False, new=False):
+        """The checker codes of a forged report whose commit (or tree) is `commit(g)` (`tree(g)`):
+        the checks of every acceptance (no git: the shape of the ids), with `new` also those of an
+        acceptance new since the base (the ids resolved), or with `verify` the re-execution."""
+        g = Fix(name, GOOD)
+        b = git(g.dir, "rev-parse", "HEAD")
+        kv = {k: v for k, v in (("commit", commit(g) if commit else None), ("tree", tree(g) if tree else None)) if v}
+        g.forge("SPEC-1-1", "checker", CHECKER, **kv)
+        g.commit("forged")
+        return ([c for c, _ in BR.verify(g.repo, g.model(), b, jobs=1)] if verify else g.codes(b if new else None)), kv
+
+    def full(g):
+        return git(g.dir, "rev-parse", "HEAD")
+
+    got, kv = named("short", commit=lambda g: full(g)[:12])
+    check("R17", got == ["CHECKER_COMMIT_NAME"], "a short commit id is refused: an abbreviation names what it "
+          "resolves to today", (got, kv))
+
+    def long_tag(g):
+        git(g.dir, "tag", "r" * 40, "HEAD")
+        return "r" * 40
+    rows = {label: named(f"expr-{k}", commit=make)[0] for k, (label, make) in enumerate(
+        (("HEAD", lambda g: "HEAD"), ("HEAD~1", lambda g: "HEAD~1"), ("40-character tag", long_tag)))}
+    check("R18", all(v == ["CHECKER_COMMIT_NAME"] for v in rows.values()),
+          "HEAD, HEAD~1 and a tag as long as an id are refused: a revision expression or a ref is no commit id", rows)
+
+    def annotated(g):
+        git(g.dir, "tag", "-a", "-m", "annotated", "annotated-source", "HEAD")
+        return git(g.dir, "rev-parse", "refs/tags/annotated-source")
+    got, kv = named("annotated", commit=annotated, new=True)
+    got_v, kv_v = named("annotated-v", commit=annotated, verify=True)
+    check("R19", got == ["CHECKER_COMMIT_NAME"] and got_v == ["CHECKER_COMMIT_NAME"] and len(kv["commit"]) == 40,
+          "an annotated tag's own object id (full lowercase hex) is refused: Git resolves it to another id", (got, got_v))
+    got, kv = named("upper", commit=lambda g: full(g).upper())
+    check("R20", got == ["CHECKER_COMMIT_NAME"], "an uppercase commit id is refused", (got, kv))
+    got, kv = named("newline", commit=lambda g: full(g)[:39] + "\n")
+    check("R21", got == ["CHECKER_COMMIT_NAME"] and len(kv["commit"]) == 40,
+          "a 39-digit id with a trailing newline, at the valid length, is refused (\\Z, not $)", (got, kv))
+    got, kv = named("tree", tree=lambda g: git(g.dir, "rev-parse", "HEAD^{tree}")[::-1], verify=True)
+    check("R22", got == ["CHECKER_OTHER_TREE"], "a commit whose tree is not the report's tree is refused by --verify "
+          "before anything runs", (got, kv))
+
+
 def main():
     try:
         checker_cases()
         check_side_cases()
         migration_cases()
+        naming_cases()
     finally:
         shutil.rmtree(BASE, ignore_errors=True)
     return finish("REPLAY")
