@@ -358,7 +358,9 @@ def supersession_cases():
     check("S1", E.reliance(rep, a, "act")["state"] == "SUPERSEDED" and E.reliance(rep, b, "act")["state"] == "ELIGIBLE"
           and rep["results"][a]["accepted"], "a superseded result stays accepted history and is not relied on now",
           (E.reliance(rep, a, "act"), E.reliance(rep, b, "act")))
-    c = w.act(HOLDER, [], established=["the API is v3"], supersedes=[b])
+    # C is unchained: were it chained, its prev would be B and S3 below would find B missing through
+    # the chain (SPEC-4-8) whatever the supersession does (M104 survived that way on the F43 branch).
+    c = w.act(HOLDER, [], established=["the API is v3"], supersedes=[b], prev=R.UNCHAINED)
     rep = w.assess(prof=prof)
     check("S2", E.reliance(rep, b, "act")["state"] == "ELIGIBLE" and E.reliance(rep, a, "act")["state"] == "SUPERSEDED",
           "an unaccepted C does not supersede B, and A never returns", (E.reliance(rep, a, "act"), E.reliance(rep, b, "act")))

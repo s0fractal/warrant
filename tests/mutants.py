@@ -1148,6 +1148,9 @@ def _visit(view, did, report, done, busy):
        '            if isinstance(r, dict) and r.get("actor") == actor and type(r.get("at")) is int:'),
       ('        named = {r["prev"] for r in mine.values()}', '        named = {r.get("prev") for r in mine.values()}')],
      "records_test", ["K15"]),
+    ("M426", "engine.py", "a filing replayed under a new prev inherits the acceptances of the one it copies",
+     [('            if b["transition"] == t_id and b["item"] == index and sorted(b["evidence"]) == want:',
+       '            if b["item"] == index and sorted(b["evidence"]) == want:')], "assessment_test", ["R46"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
