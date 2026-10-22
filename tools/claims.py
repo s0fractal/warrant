@@ -3300,6 +3300,7 @@ def selftest(jobs=1):
             """(ok, report line) of case `i`, on a clone of its own: cases share nothing but
             the read-only fixture, so they may run in parallel processes."""
             name, expect, mutate, also = cases[i]
+            prior_local_trust = os.environ.get(LOCAL_TRUST)
             d = work / f"case-{i:03d}"
             # A clone through the pack protocol, never a copy of .git's files: copytree, and a
             # local clone (which copies objects/ too), fail with ENOENT if the fixture is
@@ -3317,6 +3318,10 @@ def selftest(jobs=1):
             except Exception as ex:      # noqa: BLE001 -- a case that crashes is a failed case, not a crashed selftest
                 ok, detail = False, f" | raised {type(ex).__name__}: {ex}"
             finally:
+                if prior_local_trust is None:
+                    os.environ.pop(LOCAL_TRUST, None)
+                else:
+                    os.environ[LOCAL_TRUST] = prior_local_trust
                 shutil.rmtree(d, ignore_errors=True)
             what = "passes" if expect is None else f"refused {expect}"
             return ok, ("ok    " if ok else "FAIL  ") + f"{name}: {what}" + ("" if ok else detail)
@@ -3917,9 +3922,12 @@ def selftest(jobs=1):
             return f
 
         def accepted_by_codex(r):
-            """codex's pin names the fixture's key (the reviewed config diff), then codex binds and accepts."""
+            """Accept with an ephemeral receiver-local key, without rotating an existing codex binding.
+            A real codex binding and its signed records may already be in the copied store."""
             k = W.Key.generate()
-            bind_entry(r, "codex", k, pin=True)
+            local_c = r.root.parent / f"{r.root.name}-codex-trust.json"
+            local_c.write_bytes(C.canon(Trust.document(local_bindings() + [("codex", k.public)])))
+            os.environ[LOCAL_TRUST] = str(local_c)     # run_case restores it after check and also()
             seed_c = r.root / ".." / f"{r.root.name}-codex.seed"
             seed_c.write_text(k.seed_hex() + "\n")
             import contextlib
@@ -3997,13 +4005,13 @@ def selftest(jobs=1):
              squatter_takes_codex, also=squatter_refused)
         case("A1: a squatter binds s0fractal (reserved)", "BINDING_ROLE_RESERVED", binding("s0fractal"))
         case("A1: anyone binds readers (a collective role)", "BINDING_ROLE_COLLECTIVE", binding("readers"))
-        case("A1: codex binds with the key its pin names (a reviewed pin change in the same change)", None,
-             lambda r: (bind_entry(r, "codex", W.Key.generate(), pin=True), reproject(r)))
+        case("A1: a fresh pinned role binds with the key its pin names", None,
+             lambda r: (bind_entry(r, "selftest-pinned-role", W.Key.generate(), pin=True), reproject(r)))
         case("A1: a pin change that contradicts claude's admitted binding", "ROLE_PIN_CONFLICT", pin_against_claude)
         case("A1: a role named in .warrant/claims.json and missing from .warrant/roles.json", "ROLE_UNPINNED", drop_role)
         case("A1: a role pinned to something that is not a key, null or collective", "ROLES_SHAPE",
              lambda r: set_role(r, "codex", "anyone"))
-        case("B: codex binds and accepts a claim; the view names the acceptor", None, accepted_by_codex, also=shows_accepted)
+        case("B: codex accepts with a receiver-local fixture key; the view names the acceptor", None, accepted_by_codex, also=shows_accepted)
         case("C: a newcomer binds in this change and files a counter that replays: admitted, backing lowered", None,
              challenge_by("stranger", {}), also=lowered_by("stranger", "SPEC-3.2-20", LOWERS))
         case("C: a newcomer files a counter that does not replay", "COUNTER_NOT_REPLAYED",
