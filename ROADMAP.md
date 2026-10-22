@@ -10,7 +10,9 @@ roadmap", maps the terms to the ontology. States are Warrant's own assessment
 (trust `.warrant/trust.json`, results acceptors from `.warrant/roadmap.json`,
 as of the latest record); `· …` is what the engine's frontier asks of the
 holder. DISCHARGED needs the acceptance the duty names: a closure filed with
-its evidence and not yet accepted reads OPEN · awaiting acceptance.
+its evidence and not yet accepted reads OPEN · awaiting acceptance; once
+accepted (`tools/roadmap.py accept`, signed by the acceptor's own key) it reads
+DISCHARGED · accepted by the acceptor.
 
 ## G1 [OPEN]
 

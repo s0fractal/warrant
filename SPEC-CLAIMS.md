@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 239 · backed 184 · unbacked 6 · informative 49 · retired 0 · records 495 · blobs 492
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 239 · backed 184 · countered 0 · unbacked 6 · informative 49 · retired 0 · records 495 · blobs 492
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -15,7 +15,9 @@ fail. An UNBACKED sentence is an open question, listed below with the reason it 
 open; it closes nothing and establishes nothing. *Disposition* is Warrant's own
 assessment of the claim's duty in this store (trust `.warrant/trust.json`, default
 profile, as of the latest record): a backed claim waits for its acceptor (codex)
-until an acceptance is filed. Nobody has accepted a claim yet unless this column says DISCHARGED.
+until an acceptance is filed (`tools/claims.py accept`, signed by the acceptor's own key); the
+column names who accepted. A claim is COUNTERED when a counter blob that replays (below), filed
+by anyone with an admitted binding, lowers its backing: it counts as backed no longer.
 
 | ID | Statement | Witnesses | Mutants | Status | Disposition | Claim |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -275,6 +277,15 @@ The reason below is the filer's thesis; the replay is what admitted the loss.
 | SPEC-4-1 | An assessment is a pure function of one **view**: the snapshot (the set of record and blob bytes, read once), the recipient's trust file, the recipient's profile (§4.6), the time `as_of`, the set of revisions the recipient treats as current, the recipient's workspace (repository and commit, for §5) and the identity of the evaluating code and provider (§7). | W5: §4's lead was outside the sections W–W4 pinned. Purity is not shown by finitely many cases; contract_test I1 compares identities over some operands, not results over all of them | `3b4020f02d74` |
 | SPEC-4-4 | The **assessment id** is the SHA-256 of the canonical description of all those operands. | W5: no case recomputes the id from the canonical description of the operands; contract_test I1 only compares ids, so another digest of the same operands would pass it | `3eda8b914d3c` |
 | SPEC-7-1 | Σ-GLYPH owns evaluation, resume, replay and cycles; Warrant owns the condition, the recipient's acceptance and the credit. | who owns evaluation is a property of where the evaluating code lives, and no case observes it: an implementation with a correct evaluator of its own would pass every case of this repository. The former witnesses guard the conditions around the delegation to Sigma (C5: no provider, UNVERIFIED, and the filer's word, OVERCLAIMED; C11: an unaccepted provider closes nothing), not the delegation itself: the counter blob replaces the provider call in engine._replayed, the function M22 alters, with Warrant's own answer, and C5 and C11 still pass while C4 fails | `3b3ec0412aba` |
+
+## Challenges
+
+Every challenge against a current claim, and what it does here. A counter blob that replays lowers
+the claim's backing whoever filed it (COUNTERED); with none that replays, a challenge by the claim's
+author or by an actor its duty is owed to or accepted by stands until the author answers (`check`
+refuses CHALLENGED); one by anyone else is a thesis: listed here, it lowers and blocks nothing.
+
+None.
 
 ## Document
 

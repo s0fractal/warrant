@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The roadmap as records (tools/roadmap.py): goals, obligations, path search.
 
-Each case builds a fixture repository (a store, a trust with claude, codex,
-s0fractal and stranger, .warrant/roadmap.json) and drives the tool through its
+Each case builds a fixture repository (a store, bindings with proofs for claude,
+codex, s0fractal and stranger, .warrant/roadmap.json) and drives the tool through its
 command line in process. States are asserted on the data `path` reads from the
 engine's report, refusals by their code or by the store staying unchanged, never
 by wording, so a mutant is killed only when a rule stops holding.
@@ -12,6 +12,7 @@ by wording, so a mutant is killed only when a rule stops holding.
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import shutil
 import sys
@@ -43,24 +44,37 @@ class Repo:
         self.base = Path(tempfile.mkdtemp(prefix="warrant-roadmap-"))
         self.dir = self.base / "repo"
         (self.dir / ".warrant").mkdir(parents=True)
+        self.keys = {a: W.Key.generate() for a in ACTORS}
         if spec:
             shutil.copytree(ROOT / ".warrant" / "store", self.dir / ".warrant" / "store")
             shutil.copy(ROOT / ".warrant" / "claims.json", self.dir / ".warrant" / "claims.json")
-            for f in ("SPEC.md", "SPEC-CLAIMS.md"):
+            for f in ("SPEC.md", "SPEC-CLAIMS.md", "WITNESSES.md"):
                 shutil.copy(ROOT / f, self.dir / f)
             bound = list(C.loads((ROOT / ".warrant" / "trust.json").read_bytes())["keys"])
+            # This store's claude is bound already (the first binding of an actor wins): the test's
+            # claude key is the receiver's own binding (WARRANT_CLAIMS_TRUST), as in the claims selftest.
+            local = self.base / "local-trust.json"
+            local.write_bytes(C.canon(Trust.document([("claude", self.keys["claude"].public)])))
+            os.environ[CL.LOCAL_TRUST] = str(local)
         else:
             Store(self.dir / ".warrant" / "store").init()
             bound = []
-        self.keys = {a: W.Key.generate() for a in ACTORS}
         self.seeds = {}
         for a, k in self.keys.items():
             p = self.base / f"{a}.seed"
             p.write_text(k.seed_hex() + "\n")
             self.seeds[a] = str(p)
-        doc = Trust.document([(a, k.public) for a, k in self.keys.items()])
-        doc["keys"] = bound + doc["keys"]
+        mine = [{"actor": a, "public": k.public, "proof": CL.binding_proof(k, a)} for a, k in self.keys.items()
+                if not (spec and a == "claude")]
+        doc = {"bindings": CL.BINDINGS, "keys": bound + mine}
         (self.dir / ".warrant" / "trust.json").write_bytes(C.canon(doc))
+        # The roles the configuration names are pinned (AMEND 1 of #170): to the test keys, and in
+        # spec mode claude to the key this store's records are signed with (its own binding).
+        roles = {a: k.public for a, k in self.keys.items() if a != "stranger"}
+        if spec:
+            roles["claude"] = next(e["public"] for e in bound if e["actor"] == "claude")
+        roles["readers"] = CL.COLLECTIVE
+        (self.dir / ".warrant" / "roles.json").write_text(json.dumps({"roles": CL.ROLES, "actors": roles}))
         (self.dir / ".warrant" / "roadmap.json").write_text(CONFIG)
         self.rm = RM.Roadmap(self.dir)
         self.store = Store(self.dir / ".warrant" / "store")
@@ -105,6 +119,7 @@ class Repo:
         return [c for c, _ in RM.check(self.rm)]
 
     def close(self):
+        os.environ.pop(CL.LOCAL_TRUST, None)
         shutil.rmtree(self.base, ignore_errors=True)
 
 
