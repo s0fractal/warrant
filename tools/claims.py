@@ -83,8 +83,8 @@ of `check`: an own-file matrix (what CI's mutant run gives for free) leaves most
 witnesses unknown, and the full one costs every suite under every mutant.
 
 `why` follows the links the other way, from code to records: a statement (the unit
-changed_statements counts) is served by the current BACKED claims citing a mutant that
-changes it, by the roadmap obligations whose serves or requires name those claims'
+changed_statements counts) is served by the current claims BACKED in the view (`standing`:
+a COUNTERED claim is named, never backing) citing a mutant that changes it, by the roadmap obligations whose serves or requires name those claims'
 duties, and by the goals those obligations answer; `why --uncovered` lists the
 statements of warrant/ and warrant_agent/ no cited mutant changes.
 
@@ -1066,17 +1066,26 @@ def status_of(n, low):
     return "COUNTERED" if n.id in low else n.status
 
 
+def standing(repo, model, table=None):
+    """({claim id: status}, low): every current claim's status as the views show it (status_of
+    over lowered(challenge_table)), and the lowering entries by claim. `Node.backed` says only
+    that a claim cites witnesses and mutants; a replaying counter (#170) lowers it to COUNTERED,
+    and whatever counts backing (SPEC-CLAIMS.md, `why`, `audit`, check's totals) reads this."""
+    low = lowered(challenge_table(repo, model) if table is None else table)
+    return {cid: status_of(n, low) for cid, n in model.current.items()}, low
+
+
 def render(repo, model=None, table=None):
     snap, trust = repo.snapshot(), repo.trust()
     model, pins = model or Model(snap, trust), repo.pins()
     table = challenge_table(repo, model) if table is None else table
-    low = lowered(table)
+    status, low = standing(repo, model, table)
     rep = assessment(snap, trust)
     index = accept_index(model.recs)
     rows = sorted(model.current.values(), key=lambda n: id_key(n.id))
     live = [n for n in rows if not n.retired]
     retired = [n for n in rows if n.retired]
-    count = {s: sum(status_of(n, low) == s for n in live if n.id in pins["sentences"])
+    count = {s: sum(status[n.id] == s for n in live if n.id in pins["sentences"])
              for s in ("BACKED", "COUNTERED", "UNBACKED", "INFORMATIVE")}
     secs = ", ".join("the preamble" if s == PREAMBLE else f"§{s}" for s in pins["sections"])
     out = [
@@ -1107,11 +1116,11 @@ def render(repo, model=None, table=None):
     for n in live:
         wit = "; ".join(f"{t} {' '.join(cs)}" for t, cs in _grouped(n.doc["witnesses"])) or "—"
         mut = " ".join(n.doc["mutants"]) or "—"
-        status = status_of(n, low) + (" · CHALLENGED" if n.id in counted else "")
+        shown = status[n.id] + (" · CHALLENGED" if n.id in counted else "")
         if n.kind == "informative":
-            status += f": {n.doc['reason']}"
+            shown += f": {n.doc['reason']}"
         acc = acceptors(model.recs, index, n.tid, 0) if n.backed else []
-        out.append(f"| {n.id} | {cell(n.doc['text'])} | {cell(wit)} | {mut} | {cell(status)} | {cell(disposition(rep, n, acc))} "
+        out.append(f"| {n.id} | {cell(n.doc['text'])} | {cell(wit)} | {mut} | {cell(shown)} | {cell(disposition(rep, n, acc))} "
                    f"| `{n.tid[:12]}` |")
     opened = [n for n in live if n.status == "UNBACKED" or n.id in low]
     out += ["", "## Open questions", "",
@@ -2454,9 +2463,8 @@ def cmd_accept(repo, a):
     rep = assessment(model.snap, repo.trust())
     cids = list(dict.fromkeys(a.claim))
     if a.all:
-        low = lowered(challenge_table(repo, model))
-        cids += sorted((n.id for n in model.current.values() if n.backed and not n.retired and n.id not in cids
-                        and n.id not in low
+        status, _ = standing(repo, model)
+        cids += sorted((n.id for n in model.current.values() if status[n.id] == "BACKED" and n.id not in cids
                         and any(c["transition"] == n.tid for c in pending_for(rep, n.doc["duty"], a.actor))), key=id_key)
     if not cids:
         raise Refused("name a claim (--claim ID) or --all", "NOT_A_CLOSURE")
@@ -2678,11 +2686,14 @@ def audit(repo, rows):
     Each entry's `tier` is "line" when X's edits cover a line that an edit of one of the
     claim's mutants covers (the same statement, most likely the same rule), else
     "function" (the same function only: often another rule of it).
-    A witness that fails under X sees it; nothing is reported then."""
+    A witness that fails under X sees it; nothing is reported then. A COUNTERED claim (standing:
+    a replaying counter lowered it already) is not audited: its witnesses are shown blind, the
+    remedy is re-backing it, and a second counter would add nothing (cmd_audit lists it)."""
     repo.mutants()
     model = Model(repo.snapshot(), repo.trust())
+    status, _ = standing(repo, model)
     facts, blind, unknown = _MutantFacts(repo), [], []
-    for n in sorted((n for n in model.current.values() if not n.retired and n.backed), key=lambda n: id_key(n.id)):
+    for n in sorted((n for n in model.current.values() if status[n.id] == "BACKED"), key=lambda n: id_key(n.id)):
         _audit_claim(repo, facts, n, rows, blind, unknown)
     return blind, unknown
 
@@ -2694,6 +2705,10 @@ def cmd_audit(repo, a):
     if problems:
         return 2
     blind, unknown = audit(repo, rows)
+    _, low = standing(repo, Model(repo.snapshot(), repo.trust()))
+    for cid, xs in sorted(low.items(), key=lambda kv: id_key(kv[0])):
+        print(f"COUNTERED {cid}: not audited, re-back it first; lowered by "
+              + ", ".join(f"challenge {x['challenge'][:12]} of {x['actor']}" for x in xs))
     out = confined(a.counters) if a.counters else None
     if out:
         out.mkdir(parents=True, exist_ok=True)
@@ -2762,20 +2777,24 @@ def _roadmap_links(repo):
 
 class Why:
     """From a statement of a source file to the mutants that change it (Repo.mutant_statements,
-    a key ("at", i) for unit i: an insertion before a statement changes none), the current
-    BACKED claims citing those mutants, the roadmap obligations whose serves or requires name
-    those claims' duties, and the goals those obligations answer. Everything is read from the
-    files and the records as they are now."""
+    a key ("at", i) for unit i: an insertion before a statement changes none), the claims citing
+    those mutants that are BACKED in the view (standing: a claim a replaying counter lowered is
+    COUNTERED, shown with its counters and never as backing), the roadmap obligations whose
+    serves or requires name the backing claims' duties, and the goals those obligations answer.
+    Everything is read from the files and the records as they are now."""
 
     def __init__(self, repo):
         self.repo = repo
         self.files = why_files(repo)
         known = repo.mutants()
         model = Model(repo.snapshot(), repo.trust())
-        self.cited = {}             # mutant id -> [Node]: the current BACKED claims citing it
-        for n in sorted((n for n in model.current.values() if not n.retired and n.backed), key=lambda n: id_key(n.id)):
-            for mid in n.doc["mutants"]:
-                self.cited.setdefault(mid, []).append(n)
+        status, self.low = standing(repo, model)
+        self.cited = {}             # mutant id -> [Node]: the current claims citing it that are BACKED in the view
+        self.countering = {}        # mutant id -> [Node]: those COUNTERED (a replaying counter lowered them)
+        for n in sorted(model.current.values(), key=lambda n: id_key(n.id)):
+            index = {"BACKED": self.cited, "COUNTERED": self.countering}.get(status[n.id])
+            for mid in n.doc["mutants"] if index is not None else ():
+                index.setdefault(mid, []).append(n)
         self.changes = {}           # (path, unit index) -> {mutant id}: the mutants that change unit i
         self.inserts = {}           # (path, unit index) -> {mutant id}: those inserting before it (shown, not counted)
         for mid in sorted(known):
@@ -2807,7 +2826,7 @@ class Why:
         except SyntaxError as e:
             raise Refused(f"{path} does not parse: {e}", "WHY_FILE") from e
         hits = [i for i, (_, _, own) in enumerate(units) if line in own]
-        stmts, claims, obligations, goals = [], {}, {}, {}
+        stmts, claims, countered, obligations, goals = [], {}, {}, {}, {}
         for i in hits:
             scope, fn, own = units[i]
             mids = sorted(self.changes.get((path, i), ()), key=_mid_key)
@@ -2819,6 +2838,12 @@ class Why:
                     c = claims.setdefault(n.id, {"claim": n.id, "transition": n.tid, "duty": n.doc["duty"],
                                                  "text": n.doc["text"], "via": []})
                     c["via"] = sorted(set(c["via"]) | {mid}, key=_mid_key)
+                for n in self.countering.get(mid, []):
+                    c = countered.setdefault(n.id, {"claim": n.id, "transition": n.tid, "duty": n.doc["duty"],
+                                                    "status": "COUNTERED", "via": [],
+                                                    "challenges": [{"challenge": x["challenge"], "actor": x["actor"],
+                                                                    "counters": x["replays"]} for x in self.low[n.id]]})
+                    c["via"] = sorted(set(c["via"]) | {mid}, key=_mid_key)
         for c in claims.values():
             for ln in self.links.get(c["duty"], []):
                 o = obligations.setdefault(ln["obligation"], dict(ln, claims=[]))
@@ -2829,13 +2854,14 @@ class Why:
         status = NOT_A_STATEMENT if not hits else CLAIMED if claims else NO_CLAIM
         return {"file": path, "line": line, "status": status, "source": (lines[line - 1:line] or [""])[0],
                 "statements": stmts, "claims": sorted(claims.values(), key=lambda c: id_key(c["claim"])),
+                "countered": sorted(countered.values(), key=lambda c: id_key(c["claim"])),
                 "obligations": [obligations[d] for d in sorted(obligations)],
                 "goals": [goals[k] for k in sorted(goals, key=lambda k: int(k[1:]))]}
 
     def uncovered(self, paths):
         """Each statement of `paths` that no cited mutant changes, the functions none of whose
         statements is covered (largest first), and the counts (`why --uncovered`)."""
-        stmts, funcs, total, covered, mutated = [], {}, 0, 0, 0
+        stmts, funcs, total, covered, mutated, lowered_only = [], {}, 0, 0, 0, 0
         for path in paths:
             lines = self.files[path].read_text().splitlines()
             for i, (scope, fn, own) in enumerate(self.units(path)):
@@ -2848,10 +2874,14 @@ class Why:
                     f["covered"] += ok
                     f["line"] = min(f["line"], min(own))
                 if not ok:
-                    stmts.append({"file": path, "line": min(own), "index": i, "function": fn,
+                    low = sorted({n.id for mid in self.changes.get((path, i), ()) for n in self.countering.get(mid, [])},
+                                 key=id_key)
+                    lowered_only += bool(low)
+                    stmts.append({"file": path, "line": min(own), "index": i, "function": fn, "countered": low,
                                   "source": lines[min(own) - 1].strip()})
         bare = sorted((f for f in funcs.values() if not f["covered"]), key=lambda f: (-f["statements"], f["file"], f["line"]))
-        return {"files": list(paths), "statements": total, "covered": covered, "mutated": mutated, "uncovered": stmts,
+        return {"files": list(paths), "statements": total, "covered": covered, "mutated": mutated,
+                "countered_only": lowered_only, "uncovered": stmts,
                 "functions": bare, "functions_total": len(funcs)}
 
 
@@ -2871,23 +2901,29 @@ def render_why(d):
                    + (f"; inserting before it (not counted): {', '.join(s['inserted_before'])}" if s["inserted_before"] else ""))
     for c in d["claims"]:
         out.append(f"  claim {c['claim']} (duty {c['duty'][:12]}, via {', '.join(c['via'])}): {c['text']}")
+    for c in d["countered"]:
+        out.append(f"  claim {c['claim']} [COUNTERED] (via {', '.join(c['via'])}), not backing: lowered by "
+                   + "; ".join(f"challenge {x['challenge'][:12]} of {x['actor']} (counter {', '.join(h[:12] for h in x['counters'])})"
+                               for x in c["challenges"]))
     for o in d["obligations"]:
         out.append(f"  obligation {o['obligation'][:12]} [{o['state']}] {o['relation']} {', '.join(o['claims'])}: "
                    f"{o['statement']} -> {o['goal'] or 'no goal'}")
     for g in d["goals"]:
         out.append(f"  goal {g['goal']} [{g['state']}] {g['text']}")
     if d["status"] == NO_CLAIM:
-        out.append("  no claim: no mutant a BACKED claim cites changes this statement")
+        out.append("  no claim: no mutant a claim BACKED in the view cites changes this statement")
     return "\n".join(out) + "\n"
 
 
 def render_uncovered(d):
-    out = [f"UNCOVERED {s['file']}:{s['line']} {s['function'] or '<module>'}: {s['source'][:100]}" for s in d["uncovered"]]
+    out = [f"UNCOVERED {s['file']}:{s['line']} {s['function'] or '<module>'}: {s['source'][:100]}"
+           + (f" (COUNTERED: {', '.join(s['countered'])})" if s["countered"] else "") for s in d["uncovered"]]
     out += [f"FUNCTION {f['file']}:{f['line']} {f['function']}: none of its {f['statements']} statements is covered"
             for f in d["functions"]]
     n, c = d["statements"], d["covered"]
-    out.append(f"WHY: {n} statements in {len(d['files'])} files; {c} covered (changed by a mutant a current BACKED claim "
-               f"cites), {n - c} uncovered ({100 * c // max(n, 1)}% covered); {d['mutated']} changed by some mutant; "
+    out.append(f"WHY: {n} statements in {len(d['files'])} files; {c} covered (changed by a mutant a claim BACKED in the view "
+               f"cites), {n - c} uncovered ({100 * c // max(n, 1)}% covered), {d['countered_only']} of them changed by a COUNTERED claim's mutant; "
+               f"{d['mutated']} changed by some mutant; "
                f"{len(d['functions'])} of {d['functions_total']} functions have no covered statement")
     return "\n".join(out) + "\n"
 
@@ -2930,7 +2966,9 @@ def cmd_check(repo, a):
         print(f"REFUSED {code} {detail}")
     model = Model(repo.snapshot(), repo.trust())
     live = [n for n in model.current.values() if not n.retired]
-    print(f"CLAIMS: {len(live)} current ({sum(n.backed for n in live)} backed, "
+    status, _ = standing(repo, model)
+    print(f"CLAIMS: {len(live)} current ({sum(status[n.id] == 'BACKED' for n in live)} backed, "
+          f"{sum(status[n.id] == 'COUNTERED' for n in live)} countered, "
           f"{sum(n.kind == 'normative' and not n.backed for n in live)} unbacked, "
           f"{sum(n.kind == 'informative' for n in live)} informative), "
           f"{sum(n.retired for n in model.current.values())} retired; base {base[:12] if base else 'none'}; "
@@ -3097,9 +3135,10 @@ def _audit_e2e(fix, work, key):
     return out
 
 
-def why_selftest(fix, work):
+def why_selftest(fix, work, key):
     """[(name, ok, detail)]: `why` burned on a clone of the selftest fixture `fix` (this
-    repository's code, mutants, claims and roadmap)."""
+    repository's code, mutants, claims and roadmap), then with a real counter (M234's patch,
+    replayed) lowering SPEC-3.2-20 to COUNTERED (AMEND 1 of #171)."""
     r = _clone(fix, work / "why")
     w = Why(r)
     paths = [p for p in w.files if p.split("/")[0] in UNCOVERED_ROOTS]
@@ -3139,7 +3178,36 @@ def why_selftest(fix, work):
         except Refused as e:
             codes.append(e.code)
     out.append(("why: a file outside warrant/, warrant_agent/ and tools/ is refused WHY_FILE", codes == ["WHY_FILE"] * 3, codes))
-    return out
+    return out + _why_countered(fix, work, key, w, u, paths)
+
+
+def _why_countered(fix, work, key, w, u, paths):
+    """SPEC-3.2-20 lowered by a counter that replays for real: not backing anywhere `why` looks."""
+    r = _clone(fix, work / "why-countered")
+    r.mutants()
+    p = Model(r.snapshot(), r.trust()).current.get("SPEC-3.2-20")
+    if p is None or "M234" not in r.mutant_edits:
+        return [("why countered: SPEC-3.2-20 and M234 exist in the fixture", False, "missing")]
+    store = Store(r.store_dir)
+    h = store.put_json({"counter": COUNTER, "claim": p.id, "against": p.tid, "patch": _mutant_patch(r, "M234"),
+                        "passes": sorted(p.doc["witnesses"]), "fails": ["records_test:I5"],
+                        "why": "selftest: M234 changes the statement M232 changes; the witnesses pass"})
+    at = max(x["at"] for x in Model(r.snapshot(), r.trust()).recs.values()) + 1
+    ch = store.put_record(R.record("challenge", AUTHOR, at, R.challenge(p.tid, "selftest: replaying counter", [h], 0)), key)
+    w2 = Why(r)
+    mine = sorted({(path, i) for mid in p.doc["mutants"] for (path, i), ms in w2.changes.items() if mid in ms})
+    answers = {k: w2.at(k[0], min(w2.units(k[0])[k[1]][2])) for k in mine}
+    named = all(p.id not in [c["claim"] for c in d["claims"]]
+                and [(x["challenge"], x["counters"]) for c in d["countered"] if c["claim"] == p.id for x in c["challenges"]]
+                == [(ch, [h])] for d in answers.values())
+    only = [k for k in mine if {n.id for mid in w.changes.get(k, ()) for n in w.cited.get(mid, [])} == {p.id}]
+    u2 = w2.uncovered(paths)
+    listed = {(s["file"], s["index"]): s["countered"] for s in u2["uncovered"]}
+    return [("why countered: SPEC-3.2-20 lowered by a replaying counter is named with that counter at each of its "
+             "statements and is backing at none", bool(mine) and named and p.id in w2.low, (mine, ch[:12])),
+            ("why countered: a statement SPEC-3.2-20 alone covered is uncovered now, listed with the COUNTERED claim",
+             bool(only) and u2["covered"] == u["covered"] - len(only)
+             and all(p.id in listed.get(k, []) for k in only), (only, u["covered"], u2["covered"]))]
 
 
 def audit_selftest(fix, work, key):
@@ -3978,7 +4046,7 @@ def selftest(jobs=1):
         # repository's statements to claims, obligations and goals (why_selftest). These groups run as
         # more tasks of the pool, beside the registered cases.
         groups = [statement_reasons, lambda: _audit_synthetic(fix, work), lambda: _audit_e2e(fix, work, key),
-                  lambda: why_selftest(fix, work)]
+                  lambda: why_selftest(fix, work, key)]
 
         def run_any(i):
             return run_case(i) if i < len(cases) else groups[i - len(cases)]()

@@ -279,8 +279,12 @@ answers which claims, roadmap obligations and goals a statement of `warrant/`,
 `warrant_agent/` or `tools/` serves: the statement owning that line (statement
 granularity as for counters: a simple statement whole, a compound one by its
 header), the mutants of both harnesses whose changed statements include it, the
-current BACKED claims citing those mutants, the obligations whose `serves` or
-`requires` name those claims' duties, and the goals they answer. A blank line, a
+claims citing those mutants that are BACKED in the view, the obligations whose
+`serves` or `requires` name those claims' duties, and the goals they answer. A
+claim a replaying counter lowered (COUNTERED) is never backing: `why` names it
+with its challenge and counter, as evidence that the statement's witnesses were
+blind, and `audit` skips it (re-backing is its remedy). Every consumer reads the
+status SPEC-CLAIMS.md shows (`standing` in tools/claims.py). A blank line, a
 comment or a docstring is `NOT_A_STATEMENT`; a statement no cited mutant changes
 is `NO_CLAIM`. A mutant that only inserts code before a statement is shown and
 not counted: it changes no existing statement. `why --uncovered [FILE]` lists
