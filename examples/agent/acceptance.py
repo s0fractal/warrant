@@ -5,7 +5,7 @@ acceptance run", steps 1-6) through one front end at a time.
     python3 acceptance.py --door python|cli|mcp [--out DIR]
 
 Run it with the interpreter of an environment where the wheels are installed
-(warrant-loops[mcp] and sigma-glyph), from outside the source checkout. Every
+(warrant-graph[mcp] and sigma-glyph), from outside the source checkout. Every
 act of the producer and of the receivers goes through the chosen door: context,
 read, handoff, prepare, commit, compute. Three things are deliberately not door
 calls, because they are not the agent's to do: the reviewer's and the auditor's
@@ -75,8 +75,8 @@ class CliDoor:
 class McpDoor:
     """One `warrant-agent-mcp` stdio server per configuration, driven by the
     official SDK client in a background event loop."""
-    TYPED = {"context": "warrant_context", "prepare": "warrant_prepare", "commit": "warrant_commit"}
-    WRAPPED = {"read": "warrant_read", "handoff": "warrant_handoff", "compute": "warrant_compute"}
+    TOOLS = {"context": "warrant_context", "prepare": "warrant_prepare", "commit": "warrant_commit",
+             "read": "warrant_read", "handoff": "warrant_handoff", "compute": "warrant_compute"}
 
     def __init__(self, cfg_path):
         self.exe = str(Path(sys.executable).parent / "warrant-agent-mcp")
@@ -103,13 +103,10 @@ class McpDoor:
                         fut.set_exception(e)
 
     def call(self, op, req):
-        if op in self.TYPED:
-            args = dict(req)
-            if op == "context" and "limits" in args:
-                args["context_bytes"] = args.pop("limits")["context_bytes"]
-            tool = self.TYPED[op]
-        else:
-            tool, args = self.WRAPPED[op], {"request": req}
+        args = dict(req)                         # every tool takes the request's members as flat arguments
+        if op == "context" and "limits" in args:
+            args["context_bytes"] = args.pop("limits")["context_bytes"]
+        tool = self.TOOLS[op]
         fut = concurrent.futures.Future()
         self.loop.call_soon_threadsafe(self.queue.put_nowait, (tool, args, fut))
         res = fut.result(timeout=900)

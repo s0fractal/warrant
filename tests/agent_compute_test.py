@@ -154,6 +154,44 @@ def main():
     check("S10", s10["status"] == "ADVANCED" and s10["segment"]["result"] == r["segment"]["result"],
           "the captured bytes are verified and advanced; a later swap on disk is not used", s10["status"])
 
+    # S11: a claimed result whose receipt disagrees with the receiver's own replay is not credited, and the
+    # capsules say so on the duty and on the transition (examples/mcp-first-contact, T1)
+    from warrant import jcs as C
+    sks = ok(rc({"op": "term", "expr": "S K S K"}))["data"]
+    s_in = ok(rc({"op": "term", "expr": "S"}))["data"]["input"]
+    b2 = dict(base, input=sks["input"], environment=sks["environment"])
+    st = ok(rc(dict(b2, op="start")))["data"]
+    fin = ok(rc(dict(b2, op="resume", checkpoint=st["checkpoint"], state=st["state"], credit=100, target=TARGET)))["data"]
+    real = C.loads((rcv.ws.store / "blobs" / fin["receipt"]).read_bytes())
+    lie = rcv.blob(C.canon(dict(real, claimed=s_in)))
+    wd = rcv.file("duty", "producer", 300, R.duty("producer", "S K S K reduces to S", ["receiver"],
+                                                  {"compute": {"runtime": "sigma-book1-0.6.0/hash-thunk/leftmost-outermost",
+                                                               "input": sks["input"], "environment": sks["environment"],
+                                                               "expect": s_in}}))
+    wt = rcv.file("transition", "producer", 310, R.transition("REPLAYED", [lie], closes=[R.item(wd, "discharge", [lie])],
+                                                              established=["S K S K reduces to S"], residual=[]))
+    seen = ok(rcv.call("context", {"workspace": "rcv", "targets": [wd, wt]}))
+    caps = {c["target"]: c for c in seen["data"]["capsules"]}
+    dc, tc = caps[wd], caps[wt]
+    check("S11", fin["segment"]["result"] != s_in and dc["disposition"] == "OPEN" and dc["reliance"] == "NOT_CLOSED"
+          and [(c["verdict"], c.get("why")) for c in dc["closures"]] == [("UNVERIFIED", "the recipient's replay disagrees with the receipt")]
+          and [(c["duty"], c["verdict"], c.get("why"), c["duty_disposition"]) for c in tc["closes"]]
+          == [(wd, "UNVERIFIED", "the recipient's replay disagrees with the receipt", "OPEN")],
+          "a receipt whose claim the receiver's replay contradicts closes nothing, and both capsules say why",
+          (dc.get("closures"), tc.get("closes")))
+
+    # S12: evaluate is the receiver's own run: it compares normal forms and files nothing
+    n_records = len(list((rcv.ws.store / "records").iterdir()))
+    good = ok(rc({"op": "evaluate", "expr": "S K K (K I)", "expect_expr": "K I"}))["data"]
+    bad = ok(rc({"op": "evaluate", "expr": "S K S K", "expect_expr": "S"}))["data"]
+    short = ok(rc({"op": "evaluate", "expr": "S K S K", "expect_expr": "K", "credit": 1}))["data"]
+    check("S12", good["outcome"] == "NORMAL_FORM" and good["same_normal_form"] is True
+          and bad["outcome"] == "NORMAL_FORM" and bad["same_normal_form"] is False and bad["result"] == fin["segment"]["result"]
+          and short["outcome"] != "NORMAL_FORM" and short["same_normal_form"] is False
+          and len(list((rcv.ws.store / "records").iterdir())) == n_records,
+          "evaluate says whether the normal form is the expected term, never for an unfinished run, and files nothing",
+          (good.get("same_normal_form"), bad.get("same_normal_form"), short.get("outcome")))
+
     # S07 (Warrant side): a provider stopped by the host deadline returns no state
     rcv.doc["workspaces"]["rcv"]["limits"] = {"provider_seconds": 0.01}
     rcv.reload()

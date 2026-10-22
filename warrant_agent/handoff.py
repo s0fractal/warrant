@@ -100,7 +100,8 @@ def export(ws, token, roots, request_id):
                 "roots": roots,
                 "records": [{"id": rid, "envelope": C.digest(data)} for rid, data in sorted(snap.records.items())],
                 "blobs": sorted(snap.blobs), "sender_assessment": report["assessment_id"], "completeness": "UNATTESTED"}
-    assert manifest_problem(manifest) is None
+    # a typed refusal, not an assert: an assert is gone under -O and was an untyped crash for a bad root
+    need(manifest_problem(manifest) is None, "BAD_REQUEST", f"export: {manifest_problem(manifest)}")
     mhash = C.doc_id(manifest)
     declaration = None
     if ws.signer:
