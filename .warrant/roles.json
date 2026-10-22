@@ -4,6 +4,7 @@
     "claude": "fc176e4bca9372cb329650c804f700079d5b283839a51671c3fd662df3f6ca57",
     "codex": "793e615ef5693cf6be7304aa284c6cc6f1fae9e3a2996cfafd23e1c160023b12",
     "readers": "collective",
-    "s0fractal": null
+    "s0fractal": null,
+    "checker sha256:72ad9c4d738dff046433b180d06fe70e9d13d69b17fd7dec0ea15cd5b6322300": "354134a68731e19a5104b3a315a4dce72ee03a616b0786ce0ce3ca34519979ce"
   }
 }

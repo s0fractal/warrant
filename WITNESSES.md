@@ -23,6 +23,7 @@ the duty's and the receiver's profile's (SPEC §4.6, §6).
 
 | Actor | Key | Claims authored | Acceptances | Later refuted | Challenges | Counters | Lowering now | Cited by a downgrade | Re-backs |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| checker sha256:72ad9c4d738dff046433b180d06fe70e9d13d69b17fd7dec0ea15cd5b6322300 | `f1777cce3b39` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | claude | `10678a7996a3` | 251 | 0 | 0 | 3 | 8 | 0 | 2 | 6 |
 | codex | `fbe15554075e` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
