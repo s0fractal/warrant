@@ -89,10 +89,12 @@ jobs:
           WARRANT_IMPL= python tools/claims.py --selftest
 
       # A report, not a refusal: the matrices above hold each mutant's own test file only (no
-      # extra run), so most witnesses are unknown here, and most candidates are another rule of
-      # the same function. The full hunt: tests/mutants.py --matrix F --matrix-tests all, then
-      # audit (tools/claims.py, "audit"). A broken matrix or audit still fails this step.
+      # extra run), so most witnesses are unknown here. The full hunt: tests/mutants.py --matrix F
+      # --matrix-tests all, then audit (tools/claims.py, "audit"). Not a gate, so not on pull
+      # requests (the required job keeps its headroom; the claims selftest burns audit there);
+      # on master a broken matrix or audit still fails this step.
       - name: SPEC claims blind-spot audit (report)
+        if: github.event_name != 'pull_request'
         run: WARRANT_IMPL= python tools/claims.py audit --matrix "$RUNNER_TEMP/matrix-core.json" --matrix "$RUNNER_TEMP/matrix-agent.json"
 
       - name: Cross-host local controls and frozen round-1 artifact replay

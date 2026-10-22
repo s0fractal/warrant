@@ -345,10 +345,10 @@ def _transfers(view, d, items, holders, verdicts):
             eff, missing = _transfer_effect(view, d, t_id, i, m)
             transfers.append((eff or (float("inf"), ""), t_id, t, i, m, missing))
     for eff, t_id, t, i, m, missing in sorted(transfers, key=lambda x: (x[0], view.pos(x[1]), x[3])):
-        verdicts[(t_id, i)] = _transfer(view, d, holders, eff, t_id, t, m, missing)
+        verdicts[(t_id, i)] = _transfer(view, holders, eff, t_id, t, m, missing)
 
 
-def _transfer(view, d, holders, eff, t_id, t, m, missing):
+def _transfer(view, holders, eff, t_id, t, m, missing):
     h_file, _ = holders.at(view.pos(t_id))
     if t["actor"] != h_file:
         return V("OVERCLAIMED", "only the holder at that position transfers or delegates")
@@ -365,7 +365,10 @@ def _transfer(view, d, holders, eff, t_id, t, m, missing):
 
 
 def _release(view, did, d, t_id, t):
-    if t["actor"] in set(d["owed_to"]) | set(d["release_by"]):
+    # One statement per rule, so a counter blob's locality can tell them apart (AMEND 1 of #169).
+    if t["actor"] in d["owed_to"]:
+        return V("ADMITTED", label=f"RELEASE:{t['actor']}")
+    if t["actor"] in d["release_by"]:
         return V("ADMITTED", label=f"RELEASE:{t['actor']}")
     gid, why = authorized(view, t["actor"], "release", did, view.pos(t_id))
     if gid:
@@ -718,9 +721,16 @@ def _counting_challenges(rep, closures, duty=None):
     counts = set(rep["profile"]["challengers"])
     if duty is not None:
         counts |= set(duty["owed_to"]) | set(duty["accept_by"])
-    # An evidence-weighted challenge counts whoever filed it (SPEC §4.4).
-    return sorted(cid for cid, c in rep["challenges"].items()
-                  if (c["target"], c["item"]) in closures and (c["actor"] in counts or c.get("counter_observation")))
+    # One statement per rule, so a counter blob's locality can tell them apart (AMEND 1 of #169).
+    out = []
+    for cid, c in rep["challenges"].items():
+        if (c["target"], c["item"]) not in closures:     # another closure, or the results (item null)
+            continue
+        if c.get("counter_observation"):                 # evidence-weighted: whoever filed it (SPEC §4.4)
+            out.append(cid)
+        elif c["actor"] in counts:                       # actor-weighted (SPEC §4.6)
+            out.append(cid)
+    return sorted(out)
 
 
 def _revision_basis(subjects, triggers, current):

@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 239 · backed 184 · unbacked 6 · informative 49 · retired 0 · records 482 · blobs 488
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9 of SPEC.md · sentences 239 · backed 184 · unbacked 6 · informative 49 · retired 0 · records 483 · blobs 489
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -140,7 +140,7 @@ until an acceptance is filed. Nobody has accepted a claim yet unless this column
 | SPEC-4-2 | Records with `at > as_of` are not in the view. | assessment_test R21 | M260 | BACKED | OPEN (awaiting codex) | `02a6aa71c4b1` |
 | SPEC-4-3 | Unauthentic or malformed records are listed and excluded; they never abort the assessment and never count. | assessment_test R18; contract_test N5 N6 | M18 M32 M96 | BACKED | OPEN (awaiting codex) | `91f6073e7517` |
 | SPEC-4-4 | The **assessment id** is the SHA-256 of the canonical description of all those operands. | — | — | UNBACKED | OPEN (no closure filed) | `3eda8b914d3c` |
-| SPEC-4-5 | Changing any operand that can change a verdict changes it; moving the same bytes to another directory does not. | contract_test I1 | M16 M17 | BACKED | OPEN (awaiting codex) | `07899727f58b` |
+| SPEC-4-5 | Changing any operand that can change a verdict changes it; moving the same bytes to another directory does not. | compute_test C12; contract_test I1 | M126 M16 M17 | BACKED | OPEN (awaiting codex) | `147653296942` |
 | SPEC-4-6 | A snapshot cannot attest its own completeness: every report states `completeness: UNATTESTED`, and a reference to a record or blob that is not in the view is reported as missing, never as absence. | contract_test S3 | M104 | BACKED | OPEN (awaiting codex) | `fefa061d662d` |
 | SPEC-4-7 | **Position** of a record is `(at, id)`; positions are totally ordered. | assessment_test R39 | M275 M277 | BACKED | OPEN (awaiting codex) | `ab402e85db05` |
 | SPEC-4.1-1 | \| act \| filer \| also needs \| | — | — | INFORMATIVE: column headings of the table whose rows are SPEC-4.1-2 to SPEC-4.1-5 | — (no duty) | `15e38ed4635b` |
@@ -334,7 +334,6 @@ rule-shaped title is a review matter; the pin makes every change of one a review
 - SPEC-3.5-5: subset of acts: with one grantable act and acts non-empty, every valid delegable lies within acts, so the subset check alone has no case; M251 removes it together with the act check
 - SPEC-3.6-2: that the id names a transition is not a shape rule: a challenge whose target is no current closure or result counts for nothing (§4.4)
 - SPEC-3.6-4: the implementation also refuses an empty statement and one over 4000 code points, which SPEC does not state
-- SPEC-4-5: I1 changes the profile, as_of and the current set, and moves the store; the trust, the workspace and the provider are changed by other cases (compute_test C12 for the provider), not here
 - SPEC-4-6: M104 burns the missing half; no mutant changes the reported completeness value
 - SPEC-4.1-10: `serves` (G3) has a witness case and no mutant of its own
 - SPEC-4.2-10: "strictly": two items never share an admission position (positions are (at, id) of distinct records), so equality has no case
