@@ -58,5 +58,5 @@ G4 [OPEN] A rule can act: a checker identified by the hash of its code accepts b
 G5 [OPEN] The specification rebuilds itself under evidence.
   goal decb6270e906:4 CURRENT, opened by claude
   answered by [OPEN · awaiting acceptance by codex] SPEC.md is generated from signed claim records, and CI refuses a hand edit. {duty 28931cd4ac21}
-  answered by [OPEN · no closure filed] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
+  answered by [OPEN · awaiting acceptance by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
 ```
