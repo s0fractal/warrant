@@ -28,7 +28,7 @@ ever deleted.
     python3 tools/claims.py add --key SEED --id SPEC-1-2 --text '...' --unbacked-because '...'
     python3 tools/claims.py supersede --key SEED --id SPEC-4.2-3 --text '...' --because '...'
     python3 tools/claims.py supersede --key SEED --id SPEC-7-1 --text '...' --because '...' \
-        --unbacked-because '...' --counter CHALLENGE_OR_BLOB     # a BACKED claim losing its backing
+        --unbacked-because '...' --counter-file FAILING_CASE --challenge   # a BACKED claim losing its backing
     python3 tools/claims.py retire --key SEED --id SPEC-4.2-3 --because '...' --counter HEX
     python3 tools/claims.py project                      # regenerate SPEC-CLAIMS.md
     python3 tools/claims.py check [--base REV | --no-base]
@@ -486,8 +486,10 @@ def _grouped(witnesses):
     for w in witnesses:
         t, _, c = w.partition(":")
         groups.setdefault(t, []).append(c)
-    return [(t, sorted(cs, key=lambda c: (re.sub(r"[0-9].*", "", c), int(re.sub(r"(?:^[A-Z]+)|(?:[a-z]+$)", "", c) or 0), c)))
-            for t, cs in sorted(groups.items())]
+    def key(c):        # letters, then the number, then the rest: B2 < B2a < B10; P-edge has no number
+        m = re.match(r"([^0-9]*)([0-9]*)(.*)", c)
+        return m.group(1), int(m.group(2) or 0), c
+    return [(t, sorted(cs, key=key)) for t, cs in sorted(groups.items())]
 
 
 # ---------------------------------------------------------------- check
@@ -830,6 +832,13 @@ def cmd_supersede(repo, a):
     counter = list(a.counter)
     if a.counter_file:
         counter.append(author.store.put_blob(Path(a.counter_file).read_bytes()))
+    if a.challenge:
+        # The dispute goes on record against the claim being replaced (its discharge item,
+        # if it has one), so its closure cannot later be accepted as if nothing were found.
+        if not counter:
+            raise Refused(f"{a.id}: --challenge needs --counter or --counter-file as its evidence")
+        item = 0 if cur.rec["body"]["closes"] else None
+        counter.append(author.put("challenge", R.challenge(cur.tid, a.because, counter, item), author.at()))
     tid = author.claim(a.id, a.text, wit, mut, a.informative, a.because, a.residual, previous=cur,
                        unbacked_because=a.unbacked_because, counter=counter)
     print(f"{a.id}: {tid}")
@@ -1150,6 +1159,8 @@ def main(argv=None):
     p.add_argument("--counter", action="append", default=[],
                    help="challenge record or blob id already in the store (needed when a BACKED claim loses its backing)")
     p.add_argument("--counter-file", help="a file to store as a counter-evidence blob")
+    p.add_argument("--challenge", action="store_true",
+                   help="also file a challenge against the claim being replaced, its evidence the counter-evidence")
     p = authoring(sub.add_parser("retire", help="retire a claim with counter-evidence"))
     p.add_argument("--id", required=True)
     p.add_argument("--because", required=True)

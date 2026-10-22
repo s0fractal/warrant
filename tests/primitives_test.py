@@ -41,7 +41,9 @@ def answer(cls, inp):
 
 def main():
     check("P0", manifest_ok(), "the vendored pack matches its MANIFEST")
-    for cls in ("blob-hash", "canon", "sig-message", "verify-sig"):
+    # The case ids are spelled out so a claim can cite them (tools/claims.py finds a case by its literal id).
+    for cls, cid in (("blob-hash", "P-blob-hash"), ("canon", "P-canon"), ("sig-message", "P-sig-message"),
+                     ("verify-sig", "P-verify-sig")):
         vs = json.loads((PACK / "vectors" / f"{cls}.json").read_text())["vectors"]
         bad, excluded = [], []
         for v in vs:
@@ -50,7 +52,7 @@ def main():
                 excluded.append(v["id"])
             elif any(got.get(k) != want for k, want in v["expect"].items()):
                 bad.append(v["id"])
-        check(f"P-{cls}", not bad, f"{cls}: {len(vs) - len(excluded)} vectors pass"
+        check(cid, not bad, f"{cls}: {len(vs) - len(excluded)} vectors pass"
               + (f", {len(excluded)} excluded (not Ed25519)" if excluded else ""), bad)
     edge = json.loads((ROOT / "tests" / "vectors" / "ed25519-edge.json").read_text())["vectors"]
     wrong = [v["why"] for v in edge if keys.verify(v["key"], v["sig"], keys.sig_message(v["warrant_id"])) != v["valid"]]
