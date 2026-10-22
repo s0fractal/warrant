@@ -57,6 +57,8 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
     python3 tools/claims.py project                      # regenerate SPEC.md and SPEC-CLAIMS.md
     python3 tools/claims.py check [--base REV | --no-base]
     python3 tools/claims.py audit --matrix M.json [--matrix A.json] [--counters DIR] [--refuse]
+    python3 tools/claims.py why warrant/engine.py:729 [--json]   # the claims, obligations, goals a statement serves
+    python3 tools/claims.py why --uncovered [FILE] [--json]      # the statements no cited mutant changes
     python3 tools/claims.py --selftest                   # every refusal of `check`, burned on a copy
     python3 tools/claims.py migrate --key SEED --because '...'   # once (W5): the first document, from SPEC.md
     python3 tools/claims.py heading --key SEED --section 4.2 --because '...'   # after changing that pin
@@ -80,6 +82,12 @@ the claim passes, and prints the would-be counter. It is a report, not a refusal
 of `check`: an own-file matrix (what CI's mutant run gives for free) leaves most
 witnesses unknown, and the full one costs every suite under every mutant.
 
+`why` follows the links the other way, from code to records: a statement (the unit
+changed_statements counts) is served by the current BACKED claims citing a mutant that
+changes it, by the roadmap obligations whose serves or requires name those claims'
+duties, and by the goals those obligations answer; `why --uncovered` lists the
+statements of warrant/ and warrant_agent/ no cited mutant changes.
+
 A claim's text is whitespace-normalized: runs of whitespace compare as one space.
 Refusals are printed one per line as `REFUSED <CODE> <detail>`.
 """
@@ -91,6 +99,7 @@ import difflib
 import functools
 import hashlib
 import importlib.util
+import io
 import json
 import multiprocessing
 import os
@@ -100,6 +109,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tokenize
 import unicodedata
 from pathlib import Path
 
@@ -1514,15 +1524,18 @@ def changed_scopes(path, old, new):
 STMT_LISTS = ("body", "handlers", "orelse", "finalbody", "cases")
 
 
-def _units(stmts, scope, depth, out, top=True):
+def _units(stmts, scope, depth, out, top=True, nodes=None):
     """Append (scope, depth, dump) for each statement of `stmts`, in source order: a simple
     statement whole, a compound one by its header (the node with its statement lists
-    emptied) followed by its children; a docstring is no unit."""
+    emptied) followed by its children; a docstring is no unit. `nodes`, when given, gets
+    each unit's node, in the same order (statement_lines)."""
     for k, st in enumerate(stmts):
         if top and k == 0 and isinstance(st, ast.Expr) and isinstance(st.value, ast.Constant) \
                 and isinstance(st.value.value, str):
             continue
         lists = [(f, getattr(st, f)) for f in STMT_LISTS if isinstance(getattr(st, f, None), list)]
+        if nodes is not None:
+            nodes.append(st)
         if not lists:
             out.append((scope, depth, ast.dump(st)))
             continue
@@ -1532,7 +1545,7 @@ def _units(stmts, scope, depth, out, top=True):
         out.append((scope, depth, ast.dump(head)))
         inner = scope + st.name + "." if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) else scope
         for f, children in lists:
-            _units(children, inner, depth + 1, out, top=f == "body" and inner != scope)
+            _units(children, inner, depth + 1, out, top=f == "body" and inner != scope, nodes=nodes)
 
 
 @functools.lru_cache(maxsize=512)
@@ -1541,6 +1554,56 @@ def statement_units(src):
     without positions, comments, layout or docstrings. Raises SyntaxError."""
     out = []
     _units(ast.parse(src).body, "", 0, out)
+    return out
+
+
+CODELESS = frozenset({tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
+                      tokenize.ENCODING, tokenize.ENDMARKER})
+
+
+def code_lines(src):
+    """The numbers of the lines of `src` that hold a token of code: not blank, not only a
+    comment. A token spanning lines (a triple-quoted string) marks each of them."""
+    out = set()
+    for t in tokenize.generate_tokens(io.StringIO(src).readline):
+        if t.type not in CODELESS:
+            out.update(range(t.start[0], t.end[0] + 1))
+    return out
+
+
+def _extent(st):
+    """(first, last) source line of a statement node, decorators included; a match case has no
+    position of its own and runs from its pattern to the end of its body."""
+    if isinstance(st, ast.match_case):
+        return st.pattern.lineno, st.body[-1].end_lineno
+    return min([st.lineno] + [d.lineno for d in getattr(st, "decorator_list", [])]), st.end_lineno
+
+
+@functools.lru_cache(maxsize=512)
+def statement_lines(src):
+    """[(scope, function, lines)] parallel to statement_units(src): unit i's own source lines,
+    the lines of its extent outside its children's extents (a docstring child included) that
+    hold code (code_lines); a compound header sharing its only line with its body keeps that
+    line. `function` is the qualified name of the function the unit belongs to (a def header
+    to its own function), or None at module or class level. Raises SyntaxError."""
+    nodes, units = [], []
+    _units(ast.parse(src).body, "", 0, units, nodes=nodes)
+    code, out = code_lines(src), []
+    funcs = {sc + st.name for (sc, _, _), st in zip(units, nodes) if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    for (scope, _, _), st in zip(units, nodes):
+        first, last = _extent(st)
+        own = set(range(first, last + 1))
+        for f in STMT_LISTS:
+            for child in getattr(st, f, None) or []:
+                a, b = _extent(child)
+                own -= set(range(a, b + 1))
+        own = own & code or {first}
+        if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            fn = scope + st.name
+        else:
+            parts = scope.rstrip(".").split(".") if scope else []
+            fn = next((".".join(parts[:k]) for k in range(len(parts), 0, -1) if ".".join(parts[:k]) in funcs), None)
+        out.append((scope, fn, frozenset(own)))
     return out
 
 
@@ -2653,6 +2716,210 @@ def cmd_audit(repo, a):
     return 1 if a.refuse and blind else 0
 
 
+# ---------------------------------------------------------------- why (a statement's claims, obligations, goals)
+
+WHY_ROOTS = ("warrant", "warrant_agent", "tools")      # where the mutant harnesses edit: the files `why` reads
+UNCOVERED_ROOTS = ("warrant", "warrant_agent")          # the code SPEC.md is about: `why --uncovered`'s default
+WHY_LINE = re.compile(r"^(.+):([1-9][0-9]{0,6})\Z")     # FILE:LINE; \Z: `$` admits a trailing newline
+CLAIMED, NO_CLAIM, NOT_A_STATEMENT = "CLAIMED", "NO_CLAIM", "NOT_A_STATEMENT"
+
+
+def why_files(repo):
+    """{relative path: Path} of the Python files under WHY_ROOTS. A command-line FILE is looked
+    up here and never opened as given: `why` reads only files of this list."""
+    out = {}
+    for top in WHY_ROOTS:
+        d = repo.root / top
+        if d.is_dir():
+            out.update({q.relative_to(repo.root).as_posix(): q for q in sorted(d.rglob("*.py"))
+                        if "__pycache__" not in q.parts})
+    return out
+
+
+def _roadmap_links(repo):
+    """{duty id: [link]}: each obligation (tools/roadmap.py) whose `serves` or `requires` names
+    the duty, with its goal; {} when the repository has no roadmap configuration."""
+    sys.modules.setdefault("claims", sys.modules[__name__])      # roadmap.py reads this module as `claims`
+    spec = importlib.util.spec_from_file_location("roadmap", Path(__file__).resolve().parent / "roadmap.py")
+    rm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rm)
+    try:
+        m = rm.Roadmap(repo.root).model()
+    except rm.Refused:
+        return {}
+    out = {}
+    for did in sorted(m.obligations):
+        body, key = m.recs[did]["body"], m.goal_of(did)
+        cur = [f for f in m.goals.get(key, []) if f.state == rm.CURRENT] or m.goals.get(key, [])[-1:]
+        for rel in ("serves", "requires"):
+            for x in body[rel]:
+                out.setdefault(x, []).append({
+                    "obligation": did, "relation": rel, "statement": m.rep["duties"][did]["statement"],
+                    "state": m.rep["duties"][did]["disposition"], "goal": key, "goal_state": m.goal_state(key),
+                    "goal_text": cur[0].text if cur else None})
+    return out
+
+
+class Why:
+    """From a statement of a source file to the mutants that change it (Repo.mutant_statements,
+    a key ("at", i) for unit i: an insertion before a statement changes none), the current
+    BACKED claims citing those mutants, the roadmap obligations whose serves or requires name
+    those claims' duties, and the goals those obligations answer. Everything is read from the
+    files and the records as they are now."""
+
+    def __init__(self, repo):
+        self.repo = repo
+        self.files = why_files(repo)
+        known = repo.mutants()
+        model = Model(repo.snapshot(), repo.trust())
+        self.cited = {}             # mutant id -> [Node]: the current BACKED claims citing it
+        for n in sorted((n for n in model.current.values() if not n.retired and n.backed), key=lambda n: id_key(n.id)):
+            for mid in n.doc["mutants"]:
+                self.cited.setdefault(mid, []).append(n)
+        self.changes = {}           # (path, unit index) -> {mutant id}: the mutants that change unit i
+        self.inserts = {}           # (path, unit index) -> {mutant id}: those inserting before it (shown, not counted)
+        for mid in sorted(known):
+            for path, (kind, i) in repo.mutant_statements(mid):
+                (self.changes if kind == "at" else self.inserts).setdefault((os.path.normpath(path), i), set()).add(mid)
+        self.links = _roadmap_links(repo)
+
+    def units(self, path):
+        """[(scope, function, own lines)] of a file of `files`; Refused WHY_FILE if it does not parse."""
+        try:
+            return statement_lines(self.files[path].read_text())
+        except SyntaxError as e:
+            raise Refused(f"{path} does not parse: {e}", "WHY_FILE") from e
+
+    def covered(self, path, i):
+        return any(mid in self.cited for mid in self.changes.get((path, i), ()))
+
+    def at(self, path, line):
+        """The answer for one line: its statements and what they serve (`why FILE:LINE`)."""
+        if path not in self.files:
+            raise Refused(f"{path}: not a Python file under {', '.join(r + '/' for r in WHY_ROOTS)} of this repository",
+                          "WHY_FILE")
+        src = self.files[path].read_text()
+        lines = src.splitlines()
+        if line > len(lines):
+            raise Refused(f"{path} has no line {line}", "WHY_LINE")
+        try:
+            units = statement_lines(src)
+        except SyntaxError as e:
+            raise Refused(f"{path} does not parse: {e}", "WHY_FILE") from e
+        hits = [i for i, (_, _, own) in enumerate(units) if line in own]
+        stmts, claims, obligations, goals = [], {}, {}, {}
+        for i in hits:
+            scope, fn, own = units[i]
+            mids = sorted(self.changes.get((path, i), ()), key=_mid_key)
+            stmts.append({"index": i, "function": fn, "lines": [min(own), max(own)], "mutants": mids,
+                          "cited": [mid for mid in mids if mid in self.cited],
+                          "inserted_before": sorted(self.inserts.get((path, i), ()), key=_mid_key)})
+            for mid in mids:
+                for n in self.cited.get(mid, []):
+                    c = claims.setdefault(n.id, {"claim": n.id, "transition": n.tid, "duty": n.doc["duty"],
+                                                 "text": n.doc["text"], "via": []})
+                    c["via"] = sorted(set(c["via"]) | {mid}, key=_mid_key)
+        for c in claims.values():
+            for ln in self.links.get(c["duty"], []):
+                o = obligations.setdefault(ln["obligation"], dict(ln, claims=[]))
+                if c["claim"] not in o["claims"]:
+                    o["claims"].append(c["claim"])
+                if ln["goal"]:
+                    goals[ln["goal"]] = {"goal": ln["goal"], "state": ln["goal_state"], "text": ln["goal_text"]}
+        status = NOT_A_STATEMENT if not hits else CLAIMED if claims else NO_CLAIM
+        return {"file": path, "line": line, "status": status, "source": (lines[line - 1:line] or [""])[0],
+                "statements": stmts, "claims": sorted(claims.values(), key=lambda c: id_key(c["claim"])),
+                "obligations": [obligations[d] for d in sorted(obligations)],
+                "goals": [goals[k] for k in sorted(goals, key=lambda k: int(k[1:]))]}
+
+    def uncovered(self, paths):
+        """Each statement of `paths` that no cited mutant changes, the functions none of whose
+        statements is covered (largest first), and the counts (`why --uncovered`)."""
+        stmts, funcs, total, covered, mutated = [], {}, 0, 0, 0
+        for path in paths:
+            lines = self.files[path].read_text().splitlines()
+            for i, (scope, fn, own) in enumerate(self.units(path)):
+                ok = self.covered(path, i)
+                total, covered, mutated = total + 1, covered + ok, mutated + bool(self.changes.get((path, i)))
+                if fn is not None:
+                    f = funcs.setdefault((path, fn), {"file": path, "function": fn, "line": min(own), "statements": 0,
+                                                      "covered": 0})
+                    f["statements"] += 1
+                    f["covered"] += ok
+                    f["line"] = min(f["line"], min(own))
+                if not ok:
+                    stmts.append({"file": path, "line": min(own), "index": i, "function": fn,
+                                  "source": lines[min(own) - 1].strip()})
+        bare = sorted((f for f in funcs.values() if not f["covered"]), key=lambda f: (-f["statements"], f["file"], f["line"]))
+        return {"files": list(paths), "statements": total, "covered": covered, "mutated": mutated, "uncovered": stmts,
+                "functions": bare, "functions_total": len(funcs)}
+
+
+def _mid_key(mid):
+    return mid[0], int(re.sub(r"\D", "", mid) or 0)
+
+
+def render_why(d):
+    out = [f"{d['file']}:{d['line']} [{d['status']}] {d['source'].strip()}"]
+    if d["status"] == NOT_A_STATEMENT:
+        out.append("  no statement owns this line (blank, a comment or a docstring)")
+    for s in d["statements"]:
+        uncited = [m for m in s["mutants"] if m not in s["cited"]]
+        out.append(f"  statement {s['index']} of {s['function'] or '<module>'} (lines {s['lines'][0]}-{s['lines'][1]}): "
+                   + (f"changed by {', '.join(s['mutants'])}" if s["mutants"] else "no mutant changes it")
+                   + (f"; not cited by a BACKED claim: {', '.join(uncited)}" if uncited else "")
+                   + (f"; inserting before it (not counted): {', '.join(s['inserted_before'])}" if s["inserted_before"] else ""))
+    for c in d["claims"]:
+        out.append(f"  claim {c['claim']} (duty {c['duty'][:12]}, via {', '.join(c['via'])}): {c['text']}")
+    for o in d["obligations"]:
+        out.append(f"  obligation {o['obligation'][:12]} [{o['state']}] {o['relation']} {', '.join(o['claims'])}: "
+                   f"{o['statement']} -> {o['goal'] or 'no goal'}")
+    for g in d["goals"]:
+        out.append(f"  goal {g['goal']} [{g['state']}] {g['text']}")
+    if d["status"] == NO_CLAIM:
+        out.append("  no claim: no mutant a BACKED claim cites changes this statement")
+    return "\n".join(out) + "\n"
+
+
+def render_uncovered(d):
+    out = [f"UNCOVERED {s['file']}:{s['line']} {s['function'] or '<module>'}: {s['source'][:100]}" for s in d["uncovered"]]
+    out += [f"FUNCTION {f['file']}:{f['line']} {f['function']}: none of its {f['statements']} statements is covered"
+            for f in d["functions"]]
+    n, c = d["statements"], d["covered"]
+    out.append(f"WHY: {n} statements in {len(d['files'])} files; {c} covered (changed by a mutant a current BACKED claim "
+               f"cites), {n - c} uncovered ({100 * c // max(n, 1)}% covered); {d['mutated']} changed by some mutant; "
+               f"{len(d['functions'])} of {d['functions_total']} functions have no covered statement")
+    return "\n".join(out) + "\n"
+
+
+def _why_path(repo, arg):
+    """A command-line FILE as a key of why_files: relative to the repository root."""
+    return os.path.normpath(os.path.relpath(arg, repo.root) if os.path.isabs(arg) else arg)
+
+
+def cmd_why(repo, a):
+    if bool(a.target) == bool(a.uncovered is not None):
+        raise Refused("give FILE:LINE, or --uncovered [FILE]", "WHY_USAGE")
+    w = Why(repo)
+    if a.target:
+        m = WHY_LINE.match(a.target)
+        if not m:
+            raise Refused(f"{a.target!r} is not FILE:LINE", "WHY_USAGE")
+        d = w.at(_why_path(repo, m.group(1)), int(m.group(2)))
+        print(json.dumps(d, indent=1, ensure_ascii=False) if a.json else render_why(d), end="\n" if a.json else "")
+        return 0
+    if a.uncovered:
+        path = _why_path(repo, a.uncovered)
+        if path not in w.files:
+            raise Refused(f"{a.uncovered}: not a Python file under {', '.join(r + '/' for r in WHY_ROOTS)}", "WHY_FILE")
+        paths = [path]
+    else:
+        paths = [p for p in w.files if p.split("/")[0] in UNCOVERED_ROOTS]
+    d = w.uncovered(paths)
+    print(json.dumps(d, indent=1, ensure_ascii=False) if a.json else render_uncovered(d), end="\n" if a.json else "")
+    return 0
+
+
 def cmd_check(repo, a):
     base = None if a.no_base else (a.base or default_base(repo))
     if base is None and not a.no_base:
@@ -2827,6 +3094,51 @@ def _audit_e2e(fix, work, key):
     blind, _ = audit(r, rows)
     out.append(("audit e2e: cited with A7, which M278 fails, SPEC-3.3-8 is not reported", not _found(blind, s338, "M278"),
                 _found(blind, s338, "M278")))
+    return out
+
+
+def why_selftest(fix, work):
+    """[(name, ok, detail)]: `why` burned on a clone of the selftest fixture `fix` (this
+    repository's code, mutants, claims and roadmap)."""
+    r = _clone(fix, work / "why")
+    w = Why(r)
+    paths = [p for p in w.files if p.split("/")[0] in UNCOVERED_ROOTS]
+    out = []
+    pick = next(((n, mid, path, i, ln) for mid, ns in sorted(w.cited.items(), key=lambda kv: _mid_key(kv[0]))
+                 for n in ns if n.doc["duty"] in w.links
+                 for (path, i) in sorted(k for k, ms in w.changes.items() if mid in ms)
+                 for ln in w.links[n.doc["duty"]] if ln["goal"]), None)
+    if pick is None:
+        return [("why: the fixture has a claim whose duty an obligation names and whose mutant changes a statement",
+                 False, "none found")]
+    n, mid, path, i, ln = pick
+    d = w.at(path, min(w.units(path)[i][2]))
+    out.append(("why: a statement a cited mutant changes maps to its claim, the obligation naming the claim's duty, "
+                "and that obligation's goal",
+                d["status"] == CLAIMED and i in [s["index"] for s in d["statements"]]
+                and n.id in [c["claim"] for c in d["claims"]] and ln["obligation"] in [o["obligation"] for o in d["obligations"]]
+                and ln["goal"] in [g["goal"] for g in d["goals"]], (n.id, mid, path, i, d["status"], d["claims"][:2])))
+    lost = [(p, i) for p in paths for i, (_, _, own) in enumerate(w.units(p))
+            if i not in [s["index"] for s in w.at(p, min(own))["statements"]]]
+    out.append(("why: every statement of warrant/ and warrant_agent/ is found again from its first line", not lost, lost[:3]))
+    u = w.uncovered(paths)
+    listed = {(s["file"], s["index"]) for s in u["uncovered"]}
+    wrong = [s for s in u["uncovered"][:200] if w.at(s["file"], s["line"])["status"] != NO_CLAIM]
+    out.append(("why: --uncovered lists exactly the statements no cited mutant changes, each answered NO_CLAIM",
+                u["statements"] - u["covered"] == len(listed) and (path, i) not in listed and not wrong and u["covered"] > 0,
+                (u["statements"], u["covered"], len(listed), wrong[:2])))
+    src = w.files["warrant/engine.py"].read_text().splitlines()
+    comment = next(k + 1 for k, t in enumerate(src) if t.strip().startswith("#"))
+    out.append(("why: a comment line of warrant/engine.py is not a statement",
+                w.at("warrant/engine.py", comment)["status"] == NOT_A_STATEMENT, comment))
+    codes = []
+    for arg in ("SPEC.md", "../warrant/engine.py", "tests/mutants.py"):
+        try:
+            w.at(arg, 1)
+            codes.append(None)
+        except Refused as e:
+            codes.append(e.code)
+    out.append(("why: a file outside warrant/, warrant_agent/ and tools/ is refused WHY_FILE", codes == ["WHY_FILE"] * 3, codes))
     return out
 
 
@@ -3662,9 +3974,11 @@ def selftest(jobs=1):
                  bool(why_e3) and "not FAIL" in why_e3, why_e3)]
 
         # Gemini review, part C: `audit` names a claim whose witnesses all pass under a mutant of its own
-        # code that some case kills, and only such a claim (_audit_synthetic, _audit_e2e). These groups run
-        # as three more tasks of the pool, beside the registered cases.
-        groups = [statement_reasons, lambda: _audit_synthetic(fix, work), lambda: _audit_e2e(fix, work, key)]
+        # code that some case kills, and only such a claim (_audit_synthetic, _audit_e2e); `why` maps this
+        # repository's statements to claims, obligations and goals (why_selftest). These groups run as
+        # more tasks of the pool, beside the registered cases.
+        groups = [statement_reasons, lambda: _audit_synthetic(fix, work), lambda: _audit_e2e(fix, work, key),
+                  lambda: why_selftest(fix, work)]
 
         def run_any(i):
             return run_case(i) if i < len(cases) else groups[i - len(cases)]()
@@ -3807,6 +4121,11 @@ def main(argv=None):
                    help="a matrix from tests/mutants.py --matrix or tests/agent_mutants.py --matrix (repeatable)")
     p.add_argument("--counters", metavar="DIR", help="write each candidate's would-be counter blob there")
     p.add_argument("--refuse", action="store_true", help="exit 1 when any candidate is found")
+    p = sub.add_parser("why", help="the claims, obligations and goals a source statement serves, or the statements none does")
+    p.add_argument("target", nargs="?", metavar="FILE:LINE")
+    p.add_argument("--uncovered", nargs="?", const="", metavar="FILE",
+                   help="list the statements of warrant/ and warrant_agent/ (or FILE) that no cited mutant changes")
+    p.add_argument("--json", action="store_true")
     p = sub.add_parser("keygen", help="make a key: seed outside the repository, its binding and proof in the trust")
     p.add_argument("--out", required=True)
     p.add_argument("--actor", default=AUTHOR)
@@ -3844,6 +4163,8 @@ def main(argv=None):
             return cmd_check(repo, a)
         if a.cmd == "audit":
             return cmd_audit(repo, a)
+        if a.cmd == "why":
+            return cmd_why(repo, a)
         {"add": cmd_add, "supersede": cmd_supersede, "retire": cmd_retire, "keygen": cmd_keygen,
          "migrate": cmd_migrate, "heading": cmd_heading, "bind": cmd_bind, "trust": cmd_trust,
          "accept": cmd_accept, "challenge": cmd_challenge, "pin": cmd_pin}[a.cmd](repo, a)
