@@ -1,0 +1,46 @@
+{
+ "task": "t3",
+ "answered": true,
+ "answers": {
+  "migration": "RELY",
+  "abs": "RELY",
+  "parse": "DO NOT RELY"
+ },
+ "grounded": true,
+ "success": false,
+ "wrong_credit": true,
+ "inspected_with_expectation": false,
+ "imported": false,
+ "tool_calls": 13,
+ "per_tool": {
+  "warrant_handoff": 9,
+  "warrant_context": 1,
+  "warrant_read": 3
+ },
+ "tool_errors": 9,
+ "error_codes": [
+  "warrant_handoff:BAD_REQUEST",
+  "warrant_context:BAD_REQUEST",
+  "warrant_handoff:SCHEMA",
+  "warrant_handoff:SCHEMA",
+  "warrant_handoff:SCHEMA",
+  "warrant_handoff:SCHEMA",
+  "warrant_handoff:BAD_REQUEST",
+  "warrant_handoff:BAD_REQUEST",
+  "warrant_handoff:SCHEMA"
+ ],
+ "repeated_errors": 6,
+ "other_tools": 0,
+ "last_result_error": false,
+ "cost_usd": 0.07553812,
+ "duration_s": 456.654,
+ "turns": 14,
+ "output_tokens": 113400,
+ "input_tokens": 511605,
+ "budget_stop": false,
+ "stuck": false,
+ "run": "t3-haiku-3",
+ "model": "haiku",
+ "exit": 0,
+ "stderr": ""
+}

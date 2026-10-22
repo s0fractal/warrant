@@ -1,0 +1,42 @@
+{
+ "task": "t1",
+ "answered": true,
+ "answers": {
+  "1": "USE",
+  "2": "DO NOT USE"
+ },
+ "grounded": false,
+ "success": true,
+ "wrong_credit": false,
+ "records_crediting_wrong": 0,
+ "tool_calls": 8,
+ "per_tool": {
+  "warrant_context": 2,
+  "warrant_compute": 3,
+  "warrant_read": 3
+ },
+ "tool_errors": 7,
+ "error_codes": [
+  "warrant_context:BAD_REQUEST",
+  "warrant_context:BAD_REQUEST",
+  "warrant_read:NOT_FOUND",
+  "warrant_compute:BAD_REQUEST",
+  "warrant_compute:BAD_REQUEST",
+  "warrant_read:NOT_FOUND",
+  "warrant_read:NOT_FOUND"
+ ],
+ "repeated_errors": 4,
+ "other_tools": 0,
+ "last_result_error": true,
+ "cost_usd": 0.00325879,
+ "duration_s": 21.57,
+ "turns": 9,
+ "output_tokens": 2932,
+ "input_tokens": 44176,
+ "budget_stop": false,
+ "stuck": false,
+ "run": "t1-haiku-2",
+ "model": "haiku",
+ "exit": 0,
+ "stderr": ""
+}
