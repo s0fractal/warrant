@@ -521,6 +521,20 @@ def _visit(view, did, report, done, busy):
      [('    if not all(_hex64(doc[k]) for k in ("input", "environment", "witness")):',
        '    if not all(isinstance(doc[k], str) and len(doc[k]) == 64 for k in ("input", "environment", "witness")):')],
      "compute_test", ["C25"]),
+    # M170-M174 restore the `$` anchors of AMEND 2 of #164: `$` matches before a final newline
+    ("M170", "keys.py", "a hex64 may end in a newline (`$` instead of \\Z; records.HEX64 is this pattern)",
+     [('HEX64 = re.compile(r"^[0-9a-f]{64}\\Z")', 'HEX64 = re.compile(r"^[0-9a-f]{64}$")')], "contract_test", ["N7"]),
+    ("M171", "keys.py", "a signature may end in a newline",
+     [('HEX128 = re.compile(r"^[0-9a-f]{128}\\Z")', 'HEX128 = re.compile(r"^[0-9a-f]{128}$")')], "contract_test", ["N7"]),
+    ("M172", "records.py", "a subject may end in a newline",
+     [('SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})\\Z")', 'SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")')],
+     "contract_test", ["N7"]),
+    ("M173", "records.py", "a question reference may end in a newline",
+     [('QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\\Z")', 'QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})$")')],
+     "contract_test", ["N7"]),
+    ("M174", "compute.py", "the receipt and cycle hash members use their own `$`-anchored pattern, as at 1d67124",
+     [('    return isinstance(v, str) and R.HEX64.match(v) is not None',
+       '    return isinstance(v, str) and __import__("re").match(r"^[0-9a-f]{64}$", v) is not None')], "compute_test", ["C23", "C25"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

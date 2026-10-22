@@ -279,6 +279,69 @@ def unknown_cases():
     check("N6", ok6, "malformed signature members are invalid records; the rest is assessed", det6)
 
 
+def anchor_cases():
+    # N7 (AMEND 2 of #164): every hash, subject, question reference, trust key and signature
+    # member is anchored to the whole string. A pattern ending in `$` used through `.match`
+    # also matches before a final "\n", so "<valid>\n" (65 characters) passed every one of
+    # these validators at 1d67124. Each refusal is asserted on its structural reason; the
+    # "\r\n" twin is the control that `$` already refused; the valid value is admitted.
+    from warrant import canon, keys, loads
+    w = World()
+    d = w.duty()
+    t = w.close(d)
+    ev = w.evidence("n7")
+    key = w.keys[HOLDER]
+    msg = keys.sig_message("ab" * 32)
+    sig = key.sign(msg)
+    pub = key.public
+
+    def invalid(fn):
+        try:
+            fn()
+            return "accepted"
+        except R.Invalid as e:
+            return str(e)
+        except Exception as e:      # noqa: BLE001
+            return f"raised {type(e).__name__}"
+
+    def stored(field, value):
+        """A valid record whose stored envelope's sig member gets `value`; the report's reason."""
+        rid = w.act(HOLDER, [], established=[f"n7 {field} {value[-4:]!r}"])
+        p = w.store.root / "records" / f"{rid}.json"
+        env = loads(p.read_bytes())
+        env["sig"][field] = value
+        p.write_bytes(canon(env))
+        return w.assess()["invalid_records"].get(rid, "admitted")
+
+    got = {}
+    for name, suffix in (("\\n", "\n"), ("\\r\\n", "\r\n")):
+        got[f"subject {name}"] = invalid(lambda: w.duty(statement=f"s {name}", subject=SHA_OLD + suffix))
+        got[f"answers {name}"] = invalid(lambda: w.duty(statement=f"a {name}", answers="ab" * 32 + ":0" + suffix))
+        got[f"evidence {name}"] = invalid(lambda: w.act(HOLDER, [R.item(d, "discharge", [ev + suffix])]))
+        got[f"grant parent {name}"] = invalid(lambda: w.file("grant", OWNER, R.grant(HOLDER, ["release"], [d], parent="ab" * 32 + suffix)))
+        got[f"trust key {name}"] = invalid(lambda: Trust(Trust.document([("p", pub + suffix)])))
+        got[f"sig key {name}"] = stored("key", key.id + suffix)
+        got[f"sig ed25519 {name}"] = stored("ed25519", sig + suffix)
+        got[f"verify key {name}"] = keys.verify(pub + suffix, sig, msg)
+        got[f"verify sig {name}"] = keys.verify(pub, sig + suffix, msg)
+    want = {}
+    for name in ("\\n", "\\r\\n"):
+        want[f"subject {name}"] = "subject must be null or a revision/blob id"
+        want[f"answers {name}"] = "answers must be null or a question reference"
+        want[f"evidence {name}"] = "evidence item must be a hex64"
+        want[f"grant parent {name}"] = "parent"
+        want[f"trust key {name}"] = "trust public key must be a hex64"
+        want[f"sig key {name}"] = "invalid: sig key must be a hex64"
+        want[f"sig ed25519 {name}"] = "invalid: sig ed25519 must be 128 hex characters"
+        want[f"verify key {name}"] = False
+        want[f"verify sig {name}"] = False
+    control = (invalid(lambda: w.duty(statement="control", subject=SHA_OLD, answers="ab" * 32 + ":0")) == "accepted"
+               and keys.verify(pub, sig, msg) is True and t in w.assess()["results"])
+    check("N7", got == want and control,
+          "a trailing newline after a hash, subject, question reference, trust key or signature is refused",
+          ({k: (got[k], want[k]) for k in want if got.get(k) != want[k]}, control))
+
+
 def W_ev(w, t):
     from warrant import loads
     return loads(w.store.snapshot().records[t])["record"]["body"]["closes"][0]["evidence"]
@@ -574,6 +637,7 @@ def main():
     handoff_cases()
     depth_cases()
     limits_cases()
+    anchor_cases()
     return finish("CONTRACT")
 
 

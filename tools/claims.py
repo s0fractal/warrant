@@ -54,8 +54,8 @@ from warrant.store import Snapshot, Store, Trust   # noqa: E402
 AUTHOR = "claude"
 CLAIM, RETIRE = "warrant-claims/claim@1", "warrant-claims/retire@1"
 PINS_VERSION = "warrant-claims/pins@1"
-ID_RE = re.compile(r"^SPEC-([0-9]+(?:\.[0-9]+)*)-([1-9][0-9]*)$")
-TEST_RE = re.compile(r"^[a-z][a-z0-9_]*_test$")
+ID_RE = re.compile(r"^SPEC-([0-9]+(?:\.[0-9]+)*)-([1-9][0-9]*)\Z")    # \Z: `$` admits a trailing newline
+TEST_RE = re.compile(r"^[a-z][a-z0-9_]*_test\Z")
 HEADING = re.compile(r"^#+ ([0-9]+(?:\.[0-9]+)*)\.? ")
 RESIDUE_OK = set(" |-.0123456789")
 BACKED_RESIDUAL = ("this record cites its witness cases and mutants and does not run them; "
@@ -877,6 +877,26 @@ def selftest():
         def unretired_removal(r):
             spec_edit(b.doc["text"], "")(r)
 
+        def newline_id(r):
+            # AMEND 2 of #164: while ID_RE ended in `$`, an id with a trailing newline passed
+            # `.match`; a claim filed under one, with a duty of its own and pinned, was accepted
+            au = author(r)
+            cid, text = a.id + "\n", a.doc["text"]
+            at = au.at()
+            au.store.put_blob(text.encode())
+            duty = au.put("duty", R.duty(AUTHOR, statement_for(cid, text), au.pins["owed_to"], {"attest": {}},
+                                         accept_by=au.pins["accept_by"], subject=sha(text)), at)
+            doc = {"schema": CLAIM, "id": cid, "source": "SPEC.md", "section": a.doc["section"], "text": text,
+                   "kind": "normative", "duty": duty, "witnesses": a.doc["witnesses"], "mutants": a.doc["mutants"],
+                   "reason": None, "because": None, "previous": None}
+            h = au.store.put_json(doc)
+            au.put("transition", R.transition("ATTESTED", [h], closes=[R.item(duty, "discharge", [h])],
+                                              established=[text], residual=[BACKED_RESIDUAL]), at)
+            p = r.pins()
+            p["sentences"][cid] = "normative"
+            r.write_pins(p)
+            reproject(r)
+
         case("clean copy", None, lambda r: None)
         case("a quoted sentence no longer in SPEC.md", "QUOTE_NOT_IN_SPEC", spec_edit(a.doc["text"], "Something else entirely."))
         case("a cited mutant that does not exist", "UNKNOWN_MUTANT", rebacked(a.doc["witnesses"], ["M999"]))
@@ -892,6 +912,7 @@ def selftest():
         case("a pinned sentence unpinned without retirement", "UNPINNED_WITHOUT_RETIREMENT", unpin)
         case("a new sentence in a pinned section with no claim", "UNCOVERED_TEXT", add_sentence)
         case("a sentence removed from SPEC.md, its claim not retired", "QUOTE_NOT_IN_SPEC", unretired_removal)
+        case("a claim id with a trailing newline", "STRUCTURE", newline_id)
         case("a supersession with because", None, supersede)
         case("a retirement with counter-evidence", None, retire)
         print(f"CLAIMS SELFTEST: {'OK' if not failures else f'{failures} FAIL'}")

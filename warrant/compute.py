@@ -132,8 +132,9 @@ def environment_problem(doc):
 
 
 def _hex64(v):
-    """A hash member is lowercase hex of 64 characters (SPEC §3), not any 64-character
-    string: before AMEND 1 of #164 the receipt and cycle shapes checked the length only."""
+    """A hash member is lowercase hex of exactly 64 characters (SPEC §3; keys.HEX64, anchored
+    with \\Z): not any 64-character string (length only before AMEND 1 of #164), and not
+    65 with a trailing newline (`$` let that through before AMEND 2)."""
     return isinstance(v, str) and R.HEX64.match(v) is not None
 
 

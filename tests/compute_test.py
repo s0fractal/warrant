@@ -18,6 +18,9 @@ TARGET = "warrant-test"
 # 64-character strings that are not hex64 (SPEC §3: lowercase hex): a non-hex letter,
 # uppercase hex, non-ASCII. Each has the right length, so a length-only check passes it.
 NOT_HEX64 = {"non-hex letter": "g" * 64, "uppercase hex": "A" * 64, "non-ASCII": "\u00e9" * 64}
+# Suffixes that make a genuine hex64 65 or 66 characters: `$` in an anchored pattern matches
+# before a final "\n", so "<hex64>\n" passed `.match` before AMEND 2 of #164; "\r\n" is the control.
+TRAILING = {"trailing newline": "\n", "trailing CRLF": "\r\n"}
 
 
 def term(w, expr, runtime=P.BOOK1):
@@ -181,6 +184,8 @@ def main():
     for member in ("input", "environment", "witness"):
         for name, bad in NOT_HEX64.items():
             shapes25[f"{member} {name}"] = dict(full25, **{member: bad})
+        for name, suffix in TRAILING.items():
+            shapes25[f"{member} {name}"] = dict(full25, **{member: full25[member] + suffix})
     want25 = {k: "not a sigma-resume cycle" if k == "extra member" else "cycle hashes" for k in shapes25}
     direct25 = {k: shape_of(P.cycle_problem, doc) for k, doc in shapes25.items()}
     ds25 = {}
@@ -446,6 +451,8 @@ def main():
     for member in ("input", "environment", "checkpoint", "state", "claimed"):
         for name, bad in NOT_HEX64.items():
             shapes[f"{member} {name}"] = dict(full, **{member: bad})
+        for name, suffix in TRAILING.items():
+            shapes[f"{member} {name}"] = dict(full, **{member: full[member] + suffix})
     want23 = {k: "not a sigma-resume receipt" if k in ("extra member", "no lost") else "receipt hashes" for k in shapes}
     direct = {k: shape_of(P.receipt_problem, doc) for k, doc in shapes.items()}
     ds23 = {}

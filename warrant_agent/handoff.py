@@ -9,18 +9,16 @@ A manifest digest carried by a package is never an expectation; expectations
 come from the receiver's configuration. MATCH_EXPECTED_SET means only "this is the
 selected set"; completeness stays UNATTESTED."""
 import base64
-import re
 import time
 
 from warrant import jcs as C
 from warrant import records as R
-from warrant.keys import Key
+from warrant.keys import HEX64, Key
 from warrant.store import Snapshot, Store, _authenticate
 
 from . import views
 from .errors import AgentError, need
 
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
 MANIFEST_FIELDS = {"warrant_handoff", "source", "selection", "capture", "roots", "records", "blobs",
                    "sender_assessment", "completeness"}
 PROMOTE_DEFAULT = ("MATCH_EXPECTED_SET",)

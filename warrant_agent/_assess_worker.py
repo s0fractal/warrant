@@ -14,7 +14,7 @@ from warrant import limits as L
 from warrant.store import Snapshot, Trust
 
 
-TOKEN = re.compile(r"^[0-9a-f]{32}$")
+TOKEN = re.compile(r"^[0-9a-f]{32}\Z")       # \Z, not $ (AMEND 2 of #164)
 
 
 def view_dir(vdir):

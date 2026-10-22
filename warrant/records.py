@@ -9,9 +9,9 @@ from . import keys as K
 
 VERSION = "2"
 TYPES = ("duty", "transition", "accept", "observation", "grant", "challenge")
-HEX64 = re.compile(r"^[0-9a-f]{64}$")
-SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
-QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})$")  # [0-9], not \d: \d matches non-ASCII digits
+HEX64 = K.HEX64                                           # one definition; \Z-anchored (AMEND 2 of #164)
+SUBJECT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\Z")  # [0-9], not \d: \d matches non-ASCII digits
 BASES = ("ATTESTED", "OBSERVED", "REPLAYED")
 ACTS = ("discharge", "impossible", "release", "delegate", "substitute", "revalidate")
 GRANT_ACTS = ("release",)
