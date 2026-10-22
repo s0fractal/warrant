@@ -2,9 +2,6 @@
   "accept_by": [
     "codex"
   ],
-  "checkers": [
-    "checker sha256:72ad9c4d738dff046433b180d06fe70e9d13d69b17fd7dec0ea15cd5b6322300"
-  ],
   "claims": "warrant-claims/pins@1",
   "owed_to": [
     "readers"
