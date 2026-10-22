@@ -59,7 +59,7 @@ jobs:
       - name: Contract, computation, conditions and primitives (installed bytes)
         working-directory: tests
         run: |
-          for t in contract compute conditions assessment primitives records cli; do python "${t}_test.py"; done
+          for t in contract compute conditions assessment primitives records cli roadmap; do python "${t}_test.py"; done
 
       - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
         working-directory: tests
@@ -87,6 +87,9 @@ jobs:
           fi
           WARRANT_IMPL= python tools/claims.py check --base "$BASE_SHA"
           WARRANT_IMPL= python tools/claims.py --selftest
+
+      - name: Roadmap (goals and obligations are records in .warrant/store; ROADMAP.md is a view)
+        run: WARRANT_IMPL= python tools/roadmap.py check
 
       # A report, not a refusal: the matrices above hold each mutant's own test file only (no
       # extra run), so most witnesses are unknown here. The full hunt: tests/mutants.py --matrix F

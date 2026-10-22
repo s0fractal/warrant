@@ -112,10 +112,11 @@ does not authorize. A computation is credited only by the recipient's own replay
 ## Checks
 
 ```bash
-for t in contract compute conditions assessment primitives records; do python3 tests/${t}_test.py; done
+for t in contract compute conditions assessment primitives records roadmap; do python3 tests/${t}_test.py; done
 python3 tests/mutants.py        # every critical rule has a mutant that must fail its own case
 python3 tools/claims.py check   # SPEC.md and SPEC-CLAIMS.md against the records and the tests
 python3 tools/claims.py --selftest
+python3 tools/roadmap.py check  # ROADMAP.md against the goal and obligation records
 bash examples/run-all.sh        # needs `warrant` on PATH
 for t in agent_handoff agent_write agent_compute agent_mcp; do python3 tests/${t}_test.py; done
 python3 tests/agent_mutants.py  # needs [compute,mcp]
@@ -272,6 +273,36 @@ sentence turns on cannot be downgraded by a counter at all (SPEC-7-1's recorded
 downgrade would be refused today, as would four of the six Gemini counters
 against their claims as they stood); re-backing such a claim is the remedy, and
 `audit` is what finds it.
+
+## The roadmap
+
+Where the project is going lives in the same store as ordinary records, not in
+SPEC.md: [ROADMAP.md](ROADMAP.md) is generated from them by `tools/roadmap.py
+project`, and `check` refuses a stale or hand-edited one. No record type is
+added. The terms are those of the ontology
+(manifesto `artifacts/ONTOLOGY-FORMALIZATION-0.1.md`):
+
+| Ontology | Recorded as |
+| --- | --- |
+| Goal (row 0041; the target G of §4.3) | a question opened with scope `roadmap:G<n>` by a vision transition. Opening assigns it to nobody (SPEC §3.2). It proves nothing: it sets the direction of path search. It is reformulated, shown met (the transition *establishes* its text) or withdrawn only by a transition that supersedes the vision transition, counted once the results acceptors in `.warrant/roadmap.json` accept it (SPEC §4.7) |
+| Obligation (row 0041; §7.2, an open loop) | a duty whose `answers` names the goal. Settlement is a discharge, forgiveness a release by whom it is owed to. Repair is `impossible`, accepted by whom it is owed to, plus a compensating duty. A revalidation repairs a closure, not the obligation |
+| Commitment (§7.3.1) | filing that duty: the holder narrows its own options. `requires` makes the narrowing visible: a duty cannot close before its prerequisites (SPEC §4.2, rule 4) |
+| Purpose (row 0041) | `serves`, a purpose link that grants nothing; to a SPEC claim it names the claim's duty |
+| Value (row 0041) | a SPEC claim and its latches: a constraint on admissible paths, not a roadmap item |
+| Conclusion (§4.3, the backward cone) | a transition whose `relied_on` names the transitions whose results it uses |
+| Ledger (§7.2) | the store and its assessment |
+
+Desire (row 0041) and Intent (row 0033: pre-authorship, a direction toward an
+act) are not recorded: once signed, a direction is authored and is a goal.
+Meaning (row 0041) is not recorded either. §4.3 calls the target "Target
+Intent"; that is the goal, not row 0033's Intent. `path G<n>` prints the goal,
+the obligations that answer it and, under each, its prerequisites, with the
+engine's disposition and what its frontier asks of the holder. When every
+obligation of a goal that is still open is DISCHARGED, `path` adds a mark,
+"obligations met, goal not shown met". This is the Forward Attack of §4.3: the
+claims hold and the goal is not shown. Either the decomposition missed
+something (§4.2: the gap is not empty), or the showing is still owed. The mark
+is evidence, not a refutation.
 
 ## Limits
 

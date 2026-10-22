@@ -845,6 +845,62 @@ def _visit(view, did, report, done, busy):
     ("M283", "engine.py", "a child grant is not checked for attenuation (counter against SPEC-6-2)",
      [('    why = _attenuation_problem(rec["actor"], g, view.by_type["grant"][g["parent"]]["body"])', '    why = None')],
      "contract_test", ["U4"]),
+    # The roadmap as records (tools/roadmap.py, tests/roadmap_test.py). Ids from M300 leave
+    # M268-M299 to the parallel claims work.
+    ("M300", "../tools/roadmap.py", "the Forward Attack mark fires when any obligation is DISCHARGED, not all",
+     [('obligations and all(m.rep["duties"][d]["disposition"] == "DISCHARGED"', 'obligations and any(m.rep["duties"][d]["disposition"] == "DISCHARGED"')],
+     "roadmap_test", ["P9"]),
+    ("M301", "../tools/roadmap.py", "the Forward Attack mark ignores whether the goal is still open (a met goal is marked)",
+     [('    if state == "OPEN" and obligations and all(', '    if obligations and all(')], "roadmap_test", ["P9"]),
+    ("M302", "../tools/roadmap.py", "a released (forgiven) obligation counts as met for the Forward Attack mark",
+     [('["disposition"] == "DISCHARGED" for d in obligations', '["disposition"] in ("DISCHARGED", "RELEASED") for d in obligations')],
+     "roadmap_test", ["P9"]),
+    ("M303", "../tools/roadmap.py", "a reformulation nobody accepted is current next to the goal it supersedes",
+     [('            elif self.recs[f.tid]["body"]["supersedes"] and not res["accepted"]:', '            elif False:')],
+     "roadmap_test", ["P6"]),
+    ("M304", "../tools/roadmap.py", "a reformulated goal loses the obligations that answer its earlier formulation",
+     [('        refs = {f.ref for f in self.goals.get(key, [])}', '        refs = {f.ref for f in self.goals.get(key, []) if f.state == CURRENT}')],
+     "roadmap_test", ["P6"]),
+    ("M305", "../tools/roadmap.py", "path does not follow requires to the prerequisites",
+     [('    out["children"] = [node(m, c, "requires", seen | {did}) for c in r["requires"]]', '    out["children"] = []')],
+     "roadmap_test", ["P3", "P7"]),
+    ("M306", "../tools/roadmap.py", "ROADMAP.md is compared as text: read_text() turns \\r\\n into \\n",
+     [('    elif rm.view.read_bytes() != render_view(m).encode():', '    elif rm.view.read_text() != render_view(m):')],
+     "roadmap_test", ["P8"]),
+    ("M307", "../tools/roadmap.py", "two current formulations of one goal key pass check",
+     [('            if len(cur) > 1:\n', '            if False:\n')], "roadmap_test", ["P12"]),
+    ("M308", "../tools/roadmap.py", "a supersession may drop a goal without saying it is met or withdrawn",
+     [('                    elif key not in mine and act not in ("met", "withdraw"):', '                    elif False:')],
+     "roadmap_test", ["P12"]),
+    ("M309", "../tools/roadmap.py", "a goal may be called met without the transition establishing its text",
+     [('                    elif act == "met" and f.text not in r["body"]["established"]:', '                    elif False:')],
+     "roadmap_test", ["P12"]),
+    ("M310", "../tools/roadmap.py", "an obligation may require or serve a duty that is not in the view",
+     [('                    if x not in self.rep["duties"]:', '                    if False:')], "roadmap_test", ["P12"]),
+    ("M311", "../tools/roadmap.py", "a goal key is anchored with $, which admits a trailing newline",
+     [('KEY_RE = re.compile(r"^G[1-9][0-9]{0,3}\\Z")', 'KEY_RE = re.compile(r"^G[1-9][0-9]{0,3}$")')],
+     "roadmap_test", ["P12", "P13"]),
+    ("M312", "../tools/roadmap.py", "done discharges a duty its signer does not hold",
+     [('        if r["holder"] != self.actor and self.actor not in r["delegates"]:', '        if False:')],
+     "roadmap_test", ["P5"]),
+    ("M313", "../tools/roadmap.py", "release is filed by an actor the duty is not owed to (the holder forgives itself)",
+     [('        if self.actor not in set(b["owed_to"]) | set(b["release_by"]):', '        if False:')],
+     "roadmap_test", ["P5"]),
+    ("M314", "../tools/roadmap.py", "done discharges with no evidence named",
+     [('        if not refs:\n', '        if False:\n')], "roadmap_test", ["P5"]),
+    ("M315", "../tools/roadmap.py", "the roadmap view is written into SPEC.md",
+     [('        self.view = self.root / "ROADMAP.md"', '        self.view = self.root / "SPEC.md"')], "roadmap_test", ["P10"]),
+    ("M316", "../tools/roadmap.py", "a goal reads unowned although an obligation answers it (the engine's taken_by ignored)",
+     [('            self.owned[q["question"]] = q["taken_by"]', '            self.owned[q["question"]] = []')],
+     "roadmap_test", ["P2"]),
+    ("M317", "../tools/roadmap.py", "a revision of one goal leaves out the other goals of the transition it supersedes",
+     [('                  for q in old if act == "reformulate" or q["scope"] != SCOPE + key]',
+       '                  for q in old if act == "reformulate" and q["scope"] == SCOPE + key]')],
+     "roadmap_test", ["P6", "P11"]),
+    ("M318", "../tools/roadmap.py", "path does not show the duties whose serves names a node",
+     [('                          "goal": m.goal_of(s)} for s in m.served_by(did) if s not in seen and s in m.rep["duties"]],',
+       '                          "goal": m.goal_of(s)} for s in [] if s not in seen and s in m.rep["duties"]],')],
+     "roadmap_test", ["P7"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
@@ -880,7 +936,15 @@ def run_one(mid, fname, what, edits, test, targets, also=()):
     tmp = Path(tempfile.mkdtemp(prefix=f"warrant-{mid}-"))
     try:
         shutil.copytree(PKG, tmp / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
-        p = tmp / "warrant" / fname
+        if fname.startswith("../"):
+            # A tool beside the package (../tools/roadmap.py): its directory is copied whole, so
+            # the tool's own imports (tools/claims.py) come from the same copy; the test loads it
+            # from $WARRANT_IMPL/tools.
+            outside = Path(fname[3:]).parts[0]
+            shutil.copytree(ROOT / outside, tmp / outside, ignore=shutil.ignore_patterns("__pycache__"))
+            p = tmp / fname[3:]
+        else:
+            p = tmp / "warrant" / fname
         src = p.read_text()
         for old, new in edits:
             if src.count(old) != 1:
