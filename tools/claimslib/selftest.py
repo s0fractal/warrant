@@ -756,6 +756,13 @@ def selftest(jobs=1):
             local_c = r.root.parent / f"{r.root.name}-codex-trust.json"
             local_c.write_bytes(C.canon(Trust.document(local_bindings() + [("codex", k.public)])))
             os.environ[LOCAL_TRUST] = str(local_c)     # run_case restores it after check and also()
+            # G4: a BACKED claim's duty names the replay checker. A duty that codex accepts is one filed
+            # where the pins adopt no checker; `a` moves to such a duty first (a supersession, same sentence).
+            au = author(r)
+            au.acceptors = lambda backed: list(au.pins["accept_by"])     # the pins themselves stay as they are
+            cur = Model(r.snapshot(), r.trust()).current[a.id]
+            au.claim(a.id, cur.doc["text"], cur.doc["witnesses"], cur.doc["mutants"],
+                     because="selftest: a duty codex accepts", previous=cur)
             seed_c = r.root / ".." / f"{r.root.name}-codex.seed"
             seed_c.write_text(k.seed_hex() + "\n")
             import contextlib
@@ -791,7 +798,8 @@ def selftest(jobs=1):
 
         def squatter_refused(r):
             m = Model(r.snapshot(), r.trust())
-            return squat.get(r.root.name) == (2, 2) and not [x for x in m.recs.values() if x["type"] == "accept"]
+            return squat.get(r.root.name) == (2, 2) and not [x for x in m.recs.values()
+                                                             if x["type"] == "accept" and x["actor"] == "codex"]
 
         def pin_against_claude(r):
             set_role(r, AUTHOR, W.Key.generate().public)
@@ -846,7 +854,9 @@ def selftest(jobs=1):
              challenge_by("stranger", {"fails": ["records_test:E3"]}))
         case("C: a newcomer's challenge without a counter: admitted, lowers and blocks nothing", None,
              challenge_by("stranger"), also=lowered_by("stranger", "SPEC-3.2-20", THESIS))
-        case("C: the acceptor's challenge without a counter stands", "CHALLENGED", challenge_by("codex", pin=True))
+        # The acceptor its duty names: the replay checker for a BACKED claim since G4 (codex before).
+        acceptor = model.recs[sc.doc["duty"]]["body"]["accept_by"][0]
+        case("C: the acceptor's challenge without a counter stands", "CHALLENGED", challenge_by(acceptor, pin=True))
         case("C: a newcomer supersedes claude's claim", "LINEAGE_NOT_AUTHOR", stranger_supersedes)
         case("C: a newcomer retires claude's claim", "LINEAGE_NOT_AUTHOR", stranger_retires)
         case("C: a newcomer files the next document version", "LINEAGE_NOT_AUTHOR", stranger_document)

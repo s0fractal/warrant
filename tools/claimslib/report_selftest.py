@@ -179,11 +179,11 @@ def why_selftest(fix, work, key):
     paths = [p for p in w.files if p.split("/")[0] in UNCOVERED_ROOTS]
     out = []
     pick = next(((n, mid, path, i, ln) for mid, ns in sorted(w.cited.items(), key=lambda kv: _mid_key(kv[0]))
-                 for n in ns if n.doc["duty"] in w.links
+                 for n in ns for d in sorted(w.lineage.get(n.id, ())) if d in w.links
                  for (path, i) in sorted(k for k, ms in w.changes.items() if mid in ms)
-                 for ln in w.links[n.doc["duty"]] if ln["goal"]), None)
+                 for ln in w.links[d] if ln["goal"]), None)
     if pick is None:
-        return [("why: the fixture has a claim whose duty an obligation names and whose mutant changes a statement",
+        return [("why: the fixture has a claim a duty of whose lineage an obligation names, and whose mutant changes a statement",
                  False, "none found")]
     n, mid, path, i, ln = pick
     d = w.at(path, min(w.units(path)[i][2]))
