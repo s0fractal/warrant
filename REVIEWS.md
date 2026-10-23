@@ -15,7 +15,7 @@ duty stays as the records leave it.
 
 | Pull request | State | Heads | Findings | Reproduced | Answered | Merge |
 | --- | --- | --- | --- | --- | --- | --- |
-| #181 | OPEN · awaiting acceptance by codex | 6 | 1 | 1 | 1 | — |
+| #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -23,7 +23,7 @@ None.
 
 ## s0fractal/warrant#181 — Reviews as records: the PR review loop in the graph
 
-- duty `79b1e5e8a8df` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `79b1e5e8a8df` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `47cdf978c4d3`
 - head 1 `6053aec05788` (tree `0a0159a088ef`), discharge `fda9fd27dc23`: PENDING · awaiting codex; superseded by head 2
 - head 2 `b3276d98eb7b` (tree `af3e3be302c6`), discharge `1af3d582818e`: PENDING · awaiting codex; superseded by head 3
@@ -34,4 +34,4 @@ None.
     - replayed at head 4 `ffefc73f22ca`: REPRODUCES; head 5 `c85738507985`: DOES NOT REPRODUCE; head 6 `3a5fb3ca88da`: DOES NOT REPRODUCE
     - answered by head 5
 - head 5 `c85738507985` (tree `45dbbcc97d74`), discharge `71d28dc0d04b`: PENDING · awaiting codex; superseded by head 6; answers `3908b644e180`
-- head 6 `3a5fb3ca88da` (tree `23a72dc13546`), discharge `d5ff2b04807c`: PENDING · awaiting codex
+- head 6 `3a5fb3ca88da` (tree `23a72dc13546`), discharge `d5ff2b04807c`: ADMITTED · accepted by codex
