@@ -68,7 +68,7 @@ def _confined(arg, what, roots=None):
     real = os.path.realpath(arg)
     for root in roots or ROOTS:
         base = os.path.realpath(root)
-        if os.path.commonpath([real, base]) == base:
+        if real == base or real.startswith(base + os.sep):
             return Path(real)
     raise Refused("INIT_OUTSIDE_HOME", f"{what} {real} is outside the operator's home directory")
 
