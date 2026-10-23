@@ -1,0 +1,1 @@
+Through MCP a typed refusal is a tool error whose text is the refusal's JSON, and stdout carries MCP messages only.

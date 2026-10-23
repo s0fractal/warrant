@@ -1,0 +1,1 @@
+A context's `actor` selects whose frontier is read, not who signs, and is an actor id (§3), else `BAD_REQUEST`.

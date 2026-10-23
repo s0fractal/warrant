@@ -1,0 +1,1 @@
+Payload ids are content addresses, never paths; a duplicate id is `BAD_REQUEST`, and an object under a foreign address is a mismatch.

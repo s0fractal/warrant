@@ -1,0 +1,1 @@
+An `accept` takes `{transition, item, evidence?, support?}`; without `evidence` it is the exact evidence of that item in the view.

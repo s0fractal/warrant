@@ -1,0 +1,1 @@
+Import is journaled and idempotent under its request id: an interrupted import reads `STARTED`, and a retry completes it without duplicates.

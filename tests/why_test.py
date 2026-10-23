@@ -281,6 +281,16 @@ def cases(fx):
                              (2, "WHY_USAGE"), (2, "WHY_FILE"), (2, "WHY_FILE"), (2, "WHY_USAGE")],
           "a file outside the source roots, a missing line or a malformed FILE:LINE is refused", refusals)
 
+    # Y17: --uncovered DIR is the files of the source roots under that directory, nothing else; a prefix
+    # that is not a directory, a directory outside the roots and one holding no such file are refused
+    dirs = [fx.why("--uncovered", d) for d in ("warrant", "warrant/", str(fx.dir / "warrant"))]
+    bad = [fx.why("--uncovered", d)[::2] for d in ("warr", "tests", "..", "tools")]
+    check("Y17", all(r[0] == 0 and r[1]["files"] == ["warrant/fx.py"] and r[1]["statements"] == u["statements"]
+                     and r[1]["covered"] == u["covered"] for r in dirs)
+          and bad == [(2, "WHY_FILE")] * 4,
+          "--uncovered DIR covers the files under that directory of the source roots; any other name is refused",
+          ([r[:1] + (r[1].get("files") if isinstance(r[1], dict) else r[1],) for r in dirs], bad))
+
     rc, text, _ = fx.why(str(fx.dir / "warrant" / "fx.py") + f":{line_of('if x > 0:')}", as_json=False)
     check("Y10", rc == 0 and all(x in text for x in ("SPEC-1-1", "SPEC-1-2", fx.obligations["serves"][:12], "G1")),
           "an absolute path inside the repository is read; the text answer names the claims, obligation and goal", text)

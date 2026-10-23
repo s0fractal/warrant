@@ -1,0 +1,1 @@
+A request whose `agent_api` is not `warrant-agent/1` is `UNSUPPORTED_VERSION`; MCP tools carry no version, and the backend checks it for every front end.

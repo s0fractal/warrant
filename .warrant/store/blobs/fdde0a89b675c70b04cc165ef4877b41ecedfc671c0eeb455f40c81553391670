@@ -1,0 +1,1 @@
+`prepare` freezes one exact record whose actor and key come from the configuration and whose `at` is fixed by the first durable prepare; nothing is signed.

@@ -23,7 +23,7 @@ from .model import accept_index, acceptors, Model
 from . import by_replay, counters
 from . import replay as RP
 from .counters import challenge_table, counter_candidates, counter_file_bytes, lowered, standing
-from .document import DOCUMENT, Document, DOCUMENT_RESIDUAL, heading_section, parse_spec, render_spec
+from .document import DOCUMENT, Document, DOCUMENT_RESIDUAL, heading_section, parse_spec, render_spec, SECTION_RE
 from .check import default_base
 from .views import assessment, render, render_witnesses
 
@@ -90,11 +90,13 @@ class Author:
         if bad:
             raise Refused(f"{cid}: " + "; ".join(f"{c} {w}" for c, w in bad))
 
-    def placement(self, cid, after=None, paragraph=False, because=None):
-        """The document version that places a new sentence `cid` after claim `after`, as
+    def placement(self, cid, after=None, paragraph=False, because=None, item=False):
+        """The document version that places a new sentence `cid` after claim `after`, or first
+        under the heading of its own section when `after` is that section's number, as
         (parts, because), or None when `cid` is already placed or no document exists yet
-        (before the migration). Raises Refused, writing nothing, when a new sentence names
-        no position or a position that is not a placed claim of its own section."""
+        (before the migration). `paragraph` starts a new paragraph, `item` a list item (both:
+        a list after a blank line). Raises Refused, writing nothing, when a new sentence names
+        no position or a position that is not a placed claim or the heading of its own section."""
         doc = Document(self.model())
         if doc.current is None:
             return None
@@ -105,15 +107,29 @@ class Author:
                 raise Refused(f"{cid} is already placed in SPEC.md; it keeps its position")
             return None
         if after is None:
-            raise Refused(f"{cid} is a new sentence: name its position (--after <claim id> [--paragraph])")
-        i = [k for k, p in enumerate(parts) if isinstance(p, dict) and p.get("claim") == after]
-        if not i:
-            raise Refused(f"{cid}: --after {after} is not a claim the document places")
-        if ID_RE.match(after) is None or ID_RE.match(after).group(1) != ID_RE.match(cid).group(1):
-            raise Refused(f"{cid}: --after {after} is in another section")
+            raise Refused(f"{cid} is a new sentence: name its position (--after <claim id or its section> "
+                          "[--paragraph] [--item])")
+        section = ID_RE.match(cid).group(1)
+        if SECTION_RE.match(after):
+            if after != section:
+                raise Refused(f"{cid}: --after {after} is another section")
+            i = [k for k, p in enumerate(parts) if isinstance(p, dict) and "heading" in p
+                 and heading_section(p["heading"], self.pins.get("headings", {})) == section]
+            if len(i) != 1:
+                raise Refused(f"{cid}: the document has {len(i)} headings of §{section} (heading --section {section} "
+                              "files a pinned section's heading first)")
+            sep, where = "\n\n" + ("- " if item else ""), f"first in §{section}"
+        else:
+            i = [k for k, p in enumerate(parts) if isinstance(p, dict) and p.get("claim") == after]
+            if not i:
+                raise Refused(f"{cid}: --after {after} is not a claim the document places")
+            if ID_RE.match(after) is None or ID_RE.match(after).group(1) != section:
+                raise Refused(f"{cid}: --after {after} is in another section")
+            sep = ("\n\n" if paragraph else "\n") + "- " if item else "\n\n" if paragraph else " "
+            where = f"after {after}" + (" as a new paragraph" if paragraph else "") + (" as a list item" if item else "")
         k = i[0] + 1
-        new = parts[:k] + ["\n\n" if paragraph else " ", {"claim": cid, "layout": None}] + parts[k:]
-        return new, f"{cid} placed after {after}" + (" as a new paragraph" if paragraph else "") + (f": {because}" if because else "")
+        new = parts[:k] + [sep, {"claim": cid, "layout": None}] + parts[k:]
+        return new, f"{cid} placed {where}" + (f": {because}" if because else "")
 
     def file_document(self, parts, because, at):
         """File a document version: an ATTESTED transition whose evidence is the document blob,
@@ -129,7 +145,7 @@ class Author:
                                                    supersedes=[prev["transition"]] if prev else []), at)
 
     def claim(self, cid, text, witnesses=(), mutants=(), reason=None, because=None, residual=(), previous=None,
-              unbacked_because=None, counter=(), after=None, paragraph=False):
+              unbacked_because=None, counter=(), after=None, paragraph=False, item=False):
         """File one claim: (duty and) transition. `previous` is the Node it replaces, or None.
         `reason` makes it informative; `unbacked_because` says why a normative one is open;
         `counter` (ids already in the store) goes into the transition's evidence. A sentence
@@ -147,7 +163,7 @@ class Author:
         if previous is not None and previous.rec["actor"] != self.actor:
             raise Refused(f"{cid} is {previous.rec['actor']}'s claim: only its author supersedes it; a counter is "
                           "filed as a challenge (tools/claims.py challenge)", "LINEAGE_NOT_AUTHOR")
-        placed = self.placement(cid, after, paragraph, because if previous is None else None)
+        placed = self.placement(cid, after, paragraph, because if previous is None else None, item)
         at = self.at()
         duty = None
         backed = kind == "normative" and witnesses and mutants
@@ -228,7 +244,7 @@ def stanzas(a):
     return [{"id": a.id, "text": a.text, "witnesses": [w for x in a.witness for w in x.split(",") if w],
              "mutants": [m for x in a.mutant for m in x.split(",") if m], "informative": a.informative,
              "residual": a.residual, "because": a.because, "unbacked_because": a.unbacked_because,
-             "after": a.after, "paragraph": a.paragraph}]
+             "after": a.after, "paragraph": a.paragraph, "item": a.item}]
 
 
 def same_claim(n, s):
@@ -254,7 +270,7 @@ def cmd_add(repo, a):
         tid = author.claim(s["id"], s["text"], s.get("witnesses", ()), s.get("mutants", ()), s.get("informative"),
                            s.get("because"), s.get("residual", ()), previous=cur,
                            unbacked_because=s.get("unbacked_because"), counter=s.get("counter", ()),
-                           after=s.get("after"), paragraph=bool(s.get("paragraph")))
+                           after=s.get("after"), paragraph=bool(s.get("paragraph")), item=bool(s.get("item")))
         print(f"{s['id']}: {tid}")
 
 
@@ -336,12 +352,31 @@ def cmd_heading(repo, a):
     pinned = author.pins.get("headings", {})
     at = [i for i, q in enumerate(parts) if isinstance(q, dict) and "heading" in q
           and heading_section(q["heading"], pinned) == a.section]
+    if not at and a.section in author.pins["sections"]:
+        print(f"document: {author.file_document(new_section(parts, a.section, want, author.pins), a.because, author.at())}")
+        return
     if len(at) != 1:
-        raise Refused(f"the document has {len(at)} headings of §{a.section}; this command changes one in place")
+        raise Refused(f"the document has {len(at)} headings of §{a.section}; this command changes one in place, "
+                      "or adds the heading of a section .warrant/claims.json pins and the document lacks")
     if parts[at[0]]["heading"] == want:
         raise Refused(f"the heading of §{a.section} is already {want!r}")
     parts[at[0]] = {"heading": want}
     print(f"document: {author.file_document(parts, a.because, author.at())}")
+
+
+def new_section(parts, section, line, pins):
+    """`parts` with the heading `line` of a new pinned `section` on a line of its own: before the
+    heading of the first later pinned section the document has, else at its end. Its sentences
+    are placed afterwards (add --after SECTION)."""
+    pinned, order = pins.get("headings", {}), pins["sections"]
+    later = set(order[order.index(section) + 1:])
+    j = next((k for k, q in enumerate(parts) if isinstance(q, dict) and "heading" in q
+              and heading_section(q["heading"], pinned) in later), None)
+    if j is not None:
+        return parts[:j] + [{"heading": line}, "\n\n"] + parts[j:]
+    if not (isinstance(parts[-1], str) and parts[-1].endswith("\n")):
+        raise Refused("the document does not end in a line break; a new section's heading cannot follow it")
+    return parts[:-1] + [parts[-1] + "\n", {"heading": line}, "\n"]
 
 
 def cmd_project(repo):

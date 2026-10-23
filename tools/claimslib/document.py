@@ -8,6 +8,7 @@ from .base import GONE, id_key, ID_RE, norm, PREAMBLE, Refused, RESIDUE_OK, sha,
 
 
 HEADING = re.compile(r"^#+ ([0-9]+(?:\.[0-9]+)*)\.? ")
+SECTION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)*\Z")      # a section number (add --after SECTION); \Z, not $
 
 # The document (W5): SPEC.md's parts in order. A literal gap carries layout only, never words.
 DOCUMENT = "warrant-claims/document@1"

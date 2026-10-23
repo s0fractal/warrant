@@ -1,0 +1,1 @@
+No operation signs as an actor other than the configured signer: commit signs only a draft prepared for that signer, with its key, and no request member names another.

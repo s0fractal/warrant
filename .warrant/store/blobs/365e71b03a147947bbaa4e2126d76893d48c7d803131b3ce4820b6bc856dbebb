@@ -1,0 +1,1 @@
+`context` captures the store's records and blobs, the receiver's trust and profile and the provider's module bytes into a frozen view, assesses it once in a worker, and returns its `view_token` with the capsules, the frontier, the unowned questions, the boundary, the delivery and the use decision.

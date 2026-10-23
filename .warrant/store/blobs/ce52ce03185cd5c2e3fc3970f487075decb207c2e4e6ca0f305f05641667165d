@@ -1,0 +1,1 @@
+A foreign checkpoint is continued only by the provider's checked `resume`: verified from the receiver's root, then advanced.

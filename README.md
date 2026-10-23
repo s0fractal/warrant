@@ -162,7 +162,11 @@ must be exactly those, so no sentence can render as a heading and no heading
 inline. A title is still free text that no witness backs, so a
 rule-shaped title is a review matter; the pin makes every change of one a
 reviewed diff. To change a heading: edit its pin, then `tools/claims.py
-heading --section N --because '...'`.
+heading --section N --because '...'`. A new section is the same two steps: pin
+the section and its heading, then `heading --section N` files the heading
+before the next pinned section (at the end if there is none); its first
+sentence is placed with `add --after N` (§10, the agent interface, was added
+this way).
 `.warrant/claims.json` pins which sentences of which sections must be claimed;
 `.warrant/trust.json` holds self-certifying key bindings (below, "The circle of
 witnesses"; seeds stay out of git). **Do not edit SPEC.md**: `check` refuses it (`SPEC_NOT_PROJECTION`). A
@@ -175,7 +179,8 @@ change to a rule is made like this:
      (a BACKED claim that loses its backing also needs a counter blob, below:
      losing a proof needs a proof);
    - a new sentence: `tools/claims.py add --id SPEC-4.2-9 --text '...' --after SPEC-4.2-8`
-     (`--paragraph` to start a new paragraph after it) with `--witness
+     (`--paragraph` to start a new paragraph after it, `--item` a list item;
+     `--after 4.2` places it first under §4.2's heading) with `--witness
      file_test:CASE --mutant MNN`, or `--unbacked-because REASON` for a rule
      nothing backs yet, or `--informative REASON` for a sentence that states no
      rule. The position is filed as a new document version;
@@ -298,8 +303,8 @@ blind, and `audit` skips it (re-backing is its remedy). Every consumer reads the
 status SPEC-CLAIMS.md shows (`standing` in tools/claims.py). A blank line, a
 comment or a docstring is `NOT_A_STATEMENT`; a statement no cited mutant changes
 is `NO_CLAIM`. A mutant that only inserts code before a statement is shown and
-not counted: it changes no existing statement. `why --uncovered [FILE]` lists
-the statements of `warrant/` and `warrant_agent/` (or of FILE) that no cited
+not counted: it changes no existing statement. `why --uncovered [FILE|DIR]` lists
+the statements of `warrant/` and `warrant_agent/` (or of FILE, or of the files under DIR) that no cited
 mutant changes, the functions none of whose statements is covered (largest
 first) and the counts: the map of code that no claim explains, and the input of
 the next re-backing. It reads the files and records as they are; it refuses

@@ -1,0 +1,1 @@
+Draft ids are full hex64 addresses before any path is built, and a draft is readable and committable only in the workspace that prepared it.

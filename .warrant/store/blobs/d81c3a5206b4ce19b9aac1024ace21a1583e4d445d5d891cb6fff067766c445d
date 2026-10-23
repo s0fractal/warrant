@@ -1,0 +1,1 @@
+A draft prepared for one signer is never signed by another: a commit under another configured signer is `SIGNER_CHANGED` and files nothing.

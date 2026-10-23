@@ -1,0 +1,1 @@
+{"because":null,"duty":"85aee979c084c71a3610f510b8ed35f6de4c92a25124aec669617301303cd1d1","id":"SPEC-10-3","kind":"normative","mutants":["A80"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10","source":"SPEC.md","text":"The three front ends take the same request objects and return the same result objects.","witnesses":["agent_mcp_test:M01"]}

@@ -1,0 +1,1 @@
+Inspect stages the package and assesses its union with the receiver's live store in a frozen view, promoting nothing; a package given in one piece is the same inspection as its parts, and its capsules default to the manifest's roots.

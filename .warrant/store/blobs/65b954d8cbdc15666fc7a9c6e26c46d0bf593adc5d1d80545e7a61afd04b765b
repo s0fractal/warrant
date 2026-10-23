@@ -1,0 +1,1 @@
+When the operator changes or removes an expectation handle after an inspection, the current use of that delivery holds with a new decision id, and the historical assessment is not rewritten.

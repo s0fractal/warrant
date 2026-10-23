@@ -1,0 +1,1 @@
+Tool descriptions and schemas are static: nothing read from a record or from evidence becomes a tool, a schema, a configuration or a signer.

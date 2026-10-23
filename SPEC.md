@@ -488,3 +488,241 @@ store. In the Python implementation the refusal is `warrant.limits.LimitExceeded
 `warrant-agent` takes them from the workspace `limits` and answers
 `RESOURCE_LIMIT`. The dependency traversal is iterative: the depth of a valid
 `requires` chain is bounded only by `requires_edges`.
+
+## 10. Agent interface
+
+`warrant-agent/1` is the application interface for handing work between agents
+over the records of §3: one backend, `warrant_agent.api.call`, and three front
+ends over it, the Python API, the `warrant-agent` command and the stdio MCP
+server `warrant-agent-mcp`. Its reference implementation is the package
+`warrant_agent/`, outside `warrant/`: it is not part of the engine's identity,
+and its results carry `adapter_id`, the SHA-256 over its source files, instead.
+
+The three front ends take the same request objects and return the same result
+objects. Every verdict a result shows is the engine's report of the view (§4),
+shown and never recomputed: the interface adds no record type and no rule of
+admission, disposition or reliance.
+
+This section is the interface's contract; `AGENT.md` is the operator's guide to
+it: configuration, front ends and measured costs.
+
+### 10.1 Requests and results
+
+The configuration is the operator's, never a request's: stores, the signer, the
+receiver's trust and profile, expectations, use policies and limits. A request
+names a workspace and an expectation only by the operator's local handles: 1 to
+64 characters of `a-z`, `0-9`, `_`, `.` and `-`, the first a letter or a digit. No
+request member selects a signer, a key, a path or a URL.
+
+Every request is a closed JSON object: a missing required member or an unknown
+member is `BAD_REQUEST`. A request whose `agent_api` is not `warrant-agent/1` is
+`UNSUPPORTED_VERSION`; MCP tools carry no version, and the backend checks it for
+every front end. Every operation answers a result object carrying `agent_api`
+and `adapter_id`, or a typed refusal `{error, message, details?}`; a semantic
+verdict such as CHALLENGED or HOLD is an ordinary result, never a refusal.
+
+Through MCP a typed refusal is a tool error whose text is the refusal's JSON,
+and stdout carries MCP messages only. Every MCP tool takes the request's members
+as flat, typed arguments; an argument left out is left out of the request, so
+the backend's defaults apply. A member left out takes its default from the
+operator's configuration or from the view, never an invented one: the default
+use is the workspace's first configured use, the default actor the configured
+signer's, and an unknown use is `BAD_REQUEST` with the configured uses in
+`details.configured`.
+
+`workspace` shows the operator's configuration by name (workspaces, the signer's
+actor, permitted operations, uses and `default_use`, expectation handles,
+whether a provider is installed and accepted) and an index of at most 50 duties
+and transitions of the store that authenticate under the receiver's trust, as
+untrusted, unassessed data; it never shows a path, a key or a URL. `explain`
+gives the static meaning of a verdict, a reliance state, a delivery relation or
+a refusal code and what it does not establish; every such word a result can
+carry has an entry, and an unknown term lists the known ones.
+
+Evidence and record text is returned as untrusted data (`untrusted_data: true`)
+and changes no configuration and no record. Tool descriptions and schemas are
+static: nothing read from a record or from evidence becomes a tool, a schema, a
+configuration or a signer. Read-only tools are annotated `readOnlyHint`.
+
+### 10.2 Views
+
+`context` captures the store's records and blobs, the receiver's trust and
+profile and the provider's module bytes into a frozen view, assesses it once in
+a worker, and returns its `view_token` with the capsules, the frontier, the
+unowned questions, the boundary, the delivery and the use decision. Every later
+read of a view answers from its stored report and captured bytes, never from the
+live store. A view is assessed with the receiver's own trust and profile. Past
+the workspace's `assess_seconds` there is no report and no view:
+`NO_ASSESSMENT`. The assessment worker reads only a view directory that
+`capture` made.
+
+A view token is 32 lowercase hex digits; it selects a view of its own workspace
+and grants nothing, and a token no view of that workspace has is `VIEW_UNKNOWN`. A
+view lives at least `view_ttl` whole seconds from the moment it is ready;
+afterwards it is `VIEW_EXPIRED`.
+
+A context's `actor` selects whose frontier is read, not who signs, and is an
+actor id (§3), else `BAD_REQUEST`. A target is a duty or a transition of the
+view, named by its id, `{id}` or `{kind, id}`; any other record of the view is
+`BAD_REQUEST` with its type in `details.type`, and an id not in the view is
+`NOT_FOUND`. A context is paged under `context_bytes`; truncation is marked, and
+every cursor is bound to its view, kind and target: any other cursor is
+`CURSOR_MISMATCH`.
+
+`read` returns the captured bytes of one record or blob of a view, chunked under
+`read_bytes`, with their `digest`, whether the chunk is `complete`, and
+`untrusted_data: true`. Without `view_token` a record or blob is read from a new
+frozen view, returned as `view_token`, never from the live store; a context page
+and a cursor need the view that made them.
+
+Each capsule is the engine's (§8) with three members taken from the same report:
+`closures` on a duty, every closure attempt with its verdict and why; `closes`
+on a transition, each item with its duty, the duty's statement and disposition,
+the verdict and why; and `reading`, one line over those fields. A transition's
+own `reliance` is about its results; whether it closes a duty is decided on the
+duty, which `closes` shows.
+
+The boundary counts the view's records that do not authenticate and names up to
+20 of them, each with `claims_to_be` (type, actor and target) only when its
+bytes have a record's shape; other bytes are never read as a record.
+
+### 10.3 Use decision
+
+`use` is the receiver's local policy decision over the assessment: `{name,
+policy, state, reasons, decision_id}`, its state `WITHIN_POLICY` or `HOLD`. A
+target whose reliance the use's policy does not accept, or a delivery relation
+it does not accept, holds the use.
+
+The decision id covers the assessment id, the adapter id, the policy, the
+delivery, the observed time, the incomplete imports and whether a newer local
+event is known: a newer event changes the decision id and holds a `fresh` use,
+and never changes the historical assessment id. When the receiver's trust
+changed after the view was captured, a `fresh` use holds, and so does any use of
+a delivery that rested on an exporter's declaration. When the operator changes
+or removes an expectation handle after an inspection, the current use of that
+delivery holds with a new decision id, and the historical assessment is not
+rewritten. An unfinished import holds the workspace until it completes, or until
+every object its manifest declares is in the live store with the declared bytes;
+the staging directory is not consulted for that set.
+
+### 10.4 Handoff
+
+`handoff` export packages the whole configured store of a view: a manifest of
+every record's envelope digest and every blob with the snapshot digest and
+`completeness: UNATTESTED`, the payload, and a declaration signed by the
+configured signer when there is one. An export root that is not a duty or a
+transition is `BAD_REQUEST`.
+
+A manifest digest supplied by the sender is never an expectation: only a handle
+the receiver configured is, and a delivery inspected without one is `UNPINNED`. Inspect
+stages the package and assesses its union with the receiver's live store in a
+frozen view, promoting nothing; a package given in one piece is the same
+inspection as its parts, and its capsules default to the manifest's roots.
+
+The delivery relation is `CONTENT_MISMATCH` when delivered bytes do not hash to
+their ids, are not the canonical envelope of their id, differ from the
+manifest's envelope digest, or include undeclared objects. It is
+`MISSING_DECLARED_BYTES` when declared objects are missing, and the use holds
+although the partial view may read ELIGIBLE. It is `WRONG_SOURCE` when the
+manifest names another source than the expectation, `WRONG_SET` when it is
+another manifest than the expected one, and `UNVERIFIED_EXPORTER` when no
+declaration by the exporter the expectation names verifies under the receiver's
+trust. `MATCH_EXPECTED_SET` means that the selected set arrived, nothing more:
+`source_completeness` is always UNATTESTED, and a set signed incomplete from the
+start matches an expectation on exactly that set.
+
+Import promotes a staged package only when its relation is one the workspace's
+`import` use accepts, by default `MATCH_EXPECTED_SET`; otherwise it is
+`IMPORT_BLOCKED`. A promotion re-checks the expectation's current definition,
+that an exporter the expectation names still verifies under the receiver's
+current trust, every staged record against the manifest's envelope digest, and,
+for a match, that the staged set is exactly the declared set. Records that do
+not authenticate under the receiver's trust are never promoted: they stay staged
+and the import is `IMPORT_BLOCKED`. Import is add-only: an object already in the
+store with other bytes is `CONFLICT`, and nothing is overwritten. Import is
+journaled and idempotent under its request id: an interrupted import reads
+`STARTED`, and a retry completes it without duplicates.
+
+A transfer beyond `transfer_bytes` is `RESOURCE_LIMIT` on export and on inspect,
+and nothing is staged. Payload ids are content addresses, never paths; a
+duplicate id is `BAD_REQUEST`, and an object under a foreign address is a
+mismatch.
+
+### 10.5 Drafts and commit
+
+`prepare` freezes one exact record whose actor and key come from the
+configuration and whose `at` is fixed by the first durable prepare; nothing is
+signed. The same request id with the same inputs is the same draft, also after a
+restart; with other inputs it is `CONFLICT`. Without `request_id` a draft is
+named by its type and body, so the same body is the same draft.
+
+A transition prepared without `closes` closes nothing (`closes: []`). An invalid
+body is `BAD_REQUEST` with `details.template`, the smallest body of its type. An
+`accept` takes `{transition, item, evidence?, support?}`; without `evidence` it
+is the exact evidence of that item in the view.
+
+`commit` signs and files exactly the draft; a retry after a lost response or a
+restart returns the same record and files nothing new. Prepare and commit extend
+the signer's chain as SPEC-3-26 states: commit is a compare-and-swap on the
+signer's head. A draft prepared for one signer is never signed by another: a
+commit under another configured signer is `SIGNER_CHANGED` and files nothing.
+
+Draft ids are full hex64 addresses before any path is built, and a draft is
+readable and committable only in the workspace that prepared it. A draft's
+status, `PREPARED` or `COMMITTED`, is read by a new request (`read` with `kind:
+draft`) from any server instance, and a cancelled request is not rolled back. Recording
+a challenge is not gated by the use policy.
+
+An operation the operator did not list in the workspace's `operations` is
+`NOT_PERMITTED`. A configured signer is an actor id (§3); a configuration whose
+signer is not one is refused when it loads.
+
+### 10.6 Computation
+
+`compute` runs the installed provider on bytes read once from the receiver's
+store, and new bytes go back into it as blobs. A foreign checkpoint is continued
+only by the provider's checked `resume`: verified from the receiver's root, then
+advanced.
+
+`evaluate` runs term, start and resume in one call under a credit (10 000 by
+default); with `expect_expr`, `same_normal_form` is true only at a NORMAL_FORM
+whose result is that term's input address. Computing credits nothing: `compute`
+files no duty, acceptance or closure, never adds a provider to the profile, and
+reports `provider_accepted_by_profile` as the profile says. A provider stopped
+by the workspace's `provider_seconds` stores nothing, and the refusal is
+`PROVIDER`.
+
+### 10.7 Refusals
+
+The refusal codes are BAD_REQUEST, UNSUPPORTED_VERSION, NOT_PERMITTED,
+UNKNOWN_WORKSPACE, UNKNOWN_EXPECTATION, VIEW_UNKNOWN, VIEW_EXPIRED,
+CURSOR_MISMATCH, NOT_FOUND, CONFLICT, RESOURCE_LIMIT, NO_ASSESSMENT,
+IMPORT_INCOMPLETE, IMPORT_BLOCKED, SIGNER_CHANGED, NO_SIGNER, PROVIDER and
+REFUSED.
+
+- `RESOURCE_LIMIT` for an engine admission limit (§9) carries `details: {limit,
+  value, bound}`; no view is kept and no verdict is produced.
+- `NOT_FOUND`: the id is not in the view or the store, and nothing is fetched
+  from elsewhere.
+- `UNKNOWN_WORKSPACE`, `UNKNOWN_EXPECTATION`: the name is not a handle the
+  operator configured.
+- `NO_SIGNER`: the workspace has no configured signer, so nothing is prepared or
+  committed.
+- `IMPORT_INCOMPLETE`: an object is not in the store with its staged bytes after
+  promotion; the journal stays `STARTED`, and a retry with the same request id
+  completes it.
+- `REFUSED`: the provider refused the input, and nothing is stored.
+
+### 10.8 What the interface does not do
+
+No operation signs as an actor other than the configured signer: commit signs
+only a draft prepared for that signer, with its key, and no request member names
+another. No operation creates a key: every signing key is a file the operator
+configured. No result credits what the receiver did not establish: the source's
+completeness stays UNATTESTED, and evidence is untrusted data. Nothing is
+exposed beyond these operations: no HTTP transport, watcher, scheduler, OAuth,
+shell, package install, merge or release.
+
+On a shared machine this is an application boundary, not OS isolation: an agent
+with a shell on the same keys and configuration is not contained by it, and
+shared custody is not independent custody.
