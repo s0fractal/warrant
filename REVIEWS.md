@@ -15,7 +15,7 @@ duty stays as the records leave it.
 
 | Pull request | State | Heads | Findings | Reproduced | Answered | Merge |
 | --- | --- | --- | --- | --- | --- | --- |
-| #181 | OPEN · awaiting acceptance by codex | 2 | 0 | 0 | 0 | — |
+| #181 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance
 
@@ -26,4 +26,5 @@ None.
 - duty `79b1e5e8a8df` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
   - serves duty `47cdf978c4d3`
 - head 1 `6053aec05788` (tree `0a0159a088ef`), discharge `fda9fd27dc23`: PENDING · awaiting codex; superseded by head 2
-- head 2 `b3276d98eb7b` (tree `af3e3be302c6`), discharge `1af3d582818e`: PENDING · awaiting codex
+- head 2 `b3276d98eb7b` (tree `af3e3be302c6`), discharge `1af3d582818e`: PENDING · awaiting codex; superseded by head 3
+- head 3 `33f123e8a445` (tree `bba000b1efd7`), discharge `64584dbedbd1`: PENDING · awaiting codex
