@@ -310,6 +310,49 @@ first) and the counts: the map of code that no claim explains, and the input of
 the next re-backing. It reads the files and records as they are; it refuses
 nothing in CI.
 
+**The repository's own hunt (G7).** The mutants above are written by hand and
+each guards a rule; `tests/generated_mutants.py` makes mutants nobody chose, to
+find what no witness notices. It applies fixed AST operators to every statement
+of `warrant/`, `warrant_agent/` and `tools/claimslib/`: negate a condition,
+swap a comparison (`<` and `<=`, `==` and `!=`, `in`, `is`), swap `and` and
+`or`, replace a simple statement with `pass`, return `None`, `True` or an empty
+value, flip a boolean, add or subtract 1 from an integer. A mutant's id is a
+hash of its file, scope, the statement's syntax (statement units as `why` reads
+them), the occurrence of that statement in its scope, the operator and the
+operator's site, so an edit elsewhere keeps every id. `coverage` runs each test
+file once, unmutated, under a standard-library line tracer (subprocesses
+included), and refuses the map if a case fails; `run` gives each mutant only
+the test files that execute its statement, cheapest first, and stops at the
+first that notices it. Outcomes: KILLED (by a case, named), CRASHED (a test
+file wrote no results), TIMEOUT, SURVIVED, NOT_RUN (no test executes the
+statement) and INVALID. The controller, shards, merge and tree identity are
+`tests/mutants.py`'s (`run_all` in hunt mode: any outcome is a result, and
+`--merge` recomputes each one from its row instead of requiring KILLED).
+`.github/workflows/survivors.yml` runs it weekly and on demand, in 16 parts, and
+publishes the artifact `survivors`: `survivors.json` keyed by mutant id and
+`report.md`. Compared with the previous run's list on the same branch, BLIND (a
+mutant KILLED or CRASHED before survives now: a witness went blind; a
+TIMEOUT depends on the runner's load and counts for neither side) and NEW (a
+survivor of a statement the previous run did not have) are the signal. It is
+never a check: not on pull requests, not required, and it fails only on its own
+errors, never because something survives; it commits nothing.
+
+A generated mutant is a discovery tool and never backs a claim: `claims.py`
+knows the two curated harnesses only, and refuses a generated id as a claim's
+mutant (`UNKNOWN_MUTANT`). A survivor is closed by a witness case that kills it
+on an assertion and, where a SPEC sentence is concerned, a curated mutant the
+claim cites. A survivor that changes no behaviour is not a blind spot: list it
+in `tests/equivalent_mutants.json` with its reason, in a reviewed change; the
+report then counts it apart, and names an entry some test notices
+(`EQUIVALENT_NOTICED`) or whose id is gone (`EQUIVALENT_STALE`).
+
+```bash
+python3 tests/generated_mutants.py coverage --out MAP.json
+python3 tests/generated_mutants.py run --coverage MAP.json --matrix G.json [--shard K/N] [ID ...]
+python3 tests/generated_mutants.py report G.json --out DIR [--previous OLD/survivors.json]
+python3 tests/generated_mutants.py --selftest
+```
+
 ## The circle of witnesses
 
 Who may sign into this store is not decided by anyone. `.warrant/trust.json` is

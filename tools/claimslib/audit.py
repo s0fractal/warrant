@@ -15,6 +15,7 @@ from .counters import standing
 
 
 MATRIX = "warrant-mutants/matrix@1"
+AUDIT = "warrant-claims/audit@1"
 
 
 def confined(arg):
@@ -204,6 +205,20 @@ def audit(repo, rows):
     return blind, unknown
 
 
+def audit_doc(source, blind, unknown, countered):
+    """The audit as data (--json): each candidate blind spot as a (claim, mutant) pair with its tier
+    and whether its counter would replay, each unknown pair with the witness files not run, and the
+    COUNTERED claims not audited. A later run compares pairs by (claim, mutant): the scheduled
+    hunt (tests/generated_mutants.py report --audit) names the pairs that are new since its last list."""
+    return {"format": AUDIT, "source": source,
+            "blind": [{"claim": b["claim"], "mutant": b["mutant"], "tier": b["tier"], "confined": b["confined"],
+                       "fails": b["fails"], "what": b["what"]}
+                      for b in sorted(blind, key=lambda b: (id_key(b["claim"]), b["mutant"]))],
+            "unknown": [{"claim": u["claim"], "mutant": u["mutant"], "not_run": u["not_run"]}
+                        for u in sorted(unknown, key=lambda u: (id_key(u["claim"]), u["mutant"]))],
+            "countered": sorted(countered, key=id_key)}
+
+
 def cmd_audit(repo, a):
     rows, problems = load_matrices(repo, [confined(m) for m in a.matrix])
     for code, detail in problems:
@@ -234,4 +249,7 @@ def cmd_audit(repo, a):
           f"{len(ok)} admissible as counters (confined) in {len({b['claim'] for b in ok})} claims; tier line {len(line)} "
           f"in {len({b['claim'] for b in line})} claims, tier function {len(blind) - len(line)}; "
           f"{len(unknown)} unknown (witness file not run)")
+    if a.json:
+        doc = audit_doc(_harness(repo, "mutants.py").source_digest(repo.root), blind, unknown, low)
+        confined(a.json).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     return 1 if a.refuse and blind else 0

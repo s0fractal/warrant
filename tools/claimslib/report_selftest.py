@@ -16,7 +16,7 @@ from .repo import Repo
 from .model import Model
 from .counters import _replay_counter, STATEMENT_REFUSAL
 from .author import Author
-from .audit import _harness, _mutant_patch, audit, confined, load_matrices, MATRIX
+from .audit import _harness, _mutant_patch, audit, audit_doc, confined, load_matrices, MATRIX
 from .why import _mid_key, CLAIMED, NO_CLAIM, NOT_A_STATEMENT, UNCOVERED_ROOTS, Why
 
 
@@ -162,6 +162,9 @@ def _audit_e2e(fix, work, key):
             and "records_test:A7" in hit[0]["fails"], (run.stdout[-300:], probs, why)),
            ("audit e2e: the pre-review SPEC-4.1-5 is blind to M116, not confined, and its counter is refused per statement",
             bool(hit5) and not hit5[0]["confined"] and bool(why5) and STATEMENT_REFUSAL in why5, (hit5[:1], why5))]
+    pairs = [(x["claim"], x["mutant"], x["confined"]) for x in audit_doc("tree:x", blind, [], {})["blind"]]
+    out.append(("audit e2e: --json names each candidate as a (claim, mutant) pair with its confinement",
+                (s338, "M278", True) in pairs and (s415, "M116", False) in pairs, pairs[:4]))
     au.claim(n.id, n.doc["text"], ["contract_test:X1", "records_test:A6", "records_test:A7"], ["M05", "M06", "M241"],
              because="selftest: A7 cited, M278 still not", previous=now[s338])
     blind, _ = audit(r, rows)

@@ -26,6 +26,7 @@ KILLED only when a target case fails. A mutant that fails other cases only is
 OFF_TARGET, one that fails nothing SURVIVED, one whose test run produced no
 results CRASH, one whose text is not found exactly once BAD_MUTANT. Only KILLED
 counts; the exit status is 0 only if every mutant is KILLED."""
+import collections
 import json
 import os
 import shutil
@@ -1473,14 +1474,19 @@ COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "ass
         "why_test": 1.3, "store_index_test": 1.3, "shapes_test": 0.1, "replay_test": 4.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor
 
 
-def shards(mutants, n):
-    """`mutants` in n parts, a function of the ids, their test files and COST only: the
-    costliest first (ties in list order), each to the part with the least cost so far (ties to
-    the lowest part). Each part keeps the list order. Every mutant is in exactly one part."""
+def _cost(m):
+    return COST.get(m[4], 1.0) + 0.5
+
+
+def shards(mutants, n, cost=_cost):
+    """`mutants` in n parts, a function of the ids, their test files and the cost (COST, or a
+    hunt's) only: the costliest first (ties in list order), each to the part with the least cost
+    so far (ties to the lowest part). Each part keeps the list order. Every mutant is in exactly
+    one part."""
     load, parts = [0.0] * n, [[] for _ in range(n)]
-    for i, m in sorted(enumerate(mutants), key=lambda x: (-(COST.get(x[1][4], 1.0) + 0.5), x[0])):
+    for i, m in sorted(enumerate(mutants), key=lambda x: (-cost(x[1]), x[0])):
         k = min(range(n), key=lambda j: (load[j], j))
-        load[k] += COST.get(m[4], 1.0) + 0.5
+        load[k] += cost(m)
         parts[k].append(i)
     return [[mutants[i] for i in sorted(p)] for p in parts]
 
@@ -1517,7 +1523,15 @@ def baseline_red(chosen, runner, jobs):
     return red
 
 
-def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT):
+# How run_all and merge treat mutants that look for blind spots instead of guarding a rule
+# (tests/generated_mutants.py): judge(row, m) recomputes a row's outcome from its runs, cost(m)
+# balances the shards, baseline(chosen) gives the red files as baseline_red does, from a run made
+# before (no runner call). Any outcome is a result: the exit status says the run happened, and
+# merge checks each row against judge() instead of requiring KILLED.
+Hunt = collections.namedtuple("Hunt", "judge cost baseline")
+
+
+def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT, hunt=None):
     """Run `mutants` in parallel (--jobs N in argv, default: the CPU count): each one already
     works in its own copy of the package and its own results file, so nothing is shared.
     Output keeps the given order; ids in argv select mutants. The 2026-10-21 CI run with 89
@@ -1526,15 +1540,20 @@ def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT):
     BASELINE_RED (exit 2). With --matrix the source identity (source_digest) is taken before the
     first run and again before writing: a tree that changed meanwhile, or has no identity, gets
     no matrix (exit 2). Exit 0 only when at least one mutant ran and every one was KILLED;
-    a bad option or id exits 2 (SystemExit from argparse). --merge: see merge()."""
+    a bad option or id exits 2 (SystemExit from argparse). --merge: see merge(). With a `hunt`
+    (Hunt) the baseline and the shard costs are the hunt's, --matrix-tests is refused, and the
+    exit status is 0 once every chosen mutant has an outcome, whichever it is."""
     import concurrent.futures
     if argv[:1] == ["--merge"]:
-        return merge(mutants, label, argv[1:], prog, root=root)
+        return merge(mutants, label, argv[1:], prog, root=root, hunt=hunt)
     ns = parse_args(argv, [m[0] for m in mutants], prog)
+    if hunt and ns.matrix_tests != "own":
+        print(f"{label}: --matrix-tests is not an option of a hunt: each mutant runs the test files that execute it")
+        return 2
     pick = set(ns.ids)
     chosen = [m for m in mutants if not pick or m[0] in pick]
     if ns.shard:
-        chosen = shards(mutants, ns.shard[1])[ns.shard[0] - 1]
+        chosen = shards(mutants, ns.shard[1], *([hunt.cost] if hunt else []))[ns.shard[0] - 1]
         label = f"{label} shard {ns.shard[0]}/{ns.shard[1]}"
     if not chosen:
         print(f"{label}: no mutants selected; nothing was checked")
@@ -1546,7 +1565,7 @@ def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT):
         except SourceUnknown as e:
             print(f"{label}: SOURCE_UNKNOWN, no matrix can name what it ran: {e}")
             return 2
-    red = baseline_red(chosen, runner, ns.jobs)
+    red = hunt.baseline(chosen) if hunt else baseline_red(chosen, runner, ns.jobs)
     for test, env, failing, ids in red:
         where = f"{test}" + (f" (with {env}/)" if env else "")
         what = "gave no results" if failing is None else f"fails {','.join(failing)}"
@@ -1555,16 +1574,22 @@ def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT):
         print(f"{label}: BASELINE_RED, no mutant was run: a target case that fails without a mutant "
               "would read as a kill")
         return 2
-    killed, rows = 0, {}
+    killed, rows, tally = 0, {}, {}
     call = (lambda m: runner(*m, also=ns.also)) if ns.matrix else (lambda m: runner(*m))
     with concurrent.futures.ThreadPoolExecutor(max_workers=ns.jobs) as pool:
         for m, got in zip(chosen, pool.map(call, chosen)):
             outcome, detail = got[0], got[1]
             killed += outcome == "KILLED"
+            tally[outcome] = tally.get(outcome, 0) + 1
             print(f"{outcome:<11} {m[0]} {m[1]}: {m[2]}  [{detail}]", flush=True)
             rows[m[0]] = {"definition": mutant_digest(m), "file": m[1], "what": m[2], "test": m[4],
                           "targets": list(m[5]), "outcome": outcome, "runs": got[2] if len(got) > 2 else {}}
-    print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={ns.jobs})")
+            if hunt:
+                rows[m[0]]["detail"] = detail
+    if hunt:
+        print(f"{label}: {len(chosen)} run: " + ", ".join(f"{k} {v}" for k, v in sorted(tally.items())) + f" (jobs={ns.jobs})")
+    else:
+        print(f"{label}: {killed}/{len(chosen)} killed on target (jobs={ns.jobs})")
     if ns.matrix:
         after = source_digest(root)
         if after != before:
@@ -1577,17 +1602,19 @@ def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT):
             doc["shard"] = list(ns.shard)
         Path(ns.matrix).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
         print(f"{label}: matrix of {len(rows)} mutants ({ns.matrix_tests}) written to {ns.matrix}")
-    return 0 if killed == len(chosen) else 1
+    return 0 if hunt or killed == len(chosen) else 1
 
 
-def merge(mutants, label, argv, prog, root=ROOT):
+def merge(mutants, label, argv, prog, root=ROOT, hunt=None):
     """--merge OUT PART.json ...: the matrices of the parts of one run (--shard K/N --matrix),
     checked against this checkout and joined into one matrix OUT as an unsharded run writes it.
     Refused (exit 1, OUT not written) unless every file is a matrix of this harness over these
     sources with one --matrix-tests, no id is in two files, no id is outside the list, every id of
     the list is in one, every row is the current definition of its mutant, and every outcome is
     KILLED as verdict() recomputes it from the row's own runs. So OUT means: every mutant of the
-    list was run once and killed on its target; which part ran it is not part of the claim."""
+    list was run once and killed on its target; which part ran it is not part of the claim.
+    With a `hunt` the last condition is that every row's outcome is the one hunt.judge recomputes
+    from it, whatever it is: OUT means every mutant was run once, and says what each gave."""
     if len(argv) < 2:
         print(f"usage: {prog}.py --merge OUT PART.json [PART.json ...]", file=sys.stderr)
         return 2
@@ -1623,6 +1650,12 @@ def merge(mutants, label, argv, prog, root=ROOT):
                 continue
             if row.get("definition") != mutant_digest(m):
                 problems.append(("SHARD_STALE", f"{f}: {mid} is not the current definition"))
+            if hunt:
+                got = hunt.judge(row, m)
+                if row.get("outcome") != got:
+                    problems.append(("SHARD_OUTCOME", f"{f}: {mid} is {row.get('outcome')}, its runs give {got}"))
+                rows[mid] = row
+                continue
             got = verdict(row.get("runs") or {}, m[4], m[5])[0]
             if row.get("outcome") != "KILLED" or got != "KILLED":
                 problems.append(("SHARD_NOT_KILLED", f"{f}: {mid} is {row.get('outcome')}, its runs give {got}"))
@@ -1637,6 +1670,10 @@ def merge(mutants, label, argv, prog, root=ROOT):
         return 1
     doc = {"matrix": MATRIX, "harness": prog, "tests": docs[0][1]["tests"], "source": src, "mutants": rows}
     Path(out).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+    if hunt:
+        print(f"{label} MERGE: {len(rows)}/{len(mutants)} mutants, each run once in one of {len(docs)} files, "
+              f"each outcome recomputed from its runs; matrix written to {out}")
+        return 0
     print(f"{label} MERGE: {len(rows)}/{len(mutants)} mutants, each run once in one of {len(docs)} files and "
           f"killed on target; matrix written to {out}")
     return 0
@@ -1995,6 +2032,71 @@ def selftest():
         ("--merge refuses a row of another definition", merged(["s1.json", "s2.json", "s3.json"], tamper=redefine) == (1, None)),
         ("--merge refuses a part over other sources", merged(["s1.json", "s2.json", "s3.json"], tamper=resource) == (1, None)),
         ("--merge refuses the parts for another harness", merged(["s1.json", "s2.json", "s3.json"], prog="agent_mutants") == (1, None)),
+    ]
+    # A hunt (tests/generated_mutants.py): any outcome is a result, the baseline and the costs are
+    # the hunt's, and merge recomputes each row's outcome from its runs instead of requiring KILLED.
+    hunted = []
+
+    def hunt_runner(*m, also=()):
+        hunted.append(m[0])
+        o = "KILLED" if m[0] in ("F1", "F4") else "SURVIVED"
+        return o, "why", {m[4]: {"c": "FAIL" if o == "KILLED" else "PASS"}}
+
+    def hunt_judge(row, m):
+        return "KILLED" if any(v == "FAIL" for r in (row.get("runs") or {}).values() for v in (r or {}).values()) \
+            else "SURVIVED"
+    green_hunt = Hunt(judge=hunt_judge, cost=lambda m: 9.0 if m[4] == "u" else 1.0, baseline=lambda chosen: [])
+    red_hunt = green_hunt._replace(baseline=lambda chosen: [("t", "", ["c"], [m[0] for m in chosen])])
+
+    def hrun(argv, hunt=green_hunt):
+        hunted.clear()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                rc = run_all(many, "SELFTEST", argv, hunt_runner, hunt=hunt) if argv[:1] != ["--merge"] else \
+                    run_all(many, "SELFTEST", argv, None, hunt=hunt)
+            except SystemExit as e:
+                rc = e.code
+        return rc, sorted(hunted)
+    hparts = shards(many, 3, green_hunt.cost)
+    checks += [
+        ("a hunt with survivors exits 0 once every mutant ran", hrun(["--jobs", "2"]) == (0, sorted(m[0] for m in many))),
+        ("a hunt's red baseline refuses the run before any mutant", hrun([], hunt=red_hunt) == (2, [])),
+        ("a hunt takes no --matrix-tests", hrun(["--matrix", str(sd / "h.json"), "--matrix-tests", "all"]) == (2, [])),
+        ("a hunt's shards balance the hunt's cost",
+         max(sum(m[4] == "u" for m in p) for p in hparts) - min(sum(m[4] == "u" for m in p) for p in hparts) <= 1
+         and hparts != parts),
+    ]
+    ran = [hrun(["--shard", f"{k}/3", "--matrix", str(sd / f"h{k}.json")])[1] for k in (1, 2, 3)]
+    checks.append(("a hunt's --shard K/N runs part K of the hunt's partition",
+                   ran == [sorted(m[0] for m in p) for p in hparts]))
+    hdoc = json.loads((sd / "h1.json").read_text()) if (sd / "h1.json").is_file() else {}
+    hfiles = [str(sd / f"h{k}.json") for k in (1, 2, 3)]
+
+    def hmerged(tamper=None, hunt=green_hunt):
+        files = list(hfiles)
+        if tamper:
+            d = json.loads(Path(files[0]).read_text())
+            tamper(d)
+            (sd / "hx.json").write_text(json.dumps(d))
+            files[0] = str(sd / "hx.json")
+        (sd / "hm.json").unlink(missing_ok=True)
+        rc = hrun(["--merge", str(sd / "hm.json"), *files], hunt=hunt)[0] if hunt else \
+            run(["--merge", str(sd / "hm.json"), *files], killed, mutants=many)[0]
+        return rc, json.loads((sd / "hm.json").read_text()) if (sd / "hm.json").is_file() else None
+
+    def promote(d):
+        mid = next(i for i, r in sorted(d["mutants"].items()) if r["outcome"] == "SURVIVED")
+        d["mutants"][mid]["outcome"] = "KILLED"
+    rc_h, doc_h = hmerged()
+    checks += [
+        ("a hunt's rows keep the runner's detail", all(r.get("detail") == "why" for r in hdoc.get("mutants", {}).values())
+         and hdoc.get("shard") == [1, 3]),
+        ("a hunt's merge accepts survivors: every mutant ran once, each outcome recomputed",
+         rc_h == 0 and sorted(doc_h["mutants"]) == sorted(m[0] for m in many)
+         and {r["outcome"] for r in doc_h["mutants"].values()} == {"KILLED", "SURVIVED"}),
+        ("a hunt's merge refuses an outcome its runs do not give", hmerged(tamper=promote) == (1, None)),
+        ("a hunt's merge refuses a part without one of its ids", hmerged(tamper=drop) == (1, None)),
+        ("a hunt's parts are no gate: merged without the hunt they are refused", hmerged(hunt=None) == (1, None)),
     ]
     shutil.rmtree(sd, ignore_errors=True)
     # the real runner: an unmutated copy of a cheap test file reports its cases, all PASS

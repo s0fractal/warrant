@@ -17,7 +17,9 @@ from agent_world import R, api, check, finish, reviewed_work, world
 
 # The modules of the tree under test (WARRANT_IMPL for mutants), run as the console scripts run them.
 IMPL = os.environ.get("WARRANT_IMPL") or str(Path(__file__).resolve().parents[1])
-ENV = dict(os.environ, PYTHONPATH=IMPL)
+# IMPL first; a PYTHONPATH the run already has stays after it (the line tracer of
+# tests/generated_mutants.py coverage reaches the server through it).
+ENV = dict(os.environ, PYTHONPATH=os.pathsep.join([IMPL] + ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])))
 SERVER, SERVER_ARGS = sys.executable, ["-m", "warrant_agent.mcp_server"]
 CLI = [sys.executable, "-m", "warrant_agent.cli"]
 
