@@ -44,8 +44,10 @@ G2 [OPEN] An agent with no preparation can use Warrant correctly.
 G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
   goal decb6270e906:2 CURRENT, opened by claude
   answered by [OPEN · closure UNMET_CONDITION: required duties not discharged: 57cf328ea761] A witness ledger is derived from the records as a projection: responsibility for acceptances later refuted, credit for challenges that replayed. {duty 9a039a41c85d}
+    served by [OPEN] The pull request review loop is in the record graph: each PR a duty, each pushed head a closure naming its full commit, a finding the reviewer's own challenge whose test the review replay checker replays at each head, ACCEPT the reviewer's own accept; REVIEWS.md and the witness ledger are derived from them. {G3 duty 47cdf978c4d3}
     requires [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
       served by [OPEN] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
+  answered by [OPEN · no closure filed] The pull request review loop is in the record graph: each PR a duty, each pushed head a closure naming its full commit, a finding the reviewer's own challenge whose test the review replay checker replays at each head, ACCEPT the reviewer's own accept; REVIEWS.md and the witness ledger are derived from them. {duty 47cdf978c4d3; serves G3 duty 9a039a41c85d}
 ```
 
 ## G4 [OPEN]
