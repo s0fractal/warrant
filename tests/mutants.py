@@ -1025,7 +1025,7 @@ def _visit(view, did, report, done, busy):
     ("M371", "../tools/claimslib/views.py", "any BACKED supersession counts as a re-back",
      [("        if n.backed and prev and prev[\"transition\"] in countered:", "        if n.backed and prev:")], "circle_test", ["W7"]),
     ("M372", "../tools/claimslib/views.py", "WITNESSES.md swaps the lowering-now and downgrade columns",
-     [("f\"| {len(row['now'])} | {len(row['downgrade'])} | {len(row['rebacks'])} |\")", "f\"| {len(row['downgrade'])} | {len(row['now'])} | {len(row['rebacks'])} |\")")], "circle_test", ["W8"]),
+     [("f\"| {len(row['now'])} | {len(row['downgrade'])} | {len(row['rebacks'])} \"", "f\"| {len(row['downgrade'])} | {len(row['now'])} | {len(row['rebacks'])} \"")], "circle_test", ["W8"]),
     ("M373", "../tools/claimslib/check.py", "WITNESSES.md is compared as text: read_text() turns \\r\\n into \\n",
      [("    elif repo.witnesses.read_bytes() != render_witnesses(repo, model, table).encode():", "    elif repo.witnesses.read_text() != render_witnesses(repo, model, table):")], "circle_test", ["W9"]),
     # AMEND 1 of #170: a name the configuration gives a role is pinned in .warrant/roles.json, not first-come.

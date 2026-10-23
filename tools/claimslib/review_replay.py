@@ -48,7 +48,7 @@ CASE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 PATCH_PATH = re.compile(r"[ab]/tests/\w[\w./-]*\Z", re.ASCII)            # ASCII: \w is [A-Za-z0-9_]
 RENAME = ("rename from ", "rename to ", "copy from ", "copy to ")           # their path has no a/ or b/
 # A symlink (120000) or submodule (160000) mode on a file mode line or an index line.
-LINK_MODE = re.compile(r"(?:(?:new |deleted )?(?:file )?|old )mode 1[26]0000\b|(?:index \S+ 1[26]0000\Z)")
+LINK_MODE = re.compile(r"(?:(?:(?:new |deleted )?(?:file )?|old )mode 1[26]0000\b|index \S+ 1[26]0000\Z)")
 TIMEOUT = 900
 
 
