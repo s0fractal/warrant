@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 343 · backed 268 · countered 0 · unbacked 18 · informative 57 · retired 0 · records 1481 · blobs 1292
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 344 · backed 269 · countered 0 · unbacked 18 · informative 57 · retired 0 · records 1485 · blobs 1296
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -313,6 +313,7 @@ lowers its backing: it counts as backed no longer.
 | SPEC-10.2-13 | Each capsule is the engine's (§8) with three members taken from the same report: `closures` on a duty, every closure attempt with its verdict and why; `closes` on a transition, each item with its duty, the duty's statement and disposition, the verdict and why; and `reading`, one line over those fields. | agent_compute_test S11; agent_mcp_test M08 | A43 A44 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `7ba8b5f2c547` |
 | SPEC-10.2-14 | A transition's own `reliance` is about its results; whether it closes a duty is decided on the duty, which `closes` shows. | — | — | INFORMATIVE: how to read SPEC-10.2-13's `closes` against §4.4; adds no rule | — (no duty) | `c90c801a11ef` |
 | SPEC-10.2-15 | The boundary counts the view's records that do not authenticate and names up to 20 of them, each with `claims_to_be` (type, actor and target) only when its bytes have a record's shape; other bytes are never read as a record. | agent_mcp_test M11 M15 | A48 A54 A56 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `d019d02e3689` |
+| SPEC-10.2-16 | With `scope`, a context's questions are every question of that scope in the view, owned or not, each with the engine's `owned` and `taken_by`, and they come before the frontier. | agent_repo_test Q03 | A101 A102 A103 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `5cfa32d20ed3` |
 | SPEC-10.3-1 | `use` is the receiver's local policy decision over the assessment: `{name, policy, state, reasons, decision_id}`, its state `WITHIN_POLICY` or `HOLD`. | agent_handoff_test H01 H03 | A82 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `23116f59266f` |
 | SPEC-10.3-2 | A target whose reliance the use's policy does not accept, or a delivery relation it does not accept, holds the use. | agent_handoff_test H01 H02 | A82 A83 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `343f06446415` |
 | SPEC-10.3-3 | The decision id covers the assessment id, the adapter id, the policy, the delivery, the observed time, the incomplete imports and whether a newer local event is known: a newer event changes the decision id and holds a `fresh` use, and never changes the historical assessment id. | agent_handoff_test V01 V06 | A08 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `82855dca181e` |
@@ -410,7 +411,7 @@ None.
 
 ## Document
 
-SPEC.md is rendered from document version `c2f31c6b44c2` (750 parts). Its headings
+SPEC.md is rendered from document version `68e6d7c12063` (752 parts). Its headings
 are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold
 only those lines, once each, in order and each on its own line; the rendered SPEC.md must show
 exactly those headings. A title is free text that no witness backs, so a

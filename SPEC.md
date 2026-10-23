@@ -568,12 +568,14 @@ view lives at least `view_ttl` whole seconds from the moment it is ready;
 afterwards it is `VIEW_EXPIRED`.
 
 A context's `actor` selects whose frontier is read, not who signs, and is an
-actor id (§3), else `BAD_REQUEST`. A target is a duty or a transition of the
-view, named by its id, `{id}` or `{kind, id}`; any other record of the view is
-`BAD_REQUEST` with its type in `details.type`, and an id not in the view is
-`NOT_FOUND`. A context is paged under `context_bytes`; truncation is marked, and
-every cursor is bound to its view, kind and target: any other cursor is
-`CURSOR_MISMATCH`.
+actor id (§3), else `BAD_REQUEST`. With `scope`, a context's questions are every
+question of that scope in the view, owned or not, each with the engine's `owned`
+and `taken_by`, and they come before the frontier. A target is a duty or a
+transition of the view, named by its id, `{id}` or `{kind, id}`; any other
+record of the view is `BAD_REQUEST` with its type in `details.type`, and an id
+not in the view is `NOT_FOUND`. A context is paged under `context_bytes`;
+truncation is marked, and every cursor is bound to its view, kind and target:
+any other cursor is `CURSOR_MISMATCH`.
 
 `read` returns the captured bytes of one record or blob of a view, chunked under
 `read_bytes`, with their `digest`, whether the chunk is `complete`, and
