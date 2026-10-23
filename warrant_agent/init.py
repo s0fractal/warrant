@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from warrant import bindings as B
@@ -42,6 +43,7 @@ ROADMAP = "warrant-roadmap/config@1"
 DOT = ".warrant"
 TRUST, ROLES_FILE, ROADMAP_FILE = "trust.json", "roles.json", "roadmap.json"
 FILES = tuple(f"{DOT}/{f}" for f in (TRUST, ROLES_FILE, ROADMAP_FILE))
+ROOTS = (Path.home(),)          # where init reads and writes: the operator's home directory
 
 
 class Refused(Exception):
@@ -60,14 +62,15 @@ def _inside(path, root):
     return path == root or root in path.parents
 
 
-def _confined(arg, what):
-    """The real path of a command-line path `arg` if it lies in the operator's home directory, else refused:
-    init reads and writes only there."""
-    base = os.path.realpath(Path.home())
+def _confined(arg, what, roots=None):
+    """The real path of a command-line path `arg` if it lies under one of `roots` (the operator's home
+    directory), else refused: init reads and writes only there."""
     real = os.path.realpath(arg)
-    if os.path.commonpath([real, base]) == base:
-        return Path(real)
-    raise Refused("INIT_OUTSIDE_HOME", f"{what} {real} is outside the operator's home directory {base}")
+    for root in roots or ROOTS:
+        base = os.path.realpath(root)
+        if os.path.commonpath([real, base]) == base:
+            return Path(real)
+    raise Refused("INIT_OUTSIDE_HOME", f"{what} {real} is outside the operator's home directory")
 
 
 def _json(path, code):
@@ -150,8 +153,9 @@ def init(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     (ws_state / "profile.json").write_text(json.dumps(profile, sort_keys=True) + "\n")
     Config(doc)                                 # the configuration loads, or nothing is written for it
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_name(out.name + f".tmp{os.getpid()}")
-    tmp.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+    fd, tmp = tempfile.mkstemp(dir=out.parent)     # beside the configuration, so the replace is atomic
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     os.replace(tmp, out)
     return summary
 

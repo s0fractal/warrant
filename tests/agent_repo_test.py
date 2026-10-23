@@ -92,12 +92,12 @@ class Fixture:
     @contextlib.contextmanager
     def home(self):
         """The operator's home directory is this fixture's base while init runs (init confines its paths there)."""
-        real = Path.home
-        Path.home = classmethod(lambda cls: self.base)
+        real = I.ROOTS
+        I.ROOTS = (self.base,)
         try:
             yield
         finally:
-            Path.home = real
+            I.ROOTS = real
 
     def refusal(self, **kw):
         """The code of init's refusal, or None; and whether anything was written outside the seeds."""
