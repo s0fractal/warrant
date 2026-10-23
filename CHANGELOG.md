@@ -38,6 +38,21 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### The agent interface under the spec: SPEC §10 (G2)
+
+- **[protocol]** SPEC.md §10 "Agent interface" states the contract of warrant-agent/1 (requests
+  and results, views, the use decision, handoff, drafts and commit, computation, refusals, what the
+  interface does not do) as 86 claims in the same records and document as §1–§9: 67 BACKED by
+  `tests/agent_*_test.py` cases and agent mutants killed on them, 12 UNBACKED with their reasons,
+  7 informative. AGENT.md is now the operator's guide to it. No record type, rule or verdict changed.
+- Fixed: `explain` had no entry for four refusal codes (UNSUPPORTED_VERSION, CURSOR_MISMATCH,
+  NO_ASSESSMENT, IMPORT_INCOMPLETE); M16 holds every code, relation and reliance state to it.
+- New witnesses: H17 (WRONG_SOURCE and UNVERIFIED_EXPORTER had none), W13 (an accept's default
+  evidence), M16; agent mutants A61–A64, A66–A86.
+- `tools/claims.py`: `heading --section N` adds a newly pinned section, `add --after N` places a
+  sentence first in its section, `add --item` a list item; `why --uncovered DIR`. A G2 obligation
+  serves the §10 claim duties, so `why warrant_agent/FILE:LINE` reaches G2.
+
 ### MCP first contact: measured, improved, re-measured; distribution `warrant-graph`
 
 - `examples/mcp-first-contact/`: three problem-first tasks (a claimed computation with one wrong
