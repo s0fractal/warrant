@@ -77,7 +77,7 @@ TEMPLATES = {
 }
 
 
-BLOB_REF = re.compile(r"^blob:(0|[1-9][0-9]{0,3})\Z")       # \Z: `$` admits a trailing newline
+BLOB_REF = re.compile(r"^blob:(0|[1-9]\d{0,3})\Z", re.ASCII)    # \Z: `$` admits a trailing newline; ASCII: \d is 0-9
 
 
 def _evidence_lists(rtype, body):
@@ -120,14 +120,19 @@ def _with_blobs(ws, rtype, body, blobs):
     return body, ids
 
 
+def _inputs(ws, rtype, body, blobs):
+    """(what the request gave, the body with its blobs cited by id, the blob ids)."""
+    given = {"type": rtype, "body": body, **({"blobs": blobs} if blobs is not None else {})}
+    if blobs is None:
+        return given, body, []
+    return (given, *_with_blobs(ws, rtype, body, blobs))
+
+
 def prepare(ws, based_on, request_id, rtype, body, blobs=None):
     ws.permit("prepare")
     need(isinstance(rtype, str) and rtype in R.TYPES, "BAD_REQUEST", f"type is one of {list(R.TYPES)}")
     need(isinstance(body, dict), "BAD_REQUEST", "body is an object", template=TEMPLATES[rtype])
-    given = {"type": rtype, "body": body, **({"blobs": blobs} if blobs is not None else {})}
-    blob_ids = []
-    if blobs is not None:
-        body, blob_ids = _with_blobs(ws, rtype, body, blobs)
+    given, body, blob_ids = _inputs(ws, rtype, body, blobs)
     if rtype == "transition" and "closes" not in body:
         body = dict(body, closes=[], **({} if "evidence" in body else {"evidence": []}))
     if request_id is None:
@@ -155,7 +160,7 @@ def prepare(ws, based_on, request_id, rtype, body, blobs=None):
     except R.Invalid as e:
         raise AgentError("BAD_REQUEST", f"invalid {rtype}: {e}", template=TEMPLATES[rtype]) from None
     rid = R.record_id(rec)
-    preview = {"type": rtype, "shape": "valid", **({"blobs": blob_ids} if blobs is not None else {})}
+    preview = {"type": rtype, "shape": "valid"}
     if rtype == "accept":
         t = report["results"].get(full["transition"])
         preview.update(accepts={"transition": full["transition"], "item": full["item"], "evidence": full["evidence"]},
@@ -163,8 +168,8 @@ def prepare(ws, based_on, request_id, rtype, body, blobs=None):
     d = {"draft_id": draft_id, "request_id": request_id, "workspace": ws.name, "inputs": inputs, "actor": actor,
          "key": key.id, "at": rec["at"], "record": rec, "record_id": rid,
          "basis_assessment_id": report["assessment_id"], "preview": preview, "status": "PREPARED"}
-    if blobs is not None:
-        d["blobs"] = blobs
+    if blobs is not None:                       # stored at commit, under the ids the record cites
+        d["blobs"], preview["blobs"] = blobs, blob_ids
     views.write_json(path, d)
     return d
 

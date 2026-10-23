@@ -12,7 +12,8 @@ read again for every view; its profile counts results acceptances by the
 and it is refused unless its key is exactly the key `.warrant/roles.json` pins for ACTOR and
 `.warrant/trust.json` admits that binding: no key is created, copied or bound here (SPEC
 §10.8; `tools/claims.py keygen`, `pin` and `bind` are the operator's commands). The state
-directory, the configuration and the seed lie outside the repository. Nothing is written
+directory, the configuration and the seed lie outside the repository and, with the repository, in the
+operator's directory ($WARRANT_AGENT_HOME, else the home directory). Nothing is written
 before every check has passed; nothing of the repository is run, only its JSON files read.
 A refusal prints `REFUSED <CODE> <detail>` on stderr and exits 2."""
 import argparse
@@ -31,14 +32,17 @@ from . import AGENT_API
 from .config import HANDLE, OPERATIONS, Config, repository_trust
 from .errors import AgentError
 
-CODES = ("INIT_ACTOR_SHAPE", "INIT_NOT_A_REPOSITORY", "INIT_INSIDE_REPOSITORY", "INIT_OPERATIONS",
+CODES = ("INIT_ACTOR_SHAPE", "INIT_NOT_A_REPOSITORY", "INIT_INSIDE_REPOSITORY", "INIT_OUTSIDE_HOME", "INIT_OPERATIONS",
          "INIT_WORKSPACE_NAME", "INIT_CONFIG_EXISTS", "INIT_NO_SEED", "INIT_SEED_SHAPE", "INIT_TRUST_SHAPE",
          "INIT_ACTOR_NOT_PINNED", "INIT_KEY_NOT_PINNED", "INIT_NOT_ADMITTED", "INIT_ROADMAP_SHAPE")
 DEFAULT_OPERATIONS = ("context", "read", "prepare", "commit")
 USE = "continue"
 USES = {USE: {"delivery": ["LOCAL_CAPTURE", "MATCH_EXPECTED_SET"], "reliance": ["ELIGIBLE"], "fresh": True}}
 ROADMAP = "warrant-roadmap/config@1"
-FILES = (".warrant/trust.json", ".warrant/roles.json", ".warrant/roadmap.json")
+DOT = ".warrant"
+TRUST, ROLES_FILE, ROADMAP_FILE = "trust.json", "roles.json", "roadmap.json"
+FILES = tuple(f"{DOT}/{f}" for f in (TRUST, ROLES_FILE, ROADMAP_FILE))
+HOME = "WARRANT_AGENT_HOME"     # the operator's directory (default: the home directory)
 
 
 class Refused(Exception):
@@ -57,6 +61,15 @@ def _inside(path, root):
     return path == root or root in path.parents
 
 
+def _confined(arg, home, what):
+    """The real path of a command-line path `arg` if it lies in the operator's directory `home`, else refused:
+    init writes and reads only there."""
+    real, base = os.path.realpath(arg), os.path.realpath(home)
+    _refuse(os.path.commonpath([real, base]) == base, "INIT_OUTSIDE_HOME",
+            f"{what} {real} is outside the operator's directory {base} (${HOME}, else the home directory)")
+    return Path(real)
+
+
 def _json(path, code):
     try:
         return json.loads(path.read_bytes())
@@ -64,18 +77,20 @@ def _json(path, code):
         raise Refused(code, f"{path.name}: {type(e).__name__}: {e}") from None
 
 
-def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
+def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False, home=None):
     """(configuration document, profile document, summary): every check, nothing written."""
+    home = home or os.environ.get(HOME) or Path.home()
     try:
         R.check_actor(actor, "actor")
     except R.Invalid as e:
         raise Refused("INIT_ACTOR_SHAPE", f"{str(actor)[:60]!r} is not an actor id (SPEC §3): {e}") from None
-    repo = Path(repo).resolve()
-    _refuse((repo / ".warrant" / "store").is_dir() and all((repo / f).is_file() for f in FILES),
-            "INIT_NOT_A_REPOSITORY", f"{repo} has no .warrant/store with {', '.join(FILES)}")
-    config = Path(config).resolve()
-    state = Path(state).resolve() if state else config.parent / f"{config.stem}-state"
-    seed = Path(seed).resolve()
+    repo = _confined(repo, home, "the repository")
+    dot = repo / DOT
+    _refuse((dot / "store").is_dir() and all((repo / f).is_file() for f in FILES),
+            "INIT_NOT_A_REPOSITORY", f"{repo} has no {DOT}/store with {', '.join(FILES)}")
+    config = _confined(config, home, "the configuration")
+    state = _confined(state, home, "the state directory") if state else config.parent / f"{config.stem}-state"
+    seed = _confined(seed, home, "the seed")
     for what, p in (("the configuration", config), ("the state directory", state), ("the seed", seed)):
         _refuse(not _inside(p, repo), "INIT_INSIDE_REPOSITORY",
                 f"{what} {p} is inside the repository {repo}: the operator's files stay outside it")
@@ -92,7 +107,7 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
         key = Key.from_seed_hex(seed.read_text())
     except (OSError, ValueError, TypeError) as e:
         raise Refused("INIT_SEED_SHAPE", f"{seed.name} is not a hex Ed25519 seed: {type(e).__name__}") from None
-    roles, problems = B.read_roles(_json(repo / ".warrant" / "roles.json", "INIT_TRUST_SHAPE"))
+    roles, problems = B.read_roles(_json(dot / ROLES_FILE, "INIT_TRUST_SHAPE"))
     _refuse(not problems, "INIT_TRUST_SHAPE", "; ".join(f"{c} {d}" for c, d in problems))
     pin = roles.get(actor)
     _refuse(S.hex64(pin), "INIT_ACTOR_NOT_PINNED",
@@ -102,13 +117,13 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
             f"the seed's key {key.id[:12]} is not the key .warrant/roles.json pins for {actor!r} "
             f"({B._role_name(pin)}); no other key signs as it")
     try:
-        trust = repository_trust(repo / ".warrant" / "trust.json", repo / ".warrant" / "roles.json")
+        trust = repository_trust(dot / TRUST, dot / ROLES_FILE)
     except AgentError as e:
         raise Refused("INIT_TRUST_SHAPE", e.message) from None
     admitted = [(k["actor"], k["public"]) for k in trust["keys"]]
     _refuse((actor, key.public) in admitted, "INIT_NOT_ADMITTED",
             f".warrant/trust.json admits no binding of {actor!r} to key {key.id[:12]} (tools/claims.py bind)")
-    rm = _json(repo / ".warrant" / "roadmap.json", "INIT_ROADMAP_SHAPE")
+    rm = _json(dot / ROADMAP_FILE, "INIT_ROADMAP_SHAPE")
     _refuse(isinstance(rm, dict) and rm.get("roadmap") == ROADMAP and isinstance(rm.get("results_accept_by"), list)
             and all(S.is_actor(a) for a in rm["results_accept_by"]), "INIT_ROADMAP_SHAPE",
             f".warrant/roadmap.json is not a {ROADMAP} with results_accept_by a list of actor ids")
@@ -116,8 +131,8 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     ws_state = state / workspace
     doc = {"agent_api": AGENT_API, "state": str(state),
            "workspaces": {workspace: {
-               "store": str(repo / ".warrant" / "store"),
-               "trust": {"bindings": str(repo / ".warrant" / "trust.json"), "roles": str(repo / ".warrant" / "roles.json")},
+               "store": str(dot / "store"),
+               "trust": {"bindings": str(dot / TRUST), "roles": str(dot / ROLES_FILE)},
                "profile": str(ws_state / "profile.json"),
                "signer": {"actor": actor, "key": str(seed)},
                "source_name": workspace, "uses": USES, "operations": operations}}}
@@ -128,9 +143,9 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     return doc, profile, summary
 
 
-def init(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
+def init(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False, home=None):
     """Check everything (plan), then write the profile and the configuration; returns the summary."""
-    doc, profile, summary = plan(repo, actor, seed, config, state, workspace, operations, force)
+    doc, profile, summary = plan(repo, actor, seed, config, state, workspace, operations, force, home)
     ws_state = Path(doc["state"]) / summary["workspace"]
     ws_state.mkdir(parents=True, exist_ok=True)
     (ws_state / "profile.json").write_text(json.dumps(profile, sort_keys=True) + "\n")

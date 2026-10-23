@@ -59,8 +59,11 @@ def read_roles(doc):
 
 def _role_name(v):
     """A role value for a message: 'key <id>' for a key, else what it is (never raises)."""
-    return f"key {K.key_id(v)[:12]}" if S.hex64(v) else "collective" if v == COLLECTIVE \
-        else "reserved" if v is None else repr(v)[:40]
+    if S.hex64(v):
+        return f"key {K.key_id(v)[:12]}"
+    if v == COLLECTIVE:
+        return "collective"
+    return "reserved" if v is None else repr(v)[:40]
 
 
 def admit_bindings(doc, legacy=False, roles=None):

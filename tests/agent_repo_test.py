@@ -83,10 +83,10 @@ class Fixture:
     def init(self, actor="claude", name=None, **kw):
         cfg = self.op / f"{name or actor}.json"
         args = dict(repo=self.repo, actor=actor, seed=self.seeds / f"{actor}.seed", config=cfg,
-                    workspace="repo", operations=("context", "read", "prepare", "commit"))
+                    workspace="repo", operations=("context", "read", "prepare", "commit"), home=self.base)
         args.update(kw)
         summary = I.init(**args)
-        return Config.load(cfg), summary
+        return Config.load(args["config"]), summary
 
     def refusal(self, **kw):
         """The code of init's refusal, or None; and whether anything was written outside the seeds."""
@@ -194,6 +194,7 @@ def init_cases():
 
     # I10: the command line: exit 0 with the summary, exit 2 with REFUSED <CODE> on stderr
     out, err = io.StringIO(), io.StringIO()
+    os.environ[I.HOME] = str(f.base)
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         rc_ok = I.main(["--repo", str(f.repo), "--actor", "codex", "--seed", str(f.seeds / "codex.seed"),
                         "--config", str(f.op / "cli.json"), "--workspace", "repo"])
@@ -202,6 +203,16 @@ def init_cases():
     check("I10", rc_ok == 0 and json.loads(out.getvalue())["signer"]["actor"] == "codex" and rc_no == 2
           and err.getvalue().startswith("REFUSED INIT_KEY_NOT_PINNED ") and not (f.op / "cli2.json").exists(),
           "init's command line", (rc_ok, rc_no, err.getvalue()))
+    os.environ.pop(I.HOME)
+
+    # I11: the configuration, the state, the seed or the repository outside the operator's directory
+    elsewhere = Path(tempfile.mkdtemp(prefix="warrant-agent-elsewhere-"))
+    (elsewhere / "claude.seed").write_text(f.keys["claude"].seed_hex())
+    got = [f.refusal(name="x11", config=elsewhere / "c.json"), f.refusal(name="x11b", state=elsewhere / "state"),
+           f.refusal(name="x11c", seed=elsewhere / "claude.seed")]
+    check("I11", got == [("INIT_OUTSIDE_HOME", False)] * 3 and sorted(p.name for p in elsewhere.iterdir()) == ["claude.seed"],
+          "init reads and writes only in the operator's directory", got)
+    shutil.rmtree(elsewhere, ignore_errors=True)
     for x in (f, g, h):
         x.close()
 

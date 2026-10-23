@@ -86,7 +86,8 @@ name) for a repository that keeps its records in `.warrant/` the way
   `compute` are enabled only by `--operations`.
 
 The configuration, the state directory and the seed must lie outside the
-repository. Every check runs before anything is written; only the
+repository, and all of them, the repository too, in the operator's directory
+(`$WARRANT_AGENT_HOME`, else the home directory). Every check runs before anything is written; only the
 repository's JSON files are read, none of its code is run. A refusal prints
 `REFUSED <CODE> <detail>` on stderr and exits 2:
 
@@ -95,6 +96,7 @@ repository's JSON files are read, none of its code is run. A refusal prints
 | `INIT_ACTOR_SHAPE` | `--actor` is not an actor id (SPEC §3) |
 | `INIT_NOT_A_REPOSITORY` | no `.warrant/store` with `trust.json`, `roles.json`, `roadmap.json` |
 | `INIT_INSIDE_REPOSITORY` | the configuration, the state or the seed is inside the repository |
+| `INIT_OUTSIDE_HOME` | the repository, configuration, state or seed is outside the operator's directory (`$WARRANT_AGENT_HOME`, else the home directory) |
 | `INIT_OPERATIONS` | an operation is unknown or given twice, or none is given |
 | `INIT_WORKSPACE_NAME` | the workspace name is not a handle (SPEC §10.1) |
 | `INIT_CONFIG_EXISTS` | the configuration exists and `--force` is not given |
@@ -106,7 +108,7 @@ repository's JSON files are read, none of its code is run. A refusal prints
 | `INIT_NOT_ADMITTED` | `trust.json` admits no binding of the actor to that key |
 | `INIT_ROADMAP_SHAPE` | `roadmap.json` has no list of actor ids as `results_accept_by` |
 
-`tests/agent_repo_test.py` I01-I10 and T01-T03, agent mutants A87-A96.
+`tests/agent_repo_test.py` I01-I11 and T01-T03, agent mutants A87-A96 and A104.
 
 ## The roadmap through the interface
 
@@ -214,8 +216,8 @@ the SDK client):
 | `tests/agent_write_test.py` | W01-W13 |
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10, S11 (a contradicted receipt closes nothing; both capsules say why), S12 (evaluate) |
 | `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M16 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain, malformed stored records, every word a result carries has an explain entry) |
-| `tests/agent_repo_test.py` | I01-I10 (`init`), T01-T03 (a repository's trust), B01-B04 (`blobs`), Q03 (`scope`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
-| `tests/agent_mutants.py` | A01-A64, A66-A100, each killed on its named case; the SPEC §10 claims cite them |
+| `tests/agent_repo_test.py` | I01-I11 (`init`), T01-T03 (a repository's trust), B01-B04 (`blobs`), Q03 (`scope`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
+| `tests/agent_mutants.py` | A01-A64, A66-A104, each killed on its named case; the SPEC §10 claims cite them |
 | `examples/mcp-first-contact/` | fresh headless agents on three tasks, frozen scorer, round 1 vs round 2 |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 
