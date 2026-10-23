@@ -646,7 +646,8 @@ def ledger_cases():
     lines = view.splitlines()
     row = next(ln for ln in lines if ln.startswith("| stranger |"))
     check("W8", "nothing, and no rule reads it" in view
-          and row.split(" | ")[1:] == [f"`{K.key_id(f.keys['stranger'].public)[:12]}`", "1", "0", "0", "3", "2", "1", "0", "0 |"],
+          and row.split(" | ")[1:] == [f"`{K.key_id(f.keys['stranger'].public)[:12]}`", "1", "0", "0", "3", "2", "1", "0", "0",
+                                    "0", "0", "0", "0 |"],
           "WITNESSES.md renders each count of the ledger, with the bound key", row)
     with replaying(lambda h, p: h == lower_blob):
         gone = codes(CL.check(f.repo))

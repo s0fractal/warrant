@@ -9,7 +9,7 @@ name: ci
 #                    pinned release, the pinned MCP SDK) and publishes its digest;
 #   suites           base install, the installed-bytes suites, the mutant runner's selftest,
 #                    the generated mutants' selftest (their scheduled hunt is survivors.yml,
-#                    never a check of this workflow), the roadmap check;
+#                    never a check of this workflow), the roadmap check, the review loop suites;
 #   claims-selftest  tools/claims.py --selftest;
 #   examples         cross-host, review handoff, ref transport, scenarios, agent acceptance,
 #                    the Claude Code plugin bridge;
@@ -17,9 +17,11 @@ name: ci
 #   mutants          tests/mutants.py and tests/agent_mutants.py in parts (--shard K/N), each
 #                    part checking its own targets' baseline first and writing its matrix;
 #   replay           claims.py replay --verify: the replay checker's acceptances new since the
-#                    base, re-executed at their commits (G4);
+#                    base, re-executed at their commits (G4); review.py replay --verify: the review
+#                    replay checker's observations new since the base, re-executed;
 #   test             --merge of the parts (refused unless every mutant id ran exactly once and
-#                    was killed), then tools/claims.py check against the base, after the mutants.
+#                    was killed), then tools/claims.py check and tools/review.py check against the
+#                    base, after the mutants.
 # Every job but wheels installs from that wheelhouse, checked against the digest (no index).
 # The tests and mutants run against the installed bytes; the scenarios run through the
 # installed `warrant` command from outside the checkout.
@@ -91,6 +93,11 @@ jobs:
         working-directory: tests
         run: |
           for t in contract compute conditions assessment primitives records cli roadmap circle why store_index shapes replay; do python "${t}_test.py"; done
+
+      - name: The review loop as records (tools/review.py; fixture Git repositories)
+        working-directory: tests
+        run: |
+          for t in reviews review_check review_merge review_replay review_integration; do python "${t}_test.py"; done
 
       - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
         working-directory: tests
@@ -228,6 +235,15 @@ jobs:
           BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
           WARRANT_IMPL= python tools/claims.py replay --verify --base "$BASE_SHA" --jobs 4
 
+      # A finding's test is code from the pull request's branch, run here as its own tests are; never by check.
+      - name: Review replays new since the base, re-executed at their commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
+          WARRANT_IMPL= python tools/review.py replay --verify --base "$BASE_SHA"
+
   # Each part runs shards() of its harness (tests/mutants.py: a partition by id, test file and
   # measured cost), first the unmutated baseline of every test file it targets, and writes its
   # ids, outcomes and runs as a matrix. The parts per harness are named only here; `test`
@@ -320,6 +336,14 @@ jobs:
           # The checkout holds the whole history (fetch-depth 0): the base is in it.
           BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
           WARRANT_IMPL= python tools/claims.py check --base "$BASE_SHA"
+
+      - name: Reviews (the pull request review loop is records in .warrant/store; REVIEWS.md is a view)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
+          WARRANT_IMPL= python tools/review.py check --base "$BASE_SHA"
 
       # A report, not a refusal: the matrices above hold each mutant's own test file only (no
       # extra run), so most witnesses are unknown here. The full hunt: tests/mutants.py --matrix F

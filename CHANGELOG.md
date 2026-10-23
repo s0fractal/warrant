@@ -38,6 +38,28 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### The pull request review loop is records (G3)
+
+- `tools/review.py` (`tools/claimslib/reviews.py`) files the review loop as ordinary records in
+  `.warrant/store`: a pull request is a duty held by its author, owed to and accepted by whom
+  `.warrant/reviews.json` names; each pushed head a closure naming its full commit and tree ids
+  (`warrant-review/head@1`, one lineage through `previous`); a finding a reviewer's challenge of the
+  current head carrying `warrant-review/finding@1`, mechanical (a case and a diff confined to
+  `tests/`) or a thesis; an answer the next head naming the findings it answers (a revalidate once a
+  head was accepted); ACCEPT the reviewer's own accept. No record type is added.
+- The review replay checker (`tools/claimslib/review_replay.py`, an actor named by the hash of its
+  code, its key pinned and bound) observes a mechanical finding at its head and each later head:
+  FAIL, PASS, NO_RESULT, DOES_NOT_APPLY. `review.py replay --verify` (CI) re-executes the new ones;
+  `check` never runs a finding's test.
+- A merge is a Git act, observed: the merge, its tree, its first parent and tip, the heads accepted in
+  the tip's own store, the paths the tip changes since, and the merge's own integration changes (its
+  tree against `git merge-tree` of the first parent with the accepted head; at a conflict one side is
+  allowed; AMEND 1 of #181). REVIEWS.md is the generated view, with every merge whose result is not
+  reviewed listed by its state; WITNESSES.md counts findings filed, reproduced and answered, and
+  acceptances of a head at which a finding reproduced.
+- AGENT.md, "Reviews through the interface": the same steps through `warrant_prepare` and
+  `warrant_commit`, byte-identical (reviews_test V20). Tests V01-V33 in five files, mutants M484-M529.
+
 ### The repository hunts its own blind spots (G7)
 
 - `tests/generated_mutants.py` generates mutants nobody chose: fixed AST operators (negate a
