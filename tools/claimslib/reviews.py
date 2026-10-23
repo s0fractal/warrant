@@ -192,6 +192,7 @@ class Model:
         self.reviews, self.by_duty, self.heads, self.findings = {}, {}, {}, {}
         self._duties()
         self._heads()
+        self._late_accepts()
         self._findings()
         self._answers()
         self._observations()
@@ -319,6 +320,19 @@ class Model:
             c = cands.get((h.tid, 0), {})
             h.verdict, h.waiting = c.get("verdict"), c.get("waiting_for", [])
             h.accepted_by = acceptors(self.recs, self._accepts, h.tid, 0)
+
+    def _late_accepts(self):
+        """An acceptance of a head filed after the next head (strictly later `at`) accepts what is no longer
+        the pull request: refused, as a finding against a superseded head is."""
+        for aid, r in sorted(self.recs.items()):
+            h = self.heads.get(r["body"]["transition"]) if r["type"] == "accept" else None
+            if h is None:
+                continue
+            rv = self.by_duty[h.item["duty"]]
+            later = [s for s in rv.heads if s.n > h.n and s.rec["at"] < r["at"]]
+            if later:
+                self.problem("REVIEW_ACCEPT_SUPERSEDED", f"accept {aid[:12]} by {r['actor'][:28]} of head {h.n} of "
+                             f"#{rv.pr} was filed when head {later[0].n} ({later[0].commit[:12]}) had superseded it")
 
     def _findings(self):
         for cid, r in sorted(self.recs.items()):

@@ -167,9 +167,12 @@ def superseded_cases():
            "severity": "P2", "what": "against head 1", "where": [], "test": None}
     late = f.put("codex", "challenge", R.challenge(h.tid, "P2 against head 1", [C.digest(C.canon(doc))], item_index=0),
                  [doc], at=m.recs[t2]["at"] + 1)
+    t1 = m.recs[h.tid]["body"]
+    f.put("codex", "accept", R.accept(h.tid, 0, t1["closes"][0]["evidence"]), at=m.recs[t2]["at"] + 1)
     m = f.model()
+    codes = [c for c, _ in m.problems]
     check("V12", tool == ("REVIEW_HEAD_SUPERSEDED", True) and late_accept == ("REVIEW_HEAD_SUPERSEDED", True)
-          and "REVIEW_FINDING_SUPERSEDED" in [c for c, _ in m.problems] and late not in m.findings,
+          and "REVIEW_FINDING_SUPERSEDED" in codes and late not in m.findings and "REVIEW_ACCEPT_SUPERSEDED" in codes,
           "a finding or an acceptance names the current head: one against a superseded head is refused by the tool "
           "and, filed by hand after the next head, by check", (tool, late_accept, m.problems))
     f.close()

@@ -30,7 +30,7 @@ the duty's and the receiver's profile's (SPEC §4.6, §6).
 
 | Actor | Key | Claims authored | Acceptances | Later refuted | Challenges | Counters | Lowering now | Cited by a downgrade | Re-backs | Findings | Reproduced | Answered | Accepted heads a finding reproduces at |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| checker sha256:eb788655c7753a74303df927025546b31b98a9381196a66e4ba4afd14823a5e5 | `06b6bde8933f` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| checker sha256:c0a8c6593841a65935b9985a6e2bec60ae1c54ec7ced402be58676a13bddd482 | `e72bfbe7f0a5` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | checker sha256:eed989f372ca13d5638f7b16cc936f22f11f2fde602662c21385400c4d41a619 | `f51beebcd7e6` | 0 | 272 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | claude | `10678a7996a3` | 346 | 0 | 0 | 3 | 8 | 0 | 2 | 6 | 0 | 0 | 0 | 0 |
 | codex | `fbe15554075e` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |

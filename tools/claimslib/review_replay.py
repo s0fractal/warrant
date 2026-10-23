@@ -47,8 +47,9 @@ TEST = re.compile(r"[a-z][a-z0-9_]*_test\Z")                   # \Z: `$` admits 
 CASE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 PATCH_PATH = re.compile(r"[ab]/tests/\w[\w./-]*\Z", re.ASCII)            # ASCII: \w is [A-Za-z0-9_]
 RENAME = ("rename from ", "rename to ", "copy from ", "copy to ")           # their path has no a/ or b/
-# A symlink (120000) or submodule (160000) mode on a file mode line or an index line.
-LINK_MODE = re.compile(r"(?:(?:(?:new |deleted )?(?:file )?|old )mode 1[26]0000\b|index \S+ 1[26]0000\Z)")
+# A symlink (120000) or submodule (160000) mode on a file mode line, or on an index line.
+LINK_MODE = re.compile(r"(?:(?:new |deleted )?(?:file )?|old )mode 1[26]0000\b")
+LINK_INDEX = re.compile(r"index \S+ 1[26]0000\Z")
 TIMEOUT = 900
 
 
@@ -77,7 +78,7 @@ def _paths(line):
 def _line_problem(line):
     if line.startswith(("GIT binary patch", "Binary files ")):
         return "the patch is binary"
-    if LINK_MODE.match(line):
+    if LINK_MODE.match(line) or LINK_INDEX.match(line):
         return "the patch makes a symlink or a submodule"
     for p in _paths(line):
         if p != "/dev/null" and (not PATCH_PATH.match(p) or ".." in p.split("/")):
