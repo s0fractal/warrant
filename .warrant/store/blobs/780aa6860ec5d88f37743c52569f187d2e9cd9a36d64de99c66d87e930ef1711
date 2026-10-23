@@ -1,0 +1,1 @@
+The same request id with the same inputs is the same draft, also after a restart; with other inputs it is `CONFLICT`.

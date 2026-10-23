@@ -1,0 +1,1 @@
+`MATCH_EXPECTED_SET` means that the selected set arrived, nothing more: `source_completeness` is always UNATTESTED, and a set signed incomplete from the start matches an expectation on exactly that set.

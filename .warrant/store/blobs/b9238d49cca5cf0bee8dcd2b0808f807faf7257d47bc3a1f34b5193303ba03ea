@@ -1,0 +1,1 @@
+A request names a workspace and an expectation only by the operator's local handles: 1 to 64 characters of `a-z`, `0-9`, `_`, `.` and `-`, the first a letter or a digit.

@@ -1,0 +1,1 @@
+A view lives at least `view_ttl` whole seconds from the moment it is ready; afterwards it is `VIEW_EXPIRED`.

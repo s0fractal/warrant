@@ -1,0 +1,1 @@
+When the receiver's trust changed after the view was captured, a `fresh` use holds, and so does any use of a delivery that rested on an exporter's declaration.

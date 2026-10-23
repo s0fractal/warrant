@@ -1,0 +1,1 @@
+The decision id covers the assessment id, the adapter id, the policy, the delivery, the observed time, the incomplete imports and whether a newer local event is known: a newer event changes the decision id and holds a `fresh` use, and never changes the historical assessment id.

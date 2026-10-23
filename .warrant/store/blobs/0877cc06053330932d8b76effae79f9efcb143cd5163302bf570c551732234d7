@@ -1,0 +1,1 @@
+`use` is the receiver's local policy decision over the assessment: `{name, policy, state, reasons, decision_id}`, its state `WITHIN_POLICY` or `HOLD`.

@@ -1,0 +1,1 @@
+A context is paged under `context_bytes`; truncation is marked, and every cursor is bound to its view, kind and target: any other cursor is `CURSOR_MISMATCH`.

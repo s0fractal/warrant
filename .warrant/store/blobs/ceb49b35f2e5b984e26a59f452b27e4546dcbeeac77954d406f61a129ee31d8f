@@ -1,0 +1,1 @@
+`compute` runs the installed provider on bytes read once from the receiver's store, and new bytes go back into it as blobs.

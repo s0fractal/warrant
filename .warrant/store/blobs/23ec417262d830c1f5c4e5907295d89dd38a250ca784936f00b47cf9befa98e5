@@ -1,0 +1,1 @@
+A target is a duty or a transition of the view, named by its id, `{id}` or `{kind, id}`; any other record of the view is `BAD_REQUEST` with its type in `details.type`, and an id not in the view is `NOT_FOUND`.

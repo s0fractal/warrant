@@ -1,0 +1,1 @@
+Every request is a closed JSON object: a missing required member or an unknown member is `BAD_REQUEST`.

@@ -1,0 +1,1 @@
+The delivery relation is `CONTENT_MISMATCH` when delivered bytes do not hash to their ids, are not the canonical envelope of their id, differ from the manifest's envelope digest, or include undeclared objects.

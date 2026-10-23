@@ -1,0 +1,1 @@
+Nothing is exposed beyond these operations: no HTTP transport, watcher, scheduler, OAuth, shell, package install, merge or release.

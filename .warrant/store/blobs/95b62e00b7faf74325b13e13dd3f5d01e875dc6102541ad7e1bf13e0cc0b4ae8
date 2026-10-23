@@ -1,0 +1,1 @@
+{"because":null,"duty":"a2e2b810cd3a9169688aa6c6ccce04887aebdd252d6384dc390a944afb04713c","id":"SPEC-10.2-4","kind":"normative","mutants":["A64"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10.2","source":"SPEC.md","text":"Past the workspace's `assess_seconds` there is no report and no view: `NO_ASSESSMENT`.","witnesses":["agent_handoff_test:V08"]}

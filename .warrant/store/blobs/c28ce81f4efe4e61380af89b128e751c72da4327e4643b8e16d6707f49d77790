@@ -1,0 +1,1 @@
+A transition prepared without `closes` closes nothing (`closes: []`).
