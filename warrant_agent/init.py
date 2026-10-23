@@ -13,7 +13,7 @@ and it is refused unless its key is exactly the key `.warrant/roles.json` pins f
 `.warrant/trust.json` admits that binding: no key is created, copied or bound here (SPEC
 §10.8; `tools/claims.py keygen`, `pin` and `bind` are the operator's commands). The state
 directory, the configuration and the seed lie outside the repository and, with the repository, in the
-operator's directory ($WARRANT_AGENT_HOME, else the home directory). Nothing is written
+operator's home directory. Nothing is written
 before every check has passed; nothing of the repository is run, only its JSON files read.
 A refusal prints `REFUSED <CODE> <detail>` on stderr and exits 2."""
 import argparse
@@ -42,7 +42,6 @@ ROADMAP = "warrant-roadmap/config@1"
 DOT = ".warrant"
 TRUST, ROLES_FILE, ROADMAP_FILE = "trust.json", "roles.json", "roadmap.json"
 FILES = tuple(f"{DOT}/{f}" for f in (TRUST, ROLES_FILE, ROADMAP_FILE))
-HOME = "WARRANT_AGENT_HOME"     # the operator's directory (default: the home directory)
 
 
 class Refused(Exception):
@@ -61,12 +60,13 @@ def _inside(path, root):
     return path == root or root in path.parents
 
 
-def _confined(arg, home, what):
-    """The real path of a command-line path `arg` if it lies in the operator's directory `home`, else refused:
-    init writes and reads only there."""
-    real, base = os.path.realpath(arg), os.path.realpath(home)
+def _confined(arg, what):
+    """The real path of a command-line path `arg` if it lies in the operator's home directory, else refused:
+    init reads and writes only there."""
+    base = os.path.realpath(Path.home())
+    real = os.path.realpath(arg)
     _refuse(os.path.commonpath([real, base]) == base, "INIT_OUTSIDE_HOME",
-            f"{what} {real} is outside the operator's directory {base} (${HOME}, else the home directory)")
+            f"{what} {real} is outside the operator's home directory {base}")
     return Path(real)
 
 
@@ -77,20 +77,19 @@ def _json(path, code):
         raise Refused(code, f"{path.name}: {type(e).__name__}: {e}") from None
 
 
-def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False, home=None):
-    """(configuration document, profile document, summary): every check, nothing written."""
-    home = home or os.environ.get(HOME) or Path.home()
+def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
+    """(configuration document, profile document, summary, {config, state}): every check, nothing written."""
     try:
         R.check_actor(actor, "actor")
     except R.Invalid as e:
         raise Refused("INIT_ACTOR_SHAPE", f"{str(actor)[:60]!r} is not an actor id (SPEC §3): {e}") from None
-    repo = _confined(repo, home, "the repository")
+    repo = _confined(repo, "the repository")
     dot = repo / DOT
     _refuse((dot / "store").is_dir() and all((repo / f).is_file() for f in FILES),
             "INIT_NOT_A_REPOSITORY", f"{repo} has no {DOT}/store with {', '.join(FILES)}")
-    config = _confined(config, home, "the configuration")
-    state = _confined(state, home, "the state directory") if state else config.parent / f"{config.stem}-state"
-    seed = _confined(seed, home, "the seed")
+    config = _confined(config, "the configuration")
+    state = _confined(state, "the state directory") if state else config.parent / f"{config.stem}-state"
+    seed = _confined(seed, "the seed")
     for what, p in (("the configuration", config), ("the state directory", state), ("the seed", seed)):
         _refuse(not _inside(p, repo), "INIT_INSIDE_REPOSITORY",
                 f"{what} {p} is inside the repository {repo}: the operator's files stay outside it")
@@ -140,17 +139,16 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
                "signer": {"actor": actor, "key": key.id}, "operations": operations,
                "trust": sorted({a for a, _ in admitted}), "results_accept_by": rm["results_accept_by"],
                "serve": f"warrant-agent-mcp --config {config}"}
-    return doc, profile, summary
+    return doc, profile, summary, {"config": config, "state": ws_state}
 
 
-def init(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False, home=None):
+def init(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
     """Check everything (plan), then write the profile and the configuration; returns the summary."""
-    doc, profile, summary = plan(repo, actor, seed, config, state, workspace, operations, force, home)
-    ws_state = Path(doc["state"]) / summary["workspace"]
+    doc, profile, summary, paths = plan(repo, actor, seed, config, state, workspace, operations, force)
+    ws_state, out = paths["state"], paths["config"]
     ws_state.mkdir(parents=True, exist_ok=True)
     (ws_state / "profile.json").write_text(json.dumps(profile, sort_keys=True) + "\n")
     Config(doc)                                 # the configuration loads, or nothing is written for it
-    out = Path(summary["config"])
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.name + f".tmp{os.getpid()}")
     tmp.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")

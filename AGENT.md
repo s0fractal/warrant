@@ -86,8 +86,8 @@ name) for a repository that keeps its records in `.warrant/` the way
   `compute` are enabled only by `--operations`.
 
 The configuration, the state directory and the seed must lie outside the
-repository, and all of them, the repository too, in the operator's directory
-(`$WARRANT_AGENT_HOME`, else the home directory). Every check runs before anything is written; only the
+repository, and all of them, the repository too, in the operator's home
+directory. Every check runs before anything is written; only the
 repository's JSON files are read, none of its code is run. A refusal prints
 `REFUSED <CODE> <detail>` on stderr and exits 2:
 
@@ -96,7 +96,7 @@ repository's JSON files are read, none of its code is run. A refusal prints
 | `INIT_ACTOR_SHAPE` | `--actor` is not an actor id (SPEC §3) |
 | `INIT_NOT_A_REPOSITORY` | no `.warrant/store` with `trust.json`, `roles.json`, `roadmap.json` |
 | `INIT_INSIDE_REPOSITORY` | the configuration, the state or the seed is inside the repository |
-| `INIT_OUTSIDE_HOME` | the repository, configuration, state or seed is outside the operator's directory (`$WARRANT_AGENT_HOME`, else the home directory) |
+| `INIT_OUTSIDE_HOME` | the repository, configuration, state or seed is outside the operator's home directory |
 | `INIT_OPERATIONS` | an operation is unknown or given twice, or none is given |
 | `INIT_WORKSPACE_NAME` | the workspace name is not a handle (SPEC §10.1) |
 | `INIT_CONFIG_EXISTS` | the configuration exists and `--force` is not given |

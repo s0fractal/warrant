@@ -83,10 +83,21 @@ class Fixture:
     def init(self, actor="claude", name=None, **kw):
         cfg = self.op / f"{name or actor}.json"
         args = dict(repo=self.repo, actor=actor, seed=self.seeds / f"{actor}.seed", config=cfg,
-                    workspace="repo", operations=("context", "read", "prepare", "commit"), home=self.base)
+                    workspace="repo", operations=("context", "read", "prepare", "commit"))
         args.update(kw)
-        summary = I.init(**args)
+        with self.home():
+            summary = I.init(**args)
         return Config.load(args["config"]), summary
+
+    @contextlib.contextmanager
+    def home(self):
+        """The operator's home directory is this fixture's base while init runs (init confines its paths there)."""
+        real = Path.home
+        Path.home = classmethod(lambda cls: self.base)
+        try:
+            yield
+        finally:
+            Path.home = real
 
     def refusal(self, **kw):
         """The code of init's refusal, or None; and whether anything was written outside the seeds."""
@@ -194,8 +205,7 @@ def init_cases():
 
     # I10: the command line: exit 0 with the summary, exit 2 with REFUSED <CODE> on stderr
     out, err = io.StringIO(), io.StringIO()
-    os.environ[I.HOME] = str(f.base)
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+    with f.home(), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         rc_ok = I.main(["--repo", str(f.repo), "--actor", "codex", "--seed", str(f.seeds / "codex.seed"),
                         "--config", str(f.op / "cli.json"), "--workspace", "repo"])
         rc_no = I.main(["--repo", str(f.repo), "--actor", "codex", "--seed", str(f.seeds / "claude.seed"),
@@ -203,7 +213,6 @@ def init_cases():
     check("I10", rc_ok == 0 and json.loads(out.getvalue())["signer"]["actor"] == "codex" and rc_no == 2
           and err.getvalue().startswith("REFUSED INIT_KEY_NOT_PINNED ") and not (f.op / "cli2.json").exists(),
           "init's command line", (rc_ok, rc_no, err.getvalue()))
-    os.environ.pop(I.HOME)
 
     # I11: the configuration, the state, the seed or the repository outside the operator's directory
     elsewhere = Path(tempfile.mkdtemp(prefix="warrant-agent-elsewhere-"))
