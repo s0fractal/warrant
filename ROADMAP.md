@@ -21,7 +21,7 @@ G1 [OPEN] A counterexample changes the repository, whoever brings it.
   goal decb6270e906:0 CURRENT, opened by claude
   answered by [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
     served by [DISCHARGED] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
-  answered by [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted from any key whose self-certified binding in .warrant/trust.json verifies, with no admin admitting it. {duty 841d065d24aa; serves SPEC-4.4-13}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted from any key whose self-certified binding in .warrant/trust.json verifies, with no admin admitting it. {duty 841d065d24aa; serves SPEC-4.4-13}
 ```
 
 ## G2 [OPEN]
@@ -49,9 +49,9 @@ G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
     requires [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
       served by [DISCHARGED] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
   answered by [OPEN · no closure filed] The pull request review loop is in the record graph: each PR a duty, each pushed head a closure naming its full commit, a finding the reviewer's own challenge whose test the review replay checker replays at each head, ACCEPT the reviewer's own accept; REVIEWS.md and the witness ledger are derived from them. {duty 47cdf978c4d3; serves G3 duty 9a039a41c85d}
-    served by [OPEN] s0fractal/warrant#181 is fit to merge: Reviews as records: the PR review loop in the graph {duty 79b1e5e8a8df}
-  answered by [OPEN · closure UNMET_CONDITION: required duties not discharged: 841d065d24aa] A witness ledger is derived from the records as a projection: responsibility for acceptances later refuted, credit for challenges that replayed (requiring the accurately stated G1 counter obligation). {duty 1cbdb9002cca}
-    requires [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted from any key whose self-certified binding in .warrant/trust.json verifies, with no admin admitting it. {duty 841d065d24aa; serves SPEC-4.4-13}
+    served by [DISCHARGED] s0fractal/warrant#181 is fit to merge: Reviews as records: the PR review loop in the graph {duty 79b1e5e8a8df}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A witness ledger is derived from the records as a projection: responsibility for acceptances later refuted, credit for challenges that replayed (requiring the accurately stated G1 counter obligation). {duty 1cbdb9002cca}
+    requires [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted from any key whose self-certified binding in .warrant/trust.json verifies, with no admin admitting it. {duty 841d065d24aa; serves SPEC-4.4-13}
 ```
 
 ## G4 [OPEN]
@@ -59,7 +59,8 @@ G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
 ```text
 G4 [OPEN] A rule can act: a checker identified by the hash of its code accepts by replaying.
   goal decb6270e906:3 CURRENT, opened by claude
-  answered by [OPEN · awaiting acceptance by codex] A checker identified by the SHA-256 of its code accepts a closure by replaying it, and the recipient's profile decides whether that acceptance counts. {duty 879b8bd5219b; serves SPEC-3-22, SPEC-7-4}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A checker identified by the SHA-256 of its code accepts a closure by replaying it, and the recipient's profile decides whether that acceptance counts. {duty 879b8bd5219b; serves SPEC-3-22, SPEC-7-4}
+  mark: obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal is still open, so the decomposition did not reach it (Forward Attack)
 ```
 
 ## G5 [OPEN]
@@ -77,7 +78,8 @@ G5 [OPEN] The specification rebuilds itself under evidence.
 ```text
 G6 [OPEN] Every code statement can be traced to the claim or obligation it serves.
   goal 050a39215127:0 CURRENT, opened by claude
-  answered by [OPEN · awaiting acceptance by codex] `claims.py why FILE:LINE` answers which claims, obligations and goals a code statement serves, and says 'no claim' for a statement no cited mutant changes. {duty 2e4b8aea0bc9}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] `claims.py why FILE:LINE` answers which claims, obligations and goals a code statement serves, and says 'no claim' for a statement no cited mutant changes. {duty 2e4b8aea0bc9}
+  mark: obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal is still open, so the decomposition did not reach it (Forward Attack)
 ```
 
 ## G7 [OPEN]
