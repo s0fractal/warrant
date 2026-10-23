@@ -743,7 +743,11 @@ shell, package install, merge or release.
 repository checkout only for a signer whose existing seed's key is exactly the
 key the repository's `.warrant/roles.json` pins for that actor and whose binding
 its `.warrant/trust.json` admits; it creates no key. Its configuration, its
-state and the seed lie outside the repository.
+state and the seed lie outside the repository. `init` writes no path through a
+symlink: every path it creates or writes, the ones derived from the state
+directory too, is checked by its real path before the first write and written by
+descriptors that do not follow links, and a configuration whose workspace state
+holds a symlink is refused when it loads.
 
 On a shared machine this is an application boundary, not OS isolation: an agent
 with a shell on the same keys and configuration is not contained by it, and
