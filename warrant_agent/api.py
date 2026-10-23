@@ -184,12 +184,16 @@ def _capsule(report, tid, use):
     return cap
 
 
-def _context_items(report, actor, targets, use):
-    items = []
-    for t in targets:
-        items.append({"section": "capsule", "item": _capsule(report, t["id"], use)})
+def _context_items(report, actor, targets, use, scope=None):
+    """Capsules, then the actor's frontier and the unowned questions; with a `scope`, every question of that
+    scope, owned or not (the engine's `owned`, `taken_by`), before the frontier: a goal an obligation answers
+    is found by its scope however long the frontier is."""
+    items = [{"section": "capsule", "item": _capsule(report, t["id"], use)} for t in targets]
+    if scope is not None:
+        items += [{"section": "question", "item": q} for q in E.questions(report, scope=scope, owned=True)]
     items += [{"section": "frontier", "item": f} for f in E.frontier(report, actor)]
-    items += [{"section": "question", "item": q} for q in E.questions(report)]
+    if scope is None:
+        items += [{"section": "question", "item": q} for q in E.questions(report)]
     return items
 
 
@@ -231,8 +235,8 @@ def _invalid(ws, meta, rid, why):
     return out
 
 
-def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget):
-    items = _context_items(report, actor, targets, use)
+def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget, scope=None):
+    items = _context_items(report, actor, targets, use, scope)
     start = _parse_cursor(cursor, meta["token"], kind, actor)
     page, nxt = _page(items, start, budget)
     data = {"capsules": [i["item"] for i in page if i["section"] == "capsule"],
@@ -253,10 +257,13 @@ def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget):
 def context(cfg, req):
     # A context is a LOCAL_CAPTURE: there is no delivery to hold an expectation
     # against, so `expectation` is refused here rather than accepted and ignored.
-    _closed(req, ("workspace",), ("actor", "targets", "use", "limits", "agent_api"))
+    _closed(req, ("workspace",), ("actor", "targets", "use", "limits", "scope", "agent_api"))
     ws = cfg.workspace(req["workspace"])
     ws.permit("context")
     actor, use = _actor(ws, req.get("actor")), _use(ws, req.get("use"))
+    scope = req.get("scope")
+    need(scope is None or (isinstance(scope, str) and 0 < len(scope) <= 200), "BAD_REQUEST",
+         "scope is a question scope, a string of 1 to 200 characters")
     shapes = _target_shapes(req.get("targets", []))
     limits = req.get("limits", {})
     need(isinstance(limits, dict) and set(limits) <= {"context_bytes"} and all(_int(v, 256) for v in limits.values()),
@@ -265,8 +272,8 @@ def context(cfg, req):
     meta = views.capture(ws)
     meta2, report, vdir = views.load(ws, meta["token"])
     targets = _resolve_targets(shapes, report, vdir)
-    views.write_json(vdir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use})
-    data, pg = _projection(ws, meta2, report, actor, targets, use, "context", None, budget)
+    views.write_json(vdir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use, "scope": scope})
+    data, pg = _projection(ws, meta2, report, actor, targets, use, "context", None, budget, scope)
     return _envelope(ws, meta2, report, data, use, targets, pg)
 
 
@@ -295,7 +302,7 @@ def read(cfg, req):
     if kind == "context":
         ctx = views.read_json(vdir / CONTEXT_FILE)
         data, pg = _projection(ws, meta, report, ctx["actor"], ctx["targets"], ctx["use"], "context",
-                               req.get("cursor"), max_bytes)
+                               req.get("cursor"), max_bytes, ctx.get("scope"))
         return _envelope(ws, meta, report, data, ctx["use"], ctx["targets"], pg)
     need(isinstance(target, str) and len(target) == 64 and all(c in "0123456789abcdef" for c in target),
          "BAD_REQUEST", "target is a hex64 id")

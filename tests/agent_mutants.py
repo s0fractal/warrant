@@ -320,6 +320,16 @@ MUTANTS = [
      [('        if (actor, key.id) != (d["actor"], d["key"]):\n            raise AgentError("SIGNER_CHANGED"',
        '        _put_blobs(store, d)\n        if (actor, key.id) != (d["actor"], d["key"]):\n            raise AgentError("SIGNER_CHANGED"')],
      "agent_repo_test", ["B04"]),
+    ("A101", "api.py", "a scoped context lists only the unowned questions of its scope",
+     [("E.questions(report, scope=scope, owned=True)", "E.questions(report, scope=scope)")], "agent_repo_test", ["Q03"]),
+    ("A102", "api.py", "a scope's questions come after the frontier",
+     [('    if scope is not None:\n        items += [{"section": "question", "item": q} for q in E.questions(report, scope=scope, owned=True)]\n'
+       '    items += [{"section": "frontier", "item": f} for f in E.frontier(report, actor)]\n',
+       '    items += [{"section": "frontier", "item": f} for f in E.frontier(report, actor)]\n'
+       '    if scope is not None:\n        items += [{"section": "question", "item": q} for q in E.questions(report, scope=scope, owned=True)]\n')],
+     "agent_repo_test", ["Q03"]),
+    ("A103", "api.py", "a context page read later forgets the context's scope",
+     [('req.get("cursor"), max_bytes, ctx.get("scope"))', 'req.get("cursor"), max_bytes, None)')], "agent_repo_test", ["Q03"]),
 ]
 
 

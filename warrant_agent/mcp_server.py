@@ -94,9 +94,12 @@ def build(cfg):
                         use: Annotated[str | None, Field(description="A configured use; the default use if omitted.")] = None,
                         actor: Annotated[str | None, Field(description=(
                             "Whose frontier to show; your signer's actor if omitted. It does not choose who signs."))] = None,
-                        context_bytes: Annotated[int | None, Field(description="Page size in bytes (>= 256).")] = None
+                        context_bytes: Annotated[int | None, Field(description="Page size in bytes (>= 256).")] = None,
+                        scope: Annotated[str | None, Field(description=(
+                            "A question scope (e.g. roadmap:G2): questions then lists every question of it, "
+                            "owned or not, before the frontier."))] = None
                         ) -> dict[str, Any]:
-        return run("context", _req(workspace=workspace, targets=targets, use=use, actor=actor,
+        return run("context", _req(workspace=workspace, targets=targets, use=use, actor=actor, scope=scope,
                                    limits={"context_bytes": context_bytes} if context_bytes is not None else None))
 
     @server.tool(name="warrant_read", annotations=reads, description=(

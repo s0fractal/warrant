@@ -373,6 +373,7 @@ def dogfood_case():
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
     f = Fixture().with_goal()
+    _, first = f.tool("oblige", "--text", "An obligation filed by the tool first.", "--answers", "G1")   # G1 is owned now
     for actor in ("claude", "codex"):
         f.init(actor=actor)
     steps = recipe()
@@ -391,7 +392,7 @@ def dogfood_case():
         return res.structured_content["data"]
 
     async def claude(s):
-        ctx = await tool(s, "warrant_context", workspace="repo")
+        ctx = await tool(s, "warrant_context", workspace="repo", scope="roadmap:G1")
         goal = next(q["question"] for q in ctx["questions"] if q["scope"] == "roadmap:G1")
         o = fill_in(steps["oblige"], {"<your actor>": "claude", "<goal ref>": goal, "<one line>": "Dogfood: an obligation filed through MCP.",
                                       "<owed_to of .warrant/roadmap.json>": ["s0fractal"],
@@ -421,7 +422,7 @@ def dogfood_case():
     evidence, capsule = asyncio.run(session("codex", lambda s: codex(s, duty)))
     f.tool("project")
     rc, line = f.tool("check")
-    node = RM.path_data(f.model(), "G1")["obligations"][0]
+    node = next(n for n in RM.path_data(f.model(), "G1")["obligations"] if n["duty"] == duty)
     check("Q02", rc == 0 and node["duty"] == duty and (node["state"], node["accepted_by"]) == ("DISCHARGED", ["codex"])
           and capsule["disposition"] == "DISCHARGED" and evidence["duty"] == duty
           and "[DISCHARGED · accepted by codex] Dogfood: an obligation filed through MCP." in (f.repo / "ROADMAP.md").read_text(),
@@ -430,8 +431,27 @@ def dogfood_case():
     f.close()
 
 
+def scope_case():
+    """Q03: a goal an obligation answers is found by its scope, before a frontier of any length."""
+    f = Fixture().with_goal()
+    _, duty = f.tool("oblige", "--text", "Owns the question.", "--answers", "G1")
+    for i in range(30):                      # a long frontier for claude: duties it holds
+        f.tool("oblige", "--text", f"Frontier item {i}.", "--answers", "G1")
+    cfg, _ = f.init(name="q3")
+    plain = api.call(cfg, "context", {"workspace": "repo"})["ok"]
+    small = api.call(cfg, "context", {"workspace": "repo", "scope": "roadmap:G1", "limits": {"context_bytes": 256}})["ok"]
+    q = small["data"]["questions"]
+    nxt = api.call(cfg, "read", {"workspace": "repo", "kind": "context", "view_token": small["view_token"],
+                                 "cursor": small["page"]["cursor"], "max_bytes": 256})["ok"]
+    check("Q03", not plain["data"]["questions"] and [x["question"] for x in q] == [f.goal_ref] and q[0]["owned"] is True
+          and duty in q[0]["taken_by"] and not small["data"]["frontier"] and small["page"]["truncated"]
+          and nxt["data"]["frontier"] and not nxt["data"]["questions"] and nxt["page"]["total"] == small["page"]["total"],
+          "with a scope, its questions owned or not come first; without, only unowned ones", (q, small["page"]))
+    f.close()
+
+
 def main():
-    for part in (init_cases, trust_cases, blob_cases, equivalence_case, dogfood_case):
+    for part in (init_cases, trust_cases, blob_cases, equivalence_case, dogfood_case, scope_case):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run

@@ -118,8 +118,9 @@ slot takes any JSON value. They file exactly the bytes `roadmap.py oblige`,
 byte for byte and ROADMAP.md as bytes, and reads this block; Q02 runs it
 through the stdio server):
 
-- **oblige**: the goal ref is the `question` whose `scope` is `roadmap:G<n>` in
-  `warrant_context`'s questions; `owed_to` and `accept_by` are the lists of
+- **oblige**: the goal ref is the `question` of `warrant_context` with
+  `scope: "roadmap:G<n>"` (the formulation whose transition no accepted
+  supersession replaced, if there are several); `owed_to` and `accept_by` are the lists of
   `.warrant/roadmap.json` (`roadmap.py check` refuses other terms as
   OBLIGATION_TERMS); `requires`/`serves` are duty ids.
 - **done**: the closure of a duty you hold, its evidence a
@@ -161,7 +162,7 @@ each operation.
 | op | request | SPEC |
 | --- | --- | --- |
 | `workspace` | `{workspace?}` | §10.1 |
-| `context` | `{workspace, actor?, use?, targets?:[id \| {id} \| {kind: duty\|transition, id}], limits?:{context_bytes}}` | §10.2, §10.3 |
+| `context` | `{workspace, actor?, use?, targets?:[id \| {id} \| {kind: duty\|transition, id}], limits?:{context_bytes}, scope?}`; with `scope` the questions of that scope, owned or not, come before the frontier | §10.2, §10.3 |
 | `read` | `{workspace, view_token?, kind?: record\|blob\|context, target?, cursor?, max_bytes?}` or `{workspace, kind: draft\|operation, target}` | §10.2, §10.5 |
 | `handoff` | `{op: export, view_token?, roots?, request_id?}` / `{op: inspect, package \| (manifest, payload, declaration?), expectation?, use?, actor?, targets?}` / `{op: import, staged_id, request_id?}` | §10.4 |
 | `prepare` | `{workspace, type, body, based_on?: view_token, request_id?, blobs?: [JSON]}`; `accept` takes `{transition, item, evidence?, support?}`; `blob:<i>` in an evidence list is the id of `blobs[i]` | §10.5 |
@@ -213,7 +214,7 @@ the SDK client):
 | `tests/agent_write_test.py` | W01-W13 |
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10, S11 (a contradicted receipt closes nothing; both capsules say why), S12 (evaluate) |
 | `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M16 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain, malformed stored records, every word a result carries has an explain entry) |
-| `tests/agent_repo_test.py` | I01-I10 (`init`), T01-T03 (a repository's trust), B01-B04 (`blobs`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
+| `tests/agent_repo_test.py` | I01-I10 (`init`), T01-T03 (a repository's trust), B01-B04 (`blobs`), Q03 (`scope`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
 | `tests/agent_mutants.py` | A01-A64, A66-A100, each killed on its named case; the SPEC §10 claims cite them |
 | `examples/mcp-first-contact/` | fresh headless agents on three tasks, frozen scorer, round 1 vs round 2 |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
