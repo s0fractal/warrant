@@ -23,7 +23,7 @@ refuses it when it differs from the records. Nothing here writes SPEC.md.
     python3 tools/roadmap.py met --goal G1 --because '...' [--ref PR]...
     python3 tools/roadmap.py withdraw --goal G1 --because '...'
     python3 tools/roadmap.py oblige --text '...' --answers G1 [--requires DUTY]... [--serves DUTY]...
-    python3 tools/roadmap.py done --duty DUTY --established '...' --ref PR [--ref SHA]... [--commit SHA]
+    python3 tools/roadmap.py done --duty DUTY --established '...' --ref PR [--ref SHA]... [--commit SHA] [--replaces T]
     python3 tools/roadmap.py release --duty DUTY --because '...' --actor ACTOR   # by whom it is owed to
     python3 tools/roadmap.py accept --duty DUTY --actor ACTOR [--transition ID]  # by an acceptor the duty names
     python3 tools/roadmap.py path G1 [--json]
@@ -501,20 +501,29 @@ class Writer:
         return self.file("duty", R.duty(self.actor, text, cfg["owed_to"], {"attest": {}}, accept_by=cfg["accept_by"],
                                         requires=req, serves=srv, answers=f.ref))
 
-    def done(self, duty, established, refs, commit=None):
+    def done(self, duty, established, refs, commit=None, replaces=None):
+        """A discharge citing an evidence blob. `replaces` names the one closure of the duty still waiting
+        for acceptance that this one is filed instead of (an acceptor declined it): it stays in the record,
+        and the new closure's residual says it replaces it."""
         did = self.m.resolve_duty(duty)
         r = self.m.rep["duties"][did]
         if r["holder"] != self.actor and self.actor not in r["delegates"]:
             raise Refused(f"duty {did[:12]} is held by {r['holder']}, not {self.actor}")
-        if r["disposition"] != "OPEN" or any(c["verdict"] == "PENDING" for c in r["candidates"]):
-            raise Refused(f"duty {did[:12]} is {r['disposition']} or already has a closure waiting for acceptance")
+        pending = [c["transition"] for c in r["candidates"] if c["verdict"] == "PENDING"]
+        if r["disposition"] != "OPEN" or (pending and pending != [replaces]):
+            raise Refused(f"duty {did[:12]} is {r['disposition']} or already has a closure waiting for acceptance "
+                          "(name it with --replaces to file this one instead)")
+        if replaces is not None and replaces not in pending:
+            raise Refused(f"--replaces {str(replaces)[:12]} is not a closure of duty {did[:12]} waiting for acceptance")
         one_line(established, "--established", R.MAX_TEXT)
         if not refs:
             raise Refused("a done obligation names its evidence: --ref (a pull request, a commit)")
         ev = {"schema": EVIDENCE, "duty": did, "refs": list(refs)}
         h = C.digest(C.canon(ev))
+        residual = [DONE_RESIDUAL] + ([f"filed instead of closure {replaces}, which an acceptor declined; that one "
+                                       "stays in the record and is not to be accepted"] if replaces else [])
         body = R.transition("ATTESTED", [h], closes=[R.item(did, "discharge", [h])], established=[established],
-                            residual=[DONE_RESIDUAL], subject=commit)
+                            residual=residual, subject=commit)
         return self.file("transition", body, [ev])
 
     def accept(self, duty, transition=None):
@@ -602,6 +611,7 @@ def main(argv=None):
     p.add_argument("--established", required=True)
     p.add_argument("--ref", action="append", default=[])
     p.add_argument("--commit", help="the revision the result was established on (hex40)")
+    p.add_argument("--replaces", help="the declined closure (transition id) this one is filed instead of")
     p = signing(sub.add_parser("accept", help="accept an obligation's filed closure (by an acceptor the duty names)"))
     p.add_argument("--duty", required=True)
     p.add_argument("--transition", help="the closure's transition, when more than one is pending")
@@ -645,7 +655,7 @@ def main(argv=None):
         elif a.cmd == "oblige":
             rid = w.oblige(a.text, a.answers, a.requires, a.serves)
         elif a.cmd == "done":
-            rid = w.done(a.duty, a.established, a.ref, a.commit)
+            rid = w.done(a.duty, a.established, a.ref, a.commit, a.replaces)
         elif a.cmd == "accept":
             rid = w.accept(a.duty, a.transition)
         else:
