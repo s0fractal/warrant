@@ -42,7 +42,7 @@ USE = "continue"
 USES = {USE: {"delivery": ["LOCAL_CAPTURE", "MATCH_EXPECTED_SET"], "reliance": ["ELIGIBLE"], "fresh": True}}
 ROADMAP = "warrant-roadmap/config@1"
 DOT = ".warrant"
-TRUST, ROLES_FILE, ROADMAP_FILE = "trust.json", "roles.json", "roadmap.json"
+TRUST, ROLES_FILE, ROADMAP_FILE, PROFILE = "trust.json", "roles.json", "roadmap.json", "profile.json"
 FILES = tuple(f"{DOT}/{f}" for f in (TRUST, ROLES_FILE, ROADMAP_FILE))
 ROOTS = (Path.home(),)          # where init reads and writes: the operator's home directory
 
@@ -200,13 +200,13 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     profile = E.profile(uses={USE: {"requires_triggers": False}}, results_by=rm["results_accept_by"])
     # Every path the configuration makes the interface write, checked as the ones given (AMEND 1 of #179).
     ws_state = _target(state / workspace, "the workspace's state", repo)
-    for sub in ("profile.json", *STATE_DIRS, *STATE_LAZY):
+    for sub in (PROFILE, *STATE_DIRS, *STATE_LAZY):
         _target(ws_state / sub, f"the workspace's {sub}", repo)
     doc = {"agent_api": AGENT_API, "state": str(state),
            "workspaces": {workspace: {
                "store": str(dot / "store"),
                "trust": {"bindings": str(dot / TRUST), "roles": str(dot / ROLES_FILE)},
-               "profile": str(ws_state / "profile.json"),
+               "profile": str(ws_state / PROFILE),
                "signer": {"actor": actor, "key": str(seed)},
                "source_name": workspace, "uses": USES, "operations": operations}}}
     summary = {"config": str(config), "workspace": workspace, "repository": str(repo), "state": str(state),
@@ -228,7 +228,7 @@ def apply(doc, profile, summary, paths):
     ws_state, out = paths["state"], paths["config"]
     for sub in STATE_DIRS:
         os.close(_walk(ws_state / sub, create=True))
-    _write(ws_state, "profile.json", (json.dumps(profile, sort_keys=True) + "\n").encode(), atomic=False)
+    _write(ws_state, PROFILE, (json.dumps(profile, sort_keys=True) + "\n").encode(), atomic=False)
     _write(out.parent, out.name, (json.dumps(doc, indent=1, sort_keys=True) + "\n").encode(), atomic=True)
     return summary
 

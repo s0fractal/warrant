@@ -302,7 +302,7 @@ MUTANTS = [
     # AMEND 1 of #179 (Codex on fd385a2): every path init writes is checked and written through no symlink.
     ("A105", "init.py", "the workspace's state directory under the state root is not checked",
      [('    ws_state = _target(state / workspace, "the workspace\'s state", repo)', '    ws_state = state / workspace'),
-      ('    for sub in ("profile.json", *STATE_DIRS, *STATE_LAZY):', '    for sub in ():')],
+      ('    for sub in (PROFILE, *STATE_DIRS, *STATE_LAZY):', '    for sub in ():')],
      "agent_repo_test", ["I13"]),
     ("A106", "init.py", "a symlink within the home directory is followed",
      [("        if os.path.islink(q) and (parent == base", "        if False and (parent == base")],
