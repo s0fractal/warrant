@@ -1,0 +1,1 @@
+A capture holds the object store's lock shared from its first object until its `view.json` exists, and a collection holds it exclusively: a collection never removes an object a capture is pinning.

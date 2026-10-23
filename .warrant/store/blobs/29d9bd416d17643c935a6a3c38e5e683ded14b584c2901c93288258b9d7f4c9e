@@ -1,0 +1,1 @@
+A manifest is read only under the token and workspace it names: a `view.json` naming another view's manifest is `VIEW_UNKNOWN`.

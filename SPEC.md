@@ -560,12 +560,44 @@ read of a view answers from its stored report and captured bytes, never from the
 live store. A view is assessed with the receiver's own trust and profile. Past
 the workspace's `assess_seconds` there is no report and no view:
 `NO_ASSESSMENT`. The assessment worker reads only a view directory that
-`capture` made.
+`capture` made and the objects its operands name in that workspace's object
+store.
 
 A view token is 32 lowercase hex digits; it selects a view of its own workspace
 and grants nothing, and a token no view of that workspace has is `VIEW_UNKNOWN`. A
 view lives at least `view_ttl` whole seconds from the moment it is ready;
 afterwards it is `VIEW_EXPIRED`.
+
+A view's bytes live once in its workspace's object store, each under the SHA-256
+of its bytes: record envelopes, blobs, provider modules and the view's tree,
+report body and manifest; `views/<token>/view.json` names the manifest, and
+views of an unchanged store share their records, blobs, provider modules and
+tree. An object is added, never changed: bytes found under a name that do not
+hash to it are damage, and a capture replaces them only with the bytes that do. Every
+read of a view hashes the bytes it reads; a pinned object that is absent or does
+not hash to its name is `VIEW_DAMAGED`, or `VIEW_EXPIRED` once the view has
+expired, and nothing is read from the live store instead. A manifest is read
+only under the token and workspace it names: a `view.json` naming another view's
+manifest is `VIEW_UNKNOWN`.
+
+A collection removes every view that has expired or that a capture left without
+`view.json`, then every object no live view pins; a collected view's token is
+`VIEW_UNKNOWN`. A collection runs as `warrant-agent gc`, the operator's command
+and not a tool, and at the end of a capture when the last one is older than the
+workspace's `gc_interval` (0: never), without waiting for the lock. A capture
+holds the object store's lock shared from its first object until its `view.json`
+exists, and a collection holds it exclusively: a collection never removes an
+object a capture is pinning. A collection reads no root and removes nothing
+outside the workspace's views and objects: drafts, staged packages, import
+journals, export records and the store keep their bytes, and a draft or a staged
+import whose view was collected still commits or completes. Each workspace has
+its own object store: a collection of one removes nothing another pins. A view
+written before views were manifests, a full copy in its own directory, answers
+as before until it expires, and a collection removes it then. A view's tree
+carries the store's misfiled entries as a store read reports them, so a store
+holding a file that is neither a record nor a blob is assessed, not refused. The
+worker assesses the pinned snapshot under the workspace's admission limits (§9):
+bytes a staged package adds past one are `RESOURCE_LIMIT`, and no view is kept.
 
 A context's `actor` selects whose frontier is read, not who signs, and is an
 actor id (§3), else `BAD_REQUEST`. With `scope`, a context's questions are every
@@ -712,9 +744,9 @@ by the workspace's `provider_seconds` stores nothing, and the refusal is
 
 The refusal codes are BAD_REQUEST, UNSUPPORTED_VERSION, NOT_PERMITTED,
 UNKNOWN_WORKSPACE, UNKNOWN_EXPECTATION, VIEW_UNKNOWN, VIEW_EXPIRED,
-CURSOR_MISMATCH, NOT_FOUND, CONFLICT, RESOURCE_LIMIT, NO_ASSESSMENT,
-IMPORT_INCOMPLETE, IMPORT_BLOCKED, SIGNER_CHANGED, NO_SIGNER, PROVIDER and
-REFUSED.
+VIEW_DAMAGED, CURSOR_MISMATCH, NOT_FOUND, CONFLICT, RESOURCE_LIMIT,
+NO_ASSESSMENT, IMPORT_INCOMPLETE, IMPORT_BLOCKED, SIGNER_CHANGED, NO_SIGNER,
+PROVIDER and REFUSED.
 
 - `RESOURCE_LIMIT` for an engine admission limit (§9) carries `details: {limit,
   value, bound}`; no view is kept and no verdict is produced.
