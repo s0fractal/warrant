@@ -295,7 +295,7 @@ MUTANTS = [
     ("A93", "init.py", "a missing seed is not refused as such (it is read anyway)",
      [('    _refuse(seed.is_file(), "INIT_NO_SEED",', '    _refuse(True, "INIT_NO_SEED",')], "agent_repo_test", ["I05"]),
     ("A104", "init.py", "init writes or reads outside the operator's directory",
-     [('    _refuse(os.path.commonpath([real, base]) == base, "INIT_OUTSIDE_HOME",', '    _refuse(True, "INIT_OUTSIDE_HOME",')],
+     [('    if os.path.commonpath([real, base]) == base:\n        return Path(real)', '    if True:\n        return Path(real)')],
      "agent_repo_test", ["I11"]),
     ("A94", "config.py", "a repository's bindings are admitted without its roles",
      [("    admitted, refused = B.admit_bindings(doc, roles=roles)", "    admitted, refused = B.admit_bindings(doc)")],

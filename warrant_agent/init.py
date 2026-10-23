@@ -65,9 +65,9 @@ def _confined(arg, what):
     init reads and writes only there."""
     base = os.path.realpath(Path.home())
     real = os.path.realpath(arg)
-    _refuse(os.path.commonpath([real, base]) == base, "INIT_OUTSIDE_HOME",
-            f"{what} {real} is outside the operator's home directory {base}")
-    return Path(real)
+    if os.path.commonpath([real, base]) == base:
+        return Path(real)
+    raise Refused("INIT_OUTSIDE_HOME", f"{what} {real} is outside the operator's home directory {base}")
 
 
 def _json(path, code):
