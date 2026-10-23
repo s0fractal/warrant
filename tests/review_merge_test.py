@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Merges of pull requests reviewed as records (tools/claimslib/reviews.py): a merge observation, its report
-from history, and merges without reviewer acceptance (V13-V16).
+from history, and merges without reviewer acceptance (V13-V16); the merge's own tree is review_integration_test.
 
     python3 tests/review_merge_test.py
 """
@@ -60,6 +60,7 @@ def merge_cases():
     late = f.code("merged", "--pr", "3", "--merge", m3)
     no_merge = f.code("merged", "--pr", "1", "--merge", h1)
     check("V15", rep3["outside"] == ["calc.py"] and RV.merged_without_acceptance(rep3)
+          and RV.merge_state(rep3) == RV.TIP_CHANGED
           and [x["commit"] for x in rep3["accepted"]] == [h3] and late == ("REVIEW_MERGE_TWICE", True)
           and no_merge[1] and no_merge[0] in ("REVIEW_MERGE_TWICE", "REVIEW_MERGE_SHAPE"),
           "a tip that changes code after the accepted head merged without reviewer acceptance; a merge is observed once",

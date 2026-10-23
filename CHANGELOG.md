@@ -51,12 +51,14 @@ replaced it.
   code, its key pinned and bound) observes a mechanical finding at its head and each later head:
   FAIL, PASS, NO_RESULT, DOES_NOT_APPLY. `review.py replay --verify` (CI) re-executes the new ones;
   `check` never runs a finding's test.
-- A merge is a Git act, observed: the tip, the heads accepted in the tip's own store and the paths
-  changed since outside the records and their views. REVIEWS.md is the generated view, with merges
-  without reviewer acceptance listed; WITNESSES.md counts findings filed, reproduced and answered,
-  and acceptances of a head at which a finding reproduced.
+- A merge is a Git act, observed: the merge, its tree, its first parent and tip, the heads accepted in
+  the tip's own store, the paths the tip changes since, and the merge's own integration changes (its
+  tree against `git merge-tree` of the first parent with the accepted head; at a conflict one side is
+  allowed; AMEND 1 of #181). REVIEWS.md is the generated view, with every merge whose result is not
+  reviewed listed by its state; WITNESSES.md counts findings filed, reproduced and answered, and
+  acceptances of a head at which a finding reproduced.
 - AGENT.md, "Reviews through the interface": the same steps through `warrant_prepare` and
-  `warrant_commit`, byte-identical (reviews_test V20). Tests V01-V29 in four files, mutants M484-M522.
+  `warrant_commit`, byte-identical (reviews_test V20). Tests V01-V33 in five files, mutants M484-M529.
 
 ### The repository hunts its own blind spots (G7)
 

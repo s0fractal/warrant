@@ -97,7 +97,7 @@ jobs:
       - name: The review loop as records (tools/review.py; fixture Git repositories)
         working-directory: tests
         run: |
-          for t in reviews review_check review_merge review_replay; do python "${t}_test.py"; done
+          for t in reviews review_check review_merge review_replay review_integration; do python "${t}_test.py"; done
 
       - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
         working-directory: tests

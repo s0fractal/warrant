@@ -17,7 +17,7 @@ duty stays as the records leave it.
 | --- | --- | --- | --- | --- | --- | --- |
 | #181 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 
-## Merged without reviewer acceptance
+## Merged without reviewer acceptance of the result
 
 None.
 

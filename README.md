@@ -556,7 +556,7 @@ and accepted by, and the review replay checkers it adopts.
 | An answer (`answer`, the author) | the next head, its blob naming the findings it answers |
 | ACCEPT (`accept`, the reviewer) | an accept of the current head's closure: the duty is DISCHARGED (SPEC §4.2) |
 | AMEND | a finding (or several) against the current head; the author answers at a new head |
-| A merge (`merged`) | a Git act, not a closure: an observation of the merge commit with a report of its tip, the heads accepted in the tip's own store, and the paths the tip changes since the latest of them outside the records and their views. No accepted head, or such paths, reads "merged without reviewer acceptance"; the duty stays as the records leave it |
+| A merge (`merged`) | a Git act, not a closure: an observation of the merge commit with a report naming the merge, its own tree, its first parent and its tip; the heads accepted in the tip's own store; the paths the tip changes since the latest of them; and the merge's own integration changes, the paths where its tree is neither Git's merge (`git merge-tree`) of the first parent with the accepted head nor, at a conflict, exactly one side. Paths of the records and their views do not count. The states are kept apart: no accepted head, tip changed after acceptance, unreviewed integration changes, integration unverified, or reviewed; only the last credits the reviewer. The duty stays as the records leave it |
 
 The owner, whom a pull request is owed to, has no key (`s0fractal` is reserved
 in `.warrant/roles.json`): an owner's release or `impossible` cannot be filed,
