@@ -44,6 +44,7 @@ USES = {USE: {"delivery": ["LOCAL_CAPTURE", "MATCH_EXPECTED_SET"], "reliance": [
 ROADMAP = "warrant-roadmap/config@1"
 DOT = ".warrant"
 TRUST, ROLES_FILE, ROADMAP_FILE, PROFILE = "trust.json", "roles.json", "roadmap.json", "profile.json"
+CONFIG_WHAT = "the configuration"
 FILES = tuple(f"{DOT}/{f}" for f in (TRUST, ROLES_FILE, ROADMAP_FILE))
 ROOTS = (Path.home(),)          # where init reads and writes: the operator's home directory
 
@@ -165,8 +166,8 @@ def _separate(inputs, files, state):
         for what, p in inputs.items():
             _refuse(q != p and not _same_file(q, p), "INIT_PATH_COLLISION",
                     f"{out} {q} would be written over {what} {p}")
-    _refuse(not _inside(files["the configuration"], state), "INIT_PATH_COLLISION",
-            f"the configuration {files['the configuration']} lies in the state directory {state}")
+    _refuse(not _inside(files[CONFIG_WHAT], state), "INIT_PATH_COLLISION",
+            f"{CONFIG_WHAT} {files[CONFIG_WHAT]} lies in the state directory {state}")
 
 
 def _own_outputs(config, profile, repo, workspace):
@@ -211,7 +212,7 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     seed = _confined(seed, "the seed")             # read, never written: its real path is what counts
     _refuse(not _inside(seed, repo), "INIT_INSIDE_REPOSITORY",
             f"the seed {seed} is inside the repository {repo}: the operator's files stay outside it")
-    config = _target(config, "the configuration", repo)
+    config = _target(config, CONFIG_WHAT, repo)
     state = _target(state if state else config.parent / f"{config.stem}-state", "the state directory", repo)
     operations = list(operations)
     _refuse(bool(operations) and len(set(operations)) == len(operations) and set(operations) <= set(OPERATIONS),
@@ -252,7 +253,7 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     for sub in (PROFILE, *STATE_DIRS, *STATE_LAZY):
         _target(ws_state / sub, f"the workspace's {sub}", repo)
     _separate({"the seed": seed, "the repository": repo, **{f"{DOT}/{f}": dot / f for f in (TRUST, ROLES_FILE, ROADMAP_FILE)}},
-              {"the configuration": config, "the profile": ws_state / PROFILE}, state)
+              {CONFIG_WHAT: config, "the profile": ws_state / PROFILE}, state)
     _own_outputs(config, ws_state / PROFILE, repo, workspace)
     doc = {"agent_api": AGENT_API, "state": str(state),
            "workspaces": {workspace: {

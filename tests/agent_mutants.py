@@ -324,7 +324,7 @@ MUTANTS = [
      [('        _refuse(ok, "INIT_NOT_INIT_OUTPUT", f"{config} is not a configuration init wrote',
        '        _refuse(True, "INIT_NOT_INIT_OUTPUT", f"{config} is not a configuration init wrote')], "agent_repo_test", ["I25"]),
     ("A112", "init.py", "the configuration may lie in the state directory (at the profile's path)",
-     [('    _refuse(not _inside(files["the configuration"], state), "INIT_PATH_COLLISION",', '    _refuse(True, "INIT_PATH_COLLISION",')],
+     [('    _refuse(not _inside(files[CONFIG_WHAT], state), "INIT_PATH_COLLISION",', '    _refuse(True, "INIT_PATH_COLLISION",')],
      "agent_repo_test", ["I23"]),
     ("A113", "config.py", "a configuration whose signer's key lies in its state directory loads",
      [("            need(key != root and not key.startswith(root + os.sep), \"BAD_REQUEST\",",
