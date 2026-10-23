@@ -31,7 +31,6 @@ on:
 
 permissions:
   contents: read
-  actions: read                   # report: find and read the previous run's list
 
 concurrency:
   group: survivors-${{ github.ref }}
@@ -169,6 +168,9 @@ jobs:
   report:
     needs: [wheels, coverage, hunt, curated]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read               # find and read the previous run's list, this job only
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

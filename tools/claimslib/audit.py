@@ -16,6 +16,7 @@ from .counters import standing
 
 MATRIX = "warrant-mutants/matrix@1"
 AUDIT = "warrant-claims/audit@1"
+CORE = "mutants.py"         # the core harness: it also holds source_digest and mutant_digest
 
 
 def confined(arg):
@@ -42,7 +43,7 @@ def _definitions(repo, core):
     defs = {}
     for name, _ in HARNESSES:
         if (repo.tests / name).is_file():
-            mod = core if name == "mutants.py" else _harness(repo, name)
+            mod = core if name == CORE else _harness(repo, name)
             defs.update({m[0]: core.mutant_digest(m) for m in mod.MUTANTS})
     return defs
 
@@ -73,7 +74,7 @@ def load_matrices(repo, paths):
     for the code and tests it ran: its source digest must be this checkout's, and a row
     only for the mutant as defined now (its definition digest), else MATRIX_STALE. `paths`
     come from the caller (cmd_audit confines command-line paths first)."""
-    core = _harness(repo, "mutants.py")
+    core = _harness(repo, CORE)
     here, defs = core.source_digest(repo.root), _definitions(repo, core)
     rows, problems = {}, []
     for p in paths:
@@ -250,6 +251,6 @@ def cmd_audit(repo, a):
           f"in {len({b['claim'] for b in line})} claims, tier function {len(blind) - len(line)}; "
           f"{len(unknown)} unknown (witness file not run)")
     if a.json:
-        doc = audit_doc(_harness(repo, "mutants.py").source_digest(repo.root), blind, unknown, low)
+        doc = audit_doc(_harness(repo, CORE).source_digest(repo.root), blind, unknown, low)
         confined(a.json).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     return 1 if a.refuse and blind else 0
