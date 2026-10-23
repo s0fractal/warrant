@@ -150,8 +150,26 @@ def chain_handoff_cases():
           "a receiver importing chained records reaches the sender's verdicts on them", (sender, receiver))
 
 
+def relation_cases():
+    # H17 (SPEC §10.4): the source and the exporter an expectation names are checked. The same
+    # package, declared by producer, against three expectations of the receiver on its manifest:
+    # another source, an exporter that did not declare it, and the exporter that did (the control).
+    src, rcv = world()
+    ids = reviewed_work(src, challenge=False)
+    pkg, digest = pkg_and_digest(src, ids)
+    for handle, extra in (("other-source", {"source": "elsewhere"}), ("by-auditor", {"source": "src", "exporter": "auditor"}),
+                          ("by-producer", {"source": "src", "exporter": "producer"})):
+        rcv.expect(handle, digest, **extra)
+    got = [inspect(rcv, pkg, ids, h).get("ok", {}).get("delivery", {}).get("relation")
+           for h in ("other-source", "by-auditor", "by-producer")]
+    check("H17", got == ["WRONG_SOURCE", "UNVERIFIED_EXPORTER", "MATCH_EXPECTED_SET"],
+          "an expectation's source and exporter are checked: another source, or no declaration by the named "
+          "exporter, is not a match", got)
+
+
 def main():
     chain_handoff_cases()
+    relation_cases()
     # H01: a full package with a counting challenge: delivery MATCH, reliance CHALLENGED, use HOLD
     src, rcv = world()
     ids = reviewed_work(src)

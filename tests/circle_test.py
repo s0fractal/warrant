@@ -660,12 +660,53 @@ def ledger_cases():
     f.close()
 
 
+# ---------------------------------------------------------------- E: a new section of the document
+
+def section_cases():
+    """A section pinned after the document exists gets its heading (heading --section) before the
+    next pinned section, or at the end; its first sentence is placed under that heading (add
+    --after SECTION) and list items after a sentence (--item); another section is refused."""
+    pins = dict(PINS, sections=["0", "1"], headings={"0": "# Title", "1": "## 1. One"})
+    f = Fix(pins)
+    f.claim("SPEC-1-1")
+    f.author().file_document([{"heading": "# Title"}, "\n\n", {"heading": "## 1. One"}, "\n\n",
+                              {"claim": "SPEC-1-1", "layout": None}, "\n"], "fixture", f.at())
+    pins = dict(pins, sections=["0", "1", "2", "2.1"], headings=dict(pins["headings"], **{"2": "## 2. Two",
+                                                                                        "2.1": "### 2.1 Sub"}))
+    (f.dir / ".warrant" / "claims.json").write_text(json.dumps(pins))
+    rcs = [f.run(CL, "heading", "--section", s, "--because", "fixture")[0] for s in ("2.1", "2")]
+    for cid, text, where in (("SPEC-2-1", "A first rule.", ["--after", "2"]),
+                             ("SPEC-2-2", "Second.", ["--after", "SPEC-2-1", "--paragraph", "--item"]),
+                             ("SPEC-2-3", "Third.", ["--after", "SPEC-2-2", "--item"]),
+                             ("SPEC-2.1-1", "Sub rule.", ["--after", "2.1"])):
+        rcs.append(f.run(CL, "add", "--id", cid, "--text", text, "--unbacked-because", "fixture", *where)[0])
+    m = f.model()
+    d = CL.Document(m)
+    got = CL.render_spec(m, d.current)
+    want = ("# Title\n\n## 1. One\n\nA rule holds.\n\n## 2. Two\n\nA first rule.\n\n- Second.\n- Third.\n\n"
+            "### 2.1 Sub\n\nSub rule.\n")
+    check("E1", rcs == [0] * 6 and got == want and d.problems_with(CL.Repo(f.dir).pins()) == []
+          and set(CL.Repo(f.dir).pins()["sentences"]) >= {"SPEC-2-1", "SPEC-2-2", "SPEC-2-3", "SPEC-2.1-1"},
+          "a newly pinned section is headed before the next pinned one; its sentences go under it, as items too",
+          (rcs, got))
+
+    before = f.files()
+    refused = [f.run(CL, "add", "--id", cid, "--text", "Misplaced.", "--unbacked-because", "fixture", "--after", a)[0]
+               for cid, a in (("SPEC-2-9", "1"), ("SPEC-2-9", "2.1"), ("SPEC-2-9", "2\n"), ("SPEC-3-1", "3"))]
+    heading = f.run(CL, "heading", "--section", "3", "--because", "fixture")[0]
+    check("E2", refused == [2] * 4 and heading == 2 and f.files() == before,
+          "a sentence placed under another section's heading, or a heading the pins do not name, is refused unwritten",
+          (refused, heading))
+    f.close()
+
+
 GROUPS = ((binding_cases, ("B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12")),
           (role_cases, ("R1", "R2", "R2b", "R3", "R4", "R5", "R6", "R7")),
           (accept_cases, ("K1", "K2", "K3", "K4", "K5", "K6", "K7")),
           (lineage_cases, ("L1", "L2", "L3", "L4", "L11")),
           (challenge_cases, ("L5", "L6", "L7", "L8", "L9", "L10")),
-          (ledger_cases, ("W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9")))
+          (ledger_cases, ("W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9")),
+          (section_cases, ("E1", "E2")))
 
 
 def main():

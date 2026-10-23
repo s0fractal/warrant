@@ -1286,6 +1286,20 @@ def _visit(view, did, report, done, busy):
      [('HEX = re.compile(r"^[0-9a-f]*\\Z")', 'HEX = re.compile(r"^[0-9a-fA-F]*\\Z")')], "replay_test", ["R20"]),
     ("M469", "shapes.py", "hex may end in a newline (`$`, not \\Z)",
      [('HEX = re.compile(r"^[0-9a-f]*\\Z")', 'HEX = re.compile(r"^[0-9a-f]*$")')], "replay_test", ["R21"]),
+    # The agent interface under the spec (SPEC §10): a directory for why --uncovered, a new section of the document
+    ("M470", "../tools/claimslib/why.py", "--uncovered DIR takes every file whose path merely starts with DIR",
+     [('[p for p in w.files if p.startswith(path + "/")]', '[p for p in w.files if p.startswith(path)]')],
+     "why_test", ["Y17"]),
+    ("M471", "../tools/claimslib/why.py", "--uncovered takes no directory, only one file",
+     [('[p for p in w.files if p.startswith(path + "/")]', '[]')], "why_test", ["Y17"]),
+    ("M472", "../tools/claimslib/author.py", "a new section's heading is appended at the end, after later sections",
+     [("    if j is not None:\n        return parts[:j]", "    if False:\n        return parts[:j]")],
+     "circle_test", ["E1"]),
+    ("M473", "../tools/claimslib/author.py", "a sentence may be placed under the heading of another section",
+     [("            if after != section:\n", "            if False:\n")], "circle_test", ["E2"]),
+    ("M474", "../tools/claimslib/author.py", "--item after a sentence starts no list item",
+     [('sep = ("\\n\\n" if paragraph else "\\n") + "- " if item', 'sep = ("\\n\\n" if paragraph else "\\n") + "" if item')],
+     "circle_test", ["E1"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

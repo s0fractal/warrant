@@ -36,7 +36,7 @@ def main(argv=None):
 
     p = authoring(sub.add_parser("add", help="author claims from a stanza"))
     p.add_argument("--stanza", help="JSON stanza or list: {id, text, witnesses, mutants, informative, unbacked_because, "
-                   "counter, residual, because}")
+                   "counter, residual, because, after, paragraph, item}")
     p.add_argument("--id")
     p.add_argument("--text")
     p.add_argument("--witness", action="append", default=[], help="<test file>:<case>, repeatable or comma-separated")
@@ -44,8 +44,10 @@ def main(argv=None):
     p.add_argument("--informative", help="the reason this sentence is not normative")
     p.add_argument("--unbacked-because", help="why this normative sentence is open (no witness or no mutant)")
     p.add_argument("--because")
-    p.add_argument("--after", help="a new sentence's position: the claim it follows, in its own section")
+    p.add_argument("--after", help="a new sentence's position: the claim it follows, in its own section, or that "
+                   "section's number (first under its heading)")
     p.add_argument("--paragraph", action="store_true", help="start a new paragraph after --after")
+    p.add_argument("--item", action="store_true", help="start a list item after --after (with --paragraph: a new list)")
     p = authoring(sub.add_parser("supersede", help="replace a claim's statement"))
     p.add_argument("--id", required=True)
     p.add_argument("--text", required=True)
@@ -68,7 +70,8 @@ def main(argv=None):
     sub.add_parser("project", help="regenerate SPEC.md and SPEC-CLAIMS.md")
     p = authoring(sub.add_parser("migrate", help="W5, once: the first document version, from SPEC.md"))
     p.add_argument("--because", required=True)
-    p = authoring(sub.add_parser("heading", help="file the heading .warrant/claims.json now pins for a section"))
+    p = authoring(sub.add_parser("heading", help="file the heading .warrant/claims.json now pins for a section "
+                                 "(a renamed one in place, a newly pinned one before the next section)"))
     p.add_argument("--section", required=True, help="the section number, or 0 for the document's title")
     p.add_argument("--because", required=True)
     p = sub.add_parser("check", help="CI: refuse any disagreement")

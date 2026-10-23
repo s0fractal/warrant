@@ -230,9 +230,11 @@ def cmd_why(repo, a):
         return 0
     if a.uncovered:
         path = _why_path(repo, a.uncovered)
-        if path not in w.files:
-            raise Refused(f"{a.uncovered}: not a Python file under {', '.join(r + '/' for r in WHY_ROOTS)}", "WHY_FILE")
-        paths = [path]
+        # a file of why_files, or a directory: the files of why_files under it (never a path opened as given)
+        paths = [path] if path in w.files else [p for p in w.files if p.startswith(path + "/")]
+        if not paths:
+            raise Refused(f"{a.uncovered}: not a Python file or a directory of them under "
+                          f"{', '.join(r + '/' for r in WHY_ROOTS)}", "WHY_FILE")
     else:
         paths = [p for p in w.files if p.split("/")[0] in UNCOVERED_ROOTS]
     d = w.uncovered(paths)

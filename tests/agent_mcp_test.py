@@ -298,6 +298,16 @@ def first_contact_cases(src, rcv, ids, cfg_path, cfg):
     check("M14", k.get("means") and k.get("does_not_establish") and u.get("unknown") is True and "UNVERIFIED" in u.get("terms", []),
           "explain gives a meaning and its limit for a known word, the known words for an unknown one", (k, u))
 
+    # M16: every word a result can answer with is one explain knows: each refusal code, each delivery
+    # relation, each reliance state and each use state (at c4e6c94 four refusal codes had none)
+    from warrant import engine as E
+    from warrant_agent import config as CF, errors
+    words = list(errors.CODES) + list(CF.RELATIONS) + list(E.RELIANCE) + ["WITHIN_POLICY", "HOLD", "UNATTESTED"]
+    unknown = [t for t in words if api.call(cfg, "explain", {"term": t}).get("ok", {}).get("data", {}).get("unknown")]
+    via_mcp = tool_calls(cfg_path, [("warrant_explain", {"term": "CURSOR_MISMATCH"})])[0].get("ok", {}).get("data", {})
+    check("M16", unknown == [] and via_mcp.get("means"),
+          "every refusal code, delivery relation, reliance state and use state has a meaning in explain", unknown)
+
 
 def main():
     src, rcv = world()

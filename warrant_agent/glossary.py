@@ -60,7 +60,16 @@ TERMS = {
     "invalid": ("Records in the view that do not authenticate under the receiver's trust (wrong key for the "
                 "named actor, not canonical, wrong id). They take part in nothing.",
                 "An invalid acceptance closes nothing, whatever actor it names."),
-    # refusal codes
+    # refusal codes (every code of errors.CODES has an entry: agent_mcp_test M16)
+    "UNSUPPORTED_VERSION": ("The request's `agent_api` is not warrant-agent/1, the interface version this server "
+                            "speaks.", ""),
+    "CURSOR_MISMATCH": ("The cursor belongs to another view, kind or target; a cursor is read only with the view "
+                        "and the target that made it.", ""),
+    "NO_ASSESSMENT": ("The view could not be assessed: the worker passed the workspace's assess_seconds, produced "
+                      "no report, or assessed other operands than the captured ones. No view is kept.",
+                      "It is not a verdict about the work."),
+    "IMPORT_INCOMPLETE": ("An object was not in the store with its staged bytes after promotion; the import's "
+                          "journal stays STARTED and a retry with the same request_id completes it.", HOLDS),
     "BAD_REQUEST": ("The request's shape is wrong; the message says which member and, for a record body, "
                     "`details.template` shows the smallest valid body.", ""),
     "UNKNOWN_WORKSPACE": ("The workspace is not configured; warrant_workspace lists the configured ones.", ""),

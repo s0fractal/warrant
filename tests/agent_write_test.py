@@ -22,6 +22,7 @@ def main():
     # W11 runs first and the older cases are guarded: a mutant that breaks every commit (A57)
     # fails W11 on its assertion instead of losing the results file in W01's ok().
     chain_cases()
+    accept_default_case()
     try:
         older_cases()
     except Exception as e:      # noqa: BLE001
@@ -77,11 +78,11 @@ def older_cases():
     c1 = ok(rev.call("commit", {"workspace": "src", "draft_id": first["data"]["draft_id"]}))
     rev.file("transition", "producer", 500, R.transition("ATTESTED", established=["something else happened"]))
     n_before = len(list((rev.ws.store / "records").iterdir()))
-    c2 = ok(api.call(Config.load(rev.base / "config.json"), "commit", {"workspace": "src",
-                                                                      "draft_id": first["data"]["draft_id"]}))
-    check("W04", c1["data"]["record_id"] == c2["data"]["record_id"] == first["data"]["record_id"]
+    c2 = api.call(Config.load(rev.base / "config.json"), "commit", {"workspace": "src",
+                                                                   "draft_id": first["data"]["draft_id"]})
+    check("W04", c1["data"]["record_id"] == c2.get("ok", {}).get("data", {}).get("record_id") == first["data"]["record_id"]
           and len(list((rev.ws.store / "records").iterdir())) == n_before,
-          "a retried commit returns the committed record and files nothing new", (c1["data"], c2["data"]))
+          "a retried commit returns the committed record and files nothing new", (c1["data"], c2))
 
     # W05: cancelled before commit stays PREPARED; after commit it is COMMITTED
     p5 = ok(rev.call("prepare", {"workspace": "src", "based_on": after["view_token"], "request_id": "w5",
@@ -104,10 +105,10 @@ def older_cases():
 
     # W07: a challenge can be filed against a closure that is not ELIGIBLE
     v7 = context(rev, [{"kind": "duty", "id": ids["duty"]}])
-    p7 = ok(rev.call("prepare", {"workspace": "src", "based_on": v7["view_token"], "request_id": "w7",
-                                 "type": "challenge", "body": {"target": ids["transition"], "item": 0,
-                                                               "statement": "still wrong", "evidence": []}}))
-    c7 = rev.call("commit", {"workspace": "src", "draft_id": p7["data"]["draft_id"]})
+    p7 = rev.call("prepare", {"workspace": "src", "based_on": v7["view_token"], "request_id": "w7",
+                              "type": "challenge", "body": {"target": ids["transition"], "item": 0,
+                                                            "statement": "still wrong", "evidence": []}})
+    c7 = rev.call("commit", {"workspace": "src", "draft_id": p7["ok"]["data"]["draft_id"]}) if "ok" in p7 else p7
     check("W07", v7["data"]["capsules"][0]["reliance"] == "CHALLENGED" and "ok" in c7,
           "recording a challenge is not gated by the use policy", c7)
 
@@ -188,6 +189,22 @@ def older_cases():
           and asks == {"producer": "ok", "prodúcer": "ok", "producer\n": "BAD_REQUEST", "prodúcer\r\n": "BAD_REQUEST",
                        "producer ": "BAD_REQUEST", "": "BAD_REQUEST"},
           "a signer or a request actor that is not an actor id is refused", (loads, asks))
+
+
+def accept_default_case():
+    # W13 (SPEC §10.5): an accept prepared without `evidence` takes the exact evidence of the item it
+    # accepts in the view, not the transition's whole evidence set; item null takes the transition's.
+    s13, _ = world()
+    e1, e2 = s13.blob(b"the item's evidence"), s13.blob(b"other evidence of the transition")
+    d = s13.file("duty", "producer", 100, R.duty("producer", "w13", ["reviewer"], {"attest": {}}, accept_by=["reviewer"]))
+    t = s13.file("transition", "producer", 110, R.transition("ATTESTED", sorted([e1, e2]),
+                                                             closes=[R.item(d, "discharge", [e1])]))
+    v = s13.call("context", {"workspace": "src", "targets": [d]}).get("ok", {})
+    got = [s13.call("prepare", {"workspace": "src", "based_on": v.get("view_token"), "request_id": f"w13-{item}",
+                                "type": "accept", "body": {"transition": t, "item": item}})
+           .get("ok", {}).get("data", {}).get("record", {}).get("body", {}).get("evidence") for item in (0, None)]
+    check("W13", got == [[e1], sorted([e1, e2])],
+          "an accept without evidence takes the exact evidence of its item in the view", got)
 
 
 def chain_cases():
