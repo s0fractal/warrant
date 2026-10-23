@@ -11,7 +11,7 @@ from pathlib import Path
 from warrant import records as R
 from warrant.store import Store
 
-from .base import AUTHOR, COUNTER, GIT_NO_GC, HARNESSES, id_key, Refused
+from .base import AUTHOR, COUNTER, GIT_NO_GC, id_key, Refused
 from .repo import Repo
 from .model import Model
 from .counters import _replay_counter, STATEMENT_REFUSAL
@@ -46,7 +46,9 @@ def _audit_synthetic(fix, work):
     r = _clone(fix, work / "audit-synthetic")
     r.mutants()
     core = _harness(r, "mutants.py")
-    defs = {m[0]: m for name, _ in HARNESSES for m in (core if name == "mutants.py" else _harness(r, name)).MUTANTS}
+    # The core harness's mutants only: the planted matrix is one of tests/mutants.py, and a matrix
+    # holds only its own harness's ids (check_matrices: MATRIX_UNKNOWN_ID, AMEND 1 of #178).
+    defs = {m[0]: m for m in core.MUTANTS}
     pick = _audit_pick(r, defs)
     if pick is None:
         return [("audit: the fixture has a claim with an overlapping and a disjoint mutant", False, "none found")]
