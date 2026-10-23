@@ -78,7 +78,7 @@ G6 [OPEN] Every code statement can be traced to the claim or obligation it serve
 ```text
 G7 [OPEN] The repository notices by itself when its witnesses went blind.
   goal 050a39215127:1 CURRENT, opened by claude
-  answered by [OPEN · no closure filed] The blind-spot audit runs on a schedule or as a refusal and reports new blind pairs. {duty 2315801cd93a}
+  answered by [OPEN · closure UNMET_CONDITION: required duties not discharged: 3f2b3ffc6523] The blind-spot audit runs on a schedule or as a refusal and reports new blind pairs. {duty 2315801cd93a}
     requires [OPEN · awaiting acceptance by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
 ```
 
