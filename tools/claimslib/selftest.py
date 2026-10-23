@@ -749,6 +749,8 @@ def selftest(jobs=1):
                 return [x["kind"] for x in mine] == [kind] and status.startswith("BACKED") and not rows[actor]["now"]
             return f
 
+        acceptance_fixture = {}
+
         def accepted_by_codex(r):
             """Accept with an ephemeral receiver-local key, without rotating an existing codex binding.
             A real codex binding and its signed records may already be in the copied store."""
@@ -756,6 +758,8 @@ def selftest(jobs=1):
             local_c = r.root.parent / f"{r.root.name}-codex-trust.json"
             local_c.write_bytes(C.canon(Trust.document(local_bindings() + [("codex", k.public)])))
             os.environ[LOCAL_TRUST] = str(local_c)     # run_case restores it after check and also()
+            acceptance_fixture[r.root.name] = {rid for rid, rec in Model(r.snapshot(), r.trust()).recs.items()
+                                               if rec["type"] == "accept" and rec["actor"] == "codex"}
             # G4: a BACKED claim's duty names the replay checker. A duty that codex accepts is one filed
             # where the pins adopt no checker; `a` moves to such a duty first (a supersession, same sentence).
             au = author(r)
@@ -775,15 +779,22 @@ def selftest(jobs=1):
 
         def shows_accepted(r):
             line = next(ln for ln in r.projection.read_text().splitlines() if ln.startswith(f"| {a.id} |"))
-            rows = ledger(Model(r.snapshot(), r.trust()), {}, r.bindings()[0])
-            return "| DISCHARGED (accepted by codex) |" in line and len(rows["codex"]["accepts"]) == 1
+            m = Model(r.snapshot(), r.trust())
+            rows = ledger(m, {}, r.bindings()[0])
+            before, after = acceptance_fixture[r.root.name], set(rows["codex"]["accepts"])
+            added = after - before
+            return ("| DISCHARGED (accepted by codex) |" in line and before <= after and len(added) == 1
+                    and m.recs[next(iter(added))]["body"]["transition"] == m.current[a.id].tid)
 
         squat = {}
+        squat_accepts = {}
 
         def squatter_takes_codex(r):
             """The parent's reproduction on fad382f: a fresh key binds `codex` through the CLI and
             accepts a claim. The binding is written by hand here (bind refuses it now)."""
             k = W.Key.generate()
+            squat_accepts[r.root.name] = {rid for rid, rec in Model(r.snapshot(), r.trust()).recs.items()
+                                         if rec["type"] == "accept" and rec["actor"] == "codex"}
             bind_entry(r, "codex", k)
             seed_s = r.root / ".." / f"{r.root.name}-squatter.seed"
             seed_s.write_text(k.seed_hex() + "\n")
@@ -798,8 +809,9 @@ def selftest(jobs=1):
 
         def squatter_refused(r):
             m = Model(r.snapshot(), r.trust())
-            return squat.get(r.root.name) == (2, 2) and not [x for x in m.recs.values()
-                                                             if x["type"] == "accept" and x["actor"] == "codex"]
+            return (squat.get(r.root.name) == (2, 2)
+                    and {rid for rid, rec in m.recs.items() if rec["type"] == "accept" and rec["actor"] == "codex"}
+                    == squat_accepts[r.root.name])
 
         def pin_against_claude(r):
             set_role(r, AUTHOR, W.Key.generate().public)

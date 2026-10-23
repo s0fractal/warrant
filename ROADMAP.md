@@ -20,7 +20,7 @@ DISCHARGED · accepted by the acceptor.
 G1 [OPEN] A counterexample changes the repository, whoever brings it.
   goal decb6270e906:0 CURRENT, opened by claude
   answered by [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
-    served by [OPEN] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
+    served by [DISCHARGED] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
 ```
 
 ## G2 [OPEN]
@@ -28,13 +28,13 @@ G1 [OPEN] A counterexample changes the repository, whoever brings it.
 ```text
 G2 [OPEN] An agent with no preparation can use Warrant correctly.
   goal decb6270e906:1 CURRENT, opened by claude
-  answered by [OPEN · awaiting acceptance by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
   answered by [OPEN · no closure filed] warrant-graph is published on PyPI, and its public version and digests are read back. {duty 88d614277600}
-    requires [OPEN · awaiting acceptance by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
+    requires [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
   answered by [OPEN · no closure filed] warrant-agent-mcp is listed in the public MCP server directories; the publish step needs the owner's account. {duty fd26017fff98}
     requires [OPEN · no closure filed] warrant-graph is published on PyPI, and its public version and digests are read back. {duty 88d614277600}
-      requires [OPEN · awaiting acceptance by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
-  answered by [OPEN · awaiting acceptance by codex] The agent interface's contract is SPEC §10, generated from claim records: each normative sentence is BACKED by a tests/agent_*_test.py case and an agent mutant killed on it, or UNBACKED with the reason nothing witnesses it. {duty d4ed413defb3; serves SPEC-10-3, SPEC-10-4, SPEC-10.1-1, SPEC-10.1-2, SPEC-10.1-3, SPEC-10.1-4, SPEC-10.1-5, SPEC-10.1-6, SPEC-10.1-7, SPEC-10.1-8, SPEC-10.1-9, SPEC-10.1-10, SPEC-10.1-11, SPEC-10.1-12, SPEC-10.2-1, SPEC-10.2-2, SPEC-10.2-3, SPEC-10.2-4, SPEC-10.2-5, SPEC-10.2-6, SPEC-10.2-7, SPEC-10.2-8, SPEC-10.2-9, SPEC-10.2-10, SPEC-10.2-11, SPEC-10.2-12, SPEC-10.2-13, SPEC-10.2-15, SPEC-10.3-1, SPEC-10.3-2, SPEC-10.3-3, SPEC-10.3-4, SPEC-10.3-5, SPEC-10.3-6, SPEC-10.4-1, SPEC-10.4-2, SPEC-10.4-3, SPEC-10.4-4, SPEC-10.4-5, SPEC-10.4-6, SPEC-10.4-7, SPEC-10.4-8, SPEC-10.4-9, SPEC-10.4-10, SPEC-10.4-11, SPEC-10.4-14, SPEC-10.4-15, SPEC-10.5-1, SPEC-10.5-2, SPEC-10.5-3, SPEC-10.5-4, SPEC-10.5-5, SPEC-10.5-6, SPEC-10.5-7, SPEC-10.5-9, SPEC-10.5-10, SPEC-10.5-11, SPEC-10.5-12, SPEC-10.5-13, SPEC-10.5-14, SPEC-10.6-1, SPEC-10.6-3, SPEC-10.6-4, SPEC-10.6-5, SPEC-10.7-2, SPEC-10.8-1, SPEC-10.8-3}
+      requires [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] The agent interface's contract is SPEC §10, generated from claim records: each normative sentence is BACKED by a tests/agent_*_test.py case and an agent mutant killed on it, or UNBACKED with the reason nothing witnesses it. {duty d4ed413defb3; serves SPEC-10-3, SPEC-10-4, SPEC-10.1-1, SPEC-10.1-2, SPEC-10.1-3, SPEC-10.1-4, SPEC-10.1-5, SPEC-10.1-6, SPEC-10.1-7, SPEC-10.1-8, SPEC-10.1-9, SPEC-10.1-10, SPEC-10.1-11, SPEC-10.1-12, SPEC-10.2-1, SPEC-10.2-2, SPEC-10.2-3, SPEC-10.2-4, SPEC-10.2-5, SPEC-10.2-6, SPEC-10.2-7, SPEC-10.2-8, SPEC-10.2-9, SPEC-10.2-10, SPEC-10.2-11, SPEC-10.2-12, SPEC-10.2-13, SPEC-10.2-15, SPEC-10.3-1, SPEC-10.3-2, SPEC-10.3-3, SPEC-10.3-4, SPEC-10.3-5, SPEC-10.3-6, SPEC-10.4-1, SPEC-10.4-2, SPEC-10.4-3, SPEC-10.4-4, SPEC-10.4-5, SPEC-10.4-6, SPEC-10.4-7, SPEC-10.4-8, SPEC-10.4-9, SPEC-10.4-10, SPEC-10.4-11, SPEC-10.4-14, SPEC-10.4-15, SPEC-10.5-1, SPEC-10.5-2, SPEC-10.5-3, SPEC-10.5-4, SPEC-10.5-5, SPEC-10.5-6, SPEC-10.5-7, SPEC-10.5-9, SPEC-10.5-10, SPEC-10.5-11, SPEC-10.5-12, SPEC-10.5-13, SPEC-10.5-14, SPEC-10.6-1, SPEC-10.6-3, SPEC-10.6-4, SPEC-10.6-5, SPEC-10.7-2, SPEC-10.8-1, SPEC-10.8-3}
   answered by [OPEN · no closure filed] warrant's own repository is workable through warrant-agent-mcp: init configures a checkout for its pinned signer, and an obligation, its closure and its acceptance filed through MCP are the records tools/roadmap.py files. {duty 135f5bc93ad4}
 ```
 
@@ -45,7 +45,7 @@ G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
   goal decb6270e906:2 CURRENT, opened by claude
   answered by [OPEN · closure UNMET_CONDITION: required duties not discharged: 57cf328ea761] A witness ledger is derived from the records as a projection: responsibility for acceptances later refuted, credit for challenges that replayed. {duty 9a039a41c85d}
     requires [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
-      served by [OPEN] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
+      served by [DISCHARGED] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
 ```
 
 ## G4 [OPEN]
@@ -61,8 +61,9 @@ G4 [OPEN] A rule can act: a checker identified by the hash of its code accepts b
 ```text
 G5 [OPEN] The specification rebuilds itself under evidence.
   goal decb6270e906:4 CURRENT, opened by claude
-  answered by [OPEN · awaiting acceptance by codex] SPEC.md is generated from signed claim records, and CI refuses a hand edit. {duty 28931cd4ac21}
-  answered by [OPEN · awaiting acceptance by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] SPEC.md is generated from signed claim records, and CI refuses a hand edit. {duty 28931cd4ac21}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
+  mark: obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal is still open, so the decomposition did not reach it (Forward Attack)
 ```
 
 ## G6 [OPEN]
@@ -78,8 +79,9 @@ G6 [OPEN] Every code statement can be traced to the claim or obligation it serve
 ```text
 G7 [OPEN] The repository notices by itself when its witnesses went blind.
   goal 050a39215127:1 CURRENT, opened by claude
-  answered by [OPEN · closure UNMET_CONDITION: required duties not discharged: 3f2b3ffc6523] The blind-spot audit runs on a schedule or as a refusal and reports new blind pairs. {duty 2315801cd93a}
-    requires [OPEN · awaiting acceptance by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] The blind-spot audit runs on a schedule or as a refusal and reports new blind pairs. {duty 2315801cd93a}
+    requires [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
+  mark: obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal is still open, so the decomposition did not reach it (Forward Attack)
 ```
 
 ## G8 [OPEN]
