@@ -38,6 +38,40 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### The repository hunts its own blind spots (G7)
+
+- `tests/generated_mutants.py` generates mutants nobody chose: fixed AST operators (negate a
+  condition, swap a comparison incl. `<`/`<=`, swap `and`/`or`, a simple statement to `pass`, a
+  return value to `None`/`True`/empty, flip a boolean, ±1 on an integer) over every statement of
+  `warrant/`, `warrant_agent/` and `tools/claimslib/`, each with an id that survives edits
+  elsewhere in the file. A line-coverage map (standard-library tracer, subprocesses included,
+  made once per tree; a red case refuses it) gives each mutant only the test files that execute
+  its statement. Outcomes KILLED (by named cases), CRASHED, TIMEOUT, SURVIVED, NOT_RUN, INVALID.
+  The controller is `tests/mutants.py`'s `run_all`, now with a hunt mode: any outcome is a result,
+  and `--merge` recomputes each one from its row instead of requiring KILLED.
+- `.github/workflows/survivors.yml` runs it weekly and on demand in 16 parts, runs the curated
+  mutants under every test file and `tools/claims.py audit` over those full matrices, and
+  publishes `survivors.json` (outcome per mutant id, the audit's blind pairs) and `report.md`.
+  Against the previous run's list on the same branch: BLIND (KILLED or CRASHED before, surviving now), NEW
+  survivors and new blind pairs. Never a check; no commit, no push. `claims.py audit --json`
+  writes the pairs as data.
+- A generated mutant never backs a claim (`claims.py` refuses its id, UNKNOWN_MUTANT); a survivor
+  that changes no behaviour is listed with its reason in `tests/equivalent_mutants.json`.
+- `tests/agent_mcp_test.py` keeps an inherited PYTHONPATH after the tree under test, so the
+  tracer reaches the MCP server it starts.
+- The first hunt (8632 mutants) closed four of its survivors with witness cases and curated
+  mutants: SPEC-4.5-1's "within" and "no later" include equality (R49, M475, M476); a value 256
+  containers deep is canonical and 257 is not, written or read, and loads' depth scan skips
+  strings (E10, M477-M479); a trust file is trust/2 and binds each key once (K18, M480, M481).
+  Three survivors are listed as equivalent with their reasons.
+- One validation of matrices, `check_matrices` in `tests/mutants.py`, for every reader that
+  states what a matrix says: `--merge`, the survivor `report` (which now takes `--coverage`) and
+  `claims.py audit`. Source identity, current definitions, outcomes recomputed from each row's runs,
+  ids once (and complete, for merge and report); a matrix that fails writes nothing (Codex AMEND 1
+  on 87768ff: `report` stated 8644 KILLED from rows with no runs). The previous run's list is
+  checked too: of another shape, or whose commit is not an ancestor of HEAD, it is not compared
+  with, and the report says so.
+
 ### The agent interface under the spec: SPEC §10 (G2)
 
 - **[protocol]** SPEC.md §10 "Agent interface" states the contract of warrant-agent/1 (requests

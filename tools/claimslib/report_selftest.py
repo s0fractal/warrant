@@ -11,12 +11,12 @@ from pathlib import Path
 from warrant import records as R
 from warrant.store import Store
 
-from .base import AUTHOR, COUNTER, GIT_NO_GC, HARNESSES, id_key, Refused
+from .base import AUTHOR, COUNTER, GIT_NO_GC, id_key, Refused
 from .repo import Repo
 from .model import Model
 from .counters import _replay_counter, STATEMENT_REFUSAL
 from .author import Author
-from .audit import _harness, _mutant_patch, audit, confined, load_matrices, MATRIX
+from .audit import _harness, _mutant_patch, audit, audit_doc, confined, load_matrices, MATRIX
 from .why import _mid_key, CLAIMED, NO_CLAIM, NOT_A_STATEMENT, UNCOVERED_ROOTS, Why
 
 
@@ -41,12 +41,26 @@ def _audit_pick(r, defs):
     return None
 
 
+def _synthetic_row(core, m, runs, definition, killer, lie):
+    """A matrix row of mutant `m` with `runs` plus zz_test's ZZ_KILLER, labelled with the outcome its
+    own runs give, as run_all writes it (check_matrices recomputes it); `lie` flips the label."""
+    row_runs = json.loads(json.dumps(runs))
+    row_runs.setdefault("zz_test", {})["ZZ_KILLER"] = "FAIL" if killer else "PASS"
+    outcome = core.verdict(row_runs, m[4], m[5])[0]
+    if lie:
+        outcome = "SURVIVED" if outcome == "KILLED" else "KILLED"
+    return {"definition": definition or core.mutant_digest(m), "file": m[1], "what": m[2], "test": m[4],
+            "targets": list(m[5]), "runs": row_runs, "outcome": outcome}
+
+
 def _audit_synthetic(fix, work):
     """(1) Matrices built here over the fixture's own mutants: a planted blind claim and each guard."""
     r = _clone(fix, work / "audit-synthetic")
     r.mutants()
     core = _harness(r, "mutants.py")
-    defs = {m[0]: m for name, _ in HARNESSES for m in (core if name == "mutants.py" else _harness(r, name)).MUTANTS}
+    # The core harness's mutants only: the planted matrix is one of tests/mutants.py, and a matrix
+    # holds only its own harness's ids (check_matrices: MATRIX_UNKNOWN_ID, AMEND 1 of #178).
+    defs = {m[0]: m for m in core.MUTANTS}
     pick = _audit_pick(r, defs)
     if pick is None:
         return [("audit: the fixture has a claim with an overlapping and a disjoint mutant", False, "none found")]
@@ -54,18 +68,13 @@ def _audit_synthetic(fix, work):
     src = core.source_digest(r.root)
     first = c.doc["witnesses"][0]
 
-    def matrix(result=lambda w: "PASS", drop=(), source=src, definition=None, killer=True):
+    def matrix(result=lambda w: "PASS", drop=(), source=src, definition=None, killer=True, lie=False):
         runs = {}
         for w in c.doc["witnesses"]:
             test, _, case = w.partition(":")
             if test not in drop:
                 runs.setdefault(test, {})[case] = result(w)
-        rows = {}
-        for mid in (x, y):
-            row_runs = json.loads(json.dumps(runs))
-            row_runs.setdefault("zz_test", {})["ZZ_KILLER"] = "FAIL" if killer else "PASS"
-            rows[mid] = {"definition": definition or core.mutant_digest(defs[mid]), "file": defs[mid][1], "what": defs[mid][2],
-                         "test": defs[mid][4], "targets": list(defs[mid][5]), "outcome": "KILLED", "runs": row_runs}
+        rows = {mid: _synthetic_row(core, defs[mid], runs, definition, killer, lie) for mid in (x, y)}
         p = work / f"matrix-{len(list(work.glob('matrix-*.json')))}.json"
         p.write_text(json.dumps({"matrix": MATRIX, "harness": "mutants", "tests": "selftest", "source": source, "mutants": rows}))
         return [str(p)]
@@ -118,6 +127,9 @@ def _synthetic_guards(r, c, x, first, run, matrix):
     _, _, rows, probs = run(definition="0" * 64)
     out.append(("audit: a row of a mutant defined otherwise now is refused MATRIX_STALE",
                 not rows and {p[0] for p in probs} == {"MATRIX_STALE"}, probs))
+    _, _, rows, probs = run(lie=True)
+    out.append(("audit: a row labelled with an outcome its own runs do not give is refused MATRIX_OUTCOME "
+                "(the validation --merge uses, AMEND 1 of #178)", not rows and {p[0] for p in probs} == {"MATRIX_OUTCOME"}, probs))
     escaped = []
     for arg in ("/etc/hosts", "../hosts", "sub/../../hosts", ".."):
         try:
@@ -162,6 +174,9 @@ def _audit_e2e(fix, work, key):
             and "records_test:A7" in hit[0]["fails"], (run.stdout[-300:], probs, why)),
            ("audit e2e: the pre-review SPEC-4.1-5 is blind to M116, not confined, and its counter is refused per statement",
             bool(hit5) and not hit5[0]["confined"] and bool(why5) and STATEMENT_REFUSAL in why5, (hit5[:1], why5))]
+    pairs = [(x["claim"], x["mutant"], x["confined"]) for x in audit_doc("tree:x", blind, [], {})["blind"]]
+    out.append(("audit e2e: --json names each candidate as a (claim, mutant) pair with its confinement",
+                (s338, "M278", True) in pairs and (s415, "M116", False) in pairs, pairs[:4]))
     au.claim(n.id, n.doc["text"], ["contract_test:X1", "records_test:A6", "records_test:A7"], ["M05", "M06", "M241"],
              because="selftest: A7 cited, M278 still not", previous=now[s338])
     blind, _ = audit(r, rows)

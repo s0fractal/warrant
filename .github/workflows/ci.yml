@@ -8,7 +8,8 @@ name: ci
 #   wheels           builds the wheelhouse once (warrant from this checkout, sigma-glyph from the
 #                    pinned release, the pinned MCP SDK) and publishes its digest;
 #   suites           base install, the installed-bytes suites, the mutant runner's selftest,
-#                    the roadmap check;
+#                    the generated mutants' selftest (their scheduled hunt is survivors.yml,
+#                    never a check of this workflow), the roadmap check;
 #   claims-selftest  tools/claims.py --selftest;
 #   examples         cross-host, review handoff, ref transport, scenarios, agent acceptance,
 #                    the Claude Code plugin bridge;
@@ -98,6 +99,9 @@ jobs:
 
       - name: Mutant runner selftest (the controller, its red-baseline guard, shards and merge)
         run: python tests/mutants.py --selftest
+
+      - name: Generated mutants selftest (generator ids, tracer, outcomes, report; the hunt itself is survivors.yml)
+        run: WARRANT_IMPL= python tests/generated_mutants.py --selftest
 
       - name: Roadmap (goals and obligations are records in .warrant/store; ROADMAP.md is a view)
         run: WARRANT_IMPL= python tools/roadmap.py check

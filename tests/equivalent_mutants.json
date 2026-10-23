@@ -1,0 +1,17 @@
+{
+ "format": "warrant-generated/equivalent@1",
+ "mutants": {
+  "G4f2fd80b594d": {
+   "what": "warrant/engine.py View.accepted_at: COMPARE p < out[actor] -> p <= out[actor]",
+   "reason": "A position is (at, rank, record id), so two acceptance records never share one: p == out[actor] has no input, and < and <= keep the same earliest acceptance. SPEC-CLAIMS.md records the same fact for SPEC-4.2-10 (\"two items never share an admission position\")."
+  },
+  "G89a8d182adec": {
+   "what": "warrant/jcs.py _float: DELETE raise NotCanonical(\"floats are not admitted\") -> pass",
+   "reason": "Without the raise, parse_float returns None, so the parsed value holds null where the bytes hold a number; canon(value) then differs from the raw bytes and loads refuses them as not canonical. Every float is refused either way; only the message differs (records_test E2 reads 1.5, 2.0 and 1e2)."
+  },
+  "Gbc2ec90c84ab": {
+   "what": "warrant/records.py _grant: DELETE _need(set(delegable) <= set(acts)) -> pass",
+   "reason": "GRANT_ACTS is (\"release\",) and acts must be non-empty, so acts is [\"release\"] and every valid delegable lies within it: the subset check has no input that reaches it. SPEC-CLAIMS.md records the same residual for SPEC-3.5-5. It stops being equivalent when a second grant act is added: remove this entry in that change."
+  }
+ }
+}

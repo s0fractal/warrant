@@ -82,6 +82,7 @@ def main(argv=None):
                    help="a matrix from tests/mutants.py --matrix or tests/agent_mutants.py --matrix (repeatable)")
     p.add_argument("--counters", metavar="DIR", help="write each candidate's would-be counter blob there")
     p.add_argument("--refuse", action="store_true", help="exit 1 when any candidate is found")
+    p.add_argument("--json", metavar="FILE", help="also write the pairs as data (warrant-claims/audit@1), a file in $TMPDIR")
     p = sub.add_parser("why", help="the claims, obligations and goals a source statement serves, or the statements none does")
     p.add_argument("target", nargs="?", metavar="FILE:LINE")
     p.add_argument("--uncovered", nargs="?", const="", metavar="FILE",
