@@ -514,6 +514,12 @@ names a workspace and an expectation only by the operator's local handles: 1 to
 64 characters of `a-z`, `0-9`, `_`, `.` and `-`, the first a letter or a digit. No
 request member selects a signer, a key, a path or a URL.
 
+A workspace's trust may be `{bindings, roles}` of a repository: the bindings its
+`.warrant/trust.json` admits under the pins of its `.warrant/roles.json` by
+`warrant/bindings.py`, the rule `tools/claims.py` admits by, read again for
+every view. A roles file with any problem refuses every view of that workspace
+as `BAD_REQUEST`: a dropped pin would make its name first-come.
+
 Every request is a closed JSON object: a missing required member or an unknown
 member is `BAD_REQUEST`. A request whose `agent_api` is not `warrant-agent/1` is
 `UNSUPPORTED_VERSION`; MCP tools carry no version, and the backend checks it for
@@ -562,12 +568,14 @@ view lives at least `view_ttl` whole seconds from the moment it is ready;
 afterwards it is `VIEW_EXPIRED`.
 
 A context's `actor` selects whose frontier is read, not who signs, and is an
-actor id (§3), else `BAD_REQUEST`. A target is a duty or a transition of the
-view, named by its id, `{id}` or `{kind, id}`; any other record of the view is
-`BAD_REQUEST` with its type in `details.type`, and an id not in the view is
-`NOT_FOUND`. A context is paged under `context_bytes`; truncation is marked, and
-every cursor is bound to its view, kind and target: any other cursor is
-`CURSOR_MISMATCH`.
+actor id (§3), else `BAD_REQUEST`. With `scope`, a context's questions are every
+question of that scope in the view, owned or not, each with the engine's `owned`
+and `taken_by`, and they come before the frontier. A target is a duty or a
+transition of the view, named by its id, `{id}` or `{kind, id}`; any other
+record of the view is `BAD_REQUEST` with its type in `details.type`, and an id
+not in the view is `NOT_FOUND`. A context is paged under `context_bytes`;
+truncation is marked, and every cursor is bound to its view, kind and target:
+any other cursor is `CURSOR_MISMATCH`.
 
 `read` returns the captured bytes of one record or blob of a view, chunked under
 `read_bytes`, with their `digest`, whether the chunk is `complete`, and
@@ -661,6 +669,14 @@ body is `BAD_REQUEST` with `details.template`, the smallest body of its type. An
 `accept` takes `{transition, item, evidence?, support?}`; without `evidence` it
 is the exact evidence of that item in the view.
 
+`prepare` takes `blobs`, JSON documents that `commit` stores as their canonical
+bytes before the record; in an evidence list of the body (a transition's and its
+items', an accept's, a challenge's, an observation's `raw`) `blob:<i>` is the id
+of `blobs[i]`. A blob the body does not cite, or a `blob:<i>` that names none,
+is `BAD_REQUEST` and nothing is stored; the blobs are inputs of the draft, so
+other blobs under one request id are `CONFLICT`, and a commit refused as
+`SIGNER_CHANGED` stores none of them.
+
 `commit` signs and files exactly the draft; a retry after a lost response or a
 restart returns the same record and files nothing new. Prepare and commit extend
 the signer's chain as SPEC-3-26 states: commit is a compare-and-swap on the
@@ -722,6 +738,21 @@ configured. No result credits what the receiver did not establish: the source's
 completeness stays UNATTESTED, and evidence is untrusted data. Nothing is
 exposed beyond these operations: no HTTP transport, watcher, scheduler, OAuth,
 shell, package install, merge or release.
+
+`warrant-agent-mcp init`, the operator's command and not a tool, configures a
+repository checkout only for a signer whose existing seed's key is exactly the
+key the repository's `.warrant/roles.json` pins for that actor and whose binding
+its `.warrant/trust.json` admits; it creates no key. Its configuration, its
+state and the seed lie outside the repository. `init` writes no path through a
+symlink: every path it creates or writes, the ones derived from the state
+directory too, is checked by its real path before the first write and written by
+descriptors that do not follow links, and a configuration whose workspace state
+holds a symlink is refused when it loads. Nothing `init` reads is something it
+or the server writes: the seed and the repository's files lie neither in the
+state directory nor at a path `init` writes, by real path or as the same file,
+and `--force` replaces only a configuration an earlier `init` wrote for the same
+repository and workspace; a configuration whose signer's key lies in its state
+directory is refused when it loads.
 
 On a shared machine this is an application boundary, not OS isolation: an agent
 with a shell on the same keys and configuration is not contained by it, and

@@ -1,0 +1,1 @@
+A workspace's trust may be `{bindings, roles}` of a repository: the bindings its `.warrant/trust.json` admits under the pins of its `.warrant/roles.json` by `warrant/bindings.py`, the rule `tools/claims.py` admits by, read again for every view.

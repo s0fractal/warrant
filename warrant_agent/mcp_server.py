@@ -1,6 +1,7 @@
 """`warrant-agent-mcp` — a thin local stdio MCP server over warrant-agent/1.
 
     warrant-agent-mcp --config CONFIG.json
+    warrant-agent-mcp init --actor ACTOR --seed SEED --config OUT.json [--repo DIR] ...   (warrant_agent.init)
 
 Eight tools, each calling the same backend as the Python API and the CLI
 (warrant_agent.api.call): warrant_workspace, warrant_context, warrant_read,
@@ -93,9 +94,12 @@ def build(cfg):
                         use: Annotated[str | None, Field(description="A configured use; the default use if omitted.")] = None,
                         actor: Annotated[str | None, Field(description=(
                             "Whose frontier to show; your signer's actor if omitted. It does not choose who signs."))] = None,
-                        context_bytes: Annotated[int | None, Field(description="Page size in bytes (>= 256).")] = None
+                        context_bytes: Annotated[int | None, Field(description="Page size in bytes (>= 256).")] = None,
+                        scope: Annotated[str | None, Field(description=(
+                            "A question scope (e.g. roadmap:G2): questions then lists every question of it, "
+                            "owned or not, before the frontier."))] = None
                         ) -> dict[str, Any]:
-        return run("context", _req(workspace=workspace, targets=targets, use=use, actor=actor,
+        return run("context", _req(workspace=workspace, targets=targets, use=use, actor=actor, scope=scope,
                                    limits={"context_bytes": context_bytes} if context_bytes is not None else None))
 
     @server.tool(name="warrant_read", annotations=reads, description=(
@@ -150,16 +154,21 @@ def build(cfg):
         "{basis: ATTESTED, established: [...], residual: [...what is not established or still open], "
         "closes?: [{duty, act: discharge, evidence: [blob ids]}] only for duties the work completes}; "
         "duty {holder, statement, owed_to, condition: {attest: {}}, accept_by}; accept {transition, item}; "
-        "challenge {target, item, statement, evidence}; observation; grant. An invalid body is refused with "
-        "details.template. The same type and body without request_id give the same draft."))
+        "challenge {target, item, statement, evidence}; observation; grant. Evidence that is not in the store yet: "
+        "give it as blobs (JSON documents) and cite blobs[i] as \"blob:<i>\" in an evidence list; commit stores "
+        "them. An invalid body is refused with details.template. The same type and body without request_id give "
+        "the same draft."))
     def warrant_prepare(workspace: Workspace, type: Literal["duty", "transition", "accept", "observation", "grant",
                                                             "challenge"],
                         body: Annotated[dict[str, Any], Field(description="The record body (see the description).")],
                         based_on: Annotated[str | None, Field(description="A view_token; a new view if omitted.")] = None,
-                        request_id: Annotated[str | None, Field(description="Retry key; derived if omitted.")] = None
+                        request_id: Annotated[str | None, Field(description="Retry key; derived if omitted.")] = None,
+                        blobs: Annotated[list[Any] | None, Field(description=(
+                            "JSON documents stored at commit as canonical bytes; \"blob:<i>\" in an evidence "
+                            "list of the body is the id of blobs[i]."))] = None
                         ) -> dict[str, Any]:
         return run("prepare", _req(workspace=workspace, type=type, body=body, based_on=based_on,
-                                   request_id=request_id))
+                                   request_id=request_id, blobs=blobs))
 
     @server.tool(name="warrant_commit", annotations=local, description=(
         "Sign and file exactly the prepared draft with the configured signer; a retry returns the same record."))
@@ -202,6 +211,10 @@ def build(cfg):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["init"]:                     # the operator's command; the server never runs it
+        from . import init
+        return init.main(argv[1:])
     ap = argparse.ArgumentParser(prog="warrant-agent-mcp", description=__doc__, allow_abbrev=False,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", required=True)

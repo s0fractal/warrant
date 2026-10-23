@@ -1,0 +1,1 @@
+With `scope`, a context's questions are every question of that scope in the view, owned or not, each with the engine's `owned` and `taken_by`, and they come before the frontier.

@@ -1,0 +1,1 @@
+{"because":null,"duty":"4cf820371a347e6e8cbe9386567a3a37b080603a5c8a11bb306bc7cad62b3460","id":"SPEC-10.8-7","kind":"normative","mutants":["A90"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10.8","source":"SPEC.md","text":"Its configuration, its state and the seed lie outside the repository.","witnesses":["agent_repo_test:I06"]}

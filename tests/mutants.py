@@ -913,23 +913,24 @@ def _visit(view, did, report, done, busy):
      [('                          "goal": m.goal_of(s)} for s in m.served_by(did) if s not in seen and s in m.rep["duties"]],',
        '                          "goal": m.goal_of(s)} for s in [] if s not in seen and s in m.rep["duties"]],')],
      "roadmap_test", ["P7"]),
-    # The open circle of witnesses (tools/claims.py, tools/roadmap.py; tests/circle_test.py): A bindings,
+    # The open circle of witnesses (tools/claims.py, tools/roadmap.py; tests/circle_test.py): A bindings
+    # (the admission rule is warrant/bindings.py, the rest tools/claimslib/bindings.py),
     # B acceptance, C lineage and counters from anyone, D the witness ledger.
-    ("M319", "../tools/claimslib/bindings.py", "a binding whose proof does not verify is admitted (forged proof)",
+    ("M319", "bindings.py", "a binding whose proof does not verify is admitted (forged proof)",
      [("    if not K.verify(k[\"public\"], k[\"proof\"], msg):\n", "    if False:\n")], "circle_test", ["B2", "B3", "B8"]),
-    ("M320", "../tools/claimslib/bindings.py", "a proof signed by another key is reported as forged (the refusal stays, its code is wrong)",
+    ("M320", "bindings.py", "a proof signed by another key is reported as forged (the refusal stays, its code is wrong)",
      [("        if other:\n            return \"BINDING_PROOF_OTHER_KEY\"", "        if False:\n            return \"BINDING_PROOF_OTHER_KEY\"")], "circle_test", ["B3"]),
-    ("M321", "../tools/claimslib/bindings.py", "a second key for an actor is admitted (the first binding does not win)",
+    ("M321", "bindings.py", "a second key for an actor is admitted (the first binding does not win)",
      [("    if first is not None:\n", "    if False:\n")], "circle_test", ["B4"]),
-    ("M322", "../tools/claimslib/bindings.py", "a binding's actor id is not checked against SPEC-3-21",
+    ("M322", "bindings.py", "a binding's actor id is not checked against SPEC-3-21",
      [("        R.check_actor(k[\"actor\"])\n    except R.Invalid as e:\n        return \"BINDING_ACTOR_SHAPE\"", "        pass\n    except R.Invalid as e:\n        return \"BINDING_ACTOR_SHAPE\"")], "circle_test", ["B5"]),
-    ("M323", "../tools/claimslib/bindings.py", "one key binds two actors",
+    ("M323", "bindings.py", "one key binds two actors",
      [("    if any(p == k[\"public\"] for _, p in admitted):\n", "    if False:\n")], "circle_test", ["B6"]),
-    ("M324", "../tools/claimslib/bindings.py", "a binding with no proof is admitted",
+    ("M324", "bindings.py", "a binding with no proof is admitted",
      [("    if \"proof\" not in k:\n        return \"BINDING_UNPROVEN\"", "    if \"proof\" not in k:\n        return None, None\n        return \"BINDING_UNPROVEN\"")], "circle_test", ["B7"]),
-    ("M325", "../tools/claimslib/bindings.py", "the proof signs {actor, public} without the purpose (no domain separation)",
+    ("M325", "bindings.py", "the proof signs {actor, public} without the purpose (no domain separation)",
      [("    return C.canon({\"actor\": actor, \"public\": public, \"purpose\": BINDING})", "    return C.canon({\"actor\": actor, \"public\": public})")], "circle_test", ["B8"]),
-    ("M326", "../tools/claimslib/bindings.py", "a trust/2 file without proofs is read as admitted bindings outside a base",
+    ("M326", "bindings.py", "a trust/2 file without proofs is read as admitted bindings outside a base",
      [("    if legacy and isinstance(doc, dict) and doc.get(\"warrant\") == \"trust/2\":", "    if isinstance(doc, dict) and doc.get(\"warrant\") == \"trust/2\":")], "circle_test", ["B7"]),
     ("M327", "../tools/claimslib/bindings.py", "a binding admitted at the base may be dropped",
      [("            for a, p in was if (a, p) not in have]", "            for a, p in was if False]")], "circle_test", ["B10"]),
@@ -1028,13 +1029,13 @@ def _visit(view, did, report, done, busy):
     ("M373", "../tools/claimslib/check.py", "WITNESSES.md is compared as text: read_text() turns \\r\\n into \\n",
      [("    elif repo.witnesses.read_bytes() != render_witnesses(repo, model, table).encode():", "    elif repo.witnesses.read_text() != render_witnesses(repo, model, table):")], "circle_test", ["W9"]),
     # AMEND 1 of #170: a name the configuration gives a role is pinned in .warrant/roles.json, not first-come.
-    ("M376", "../tools/claimslib/bindings.py", "a role (a pinned key, reserved or collective) admits a binding of another key",
+    ("M376", "bindings.py", "a role (a pinned key, reserved or collective) admits a binding of another key",
      [("    if role != k[\"public\"]:", "    if False:")], "circle_test", ["R1", "R2b", "R7"]),
     ("M377", "../tools/claimslib/repo.py", "the repository's bindings are admitted without its roles",
      [("        return admit_bindings(doc, roles=self.roles()[0])", "        return admit_bindings(doc)")], "circle_test", ["R2b"]),
     ("M378", "../tools/claimslib/bindings.py", "bind writes a binding the roles refuse",
      [("    admitted, problems = admit_bindings(doc, roles=repo.roles()[0])", "    admitted, problems = admit_bindings(doc)")], "circle_test", ["R2"]),
-    ("M379", "../tools/claimslib/bindings.py", "a role may be pinned to anything",
+    ("M379", "bindings.py", "a role may be pinned to anything",
      [("        if not (v is None or v == COLLECTIVE or S.hex64(v)):", "        if False:")], "circle_test", ["R3"]),
     ("M380", "../tools/claimslib/check.py", "check does not report a malformed roles file",
      [("    out += why + unpinned(roles, ", "    out += unpinned(roles, ")], "circle_test", ["R3"]),
@@ -1193,6 +1194,13 @@ def _visit(view, did, report, done, busy):
      "store_index_test", ["V14"]),
     ("M437", "store.py", "a receiver's index secret is a constant, not random",
      [('                os.write(fd, os.urandom(32))', '                os.write(fd, bytes(32))')], "store_index_test", ["V17"]),
+    # A blob found canonical is remembered by the sha256 of its bytes (Snapshot.json_blob, _CANONICAL): claims-selftest
+    # re-read ~100 document versions of SPEC.md (37 KB each) in every case, 286 s -> 106 s locally.
+    ("M482", "store.py", "a remembered canonical blob is keyed by its name, not by its bytes",
+     [("        seen = hashlib.sha256(data).digest()\n", "        seen = h\n")], "store_index_test", ["V19"]),
+    ("M483", "store.py", "bytes are remembered as canonical before C.loads has accepted them",
+     [("        try:\n            value = C.loads(data)\n", "        _CANONICAL.add(seen)\n        try:\n            value = C.loads(data)\n")],
+     "store_index_test", ["V19"]),
     # One module of shapes (warrant/shapes.py, tests/shapes_test.py): each predicate against the `$`,
     # CRLF, non-ASCII, case and length vectors, never raising; and no second definition anywhere.
     ("M438", "shapes.py", "hex64 assumes a string: a non-string raises instead of answering False",
@@ -1489,7 +1497,7 @@ def mutant_digest(m):
 COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "assessment_test": 0.9,
         "primitives_test": 0.1, "records_test": 0.2, "cli_test": 0.3, "roadmap_test": 3.1, "circle_test": 0.9,
         "agent_handoff_test": 7.0, "agent_write_test": 1.9, "agent_compute_test": 1.9, "agent_mcp_test": 17.0,
-        "why_test": 1.3, "store_index_test": 1.3, "shapes_test": 0.1, "replay_test": 4.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor
+        "why_test": 1.3, "store_index_test": 1.3, "shapes_test": 0.1, "replay_test": 4.0, "agent_repo_test": 6.6}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor
 
 
 def _cost(m):
