@@ -15,8 +15,9 @@ name: survivors
 #   wheels    the wheelhouse, as in ci.yml;
 #   coverage  every tests/*_test.py once, unmutated and traced: the map (refused if a case fails);
 #   hunt      16 parts of the generated mutants (--shard K/N), each writing its matrix;
-#   curated   the curated mutants of tests/mutants.py and tests/agent_mutants.py in parts, each
-#             under every test file (--matrix-tests all), so the audit knows every witness;
+#   curated   the curated mutants of tests/mutants.py (12 parts) and tests/agent_mutants.py (2 parts),
+#             each under every test file (--matrix-tests all), so the audit knows every witness
+#             (545 mutants took 1 h 33 min on 12 local jobs: about 2 min of test time per mutant);
 #   report    the generated parts merged (refused unless every generated mutant ran exactly once
 #             and each outcome is the one its runs give), the curated parts merged (as in ci.yml),
 #             tools/claims.py audit over those full matrices, then both compared with the last
@@ -133,14 +134,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {harness: mutants, part: 1, of: 8}
-          - {harness: mutants, part: 2, of: 8}
-          - {harness: mutants, part: 3, of: 8}
-          - {harness: mutants, part: 4, of: 8}
-          - {harness: mutants, part: 5, of: 8}
-          - {harness: mutants, part: 6, of: 8}
-          - {harness: mutants, part: 7, of: 8}
-          - {harness: mutants, part: 8, of: 8}
+          - {harness: mutants, part: 1, of: 12}
+          - {harness: mutants, part: 2, of: 12}
+          - {harness: mutants, part: 3, of: 12}
+          - {harness: mutants, part: 4, of: 12}
+          - {harness: mutants, part: 5, of: 12}
+          - {harness: mutants, part: 6, of: 12}
+          - {harness: mutants, part: 7, of: 12}
+          - {harness: mutants, part: 8, of: 12}
+          - {harness: mutants, part: 9, of: 12}
+          - {harness: mutants, part: 10, of: 12}
+          - {harness: mutants, part: 11, of: 12}
+          - {harness: mutants, part: 12, of: 12}
           - {harness: agent_mutants, part: 1, of: 2}
           - {harness: agent_mutants, part: 2, of: 2}
     name: curated (${{ matrix.harness }} ${{ matrix.part }}/${{ matrix.of }}, all test files)
