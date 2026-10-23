@@ -1,0 +1,7 @@
+{
+  "reviews": "warrant-review/config@1",
+  "repository": "s0fractal/warrant",
+  "owed_to": ["s0fractal"],
+  "accept_by": ["codex"],
+  "replayers": ["checker sha256:7ef1efb6f5bb2cef8a5060d7218e666b74bc8394fd7a23a97dc68e5fc3890759"]
+}
