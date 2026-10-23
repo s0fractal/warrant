@@ -41,6 +41,18 @@ def _audit_pick(r, defs):
     return None
 
 
+def _synthetic_row(core, m, runs, definition, killer, lie):
+    """A matrix row of mutant `m` with `runs` plus zz_test's ZZ_KILLER, labelled with the outcome its
+    own runs give, as run_all writes it (check_matrices recomputes it); `lie` flips the label."""
+    row_runs = json.loads(json.dumps(runs))
+    row_runs.setdefault("zz_test", {})["ZZ_KILLER"] = "FAIL" if killer else "PASS"
+    outcome = core.verdict(row_runs, m[4], m[5])[0]
+    if lie:
+        outcome = "SURVIVED" if outcome == "KILLED" else "KILLED"
+    return {"definition": definition or core.mutant_digest(m), "file": m[1], "what": m[2], "test": m[4],
+            "targets": list(m[5]), "runs": row_runs, "outcome": outcome}
+
+
 def _audit_synthetic(fix, work):
     """(1) Matrices built here over the fixture's own mutants: a planted blind claim and each guard."""
     r = _clone(fix, work / "audit-synthetic")
@@ -62,16 +74,7 @@ def _audit_synthetic(fix, work):
             test, _, case = w.partition(":")
             if test not in drop:
                 runs.setdefault(test, {})[case] = result(w)
-        rows = {}
-        for mid in (x, y):
-            row_runs = json.loads(json.dumps(runs))
-            row_runs.setdefault("zz_test", {})["ZZ_KILLER"] = "FAIL" if killer else "PASS"
-            rows[mid] = {"definition": definition or core.mutant_digest(defs[mid]), "file": defs[mid][1], "what": defs[mid][2],
-                         "test": defs[mid][4], "targets": list(defs[mid][5]), "runs": row_runs,
-                         # the outcome the row's own runs give, as run_all writes it (check_matrices recomputes it)
-                         "outcome": core.verdict(row_runs, defs[mid][4], defs[mid][5])[0]}
-            if lie:
-                rows[mid]["outcome"] = "SURVIVED" if rows[mid]["outcome"] == "KILLED" else "KILLED"
+        rows = {mid: _synthetic_row(core, defs[mid], runs, definition, killer, lie) for mid in (x, y)}
         p = work / f"matrix-{len(list(work.glob('matrix-*.json')))}.json"
         p.write_text(json.dumps({"matrix": MATRIX, "harness": "mutants", "tests": "selftest", "source": source, "mutants": rows}))
         return [str(p)]
