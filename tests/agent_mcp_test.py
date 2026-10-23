@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-from agent_world import R, api, check, finish, reviewed_work, world
+from agent_world import Config, R, api, check, finish, reviewed_work, views, world
 
 # The modules of the tree under test (WARRANT_IMPL for mutants), run as the console scripts run them.
 IMPL = os.environ.get("WARRANT_IMPL") or str(Path(__file__).resolve().parents[1])
@@ -160,7 +160,7 @@ def first_contact_cases(src, rcv, ids, cfg_path, cfg):
     # M08: a capsule shows every closure attempt with the engine's own verdict and why
     r = tool_calls(cfg_path, [("warrant_context", {"workspace": "src", "targets": [pd, pt]})])[0]
     caps = {c["target"]: c for c in r.get("ok", {}).get("data", {}).get("capsules", [])}
-    rep = json.loads((Path(doc["state"]) / "src" / "views" / r["ok"]["view_token"] / "report.json").read_text()) \
+    rep = views.load(Config(doc).workspace("src"), r["ok"]["view_token"])[1] \
         if "ok" in r else {"duties": {pd: {"candidates": []}}}
     cand = rep["duties"][pd]["candidates"]
     dcl, tcl = caps.get(pd, {}).get("closures", []), caps.get(pt, {}).get("closes", [])
@@ -215,7 +215,6 @@ def first_contact_cases(src, rcv, ids, cfg_path, cfg):
     cfg3.write_text(json.dumps(doc3))
     p = pkg["package"]
     r = tool_calls(cfg3, [("warrant_handoff", {"op": "inspect", "workspace": "rcv", "package": p, "expectation": "from-src"})])
-    from warrant_agent.config import Config
     parts = api.call(Config.load(cfg3), "handoff", {"op": "inspect", "workspace": "rcv", "manifest": p["manifest"],
                                                     "payload": p["payload"], "declaration": p["declaration"],
                                                     "expectation": "from-src"}).get("ok", {})

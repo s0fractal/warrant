@@ -19,14 +19,15 @@ from .errors import AgentError, need
 HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\Z")      # \Z: `$` admits a trailing newline (AMEND 2 of #164)
 OPERATIONS = ("context", "read", "handoff", "prepare", "commit", "compute")
 # What a workspace keeps under <state>/<name>: created when the configuration loads (the first six) or by the
-# views and the store (verdicts, replay-cache). None of them may be a symlink (AMEND 1 of #179).
+# views and the store (verdicts, replay-cache, objects). None of them may be a symlink (AMEND 1 of #179).
 STATE_DIRS = ("views", "staging", "imports", "drafts", "requests", "exports")
-STATE_LAZY = ("verdicts", "replay-cache")
+STATE_LAZY = ("verdicts", "replay-cache", "objects")
 RELATIONS = ("MATCH_EXPECTED_SET", "UNPINNED", "MISSING_DECLARED_BYTES", "CONTENT_MISMATCH", "WRONG_SET",
              "WRONG_SOURCE", "UNVERIFIED_EXPORTER", "LOCAL_CAPTURE")
 # The engine's admission limits (warrant.limits, SPEC §9) are workspace limits too.
 DEFAULT_LIMITS = {"context_bytes": 16 * 1024, "transfer_bytes": 16 * 1024 * 1024, "assess_seconds": 120,
-                  "provider_seconds": 600, "read_bytes": 64 * 1024, "view_ttl": 24 * 3600, **L.DEFAULTS}
+                  "provider_seconds": 600, "read_bytes": 64 * 1024, "view_ttl": 24 * 3600,
+                  "gc_interval": 3600, **L.DEFAULTS}
 
 
 def state_links(ws_state):

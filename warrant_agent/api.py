@@ -44,25 +44,25 @@ def _target_shapes(raw):
     return out
 
 
-def _kind_in_view(tid, report, vdir):
+def _kind_in_view(tid, report, view):
     """A duty or a transition of THIS view; any other id is refused by what it is, never shown as a capsule of
     something else."""
     if tid in report["duties"]:
         return "duty"
     if tid in report["results"]:
         return "transition"
-    p = vdir / "records" / f"{tid}.json"
-    if not p.is_file():
+    data = view.record(tid)
+    if data is None:
         raise AgentError("NOT_FOUND", f"{tid[:12]} is not a record of this view", target=tid)
-    rec = _record_shape(p.read_bytes())
+    rec = _record_shape(data)
     rtype = rec["type"] if rec else "unreadable"
     raise AgentError("BAD_REQUEST", f"{tid[:12]} is a record of type {rtype} in this view, not a duty or a "
                      "transition; read it with warrant_read", target=tid, type=rtype)
 
 
-def _resolve_targets(shapes, report, vdir):
+def _resolve_targets(shapes, report, view):
     """[{kind, id}]: a target given without its kind is resolved in the view; a given kind is kept as given."""
-    return [{"kind": kind or _kind_in_view(tid, report, vdir), "id": tid} for kind, tid in shapes]
+    return [{"kind": kind or _kind_in_view(tid, report, view), "id": tid} for kind, tid in shapes]
 
 
 def _use(ws, use):
@@ -220,14 +220,12 @@ def _parse_cursor(cursor, token, kind, target):
     return int(parts[3])
 
 
-def _invalid(ws, meta, rid, why):
+def _invalid(view, rid, why):
     """An invalid record of the view, with what its bytes claim to be (untrusted: it does not authenticate)
     when they have a record's shape at all."""
     out = {"id": rid, "why": why}
-    try:
-        rec = _record_shape((ws.state / "views" / meta["token"] / "records" / f"{rid}.json").read_bytes())
-    except OSError:
-        rec = None
+    data = view.record(rid)
+    rec = None if data is None else _record_shape(data)
     if rec is not None:
         b = rec["body"]
         out["claims_to_be"] = {"type": rec["type"], "actor": rec.get("actor") if isinstance(rec.get("actor"), str) else None,
@@ -235,7 +233,7 @@ def _invalid(ws, meta, rid, why):
     return out
 
 
-def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget, scope=None):
+def _projection(view, meta, report, actor, targets, use, kind, cursor, budget, scope=None):
     items = _context_items(report, actor, targets, use, scope)
     start = _parse_cursor(cursor, meta["token"], kind, actor)
     page, nxt = _page(items, start, budget)
@@ -244,7 +242,7 @@ def _projection(ws, meta, report, actor, targets, use, kind, cursor, budget, sco
             "questions": [i["item"] for i in page if i["section"] == "question"],
             "boundary": {"completeness": report["view"]["completeness"],
                          "invalid_records": len(report["invalid_records"]),
-                         "invalid": [_invalid(ws, meta, i, w) for i, w in sorted(report["invalid_records"].items())][:20],
+                         "invalid": [_invalid(view, i, w) for i, w in sorted(report["invalid_records"].items())][:20],
                          "missing": report["missing"],
                          "unbound_actors": report["unbound_actors"], "evidence_is_untrusted_data": True}}
     pg = {"included": len(page), "total": len(items), "offset": start, "truncated": nxt is not None,
@@ -270,10 +268,10 @@ def context(cfg, req):
          "BAD_REQUEST", "limits: {context_bytes >= 256}")
     budget = min(limits.get("context_bytes", ws.limits["context_bytes"]), ws.limits["context_bytes"])
     meta = views.capture(ws)
-    meta2, report, vdir = views.load(ws, meta["token"])
-    targets = _resolve_targets(shapes, report, vdir)
-    views.write_json(vdir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use, "scope": scope})
-    data, pg = _projection(ws, meta2, report, actor, targets, use, "context", None, budget, scope)
+    meta2, report, view = views.load(ws, meta["token"])
+    targets = _resolve_targets(shapes, report, view)
+    views.write_json(view.dir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use, "scope": scope})
+    data, pg = _projection(view, meta2, report, actor, targets, use, "context", None, budget, scope)
     return _envelope(ws, meta2, report, data, use, targets, pg)
 
 
@@ -295,20 +293,19 @@ def read(cfg, req):
         need(kind != "context", "BAD_REQUEST", "a context page needs the view_token of warrant_context")
         need(req.get("cursor") is None, "BAD_REQUEST", "a cursor belongs to the view_token it came with")
         req = dict(req, view_token=views.capture(ws)["token"])
-    meta, report, vdir = views.load(ws, req["view_token"])
+    meta, report, view = views.load(ws, req["view_token"])
     max_bytes = req.get("max_bytes", ws.limits["read_bytes"])
     need(_int(max_bytes, 1), "BAD_REQUEST", "max_bytes")
     max_bytes = min(max_bytes, ws.limits["read_bytes"])
     if kind == "context":
-        ctx = views.read_json(vdir / CONTEXT_FILE)
-        data, pg = _projection(ws, meta, report, ctx["actor"], ctx["targets"], ctx["use"], "context",
+        ctx = views.read_json(view.dir / CONTEXT_FILE)
+        data, pg = _projection(view, meta, report, ctx["actor"], ctx["targets"], ctx["use"], "context",
                                req.get("cursor"), max_bytes, ctx.get("scope"))
         return _envelope(ws, meta, report, data, ctx["use"], ctx["targets"], pg)
     need(isinstance(target, str) and len(target) == 64 and all(c in "0123456789abcdef" for c in target),
          "BAD_REQUEST", "target is a hex64 id")
-    path = vdir / ("records" if kind == "record" else "blobs") / (f"{target}.json" if kind == "record" else target)
-    need(path.is_file(), "NOT_FOUND", f"no such {kind} in this view; nothing is read from elsewhere")
-    data_bytes = path.read_bytes()
+    data_bytes = view.record(target) if kind == "record" else view.blob(target)
+    need(data_bytes is not None, "NOT_FOUND", f"no such {kind} in this view; nothing is read from elsewhere")
     start = _parse_cursor(req.get("cursor"), meta["token"], kind, target)
     chunk = data_bytes[start:start + max_bytes]
     nxt = start + len(chunk)
@@ -333,11 +330,11 @@ def _export(cfg, req):
     _closed(req, ("op", "workspace"), ("view_token", "roots", "request_id", "agent_api"))
     ws = cfg.workspace(req["workspace"])
     ws.permit("handoff")
-    meta, report, vdir = _view(ws, req.get("view_token"))
+    meta, report, view = _view(ws, req.get("view_token"))
     if "roots" in req:
-        roots = _resolve_targets(_target_shapes(req["roots"]), report, vdir)
+        roots = _resolve_targets(_target_shapes(req["roots"]), report, view)
     else:                                       # the targets of the context that made the view, if any
-        ctx = vdir / CONTEXT_FILE
+        ctx = view.dir / CONTEXT_FILE
         roots = views.read_json(ctx)["targets"] if ctx.is_file() else []
     request_id = req.get("request_id") or f"export:{meta['token']}:{C.doc_id(roots)[:32]}"
     pkg = handoff.export(ws, meta["token"], roots, request_id)
@@ -369,12 +366,12 @@ def _inspect(cfg, req):
     shapes = _target_shapes(req["targets"]) if "targets" in req else None
     staged_id, meta = handoff.inspect(ws, req["manifest"], req["payload"], req.get("expectation"),
                                       req.get("declaration"))
-    meta, report, vdir = views.load(ws, meta["token"])
+    meta, report, view = views.load(ws, meta["token"])
     if shapes is None:                          # the package's own roots, read from its checked manifest
         shapes = [(r["kind"], r["id"]) for r in req["manifest"]["roots"]]
-    targets = _resolve_targets(shapes, report, vdir)
-    views.write_json(vdir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use})
-    data, pg = _projection(ws, meta, report, actor, targets, use, "context", None, ws.limits["context_bytes"])
+    targets = _resolve_targets(shapes, report, view)
+    views.write_json(view.dir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use})
+    data, pg = _projection(view, meta, report, actor, targets, use, "context", None, ws.limits["context_bytes"])
     data["staged_id"] = staged_id
     return _envelope(ws, meta, report, data, use, targets, pg)
 

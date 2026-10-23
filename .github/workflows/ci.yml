@@ -95,7 +95,7 @@ jobs:
       - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
         working-directory: tests
         run: |
-          for t in agent_handoff agent_write agent_compute agent_mcp agent_repo; do python "${t}_test.py"; done
+          for t in agent_handoff agent_write agent_compute agent_mcp agent_repo agent_views; do python "${t}_test.py"; done
 
       - name: Mutant runner selftest (the controller, its red-baseline guard, shards and merge)
         run: python tests/mutants.py --selftest

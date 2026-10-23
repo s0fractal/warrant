@@ -79,6 +79,10 @@ TERMS = {
     "VIEW_UNKNOWN": ("No such view token in this workspace; a view token comes from warrant_context, an inspect, "
                      "or a read/export/prepare without one.", ""),
     "VIEW_EXPIRED": ("The view is older than the workspace's view_ttl; open a new one.", ""),
+    "VIEW_DAMAGED": ("A byte the view pins is absent from the workspace's object store or no longer hashes to its "
+                     "name; the view answers nothing, and nothing is read from elsewhere. Open a new context.",
+                     "It does not say the live store changed: the object store is the server's own, and a new "
+                     "context writes the bytes again."),
     "NOT_FOUND": ("The id is not in this view or store; nothing is fetched from elsewhere.", ""),
     "CONFLICT": ("The request id was used with other inputs, or the store holds other bytes under the id.", ""),
     "NO_SIGNER": ("The operator configured no signer for this workspace; nothing can be committed.", ""),

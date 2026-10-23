@@ -1,15 +1,17 @@
 """Frozen receiver views (PROPOSAL §4, CONTRACT C.1-C.2).
 
-The worker reads the view directory and, for cost only, the workspace's
-replay cache (`<state>/replay-cache`): the receiver's own earlier verified
-replays by the same provider over the same bytes (SPEC §7).
-
-A view owns copies of every operand that can change a verdict: the store's
-record and blob bytes, the receiver's trust bytes and profile, as_of, current
-revisions, the workspace commit and the accepted provider's module bytes. The
-engine assesses that copy once, in a worker process with a deadline; every later
-read of the view uses the stored report and the captured bytes, never the live
-store. A view token selects a view; it grants nothing."""
+A view pins every operand that can change a verdict: the store's record and blob
+bytes, the receiver's trust bytes and profile, as_of, current revisions, the
+workspace commit and the accepted provider's module bytes. The bytes live once in
+the workspace's object store (objects.py), each under its SHA-256; a view is a
+manifest object naming them, reached from views/<token>/view.json. The engine
+assesses the pinned bytes once, in a worker process with a deadline, which reads
+the view directory, the objects it names and, for cost only, the workspace's
+replay cache (`<state>/replay-cache`): the receiver's own earlier verified replays
+by the same provider over the same bytes (SPEC §7). Every later read of the view
+uses the stored report and the pinned objects, each hashed as it is read, never
+the live store. A view token selects a view; it grants nothing. collect removes
+expired views and the objects no live view pins."""
 import base64
 import json
 import math
@@ -29,6 +31,7 @@ from warrant import shapes as S
 from warrant import triggers as TR
 from warrant.store import Snapshot, Trust
 
+from . import objects as O
 from .errors import AgentError, need
 
 TOKEN = S.HEX32
@@ -103,60 +106,100 @@ def incomplete_imports(ws):
     return out
 
 
+VIEW = "warrant-agent/view@1"      # a manifest's format: the view it pins, by object names
+LEGACY = "a full copy"              # a view written before views were manifests (still read until it expires)
+
+
+def objects_of(ws):
+    return O.Objects(ws.state / "objects")
+
+
 def capture(ws, extra=None, delivery=None, as_of=None):
-    """Freeze the operands, assess once, return the view meta. `extra` is
+    """Freeze the operands, assess once, return the view's manifest. `extra` is
     {"records": {id: bytes}, "blobs": {hash: bytes}} added to the live store's
-    bytes (an inspection of a staged package); live bytes are never replaced."""
+    bytes (an inspection of a staged package); live bytes are never replaced.
+
+    Every byte goes into the workspace's object store (objects.py) under its hash; the view is a
+    manifest object pinning them by name, reachable from views/<token>/view.json once it is ready.
+    The shared lock is held from the first object written until view.json exists: a collection
+    (collect) holds it exclusively, so it never takes an object a capture is about to pin."""
     live = read_snapshot(ws, ws.store)
-    records, blobs = dict(live.records), dict(live.blobs)
+    records, blobs, misfiled = dict(live.records), dict(live.blobs), list(live.misfiled)
     for rid, data in (extra or {}).get("records", {}).items():
-        records.setdefault(rid, bytes(data))
+        records.setdefault(_addr(rid), bytes(data))
     for h, data in (extra or {}).get("blobs", {}).items():
-        blobs.setdefault(h, bytes(data))
-    frozen = Snapshot(records, blobs, live.misfiled)
+        if _addr(h) in blobs:
+            continue
+        if C.digest(bytes(data)) != h:      # as a store read files it (Snapshot.read): never under its name
+            misfiled.append(f"blobs/{h}: name is not its hash")
+        else:
+            blobs[h] = bytes(data)
+    for rid in records:
+        _addr(rid)
+    frozen = Snapshot(records, blobs, misfiled)
     try:
         provider = P.Provider.capture()
-        sources = {n: bytes(b) for n, b in provider.sources.items()}
+        sources = {_addr(n, SOURCE): bytes(b) for n, b in provider.sources.items()}
     except P.ProviderError:
         sources = None
     commit = TR.resolve(*ws.repo) if ws.repo else None
     trust_bytes, profile = ws.trust_bytes(), ws.profile()   # each read once
     token = secrets.token_hex(16)
     vdir = ws.state / "views" / token
-    for rid, data in records.items():
-        _write(vdir / "records" / f"{_addr(rid)}.json", data)
-    for h, data in blobs.items():
-        _write(vdir / "blobs" / _addr(h), data)
-    for n, data in (sources or {}).items():
-        _write(vdir / "provider" / f"{_addr(n, SOURCE)}.py", data)
-    now = int(time.time())
-    meta = {"token": token, "workspace": ws.name, "created": now, "expires": None,
-            "as_of": int(as_of if as_of is not None else now), "current": sorted(ws.current),
-            "repo": [str(ws.repo[0]), commit] if ws.repo else None, "snapshot": frozen.digest,
-            "live_snapshot": live.digest, "trust": base64.b64encode(trust_bytes).decode(),
-            "profile": profile, "provider": bool(sources), "limits": ws.assessment_limits(),
-            # The receiver's own verified replays, reused across views (cost only).
-            "replay_cache": str(ws.state / "replay-cache"),
-            # ... and its own authentication verdicts (store.Verdicts.at, F44; cost only).
-            "verdicts": str(ws.state / "verdicts"),
-            "delivery": delivery or {"relation": "LOCAL_CAPTURE", "source_completeness": "UNATTESTED"}}
-    write_json(vdir / "meta.json", meta)
-    try:
-        _assess(vdir, ws.limits["assess_seconds"])
-    except AgentError:
-        shutil.rmtree(vdir, ignore_errors=True)
-        raise
-    report = read_json(vdir / "report.json")
-    assessed = report["view"]
-    want_provider = P.identity_of(sources) if sources else None
-    got_provider = (assessed["provider"] or {}).get("provider")
-    if (assessed["snapshot"], assessed["trust"], got_provider) != (frozen.digest, Trust(C.loads(trust_bytes)).digest, want_provider):
-        shutil.rmtree(vdir, ignore_errors=True)
-        raise AgentError("NO_ASSESSMENT", "the assessed operands are not the captured ones")
-    # The handle's lifetime starts when the view is ready and is at least view_ttl whole seconds.
-    meta["expires"] = math.ceil(time.time()) + int(ws.limits["view_ttl"])
-    write_json(vdir / "meta.json", meta)
+    objs = objects_of(ws)
+    with objs.lock(exclusive=False):
+        try:
+            tree = {"records": {rid: objs.put(data) for rid, data in sorted(records.items())},
+                    "blobs": sorted(objs.put(data) for data in blobs.values()), "misfiled": sorted(misfiled)}
+            now = int(time.time())
+            meta = {"view": VIEW, "token": token, "workspace": ws.name, "created": now, "expires": None,
+                    "as_of": int(as_of if as_of is not None else now), "current": sorted(ws.current),
+                    "repo": [str(ws.repo[0]), commit] if ws.repo else None, "snapshot": frozen.digest,
+                    "tree": objs.put(O.doc_bytes(tree)), "live_snapshot": live.digest,
+                    "trust": base64.b64encode(trust_bytes).decode(), "profile": profile,
+                    "provider": {n: objs.put(b) for n, b in sorted(sources.items())} if sources else None,
+                    "limits": ws.assessment_limits(),
+                    # The receiver's own verified replays, reused across views (cost only).
+                    "replay_cache": str(ws.state / "replay-cache"),
+                    # ... and its own authentication verdicts (store.Verdicts.at, F44; cost only).
+                    "verdicts": str(ws.state / "verdicts"),
+                    "delivery": delivery or {"relation": "LOCAL_CAPTURE", "source_completeness": "UNATTESTED"}}
+        except O.Unreadable as e:
+            raise damaged(e) from None
+        vdir.mkdir()
+        try:
+            write_json(vdir / "meta.json", meta)
+            _assess(vdir, ws.limits["assess_seconds"])
+            report = read_json(vdir / "report.json")
+            assessed = report["view"]
+            want_provider = P.identity_of(sources) if sources else None
+            got_provider = (assessed["provider"] or {}).get("provider")
+            if (assessed["snapshot"], assessed["trust"], got_provider) != (frozen.digest, Trust(C.loads(trust_bytes)).digest, want_provider):
+                raise AgentError("NO_ASSESSMENT", "the assessed operands are not the captured ones")
+            # The handle's lifetime starts when the view is ready and is at least view_ttl whole seconds.
+            meta["expires"] = math.ceil(time.time()) + int(ws.limits["view_ttl"])
+            body = {k: v for k, v in report.items() if k not in REPORT_OWN}
+            meta["report"] = {"body": objs.put(O.doc_bytes(body)), **{k: report[k] for k in REPORT_OWN}}
+            write_json(vdir / "view.json", {"manifest": objs.put(O.doc_bytes(meta))})
+        except AgentError:
+            shutil.rmtree(vdir, ignore_errors=True)
+            raise
+        for transient in ("meta.json", "report.json"):
+            (vdir / transient).unlink()
+    collect_due(ws)
     return meta
+
+
+REPORT_OWN = ("assessment_id", "view")      # what a view's own report has that its body does not: the manifest carries it
+
+
+def damaged(e, expires=None):
+    """An object a view pins that cannot be read as itself: VIEW_EXPIRED when the view has expired by now
+    (a collection may have taken it), else VIEW_DAMAGED. Nothing is read from elsewhere."""
+    if expires is not None and time.time() >= expires:
+        return AgentError("VIEW_EXPIRED", "the view expired; open a new context")
+    return AgentError("VIEW_DAMAGED", f"{e}; this view answers nothing from elsewhere: open a new context",
+                      object=e.name, why=e.why)
 
 
 def _assess(vdir, deadline):
@@ -170,22 +213,187 @@ def _assess(vdir, deadline):
     if (vdir / "refusal.json").is_file():
         r = read_json(vdir / "refusal.json")
         raise refusal(L.LimitExceeded(r["limit"], r["value"], r["bound"]))
+    if (vdir / "damaged.json").is_file():
+        r = read_json(vdir / "damaged.json")
+        raise damaged(O.Unreadable(r["object"], r["why"]))
     if p.returncode != 0 or not (vdir / "report.json").is_file():
         raise AgentError("NO_ASSESSMENT", "the assessment worker produced no report",
                          stderr=p.stderr.decode(errors="replace")[-400:])
 
 
+class View:
+    """The bytes of one view: through its manifest's tree and the object store, or (a view written
+    before manifests) from its own directory. `dir` keeps what the call that made it wrote (context.json)."""
+
+    def __init__(self, ws, vdir, meta):
+        self.ws, self.dir, self.meta = ws, vdir, meta
+        self.legacy = "tree" not in meta
+        self._tree = None
+
+    def _doc(self, name):
+        try:
+            return objects_of(self.ws).get_doc(name)
+        except O.Unreadable as e:
+            raise damaged(e, self.meta["expires"]) from None
+
+    def tree(self):
+        if self._tree is None:
+            self._tree = self._doc(self.meta["tree"])
+        return self._tree
+
+    def _get(self, name):
+        try:
+            return objects_of(self.ws).get(name)
+        except O.Unreadable as e:
+            raise damaged(e, self.meta["expires"]) from None
+
+    def record(self, rid):
+        """The bytes this view holds under record id `rid`, or None if it holds none."""
+        if self.legacy:
+            p = self.dir / "records" / f"{_addr(rid)}.json"
+            return p.read_bytes() if p.is_file() else None
+        name = self.tree()["records"].get(rid)
+        return None if name is None else self._get(name)
+
+    def blob(self, h):
+        if self.legacy:
+            p = self.dir / "blobs" / _addr(h)
+            return p.read_bytes() if p.is_file() else None
+        return self._get(h) if h in set(self.tree()["blobs"]) else None
+
+    def snapshot(self):
+        """The view's whole snapshot, under the workspace's admission limits."""
+        if self.legacy:
+            return read_snapshot(self.ws, self.dir)
+        try:
+            return objects_of(self.ws).snapshot(self.tree(), self.ws.assessment_limits())
+        except L.LimitExceeded as e:
+            raise refusal(e) from None
+        except O.Unreadable as e:
+            raise damaged(e, self.meta["expires"]) from None
+
+
+def _legacy(vdir):
+    """The meta of a view directory written before manifests (meta.json with no tree beside its report), or None."""
+    if not ((vdir / "meta.json").is_file() and (vdir / "report.json").is_file()):
+        return None
+    meta = read_json(vdir / "meta.json")
+    return meta if isinstance(meta, dict) and "tree" not in meta else None
+
+
 def load(ws, token):
     need(isinstance(token, str) and TOKEN.match(token) is not None, "VIEW_UNKNOWN", "not a view token")
     vdir = ws.state / "views" / token
-    if not (vdir / "meta.json").is_file() or not (vdir / "report.json").is_file():
-        raise AgentError("VIEW_UNKNOWN", "no such view in this workspace; open a new context")
-    meta = read_json(vdir / "meta.json")
+    unknown = AgentError("VIEW_UNKNOWN", "no such view in this workspace; open a new context")
+    if (vdir / "view.json").is_file():
+        name = read_json(vdir / "view.json").get("manifest")
+        try:
+            meta = objects_of(ws).get_doc(name)
+        except O.Unreadable as e:
+            raise damaged(e) from None
+        if meta.get("view") != VIEW or meta.get("token") != token:
+            raise unknown
+        report = None
+    else:
+        meta = _legacy(vdir)
+        if meta is None:
+            raise unknown
+        report = read_json(vdir / "report.json")
     if meta["workspace"] != ws.name:
-        raise AgentError("VIEW_UNKNOWN", "no such view in this workspace; open a new context")
+        raise unknown
     if meta["expires"] is None or time.time() >= meta["expires"]:
         raise AgentError("VIEW_EXPIRED", "the view expired; open a new context")
-    return meta, read_json(vdir / "report.json"), vdir
+    view = View(ws, vdir, meta)
+    if report is None:
+        own = meta["report"]
+        report = dict(view._doc(own["body"]), **{k: own[k] for k in REPORT_OWN})
+    return meta, report, view
+
+
+# ---------------------------------------------------------------- collection
+
+def _reach(ws, objs, vdir, now, trees):
+    """(state, names): `live` with every object name the view pins, or why it is removed:
+    `expired`, `unreadable` (its manifest, tree or report body cannot be read as itself) or
+    `unfinished` (no view.json: a capture that is not in flight, since the caller holds the
+    lock exclusively). A view written before manifests is `live` with no objects, or `expired`."""
+    if not (vdir / "view.json").is_file():
+        legacy = _legacy(vdir)
+        if legacy is None:
+            return "unfinished", set()
+        return ("live" if legacy["expires"] is not None and now < legacy["expires"] else "expired"), set()
+    try:
+        name = read_json(vdir / "view.json").get("manifest")
+        meta = objs.get_doc(name)
+        if meta.get("token") != vdir.name or meta.get("workspace") != ws.name:
+            return "unreadable", set()
+        if meta["expires"] is None or now >= meta["expires"]:
+            return "expired", set()
+        if meta["tree"] not in trees:
+            trees[meta["tree"]] = objs.get_doc(meta["tree"])
+        objs.get(meta["report"]["body"])
+    except (O.Unreadable, ValueError, KeyError, TypeError, AttributeError):
+        return "unreadable", set()
+    tree = trees[meta["tree"]]
+    return "live", {name, meta["tree"], meta["report"]["body"], *(meta["provider"] or {}).values(),
+                    *tree["records"].values(), *tree["blobs"]}
+
+
+def collect(ws, dry_run=False, wait=True):
+    """Mark and sweep the workspace's views and objects under the exclusive lock: remove every view
+    directory that is expired, unreadable or unfinished, then every object no live view pins.
+    Nothing outside views/ and objects/ is read as a root or touched: drafts, staging, imports, exports
+    and request status keep their own bytes, and the store is never touched. Returns what was (or,
+    dry_run, would be) removed; None when wait=False and the lock is busy."""
+    objs = objects_of(ws)
+    with objs.lock(exclusive=True, wait=wait) as held:
+        if not held:
+            return None
+        now = time.time()
+        views, marked, trees, gone = {}, set(), {}, []
+        for vdir in sorted((ws.state / "views").iterdir()):
+            if not (TOKEN.match(vdir.name) and vdir.is_dir() and not vdir.is_symlink()):
+                continue                    # not a view: not this collection's to judge
+            state, names = _reach(ws, objs, vdir, now, trees)
+            views[state] = views.get(state, 0) + 1
+            if state == "live":
+                marked |= names
+            else:
+                gone.append(vdir)
+        removed, freed, kept = 0, 0, 0
+        for name, path in list(objs.names()):
+            if name is not None and name in marked:
+                kept += 1
+                continue
+            if name is None and not path.name.startswith(O.TMP):
+                continue                    # not an object or a writer's temporary: left as found
+            removed += 1
+            freed += path.lstat().st_size
+            if not dry_run:
+                path.unlink()
+        if not dry_run:
+            for vdir in gone:
+                shutil.rmtree(vdir)
+            write_json(objs.root / O.LAST, {"collected": int(now)})
+        return {"workspace": ws.name, "dry_run": dry_run, "views": views, "views_removed": len(gone),
+                "objects_kept": kept, "objects_removed": removed, "bytes_removed": freed}
+
+
+def collect_due(ws):
+    """A collection at the end of a capture when the last one is older than gc_interval (0: never), only if
+    nobody holds the lock: it neither waits nor makes a context wait. A collection that fails here leaves
+    the capture's view as it is (it removes only what no live view pins); `warrant-agent gc` reports it."""
+    interval = ws.limits["gc_interval"]
+    if not interval:
+        return None
+    try:
+        last = read_json(objects_of(ws).root / O.LAST)["collected"]
+    except (OSError, ValueError, KeyError, TypeError):
+        last = 0
+    try:
+        return collect(ws, wait=False) if time.time() - last >= interval else None
+    except OSError:
+        return None
 
 
 def expectation_now(ws, delivery):

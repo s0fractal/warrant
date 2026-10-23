@@ -35,7 +35,7 @@ def _signer(ws):
     return actor, Key.from_seed_hex(keyfile.read_text())
 
 
-def _accept_body(meta_vdir, body):
+def _accept_body(view, body):
     """The typed accept convenience: {transition, item, evidence?, support?}; a
     missing evidence set is the exact evidence of that item in the frozen view."""
     need(isinstance(body, dict) and set(body) <= {"transition", "item", "evidence", "support"}
@@ -43,10 +43,10 @@ def _accept_body(meta_vdir, body):
     need(S.hex64(body["transition"]), "BAD_REQUEST", "transition is a hex64 record id")
     if "evidence" in body:
         return R.accept(body["transition"], body["item"], body["evidence"], body.get("support", []))
-    p = meta_vdir / "records" / f"{body['transition']}.json"
-    need(p.is_file(), "NOT_FOUND", "the transition is not in this view")
+    data = view.record(body["transition"])
+    need(data is not None, "NOT_FOUND", "the transition is not in this view")
     try:                                        # the view's bytes are untrusted: a malformed record is no transition
-        t = C.loads(p.read_bytes())["record"]["body"]
+        t = C.loads(data)["record"]["body"]
         closes, evidence = t["closes"], t["evidence"]
     except (C.NotCanonical, ValueError, KeyError, TypeError):
         raise AgentError("BAD_REQUEST", "the record is not a well-formed transition") from None
@@ -148,8 +148,8 @@ def prepare(ws, based_on, request_id, rtype, body, blobs=None):
         d = views.read_json(path)
         need(d["inputs"] == inputs, "CONFLICT", "request_id was prepared with other inputs")
         return d
-    _, report, vdir = views.load(ws, views.capture(ws)["token"] if based_on is None else based_on)
-    full = _accept_body(vdir, body) if rtype == "accept" else fill(rtype, body)
+    _, report, view = views.load(ws, views.capture(ws)["token"] if based_on is None else based_on)
+    full = _accept_body(view, body) if rtype == "accept" else fill(rtype, body)
     # The signer's chain (SPEC §3): `prev` is its head in the live store, and `at` is never
     # before the head's; commit refuses the draft if the head has moved by then. The head is
     # read under the workspace's own trust: a record this workspace's reader rejects is never

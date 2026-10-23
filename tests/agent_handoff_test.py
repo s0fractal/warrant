@@ -30,6 +30,16 @@ def inspect(rcv, pkg, ids, expectation=None, payload=None, manifest=None):
     return rcv.call("handoff", req)
 
 
+def worker_dir(ws):
+    """A view directory as capture hands it to the worker (meta.json beside nothing yet): a finished view is
+    view.json alone, so the worker's path rule is exercised on the shape it is given."""
+    import secrets
+    d = (ws.state / "views" / secrets.token_hex(16)).resolve()
+    d.mkdir()
+    (d / "meta.json").write_text("{}")
+    return d
+
+
 def without(payload, kind, ident):
     return dict(payload, **{kind: [it for it in payload[kind] if it["id"] != ident]})
 
@@ -91,7 +101,7 @@ def anchor_cases():
 
     ctx = ok(src.call("context", {"workspace": "src", "actor": "producer", "use": "continue", "targets": []}))
     token = ctx["view_token"]
-    real = (src.ws.state / "views" / token).resolve()
+    real = worker_dir(src.ws)
     got12, want12 = {}, {}
     for name, suffix in (("\\n", "\n"), ("\\r\\n", "\r\n")):
         r = src.call("read", {"workspace": "src", "view_token": token + suffix, "kind": "context"})
@@ -673,7 +683,7 @@ def more_views():
     # meta.json are refused before anything is read
     import os
     from warrant_agent import _assess_worker as WK
-    real = (src.ws.state / "views" / fine["ok"]["view_token"]).resolve()
+    real = worker_dir(src.ws)
     link = real.parent / ("f" * 32)
     os.symlink(real, link)
     other = real.parent / ("e" * 32)
