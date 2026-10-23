@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 337 · backed 262 · countered 0 · unbacked 18 · informative 57 · retired 0 · records 1463 · blobs 1274
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 343 · backed 268 · countered 0 · unbacked 18 · informative 57 · retired 0 · records 1481 · blobs 1292
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -296,6 +296,8 @@ lowers its backing: it counts as backed no longer.
 | SPEC-10.1-12 | Evidence and record text is returned as untrusted data (`untrusted_data: true`) and changes no configuration and no record. | agent_handoff_test V07 | A63 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `e3c25a8f8bfb` |
 | SPEC-10.1-13 | Tool descriptions and schemas are static: nothing read from a record or from evidence becomes a tool, a schema, a configuration or a signer. | — | — | UNBACKED | OPEN (no closure filed) | `3d3b48ae728a` |
 | SPEC-10.1-14 | Read-only tools are annotated `readOnlyHint`. | — | — | UNBACKED | OPEN (no closure filed) | `41204954b0ca` |
+| SPEC-10.1-15 | A workspace's trust may be `{bindings, roles}` of a repository: the bindings its `.warrant/trust.json` admits under the pins of its `.warrant/roles.json` by `warrant/bindings.py`, the rule `tools/claims.py` admits by, read again for every view. | agent_repo_test T01 T02 | A94 A96 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `4e0f94073d42` |
+| SPEC-10.1-16 | A roles file with any problem refuses every view of that workspace as `BAD_REQUEST`: a dropped pin would make its name first-come. | agent_repo_test T03 | A95 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `0b61f3050e0c` |
 | SPEC-10.2-1 | `context` captures the store's records and blobs, the receiver's trust and profile and the provider's module bytes into a frozen view, assesses it once in a worker, and returns its `view_token` with the capsules, the frontier, the unowned questions, the boundary, the delivery and the use decision. | agent_handoff_test V01 V02 | A05 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `2653db118b81` |
 | SPEC-10.2-2 | Every later read of a view answers from its stored report and captured bytes, never from the live store. | agent_handoff_test V01 | A05 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `04b87efd33ab` |
 | SPEC-10.2-3 | A view is assessed with the receiver's own trust and profile. | agent_handoff_test V05 | A04 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `7e48ec3fedba` |
@@ -346,6 +348,8 @@ lowers its backing: it counts as backed no longer.
 | SPEC-10.5-12 | Recording a challenge is not gated by the use policy. | agent_write_test W07 | A78 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `b5a0946fde5b` |
 | SPEC-10.5-13 | An operation the operator did not list in the workspace's `operations` is `NOT_PERMITTED`. | agent_write_test W09 | A75 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `977e3b4f480d` |
 | SPEC-10.5-14 | A configured signer is an actor id (§3); a configuration whose signer is not one is refused when it loads. | agent_write_test W10 | A36 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `80a7cc14c32d` |
+| SPEC-10.5-15 | `prepare` takes `blobs`, JSON documents that `commit` stores as their canonical bytes before the record; in an evidence list of the body (a transition's and its items', an accept's, a challenge's, an observation's `raw`) `blob:<i>` is the id of `blobs[i]`. | agent_repo_test B01 | A97 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `b267b09a0b23` |
+| SPEC-10.5-16 | A blob the body does not cite, or a `blob:<i>` that names none, is `BAD_REQUEST` and nothing is stored; the blobs are inputs of the draft, so other blobs under one request id are `CONFLICT`, and a commit refused as `SIGNER_CHANGED` stores none of them. | agent_repo_test B02 B03 B04 | A100 A98 A99 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `cdab170bcde7` |
 | SPEC-10.6-1 | `compute` runs the installed provider on bytes read once from the receiver's store, and new bytes go back into it as blobs. | agent_compute_test S10 | A13 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `89a481b8ca7e` |
 | SPEC-10.6-2 | A foreign checkpoint is continued only by the provider's checked `resume`: verified from the receiver's root, then advanced. | — | — | UNBACKED | OPEN (no closure filed) | `abfc763506a2` |
 | SPEC-10.6-3 | `evaluate` runs term, start and resume in one call under a credit (10 000 by default); with `expect_expr`, `same_normal_form` is true only at a NORMAL_FORM whose result is that term's input address. | agent_compute_test S12 | A53 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `9bfce6058f10` |
@@ -363,6 +367,8 @@ lowers its backing: it counts as backed no longer.
 | SPEC-10.8-3 | No result credits what the receiver did not establish: the source's completeness stays UNATTESTED, and evidence is untrusted data. | agent_handoff_test H01 V07 | A63 A79 | BACKED | DISCHARGED (accepted by replay of its witnesses and mutants at tree b0641a4ae84c (checker eed989f372ca)) | `57a214c09fc5` |
 | SPEC-10.8-4 | Nothing is exposed beyond these operations: no HTTP transport, watcher, scheduler, OAuth, shell, package install, merge or release. | — | — | UNBACKED | OPEN (no closure filed) | `122e1c5ea986` |
 | SPEC-10.8-5 | On a shared machine this is an application boundary, not OS isolation: an agent with a shell on the same keys and configuration is not contained by it, and shared custody is not independent custody. | — | — | INFORMATIVE: states the limit of the interface's threat model; no rule a request or a result can break | — (no duty) | `4a0eae306094` |
+| SPEC-10.8-6 | `warrant-agent-mcp init`, the operator's command and not a tool, configures a repository checkout only for a signer whose existing seed's key is exactly the key the repository's `.warrant/roles.json` pins for that actor and whose binding its `.warrant/trust.json` admits; it creates no key. | agent_repo_test I02 I03 I04 I05 | A87 A88 A89 A93 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `6074fce54864` |
+| SPEC-10.8-7 | Its configuration, its state and the seed lie outside the repository. | agent_repo_test I06 | A90 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `12db993e8f10` |
 
 ## Open questions
 
@@ -404,7 +410,7 @@ None.
 
 ## Document
 
-SPEC.md is rendered from document version `3472ce1e2121` (738 parts). Its headings
+SPEC.md is rendered from document version `c2f31c6b44c2` (750 parts). Its headings
 are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold
 only those lines, once each, in order and each on its own line; the rendered SPEC.md must show
 exactly those headings. A title is free text that no witness backs, so a

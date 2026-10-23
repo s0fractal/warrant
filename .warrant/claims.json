@@ -314,6 +314,8 @@
     "SPEC-10.1-12": "normative",
     "SPEC-10.1-13": "normative",
     "SPEC-10.1-14": "normative",
+    "SPEC-10.1-15": "normative",
+    "SPEC-10.1-16": "normative",
     "SPEC-10.2-1": "normative",
     "SPEC-10.2-2": "normative",
     "SPEC-10.2-3": "normative",
@@ -364,6 +366,8 @@
     "SPEC-10.5-12": "normative",
     "SPEC-10.5-13": "normative",
     "SPEC-10.5-14": "normative",
+    "SPEC-10.5-15": "normative",
+    "SPEC-10.5-16": "normative",
     "SPEC-10.6-1": "normative",
     "SPEC-10.6-2": "normative",
     "SPEC-10.6-3": "normative",
@@ -380,7 +384,9 @@
     "SPEC-10.8-2": "normative",
     "SPEC-10.8-3": "normative",
     "SPEC-10.8-4": "normative",
-    "SPEC-10.8-5": "informative"
+    "SPEC-10.8-5": "informative",
+    "SPEC-10.8-6": "normative",
+    "SPEC-10.8-7": "normative"
   },
   "source": "SPEC.md",
   "headings": {
