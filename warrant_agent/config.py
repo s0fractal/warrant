@@ -68,6 +68,10 @@ class Workspace:
             raise AgentError("BAD_REQUEST", f"workspace {name!r}: {e}") from None
         self.operations = tuple(doc.get("operations", OPERATIONS))
         self.state = Path(state_root) / name
+        if self.signer:          # the server writes files under the state: never where the signing key is (AMEND 2)
+            key, root = os.path.realpath(self.signer[1]), os.path.realpath(state_root)
+            need(key != root and not key.startswith(root + os.sep), "BAD_REQUEST",
+                 f"workspace {name!r}: the signer's key lies in the state directory, where the server writes")
         links = state_links(self.state)
         need(not links, "BAD_REQUEST", f"workspace {name!r}: the state tree holds symlinks: {links}", links=links)
         for sub in STATE_DIRS if create else ():

@@ -36,7 +36,8 @@ from .errors import AgentError
 CODES = ("INIT_ACTOR_SHAPE", "INIT_NOT_A_REPOSITORY", "INIT_INSIDE_REPOSITORY", "INIT_OUTSIDE_HOME", "INIT_OPERATIONS",
          "INIT_WORKSPACE_NAME", "INIT_CONFIG_EXISTS", "INIT_NO_SEED", "INIT_SEED_SHAPE", "INIT_TRUST_SHAPE",
          "INIT_ACTOR_NOT_PINNED", "INIT_KEY_NOT_PINNED", "INIT_NOT_ADMITTED", "INIT_ROADMAP_SHAPE", "INIT_SYMLINK",
-         "INIT_PATH_CHANGED")
+         "INIT_PATH_CHANGED", "INIT_PATH_COLLISION", "INIT_NOT_INIT_OUTPUT",
+         "INIT_CONFIG_INVALID")
 DEFAULT_OPERATIONS = ("context", "read", "prepare", "commit")
 USE = "continue"
 USES = {USE: {"delivery": ["LOCAL_CAPTURE", "MATCH_EXPECTED_SET"], "reliance": ["ELIGIBLE"], "fresh": True}}
@@ -142,6 +143,54 @@ def _write(dir_real, name, data, atomic):
         os.close(fd)
 
 
+def _same_file(a, b):
+    """Whether two existing paths are one file (device and inode: a hard link too)."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _separate(inputs, files, state):
+    """AMEND 2 of #179 (Codex on 592fd7f): what init reads and what it writes never overlap. `inputs` are
+    {what: real path} of everything read (the seed, the repository and its .warrant files), `files` the
+    files written ({what: real path}: the configuration, the profile), `state` the state directory, in
+    which the server writes files of its own. No input lies at or under the state directory, nor contains
+    it; no written file is an input, by path or as the same file (a hard link); the configuration is not in
+    the state directory (so not the profile either). INIT_PATH_COLLISION names the pair."""
+    for what, p in inputs.items():
+        _refuse(not _inside(p, state) and not _inside(state, p), "INIT_PATH_COLLISION",
+                f"{what} {p} and the state directory {state} overlap: the server writes files under the state")
+    for out, q in files.items():
+        for what, p in inputs.items():
+            _refuse(q != p and not _same_file(q, p), "INIT_PATH_COLLISION",
+                    f"{out} {q} would be written over {what} {p}")
+    _refuse(not _inside(files["the configuration"], state), "INIT_PATH_COLLISION",
+            f"the configuration {files['the configuration']} lies in the state directory {state}")
+
+
+def _own_outputs(config, profile, repo, workspace):
+    """An existing configuration or profile is replaced only if it is what an earlier init wrote for this
+    repository and workspace (AMEND 2 of #179): a configuration of warrant-agent/1 whose one workspace is
+    `workspace` on this repository's store, and a profile the engine reads as one. `--force` authorizes
+    replacing that configuration, never another file (a seed, a document) under its name."""
+    if config.exists():
+        try:
+            doc = json.loads(config.read_bytes())
+            ws = doc["workspaces"]
+            ok = doc.get("agent_api") == AGENT_API and list(ws) == [workspace] and ws[workspace]["store"] == str(repo / DOT / "store")
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            ok = False
+        _refuse(ok, "INIT_NOT_INIT_OUTPUT", f"{config} is not a configuration init wrote for workspace {workspace!r} "
+                f"of {repo}; --force replaces only that")
+    if profile.exists():
+        try:
+            ok = E.profile_problem(json.loads(profile.read_bytes())) is None
+        except (OSError, ValueError, TypeError):
+            ok = False
+        _refuse(ok, "INIT_NOT_INIT_OUTPUT", f"{profile} exists and is not a profile init wrote; nothing replaces it")
+
+
 def _json(path, code):
     try:
         return json.loads(path.read_bytes())
@@ -202,6 +251,9 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     ws_state = _target(state / workspace, "the workspace's state", repo)
     for sub in (PROFILE, *STATE_DIRS, *STATE_LAZY):
         _target(ws_state / sub, f"the workspace's {sub}", repo)
+    _separate({"the seed": seed, "the repository": repo, **{f"{DOT}/{f}": dot / f for f in (TRUST, ROLES_FILE, ROADMAP_FILE)}},
+              {"the configuration": config, "the profile": ws_state / PROFILE}, state)
+    _own_outputs(config, ws_state / PROFILE, repo, workspace)
     doc = {"agent_api": AGENT_API, "state": str(state),
            "workspaces": {workspace: {
                "store": str(dot / "store"),
@@ -215,10 +267,8 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
                "serve": f"warrant-agent-mcp --config {config}"}
     try:
         Config(doc, create=False)               # the configuration loads; nothing is created by this check
-    except AgentError as e:
-        if "links" not in e.details:
-            raise
-        raise Refused("INIT_SYMLINK", e.message) from None
+    except AgentError as e:                     # the rules a configuration is loaded by, as init's own refusals
+        raise Refused("INIT_SYMLINK" if "links" in e.details else "INIT_CONFIG_INVALID", e.message) from None
     return doc, profile, summary, {"config": config, "state": ws_state}
 
 

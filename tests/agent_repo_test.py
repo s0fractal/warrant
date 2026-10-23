@@ -12,6 +12,7 @@ states by the engine's data, never by wording.
 """
 import asyncio
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -338,6 +339,89 @@ def symlink_cases():
     f.close()
 
 
+def collision_cases():
+    """AMEND 2 of #179 (Codex on 592fd7f): what init reads and what it writes never overlap, and --force
+    replaces only an earlier init's own configuration. Each refusal has its code, the seed is byte-identical
+    afterwards and no configuration is written."""
+    keys = {a: Key.generate() for a in ACTORS}
+
+    def run(place, **kw):
+        """(refusal code, seed unchanged, configuration written) with the seed copied to `place(f)`."""
+        f = Fixture(keys=keys)
+        f.op.mkdir()
+        where = place(f)
+        if where is not None:
+            where.parent.mkdir(parents=True, exist_ok=True)
+            if not where.exists():
+                where.write_bytes((f.seeds / "claude.seed").read_bytes())
+            kw.setdefault("seed", where)
+        seed = Path(kw.get("seed", f.seeds / "claude.seed"))
+        before = hashlib.sha256(seed.read_bytes()).hexdigest()
+        cfg = Path(kw.get("config", f.op / "claude.json"))
+        had = cfg.read_bytes() if cfg.is_file() else None
+        code, _ = f.refusal(**kw)
+        out = (code, hashlib.sha256(seed.read_bytes()).hexdigest() == before,
+               (cfg.read_bytes() if cfg.is_file() else None) == had)
+        f.close()
+        return out
+    refused = lambda code: (code, True, True)          # noqa: E731
+    got = {
+        # Codex's case: the seed where the profile will be written, no --force
+        "I20": run(lambda f: f.op / "claude-state" / "repo" / "profile.json"),
+        # the seed anywhere in the state directory
+        "I21": run(lambda f: f.op / "claude-state" / "keys" / "claude.seed"),
+        # the seed as the configuration, with --force
+        "I22": run(lambda f: f.op / "claude.json", force=True),
+    }
+    # the configuration as the profile (an explicit state directory holding it)
+    f = Fixture(keys=keys)
+    f.op.mkdir()
+    got["I23"] = (f.refusal(config=f.op / "st" / "repo" / "profile.json", state=f.op / "st")[0],)
+    f.close()
+
+    # a hard link of the seed at the profile's path
+    def hard(f):
+        q = f.op / "claude-state" / "repo" / "profile.json"
+        q.parent.mkdir(parents=True)
+        os.link(f.seeds / "claude.seed", q)
+        return None
+    got["I24"] = run(hard)
+
+    # --force over a file that is not an earlier init's configuration (another document of the operator)
+    def foreign(f):
+        (f.op / "claude.json").write_text('{"mine": true}')
+        return None
+    got["I25"] = run(foreign, force=True)
+    check("I20", got["I20"] == refused("INIT_PATH_COLLISION"), "Codex's case: the seed at the profile's path", got["I20"])
+    check("I21", got["I21"] == refused("INIT_PATH_COLLISION"), "the seed inside the state directory", got["I21"])
+    check("I22", got["I22"] == refused("INIT_PATH_COLLISION"), "--force with the seed as the configuration", got["I22"])
+    check("I23", got["I23"] == ("INIT_PATH_COLLISION",), "the configuration at the profile's path", got["I23"])
+    check("I24", got["I24"] == refused("INIT_PATH_COLLISION"), "a hard link of the seed where init writes", got["I24"])
+    check("I25", got["I25"] == refused("INIT_NOT_INIT_OUTPUT"), "--force replaces only an earlier init's configuration",
+          got["I25"])
+
+    # I26: --force over this init's own configuration still replaces it (the earlier I08 shape), and the profile too
+    f = Fixture(keys=keys)
+    f.init(operations=("context",))
+    first = (f.op / "claude.json").read_bytes()
+    f.init(force=True)
+    check("I26", (f.op / "claude.json").read_bytes() != first, "--force replaces init's own configuration", first[:40])
+
+    # T05: a configuration whose signer's key lies in its state directory is refused when it loads
+    doc = json.loads((f.op / "claude.json").read_text())
+    inside = Path(doc["state"]) / "claude.seed"
+    inside.write_bytes((f.seeds / "claude.seed").read_bytes())
+    doc["workspaces"]["repo"]["signer"]["key"] = str(inside)
+    (f.op / "moved.json").write_text(json.dumps(doc))
+    try:
+        Config.load(f.op / "moved.json")
+        t5 = None
+    except AgentError as e:
+        t5 = e.code
+    check("T05", t5 == "BAD_REQUEST", "the signer's key in the state directory is refused at load", t5)
+    f.close()
+
+
 def trust_cases():
     f = Fixture().with_goal()
     cfg, _ = f.init(name="t")
@@ -583,7 +667,7 @@ def scope_case():
 
 
 def main():
-    for part in (init_cases, symlink_cases, trust_cases, blob_cases, equivalence_case, dogfood_case, scope_case):
+    for part in (init_cases, symlink_cases, collision_cases, trust_cases, blob_cases, equivalence_case, dogfood_case, scope_case):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run
