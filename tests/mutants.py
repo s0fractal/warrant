@@ -1623,6 +1623,63 @@ def run_all(mutants, label, argv, runner, prog="mutants", root=ROOT, hunt=None):
     return 0 if hunt or killed == len(chosen) else 1
 
 
+def check_matrices(docs, mutants, prog, root=ROOT, hunt=None, gate=True, complete=True, prefix="SHARD"):
+    """(problems, rows, source): the one validation of matrices that every reader stating what they
+    say goes through: --merge here, tests/generated_mutants.py report, tools/claims.py audit (Codex
+    AMEND 1 of #178: report trusted the outcomes of a matrix --merge would have refused). `docs` is
+    [(name, document)]; `mutants` the list as defined now. Problems, each a (PREFIX_CODE, detail):
+    NOT_THIS_HARNESS (not a matrix of `prog`), SOURCE_UNKNOWN / STALE (written over other sources
+    than source_digest(root), or a row of a mutant defined otherwise now), SHAPE (documents run with
+    different --matrix-tests), DUPLICATE_ID, UNKNOWN_ID, OUTCOME (an outcome the row's own runs do
+    not give: hunt.judge, else verdict()), NOT_KILLED (`gate`: every row must be KILLED on target),
+    MISSING_ID (`complete`: an id of the list in no document). `rows` holds only the rows with no
+    problem of their own; a caller writes or states nothing unless `problems` is empty."""
+    def code(c):
+        return f"{prefix}_{c}"
+    problems = []
+    try:
+        src = source_digest(root)
+    except SourceUnknown as e:
+        src = None
+        problems.append((code("SOURCE_UNKNOWN"), str(e)))
+    by_id = {m[0]: m for m in mutants}
+    if len({json.dumps(d.get("tests")) if isinstance(d, dict) else "" for _, d in docs}) > 1:
+        problems.append((code("SHAPE"), "the files were run with different --matrix-tests"))
+    rows, where = {}, {}
+    for f, d in docs:
+        if not (isinstance(d, dict) and d.get("matrix") == MATRIX and d.get("harness") == prog
+                and isinstance(d.get("mutants"), dict)):
+            got = (d.get("matrix"), d.get("harness")) if isinstance(d, dict) else (type(d).__name__, None)
+            problems.append((code("NOT_THIS_HARNESS"), f"{f}: {got[0]!r} by {got[1]!r}, not a matrix of {prog}"))
+            continue
+        if src is not None and d.get("source") != src:
+            problems.append((code("STALE"), f"{f}: written over other sources than this checkout's"))
+        for mid, row in sorted(d["mutants"].items()):
+            if mid in where:
+                problems.append((code("DUPLICATE_ID"), f"{mid} in {where[mid]} and {f}"))
+                continue
+            where[mid] = f
+            m = by_id.get(mid)
+            if m is None:
+                problems.append((code("UNKNOWN_ID"), f"{f}: {mid} is not a mutant of {prog}.py"))
+                continue
+            if not isinstance(row, dict) or row.get("definition") != mutant_digest(m):
+                problems.append((code("STALE"), f"{f}: {mid} is not the current definition"))
+                continue
+            got = hunt.judge(row, m) if hunt else verdict(row.get("runs") or {}, m[4], m[5])[0]
+            if row.get("outcome") != got:
+                problems.append((code("OUTCOME"), f"{f}: {mid} is {row.get('outcome')}, its runs give {got}"))
+                continue
+            if gate and got != "KILLED":
+                problems.append((code("NOT_KILLED"), f"{f}: {mid} is {row.get('outcome')}, its runs give {got}"))
+                continue
+            rows[mid] = row
+    missing = [m[0] for m in mutants if m[0] not in where] if complete else []
+    if missing:
+        problems.append((code("MISSING_ID"), f"{len(missing)} not run: {' '.join(missing)}"))
+    return problems, rows, src
+
+
 def merge(mutants, label, argv, prog, root=ROOT, hunt=None):
     """--merge OUT PART.json ...: the matrices of the parts of one run (--shard K/N --matrix),
     checked against this checkout and joined into one matrix OUT as an unsharded run writes it.
@@ -1643,44 +1700,8 @@ def merge(mutants, label, argv, prog, root=ROOT, hunt=None):
             docs.append((f, json.loads(Path(f).read_text())))
         except (OSError, ValueError) as e:
             problems.append(("SHARD_UNREADABLE", f"{f}: {e}"))
-    try:
-        src = source_digest(root)
-    except SourceUnknown as e:
-        src = None
-        problems.append(("SHARD_SOURCE_UNKNOWN", str(e)))
-    by_id = {m[0]: m for m in mutants}
-    if len({json.dumps(d.get("tests")) for _, d in docs}) > 1:
-        problems.append(("SHARD_SHAPE", "the files were run with different --matrix-tests"))
-    rows, where = {}, {}
-    for f, d in docs:
-        if d.get("matrix") != MATRIX or d.get("harness") != prog:
-            problems.append(("SHARD_NOT_THIS_HARNESS", f"{f}: {d.get('matrix')!r} by {d.get('harness')!r}, not {prog}"))
-        if src is not None and d.get("source") != src:
-            problems.append(("SHARD_STALE", f"{f}: written over other sources than this checkout's"))
-        for mid, row in sorted((d.get("mutants") or {}).items()):
-            if mid in where:
-                problems.append(("SHARD_DUPLICATE_ID", f"{mid} in {where[mid]} and {f}"))
-                continue
-            where[mid] = f
-            m = by_id.get(mid)
-            if m is None:
-                problems.append(("SHARD_UNKNOWN_ID", f"{f}: {mid} is not a mutant of {prog}.py"))
-                continue
-            if row.get("definition") != mutant_digest(m):
-                problems.append(("SHARD_STALE", f"{f}: {mid} is not the current definition"))
-            if hunt:
-                got = hunt.judge(row, m)
-                if row.get("outcome") != got:
-                    problems.append(("SHARD_OUTCOME", f"{f}: {mid} is {row.get('outcome')}, its runs give {got}"))
-                rows[mid] = row
-                continue
-            got = verdict(row.get("runs") or {}, m[4], m[5])[0]
-            if row.get("outcome") != "KILLED" or got != "KILLED":
-                problems.append(("SHARD_NOT_KILLED", f"{f}: {mid} is {row.get('outcome')}, its runs give {got}"))
-            rows[mid] = row
-    missing = [m[0] for m in mutants if m[0] not in where]
-    if missing:
-        problems.append(("SHARD_MISSING_ID", f"{len(missing)} not run: {' '.join(missing)}"))
+    more, rows, src = check_matrices(docs, mutants, prog, root, hunt=hunt, gate=not hunt)
+    problems += more
     for code, why in problems:
         print(f"{code:<22} {why}")
     if problems:

@@ -5,7 +5,7 @@
     python3 tests/generated_mutants.py coverage --out MAP.json [--jobs N] # each test file once, traced
     python3 tests/generated_mutants.py run --coverage MAP.json [--shard K/N] [--matrix FILE] [--jobs N] [ID ...]
     python3 tests/generated_mutants.py merge --coverage MAP.json OUT PART.json ...
-    python3 tests/generated_mutants.py report MATRIX.json --out DIR [--previous LIST.json]
+    python3 tests/generated_mutants.py report MATRIX.json --coverage MAP.json --out DIR [--previous LIST.json] [--audit A.json]
     python3 tests/generated_mutants.py --selftest
 
 A generated mutant is a discovery tool, never backing: a SPEC claim is backed only by a curated
@@ -40,7 +40,10 @@ cheapest first, and stops at the first that notices it. Outcomes:
 The exit status says whether the hunt ran, never whether something survived: 0 when every chosen
 mutant got an outcome, 2 on a stale map, a red baseline or a source that changed during the run.
 
-`report` turns a merged matrix into DIR/survivors.json (warrant-generated/list@1: every id with its
+`report` reads a matrix only through tests/mutants.py's check_matrices, the validation --merge uses
+(Codex AMEND 1 of #178): this checkout's source, every generated id exactly once, each row the
+current definition (the map's test files included) and labelled with the outcome its own runs give,
+no shard; otherwise it writes nothing. It turns that matrix into DIR/survivors.json (warrant-generated/list@1: every id with its
 outcome; the survivors with where they are; the tree) and DIR/report.md. With --previous (the last
 run's list) it names what changed since that tree: BLIND, a mutant KILLED or CRASHED before that
 survives now (a witness went blind; a TIMEOUT depends on the runner's load and counts for neither
@@ -55,6 +58,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -518,11 +522,52 @@ def load_equivalent(path=EQUIVALENT_FILE):
     return out
 
 
-def build_list(matrix, gen, equivalent, previous=None, audit=None):
+def head_commit(source, root=ROOT):
+    """The commit a list names: HEAD, when `source` is HEAD's tree (a clean checkout), else None."""
+    try:
+        head = MU._git(root, "rev-parse", "HEAD").decode().strip()
+        tree = MU._git(root, "rev-parse", "HEAD^{tree}").decode().strip()
+    except MU.SourceUnknown:
+        return None
+    return head if source == f"tree:{tree}" else None
+
+
+def previous_problem(prev, root=ROOT):
+    """None if `prev` (a downloaded list: untrusted) is one this checkout may compare with, else why
+    not: not a list@1 document, outcomes that are not {G-id: outcome}, pairs of another shape, no
+    commit (a run over a dirty tree), a commit that is not an ancestor of HEAD here (another branch,
+    or history not fetched), or a source that is not that commit's tree. Its outcomes cannot be
+    recomputed (it carries no runs); its shape and its place in this history can be checked."""
+    if not (isinstance(prev, dict) and prev.get("format") == LIST):
+        return f"not a {LIST} document"
+    outs = prev.get("outcomes")
+    if not (isinstance(outs, dict) and all(isinstance(k, str) and re.fullmatch(r"G[0-9a-f]{12}", k) and v in OUTCOMES
+                                           for k, v in outs.items())):
+        return "its outcomes are not {generated id: outcome}"
+    pairs = prev.get("pairs", [])
+    if not (isinstance(pairs, list) and all(isinstance(q, list) and len(q) == 4 and all(isinstance(x, str) for x in q[:3])
+                                            and isinstance(q[3], bool) for q in pairs)):
+        return "its pairs are not [claim, mutant, tier, confined]"
+    c = prev.get("commit")
+    if not (isinstance(c, str) and re.fullmatch(r"[0-9a-f]{40}", c)):
+        return "it names no commit (a run over a dirty tree, or an older list)"
+    try:
+        tree = MU._git(root, "rev-parse", "--verify", "--end-of-options", f"{c}^{{tree}}").decode().strip()
+    except MU.SourceUnknown:
+        return f"its commit {c[:12]} is not in this checkout's history"
+    if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", c, "HEAD"], capture_output=True).returncode:
+        return f"its commit {c[:12]} is not an ancestor of HEAD (another branch)"
+    if prev.get("source") != f"tree:{tree}":
+        return f"its source is not the tree of its commit {c[:12]}"
+    return None
+
+
+def build_list(matrix, gen, equivalent, previous=None, audit=None, previous_why=None, root=ROOT):
     """The list document: outcomes by id, survivors with where they are, per-file counts, the
     blind (claim, mutant) pairs of `audit` (claims.py audit --json over full matrices of the
     curated mutants), and what changed since `previous`: BLIND, NEW and CLOSED mutants, and the
-    pairs new since then (when the previous list had pairs)."""
+    pairs new since then (when the previous list had pairs). Without a usable previous list,
+    `since` says why (`previous_why`), never an empty comparison."""
     by_id = {m["id"]: m for m in gen}
     rows = matrix["mutants"]
     outcomes = {mid: rows[mid]["outcome"] for mid in sorted(rows)}
@@ -547,14 +592,17 @@ def build_list(matrix, gen, equivalent, previous=None, audit=None):
         elif outcomes[mid] in NOTICED:
             findings.append(("EQUIVALENT_NOTICED", mid, f"marked equivalent but {outcomes[mid]}: "
                              f"{rows[mid].get('detail', '')}"))
-    doc = {"format": LIST, "source": matrix["source"], "generated": len(outcomes), "outcomes": outcomes,
+    doc = {"format": LIST, "source": matrix["source"], "commit": head_commit(matrix["source"], root),
+           "generated": len(outcomes), "outcomes": outcomes,
            "per_file": per, "survivors": survivors, "equivalent": sorted(set(equivalent) & set(outcomes)),
            "findings": [list(f) for f in findings]}
     if audit is not None:
         doc["audit_source"] = audit["source"]
         doc["pairs"] = [[b["claim"], b["mutant"], b["tier"], b["confined"]] for b in audit["blind"]]
         doc["unknown_pairs"] = len(audit["unknown"])
-    if previous is not None:
+    if previous is None:
+        doc["since"] = {"source": None, "no_previous": previous_why or "no previous list was given"}
+    else:
         before = previous.get("outcomes", {})
         doc["since"] = {"source": previous.get("source"),
                         "blind": sorted(mid for mid in survivors if before.get(mid) in SURELY_NOTICED),
@@ -574,7 +622,9 @@ def render(doc):
     out = ["# Generated mutants: survivor report", "",
            f"Source `{doc['source']}`; {doc['generated']} generated. A survivor is a candidate blind spot, "
            "not a defect: it may be equivalent (tests/equivalent_mutants.json). Generated mutants never back a claim.", ""]
-    if "since" in doc:
+    if doc.get("since", {}).get("no_previous"):
+        out += ["## Since the previous run", "", f"No previous run to compare with: {doc['since']['no_previous']}.", ""]
+    elif "since" in doc:
         s = doc["since"]
         out += [f"## Since `{s['source']}`", "",
                 f"- BLIND (KILLED or CRASHED before, surviving now): {len(s['blind'])}",
@@ -682,43 +732,78 @@ def cmd_merge(argv):
                       hunt=hunt(cmap))
 
 
-def cmd_report(argv):
-    out, argv = _opt(argv, "--out")
-    prev, argv = _opt(argv, "--previous")
-    aud, argv = _opt(argv, "--audit")
-    if not out or len(argv) != 1:
-        raise SystemExit("usage: generated_mutants.py report MATRIX.json --out DIR [--previous LIST.json] [--audit AUDIT.json]")
-    matrix = json.loads(Path(argv[0]).read_text())
-    if matrix.get("matrix") != MU.MATRIX or matrix.get("harness") != PROG or "shard" in matrix:
-        raise SystemExit(f"REPORT_MATRIX {argv[0]}: not a merged matrix of {PROG}")
-    gen = generate()
-    if set(matrix["mutants"]) != {m["id"] for m in gen}:
-        raise SystemExit(f"REPORT_MATRIX {argv[0]}: its ids are not this checkout's generated mutants")
-    previous = None
-    if prev:
-        previous = json.loads(Path(prev).read_text())
-        if previous.get("format") != LIST:
-            raise SystemExit(f"REPORT_PREVIOUS {prev}: not {LIST}")
-    audit = None
-    if aud:
-        audit = json.loads(Path(aud).read_text())
-        if audit.get("format") != "warrant-claims/audit@1" or audit.get("source") != matrix["source"]:
-            raise SystemExit(f"REPORT_AUDIT {aud}: not an audit of the tree the matrix ran over")
-    doc = build_list(matrix, gen, load_equivalent(), previous, audit)
+def validated(matrix, cmap, root=ROOT, name="matrix"):
+    """(problems, generated mutants): `matrix` checked by tests/mutants.py's check_matrices, as
+    --merge checks its parts, against the mutants generated now with the map's test files: this
+    checkout's source, every id once and none other, each row the current definition, each outcome
+    the one its runs give; and merged (no shard)."""
+    gen = generate(root)
+    problems, _, _ = MU.check_matrices([(name, matrix)], as_tuples(gen, cmap), PROG, root, hunt=hunt(cmap, root),
+                                       gate=False, complete=True, prefix="MATRIX")
+    if isinstance(matrix, dict) and "shard" in matrix:
+        problems.append(("MATRIX_SHARD", f"{name}: one part of a sharded run; merge the parts first"))
+    return problems, gen
+
+
+def report(matrix, cmap, out, previous=None, audit=None, root=ROOT, name="matrix"):
+    """0 and DIR/survivors.json + DIR/report.md, or 1 and nothing written when the matrix or the
+    audit does not validate. A previous list that does not (previous_problem) is not compared with,
+    and the report says why."""
+    problems, gen = validated(matrix, cmap, root, name)
+    if audit is not None and not (isinstance(audit, dict) and audit.get("format") == "warrant-claims/audit@1"
+                                  and audit.get("source") == matrix.get("source")
+                                  and isinstance(audit.get("blind"), list) and isinstance(audit.get("unknown"), list)):
+        problems.append(("REPORT_AUDIT", "not an audit of the tree the matrix ran over"))
+    for code, why in problems:
+        print(f"{code:<22} {why}")
+    if problems:
+        print(f"REPORT: REFUSED ({len(problems)} problems); nothing written to {out}")
+        return 1
+    why = None if previous is None else previous_problem(previous, root)
+    if why:
+        print(f"REPORT: the previous list is not compared with: {why}")
+    doc = build_list(matrix, gen, load_equivalent(root / "tests" / "equivalent_mutants.json"),
+                     None if why else previous, audit, previous_why=why, root=root)
     d = Path(out)
     d.mkdir(parents=True, exist_ok=True)
     (d / "survivors.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
     (d / "report.md").write_text(render(doc))
     c = collections.Counter(doc["outcomes"].values())
+    s = doc["since"]
     print(f"REPORT: {doc['generated']} generated; " + ", ".join(f"{k} {c[k]}" for k in OUTCOMES)
           + f"; {len(doc['equivalent'])} marked equivalent; {len(doc['survivors'])} survivors listed"
-          + (f"; since {doc['since']['source']}: {len(doc['since']['blind'])} BLIND, {len(doc['since']['new'])} NEW"
-             if "since" in doc else "; no previous list")
+          + (f"; no previous run ({s['no_previous']})" if s.get("no_previous")
+             else f"; since {s['source']}: {len(s['blind'])} BLIND, {len(s['new'])} NEW")
           + (f"; {len(doc['pairs'])} blind pairs" if "pairs" in doc else "")
-          + (f", {len(doc['since']['new_pairs'])} new" if "new_pairs" in doc.get("since", {}) else ""))
-    for code, mid, why in doc["findings"]:
-        print(f"{code} {mid}: {why}")
+          + (f", {len(s['new_pairs'])} new" if "new_pairs" in s else ""))
+    for code, mid, why_ in doc["findings"]:
+        print(f"{code} {mid}: {why_}")
     return 0
+
+
+def _read(path, what):
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"REPORT_UNREADABLE {what} {path}: {e}") from None
+
+
+def cmd_report(argv):
+    out, argv = _opt(argv, "--out")
+    path, argv = _opt(argv, "--coverage")
+    prev, argv = _opt(argv, "--previous")
+    aud, argv = _opt(argv, "--audit")
+    if not out or not path or len(argv) != 1:
+        raise SystemExit("usage: generated_mutants.py report MATRIX.json --coverage MAP.json --out DIR "
+                         "[--previous LIST.json] [--audit AUDIT.json]")
+    previous = None
+    if prev:
+        try:
+            previous = json.loads(Path(prev).read_text())
+        except (OSError, ValueError) as e:
+            previous = {"unreadable": str(e)}
+    return report(_read(argv[0], "matrix"), load_map(path), out, previous, _read(aud, "audit") if aud else None,
+                  name=argv[0])
 
 
 def main(argv):
@@ -912,6 +997,66 @@ def selftest():
                  and judge({"outcome": "INVALID", "runs": {}}, invalid, fx) == "INVALID"
                  and judge({"outcome": "INVALID", "runs": {}}, chosen["killed"], fx) != "INVALID"),
             ]
+            # The report states only what check_matrices accepts (Codex AMEND 1 of #178: rows saying
+            # KILLED with no runs, over another tree or this one, were reported as 8644 KILLED)
+            mx, out_dir = fx.with_name(fx.name + "-matrix.json"), fx.with_name(fx.name + "-report")
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc_run = MU.run_all(tuples, "SELFTEST", ["--jobs", "4", "--matrix", str(mx)], runner, prog=PROG, root=fx,
+                                    hunt=hunt(cmap, fx))
+            genuine = json.loads(mx.read_text())
+
+            def rpt(matrix, previous=None):
+                shutil.rmtree(out_dir, ignore_errors=True)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    rc = report(matrix, cmap, out_dir, previous, root=fx)
+                listed = json.loads((out_dir / "survivors.json").read_text()) if (out_dir / "survivors.json").exists() else None
+                return rc, buf.getvalue(), listed
+
+            def doctored(change):
+                d = json.loads(json.dumps(genuine))
+                change(d)
+                return d
+            codex = {m[0]: {"file": m[1], "test": [], "runs": {}, "outcome": "KILLED"} for m in tuples}
+            survivor = next(mid for mid, r in genuine["mutants"].items() if r["outcome"] == "SURVIVED")
+            rc0, _, listed = rpt(genuine)
+            rc_prev, _, again = rpt(genuine, listed)
+            rc_bad, said_bad, bad_prev = rpt(genuine, {"format": LIST, "outcomes": 5})
+            subprocess.run([*git, "-C", str(fx), "checkout", "-q", "-b", "side"], check=True)
+            subprocess.run([*git, "-C", str(fx), "commit", "-q", "--allow-empty", "-m", "side"], check=True)
+            side = MU._git(fx, "rev-parse", "HEAD").decode().strip()
+            subprocess.run([*git, "-C", str(fx), "checkout", "-q", "-"], check=True)
+            _, _, other = rpt(genuine, dict(listed or {}, commit=side))
+            checks += [
+                ("a genuine merged matrix is reported, with every id and its runs' outcomes",
+                 rc_run == 0 and rc0 == 0 and listed is not None and len(listed["outcomes"]) == len(tuples)
+                 and listed["outcomes"][survivor] == "SURVIVED" and listed["commit"] == MU._git(fx, "rev-parse", "HEAD").decode().strip()),
+                ("without a previous list the report says so", (listed or {}).get("since", {}).get("no_previous") == "no previous list was given"),
+                ("a previous list of an ancestor commit is compared with", rc_prev == 0 and "blind" in (again or {}).get("since", {})),
+                ("a malformed previous list is no previous run, and the report says why",
+                 rc_bad == 0 and "outcomes" in (bad_prev or {}).get("since", {}).get("no_previous", "") and "not compared" in said_bad),
+                ("a previous list of another branch is no previous run",
+                 "not an ancestor" in (other or {}).get("since", {}).get("no_previous", "")),
+            ]
+            for name, matrix, code in (
+                    ("Codex's fixture: every id KILLED with no runs, this tree", dict(genuine, mutants=codex), "MATRIX_STALE"),
+                    ("Codex's fixture over another tree", dict(genuine, mutants=codex, source="tree:" + "0" * 40), "MATRIX_STALE"),
+                    ("a label the row's runs do not give",
+                     doctored(lambda d: d["mutants"][survivor].update(outcome="KILLED")), "MATRIX_OUTCOME"),
+                    ("a row of another definition under the same id",
+                     doctored(lambda d: d["mutants"][survivor].update(definition="0" * 64)), "MATRIX_STALE"),
+                    ("a matrix without one of the ids", doctored(lambda d: d["mutants"].pop(survivor)), "MATRIX_MISSING_ID"),
+                    ("one part of a sharded run", dict(genuine, shard=[1, 2]), "MATRIX_SHARD")):
+                rc, said, wrote = rpt(matrix)
+                checks.append((f"the report refuses {name} ({code}) and writes nothing", rc == 1 and code in said and wrote is None))
+            (fx / "tests" / "toy_test.py").write_text(TOY_TEST + "# a test-only edit: every id stays\n")
+            subprocess.run([*git, "-C", str(fx), "commit", "-qam", "edit"], check=True)
+            rc, said, wrote = rpt(genuine)
+            checks.append(("after a test-only edit (the ids unchanged) the old matrix is refused MATRIX_STALE",
+                           {m["id"] for m in generate(fx, ["warrant/toy.py"])} == set(genuine["mutants"])
+                           and rc == 1 and "MATRIX_STALE" in said and wrote is None))
+            for d in (mx, out_dir):
+                shutil.rmtree(d, ignore_errors=True) if d.is_dir() else d.unlink(missing_ok=True)
             Path(fx / "map.json").write_text(json.dumps(dict(cmap, source="tree:" + "0" * 40)))
             try:
                 load_map(fx / "map.json", fx)
@@ -924,7 +1069,7 @@ def selftest():
             shutil.rmtree(fx, ignore_errors=True)
         return checks
 
-    def report():
+    def listing():
         checks = []
         # The report: equivalents apart, and what changed since the previous list
         rows = {k: {"outcome": o, "file": "warrant/x.py", "test": ["t"], "detail": "t:c"} for k, o in
@@ -974,7 +1119,7 @@ def selftest():
         return checks
 
     checks = []
-    for section in (generator, outcomes, fixture, report, claims):
+    for section in (generator, outcomes, fixture, listing, claims):
         try:
             checks += section()
         except Exception:     # noqa: BLE001  a section that raises fails by name, not as a crash of the selftest

@@ -64,6 +64,13 @@ replaced it.
   containers deep is canonical and 257 is not, written or read, and loads' depth scan skips
   strings (E10, M477-M479); a trust file is trust/2 and binds each key once (K18, M480, M481).
   Three survivors are listed as equivalent with their reasons.
+- One validation of matrices, `check_matrices` in `tests/mutants.py`, for every reader that
+  states what a matrix says: `--merge`, the survivor `report` (which now takes `--coverage`) and
+  `claims.py audit`. Source identity, current definitions, outcomes recomputed from each row's runs,
+  ids once (and complete, for merge and report); a matrix that fails writes nothing (Codex AMEND 1
+  on 87768ff: `report` stated 8644 KILLED from rows with no runs). The previous run's list is
+  checked too: of another shape, or whose commit is not an ancestor of HEAD, it is not compared
+  with, and the report says so.
 
 ### The agent interface under the spec: SPEC §10 (G2)
 

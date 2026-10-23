@@ -54,7 +54,7 @@ def _audit_synthetic(fix, work):
     src = core.source_digest(r.root)
     first = c.doc["witnesses"][0]
 
-    def matrix(result=lambda w: "PASS", drop=(), source=src, definition=None, killer=True):
+    def matrix(result=lambda w: "PASS", drop=(), source=src, definition=None, killer=True, lie=False):
         runs = {}
         for w in c.doc["witnesses"]:
             test, _, case = w.partition(":")
@@ -65,7 +65,11 @@ def _audit_synthetic(fix, work):
             row_runs = json.loads(json.dumps(runs))
             row_runs.setdefault("zz_test", {})["ZZ_KILLER"] = "FAIL" if killer else "PASS"
             rows[mid] = {"definition": definition or core.mutant_digest(defs[mid]), "file": defs[mid][1], "what": defs[mid][2],
-                         "test": defs[mid][4], "targets": list(defs[mid][5]), "outcome": "KILLED", "runs": row_runs}
+                         "test": defs[mid][4], "targets": list(defs[mid][5]), "runs": row_runs,
+                         # the outcome the row's own runs give, as run_all writes it (check_matrices recomputes it)
+                         "outcome": core.verdict(row_runs, defs[mid][4], defs[mid][5])[0]}
+            if lie:
+                rows[mid]["outcome"] = "SURVIVED" if rows[mid]["outcome"] == "KILLED" else "KILLED"
         p = work / f"matrix-{len(list(work.glob('matrix-*.json')))}.json"
         p.write_text(json.dumps({"matrix": MATRIX, "harness": "mutants", "tests": "selftest", "source": source, "mutants": rows}))
         return [str(p)]
@@ -118,6 +122,9 @@ def _synthetic_guards(r, c, x, first, run, matrix):
     _, _, rows, probs = run(definition="0" * 64)
     out.append(("audit: a row of a mutant defined otherwise now is refused MATRIX_STALE",
                 not rows and {p[0] for p in probs} == {"MATRIX_STALE"}, probs))
+    _, _, rows, probs = run(lie=True)
+    out.append(("audit: a row labelled with an outcome its own runs do not give is refused MATRIX_OUTCOME "
+                "(the validation --merge uses, AMEND 1 of #178)", not rows and {p[0] for p in probs} == {"MATRIX_OUTCOME"}, probs))
     escaped = []
     for arg in ("/etc/hosts", "../hosts", "sub/../../hosts", ".."):
         try:

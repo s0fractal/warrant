@@ -346,10 +346,19 @@ in `tests/equivalent_mutants.json` with its reason, in a reviewed change; the
 report then counts it apart, and names an entry some test notices
 (`EQUIVALENT_NOTICED`) or whose id is gone (`EQUIVALENT_STALE`).
 
+Every reader of a matrix that states what it says goes through one validation,
+`check_matrices` in `tests/mutants.py`: `--merge`, `report` and `claims.py audit`.
+A matrix is read only over this checkout's sources, with each row the current
+definition of its mutant and labelled with the outcome its own runs give, and,
+for `--merge` and `report`, with every id of the list exactly once; otherwise
+nothing is written. The previous list is untrusted input too: one of another
+shape, or whose commit is not an ancestor of this checkout's HEAD, is not
+compared with, and the report says so instead of an empty comparison.
+
 ```bash
 python3 tests/generated_mutants.py coverage --out MAP.json
 python3 tests/generated_mutants.py run --coverage MAP.json --matrix G.json [--shard K/N] [ID ...]
-python3 tests/generated_mutants.py report G.json --out DIR [--previous OLD/survivors.json]
+python3 tests/generated_mutants.py report G.json --coverage MAP.json --out DIR [--previous OLD/survivors.json] [--audit A.json]
 python3 tests/generated_mutants.py --selftest
 ```
 
