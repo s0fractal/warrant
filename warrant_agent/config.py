@@ -2,6 +2,7 @@
 stores, signer, receiver trust/profile, expectations, use policies and limits.
 Requests name a workspace and an expectation only by their local handles."""
 import json
+import os
 import re
 from pathlib import Path
 
@@ -17,6 +18,10 @@ from .errors import AgentError, need
 
 HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\Z")      # \Z: `$` admits a trailing newline (AMEND 2 of #164)
 OPERATIONS = ("context", "read", "handoff", "prepare", "commit", "compute")
+# What a workspace keeps under <state>/<name>: created when the configuration loads (the first six) or by the
+# views and the store (verdicts, replay-cache). None of them may be a symlink (AMEND 1 of #179).
+STATE_DIRS = ("views", "staging", "imports", "drafts", "requests", "exports")
+STATE_LAZY = ("verdicts", "replay-cache")
 RELATIONS = ("MATCH_EXPECTED_SET", "UNPINNED", "MISSING_DECLARED_BYTES", "CONTENT_MISMATCH", "WRONG_SET",
              "WRONG_SOURCE", "UNVERIFIED_EXPORTER", "LOCAL_CAPTURE")
 # The engine's admission limits (warrant.limits, SPEC §9) are workspace limits too.
@@ -24,8 +29,15 @@ DEFAULT_LIMITS = {"context_bytes": 16 * 1024, "transfer_bytes": 16 * 1024 * 1024
                   "provider_seconds": 600, "read_bytes": 64 * 1024, "view_ttl": 24 * 3600, **L.DEFAULTS}
 
 
+def state_links(ws_state):
+    """The paths of a workspace's state tree that are symlinks (dangling ones included): its directory, the
+    directories under it and the profile beside them are written by the interface, and a link there would
+    take those writes elsewhere."""
+    return [str(q) for q in (ws_state, *(ws_state / d for d in STATE_DIRS + STATE_LAZY)) if os.path.islink(q)]
+
+
 class Workspace:
-    def __init__(self, name, doc, state_root):
+    def __init__(self, name, doc, state_root, create=True):
         self.name = name
         self.store = Path(doc["store"])
         trust = doc["trust"]
@@ -56,7 +68,9 @@ class Workspace:
             raise AgentError("BAD_REQUEST", f"workspace {name!r}: {e}") from None
         self.operations = tuple(doc.get("operations", OPERATIONS))
         self.state = Path(state_root) / name
-        for sub in ("views", "staging", "imports", "drafts", "requests", "exports"):
+        links = state_links(self.state)
+        need(not links, "BAD_REQUEST", f"workspace {name!r}: the state tree holds symlinks: {links}", links=links)
+        for sub in STATE_DIRS if create else ():
             (self.state / sub).mkdir(parents=True, exist_ok=True)
 
     def assessment_limits(self):
@@ -113,7 +127,7 @@ def repository_trust(bindings_path, roles_path):
 
 
 class Config:
-    def __init__(self, doc):
+    def __init__(self, doc, create=True):
         need(isinstance(doc, dict) and doc.get("agent_api") == AGENT_API, "UNSUPPORTED_VERSION",
              f"configuration must declare agent_api {AGENT_API!r}")
         self.state = Path(doc["state"])
@@ -126,7 +140,7 @@ class Config:
             for u, p in w.get("uses", {}).items():
                 need(set(p) <= {"delivery", "reliance", "fresh"} and all(r in RELATIONS for r in p.get("delivery", [])),
                      "BAD_REQUEST", f"use policy {u!r}: delivery, reliance, fresh")
-            self.workspaces[name] = Workspace(name, w, self.state)
+            self.workspaces[name] = Workspace(name, w, self.state, create)
         # Configuration is not a Warrant record: it may carry floats (deadlines).
         self.digest = C.digest(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode())
 

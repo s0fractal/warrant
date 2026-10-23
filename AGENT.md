@@ -107,8 +107,23 @@ repository's JSON files are read, none of its code is run. A refusal prints
 | `INIT_KEY_NOT_PINNED` | the seed's key is not the one `roles.json` pins for the actor |
 | `INIT_NOT_ADMITTED` | `trust.json` admits no binding of the actor to that key |
 | `INIT_ROADMAP_SHAPE` | `roadmap.json` has no list of actor ids as `results_accept_by` |
+| `INIT_SYMLINK` | a path init would write, or one the server writes under the state, has a symlink (dangling ones too) on a component within the home directory |
+| `INIT_PATH_CHANGED` | a component became a symlink or a non-directory after the check, before the write |
 
-`tests/agent_repo_test.py` I01-I11 and T01-T03, agent mutants A87-A96 and A104.
+The paths checked before the first write are the configuration, its directory,
+the state directory (given or the default `<config>-state`),
+`<state>/<workspace>`, its `profile.json`, the directories the server creates
+under it (`views`, `staging`, `imports`, `drafts`, `requests`, `exports`) and the
+ones the views and the store create (`verdicts`, `replay-cache`): each by its
+real path (in the home directory, outside the repository), with no symlink on it
+below the home directory. They are then created and written by descriptors
+opened from the home directory one component at a time with `O_NOFOLLOW`, so a
+link planted between the check and the write is refused, not followed; a
+process of the operator's own renaming a directory init has already opened is
+not defended against (SPEC §10.8). When a configuration loads, a workspace whose
+state tree holds a symlink is refused (`BAD_REQUEST`, `details.links`).
+
+`tests/agent_repo_test.py` I01-I19, T01-T04, agent mutants A87-A96, A104-A108.
 
 ## The roadmap through the interface
 
@@ -216,8 +231,8 @@ the SDK client):
 | `tests/agent_write_test.py` | W01-W13 |
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10, S11 (a contradicted receipt closes nothing; both capsules say why), S12 (evaluate) |
 | `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M16 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain, malformed stored records, every word a result carries has an explain entry) |
-| `tests/agent_repo_test.py` | I01-I11 (`init`), T01-T03 (a repository's trust), B01-B04 (`blobs`), Q03 (`scope`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
-| `tests/agent_mutants.py` | A01-A64, A66-A104, each killed on its named case; the SPEC §10 claims cite them |
+| `tests/agent_repo_test.py` | I01-I19 (`init`; I12-I19 symlinks, AMEND 1), T01-T04 (a repository's trust; a symlinked state tree), B01-B04 (`blobs`), Q03 (`scope`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
+| `tests/agent_mutants.py` | A01-A64, A66-A108, each killed on its named case; the SPEC §10 claims cite them |
 | `examples/mcp-first-contact/` | fresh headless agents on three tasks, frozen scorer, round 1 vs round 2 |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 

@@ -25,6 +25,7 @@ from pathlib import Path
 from agent_world import C, Config, Key, api, check, finish
 from warrant import bindings as B
 from warrant_agent import init as I
+from warrant_agent.errors import AgentError
 
 ROOT = Path(__file__).resolve().parents[1]
 IMPL = os.environ.get("WARRANT_IMPL") or str(ROOT)
@@ -224,6 +225,117 @@ def init_cases():
     shutil.rmtree(elsewhere, ignore_errors=True)
     for x in (f, g, h):
         x.close()
+
+
+def symlink_cases():
+    """AMEND 1 of #179 (Codex on fd385a2): every path init writes is checked, the derived ones too, and
+    written through no symlink. Each refusal has its code, and nothing lands where a link points."""
+    def attempt(f, plant, **kw):
+        """(init's refusal code or None, the files under the link's target) after `plant(f)`."""
+        f.op.mkdir(exist_ok=True)
+        target = plant(f)
+        code, _ = f.refusal(**kw)
+        return code, sorted(str(q.relative_to(target)) for q in target.rglob("*")) if target.is_dir() else None
+
+    def repo_target(f):
+        t = f.repo / "generated-state"
+        t.mkdir(exist_ok=True)
+        return t
+    keys = {a: Key.generate() for a in ACTORS}
+
+    def v1(f):                                   # the default state directory is a link into the repository
+        t = repo_target(f)
+        (f.op / "claude-state").symlink_to(t, target_is_directory=True)
+        return t
+
+    def v2(f):                                   # state/<workspace> is a link into the repository
+        t = repo_target(f)
+        (f.op / "claude-state").mkdir()
+        (f.op / "claude-state" / "repo").symlink_to(t, target_is_directory=True)
+        return t
+    outside = Path(tempfile.mkdtemp(prefix="warrant-agent-outside-"))
+
+    def v3(f):                                   # the default state directory is a link outside the home directory
+        (f.op / "claude-state").symlink_to(outside, target_is_directory=True)
+        return outside
+
+    def mid(f):                                  # an intermediate component, a link within the home directory
+        real = f.base / "real-op"
+        real.mkdir()
+        (f.op / "link").symlink_to(real, target_is_directory=True)
+        return real
+
+    def dangling(f):                             # a dangling link where the state directory would be created
+        (f.op / "claude-state").symlink_to(f.base / "not-yet", target_is_directory=True)
+        return f.base
+
+    def profile_link(f):                         # state/<workspace>/profile.json, a link to another file of home
+        (f.op / "claude-state" / "repo").mkdir(parents=True)
+        (f.base / "other.json").write_text("{}")
+        (f.op / "claude-state" / "repo" / "profile.json").symlink_to(f.base / "other.json")
+        return f.base
+
+    def drafts_link(f):                          # a directory the server creates under state/<workspace>
+        t = f.base / "drafts-elsewhere"
+        t.mkdir()
+        (f.op / "claude-state" / "repo").mkdir(parents=True)
+        (f.op / "claude-state" / "repo" / "drafts").symlink_to(t, target_is_directory=True)
+        return t
+    got = {}
+    for name, plant, kw in (("I12", v1, {}), ("I13", v2, {}), ("I14", v3, {}),
+                            ("I15", mid, {"config": None}), ("I16", dangling, {}), ("I17", profile_link, {}),
+                            ("I18", drafts_link, {})):
+        f = Fixture(keys=keys)
+        if name == "I15":
+            kw = {"config": f.op / "link" / "c.json"}
+        got[name] = (attempt(f, plant, **kw), (f.op / "claude.json").exists())
+        if name == "I16":
+            got[name] = (got[name], (f.base / "not-yet").exists())
+        f.close()
+    shutil.rmtree(outside, ignore_errors=True)
+    check("I12", got["I12"] == (("INIT_INSIDE_REPOSITORY", []), False), "the default state as a link into the repository", got["I12"])
+    check("I13", got["I13"] == (("INIT_INSIDE_REPOSITORY", []), False), "state/<workspace> as a link into the repository", got["I13"])
+    check("I14", got["I14"] == (("INIT_OUTSIDE_HOME", []), False), "the default state as a link outside the home directory", got["I14"])
+    check("I15", got["I15"][0][0] == "INIT_SYMLINK" and got["I15"][0][1] == [] and not got["I15"][1],
+          "a link on an intermediate component of the configuration's path", got["I15"])
+    check("I16", got["I16"][0][0][0] == "INIT_SYMLINK" and got["I16"][1] is False,
+          "a dangling link where the state directory would be: refused, its target not created", got["I16"])
+    check("I17", got["I17"][0][0] == "INIT_SYMLINK" and (got["I17"][0][1] or []).count("other.json") == 1,
+          "state/<workspace>/profile.json as a link: refused, the file it names unchanged", got["I17"])
+    check("I18", got["I18"] == (("INIT_SYMLINK", []), False), "a state directory the server writes, as a link", got["I18"])
+
+    # I19: a link planted after plan checked the paths and before apply wrote them: refused, nothing written there
+    f = Fixture(keys=keys)
+    with f.home():
+        steps = I.plan(f.repo, "claude", f.seeds / "claude.seed", f.op / "claude.json", workspace="repo")
+        t = repo_target(f)
+        (f.op / "claude-state").mkdir(parents=True)
+        (f.op / "claude-state" / "repo").symlink_to(t, target_is_directory=True)
+        try:
+            I.apply(*steps)
+            code = None
+        except I.Refused as e:
+            code = e.code
+    check("I19", (code, sorted(q.name for q in t.rglob("*")), (f.op / "claude.json").exists()) == ("INIT_PATH_CHANGED", [], False),
+          "a link planted between the check and the write is refused, not followed", (code, list(t.rglob("*"))))
+    f.close()
+
+    # T04: the same rule when a configuration loads: a state directory of the workspace that is a symlink is refused
+    f = Fixture(keys=keys).with_goal()
+    cfg, _ = f.init()
+    elsewhere = f.base / "views-elsewhere"
+    elsewhere.mkdir()
+    views = Path(cfg.state) / "repo" / "views"
+    shutil.rmtree(views)
+    views.symlink_to(elsewhere, target_is_directory=True)
+    try:
+        Config.load(f.op / "claude.json")
+        refused = None
+    except AgentError as e:
+        refused = (e.code, e.details.get("links"))
+    check("T04", refused == ("BAD_REQUEST", [str(views)]) and not list(elsewhere.iterdir()),
+          "a configuration whose workspace state holds a symlink is refused when it loads", refused)
+    f.close()
 
 
 def trust_cases():
@@ -471,7 +583,7 @@ def scope_case():
 
 
 def main():
-    for part in (init_cases, trust_cases, blob_cases, equivalence_case, dogfood_case, scope_case):
+    for part in (init_cases, symlink_cases, trust_cases, blob_cases, equivalence_case, dogfood_case, scope_case):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run

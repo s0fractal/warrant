@@ -13,14 +13,14 @@ and it is refused unless its key is exactly the key `.warrant/roles.json` pins f
 `.warrant/trust.json` admits that binding: no key is created, copied or bound here (SPEC
 §10.8; `tools/claims.py keygen`, `pin` and `bind` are the operator's commands). The state
 directory, the configuration and the seed lie outside the repository and, with the repository, in the
-operator's home directory. Nothing is written
+operator's home directory; every path init writes, the derived ones too, is checked by its real path and
+written through no symlink (AMEND 1 of #179). Nothing is written
 before every check has passed; nothing of the repository is run, only its JSON files read.
 A refusal prints `REFUSED <CODE> <detail>` on stderr and exits 2."""
 import argparse
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 from warrant import bindings as B
@@ -30,12 +30,13 @@ from warrant import shapes as S
 from warrant.keys import Key
 
 from . import AGENT_API
-from .config import HANDLE, OPERATIONS, Config, repository_trust
+from .config import HANDLE, OPERATIONS, STATE_DIRS, STATE_LAZY, Config, repository_trust
 from .errors import AgentError
 
 CODES = ("INIT_ACTOR_SHAPE", "INIT_NOT_A_REPOSITORY", "INIT_INSIDE_REPOSITORY", "INIT_OUTSIDE_HOME", "INIT_OPERATIONS",
          "INIT_WORKSPACE_NAME", "INIT_CONFIG_EXISTS", "INIT_NO_SEED", "INIT_SEED_SHAPE", "INIT_TRUST_SHAPE",
-         "INIT_ACTOR_NOT_PINNED", "INIT_KEY_NOT_PINNED", "INIT_NOT_ADMITTED", "INIT_ROADMAP_SHAPE")
+         "INIT_ACTOR_NOT_PINNED", "INIT_KEY_NOT_PINNED", "INIT_NOT_ADMITTED", "INIT_ROADMAP_SHAPE", "INIT_SYMLINK",
+         "INIT_PATH_CHANGED")
 DEFAULT_OPERATIONS = ("context", "read", "prepare", "commit")
 USE = "continue"
 USES = {USE: {"delivery": ["LOCAL_CAPTURE", "MATCH_EXPECTED_SET"], "reliance": ["ELIGIBLE"], "fresh": True}}
@@ -73,6 +74,74 @@ def _confined(arg, what, roots=None):
     raise Refused("INIT_OUTSIDE_HOME", f"{what} {real} is outside the operator's home directory")
 
 
+def _root(real):
+    """The real root of ROOTS that holds the real path `real` (it was confined)."""
+    return next(b for b in (os.path.realpath(r) for r in ROOTS) if real == b or real.startswith(b + os.sep))
+
+
+def _target(path, what, repo):
+    """The real path init will create or write for `path`, checked before anything is written (AMEND 1 of
+    #179): its real path lies in the home directory and outside the repository, and no component of it
+    below the home directory is a symlink, dangling or not, so the path written is the path checked."""
+    real = _confined(path, what)
+    _refuse(not _inside(real, repo), "INIT_INSIDE_REPOSITORY",
+            f"{what} {real} is inside the repository {repo}: the operator's files stay outside it")
+    base = _root(str(real))
+    lexical = Path(os.path.abspath(path))
+    for q in (lexical, *lexical.parents):
+        parent = os.path.realpath(q.parent)
+        if os.path.islink(q) and (parent == base or parent.startswith(base + os.sep)):
+            raise Refused("INIT_SYMLINK", f"{what}: {q} is a symlink; init writes no path through one")
+    return real
+
+
+def _walk(real, create):
+    """A descriptor of directory `real`, opened from its home root one component at a time with O_NOFOLLOW
+    (and created where missing when `create`): a symlink put on the path after plan checked it is refused,
+    not followed. This defends against a link planted on any component between the check and the write;
+    it does not defend against a process of the operator's own renaming a directory already opened (SPEC
+    §10.8: an application boundary, not OS isolation)."""
+    base = _root(str(real))
+    fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in Path(real).relative_to(base).parts:
+            if create:
+                try:
+                    os.mkdir(part, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            try:
+                nfd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except OSError as e:
+                raise Refused("INIT_PATH_CHANGED", f"{real}: {part!r} is no longer a directory init checked "
+                              f"({type(e).__name__}); nothing more is written") from None
+            os.close(fd)
+            fd = nfd
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _write(dir_real, name, data, atomic):
+    """Write `data` as file `name` of the directory `dir_real` (walked, see _walk), never through a symlink:
+    O_NOFOLLOW, and with `atomic` a new file renamed over the old one inside that directory."""
+    fd = _walk(dir_real, create=True)
+    try:
+        tmp = f".{name}.tmp{os.getpid()}" if atomic else name
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | (os.O_EXCL if atomic else os.O_TRUNC)
+        try:
+            out = os.open(tmp, flags, 0o600, dir_fd=fd)
+        except OSError as e:
+            raise Refused("INIT_PATH_CHANGED", f"{dir_real}/{name}: not a file init may write ({type(e).__name__})") from None
+        with os.fdopen(out, "wb") as f:
+            f.write(data)
+        if atomic:
+            os.replace(tmp, name, src_dir_fd=fd, dst_dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
 def _json(path, code):
     try:
         return json.loads(path.read_bytes())
@@ -90,12 +159,11 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
     dot = repo / DOT
     _refuse((dot / "store").is_dir() and all((repo / f).is_file() for f in FILES),
             "INIT_NOT_A_REPOSITORY", f"{repo} has no {DOT}/store with {', '.join(FILES)}")
-    config = _confined(config, "the configuration")
-    state = _confined(state, "the state directory") if state else config.parent / f"{config.stem}-state"
-    seed = _confined(seed, "the seed")
-    for what, p in (("the configuration", config), ("the state directory", state), ("the seed", seed)):
-        _refuse(not _inside(p, repo), "INIT_INSIDE_REPOSITORY",
-                f"{what} {p} is inside the repository {repo}: the operator's files stay outside it")
+    seed = _confined(seed, "the seed")             # read, never written: its real path is what counts
+    _refuse(not _inside(seed, repo), "INIT_INSIDE_REPOSITORY",
+            f"the seed {seed} is inside the repository {repo}: the operator's files stay outside it")
+    config = _target(config, "the configuration", repo)
+    state = _target(state if state else config.parent / f"{config.stem}-state", "the state directory", repo)
     operations = list(operations)
     _refuse(bool(operations) and len(set(operations)) == len(operations) and set(operations) <= set(OPERATIONS),
             "INIT_OPERATIONS", f"operations are distinct names of {list(OPERATIONS)}, not {operations}")
@@ -130,7 +198,10 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
             and all(S.is_actor(a) for a in rm["results_accept_by"]), "INIT_ROADMAP_SHAPE",
             f".warrant/roadmap.json is not a {ROADMAP} with results_accept_by a list of actor ids")
     profile = E.profile(uses={USE: {"requires_triggers": False}}, results_by=rm["results_accept_by"])
-    ws_state = state / workspace
+    # Every path the configuration makes the interface write, checked as the ones given (AMEND 1 of #179).
+    ws_state = _target(state / workspace, "the workspace's state", repo)
+    for sub in ("profile.json", *STATE_DIRS, *STATE_LAZY):
+        _target(ws_state / sub, f"the workspace's {sub}", repo)
     doc = {"agent_api": AGENT_API, "state": str(state),
            "workspaces": {workspace: {
                "store": str(dot / "store"),
@@ -142,22 +213,29 @@ def plan(repo, actor, seed, config, state=None, workspace=None, operations=DEFAU
                "signer": {"actor": actor, "key": key.id}, "operations": operations,
                "trust": sorted({a for a, _ in admitted}), "results_accept_by": rm["results_accept_by"],
                "serve": f"warrant-agent-mcp --config {config}"}
+    try:
+        Config(doc, create=False)               # the configuration loads; nothing is created by this check
+    except AgentError as e:
+        if "links" not in e.details:
+            raise
+        raise Refused("INIT_SYMLINK", e.message) from None
     return doc, profile, summary, {"config": config, "state": ws_state}
 
 
-def init(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
-    """Check everything (plan), then write the profile and the configuration; returns the summary."""
-    doc, profile, summary, paths = plan(repo, actor, seed, config, state, workspace, operations, force)
+def apply(doc, profile, summary, paths):
+    """Write what plan checked, through _walk/_write: the workspace's state directories, its profile, then
+    the configuration, the last write, so a refusal on the way leaves no configuration to load."""
     ws_state, out = paths["state"], paths["config"]
-    ws_state.mkdir(parents=True, exist_ok=True)
-    (ws_state / "profile.json").write_text(json.dumps(profile, sort_keys=True) + "\n")
-    Config(doc)                                 # the configuration loads, or nothing is written for it
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=out.parent)     # beside the configuration, so the replace is atomic
-    with os.fdopen(fd, "w") as f:
-        f.write(json.dumps(doc, indent=1, sort_keys=True) + "\n")
-    os.replace(tmp, out)
+    for sub in STATE_DIRS:
+        os.close(_walk(ws_state / sub, create=True))
+    _write(ws_state, "profile.json", (json.dumps(profile, sort_keys=True) + "\n").encode(), atomic=False)
+    _write(out.parent, out.name, (json.dumps(doc, indent=1, sort_keys=True) + "\n").encode(), atomic=True)
     return summary
+
+
+def init(repo, actor, seed, config, state=None, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
+    """Check everything (plan), then write the state directories, the profile and the configuration."""
+    return apply(*plan(repo, actor, seed, config, state, workspace, operations, force))
 
 
 def main(argv=None):
