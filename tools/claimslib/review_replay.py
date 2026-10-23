@@ -45,8 +45,10 @@ PREFIX = "checker sha256:"
 RESULTS = ("FAIL", "PASS", "NO_RESULT", "DOES_NOT_APPLY")
 TEST = re.compile(r"[a-z][a-z0-9_]*_test\Z")                   # \Z: `$` admits a trailing newline
 CASE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
-PATCH_PATH = re.compile(r"[ab]/tests/[A-Za-z0-9_][A-Za-z0-9_./-]*\Z")
-HEADER = ("--- ", "+++ ", "rename from ", "rename to ", "copy from ", "copy to ")
+PATCH_PATH = re.compile(r"[ab]/tests/\w[\w./-]*\Z", re.ASCII)            # ASCII: \w is [A-Za-z0-9_]
+RENAME = ("rename from ", "rename to ", "copy from ", "copy to ")           # their path has no a/ or b/
+# A symlink (120000) or submodule (160000) mode on a file mode line or an index line.
+LINK_MODE = re.compile(r"(?:(?:new |deleted )?(?:file )?|old )mode 1[26]0000\b|(?:index \S+ 1[26]0000\Z)")
 TIMEOUT = 900
 
 
@@ -61,30 +63,35 @@ def actor(data=None):
     return PREFIX + identity(Path(__file__).read_bytes() if data is None else data)
 
 
+def _paths(line):
+    """The paths a header line of a diff names (`a/…`, `b/…` or /dev/null), [] for any other line."""
+    if line.startswith("diff --git "):
+        return line[len("diff --git "):].split(" ")
+    if line.startswith(RENAME):
+        return ["a/" + line.split(" ", 2)[-1]]
+    if line.startswith(("--- ", "+++ ")):
+        return [line[4:].split("\t")[0].strip()]
+    return []
+
+
+def _line_problem(line):
+    if line.startswith(("GIT binary patch", "Binary files ")):
+        return "the patch is binary"
+    if LINK_MODE.match(line):
+        return "the patch makes a symlink or a submodule"
+    for p in _paths(line):
+        if p != "/dev/null" and (not PATCH_PATH.match(p) or ".." in p.split("/")):
+            return f"the patch touches {p[:80]!r}, outside tests/"
+    return None
+
+
 def patch_problem(patch):
     """Why a finding's diff is not a text diff of files under tests/, or None. A path outside tests/,
     a `..`, a symlink or submodule mode and a binary hunk are each refused: the diff adds or changes
     test code, and nothing else."""
     if not isinstance(patch, str):
         return "the patch is not a string"
-    for line in patch.splitlines():
-        if line.startswith("diff --git "):
-            paths = line[len("diff --git "):].split(" ")
-        elif line.startswith(HEADER):
-            rest = line.split(" ", 2)[-1] if line.startswith(("rename", "copy")) else line[4:]
-            paths = [rest.split("\t")[0].strip()]
-            if line.startswith(("rename", "copy")):
-                paths = ["a/" + paths[0]]
-        elif line.startswith(("GIT binary patch", "Binary files ")):
-            return "the patch is binary"
-        elif re.match(r"(?:(?:new |deleted )?(?:file )?|old )mode 1[26]0000\b|index \S+ 1[26]0000\Z", line):
-            return "the patch makes a symlink or a submodule"
-        else:
-            continue
-        for p in paths:
-            if p != "/dev/null" and (not PATCH_PATH.match(p) or ".." in p.split("/")):
-                return f"the patch touches {p[:80]!r}, outside tests/"
-    return None
+    return next((why for why in map(_line_problem, patch.splitlines()) if why), None)
 
 
 def test_problem(test):

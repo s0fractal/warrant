@@ -106,9 +106,19 @@ class Fixture:
             sign = ["--key", self.seeds[self.replayer]]
         elif argv[0] not in ("project", "check", "replay"):
             sign = ["--key", self.seeds[actor], "--actor", actor]
+        rest, stdin = list(argv[1:]), ""
+        if "--patch" in rest:                    # the tool reads a finding's diff from standard input
+            k = rest.index("--patch")
+            stdin = Path(rest[k + 1]).read_text()
+            rest[k:k + 2] = ["--patch-stdin"]
         out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            rc = RV.main(["--root", str(self.dir), argv[0], *sign, *argv[1:]])
+        real = sys.stdin
+        sys.stdin = io.StringIO(stdin)
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = RV.main(["--root", str(self.dir), argv[0], *sign, *rest])
+        finally:
+            sys.stdin = real
         return rc, out.getvalue().strip(), err.getvalue()
 
     def ok(self, *argv, actor="claude"):

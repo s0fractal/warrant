@@ -42,7 +42,7 @@ nothing. `check` never runs a finding's test; only `replay` and `replay --verify
     python3 tools/review.py head --pr N --commit SHA [--answers FINDING]...
     python3 tools/review.py answer --pr N --commit SHA --finding FINDING [--finding FINDING]...
     python3 tools/review.py finding --pr N --commit SHA --severity P2 --what '...' [--where PATH:LINE]...
-                                    [--test FILE --case ID [--patch DIFF_FILE]] --actor codex
+                                    [--test FILE --case ID [--patch-stdin < DIFF]] --actor codex
     python3 tools/review.py accept --pr N --commit SHA --actor codex
     python3 tools/review.py replay --key CHECKER_SEED [--pr N]
     python3 tools/review.py replay --verify --base REV
@@ -92,9 +92,11 @@ SEVERITIES = ("P0", "P1", "P2", "P3")
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")          # \Z: `$` admits a trailing newline
 STATEMENT = re.compile(r"(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(?P<pr>[1-9][0-9]{0,6}) is fit to merge: "
                        r"(?P<title>\S(?:.*\S)?)\Z")
-LEDGER_DIR = ".warrant/store/"
+LEDGER_DIR = ".warrant/store/"         # the store's path in a tree
 LEDGER_FILES = ("REVIEWS.md", "ROADMAP.md", "SPEC-CLAIMS.md", "WITNESSES.md")
 VIEW = "REVIEWS.md"
+DOT = ".warrant"
+STORE = f"{DOT}/store"
 MAX_WHERE = 32
 HEAD_RESIDUAL = ("this record names a commit and its tree; whether the change is fit to merge is the "
                  "acceptor's judgment, not this record's")
@@ -118,7 +120,7 @@ def is_line(text, limit):
 
 
 def config(root):
-    p = Path(root) / ".warrant" / "reviews.json"
+    p = Path(root) / DOT / "reviews.json"
     try:
         cfg = json.loads(p.read_text())
     except (OSError, ValueError) as e:
@@ -278,9 +280,10 @@ class Model:
         for rv in self.reviews.values():
             self._lineage(rv)
 
-    def _lineage(self, rv):
+    def _successors(self, rv):
+        """{previous closure (None for the first head): [heads naming it]}; a previous that is no head
+        of this pull request is a problem."""
         mine = {h.tid: h for h in rv.heads}
-        roots = [h for h in rv.heads if h.previous is None]
         succ = {}
         for h in rv.heads:
             if h.previous is not None and h.previous not in mine:
@@ -288,11 +291,16 @@ class Model:
                              "not a head of this pull request")
             else:
                 succ.setdefault(h.previous, []).append(h)
+        return succ
+
+    def _lineage(self, rv):
+        succ = self._successors(rv)
         forks = [p for p, hs in succ.items() if len(hs) > 1]
         if forks:
             rv.fork = True
             self.problem("REVIEW_HEAD_FORK", f"#{rv.pr}: {'two first heads' if None in forks else 'two heads name the same previous'}"
                          f" ({', '.join(h.tid[:12] for p in forks for h in succ[p])})")
+        roots = [h for h in rv.heads if h.previous is None]
         order, cur, seen = [], (roots[0] if len(roots) == 1 else None), set()
         while cur is not None and cur.tid not in seen:
             seen.add(cur.tid)
@@ -301,6 +309,9 @@ class Model:
             cur = nxt[0] if len(nxt) == 1 else None
         rest = sorted((h for h in rv.heads if h.tid not in seen), key=lambda h: (h.rec["at"], h.tid))
         rv.heads = order + rest
+        self._verdicts(rv)
+
+    def _verdicts(self, rv):
         cands = {(c["transition"], c["item"]): c for c in self.rep["duties"][rv.did]["candidates"]} if self.rep else {}
         for i, h in enumerate(rv.heads):
             h.n = i + 1
@@ -311,31 +322,33 @@ class Model:
 
     def _findings(self):
         for cid, r in sorted(self.recs.items()):
-            if r["type"] != "challenge":
-                continue
-            b = r["body"]
-            docs = [self.blob(h) for h in b["evidence"]]
-            carries = any(d is not None and d.get("schema") == FINDING for d in docs)
-            h = self.heads.get(b["target"])
-            if h is None:
-                if carries:
-                    self.problem("REVIEW_FINDING_HEAD", f"challenge {cid[:12]} carries a finding and targets "
-                                 f"{b['target'][:12]}, not the closure of a pull request's head")
-                continue
-            rv = self.by_duty[h.item["duty"]]
-            doc = docs[0] if len(docs) == 1 else None
-            if not (doc is not None and doc.get("schema") == FINDING and set(doc) == set(FINDING_FIELDS)
-                    and b["item"] == 0):
-                self.problem("REVIEW_FINDING_SHAPE", f"challenge {cid[:12]} against head {h.n} of #{rv.pr}: a challenge "
-                             f"of a head is of item 0 and carries exactly one {FINDING} blob")
-                continue
-            why = self._finding_problem(cid, r, doc, h, rv)
-            if why:
-                self.problem(*why)
-                continue
-            f = Finding(cid, r, doc, h)
-            self.findings[cid] = f
-            rv.findings.append(f)
+            f = self._finding(cid, r) if r["type"] == "challenge" else None
+            if f is not None:
+                self.findings[cid] = f
+                self.by_duty[f.head.item["duty"]].findings.append(f)
+
+    def _finding(self, cid, r):
+        """The Finding challenge `cid` is, or None (a problem when it carries a finding or targets a head)."""
+        b = r["body"]
+        docs = [self.blob(h) for h in b["evidence"]]
+        h = self.heads.get(b["target"])
+        if h is None:
+            if any(d is not None and d.get("schema") == FINDING for d in docs):
+                self.problem("REVIEW_FINDING_HEAD", f"challenge {cid[:12]} carries a finding and targets "
+                             f"{b['target'][:12]}, not the closure of a pull request's head")
+            return None
+        rv = self.by_duty[h.item["duty"]]
+        doc = docs[0] if len(docs) == 1 else None
+        if not (doc is not None and doc.get("schema") == FINDING and set(doc) == set(FINDING_FIELDS)
+                and b["item"] == 0):
+            self.problem("REVIEW_FINDING_SHAPE", f"challenge {cid[:12]} against head {h.n} of #{rv.pr}: a challenge "
+                         f"of a head is of item 0 and carries exactly one {FINDING} blob")
+            return None
+        why = self._finding_problem(cid, r, doc, h, rv)
+        if why:
+            self.problem(*why)
+            return None
+        return Finding(cid, r, doc, h)
 
     def _finding_problem(self, cid, r, doc, h, rv):
         where = f"finding {cid[:12]} against head {h.n} of #{rv.pr}"
@@ -500,8 +513,9 @@ def repo_ledger(repo_root, recs_model):
 def _state(model, rv):
     r = model.rep["duties"][rv.did]
     waiting = sorted({a for h in rv.heads if h.verdict == "PENDING" for a in h.waiting})
-    return r["disposition"] + (f" · awaiting acceptance by {', '.join(waiting)}" if r["disposition"] == "OPEN" and waiting
-                               else " · no head filed" if not rv.heads else "")
+    if r["disposition"] == "OPEN" and waiting:
+        return f"{r['disposition']} · awaiting acceptance by {', '.join(waiting)}"
+    return r["disposition"] + ("" if rv.heads else " · no head filed")
 
 
 def _verdict(h):
@@ -585,8 +599,9 @@ def render_view(model):
         out += ["| Pull request | State | Heads | Findings | Reproduced | Answered | Merge |",
                 "| --- | --- | --- | --- | --- | --- | --- |"]
         for rv in rows:
-            merge = "—" if not rv.merges else ("without reviewer acceptance" if merged_without_acceptance(rv.merges[0][2])
-                                                else "at an accepted head")
+            merge = "—"
+            if rv.merges:
+                merge = "without reviewer acceptance" if merged_without_acceptance(rv.merges[0][2]) else "at an accepted head"
             out.append(f"| #{rv.pr} | {_state(model, rv)} | {len(rv.heads)} | {len(rv.findings)} "
                        f"| {sum(finding_class(f) == 'REPRODUCED' for f in rv.findings)} "
                        f"| {sum(f.answered_by is not None for f in rv.findings)} | {merge} |")
@@ -604,8 +619,27 @@ def render_view(model):
 
 # ---------------------------------------------------------------- git
 
-def _git(root, *args):
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=True).stdout
+def _git(root, *args, ids=(), paths=()):
+    """Git at `root` with object ids last before `paths`. Each id is a full lowercase object id (is_commit),
+    checked here: a name never reaches Git's argument list, so none can be read as an option."""
+    if not all(is_commit(x) for x in ids):
+        # Its own code: every caller checks its names first (REVIEW_COMMIT_NAME); this is the last guard.
+        raise Refused(f"{[str(x)[:50] for x in ids]} are not full lowercase object ids", "REVIEW_GIT_ID")
+    cmd = ["git", "-C", str(root), *args, *ids] + (["--", *paths] if paths else [])
+    return subprocess.run(cmd, capture_output=True, check=True).stdout
+
+
+def resolve(root, name):
+    """The commit id an operator's revision `name` (`--base origin/master`) names. The name is read by
+    `git cat-file --batch-check` from standard input, never given as an argument."""
+    if not (isinstance(name, str) and name and not any(c.isspace() for c in name)):
+        raise Refused(f"{str(name)[:50]!r} is not a revision name", "BASE_UNREADABLE")
+    r = subprocess.run(["git", "-C", str(root), "cat-file", "--batch-check"], input=f"{name}^{{commit}}\n".encode(),
+                       capture_output=True, check=False)
+    out = r.stdout.decode().split()
+    if r.returncode or len(out) != 3 or out[1] != "commit" or not is_commit(out[0]):
+        raise Refused(f"{name[:50]!r} names no commit here", "BASE_UNREADABLE")
+    return out[0]
 
 
 def canonical(root, name):
@@ -616,22 +650,26 @@ def canonical(root, name):
         raise Refused(str(e), "REVIEW_COMMIT_NAME") from None
 
 
-def is_ancestor(root, commit, of="HEAD"):
-    return subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, of],
-                          capture_output=True, check=False).returncode == 0
+def is_ancestor(root, commit):
+    """Whether commit `commit` (a full id) is an ancestor of HEAD."""
+    try:
+        _git(root, "merge-base", "--is-ancestor", ids=(commit, resolve(root, "HEAD")))
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def store_at(root, commit):
     """The Snapshot of `.warrant/store` in the tree of `commit` (a canonical id)."""
     work = Path(tempfile.mkdtemp(prefix="review-store-"))
     try:
-        r = subprocess.run(["git", "-C", str(root), "archive", "--format=tar", commit, "--", ".warrant/store"],
-                           capture_output=True, check=False)
-        if r.returncode == 0:
-            with tarfile.open(fileobj=io.BytesIO(r.stdout)) as t:
+        try:
+            data = _git(root, "archive", "--format=tar", ids=(commit,), paths=(STORE,))
+            with tarfile.open(fileobj=io.BytesIO(data)) as t:
                 t.extractall(work, filter="data")
-        return Snapshot.read(work / ".warrant" / "store") if (work / ".warrant" / "store").is_dir() \
-            else Snapshot({}, {})
+        except subprocess.CalledProcessError:
+            pass                                # no store in that tree: no records
+        return Snapshot.read(work / STORE) if (work / STORE).is_dir() else Snapshot({}, {})
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -641,7 +679,7 @@ def merge_report(root, trust, cfg, rv, merge):
     heads accepted in the tip's own store (an acceptance filed after the merge is not in it), and the
     paths the tip changes since the latest of them outside the records and their views."""
     merge, _ = canonical(root, merge)
-    parents = _git(root, "rev-list", "--parents", "-n", "1", merge).decode().split()
+    parents = _git(root, "rev-list", "--parents", "-n", "1", ids=(merge,)).decode().split()
     if len(parents) < 3:
         raise Refused(f"{merge[:12]} has {len(parents) - 1} parent(s): not a merge commit", "REVIEW_MERGE_SHAPE")
     tip = parents[2]
@@ -651,7 +689,7 @@ def merge_report(root, trust, cfg, rv, merge):
     outside = None
     if accepted:
         last = accepted[-1]["commit"]
-        names = _git(root, "diff", "--name-only", "--no-renames", last, tip).decode().splitlines() if last != tip else []
+        names = _git(root, "diff", "--name-only", "--no-renames", ids=(last, tip)).decode().splitlines() if last != tip else []
         outside = sorted(p for p in names if not ledger_path(p))
     return {"schema": MERGE_REPORT, "duty": rv.did, "pr": rv.pr, "merge": merge, "tip": tip, "accepted": accepted,
             "outside": outside}
@@ -792,27 +830,25 @@ class Writer:
             raise Refused(f"replay signs as {me[:28]}…, this checkout's {RR.SELF}", "REVIEW_REPLAYER_KEY")
         if me not in self.cfg["replayers"]:
             raise Refused(f".warrant/reviews.json adopts no replayer {me[:28]}…", "REVIEW_REPLAYER_UNPINNED")
-        done = []
-        for rv in sorted(self.m.reviews.values(), key=lambda x: x.pr):
-            if pr is not None and rv.pr != pr:
-                continue
-            for f in rv.findings:
-                for h in (x for x in rv.heads if f.test is not None and x.n >= f.head.n):
-                    if f.at(h.commit) is not None:
-                        continue
-                    commit, tree = canonical(self.rv.root, h.commit)
-                    if tree != h.tree:
-                        raise Refused(f"head {h.n} of #{rv.pr}: {commit[:12]} has tree {tree[:12]}", "REVIEW_COMMIT_NAME")
-                    t0 = int(time.time())
-                    result = RR.run(self.rv.root, commit, f.test)
-                    probe = {"probe": RR.PROBE, "finding": f.cid, "commit": commit, "tree": tree,
-                             "test": f"{f.test['file']}:{f.test['case']}"}
-                    now = self.at()
-                    body = R.observation(replay_target(self.cfg, rv.pr, f.cid, commit), C.digest(C.canon(probe)),
-                                         [min(t0, now), now], result)
-                    done.append((f.cid, commit, result, self.file("observation", body, [probe])))
-                    self.m = self.rv.model()
-        return done
+        todo = [(rv, f, h) for rv in sorted(self.m.reviews.values(), key=lambda x: x.pr) if pr in (None, rv.pr)
+                for f in rv.findings if f.test is not None
+                for h in rv.heads if h.n >= f.head.n and f.at(h.commit) is None]
+        return [self._replay_one(rv, f, h) for rv, f, h in todo]
+
+    def _replay_one(self, rv, f, h):
+        commit, tree = canonical(self.rv.root, h.commit)
+        if tree != h.tree:
+            raise Refused(f"head {h.n} of #{rv.pr}: {commit[:12]} has tree {tree[:12]}", "REVIEW_COMMIT_NAME")
+        t0 = int(time.time())
+        result = RR.run(self.rv.root, commit, f.test)
+        probe = {"probe": RR.PROBE, "finding": f.cid, "commit": commit, "tree": tree,
+                 "test": f"{f.test['file']}:{f.test['case']}"}
+        now = self.at()
+        body = R.observation(replay_target(self.cfg, rv.pr, f.cid, commit), C.digest(C.canon(probe)),
+                             [min(t0, now), now], result)
+        oid = self.file("observation", body, [probe])
+        self.m = self.rv.model()
+        return f.cid, commit, result, oid
 
 
 def head_established(cfg, pr, commit, tree):
@@ -823,8 +859,7 @@ def head_established(cfg, pr, commit, tree):
 
 def base_ids(root, base):
     """The record ids at revision `base` (resolved once to its commit id)."""
-    rev = _git(root, "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}").decode().strip()
-    rows = _git(root, "ls-tree", "-r", "--name-only", rev, "--", ".warrant/store/records").decode().split()
+    rows = _git(root, "ls-tree", "-r", "--name-only", ids=(resolve(root, base),), paths=(f"{STORE}/records",)).decode().split()
     return {Path(p).name[:-5] for p in rows if p.endswith(".json")}
 
 
@@ -832,36 +867,37 @@ def new_problems(rv, model, before):
     """[(code, detail)] of the review records new since the base, read against this repository's history:
     every new head's commit is canonical with its tree and an ancestor of HEAD; every new merge
     observation's report is the one this history gives."""
-    out = []
-    for h in model.heads.values():
-        if h.tid in before:
-            continue
-        try:
-            _, tree = canonical(rv.root, h.commit)
-        except Refused as e:
-            out.append(("REVIEW_COMMIT_NAME", f"head {h.tid[:12]}: {e}"))
-            continue
-        if tree != h.tree:
-            out.append(("REVIEW_COMMIT_NAME", f"head {h.tid[:12]}: {h.commit[:12]} has tree {tree[:12]}, the blob says "
-                        f"{h.tree[:12]}"))
-        elif not is_ancestor(rv.root, h.commit):
-            out.append(("REVIEW_COMMIT_NOT_ANCESTOR", f"head {h.tid[:12]}: {h.commit[:12]} is not an ancestor of HEAD"))
+    out = [x for h in model.heads.values() if h.tid not in before for x in _head_problems(rv, h)]
     for r in model.reviews.values():
-        for oid, _, rep in r.merges:
-            if oid in before:
-                continue
-            try:
-                want = merge_report(rv.root, rv.repo.trust(), model.cfg, r, rep["merge"])
-            except (Refused, subprocess.CalledProcessError) as e:
-                out.append(("REVIEW_MERGE_REPORT", f"merge observation {oid[:12]}: {e}"))
-                continue
-            if want != rep:
-                out.append(("REVIEW_MERGE_REPORT", f"merge observation {oid[:12]} of #{r.pr}: this history gives tip "
-                            f"{want['tip'][:12]}, {len(want['accepted'])} accepted head(s), outside {want['outside']}"))
-            elif not is_ancestor(rv.root, rep["merge"]):
-                out.append(("REVIEW_COMMIT_NOT_ANCESTOR", f"merge observation {oid[:12]}: {rep['merge'][:12]} is not an "
-                            "ancestor of HEAD"))
+        out += [x for oid, _, rep in r.merges if oid not in before for x in _merge_problems(rv, model, r, oid, rep)]
     return out
+
+
+def _head_problems(rv, h):
+    try:
+        _, tree = canonical(rv.root, h.commit)
+    except Refused as e:
+        return [("REVIEW_COMMIT_NAME", f"head {h.tid[:12]}: {e}")]
+    if tree != h.tree:
+        return [("REVIEW_COMMIT_NAME", f"head {h.tid[:12]}: {h.commit[:12]} has tree {tree[:12]}, the blob says "
+                 f"{h.tree[:12]}")]
+    if not is_ancestor(rv.root, h.commit):
+        return [("REVIEW_COMMIT_NOT_ANCESTOR", f"head {h.tid[:12]}: {h.commit[:12]} is not an ancestor of HEAD")]
+    return []
+
+
+def _merge_problems(rv, model, r, oid, rep):
+    try:
+        want = merge_report(rv.root, rv.repo.trust(), model.cfg, r, rep["merge"])
+    except (Refused, subprocess.CalledProcessError) as e:
+        return [("REVIEW_MERGE_REPORT", f"merge observation {oid[:12]}: {e}")]
+    if want != rep:
+        return [("REVIEW_MERGE_REPORT", f"merge observation {oid[:12]} of #{r.pr}: this history gives tip "
+                 f"{want['tip'][:12]}, {len(want['accepted'])} accepted head(s), outside {want['outside']}")]
+    if not is_ancestor(rv.root, rep["merge"]):
+        return [("REVIEW_COMMIT_NOT_ANCESTOR", f"merge observation {oid[:12]}: {rep['merge'][:12]} is not an "
+                 "ancestor of HEAD")]
+    return []
 
 
 def check(rv, base=None):
@@ -880,8 +916,8 @@ def check(rv, base=None):
     if base is not None:
         try:
             before = base_ids(rv.root, base)
-        except subprocess.CalledProcessError as e:
-            return out + [("BASE_UNREADABLE", f"{base}: {e.stderr.decode().strip()}")]
+        except (Refused, subprocess.CalledProcessError) as e:
+            return out + [("BASE_UNREADABLE", f"{base}: {e}")]
         out += new_problems(rv, m, before)
     return out
 
@@ -890,29 +926,27 @@ def verify(rv, base):
     """[(code, detail)]: each replay observation new since `base` re-executed by this checkout's
     review_replay.py, which must be the observer (REVIEW_REPLAYER_CODE), at the observed commit, which
     must be canonical with the observed tree; a result other than the observed one is REVIEW_REPLAY_DIFFERS."""
-    m, before, me, out = rv.model(), base_ids(rv.root, base), RR.actor(), []
-    for f in m.findings.values():
-        for commit, (oid, result) in sorted(f.observed.items()):
-            if oid in before:
-                continue
-            if m.recs[oid]["actor"] != me:
-                out.append(("REVIEW_REPLAYER_CODE", f"replay {oid[:12]} is by {m.recs[oid]['actor'][:28]}…, this "
-                            f"checkout's {RR.SELF} is {me[:28]}…: re-execute it with that code"))
-                continue
-            try:
-                c, tree = canonical(rv.root, commit)
-            except Refused as e:
-                out.append(("REVIEW_COMMIT_NAME", f"replay {oid[:12]}: {e}; nothing run"))
-                continue
-            head = next(h for h in m.by_duty[f.head.item["duty"]].heads if h.commit == c)
-            if tree != head.tree:
-                out.append(("REVIEW_COMMIT_NAME", f"replay {oid[:12]}: {c[:12]} has tree {tree[:12]}; nothing run"))
-                continue
-            got = RR.run(rv.root, c, f.test)
-            if got != result:
-                out.append(("REVIEW_REPLAY_DIFFERS", f"replay {oid[:12]} of finding {f.cid[:12]} at {c[:12]}: observed "
-                            f"{result}, re-executed {got}"))
-    return out
+    m, before, me = rv.model(), base_ids(rv.root, base), RR.actor()
+    return [x for f in m.findings.values() for commit, (oid, result) in sorted(f.observed.items()) if oid not in before
+            for x in _reexecute(rv, m, f, commit, oid, result, me)]
+
+
+def _reexecute(rv, m, f, commit, oid, result, me):
+    if m.recs[oid]["actor"] != me:
+        return [("REVIEW_REPLAYER_CODE", f"replay {oid[:12]} is by {m.recs[oid]['actor'][:28]}…, this "
+                 f"checkout's {RR.SELF} is {me[:28]}…: re-execute it with that code")]
+    try:
+        c, tree = canonical(rv.root, commit)
+    except Refused as e:
+        return [("REVIEW_COMMIT_NAME", f"replay {oid[:12]}: {e}; nothing run")]
+    head = next(h for h in m.by_duty[f.head.item["duty"]].heads if h.commit == c)
+    if tree != head.tree:
+        return [("REVIEW_COMMIT_NAME", f"replay {oid[:12]}: {c[:12]} has tree {tree[:12]}; nothing run")]
+    got = RR.run(rv.root, c, f.test)
+    if got != result:
+        return [("REVIEW_REPLAY_DIFFERS", f"replay {oid[:12]} of finding {f.cid[:12]} at {c[:12]}: observed "
+                 f"{result}, re-executed {got}")]
+    return []
 
 
 def summary(m):
@@ -927,49 +961,93 @@ def summary(m):
 
 # ---------------------------------------------------------------- command line
 
-def main(argv=None):
-    from .author import load_key            # here: author imports views, and views reads this module's ledger
+def _parser():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[2]), help="the repository (default: this checkout)")
     sub = ap.add_subparsers(dest="cmd")
 
-    def signing(p):
+    def signing(name, text):
+        p = sub.add_parser(name, help=text)
         p.add_argument("--key", help="seed file of the signing key (or WARRANT_CLAIMS_KEY)")
         p.add_argument("--actor", default=AUTHOR)
+        if name != "replay":
+            p.add_argument("--pr", type=int, required=True)
         return p
 
-    p = signing(sub.add_parser("open", help="file the duty of a pull request (its author)"))
-    p.add_argument("--pr", type=int, required=True)
+    p = signing("open", "file the duty of a pull request (its author)")
     p.add_argument("--title", required=True)
     p.add_argument("--serves", action="append", default=[])
-    for name in ("head", "answer"):
-        p = signing(sub.add_parser(name, help="file the closure of a pushed head" + (" that answers findings" if name == "answer" else "")))
-        p.add_argument("--pr", type=int, required=True)
-        p.add_argument("--commit", required=True)
-        p.add_argument("--answers" if name == "head" else "--finding", dest="answers", action="append", default=[],
-                       required=name == "answer")
-    p = signing(sub.add_parser("finding", help="challenge the current head with a finding (a reviewer)"))
-    p.add_argument("--pr", type=int, required=True)
+    p = signing("head", "file the closure of a pushed head")
+    p.add_argument("--commit", required=True)
+    p.add_argument("--answers", action="append", default=[])
+    p = signing("answer", "file the closure of a pushed head that answers findings")
+    p.add_argument("--commit", required=True)
+    p.add_argument("--finding", dest="answers", action="append", required=True)
+    p = signing("finding", "challenge the current head with a finding (a reviewer)")
     p.add_argument("--commit", required=True, help="the current head's full commit id: what was reviewed")
     p.add_argument("--severity", required=True)
     p.add_argument("--what", required=True)
     p.add_argument("--where", action="append", default=[])
     p.add_argument("--test", help="a test file of tests/, without .py (mechanical finding)")
     p.add_argument("--case", help="the case of that file that fails at the head")
-    p.add_argument("--patch", help="a file holding a unified diff confined to tests/ (adds or changes the case)")
-    p = signing(sub.add_parser("accept", help="accept the current head (an actor of accept_by)"))
-    p.add_argument("--pr", type=int, required=True)
+    p.add_argument("--patch-stdin", action="store_true", help="read a unified diff confined to tests/ from standard input")
+    p = signing("accept", "accept the current head (an actor of accept_by)")
     p.add_argument("--commit", required=True)
-    p = signing(sub.add_parser("replay", help="the review replay checker: replay mechanical findings at their heads"))
+    p = signing("replay", "the review replay checker: replay mechanical findings at their heads")
     p.add_argument("--pr", type=int)
     p.add_argument("--verify", action="store_true", help="re-execute the replays new since --base (CI)")
     p.add_argument("--base")
-    p = signing(sub.add_parser("merged", help="observe the merge commit of a pull request"))
-    p.add_argument("--pr", type=int, required=True)
+    p = signing("merged", "observe the merge commit of a pull request")
     p.add_argument("--merge", required=True)
     sub.add_parser("project", help="regenerate REVIEWS.md")
     p = sub.add_parser("check", help="CI: refuse malformed review records or a stale REVIEWS.md")
     p.add_argument("--base")
+    return ap
+
+
+def _report(problems, last):
+    for code, detail in problems:
+        print(f"REFUSED {code} {detail}")
+    print(f"{last}; {'OK' if not problems else f'{len(problems)} refused'}")
+    return 1 if problems else 0
+
+
+def _cmd_check(rv, a):
+    problems = check(rv, a.base)
+    try:
+        tail = summary(rv.model())
+    except Refused:
+        tail = "no model"
+    return _report(problems, f"REVIEWS: {tail}; base {a.base or 'none'}")
+
+
+def _cmd_verify(rv, a):
+    if not a.base:
+        raise Refused("replay --verify needs --base", "BASE_UNREADABLE")
+    return _report(verify(rv, a.base), "REVIEW REPLAY VERIFY")
+
+
+def _finding_test(a):
+    if not (a.test or a.case or a.patch_stdin):
+        return None
+    return {"file": a.test, "case": a.case, "patch": sys.stdin.read() if a.patch_stdin else ""}
+
+
+WRITES = {
+    "open": lambda w, a: w.open(a.pr, a.title, a.serves),
+    "head": lambda w, a: w.head(a.pr, a.commit, a.answers),
+    "answer": lambda w, a: w.head(a.pr, a.commit, a.answers),
+    "finding": lambda w, a: w.finding(a.pr, a.commit, a.severity, a.what, a.where, _finding_test(a)),
+    "accept": lambda w, a: w.accept(a.pr, a.commit),
+    "merged": lambda w, a: w.merged(a.pr, a.merge),
+    "replay": lambda w, a: "\n".join(f"{oid} finding {cid[:12]} at {commit[:12]}: {result}"
+                                     for cid, commit, result, oid in w.replay(a.pr)),
+}
+
+
+def main(argv=None):
+    from .author import load_key            # here: author imports views, and views reads this module's ledger
+    ap = _parser()
     a = ap.parse_args(argv)
     rv = Reviews(a.root)
     if a.cmd is None:
@@ -977,46 +1055,16 @@ def main(argv=None):
         return 2
     try:
         if a.cmd == "check":
-            problems = check(rv, a.base)
-            for code, detail in problems:
-                print(f"REFUSED {code} {detail}")
-            try:
-                tail = summary(rv.model())
-            except Refused:
-                tail = "no model"
-            print(f"REVIEWS: {tail}; base {a.base or 'none'}; "
-                  f"{'OK' if not problems else f'{len(problems)} refused'}")
-            return 1 if problems else 0
+            return _cmd_check(rv, a)
         if a.cmd == "project":
             rv.view.write_bytes(render_view(rv.model()).encode())
             return 0
         if a.cmd == "replay" and a.verify:
-            if not a.base:
-                raise Refused("replay --verify needs --base", "BASE_UNREADABLE")
-            problems = verify(rv, a.base)
-            for code, detail in problems:
-                print(f"REFUSED {code} {detail}")
-            print(f"REVIEW REPLAY VERIFY: {'OK' if not problems else f'{len(problems)} refused'}")
-            return 1 if problems else 0
+            return _cmd_verify(rv, a)
         actor = RR.actor() if a.cmd == "replay" else a.actor
-        w = Writer(rv, load_key(rv.repo, a.key, actor), actor)
-        if a.cmd == "open":
-            print(w.open(a.pr, a.title, a.serves))
-        elif a.cmd in ("head", "answer"):
-            print(w.head(a.pr, a.commit, a.answers))
-        elif a.cmd == "finding":
-            test = None
-            if a.test or a.case or a.patch:
-                patch = Path(a.patch).read_text() if a.patch else ""
-                test = {"file": a.test, "case": a.case, "patch": patch}
-            print(w.finding(a.pr, a.commit, a.severity, a.what, a.where, test))
-        elif a.cmd == "accept":
-            print(w.accept(a.pr, a.commit))
-        elif a.cmd == "merged":
-            print(w.merged(a.pr, a.merge))
-        else:
-            for cid, commit, result, oid in w.replay(a.pr):
-                print(f"{oid} finding {cid[:12]} at {commit[:12]}: {result}")
+        out = WRITES[a.cmd](Writer(rv, load_key(rv.repo, a.key, actor), actor), a)
+        if out:
+            print(out)
         return 0
     except (Refused, R.Invalid) as e:
         code = getattr(e, "code", None)
