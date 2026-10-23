@@ -747,7 +747,12 @@ state and the seed lie outside the repository. `init` writes no path through a
 symlink: every path it creates or writes, the ones derived from the state
 directory too, is checked by its real path before the first write and written by
 descriptors that do not follow links, and a configuration whose workspace state
-holds a symlink is refused when it loads.
+holds a symlink is refused when it loads. Nothing `init` reads is something it
+or the server writes: the seed and the repository's files lie neither in the
+state directory nor at a path `init` writes, by real path or as the same file,
+and `--force` replaces only a configuration an earlier `init` wrote for the same
+repository and workspace; a configuration whose signer's key lies in its state
+directory is refused when it loads.
 
 On a shared machine this is an application boundary, not OS isolation: an agent
 with a shell on the same keys and configuration is not contained by it, and

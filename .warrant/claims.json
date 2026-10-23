@@ -388,7 +388,8 @@
     "SPEC-10.8-5": "informative",
     "SPEC-10.8-6": "normative",
     "SPEC-10.8-7": "normative",
-    "SPEC-10.8-8": "normative"
+    "SPEC-10.8-8": "normative",
+    "SPEC-10.8-9": "normative"
   },
   "source": "SPEC.md",
   "headings": {

@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 345 · backed 270 · countered 0 · unbacked 18 · informative 57 · retired 0 · records 1490 · blobs 1300
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 346 · backed 271 · countered 0 · unbacked 18 · informative 57 · retired 0 · records 1493 · blobs 1303
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
@@ -371,6 +371,7 @@ lowers its backing: it counts as backed no longer.
 | SPEC-10.8-6 | `warrant-agent-mcp init`, the operator's command and not a tool, configures a repository checkout only for a signer whose existing seed's key is exactly the key the repository's `.warrant/roles.json` pins for that actor and whose binding its `.warrant/trust.json` admits; it creates no key. | agent_repo_test I02 I03 I04 I05 | A87 A88 A89 A93 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `6074fce54864` |
 | SPEC-10.8-7 | Its configuration, its state and the seed lie outside the repository. | agent_repo_test I06 | A90 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `12db993e8f10` |
 | SPEC-10.8-8 | `init` writes no path through a symlink: every path it creates or writes, the ones derived from the state directory too, is checked by its real path before the first write and written by descriptors that do not follow links, and a configuration whose workspace state holds a symlink is refused when it loads. | agent_repo_test I13 I15 I19 T04 | A105 A106 A107 A108 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `d2735a00b62f` |
+| SPEC-10.8-9 | Nothing `init` reads is something it or the server writes: the seed and the repository's files lie neither in the state directory nor at a path `init` writes, by real path or as the same file, and `--force` replaces only a configuration an earlier `init` wrote for the same repository and workspace; a configuration whose signer's key lies in its state directory is refused when it loads. | agent_repo_test I21 I22 I23 I24 I25 T05 | A109 A110 A111 A112 A113 | BACKED | OPEN (awaiting the replay checker eed989f372ca) | `36676f137860` |
 
 ## Open questions
 
@@ -412,7 +413,7 @@ None.
 
 ## Document
 
-SPEC.md is rendered from document version `d3ea10fd9122` (754 parts). Its headings
+SPEC.md is rendered from document version `fdfff12db21f` (756 parts). Its headings
 are not claims: each is pinned, line for line, in `.warrant/claims.json`, and the document may hold
 only those lines, once each, in order and each on its own line; the rendered SPEC.md must show
 exactly those headings. A title is free text that no witness backs, so a
