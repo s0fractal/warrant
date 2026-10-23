@@ -1194,6 +1194,13 @@ def _visit(view, did, report, done, busy):
      "store_index_test", ["V14"]),
     ("M437", "store.py", "a receiver's index secret is a constant, not random",
      [('                os.write(fd, os.urandom(32))', '                os.write(fd, bytes(32))')], "store_index_test", ["V17"]),
+    # A blob found canonical is remembered by the sha256 of its bytes (Snapshot.json_blob, _CANONICAL): claims-selftest
+    # re-read ~100 document versions of SPEC.md (37 KB each) in every case, 286 s -> 106 s locally.
+    ("M482", "store.py", "a remembered canonical blob is keyed by its name, not by its bytes",
+     [("        seen = hashlib.sha256(data).digest()\n", "        seen = h\n")], "store_index_test", ["V19"]),
+    ("M483", "store.py", "bytes are remembered as canonical before C.loads has accepted them",
+     [("        try:\n            value = C.loads(data)\n", "        _CANONICAL.add(seen)\n        try:\n            value = C.loads(data)\n")],
+     "store_index_test", ["V19"]),
     # One module of shapes (warrant/shapes.py, tests/shapes_test.py): each predicate against the `$`,
     # CRLF, non-ASCII, case and length vectors, never raising; and no second definition anywhere.
     ("M438", "shapes.py", "hex64 assumes a string: a non-string raises instead of answering False",

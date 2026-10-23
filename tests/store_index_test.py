@@ -427,12 +427,31 @@ def cli_cases():
     check("V18", got == want, "warrant file and assess --verdicts DIR: the chain and the report as without it", got)
 
 
+def blob_cases():
+    """V19: a canonical blob's second read is parsed without re-encoding (Snapshot.json_blob, _CANONICAL),
+    and answers as C.loads does: keyed by the bytes, never by the name, and only bytes found canonical."""
+    S._CANONICAL.clear()
+    doc = {"b": [1, "é", {"a": None}], "a": True}
+    good = C.canon(doc)
+    bad = b'{"b":1,"a":2}'                        # valid JSON, members out of order: not canonical
+    h = C.digest(good)
+    first, second = S.Snapshot({}, {h: good}).json_blob(h), S.Snapshot({}, {h: good}).json_blob(h)
+    second["b"].append("mutated")                 # a caller's edit of one read is not in the next
+    third = S.Snapshot({}, {h: good}).json_blob(h)
+    renamed = S.Snapshot({}, {h: bad}).json_blob(h)      # the same name, other bytes (a Snapshot built in memory)
+    twice = [S.Snapshot({}, {"x" * 64: bad}).json_blob("x" * 64) for _ in range(2)]
+    got = (first == doc, third == doc, first is not third, renamed, twice, hashlib.sha256(good).digest() in S._CANONICAL,
+           hashlib.sha256(bad).digest() in S._CANONICAL)
+    check("V19", got == (True, True, True, None, [None, None], True, False),
+          "a remembered canonical blob: fresh values, keyed by the bytes, never for bytes C.loads refused", got)
+
+
 def lines_at(path):
     return [json.loads(x) for x in Path(path).read_bytes().split(b"\n") if x]
 
 
 def main():
-    for group in (equivalence_cases, cost_cases, corruption_cases, receiver_cases, cli_cases):
+    for group in (equivalence_cases, cost_cases, corruption_cases, receiver_cases, cli_cases, blob_cases):
         try:
             group()
         except Exception as e:      # noqa: BLE001

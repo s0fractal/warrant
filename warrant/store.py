@@ -238,14 +238,23 @@ class Snapshot:
         return self.blobs.get(h) if isinstance(h, str) else None
 
     def json_blob(self, h):
-        """A canonical JSON blob, or None."""
+        """A canonical JSON blob, or None. The bytes C.loads found canonical are remembered by their
+        own sha256 in this process (_CANONICAL), so a second read of the same bytes is parsed without
+        re-encoding them (cost only, SPEC §7): canonical bytes parse to what C.loads returns."""
         data = self.blob(h)
         if data is None:
             return None
+        seen = hashlib.sha256(data).digest()
+        if seen in _CANONICAL:
+            return json.loads(data)
         try:
-            return C.loads(data)
+            value = C.loads(data)
         except C.NotCanonical:
             return None
+        if len(_CANONICAL) >= _MEMO_MAX:
+            _CANONICAL.clear()
+        _CANONICAL.add(seen)
+        return value
 
     def authentic(self, trust, index=None):
         """({id: record}, {id: reason}) — records that are canonical, carry their
@@ -272,6 +281,7 @@ class Snapshot:
 # record a remembered verdict admits is parsed from those same bytes.
 
 MISS = object()
+_CANONICAL = set()      # sha256 of blob bytes C.loads found canonical (Snapshot.json_blob); emptied when full
 _MEMO = {}              # (trust digest, record id, sha256 of the bytes) -> reason or None
 _MEMO_MAX = 1 << 17     # entries (some 40 MB); this process's own memory, emptied when full
 
