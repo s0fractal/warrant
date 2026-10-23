@@ -59,6 +59,11 @@ replaced it.
   that changes no behaviour is listed with its reason in `tests/equivalent_mutants.json`.
 - `tests/agent_mcp_test.py` keeps an inherited PYTHONPATH after the tree under test, so the
   tracer reaches the MCP server it starts.
+- The first hunt (8632 mutants) closed four of its survivors with witness cases and curated
+  mutants: SPEC-4.5-1's "within" and "no later" include equality (R49, M475, M476); a value 256
+  containers deep is canonical and 257 is not, written or read, and loads' depth scan skips
+  strings (E10, M477-M479); a trust file is trust/2 and binds each key once (K18, M480, M481).
+  Two survivors are listed as equivalent with their reasons.
 
 ### The agent interface under the spec: SPEC §10 (G2)
 

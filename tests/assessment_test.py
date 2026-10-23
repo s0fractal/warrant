@@ -297,6 +297,23 @@ def grant_cases():
                          "later": "NOT_ATTENUATED", "never": "NOT_ATTENUATED"},
           "a child beyond its parent's grantee, duties or expiry is not an attenuation", got)
 
+    # R49 (§4.5, G7): "within" and "no later" include equality: a child whose delegable is exactly
+    # its parent's, and one that expires exactly when its parent does, are attenuations. Found by
+    # the generated-mutant hunt: `<=` -> `<` on delegable and `>` -> `>=` on expires survived R17.
+    w = World()
+    d1 = w.duty(statement="one")
+    p = w.file("grant", OWNER, R.grant(STRANGER, ["release"], [d1], delegable=["release"], expires=5000))
+    kids = {
+        "same delegable": w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d1], delegable=["release"], parent=p,
+                                                            expires=4000)),
+        "same expiry": w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d1], parent=p, expires=5000)),
+        "one later": w.file("grant", STRANGER, R.grant(CODEX, ["release"], [d1], parent=p, expires=5001)),
+    }
+    rep = w.assess(as_of=1000, prof=E.profile(grant_roots=[p]))
+    got = {k: rep["grants"][g] for k, g in kids.items()}
+    check("R49", got == {"same delegable": "VALID", "same expiry": "VALID", "one later": "NOT_ATTENUATED"},
+          "a child equal to its parent's delegable, or expiring with it, is an attenuation; one second later is not", got)
+
     # R18 (§4.5): a grant record signed by a key bound to another actor than its grantor
     # is invalid, even when the recipient lists its id as a root; the same grant signed
     # by its grantor authorizes

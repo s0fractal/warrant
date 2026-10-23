@@ -1301,6 +1301,24 @@ def _visit(view, did, report, done, busy):
     ("M474", "../tools/claimslib/author.py", "--item after a sentence starts no list item",
      [('sep = ("\\n\\n" if paragraph else "\\n") + "- " if item', 'sep = ("\\n\\n" if paragraph else "\\n") + "" if item')],
      "circle_test", ["E1"]),
+    # G7: survivors of the generated-mutant hunt (tests/generated_mutants.py), each closed by a
+    # witness that kills it on an assertion; the curated twin is what a claim may cite.
+    ("M475", "engine.py", "a child whose delegable equals its parent's is not an attenuation",
+     [('    if not set(g["delegable"]) <= set(p["delegable"]):', '    if not set(g["delegable"]) < set(p["delegable"]):')],
+     "assessment_test", ["R49"]),
+    ("M476", "engine.py", "a child expiring exactly with its parent is not an attenuation",
+     [('(g["expires"] is None or g["expires"] > p["expires"])', '(g["expires"] is None or g["expires"] >= p["expires"])')],
+     "assessment_test", ["R49"]),
+    ("M477", "jcs.py", "a value 256 containers deep is refused",
+     [("        if depth > MAX_DEPTH:\n", "        if depth >= MAX_DEPTH:\n")], "records_test", ["E10"]),
+    ("M478", "jcs.py", "a value 257 containers deep is canonical",
+     [("MAX_DEPTH = 256\n", "MAX_DEPTH = 257\n")], "records_test", ["E10"]),
+    ("M479", "jcs.py", "loads' depth scan counts brackets inside strings",
+     [("        if in_str:\n            if esc:", "        if False:\n            if esc:")], "records_test", ["E10"]),
+    ("M480", "store.py", "a trust file may bind one key twice",
+     [('            R._need(kid not in self.keys, "a key is bound twice")\n', "")], "records_test", ["K18"]),
+    ("M481", "store.py", "a trust file of another version is read",
+     [('        R._need(doc["warrant"] == "trust/2", "trust version must be \\"trust/2\\"")\n', "")], "records_test", ["K18"]),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

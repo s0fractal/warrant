@@ -231,6 +231,30 @@ def encoding_cases():
              ("schedule start true", rec("duty", put(DUTY, schedule={"start": True, "every": 10})), "invalid")]
     ok, bad = table(rows)
     check("E9", ok, "time is integer seconds", bad)
+    # E10 (G7): nesting is bounded: the innermost value may lie MAX_DEPTH (256) containers deep,
+    # not 257, written or read, also through loads' bracket pre-count (taken past 4 x MAX_DEPTH
+    # brackets), which must skip brackets inside strings and escaped quotes. Found by the
+    # generated-mutant hunt: `>` -> `>=` on the depth, MAX_DEPTH +-1 and loads' depth scan survived.
+    def nest(n):
+        v = 0
+        for _ in range(n):
+            v = [v]
+        return v
+
+    def deep(n, pad):           # bytes: one list holding n - 1 more around 0, then `pad` empty lists
+        return b"[" + b"[" * (n - 1) + b"0" + b"]" * (n - 1) + b",[]" * pad + b"]"
+    quoted = C.canon({"a": "\"" + "[" * 1100 + "{", "b": [[1]]})
+    rows = [
+        ("write depth 256", outcome(lambda: C.canon(nest(256))), "accepted"),
+        ("write depth 257", outcome(lambda: C.canon(nest(257))), "invalid"),
+        ("read depth 256", outcome(lambda: C.loads(deep(256, 0))), "accepted"),
+        ("read depth 257", outcome(lambda: C.loads(deep(257, 0))), "invalid"),
+        ("read depth 256, 1100 brackets", outcome(lambda: C.loads(deep(256, 850))), "accepted"),
+        ("read depth 257, 1100 brackets", outcome(lambda: C.loads(deep(257, 850))), "invalid"),
+        ("brackets and an escaped quote inside a string", outcome(lambda: C.loads(quoted)), "accepted"),
+    ]
+    ok, bad = table(rows)
+    check("E10", ok, "nesting: 256 containers deep is read and written, 257 is refused", bad)
 
 
 # ---------------------------------------------------------------- SPEC §3
@@ -327,6 +351,18 @@ def record_cases():
             ("unauthentic", sorted(bad_) if isinstance(bad_, dict) else bad_, sorted([spaced, renamed, resigned, forged, unbound]))]
     ok, bad = table(rows)
     check("K6", ok, "authentic iff canonical, id matches, signature verifies under a key bound to the actor", bad)
+    # K18 (G7): a trust file is trust/2 and binds each key once: one key bound to two actors,
+    # or another version, is not a trust file. Found by the generated-mutant hunt: deleting either
+    # refusal survived every case.
+    k1, k2 = W.Key.generate().public, W.Key.generate().public
+    rows = [
+        ("control", outcome(lambda: Trust(Trust.document([(HOLDER, k1), (OWNER, k2)]))), "accepted"),
+        ("one key, two actors", outcome(lambda: Trust(Trust.document([(HOLDER, k1), (OWNER, k1)]))), "invalid"),
+        ("one key twice, one actor", outcome(lambda: Trust(Trust.document([(HOLDER, k1), (HOLDER, k1)]))), "invalid"),
+        ("trust/1", outcome(lambda: Trust(dict(Trust.document([(HOLDER, k1)]), warrant="trust/1"))), "invalid"),
+    ]
+    ok, bad = table(rows)
+    check("K18", ok, "a trust file is trust/2 and binds each key once", bad)
     # K8: exactly six types; any other name is invalid
     rows = [(t, rec(t, BASES[t], ACTOR_OF[t]), "accepted") for t in BASES]
     rows += [(t, rec(t, TRANSITION), "invalid") for t in ("claim", "note", "Transition", "transition\n", "prior")]
