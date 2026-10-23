@@ -15,7 +15,7 @@ duty stays as the records leave it.
 
 | Pull request | State | Heads | Findings | Reproduced | Answered | Merge |
 | --- | --- | --- | --- | --- | --- | --- |
-| #181 | OPEN · awaiting acceptance by codex | 4 | 1 | 0 | 0 | — |
+| #181 | OPEN · awaiting acceptance by codex | 5 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -28,8 +28,9 @@ None.
 - head 1 `6053aec05788` (tree `0a0159a088ef`), discharge `fda9fd27dc23`: PENDING · awaiting codex; superseded by head 2
 - head 2 `b3276d98eb7b` (tree `af3e3be302c6`), discharge `1af3d582818e`: PENDING · awaiting codex; superseded by head 3
 - head 3 `33f123e8a445` (tree `bba000b1efd7`), discharge `64584dbedbd1`: PENDING · awaiting codex; superseded by head 4
-- head 4 `ffefc73f22ca` (tree `4d6b04a28cda`), discharge `c86a6449df54`: PENDING · awaiting codex
-  - finding `3908b644e180` by codex, P2, mechanical `codex_181_existing_accept_test:F1`: NOT_REPLAYED — Claims selftest fails once Codex has an authentic acceptance, so the review ACCEPT workflow cannot pass CI
+- head 4 `ffefc73f22ca` (tree `4d6b04a28cda`), discharge `c86a6449df54`: PENDING · awaiting codex; superseded by head 5
+  - finding `3908b644e180` by codex, P2, mechanical `codex_181_existing_accept_test:F1`: REPRODUCED — Claims selftest fails once Codex has an authentic acceptance, so the review ACCEPT workflow cannot pass CI
     - where: tools/claimslib/selftest.py:779, tools/claimslib/selftest.py:801
-    - replayed at head 4 `ffefc73f22ca`: NOT REPLAYED
-    - not answered
+    - replayed at head 4 `ffefc73f22ca`: REPRODUCES; head 5 `c85738507985`: DOES NOT REPRODUCE
+    - answered by head 5
+- head 5 `c85738507985` (tree `45dbbcc97d74`), discharge `71d28dc0d04b`: PENDING · awaiting codex; answers `3908b644e180`
