@@ -48,6 +48,7 @@ G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
     requires [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
       served by [OPEN] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
   answered by [OPEN · no closure filed] The pull request review loop is in the record graph: each PR a duty, each pushed head a closure naming its full commit, a finding the reviewer's own challenge whose test the review replay checker replays at each head, ACCEPT the reviewer's own accept; REVIEWS.md and the witness ledger are derived from them. {duty 47cdf978c4d3; serves G3 duty 9a039a41c85d}
+    served by [OPEN] s0fractal/warrant#181 is fit to merge: Reviews as records: the PR review loop in the graph {duty 79b1e5e8a8df}
 ```
 
 ## G4 [OPEN]

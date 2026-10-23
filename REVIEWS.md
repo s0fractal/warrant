@@ -13,8 +13,16 @@ duty. States are Warrant's own assessment (trust `.warrant/trust.json`, as of th
 latest record). A merge is a Git act: it is shown from a merge observation, and the
 duty stays as the records leave it.
 
-No review is recorded.
+| Pull request | State | Heads | Findings | Reproduced | Answered | Merge |
+| --- | --- | --- | --- | --- | --- | --- |
+| #181 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance
 
 None.
+
+## s0fractal/warrant#181 — Reviews as records: the PR review loop in the graph
+
+- duty `79b1e5e8a8df` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `47cdf978c4d3`
+- head 1 `6053aec05788` (tree `0a0159a088ef`), discharge `fda9fd27dc23`: PENDING · awaiting codex
