@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 
+from warrant import bindings as B
 from warrant import jcs as C
 from warrant import limits as L
 from warrant import records as R
@@ -27,7 +28,13 @@ class Workspace:
     def __init__(self, name, doc, state_root):
         self.name = name
         self.store = Path(doc["store"])
-        self.trust_path = Path(doc["trust"])
+        trust = doc["trust"]
+        if isinstance(trust, dict):         # a repository's bindings under its roles, admitted on every read
+            need(set(trust) == {"bindings", "roles"}, "BAD_REQUEST",
+                 f"workspace {name!r}: trust is a trust/2 file or {{bindings, roles}} of a repository")
+            self.trust_path, self.roles_path = Path(trust["bindings"]), Path(trust["roles"])
+        else:
+            self.trust_path, self.roles_path = Path(trust), None
         self.profile_path = Path(doc["profile"])
         self.current = list(doc.get("current", []))
         repo = doc.get("repo")
@@ -60,7 +67,9 @@ class Workspace:
         need(op in self.operations, "NOT_PERMITTED", f"operation {op!r} is not permitted for workspace {self.name!r}")
 
     def trust_bytes(self):
-        return self.trust_path.read_bytes()
+        if self.roles_path is None:
+            return self.trust_path.read_bytes()
+        return C.canon(repository_trust(self.trust_path, self.roles_path))
 
     def trust(self):
         return Trust(C.loads(self.trust_bytes()))
@@ -84,6 +93,23 @@ class Workspace:
     def use_policy(self, use):
         need(isinstance(use, str) and use in self.uses, "BAD_REQUEST", f"use {use!r} is not configured")
         return self.uses[use]
+
+
+def repository_trust(bindings_path, roles_path):
+    """The trust/2 document of the bindings a repository's .warrant/trust.json admits under its
+    .warrant/roles.json, by warrant.bindings: the rule tools/claims.py admits by. A binding that
+    rule does not admit is not in the trust; a roles file with any problem, or a bindings file
+    that is not a bindings document, is refused: a dropped pin would make its name first-come."""
+    try:
+        roles_doc, doc = json.loads(Path(roles_path).read_bytes()), C.loads(Path(bindings_path).read_bytes())
+    except (OSError, ValueError, TypeError) as e:      # C.NotCanonical is a ValueError
+        raise AgentError("BAD_REQUEST", f"repository trust: {type(e).__name__}: {e}") from None
+    roles, problems = B.read_roles(roles_doc)
+    admitted, refused = B.admit_bindings(doc, roles=roles)
+    problems += [p for p in refused if p[0] == "BINDINGS_SHAPE"]
+    need(not problems, "BAD_REQUEST", "repository trust: " + "; ".join(f"{c} {d}" for c, d in problems),
+         problems=[c for c, _ in problems])
+    return Trust.document(admitted)
 
 
 class Config:

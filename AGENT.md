@@ -43,7 +43,8 @@ MCP. `agent_api` is the interface version; it is not Warrant `"2"`, not
    "operations": ["context", "read", "handoff", "prepare", "commit", "compute"]}}}
 ```
 
-Requests name a workspace and an expectation only by these local handles
+`trust` is a trust/2 file, or `{"bindings": PATH, "roles": PATH}` of a
+repository (`init` below). Requests name a workspace and an expectation only by these local handles
 (SPEC §10.1); on a shared machine this is an application boundary, not OS
 isolation (SPEC §10.8).
 
@@ -52,6 +53,103 @@ their defaults. A store or view beyond one is refused as `RESOURCE_LIMIT` with
 `details: {limit, value, bound}` before it is assessed; no view is kept and no
 verdict is produced. A malformed one (unknown name, not a positive integer) is
 refused when the configuration loads.
+
+## A repository checkout: `init`
+
+```sh
+warrant-agent-mcp init --repo ~/Projects/warrant --actor codex --seed ~/keys/codex.seed \
+    --config ~/.warrant/warrant-codex.json [--state DIR] [--workspace NAME] \
+    [--operations context,read,prepare,commit] [--force]
+warrant-agent-mcp --config ~/.warrant/warrant-codex.json
+```
+
+`init` is the operator's command, not a tool, and the server never runs it. It
+writes a configuration of one workspace (default name: the checkout's directory
+name) for a repository that keeps its records in `.warrant/` the way
+`tools/claims.py` and `tools/roadmap.py` do:
+
+- the store is `.warrant/store`;
+- the trust is `{"bindings": ".warrant/trust.json", "roles": ".warrant/roles.json"}`:
+  the bindings that file admits under those pins, by `warrant/bindings.py`, the
+  rule `tools/claims.py` admits by, read again for every view (a binding merged
+  later is in the next view, and an older view's `observation.trust_current`
+  turns false). A roles file with any problem refuses every view as
+  `BAD_REQUEST`, since a dropped pin would make its name first-come;
+- the profile (`<state>/<workspace>/profile.json`) counts results acceptances
+  by `.warrant/roadmap.json`'s `results_accept_by`, with one use, `continue`;
+  run `init --force` again if that file changes;
+- the signer is the operator's existing seed for `--actor`, accepted only if its
+  key is exactly the key `.warrant/roles.json` pins for that actor and
+  `.warrant/trust.json` admits that binding. `init` creates, copies and binds
+  no key (`tools/claims.py keygen`, `pin` and `bind` are the operator's);
+- operations default to `context, read, prepare, commit`; `handoff` and
+  `compute` are enabled only by `--operations`.
+
+The configuration, the state directory and the seed must lie outside the
+repository. Every check runs before anything is written; only the
+repository's JSON files are read, none of its code is run. A refusal prints
+`REFUSED <CODE> <detail>` on stderr and exits 2:
+
+| Code | When |
+| --- | --- |
+| `INIT_ACTOR_SHAPE` | `--actor` is not an actor id (SPEC §3) |
+| `INIT_NOT_A_REPOSITORY` | no `.warrant/store` with `trust.json`, `roles.json`, `roadmap.json` |
+| `INIT_INSIDE_REPOSITORY` | the configuration, the state or the seed is inside the repository |
+| `INIT_OPERATIONS` | an operation is unknown or given twice, or none is given |
+| `INIT_WORKSPACE_NAME` | the workspace name is not a handle (SPEC §10.1) |
+| `INIT_CONFIG_EXISTS` | the configuration exists and `--force` is not given |
+| `INIT_NO_SEED` | no file at `--seed` (none is created) |
+| `INIT_SEED_SHAPE` | the seed is not a hex Ed25519 seed |
+| `INIT_TRUST_SHAPE` | `roles.json` has a problem, or `trust.json` is not a bindings document |
+| `INIT_ACTOR_NOT_PINNED` | `roles.json` gives the actor no key (reserved, collective, or no role) |
+| `INIT_KEY_NOT_PINNED` | the seed's key is not the one `roles.json` pins for the actor |
+| `INIT_NOT_ADMITTED` | `trust.json` admits no binding of the actor to that key |
+| `INIT_ROADMAP_SHAPE` | `roadmap.json` has no list of actor ids as `results_accept_by` |
+
+`tests/agent_repo_test.py` I01-I10 and T01-T03, agent mutants A87-A96.
+
+## The roadmap through the interface
+
+`tools/roadmap.py` files obligations, closures and acceptances as ordinary
+records (README.md, "The roadmap"). Through MCP they are `warrant_prepare`
+then `warrant_commit` with these arguments; `<…>` is a slot, a whole-string
+slot takes any JSON value. They file exactly the bytes `roadmap.py oblige`,
+`done` and `accept` file (`tests/agent_repo_test.py` Q01 compares the stores
+byte for byte and ROADMAP.md as bytes, and reads this block; Q02 runs it
+through the stdio server):
+
+- **oblige**: the goal ref is the `question` whose `scope` is `roadmap:G<n>` in
+  `warrant_context`'s questions; `owed_to` and `accept_by` are the lists of
+  `.warrant/roadmap.json` (`roadmap.py check` refuses other terms as
+  OBLIGATION_TERMS); `requires`/`serves` are duty ids.
+- **done**: the closure of a duty you hold, its evidence a
+  `warrant-roadmap/evidence@1` blob given with the prepare (`blob:0`, SPEC
+  §10.5) naming the pull request and commits; `subject` is the merge commit or
+  null.
+- **accept**: the acceptor (`accept_by`) accepts exactly the closure's item:
+  `transition` and `item` are a `closures` entry of the duty's capsule in
+  `warrant_context` (verdict PENDING, `waiting_for` you). Read its evidence
+  blob (`warrant_read kind=blob`) and review the work it names first.
+
+The tool's own refusals (the holder files `done`, a duty with a pending
+closure, an empty `--ref`, one-line texts) are not the interface's: through
+MCP the agent keeps them itself, and `roadmap.py check` reads the result.
+
+<!-- roadmap-recipe -->
+```json
+{
+ "oblige": {"type": "duty", "body": {"holder": "<your actor>", "statement": "<one line>",
+   "owed_to": "<owed_to of .warrant/roadmap.json>", "accept_by": "<accept_by of .warrant/roadmap.json>",
+   "condition": {"attest": {}}, "requires": "<required duty ids>", "serves": "<served duty ids>",
+   "answers": "<goal ref>"}},
+ "done": {"type": "transition", "body": {"basis": "ATTESTED", "established": ["<what is now true, one line>"],
+   "residual": ["the evidence blob names pull requests and commits; this record does not replay them"],
+   "closes": [{"duty": "<duty id>", "act": "discharge", "evidence": ["blob:0"]}], "evidence": ["blob:0"],
+   "subject": "<merge commit, hex40>"},
+  "blobs": [{"schema": "warrant-roadmap/evidence@1", "duty": "<duty id>", "refs": ["<pull request>", "<commit>"]}]},
+ "accept": {"type": "accept", "body": {"transition": "<closure transition id>", "item": "<item>"}}
+}
+```
 
 ## Operations
 
@@ -66,7 +164,7 @@ each operation.
 | `context` | `{workspace, actor?, use?, targets?:[id \| {id} \| {kind: duty\|transition, id}], limits?:{context_bytes}}` | §10.2, §10.3 |
 | `read` | `{workspace, view_token?, kind?: record\|blob\|context, target?, cursor?, max_bytes?}` or `{workspace, kind: draft\|operation, target}` | §10.2, §10.5 |
 | `handoff` | `{op: export, view_token?, roots?, request_id?}` / `{op: inspect, package \| (manifest, payload, declaration?), expectation?, use?, actor?, targets?}` / `{op: import, staged_id, request_id?}` | §10.4 |
-| `prepare` | `{workspace, type, body, based_on?: view_token, request_id?}`; `accept` takes `{transition, item, evidence?, support?}` | §10.5 |
+| `prepare` | `{workspace, type, body, based_on?: view_token, request_id?, blobs?: [JSON]}`; `accept` takes `{transition, item, evidence?, support?}`; `blob:<i>` in an evidence list is the id of `blobs[i]` | §10.5 |
 | `commit` | `{workspace, draft_id}` | §10.5 |
 | `compute` | `{workspace, op: provider\|term\|evaluate\|start\|resume\|cycle, ...hex64 addresses, expr?, expect_expr?, credit?, max_actions?, max_steps?, target?}`; `evaluate {expr, expect_expr?, credit? (10000), runtime? (book1)}` | §10.6 |
 | `explain` | `{term}` | §10.1 |
@@ -115,7 +213,8 @@ the SDK client):
 | `tests/agent_write_test.py` | W01-W13 |
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10, S11 (a contradicted receipt closes nothing; both capsules say why), S12 (evaluate) |
 | `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M16 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain, malformed stored records, every word a result carries has an explain entry) |
-| `tests/agent_mutants.py` | A01-A64, A66-A86, each killed on its named case; the SPEC §10 claims cite them |
+| `tests/agent_repo_test.py` | I01-I10 (`init`), T01-T03 (a repository's trust), B01-B04 (`blobs`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
+| `tests/agent_mutants.py` | A01-A64, A66-A100, each killed on its named case; the SPEC §10 claims cite them |
 | `examples/mcp-first-contact/` | fresh headless agents on three tasks, frozen scorer, round 1 vs round 2 |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
 

@@ -388,9 +388,9 @@ def handoff_op(cfg, req):
 
 
 def prepare(cfg, req):
-    _closed(req, ("workspace", "type", "body"), ("based_on", "request_id", "agent_api"))
+    _closed(req, ("workspace", "type", "body"), ("based_on", "request_id", "blobs", "agent_api"))
     ws = cfg.workspace(req["workspace"])
-    d = drafts.prepare(ws, req.get("based_on"), req.get("request_id"), req["type"], req["body"])
+    d = drafts.prepare(ws, req.get("based_on"), req.get("request_id"), req["type"], req["body"], req.get("blobs"))
     return {"agent_api": AGENT_API, "adapter_id": adapter_id(),
             "data": {k: d[k] for k in ("draft_id", "record_id", "actor", "at", "record", "basis_assessment_id",
                                         "preview", "status")}}
