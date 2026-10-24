@@ -36,7 +36,7 @@ question reference `<transition id>:<index>`. Signing: --key or
 WARRANT_CLAIMS_KEY, bound to --actor (default claude) in .warrant/trust.json.
 Refusals print as `REFUSED <detail>` (commands) or `REFUSED <CODE> <detail>` (check).
 `goal --source FILE --source-by ACTOR` cites the bytes of the proposal the goals
-come from and who wrote it (a `warrant-roadmap/source@1` blob); it credits, and
+come from (a file in the operator's home directory) and who wrote it (a `warrant-roadmap/source@1` blob); it credits, and
 neither grants nor establishes anything.
 """
 import argparse
@@ -616,6 +616,16 @@ def summary(m):
 
 # ---------------------------------------------------------------- command line
 
+def confined(arg):
+    """The resolved path of command-line path `arg` if it lies in the operator's home directory;
+    Refused otherwise, before it is opened (the form warrant_agent/init.py's _confined has)."""
+    base = os.path.realpath(Path.home())
+    real = os.path.realpath(arg)
+    if os.path.commonpath([real, base]) == base:
+        return Path(real)
+    raise Refused(f"--source {real} is outside the operator's home directory {base}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--root", default=str(ROOT), help="the repository (default: this checkout)")
@@ -689,7 +699,7 @@ def main(argv=None):
             if (a.source is None) != (a.source_by is None):
                 raise Refused("give --source and --source-by together")
             try:
-                source = None if a.source is None else (Path(a.source).read_bytes(), a.source_by)
+                source = None if a.source is None else (confined(a.source).read_bytes(), a.source_by)
             except OSError as e:
                 raise Refused(f"--source: {e}") from e
             rid = w.goal(list(zip(a.keys, a.texts)), source)

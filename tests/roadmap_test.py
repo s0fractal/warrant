@@ -159,8 +159,12 @@ def goal_cases():
 def source_cases():
     r = Repo()
     proposal = b'{"goal": "proposed by codex"}\n'           # raw, not canonical JSON: cited as it is
-    (r.base / "claims.json").write_bytes(proposal)
-    v = r.ok("goal", "--id", "G1", "--text", "Proposed.", "--source", str(r.base / "claims.json"), "--source-by", "codex")
+    home, was = r.base / "home", os.environ.get("HOME")
+    home.mkdir()
+    os.environ["HOME"] = str(home)                           # --source is read only under the operator's home
+    (home / "claims.json").write_bytes(proposal)
+    (r.base / "outside.json").write_bytes(proposal)
+    v = r.ok("goal", "--id", "G1", "--text", "Proposed.", "--source", str(home / "claims.json"), "--source-by", "codex")
     m = r.model()
     raw = C.digest(proposal)
     src = {"schema": RM.SOURCE, "by": "codex", "blob": raw}
@@ -171,10 +175,16 @@ def source_cases():
     control = r.problems()
     before = r.files()
     rcs = [r.run("goal", "--id", "G2", "--text", "x", *extra)[0] for extra in
-           (("--source", str(r.base / "claims.json")), ("--source-by", "codex"),
-            ("--source", str(r.base / "claims.json"), "--source-by", "codex\n"),
-            ("--source", str(r.base / "absent"), "--source-by", "codex"))]
+           (("--source", str(home / "claims.json")), ("--source-by", "codex"),
+            ("--source", str(home / "claims.json"), "--source-by", "codex\n"),
+            ("--source", str(home / "absent"), "--source-by", "codex"),
+            ("--source", str(r.base / "outside.json"), "--source-by", "codex"),
+            ("--source", str(home / ".." / "outside.json"), "--source-by", "codex"))]
     unchanged = r.files() == before
+    if was is None:
+        os.environ.pop("HOME")
+    else:
+        os.environ["HOME"] = was
     r.close()
     r = Repo()
     # names bytes the store holds and the transition does not cite
@@ -184,9 +194,9 @@ def source_cases():
     r.ok("project")
     ghosted = r.problems()
     r.close()
-    check("P16", good and control == [] and rcs == [2] * 4 and unchanged and ghosted == ["SOURCE_SHAPE"],
+    check("P16", good and control == [] and rcs == [2] * 6 and unchanged and ghosted == ["SOURCE_SHAPE"],
           "goal --source cites the proposal's raw bytes and a source blob naming its author; path shows it; check "
-          "refuses a source blob naming bytes the transition does not cite; a half or bad --source writes nothing",
+          "refuses a source blob naming bytes the transition does not cite; a half or bad --source, or one outside the operator's home, writes nothing",
           (good, control, rcs, unchanged, ghosted))
 
 
