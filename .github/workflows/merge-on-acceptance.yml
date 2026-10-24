@@ -3,7 +3,7 @@ name: merge-on-acceptance
 # Merges a pull request the review loop has accepted, with no owner act (tools/claimslib/eligibility.py
 # states the predicate; tools/claimslib/gate.py the GitHub side). Only trusted code runs here: this
 # file and tools/ are the base branch's (workflow_run and schedule always run the default branch's
-# workflow; a dispatch from another ref is refused below), the checkout is the base branch at the
+# workflow; a dispatch from another ref is refused below), the working tree is the base branch at the
 # exact commit GitHub reports for it, and every pull request head is fetched as Git objects into
 # refs/warrant-gate/pull/<n>, read with git ls-tree / cat-file / diff-tree, never checked out,
 # installed or run.
@@ -44,29 +44,30 @@ jobs:
       checks: read             # the required checks at a pull request's head
       actions: write           # the runs behind those checks; dispatching master CI after a merge
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: master
-          fetch-depth: 0
-          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
 
-      - name: The code running is the base read, and only it
+      # No checkout action: master is fetched by hand and checked out at the id GitHub reports for
+      # it, so the code running is that commit's, whole, and nothing of a pull request is checked out.
+      - name: The code running is master's tip on GitHub, and only it
         id: base
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          base=$(git rev-parse HEAD)
           tip=$(gh api "repos/$GITHUB_REPOSITORY/branches/master" --jq .commit.sha)
-          if [ "$base" != "$tip" ]; then
-            echo "Checkout $base, master on GitHub $tip: nothing assessed; a later run reads it." >> "$GITHUB_STEP_SUMMARY"
+          [[ "$tip" =~ ^[0-9a-f]{40}$ ]]
+          git init -q .
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch -q --no-tags origin "+refs/heads/master:refs/remotes/origin/master"
+          if [ "$(git rev-parse refs/remotes/origin/master)" != "$tip" ]; then
+            echo "master moved while it was fetched: nothing assessed; a later run reads it." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          git checkout -q --detach "$tip"
           [ -z "$(git status --porcelain --untracked-files=all)" ]
-          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "base=$tip" >> "$GITHUB_OUTPUT"
 
       - name: Signature verification library (exact version and hashes)
         if: steps.base.outputs.base != ''

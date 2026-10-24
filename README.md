@@ -586,7 +586,8 @@ same facts. **Merge-eligible**: no hold; the head's store, read from the head co
 Git objects, holds the pull request's review under the BASE's `.warrant/reviews.json`
 and a trust made only of the keys the BASE's `.warrant/roles.json` pins; its latest
 head's closure names a commit X in the head's history; nothing after X changed but
-added records and blobs and the generated views; an actor of the base's `accept_by`,
+added records and blobs and the generated views, and every record added after X is a
+verdict by an acceptor or this pull request's own review record; an actor of the base's `accept_by`,
 neither the author nor the closure's filer, accepted exactly that closure; no finding
 stands against it; and the required checks of `.warrant/merge.json` (each bound to its
 workflow file) are green at the head. **Due for review**: the same reading, CI green,
@@ -605,7 +606,7 @@ merge-on-acceptance.yml`.
 The reviewer is woken by [the Codex plugin](integrations/codex-plugin/README.md): the
 warrant MCP server, the `warrant-review` skill, and a waker that runs `tools/review.py
 due` from the base's own tree and starts `codex exec` once per pull request head that is
-due.
+due, in its own worktree, retrying a failed wake at most three times.
 
 ## Limits
 

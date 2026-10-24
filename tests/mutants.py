@@ -1485,7 +1485,7 @@ def _visit(view, did, report, done, busy):
      [('    h = rv.latest()\n    if h is None:\n        sh.append(("NO_HEAD"', '    h = next((x for x in reversed(rv.heads) if x.accepted_by), rv.latest())\n    if h is None:\n        sh.append(("NO_HEAD"')],
      'review_gate_test', ['G5']),
     ('M536', '../tools/claimslib/eligibility.py', 'changes after the accepted head are not read',
-     [('    extra = tail(root, x, head)', '    extra = []')],
+     [('    extra = tail(root, x, head, added)', '    extra = []')],
      'review_gate_test', ['G11']),
     ('M537', '../tools/claimslib/eligibility.py', 'an entry added to the store after the accepted head may be a symlink',
      [('        if status == "A" and new_mode == REGULAR and record:', '        if status == "A" and record:')],
@@ -1556,6 +1556,12 @@ def _visit(view, did, report, done, busy):
     ('M559', '../tools/claimslib/eligibility.py', 'an owner path ending in / names no directory',
      [(' or (e.endswith("/") and p.startswith(e))', '')],
      'review_gate_test', ['G29']),
+    ('M560', '../tools/claimslib/eligibility.py', 'a record added after the accepted head is merged whatever it is',
+     [('    if stray:', '    if False:')],
+     'review_gate_test', ['G31', 'G32']),
+    ('M561', '../tools/claimslib/eligibility.py', "the pull request's own review records added after X count as unreviewed",
+     [('    return sorted(r for r in added if r not in mine\n                  and (', '    return sorted(r for r in added if True\n                  and (')],
+     'review_gate_test', ['G3']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

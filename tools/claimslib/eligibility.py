@@ -18,11 +18,16 @@ holding two verdicts computed from the same facts:
     - the latest head's closure names a commit X that is canonical with the tree it names and an
       ancestor of the pull request's head;
     - the head's tree differs from X's only by added records and blobs of .warrant/store (regular
-      files, named by content address) and by changed bytes of the generated views (REVIEWS.md,
-      ROADMAP.md, SPEC-CLAIMS.md, WITNESSES.md; added or changed). That those views are the byte-identical rendering of
-      the head's records is checked by the required check `test` at the head, which runs the head's
-      own `claims.py check`, `review.py check` and `roadmap.py check`: code byte-identical to X's,
-      since the tail touches nothing else;
+      files, named by content address) and by the bytes of the generated views (REVIEWS.md,
+      ROADMAP.md, SPEC-CLAIMS.md, WITNESSES.md; added or changed). That those views are the
+      byte-identical rendering of the head's records is checked by the required check `test` at the
+      head, which runs the head's own `claims.py check`, `review.py check` and `roadmap.py check`: code
+      byte-identical to X's, since the tail touches nothing else;
+    - every record added after X is either a verdict record (authentic under the base's pins and signed
+      by an actor of the base's accept_by) or a review-loop record of this pull request's own duty (the
+      duty, its head closures, findings against its heads, the review replay checker's observations of
+      those findings, a merge observation). Any other record (an unrelated transition, a grant, a record
+      the base's pins do not authenticate) was never reviewed: TAIL_RECORD_UNREVIEWED;
     - an actor of the base's accept_by, other than the duty's author (the pull request's author
       actor) and the closure's filer, accepted exactly that closure, item 0 and its evidence, by a
       record signed with the key the base's roles.json pins for it (the trust above);
@@ -37,7 +42,7 @@ holding two verdicts computed from the same facts:
 
   due-for-review  the pull request is open, not a draft, into the base branch; the base and the
     head's store read as above; the latest head's closure is at the head (X canonical, an ancestor,
-    and the same records-only tail); every required check is green at the head; and there is no
+    and the same records-only tail, its added records verdicts or this pull request's own); every required check is green at the head; and there is no
     verdict at that head: no acceptance by a reviewer (the acceptance rule above) and no finding.
 
 Both share every fact and every rule above; only the last clauses differ. Formats are functions of
@@ -159,10 +164,11 @@ def store_at(root, commit, limits=None):
     return Snapshot(recs, blobs), problems
 
 
-def tail(root, x, head):
+def tail(root, x, head, added=None):
     """[(path, why)] of the changes from commit `x` to commit `head` other than a records-only tail:
     an added regular file .warrant/store/records/<hex64>.json or .warrant/store/blobs/<hex64>, or an
-    added or changed regular file among the generated views (VIEWS). Renames are read as delete and add."""
+    added or changed regular file among the generated views (VIEWS). Renames are read as delete and add.
+    The ids of the records it adds are appended to `added` (tail_records reads what they are)."""
     raw = _git(root, "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", ids=(x, head)).decode().split("\0")
     out = []
     for i in range(0, len(raw) - 1, 2):
@@ -171,11 +177,24 @@ def tail(root, x, head):
         kind, _, name = path[len(STORE):].partition("/") if path.startswith(STORE) else ("", "", "")
         record = (kind == "records" and name.endswith(".json") and S.hex64(name[:-5])) or (kind == "blobs" and S.hex64(name))
         if status == "A" and new_mode == REGULAR and record:
+            if added is not None and kind == "records":
+                added.append(name[:-5])
             continue
         if status in ("A", "M") and new_mode == REGULAR and old_mode in (REGULAR, "000000") and path in VIEWS:
             continue
         out.append((path, f"{status} {old_mode}->{new_mode}"))
     return out
+
+
+def tail_records(b, model, rv, added):
+    """The records of `added` (ids added after the accepted commit) that are neither a verdict record (an
+    authentic record, under the base's pins, by an actor of the base's accept_by) nor a review-loop record
+    of this pull request's own duty (the duty, its head closures, findings against its heads, the review
+    replay checker's observations of those findings, a merge observation): records nobody reviewed."""
+    mine = ({rv.did} | {h.tid for h in rv.heads} | {f.cid for f in rv.findings}
+            | {o for f in rv.findings for o, _ in f.observed.values()} | {o for o, _, _ in rv.merges})
+    return sorted(r for r in added if r not in mine
+                  and (r not in model.recs or model.recs[r]["actor"] not in b.cfg["accept_by"]))
 
 
 def owner_paths(root, base, x, listed):
@@ -407,10 +426,16 @@ def _review(a, root, b, pr, head, model):
     if owned is None or owned:
         a.reasons.append(("OWNER_PATHS", "the owner merges a change to what decides merging: " + (
             ", ".join(owned[:8]) if owned else f"{x[:12]} has no merge base with the base")))
-    extra = tail(root, x, head)
+    added = []
+    extra = tail(root, x, head, added)
     if extra:
         sh.append(("TAIL_CHANGES", f"{len(extra)} change(s) after head {h.n} ({x[:12]}) beyond added records and "
                    "regenerated views: " + ", ".join(f"{p} ({w})" for p, w in extra[:8])))
+    stray = tail_records(b, model, rv, added)
+    if stray:
+        sh.append(("TAIL_RECORD_UNREVIEWED", f"{len(stray)} record(s) added after head {h.n} ({x[:12]}) are neither "
+                   f"a verdict of {b.cfg['accept_by']} nor #{pr['number']}'s own review records: "
+                   + ", ".join(r[:12] for r in stray[:8])))
     found = [f for f in rv.findings if f.head is h]
     accepts = valid_acceptors(b, model, h, rv.rec["actor"])
     good = sorted(x for x, why in accepts.items() if why is None)

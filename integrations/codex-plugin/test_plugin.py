@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Codex plugin and its waker, without Codex and without GitHub (C1-C9).
+"""The Codex plugin and its waker, without Codex and without GitHub (C1-C12).
 
     python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
@@ -92,29 +92,95 @@ def config_edit():
           "install removes exactly the [mcp_servers.warrant] table from config.toml", got)
 
 
-def wakes():
-    home = Path(tempfile.mkdtemp(prefix="codex-waker-"))
-    for sub in ("wakes", "logs", "results"):
-        (home / sub).mkdir()
-    a = {"pr": 7, "head": "a" * 40, "base": "b" * 40, "branch": "topic", "title": "T",
-         "facts": {"duty": "d" * 64, "closure": "c" * 64, "head_n": 2, "x": "e" * 40}}
-    calls = []
+def fixture_mirror():
+    """A Waker over a scratch home whose mirror is a bare repository with two commits (heads to wake for)."""
+    base = Path(tempfile.mkdtemp(prefix="codex-waker-"))
+    g = ["git", "-c", "user.name=t", "-c", "user.email=t@invalid", "-c", "commit.gpgsign=false"]
+    work = base / "work"
+    subprocess.run(["git", "init", "-q", str(work)], check=True)
+    heads = []
+    for i in range(2):
+        (work / "f").write_text(str(i))
+        subprocess.run([*g, "-C", str(work), "add", "-A"], check=True)
+        subprocess.run([*g, "-C", str(work), "commit", "-q", "-m", str(i)], check=True)
+        heads.append(subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True,
+                                    check=True).stdout.strip())
+    home = base / "home"
+    home.mkdir()
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(home / "warrant.git")], check=True)
+    return base, home, heads
 
-    def run(cmd, **kw):
-        calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0)
-    first = WAKER.wake(a, home, "/bin/codex", HERE, run=run)
-    second = WAKER.wake(a, home, "/bin/codex", HERE, run=run)
-    memo = json.loads((home / "wakes" / f"7-{'a' * 40}.json").read_text())
-    cmd = calls[0] if calls else []
+
+def due_json(head, pr=7):
+    return {"pr": pr, "head": head, "base": "b" * 40, "branch": "topic",
+            "facts": {"duty": "d" * 64, "closure": "c" * 64, "head_n": 2, "x": "e" * 40}}
+
+
+class Codex:
+    """A fake `codex exec`: records each command, exits `code`, and may leave a file in its worktree."""
+
+    def __init__(self, code=0, dirty=False):
+        self.calls, self.code, self.dirty = [], code, dirty
+
+    def __call__(self, cmd, **kw):
+        self.calls.append(cmd)
+        if self.dirty:
+            (Path(cmd[cmd.index("-C") + 1]) / "left.txt").write_text("x")
+        return subprocess.CompletedProcess(cmd, self.code)
+
+
+def wakes():
+    base, home, heads = fixture_mirror()
+    now = [1_000_000.0]
+    codex = Codex()
+    w = WAKER.Waker(home=home, trees=base / "trees", codex="/bin/codex", run=codex, clock=lambda: now[0])
+    a = due_json(heads[0])
+    first, second = w.wake(a)[1], w.wake(a)[1]
+    memo = json.loads((home / "wakes" / f"7-{heads[0]}.json").read_text())
+    cmd = codex.calls[0] if codex.calls else []
     text = cmd[-1] if cmd else ""
-    check("C6", first[1].startswith("woken") and second[1] == "already woken" and len(calls) == 1
-          and memo["exit"] == 0 and memo["head"] == "a" * 40,
-          "one wake per pull request head: the memo is created exclusively, a second run starts nothing", (first, second, calls))
+    check("C6", first.startswith("woken") and second.startswith("woken") is False and len(codex.calls) == 1
+          and [t.get("exit") for t in memo["attempts"]] == [0] and memo["head"] == heads[0],
+          "one wake per pull request head: a second run after a clean exit starts nothing", (first, second, memo))
     check("C7", cmd[:2] == ["/bin/codex", "exec"] and "-s" in cmd and cmd[cmd.index("-s") + 1] == "workspace-write"
           and not any("dangerously" in c for c in cmd) and all(x in text for x in ("$warrant-review", "c" * 64, "e" * 40,
-                                                                                   "a" * 40, "warrant-mcp-call")),
+                                                                                   heads[0], "warrant-mcp-call")),
           "codex exec runs sandboxed with the review skill and the facts of the head it was woken for", cmd)
+    wt = Path(cmd[cmd.index("-C") + 1]) if cmd else None
+    check("C10", wt is not None and wt.parent == base / "trees" and wt.name == f"7-{heads[0][:12]}"
+          and wt.resolve() != WAKER.OPERATOR_CHECKOUT.resolve() and not wt.exists()
+          and memo["attempts"][0]["worktree"] == str(wt),
+          "each wake runs in its own worktree of the mirror, never the operator's checkout, removed after a clean run",
+          (wt, memo))
+    refused = None
+    try:
+        w.command(a, WAKER.OPERATOR_CHECKOUT)
+    except ValueError as e:
+        refused = str(e)
+    dirty = WAKER.Waker(home=home, trees=base / "trees", codex="/bin/codex", run=Codex(dirty=True), clock=lambda: now[0])
+    out = dirty.wake(due_json(heads[1], pr=8))[1]
+    kept = base / "trees" / f"8-{heads[1][:12]}"
+    head_there = subprocess.run(["git", "-C", str(kept), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    check("C11", refused is not None and "kept" in out and (kept / "left.txt").is_file() and head_there == heads[1],
+          "the operator's checkout is refused as a wake's directory; a worktree Codex left changes in is kept, "
+          "detached at the head", (refused, out, head_there))
+
+    failing = Codex(code=1)
+    f = WAKER.Waker(home=home, trees=base / "trees", codex="/bin/codex", run=failing, clock=lambda: now[0])
+    b = due_json(heads[1], pr=9)
+    states = [f.wake(b)[1], f.wake(b)[1]]
+    now[0] += WAKER.BACKOFF + 1
+    states.append(f.wake(b)[1])
+    now[0] += 2 * WAKER.BACKOFF + 1
+    states.append(f.wake(b)[1])
+    now[0] += 100 * WAKER.BACKOFF
+    states.append(f.wake(b)[1])
+    tries = json.loads((home / "wakes" / f"9-{heads[1]}.json").read_text())["attempts"]
+    check("C12", len(failing.calls) == WAKER.MAX_TRIES == 3 and [t["exit"] for t in tries] == [1, 1, 1]
+          and "retry after" in states[1] and states[2].startswith("woken") and "gave up" in states[4]
+          and "gave up" in f.report(b, held=False),
+          "a wake that exited non-zero is retried after a doubling backoff, three attempts in all, then given up; the "
+          "listing says so", states)
 
 
 def mcp_call():

@@ -45,7 +45,8 @@ replaced it.
   configuration (`.warrant/reviews.json`, the new `.warrant/merge.json`) and the trust (only the
   keys `.warrant/roles.json` pins) are the BASE commit's. Eligible: no hold, the review records
   well formed, the latest head's closure at a commit X in the head's history, nothing after X
-  but added records and blobs and the generated views, an acceptance of exactly that closure by
+  but added records and blobs and the generated views, every record added after X a verdict by an
+  acceptor or this pull request's own review record, an acceptance of exactly that closure by
   an actor of `accept_by` who is neither the author nor the filer, no finding against it, and the
   required checks green at the head, each bound to its workflow file.
 - `.github/workflows/merge-on-acceptance.yml` runs only the base branch's code and merges at most
@@ -57,9 +58,11 @@ replaced it.
 - `integrations/codex-plugin` (Codex's plugin format, marketplace `.agents/plugins/marketplace.json`):
   the warrant MCP server, the `warrant-review` skill, a stdio client for a review worktree's
   configuration, and a waker run by launchd that runs the base tree's `review.py due` and starts
-  `codex exec` once per pull request head that is due. `install.py` installs it.
-- `tests/review_gate_test.py` G1-G28; mutants M534-M557; `integrations/codex-plugin/test_plugin.py`
-  C1-C9 (CI, examples job).
+  `codex exec` once per pull request head that is due, in its own detached worktree of a mirror
+  (never the operator's checkout), retrying a failed wake with a doubling backoff, three attempts in
+  all. `install.py` installs it.
+- `tests/review_gate_test.py` G1-G32; mutants M534-M561; `integrations/codex-plugin/test_plugin.py`
+  C1-C12 (CI, examples job).
 - The retired autonomy envelope (`history/AUTONOMY-ENVELOPE-0.1-RETIREMENT.md` at the tag
   `history/warrant-0.x-2026-10-18`) never merged anything: its actor needed the branch-protection
   endpoint a workflow token cannot read. This gate reads no protection settings; it binds the

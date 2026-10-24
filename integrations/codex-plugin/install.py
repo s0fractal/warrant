@@ -42,7 +42,7 @@ LABEL = "dev.s0fractal.warrant-codex-waker"
 PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 PLUGIN = "warrant-review@warrant"
 CRYPTOGRAPHY = "cryptography==50.0.2"
-TABLE = re.compile(r"^\[mcp_servers\.warrant\]\n(?:(?!\[).*\n?)*", re.M)
+TABLE = re.compile(r"^\[mcp_servers\.warrant\]\n(?:(?!\[)[^\n]*\n)*", re.M)
 
 
 def run(*cmd, dry=False, **kw):

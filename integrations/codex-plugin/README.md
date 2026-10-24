@@ -13,13 +13,14 @@ it can verify; nobody else has to act.
 | `.mcp.json`, `scripts/warrant-mcp` | the MCP server `warrant`: `warrant-agent-mcp --config ${WARRANT_AGENT_CONFIG:-~/.warrant/codex-warrant.json}` |
 | `skills/warrant-review/SKILL.md` | the blind review instruction: what to look at and where, and how to file findings or accept through MCP |
 | `scripts/warrant-mcp-call` | a stdio client of the same server for another configuration (a review worktree's, made by `warrant-agent-mcp init` with Codex's own seed), one tool per call |
-| `waker/waker.py` | the waker: fetches master into a bare mirror, writes master's tree once, runs THAT tree's `tools/review.py due`, and starts `codex exec` with the skill once per pull request head that is due (a memo per head) |
+| `waker/waker.py` | the waker: fetches master into a bare mirror, writes master's tree once, runs THAT tree's `tools/review.py due`, and starts `codex exec` with the skill once per pull request head that is due (a memo per head), in that wake's own detached worktree of the mirror (`~/Projects/.worktrees/codex-review/<n>-<head12>`, removed after the run unless Codex left changes); a non-zero exit is retried after 15, then 30 minutes, three attempts in all |
 | `install.py` | installs all of it on a Mac and loads the waker as a launchd agent (every five minutes) |
 
 The waker signs nothing and reads no key. Its state lives in `~/.warrant/codex-waker`:
 `warrant.git` (the mirror), `code/<commit>` (the base trees it ran), `wakes/<n>-<head>.json`
-(one memo per woken head; delete it to wake that head again), `logs/`, `results/` (Codex's
-last message of each wake).
+(one memo per head with every attempt's exit status; delete it to wake that head again), `logs/`,
+`results/` (Codex's last message of each wake). `WARRANT_WAKER_HOME`, `WARRANT_WAKER_TREES`,
+`WARRANT_WAKER_PYTHON` and `WARRANT_WAKER_CODEX` override the defaults.
 
 ```bash
 python3 integrations/codex-plugin/install.py
@@ -48,4 +49,5 @@ python3 integrations/codex-plugin/install.py --uninstall
 ```
 
 `test_plugin.py` (CI, examples job) checks the manifests' paths, the launcher, the
-configuration edit, one wake per head and the stdio client, with no Codex and no GitHub.
+configuration edit, one wake per head, the wake's own worktree, retries, and the stdio client,
+with no Codex and no GitHub.

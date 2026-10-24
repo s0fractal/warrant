@@ -27,14 +27,19 @@ closure T, the closure's commit X (what the author asks you to review), and the 
 M. Check them yourself: `python3 tools/review.py due --base M --json` from a checkout of M lists the
 pull requests that are due, with these facts.
 
-## 1. A worktree at the pull request's head
+## 1. Your worktree at the pull request's head
+
+The waker gives you your own worktree, detached at H, and names it in its prompt
+(`~/Projects/.worktrees/codex-review/<N>-<H12>`, a worktree of the waker's mirror; its remote `origin`
+is the repository). Work only there. Never check out anything in `~/Projects/warrant`: other sessions
+work from that checkout. Started without the waker, make your own the same way:
 
 ```sh
-git -C ~/Projects/warrant fetch origin master "+refs/pull/N/head:refs/remotes/origin/pr/N"
-git -C ~/Projects/warrant worktree add -B codex/review-N ~/Projects/.worktrees/codex-review-N H
+git -C ~/Projects/warrant fetch origin "+refs/pull/N/head:refs/remotes/origin/pr/N"
+git -C ~/Projects/warrant worktree add --detach ~/Projects/.worktrees/codex-review/N-<H12> H
 ```
 
-(Reuse it on a later wake: `git -C ~/Projects/.worktrees/codex-review-N checkout -B codex/review-N H`.)
+The waker removes the worktree after your run unless you left uncommitted changes in it.
 
 ## 2. What to review (blind: what and where, not the author's conclusions)
 
@@ -59,7 +64,7 @@ Make a configuration of the warrant MCP server for this worktree, with your own 
 command of yours; it creates no key):
 
 ```sh
-warrant-agent-mcp init --repo ~/Projects/.worktrees/codex-review-N --actor codex \
+warrant-agent-mcp init --repo <your worktree> --actor codex \
   --seed <your codex seed> --config ~/.warrant/codex-review-N.json --force
 ```
 
@@ -69,8 +74,11 @@ directory), with the plugin's stdio client:
 ```sh
 PY="$(dirname "$(command -v warrant-agent-mcp || echo ~/.warrant/codex-mcp/bin/warrant-agent-mcp)")/python"
 "$PY" <plugin>/scripts/warrant-mcp-call --config ~/.warrant/codex-review-N.json workspace '{}'
-"$PY" <plugin>/scripts/warrant-mcp-call --config ~/.warrant/codex-review-N.json context '{"workspace": "codex-review-N", "targets": ["D"]}'
+"$PY" <plugin>/scripts/warrant-mcp-call --config ~/.warrant/codex-review-N.json context '{"workspace": "<worktree name>", "targets": ["D"]}'
 ```
+
+(`<plugin>/scripts/warrant-mcp-call` is named in the waker's prompt; the workspace's name is the
+worktree directory's, as `init` names it.)
 
 The exact record bodies are in `AGENT.md`, "Reviews through the interface" (the `review-recipe`):
 
@@ -84,7 +92,8 @@ The exact record bodies are in `AGENT.md`, "Reviews through the interface" (the 
 ## 4. Records onto the pull request
 
 In the worktree: regenerate the views and check them, then commit only the records and the views, and
-push to the pull request's branch (a fast-forward):
+push to the pull request's branch (a fast-forward). Commit only your own verdict records: the merge
+gate refuses any other record added after X (TAIL_RECORD_UNREVIEWED).
 
 ```sh
 python3 tools/claims.py project && python3 tools/roadmap.py project && python3 tools/review.py project

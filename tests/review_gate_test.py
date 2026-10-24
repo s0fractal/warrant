@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Merge eligibility and due-for-review (tools/claimslib/eligibility.py) and the gate's GitHub side
-(tools/claimslib/gate.py), G1-G30. Each refusal case asserts the exact set of refusal codes, so a
+(tools/claimslib/gate.py), G1-G32. Each refusal case asserts the exact set of refusal codes, so a
 mutant that removes one rule is seen by its code disappearing (a later rule catching the same case
 does not hide it). Three fixture worlds are built once; each case works on its own branch from a
 world's commit.
@@ -108,12 +108,15 @@ def pending_cases(f):
     p.write_text(json.dumps(env, separators=(",", ":"), sort_keys=True))
     tip = f.save()
     _, got = codes(f, tip)
-    check("G7", got == {"NO_ACCEPT"}, "a forged signature on codex's acceptance: no acceptance", got)
+    check("G7", got == {"NO_ACCEPT", "TAIL_RECORD_UNREVIEWED"}, "a forged signature on codex's acceptance: no acceptance, and an "
+          "unauthentic record in the tail", got)
 
     _, got = codes(f, accept_by_hand(at(f, f.pre, "g10"), "stranger"))
-    check("G10", got == {"NO_ACCEPT"}, "an acceptance by an actor the base's roles.json does not pin is not authentic", got)
+    check("G10", got == {"NO_ACCEPT", "TAIL_RECORD_UNREVIEWED"}, "an acceptance by an actor the base's roles.json does not pin is not "
+          "authentic", got)
     _, got = codes(f, accept_by_hand(at(f, f.pre, "g25"), f.replayer))
-    check("G25", got == {"ACCEPT_NOT_ACCEPTOR"}, "an acceptance by a pinned actor outside the base's accept_by", got)
+    check("G25", got == {"ACCEPT_NOT_ACCEPTOR", "TAIL_RECORD_UNREVIEWED"}, "an acceptance by a pinned actor outside the base's accept_by",
+          got)
 
 
 def author_cases(f):
@@ -132,7 +135,7 @@ def accepted_cases(f):
     roles["actors"]["codex"] = f.keys["stranger"].public
     at(f, f.tip, "g6").ok("head", "--pr", "1", "--commit", f.commit("re-pin codex", {".warrant/roles.json": json.dumps(roles)}))
     _, got = codes(f, accept_by_hand(f, "codex", key=f.keys["stranger"]))
-    check("G6", got == {"NO_ACCEPT", "OWNER_PATHS"}, "pins taken from the pull request's head: an acceptance signed by "
+    check("G6", got == {"NO_ACCEPT", "OWNER_PATHS", "TAIL_RECORD_UNREVIEWED"}, "pins taken from the pull request's head: an acceptance signed by "
           "the key the head pins for codex is not codex's under the base's pins (and re-pinning is the owner's to merge)", got)
 
     at(f, f.tip, "g8").ok("finding", "--pr", "1", "--commit", f.x, "--severity", "P2", "--what", "add is still wrong",
@@ -146,7 +149,7 @@ def accepted_cases(f):
     statement = at(f, f.tip, "g26").model().reviews[1].rec["body"]["statement"]
     f.put("claude", "duty", R.duty("claude", statement, ["s0fractal"], {"attest": {}}, accept_by=["codex"]))
     _, got = codes(f, f.save())
-    check("G26", got == {"REVIEW_RECORDS"}, "a problem in the head's review records (a second review duty of #1)", got)
+    check("G26", got == {"REVIEW_RECORDS", "TAIL_RECORD_UNREVIEWED"}, "a problem in the head's review records (a second review duty of #1)", got)
 
     gots = [EL.assess(f.dir, f.base_commit, pr(f.tip, **kw), checks(f.tip)).codes()
             for kw in ({"state": "closed"}, {"draft": True}, {"base": "release"})]
@@ -161,6 +164,16 @@ def accepted_cases(f):
         _, got = codes(f, accept_by_hand(f, "codex"))
         check("G29" if path.startswith(".github") else "G30", got == {"OWNER_PATHS"},
               f"a pull request changing {path} (an owner path of the base's merge.json) is not merged by the gate", got)
+
+    at(f, f.tip, "g31").put("claude", "duty", R.duty("claude", "an unrelated obligation, filed after review",
+                                                     ["s0fractal"], {"attest": {}}, accept_by=["codex"]))
+    _, got = codes(f, f.save())
+    check("G31", got == {"TAIL_RECORD_UNREVIEWED"}, "a record by the author after the accepted head that is not this pull request's "
+          "review record (an unrelated duty) was never reviewed", got)
+    at(f, f.tip, "g32").put("stranger", "duty", R.duty("stranger", "a stranger's second line", ["s0fractal"],
+                                                       {"attest": {}}, accept_by=["s0fractal"]))
+    _, got = codes(f, f.save())
+    check("G32", got == {"TAIL_RECORD_UNREVIEWED"}, "a record the base's pins do not authenticate, added after the accepted head", got)
 
     (at(f, f.tip, "g28").dir / ".warrant" / "store" / "blobs" / ("b" * 64)).write_text("{}")
     _, got = codes(f, f.commit("a blob not named by its hash"))
@@ -214,7 +227,7 @@ def check_and_hold_cases(f):
     doc = json.loads(roles.read_text())
     doc["actors"]["codex"] = f.keys["stranger"].public
     _, got = codes(f, tip, base=f.commit("the base re-pins codex", {".warrant/roles.json": json.dumps(doc)}))
-    check("G22", got == {"NO_ACCEPT"}, "the pins are the base's: re-pinned at the base, the same acceptance does not count", got)
+    check("G22", got == {"NO_ACCEPT", "TAIL_RECORD_UNREVIEWED"}, "the pins are the base's: re-pinned at the base, the same acceptance does not count", got)
 
 
 # ---------------------------------------------------------------- the merge call
