@@ -527,6 +527,13 @@ added. The terms are those of the ontology
 | Conclusion (§4.3, the backward cone) | a transition whose `relied_on` names the transitions whose results it uses |
 | Ledger (§7.2) | the store and its assessment |
 
+A vision transition may cite the proposal its goals come from (`goal --source
+FILE --source-by ACTOR`): the file's bytes as they are and a
+`warrant-roadmap/source@1` blob naming who wrote them, which `path` shows next
+to the goal. It credits the proposal's author; it grants nothing and
+establishes nothing of the proposal, and `check` refuses a source blob naming
+bytes the transition does not cite (SOURCE_SHAPE).
+
 Desire (row 0041) and Intent (row 0033: pre-authorship, a direction toward an
 act) are not recorded: once signed, a direction is authored and is a goal.
 Meaning (row 0041) is not recorded either. §4.3 calls the target "Target

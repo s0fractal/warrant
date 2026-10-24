@@ -156,6 +156,40 @@ def goal_cases():
     r.close()
 
 
+def source_cases():
+    r = Repo()
+    proposal = b'{"goal": "proposed by codex"}\n'           # raw, not canonical JSON: cited as it is
+    (r.base / "claims.json").write_bytes(proposal)
+    v = r.ok("goal", "--id", "G1", "--text", "Proposed.", "--source", str(r.base / "claims.json"), "--source-by", "codex")
+    m = r.model()
+    raw = C.digest(proposal)
+    src = {"schema": RM.SOURCE, "by": "codex", "blob": raw}
+    f = r.path("G1")["formulations"][0]
+    good = (m.recs[v]["body"]["evidence"] == [C.digest(C.canon(src)), raw] and m.snap.blob(raw) == proposal
+            and f["sources"] == [{"by": "codex", "blob": raw}] and f"from codex's source blob {raw[:12]}" in RM.render_path(r.path("G1")))
+    r.ok("project")
+    control = r.problems()
+    before = r.files()
+    rcs = [r.run("goal", "--id", "G2", "--text", "x", *extra)[0] for extra in
+           (("--source", str(r.base / "claims.json")), ("--source-by", "codex"),
+            ("--source", str(r.base / "claims.json"), "--source-by", "codex\n"),
+            ("--source", str(r.base / "absent"), "--source-by", "codex"))]
+    unchanged = r.files() == before
+    r.close()
+    r = Repo()
+    # names bytes the store holds and the transition does not cite
+    ghost = {"schema": RM.SOURCE, "by": "codex", "blob": r.store.put_blob(proposal)}
+    r.file("claude", "transition", R.transition("ATTESTED", [C.digest(C.canon(ghost))],
+                                                opened=[{"text": "Ghost.", "scope": "roadmap:G1"}]), [ghost])
+    r.ok("project")
+    ghosted = r.problems()
+    r.close()
+    check("P16", good and control == [] and rcs == [2] * 4 and unchanged and ghosted == ["SOURCE_SHAPE"],
+          "goal --source cites the proposal's raw bytes and a source blob naming its author; path shows it; check "
+          "refuses a source blob naming bytes the transition does not cite; a half or bad --source writes nothing",
+          (good, control, rcs, unchanged, ghosted))
+
+
 def requires_cases():
     r = Repo()
     r.ok("goal", "--id", "G1", "--text", "The ledger exists.")
@@ -381,7 +415,7 @@ def check_cases():
     r.close()
 
 
-GROUPS = ((goal_cases, ("P1", "P2")), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
+GROUPS = ((goal_cases, ("P1", "P2")), (source_cases, ("P16",)), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
           (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
           (check_cases, ("P12", "P13")))
 
