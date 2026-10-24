@@ -21,12 +21,12 @@ class LimitExceeded(ValueError):
         self.limit, self.value, self.bound = limit, value, bound
 
 
-def resolve(overrides=None):
-    """DEFAULTS with `overrides` ({name: positive int}); an unknown name or another
-    value is a ValueError, not a limit."""
-    out = dict(DEFAULTS)
+def resolve(overrides=None, defaults=DEFAULTS):
+    """`defaults` (DEFAULTS, or another family's: warrant.pilot.LIMITS) with `overrides`
+    ({name: positive int}); an unknown name or another value is a ValueError, not a limit."""
+    out = dict(defaults)
     for name, value in (overrides or {}).items():
-        if name not in DEFAULTS:
+        if name not in defaults:
             raise ValueError(f"limits: unknown limit {name!r}")
         if type(value) is not int or value < 1:
             raise ValueError(f"limits: {name} must be a positive integer")

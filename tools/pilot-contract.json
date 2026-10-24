@@ -1,0 +1,107 @@
+{
+  "contract": "warrant-pilot/contract@1",
+  "title": "Proof-space pilot contract",
+  "intro": [
+    "The pilot of goal G9: a fresh receiver gathers, from content roots and its own configuration only, every object one Sigma receipt needs, checks their bytes, and only then replays the receipt under a verification profile it admits. This contract fixes the terms. The resolution layer (PS-02, PS-03, PS-04) is implemented in `warrant/pilot.py` and tested by `tests/pilot_test.py` (A1-A8, D1-D8, F1-F4, K1-K2); the replay itself and everything after it are deferred to the cards named below.",
+    "Scope: the pilot is not part of SPEC.md. It adds no Warrant record type and no engine rule, `engine.assess` does not read it, and the Sigma receipt keeps SPEC §7's members and the meaning of `lost`. A rule below is enforced (cases of `tests/pilot_test.py` that pass, and mutants of `tests/mutants.py` that make them fail), deferred to a filed G9 obligation, or excluded from the pilot."
+  ],
+  "sections": [
+    {
+      "title": "The pilot and its receipt",
+      "card": "PS-01",
+      "rows": [
+        {"id": "PC-01", "rule": "The pilot's one proof kind is SPEC §7's `sigma-resume` receipt, unchanged: its dependency fields are read only through `compute.receipt_problem`, so a receipt with another member, a missing one or a malformed hash is refused.", "tests": ["D8", "D3"], "mutants": ["M581"]},
+        {"id": "PC-02", "rule": "The predicate verified: under an admitted profile p, receipt r is VERIFIED iff SPEC §7's admission holds with p's provider and runtime: target accepted, `lost` empty, `(input, environment)` equal to the condition's, and the receiver's own replay from the root gives NORMAL_FORM with result equal to `claimed` and to the condition's `expect`. A paused, blocked or unavailable replay is not VERIFIED.", "deferred": "PS-05+06"},
+        {"id": "PC-03", "rule": "Cycle blobs (`impossible` items) and any second proof kind are outside the pilot; no other kind inherits its labels.", "excluded": "a second proof kind is the proposal card PS-14, not filed"}
+      ]
+    },
+    {
+      "title": "Typed addresses and object stores",
+      "card": "PS-02",
+      "text": ["A typed address is `<kind>:<hex64>`; the hex64 is the SHA-256 of the object's exact bytes (SPEC §2). The pilot's kinds, each with the tag checked on its bytes and the dependency fields read after it:"],
+      "table": "kinds",
+      "rows": [
+        {"id": "PC-04", "rule": "Anything but `<kind>:<64 lowercase hex digits>` (`shapes.hex64`) is BAD_ADDRESS, refused before any path is built or any store read: path traversal at the right length, uppercase, a trailing newline.", "tests": ["A4", "D4"], "mutants": ["M571"]},
+        {"id": "PC-05", "rule": "An object whose bytes hash to its address but lack its kind's tag is KIND_MISMATCH, refused before its dependency fields are read. JSON kinds are canonical bytes (`jcs.loads`): other bytes are refused, never normalized.", "tests": ["A3", "F4"], "mutants": ["M570", "M593"]},
+        {"id": "PC-06", "rule": "A record id is no object address (a store's `records/` is never read), and a record envelope named by its digest is not an object of any pilot kind.", "tests": ["A5"], "mutants": ["M570"]},
+        {"id": "PC-07", "rule": "The receiver consults its configured local stores in order: layout `blobs` (`<dir>/<hex64>`, a Warrant store's `blobs/`) and layout `fanout` (`<dir>/<2 hex>/<62 hex>`, a warrant-agent object store). Only a regular file inside the store's real directory is an object of that store: a symlink, a path through a symlinked directory or a directory is not.", "tests": ["A1", "A6"], "mutants": ["M591", "M572"]},
+        {"id": "PC-08", "rule": "One typed address resolves to the same bytes and the same closure id through either store, both, or stores that each hold part of the closure; the closure manifest names no store.", "tests": ["A1"], "mutants": ["M591"]},
+        {"id": "PC-09", "rule": "Bytes a store holds under a name that do not hash to it are DIGEST_MISMATCH naming that store, refused before any kind reads them; no other store is consulted past them.", "tests": ["A2"], "mutants": ["M568", "M569"]},
+        {"id": "PC-10", "rule": "Nothing is fetched from outside the configured stores: no network, no store an object names.", "excluded": "a network resolver is the proposal card PS-12, not filed; `warrant/pilot.py` opens only files of configured stores"}
+      ]
+    },
+    {
+      "title": "The closure before verification",
+      "card": "PS-03",
+      "text": ["The closure of a root is every object reachable through the dependency fields of the table above, walked depth first. Every dependency field is required; the pilot has no optional one."],
+      "rows": [
+        {"id": "PC-11", "rule": "Every dependency field of the kinds table is followed: a receipt's `input`, `environment`, `checkpoint` and `state`, an environment's `hashes`, a root's `requires`. A missing object anywhere in the closure is MISSING at its address. `claimed` is a result hash, not a dependency.", "tests": ["D1", "D2"], "mutants": ["M580"]},
+        {"id": "PC-12", "rule": "Verification starts only on RESOLVED: `Receiver.check` calls the verifier once with the whole closure, and on any other result never calls it and answers the resolution. A result other than RESOLVED carries no object.", "tests": ["D3"], "mutants": ["M574"]},
+        {"id": "PC-13", "rule": "A shared dependency is read once; every reference followed counts toward `pilot_edges`, repeats included, so repeated references do not escape the aggregate limit.", "tests": ["D1", "D6"], "mutants": ["M592", "M576"]},
+        {"id": "PC-14", "rule": "An address met again on its own reference path is CYCLE. SHA-256 addresses cannot form a cycle; the guard is shown on a stand-in fetch, and a diamond is not a cycle.", "tests": ["D5"], "mutants": ["M575"]},
+        {"id": "PC-15", "rule": "Dependency fields are read with the kind's exact shape: a receipt or root with another member, an environment out of order, a root naming an address twice or nothing is MALFORMED.", "tests": ["D8", "A8"], "mutants": ["M581", "M582"]},
+        {"id": "PC-16", "rule": "A kind the receiver does not admit is UNKNOWN_KIND, at the root or as a dependency, also a kind `warrant/pilot.py` knows.", "tests": ["A7", "D4"], "mutants": ["M573", "M600"]}
+      ]
+    },
+    {
+      "title": "Resource bounds",
+      "card": "PS-03",
+      "text": ["The receiver's limits (`warrant.limits.resolve` over these defaults; a receiver sets each one in its configuration):"],
+      "table": "limits",
+      "rows": [
+        {"id": "PC-17", "rule": "Within every limit a closure resolves as without limits; beyond one the result is LIMIT with `limit`, `value` and `bound`, and no object. Objects and bytes are admitted before an object is read; `pilot_depth` bounds the longest chain of references from the root whatever the order of the walk.", "tests": ["D6", "D7"], "mutants": ["M576", "M577", "M578", "M579"]}
+      ]
+    },
+    {
+      "title": "Result meanings",
+      "card": "PS-03",
+      "text": ["RESOLVED establishes that every object of the closure is present in a configured store and is what its address says: byte identity under the address scheme, nothing about the objects' truth, signatures or authority, or the computation's result. INCONCLUSIVE means this receiver could not decide; REFUSED that the objects as presented are not admissible. Neither refutes a proof."],
+      "table": "codes",
+      "rows": [
+        {"id": "PC-18", "rule": "Each code has the one result of the table: a missing object, an unadmitted kind and an exhausted limit are INCONCLUSIVE; a bad address, a digest or kind mismatch, a malformed object and a cycle are REFUSED.", "tests": ["D2", "A5", "A6", "A7", "D4"], "mutants": ["M583", "M600"]},
+        {"id": "PC-19", "rule": "The results of verification itself (VERIFIED, and an unsupported profile or an unavailable operand never becoming VERIFIED) and their independence from duties, grants and acceptances.", "deferred": "PS-05+06"},
+        {"id": "PC-20", "rule": "A verified result grants no Warrant authority or permission: use is the receiver's own policy, view and freshness basis.", "deferred": "PS-07"}
+      ]
+    },
+    {
+      "title": "Verification profiles",
+      "card": "PS-04",
+      "text": ["A profile is canonical JSON `{schema: \"warrant-pilot/profile@1\", rule, runtime, verifier: {entry, boot, protocol, provider, modules}, axioms, assumptions}`. `boot` is the digest of the boot script that runs the provider (`compute.BOOT`), `modules` the digest of each provider module, `provider` the identity those digests give (`compute.identity_of_files`). Pinned bytes appear only as digests; host conditions only as text in `assumptions`."],
+      "rows": [
+        {"id": "PC-21", "rule": "A profile's id is the SHA-256 of its canonical bytes, which is its `pilot-profile` address; the receiver recomputes it from the bytes it resolved. `pilot.profile` builds one from the receiver's own installed provider.", "tests": ["F1"], "mutants": ["M588"]},
+        {"id": "PC-22", "rule": "Changing any declared semantic operand alone (entry, boot, protocol, a module digest, rule, runtime, an axiom, an assumption) gives a valid profile with another id; the old profile stays separately addressable.", "tests": ["F2"], "mutants": ["M588"]},
+        {"id": "PC-23", "rule": "A profile with a member missing or added (an unpinned URL), a pin that is not a hex64 digest (a path, URL, ref, uppercase), a provider other than its module digests give, or axioms and assumptions that are not non-empty sorted lists of distinct strings is MALFORMED.", "tests": ["F3"], "mutants": ["M584", "M585", "M586", "M587", "M589"]},
+        {"id": "PC-24", "rule": "The execution-profile assumptions of the pilot's replay are declared, not pinned: the provider runs as its captured module bytes in a separate CPython interpreter (`-I -B`), which is not an OS sandbox, and a host limit or timeout is inconclusive. `pilot.profile` declares them (`pilot.ASSUMPTIONS`).", "tests": ["F1"], "mutants": ["M601"]},
+        {"id": "PC-25", "rule": "Which profiles a receiver admits, and the check that the installed provider is the one an admitted profile pins before a replay runs.", "deferred": "PS-05+06"}
+      ]
+    },
+    {
+      "title": "Receiver-controlled admission",
+      "card": "PS-01",
+      "rows": [
+        {"id": "PC-26", "rule": "Only the receiver's configuration (`Receiver`, `Receiver.from_config`: `warrant-pilot/receiver@1`) chooses the stores, the admitted kinds and the limits; a configuration with anything else is refused, and no object can add a store, kind or limit.", "tests": ["A7", "A8"], "mutants": ["M573", "M582"]},
+        {"id": "PC-27", "rule": "Fetched verifier code is never executed: the pilot runs only the receiver's installed provider (`compute.Provider`).", "excluded": "running fetched code is the proposal card PS-13, not filed"}
+      ]
+    },
+    {
+      "title": "Later cards",
+      "rows": [
+        {"id": "PC-28", "rule": "A portable bundle of root descriptors and the data and verifier-description closure, verified offline without the producer's checkout or store.", "deferred": "PS-08"},
+        {"id": "PC-29", "rule": "Only a candidate that passes the admitted verifier is exposed as a verified result root of a continuation recipe.", "deferred": "PS-09"},
+        {"id": "PC-30", "rule": "Two fresh receiver processes with different client entry points verify a frozen bundle and resume its recipe to the expected root.", "deferred": "PS-10"},
+        {"id": "PC-31", "rule": "A retention root keeps every required reachable object through collection until it expires or is released; a lost unretained object is named unavailability.", "deferred": "PS-11"},
+        {"id": "PC-32", "rule": "The pilot's evidence maps each admission, integrity, closure, replay and use boundary to a negative vector lost under a named mutation, with no empty, skipped or crashed case credited.", "deferred": "PS-15"}
+      ]
+    },
+    {
+      "title": "Trusted assumptions",
+      "text": [
+        "- SHA-256 is collision resistant for every address a closure names.",
+        "- The receiver's configuration and its installed provider are the receiver's own; nothing a store or an object says changes them.",
+        "- A local store may be damaged or changed under the receiver: the digest check detects it at read time and prevents nothing; the pilot keeps no copy (retention is PS-11).",
+        "- The process boundary of the provider is not an OS sandbox (SPEC §7)."
+      ],
+      "rows": []
+    }
+  ]
+}
