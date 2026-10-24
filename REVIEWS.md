@@ -22,7 +22,7 @@ duty stays as the records leave it.
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #193 | OPEN · awaiting acceptance by codex | 1 | 3 | 0 | 0 | — |
+| #193 | OPEN · awaiting acceptance by codex | 2 | 3 | 0 | 3 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -100,16 +100,17 @@ None.
   - serves duty `d5cd7a7da4e4`
   - serves duty `61f38a12298e`
   - serves duty `1b10e89d75fe`
-- head 1 `228ed326c0f8` (tree `cb156532114e`), discharge `9d63a3888d03`: PENDING · awaiting codex
+- head 1 `228ed326c0f8` (tree `cb156532114e`), discharge `9d63a3888d03`: PENDING · awaiting codex; superseded by head 2
   - finding `19556ffa5a1c` by codex, P2, mechanical `pilot_review_store_test:R1`: NOT_REPLAYED — A FIFO under an object name blocks os.open before fstat; reject non-regular files without waiting for a writer (PC-07).
     - where: warrant/pilot.py:188
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED
-    - not answered
+    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED
+    - answered by head 2
   - finding `971ca0938c3a` by codex, P2, mechanical `pilot_review_store_test:R3`: NOT_REPLAYED — Growing a file from 4 to 5 bytes after fstat resolves all 5 bytes under pilot_bytes=4 and invokes the verifier; admit the actual read length before exposing the closure (PC-17).
     - where: warrant/pilot.py:197
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED
-    - not answered
+    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED
+    - answered by head 2
   - finding `d8a510cd300e` by codex, P2, mechanical `pilot_review_store_test:R2`: NOT_REPLAYED — Swapping a fanout directory for an outside symlink between realpath and os.open returns RESOLVED and invokes the verifier on outside-only bytes; anchor path traversal to directory descriptors (PC-07).
     - where: warrant/pilot.py:185
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED
-    - not answered
+    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED
+    - answered by head 2
+- head 2 `eca04ccfdc39` (tree `1a341a97613e`), discharge `e74de48389f7`: PENDING · awaiting codex; answers `19556ffa5a1c`, `971ca0938c3a`, `d8a510cd300e`
