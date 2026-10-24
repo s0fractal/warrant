@@ -1,0 +1,502 @@
+{
+  "format": "local-draft/proof-space-roadmap-v1",
+  "status": "PROPOSED",
+  "created": "2026-10-24",
+  "not_a_warrant_record": true,
+  "adopted": false,
+  "source": {
+    "file": "source.txt",
+    "sha256": "e460077a429eea0f488358d0be31ee49afd8bb2439951f291ae14c934bffa2cb",
+    "attribution": "Owner-supplied text; original author/model not established; architectural hypotheses, not verified product facts."
+  },
+  "baseline": {
+    "repo": "s0fractal/warrant",
+    "commit": "11883c713a30061940a5e7220b2e0f57799bceaf",
+    "pending_proposals": [
+      "#186 roadmap-honest",
+      "#187 Codex G4 acceptance and G6 thesis; neither merged at preparation"
+    ],
+    "current_paths": [
+      "SPEC.md §§7,9,10",
+      "warrant/compute.py",
+      "warrant/limits.py",
+      "warrant_agent/config.py",
+      "warrant_agent/views.py",
+      "warrant_agent/objects.py",
+      "warrant_agent/handoff.py",
+      "tools/roadmap.py"
+    ]
+  },
+  "goal": {
+    "id": "PS-G1",
+    "status": "PROPOSED",
+    "statement": "A fresh receiver can recover a bounded verified Sigma computation from portable content roots and continue its fixed recipe under an explicit verification profile and receiver-chosen use policy.",
+    "existing_strategic_links": [
+      "G2",
+      "G4",
+      "G5"
+    ],
+    "numbering": "PS-* are local draft labels, not reserved G<n> keys, Warrant record IDs or SPEC claim IDs."
+  },
+  "filing": {
+    "holder": "UNASSIGNED",
+    "acceptor": "receiver/roadmap configuration; no authority change proposed",
+    "current_constraint": "roadmap.json accept_by=[codex]; attested duties require an acceptor other than holder, and only holder can file. Codex cannot file these as Claude or self-accept a Codex-held duty.",
+    "next_action": "Independent holder reviews the proposal, chooses applicable cards, files goals/duties under existing terms with symbolic requires resolved to actual IDs, and regenerates ROADMAP.md. No done/met/accept is implied by this package."
+  },
+  "mvp": [
+    "PS-01",
+    "PS-02",
+    "PS-03",
+    "PS-04",
+    "PS-05",
+    "PS-06",
+    "PS-07",
+    "PS-08",
+    "PS-09",
+    "PS-10",
+    "PS-11",
+    "PS-15"
+  ],
+  "deferred": [
+    "PS-12",
+    "PS-13",
+    "PS-14",
+    "PS-16"
+  ],
+  "cards": [
+    {
+      "id": "PS-01",
+      "title": "Контракт першого пілота",
+      "status": "PROPOSED",
+      "statement": "A reviewed pilot contract fixes the Sigma receipt kind, address schemes, required dependency fields, execution-profile assumptions, result meanings, resource bounds and receiver-controlled admission before implementation is credited.",
+      "requires": [],
+      "phase": "A",
+      "evidence_kind": "reviewed_contract",
+      "baseline": "Є Sigma receipts, provider identity та SPEC §7; універсального контракту доказового простору немає.",
+      "positive": [
+        "Описано один пілот: bounded replay Sigma receipt до очікуваної normal form, а не доведення довільної теореми."
+      ],
+      "negative": [
+        "Контракт без визначення перевірюваного предиката або з порожнім набором позитивних/негативних векторів не закриває зобов’язання."
+      ],
+      "closure_evidence": [
+        "Версійований контракт, інвентар векторів, перелік довірених припущень і незалежне ревю."
+      ],
+      "boundary": "Слова VERIFIED/INVALID/UNKNOWN у пакеті — кандидати на новий контракт, не додані стани чинного API.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-02",
+      "title": "Типізована адреса та точні байти",
+      "status": "PROPOSED",
+      "statement": "For the pilot address schemes, a receiver resolves the same typed address through either of two configured local providers to the same bytes and refuses a digest or address-kind mismatch before interpreting the object.",
+      "requires": [
+        "PS-01"
+      ],
+      "phase": "B",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Blob CAS і view manifests вже є; record ID та hash повного signed envelope мають різні значення.",
+      "positive": [
+        "Той самий blob з двох незалежно налаштованих локальних providers дає однакові байти та digest; адреса envelope перевіряється за власним правилом."
+      ],
+      "negative": [
+        "Один біт payload змінено; bytes-envelope подано як semantic record ID; невідома схема адреси; path traversal замість digest."
+      ],
+      "closure_evidence": [
+        "Commit/tree, fixtures з типами адрес, результати двох providers, мутант пропуску hash/kind-перевірки, убитий відповідним negative-case."
+      ],
+      "boundary": "Hash встановлює ідентичність байтів у визначеній схемі, а не істинність, наявність підпису чи повноваження.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-03",
+      "title": "Замикання заявлених залежностей",
+      "status": "PROPOSED",
+      "statement": "For the pilot dependency schema, verification starts only after every required reachable object is resolved and hash-checked within receiver limits; a missing object, unknown dependency kind, cycle or exhausted limit yields an explicit inconclusive/refusal result.",
+      "requires": [
+        "PS-01",
+        "PS-02"
+      ],
+      "phase": "B",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Чинний handoff перевіряє declared set; це не універсальний resolver proof dependencies.",
+      "positive": [
+        "Граф із розгалуженням і спільною залежністю збирається повністю; повторні посилання не обходять aggregate limits."
+      ],
+      "negative": [
+        "Пропущено leaf; невідомий обов’язковий dependency kind; цикл; глибина, кількість або сукупні байти перевищують зафіксовані межі."
+      ],
+      "closure_evidence": [
+        "Hashed root/closure manifests, logs відсутнього hash/межі, позитивний контроль і мутанти пропуску leaf/kind/limit перевірок."
+      ],
+      "boundary": "Повнота лише щодо нормативних dependency-полів вибраної схеми; жодної заяви про всю історію чи всі сховища.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-04",
+      "title": "Ідентичність правил перевірки",
+      "status": "PROPOSED",
+      "statement": "A pilot verification profile is a content-addressed manifest of the verifier entry point, code/dependency identities, rule version, explicit axioms and execution-profile assumptions; changing any declared semantic operand changes its profile ID.",
+      "requires": [
+        "PS-01",
+        "PS-02"
+      ],
+      "phase": "B",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Provider/checker identities прив’язують код; Sigma environment ID не є повним описом ОС, Python або sandbox.",
+      "positive": [
+        "Receiver відновлює ID manifest незалежно; збережений старий profile залишається окремо адресованим."
+      ],
+      "negative": [
+        "Без зміни proof підмінено verifier, правило, аксіому або execution profile; пропущено required manifest field; у descriptor заховано неприкріплений mutable URL/ref."
+      ],
+      "closure_evidence": [
+        "Manifest schema, алгоритм identity/domain separation, fixtures зміни кожного operand, мутант ігнорування одного поля."
+      ],
+      "boundary": "Маніфест явно відрізняє закріплені байти від припущень про довірений host; це не автоматична герметичність середовища.",
+      "strategic_links": [
+        "G4",
+        "G5"
+      ]
+    },
+    {
+      "id": "PS-05",
+      "title": "Обмежена перевірка конкретного результату",
+      "status": "PROPOSED",
+      "statement": "Under an admitted pilot profile, a Sigma receipt is marked verified only when replay checks its exact input, environment, target, loss boundary and expected normal-form result; unsupported profiles or unavailable operands never become verified results.",
+      "requires": [
+        "PS-03",
+        "PS-04"
+      ],
+      "phase": "B",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Warrant/Sigma вже мають bounded replay і зіставлення receipt з compute condition; використати їх, а не новий evaluator.",
+      "positive": [
+        "Заздалегідь зафіксований Sigma receipt відтворює оголошений result root під відповідним profile."
+      ],
+      "negative": [
+        "Receipt правильний для іншого input/environment/target; підмінений result; nonempty loss; PAUSED замість normal form; невідомий profile або відсутній runtime."
+      ],
+      "closure_evidence": [
+        "Exact root tuple/profile ID, незалежний replay на чистому receiver, planned-case→guard→mutant mapping і результати."
+      ],
+      "boundary": "Перевірено саме обчислювальний предикат; не довільну семантичну властивість програми, зовнішній факт чи формальну теорему.",
+      "strategic_links": [
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-06",
+      "title": "Стабільний результат поза work/authority graph",
+      "status": "PROPOSED",
+      "statement": "For a fixed admitted pilot profile and fixed proof operands, completed verification computes the same result when only Warrant duties, grants, acceptances or unrelated records differ between receiver contexts.",
+      "requires": [
+        "PS-05"
+      ],
+      "phase": "B",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "REPLAYED і reliance вже розведені; окремий transport-neutral proof-check contract потребує явного bridge.",
+      "positive": [
+        "Один proof/profile перевірено в двох контекстах із різними work/authority records; completed computation roots збігаються."
+      ],
+      "negative": [
+        "Мутант додає trusted actor або стан duty до чистого computation result; результат перевірки непомітно залежить від cwd/repository path."
+      ],
+      "closure_evidence": [
+        "Парні fixtures з однаковими proof operands та різними графами, consumer contract і mutant kill."
+      ],
+      "boundary": "Profile має бути допущений в обох контекстах; host timeout/брак ресурсів можуть дати inconclusive, а не інший доведений результат.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-07",
+      "title": "Доказ не створює права використання",
+      "status": "PROPOSED",
+      "statement": "A verified pilot result alone grants no Warrant authority or external-effect permission: the receiver assesses use against its own explicit policy, view and freshness basis, and a denied use remains denied even when proof checking succeeds.",
+      "requires": [
+        "PS-05",
+        "PS-06"
+      ],
+      "phase": "B",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Є recipient trust, reliance та WITHIN_POLICY/HOLD; треба показати цей поділ на новому proof-facing шляху.",
+      "positive": [
+        "Той самий verified result дозволений однією use policy і утриманий іншою; proof result однаковий, use decisions різні."
+      ],
+      "negative": [
+        "Доданий challenge/revocation/freshness change впливає на use без переписування історичного computation result; self-declared trust із payload не допускає новий verifier чи дію."
+      ],
+      "closure_evidence": [
+        "Парні use-policy fixtures, exact view/as_of/current basis, mutant пропуску policy/freshness guard."
+      ],
+      "boundary": "Не доводиться глобальна відсутність challenge; право на ефект і валідність локального виведення лишаються різними питаннями.",
+      "strategic_links": [
+        "G2",
+        "G3",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-08",
+      "title": "Самодостатній пакет для холодної перевірки",
+      "status": "PROPOSED",
+      "statement": "Given a receiver that supplies the admitted execution profile, a pilot bundle contains the root descriptors and required data/verifier-description closure needed to reproduce its declared result offline without the producer checkout or original store.",
+      "requires": [
+        "PS-03",
+        "PS-04",
+        "PS-05"
+      ],
+      "phase": "C",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Чинний handoff пакує весь configured store; для першого пілота допустимо перевикористати його, не обіцяючи minimal slice.",
+      "positive": [
+        "Пакет перевірено з мережою вимкненою, з іншого абсолютного шляху, без .git і без producer store."
+      ],
+      "negative": [
+        "Відсутній required blob/profile descriptor; пакет посилається на локальний шлях автора; receiver не має matching execution profile."
+      ],
+      "closure_evidence": [
+        "Bundle/root digests, повний інвентар залежностей та host assumptions, команда cold verification і негативні результати."
+      ],
+      "boundary": "Runtime може бути передумовою receiver, а не байтами пакета; недоступний runtime дає inconclusive. Це не backup усього світу.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-09",
+      "title": "Кандидат проходить ту саму перевірку",
+      "status": "PROPOSED",
+      "statement": "For one fixed Sigma continuation recipe, candidate generation may store proposals, but only a candidate that passes the admitted verifier is exposed as a verified result root; a model assertion, signature or prior work acceptance cannot bypass that gate.",
+      "requires": [
+        "PS-05",
+        "PS-07"
+      ],
+      "phase": "C",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Є produce/receive/handoff та Sigma resume; новий derive facade не повинен оголошувати загальний proof search.",
+      "positive": [
+        "Детермінована continuation recipe породжує candidate й verifier підтверджує його очікуваний result root."
+      ],
+      "negative": [
+        "Generator повертає гарно підписаний неправильний result; кандидат посилається на інший goal/profile; crash або PAUSED подано як успіх."
+      ],
+      "closure_evidence": [
+        "Frozen recipe/input/profile, proposal та verified-result roots окремо, мутант прямого присвоєння verified без перевірки."
+      ],
+      "boundary": "Збереження candidate bytes дозволене; це не їх визнання. Пілот не виконує зовнішніх побічних дій.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-10",
+      "title": "Продовження без пам’яті та checkout автора",
+      "status": "PROPOSED",
+      "statement": "Two fresh receiver processes using different client entry points can verify a frozen pilot bundle and resume its fixed Sigma recipe to the expected computation root using only the supplied roots and receiver configuration.",
+      "requires": [
+        "PS-08",
+        "PS-09"
+      ],
+      "phase": "C",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Є first-contact pilots і replayable handoff; це новий end-to-end сценарій, а не повторне прийняття старої G2 duty.",
+      "positive": [
+        "CLI і MCP clients у порожніх workspaces отримують roots/config без попереднього чату, виходять на той самий оголошений computation root."
+      ],
+      "negative": [
+        "Прихований ~/.cache/producer lookup, repository path або chat hint потрібен одному client; invalid predecessor чи інший environment дозволяє продовжити як verified."
+      ],
+      "closure_evidence": [
+        "Frozen task, обидва повні transcripts/commands, environment inventory, expected roots та negative cases."
+      ],
+      "boundary": "Рівними є computation roots фіксованої recipe, не timestamps, signatures, record IDs або траєкторії довільних LLM.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-11",
+      "title": "Утримання байтів є явним зобов’язанням",
+      "status": "PROPOSED",
+      "statement": "A receiver retention root keeps every required reachable pilot object through collection until that root expires or is explicitly released; losing an unretained required object produces named unavailability, never a verified result or a proof refutation.",
+      "requires": [
+        "PS-03",
+        "PS-08"
+      ],
+      "phase": "C",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "#184 зберігає objects за live views із TTL; довгоживучий proof root не можна ототожнювати з цим кешем.",
+      "positive": [
+        "Після завершення view TTL і GC дані явно утриманого root доступні; після release непотрібні objects можуть бути зібрані."
+      ],
+      "negative": [
+        "Мутант ігнорує retention root; одна залежність зникає; collector однієї workspace зачіпає іншу."
+      ],
+      "closure_evidence": [
+        "Retention/expiry contract, GC fixtures з живими та звільненими roots, cold export/readback і guard mutant."
+      ],
+      "boundary": "Обмежена retention гарантія receiver не є безсмертям байтів чи доказом доступності чужих providers.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-12",
+      "title": "Мережевий transport як окреме розширення",
+      "status": "PROPOSED",
+      "statement": "An optional network resolver contacts only operator-configured providers under fixed destination, redirect, byte and deadline policies, verifies every returned object locally and cannot obtain verifier admission or action authority from a network response.",
+      "requires": [
+        "PS-02",
+        "PS-03",
+        "PS-11",
+        "PS-15"
+      ],
+      "phase": "D",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "Чинний agent API не робить HTTP fetch; local NOT_FOUND не повинен непомітно змінити семантику.",
+      "positive": [
+        "Локальний HTTP fixture, явно допущений конфігурацією, доставляє правильний object; client знову перевіряє bytes."
+      ],
+      "negative": [
+        "Неприпустиме призначення або redirect; oversized/slow response; hash mismatch; payload намагається додати provider, signer або policy."
+      ],
+      "closure_evidence": [
+        "Transport threat model, destination-policy та resource-limit vectors, egress observations, mutants відключення кожного guard."
+      ],
+      "boundary": "HTTP не потрібен для MVP; URI або hash у proof не є дозволом довільно звертатися до мережі.",
+      "strategic_links": [
+        "G2"
+      ]
+    },
+    {
+      "id": "PS-13",
+      "title": "Бар’єр для завантажуваного verifier-коду",
+      "status": "PROPOSED",
+      "statement": "Fetched verifier code is never executed by the pilot; any later execution of such code requires an independently reviewed, explicitly named OS confinement profile that demonstrates filesystem, credential, network, child-process and resource isolation.",
+      "requires": [
+        "PS-04",
+        "PS-15"
+      ],
+      "phase": "D",
+      "evidence_kind": "implementation_vectors",
+      "baseline": "SPEC §7 прямо каже, що provider subprocess не є OS sandbox; Python -I цього не змінює.",
+      "positive": [
+        "MVP використовує лише заздалегідь допущений installed verifier; later profile працює на одному зафіксованому OS/runner."
+      ],
+      "negative": [
+        "Fetched code пробує читати sentinel/seed, відкривати network socket, запускати child process або обійти deadline/memory limit; runner без потрібного confinement відмовляє."
+      ],
+      "closure_evidence": [
+        "Окреме ревю threat model і TCB, live hostile-code probes на заявленому runner, logs відмов і тест відсутнього sandbox."
+      ],
+      "boundary": "Завантаження байтів не дорівнює дозволу їх запускати. До закриття цього пункту arbitrary downloaded verifier execution поза scope.",
+      "strategic_links": [
+        "G2",
+        "G4"
+      ]
+    },
+    {
+      "id": "PS-14",
+      "title": "Другий вид доказів лише з власною семантикою",
+      "status": "PROPOSED",
+      "statement": "Before a second proof kind is admitted, its reviewed contract names the exact predicate, verifier/rules/axioms, dependency schema and result interpretation, and demonstrates that unsupported kinds cannot inherit the Sigma pilot verification label.",
+      "requires": [
+        "PS-04",
+        "PS-06",
+        "PS-15",
+        "PS-16"
+      ],
+      "phase": "D",
+      "evidence_kind": "reviewed_contract_and_vectors",
+      "baseline": "Універсального formal-proof verifier у Warrant немає; Sigma receipt не є автоматично Lean/K proof.",
+      "positive": [
+        "Один явно вибраний другий kind має власні positive/negative fixtures і зафіксовані semantics; receiver допускає його окремо."
+      ],
+      "negative": [
+        "Невідомий proof kind трактують як Sigma; result без axiom/rules identity; adapter повертає той самий success label для різних предикатів."
+      ],
+      "closure_evidence": [
+        "Contract/adapter/profile, semantic conformance vectors, незалежне ревю і mutant зняття kind guard."
+      ],
+      "boundary": "Ні список всіх prover-ів, ні переписування ядра не є критерієм закриття цього пункту.",
+      "strategic_links": [
+        "G4",
+        "G5"
+      ]
+    },
+    {
+      "id": "PS-15",
+      "title": "Негативні вектори перевіряють реальні бар’єри",
+      "status": "PROPOSED",
+      "statement": "The pilot evidence maps each claimed admission, integrity, closure, replay and use boundary to a negative vector whose expected refusal is lost under a named guard mutation, with no empty, skipped or crashed case credited as a successful check.",
+      "requires": [
+        "PS-10",
+        "PS-11"
+      ],
+      "phase": "C",
+      "evidence_kind": "independent_gate",
+      "baseline": "Перевикористати tests/mutants.py, agent_mutants та claims replay; новий паралельний assurance engine не потрібен.",
+      "positive": [
+        "Для PS-02…PS-11 evidence містить exact source tree, baseline PASS, target-case assertion failure під mutant та правильний refusal/result."
+      ],
+      "negative": [
+        "Мутант убитий через ImportError, лише текст діагностики або інший case; пропущений/порожній набір; чужий source tree зараховано як актуальний."
+      ],
+      "closure_evidence": [
+        "Per-boundary matrix з source identity, transcripts холодного пілота, повне незалежне ревю та окремі PASS/FAIL/UNKNOWN/SKIPPED результати."
+      ],
+      "boundary": "Підпис прийняття не замінює виконання; green CI не замінює незалежний пошук контрприкладів.",
+      "strategic_links": [
+        "G2",
+        "G4",
+        "G5"
+      ]
+    },
+    {
+      "id": "PS-16",
+      "title": "Рішення про архітектуру після пілота",
+      "status": "PROPOSED",
+      "statement": "A reviewed pilot report compares keeping proof verification as a Warrant/Sigma adapter with extracting a reusable proof layer, reports observed benefits and remaining assumptions, and recommends the next boundary without claiming new governance or universal proof semantics.",
+      "requires": [
+        "PS-10",
+        "PS-15"
+      ],
+      "phase": "D",
+      "evidence_kind": "reviewed_decision_report",
+      "baseline": "Нині Sigma owns computation, Warrant owns records/authority/work; текст пропонує напрям, а не встановлює нову онтологію.",
+      "positive": [
+        "Є вимірювані cold-restore/reuse результати й порівняння щонайменше двох способів збереження існуючої межі компонентів."
+      ],
+      "negative": [
+        "Рекомендація базується лише на hash-equality або красивій моделі п’яти графів; немає окремого звіту про TCB, availability та місця policy decisions."
+      ],
+      "closure_evidence": [
+        "Звіт із посиланнями на evidence PS-15, витратами/обмеженнями, рекомендацією і переліком ще потрібних owner/design рішень."
+      ],
+      "boundary": "Прийняття звіту не змінює authority graph, SPEC, ключі, record types чи реалізацію саме собою.",
+      "strategic_links": [
+        "G2",
+        "G4",
+        "G5"
+      ]
+    }
+  ]
+}
