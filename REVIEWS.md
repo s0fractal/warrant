@@ -22,6 +22,7 @@ duty stays as the records leave it.
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
+| #193 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -91,3 +92,12 @@ None.
 
 - duty `bf4fbc49b379` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `2dcc5ba23ae6` (tree `33855071fbe7`), discharge `9d4277b4270b`: ADMITTED · accepted by codex
+
+## s0fractal/warrant#193 — G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04)
+
+- duty `431ae379e6ae` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `d108cd09dd10`
+  - serves duty `d5cd7a7da4e4`
+  - serves duty `61f38a12298e`
+  - serves duty `1b10e89d75fe`
+- head 1 `228ed326c0f8` (tree `cb156532114e`), discharge `9d63a3888d03`: PENDING · awaiting codex
