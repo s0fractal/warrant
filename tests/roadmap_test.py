@@ -195,6 +195,28 @@ def requires_cases():
     check("P5", rc == 2 and refused == [2, 2, 2] and unchanged and state_of(r.path("G1")["obligations"], c)[0] == "RELEASED",
           "release is forgiveness by whom the duty is owed to; the holder cannot release or re-close, a stranger cannot "
           "discharge, a discharge names evidence", (rc, refused, unchanged))
+
+    # A declined closure is replaced only by naming it (#182: evidence without the merge commit).
+    d = r.ok("oblige", "--text", "A fourth thing.", "--answers", "G1")
+    t1 = r.ok("done", "--duty", d, "--established", "done", "--ref", "s0fractal/warrant#3")
+    before = r.files()
+    blind = r.run("done", "--duty", d, "--established", "done", "--ref", "s0fractal/warrant#3", "--ref", "a" * 40)[0]
+    wrong = r.run("done", "--duty", d, "--established", "done", "--ref", "x", "--replaces", "b" * 64)[0]
+    e = r.ok("oblige", "--text", "A fifth thing.", "--answers", "G1")
+    before = r.files()
+    nothing = r.run("done", "--duty", e, "--established", "done", "--ref", "x", "--replaces", t1)[0]
+    unchanged = r.files() == before
+    t2 = r.ok("done", "--duty", d, "--established", "done", "--ref", "s0fractal/warrant#3", "--ref", "a" * 40,
+              "--replaces", t1)
+    body = r.model().recs[t2]["body"]
+    cands = [(c["transition"], c["verdict"]) for c in r.model().rep["duties"][d]["candidates"]]
+    r.accept(t2)
+    check("P15", blind == wrong == nothing == 2 and unchanged and any(t1 in x for x in body["residual"])
+          and sorted(cands) == sorted([(t1, "PENDING"), (t2, "PENDING")])
+          and state_of(r.path("G1")["obligations"], d)[0] == "DISCHARGED",
+          "a second closure of a duty with one waiting is filed only with --replaces naming that one (and --replaces "
+          "names a waiting closure of that duty); its residual "
+          "names it, both stay in the record, and accepting the new one discharges the duty", (blind, wrong, cands))
     r.close()
 
 
@@ -359,7 +381,7 @@ def check_cases():
     r.close()
 
 
-GROUPS = ((goal_cases, ("P1", "P2")), (requires_cases, ("P3", "P14", "P4", "P5")), (supersede_cases, ("P6", "P7")),
+GROUPS = ((goal_cases, ("P1", "P2")), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
           (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
           (check_cases, ("P12", "P13")))
 

@@ -181,6 +181,62 @@ MCP the agent keeps them itself, and `roadmap.py check` reads the result.
 }
 ```
 
+## Reviews through the interface
+
+`tools/review.py` files the pull request review loop as ordinary records
+(README.md, "Reviews as records"; REVIEWS.md is their view). Through MCP each
+step is `warrant_prepare` then `warrant_commit` with these arguments; `<…>` is
+a slot, a whole-string slot takes any JSON value. They file exactly the bytes
+`review.py open`, `head` (or `answer`), `finding` and `accept` file
+(`tests/reviews_test.py` V20 reads this block and compares the stores byte for
+byte, and REVIEWS.md as bytes):
+
+- **open** (the author): the line is `<repository>#<number> is fit to merge:
+  <title>`, the repository and the lists those of `.warrant/reviews.json`
+  (`review.py check` refuses other terms as REVIEW_TERMS).
+- **head** (the author, after pushing): `commit` is the pushed head's full
+  commit id and `tree` its tree id (`git rev-parse <commit>^{tree}`), never a
+  ref; `previous` is the closure of the pull request's current head, or null
+  for the first; `answers` the sorted ids of the findings this head answers
+  (`[]` for none). Once a head was accepted, use **revalidate**: the same with
+  the item's act `revalidate` and `revalidates` the accepted heads' closures.
+- **finding** (a reviewer): `target` and `head` are the closure of the current
+  head (a `closures` entry of the duty's capsule in `warrant_context`, its
+  transition's head blob read with `warrant_read kind=blob`); `commit` and
+  `tree` are that blob's, which you reviewed; the statement is the severity, one
+  space and `what`. `test` is null for a thesis, or `{"file": "<name>_test",
+  "case": "<id>", "patch": "<unified diff confined to tests/>"}`: a case that
+  fails at that commit. Prefer a new test file, so the diff still applies at the
+  author's later heads.
+- **accept** (an acceptor of `accept_by`): the current head's closure, item 0,
+  after reviewing that commit.
+
+<!-- review-recipe -->
+```json
+{
+ "open": {"type": "duty", "body": {"holder": "<your actor>", "statement": "<REPO#N is fit to merge: TITLE>",
+   "owed_to": "<owed_to of .warrant/reviews.json>", "accept_by": "<accept_by of .warrant/reviews.json>",
+   "condition": {"attest": {}}, "serves": "<served duty ids>"}},
+ "head": {"type": "transition", "body": {"basis": "ATTESTED", "established": ["<REPO#N head COMMIT tree TREE>"],
+   "residual": ["this record names a commit and its tree; whether the change is fit to merge is the acceptor's judgment, not this record's"],
+   "closes": [{"duty": "<duty id>", "act": "discharge", "evidence": ["blob:0"]}], "evidence": ["blob:0"], "subject": "<commit>"},
+  "blobs": [{"schema": "warrant-review/head@1", "duty": "<duty id>", "pr": "<number>", "commit": "<commit>", "tree": "<tree>",
+             "previous": "<previous head closure or null>", "answers": "<sorted finding ids>"}]},
+ "revalidate": {"type": "transition", "body": {"basis": "ATTESTED", "established": ["<REPO#N head COMMIT tree TREE>"],
+   "residual": ["this record names a commit and its tree; whether the change is fit to merge is the acceptor's judgment, not this record's"],
+   "closes": [{"duty": "<duty id>", "act": "revalidate", "evidence": ["blob:0"], "revalidates": "<accepted head closures>"}],
+   "evidence": ["blob:0"], "subject": "<commit>"},
+  "blobs": [{"schema": "warrant-review/head@1", "duty": "<duty id>", "pr": "<number>", "commit": "<commit>", "tree": "<tree>",
+             "previous": "<previous head closure or null>", "answers": "<sorted finding ids>"}]},
+ "finding": {"type": "challenge", "body": {"target": "<current head closure>", "item": 0, "statement": "<SEVERITY WHAT>",
+   "evidence": ["blob:0"]},
+  "blobs": [{"schema": "warrant-review/finding@1", "duty": "<duty id>", "pr": "<number>", "head": "<current head closure>",
+             "commit": "<commit>", "tree": "<tree>", "severity": "<P0, P1, P2 or P3>", "what": "<one line>",
+             "where": "<paths or path:line>", "test": "<null or file, case, patch>"}]},
+ "accept": {"type": "accept", "body": {"transition": "<current head closure>", "item": 0}}
+}
+```
+
 ## Operations
 
 Every result is `{"agent_api", "adapter_id", "data", ...}`; a refusal is

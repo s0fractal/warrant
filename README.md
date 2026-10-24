@@ -539,6 +539,38 @@ claims hold and the goal is not shown. Either the decomposition missed
 something (§4.2: the gap is not empty), or the showing is still owed. The mark
 is evidence, not a refutation.
 
+## Reviews as records
+
+The review loop of a pull request lives in the same store as ordinary records:
+[REVIEWS.md](REVIEWS.md) is generated from them by `tools/review.py project`,
+and `check` refuses a stale or hand-edited one. No record type is added.
+`.warrant/reviews.json` names the repository, whom a pull request is owed to
+and accepted by, and the review replay checkers it adopts.
+
+| Review step | Recorded as |
+| --- | --- |
+| A pull request (`open`, its author) | a duty "`<repo>#<n>` is fit to merge: `<title>`", held by the author, owed to `owed_to`, accepted by `accept_by`, condition attest, no `release_by`; `serves` may name the roadmap obligations it serves |
+| A pushed head (`head`) | a closure of that duty: an ATTESTED transition citing a `warrant-review/head@1` blob (the head's full canonical commit id and its tree id, the previous head's closure) whose subject is that commit. Once a head was accepted, the next one is a `revalidate` naming the accepted heads |
+| A finding (`finding`, a reviewer) | a challenge of the current head's closure carrying a `warrant-review/finding@1` blob: severity, what, where, the head's commit and tree, and a test (a case and a diff confined to `tests/`) or null. With a test it is mechanical; without, a thesis, and it reads so |
+| Reproduces / no longer reproduces | an observation by the review replay checker, `checker sha256:<hash of tools/claimslib/review_replay.py>` with its own key: the finding's case at one head's exact tree is FAIL (reproduces), PASS (does not), NO_RESULT or DOES_NOT_APPLY. CI re-executes those new since the base (`review.py replay --verify`) |
+| An answer (`answer`, the author) | the next head, its blob naming the findings it answers |
+| ACCEPT (`accept`, the reviewer) | an accept of the current head's closure: the duty is DISCHARGED (SPEC §4.2) |
+| AMEND | a finding (or several) against the current head; the author answers at a new head |
+| A merge (`merged`) | a Git act, not a closure: an observation of the merge commit with a report naming the merge, its own tree, its first parent and its tip; the heads accepted in the tip's own store; the paths the tip changes since the latest of them; and the merge's own integration changes, the paths where its tree is neither Git's merge (`git merge-tree`) of the first parent with the accepted head nor, at a conflict, exactly one side. Paths of the records and their views do not count. The states are kept apart: no accepted head, tip changed after acceptance, unreviewed integration changes, integration unverified, or reviewed; only the last credits the reviewer. The duty stays as the records leave it |
+
+The owner, whom a pull request is owed to, has no key (`s0fractal` is reserved
+in `.warrant/roles.json`): an owner's release or `impossible` cannot be filed,
+and merging is the owner's act in Git, observed, never signed as the owner. A
+finding's test is code from the pull request's branch: it runs only where the
+branch's own tests run (CI, or a sandbox of whoever holds the replay checker's
+seed), never inside an assessment or `check`. The records travel in the pull
+request's branch, which its author controls: an author can drop a reviewer's
+record before the merge, and the reviewer's own branch is the witness of what
+it filed. WITNESSES.md counts, per actor, findings filed, reproduced, answered,
+and acceptances of a head at which a finding reproduced; it grants nothing. Through
+MCP the steps are `warrant_prepare`/`warrant_commit` with the recipe in
+[AGENT.md](AGENT.md), "Reviews through the interface".
+
 ## Limits
 
 Not in this version: threshold adoption, key rotation, P-256, policy
