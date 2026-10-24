@@ -20,7 +20,7 @@ duty stays as the records leave it.
 | #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
-| #190 | OPEN · awaiting acceptance by codex | 5 | 2 | 0 | 2 | — |
+| #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -70,7 +70,7 @@ None.
 
 ## s0fractal/warrant#190 — Merge on acceptance without the owner's act; Codex wakes itself to review
 
-- duty `60897810079d` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `60897810079d` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `47cdf978c4d3`
 - head 1 `9d7d4401008c` (tree `86260b0ab0c5`), discharge `31c1218a05f7`: PENDING · awaiting codex; superseded by head 2
 - head 2 `17ea0667232c` (tree `b7f1bbc12d4c`), discharge `1d2e45e92cdd`: PENDING · awaiting codex; superseded by head 3
@@ -84,4 +84,4 @@ None.
     - where: integrations/codex-plugin/install.py:130
     - replayed at head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
     - answered by head 5
-- head 5 `bd4693ce646b` (tree `50ed127677ed`), discharge `b65fbf28e09d`: PENDING · awaiting codex; answers `41141d15bbaf`
+- head 5 `bd4693ce646b` (tree `50ed127677ed`), discharge `b65fbf28e09d`: ADMITTED · accepted by codex; answers `41141d15bbaf`
