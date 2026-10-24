@@ -38,6 +38,27 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### Agent views as manifests over a content-addressed store; collection by reachability
+
+- **[protocol]** A warrant-agent view no longer copies the store: its record envelopes, blobs,
+  provider modules, tree, report body and manifest live once per workspace in
+  `<state>/<workspace>/objects/<2 hex>/<62 hex>`, each under the SHA-256 of its bytes, and
+  `views/<token>/view.json` names the manifest (SPEC §10.2, SPEC-10.2-17..28). Every read hashes
+  what it read; an absent or damaged pinned object is the new refusal `VIEW_DAMAGED` (§10.7),
+  never a read from the live store. On a copy of this repository's store, 45 contexts took
+  756 MB and 127 128 files on master, 18 MB and 2 964 files now; a context's median fell from
+  1.12 s to 0.65 s.
+- `warrant-agent --config C gc [--workspace W] [--dry-run]`, and a collection at the end of a
+  capture every `gc_interval` seconds (new workspace limit, default 3600, 0 never): expired and
+  unfinished views go, then every object no live view pins; a capture holds `objects/lock`
+  shared until its view is reachable, a collection exclusively. Drafts, staging, imports,
+  exports and the store are never roots and never touched.
+- A store holding a file that is neither a record nor a blob is now assessed (the tree carries
+  its misfiled entries); every context of such a store was `NO_ASSESSMENT` before.
+- Views written by an earlier version keep answering until they expire; nothing is converted.
+- `tests/agent_views_test.py` J01-J16; agent mutants A114-A131; A05, A48, A54, A56, A64, A78 and
+  A80 retargeted onto the new text.
+
 ### The pull request review loop is records (G3)
 
 - `tools/review.py` (`tools/claimslib/reviews.py`) files the review loop as ordinary records in

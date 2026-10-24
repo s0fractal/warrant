@@ -1,0 +1,1 @@
+A collection reads no root and removes nothing outside the workspace's views and objects: drafts, staged packages, import journals, export records and the store keep their bytes, and a draft or a staged import whose view was collected still commits or completes.

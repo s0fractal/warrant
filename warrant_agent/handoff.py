@@ -78,7 +78,7 @@ def _payload_items(payload, limit):
 def export(ws, token, roots, request_id):
     ws.permit("handoff")
     need(isinstance(request_id, str) and 0 < len(request_id) <= 128, "BAD_REQUEST", "request_id")
-    meta, report, vdir = views.load(ws, token)
+    meta, report, view = views.load(ws, token)
     need(isinstance(roots, list) and all(isinstance(r, dict) and set(r) == {"kind", "id"} for r in roots),
          "BAD_REQUEST", "roots are [{kind, id}]")
     roots = sorted(roots, key=lambda r: (r["kind"], r["id"]))
@@ -87,7 +87,7 @@ def export(ws, token, roots, request_id):
         prev = views.read_json(rec_path)
         need(prev["view"] == token and prev["roots"] == roots, "CONFLICT", "request_id was used for another export")
         return prev["package"]
-    snap = views.read_snapshot(ws, vdir)
+    snap = view.snapshot()
     size = sum(len(b) for b in snap.records.values()) + sum(len(b) for b in snap.blobs.values())
     if size > ws.limits["transfer_bytes"]:
         raise AgentError("RESOURCE_LIMIT", f"the store is {size} bytes; the configured transfer limit is "

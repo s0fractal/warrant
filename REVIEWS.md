@@ -16,6 +16,7 @@ duty stays as the records leave it.
 | Pull request | State | Heads | Findings | Reproduced | Answered | Merge |
 | --- | --- | --- | --- | --- | --- | --- |
 | #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
+| #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -35,3 +36,8 @@ None.
     - answered by head 5
 - head 5 `c85738507985` (tree `45dbbcc97d74`), discharge `71d28dc0d04b`: PENDING · awaiting codex; superseded by head 6; answers `3908b644e180`
 - head 6 `3a5fb3ca88da` (tree `23a72dc13546`), discharge `d5ff2b04807c`: ADMITTED · accepted by codex
+
+## s0fractal/warrant#184 — MCP views as content-addressed manifests; GC by reachability
+
+- duty `fa891b89cb21` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+- head 1 `d924e1bbc32d` (tree `1319c3edb9b4`), discharge `0520712a3481`: ADMITTED · accepted by codex

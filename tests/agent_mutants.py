@@ -33,8 +33,8 @@ MUTANTS = [
        "    trust_bytes, profile = ws.trust_bytes(), dict(ws.profile(), challengers=[\"auditor\"])")],
      "agent_handoff_test", ["V05"]),
     ("A05", "api.py", "a read of a view re-assesses the live store",
-     [("    meta, report, vdir = views.load(ws, req[\"view_token\"])\n",
-       "    meta, report, vdir = views.load(ws, req[\"view_token\"])\n"
+     [("    meta, report, view = views.load(ws, req[\"view_token\"])\n",
+       "    meta, report, view = views.load(ws, req[\"view_token\"])\n"
        "    meta, report, _ = views.load(ws, views.capture(ws)[\"token\"])\n")],
      "agent_handoff_test", ["V01"]),
     ("A06", "api.py", "truncation is not marked",
@@ -150,7 +150,7 @@ MUTANTS = [
      [('        shapes = [(r["kind"], r["id"]) for r in req["manifest"]["roots"]]\n', "        shapes = []\n")],
      "agent_mcp_test", ["M11"]),
     ("A48", "api.py", "the boundary counts invalid records but does not name them",
-     [('[_invalid(ws, meta, i, w) for i, w in sorted(report["invalid_records"].items())][:20]', "[]")],
+     [('[_invalid(view, i, w) for i, w in sorted(report["invalid_records"].items())][:20]', "[]")],
      "agent_mcp_test", ["M11"]),
     ("A49", "api.py", "a package in one piece drops its declaration",
      [('payload=pkg["payload"], **({"declaration": pkg["declaration"]} if "declaration" in pkg else {}))',
@@ -169,9 +169,9 @@ MUTANTS = [
        'same_normal_form=seg.get("outcome") == "NORMAL_FORM")')], "agent_compute_test", ["S12"]),
     # A54-A56 restore the unguarded reads of stored record bytes of 7a56a56 (Codex P2 on PR #167)
     ("A54", "api.py", "an invalid record's bytes are read as a record (as at 7a56a56)",
-     [('        rec = _record_shape((ws.state / "views" / meta["token"] / "records" / f"{rid}.json").read_bytes())\n',
-       '        rec = C.loads((ws.state / "views" / meta["token"] / "records" / f"{rid}.json").read_bytes())["record"]\n'
-       '        rec.get("type")\n')],
+     [('    rec = None if data is None else _record_shape(data)\n',
+       '    rec = None if data is None else C.loads(data)["record"]\n'
+       '    rec.get("type")\n')],
      "agent_mcp_test", ["M15"]),
     ("A55", "api.py", "the workspace index reads every stored record, authentic or not (as at 7a56a56)",
      [("    for rid, rec in good.items():\n",
@@ -180,7 +180,7 @@ MUTANTS = [
      "agent_mcp_test", ["M15"]),
     ("A56", "api.py", "a target's record type is read from bytes that are not a record",
      [('    rtype = rec["type"] if rec else "unreadable"\n',
-       '    rtype = C.loads(p.read_bytes())["record"].get("type", "unreadable")\n')],
+       '    rtype = C.loads(data)["record"].get("type", "unreadable")\n')],
      "agent_mcp_test", ["M15"]),
     # W5: the actor id of SPEC §3 in the agent's configuration and requests
     ("A36", "config.py", "the configured signer need not be an actor id",
@@ -209,8 +209,8 @@ MUTANTS = [
     ("A63", "api.py", "bytes read from a view are not marked as untrusted data",
      [('            "untrusted_data": True}\n', '            "untrusted_data": False}\n')], "agent_handoff_test", ["V07"]),
     ("A64", "views.py", "a view whose assessment failed is kept",
-     [("    except AgentError:\n        shutil.rmtree(vdir, ignore_errors=True)\n        raise\n",
-       "    except AgentError:\n        raise\n")], "agent_handoff_test", ["V08"]),
+     [("        except AgentError:\n            shutil.rmtree(vdir, ignore_errors=True)\n            raise\n",
+       "        except AgentError:\n            raise\n")], "agent_handoff_test", ["V08"]),
     ("A66", "views.py", "a view never expires",
      [('    if meta["expires"] is None or time.time() >= meta["expires"]:\n', '    if meta["expires"] is None:\n')],
      "agent_handoff_test", ["V03"]),
@@ -242,8 +242,8 @@ MUTANTS = [
      [('        out = provider.call(op, args, blobs, timeout=ws.limits["provider_seconds"])\n',
        "        out = provider.call(op, args, blobs)\n")], "agent_compute_test", ["S07"]),
     ("A78", "drafts.py", "a challenge of a closure the use already holds (CHALLENGED) is refused: a use gate on recording",
-     [("    full = _accept_body(vdir, body) if rtype == \"accept\" else fill(rtype, body)\n",
-       "    full = _accept_body(vdir, body) if rtype == \"accept\" else fill(rtype, body)\n"
+     [("    full = _accept_body(view, body) if rtype == \"accept\" else fill(rtype, body)\n",
+       "    full = _accept_body(view, body) if rtype == \"accept\" else fill(rtype, body)\n"
        "    from warrant import engine as _E\n"
        "    if rtype == \"challenge\" and any(_E.reliance(report, did, next(iter(ws.uses)))[\"state\"] == \"CHALLENGED\"\n"
        "                                     for did, d in report[\"duties\"].items() for c in d[\"candidates\"]\n"
@@ -255,8 +255,9 @@ MUTANTS = [
        '"source_completeness": "COMPLETE" if relation == "MATCH_EXPECTED_SET" else "UNATTESTED", "reasons": reasons}')],
      "agent_handoff_test", ["H01"]),
     ("A80", "cli.py", "the command line rewrites a request before the backend sees it",
-     [("        out = api.call(cfg, a.operation, req)\n",
-       '        out = api.call(cfg, a.operation, dict(req, request_id="cli") if a.operation == "prepare" else req)\n')],
+     [("            out = api.call(cfg, a.operation, _request(a.request))\n",
+       "            req = _request(a.request)\n"
+       '            out = api.call(cfg, a.operation, dict(req, request_id="cli") if a.operation == "prepare" else req)\n')],
      "agent_mcp_test", ["M01"]),
     ("A81", "mcp_server.py", "an MCP `targets` left out is sent as null instead of being left out of the request",
      [("    return {k: v for k, v in kw.items() if v is not None}\n",
@@ -363,6 +364,63 @@ MUTANTS = [
      "agent_repo_test", ["Q03"]),
     ("A103", "api.py", "a context page read later forgets the context's scope",
      [('req.get("cursor"), max_bytes, ctx.get("scope"))', 'req.get("cursor"), max_bytes, None)')], "agent_repo_test", ["Q03"]),
+    # Views as manifests over a content-addressed object store; collection by reachability (tests/agent_views_test.py)
+    ("A114", "objects.py", "a read of an object does not hash what it read",
+     [('        if name_of(data) != name:\n            raise Unreadable(name, "damaged',
+       '        if False:\n            raise Unreadable(name, "damaged')], "agent_views_test", ["J02"]),
+    ("A115", "views.py", "a view reads a record from the live store",
+     [("        return None if name is None else self._get(name)\n",
+       '        return None if name is None else (self.ws.store / "records" / f"{rid}.json").read_bytes()\n')],
+     "agent_views_test", ["J01"]),
+    ("A116", "views.py", "an absent or damaged pinned object is read from the live store instead",
+     [('            return objects_of(self.ws).get(name)\n        except O.Unreadable as e:\n'
+       '            raise damaged(e, self.meta["expires"]) from None\n',
+       '            return objects_of(self.ws).get(name)\n        except O.Unreadable:\n'
+       '            return (self.ws.store / "blobs" / name).read_bytes()\n')], "agent_views_test", ["J03"]),
+    ("A117", "objects.py", "bytes under a name that do not hash to it are kept, not replaced",
+     [("            if existing is not None:\n"
+       "                # bytes under this name that do not hash to it: damage, replaced by the bytes that do\n"
+       "                os.replace(tmp, p)\n",
+       "            if existing is not None:\n                os.unlink(tmp)\n")], "agent_views_test", ["J04"]),
+    ("A118", "views.py", "a capture writes and pins its objects without the lock",
+     [("    with objs.lock(exclusive=False):\n", '    with __import__("contextlib").nullcontext(True):\n')],
+     "agent_views_test", ["J08"]),
+    ("A119", "views.py", "a collection marks a view's manifest but not the records and blobs its tree names",
+     [(',\n                    *tree["records"].values(), *tree["blobs"]}', "}")], "agent_views_test", ["J05"]),
+    ("A120", "views.py", "a collection keeps expired views",
+     [('        if meta["expires"] is None or now >= meta["expires"]:\n            return "expired", set()\n', "")],
+     "agent_views_test", ["J05"]),
+    ("A121", "views.py", "a view directory a capture left unfinished is kept as live",
+     [('            return "unfinished", set()', '            return "live", set()')], "agent_views_test", ["J07"]),
+    ("A122", "views.py", "the collection at a capture runs whenever the lock is free, whatever gc_interval says",
+     [("    return collect(ws, wait=False) if time.time() - last >= interval else None",
+       "    return collect(ws, wait=False)")], "agent_views_test", ["J09"]),
+    ("A123", "views.py", "the collection at a capture waits for the lock",
+     [("    return collect(ws, wait=False) if", "    return collect(ws, wait=True) if")], "agent_views_test", ["J09"]),
+    ("A124", "views.py", "a pinned object a collection took after expiry reads as damage, not expiry",
+     [("    if expires is not None and time.time() >= expires:\n", "    if False:\n")], "agent_views_test", ["J10"]),
+    ("A125", "views.py", "a manifest of another view is read under this token",
+     [('        if meta.get("view") != VIEW or meta.get("token") != token:\n', '        if meta.get("view") != VIEW:\n')],
+     "agent_views_test", ["J02"]),
+    ("A126", "views.py", "damage the worker finds is NO_ASSESSMENT, not VIEW_DAMAGED",
+     [('    if (vdir / "damaged.json").is_file():\n', "    if False:\n")], "agent_views_test", ["J02"]),
+    ("A127", "views.py", "a view written before manifests is unknown, not read until it expires",
+     [("        meta = _legacy(vdir)\n        if meta is None:\n", "        meta = None\n        if meta is None:\n")],
+     "agent_views_test", ["J12"]),
+    ("A128", "views.py", "the store's misfiled files are left out of a view's tree",
+     [('"misfiled": sorted(misfiled)}', '"misfiled": []}')], "agent_views_test", ["J13"]),
+    ("A129", "cli.py", "gc --dry-run removes",
+     [("views.collect(cfg.workspace(n), dry_run=a.dry_run)", "views.collect(cfg.workspace(n), dry_run=False)")],
+     "agent_views_test", ["J14"]),
+    # The objects' snapshot (objects.snapshot) and the engine (Snapshot.admit) both admit the limits: removing either
+    # alone is equivalent in outcome (the other refuses), so the mutant takes the workspace's limits from both.
+    ("A130", "_assess_worker.py", "the worker assesses the pinned snapshot under no workspace limit",
+     [('        snap = objs.snapshot(objs.get_doc(meta["tree"]), meta["limits"])\n',
+       '        snap = objs.snapshot(objs.get_doc(meta["tree"]), None)\n'),
+      ('replay_cache=meta.get("replay_cache"), limits=meta["limits"],', 'replay_cache=meta.get("replay_cache"), limits=None,')],
+     "agent_views_test", ["J16"]),
+    ("A131", "views.py", "each view writes a tree of its own, so views of an unchanged store share no tree",
+     [('"misfiled": sorted(misfiled)}', '"misfiled": sorted(misfiled), "view": token}')], "agent_views_test", ["J15"]),
 ]
 
 

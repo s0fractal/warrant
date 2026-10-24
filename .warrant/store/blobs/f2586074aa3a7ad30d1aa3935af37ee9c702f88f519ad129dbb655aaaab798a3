@@ -1,0 +1,1 @@
+A collection removes every view that has expired or that a capture left without `view.json`, then every object no live view pins; a collected view's token is `VIEW_UNKNOWN`.

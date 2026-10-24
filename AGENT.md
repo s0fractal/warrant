@@ -37,7 +37,7 @@ MCP. `agent_api` is the interface version; it is not Warrant `"2"`, not
    "uses": {"continue": {"delivery": ["MATCH_EXPECTED_SET", "LOCAL_CAPTURE"], "reliance": ["ELIGIBLE"], "fresh": true},
             "import": {"delivery": ["MATCH_EXPECTED_SET"]}},
    "limits": {"context_bytes": 16384, "transfer_bytes": 16777216, "assess_seconds": 120,
-              "provider_seconds": 600, "read_bytes": 65536, "view_ttl": 86400,
+              "provider_seconds": 600, "read_bytes": 65536, "view_ttl": 86400, "gc_interval": 3600,
               "snapshot_records": 100000, "snapshot_blobs": 100000, "snapshot_bytes": 1073741824,
               "requires_edges": 1000000, "duty_periods": 10000, "report_periods": 100000},
    "operations": ["context", "read", "handoff", "prepare", "commit", "compute"]}}}
@@ -117,7 +117,7 @@ The paths checked before the first write are the configuration, its directory,
 the state directory (given or the default `<config>-state`),
 `<state>/<workspace>`, its `profile.json`, the directories the server creates
 under it (`views`, `staging`, `imports`, `drafts`, `requests`, `exports`) and the
-ones the views and the store create (`verdicts`, `replay-cache`): each by its
+ones the views and the store create (`verdicts`, `replay-cache`, `objects`): each by its
 real path (in the home directory, outside the repository), with no symlink on it
 below the home directory. They are then created and written by descriptors
 opened from the home directory one component at a time with `O_NOFOLLOW`, so a
@@ -300,9 +300,69 @@ the SDK client):
 | `tests/agent_compute_test.py` | S01 end to end, exact acceptance retry/restart, S02-S04 negatives, S07, S08, S10, S11 (a contradicted receipt closes nothing; both capsules say why), S12 (evaluate) |
 | `tests/agent_mcp_test.py` | M01-M05, cancellation, M06-M16 (overview, targets, closures, defaults, export roots, package inspect, read without a view, prepare defaults, explain, malformed stored records, every word a result carries has an explain entry) |
 | `tests/agent_repo_test.py` | I01-I26 (`init`; I12-I19 symlinks, AMEND 1; I20-I26 collisions, AMEND 2), T01-T05 (a repository's trust; a symlinked state tree; a key in the state), B01-B04 (`blobs`), Q03 (`scope`), Q01 (the roadmap recipe files the bytes `roadmap.py` files), Q02 (the recipe through the stdio server, DISCHARGED in ROADMAP.md) |
-| `tests/agent_mutants.py` | A01-A64, A66-A113, each killed on its named case; the SPEC §10 claims cite them |
+| `tests/agent_views_test.py` | J01-J16 (views as manifests: frozen after store changes, damaged and absent objects refused, repair; collection: what a live view pins is kept, expiry, unfinished captures, the race with a capture, `gc_interval`, workspaces, full-copy views of an earlier version, `warrant-agent gc`) |
+| `tests/agent_mutants.py` | A01-A64, A66-A131, each killed on its named case; the SPEC §10 claims cite them |
 | `examples/mcp-first-contact/` | fresh headless agents on three tasks, frozen scorer, round 1 vs round 2 |
 | `examples/agent/acceptance.py --door python\|cli\|mcp` | the end-to-end run, from installed wheels outside the checkout |
+
+## Where a view's bytes live, and `gc`
+
+A view pins every byte it answers from (SPEC §10.2). Since 2026-10-24 those
+bytes live once per workspace, in `<state>/<workspace>/objects/<2 hex>/<62 hex>`,
+each under the SHA-256 of its bytes: record envelopes, blobs, provider modules,
+and each view's tree (record id → envelope hash, blob hashes, the store's
+misfiled entries), report body and manifest. `views/<token>/view.json` names the
+manifest; `context.json` beside it is what the call that made the view asked for.
+Views of an unchanged store share every object but their manifests, and an
+object is added, never changed: every read hashes what it read, and a pinned
+object that is absent or damaged is `VIEW_DAMAGED`, never read from the store
+instead. A new `context` writes damaged or absent objects back, so a damaged view
+token answers again after one.
+
+Measured on a copy of this repository's store (1507 records, 1312 blobs,
+6.2 MB), 45 `context` calls:
+
+| | master 7b4c79f (full copies) | manifests |
+| --- | --- | --- |
+| files under the workspace's state | 127 128 | 2 964 |
+| bytes on disk | 756 MB | 18 MB |
+| per view | 2 825 files, 16.8 MB | 3 files, 12 KB |
+| `context` (median; first) | 1.12 s; 1.25 s | 0.65 s; 2.3 s (writes every object) |
+
+Nothing removes an object by itself except a **collection**: it removes every
+view that has expired or that a capture left without `view.json`, then every
+object no live view pins. It runs:
+
+- at the end of a capture, when the last collection is older than the
+  workspace's `gc_interval` (seconds, default 3600; 0 never), only if no
+  capture or collection holds the lock: it never waits;
+- by the operator:
+
+```
+warrant-agent --config CONFIG.json gc [--workspace NAME] [--dry-run]
+```
+
+`gc` waits for every capture in flight, then prints, per workspace, the views
+by state (`live`, `expired`, `unfinished`, `unreadable`) and the objects kept
+and removed; `--dry-run` removes nothing. A capture holds `objects/lock` shared
+from its first object to its `view.json`, a collection exclusively: a
+collection never removes an object a capture is pinning. Readers take no lock:
+a live view's objects are always kept, and a view loaded just before it expired
+whose objects were collected answers `VIEW_EXPIRED`; its token is then
+`VIEW_UNKNOWN`.
+
+A collection reads no root outside `views/` and touches nothing outside
+`views/` and `objects/`: drafts carry their record and blobs, staging its
+received bytes, an export record its package, an import journal its status, so
+a draft or a staged import whose view was collected still commits or completes.
+The store is never touched. Each workspace has its own object store and lock;
+two workspaces over one store hold two copies of its bytes.
+
+A view directory written before 2026-10-24 (a full copy: `meta.json`,
+`report.json`, `records/`, `blobs/`, `provider/`) still answers as before
+until it expires (its own `expires`, fixed when it was made); a collection then
+removes it. Nothing is converted. To reclaim their space at once, remove
+`views/` while no server runs: every token in it becomes `VIEW_UNKNOWN`.
 
 ## Measured cost of the provider (2026-10-19)
 
