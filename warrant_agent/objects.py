@@ -16,7 +16,6 @@ import fcntl
 import hashlib
 import json
 import os
-import re
 import secrets
 from pathlib import Path
 
@@ -24,8 +23,6 @@ from warrant import limits as L
 from warrant import shapes as S
 from warrant.store import Snapshot
 
-NAME = S.HEX64
-FANOUT = re.compile(r"^[0-9a-f]{2}\Z")
 LOCK, LAST = "lock", "gc.json"
 TMP = ".tmp-"
 
@@ -52,17 +49,16 @@ class Objects:
         self.root = Path(root)
 
     def path(self, name):
-        if not (isinstance(name, str) and NAME.match(name)):
+        """The path of `name`: a full object name (shapes.hex64) whose real path is exactly
+        <root>/<2 hex>/<62 hex>, inside the store's real root with no symlink below it."""
+        if not S.hex64(name):
             raise Unreadable(name, "not an object name")
-        return self.root / name[:2] / name[2:]
-
-    def _fanout(self, name, create):
-        d = self.root / name[:2]
-        if os.path.islink(d):
-            raise Unreadable(name, "under a symlinked directory")
-        if create:
-            d.mkdir(parents=True, exist_ok=True)
-        return d
+        base = os.path.realpath(self.root)
+        want = os.path.join(base, name[:2], name[2:])
+        real = os.path.realpath(want)
+        if not (real.startswith(base + os.sep) and real == want):
+            raise Unreadable(name, "not a plain file path under the object store")
+        return Path(real)
 
     def _read(self, p, name):
         try:
@@ -81,7 +77,8 @@ class Objects:
         data = bytes(data)
         name = name_of(data)
         p = self.path(name)
-        d = self._fanout(name, create=True)
+        d = p.parent
+        d.mkdir(parents=True, exist_ok=True)
         for _ in range(3):
             existing = self._read(p, name)
             if existing == data:
@@ -107,7 +104,6 @@ class Objects:
     def get(self, name):
         """The bytes of `name`, hashed on this read; Unreadable if absent or damaged."""
         p = self.path(name)
-        self._fanout(name, create=False)
         data = self._read(p, name)
         if data is None:
             raise Unreadable(name, "absent")
@@ -165,8 +161,8 @@ class Objects:
     def names(self):
         """(object name, path) of every file under a fan-out directory, temporaries included (name None)."""
         for d in sorted(self.root.iterdir()) if self.root.is_dir() else ():
-            if not (FANOUT.match(d.name) and d.is_dir() and not d.is_symlink()):
+            if not (S.hex_of(d.name, 2) and d.is_dir() and not d.is_symlink()):
                 continue
             for f in sorted(d.iterdir()):
                 full = d.name + f.name
-                yield (full if NAME.match(full) else None), f
+                yield (full if S.hex64(full) else None), f

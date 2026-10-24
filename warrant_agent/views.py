@@ -107,6 +107,7 @@ def incomplete_imports(ws):
 
 
 VIEW = "warrant-agent/view@1"      # a manifest's format: the view it pins, by object names
+VIEW_FILE = "view.json"             # views/<token>/view.json: {"manifest": the manifest's object name}
 LEGACY = "a full copy"              # a view written before views were manifests (still read until it expires)
 
 
@@ -180,7 +181,7 @@ def capture(ws, extra=None, delivery=None, as_of=None):
             meta["expires"] = math.ceil(time.time()) + int(ws.limits["view_ttl"])
             body = {k: v for k, v in report.items() if k not in REPORT_OWN}
             meta["report"] = {"body": objs.put(O.doc_bytes(body)), **{k: report[k] for k in REPORT_OWN}}
-            write_json(vdir / "view.json", {"manifest": objs.put(O.doc_bytes(meta))})
+            write_json(vdir / VIEW_FILE, {"manifest": objs.put(O.doc_bytes(meta))})
         except AgentError:
             shutil.rmtree(vdir, ignore_errors=True)
             raise
@@ -285,8 +286,8 @@ def load(ws, token):
     need(isinstance(token, str) and TOKEN.match(token) is not None, "VIEW_UNKNOWN", "not a view token")
     vdir = ws.state / "views" / token
     unknown = AgentError("VIEW_UNKNOWN", "no such view in this workspace; open a new context")
-    if (vdir / "view.json").is_file():
-        name = read_json(vdir / "view.json").get("manifest")
+    if (vdir / VIEW_FILE).is_file():
+        name = read_json(vdir / VIEW_FILE).get("manifest")
         try:
             meta = objects_of(ws).get_doc(name)
         except O.Unreadable as e:
@@ -317,13 +318,13 @@ def _reach(ws, objs, vdir, now, trees):
     `expired`, `unreadable` (its manifest, tree or report body cannot be read as itself) or
     `unfinished` (no view.json: a capture that is not in flight, since the caller holds the
     lock exclusively). A view written before manifests is `live` with no objects, or `expired`."""
-    if not (vdir / "view.json").is_file():
+    if not (vdir / VIEW_FILE).is_file():
         legacy = _legacy(vdir)
         if legacy is None:
             return "unfinished", set()
         return ("live" if legacy["expires"] is not None and now < legacy["expires"] else "expired"), set()
     try:
-        name = read_json(vdir / "view.json").get("manifest")
+        name = read_json(vdir / VIEW_FILE).get("manifest")
         meta = objs.get_doc(name)
         if meta.get("token") != vdir.name or meta.get("workspace") != ws.name:
             return "unreadable", set()
@@ -339,6 +340,37 @@ def _reach(ws, objs, vdir, now, trees):
                     *tree["records"].values(), *tree["blobs"]}
 
 
+def _mark(ws, objs, now):
+    """({state: count}, every object name a live view pins, the view directories to remove)."""
+    views, marked, trees, gone = {}, set(), {}, []
+    for vdir in sorted((ws.state / "views").iterdir()):
+        if not (TOKEN.match(vdir.name) and vdir.is_dir() and not vdir.is_symlink()):
+            continue                    # not a view: not this collection's to judge
+        state, names = _reach(ws, objs, vdir, now, trees)
+        views[state] = views.get(state, 0) + 1
+        if state == "live":
+            marked |= names
+        else:
+            gone.append(vdir)
+    return views, marked, gone
+
+
+def _sweep(objs, marked, dry_run):
+    """(kept, removed, bytes removed): every object no live view pins, and writers' temporaries."""
+    removed, freed, kept = 0, 0, 0
+    for name, path in objs.names():
+        if name is not None and name in marked:
+            kept += 1
+            continue
+        if name is None and not path.name.startswith(O.TMP):
+            continue                    # not an object or a writer's temporary: left as found
+        removed += 1
+        freed += path.lstat().st_size
+        if not dry_run:
+            path.unlink()
+    return kept, removed, freed
+
+
 def collect(ws, dry_run=False, wait=True):
     """Mark and sweep the workspace's views and objects under the exclusive lock: remove every view
     directory that is expired, unreadable or unfinished, then every object no live view pins.
@@ -350,27 +382,8 @@ def collect(ws, dry_run=False, wait=True):
         if not held:
             return None
         now = time.time()
-        views, marked, trees, gone = {}, set(), {}, []
-        for vdir in sorted((ws.state / "views").iterdir()):
-            if not (TOKEN.match(vdir.name) and vdir.is_dir() and not vdir.is_symlink()):
-                continue                    # not a view: not this collection's to judge
-            state, names = _reach(ws, objs, vdir, now, trees)
-            views[state] = views.get(state, 0) + 1
-            if state == "live":
-                marked |= names
-            else:
-                gone.append(vdir)
-        removed, freed, kept = 0, 0, 0
-        for name, path in list(objs.names()):
-            if name is not None and name in marked:
-                kept += 1
-                continue
-            if name is None and not path.name.startswith(O.TMP):
-                continue                    # not an object or a writer's temporary: left as found
-            removed += 1
-            freed += path.lstat().st_size
-            if not dry_run:
-                path.unlink()
+        views, marked, gone = _mark(ws, objs, now)
+        kept, removed, freed = _sweep(objs, marked, dry_run)
         if not dry_run:
             for vdir in gone:
                 shutil.rmtree(vdir)
