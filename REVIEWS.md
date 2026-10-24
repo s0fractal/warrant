@@ -18,6 +18,7 @@ duty stays as the records leave it.
 | #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
 | #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
+| #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -51,3 +52,10 @@ None.
     - where: .warrant/store/records/8449a1d635f3433496d584fae7abe2cf272c4f5075688b25f97816c6c7b83cf2.json:1
     - answered by head 2
 - head 2 `4c6229d75be0` (tree `728b65442e48`), discharge `de297427e560`: ADMITTED · accepted by codex; answers `3e11e8489fcd`
+
+## s0fractal/warrant#188 — G9 from Codex's proof-space roadmap: goal, 11 obligations, goal --source credit
+
+- duty `c604537d318e` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+- head 1 `03424bef12e5` (tree `05e8efd180c2`), discharge `ba001e0d52e8`: PENDING · awaiting codex; superseded by head 2
+- head 2 `18aada2aa6fb` (tree `43c3f5614fea`), discharge `23be3f7db84e`: PENDING · awaiting codex; superseded by head 3
+- head 3 `358eb8df4f35` (tree `a22878a31c6a`), discharge `92df3b7fc6d4`: ADMITTED · accepted by codex
