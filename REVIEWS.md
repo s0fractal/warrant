@@ -17,6 +17,7 @@ duty stays as the records leave it.
 | --- | --- | --- | --- | --- | --- | --- |
 | #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
 | #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
+| #186 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -41,3 +42,8 @@ None.
 
 - duty `fa891b89cb21` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `d924e1bbc32d` (tree `1319c3edb9b4`), discharge `0520712a3481`: ADMITTED · accepted by codex
+
+## s0fractal/warrant#186 — Roadmap after the Forward Attack marks: G4 met, G6 and G7 decomposed further
+
+- duty `3a08c2b419d9` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- head 1 `73f54ac506b5` (tree `4c5e34bcdb38`), discharge `0847fdeab859`: PENDING · awaiting codex
