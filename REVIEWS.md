@@ -21,7 +21,7 @@ duty stays as the records leave it.
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
-| #191 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
+| #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -89,5 +89,5 @@ None.
 
 ## s0fractal/warrant#191 — ROADMAP.md: each duty in full once per goal; a goal opened again unchanged is REOPENED
 
-- duty `bf4fbc49b379` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
-- head 1 `2dcc5ba23ae6` (tree `33855071fbe7`), discharge `9d4277b4270b`: PENDING · awaiting codex
+- duty `bf4fbc49b379` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+- head 1 `2dcc5ba23ae6` (tree `33855071fbe7`), discharge `9d4277b4270b`: ADMITTED · accepted by codex
