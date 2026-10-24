@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Merge eligibility and due-for-review (tools/claimslib/eligibility.py) and the gate's GitHub side
-(tools/claimslib/gate.py), G1-G32. Each refusal case asserts the exact set of refusal codes, so a
+(tools/claimslib/gate.py), G1-G33. Each refusal case asserts the exact set of refusal codes, so a
 mutant that removes one rule is seen by its code disappearing (a later rule catching the same case
 does not hide it). Three fixture worlds are built once; each case works on its own branch from a
 world's commit.
@@ -235,8 +235,8 @@ def check_and_hold_cases(f):
 class FakeGh:
     """`gh api` for GitHub.run: records each call; the pull request's head is `head`, or another when `moved`."""
 
-    def __init__(self, head, base, moved=False):
-        self.calls, self.head, self.base, self.moved = [], head, base, moved
+    def __init__(self, head, base, moved=False, now=None):
+        self.calls, self.head, self.base, self.moved, self.now = [], head, base, moved, now or {}
 
     def __call__(self, cmd, input=None, capture_output=True, check=False):
         path = next(x for x in cmd if x.startswith("repos/"))
@@ -244,7 +244,7 @@ class FakeGh:
         self.calls.append((method, path, json.loads(input) if input else None))
         if path.endswith("/pulls/1") and method == "GET":
             out = {"number": 1, "state": "open", "draft": False, "base": {"ref": "master"},
-                   "head": {"sha": "f" * 40 if self.moved else self.head}, "labels": []}
+                   "head": {"sha": "f" * 40 if self.moved else self.head}, "labels": [], **self.now}
         elif "/branches/" in path:
             out = {"commit": {"sha": self.base}}
         elif path.endswith("/merge"):
@@ -273,6 +273,15 @@ def merge_cases(f):
     m2 = GT.merge_one(b, a, GT.GitHub("s0fractal/warrant", run=moved))
     check("G24", not m2["merged"] and not [c for c in moved.calls if c[0] == "PUT"],
           "a head that moved since the assessment is not merged", (m2, moved.calls))
+    late = {}
+    for name, now in (("base", {"base": {"ref": "release"}}), ("hold", {"labels": [{"name": "hold"}]}),
+                      ("draft", {"draft": True}), ("closed", {"state": "closed"})):
+        fake = FakeGh(f.tip, f.base_commit, now=now)
+        m3 = GT.merge_one(b, a, GT.GitHub("s0fractal/warrant", run=fake))
+        late[name] = (m3["merged"], len([c for c in fake.calls if c[0] == "PUT"]))
+    check("G33", late == {k: (False, 0) for k in ("base", "hold", "draft", "closed")},
+          "a pull request retargeted, held, drafted or closed after the assessment, at the same head, is not merged "
+          "(Codex finding 190c1c64418f on 17ea066)", late)
 
 
 if __name__ == "__main__":

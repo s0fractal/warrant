@@ -1518,7 +1518,7 @@ def _visit(view, did, report, done, busy):
      [('    if b.gate["hold_label"] in pr["labels"]:', '    if False:')],
      'review_gate_test', ['G20']),
     ('M547', '../tools/claimslib/eligibility.py', 'the global hold holds nothing',
-     [('    if hold:\n        a.reasons.append(("GATE_HOLD"', '    if False:\n        a.reasons.append(("GATE_HOLD"')],
+     [('    if hold:\n        out.append(("GATE_HOLD"', '    if False:\n        out.append(("GATE_HOLD"')],
      'review_gate_test', ['G21']),
     ('M548', '../tools/claimslib/eligibility.py', "the accepted commit need not be in the head's history",
      [('    if not is_ancestor(root, x, head):', '    if False:')],
@@ -1530,7 +1530,7 @@ def _visit(view, did, report, done, busy):
      [('{"sha": _sha(sha), "merge_method": "merge",', '{"merge_method": "merge",')],
      'review_gate_test', ['G23']),
     ('M551', '../tools/claimslib/gate.py', 'a head that moved after the assessment is merged',
-     [('    if now["state"] != "open" or now["head"] != head:', '    if now["state"] != "open":')],
+     [('    if now["head"] != head:', '    if False:')],
      'review_gate_test', ['G24']),
     ('M552', '../tools/claimslib/gate.py', 'no workflow is dispatched on the base after a merge (master CI would not run)',
      [('    for w in sorted({c["workflow"] for c in b.gate["required"]}):', '    for w in []:')],
@@ -1562,6 +1562,9 @@ def _visit(view, did, report, done, busy):
     ('M561', '../tools/claimslib/eligibility.py', "the pull request's own review records added after X count as unreviewed",
      [('    return sorted(r for r in added if r not in mine\n                  and (', '    return sorted(r for r in added if True\n                  and (')],
      'review_gate_test', ['G3']),
+    ('M562', '../tools/claimslib/gate.py', "the pull request read again before the merge is not held to the predicate's own rules",
+     [('    changed = EL.pr_reasons(b, now)', '    changed = []')],
+     'review_gate_test', ['G33']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

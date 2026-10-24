@@ -50,7 +50,9 @@ replaced it.
   an actor of `accept_by` who is neither the author nor the filer, no finding against it, and the
   required checks green at the head, each bound to its workflow file.
 - `.github/workflows/merge-on-acceptance.yml` runs only the base branch's code and merges at most
-  one eligible pull request per run, with a merge commit bound to the head it assessed, then
+  one eligible pull request per run, with a merge commit bound to the head it assessed (the pull
+  request read again just before must still pass the predicate's pull request rules: no hold label,
+  open, not a draft, into master; Codex finding 190c1c64418f), then
   dispatches `ci.yml` and `x1-cross-repo.yml` on master (a `GITHUB_TOKEN` merge starts no push
   workflow). Every refusal reason goes into the job summary. Holds: the label `hold`, the
   repository variable `WARRANT_MERGE_GATE=hold`, disabling the workflow.
@@ -61,7 +63,7 @@ replaced it.
   `codex exec` once per pull request head that is due, in its own detached worktree of a mirror
   (never the operator's checkout), retrying a failed wake with a doubling backoff, three attempts in
   all. `install.py` installs it.
-- `tests/review_gate_test.py` G1-G32; mutants M534-M561; `integrations/codex-plugin/test_plugin.py`
+- `tests/review_gate_test.py` G1-G33; mutants M534-M562; `integrations/codex-plugin/test_plugin.py`
   C1-C12 (CI, examples job).
 - The retired autonomy envelope (`history/AUTONOMY-ENVELOPE-0.1-RETIREMENT.md` at the tag
   `history/warrant-0.x-2026-10-18`) never merged anything: its actor needed the branch-protection

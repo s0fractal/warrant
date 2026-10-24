@@ -359,24 +359,37 @@ def assess(root, base, pr, checks, hold=False):
         a.shared.append(("BASE_CONFIG", str(e)))
         a.reasons += a.shared
         return a
-    if hold:
-        a.reasons.append(("GATE_HOLD", "the repository variable WARRANT_MERGE_GATE is hold"))
-    if b.gate["hold_label"] in pr["labels"]:
-        a.reasons.append(("PR_HOLD", f"#{pr['number']} carries the label {b.gate['hold_label']!r}"))
+    reasons = pr_reasons(b, pr, hold)
+    a.reasons += [r for r in reasons if r[0] in HOLDS]
+    a.shared += [r for r in reasons if r[0] not in HOLDS]
     _shared(a, root, b, pr, checks)
     a.reasons += a.shared
     return a
 
 
+HOLDS = ("GATE_HOLD", "PR_HOLD")          # refusals of a merge only; the rest of pr_reasons refuse both verdicts
+
+
+def pr_reasons(b, pr, hold=False):
+    """[(code, detail)] of the pull request's own state as GitHub reports it: the holds, open, not a draft,
+    into the base branch. The gate applies it again to the pull request it reads just before merging."""
+    out = []
+    if hold:
+        out.append(("GATE_HOLD", "the repository variable WARRANT_MERGE_GATE is hold"))
+    if b.gate["hold_label"] in pr["labels"]:
+        out.append(("PR_HOLD", f"#{pr['number']} carries the label {b.gate['hold_label']!r}"))
+    if pr["state"] != "open":
+        out.append(("PR_NOT_OPEN", f"#{pr['number']} is {pr['state']}"))
+    if pr["draft"]:
+        out.append(("PR_DRAFT", f"#{pr['number']} is a draft"))
+    if pr["base"] != b.gate["base"]:
+        out.append(("PR_BASE", f"#{pr['number']} is into {pr['base']}, not {b.gate['base']}"))
+    return out
+
+
 def _shared(a, root, b, pr, checks):
     """The facts and refusals both verdicts share, then the review's own (_review)."""
     sh = a.shared
-    if pr["state"] != "open":
-        sh.append(("PR_NOT_OPEN", f"#{pr['number']} is {pr['state']}"))
-    if pr["draft"]:
-        sh.append(("PR_DRAFT", f"#{pr['number']} is a draft"))
-    if pr["base"] != b.gate["base"]:
-        sh.append(("PR_BASE", f"#{pr['number']} is into {pr['base']}, not {b.gate['base']}"))
     head = pr["head"]
     try:
         head, _ = RV.canonical(root, head)

@@ -137,12 +137,16 @@ def survey(root, b, gh, prs=None, hold=False, remote="origin"):
 
 def merge_one(b, a, gh):
     """Merge eligible Assessment `a` at the head it assessed, after reading the pull request and the
-    base branch again; then dispatch the required workflows on the base branch. A dict of what
-    happened, for the summary."""
+    base branch again: the pull request read again must still pass the predicate's own pull request rules
+    (eligibility.pr_reasons: no hold label, open, not a draft, into the base branch) at the same head.
+    Then dispatch the required workflows on the base branch. A dict of what happened, for the summary."""
     n, head, base = a.pr["number"], a.pr["head"], a.base
     now = gh.pull(n)
-    if now["state"] != "open" or now["head"] != head:
-        return {"pr": n, "merged": False, "why": f"HEAD_MOVED: #{n} is {now['state']} at {now['head'][:12]}"}
+    changed = EL.pr_reasons(b, now)
+    if now["head"] != head:
+        changed.append(("HEAD_MOVED", f"#{n} is at {now['head'][:12]}, not the head assessed"))
+    if changed:
+        return {"pr": n, "merged": False, "why": "; ".join(f"{c}: {d}" for c, d in changed)}
     tip = gh.tip(b.gate["base"])
     if tip != base:
         return {"pr": n, "merged": False, "why": f"BASE_MOVED: {b.gate['base']} is at {tip[:12]}"}
