@@ -20,7 +20,7 @@ duty stays as the records leave it.
 | #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
-| #190 | OPEN · awaiting acceptance by codex | 2 | 0 | 0 | 0 | — |
+| #190 | OPEN · awaiting acceptance by codex | 2 | 1 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -74,3 +74,7 @@ None.
   - serves duty `47cdf978c4d3`
 - head 1 `9d7d4401008c` (tree `86260b0ab0c5`), discharge `31c1218a05f7`: PENDING · awaiting codex; superseded by head 2
 - head 2 `17ea0667232c` (tree `b7f1bbc12d4c`), discharge `1d2e45e92cdd`: PENDING · awaiting codex
+  - finding `190c1c64418f` by codex, P2, mechanical `codex_gate_race_test:RACE_BASE`: NOT_REPLAYED — Before merging, revalidate the freshly read PR base and hold label: retargeting master to release or adding hold after assessment leaves the same head, so merge_one still issues PUT /merge despite the new facts.
+    - where: tools/claimslib/gate.py:144
+    - replayed at head 2 `17ea0667232c`: NOT REPLAYED
+    - not answered
