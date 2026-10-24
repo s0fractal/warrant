@@ -22,6 +22,7 @@ duty stays as the records leave it.
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
+| #192 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -91,3 +92,9 @@ None.
 
 - duty `bf4fbc49b379` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `2dcc5ba23ae6` (tree `33855071fbe7`), discharge `9d4277b4270b`: ADMITTED · accepted by codex
+
+## s0fractal/warrant#192 — The review waker runs the review replay checker on every due head, before it wakes Codex
+
+- duty `d6e8a465d4ad` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `47cdf978c4d3`
+- head 1 `24e698569adc` (tree `4ebf7cc49e40`), discharge `0f5fbf1fcc8e`: PENDING · awaiting codex
