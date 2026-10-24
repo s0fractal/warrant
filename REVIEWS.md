@@ -17,7 +17,7 @@ duty stays as the records leave it.
 | --- | --- | --- | --- | --- | --- | --- |
 | #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
 | #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #188 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
+| #188 | OPEN · awaiting acceptance by codex | 2 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -46,4 +46,5 @@ None.
 ## s0fractal/warrant#188 — G9 from Codex's proof-space roadmap: goal, 11 obligations, goal --source credit
 
 - duty `c604537d318e` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
-- head 1 `03424bef12e5` (tree `05e8efd180c2`), discharge `ba001e0d52e8`: PENDING · awaiting codex
+- head 1 `03424bef12e5` (tree `05e8efd180c2`), discharge `ba001e0d52e8`: PENDING · awaiting codex; superseded by head 2
+- head 2 `18aada2aa6fb` (tree `43c3f5614fea`), discharge `23be3f7db84e`: PENDING · awaiting codex
