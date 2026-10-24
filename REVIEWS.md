@@ -20,6 +20,7 @@ duty stays as the records leave it.
 | #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
+| #190 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -66,3 +67,9 @@ None.
 - duty `ca58c1b8f0ee` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `cf4a49e78c2a` (tree `e51e25dc483f`), discharge `dc3bb8733197`: PENDING · awaiting codex; superseded by head 2
 - head 2 `fd345b816849` (tree `f5caa21e7198`), discharge `6e2326bf0aa8`: ADMITTED · accepted by codex
+
+## s0fractal/warrant#190 — Merge on acceptance without the owner's act; Codex wakes itself to review
+
+- duty `60897810079d` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `47cdf978c4d3`
+- head 1 `9d7d4401008c` (tree `86260b0ab0c5`), discharge `31c1218a05f7`: PENDING · awaiting codex
