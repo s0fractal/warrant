@@ -178,23 +178,44 @@ class _Dir:
 
     def read(self, name, admit):
         """The bytes of the regular file this store holds under `name` (hex64), or None: an entry that is
-        absent, not a regular file, or not inside the store's real directory (a symlink on the way) is
-        not an object of this store. `admit(size)` runs before a byte is read."""
-        base = os.path.realpath(self.root)
-        want = os.path.join(base, *self.parts(name))
-        if os.path.realpath(want) != want:
-            return None
+        absent, not a regular file (a FIFO, a directory) or reached through a symlink is not an object of
+        this store. Each component below the store's directory is opened relative to its parent's
+        descriptor without following a symlink, so the directories checked are the ones read (Codex
+        finding d8a510cd300e on #193), and the object without blocking, so a FIFO is seen as one before
+        anything waits on it (19556ffa5a1c). `admit(size)` runs before a byte is read, and again on the
+        bytes read: a file grown since fstat is admitted at its read length (971ca0938c3a)."""
         try:
-            fd = os.open(want, os.O_RDONLY | os.O_NOFOLLOW)
+            fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
         except OSError:
             return None
-        st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
-            os.close(fd)
+        obj = -1
+        try:
+            *dirs, leaf = self.parts(name)
+            for d in dirs:
+                parent, fd = fd, -1
+                try:
+                    fd = os.open(d, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                finally:
+                    os.close(parent)
+            obj = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        except OSError:
             return None
-        with os.fdopen(fd, "rb") as f:
+        finally:
+            if fd >= 0:
+                os.close(fd)
+        try:
+            st = os.fstat(obj)
+            if not stat.S_ISREG(st.st_mode):
+                return None
             admit(st.st_size)
-            return f.read(st.st_size + 1)       # a file grown since fstat reads one byte more: a digest mismatch
+            with os.fdopen(obj, "rb") as f:
+                obj = -1
+                data = f.read(st.st_size + 1)   # one byte more than fstat said: a grown file is seen as grown
+            admit(len(data))
+            return data
+        finally:
+            if obj >= 0:
+                os.close(obj)
 
 
 class BlobDir(_Dir):

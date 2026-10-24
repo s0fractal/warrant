@@ -10,11 +10,13 @@ is the target of a mutant in tests/mutants.py (K1 checks it), so CI's mutant bas
 import base64
 import importlib.util
 import json
+import multiprocessing
 import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from world import ROOT, P, World, check, finish, results
 from warrant import jcs as C
@@ -158,6 +160,32 @@ def standin(graph, leaves=()):
         admit(len(data))
         return data
     return fetch, addr
+
+
+def _fifo_worker(root, layout, name, conn):
+    conn.send(PL.Receiver([PL.LAYOUTS[layout](root)]).resolve("sigma-state:" + name))
+    conn.close()
+
+
+def fifo_resolves(layout, wait=5):
+    """outcome() of resolving a FIFO named like an object, in a child process; ("BLOCKED",) when the child has
+    not answered after `wait` seconds (it is then stopped)."""
+    root, name = Path(tempfile.mkdtemp(prefix="warrant-pilot-fifo-")), "a" * 64
+    target = root / name if layout == "blobs" else root / name[:2] / name[2:]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(target)
+    ctx = multiprocessing.get_context("fork")
+    parent, child = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_fifo_worker, args=(root, layout, name, child))
+    proc.start()
+    child.close()
+    try:
+        return outcome(parent.recv()) if parent.poll(wait) else ("BLOCKED",)
+    finally:
+        if proc.is_alive():
+            proc.terminate()
+        proc.join(5)
+        parent.close()
 
 
 def damaged():
@@ -330,6 +358,40 @@ def main():
                              ("REFUSED", "MALFORMED", f"pilot-root:{smuggle}")),
               "stores, kinds and limits come from the receiver's configuration only; an object cannot add a store", got8)
 
+    # A9 (Codex finding 19556ffa5a1c on #193, observed at 228ed32: the open blocked on a FIFO before the
+    # type check; expected MISSING): a FIFO under an object name, in either layout, is no object of that
+    # store, and the resolver returns at once. The resolver runs in a child that the case stops after.
+    with case('A9'):
+        got_a9 = [fifo_resolves(layout) for layout in ("blobs", "fanout")]
+        check("A9", got_a9 == [("INCONCLUSIVE", "MISSING", "sigma-state:" + "a" * 64)] * 2,
+              "a FIFO under an object name is no object, and nothing waits on it", got_a9)
+
+    # A10 (Codex finding d8a510cd300e on #193, observed at 228ed32: a fan-out directory replaced by a symlink
+    # between the check and the open was read through; expected MISSING, no verifier call): the
+    # replacement happens at the first open of the read, and the bytes exist only outside the store.
+    with case('A10'):
+        root = Path(tempfile.mkdtemp(prefix="warrant-pilot-swap-"))
+        store, outside = root / "store", root / "outside"
+        outside.mkdir()
+        data = PL.STATE_MAGIC + b" bytes present only outside the configured store"
+        name = C.digest(data)
+        (outside / name[2:]).write_bytes(data)
+        (store / name[:2]).mkdir(parents=True)
+        real_open, swapped, calls = os.open, [], []
+
+        def swap(path, *args, **kw):
+            if not swapped:
+                (store / name[:2]).rename(store / "was")
+                (store / name[:2]).symlink_to(outside, target_is_directory=True)
+                swapped.append(path)
+            return real_open(path, *args, **kw)
+        with mock.patch.object(PL.os, "open", side_effect=swap):
+            res = PL.Receiver([PL.FanoutDir(store)]).check("sigma-state:" + name,
+                                                           lambda r: calls.append(r) or {"verified": "stand-in"})
+        got_a10 = (len(swapped), outcome(res), calls)
+        check("A10", got_a10 == (1, ("INCONCLUSIVE", "MISSING", "sigma-state:" + name), []),
+              "a directory swapped for a symlink between check and use is never read through", got_a10)
+
     # ---------------------------------------------------------------- PS-03: the closure before verification
     # D1: branching and shared dependencies: the environment (named by the root and the receipt) and the
     # input node (named by the receipt and the environment) are read once; every object of the closure is
@@ -441,6 +503,39 @@ def main():
                                                                  f"pilot-root:{twice}", f"pilot-root:{empty}")]
         check("D8", got_d8 == [("REFUSED", "MALFORMED")] * 4,
               "an object whose dependency fields are not exactly its kind's shape is refused", got_d8)
+
+    # D9: bytes are admitted before an object is read (an object over the bound is not read at all) and
+    # again as read (Codex finding 971ca0938c3a on #193, observed at 228ed32: a file grown from 4 to 5 bytes
+    # after fstat resolved under pilot_bytes 4 and reached the verifier; expected LIMIT, no verifier call).
+    with case('D9'):
+        root = Path(tempfile.mkdtemp(prefix="warrant-pilot-bytes-"))
+        big = PL.STATE_MAGIC + bytes(6)
+        (root / C.digest(big)).write_bytes(big)
+        real_fdopen, opened = os.fdopen, []
+
+        def fdopen(*args, **kw):
+            opened.append(args[0])
+            return real_fdopen(*args, **kw)
+        with mock.patch.object(PL.os, "fdopen", side_effect=fdopen):
+            over = PL.Receiver([PL.BlobDir(root)], limits={"pilot_bytes": 4}).resolve("sigma-state:" + C.digest(big))
+        after = PL.STATE_MAGIC + b"x"
+        target = root / C.digest(after)
+        target.write_bytes(PL.STATE_MAGIC)
+        real_fstat, grown, calls = os.fstat, [], []
+
+        def grow(fd):
+            info = real_fstat(fd)
+            if not grown:
+                with target.open("ab") as out:
+                    out.write(b"x")
+                grown.append(fd)
+            return info
+        with mock.patch.object(PL.os, "fstat", side_effect=grow):
+            res = PL.Receiver([PL.BlobDir(root)], limits={"pilot_bytes": 4}).check(
+                "sigma-state:" + C.digest(after), lambda r: calls.append(r) or {"verified": "stand-in"})
+        got_d9 = (outcome(over)[:2], over.get("value"), opened, len(grown), outcome(res)[:2], res.get("value"), calls)
+        check("D9", got_d9 == (("INCONCLUSIVE", "LIMIT"), 10, [], 1, ("INCONCLUSIVE", "LIMIT"), 5, []),
+              "bytes are admitted before an object is read and again on the bytes read", got_d9)
 
     # ---------------------------------------------------------------- PS-04: verification profiles
     # F1: the profile of the installed provider pins its modules and boot by digest, its id is the SHA-256

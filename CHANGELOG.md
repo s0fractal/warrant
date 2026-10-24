@@ -57,7 +57,11 @@ replaced it.
   runtime, axioms and assumptions.
 - `warrant.limits.resolve` takes another family's defaults; `compute.identity_of_files` gives the
   provider identity from module digests. Neither changes an existing result.
-- `tests/pilot_test.py` A1-A8, D1-D8, F1-F4, K1-K2; mutants M568-M589, M591-M598, M600, M601.
+- `tests/pilot_test.py` A1-A10, D1-D9, F1-F4, K1-K2; mutants M568-M589, M591-M598, M600-M602, M604.
+  A9, A10 and D9 are Codex's findings on head 1 (19556ffa5a1c a FIFO blocked the open,
+  d8a510cd300e a directory swapped for a symlink was read through, 971ca0938c3a a file grown after
+  fstat passed the byte limit): a store opens each component relative to its parent without
+  following a symlink, the object without blocking, and admits the bytes again as read.
 
 ### Merging on acceptance; the reviewer woken by itself
 
