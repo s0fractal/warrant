@@ -22,7 +22,7 @@ duty stays as the records leave it.
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #193 | OPEN · awaiting acceptance by codex | 3 | 5 | 0 | 5 | — |
+| #193 | OPEN · awaiting acceptance by codex | 3 | 6 | 0 | 5 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -123,3 +123,7 @@ None.
     - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED
     - answered by head 3
 - head 3 `11e11c605f12` (tree `84f2674694cf`), discharge `11b8a1f8499a`: PENDING · awaiting codex; answers `b60e976acb54`, `d564e974a47d`
+  - finding `b3887f01538c` by codex, P2, mechanical `pilot_review_config_test:C1`: NOT_REPLAYED — Validate receiver configuration containers before using them: limits false/0/""/[] silently select default budgets and reach the verifier, true/1/"invalid"/[1] raise AttributeError, and layout []/{} raises TypeError; PC-26 and Receiver.from_config require malformed configuration to be refused with ValueError.
+    - where: warrant/pilot.py:340, warrant/pilot.py:349, warrant/limits.py:29
+    - replayed at head 3 `11e11c605f12`: NOT REPLAYED
+    - not answered
