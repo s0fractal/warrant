@@ -147,7 +147,8 @@ def accepted_cases(f):
           "is not due", got)
 
     statement = at(f, f.tip, "g26").model().reviews[1].rec["body"]["statement"]
-    f.put("claude", "duty", R.duty("claude", statement, ["s0fractal"], {"attest": {}}, accept_by=["codex"]))
+    # Dated strictly after every record: in the same second, the order of the two duties would be their ids'.
+    f.put("claude", "duty", R.duty("claude", statement, ["s0fractal"], {"attest": {}}, accept_by=["codex"]), at=f.at() + 1)
     _, got = codes(f, f.save())
     check("G26", got == {"REVIEW_RECORDS", "TAIL_RECORD_UNREVIEWED"}, "a problem in the head's review records (a second review duty of #1)", got)
 
