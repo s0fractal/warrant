@@ -1,0 +1,9 @@
+# The one library merge-on-acceptance.yml installs: signature verification (warrant/keys.py), at an exact
+# version with the hashes of its wheels for the runner (ubuntu-latest x86_64, CPython 3.11). Everything
+# else the gate runs is the base checkout itself.
+cryptography==50.0.2 \
+    --hash=sha256:9dab55f57c74c3cad24c323bacbbd04be4705ba6eb0d92e920b1fc4837ed5079
+cffi==2.1.1 \
+    --hash=sha256:34e261f78cb6ceaaa36f42f2613f4380d94d9c759a9c73c769ee6e0247364632
+pycparser==3.12 \
+    --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e

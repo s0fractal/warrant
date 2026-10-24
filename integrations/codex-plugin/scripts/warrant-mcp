@@ -1,0 +1,13 @@
+#!/bin/sh
+# The warrant MCP server for this plugin: warrant-agent-mcp with the operator's configuration.
+# WARRANT_AGENT_MCP names the server (default: the operator's install under ~/.warrant/codex-mcp, then
+# PATH); WARRANT_AGENT_CONFIG its configuration (default ~/.warrant/codex-warrant.json). Neither is a
+# key: the configuration names the signer's seed, and the server signs only what the agent commits.
+cfg="${WARRANT_AGENT_CONFIG:-$HOME/.warrant/codex-warrant.json}"
+for bin in "$WARRANT_AGENT_MCP" "$HOME/.warrant/codex-mcp/bin/warrant-agent-mcp" "$(command -v warrant-agent-mcp 2>/dev/null)"; do
+  if [ -n "$bin" ] && [ -x "$bin" ]; then
+    exec "$bin" --config "$cfg"
+  fi
+done
+echo "warrant-mcp: no warrant-agent-mcp (set WARRANT_AGENT_MCP, or pip install 'warrant-graph[mcp]')" >&2
+exit 127

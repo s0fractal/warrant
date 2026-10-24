@@ -1,0 +1,85 @@
+name: merge-on-acceptance
+
+# Merges a pull request the review loop has accepted, with no owner act (tools/claimslib/eligibility.py
+# states the predicate; tools/claimslib/gate.py the GitHub side). Only trusted code runs here: this
+# file and tools/ are the base branch's (workflow_run and schedule always run the default branch's
+# workflow; a dispatch from another ref is refused below), the working tree is the base branch at the
+# exact commit GitHub reports for it, and every pull request head is fetched as Git objects into
+# refs/warrant-gate/pull/<n>, read with git ls-tree / cat-file / diff-tree, never checked out,
+# installed or run.
+#
+# At most one merge per run, with a merge commit, bound to the head assessed (GitHub refuses the
+# merge when the head moved). A merge made with GITHUB_TOKEN starts no push workflow, so the gate
+# then dispatches the required workflows (ci.yml, x1-cross-repo.yml) on master: master CI still runs
+# after every merge this gate makes; the dispatched runs show as workflow_dispatch on master.
+#
+# Holds, controlled by the owner without code:
+#   - the label `hold` on a pull request (.warrant/merge.json hold_label): that pull request is not merged;
+#   - the repository variable WARRANT_MERGE_GATE=hold (Settings > Secrets and variables > Actions >
+#     Variables, or `gh variable set WARRANT_MERGE_GATE --body hold`): nothing is merged;
+#   - `gh workflow disable merge-on-acceptance.yml`: the gate does not run.
+# Every refusal reason of every open pull request is written to the job summary.
+on:
+  workflow_run:
+    workflows: [ci, sigma-provider]
+    types: [completed]
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: merge-on-acceptance
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write          # the merge
+      pull-requests: write     # the merge
+      checks: read             # the required checks at a pull request's head
+      actions: write           # the runs behind those checks; dispatching master CI after a merge
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      # No checkout action: master is fetched by hand and checked out at the id GitHub reports for
+      # it, so the code running is that commit's, whole, and nothing of a pull request is checked out.
+      - name: The code running is master's tip on GitHub, and only it
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/branches/master" --jq .commit.sha)
+          [[ "$tip" =~ ^[0-9a-f]{40}$ ]]
+          git init -q .
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch -q --no-tags origin "+refs/heads/master:refs/remotes/origin/master"
+          if [ "$(git rev-parse refs/remotes/origin/master)" != "$tip" ]; then
+            echo "master moved while it was fetched: nothing assessed; a later run reads it." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git checkout -q --detach "$tip"
+          [ -z "$(git status --porcelain --untracked-files=all)" ]
+          echo "base=$tip" >> "$GITHUB_OUTPUT"
+
+      - name: Signature verification library (exact version and hashes)
+        if: steps.base.outputs.base != ''
+        run: python -m pip install --quiet --only-binary ':all:' --require-hashes -r .github/merge-gate-requirements.txt
+
+      - name: Assess the open pull requests; merge one that is eligible
+        if: steps.base.outputs.base != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.base.outputs.base }}
+          GATE_VAR: ${{ vars.WARRANT_MERGE_GATE }}
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE" python tools/review.py gate --base "$BASE" --merge \
+            --gate-var "$GATE_VAR" --summary "$GITHUB_STEP_SUMMARY"

@@ -20,6 +20,7 @@ duty stays as the records leave it.
 | #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
+| #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -66,3 +67,21 @@ None.
 - duty `ca58c1b8f0ee` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `cf4a49e78c2a` (tree `e51e25dc483f`), discharge `dc3bb8733197`: PENDING · awaiting codex; superseded by head 2
 - head 2 `fd345b816849` (tree `f5caa21e7198`), discharge `6e2326bf0aa8`: ADMITTED · accepted by codex
+
+## s0fractal/warrant#190 — Merge on acceptance without the owner's act; Codex wakes itself to review
+
+- duty `60897810079d` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+  - serves duty `47cdf978c4d3`
+- head 1 `9d7d4401008c` (tree `86260b0ab0c5`), discharge `31c1218a05f7`: PENDING · awaiting codex; superseded by head 2
+- head 2 `17ea0667232c` (tree `b7f1bbc12d4c`), discharge `1d2e45e92cdd`: PENDING · awaiting codex; superseded by head 3
+  - finding `190c1c64418f` by codex, P2, mechanical `codex_gate_race_test:RACE_BASE`: NOT_REPLAYED — Before merging, revalidate the freshly read PR base and hold label: retargeting master to release or adding hold after assessment leaves the same head, so merge_one still issues PUT /merge despite the new facts.
+    - where: tools/claimslib/gate.py:144
+    - replayed at head 2 `17ea0667232c`: NOT REPLAYED; head 3 `d6fe668d596a`: NOT REPLAYED; head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
+    - answered by head 3
+- head 3 `d6fe668d596a` (tree `ab43db307e55`), discharge `2d12575c8bf7`: PENDING · awaiting codex; superseded by head 4; answers `190c1c64418f`
+- head 4 `f2a95e5439e2` (tree `dc32d741b002`), discharge `486520e1e31c`: PENDING · awaiting codex; superseded by head 5
+  - finding `41141d15bbaf` by codex, P2, mechanical `codex_install_dry_run_test:DRY_RUN_NO_BOOTOUT`: NOT_REPLAYED — install.py --dry-run unconditionally executes launchctl bootout, stopping an installed review waker while the dry bootstrap is skipped. Route bootout through the dry-aware run helper and test that dry-run issues no mutating launchctl command.
+    - where: integrations/codex-plugin/install.py:130
+    - replayed at head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
+    - answered by head 5
+- head 5 `bd4693ce646b` (tree `50ed127677ed`), discharge `b65fbf28e09d`: ADMITTED · accepted by codex; answers `41141d15bbaf`
