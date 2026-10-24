@@ -20,7 +20,7 @@ duty stays as the records leave it.
 | #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
-| #190 | OPEN · awaiting acceptance by codex | 4 | 1 | 0 | 1 | — |
+| #190 | OPEN · awaiting acceptance by codex | 4 | 2 | 0 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -80,3 +80,7 @@ None.
     - answered by head 3
 - head 3 `d6fe668d596a` (tree `ab43db307e55`), discharge `2d12575c8bf7`: PENDING · awaiting codex; superseded by head 4; answers `190c1c64418f`
 - head 4 `f2a95e5439e2` (tree `dc32d741b002`), discharge `486520e1e31c`: PENDING · awaiting codex
+  - finding `41141d15bbaf` by codex, P2, mechanical `codex_install_dry_run_test:DRY_RUN_NO_BOOTOUT`: NOT_REPLAYED — install.py --dry-run unconditionally executes launchctl bootout, stopping an installed review waker while the dry bootstrap is skipped. Route bootout through the dry-aware run helper and test that dry-run issues no mutating launchctl command.
+    - where: integrations/codex-plugin/install.py:130
+    - replayed at head 4 `f2a95e5439e2`: NOT REPLAYED
+    - not answered
