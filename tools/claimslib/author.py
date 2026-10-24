@@ -32,7 +32,12 @@ def load_key(repo, path, actor):
     p = Path(path or os.environ.get("WARRANT_CLAIMS_KEY") or "")
     if not p.is_file():
         raise Refused("a signing seed is needed: --key PATH or WARRANT_CLAIMS_KEY (keygen makes one)")
-    key = W.Key.from_seed_hex(p.read_text())
+    return bound_key(repo, p.read_text(), actor)
+
+
+def bound_key(repo, seed_hex, actor):
+    """The key of `seed_hex`, refused unless .warrant/trust.json binds it to `actor`."""
+    key = W.Key.from_seed_hex(seed_hex)
     if repo.trust().keys.get(key.id, (None,))[0] != actor:
         raise Refused(f"key {key.id[:12]} is not bound to {actor!r} in .warrant/trust.json")
     return key

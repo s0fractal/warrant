@@ -46,7 +46,7 @@ nothing. `check` never runs a finding's test; only `replay` and `replay --verify
     python3 tools/review.py finding --pr N --commit SHA --severity P2 --what '...' [--where PATH:LINE]...
                                     [--test FILE --case ID [--patch-stdin < DIFF]] --actor codex
     python3 tools/review.py accept --pr N --commit SHA --actor codex
-    python3 tools/review.py replay --key CHECKER_SEED [--pr N]
+    python3 tools/review.py replay --key CHECKER_SEED [--pr N]   # --key -: the seed on standard input
     python3 tools/review.py replay --verify --base REV
     python3 tools/review.py merged --pr N --merge SHA
     python3 tools/review.py project            # regenerate REVIEWS.md
@@ -1145,7 +1145,7 @@ WRITES = {
 
 
 def main(argv=None):
-    from .author import load_key            # here: author imports views, and views reads this module's ledger
+    from .author import bound_key, load_key  # here: author imports views, and views reads this module's ledger
     ap = _parser()
     a = ap.parse_args(argv)
     rv = Reviews(a.root)
@@ -1164,7 +1164,11 @@ def main(argv=None):
             from . import gate               # here: gate imports eligibility, which imports this module
             return (gate.cmd_gate if a.cmd == "gate" else gate.cmd_due)(rv, a)
         actor = RR.actor() if a.cmd == "replay" else a.actor
-        out = WRITES[a.cmd](Writer(rv, load_key(rv.repo, a.key, actor), actor), a)
+        # `replay --key -`: the seed on standard input (the review waker's way: no path to it in argv or the
+        # environment the finding tests inherit, and read to its end before any of them runs).
+        key = (bound_key(rv.repo, sys.stdin.read(), actor) if a.cmd == "replay" and a.key == "-"
+               else load_key(rv.repo, a.key, actor))
+        out = WRITES[a.cmd](Writer(rv, key, actor), a)
         if out:
             print(out)
         return 0
