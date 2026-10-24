@@ -74,8 +74,10 @@ VISION_RESIDUAL = ("a goal proves nothing: it sets the direction of path search;
 DONE_RESIDUAL = "the evidence blob names pull requests and commits; this record does not replay them"
 FORWARD = ("obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal "
            "is still open, so the decomposition did not reach it (Forward Attack)")
-# Formulation states: the goal text as one transition opened it.
-CURRENT, PROPOSED, REFORMULATED, MET, WITHDRAWN = "CURRENT", "PROPOSED", "REFORMULATED", "MET", "WITHDRAWN"
+# Formulation states: the goal text as one transition opened it. REOPENED: a transition that superseded it
+# (revising another goal) opened the same text again, which is not a reformulation.
+CURRENT, PROPOSED, REFORMULATED, REOPENED, MET, WITHDRAWN = \
+    "CURRENT", "PROPOSED", "REFORMULATED", "REOPENED", "MET", "WITHDRAWN"
 
 
 class Refused(Exception):
@@ -267,7 +269,8 @@ class Model:
                 s = sorted(res["superseded_by"])[0]
                 nxt = self.opened_keys(s).get(f.key)
                 act = self.revisions(s).get(f.key, {}).get("act")
-                f.state, f.by = (REFORMULATED, nxt.ref) if nxt else (MET if act == "met" else WITHDRAWN, s)
+                f.state, f.by = ((REOPENED if nxt.text == f.text else REFORMULATED), nxt.ref) if nxt else \
+                    (MET if act == "met" else WITHDRAWN, s)
             elif self.recs[f.tid]["body"]["supersedes"] and not res["accepted"]:
                 f.state, f.waiting = PROPOSED, sorted(need - set(res["accepted_by"]))
 
@@ -354,8 +357,18 @@ class Model:
 
 # ---------------------------------------------------------------- path search
 
-def node(m, did, edge, seen):
+def node(m, did, edge, seen, shown):
+    """One duty of a goal's tree. `seen` = the duties above it (a cycle), `shown` = every duty this goal's
+    tree has already expanded: a later occurrence is a reference back to it, with no statement and no children
+    (a duty many obligations require is printed once, not under each of them)."""
     r = m.rep["duties"].get(did)
+    if did in shown:
+        out = {"edge": edge, "duty": did, "state": "MISSING" if r is None else r["disposition"], "shown": True,
+               "statement": None, "children": [], "served_by": []}
+        if did in seen:
+            out["cycle"] = True
+        return out
+    shown.add(did)
     if r is None:
         return {"edge": edge, "duty": did, "state": "MISSING", "statement": None, "children": [], "served_by": []}
     out = {"edge": edge, "duty": did, "state": r["disposition"], "need": m.need(did), "accepted_by": m.accepted_by(did),
@@ -365,10 +378,20 @@ def node(m, did, edge, seen):
            "served_by": [{"duty": s, "state": m.rep["duties"][s]["disposition"], "statement": m.rep["duties"][s]["statement"],
                           "goal": m.goal_of(s)} for s in m.served_by(did) if s not in seen and s in m.rep["duties"]],
            "children": []}
-    if did in seen:
-        out["cycle"] = True
-        return out
-    out["children"] = [node(m, c, "requires", seen | {did}) for c in r["requires"]]
+    out["children"] = [node(m, c, "requires", seen | {did}, shown) for c in r["requires"]]
+    return out
+
+
+def prerequisites_first(m, dids):
+    """`dids` (in filing order) reordered so that an obligation comes after those of them it requires,
+    else in filing order: each is printed in full before a later one refers back to it (records filed in
+    the same second tie on `at` and are ordered by id). A cycle takes the first of the rest."""
+    rest, out = list(dids), []
+    while rest:
+        done = set(out)
+        ready = [d for d in rest if all(x in done or x not in rest for x in m.rep["duties"][d]["requires"])]
+        out.append((ready or rest)[0])
+        rest.remove(out[-1])
     return out
 
 
@@ -377,25 +400,46 @@ def path_data(m, key):
     if not fs:
         raise Refused(f"no goal {key} in the view")
     state = m.goal_state(key)
-    obligations = m.answering(key)
-    tree = [node(m, did, "answered by", frozenset()) for did in obligations]
+    obligations = prerequisites_first(m, m.answering(key))
+    shown = set()
+    tree = [node(m, did, "answered by", frozenset(), shown) for did in obligations]
     marks = []
     if state == "OPEN" and obligations and all(m.rep["duties"][d]["disposition"] == "DISCHARGED" for d in obligations):
         marks.append("FORWARD_ATTACK")
     return {"goal": key, "state": state,
             "formulations": [{"ref": f.ref, "text": f.text, "state": f.state, "by": f.by, "opened_by": f.actor,
                               "sources": m._sources[f.tid],
-                              "waiting_for": f.waiting, "taken_by": m.owned.get(f.ref, [])} for f in fs],
+                              "waiting_for": f.waiting, "taken_by": m.owned.get(f.ref, []),
+                              "answered_as": reopened_from(m, fs, f)} for f in fs],
             "pending": [{"transition": t, "act": a, "waiting_for": w} for t, a, w in m.pending(key)],
             "obligations": tree, "marks": marks}
+
+
+def reopened_from(m, fs, f):
+    """The earlier formulations this one opens again unchanged (through REOPENED links) that an obligation
+    answers: their obligations answer the same text, though not this question reference."""
+    out, prev, seen = [], [f.ref], {f.ref}
+    while prev:
+        prev = [g.ref for g in fs if g.state == REOPENED and g.by in prev and g.ref not in seen]
+        seen.update(prev)
+        out += [x for x in prev if m.owned.get(x)]
+    return sorted(out)
 
 
 def _short(did, claim=None, goal=None):
     return " ".join(x for x in (claim, goal, f"duty {did[:12]}") if x)
 
 
+def _qref(ref):
+    return f"{ref[:12]}:{ref.split(':')[1]}"
+
+
 def render_node(n, depth, out):
     pad = "  " * depth
+    if n.get("shown"):
+        cycle = " (cycle: this duty requires itself through the duties above)" if n.get("cycle") else ""
+        out.append(f"{pad}{n['edge']} [{n['state']}] duty {n['duty'][:12]}, shown above{cycle}")
+        return
     state = n["state"] + (f" · {n['need']}" if n.get("need") else "") + \
         (f" · accepted by {', '.join(n['accepted_by'])}" if n.get("accepted_by") else "")
     tail = [_short(n["duty"], n.get("claim"))]
@@ -403,8 +447,6 @@ def render_node(n, depth, out):
         tail.append("serves " + ", ".join(s["claim"] or _short(s["duty"], goal=s["goal"]) for s in n["serves"]))
     text = n["statement"] if n["statement"] is not None else "(not in the view)"
     out.append(f"{pad}{n['edge']} [{state}] {text} {{{'; '.join(tail)}}}")
-    if n.get("cycle"):
-        out.append(f"{pad}  (cycle: this duty requires itself through the duties above)")
     for s in n.get("served_by", []):
         out.append(f"{pad}  served by [{s['state']}] {s['statement']} {{{_short(s['duty'], goal=s['goal'])}}}")
     for c in n["children"]:
@@ -415,17 +457,21 @@ def render_path(d):
     cur = [f for f in d["formulations"] if f["state"] == CURRENT] or d["formulations"][-1:]
     out = [f"{d['goal']} [{d['state']}] {cur[0]['text']}"]
     for f in d["formulations"]:
-        line = f"  goal {f['ref'][:12]}:{f['ref'].split(':')[1]} {f['state']}, opened by {f['opened_by']}"
+        line = f"  goal {_qref(f['ref'])} {f['state']}, opened by {f['opened_by']}"
         line += "".join(f" from {s['by']}'s source blob {s['blob'][:12]}" for s in f["sources"])
         if f["state"] == REFORMULATED:
-            line += f"; reformulated as {f['by'][:12]}:{f['by'].split(':')[1]}"
+            line += f"; reformulated as {_qref(f['by'])}"
+        elif f["state"] == REOPENED:
+            line += f"; opened again unchanged as {_qref(f['by'])}"
         elif f["state"] in (MET, WITHDRAWN):
             line += f" by {f['by'][:12]}"
         elif f["state"] == PROPOSED:
             line += f": supersession awaiting acceptance by {', '.join(f['waiting_for']) or 'nobody named'}"
         if f["state"] != CURRENT and f["text"] != cur[0]["text"]:
             line += f" — {f['text']}"
-        if f["state"] == CURRENT and not f["taken_by"]:
+        if f["state"] == CURRENT and not f["taken_by"] and f["answered_as"]:
+            line += f"; its obligations answer the same text as opened in {', '.join(_qref(x) for x in f['answered_as'])}"
+        elif f["state"] == CURRENT and not f["taken_by"]:
             line += "; unowned: no obligation answers it"
         out.append(line)
     for p in d["pending"]:
@@ -452,7 +498,9 @@ def render_view(m):
         "holder. DISCHARGED needs the acceptance the duty names: a closure filed with",
         "its evidence and not yet accepted reads OPEN · awaiting acceptance; once",
         "accepted (`tools/roadmap.py accept`, signed by the acceptor's own key) it reads",
-        "DISCHARGED · accepted by the acceptor.", "",
+        "DISCHARGED · accepted by the acceptor. Within a goal each duty is printed in",
+        "full once, with its prerequisites under it; a later occurrence reads `duty <id>,",
+        "shown above`.", "",
     ]
     for key in sorted(m.goals, key=key_n):
         d = path_data(m, key)

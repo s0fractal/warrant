@@ -21,6 +21,7 @@ duty stays as the records leave it.
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
+| #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -85,3 +86,8 @@ None.
     - replayed at head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
     - answered by head 5
 - head 5 `bd4693ce646b` (tree `50ed127677ed`), discharge `b65fbf28e09d`: ADMITTED · accepted by codex; answers `41141d15bbaf`
+
+## s0fractal/warrant#191 — ROADMAP.md: each duty in full once per goal; a goal opened again unchanged is REOPENED
+
+- duty `bf4fbc49b379` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+- head 1 `2dcc5ba23ae6` (tree `33855071fbe7`), discharge `9d4277b4270b`: ADMITTED · accepted by codex

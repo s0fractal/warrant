@@ -874,7 +874,7 @@ def _visit(view, did, report, done, busy):
      [('        refs = {f.ref for f in self.goals.get(key, [])}', '        refs = {f.ref for f in self.goals.get(key, []) if f.state == CURRENT}')],
      "roadmap_test", ["P6"]),
     ("M305", "../tools/roadmap.py", "path does not follow requires to the prerequisites",
-     [('    out["children"] = [node(m, c, "requires", seen | {did}) for c in r["requires"]]', '    out["children"] = []')],
+     [('    out["children"] = [node(m, c, "requires", seen | {did}, shown) for c in r["requires"]]', '    out["children"] = []')],
      "roadmap_test", ["P3", "P7"]),
     ("M306", "../tools/roadmap.py", "ROADMAP.md is compared as text: read_text() turns \\r\\n into \\n",
      [('    elif rm.view.read_bytes() != render_view(m).encode():', '    elif rm.view.read_text() != render_view(m):')],
@@ -1565,6 +1565,19 @@ def _visit(view, did, report, done, busy):
     ('M562', '../tools/claimslib/gate.py', "the pull request read again before the merge is not held to the predicate's own rules",
      [('    changed = EL.pr_reasons(b, now)', '    changed = []')],
      'review_gate_test', ['G33']),
+    # ROADMAP.md: a shared prerequisite once per goal; a goal opened again unchanged (tools/roadmap.py).
+    ('M563', '../tools/roadmap.py', "a duty's full line is printed again under each duty that requires it",
+     [('    if did in shown:\n', '    if did in seen:\n')], 'roadmap_test', ['P17']),
+    ('M564', '../tools/roadmap.py', "a goal another revision opens again unchanged reads REFORMULATED",
+     [('((REOPENED if nxt.text == f.text else REFORMULATED), nxt.ref)', '(REFORMULATED, nxt.ref)')],
+     'roadmap_test', ['P6', 'P18']),
+    ('M565', '../tools/roadmap.py', "a goal opened again unchanged reads unowned although obligations answer its text",
+     [('"answered_as": reopened_from(m, fs, f)}', '"answered_as": []}')], 'roadmap_test', ['P18']),
+    ('M566', '../tools/roadmap.py', "a duty that requires itself through others is not marked as a cycle",
+     [('        if did in seen:\n            out["cycle"] = True', '        if False:\n            out["cycle"] = True')],
+     'roadmap_test', ['P19']),
+    ('M567', '../tools/roadmap.py', "an obligation is printed before the obligations it requires",
+     [('        out.append((ready or rest)[0])', '        out.append(rest[0])')], 'roadmap_test', ['P20']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
