@@ -2,7 +2,7 @@
   "contract": "warrant-pilot/contract@1",
   "title": "Proof-space pilot contract",
   "intro": [
-    "The pilot of goal G9: a fresh receiver gathers, from content roots and its own configuration only, every object one Sigma receipt needs, checks their bytes, and only then replays the receipt under a verification profile it admits. This contract fixes the terms. The resolution layer (PS-02, PS-03, PS-04) is implemented in `warrant/pilot.py` and tested by `tests/pilot_test.py` (A1-A10, D1-D9, F1-F4, K1-K2); the replay itself and everything after it are deferred to the cards named below.",
+    "The pilot of goal G9: a fresh receiver gathers, from content roots and its own configuration only, every object one Sigma receipt needs, checks their bytes, and only then replays the receipt under a verification profile it admits. This contract fixes the terms. The resolution layer (PS-02, PS-03, PS-04) is implemented in `warrant/pilot.py` and tested by `tests/pilot_test.py` (A1-A11, D1-D10, F1-F4, K1-K2); the replay itself and everything after it are deferred to the cards named below.",
     "Scope: the pilot is not part of SPEC.md. It adds no Warrant record type and no engine rule, `engine.assess` does not read it, and the Sigma receipt keeps SPEC §7's members and the meaning of `lost`. A rule below is enforced (cases of `tests/pilot_test.py` that pass, and mutants of `tests/mutants.py` that make them fail), deferred to a filed G9 obligation, or excluded from the pilot."
   ],
   "sections": [
@@ -22,11 +22,11 @@
       "table": "kinds",
       "rows": [
         {"id": "PC-04", "rule": "Anything but `<kind>:<64 lowercase hex digits>` (`shapes.hex64`) is BAD_ADDRESS, refused before any path is built or any store read: path traversal at the right length, uppercase, a trailing newline.", "tests": ["A4", "D4"], "mutants": ["M571"]},
-        {"id": "PC-05", "rule": "An object whose bytes hash to its address but lack its kind's tag is KIND_MISMATCH, refused before its dependency fields are read. JSON kinds are canonical bytes (`jcs.loads`): other bytes are refused, never normalized.", "tests": ["A3", "F4"], "mutants": ["M570", "M593"]},
+        {"id": "PC-05", "rule": "An object whose bytes hash to its address but lack its kind's tag is KIND_MISMATCH, refused before its dependency fields are read. JSON kinds are canonical bytes (`jcs.loads`): other bytes are refused, never normalized, whatever the parser raises on them.", "tests": ["A3", "F4", "A11"], "mutants": ["M570", "M593", "M606"]},
         {"id": "PC-06", "rule": "A record id is no object address (a store's `records/` is never read), and a record envelope named by its digest is not an object of any pilot kind.", "tests": ["A5"], "mutants": ["M570"]},
         {"id": "PC-07", "rule": "The receiver consults its configured local stores in order: layout `blobs` (`<dir>/<hex64>`, a Warrant store's `blobs/`) and layout `fanout` (`<dir>/<2 hex>/<62 hex>`, a warrant-agent object store). Only a regular file reached from the store's directory without a symlink is an object of that store: each component is opened relative to its parent without following one, so a symlink, a directory swapped for a symlink between check and use, a FIFO (opened without blocking) or a directory is not.", "tests": ["A1", "A6", "A9", "A10"], "mutants": ["M591", "M572", "M602"]},
         {"id": "PC-08", "rule": "One typed address resolves to the same bytes and the same closure id through either store, both, or stores that each hold part of the closure; the closure manifest names no store.", "tests": ["A1"], "mutants": ["M591"]},
-        {"id": "PC-09", "rule": "Bytes a store holds under a name that do not hash to it are DIGEST_MISMATCH naming that store, refused before any kind reads them; no other store is consulted past them.", "tests": ["A2"], "mutants": ["M568", "M569"]},
+        {"id": "PC-09", "rule": "Bytes a store holds under a name that do not hash to it are DIGEST_MISMATCH naming that store, refused before any kind reads them; no other store is consulted past them. The digest is checked on the whole file as read to its end, also when it grew after its size was taken.", "tests": ["A2", "D10"], "mutants": ["M568", "M569", "M605"]},
         {"id": "PC-10", "rule": "Nothing is fetched from outside the configured stores: no network, no store an object names.", "excluded": "a network resolver is the proposal card PS-12, not filed; `warrant/pilot.py` opens only files of configured stores"}
       ]
     },

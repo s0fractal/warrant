@@ -77,11 +77,13 @@ class _Stop(Exception):
 # ---------------------------------------------------------------- kinds
 
 def _json_tag(member, value):
-    """Canonical JSON (jcs.loads: non-canonical bytes are refused, never normalized) whose `member` is `value`."""
+    """Canonical JSON (jcs.loads: non-canonical bytes are refused, never normalized) whose `member` is `value`.
+    Any ValueError of the parser is a refusal too: an integer past CPython's conversion limit raises one
+    that is not NotCanonical (Codex finding b60e976acb54 on #193)."""
     def tag(data):
         try:
             doc = C.loads(data)
-        except C.NotCanonical:
+        except ValueError:
             return None
         return doc if isinstance(doc, dict) and doc.get(member) == value else None
     return tag
@@ -183,7 +185,8 @@ class _Dir:
         descriptor without following a symlink, so the directories checked are the ones read (Codex
         finding d8a510cd300e on #193), and the object without blocking, so a FIFO is seen as one before
         anything waits on it (19556ffa5a1c). `admit(size)` runs before a byte is read, and again on the
-        bytes read: a file grown since fstat is admitted at its read length (971ca0938c3a)."""
+        bytes read: a file grown since fstat is read to its end, each part admitted as it is read, so
+        its whole bytes are what the digest is checked on (971ca0938c3a, d564e974a47d)."""
         try:
             fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
         except OSError:
@@ -211,8 +214,12 @@ class _Dir:
             with os.fdopen(obj, "rb") as f:
                 obj = -1
                 data = f.read(st.st_size + 1)   # one byte more than fstat said: a grown file is seen as grown
-            admit(len(data))
-            return data
+                while True:
+                    admit(len(data))
+                    more = f.read(1 << 16)
+                    if not more:
+                        return data
+                    data += more
         finally:
             if obj >= 0:
                 os.close(obj)

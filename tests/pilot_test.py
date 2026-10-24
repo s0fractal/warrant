@@ -392,6 +392,23 @@ def main():
         check("A10", got_a10 == (1, ("INCONCLUSIVE", "MISSING", "sigma-state:" + name), []),
               "a directory swapped for a symlink between check and use is never read through", got_a10)
 
+    # A11 (Codex finding b60e976acb54 on #193, observed at eca04cc: a digest-correct root holding a 5000-digit
+    # integer made the parser raise a ValueError the tag did not catch, and the resolver raised; expected a
+    # typed KIND_MISMATCH): bytes outside the canonical JSON domain are refused, whatever the parser raises.
+    with case('A11'):
+        root = Path(tempfile.mkdtemp(prefix="warrant-pilot-json-"))
+        huge = b'{"requires":["sigma-state:' + b"a" * 64 + b'"],"schema":"warrant-pilot/root@1","x":' + b"1" * 5000 + b"}"
+        (root / C.digest(huge)).write_bytes(huge)
+        calls = []
+        try:
+            res = PL.Receiver([PL.BlobDir(root)]).check("pilot-root:" + C.digest(huge),
+                                                        lambda r: calls.append(r) or {"verified": "stand-in"})
+        except Exception as e:      # noqa: BLE001  (the defect: the resolver raised instead of answering)
+            res = {"raised": f"{type(e).__name__}: {str(e)[:60]}"}
+        got_a11 = (outcome(res), res.get("raised"), calls)
+        check("A11", got_a11 == (("REFUSED", "KIND_MISMATCH", "pilot-root:" + C.digest(huge)), None, []),
+              "an object the JSON parser rejects in any way is a typed refusal, never an exception", got_a11)
+
     # ---------------------------------------------------------------- PS-03: the closure before verification
     # D1: branching and shared dependencies: the environment (named by the root and the receipt) and the
     # input node (named by the receipt and the environment) are read once; every object of the closure is
@@ -536,6 +553,32 @@ def main():
         got_d9 = (outcome(over)[:2], over.get("value"), opened, len(grown), outcome(res)[:2], res.get("value"), calls)
         check("D9", got_d9 == (("INCONCLUSIVE", "LIMIT"), 10, [], 1, ("INCONCLUSIVE", "LIMIT"), 5, []),
               "bytes are admitted before an object is read and again on the bytes read", got_d9)
+
+    # D10 (Codex finding d564e974a47d on #193, observed at eca04cc: after fstat saw 4 bytes the file was
+    # rewritten to 16, the store read 5, and that prefix hashed to the address and reached the verifier;
+    # expected DIGEST_MISMATCH, no verifier call): a grown file is read to its end, in both layouts.
+    with case('D10'):
+        got_d10 = {}
+        for layout, cls in PL.LAYOUTS.items():
+            root = Path(tempfile.mkdtemp(prefix="warrant-pilot-grow-"))
+            store, prefix = cls(root), PL.STATE_MAGIC + b"X"
+            path = root.joinpath(*store.parts(C.digest(prefix)))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(PL.STATE_MAGIC)
+            real_fstat, grown, calls = os.fstat, [], []
+
+            def regrow(fd, path=path, grown=grown, prefix=prefix):
+                info = real_fstat(fd)
+                if not grown:
+                    path.write_bytes(prefix + b"UNREAD-TAIL")
+                    grown.append(fd)
+                return info
+            with mock.patch.object(PL.os, "fstat", side_effect=regrow):
+                res = PL.Receiver([store]).check("sigma-state:" + C.digest(prefix),
+                                                 lambda r, calls=calls: calls.append(r) or {"verified": "stand-in"})
+            got_d10[layout] = (len(grown), outcome(res)[:2], calls)
+        check("D10", got_d10 == {k: (1, ("REFUSED", "DIGEST_MISMATCH"), []) for k in PL.LAYOUTS},
+              "a file grown past its size is read whole, so no prefix of it passes for the object", got_d10)
 
     # ---------------------------------------------------------------- PS-04: verification profiles
     # F1: the profile of the installed provider pins its modules and boot by digest, its id is the SHA-256
