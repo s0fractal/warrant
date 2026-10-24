@@ -22,7 +22,7 @@ duty stays as the records leave it.
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #193 | OPEN · awaiting acceptance by codex | 2 | 3 | 0 | 3 | — |
+| #193 | OPEN · awaiting acceptance by codex | 2 | 5 | 0 | 3 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -114,3 +114,11 @@ None.
     - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED
     - answered by head 2
 - head 2 `eca04ccfdc39` (tree `1a341a97613e`), discharge `e74de48389f7`: PENDING · awaiting codex; answers `19556ffa5a1c`, `971ca0938c3a`, `d8a510cd300e`
+  - finding `b60e976acb54` by codex, P2, mechanical `pilot_review_boundary_test:J1`: NOT_REPLAYED — A digest-correct JSON object with a 5000-digit integer raises CPython ValueError through _json_tag instead of returning REFUSED/KIND_MISMATCH; Receiver.resolve/check aborts on about 5 KB of untrusted bytes.
+    - where: warrant/pilot.py:83, warrant/pilot.py:84
+    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED
+    - not answered
+  - finding `d564e974a47d` by codex, P2, mechanical `pilot_review_boundary_test:G1`: NOT_REPLAYED — A file growing by more than one byte after fstat is truncated to st_size+1; a name hashing to that prefix resolves and invokes the verifier even though the whole stored file hashes differently (both layouts; expected DIGEST_MISMATCH).
+    - where: warrant/pilot.py:213
+    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED
+    - not answered
