@@ -22,7 +22,7 @@ duty stays as the records leave it.
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #193 | OPEN · awaiting acceptance by codex | 4 | 6 | 0 | 6 | — |
+| #193 | DISCHARGED | 4 | 6 | 0 | 6 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -95,7 +95,7 @@ None.
 
 ## s0fractal/warrant#193 — G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04)
 
-- duty `431ae379e6ae` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `431ae379e6ae` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `d108cd09dd10`
   - serves duty `d5cd7a7da4e4`
   - serves duty `61f38a12298e`
@@ -127,4 +127,4 @@ None.
     - where: warrant/pilot.py:340, warrant/pilot.py:349, warrant/limits.py:29
     - replayed at head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
     - answered by head 4
-- head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: PENDING · awaiting codex; answers `b3887f01538c`
+- head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`
