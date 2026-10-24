@@ -528,7 +528,7 @@ added. The terms are those of the ontology
 | Ledger (§7.2) | the store and its assessment |
 
 A vision transition may cite the proposal its goals come from (`goal --source
-FILE --source-by ACTOR`, a file in the operator's home directory): its bytes as they are and a
+FILE --source-by ACTOR`, a file named in `$TMPDIR` as for `claims.py audit`): its bytes as they are and a
 `warrant-roadmap/source@1` blob naming who wrote them, which `path` shows next
 to the goal. It credits the proposal's author; it grants nothing and
 establishes nothing of the proposal, and `check` refuses a source blob naming
