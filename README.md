@@ -539,7 +539,13 @@ act) are not recorded: once signed, a direction is authored and is a goal.
 Meaning (row 0041) is not recorded either. §4.3 calls the target "Target
 Intent"; that is the goal, not row 0033's Intent. `path G<n>` prints the goal,
 the obligations that answer it and, under each, its prerequisites, with the
-engine's disposition and what its frontier asks of the holder. When every
+engine's disposition and what its frontier asks of the holder. Within a goal
+each duty is printed in full once, and an obligation comes after the ones it
+requires; a later occurrence is one line, `duty <id>, shown above`, so a
+prerequisite many obligations share reads once. A formulation that a
+transition revising another goal opens again with the same text is REOPENED,
+not REFORMULATED, and the current form names the earlier formulation its
+obligations answer instead of reading unowned. When every
 obligation of a goal that is still open is DISCHARGED, `path` adds a mark,
 "obligations met, goal not shown met". This is the Forward Attack of §4.3: the
 claims hold and the goal is not shown. Either the decomposition missed

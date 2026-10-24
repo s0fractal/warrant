@@ -275,10 +275,10 @@ def supersede_cases():
     check("P6", proposed and [f["state"] for f in fs] == ["REFORMULATED", "CURRENT"] and fs[0]["by"] == fs[1]["ref"]
           and fs[1]["ref"].startswith(s + ":") and fs[1]["text"] == "New wording." and p["state"] == "OPEN"
           and [n["duty"] for n in p["obligations"]] == [d]
-          and [(f["state"], f["text"]) for f in p2["formulations"]] == [("REFORMULATED", "Unchanged goal."), ("CURRENT", "Unchanged goal.")]
+          and [(f["state"], f["text"]) for f in p2["formulations"]] == [("REOPENED", "Unchanged goal."), ("CURRENT", "Unchanged goal.")]
           and p2["formulations"][1]["ref"].startswith(s + ":") and v != s and r.problems() == ["ROADMAP_MISSING"],
           "a goal is reformulated by a superseding transition: pending until accepted, then the old formulation is "
-          "REFORMULATED, its obligations stay under the goal, the other goals are opened again unchanged", p)
+          "REFORMULATED, its obligations stay under the goal, the other goals are opened again unchanged (REOPENED)", p)
 
     b = r.ok("oblige", "--text", "A prerequisite.", "--answers", "G1")
     r.ok("oblige", "--text", "Built on it.", "--answers", "G1", "--requires", b)
@@ -290,10 +290,93 @@ def supersede_cases():
     parent = lines[lines.index(deep[0]) - 1] if deep else ""
     check("P7", lines[0].startswith("G1 [OPEN] New wording.") and len(tops) == 3 and len(deep) == 1 and b[:12] in deep[0]
           and parent.startswith("  answered by ") and "Built on it." in parent and "reformulated as" in lines[1]
-          and len(served) == 2 and all(helper[:12] in ln and "G2" in ln for ln in served),
+          and len(served) == 1 and all(helper[:12] in ln and "G2" in ln for ln in served),
           "path prints the goal, its formulations, each obligation, under it its prerequisites, and the duties "
-          "that serve a node with the goal they answer", lines)
+          "that serve a node with the goal they answer (once, where the node is printed in full)", lines)
     r.close()
+
+
+def shared_cases():
+    """A duty many obligations require is printed in full once per goal; a goal opened again unchanged
+    is not called reformulated, nor unowned while obligations answer its text."""
+    r = Repo()
+    r.ok("goal", "--id", "G1", "--text", "Shared prerequisites.", "--id", "G2", "--text", "Carried unchanged.")
+    a = r.ok("oblige", "--text", "The common base.", "--answers", "G1")
+    b = r.ok("oblige", "--text", "Left, on the base.", "--answers", "G1", "--requires", a)
+    c = r.ok("oblige", "--text", "Right, on the base.", "--answers", "G1", "--requires", a)
+    d = r.ok("oblige", "--text", "Top, on both.", "--answers", "G1", "--requires", b, "--requires", c)
+    p = r.path("G1")
+    lines = RM.render_path(p).splitlines()
+    full = [ln for ln in lines if "The common base." in ln]
+    back = [ln for ln in lines if a[:12] in ln and "shown above" in ln]
+    nd = next(n for n in p["obligations"] if n["duty"] == d)
+    again = RM.render_path(r.path("G1"))
+    tops = [n["duty"] for n in p["obligations"]]
+    check("P17", len(full) == 1 and full[0].startswith("  answered by ") and len(back) == 2
+          and tops.index(a) < min(tops.index(b), tops.index(c)) and tops.index(d) == 3
+          and [x.get("shown") for x in nd["children"]] == [True, True] and nd["children"][0]["state"] == "OPEN"
+          and len([ln for ln in lines if "Left, on the base." in ln]) == 1 and again == "\n".join(lines) + "\n",
+          "within a goal a duty is printed in full once; every later occurrence is one line naming it, shown above "
+          "(the base three obligations require reads once, not five times); an obligation comes after those it "
+          "requires; the view is the same twice", lines)
+
+    e = r.ok("oblige", "--text", "Answers the carried goal.", "--answers", "G2")
+    r.accept(r.ok("reformulate", "--goal", "G1", "--text", "Shared prerequisites, sharper.", "--because", "sharper"), item=None)
+    q = r.path("G2")
+    fs = q["formulations"]
+    head = RM.render_path(q).splitlines()[1:3]
+    check("P18", [f["state"] for f in fs] == ["REOPENED", "CURRENT"] and fs[1].get("answered_as") == [fs[0]["ref"]]
+          and fs[1]["taken_by"] == [] and fs[0]["taken_by"] == [e] and "reformulated" not in head[0]
+          and "unowned" not in head[1] and fs[0]["ref"][:12] in head[1]
+          and [f["state"] for f in r.path("G1")["formulations"]] == ["REFORMULATED", "CURRENT"],
+          "a goal another goal's revision opens again unchanged is REOPENED, not REFORMULATED; its current form "
+          "names the formulation its obligations answer instead of reading unowned", (fs, head))
+    r.close()
+
+
+class _Cyclic:
+    """A stand-in model whose two duties require each other (no signed records can: an id is a hash)."""
+
+    def __init__(self, x, y):
+        duty = {"disposition": "OPEN", "serves": []}
+        self.rep = {"duties": {x: dict(duty, statement="X.", requires=[y]), y: dict(duty, statement="Y.", requires=[x])}}
+        self.claim_of = {}
+
+    @classmethod
+    def chain(cls, ids, requires):
+        """A stand-in whose duties `ids` require `requires[id]`."""
+        m = cls("x" * 64, "y" * 64)
+        m.rep["duties"] = {i: {"requires": requires.get(i, [])} for i in ids}
+        return m
+
+    def need(self, did):
+        return None
+
+    def accepted_by(self, did):
+        return []
+
+    def served_by(self, did):
+        return []
+
+    def goal_of(self, did):
+        return None
+
+
+def cycle_cases():
+    x, y = "a" * 64, "b" * 64
+    n = RM.node(_Cyclic(x, y), x, "answered by", frozenset(), set())
+    inner = n["children"][0]["children"][0]
+    out = []
+    RM.render_node(n, 1, out)
+    check("P19", inner["duty"] == x and inner.get("shown") and inner.get("cycle") and inner["children"] == []
+          and len(out) == 3 and "cycle:" in out[2] and sum("X." in ln for ln in out) == 1,
+          "a duty that requires itself through others ends the walk at the repeat, marked as a cycle", out)
+    ids = ["d", "b", "a", "c"]
+    order = RM.prerequisites_first(_Cyclic.chain(ids, {"d": ["b"], "b": ["a"]}), ids)
+    loop = RM.prerequisites_first(_Cyclic.chain(ids, {"d": ["b"], "b": ["d"]}), ids)
+    check("P20", order == ["a", "b", "d", "c"] and loop == ["a", "c", "d", "b"],
+          "a goal's obligations are ordered so each comes after those of them it requires, else in filing order "
+          "(same-second records tie on `at`); a cycle takes the first of the rest", (order, loop))
 
 
 def projection_cases():
@@ -423,7 +506,7 @@ def check_cases():
 
 
 GROUPS = ((goal_cases, ("P1", "P2")), (source_cases, ("P16",)), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
-          (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
+          (shared_cases, ("P17", "P18")), (cycle_cases, ("P19", "P20")), (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
           (check_cases, ("P12", "P13")))
 
 
