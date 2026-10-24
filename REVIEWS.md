@@ -18,6 +18,7 @@ duty stays as the records leave it.
 | #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
 | #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #188 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
+| #189 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -49,3 +50,8 @@ None.
 - head 1 `03424bef12e5` (tree `05e8efd180c2`), discharge `ba001e0d52e8`: PENDING · awaiting codex; superseded by head 2
 - head 2 `18aada2aa6fb` (tree `43c3f5614fea`), discharge `23be3f7db84e`: PENDING · awaiting codex; superseded by head 3
 - head 3 `358eb8df4f35` (tree `a22878a31c6a`), discharge `92df3b7fc6d4`: PENDING · awaiting codex
+
+## s0fractal/warrant#189 — G10 from Monday's possibility-space proposal: goal, 7 obligations linked to G9
+
+- duty `ca58c1b8f0ee` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- head 1 `cf4a49e78c2a` (tree `e51e25dc483f`), discharge `dc3bb8733197`: PENDING · awaiting codex
