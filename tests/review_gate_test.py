@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Merge eligibility and due-for-review (tools/claimslib/eligibility.py) and the gate's GitHub side
-(tools/claimslib/gate.py), G1-G33. Each refusal case asserts the exact set of refusal codes, so a
+(tools/claimslib/gate.py), G1-G36. Each refusal case asserts the exact set of refusal codes, so a
 mutant that removes one rule is seen by its code disappearing (a later rule catching the same case
 does not hide it). Three fixture worlds are built once; each case works on its own branch from a
 world's commit.
@@ -11,7 +11,7 @@ import json
 import os
 import subprocess
 
-from review_world import FIXED, Fixture, R
+from review_world import BUGGY, C, FIXED, Fixture, R, RR, RV, _write, finding_test
 from world import check, finish
 
 from claimslib import eligibility as EL      # noqa: E402  (review_world put tools/ on the path)
@@ -285,7 +285,61 @@ def merge_cases(f):
           "(Codex finding 190c1c64418f on 17ea066)", late)
 
 
+# ---------------------------------------------------------------- the review waker's replays in a tail
+
+def replay_tail_cases():
+    """The base also holds #2, reviewed before, with Codex's mechanical finding at its head that nobody replayed.
+    #1's head is accepted; the review waker then files the checker's observations on top of it (a tail)."""
+    f = Fixture()
+    (f.dir / ".warrant" / "merge.json").write_text(json.dumps(MERGE) + "\n")
+    h = f.commit("#2's change", {"calc.py": BUGGY + "# two\n"})
+    f.ok("open", "--pr", "2", "--title", "Second")
+    f.ok("head", "--pr", "2", "--commit", h)
+    cid = f.ok("finding", "--pr", "2", "--commit", h, "--severity", "P2", "--what", "add subtracts", "--test",
+               "finding_test", "--case", "F1", "--patch", str(_write(f.base / "f.diff", finding_test()["patch"])),
+               actor="codex")
+    f.base_commit = f.save()
+    f.git("checkout", "-q", "-b", "pr1")
+    f.x = f.commit("the change", {"calc.py": FIXED})
+    f.ok("open", "--pr", "1", "--title", "Fix add")
+    f.ok("head", "--pr", "1", "--commit", f.x)
+    f.save()
+    f.ok("accept", "--pr", "1", "--commit", f.x, actor="codex")
+    f.tip = f.save()
+
+    at(f, f.tip, "g34").ok("replay")
+    tip = f.save()
+    _, got = codes(f, tip)
+    m = f.model()
+    check("G34", got == set() and m.findings[cid].at(h) == "FAIL" and RV.verify(f.rv(), f.tip) == [],
+          "the checker's observation of another pull request's finding, added after the accepted head, is merged "
+          "(re-executed by the check `test`, replay --verify)", (got, m.findings[cid].observed))
+
+    probe = {"probe": RR.PROBE, "finding": cid, "commit": h, "tree": f.model().findings[cid].head.tree, "test": "finding_test:F1"}
+
+    def observation(actor, result):
+        now = f.at() + 1
+        f.put(actor, "observation", R.observation(RV.replay_target(f.model().cfg, 2, cid, h), C.digest(C.canon(probe)),
+                                                  [now, now], result), [probe], at=now)
+        return f.save()
+
+    at(f, f.tip, "g35")
+    _, got = codes(f, observation("claude", "FAIL"))
+    check("G35", got == {"REVIEW_RECORDS", "TAIL_RECORD_UNREVIEWED"},
+          "the same observation signed by another pinned identity (claude) is no replay: refused, and unreviewed in the tail",
+          got)
+
+    at(f, f.tip, "g36")
+    _, got = codes(f, observation(f.replayer, "PASS"))
+    lied = [c for c, _ in RV.verify(f.rv(), f.tip)]
+    check("G36", got == set() and lied == ["REVIEW_REPLAY_DIFFERS"],
+          "an observation by the checker's key whose result a real replay does not give passes the path rule and is "
+          "refused by replay --verify, the required check `test`", (got, lied))
+    f.close()
+
+
 if __name__ == "__main__":
+    replay_tail_cases()
     w = world()
     pending_cases(w)
     w.close()

@@ -24,9 +24,11 @@ holding two verdicts computed from the same facts:
       head, which runs the head's own `claims.py check`, `review.py check` and `roadmap.py check`: code
       byte-identical to X's, since the tail touches nothing else;
     - every record added after X is either a verdict record (authentic under the base's pins and signed
-      by an actor of the base's accept_by) or a review-loop record of this pull request's own duty (the
-      duty, its head closures, findings against its heads, the review replay checker's observations of
-      those findings, a merge observation). Any other record (an unrelated transition, a grant, a record
+      by an actor of the base's accept_by), a review-loop record of this pull request's own duty (the
+      duty, its head closures, findings against its heads, a merge observation) or an observation by a
+      replayer of the base's reviews.json of any mechanical finding at one of its heads (the review
+      waker files those on top of a head; the required check `test` re-executes each one new since the
+      base, `review.py replay --verify`). Any other record (an unrelated transition, a grant, a record
       the base's pins do not authenticate) was never reviewed: TAIL_RECORD_UNREVIEWED;
     - an actor of the base's accept_by, other than the duty's author (the pull request's author
       actor) and the closure's filer, accepted exactly that closure, item 0 and its evidence, by a
@@ -42,7 +44,7 @@ holding two verdicts computed from the same facts:
 
   due-for-review  the pull request is open, not a draft, into the base branch; the base and the
     head's store read as above; the latest head's closure is at the head (X canonical, an ancestor,
-    and the same records-only tail, its added records verdicts or this pull request's own); every required check is green at the head; and there is no
+    and the same records-only tail, its added records verdicts, this pull request's own or replay observations); every required check is green at the head; and there is no
     verdict at that head: no acceptance by a reviewer (the acceptance rule above) and no finding.
 
 Both share every fact and every rule above; only the last clauses differ. Formats are functions of
@@ -188,11 +190,13 @@ def tail(root, x, head, added=None):
 
 def tail_records(b, model, rv, added):
     """The records of `added` (ids added after the accepted commit) that are neither a verdict record (an
-    authentic record, under the base's pins, by an actor of the base's accept_by) nor a review-loop record
-    of this pull request's own duty (the duty, its head closures, findings against its heads, the review
-    replay checker's observations of those findings, a merge observation): records nobody reviewed."""
-    mine = ({rv.did} | {h.tid for h in rv.heads} | {f.cid for f in rv.findings}
-            | {o for f in rv.findings for o, _ in f.observed.values()} | {o for o, _, _ in rv.merges})
+    authentic record, under the base's pins, by an actor of the base's accept_by), a review-loop record
+    of this pull request's own duty (the duty, its head closures, findings against its heads, a merge
+    observation) nor a replay observation the model admits (by a replayer of the base's reviews.json, of
+    any pull request's mechanical finding at one of its heads; re-executed by the check `test`): records
+    nobody reviewed."""
+    mine = ({rv.did} | {h.tid for h in rv.heads} | {f.cid for f in rv.findings} | {o for o, _, _ in rv.merges}
+            | {o for f in model.findings.values() for o, _ in f.observed.values()})
     return sorted(r for r in added if r not in mine
                   and (r not in model.recs or model.recs[r]["actor"] not in b.cfg["accept_by"]))
 

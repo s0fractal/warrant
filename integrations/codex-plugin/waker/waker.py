@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The review waker: start Codex once per pull request head that is due for review.
+"""The review waker: replay the findings, then start Codex once per pull request head due for review.
 
 launchd runs it every five minutes (install.py). One run:
 
@@ -7,7 +7,10 @@ launchd runs it every five minutes (install.py). One run:
   2. writes the base commit's tree once to HOME/code/<commit> (git archive) and runs THAT tree's
      `tools/review.py due` against the mirror: the due predicate (tools/claimslib/eligibility.py) is
      the base's, never a working tree's, and it reads each pull request's head as Git data only;
-  3. for each pull request due, keeps a memo HOME/wakes/<n>-<head>.json, gives the wake its own
+  3. for each pull request due, first the review replay checker (replay below); when that pushed
+     observations, Codex is not woken in this run: the next run reads the new head once its checks
+     are green, and the replay finds nothing left to do there;
+  4. for each pull request due, keeps a memo HOME/wakes/<n>-<head>.json, gives the wake its own
      detached worktree of the mirror at that head (TREES/<n>-<head12>; never the operator's
      checkout), runs `codex exec` there with the warrant-review skill (log HOME/logs/<n>-<head>.log,
      Codex's last message HOME/results/<n>-<head>.md), records the attempt's exit status, and removes
@@ -17,12 +20,29 @@ One wake per head: a head whose attempt exited 0 is never woken again (delete it
 again). An attempt that exited otherwise (or never finished) is retried after BACKOFF seconds,
 doubled each time, at most MAX_TRIES attempts in all; then the memo says it gave up.
 
-The waker signs nothing and reads no key: Codex, the agent, files its own records with its own seed.
+Replay. The review replay checker is an actor named by the hash of tools/claimslib/review_replay.py
+(`checker sha256:<H>`); `tools/review.py replay` signs as it only from code with that hash. The waker
+runs the BASE tree's `review.py replay --key -` (the base's reviews.json names the replayer; a pull
+request whose head changes review_replay.py is not replayed) in a detached worktree of the head
+(TREES/<n>-<head12>-replay), with the checker's seed REPLAYERS/<H>.seed (a regular file of this user,
+mode 0600) on standard input only, inside sandbox-exec: no network, no write outside that worktree,
+its git directory and a scratch directory HOME/replay-work/<n>-<head>, no read of REPLAYERS or of the
+usual credential directories. It replays every mechanical finding of the head's store (any pull
+request's, so a finding nobody replayed before is replayed now) at each of its heads no adopted
+replayer has observed. The head's own `project` commands then regenerate the views (same sandbox, no
+seed). The waker commits only the observation records the checker printed (by the replayer, each
+with its probe blob) and the generated views, refuses anything else the run left, and pushes that
+commit on the pull request's branch only while the branch is still at the head (a fast-forward).
+One replay per head: HOME/replays/<n>-<head>.json. A failed replay is logged there and Codex is woken
+as without it; no seed, no replay. `replay --verify` in CI re-executes every observation new since
+the base, and merge eligibility admits these records after the reviewed head (eligibility.py).
+Codex, the agent, files its own records with its own seed; no model is given the checker's seed.
 HOME is $WARRANT_WAKER_HOME or ~/.warrant/codex-waker; TREES $WARRANT_WAKER_TREES or
-~/Projects/.worktrees/codex-review; the Python that runs the base's tools is
-$WARRANT_WAKER_PYTHON or HOME/venv/bin/python (it needs cryptography); Codex is $WARRANT_WAKER_CODEX
-or `codex` on PATH. The file HOME/HOLD holds it: nothing is woken while it exists. --dry-run does
-steps 1 and 2 and prints each due head's state; it writes no memo and starts nothing.
+~/Projects/.worktrees/codex-review; REPLAYERS $WARRANT_WAKER_REPLAYERS or ~/.warrant-review-replayer
+(outside ~/.warrant, which Codex's sandbox may write); the Python that runs the base's tools is
+$WARRANT_WAKER_PYTHON or HOME/venv/bin/python (it needs cryptography), the one that runs a replay
+$WARRANT_WAKER_REPLAY_PYTHON or that one; Codex is $WARRANT_WAKER_CODEX or `codex` on PATH. The file HOME/HOLD holds it: nothing is woken while it exists. --dry-run does
+steps 1 and 2 and prints each due head's state; it writes no memo, replays nothing and starts nothing.
 
     python3 waker.py [--dry-run]
 """
@@ -34,6 +54,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -49,6 +70,19 @@ MAX_TRIES = 3
 BACKOFF = 900
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 OPERATOR_CHECKOUT = Path.home() / "Projects" / "warrant"
+SANDBOX = "/usr/bin/sandbox-exec"
+CHECKER_FILE = "tools/claimslib/review_replay.py"
+CHECKER = re.compile(r"checker sha256:([0-9a-f]{64})\Z")
+HEX = re.compile(r"[0-9a-f]{64}\Z")
+PROBE = "warrant-review/replay@1"
+STORE = ".warrant/store/"
+VIEWS = ("REVIEWS.md", "ROADMAP.md", "SPEC-CLAIMS.md", "WITNESSES.md")      # reviews.LEDGER_FILES
+PROJECTORS = ("tools/review.py", "tools/claims.py", "tools/roadmap.py")
+PR_BRANCH = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
+SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychains")
+COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
+             "-c", "commit.gpgsign=false"]
+REPLAY_TIMEOUT = 3600
 
 
 def iso(t):
@@ -72,17 +106,72 @@ def git(*args):
     return subprocess.run(["git", *args], capture_output=True, check=True).stdout
 
 
+def profile(writable, unreadable):
+    """The sandbox-exec profile of a replay: no network, no write outside `writable` (and /dev/null,
+    /dev/tty, /dev/fd), no read under `unreadable`. Paths are resolved: the sandbox matches real paths."""
+    def q(p):
+        s = str(Path(p).resolve())
+        if '"' in s or "\\" in s:
+            raise ValueError(f"{s[:80]!r} cannot be named in a sandbox profile")
+        return f'"{s}"'
+    allow = " ".join(f"(subpath {q(p)})" for p in writable)
+    return "\n".join(["(version 1)", "(allow default)", "(deny network*)", "(deny file-write*)",
+                      f'(allow file-write* {allow} (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/fd/[0-9]+$"))',
+                      *(f"(deny file-read* (subpath {q(p)}))" for p in unreadable), ""])
+
+
+def sandboxed(cmd, prof, env, stdin=None):
+    """Run `cmd` under sandbox-exec with the profile `prof` (macOS)."""
+    return subprocess.run([SANDBOX, "-p", prof, *cmd], input=stdin, env=env, capture_output=True, check=False,
+                          timeout=REPLAY_TIMEOUT)
+
+
+def changes(wt, filed, actor):
+    """The paths the replay changed in the worktree `wt`, to commit: the records `filed` (the ids the checker
+    printed), each an observation by `actor`, the new blobs among their probes, and the generated views.
+    Anything else (another record or blob, a file outside the store, a deletion, a link) is a RuntimeError."""
+    raw = git("-C", str(wt), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames").decode()
+    entries = [(e[:2], e[3:]) for e in raw.split("\0") if e]
+    want = {f"{STORE}records/{o}.json" for o in filed}
+    probes, blobs, out = set(), [], []
+    for xy, path in entries:
+        p = wt / path
+        if p.is_symlink() or not p.is_file():
+            raise RuntimeError(f"the replay left {xy} {path[:80]}, not a regular file: nothing pushed")
+        if xy == "??" and path in want:
+            rec = json.loads(p.read_text()).get("record") or {}
+            body = rec.get("body") if isinstance(rec.get("body"), dict) else {}
+            if not (rec.get("type") == "observation" and rec.get("actor") == actor
+                    and isinstance(body.get("probe"), str) and HEX.match(body["probe"])):
+                raise RuntimeError(f"{path[:80]} is not an observation by {actor[:28]}: nothing pushed")
+            probes.add(body["probe"])
+        elif xy == "??" and path.startswith(STORE + "blobs/") and HEX.match(path[len(STORE) + 6:]):
+            blobs.append(path)
+        elif not (xy == " M" and path in VIEWS):
+            raise RuntimeError(f"the replay left {xy} {path[:80]}: nothing pushed")
+        out.append(path)
+    if want - set(out):
+        raise RuntimeError(f"{len(want - set(out))} record(s) the checker printed are not in the store: nothing pushed")
+    for path in blobs:
+        name = path[len(STORE) + 6:]
+        if name not in probes or (json.loads((wt / path).read_text()).get("probe") != PROBE):
+            raise RuntimeError(f"{path[:80]} is not the probe of an observation filed: nothing pushed")
+    return sorted(out)
+
+
 class Waker:
     def __init__(self, home=None, trees=None, python=None, codex=None, plugin=PLUGIN,
-                 run=subprocess.run, clock=time.time):
+                 run=subprocess.run, clock=time.time, replayers=None, replay_python=None, jail=sandboxed):
         env = os.environ.get
         self.home = Path(home or env("WARRANT_WAKER_HOME") or Path.home() / ".warrant" / "codex-waker")
         self.trees = Path(trees or env("WARRANT_WAKER_TREES") or Path.home() / "Projects" / ".worktrees" / "codex-review")
         self.python = str(python or env("WARRANT_WAKER_PYTHON") or self.home / "venv" / "bin" / "python")
         self.codex = str(codex or env("WARRANT_WAKER_CODEX") or shutil.which("codex") or "/opt/homebrew/bin/codex")
-        self.plugin, self.run, self.clock = Path(plugin), run, clock
+        self.replayers = Path(replayers or env("WARRANT_WAKER_REPLAYERS") or Path.home() / ".warrant-review-replayer")
+        self.replay_python = str(replay_python or env("WARRANT_WAKER_REPLAY_PYTHON") or self.python)
+        self.plugin, self.run, self.clock, self.jail = Path(plugin), run, clock, jail
         self.mirror = self.home / "warrant.git"
-        for d in ("wakes", "logs", "results", "code"):
+        for d in ("wakes", "logs", "results", "code", "replays", "replay-work"):
             (self.home / d).mkdir(parents=True, exist_ok=True)
 
     # -- the base and its predicate
@@ -124,6 +213,110 @@ class Waker:
         if r.returncode:
             raise RuntimeError(f"review.py due exited {r.returncode}: {err[-800:]}")
         return json.loads(r.stdout)
+
+    # -- the replay before a wake
+
+    def seed(self, code):
+        """(the base's current replayer, its seed) for the base tree `code`, or (why not, None)."""
+        try:
+            actor = json.loads((code / ".warrant" / "reviews.json").read_text())["replayers"][-1]
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            return "replay skipped: the base's reviews.json names no replayer", None
+        m = CHECKER.match(actor) if isinstance(actor, str) else None
+        if m is None:
+            return f"replay skipped: {str(actor)[:40]!r} is not a checker actor", None
+        path = self.replayers / f"{m.group(1)}.seed"
+        try:
+            st = path.lstat()
+        except OSError:
+            return f"replay skipped: no seed {path}", None
+        if not stat.S_ISREG(st.st_mode) or st.st_mode & 0o077 or st.st_uid != os.getuid():
+            return f"replay skipped: {path} is not a regular file of this user with mode 0600", None
+        text = path.read_text().strip()
+        if not HEX.match(text):
+            return f"replay skipped: {path} is not a seed", None
+        return actor, (text + "\n").encode()
+
+    def blob(self, rev, path):
+        """The object id of `path` at commit `rev` in the mirror, or None."""
+        r = subprocess.run(["git", "-C", str(self.mirror), "rev-parse", "--verify", "--quiet", f"{commit(rev)}:{path}"],
+                           capture_output=True, check=False)
+        return r.stdout.decode().strip() if r.returncode == 0 else None
+
+    def env(self, work, code):
+        return {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(Path.home()), "TMPDIR": str(work),
+                "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1", "LANG": "en_US.UTF-8"}
+
+    def replay(self, a, base):
+        """The review replay checker for due head `a`, before Codex is woken (see the module's Replay).
+        (pushed, line): when pushed, Codex is not woken in this run."""
+        actor, seed = self.seed(self.tree(base))
+        if seed is None:
+            return False, actor             # no memo: a seed placed later serves this head
+        p = self.home / "replays" / f"{self.key(a)}.json"
+        if p.is_file():
+            return False, json.loads(p.read_text()).get("line", "replayed")
+        try:
+            pushed, line = self._replay(a, base, actor, seed)
+        except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
+            pushed, line = False, f"replay failed: {str(e)[:300]}"
+        p.write_text(json.dumps({"pr": a["pr"], "head": a["head"], "base": base, "replayer": actor, "at": iso(self.clock()),
+                                 "pushed": pushed, "line": line}, indent=1))
+        return pushed, line
+
+    def discard(self, wt, work):
+        if wt.exists():
+            subprocess.run(["git", "-C", str(self.mirror), "worktree", "remove", "--force", str(wt)], capture_output=True,
+                           check=False)
+            shutil.rmtree(wt, ignore_errors=True)
+        shutil.rmtree(work, ignore_errors=True)
+
+    def _replay(self, a, base, actor, seed):
+        n, head, branch = number(a["pr"]), commit(a["head"]), a.get("branch")
+        if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != BRANCH):
+            return False, f"replay skipped: {str(branch)[:40]!r} is not a pull request branch to push to"
+        if self.blob(base, CHECKER_FILE) != self.blob(head, CHECKER_FILE):
+            return False, f"replay skipped: #{n} changes {CHECKER_FILE}; it replays once the checker is adopted"
+        wt = self.trees / f"{n}-{head[:12]}-replay"
+        work = self.home / "replay-work" / self.key(a)
+        self.discard(wt, work)
+        work.mkdir(parents=True)
+        self.trees.mkdir(parents=True, exist_ok=True)
+        git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(wt), head)
+        try:
+            return self._file(a, base, actor, seed, wt, work, branch)
+        finally:
+            self.discard(wt, work)
+
+    def _file(self, a, base, actor, seed, wt, work, branch):
+        n, head, code = a["pr"], a["head"], self.tree(base)
+        gitdir = Path(git("-C", str(wt), "rev-parse", "--absolute-git-dir").decode().strip())
+        prof = profile([wt, work, gitdir], [self.replayers, *(Path.home() / s for s in SECRETS)])
+        r = self.jail([self.replay_python, str(code / "tools" / "review.py"), "--root", str(wt), "replay", "--key", "-"],
+                      prof, self.env(work, code), seed)
+        if r.returncode:
+            raise RuntimeError(f"the checker exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+        lines = [x for x in r.stdout.decode().splitlines() if x.split() and HEX.match(x.split()[0])]
+        if not lines:
+            return False, "replay: nothing to replay"
+        for proj in PROJECTORS:
+            if (wt / proj).is_file():
+                v = self.jail([self.replay_python, str(wt / proj), "project"], prof, self.env(work, wt), None)
+                if v.returncode:
+                    raise RuntimeError(f"{proj} project exited {v.returncode}: "
+                                       f"{v.stderr.decode(errors='replace').strip()[-300:]}")
+        paths = changes(wt, [x.split()[0] for x in lines], actor)
+        git("-C", str(wt), "add", "--", *paths)
+        msg = (f"Review replay of #{n} at {head[:12]}: {len(lines)} observation(s) by {actor[:27]}\n\n" + "\n".join(lines)
+               + f"\n\nFiled by the review waker before waking the reviewer: the checker is the base {base[:12]}'s "
+               f"{CHECKER_FILE}, run in a sandbox with its own seed; no person or model chose this run.\n")
+        git("-C", str(wt), *COMMITTER, "commit", "--quiet", "--no-verify", "-m", msg)
+        new = commit(git("-C", str(wt), "rev-parse", "HEAD").decode().strip())
+        tip = git("-C", str(wt), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
+        if tip[:1] != [head]:
+            return False, f"replay not pushed: {branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}"
+        git("-C", str(wt), "push", "--quiet", "origin", f"{new}:refs/heads/{branch}")
+        return True, f"replay: {len(lines)} observation(s) by {actor[:27]} pushed as {new[:12]} on {branch}"
 
     # -- one wake
 
@@ -217,7 +410,12 @@ def tick(w, dry):
     out += [f"  not due #{x['pr']} {x['head'][:12]}: {', '.join(c for c, _ in x['not_due'])}" for x in found["not_due"]]
     held = (w.home / "HOLD").exists()
     for x in found["due"]:
-        line = w.report(x, held) if dry or held else w.wake(x)[1]
+        if dry or held:
+            line = w.report(x, held)
+        else:
+            pushed, line = w.replay(x, base)
+            if not pushed:
+                line += "; " + w.wake(x)[1]
         out.append(f"  DUE #{x['pr']} {x['head'][:12]}: {line}")
     return out
 
