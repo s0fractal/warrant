@@ -1,0 +1,538 @@
+# Proposal: Warrant as a Verifiable Space of Possibilities
+
+**Subtitle:** Agent-synthesized transformation recipes, heterogeneous environments, and persistent obligations
+
+**Status:** Exploratory architectural proposal  
+**Target:** Warrant 2 and future compatible extensions  
+**Scope:** Architecture, semantics, and experimental direction  
+**Guiding principle:** *Dynamic expansion of the space of possibilities, with memory of obligations.*
+
+**Author:** Monday (ChatGPT), relayed by the owner (s0fractal) on 2026-10-24. Saved verbatim by Claude for crediting as a roadmap source.
+
+---
+
+## 1. Abstract
+
+Warrant should be considered not only as a protocol for recording and transferring work between agents, but as a potential foundation for a persistent, verifiable environment in which autonomous agents can discover, construct, and extend the space of possible operations.
+
+The fundamental unit of this environment is not a repository, a conversation, an agent session, or a storage location.
+
+It is a **content-addressed artifact**, together with the evidence, verification rules, and obligations relevant to its use.
+
+Agents are temporary participants. Artifacts, verifiable relationships, and unresolved obligations can persist beyond any particular agent, model, execution environment, or repository.
+
+A central proposed mechanism is the **transformation recipe**: a reusable, content-addressed description of a transformation between environments, including its preconditions, established guarantees, known losses, and effects on obligations.
+
+Agents may synthesize candidate recipes by recognizing patterns across previously observed transformations. Independent verification determines which claims about those recipes can be relied upon.
+
+As verified recipes accumulate, agents gain access to new transformations and new compositions of existing transformations.
+
+The intended result is not merely the accumulation of knowledge, but the **dynamic expansion and revision of what agents can justifiably do**, while preserving responsibility for previously incurred obligations.
+
+## 2. Motivation
+
+Most agent architectures place substantial responsibility on the agent itself.
+
+The agent maintains context, interprets past work, selects tools, carries assumptions forward, and decides which earlier conclusions remain trustworthy.
+
+This creates an uncomfortable dependency: the reliability of continued work depends heavily on a probabilistic model's ability to remember, interpret, and faithfully reproduce its history.
+
+Warrant already offers another direction.
+
+Its current architecture includes:
+
+- Hash-addressed records and arbitrary blobs.
+- Explicit distinctions between assertions, observations, replayed computation, and acceptance.
+- Records of established results and residual uncertainty.
+- Persistent duties with controlled discharge, delegation, and release.
+- Recipient-relative assessment rather than universal acceptance.
+- Reproducible computation through a specifically identified Sigma provider.
+
+These mechanisms suggest a more general interpretation.
+
+**What if an agent did not need to trust or reconstruct another agent's reasoning, but could instead operate directly on a graph of independently verifiable artifacts?**
+
+A subsequent agent could retrieve the necessary bytes by their hashes, verify the relevant claims under an explicitly chosen verification environment, inspect outstanding obligations, and continue from the resulting state.
+
+The location of those bytes would be incidental.
+
+A local content-addressed store, object storage service, repository, peer-to-peer network, or another compatible provider could all serve the same artifact.
+
+The storage provider would supply bytes, not authority.
+
+## 3. Central Thesis
+
+The proposed architecture separates five concerns.
+
+| Layer | Responsibility |
+|---|---|
+| Content | Identify immutable artifacts by their bytes |
+| Verification | Establish what follows from specific artifacts under explicit rules |
+| Transformation | Describe and execute admissible operations between environments |
+| Obligation | Preserve responsibility for established, pending, transferred, and unresolved work |
+| Agency | Discover patterns, synthesize candidates, choose goals, and propose new operations |
+
+These layers may share content-addressed objects without sharing the same semantics.
+
+In particular, Warrant's current `duty`, `transition`, `accept`, `observation`, `grant`, and `challenge` records can remain a protocol for responsibility and reliance.
+
+They need not become the universal ontology for every computation, proof, transformation, or artifact.
+
+**The proof space is more general than the work protocol. The work protocol provides accountability within that space.**
+
+This distinction allows the system to expand without requiring each newly discovered capability to become a new Warrant record type.
+
+## 4. Transformation Recipes
+
+A transformation recipe describes a reusable pattern for moving from one class of states to another.
+
+Conceptually:
+
+R : (E_i, A, P, O) -> (E_j, A', P', O', L)
+
+Where:
+
+- E_i is the source environment.
+- E_j is the target environment.
+- A and A' are input and output artifacts.
+- P and P' are established properties applicable to those artifacts.
+- O and O' are obligations before and after transformation.
+- L is an explicit account of lost information, unavailable guarantees, or unresolved claims.
+
+A recipe is more than an executable function.
+
+It describes the conditions under which a transformation may be applied, what the transformation establishes, what it does not establish, and what responsibilities remain afterward.
+
+### 4.1 Three kinds of loss
+
+A particularly important distinction is between:
+
+1. **Information loss:** Source information is not preserved in the target artifact.
+2. **Guarantee loss:** A property may still hold, but the available evidence no longer establishes it in the target environment.
+3. **Property invalidation:** Evidence establishes that a property no longer holds.
+
+These must not be conflated.
+
+A transformation from one representation to another may preserve a semantic property while losing the ability to verify it with the original checker.
+
+Conversely, preserving all bytes does not necessarily preserve the meaning of those bytes under a different interpreter.
+
+Every recipe should therefore distinguish preservation, non-establishment, and known invalidation.
+
+### 4.2 Recipes as content-addressed artifacts
+
+A candidate recipe could be represented by a versioned canonical blob.
+
+For illustration, not as a normative Warrant 2 schema:
+
+```json
+{
+  "schema": "warrant.recipe/0",
+  "source_environment": "<hash>",
+  "target_environment": "<hash>",
+  "transform": "<hash>",
+  "preconditions": ["<claim-hash>"],
+  "claimed_postconditions": ["<claim-hash>"],
+  "declared_losses": ["<loss-hash>"],
+  "obligation_rules": "<hash>",
+  "verification_contract": "<hash>"
+}
+```
+
+The recipe identifier would be derived from its canonical bytes.
+
+Every referenced object would have its own independently verifiable identity.
+
+The recipe is initially only a **proposal**. Its content hash proves identity, not correctness.
+
+The verification contract must identify the verifier, assumptions, expected evidence, and limits of the claimed guarantees.
+
+Successful verification of one application does not automatically establish universal correctness of the recipe.
+
+## 5. Agent-Synthesized Recipes
+
+The ability to synthesize new recipes is central to the proposal.
+
+Language models are effective at recognizing and generalizing patterns. That capability can be used to generate candidate transformations without giving the model authority to declare its own results correct.
+
+Consider three observed transformations:
+
+```text
+A1 -> B1
+A2 -> B2
+A3 -> B3
+```
+
+An agent identifies a common structure and proposes a recipe:
+
+```text
+observations
+    |
+    v
+pattern discovery
+    |
+    v
+candidate recipe R
+    |
+    v
+verification of claims
+    |
+    +-- rejected / unresolved
+    |
+    +-- verified within scope
+             |
+             v
+      reusable artifact
+```
+
+The essential separation is:
+
+**Pattern recognition proposes. Verification establishes. Warrant records the resulting responsibilities and reliance conditions.**
+
+The system should preserve failed attempts as well as successful ones where useful.
+
+A failed generalization can reveal missing preconditions, unexplored environmental differences, or entirely new obligations.
+
+A recipe that fails on one input may still become valid after its domain is narrowed and its assumptions made explicit.
+
+This makes synthesis an iterative process of discovery rather than a one-shot act of invention.
+
+## 6. Composition of Recipes
+
+The main value of a recipe is not necessarily its individual execution.
+
+It is its potential for composition.
+
+If R_1: A -> B and R_2: B -> C, then an agent may propose R_2 ∘ R_1: A -> C.
+
+But composition is admissible only when the verified postconditions of R_1 establish the necessary preconditions of R_2, under compatible interpretation and verification rules.
+
+### 6.1 No guarantee laundering
+
+A fundamental invariant should be:
+
+> No composition may promote an unestablished property into an established guarantee without new admissible evidence.
+
+Suppose a transformation loses the evidence for property P.
+
+A subsequent recipe cannot silently recover P simply because its output representation supports an assertion about that property.
+
+Recovery requires an appropriate new proof, observation, or other explicitly admitted basis.
+
+### 6.2 Obligation conservation
+
+A corresponding accountability invariant should be:
+
+> Every outstanding obligation affected by a transformation must remain traceable until discharged, transferred, substituted, released, or otherwise disposed of under the applicable authority rules.
+
+A recipe may introduce obligations.
+
+It may establish conditions allowing existing obligations to be discharged.
+
+It may discover that a previously promised result is impossible under a particular environment.
+
+But it must not silently erase an obligation.
+
+The existing Warrant duty and transition semantics should remain authoritative for these dispositions; recipe metadata alone grants no power to release or discharge a duty.
+
+### 6.3 Non-monotonic possibilities
+
+The space of established possibilities is not necessarily monotonically expanding.
+
+New evidence may enable previously unavailable operations, but it may also invalidate assumptions, activate triggers, or make earlier actions inadmissible.
+
+The intended system therefore supports both discovery and revision.
+
+**The accumulated artifact graph can grow while the set of currently admissible actions changes in either direction.**
+
+## 7. Obligations as Drivers of Discovery
+
+Obligations should not be regarded exclusively as restrictions on action.
+
+They can also define directions for discovering new capabilities.
+
+Consider a transformation that preserves properties P and Q but leaves property R unestablished.
+
+The resulting state may carry an obligation to establish R before some further operation becomes admissible.
+
+An agent can search for an existing verification procedure or synthesize a new recipe that provides the missing evidence.
+
+The resulting cycle is:
+
+```text
+Transformation
+     |
+     v
+Unestablished property
+     |
+     v
+Explicit unresolved obligation
+     |
+     v
+Search / pattern discovery
+     |
+     v
+Candidate repair recipe
+     |
+     v
+Independent verification
+     |
+     v
+New admissible capability
+```
+
+An obligation can therefore serve two purposes simultaneously:
+
+- Preserve accountability for unfinished work.
+- Create a verifiable target for exploration.
+
+This is the practical meaning of **dynamic expansion of the space of possibilities, with memory of obligations**.
+
+However, the existence of an obligation does not imply that it is solvable, or that any agent is authorized to discharge it.
+
+## 8. Storage Independence
+
+Content identity should not depend on storage topology.
+
+The conceptual interface is:
+
+```text
+resolve(content_hash)
+    -> bytes
+    -> verify digest
+    -> decode under explicit schema
+    -> resolve required dependencies
+    -> verified artifact or typed refusal
+```
+
+The resolver may consult one or more independent providers.
+
+No provider becomes an authority merely by returning data.
+
+A correct resolver must distinguish at least:
+
+- Verified bytes returned.
+- Object unavailable.
+- Returned bytes inconsistent with the requested hash.
+- Required dependency missing.
+- Resource or policy refusal.
+
+An unavailable object must not be treated as evidence that the object does not exist.
+
+Likewise, retrieving a complete dependency closure for a particular proof does not establish the completeness of the global record universe.
+
+This proposal does not require a global index, a new blockchain, or consensus among all participants.
+
+Local, explicitly pinned proof closures should be sufficient for locally verifiable claims.
+
+Claims involving global absence, freshness, revocation, or latest-state semantics require additional assumptions and mechanisms.
+
+## 9. Verification and Authority
+
+Verification and authorization must remain independent.
+
+A cryptographically authentic statement may be false.
+
+A mechanically valid result may be irrelevant to the recipient's intended use.
+
+A valid transformation may still be unauthorized.
+
+Accordingly, the system should distinguish:
+
+**Artifact identity:** Do these bytes have the expected digest?
+
+**Computational validity:** Does this verifier establish the claimed result under this environment?
+
+**Applicability:** Do the verified assumptions match the proposed use?
+
+**Authority:** Is the actor permitted to perform the relevant operation or settle the relevant obligation?
+
+**Reliance:** Does the recipient's current policy permit acting on the available evidence?
+
+The identity of the verifier, its rules, assumptions, environment, and any trusted external observations must be explicit.
+
+Where possible, these should also be content-addressed.
+
+A proof is portable only to the extent that its verification dependencies are available and the recipient accepts the required trust base.
+
+Warrant's current Sigma replay mechanism already provides an important example of this separation.
+
+The proposed loss-accounting semantics are distinct from the existing Sigma receipt's `lost` field, which Warrant 2 currently requires to be empty for admitted REPLAYED computation closures. These concepts must not be merged by changing the meaning of that field.
+
+## 10. Relationship to Warrant 2
+
+The proposal should initially be implemented as an extension above the existing Warrant 2 core.
+
+It should not require new record kinds, a different hashing scheme, or altered duty settlement semantics.
+
+Existing mechanisms can be reused as follows:
+
+| Existing Warrant mechanism | Proposed role |
+|---|---|
+| Content-addressed blobs | Recipe definitions, environments, manifests, and verification artifacts |
+| `transition` | Record concrete recipe applications and their established results |
+| `evidence` / `relied_on` | Connect applications to supporting artifacts and earlier work |
+| `residual` / `opened` | Identify unresolved consequences and possible new work |
+| `duty` | Represent explicitly assumed responsibilities |
+| `accept` / `grant` | Preserve recipient-specific acceptance and authority |
+| Sigma replay | Provide a verified computational basis where expressible |
+| `challenge` | Record counterexamples and dispute applicable claims |
+| Agent interface | Expose compact verified context and actionable frontiers |
+
+A recipe may initially be an ordinary blob referenced by a transition's evidence.
+
+A separately versioned recipe-processing layer can supply interpretation, candidate synthesis, verification, and composition.
+
+Only after actual usage demonstrates missing expressiveness should additional normative record structures be considered.
+
+## 11. Minimal Experiment
+
+The first milestone should demonstrate a capability that cannot be reduced to conversation handoff inside one repository.
+
+### Three-agent, three-environment experiment
+
+**Agent A — Discovery**
+
+Agent A operates in environment E_1.
+
+It observes several concrete transformations and synthesizes a candidate reusable recipe.
+
+It produces content-addressed artifacts describing the recipe, its dependencies, claimed guarantees, and outstanding obligations.
+
+**Agent B — Independent continuation**
+
+Agent B starts with no conversation history from A and no shared repository.
+
+It receives only a root hash and access to one or more artifact providers.
+
+It resolves the required bytes, verifies the recipe within an explicitly accepted environment, and applies it to a new compatible input.
+
+The application crosses into a different environment E_2, causing one guarantee to become unestablished.
+
+B records the consequence without silently discarding the associated obligation.
+
+**Agent C — Recovery and composition**
+
+Agent C operates in environment E_3, without access to either previous agent's context.
+
+It independently retrieves the artifact graph.
+
+It identifies the unresolved property, synthesizes or discovers a recipe that establishes the missing guarantee under an appropriate checker, and composes the result with the earlier transformation.
+
+If its evidence and authority are sufficient, it records the relevant closure. Otherwise the obligation remains open.
+
+### Success criteria
+
+The experiment succeeds only if:
+
+1. Artifact identity is unchanged by movement between independent stores.
+2. No LLM is required to reproduce cryptographically sensitive artifact bytes through its natural-language context.
+3. Recipe application is independently checked under pinned verification semantics.
+4. Guarantees not established by a transformation are not silently promoted by composition.
+5. Outstanding obligations remain traceable across agent and environment boundaries.
+6. Agent C can continue without knowledge of the previous conversations or repository layouts.
+7. The final result and its evidential basis can be verified independently of A, B, and C.
+
+Negative tests should include corrupted bytes, missing dependencies, invalid recipe preconditions, false postcondition claims, mismatched verifier identity, and attempted loss of obligations.
+
+The experiment should also document precisely which claims remain dependent on trust, external observations, or incomplete views.
+
+## 12. Incremental Implementation
+
+### Stage 1 — Recipe artifacts
+
+Define a minimal versioned recipe schema, a verification contract, and loss-accounting semantics as ordinary content-addressed blobs.
+
+Keep the existing Warrant 2 record model unchanged.
+
+### Stage 2 — Portable resolution
+
+Introduce a pluggable content resolver, initially supporting two independent local stores.
+
+Add remote providers only after the byte-identity and missing-dependency semantics are tested.
+
+### Stage 3 — Verification and application
+
+Implement a narrow recipe executor/verifier for one well-defined class of transformations.
+
+Reuse Sigma where its semantics fit.
+
+Do not claim that generic host-language execution is formally verified merely because it produces a hash-addressed receipt.
+
+### Stage 4 — Synthesis and composition
+
+Allow an agent to propose new recipes based on observed examples.
+
+Provide mechanical checking of applicability, evidence, declared guarantee changes, and obligation propagation.
+
+### Stage 5 — Independent ecosystem demonstration
+
+Complete the three-agent experiment with different model sessions, different storage locations, and independently reproducible verification.
+
+Publish the artifacts, root hashes, verification procedures, and failed cases.
+
+Measure not merely task success, but independent reproducibility and resistance to unjustified claims.
+
+## 13. Non-Goals
+
+This proposal does not attempt to:
+
+- Prove that arbitrary natural-language claims are true.
+- Make language models intrinsically reliable.
+- Require all artifacts to be publicly accessible.
+- Establish a globally complete history of all records.
+- Replace Warrant's recipient-relative trust and authorization model.
+- Introduce a global consensus mechanism.
+- Require one universal interpreter for all heterogeneous environments.
+- Guarantee that every unresolved obligation can eventually be satisfied.
+
+Its purpose is narrower and more concrete: make independently verifiable transformations reusable and composable, with explicit boundaries on their guarantees and persistent accountability for their consequences.
+
+## 14. Long-Term Direction
+
+The long-term objective is an environment in which the introduction of a new agent does not require reconstructing the reasoning history of earlier agents.
+
+The agent discovers available artifacts, determines which properties it can establish under its accepted verification rules, identifies applicable transformations, and proposes further changes.
+
+Successful transformations produce additional reusable artifacts.
+
+Failed transformations may yield counterexamples, narrower domains of applicability, or new obligations.
+
+Recipes themselves become objects of discovery, improvement, verification, and composition.
+
+Thus the environment accumulates not only results, but **ways of obtaining further results**.
+
+An agent's intelligence contributes to exploration. The environment supplies persistence, verifiability, and accountability.
+
+No particular model, repository, storage provider, or original protocol author must remain present for independently verifiable work to continue.
+
+## 15. Design Principle
+
+The central design principle can be stated as:
+
+> **Agents may expand the space of possible transformations, but must not silently expand the space of established truths or erase the obligations inherited from previous transformations.**
+
+This is the distinction that makes open-ended agent synthesis compatible with disciplined verification.
+
+Warrant does not need to know all future operations in advance.
+
+It needs to preserve enough structure for future agents to establish what they may rely on, identify what remains unresolved, and construct new admissible paths forward.
+
+The resulting system is not a universal truth machine.
+
+It is a potential foundation for a persistent, distributed, verifiable space of evolving capabilities.
+
+**Dynamic expansion of the space of possibilities, with memory of obligations.**
+
+---
+
+## Open Design Questions
+
+1. What is the smallest verifiable recipe representation that supports meaningful composition without introducing a new universal execution language?
+2. Should guarantee changes be represented as typed claims, separate certificates, or an independently verified effect ledger?
+3. How should recipe synthesis distinguish demonstrated applicability from universally established correctness?
+4. What is the minimal common interface for independent verifiers operating in heterogeneous environments?
+5. How can recipe composition preserve Warrant's existing obligation authority rules without duplicating the assessment engine?
+6. Which parts of this proposal can be demonstrated entirely as application-layer artifacts before any normative change to Warrant 2?
+
+The recommended next step is to resolve these questions through one minimal cross-environment experiment rather than by extending the core specification prematurely.
