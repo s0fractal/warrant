@@ -288,12 +288,15 @@ def sandbox_cases():
     if not Path(WAKER.SANDBOX).is_file():
         print(f"skip  W4 (no {WAKER.SANDBOX} on this host)")
         return
+    if subprocess.run([WAKER.SANDBOX, "-p", "(version 1)\n(allow default)\n", "/usr/bin/true"], capture_output=True).returncode:
+        print("skip  W4 (this process may not apply a sandbox: it runs inside one already)")
+        return
     f = Fixture()
     try:
         keys, inside, outside = f.base / "keys", f.base / "inside", f.base / "outside"
         for d in (keys, inside, outside):
             d.mkdir()
-        (keys / "k.seed").write_text("secret\n")
+        (keys / "k.seed").write_text("0" * 64 + "\n")
         probe = ("import socket, sys\nout = []\n"
                  f"for p in ({str(keys / 'k.seed')!r},):\n"
                  "    try:\n        open(p).read(); out.append('read')\n    except OSError:\n        out.append('no read')\n"
