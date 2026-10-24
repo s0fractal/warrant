@@ -11,6 +11,7 @@ and reproducible computations are others.
 - Contract: [SPEC.md](SPEC.md)
 - What the rebuild retired, and where the previous generation lives: [HISTORY.md](HISTORY.md)
 - Handing work to another agent (Python API, CLI, stdio MCP): [AGENT.md](AGENT.md)
+- The proof-space pilot (goal G9), its contract and resolution layer, outside SPEC.md: [PILOT.md](PILOT.md)
 
 ## Install
 
