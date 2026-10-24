@@ -12,7 +12,7 @@ name: ci
 #                    never a check of this workflow), the roadmap check, the review loop suites;
 #   claims-selftest  tools/claims.py --selftest;
 #   examples         cross-host, review handoff, ref transport, scenarios, agent acceptance,
-#                    the Claude Code plugin bridge;
+#                    the Codex plugin and review waker, the Claude Code plugin bridge;
 #   dependency-audit the frozen dependency-audit inputs and the application handoff;
 #   mutants          tests/mutants.py and tests/agent_mutants.py in parts (--shard K/N), each
 #                    part checking its own targets' baseline first and writing its matrix;
@@ -97,7 +97,7 @@ jobs:
       - name: The review loop as records (tools/review.py; fixture Git repositories)
         working-directory: tests
         run: |
-          for t in reviews review_check review_merge review_replay review_integration; do python "${t}_test.py"; done
+          for t in reviews review_check review_merge review_replay review_integration review_gate; do python "${t}_test.py"; done
 
       - name: Agent interface (Python API, CLI and stdio MCP over one backend; installed bytes)
         working-directory: tests
@@ -159,6 +159,9 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           for d in python cli mcp; do python "$GITHUB_WORKSPACE/examples/agent/acceptance.py" --door "$d"; done
+
+      - name: Codex plugin and review waker (manifests, launcher, one wake per head, stdio MCP client)
+        run: python integrations/codex-plugin/test_plugin.py
 
       - name: Claude Code plugin bridge (Warrant 0.x format, published warrant-verify 0.12.0)
         run: |

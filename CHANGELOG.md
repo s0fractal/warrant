@@ -38,6 +38,34 @@ Everything below this entry describes Warrant 0.x, which is preserved at the tag
 `history/warrant-0.x-2026-10-18`; `HISTORY.md` maps what was retired and what
 replaced it.
 
+### Merging on acceptance; the reviewer woken by itself
+
+- One predicate (`tools/claimslib/eligibility.py`) gives two verdicts from the same facts:
+  merge-eligible, and due for review. The pull request's head is read as Git objects only; the
+  configuration (`.warrant/reviews.json`, the new `.warrant/merge.json`) and the trust (only the
+  keys `.warrant/roles.json` pins) are the BASE commit's. Eligible: no hold, the review records
+  well formed, the latest head's closure at a commit X in the head's history, nothing after X
+  but added records and blobs and the generated views, an acceptance of exactly that closure by
+  an actor of `accept_by` who is neither the author nor the filer, no finding against it, and the
+  required checks green at the head, each bound to its workflow file.
+- `.github/workflows/merge-on-acceptance.yml` runs only the base branch's code and merges at most
+  one eligible pull request per run, with a merge commit bound to the head it assessed, then
+  dispatches `ci.yml` and `x1-cross-repo.yml` on master (a `GITHUB_TOKEN` merge starts no push
+  workflow). Every refusal reason goes into the job summary. Holds: the label `hold`, the
+  repository variable `WARRANT_MERGE_GATE=hold`, disabling the workflow.
+- `tools/review.py gate` and `due`; `tools/claimslib/gate.py` (GitHub through `gh api`).
+- `integrations/codex-plugin` (Codex's plugin format, marketplace `.agents/plugins/marketplace.json`):
+  the warrant MCP server, the `warrant-review` skill, a stdio client for a review worktree's
+  configuration, and a waker run by launchd that runs the base tree's `review.py due` and starts
+  `codex exec` once per pull request head that is due. `install.py` installs it.
+- `tests/review_gate_test.py` G1-G28; mutants M534-M557; `integrations/codex-plugin/test_plugin.py`
+  C1-C9 (CI, examples job).
+- The retired autonomy envelope (`history/AUTONOMY-ENVELOPE-0.1-RETIREMENT.md` at the tag
+  `history/warrant-0.x-2026-10-18`) never merged anything: its actor needed the branch-protection
+  endpoint a workflow token cannot read. This gate reads no protection settings; it binds the
+  base, the head and the required checks it reads, and GitHub's own protection still applies to
+  the merge.
+
 ### Agent views as manifests over a content-addressed store; collection by reachability
 
 - **[protocol]** A warrant-agent view no longer copies the store: its record envelopes, blobs,

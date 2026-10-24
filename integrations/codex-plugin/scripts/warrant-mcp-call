@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""Call one tool of the warrant MCP server over stdio, with a given configuration, and print its data.
+
+    warrant-mcp-call --config CONFIG TOOL '{"workspace": "...", ...}'
+
+TOOL is a warrant tool without its prefix (workspace, context, read, prepare, commit, explain, ...).
+The server is warrant-agent-mcp beside this Python (the venv the server is installed in), or
+$WARRANT_AGENT_MCP. It is the same server the plugin registers, pointed at another configuration (a
+review worktree's, made by `warrant-agent-mcp init`): what it signs is the configuration's signer's,
+and only on `commit`. A refusal prints the server's error and exits 2.
+"""
+import argparse
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def server():
+    env = os.environ.get("WARRANT_AGENT_MCP")
+    if env:
+        return env
+    beside = Path(sys.executable).parent / "warrant-agent-mcp"
+    return str(beside) if beside.is_file() else "warrant-agent-mcp"
+
+
+async def call(config, tool, args):
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+    params = StdioServerParameters(command=server(), args=["--config", config])
+    async with stdio_client(params) as (r, w):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            res = await s.call_tool("warrant_" + tool, args)
+            if res.is_error:
+                return 2, [getattr(c, "text", str(c)) for c in res.content]
+            return 0, (res.structured_content or {}).get("data", res.structured_content)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--config", required=True)
+    ap.add_argument("tool")
+    ap.add_argument("args", nargs="?", default="{}", help="the tool's arguments, a JSON object")
+    a = ap.parse_args(argv)
+    args = json.loads(a.args)
+    if not isinstance(args, dict):
+        ap.error("the arguments are a JSON object")
+    rc, out = asyncio.run(call(a.config, a.tool, args))
+    print(json.dumps(out, indent=1))
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

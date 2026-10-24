@@ -1,0 +1,36 @@
+{
+  "name": "warrant-review",
+  "version": "0.1.0",
+  "description": "The warrant MCP server and the review skill of the warrant pull request review loop; a waker starts Codex when a pull request is due for review.",
+  "author": {
+    "name": "s0fractal",
+    "url": "https://github.com/s0fractal"
+  },
+  "homepage": "https://github.com/s0fractal/warrant/tree/master/integrations/codex-plugin",
+  "repository": "https://github.com/s0fractal/warrant",
+  "license": "MIT",
+  "keywords": [
+    "warrant",
+    "review",
+    "mcp",
+    "provenance",
+    "agents"
+  ],
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Warrant review",
+    "shortDescription": "Review warrant pull requests as signed records",
+    "longDescription": "The warrant MCP server (warrant-agent-mcp) and a skill for reviewing a pull request of s0fractal/warrant that the review loop says is due: file findings against its head closure, or accept it, through MCP. A waker (waker/waker.py, run by launchd) starts Codex once per pull request head that is due.",
+    "developerName": "s0fractal",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/s0fractal/warrant",
+    "defaultPrompt": [
+      "Review the warrant pull requests that are due"
+    ]
+  }
+}

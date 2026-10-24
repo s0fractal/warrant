@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "warrant": {
+      "command": "/bin/sh",
+      "args": ["./scripts/warrant-mcp"],
+      "cwd": ".",
+      "env_vars": ["HOME", "PATH", "WARRANT_AGENT_MCP", "WARRANT_AGENT_CONFIG"],
+      "tool_timeout_sec": 120
+    }
+  }
+}

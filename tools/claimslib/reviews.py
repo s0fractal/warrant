@@ -51,6 +51,8 @@ nothing. `check` never runs a finding's test; only `replay` and `replay --verify
     python3 tools/review.py merged --pr N --merge SHA
     python3 tools/review.py project            # regenerate REVIEWS.md
     python3 tools/review.py check [--base REV]
+    python3 tools/review.py gate --base SHA [--merge] [--gate-var V] [--summary F]   # merge-on-acceptance.yml
+    python3 tools/review.py due --base SHA [--json]                              # the review waker
 
 Signing: --key or WARRANT_CLAIMS_KEY, bound to --actor (default claude) in .warrant/trust.json.
 Refusals print as `REFUSED <CODE> <detail>`.
@@ -133,6 +135,11 @@ def config(root):
         cfg = json.loads(p.read_text())
     except (OSError, ValueError) as e:
         raise Refused(f".warrant/reviews.json: {e}", "REVIEW_CONFIG") from e
+    return check_config(cfg)
+
+
+def check_config(cfg):
+    """The parsed .warrant/reviews.json, refused unless well formed (the merge gate reads it from the base)."""
     if not (isinstance(cfg, dict) and set(cfg) == set(CONFIG_FIELDS) and cfg["reviews"] == CONFIG
             and isinstance(cfg["repository"], str) and REPOSITORY.match(cfg["repository"])
             and all(isinstance(cfg[k], list) and all(S.is_actor(a) for a in cfg[k]) for k in CONFIG_FIELDS[2:])
@@ -1083,6 +1090,17 @@ def _parser():
     sub.add_parser("project", help="regenerate REVIEWS.md")
     p = sub.add_parser("check", help="CI: refuse malformed review records or a stale REVIEWS.md")
     p.add_argument("--base")
+    for name, text in (("gate", "assess the open pull requests for merge (merge-on-acceptance.yml); --merge merges one"),
+                       ("due", "the open pull requests due for review (the review waker)")):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--base", required=True, help="the base branch's full commit id: the code running and the base read")
+        p.add_argument("--remote", default="origin", help="the remote pull request heads are fetched from")
+        p.add_argument("--json", action="store_true")
+        if name == "gate":
+            p.add_argument("--pr", type=int, action="append", help="assess only these pull requests")
+            p.add_argument("--merge", action="store_true", help="merge the first eligible pull request")
+            p.add_argument("--gate-var", default="", help="the repository variable WARRANT_MERGE_GATE (hold: merge nothing)")
+            p.add_argument("--summary", help="append the job summary (Markdown) to this file")
     return ap
 
 
@@ -1142,6 +1160,9 @@ def main(argv=None):
             return 0
         if a.cmd == "replay" and a.verify:
             return _cmd_verify(rv, a)
+        if a.cmd in ("gate", "due"):
+            from . import gate               # here: gate imports eligibility, which imports this module
+            return (gate.cmd_gate if a.cmd == "gate" else gate.cmd_due)(rv, a)
         actor = RR.actor() if a.cmd == "replay" else a.actor
         out = WRITES[a.cmd](Writer(rv, load_key(rv.repo, a.key, actor), actor), a)
         if out:
