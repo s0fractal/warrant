@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Codex plugin and its waker, without Codex and without GitHub (C1-C12).
+"""The Codex plugin and its waker, without Codex and without GitHub (C1-C13).
 
     python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
@@ -90,6 +90,27 @@ def config_edit():
     check("C5", "[mcp_servers.warrant]" not in got and "/a/warrant-agent-mcp" not in got
           and "[mcp_servers.warrant-181]\ncommand = \"/b\"" in got and "[desktop]\nk = 1" in got,
           "install removes exactly the [mcp_servers.warrant] table from config.toml", got)
+
+
+def dry_install():
+    """install(dry=True) with the commit, the marketplace and the configuration edit stubbed (they read the
+    checkout and the operator's files): every command it would run is printed, none that changes anything
+    runs, and nothing is written under its home or LaunchAgents."""
+    from unittest.mock import patch
+    calls = []
+
+    def fake(cmd, **kw):
+        calls.append([str(c) for c in cmd])
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+    home = Path(tempfile.mkdtemp(prefix="codex-install-dry-"))
+    plist = home / "LaunchAgents" / "x.plist"
+    with patch.object(INSTALL, "HOME", home / "waker"), patch.object(INSTALL, "PLIST", plist), \
+            patch.object(INSTALL, "head", return_value="a" * 40), patch.object(INSTALL, "marketplace"), \
+            patch.object(INSTALL, "config_without_server"), patch.object(INSTALL.subprocess, "run", side_effect=fake):
+        INSTALL.install(True)
+    check("C13", calls == [["codex", "plugin", "marketplace", "list"]] and not (home / "waker").exists() and not plist.exists(),
+          "install --dry-run runs only a read (the marketplace list): no launchctl, codex or pip command, no file "
+          "(Codex finding 41141d15bbaf on f2a95e5)", calls)
 
 
 def fixture_mirror():
@@ -218,6 +239,7 @@ if __name__ == "__main__":
     manifests()
     launcher()
     config_edit()
+    dry_install()
     wakes()
     mcp_call()
     failed = sorted(k for k, v in results.items() if not v)

@@ -49,5 +49,5 @@ python3 integrations/codex-plugin/install.py --uninstall
 ```
 
 `test_plugin.py` (CI, examples job) checks the manifests' paths, the launcher, the
-configuration edit, one wake per head, the wake's own worktree, retries, and the stdio client,
+configuration edit, a dry install that changes nothing, one wake per head, the wake's own worktree, retries, and the stdio client,
 with no Codex and no GitHub.

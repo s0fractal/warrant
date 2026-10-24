@@ -62,7 +62,8 @@ replaced it.
   configuration, and a waker run by launchd that runs the base tree's `review.py due` and starts
   `codex exec` once per pull request head that is due, in its own detached worktree of a mirror
   (never the operator's checkout), retrying a failed wake with a doubling backoff, three attempts in
-  all. `install.py` installs it.
+  all. `install.py` installs it; `--dry-run` prints every step and changes nothing (Codex finding
+  41141d15bbaf).
 - `tests/review_gate_test.py` G1-G33; mutants M534-M562; `integrations/codex-plugin/test_plugin.py`
   C1-C12 (CI, examples job).
 - The retired autonomy envelope (`history/AUTONOMY-ENVELOPE-0.1-RETIREMENT.md` at the tag

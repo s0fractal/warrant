@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install the warrant-review Codex plugin and its waker on this machine (macOS), or remove them.
 
-    python3 integrations/codex-plugin/install.py [--dry-run]
+    python3 integrations/codex-plugin/install.py [--dry-run]     # --dry-run prints each step and changes nothing
     python3 integrations/codex-plugin/install.py --uninstall
 
 Install, from the checkout's HEAD commit (never its working tree: a dirty plugin path is refused):
@@ -122,12 +122,14 @@ def install(dry):
     if not (venv / "bin" / "python").is_file():
         run(sys.executable, "-m", "venv", venv, dry=dry)
     run(venv / "bin" / "python", "-m", "pip", "install", "--quiet", "--only-binary", ":all:", CRYPTOGRAPHY, dry=dry)
-    (HOME / "logs").mkdir(parents=True, exist_ok=True)
     print(f"+ write {PLIST}")
     if not dry:
+        (HOME / "logs").mkdir(parents=True, exist_ok=True)
         PLIST.parent.mkdir(parents=True, exist_ok=True)
         PLIST.write_text(plist(str(venv / "bin" / "python")))
-    subprocess.run(["launchctl", "bootout", f"{domain()}/{LABEL}"], capture_output=True)
+    print(f"+ launchctl bootout {domain()}/{LABEL} (if loaded)")
+    if not dry:            # a dry run stops nothing: an installed waker keeps running
+        subprocess.run(["launchctl", "bootout", f"{domain()}/{LABEL}"], capture_output=True)
     run("launchctl", "bootstrap", domain(), PLIST, dry=dry)
     print(f"installed {PLUGIN} from {commit[:12]}; waker {LABEL} every 300 s; logs {HOME / 'logs'}")
 
