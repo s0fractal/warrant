@@ -19,8 +19,8 @@ DISCHARGED · accepted by the acceptor.
 ```text
 G1 [OPEN] A counterexample changes the repository, whoever brings it.
   goal decb6270e906:0 REFORMULATED, opened by claude; reformulated as f2a328562cba:0
-  goal f2a328562cba:0 CURRENT, opened by claude; unowned: no obligation answers it
-  goal 6cfdcd92bdd7:0 PROPOSED, opened by claude: supersession awaiting acceptance by codex
+  goal f2a328562cba:0 REFORMULATED, opened by claude; reformulated as 6cfdcd92bdd7:0
+  goal 6cfdcd92bdd7:0 CURRENT, opened by claude; unowned: no obligation answers it
   answered by [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
     served by [DISCHARGED] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {G5 duty 3f2b3ffc6523}
   answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted from any key whose self-certified binding in .warrant/trust.json verifies, with no admin admitting it. {duty 841d065d24aa; serves SPEC-4.4-13}
@@ -31,8 +31,8 @@ G1 [OPEN] A counterexample changes the repository, whoever brings it.
 ```text
 G2 [OPEN] An agent with no preparation can use Warrant correctly.
   goal decb6270e906:1 REFORMULATED, opened by claude; reformulated as f2a328562cba:1
-  goal f2a328562cba:1 CURRENT, opened by claude; unowned: no obligation answers it
-  goal 6cfdcd92bdd7:1 PROPOSED, opened by claude: supersession awaiting acceptance by codex
+  goal f2a328562cba:1 REFORMULATED, opened by claude; reformulated as 6cfdcd92bdd7:1
+  goal 6cfdcd92bdd7:1 CURRENT, opened by claude; unowned: no obligation answers it
   answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
   answered by [OPEN · no closure filed] warrant-graph is published on PyPI, and its public version and digests are read back. {duty 88d614277600}
     requires [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
@@ -48,8 +48,8 @@ G2 [OPEN] An agent with no preparation can use Warrant correctly.
 ```text
 G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
   goal decb6270e906:2 REFORMULATED, opened by claude; reformulated as f2a328562cba:2
-  goal f2a328562cba:2 CURRENT, opened by claude; unowned: no obligation answers it
-  goal 6cfdcd92bdd7:2 PROPOSED, opened by claude: supersession awaiting acceptance by codex
+  goal f2a328562cba:2 REFORMULATED, opened by claude; reformulated as 6cfdcd92bdd7:2
+  goal 6cfdcd92bdd7:2 CURRENT, opened by claude; unowned: no obligation answers it
   answered by [OPEN · closure UNMET_CONDITION: required duties not discharged: 57cf328ea761] A witness ledger is derived from the records as a projection: responsibility for acceptances later refuted, credit for challenges that replayed. {duty 9a039a41c85d}
     served by [OPEN] The pull request review loop is in the record graph: each PR a duty, each pushed head a closure naming its full commit, a finding the reviewer's own challenge whose test the review replay checker replays at each head, ACCEPT the reviewer's own accept; REVIEWS.md and the witness ledger are derived from them. {G3 duty 47cdf978c4d3}
     requires [OPEN · awaiting acceptance by codex] A counter blob (warrant-claims/counter@1) that replays in check is accepted whoever signed it, with no key bound in .warrant/trust.json. {duty 57cf328ea761; serves SPEC-4.4-13}
@@ -68,16 +68,14 @@ G4 [MET] A rule can act: a checker identified by the hash of its code accepts by
   answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A checker identified by the SHA-256 of its code accepts a closure by replaying it, and the recipient's profile decides whether that acceptance counts. {duty 879b8bd5219b; serves SPEC-3-22, SPEC-7-4}
 ```
 
-## G5 [OPEN]
+## G5 [MET]
 
 ```text
-G5 [OPEN] The specification rebuilds itself under evidence.
+G5 [MET] The specification rebuilds itself under evidence.
   goal decb6270e906:4 REFORMULATED, opened by claude; reformulated as f2a328562cba:3
-  goal f2a328562cba:3 CURRENT, opened by claude; unowned: no obligation answers it
-  pending: met in 6cfdcd92bdd7, awaiting acceptance by codex
+  goal f2a328562cba:3 MET, opened by claude by 6cfdcd92bdd7
   answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] SPEC.md is generated from signed claim records, and CI refuses a hand edit. {duty 28931cd4ac21}
   answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A mechanical audit lists the claims whose witnesses do not observe the code their sentence is about. {duty 3f2b3ffc6523; serves G1 duty 57cf328ea761}
-  mark: obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal is still open, so the decomposition did not reach it (Forward Attack)
 ```
 
 ## G6 [OPEN]
