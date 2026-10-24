@@ -2,7 +2,7 @@
   "contract": "warrant-pilot/contract@1",
   "title": "Proof-space pilot contract",
   "intro": [
-    "The pilot of goal G9: a fresh receiver gathers, from content roots and its own configuration only, every object one Sigma receipt needs, checks their bytes, and only then replays the receipt under a verification profile it admits. This contract fixes the terms. The resolution layer (PS-02, PS-03, PS-04) is implemented in `warrant/pilot.py` and tested by `tests/pilot_test.py` (A1-A11, D1-D10, F1-F4, K1-K2); the replay itself and everything after it are deferred to the cards named below.",
+    "The pilot of goal G9: a fresh receiver gathers, from content roots and its own configuration only, every object one Sigma receipt needs, checks their bytes, and only then replays the receipt under a verification profile it admits. This contract fixes the terms. The resolution layer (PS-02, PS-03, PS-04) is implemented in `warrant/pilot.py` and tested by `tests/pilot_test.py` (A1-A12, D1-D10, F1-F4, K1-K2); the replay itself and everything after it are deferred to the cards named below.",
     "Scope: the pilot is not part of SPEC.md. It adds no Warrant record type and no engine rule, `engine.assess` does not read it, and the Sigma receipt keeps SPEC §7's members and the meaning of `lost`. A rule below is enforced (cases of `tests/pilot_test.py` that pass, and mutants of `tests/mutants.py` that make them fail), deferred to a filed G9 obligation, or excluded from the pilot."
   ],
   "sections": [
@@ -79,7 +79,7 @@
       "title": "Receiver-controlled admission",
       "card": "PS-01",
       "rows": [
-        {"id": "PC-26", "rule": "Only the receiver's configuration (`Receiver`, `Receiver.from_config`: `warrant-pilot/receiver@1`) chooses the stores, the admitted kinds and the limits; a configuration with anything else is refused, and no object can add a store, kind or limit.", "tests": ["A7", "A8"], "mutants": ["M573", "M582"]},
+        {"id": "PC-26", "rule": "Only the receiver's configuration (`Receiver`, `Receiver.from_config`: `warrant-pilot/receiver@1`) chooses the stores, the admitted kinds and the limits; a configuration with anything else (another member, limits that are not a mapping, a layout that is not a layout name) is refused as a ValueError before it is used, and no object can add a store, kind or limit.", "tests": ["A7", "A8", "A12"], "mutants": ["M573", "M582", "M607", "M608"]},
         {"id": "PC-27", "rule": "Fetched verifier code is never executed: the pilot runs only the receiver's installed provider (`compute.Provider`).", "excluded": "running fetched code is the proposal card PS-13, not filed"}
       ]
     },

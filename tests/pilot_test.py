@@ -409,6 +409,28 @@ def main():
         check("A11", got_a11 == (("REFUSED", "KIND_MISMATCH", "pilot-root:" + C.digest(huge)), None, []),
               "an object the JSON parser rejects in any way is a typed refusal, never an exception", got_a11)
 
+    # A12 (Codex finding b3887f01538c on #193, observed at 11e11c6: `limits` false, 0, "" or [] gave the
+    # default budgets and resolved; true, 1, a string or a list, and a store layout that is a list or an
+    # object, raised AttributeError or TypeError; expected ValueError): a malformed configuration is refused.
+    with case('A12'):
+        base = {"receiver": PL.RECEIVER, "stores": [{"layout": "blobs", "path": str(f.a)}]}
+        controls = (outcome(PL.Receiver.from_config(base).resolve(f"sigma-state:{f.st}"))[0],
+                    outcome(PL.Receiver.from_config(dict(base, limits={"pilot_bytes": 4})).resolve(f"sigma-state:{f.st}"))[:2])
+        bad_cfgs = {f"limits {v!r}": dict(base, limits=v) for v in (False, 0, "", [], True, 1, "invalid", [1])}
+        bad_cfgs.update({f"layout {v!r}": dict(base, stores=[{"layout": v, "path": str(f.a)}]) for v in ([], {})})
+        got_a12 = {}
+        for label, cfg in bad_cfgs.items():
+            try:
+                PL.Receiver.from_config(cfg)
+                got_a12[label] = "accepted"
+            except ValueError:
+                got_a12[label] = "refused"
+            except Exception as e:      # noqa: BLE001  (the defect: an unhandled error, not a refusal)
+                got_a12[label] = f"raised {type(e).__name__}"
+        check("A12", (controls, got_a12) == (("RESOLVED", ("INCONCLUSIVE", "LIMIT")), {k: "refused" for k in bad_cfgs}),
+              "a receiver configuration with limits that are not a mapping or a layout that is not a name is refused",
+              (controls, got_a12))
+
     # ---------------------------------------------------------------- PS-03: the closure before verification
     # D1: branching and shared dependencies: the environment (named by the root and the receipt) and the
     # input node (named by the receipt and the environment) are read once; every object of the closure is

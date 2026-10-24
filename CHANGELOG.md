@@ -57,7 +57,7 @@ replaced it.
   runtime, axioms and assumptions.
 - `warrant.limits.resolve` takes another family's defaults; `compute.identity_of_files` gives the
   provider identity from module digests. Neither changes an existing result.
-- `tests/pilot_test.py` A1-A11, D1-D10, F1-F4, K1-K2; mutants M568-M589, M591-M598, M600-M602, M604-M606.
+- `tests/pilot_test.py` A1-A12, D1-D10, F1-F4, K1-K2; mutants M568-M589, M591-M598, M600-M602, M604-M608.
   A9, A10 and D9 are Codex's findings on head 1 (19556ffa5a1c a FIFO blocked the open,
   d8a510cd300e a directory swapped for a symlink was read through, 971ca0938c3a a file grown after
   fstat passed the byte limit): a store opens each component relative to its parent without
@@ -65,6 +65,8 @@ replaced it.
   A11 and D10 are its findings on head 2 (b60e976acb54 a 5000-digit integer escaped the JSON tag as a
   ValueError, d564e974a47d a file grown further was validated as its 5-byte prefix): every ValueError
   of the parser is a refusal, and a grown file is read to its end, each part admitted.
+  A12 is its finding on head 3 (b3887f01538c: limits that were not a mapping gave the defaults or
+  raised, as did a layout that was not a string): the configuration is refused as a ValueError.
 
 ### Merging on acceptance; the reviewer woken by itself
 

@@ -326,6 +326,9 @@ class Receiver:
         if unknown:
             raise ValueError(f"pilot receiver: unknown kinds {unknown}")
         self.kinds = {k: KINDS[k] for k in names}
+        # A mapping or nothing: a false value is not "no limits given" (Codex finding b3887f01538c on #193)
+        if limits is not None and not isinstance(limits, dict):
+            raise ValueError("pilot receiver: limits is a mapping of limit names to positive integers")
         self.limits = L.resolve(limits, LIMITS)
 
     @classmethod
@@ -337,7 +340,7 @@ class Receiver:
             raise ValueError(f"pilot receiver: not a {RECEIVER} configuration")
         stores = []
         for s in doc["stores"] if isinstance(doc["stores"], list) else [None]:
-            if not (isinstance(s, dict) and set(s) == {"layout", "path"} and s["layout"] in LAYOUTS
+            if not (isinstance(s, dict) and set(s) == {"layout", "path"} and isinstance(s["layout"], str) and s["layout"] in LAYOUTS
                     and isinstance(s["path"], str) and s["path"]):
                 raise ValueError("pilot receiver: a store is {layout: blobs|fanout, path}")
             stores.append(LAYOUTS[s["layout"]](Path(base) / s["path"]))
