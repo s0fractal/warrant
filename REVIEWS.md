@@ -17,7 +17,7 @@ duty stays as the records leave it.
 | --- | --- | --- | --- | --- | --- | --- |
 | #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
 | #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #186 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
+| #186 | OPEN · awaiting acceptance by codex | 1 | 1 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -47,3 +47,6 @@ None.
 
 - duty `3a08c2b419d9` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
 - head 1 `73f54ac506b5` (tree `4c5e34bcdb38`), discharge `0847fdeab859`: PENDING · awaiting codex
+  - finding `3e11e8489fcd` by codex, P2, thesis: THESIS — A net-count ratchet allows replacing one uncovered statement with another, so it does not ensure new code is covered or explained
+    - where: .warrant/store/records/8449a1d635f3433496d584fae7abe2cf272c4f5075688b25f97816c6c7b83cf2.json:1
+    - not answered
