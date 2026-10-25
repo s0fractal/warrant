@@ -20,10 +20,10 @@ duty stays as the records leave it.
 | #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
 | #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
-| #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
+| #190 | DISCHARGED | 5 | 2 | 2 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
-| #193 | DISCHARGED | 4 | 6 | 0 | 6 | — |
+| #193 | DISCHARGED | 4 | 6 | 6 | 6 | — |
 | #194 | OPEN · awaiting acceptance by codex | 2 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
@@ -78,15 +78,15 @@ None.
   - serves duty `47cdf978c4d3`
 - head 1 `9d7d4401008c` (tree `86260b0ab0c5`), discharge `31c1218a05f7`: PENDING · awaiting codex; superseded by head 2
 - head 2 `17ea0667232c` (tree `b7f1bbc12d4c`), discharge `1d2e45e92cdd`: PENDING · awaiting codex; superseded by head 3
-  - finding `190c1c64418f` by codex, P2, mechanical `codex_gate_race_test:RACE_BASE`: NOT_REPLAYED — Before merging, revalidate the freshly read PR base and hold label: retargeting master to release or adding hold after assessment leaves the same head, so merge_one still issues PUT /merge despite the new facts.
+  - finding `190c1c64418f` by codex, P2, mechanical `codex_gate_race_test:RACE_BASE`: REPRODUCED — Before merging, revalidate the freshly read PR base and hold label: retargeting master to release or adding hold after assessment leaves the same head, so merge_one still issues PUT /merge despite the new facts.
     - where: tools/claimslib/gate.py:144
-    - replayed at head 2 `17ea0667232c`: NOT REPLAYED; head 3 `d6fe668d596a`: NOT REPLAYED; head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
+    - replayed at head 2 `17ea0667232c`: REPRODUCES; head 3 `d6fe668d596a`: DOES NOT REPRODUCE; head 4 `f2a95e5439e2`: DOES NOT REPRODUCE; head 5 `bd4693ce646b`: DOES NOT REPRODUCE
     - answered by head 3
 - head 3 `d6fe668d596a` (tree `ab43db307e55`), discharge `2d12575c8bf7`: PENDING · awaiting codex; superseded by head 4; answers `190c1c64418f`
 - head 4 `f2a95e5439e2` (tree `dc32d741b002`), discharge `486520e1e31c`: PENDING · awaiting codex; superseded by head 5
-  - finding `41141d15bbaf` by codex, P2, mechanical `codex_install_dry_run_test:DRY_RUN_NO_BOOTOUT`: NOT_REPLAYED — install.py --dry-run unconditionally executes launchctl bootout, stopping an installed review waker while the dry bootstrap is skipped. Route bootout through the dry-aware run helper and test that dry-run issues no mutating launchctl command.
+  - finding `41141d15bbaf` by codex, P2, mechanical `codex_install_dry_run_test:DRY_RUN_NO_BOOTOUT`: REPRODUCED — install.py --dry-run unconditionally executes launchctl bootout, stopping an installed review waker while the dry bootstrap is skipped. Route bootout through the dry-aware run helper and test that dry-run issues no mutating launchctl command.
     - where: integrations/codex-plugin/install.py:130
-    - replayed at head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
+    - replayed at head 4 `f2a95e5439e2`: REPRODUCES; head 5 `bd4693ce646b`: DOES NOT REPRODUCE
     - answered by head 5
 - head 5 `bd4693ce646b` (tree `50ed127677ed`), discharge `b65fbf28e09d`: ADMITTED · accepted by codex; answers `41141d15bbaf`
 
@@ -111,31 +111,31 @@ None.
   - serves duty `61f38a12298e`
   - serves duty `1b10e89d75fe`
 - head 1 `228ed326c0f8` (tree `cb156532114e`), discharge `9d63a3888d03`: PENDING · awaiting codex; superseded by head 2
-  - finding `19556ffa5a1c` by codex, P2, mechanical `pilot_review_store_test:R1`: NOT_REPLAYED — A FIFO under an object name blocks os.open before fstat; reject non-regular files without waiting for a writer (PC-07).
+  - finding `19556ffa5a1c` by codex, P2, mechanical `pilot_review_store_test:R1`: REPRODUCED — A FIFO under an object name blocks os.open before fstat; reject non-regular files without waiting for a writer (PC-07).
     - where: warrant/pilot.py:188
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 1 `228ed326c0f8`: REPRODUCES; head 2 `eca04ccfdc39`: DOES NOT REPRODUCE; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 2
-  - finding `971ca0938c3a` by codex, P2, mechanical `pilot_review_store_test:R3`: NOT_REPLAYED — Growing a file from 4 to 5 bytes after fstat resolves all 5 bytes under pilot_bytes=4 and invokes the verifier; admit the actual read length before exposing the closure (PC-17).
+  - finding `971ca0938c3a` by codex, P2, mechanical `pilot_review_store_test:R3`: REPRODUCED — Growing a file from 4 to 5 bytes after fstat resolves all 5 bytes under pilot_bytes=4 and invokes the verifier; admit the actual read length before exposing the closure (PC-17).
     - where: warrant/pilot.py:197
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 1 `228ed326c0f8`: REPRODUCES; head 2 `eca04ccfdc39`: DOES NOT REPRODUCE; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 2
-  - finding `d8a510cd300e` by codex, P2, mechanical `pilot_review_store_test:R2`: NOT_REPLAYED — Swapping a fanout directory for an outside symlink between realpath and os.open returns RESOLVED and invokes the verifier on outside-only bytes; anchor path traversal to directory descriptors (PC-07).
+  - finding `d8a510cd300e` by codex, P2, mechanical `pilot_review_store_test:R2`: REPRODUCED — Swapping a fanout directory for an outside symlink between realpath and os.open returns RESOLVED and invokes the verifier on outside-only bytes; anchor path traversal to directory descriptors (PC-07).
     - where: warrant/pilot.py:185
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 1 `228ed326c0f8`: REPRODUCES; head 2 `eca04ccfdc39`: DOES NOT REPRODUCE; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `eca04ccfdc39` (tree `1a341a97613e`), discharge `e74de48389f7`: PENDING · awaiting codex; superseded by head 3; answers `19556ffa5a1c`, `971ca0938c3a`, `d8a510cd300e`
-  - finding `b60e976acb54` by codex, P2, mechanical `pilot_review_boundary_test:J1`: NOT_REPLAYED — A digest-correct JSON object with a 5000-digit integer raises CPython ValueError through _json_tag instead of returning REFUSED/KIND_MISMATCH; Receiver.resolve/check aborts on about 5 KB of untrusted bytes.
+  - finding `b60e976acb54` by codex, P2, mechanical `pilot_review_boundary_test:J1`: REPRODUCED — A digest-correct JSON object with a 5000-digit integer raises CPython ValueError through _json_tag instead of returning REFUSED/KIND_MISMATCH; Receiver.resolve/check aborts on about 5 KB of untrusted bytes.
     - where: warrant/pilot.py:83, warrant/pilot.py:84
-    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 2 `eca04ccfdc39`: REPRODUCES; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 3
-  - finding `d564e974a47d` by codex, P2, mechanical `pilot_review_boundary_test:G1`: NOT_REPLAYED — A file growing by more than one byte after fstat is truncated to st_size+1; a name hashing to that prefix resolves and invokes the verifier even though the whole stored file hashes differently (both layouts; expected DIGEST_MISMATCH).
+  - finding `d564e974a47d` by codex, P2, mechanical `pilot_review_boundary_test:G1`: REPRODUCED — A file growing by more than one byte after fstat is truncated to st_size+1; a name hashing to that prefix resolves and invokes the verifier even though the whole stored file hashes differently (both layouts; expected DIGEST_MISMATCH).
     - where: warrant/pilot.py:213
-    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 2 `eca04ccfdc39`: REPRODUCES; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 3
 - head 3 `11e11c605f12` (tree `84f2674694cf`), discharge `11b8a1f8499a`: PENDING · awaiting codex; superseded by head 4; answers `b60e976acb54`, `d564e974a47d`
-  - finding `b3887f01538c` by codex, P2, mechanical `pilot_review_config_test:C1`: NOT_REPLAYED — Validate receiver configuration containers before using them: limits false/0/""/[] silently select default budgets and reach the verifier, true/1/"invalid"/[1] raise AttributeError, and layout []/{} raises TypeError; PC-26 and Receiver.from_config require malformed configuration to be refused with ValueError.
+  - finding `b3887f01538c` by codex, P2, mechanical `pilot_review_config_test:C1`: REPRODUCED — Validate receiver configuration containers before using them: limits false/0/""/[] silently select default budgets and reach the verifier, true/1/"invalid"/[1] raise AttributeError, and layout []/{} raises TypeError; PC-26 and Receiver.from_config require malformed configuration to be refused with ValueError.
     - where: warrant/pilot.py:340, warrant/pilot.py:349, warrant/limits.py:29
-    - replayed at head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 3 `11e11c605f12`: REPRODUCES; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`
 
