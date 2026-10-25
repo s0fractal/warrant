@@ -552,8 +552,201 @@ def acceptance_cases():
     f.close()
 
 
+# ---------------------------------------------------------------- an incomplete replay is retried, and wakes nobody
+
+def flaky(f, failures):
+    """A jail whose first `failures` checker runs exit 75 (a transient failure); the rest run as the fixture's."""
+    real, runs = f.w.jail, []
+
+    def jail(cmd, prof, env, stdin=None):
+        if "replay" in cmd:
+            runs.append(cmd)
+            if len(runs) <= failures:
+                return subprocess.CompletedProcess(cmd, 75, b"", b"transient checker failure")
+        return real(cmd, prof, env, stdin)
+    f.w.jail, f.runs = jail, runs
+    f.now = [1_800_000_000.0]
+    f.w.clock = lambda: f.now[0]
+    f.w.fetch = lambda: f.start
+    f.w.acceptances = lambda base: {"due": []}
+
+
+def retry_cases():
+    # W17: Codex's challenge 6f72103999cd of the G3 closure 97b0075061cc (evidence f6e423b516e1, observed at master
+    # 4701650): the checker's first run exited 75, the memo kept the failure as the replay, Codex was woken with no
+    # observation at the head and the replay never ran again. Expected: nobody is woken while the replay is
+    # incomplete; it runs again after the backoff, and Codex is woken at the head that carries its observations.
+    f = pr_world()
+    flaky(f, 1)
+    f.w.due = lambda base: {"due": [due(f, tip(f))], "not_due": []}
+    seen = []
+    for advance in (0, 0, WAKER.BACKOFF + 1, 0):
+        f.now[0] += advance
+        lines = WAKER.tick(f.w, False)
+        seen.append((len(f.runs), len(f.codex.calls), tip(f), lines[1]))
+    observed = at_commit(f, seen[2][2]).findings[f.cid].observed
+    check("W17", [x[:2] for x in seen] == [(1, 0), (1, 0), (2, 0), (3, 1)] and seen[1][2] == f.head
+          and seen[2][2] != f.head and sorted(observed) == sorted([f.h1, f.h2])
+          and "not woken" in seen[0][3] and "not woken" in seen[1][3],
+          "a checker run that failed leaves the replay incomplete: nobody is woken, it runs again after the backoff, "
+          "and Codex is woken only at the head that carries the observations", seen)
+    f.close()
+
+    # W18: the retry outlives a verdict at the head: the pull request is not due once Codex has accepted it, and its
+    # replay is still retried at its new tip, until one completes.
+    g = pr_world()
+    flaky(g, 1)
+    g.w.due = lambda base: {"due": [due(g, tip(g))], "not_due": []}
+    first = WAKER.tick(g.w, False)
+    g.ok("accept", "--pr", "1", "--commit", g.h2, actor="codex")
+    verdict = g.save()
+    git("-C", str(g.dir), "push", "-q", str(g.origin), f"{verdict}:refs/heads/pr1")
+    git("-C", str(g.w.mirror), "fetch", "-q", str(g.origin), "+refs/heads/pr1:refs/heads/pr1")
+    reviewed = lambda base: {"due": [], "not_due": [dict(due(g, tip(g)), head_repo=WAKER.REPO,  # noqa: E731
+                                                         not_due=[["REVIEWED", "accepted"]])]}
+    g.w.due = reviewed
+    g.now[0] += WAKER.BACKOFF + 1
+    second = WAKER.tick(g.w, False)
+    moved = tip(g)
+    after = (len(g.runs), g.w.pending(1))
+    WAKER.tick(g.w, False)
+    observed = at_commit(g, moved).findings[g.cid].observed
+    check("W18", len(g.codex.calls) == 0 and moved not in (g.head, verdict) and sorted(observed) == sorted([g.h1, g.h2])
+          and after == (2, False) and len(g.runs) == 2 and any(x.startswith("  RETRY #1") and "pushed" in x for x in second),
+          "an incomplete replay is retried at the pull request's new tip after a verdict there, though it is no longer "
+          "due, and once one completes nothing is pending", (first, second, after))
+    g.close()
+
+    # W19: the retries are bounded: after MAX_TRIES failed runs Codex is woken, told that the replay is incomplete
+    # and why, and the checker does not run again at that head.
+    h = pr_world()
+    flaky(h, 99)
+    h.w.due = lambda base: {"due": [due(h, tip(h))], "not_due": []}
+    counts = []
+    for n in range(WAKER.MAX_TRIES + 1):
+        h.now[0] += WAKER.BACKOFF * 2 ** max(n - 1, 0) + 1 if n else 0
+        WAKER.tick(h.w, False)
+        counts.append((len(h.runs), len(h.codex.calls)))
+    told = h.codex.calls[0][-1] if h.codex.calls else ""
+    check("W19", counts == [(1, 0), (2, 0), (3, 1), (3, 1)] and "did not complete" in told
+          and "transient checker failure" in told,
+          "after MAX_TRIES failed checker runs Codex is woken with the replay's incompleteness and its cause in the "
+          "prompt, and the checker is not run again at that head", (counts, told[-400:]))
+    h.close()
+
+
+def race_cases():
+    # W20 (Codex finding on #204 head 1, 213c1b9, test replay_retry_race_test RACE1): after a failed run and a
+    # verdict, the retry's checker succeeded but the branch moved before its push; that run was saved complete and
+    # covered the failure, so the new tip was never replayed and kept no observation. Expected: still pending.
+    f = pr_world()
+    flaky(f, 1)
+    f.w.due = lambda base: {"due": [due(f, tip(f))], "not_due": []}
+    WAKER.tick(f.w, False)
+    f.ok("accept", "--pr", "1", "--commit", f.h2, actor="codex")
+    reviewed = f.save()
+    git("-C", str(f.dir), "push", "-q", str(f.origin), f"{reviewed}:refs/heads/pr1")
+    git("-C", str(f.w.mirror), "fetch", "-q", str(f.origin), "+refs/heads/pr1:refs/heads/pr1")
+    moved = f.commit("a commit pushed while the checker runs")
+
+    def move(cmd, result):
+        if "replay" in cmd:
+            git("-C", str(f.dir), "push", "-q", str(f.origin), f"{moved}:refs/heads/pr1")
+            git("-C", str(f.w.mirror), "fetch", "-q", str(f.origin), "+refs/heads/pr1:refs/heads/pr1")
+    f.jail.after = move
+    f.w.due = lambda base: {"due": [], "not_due": [dict(due(f, tip(f)), head_repo=WAKER.REPO,
+                                                        not_due=[["REVIEWED", "accepted"]])]}
+    f.now[0] += WAKER.BACKOFF + 1
+    raced = WAKER.tick(f.w, False)
+    pending = f.w.pending(1)
+    f.jail.after = None
+    WAKER.tick(f.w, False)
+    observed = at_commit(f, tip(f)).findings[f.cid].observed
+    check("W20", pending and len(f.runs) == 3 and sorted(observed) == sorted([f.h1, f.h2]) and not f.w.pending(1)
+          and len(f.codex.calls) == 0,
+          "a checker run whose observations did not reach the branch leaves the replay pending; the branch's new tip "
+          "is replayed and carries them", (raced, pending, len(f.runs), sorted(observed)))
+    f.close()
+
+
+def skip_cases():
+    # W21 (Codex finding 23d10e5b513c on #204 head 2, 9e58df1, test replay_retry_skip_test SKIP1): a retry at a tip
+    # that changes review_replay.py was skipped, saved complete and covered the earlier failed replay, so nothing
+    # stayed pending with no observation made. Expected: a skip covers nothing and the failure stays pending.
+    f = pr_world()
+    flaky(f, 1)
+    f.w.due = lambda base: {"due": [due(f, tip(f))], "not_due": []}
+    WAKER.tick(f.w, False)
+    f.ok("accept", "--pr", "1", "--commit", f.h2, actor="codex")
+    f.save()
+    changed = f.commit("checker bytes awaiting adoption", {WAKER.CHECKER_FILE: "# not the base's checker\n"})
+    git("-C", str(f.dir), "push", "-q", str(f.origin), f"{changed}:refs/heads/pr1")
+    git("-C", str(f.w.mirror), "fetch", "-q", str(f.origin), "+refs/heads/pr1:refs/heads/pr1")
+    f.w.due = lambda base: {"due": [], "not_due": [dict(due(f, tip(f)), head_repo=WAKER.REPO,
+                                                        not_due=[["REVIEWED", "accepted"]])]}
+    f.now[0] += WAKER.BACKOFF + 1
+    first = WAKER.tick(f.w, False)
+    again = WAKER.tick(f.w, False)
+    earlier = json.loads((f.w.home / "replays" / f"{f.w.key(due(f))}.json").read_text())
+    check("W21", len(f.runs) == 1 and f.w.pending(1) and not earlier.get("covered_by")
+          and any("replay skipped" in x for x in first) and not any("RETRY" in x for x in again),
+          "a replay skipped at a head that changes the checker covers nothing: the earlier failed replay stays pending",
+          (first, again, earlier.get("covered_by")))
+    f.close()
+
+    # W22 (Codex finding fec604ae5dc1 on #204 head 2, test replay_retry_legacy_test LEGACY1): the memo the previous
+    # waker wrote after a lost branch race ("replay not pushed") read as a completed replay, so after a verdict
+    # nothing was retried. Expected: it reads as a failed run, and the pull request's tip is replayed.
+    g = pr_world()
+    flaky(g, 0)
+    (g.w.home / "replays" / f"{g.w.key(due(g))}.json").write_text(json.dumps(
+        {"pr": 1, "head": g.head, "base": g.start, "pushed": False,
+         "line": "replay not pushed: pr1 is at 0123456789ab, not " + g.head[:12]}))
+    g.ok("accept", "--pr", "1", "--commit", g.h2, actor="codex")
+    reviewed = g.save()
+    git("-C", str(g.dir), "push", "-q", str(g.origin), f"{reviewed}:refs/heads/pr1")
+    git("-C", str(g.w.mirror), "fetch", "-q", str(g.origin), "+refs/heads/pr1:refs/heads/pr1")
+    g.w.due = lambda base: {"due": [], "not_due": [dict(due(g, tip(g)), head_repo=WAKER.REPO,
+                                                        not_due=[["REVIEWED", "accepted"]])]}
+    before = g.w.pending(1)
+    lines = WAKER.tick(g.w, False)
+    observed = at_commit(g, tip(g)).findings[g.cid].observed
+    check("W22", before and len(g.runs) == 1 and sorted(observed) == sorted([g.h1, g.h2]) and not g.w.pending(1),
+          "a memo of the previous waker saying its observations were not pushed reads as a failed run: after a "
+          "verdict the tip is replayed", (before, lines))
+    g.close()
+
+
+def seed_cases():
+    # W23 (Codex finding 77e675a71b60 on #204 head 3, f207ba5, test replay_retry_seed_test SEED1): after a failed run
+    # the checker's seed became unavailable; replay() returned before recording a run, the memo stayed pending and
+    # Codex was never woken, however long. Expected: the missing seed is a failed run, so the runs end and Codex is
+    # woken with the gap stated; with no memo the missing seed wakes Codex as before.
+    f = pr_world()
+    flaky(f, 1)
+    f.w.due = lambda base: {"due": [due(f)], "not_due": []}
+    WAKER.tick(f.w, False)
+    f.w.seed = lambda code: ("replay skipped: no seed for the base's checker", None)
+    for _ in range(WAKER.MAX_TRIES):
+        f.now[0] += WAKER.BACKOFF * 8 + 1
+        WAKER.tick(f.w, False)
+    told = f.codex.calls[0][-1] if f.codex.calls else ""
+    g = pr_world()
+    flaky(g, 0)
+    g.w.seed = lambda code: ("replay skipped: no seed", None)
+    g.w.due = lambda base: {"due": [due(g)], "not_due": []}
+    WAKER.tick(g.w, False)
+    check("W23", len(f.codex.calls) == 1 and len(f.runs) == 1 and "did not complete" in told and "no seed" in told
+          and len(g.codex.calls) == 1 and not g.runs,
+          "a replay incomplete at a head whose checker seed is now missing ends its runs and wakes Codex with the gap "
+          "stated; a head with no replay memo and no seed wakes Codex as before", (len(f.codex.calls), told[-300:]))
+    f.close()
+    g.close()
+
+
 def main():
-    for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases):
+    for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
+                 race_cases, skip_cases, seed_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run

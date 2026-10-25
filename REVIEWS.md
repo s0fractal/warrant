@@ -26,9 +26,10 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
-| #197 | DISCHARGED | 4 | 2 | 2 | 2 | — |
+| #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
+| #204 | DISCHARGED | 4 | 4 | 4 | 4 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -212,6 +213,7 @@ duty stays as the records leave it.
     - replayed at head 3 `3789dbb93489`: REPRODUCES; head 4 `67e0f46fbd86`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `67e0f46fbd86` (tree `7ecfd27449e9`), discharge `617462b8eb13`: ADMITTED · accepted by codex; answers `48009e3c2e0b`
+- merge `07eff24c669f` (tree `40a76e610bb6`), first parent `c257ca0f9bc1`, tip `10a3817a05b9` (observed by claude, `ba7f4921c953`): at the head `67e0f46fbd86` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#201 — Release surface: warrant-graph 2.0.0a1 — core boundary as a check, executable quickstart, README split, release workflow
 
@@ -226,3 +228,28 @@ duty stays as the records leave it.
   - serves duty `88d614277600`
 - head 1 `14aa1a9c69db` (tree `6a9518b69100`), discharge `b73b6ce87659`: ADMITTED · accepted by codex
 - merge `8ea5910a6d4d` (tree `44f5beb51ac4`), first parent `dfe0892739d3`, tip `d488be334879` (observed by claude, `4b1b9f4c743e`): at the head `14aa1a9c69db` accepted by codex; the merge adds nothing else
+
+## s0fractal/warrant#204 — Waker: a failed replay is retried and wakes nobody; the retry outlives a verdict (G3)
+
+- duty `8057c2a37f1c` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+  - serves duty `47cdf978c4d3`
+- head 1 `213c1b9ef2f2` (tree `bfedf82a197f`), discharge `728aa12d5e57`: PENDING · awaiting codex; superseded by head 2
+  - finding `be3c24f3b319` by codex, P2, mechanical `replay_retry_race_test:RACE1`: REPRODUCED — After a failed replay and a verdict, a successful retry whose observations lose the branch-tip race is saved ok=True and covers the failure; pending becomes false, so the new tip is never retried and retains no observations. Keep the replay pending until its observations reach the branch or already exist there.
+    - where: integrations/codex-plugin/waker/waker.py:313-322, integrations/codex-plugin/waker/waker.py:412-414, integrations/codex-plugin/waker/waker.py:607-608
+    - replayed at head 1 `213c1b9ef2f2`: REPRODUCES; head 2 `9e58df1fc276`: DOES NOT REPRODUCE; head 3 `f207ba5252a6`: DOES NOT REPRODUCE; head 4 `3924e6a29d78`: DOES NOT REPRODUCE
+    - answered by head 2
+- head 2 `9e58df1fc276` (tree `d1e6a3c207b3`), discharge `7a2f5af4c5af`: PENDING · awaiting codex; superseded by head 3; answers `be3c24f3b319`
+  - finding `23d10e5b513c` by codex, P2, mechanical `replay_retry_skip_test:SKIP1`: REPRODUCED — A retry at a head that changes review_replay.py is skipped, but replay() still sets ok=True and cover() clears the earlier failed memo. pending() becomes false despite zero observations, so a PR no longer due loses its retry. A skipped run must not count as a completed replay or cover earlier failures.
+    - where: integrations/codex-plugin/waker/waker.py:317, integrations/codex-plugin/waker/waker.py:327-328, integrations/codex-plugin/waker/waker.py:381-382
+    - replayed at head 2 `9e58df1fc276`: REPRODUCES; head 3 `f207ba5252a6`: DOES NOT REPRODUCE; head 4 `3924e6a29d78`: DOES NOT REPRODUCE
+    - answered by head 3
+  - finding `fec604ae5dc1` by codex, P2, mechanical `replay_retry_legacy_test:LEGACY1`: REPRODUCED — Upgrading an old memo with line 'replay not pushed: ...' sets its attempt ok=True. After a verdict, pending() is false, so retry_lines never runs the checker and the branch retains no observations. This is the memo master wrote after a branch-tip race; migrate it as incomplete, like a checker failure.
+    - where: integrations/codex-plugin/waker/waker.py:195-197
+    - replayed at head 2 `9e58df1fc276`: REPRODUCES; head 3 `f207ba5252a6`: DOES NOT REPRODUCE; head 4 `3924e6a29d78`: DOES NOT REPRODUCE
+    - answered by head 3
+- head 3 `f207ba5252a6` (tree `05c5e541b57a`), discharge `5c1b65f93bff`: PENDING · awaiting codex; superseded by head 4; answers `23d10e5b513c`, `fec604ae5dc1`
+  - finding `77e675a71b60` by codex, P2, mechanical `replay_retry_seed_test:SEED1`: REPRODUCED — After a failed replay, an unavailable checker seed permanently suppresses review: replay() returns before recording another attempt, while wake_after_replay() keeps the old memo pending. Even after five backoff intervals, no reviewer is woken and MAX_TRIES is never reached. Treat the unavailable run explicitly so review can proceed with its replay gap.
+    - where: integrations/codex-plugin/waker/waker.py:317-319, integrations/codex-plugin/waker/waker.py:614-617
+    - replayed at head 3 `f207ba5252a6`: REPRODUCES; head 4 `3924e6a29d78`: DOES NOT REPRODUCE
+    - answered by head 4
+- head 4 `3924e6a29d78` (tree `bc0f687dd205`), discharge `78f76cb5883f`: ADMITTED · accepted by codex; answers `77e675a71b60`

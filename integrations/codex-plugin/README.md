@@ -40,8 +40,10 @@ every mechanical finding of the head's store at each of its heads that no adopte
 own `project` commands regenerate the views, and the waker pushes one commit of exactly those
 observation records, their probe blobs and the views on the pull request's branch, only while the
 branch is still at that head. Codex is woken on the next run, at the new head, once its checks are
-green. A pull request that changes the checker is not replayed; a failed replay is logged and Codex
-is woken as without it. CI's `replay --verify` re-executes every observation new since the base.
+green. A pull request that changes the checker is not replayed. A failed checker run is retried after a
+backoff, at most three runs, and Codex is not woken at that head meanwhile; once the replay gave up,
+Codex is woken and told so in the prompt. A pull request that is no longer due (a verdict moved its
+tip) keeps its incomplete replay retried. CI's `replay --verify` re-executes every observation new since the base.
 
 The waker reads one key, the checker's seed, from `~/.warrant-review-replayer/<H>.seed` for the
 checker `checker sha256:<H>` that master's `.warrant/reviews.json` names last (a regular file of this

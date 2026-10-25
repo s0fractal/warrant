@@ -629,14 +629,18 @@ class Writer:
 
     def done(self, duty, established, refs, commit=None, replaces=None):
         """A discharge citing an evidence blob. `replaces` names the one closure of the duty still waiting
-        for acceptance that this one is filed instead of (an acceptor declined it): it stays in the record,
+        for acceptance that this one is filed instead of (an acceptor declined it, or what it cites moved on):
+        it stays in the record,
         the new closure supersedes it, and its residual says so. Once the new one is admitted the engine
         no longer asks for the old one's acceptance (a residual sentence alone is not a record)."""
         did = self.m.resolve_duty(duty)
         r = self.m.rep["duties"][did]
         if r["holder"] != self.actor and self.actor not in r["delegates"]:
             raise Refused(f"duty {did[:12]} is held by {r['holder']}, not {self.actor}")
-        pending = [c["transition"] for c in r["candidates"] if c["verdict"] == "PENDING"]
+        # A closure another closure of the duty was filed instead of (supersedes) waits for nobody: the newest
+        # of a chain of refilings is the one waiting, and the one a further refiling names (#204).
+        over = {old for c in r["candidates"] for old in self.m.recs[c["transition"]]["body"]["supersedes"]}
+        pending = [c["transition"] for c in r["candidates"] if c["verdict"] == "PENDING" and c["transition"] not in over]
         if r["disposition"] != "OPEN" or (pending and pending != [replaces]):
             raise Refused(f"duty {did[:12]} is {r['disposition']} or already has a closure waiting for acceptance "
                           "(name it with --replaces to file this one instead)")
@@ -647,8 +651,8 @@ class Writer:
             raise Refused("a done obligation names its evidence: --ref (a pull request, a commit)")
         ev = {"schema": EVIDENCE, "duty": did, "refs": list(refs)}
         h = C.digest(C.canon(ev))
-        residual = [DONE_RESIDUAL] + ([f"filed instead of closure {replaces}, which an acceptor declined; that one "
-                                       "stays in the record and is not to be accepted"] if replaces else [])
+        residual = [DONE_RESIDUAL] + ([f"filed instead of closure {replaces}; that one stays in the record and is "
+                                       "not to be accepted"] if replaces else [])
         body = R.transition("ATTESTED", [h], closes=[R.item(did, "discharge", [h])], established=[established],
                             residual=residual, subject=commit, supersedes=[replaces] if replaces else [])
         return self.file("transition", body, [ev])

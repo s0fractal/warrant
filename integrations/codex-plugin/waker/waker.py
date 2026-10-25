@@ -45,8 +45,15 @@ replayer has observed. The head's own `project` commands then regenerate the vie
 seed). The waker commits only the observation records the checker printed (by the replayer, each
 with its probe blob) and the generated views, refuses anything else the run left, and pushes that
 commit on the pull request's branch only while the branch is still at the head (a fast-forward).
-One replay per head: HOME/replays/<n>-<head>.json. A failed replay is logged there and Codex is woken
-as without it; no seed, no replay. `replay --verify` in CI re-executes every observation new since
+One replay per head: HOME/replays/<n>-<head>.json, with its runs. A run that failed (the checker exited
+otherwise, its output was refused, or its observations did not reach the branch) is not a replay, nor
+is one skipped at a head that changes the checker (Codex is woken there as before, and it covers nothing): it runs again after BACKOFF seconds, doubled each
+time, at most MAX_TRIES runs, and Codex is not woken at that head meanwhile; once it gave up, Codex is
+woken and told so in the prompt. The retry outlives the head being due: a pull request of this repository
+not due (a verdict moved its tip) with an incomplete replay is replayed at its current head, and a replay
+completed at a later head covers the earlier ones (Codex's challenge 6f72103999cd). No seed, no replay;
+but a replay already incomplete at a head records the missing seed as a failed run, so its runs end.
+`replay --verify` in CI re-executes every observation new since
 the base, and merge eligibility admits these records after the reviewed head (eligibility.py).
 Codex, the agent, files its own records with its own seed; no model is given the checker's seed.
 HOME is $WARRANT_WAKER_HOME or ~/.warrant/codex-waker; TREES $WARRANT_WAKER_TREES or
@@ -181,6 +188,26 @@ def changes(wt, filed, actor):
     return sorted(out)
 
 
+class Skipped(Exception):
+    """No replay can run at this head by design: it changes the checker, or its branch is not one to push to."""
+
+
+class NotPushed(Exception):
+    """The checker's run completed, and its observations did not reach the branch (it moved meanwhile)."""
+
+
+def runs(doc):
+    """A replay memo with its runs: one of an older waker (a single run, no `attempts`) reads as one run, failed
+    when its line says the checker failed or its observations were not pushed (Codex finding on #204: that waker
+    wrote "replay not pushed" after a lost branch race), skipped when it says so, else done."""
+    if "attempts" not in doc:
+        line = str(doc.get("line", "replayed"))
+        failed = line.startswith(("replay failed", "replay not pushed"))
+        skipped = line.startswith("replay skipped")
+        doc["attempts"] = [{"finished": 0, "ok": not (failed or skipped), "line": line, **({"skipped": True} if skipped else {})}]
+    return doc
+
+
 class Waker:
     def __init__(self, home=None, trees=None, python=None, codex=None, plugin=PLUGIN,
                  run=subprocess.run, clock=time.time, replayers=None, replay_python=None, jail=sandboxed):
@@ -290,18 +317,74 @@ class Waker:
         """The review replay checker for due head `a`, before Codex is woken (see the module's Replay).
         (pushed, line): when pushed, Codex is not woken in this run."""
         actor, seed = self.seed(self.tree(base))
-        if seed is None:
+        p, doc = self.replay_memo(a)
+        if seed is None and doc is None:
             return False, actor             # no memo: a seed placed later serves this head
-        p = self.home / "replays" / f"{self.key(a)}.json"
-        if p.is_file():
-            return False, json.loads(p.read_text()).get("line", "replayed")
+        state, why = self.replay_state(doc)
+        if state != "retry":
+            return False, why
+        skipped = False
         try:
-            pushed, line = self._replay(a, base, actor, seed)
+            if seed is None:                # a replay already incomplete here: the missing seed is a failed run,
+                raise RuntimeError(actor)   # so the runs end and Codex is told the gap (Codex finding 77e675a71b60)
+            (pushed, line), ok = self._replay(a, base, actor, seed), True
+        except Skipped as e:            # no replay can run at this head: neither done nor failed (Codex, #204)
+            pushed, line, ok, skipped = False, str(e), False, True
+        except NotPushed as e:          # observations that did not reach the branch are no replay (Codex, #204)
+            pushed, line, ok = False, str(e), False
         except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
-            pushed, line = False, f"replay failed: {str(e)[:300]}"
-        p.write_text(json.dumps({"pr": a["pr"], "head": a["head"], "base": base, "replayer": actor, "at": iso(self.clock()),
-                                 "pushed": pushed, "line": line}, indent=1))
+            pushed, line, ok = False, f"replay failed: {str(e)[:300]}", False
+        t = self.clock()
+        doc = doc or {"pr": a["pr"], "head": a["head"], "attempts": []}
+        doc.update(base=base, replayer=actor, at=iso(t), pushed=pushed, line=line)
+        doc["attempts"].append({"at": iso(t), "finished": t, "ok": ok, "line": line, **({"skipped": True} if skipped else {})})
+        p.write_text(json.dumps(doc, indent=1))
+        if ok:
+            self.cover(a)
         return pushed, line
+
+    def replay_memo(self, a):
+        """(path, memo) of the replay at `a`'s head, or (path, None). A memo of an older waker (one run, no
+        attempts) reads as one attempt, failed when its line says so."""
+        p = self.home / "replays" / f"{self.key(a)}.json"
+        return p, (runs(json.loads(p.read_text())) if p.is_file() else None)
+
+    def replay_state(self, doc):
+        """(what, detail) of a replay memo: done (a run completed, here or at a later head of the pull request,
+        `covered_by`), skipped (no replay can run at this head: it changes the checker, or its branch is not one
+        to push to; this covers nothing), gave up (MAX_TRIES runs failed), waiting (for its backoff) or retry. A
+        failed run is not a replay (Codex's challenge 6f72103999cd: a transient exit 75 was kept as the head's
+        replay)."""
+        if doc is None:
+            return "retry", "first replay"
+        tries = doc["attempts"]
+        last = tries[-1]
+        if last.get("ok") or doc.get("covered_by"):
+            return "done", (last.get("line") or "replayed") + (f" (covered by the replay at {doc['covered_by'][:12]})"
+                                                               if doc.get("covered_by") and not last.get("ok") else "")
+        if last.get("skipped"):
+            return "skipped", last.get("line") or "replay skipped"
+        if len(tries) >= MAX_TRIES:
+            return "gave up", f"replay incomplete: {len(tries)} checker runs failed, the last: {last.get('line')}"
+        due_at = last.get("finished", 0) + BACKOFF * 2 ** (len(tries) - 1)
+        if self.clock() < due_at:
+            return "waiting", f"replay incomplete: run {len(tries)} failed ({last.get('line')}); retry after {iso(due_at)}"
+        return "retry", f"replay run {len(tries) + 1} of {MAX_TRIES}"
+
+    def pending(self, n):
+        """Whether a replay of pull request `n` is incomplete with runs left (waiting or retry), at any head."""
+        return any(self.replay_state(runs(json.loads(p.read_text())))[0] in ("waiting", "retry")
+                   for p in (self.home / "replays").glob(f"{number(n)}-*.json"))
+
+    def cover(self, a):
+        """A replay completed at `a`'s head replays every finding of its store at each of its heads: the
+        incomplete replays of the same pull request at other heads are covered by it."""
+        for p in (self.home / "replays").glob(f"{number(a['pr'])}-*.json"):
+            doc = runs(json.loads(p.read_text()))
+            last = doc["attempts"][-1]
+            if doc.get("head") != a["head"] and not last.get("ok") and not last.get("skipped") and not doc.get("covered_by"):
+                doc["covered_by"] = a["head"]
+                p.write_text(json.dumps(doc, indent=1))
 
     def discard(self, wt, work):
         if wt.exists():
@@ -313,9 +396,9 @@ class Waker:
     def _replay(self, a, base, actor, seed):
         n, head, branch = number(a["pr"]), commit(a["head"]), a.get("branch")
         if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != BRANCH):
-            return False, f"replay skipped: {str(branch)[:40]!r} is not a pull request branch to push to"
+            raise Skipped(f"replay skipped: {str(branch)[:40]!r} is not a pull request branch to push to")
         if self.blob(base, CHECKER_FILE) != self.blob(head, CHECKER_FILE):
-            return False, f"replay skipped: #{n} changes {CHECKER_FILE}; it replays once the checker is adopted"
+            raise Skipped(f"replay skipped: #{n} changes {CHECKER_FILE}; it replays once the checker is adopted")
         wt = self.trees / f"{n}-{head[:12]}-replay"
         work = self.home / "replay-work" / self.key(a)
         self.discard(wt, work)
@@ -353,7 +436,7 @@ class Waker:
         new = commit(git("-C", str(wt), "rev-parse", "HEAD").decode().strip())
         tip = git("-C", str(wt), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
         if tip[:1] != [head]:
-            return False, f"replay not pushed: {branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}"
+            raise NotPushed(f"replay not pushed: {branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}")
         git("-C", str(wt), "push", "--quiet", "origin", f"{new}:refs/heads/{branch}")
         return True, f"replay: {len(lines)} observation(s) by {actor[:27]} pushed as {new[:12]} on {branch}"
 
@@ -389,8 +472,8 @@ class Waker:
             git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(path), a["head"])
         return path
 
-    def command(self, a, path):
-        return self.codex_exec(path, self.key(a), prompt(a, self.plugin, path))
+    def command(self, a, path, incomplete=None):
+        return self.codex_exec(path, self.key(a), prompt(a, self.plugin, path, incomplete))
 
     def codex_exec(self, path, key, text):
         if path.resolve() == OPERATOR_CHECKOUT.resolve():
@@ -400,11 +483,13 @@ class Waker:
                 "--add-dir", str(Path.home() / ".warrant"),
                 "-o", str(self.home / "results" / f"{key}.md"), text]
 
-    def wake(self, a):
-        """Wake Codex for Assessment JSON `a` when its memo's state allows. (key, what happened)."""
+    def wake(self, a, incomplete=None):
+        """Wake Codex for Assessment JSON `a` when its memo's state allows; `incomplete` says why the replay at
+        its head gave up, for the prompt. (key, what happened)."""
         p, doc = self.memo(a)
         doc = doc or {"pr": a["pr"], "head": a["head"], "base": a["base"], "facts": a["facts"], "attempts": []}
-        return self.key(a), self.attempt(p, doc, self.key(a), lambda: self.worktree(a), lambda path: self.command(a, path))[1]
+        return self.key(a), self.attempt(p, doc, self.key(a), lambda: self.worktree(a),
+                                         lambda path: self.command(a, path, incomplete))[1]
 
     def attempt(self, p, doc, key, worktree, command):
         """One attempt of the wake whose memo `p` holds `doc`, when its state allows: the memo is written before
@@ -473,14 +558,18 @@ class Waker:
                             lambda path: self.codex_exec(path, key, accept_prompt(c, base, self.plugin, path)))
 
 
-def prompt(a, plugin, path):
+def prompt(a, plugin, path, incomplete=None):
     f = a["facts"]
+    gap = ("" if incomplete is None else
+           f" The review replay checker did not complete at H ({incomplete}): no checker observation covers this "
+           "head's mechanical findings. Run them yourself before you rely on them, and say in your verdict that the "
+           "replay was incomplete.")
     return (f"Use the warrant-review skill ($warrant-review). Pull request {REPO}#{a['pr']} is due for review: "
             f"branch {a.get('branch')}, head H {a['head']}; duty D {f.get('duty')}; head closure T {f.get('closure')} "
             f"(head {f.get('head_n')}) at commit X {f.get('x')}; base {BRANCH} M {a['base']}. Your worktree is {path}, "
             f"detached at H (its remote origin is the repository). The plugin's stdio MCP client is "
             f"{plugin / 'scripts' / 'warrant-mcp-call'}. These facts come from `tools/review.py due` at M, run by the "
-            "review waker; check them yourself before you rely on them.")
+            "review waker; check them yourself before you rely on them." + gap)
 
 
 def accept_prompt(c, base, plugin, path):
@@ -515,9 +604,36 @@ def tick(w, dry):
         else:
             pushed, line = w.replay(x, base)
             if not pushed:
-                line += "; " + w.wake(x)[1]
+                line += "; " + wake_after_replay(w, x)
         out.append(f"  DUE #{x['pr']} {x['head'][:12]}: {line}")
+    if not (dry or held):
+        out += retry_lines(w, base, found)
     return out + acceptance_lines(w, base, found, dry, held)
+
+
+def wake_after_replay(w, x):
+    """What happens to due head `x` once its replay did not push: Codex is woken when the replay completed (or
+    none could run: no seed, or the head changes the checker), not while it is incomplete with runs left, and, once it gave up, woken with that
+    said in the prompt (a reviewer told of the gap can replay the findings itself; one never woken leaves the
+    pull request unreviewed)."""
+    _, doc = w.replay_memo(x)
+    what, detail = w.replay_state(doc) if doc is not None else ("done", "")
+    if what in ("waiting", "retry"):
+        return "not woken: the replay is incomplete"
+    return w.wake(x, detail if what == "gave up" else None)[1]
+
+
+def retry_lines(w, base, found):
+    """An incomplete replay outlives the head being due: a pull request of this repository that is not due (a
+    verdict at its head moved it, its checks run) and has an incomplete replay with runs left is replayed again at
+    its current head. Nobody is woken here."""
+    out = []
+    for x in found["not_due"]:
+        if x.get("head_repo") == REPO and w.pending(x["pr"]):
+            _, doc = w.replay_memo(x)
+            if doc is None or w.replay_state(doc)[0] in ("waiting", "retry"):    # a head that skipped stays quiet
+                out.append(f"  RETRY #{x['pr']} {x['head'][:12]}: {w.replay(x, base)[1]}")
+    return out
 
 
 def hold(found, dry, held):

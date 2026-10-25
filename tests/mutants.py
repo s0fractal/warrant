@@ -1828,6 +1828,38 @@ def _visit(view, did, report, done, busy):
     ('M684', 'engine.py', "a counting challenge of a duty's closure no longer makes relying on it CHALLENGED",
      [('    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))\n',
        '    yield None\n')], 'quickstart_test', ['challenge']),
+    # An incomplete replay is retried and wakes nobody (Codex's challenge 6f72103999cd of 97b0075061cc; W17-W19).
+    ('M685', '../integrations/codex-plugin/waker/waker.py', "a failed checker run is kept as the head's replay",
+     [('        if last.get("ok") or doc.get("covered_by"):', '        if True:')], 'review_replay_test', ['W17']),
+    ('M686', '../integrations/codex-plugin/waker/waker.py', "Codex is woken while the replay at the head is incomplete",
+     [('    if what in ("waiting", "retry"):\n        return "not woken', '    if False:\n        return "not woken')],
+     'review_replay_test', ['W17']),
+    ('M687', '../integrations/codex-plugin/waker/waker.py', "an incomplete replay is not retried once the pull request is not due",
+     [('if x.get("head_repo") == REPO and w.pending(x["pr"]):', 'if False:')], 'review_replay_test', ['W18']),
+    ('M688', '../integrations/codex-plugin/waker/waker.py', "a replay completed at a later head leaves the earlier incomplete ones pending",
+     [('        if ok:\n            self.cover(a)', '        if False:\n            self.cover(a)')], 'review_replay_test', ['W18']),
+    ('M689', '../integrations/codex-plugin/waker/waker.py', "a failing checker is retried without bound and Codex is never woken",
+     [('        if len(tries) >= MAX_TRIES:\n            return "gave up", f"replay', '        if False:\n            return "gave up", f"replay')],
+     'review_replay_test', ['W19']),
+    ('M690', '../integrations/codex-plugin/waker/waker.py', "a wake after the replay gave up does not say so",
+     [('    return w.wake(x, detail if what == "gave up" else None)[1]', '    return w.wake(x)[1]')], 'review_replay_test', ['W19']),
+    ('M693', '../tools/roadmap.py', "a closure another one was filed instead of still counts as waiting, so the newest cannot be refiled",
+     [(' if c["verdict"] == "PENDING" and c["transition"] not in over]', ' if c["verdict"] == "PENDING"]')],
+     'roadmap_test', ['P32']),
+    ('M694', '../integrations/codex-plugin/waker/waker.py', "a replay skipped at a head that changes the checker is a completed replay",
+     [('            pushed, line, ok, skipped = False, str(e), False, True', '            pushed, line, ok, skipped = False, str(e), True, False')],
+     'review_replay_test', ['W21']),
+    ('M695', '../integrations/codex-plugin/waker/waker.py', "a memo of the previous waker saying its observations were not pushed reads as done",
+     [('        failed = line.startswith(("replay failed", "replay not pushed"))', '        failed = line.startswith("replay failed")')],
+     'review_replay_test', ['W22']),
+    ('M696', '../integrations/codex-plugin/waker/waker.py', "with no seed, a replay already incomplete stays pending and nobody is woken",
+     [('        if seed is None and doc is None:\n', '        if seed is None:\n')], 'review_replay_test', ['W23']),
+    ('M692', '../integrations/codex-plugin/waker/waker.py', "a run whose observations did not reach the branch is a complete replay",
+     [('            pushed, line, ok = False, str(e), False', '            pushed, line, ok = False, str(e), True')],
+     'review_replay_test', ['W20']),
+    ('M691', '../integrations/codex-plugin/waker/waker.py', "a failed replay runs again in the next run, with no backoff",
+     [('        if self.clock() < due_at:\n            return "waiting", f"replay', '        if False:\n            return "waiting", f"replay')],
+     'review_replay_test', ['W17']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
@@ -2002,9 +2034,9 @@ COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "ass
         "primitives_test": 0.1, "records_test": 0.2, "cli_test": 0.3, "roadmap_test": 3.1, "circle_test": 0.9,
         "agent_handoff_test": 7.0, "agent_write_test": 1.9, "agent_compute_test": 1.9, "agent_mcp_test": 17.0,
         "why_test": 1.3, "store_index_test": 1.3, "shapes_test": 0.1, "replay_test": 4.0, "agent_repo_test": 6.6,
-        "reviews_test": 6.7, "review_check_test": 3.9, "review_merge_test": 14.0, "review_replay_test": 25.0,
+        "reviews_test": 6.7, "review_check_test": 3.9, "review_merge_test": 14.0, "review_replay_test": 45.0,
         "review_integration_test": 9.5, "agent_views_test": 16.0, "review_gate_test": 30.0,
-        "pilot_test": 4.0, "boundary_test": 3.0, "quickstart_test": 5.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement; review_merge_test 5.5 s locally with V34-V37, the same factor
+        "pilot_test": 4.0, "boundary_test": 3.0, "quickstart_test": 5.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement; review_merge_test 5.5 s locally with V34-V37, the same factor; review_replay_test 18.7 s locally with W17-W23 (10.5 s before), 25.0 scaled to 45.0
 
 
 def _cost(m):
