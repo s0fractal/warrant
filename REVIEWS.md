@@ -29,7 +29,7 @@ duty stays as the records leave it.
 | #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #204 | OPEN · awaiting acceptance by codex | 2 | 1 | 1 | 1 | — |
+| #204 | OPEN · awaiting acceptance by codex | 2 | 3 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -239,3 +239,11 @@ duty stays as the records leave it.
     - replayed at head 1 `213c1b9ef2f2`: REPRODUCES; head 2 `9e58df1fc276`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `9e58df1fc276` (tree `d1e6a3c207b3`), discharge `7a2f5af4c5af`: PENDING · awaiting codex; answers `be3c24f3b319`
+  - finding `23d10e5b513c` by codex, P2, mechanical `replay_retry_skip_test:SKIP1`: NOT_REPLAYED — A retry at a head that changes review_replay.py is skipped, but replay() still sets ok=True and cover() clears the earlier failed memo. pending() becomes false despite zero observations, so a PR no longer due loses its retry. A skipped run must not count as a completed replay or cover earlier failures.
+    - where: integrations/codex-plugin/waker/waker.py:317, integrations/codex-plugin/waker/waker.py:327-328, integrations/codex-plugin/waker/waker.py:381-382
+    - replayed at head 2 `9e58df1fc276`: NOT REPLAYED
+    - not answered
+  - finding `fec604ae5dc1` by codex, P2, mechanical `replay_retry_legacy_test:LEGACY1`: NOT_REPLAYED — Upgrading an old memo with line 'replay not pushed: ...' sets its attempt ok=True. After a verdict, pending() is false, so retry_lines never runs the checker and the branch retains no observations. This is the memo master wrote after a branch-tip race; migrate it as incomplete, like a checker failure.
+    - where: integrations/codex-plugin/waker/waker.py:195-197
+    - replayed at head 2 `9e58df1fc276`: NOT REPLAYED
+    - not answered
