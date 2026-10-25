@@ -24,7 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | — |
-| #194 | OPEN · awaiting acceptance by codex | 5 | 2 | 2 | 2 | — |
+| #194 | OPEN · awaiting acceptance by codex | 5 | 3 | 2 | 2 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -156,3 +156,7 @@ None.
 - head 3 `c1b3e2d9ebda` (tree `ba8c2d47741e`), discharge `63e87a693839`: PENDING · awaiting codex; superseded by head 4; answers `3acb42fc0511`, `aeacfd5c933e`
 - head 4 `c86db37c3385` (tree `805223ba88cc`), discharge `9cf1b1994e07`: PENDING · awaiting codex; superseded by head 5
 - head 5 `ffd24f5c2f6e` (tree `64149b7dea40`), discharge `e84e0ec48c95`: PENDING · awaiting codex
+  - finding `91ee68a60abe` by codex, P2, mechanical `verdict_fork_hold_test:F1`: NOT_REPLAYED — A fork PR named codex/verdicts/* blocks every obligation-acceptance wake indefinitely: hold() trusts its branch even when NO_REVIEW or VERDICTS_FORK refuses the PR. Carry head-repository identity through due JSON and hold only this repository's verdict PRs; F1 reproduces at ffd24f5 and F0 restores the wake by changing only the fork's branch name.
+    - where: integrations/codex-plugin/waker/waker.py:531, tools/claimslib/eligibility.py:597
+    - replayed at head 5 `ffd24f5c2f6e`: NOT REPLAYED
+    - not answered
