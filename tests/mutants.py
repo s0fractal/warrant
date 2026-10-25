@@ -1801,7 +1801,7 @@ def _visit(view, did, report, done, busy):
     ('M663', '../tools/claimslib/reviews.py', "a merge observation may name a merge that merged none of the pull request's heads",
      [("    if not any(_contains(root, h.commit, tip) for h in rv.heads):", "    if False:")], 'review_merge_test', ['V37']),
     ('M664', '../tools/claimslib/reviews.py', "another merge that holds the pull request's head stands for the one Git's history names",
-     [("    if named is not None and named != merge:", "    if False:")], 'review_merge_test', ['V37']),
+     [("    if named and merge not in named:", "    if False:")], 'review_merge_test', ['V36', 'V37']),
     ('M642', '../tools/roadmap.py', "done --replaces names the declined closure only in its residual, not in supersedes",
      [('subject=commit, supersedes=[replaces] if replaces else [])', 'subject=commit)')], 'roadmap_test', ['P26']),
     ('M643', 'pilot.py', "a chain through a shared object is admitted only when its parent is left, after later siblings are read",

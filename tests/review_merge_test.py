@@ -148,11 +148,14 @@ def auto_cases():
     copy = f.git("rev-parse", "HEAD")
     m1 = merge(f, tip1, "Merge pull request #1 from s0fractal/pr1")
     f.git("merge", "-q", "--no-ff", "-m", "Merge branch 'copy'", copy)
+    other = f.git("rev-parse", "HEAD")      # holds #1's head in what it merged, under no #1 subject
     twice = f.code("merged", "--due")
+    # Codex finding on #197 head 3 (3789dbb): the explicit form accepted a merge outside the candidates
+    outside = f.code("merged", "--pr", "1", "--merge", other)
     named = f.run("merged", "--pr", "1", "--merge", m1)[0]
-    check("V36", (twice, named) == (("REVIEW_MERGE_AMBIGUOUS", True), 0),
-          "an ambiguous merge is refused with nothing filed, and the explicit merged --pr --merge still observes it",
-          (twice, named))
+    check("V36", (twice, outside, named) == (("REVIEW_MERGE_AMBIGUOUS", True), ("REVIEW_MERGE_NOT_THE_PR", True), 0),
+          "an ambiguous merge is refused with nothing filed; the explicit merged --pr --merge observes one of its "
+          "candidates, and no other merge", (twice, outside, named))
     f.close()
 
 

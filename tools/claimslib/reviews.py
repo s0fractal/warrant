@@ -34,8 +34,8 @@ checkers this repository adopts (replayers, the last one current).
            with the accepted head nor, at a conflict, one side (AMEND 1 of #181). Paths of the records
            and their generated views do not count. merge_state keeps the states apart; only REVIEWED
            credits the acceptor. The duty itself stays OPEN (merging is a Git act, not a closure).
-           The merge must have merged one of the pull request's heads (in its second parent), and be the one
-           merge_of names when it names one (REVIEW_MERGE_NOT_THE_PR, when filed and in check --base).
+           The merge must have merged one of the pull request's heads (in its second parent), and be one of
+           merge_of's candidates when there are any (REVIEW_MERGE_NOT_THE_PR, when filed and in check --base).
            `merged --due` files one for each pull request that Git's history shows merged into HEAD's
            (merge_of: GitHub's merge subject and the head's ancestry decide, nobody chooses) and none yet,
            and `head` refuses a head whose own commit's store lacks one (REVIEW_MERGE_UNOBSERVED): the next
@@ -730,16 +730,22 @@ def merge_of(root, rv, upto):
     the gate's "… (accepted by …)") and which has the pull request's latest head commit as an ancestor (the
     head the records name is in what merged). More than one is REVIEW_MERGE_AMBIGUOUS: name the merge with
     `merged --pr N --merge SHA`. A squash or rebase merge leaves no such commit, and none is found."""
-    last = rv.latest()
-    if last is None or not (is_commit(last.commit) and is_commit(upto)):
-        return None                     # both checked: the range below is built from full ids only
-    subject = re.compile(rf"Merge pull request #{rv.pr}(?: |\Z)")
-    rows = _git(root, "log", "--merges", "--ancestry-path", "--format=%H%x00%s", f"{last.commit}..{upto}").decode()
-    found = [c for c, _, title in (r.partition("\0") for r in rows.splitlines()) if subject.match(title)]
+    found = merge_candidates(root, rv, upto)
     if len(found) > 1:
         raise Refused(f"#{rv.pr} merged at {', '.join(c[:12] for c in found)}, by their subjects: name its merge with "
                       "tools/review.py merged --pr N --merge SHA", "REVIEW_MERGE_AMBIGUOUS")
     return found[0] if found else None
+
+
+def merge_candidates(root, rv, upto):
+    """The merge commits merge_of chooses from: in the history of `upto`, with the pull request's subject and its
+    latest head as an ancestor, newest first."""
+    last = rv.latest()
+    if last is None or not (is_commit(last.commit) and is_commit(upto)):
+        return []                       # both checked: the range below is built from full ids only
+    subject = re.compile(rf"Merge pull request #{rv.pr}(?: |\Z)")
+    rows = _git(root, "log", "--merges", "--ancestry-path", "--format=%H%x00%s", f"{last.commit}..{upto}").decode()
+    return [c for c, _, title in (r.partition("\0") for r in rows.splitlines()) if subject.match(title)]
 
 
 def _contains(root, a, b):
@@ -818,12 +824,10 @@ def merge_report(root, trust, cfg, rv, merge):
     if not any(_contains(root, h.commit, tip) for h in rv.heads):
         raise Refused(f"{merge[:12]} merged none of #{rv.pr}'s heads (none is in its second parent): not its merge",
                       "REVIEW_MERGE_NOT_THE_PR")
-    try:
-        named = merge_of(root, rv, resolve(root, "HEAD"))
-    except Refused:
-        named = None                    # ambiguous: the merge named here is the operator's choice among them
-    if named is not None and named != merge:
-        raise Refused(f"Git's history gives #{rv.pr}'s merge as {named[:12]}, not {merge[:12]}", "REVIEW_MERGE_NOT_THE_PR")
+    named = merge_candidates(root, rv, resolve(root, "HEAD"))
+    if named and merge not in named:    # one: merge_of's; several: the operator chooses among them (Codex, #197 head 3)
+        raise Refused(f"Git's history gives #{rv.pr}'s merge as {' or '.join(c[:12] for c in named)}, not {merge[:12]}",
+                      "REVIEW_MERGE_NOT_THE_PR")
     then = Model(store_at(root, tip), trust, cfg).by_duty.get(rv.did)
     accepted = [] if then is None else [{"transition": h.tid, "commit": h.commit, "by": h.accepted_by}
                                         for h in then.heads if h.verdict == "ADMITTED"]
