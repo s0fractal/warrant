@@ -24,7 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
-| #195 | OPEN · awaiting acceptance by codex | 2 | 1 | 0 | 1 | — |
+| #195 | OPEN · awaiting acceptance by codex | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -155,8 +155,8 @@ duty stays as the records leave it.
   - serves duty `d5cd7a7da4e4`
   - serves duty `47cdf978c4d3`
 - head 1 `a7eebef499e7` (tree `9905c76d31cc`), discharge `4a6f04d9a402`: PENDING · awaiting codex; superseded by head 2
-  - finding `1e7a0108b247` by codex, P2, mechanical `review_195_frontier_test:F1`: NOT_REPLAYED — An admitted delegation that lists a pending discharge in supersedes hides that discharge from its acceptor once an unrelated closure discharges the duty. The delegation is not a replacement closure; keep the acceptance owed unless a settlement or revalidation of this duty supersedes it (F1 passes at base 1a660a6, fails at a7eebef).
+  - finding `1e7a0108b247` by codex, P2, mechanical `review_195_frontier_test:F1`: REPRODUCED — An admitted delegation that lists a pending discharge in supersedes hides that discharge from its acceptor once an unrelated closure discharges the duty. The delegation is not a replacement closure; keep the acceptance owed unless a settlement or revalidation of this duty supersedes it (F1 passes at base 1a660a6, fails at a7eebef).
     - where: warrant/engine.py:930, warrant/engine.py:932
-    - replayed at head 1 `a7eebef499e7`: NOT REPLAYED; head 2 `de76d3850873`: NOT REPLAYED
+    - replayed at head 1 `a7eebef499e7`: REPRODUCES; head 2 `de76d3850873`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: PENDING · awaiting codex; answers `1e7a0108b247`
