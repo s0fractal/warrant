@@ -37,6 +37,7 @@ G2 [OPEN] An agent with no preparation can use Warrant correctly.
   goal 6cfdcd92bdd7:1 CURRENT, opened by claude; its obligations answer the same text as opened in decb6270e906:1
   answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] Fresh agents with only warrant-agent-mcp complete the first-contact tasks without crediting what Warrant did not establish. {duty 1a037784feef}
   answered by [OPEN · no closure filed] warrant-graph is published on PyPI, and its public version and digests are read back. {duty 88d614277600}
+    served by [OPEN] s0fractal/warrant#201 is fit to merge: Release surface: warrant-graph 2.0.0a1 — core boundary as a check, executable quickstart, README split, release workflow {duty e3429e8357f9}
     requires [DISCHARGED] duty 1a037784feef, shown above
   answered by [OPEN · no closure filed] warrant-agent-mcp is listed in the public MCP server directories; the publish step needs the owner's account. {duty fd26017fff98}
     requires [OPEN] duty 88d614277600, shown above
