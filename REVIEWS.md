@@ -24,7 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | — |
-| #194 | OPEN · awaiting acceptance by codex | 5 | 3 | 2 | 2 | — |
+| #194 | OPEN · awaiting acceptance by codex | 6 | 3 | 2 | 3 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -147,16 +147,17 @@ None.
 - head 2 `41a10739b0fe` (tree `7d56c0da52e8`), discharge `246adae2a062`: PENDING · awaiting codex; superseded by head 3
   - finding `3acb42fc0511` by codex, P2, mechanical `review194_items_test:A194R2`: REPRODUCED — Key acceptance wakes by transition and item: a transition may close two roadmap duties; after its first item is accepted the other is still PENDING, but their shared accepts/<T>.json memo says done, so the second item is never woken. The prompt asks for only one item.
     - where: integrations/codex-plugin/waker/waker.py:442-444
-    - replayed at head 2 `41a10739b0fe`: REPRODUCES; head 3 `c1b3e2d9ebda`: DOES NOT REPRODUCE; head 4 `c86db37c3385`: DOES NOT REPRODUCE; head 5 `ffd24f5c2f6e`: DOES NOT REPRODUCE
+    - replayed at head 2 `41a10739b0fe`: REPRODUCES; head 3 `c1b3e2d9ebda`: DOES NOT REPRODUCE; head 4 `c86db37c3385`: DOES NOT REPRODUCE; head 5 `ffd24f5c2f6e`: DOES NOT REPRODUCE; head 6 `2916eeb4bd16`: NOT REPLAYED
     - answered by head 3
   - finding `aeacfd5c933e` by codex, P2, mechanical `review194_replacement_test:A194R1`: REPRODUCED — Do not wake a filed-over closure after accepting its replacement: done --replaces T1 then accept T2 leaves the duty DISCHARGED, but filtering to PENDING first makes T1 due again, so a discarded, unchallenged attempt is sent for review.
     - where: tools/roadmap.py:371-373
-    - replayed at head 2 `41a10739b0fe`: REPRODUCES; head 3 `c1b3e2d9ebda`: DOES NOT REPRODUCE; head 4 `c86db37c3385`: DOES NOT REPRODUCE; head 5 `ffd24f5c2f6e`: DOES NOT REPRODUCE
+    - replayed at head 2 `41a10739b0fe`: REPRODUCES; head 3 `c1b3e2d9ebda`: DOES NOT REPRODUCE; head 4 `c86db37c3385`: DOES NOT REPRODUCE; head 5 `ffd24f5c2f6e`: DOES NOT REPRODUCE; head 6 `2916eeb4bd16`: NOT REPLAYED
     - answered by head 3
 - head 3 `c1b3e2d9ebda` (tree `ba8c2d47741e`), discharge `63e87a693839`: PENDING · awaiting codex; superseded by head 4; answers `3acb42fc0511`, `aeacfd5c933e`
 - head 4 `c86db37c3385` (tree `805223ba88cc`), discharge `9cf1b1994e07`: PENDING · awaiting codex; superseded by head 5
-- head 5 `ffd24f5c2f6e` (tree `64149b7dea40`), discharge `e84e0ec48c95`: PENDING · awaiting codex
+- head 5 `ffd24f5c2f6e` (tree `64149b7dea40`), discharge `e84e0ec48c95`: PENDING · awaiting codex; superseded by head 6
   - finding `91ee68a60abe` by codex, P2, mechanical `verdict_fork_hold_test:F1`: NOT_REPLAYED — A fork PR named codex/verdicts/* blocks every obligation-acceptance wake indefinitely: hold() trusts its branch even when NO_REVIEW or VERDICTS_FORK refuses the PR. Carry head-repository identity through due JSON and hold only this repository's verdict PRs; F1 reproduces at ffd24f5 and F0 restores the wake by changing only the fork's branch name.
     - where: integrations/codex-plugin/waker/waker.py:531, tools/claimslib/eligibility.py:597
-    - replayed at head 5 `ffd24f5c2f6e`: NOT REPLAYED
-    - not answered
+    - replayed at head 5 `ffd24f5c2f6e`: NOT REPLAYED; head 6 `2916eeb4bd16`: NOT REPLAYED
+    - answered by head 6
+- head 6 `2916eeb4bd16` (tree `914a178534f3`), discharge `c9f7a2fb3f2d`: PENDING · awaiting codex; answers `91ee68a60abe`
