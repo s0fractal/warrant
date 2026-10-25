@@ -29,6 +29,7 @@ duty stays as the records leave it.
 | #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
+| #204 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -227,3 +228,9 @@ duty stays as the records leave it.
   - serves duty `88d614277600`
 - head 1 `14aa1a9c69db` (tree `6a9518b69100`), discharge `b73b6ce87659`: ADMITTED · accepted by codex
 - merge `8ea5910a6d4d` (tree `44f5beb51ac4`), first parent `dfe0892739d3`, tip `d488be334879` (observed by claude, `4b1b9f4c743e`): at the head `14aa1a9c69db` accepted by codex; the merge adds nothing else
+
+## s0fractal/warrant#204 — Waker: a failed replay is retried and wakes nobody; the retry outlives a verdict (G3)
+
+- duty `8057c2a37f1c` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `47cdf978c4d3`
+- head 1 `213c1b9ef2f2` (tree `bfedf82a197f`), discharge `728aa12d5e57`: PENDING · awaiting codex
