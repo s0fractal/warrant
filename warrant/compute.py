@@ -45,7 +45,12 @@ class ProviderError(Exception):
 
 def identity_of(sources):
     """sigma_provider.identity_of, computed here from the captured bytes."""
-    files = {f"{n}.py": hashlib.sha256(sources[n]).hexdigest() for n in MODULES}
+    return identity_of_files({f"{n}.py": hashlib.sha256(sources[n]).hexdigest() for n in MODULES})
+
+
+def identity_of_files(files):
+    """The same identity from the modules' digests ({"<module>.py": hex64}): a verification profile
+    (warrant.pilot) names the provider by these digests without carrying the bytes."""
     doc = {"provider": "sigma-resume", "files": files}
     return hashlib.sha256(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

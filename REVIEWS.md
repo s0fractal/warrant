@@ -23,6 +23,7 @@ duty stays as the records leave it.
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #192 | OPEN · awaiting acceptance by codex | 2 | 0 | 0 | 0 | — |
+| #193 | DISCHARGED | 4 | 6 | 0 | 6 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -99,3 +100,39 @@ None.
   - serves duty `47cdf978c4d3`
 - head 1 `24e698569adc` (tree `4ebf7cc49e40`), discharge `0f5fbf1fcc8e`: PENDING · awaiting codex; superseded by head 2
 - head 2 `8449a8e1c758` (tree `90f264a708ef`), discharge `5b57ea6a31ff`: PENDING · awaiting codex
+
+## s0fractal/warrant#193 — G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04)
+
+- duty `431ae379e6ae` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+  - serves duty `d108cd09dd10`
+  - serves duty `d5cd7a7da4e4`
+  - serves duty `61f38a12298e`
+  - serves duty `1b10e89d75fe`
+- head 1 `228ed326c0f8` (tree `cb156532114e`), discharge `9d63a3888d03`: PENDING · awaiting codex; superseded by head 2
+  - finding `19556ffa5a1c` by codex, P2, mechanical `pilot_review_store_test:R1`: NOT_REPLAYED — A FIFO under an object name blocks os.open before fstat; reject non-regular files without waiting for a writer (PC-07).
+    - where: warrant/pilot.py:188
+    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - answered by head 2
+  - finding `971ca0938c3a` by codex, P2, mechanical `pilot_review_store_test:R3`: NOT_REPLAYED — Growing a file from 4 to 5 bytes after fstat resolves all 5 bytes under pilot_bytes=4 and invokes the verifier; admit the actual read length before exposing the closure (PC-17).
+    - where: warrant/pilot.py:197
+    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - answered by head 2
+  - finding `d8a510cd300e` by codex, P2, mechanical `pilot_review_store_test:R2`: NOT_REPLAYED — Swapping a fanout directory for an outside symlink between realpath and os.open returns RESOLVED and invokes the verifier on outside-only bytes; anchor path traversal to directory descriptors (PC-07).
+    - where: warrant/pilot.py:185
+    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - answered by head 2
+- head 2 `eca04ccfdc39` (tree `1a341a97613e`), discharge `e74de48389f7`: PENDING · awaiting codex; superseded by head 3; answers `19556ffa5a1c`, `971ca0938c3a`, `d8a510cd300e`
+  - finding `b60e976acb54` by codex, P2, mechanical `pilot_review_boundary_test:J1`: NOT_REPLAYED — A digest-correct JSON object with a 5000-digit integer raises CPython ValueError through _json_tag instead of returning REFUSED/KIND_MISMATCH; Receiver.resolve/check aborts on about 5 KB of untrusted bytes.
+    - where: warrant/pilot.py:83, warrant/pilot.py:84
+    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - answered by head 3
+  - finding `d564e974a47d` by codex, P2, mechanical `pilot_review_boundary_test:G1`: NOT_REPLAYED — A file growing by more than one byte after fstat is truncated to st_size+1; a name hashing to that prefix resolves and invokes the verifier even though the whole stored file hashes differently (both layouts; expected DIGEST_MISMATCH).
+    - where: warrant/pilot.py:213
+    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - answered by head 3
+- head 3 `11e11c605f12` (tree `84f2674694cf`), discharge `11b8a1f8499a`: PENDING · awaiting codex; superseded by head 4; answers `b60e976acb54`, `d564e974a47d`
+  - finding `b3887f01538c` by codex, P2, mechanical `pilot_review_config_test:C1`: NOT_REPLAYED — Validate receiver configuration containers before using them: limits false/0/""/[] silently select default budgets and reach the verifier, true/1/"invalid"/[1] raise AttributeError, and layout []/{} raises TypeError; PC-26 and Receiver.from_config require malformed configuration to be refused with ValueError.
+    - where: warrant/pilot.py:340, warrant/pilot.py:349, warrant/limits.py:29
+    - replayed at head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - answered by head 4
+- head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`

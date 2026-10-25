@@ -78,6 +78,6 @@ python3 integrations/codex-plugin/install.py --uninstall
 
 `test_plugin.py` (CI, examples job) checks the manifests' paths, the launcher, the
 configuration edit, a dry install that changes nothing, one wake per head, the wake's own worktree, retries, and the stdio client,
-with no Codex and no GitHub. `tests/review_replay_test.py` (W1-W11, mutants M580-M595 with
+with no Codex and no GitHub. `tests/review_replay_test.py` (W1-W11, mutants M609-M624 with
 `tests/review_gate_test.py` G34-G36) checks the replay: what it files and pushes, the seed only on
 standard input, the sandbox profile (and the sandbox itself on a Mac), and what it refuses to push.
