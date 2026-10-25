@@ -662,7 +662,7 @@ def _results(view):
         out[t_id] = {"actor": t["actor"], "at": t["at"], "basis": t["body"]["basis"],
                      "established": t["body"]["established"], "residual": t["body"]["residual"],
                      "subject": t["body"]["subject"], "evidence": t["body"]["evidence"], "accepted_by": sorted(got),
-                     "accepted": bool(need) and need <= set(got), "superseded_by": [],
+                     "accepted": bool(need) and need <= set(got), "supersedes": t["body"]["supersedes"], "superseded_by": [],
                      "triggers": [], "challenges": []}
     for t_id, t in view.transitions.items():
         for old in t["body"]["supersedes"]:
@@ -911,6 +911,9 @@ def reliance(rep, target, use):
     return dict(out, state="ELIGIBLE")
 
 
+CLOSING_ACTS = ("discharge", "impossible", "release", "revalidate")
+
+
 def _duty_needs(rep, did, r, actor):
     holds = actor == r["holder"] or actor in r["delegates"]
     if holds and r["disposition"] == "OPEN":
@@ -925,11 +928,16 @@ def _duty_needs(rep, did, r, actor):
                 yield {"duty": did, "need": f"period {n} {p['state']}", "statement": r["statement"]}
     # A pending closure is no longer acceptance work only when THIS duty is closed
     # by an admitted item of a transition that superseded it. Results supersession
-    # alone admits nothing on this duty (Codex W141-01).
-    closed_by_admitted = {c["transition"] for c in r["candidates"] if c["verdict"] == "ADMITTED"} \
+    # alone admits nothing on this duty (Codex W141-01); nor does it have to be
+    # accepted: the admitted item is what retires the old one (Gemini, 1a660a6). Only
+    # a closing item does: an admitted delegation or substitution closes nothing
+    # (Codex finding 1e7a0108b247 on #195).
+    closed_by_admitted = {c["transition"] for c in r["candidates"] if c["verdict"] == "ADMITTED"
+                          and c["act"] in CLOSING_ACTS} \
         if r["disposition"] in ("DISCHARGED", "IMPOSSIBLE", "RELEASED") else set()
+    replaced_by_admitted = {old for t in closed_by_admitted for old in rep["results"][t]["supersedes"]}
     for c in r["candidates"]:
-        replaced = set(rep["results"].get(c["transition"], {}).get("superseded_by", [])) & closed_by_admitted
+        replaced = c["transition"] in replaced_by_admitted
         if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []) and not replaced:
             # Whose acceptance this item still waits for, and whether this one is the
             # last: a reader must not have to guess that its own accept closes the duty

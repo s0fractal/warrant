@@ -15,19 +15,20 @@ duty stays as the records leave it.
 
 | Pull request | State | Heads | Findings | Reproduced | Answered | Merge |
 | --- | --- | --- | --- | --- | --- | --- |
-| #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
-| #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
-| #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
-| #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
-| #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
-| #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
-| #193 | DISCHARGED | 4 | 6 | 0 | 6 | — |
+| #181 | DISCHARGED | 6 | 1 | 1 | 1 | at an accepted head |
+| #184 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
+| #186 | DISCHARGED | 2 | 1 | 0 | 1 | at an accepted head |
+| #188 | DISCHARGED | 3 | 0 | 0 | 0 | at an accepted head |
+| #189 | DISCHARGED | 2 | 0 | 0 | 0 | at an accepted head |
+| #190 | DISCHARGED | 5 | 2 | 2 | 2 | at an accepted head |
+| #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
+| #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
+| #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
+| #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
-None.
+- #192: merge `1a660a647746` (tree `5ee5c18c9377`), first parent `29d1faf66fe3`, tip `8f58eed277ec` (observed by claude, `d5a855fe0d11`): MERGED WITHOUT REVIEWER ACCEPTANCE: no head was accepted in the tip's store
 
 ## s0fractal/warrant#181 — Reviews as records: the PR review loop in the graph
 
@@ -43,11 +44,13 @@ None.
     - answered by head 5
 - head 5 `c85738507985` (tree `45dbbcc97d74`), discharge `71d28dc0d04b`: PENDING · awaiting codex; superseded by head 6; answers `3908b644e180`
 - head 6 `3a5fb3ca88da` (tree `23a72dc13546`), discharge `d5ff2b04807c`: ADMITTED · accepted by codex
+- merge `fd4dc5a6ade9` (tree `77b1b6725718`), first parent `7b4c79f1e56a`, tip `2458d800da0a` (observed by claude, `7978ef62d78b`): at the head `3a5fb3ca88da` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#184 — MCP views as content-addressed manifests; GC by reachability
 
 - duty `fa891b89cb21` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `d924e1bbc32d` (tree `1319c3edb9b4`), discharge `0520712a3481`: ADMITTED · accepted by codex
+- merge `11883c713a30` (tree `086db4c19846`), first parent `fd4dc5a6ade9`, tip `83c96a22a604` (observed by claude, `02e59c00fd43`): at the head `d924e1bbc32d` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#186 — Roadmap after the Forward Attack marks: G4 met, G6 and G7 decomposed further
 
@@ -57,6 +60,7 @@ None.
     - where: .warrant/store/records/8449a1d635f3433496d584fae7abe2cf272c4f5075688b25f97816c6c7b83cf2.json:1
     - answered by head 2
 - head 2 `4c6229d75be0` (tree `728b65442e48`), discharge `de297427e560`: ADMITTED · accepted by codex; answers `3e11e8489fcd`
+- merge `f6ba9a8e91e7` (tree `b394805a8b5d`), first parent `11883c713a30`, tip `694a1813e45e` (observed by claude, `032f00d9db84`): at the head `4c6229d75be0` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#188 — G9 from Codex's proof-space roadmap: goal, 11 obligations, goal --source credit
 
@@ -64,12 +68,14 @@ None.
 - head 1 `03424bef12e5` (tree `05e8efd180c2`), discharge `ba001e0d52e8`: PENDING · awaiting codex; superseded by head 2
 - head 2 `18aada2aa6fb` (tree `43c3f5614fea`), discharge `23be3f7db84e`: PENDING · awaiting codex; superseded by head 3
 - head 3 `358eb8df4f35` (tree `a22878a31c6a`), discharge `92df3b7fc6d4`: ADMITTED · accepted by codex
+- merge `3d9bc18616bf` (tree `aa72a060a121`), first parent `f6ba9a8e91e7`, tip `7a6999a37853` (observed by claude, `359a05dde82b`): at the head `358eb8df4f35` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#189 — G10 from Monday's possibility-space proposal: goal, 7 obligations linked to G9
 
 - duty `ca58c1b8f0ee` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `cf4a49e78c2a` (tree `e51e25dc483f`), discharge `dc3bb8733197`: PENDING · awaiting codex; superseded by head 2
 - head 2 `fd345b816849` (tree `f5caa21e7198`), discharge `6e2326bf0aa8`: ADMITTED · accepted by codex
+- merge `63f62e2002a9` (tree `9d581257647e`), first parent `3d9bc18616bf`, tip `3154f4ffb8e5` (observed by claude, `8fb4dda68676`): at the head `fd345b816849` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#190 — Merge on acceptance without the owner's act; Codex wakes itself to review
 
@@ -77,22 +83,24 @@ None.
   - serves duty `47cdf978c4d3`
 - head 1 `9d7d4401008c` (tree `86260b0ab0c5`), discharge `31c1218a05f7`: PENDING · awaiting codex; superseded by head 2
 - head 2 `17ea0667232c` (tree `b7f1bbc12d4c`), discharge `1d2e45e92cdd`: PENDING · awaiting codex; superseded by head 3
-  - finding `190c1c64418f` by codex, P2, mechanical `codex_gate_race_test:RACE_BASE`: NOT_REPLAYED — Before merging, revalidate the freshly read PR base and hold label: retargeting master to release or adding hold after assessment leaves the same head, so merge_one still issues PUT /merge despite the new facts.
+  - finding `190c1c64418f` by codex, P2, mechanical `codex_gate_race_test:RACE_BASE`: REPRODUCED — Before merging, revalidate the freshly read PR base and hold label: retargeting master to release or adding hold after assessment leaves the same head, so merge_one still issues PUT /merge despite the new facts.
     - where: tools/claimslib/gate.py:144
-    - replayed at head 2 `17ea0667232c`: NOT REPLAYED; head 3 `d6fe668d596a`: NOT REPLAYED; head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
+    - replayed at head 2 `17ea0667232c`: REPRODUCES; head 3 `d6fe668d596a`: DOES NOT REPRODUCE; head 4 `f2a95e5439e2`: DOES NOT REPRODUCE; head 5 `bd4693ce646b`: DOES NOT REPRODUCE
     - answered by head 3
 - head 3 `d6fe668d596a` (tree `ab43db307e55`), discharge `2d12575c8bf7`: PENDING · awaiting codex; superseded by head 4; answers `190c1c64418f`
 - head 4 `f2a95e5439e2` (tree `dc32d741b002`), discharge `486520e1e31c`: PENDING · awaiting codex; superseded by head 5
-  - finding `41141d15bbaf` by codex, P2, mechanical `codex_install_dry_run_test:DRY_RUN_NO_BOOTOUT`: NOT_REPLAYED — install.py --dry-run unconditionally executes launchctl bootout, stopping an installed review waker while the dry bootstrap is skipped. Route bootout through the dry-aware run helper and test that dry-run issues no mutating launchctl command.
+  - finding `41141d15bbaf` by codex, P2, mechanical `codex_install_dry_run_test:DRY_RUN_NO_BOOTOUT`: REPRODUCED — install.py --dry-run unconditionally executes launchctl bootout, stopping an installed review waker while the dry bootstrap is skipped. Route bootout through the dry-aware run helper and test that dry-run issues no mutating launchctl command.
     - where: integrations/codex-plugin/install.py:130
-    - replayed at head 4 `f2a95e5439e2`: NOT REPLAYED; head 5 `bd4693ce646b`: NOT REPLAYED
+    - replayed at head 4 `f2a95e5439e2`: REPRODUCES; head 5 `bd4693ce646b`: DOES NOT REPRODUCE
     - answered by head 5
 - head 5 `bd4693ce646b` (tree `50ed127677ed`), discharge `b65fbf28e09d`: ADMITTED · accepted by codex; answers `41141d15bbaf`
+- merge `07cabb1c13d5` (tree `cd1f92c2eb71`), first parent `63f62e2002a9`, tip `8e0bee57733f` (observed by claude, `d0b3c7f717f9`): at the head `bd4693ce646b` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#191 — ROADMAP.md: each duty in full once per goal; a goal opened again unchanged is REOPENED
 
 - duty `bf4fbc49b379` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `2dcc5ba23ae6` (tree `33855071fbe7`), discharge `9d4277b4270b`: ADMITTED · accepted by codex
+- merge `3063c2989b4e` (tree `deb2b348a116`), first parent `07cabb1c13d5`, tip `d30cd9fcb34e` (observed by claude, `6bf190ed0301`): at the head `2dcc5ba23ae6` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#192 — The review waker runs the review replay checker on every due head, before it wakes Codex
 
@@ -101,6 +109,7 @@ None.
 - head 1 `24e698569adc` (tree `4ebf7cc49e40`), discharge `0f5fbf1fcc8e`: PENDING · awaiting codex; superseded by head 2
 - head 2 `8449a8e1c758` (tree `90f264a708ef`), discharge `5b57ea6a31ff`: PENDING · awaiting codex; superseded by head 3
 - head 3 `a5d2b8b4e4ae` (tree `3435922ec5e7`), discharge `db91868adafb`: PENDING · awaiting codex
+- merge `1a660a647746` (tree `5ee5c18c9377`), first parent `29d1faf66fe3`, tip `8f58eed277ec` (observed by claude, `d5a855fe0d11`): MERGED WITHOUT REVIEWER ACCEPTANCE: no head was accepted in the tip's store
 
 ## s0fractal/warrant#193 — G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04)
 
@@ -110,30 +119,44 @@ None.
   - serves duty `61f38a12298e`
   - serves duty `1b10e89d75fe`
 - head 1 `228ed326c0f8` (tree `cb156532114e`), discharge `9d63a3888d03`: PENDING · awaiting codex; superseded by head 2
-  - finding `19556ffa5a1c` by codex, P2, mechanical `pilot_review_store_test:R1`: NOT_REPLAYED — A FIFO under an object name blocks os.open before fstat; reject non-regular files without waiting for a writer (PC-07).
+  - finding `19556ffa5a1c` by codex, P2, mechanical `pilot_review_store_test:R1`: REPRODUCED — A FIFO under an object name blocks os.open before fstat; reject non-regular files without waiting for a writer (PC-07).
     - where: warrant/pilot.py:188
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 1 `228ed326c0f8`: REPRODUCES; head 2 `eca04ccfdc39`: DOES NOT REPRODUCE; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 2
-  - finding `971ca0938c3a` by codex, P2, mechanical `pilot_review_store_test:R3`: NOT_REPLAYED — Growing a file from 4 to 5 bytes after fstat resolves all 5 bytes under pilot_bytes=4 and invokes the verifier; admit the actual read length before exposing the closure (PC-17).
+  - finding `971ca0938c3a` by codex, P2, mechanical `pilot_review_store_test:R3`: REPRODUCED — Growing a file from 4 to 5 bytes after fstat resolves all 5 bytes under pilot_bytes=4 and invokes the verifier; admit the actual read length before exposing the closure (PC-17).
     - where: warrant/pilot.py:197
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 1 `228ed326c0f8`: REPRODUCES; head 2 `eca04ccfdc39`: DOES NOT REPRODUCE; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 2
-  - finding `d8a510cd300e` by codex, P2, mechanical `pilot_review_store_test:R2`: NOT_REPLAYED — Swapping a fanout directory for an outside symlink between realpath and os.open returns RESOLVED and invokes the verifier on outside-only bytes; anchor path traversal to directory descriptors (PC-07).
+  - finding `d8a510cd300e` by codex, P2, mechanical `pilot_review_store_test:R2`: REPRODUCED — Swapping a fanout directory for an outside symlink between realpath and os.open returns RESOLVED and invokes the verifier on outside-only bytes; anchor path traversal to directory descriptors (PC-07).
     - where: warrant/pilot.py:185
-    - replayed at head 1 `228ed326c0f8`: NOT REPLAYED; head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 1 `228ed326c0f8`: REPRODUCES; head 2 `eca04ccfdc39`: DOES NOT REPRODUCE; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `eca04ccfdc39` (tree `1a341a97613e`), discharge `e74de48389f7`: PENDING · awaiting codex; superseded by head 3; answers `19556ffa5a1c`, `971ca0938c3a`, `d8a510cd300e`
-  - finding `b60e976acb54` by codex, P2, mechanical `pilot_review_boundary_test:J1`: NOT_REPLAYED — A digest-correct JSON object with a 5000-digit integer raises CPython ValueError through _json_tag instead of returning REFUSED/KIND_MISMATCH; Receiver.resolve/check aborts on about 5 KB of untrusted bytes.
+  - finding `b60e976acb54` by codex, P2, mechanical `pilot_review_boundary_test:J1`: REPRODUCED — A digest-correct JSON object with a 5000-digit integer raises CPython ValueError through _json_tag instead of returning REFUSED/KIND_MISMATCH; Receiver.resolve/check aborts on about 5 KB of untrusted bytes.
     - where: warrant/pilot.py:83, warrant/pilot.py:84
-    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 2 `eca04ccfdc39`: REPRODUCES; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 3
-  - finding `d564e974a47d` by codex, P2, mechanical `pilot_review_boundary_test:G1`: NOT_REPLAYED — A file growing by more than one byte after fstat is truncated to st_size+1; a name hashing to that prefix resolves and invokes the verifier even though the whole stored file hashes differently (both layouts; expected DIGEST_MISMATCH).
+  - finding `d564e974a47d` by codex, P2, mechanical `pilot_review_boundary_test:G1`: REPRODUCED — A file growing by more than one byte after fstat is truncated to st_size+1; a name hashing to that prefix resolves and invokes the verifier even though the whole stored file hashes differently (both layouts; expected DIGEST_MISMATCH).
     - where: warrant/pilot.py:213
-    - replayed at head 2 `eca04ccfdc39`: NOT REPLAYED; head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 2 `eca04ccfdc39`: REPRODUCES; head 3 `11e11c605f12`: DOES NOT REPRODUCE; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 3
 - head 3 `11e11c605f12` (tree `84f2674694cf`), discharge `11b8a1f8499a`: PENDING · awaiting codex; superseded by head 4; answers `b60e976acb54`, `d564e974a47d`
-  - finding `b3887f01538c` by codex, P2, mechanical `pilot_review_config_test:C1`: NOT_REPLAYED — Validate receiver configuration containers before using them: limits false/0/""/[] silently select default budgets and reach the verifier, true/1/"invalid"/[1] raise AttributeError, and layout []/{} raises TypeError; PC-26 and Receiver.from_config require malformed configuration to be refused with ValueError.
+  - finding `b3887f01538c` by codex, P2, mechanical `pilot_review_config_test:C1`: REPRODUCED — Validate receiver configuration containers before using them: limits false/0/""/[] silently select default budgets and reach the verifier, true/1/"invalid"/[1] raise AttributeError, and layout []/{} raises TypeError; PC-26 and Receiver.from_config require malformed configuration to be refused with ValueError.
     - where: warrant/pilot.py:340, warrant/pilot.py:349, warrant/limits.py:29
-    - replayed at head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
+    - replayed at head 3 `11e11c605f12`: REPRODUCES; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`
+- merge `29d1faf66fe3` (tree `62c6b12442ea`), first parent `3063c2989b4e`, tip `641cb12e28f4` (observed by claude, `448018e5e1d9`): at the head `19b757bf307a` accepted by codex; the merge adds nothing else
+
+## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
+
+- duty `aadb208517a0` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+  - serves duty `61f38a12298e`
+  - serves duty `d5cd7a7da4e4`
+  - serves duty `47cdf978c4d3`
+- head 1 `a7eebef499e7` (tree `9905c76d31cc`), discharge `4a6f04d9a402`: PENDING · awaiting codex; superseded by head 2
+  - finding `1e7a0108b247` by codex, P2, mechanical `review_195_frontier_test:F1`: REPRODUCED — An admitted delegation that lists a pending discharge in supersedes hides that discharge from its acceptor once an unrelated closure discharges the duty. The delegation is not a replacement closure; keep the acceptance owed unless a settlement or revalidation of this duty supersedes it (F1 passes at base 1a660a6, fails at a7eebef).
+    - where: warrant/engine.py:930, warrant/engine.py:932
+    - replayed at head 1 `a7eebef499e7`: REPRODUCES; head 2 `de76d3850873`: DOES NOT REPRODUCE
+    - answered by head 2
+- head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: ADMITTED · accepted by codex; answers `1e7a0108b247`
