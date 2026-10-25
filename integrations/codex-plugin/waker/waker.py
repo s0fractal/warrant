@@ -46,7 +46,7 @@ seed). The waker commits only the observation records the checker printed (by th
 with its probe blob) and the generated views, refuses anything else the run left, and pushes that
 commit on the pull request's branch only while the branch is still at the head (a fast-forward).
 One replay per head: HOME/replays/<n>-<head>.json, with its runs. A run that failed (the checker exited
-otherwise, or its output was refused) is not a replay: it runs again after BACKOFF seconds, doubled each
+otherwise, its output was refused, or its observations did not reach the branch) is not a replay: it runs again after BACKOFF seconds, doubled each
 time, at most MAX_TRIES runs, and Codex is not woken at that head meanwhile; once it gave up, Codex is
 woken and told so in the prompt. The retry outlives the head being due: a pull request of this repository
 not due (a verdict moved its tip) with an incomplete replay is replayed at its current head, and a replay
@@ -185,6 +185,10 @@ def changes(wt, filed, actor):
     return sorted(out)
 
 
+class NotPushed(Exception):
+    """The checker's run completed, and its observations did not reach the branch (it moved meanwhile)."""
+
+
 def runs(doc):
     """A replay memo with its runs: one of an older waker (a single run, no `attempts`) reads as one run,
     failed when its line says so."""
@@ -311,6 +315,8 @@ class Waker:
             return False, why
         try:
             (pushed, line), ok = self._replay(a, base, actor, seed), True
+        except NotPushed as e:          # observations that did not reach the branch are no replay (Codex, #204)
+            pushed, line, ok = False, str(e), False
         except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
             pushed, line, ok = False, f"replay failed: {str(e)[:300]}", False
         t = self.clock()
@@ -411,7 +417,7 @@ class Waker:
         new = commit(git("-C", str(wt), "rev-parse", "HEAD").decode().strip())
         tip = git("-C", str(wt), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
         if tip[:1] != [head]:
-            return False, f"replay not pushed: {branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}"
+            raise NotPushed(f"replay not pushed: {branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}")
         git("-C", str(wt), "push", "--quiet", "origin", f"{new}:refs/heads/{branch}")
         return True, f"replay: {len(lines)} observation(s) by {actor[:27]} pushed as {new[:12]} on {branch}"
 

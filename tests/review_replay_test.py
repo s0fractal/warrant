@@ -635,8 +635,43 @@ def retry_cases():
     h.close()
 
 
+def race_cases():
+    # W20 (Codex finding on #204 head 1, 213c1b9, test replay_retry_race_test RACE1): after a failed run and a
+    # verdict, the retry's checker succeeded but the branch moved before its push; that run was saved complete and
+    # covered the failure, so the new tip was never replayed and kept no observation. Expected: still pending.
+    f = pr_world()
+    flaky(f, 1)
+    f.w.due = lambda base: {"due": [due(f, tip(f))], "not_due": []}
+    WAKER.tick(f.w, False)
+    f.ok("accept", "--pr", "1", "--commit", f.h2, actor="codex")
+    reviewed = f.save()
+    git("-C", str(f.dir), "push", "-q", str(f.origin), f"{reviewed}:refs/heads/pr1")
+    git("-C", str(f.w.mirror), "fetch", "-q", str(f.origin), "+refs/heads/pr1:refs/heads/pr1")
+    moved = f.commit("a commit pushed while the checker runs")
+
+    def move(cmd, result):
+        if "replay" in cmd:
+            git("-C", str(f.dir), "push", "-q", str(f.origin), f"{moved}:refs/heads/pr1")
+            git("-C", str(f.w.mirror), "fetch", "-q", str(f.origin), "+refs/heads/pr1:refs/heads/pr1")
+    f.jail.after = move
+    f.w.due = lambda base: {"due": [], "not_due": [dict(due(f, tip(f)), head_repo=WAKER.REPO,
+                                                        not_due=[["REVIEWED", "accepted"]])]}
+    f.now[0] += WAKER.BACKOFF + 1
+    raced = WAKER.tick(f.w, False)
+    pending = f.w.pending(1)
+    f.jail.after = None
+    WAKER.tick(f.w, False)
+    observed = at_commit(f, tip(f)).findings[f.cid].observed
+    check("W20", pending and len(f.runs) == 3 and sorted(observed) == sorted([f.h1, f.h2]) and not f.w.pending(1)
+          and len(f.codex.calls) == 0,
+          "a checker run whose observations did not reach the branch leaves the replay pending; the branch's new tip "
+          "is replayed and carries them", (raced, pending, len(f.runs), sorted(observed)))
+    f.close()
+
+
 def main():
-    for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases):
+    for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
+                 race_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run
