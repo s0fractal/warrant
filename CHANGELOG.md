@@ -25,7 +25,11 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
-## 2.0.0a1 — first publication of `warrant-graph` (unreleased until its tag)
+## 2.0.0a1 — first publication of `warrant-graph` (2026-10-25)
+
+Published to PyPI from the tag `v2.0.0a1` (dfe0892) by `release.yml` run 40209916198, whose
+readback found PyPI's version and sha256 digests equal to the built ones; the G2 closure of duty
+88d614277600 cites the run and both digests.
 
 The first version of Warrant 2 meant for PyPI: everything under 2.0.0.dev0 below, which was
 never published. `2.0.0a1` is a PEP 440 alpha, so pip installs it only when asked

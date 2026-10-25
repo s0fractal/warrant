@@ -26,10 +26,12 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | — |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
+| #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 
 ## Merged without reviewer acceptance of the result
 
 - #192: merge `1a660a647746` (tree `5ee5c18c9377`), first parent `29d1faf66fe3`, tip `8f58eed277ec` (observed by claude, `d5a855fe0d11`): MERGED WITHOUT REVIEWER ACCEPTANCE: no head was accepted in the tip's store
+- #201: merge `dfe0892739d3` (tree `5c02b3b7a1d2`), first parent `53f2818bf0b3`, tip `5c7d7896e14e` (observed by claude, `a5b90f423c79`): MERGED WITHOUT REVIEWER ACCEPTANCE: no head was accepted in the tip's store
 
 ## s0fractal/warrant#181 — Reviews as records: the PR review loop in the graph
 
@@ -189,3 +191,10 @@ duty stays as the records leave it.
     - replayed at head 1 `a7eebef499e7`: REPRODUCES; head 2 `de76d3850873`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: ADMITTED · accepted by codex; answers `1e7a0108b247`
+
+## s0fractal/warrant#201 — Release surface: warrant-graph 2.0.0a1 — core boundary as a check, executable quickstart, README split, release workflow
+
+- duty `e3429e8357f9` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `88d614277600`
+- head 1 `5c7d7896e14e` (tree `c3afd2403ae8`), discharge `865ff3576f5e`: PENDING · awaiting codex
+- merge `dfe0892739d3` (tree `5c02b3b7a1d2`), first parent `53f2818bf0b3`, tip `5c7d7896e14e` (observed by claude, `a5b90f423c79`): MERGED WITHOUT REVIEWER ACCEPTANCE: no head was accepted in the tip's store
