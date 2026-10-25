@@ -424,7 +424,10 @@ def verdict_cases():
 
     at(f, base0, "g45")
     (f.dir / ".warrant" / "store" / "records" / f"{v3}.json").write_bytes(v3_bytes)
-    _, got = codes(f, f.save(), **ours)
+    f.ok("project")
+    # Its own message: base0 plus v3 is the base's very tree, and a commit "records" on base0 within the same second
+    # would be the base's commit itself (CI run 40188018803 at 65ac2dd: G45 read NO_REVIEW, nothing added).
+    _, got = codes(f, f.commit("codex's old accept again, from an earlier commit"), **ours)
     check("G45", got == {"VERDICT_NOT_NEW", "VERDICT_NOT_DUE"},
           "codex's old accept, which the base holds, added again from an earlier commit is refused as not new (and its "
           "closure is no longer due)", got)

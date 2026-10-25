@@ -176,6 +176,16 @@ def store_at(root, commit, limits=None):
     return Snapshot(recs, blobs), problems
 
 
+def stored(path):
+    """("records", id) or ("blobs", id) for a store entry named by its content address, else None."""
+    kind, _, name = path[len(STORE):].partition("/") if path.startswith(STORE) else ("", "", "")
+    if kind == "records" and name.endswith(".json") and S.hex64(name[:-5]):
+        return kind, name[:-5]
+    if kind == "blobs" and S.hex64(name):
+        return kind, name
+    return None
+
+
 def tail(root, x, head, added=None, blobs=None):
     """[(path, why)] of the changes from commit `x` to commit `head` other than a records-only tail:
     an added regular file .warrant/store/records/<hex64>.json or .warrant/store/blobs/<hex64>, or an
@@ -183,17 +193,14 @@ def tail(root, x, head, added=None, blobs=None):
     The ids of the records it adds are appended to `added` (tail_records reads what they are), those of
     the blobs to `blobs` (uncited)."""
     raw = _git(root, "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", ids=(x, head)).decode().split("\0")
-    out = []
+    out, sinks = [], {"records": added, "blobs": blobs}
     for i in range(0, len(raw) - 1, 2):
         meta, path = raw[i], raw[i + 1]
         old_mode, new_mode, _, _, status = meta.lstrip(":").split()
-        kind, _, name = path[len(STORE):].partition("/") if path.startswith(STORE) else ("", "", "")
-        record = (kind == "records" and name.endswith(".json") and S.hex64(name[:-5])) or (kind == "blobs" and S.hex64(name))
+        record = stored(path)
         if status == "A" and new_mode == REGULAR and record:
-            if added is not None and kind == "records":
-                added.append(name[:-5])
-            if blobs is not None and kind == "blobs":
-                blobs.append(name)
+            if sinks[record[0]] is not None:
+                sinks[record[0]].append(record[1])
             continue
         if status in ("A", "M") and new_mode == REGULAR and old_mode in (REGULAR, "000000") and path in VIEWS:
             continue
