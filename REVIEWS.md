@@ -29,7 +29,7 @@ duty stays as the records leave it.
 | #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #204 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
+| #204 | OPEN · awaiting acceptance by codex | 1 | 1 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -234,3 +234,7 @@ duty stays as the records leave it.
 - duty `8057c2a37f1c` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
   - serves duty `47cdf978c4d3`
 - head 1 `213c1b9ef2f2` (tree `bfedf82a197f`), discharge `728aa12d5e57`: PENDING · awaiting codex
+  - finding `be3c24f3b319` by codex, P2, mechanical `replay_retry_race_test:RACE1`: NOT_REPLAYED — After a failed replay and a verdict, a successful retry whose observations lose the branch-tip race is saved ok=True and covers the failure; pending becomes false, so the new tip is never retried and retains no observations. Keep the replay pending until its observations reach the branch or already exist there.
+    - where: integrations/codex-plugin/waker/waker.py:313-322, integrations/codex-plugin/waker/waker.py:412-414, integrations/codex-plugin/waker/waker.py:607-608
+    - replayed at head 1 `213c1b9ef2f2`: NOT REPLAYED
+    - not answered
