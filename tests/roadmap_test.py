@@ -282,6 +282,23 @@ def requires_cases():
           and not any("declined" in x for x in m.recs[u3]["body"]["residual"]),
           "a closure filed instead of another can itself be filed over, naming it; the one it superseded is not "
           "waiting any more, and the residual says only what it was filed instead of", (stale, rc, out))
+
+    # P33 (G9 PS-03/PS-04 at 7b46fef): a closure filed before its prerequisite is discharged is UNMET_CONDITION, not
+    # PENDING; `done --replaces` refused it, so a corrected closure could not supersede it. Expected: it is waiting
+    # too (it is admitted once the prerequisite is), so it is refiled only by naming it.
+    first = r.ok("oblige", "--text", "A prerequisite still open.", "--answers", "G1")
+    later = r.ok("oblige", "--text", "Built on the open one.", "--answers", "G1", "--requires", first)
+    v1 = r.ok("done", "--duty", later, "--established", "done", "--ref", "s0fractal/warrant#7")
+    verdict = next(c["verdict"] for c in r.model().rep["duties"][later]["candidates"] if c["transition"] == v1)
+    before = r.files()
+    blind = r.run("done", "--duty", later, "--established", "again", "--ref", "x")[0]
+    unchanged = r.files() == before
+    rc, out, err = r.run("done", "--duty", later, "--established", "corrected", "--ref", "s0fractal/warrant#7",
+                         "--replaces", v1)
+    sup = r.model().recs[out.strip()]["body"]["supersedes"] if rc == 0 else None
+    check("P33", (verdict, blind, unchanged, rc, sup) == ("UNMET_CONDITION", 2, True, 0, [v1]),
+          "a closure waiting for its prerequisite is waiting: a second one is filed only by naming it with --replaces, "
+          "and then supersedes it", (verdict, blind, rc, err, sup))
     r.close()
 
 

@@ -82,6 +82,9 @@ CURRENT, PROPOSED, REFORMULATED, REOPENED, MET, WITHDRAWN = \
     "CURRENT", "PROPOSED", "REFORMULATED", "REOPENED", "MET", "WITHDRAWN"
 
 
+WAITING = ("PENDING", "UNMET_CONDITION")        # closures `done` counts as waiting for their admission
+
+
 class Refused(Exception):
     """A command that cannot be carried out; nothing was written."""
 
@@ -639,8 +642,10 @@ class Writer:
             raise Refused(f"duty {did[:12]} is held by {r['holder']}, not {self.actor}")
         # A closure another closure of the duty was filed instead of (supersedes) waits for nobody: the newest
         # of a chain of refilings is the one waiting, and the one a further refiling names (#204).
+        # Waiting: PENDING (acceptances missing) or UNMET_CONDITION (a prerequisite not yet discharged; admitted once
+        # it is, so a corrected closure must supersede it too: G9 PS-03/PS-04).
         over = {old for c in r["candidates"] for old in self.m.recs[c["transition"]]["body"]["supersedes"]}
-        pending = [c["transition"] for c in r["candidates"] if c["verdict"] == "PENDING" and c["transition"] not in over]
+        pending = [c["transition"] for c in r["candidates"] if c["verdict"] in WAITING and c["transition"] not in over]
         if r["disposition"] != "OPEN" or (pending and pending != [replaces]):
             raise Refused(f"duty {did[:12]} is {r['disposition']} or already has a closure waiting for acceptance "
                           "(name it with --replaces to file this one instead)")
