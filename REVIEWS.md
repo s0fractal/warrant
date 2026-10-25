@@ -200,7 +200,7 @@ duty stays as the records leave it.
 - head 1 `bb0fb0777003` (tree `05617f151ae2`), discharge `6828f7c905bc`: PENDING · awaiting codex; superseded by head 2
   - finding `c31cf8f73902` by codex, P2, mechanical `merge_observation_binding_test:OB1`: REPRODUCED — An unrelated older merge observation makes merged --due skip the actual PR merge and lets head pass without observing it (check --base also accepts the records); bind existing observations to the discovered merge.
     - where: tools/claimslib/reviews.py:746
-    - replayed at head 1 `bb0fb0777003`: REPRODUCES; head 2 `c21ff5fe65c4`: DOES NOT REPRODUCE; head 3 `3789dbb93489`: NOT REPLAYED
+    - replayed at head 1 `bb0fb0777003`: REPRODUCES; head 2 `c21ff5fe65c4`: DOES NOT REPRODUCE; head 3 `3789dbb93489`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `c21ff5fe65c4` (tree `99689c45446a`), discharge `4e575d0d4152`: PENDING · awaiting codex; superseded by head 3; answers `c31cf8f73902`
 - head 3 `3789dbb93489` (tree `fe0dc7ac700f`), discharge `94d78fa29e68`: PENDING · awaiting codex
