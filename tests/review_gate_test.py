@@ -369,7 +369,8 @@ def verdict_cases():
           "views) is eligible as it is, and never due for review", (got, a.accept, a.facts))
     b = EL.Base(f.dir, f.base_commit)
     fake = FakeGh(tip, f.base_commit)
-    m = GT.merge_one(b, a, GT.GitHub("s0fractal/warrant", run=fake))
+    # only an eligible assessment reaches merge_one (cmd_gate): a mutant that refuses it fails here, not by raising
+    m = GT.merge_one(b, a, GT.GitHub("s0fractal/warrant", run=fake)) if a.eligible else {"merged": False}
     put = [c[2] for c in fake.calls if c[0] == "PUT"]
     check("G42", m["merged"] and len(put) == 1 and put[0]["commit_title"] == "Merge pull request #1 (verdicts by codex)"
           and v in put[0]["commit_message"] and "verdicts only" in put[0]["commit_message"]
@@ -378,7 +379,7 @@ def verdict_cases():
 
     c, tip = verdict("g38", "codex", "challenge")
     a, got = codes(f, tip)
-    check("G38", got == set() and a.eligible and a.accept[:3] == ("codex", c, t),
+    check("G38", got == set() and a.eligible and (a.accept or ())[:3] == ("codex", c, t),
           "codex's challenge of that closure travels the same way", (got, a.accept))
 
     _, tip = verdict("g39", "claude")
