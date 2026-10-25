@@ -265,6 +265,23 @@ def requires_cases():
     check("P26", body["supersedes"] == [t1] and not asked,
           "a closure filed with --replaces supersedes the declined one, which then is not acceptance work",
           (body["supersedes"], asked))
+
+    # P32 (#204, observed at b64b732): a closure filed instead of another is refiled once more (its code moved on)
+    # with --replaces naming it; `done` refused, counting the first one, which it already supersedes, as waiting.
+    g = r.ok("oblige", "--text", "A sixth thing.", "--answers", "G1")
+    u1 = r.ok("done", "--duty", g, "--established", "done", "--ref", "s0fractal/warrant#6")
+    u2 = r.ok("done", "--duty", g, "--established", "done", "--ref", "s0fractal/warrant#6", "--replaces", u1)
+    before = r.files()
+    stale = r.run("done", "--duty", g, "--established", "done", "--ref", "x", "--replaces", u1)[0]
+    unchanged = r.files() == before
+    rc, out, _ = r.run("done", "--duty", g, "--established", "done again", "--ref", "s0fractal/warrant#6", "--replaces", u2)
+    u3 = out.strip()
+    m = r.model()
+    check("P32", (stale, unchanged, rc) == (2, True, 0) and m.recs[u3]["body"]["supersedes"] == [u2]
+          and [c for c in due(r) if c in (u1, u2, u3)] == [u3]
+          and not any("declined" in x for x in m.recs[u3]["body"]["residual"]),
+          "a closure filed instead of another can itself be filed over, naming it; the one it superseded is not "
+          "waiting any more, and the residual says only what it was filed instead of", (stale, rc, out))
     r.close()
 
 
