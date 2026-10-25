@@ -7,7 +7,8 @@ name: ci
 # Jobs, all on ubuntu-latest:
 #   wheels           builds the wheelhouse once (warrant from this checkout, sigma-glyph from the
 #                    pinned release, the pinned MCP SDK) and publishes its digest;
-#   suites           base install, the installed-bytes suites, the mutant runner's selftest,
+#   suites           base install, the installed-bytes suites, the public surface and the
+#                    executable QUICKSTART.md, the mutant runner's selftest,
 #                    the generated mutants' selftest (their scheduled hunt is survivors.yml,
 #                    never a check of this workflow), the roadmap check, the review loop suites;
 #   claims-selftest  tools/claims.py --selftest;
@@ -93,6 +94,13 @@ jobs:
         working-directory: tests
         run: |
           for t in contract compute conditions assessment primitives records cli roadmap circle why store_index shapes replay; do python "${t}_test.py"; done
+
+      # The public surface: the core's imports, and the wheel and sdist built here from this tree
+      # (release.yml runs the same cases on the artifacts it publishes); QUICKSTART.md run as written.
+      - name: Public surface and the quickstart (installed bytes)
+        working-directory: tests
+        run: |
+          for t in boundary quickstart; do python "${t}_test.py"; done
 
       - name: The review loop as records (tools/review.py; fixture Git repositories)
         working-directory: tests

@@ -1789,6 +1789,23 @@ def _visit(view, did, report, done, busy):
        '            L.admit(lim, "pilot_depth", len(path) - 1 + height[address])\n')], 'pilot_test', ['D11']),
     ('M644', 'pilot.py', "a store path with a NUL byte is accepted and raises on the first read",
      [('        if "\\x00" in str(self.root):', '        if False:')], 'pilot_test', ['A13']),
+    # The public surface (tests/boundary_test.py): the core imports nothing of the repository's
+    # machinery or the agent package, and the distribution ships the two packages only.
+    ('M680', 'cli.py', "the core's command line imports the agent package",
+     [('from .store import Store, Trust\n', 'from .store import Store, Trust\nfrom warrant_agent import errors as AE\n')],
+     'boundary_test', ['B1']),
+    ('M681', 'engine.py', "the engine loads the repository's tools by a computed name",
+     [('def profile_problem(prof):\n', 'def profile_problem(prof):\n    __import__("tools.claimslib")\n')],
+     'boundary_test', ['B1']),
+    ('M682', 'store.py', "the store imports a third-party package besides cryptography",
+     [('        import cryptography\n', '        import cryptography\n        import mcp\n')], 'boundary_test', ['B1']),
+    ('M683', '../pyproject.toml', "the distribution ships the repository's tools/ as a package",
+     [('packages = ["warrant", "warrant_agent"]', 'packages = ["warrant", "warrant_agent", "tools"]')],
+     'boundary_test', ['W1', 'W2', 'S1']),
+    # QUICKSTART.md, run by tests/quickstart_test.py: a shown output that the engine no longer produces.
+    ('M684', 'engine.py', "a counting challenge of a duty's closure no longer makes relying on it CHALLENGED",
+     [('    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))\n',
+       '    yield None\n')], 'quickstart_test', ['challenge']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
@@ -1836,7 +1853,10 @@ def run_one(mid, fname, what, edits, test, targets, also=()):
             # the tool's own imports (tools/claims.py) come from the same copy; the test loads it
             # from $WARRANT_IMPL/tools.
             outside = Path(fname[3:]).parts[0]
-            shutil.copytree(ROOT / outside, tmp / outside, ignore=shutil.ignore_patterns("__pycache__"))
+            if (ROOT / outside).is_dir():
+                shutil.copytree(ROOT / outside, tmp / outside, ignore=shutil.ignore_patterns("__pycache__"))
+            else:       # a file at the root (../pyproject.toml): the test reads it from $WARRANT_IMPL
+                shutil.copy2(ROOT / outside, tmp / outside)
             p = tmp / fname[3:]
         else:
             p = tmp / "warrant" / fname
@@ -1962,7 +1982,7 @@ COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "ass
         "why_test": 1.3, "store_index_test": 1.3, "shapes_test": 0.1, "replay_test": 4.0, "agent_repo_test": 6.6,
         "reviews_test": 6.7, "review_check_test": 3.9, "review_merge_test": 5.0, "review_replay_test": 25.0,
         "review_integration_test": 9.5, "agent_views_test": 16.0, "review_gate_test": 30.0,
-        "pilot_test": 4.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement
+        "pilot_test": 4.0, "boundary_test": 3.0, "quickstart_test": 5.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement
 
 
 def _cost(m):
@@ -1983,7 +2003,7 @@ def shards(mutants, n, cost=_cost):
 
 
 def _environment(m):
-    """What a mutant's run copies besides the package: the directory of a tool beside it."""
+    """What a mutant's run copies besides the package: the directory of a tool beside it, or a file at the root."""
     return Path(m[1][3:]).parts[0] if m[1].startswith("../") else ""
 
 

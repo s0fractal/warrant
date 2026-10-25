@@ -11,7 +11,7 @@ shows it met (it then *establishes* the goal's text) or withdraws it, with a
 revision blob saying which and why, and every other goal of the superseded
 transition is opened again unchanged. A supersession counts once the roadmap
 profile's results acceptors accept it (SPEC §4.7); until then it is pending.
-README.md, "The roadmap", maps these terms to the ontology.
+docs/REPOSITORY.md, "The roadmap", maps these terms to the ontology.
 
 Dispositions, waiting acceptances, ownership of questions and supersession
 are the engine's own (`assess`, `questions`, `frontier`, `results`); this file
@@ -534,8 +534,8 @@ def render_view(m):
         "`python tools/roadmap.py check` refuses it when it differs. It is not part of",
         "SPEC.md. A goal is a question nobody owns: it proves nothing and sets the",
         "direction of path search. An obligation is a duty that answers it, `requires`",
-        "names its hard prerequisites and `serves` its purpose links; README.md, \"The",
-        "roadmap\", maps the terms to the ontology. States are Warrant's own assessment",
+        "names its hard prerequisites and `serves` its purpose links; docs/REPOSITORY.md,",
+        "\"The roadmap\", maps the terms to the ontology. States are Warrant's own assessment",
         "(trust `.warrant/trust.json`, results acceptors from `.warrant/roadmap.json`,",
         "as of the latest record); `· …` is what the engine's frontier asks of the",
         "holder. DISCHARGED needs the acceptance the duty names: a closure filed with",

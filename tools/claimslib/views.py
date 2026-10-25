@@ -68,7 +68,7 @@ def render(repo, model=None, table=None):
         "`.warrant/store/`. **The records are the source; this file is a view.**",
         "`python tools/claims.py check` refuses it when it differs from what the records",
         "say. SPEC.md is generated from the same records. Edit neither by hand: add,",
-        "supersede or retire the claim, then regenerate both (README.md, \"Changing a",
+        "supersede or retire the claim, then regenerate both (docs/REPOSITORY.md, \"Changing a",
         "normative sentence\").", "",
         f"Sections {secs} of SPEC.md · sentences {len(pins['sentences'])} · backed {count['BACKED']} · "
         f"countered {count['COUNTERED']} · unbacked {count['UNBACKED']} · informative {count['INFORMATIVE']} · "
