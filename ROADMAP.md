@@ -143,19 +143,19 @@ G9 [OPEN] A fresh receiver can recover a bounded verified Sigma computation from
     served by [DISCHARGED] s0fractal/warrant#205 is fit to merge: G9 PS-02/PS-03/PS-04 closures refiled at 910c969; done --replaces supersedes an UNMET_CONDITION closure {duty aba5e08a216d}
     requires [DISCHARGED] duty d108cd09dd10, shown above
     requires [DISCHARGED] duty d5cd7a7da4e4, shown above
-  answered by [OPEN · awaiting acceptance by codex] A pilot verification profile is a content-addressed manifest of the verifier entry point, code/dependency identities, rule version, explicit axioms and execution-profile assumptions; changing any declared semantic operand changes its profile ID. (Codex PS-04) {duty 1b10e89d75fe}
+  answered by [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A pilot verification profile is a content-addressed manifest of the verifier entry point, code/dependency identities, rule version, explicit axioms and execution-profile assumptions; changing any declared semantic operand changes its profile ID. (Codex PS-04) {duty 1b10e89d75fe}
     served by [DISCHARGED] s0fractal/warrant#193 is fit to merge: G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04) {duty 431ae379e6ae}
     served by [DISCHARGED] s0fractal/warrant#205 is fit to merge: G9 PS-02/PS-03/PS-04 closures refiled at 910c969; done --replaces supersedes an UNMET_CONDITION closure {duty aba5e08a216d}
     requires [DISCHARGED] duty d108cd09dd10, shown above
     requires [DISCHARGED] duty d5cd7a7da4e4, shown above
   answered by [OPEN · no closure filed] Under an admitted pilot profile, a Sigma receipt is marked verified only when replay checks its exact input, environment, target, loss boundary and expected normal-form result; unsupported profiles or unavailable operands never become verified results; for the same operands, a completed check's result is unchanged when only duties, grants, acceptances or unrelated records differ. (Codex PS-05+06) {duty 637d7124cdb5; serves SPEC-7-15}
     requires [DISCHARGED] duty 61f38a12298e, shown above
-    requires [OPEN] duty 1b10e89d75fe, shown above
+    requires [DISCHARGED] duty 1b10e89d75fe, shown above
   answered by [OPEN · no closure filed] A verified pilot result alone grants no Warrant authority or external-effect permission: the receiver assesses use against its own explicit policy, view and freshness basis, and a denied use remains denied even when proof checking succeeds. (Codex PS-07) {duty cebe8e77a8bc; serves SPEC-10.6-4}
     requires [OPEN] duty 637d7124cdb5, shown above
   answered by [OPEN · no closure filed] Given a receiver that supplies the admitted execution profile, a pilot bundle contains the root descriptors and required data/verifier-description closure needed to reproduce its declared result offline without the producer checkout or original store. (Codex PS-08) {duty 998ddc19a876}
     requires [DISCHARGED] duty 61f38a12298e, shown above
-    requires [OPEN] duty 1b10e89d75fe, shown above
+    requires [DISCHARGED] duty 1b10e89d75fe, shown above
     requires [OPEN] duty 637d7124cdb5, shown above
   answered by [OPEN · no closure filed] For one fixed Sigma continuation recipe, candidate generation may store proposals, but only a candidate that passes the admitted verifier is exposed as a verified result root; a model assertion, signature or prior work acceptance cannot bypass that gate. (Codex PS-09) {duty 4dcb3a20bf2b}
     requires [OPEN] duty 637d7124cdb5, shown above
@@ -188,7 +188,7 @@ G10 [OPEN] Agents may expand the space of possible transformations, but must not
         served by [DISCHARGED] s0fractal/warrant#195 is fit to merge: Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193 {duty aadb208517a0}
         served by [DISCHARGED] s0fractal/warrant#205 is fit to merge: G9 PS-02/PS-03/PS-04 closures refiled at 910c969; done --replaces supersedes an UNMET_CONDITION closure {duty aba5e08a216d}
         requires [DISCHARGED] duty d108cd09dd10, shown above
-    requires [OPEN · awaiting acceptance by codex] A pilot verification profile is a content-addressed manifest of the verifier entry point, code/dependency identities, rule version, explicit axioms and execution-profile assumptions; changing any declared semantic operand changes its profile ID. (Codex PS-04) {duty 1b10e89d75fe}
+    requires [DISCHARGED · revalidate (UNASSESSED for act) · accepted by codex] A pilot verification profile is a content-addressed manifest of the verifier entry point, code/dependency identities, rule version, explicit axioms and execution-profile assumptions; changing any declared semantic operand changes its profile ID. (Codex PS-04) {duty 1b10e89d75fe}
       served by [DISCHARGED] s0fractal/warrant#193 is fit to merge: G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04) {duty 431ae379e6ae}
       served by [DISCHARGED] s0fractal/warrant#205 is fit to merge: G9 PS-02/PS-03/PS-04 closures refiled at 910c969; done --replaces supersedes an UNMET_CONDITION closure {duty aba5e08a216d}
       requires [DISCHARGED] duty d108cd09dd10, shown above
@@ -202,7 +202,7 @@ G10 [OPEN] Agents may expand the space of possible transformations, but must not
     requires [OPEN · no closure filed] For one fixed Sigma continuation recipe, candidate generation may store proposals, but only a candidate that passes the admitted verifier is exposed as a verified result root; a model assertion, signature or prior work acceptance cannot bypass that gate. (Codex PS-09) {duty 4dcb3a20bf2b}
       requires [OPEN · no closure filed] Under an admitted pilot profile, a Sigma receipt is marked verified only when replay checks its exact input, environment, target, loss boundary and expected normal-form result; unsupported profiles or unavailable operands never become verified results; for the same operands, a completed check's result is unchanged when only duties, grants, acceptances or unrelated records differ. (Codex PS-05+06) {duty 637d7124cdb5; serves SPEC-7-15}
         requires [DISCHARGED] duty 61f38a12298e, shown above
-        requires [OPEN] duty 1b10e89d75fe, shown above
+        requires [DISCHARGED] duty 1b10e89d75fe, shown above
       requires [OPEN · no closure filed] A verified pilot result alone grants no Warrant authority or external-effect permission: the receiver assesses use against its own explicit policy, view and freshness basis, and a denied use remains denied even when proof checking succeeds. (Codex PS-07) {duty cebe8e77a8bc; serves SPEC-10.6-4}
         requires [OPEN] duty 637d7124cdb5, shown above
   answered by [OPEN · no closure filed] R2∘R1 is admissible only when R1's verified application establishes each precondition of R2 under one admitted verification profile, evaluated per view from present reliance: a later challenge, fired trigger or supersession of either part withdraws it, and earlier records stay. Refuted by admission on an asserted or lost precondition, or admission surviving such a record. (Monday §6, §6.3) {duty f81b5f3fb668; serves SPEC-4.3-5}
@@ -217,7 +217,7 @@ G10 [OPEN] Agents may expand the space of possible transformations, but must not
     requires [OPEN · no closure filed] Two fresh receiver processes using different client entry points can verify a frozen pilot bundle and resume its fixed Sigma recipe to the expected computation root using only the supplied roots and receiver configuration. (Codex PS-10) {duty 742f0e621e4f; serves SPEC-10.6-2}
       requires [OPEN · no closure filed] Given a receiver that supplies the admitted execution profile, a pilot bundle contains the root descriptors and required data/verifier-description closure needed to reproduce its declared result offline without the producer checkout or original store. (Codex PS-08) {duty 998ddc19a876}
         requires [DISCHARGED] duty 61f38a12298e, shown above
-        requires [OPEN] duty 1b10e89d75fe, shown above
+        requires [DISCHARGED] duty 1b10e89d75fe, shown above
         requires [OPEN] duty 637d7124cdb5, shown above
       requires [OPEN] duty 4dcb3a20bf2b, shown above
     requires [OPEN · no closure filed] The pilot evidence maps each claimed admission, integrity, closure, replay and use boundary to a negative vector whose expected refusal is lost under a named guard mutation, with no empty, skipped or crashed case credited as a successful check. (Codex PS-15) {duty acb91af7e549}
