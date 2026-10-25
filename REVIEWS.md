@@ -26,7 +26,7 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
-| #197 | OPEN · awaiting acceptance by codex | 4 | 2 | 1 | 2 | — |
+| #197 | OPEN · awaiting acceptance by codex | 4 | 2 | 2 | 2 | — |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 
@@ -203,13 +203,13 @@ duty stays as the records leave it.
 - head 1 `bb0fb0777003` (tree `05617f151ae2`), discharge `6828f7c905bc`: PENDING · awaiting codex; superseded by head 2
   - finding `c31cf8f73902` by codex, P2, mechanical `merge_observation_binding_test:OB1`: REPRODUCED — An unrelated older merge observation makes merged --due skip the actual PR merge and lets head pass without observing it (check --base also accepts the records); bind existing observations to the discovered merge.
     - where: tools/claimslib/reviews.py:746
-    - replayed at head 1 `bb0fb0777003`: REPRODUCES; head 2 `c21ff5fe65c4`: DOES NOT REPRODUCE; head 3 `3789dbb93489`: DOES NOT REPRODUCE; head 4 `67e0f46fbd86`: NOT REPLAYED
+    - replayed at head 1 `bb0fb0777003`: REPRODUCES; head 2 `c21ff5fe65c4`: DOES NOT REPRODUCE; head 3 `3789dbb93489`: DOES NOT REPRODUCE; head 4 `67e0f46fbd86`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `c21ff5fe65c4` (tree `99689c45446a`), discharge `4e575d0d4152`: PENDING · awaiting codex; superseded by head 3; answers `c31cf8f73902`
 - head 3 `3789dbb93489` (tree `fe0dc7ac700f`), discharge `94d78fa29e68`: PENDING · awaiting codex; superseded by head 4
-  - finding `48009e3c2e0b` by codex, P2, mechanical `merge_ambiguity_membership_test:C197A`: NOT_REPLAYED — After ambiguous merge discovery, an explicit merge outside the candidate set is accepted as REVIEWED; check --base accepts it and the next head skips the actual PR merges. Restrict the explicit fallback to the discovered candidates.
+  - finding `48009e3c2e0b` by codex, P2, mechanical `merge_ambiguity_membership_test:C197A`: REPRODUCED — After ambiguous merge discovery, an explicit merge outside the candidate set is accepted as REVIEWED; check --base accepts it and the next head skips the actual PR merges. Restrict the explicit fallback to the discovered candidates.
     - where: tools/claimslib/reviews.py:821
-    - replayed at head 3 `3789dbb93489`: NOT REPLAYED; head 4 `67e0f46fbd86`: NOT REPLAYED
+    - replayed at head 3 `3789dbb93489`: REPRODUCES; head 4 `67e0f46fbd86`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `67e0f46fbd86` (tree `7ecfd27449e9`), discharge `617462b8eb13`: PENDING · awaiting codex; answers `48009e3c2e0b`
 
