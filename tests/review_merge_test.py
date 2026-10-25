@@ -85,8 +85,79 @@ def merge_cases():
     f.close()
 
 
+def auto_cases():
+    """`merged --due` files the merge observations Git's history shows; `head` refuses a head whose store lacks
+    one (#181-#193 had none until #195 backfilled them by hand)."""
+    f = Fixture()
+    branch(f, "pr1")
+    h1 = f.commit("change 1", {"calc.py": FIXED})
+    f.ok("open", "--pr", "1", "--title", "One")
+    f.ok("head", "--pr", "1", "--commit", h1)
+    f.save()
+    f.ok("accept", "--pr", "1", "--commit", h1, actor="codex")
+    tip1 = f.save()
+    # #2's branch takes #1's commits before #1 merges, under another number's subject: not #1's merge
+    f.git("checkout", "-q", "-b", "pr2", "master")
+    f.git("merge", "-q", "--no-ff", "-m", "Merge pull request #10 from s0fractal/pr1", tip1)
+    h2 = f.commit("change 2", {"calc.py": FIXED + "# 2\n"})
+    m1 = merge(f, tip1, "Merge pull request #1 from s0fractal/pr1")
+    f.git("checkout", "-q", "-b", "elsewhere", f.start)    # #2's number on a merge that holds none of its heads
+    stray = f.commit("unrelated", {"other.txt": "x\n"})
+    merge(f, stray, "Merge pull request #2 from someone/elsewhere")
+    f.git("checkout", "-q", "pr2")
+    f.ok("open", "--pr", "2", "--title", "Two")
+    head2 = f.run("head", "--pr", "2", "--commit", h2)[0]      # its history holds #1's commits, not #1's merge
+    tip2 = f.save()
+    m2 = merge(f, tip2, "Merge pull request #2 (accepted by codex)")
+    branch(f, "pr3")
+    h3 = f.commit("change 3", {"calc.py": FIXED + "# 3\n"})
+    f.ok("open", "--pr", "3", "--title", "Three")
+    f.save()
+    refused = f.code("head", "--pr", "3", "--commit", h3)
+
+    # V34: a head whose own commit's store lacks a merge observation of a pull request merged in its history
+    check("V34", refused == ("REVIEW_MERGE_UNOBSERVED", True),
+          "a head is not filed while its commit's store lacks the merge observation of a pull request merged "
+          "into its history", refused)
+
+    rc, out, err = f.run("merged", "--due")
+    m = f.model()
+    got = {n: rv.merges[0][2]["merge"] if rv.merges else None for n, rv in sorted(m.reviews.items())}
+    by = {r["actor"] for n in (1, 2) for _, r, _ in m.reviews[n].merges}
+    rc2, out2, _ = f.run("merged", "--due")
+    uncommitted = f.code("head", "--pr", "3", "--commit", h3)     # observed, but not in h3's own store
+    h3b = f.save()
+    rc3, _, err3 = f.run("head", "--pr", "3", "--commit", h3b)
+    # V35: the merge whose GitHub subject names exactly the pull request and that holds its latest head, each
+    # observed once, by the writer; then a head whose own commit holds them is filed
+    check("V35", (head2, rc, got, by, rc2, out2.strip(), uncommitted, rc3)
+          == (0, 0, {1: m1, 2: m2, 3: None}, {"claude"}, 0, "", ("REVIEW_MERGE_UNOBSERVED", True), 0),
+          "merged --due observes each pull request merged into HEAD's history, at its own merge commit, once",
+          (head2, rc, err, got, by, rc2, out2, uncommitted, rc3, err3))
+    f.close()
+
+    # V36: two merges that both say they merged #1 and hold its head: nothing is guessed or filed
+    f = Fixture()
+    branch(f, "pr1")
+    h1 = f.commit("change 1", {"calc.py": FIXED})
+    f.ok("open", "--pr", "1", "--title", "One")
+    f.ok("head", "--pr", "1", "--commit", h1)
+    tip1 = f.save()
+    f.git("checkout", "-q", "-b", "copy", "master")
+    f.git("merge", "-q", "--no-ff", "-m", "Merge pull request #1 from s0fractal/copy", tip1)
+    copy = f.git("rev-parse", "HEAD")
+    m1 = merge(f, tip1, "Merge pull request #1 from s0fractal/pr1")
+    f.git("merge", "-q", "--no-ff", "-m", "Merge branch 'copy'", copy)
+    twice = f.code("merged", "--due")
+    named = f.run("merged", "--pr", "1", "--merge", m1)[0]
+    check("V36", (twice, named) == (("REVIEW_MERGE_AMBIGUOUS", True), 0),
+          "an ambiguous merge is refused with nothing filed, and the explicit merged --pr --merge still observes it",
+          (twice, named))
+    f.close()
+
+
 def main():
-    for part in (merge_cases,):
+    for part in (merge_cases, auto_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run

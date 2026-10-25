@@ -200,6 +200,10 @@ byte, and REVIEWS.md as bytes):
   for the first; `answers` the sorted ids of the findings this head answers
   (`[]` for none). Once a head was accepted, use **revalidate**: the same with
   the item's act `revalidate` and `revalidates` the accepted heads' closures.
+  The head's commit holds a merge observation of every pull request merged into
+  its history: run `review.py merged --due` and commit what it files before
+  that commit. `review.py head` refuses a head without them
+  (REVIEW_MERGE_UNOBSERVED); a head filed through MCP is not checked for them.
 - **finding** (a reviewer): `target` and `head` are the closure of the current
   head (a `closures` entry of the duty's capsule in `warrant_context`, its
   transition's head blob read with `warrant_read kind=blob`); `commit` and

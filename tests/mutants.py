@@ -1780,6 +1780,24 @@ def _visit(view, did, report, done, busy):
     ('M645', 'engine.py', "an admitted delegation retires the pending closure its transition supersedes (Codex 1e7a0108b247)",
      [('if c["verdict"] == "ADMITTED"\n                          and c["act"] in CLOSING_ACTS}', 'if c["verdict"] == "ADMITTED"}')],
      'contract_test', ['F7']),
+    # Merge observations filed from Git's history (merged --due) and required at a head (V34-V36).
+    ('M657', '../tools/claimslib/reviews.py', "a merge subject naming #10 is read as #1's",
+     [('rf"Merge pull request #{rv.pr}(?: |\\Z)"', 'rf"Merge pull request #{rv.pr}"')], 'review_merge_test', ['V35']),
+    ('M658', '../tools/claimslib/reviews.py', "a merge that holds none of the pull request's heads is its merge",
+     [('_git(root, "log", "--merges", "--ancestry-path", "--format=%H%x00%s", f"{last.commit}..{upto}")',
+       '_git(root, "log", "--merges", "--format=%H%x00%s", f"{last.commit}..{upto}")')], 'review_merge_test', ['V35']),
+    ('M659', '../tools/claimslib/reviews.py', "a head is filed while a merge in its history is unobserved",
+     [('        if missing:\n            raise Refused(f"{commit[:12]}\'s store', '        if False:\n            raise Refused(f"{commit[:12]}\'s store')],
+     'review_merge_test', ['V34']),
+    ('M660', '../tools/claimslib/reviews.py', "of two merges that both name the pull request, the first is taken",
+     [('    if len(found) > 1:\n        raise Refused(f"#{rv.pr} merged at', '    if False:\n        raise Refused(f"#{rv.pr} merged at')],
+     'review_merge_test', ['V36']),
+    ('M661', '../tools/claimslib/reviews.py', "merged --due observes a pull request observed already",
+     [('    return [(n, mc) for n, rv in sorted(model.reviews.items()) if not rv.merges\n',
+       '    return [(n, mc) for n, rv in sorted(model.reviews.items())\n')], 'review_merge_test', ['V35']),
+    ('M662', '../tools/claimslib/reviews.py', "a head counts merge observations filed after its commit, not in its own store",
+     [('unobserved(self.rv.root, Model(store_at(self.rv.root, commit), self.rv.repo.trust(), self.cfg), commit)',
+       'unobserved(self.rv.root, self.m, commit)')], 'review_merge_test', ['V35']),
     ('M642', '../tools/roadmap.py', "done --replaces names the declined closure only in its residual, not in supersedes",
      [('subject=commit, supersedes=[replaces] if replaces else [])', 'subject=commit)')], 'roadmap_test', ['P26']),
     ('M643', 'pilot.py', "a chain through a shared object is admitted only when its parent is left, after later siblings are read",
@@ -1960,9 +1978,9 @@ COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "ass
         "primitives_test": 0.1, "records_test": 0.2, "cli_test": 0.3, "roadmap_test": 3.1, "circle_test": 0.9,
         "agent_handoff_test": 7.0, "agent_write_test": 1.9, "agent_compute_test": 1.9, "agent_mcp_test": 17.0,
         "why_test": 1.3, "store_index_test": 1.3, "shapes_test": 0.1, "replay_test": 4.0, "agent_repo_test": 6.6,
-        "reviews_test": 6.7, "review_check_test": 3.9, "review_merge_test": 5.0, "review_replay_test": 25.0,
+        "reviews_test": 6.7, "review_check_test": 3.9, "review_merge_test": 10.0, "review_replay_test": 25.0,
         "review_integration_test": 9.5, "agent_views_test": 16.0, "review_gate_test": 30.0,
-        "pilot_test": 4.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement
+        "pilot_test": 4.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement; review_merge_test 4.1 s locally with V34-V36, the same factor
 
 
 def _cost(m):
