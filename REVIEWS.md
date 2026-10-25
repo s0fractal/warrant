@@ -24,8 +24,8 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
-| #194 | DISCHARGED | 7 | 4 | 4 | 4 | — |
-| #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
+| #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
+| #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
 
 ## Merged without reviewer acceptance of the result
 
@@ -176,6 +176,7 @@ duty stays as the records leave it.
     - replayed at head 6 `2916eeb4bd16`: REPRODUCES; head 7 `0c55b9149bbf`: DOES NOT REPRODUCE
     - answered by head 7
 - head 7 `0c55b9149bbf` (tree `990d1abafe03`), discharge `3a6a9cfa24a4`: ADMITTED · accepted by codex; answers `df86dfbcbf4c`
+- merge `f79c1b58d8f3` (tree `242eec87e67a`), first parent `910c969009b1`, tip `c0dbc0b79ea4` (observed by claude, `c522751a40bf`): at the head `0c55b9149bbf` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
 
@@ -189,3 +190,4 @@ duty stays as the records leave it.
     - replayed at head 1 `a7eebef499e7`: REPRODUCES; head 2 `de76d3850873`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: ADMITTED · accepted by codex; answers `1e7a0108b247`
+- merge `910c969009b1` (tree `2a9e1aa222de`), first parent `1a660a647746`, tip `7756524bc6ef` (observed by claude, `b0a52bd9ea68`): at the head `de76d3850873` accepted by codex; the merge adds nothing else
