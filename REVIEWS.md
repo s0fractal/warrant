@@ -24,7 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
-| #195 | OPEN · awaiting acceptance by codex | 2 | 1 | 1 | 1 | — |
+| #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -150,7 +150,7 @@ duty stays as the records leave it.
 
 ## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
 
-- duty `aadb208517a0` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `aadb208517a0` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `61f38a12298e`
   - serves duty `d5cd7a7da4e4`
   - serves duty `47cdf978c4d3`
@@ -159,4 +159,4 @@ duty stays as the records leave it.
     - where: warrant/engine.py:930, warrant/engine.py:932
     - replayed at head 1 `a7eebef499e7`: REPRODUCES; head 2 `de76d3850873`: DOES NOT REPRODUCE
     - answered by head 2
-- head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: PENDING · awaiting codex; answers `1e7a0108b247`
+- head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: ADMITTED · accepted by codex; answers `1e7a0108b247`
