@@ -512,16 +512,27 @@ def tick(w, dry):
     return out + acceptance_lines(w, base, found, dry, held)
 
 
+def hold(found, dry, held):
+    """Why no acceptance wake starts in this run, or None."""
+    if dry:
+        return "dry run"
+    if held:
+        return "held (HOME/HOLD)"
+    if found.get("refused"):
+        return "held: the open pull requests were not read"
+    verdicts = [x for x in found["due"] + found["not_due"] if str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
+    if verdicts:
+        return f"held: verdict pull request #{verdicts[0]['pr']} is open"
+    return None
+
+
 def acceptance_lines(w, base, found, dry, held):
     """The obligation closures due for Codex's verdict at the base: at most one woken per run, none while a
     verdict pull request is open (or the open pull requests could not be read)."""
     got = w.acceptances(base)
     out = [f"  {len(got['due'])} obligation closure(s) due for {ACCEPTOR}'s verdict"
            + (f"; nothing assessed: {got['refused']}" if got.get("refused") else "")]
-    verdicts = [x for x in found["due"] + found["not_due"] if str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
-    why_not = ("dry run" if dry else "held (HOME/HOLD)" if held else
-               "held: the open pull requests were not read" if found.get("refused") else
-               f"held: verdict pull request #{verdicts[0]['pr']} is open" if verdicts else None)
+    why_not = hold(found, dry, held)
     for c in got["due"]:
         woken, line = w.accept(c, base, why_not)
         if woken:

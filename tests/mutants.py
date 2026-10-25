@@ -1742,10 +1742,10 @@ def _visit(view, did, report, done, busy):
     ('M638', '../integrations/codex-plugin/waker/waker.py', "every due closure is woken in one run",
      [('        if woken:\n            why_not = ', '        if False:\n            why_not = ')], 'review_replay_test', ['W13']),
     ('M639', '../integrations/codex-plugin/waker/waker.py', "an acceptance wake starts while Codex's verdict pull request is open",
-     [('f"held: verdict pull request #{verdicts[0][\'pr\']} is open" if verdicts else None)', 'None)')],
+     [('    if verdicts:\n        return f"held: verdict pull request', '    if False:\n        return f"held: verdict pull request')],
      'review_replay_test', ['W13']),
     ('M640', '../integrations/codex-plugin/waker/waker.py', "an acceptance wake starts when the open pull requests could not be read",
-     [('               "held: the open pull requests were not read" if found.get("refused") else\n', '')],
+     [('    if found.get("refused"):\n        return "held: the open', '    if False:\n        return "held: the open')],
      'review_replay_test', ['W13']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
