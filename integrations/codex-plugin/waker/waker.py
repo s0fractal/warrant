@@ -51,7 +51,9 @@ is one skipped at a head that changes the checker (Codex is woken there as befor
 time, at most MAX_TRIES runs, and Codex is not woken at that head meanwhile; once it gave up, Codex is
 woken and told so in the prompt. The retry outlives the head being due: a pull request of this repository
 not due (a verdict moved its tip) with an incomplete replay is replayed at its current head, and a replay
-completed at a later head covers the earlier ones (Codex's challenge 6f72103999cd). No seed, no replay. `replay --verify` in CI re-executes every observation new since
+completed at a later head covers the earlier ones (Codex's challenge 6f72103999cd). No seed, no replay;
+but a replay already incomplete at a head records the missing seed as a failed run, so its runs end.
+`replay --verify` in CI re-executes every observation new since
 the base, and merge eligibility admits these records after the reviewed head (eligibility.py).
 Codex, the agent, files its own records with its own seed; no model is given the checker's seed.
 HOME is $WARRANT_WAKER_HOME or ~/.warrant/codex-waker; TREES $WARRANT_WAKER_TREES or
@@ -315,14 +317,16 @@ class Waker:
         """The review replay checker for due head `a`, before Codex is woken (see the module's Replay).
         (pushed, line): when pushed, Codex is not woken in this run."""
         actor, seed = self.seed(self.tree(base))
-        if seed is None:
-            return False, actor             # no memo: a seed placed later serves this head
         p, doc = self.replay_memo(a)
+        if seed is None and doc is None:
+            return False, actor             # no memo: a seed placed later serves this head
         state, why = self.replay_state(doc)
         if state != "retry":
             return False, why
         skipped = False
         try:
+            if seed is None:                # a replay already incomplete here: the missing seed is a failed run,
+                raise RuntimeError(actor)   # so the runs end and Codex is told the gap (Codex finding 77e675a71b60)
             (pushed, line), ok = self._replay(a, base, actor, seed), True
         except Skipped as e:            # no replay can run at this head: neither done nor failed (Codex, #204)
             pushed, line, ok, skipped = False, str(e), False, True

@@ -717,9 +717,36 @@ def skip_cases():
     g.close()
 
 
+def seed_cases():
+    # W23 (Codex finding 77e675a71b60 on #204 head 3, f207ba5, test replay_retry_seed_test SEED1): after a failed run
+    # the checker's seed became unavailable; replay() returned before recording a run, the memo stayed pending and
+    # Codex was never woken, however long. Expected: the missing seed is a failed run, so the runs end and Codex is
+    # woken with the gap stated; with no memo the missing seed wakes Codex as before.
+    f = pr_world()
+    flaky(f, 1)
+    f.w.due = lambda base: {"due": [due(f)], "not_due": []}
+    WAKER.tick(f.w, False)
+    f.w.seed = lambda code: ("replay skipped: no seed for the base's checker", None)
+    for _ in range(WAKER.MAX_TRIES):
+        f.now[0] += WAKER.BACKOFF * 8 + 1
+        WAKER.tick(f.w, False)
+    told = f.codex.calls[0][-1] if f.codex.calls else ""
+    g = pr_world()
+    flaky(g, 0)
+    g.w.seed = lambda code: ("replay skipped: no seed", None)
+    g.w.due = lambda base: {"due": [due(g)], "not_due": []}
+    WAKER.tick(g.w, False)
+    check("W23", len(f.codex.calls) == 1 and len(f.runs) == 1 and "did not complete" in told and "no seed" in told
+          and len(g.codex.calls) == 1 and not g.runs,
+          "a replay incomplete at a head whose checker seed is now missing ends its runs and wakes Codex with the gap "
+          "stated; a head with no replay memo and no seed wakes Codex as before", (len(f.codex.calls), told[-300:]))
+    f.close()
+    g.close()
+
+
 def main():
     for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
-                 race_cases, skip_cases):
+                 race_cases, skip_cases, seed_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run
