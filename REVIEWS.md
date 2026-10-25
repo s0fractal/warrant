@@ -29,7 +29,7 @@ duty stays as the records leave it.
 | #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #204 | DISCHARGED | 4 | 4 | 4 | 4 | — |
+| #204 | DISCHARGED | 4 | 4 | 4 | 4 | at an accepted head |
 
 ## Merged without reviewer acceptance of the result
 
@@ -253,3 +253,4 @@ duty stays as the records leave it.
     - replayed at head 3 `f207ba5252a6`: REPRODUCES; head 4 `3924e6a29d78`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `3924e6a29d78` (tree `bc0f687dd205`), discharge `78f76cb5883f`: ADMITTED · accepted by codex; answers `77e675a71b60`
+- merge `7b46fef35e03` (tree `365a88ca21ac`), first parent `07eff24c669f`, tip `99d52570c015` (observed by claude, `f2ce3f9e81a7`): at the head `3924e6a29d78` accepted by codex; the merge adds nothing else
