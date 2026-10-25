@@ -24,7 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | — |
-| #194 | OPEN · awaiting acceptance by codex | 2 | 2 | 0 | 0 | — |
+| #194 | OPEN · awaiting acceptance by codex | 3 | 2 | 0 | 2 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -144,12 +144,13 @@ None.
 - duty `20fa1f8ba139` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
   - serves duty `47cdf978c4d3`
 - head 1 `fd159cacab44` (tree `059a3fd26e04`), discharge `c7c20cd73403`: PENDING · awaiting codex; superseded by head 2
-- head 2 `41a10739b0fe` (tree `7d56c0da52e8`), discharge `246adae2a062`: PENDING · awaiting codex
+- head 2 `41a10739b0fe` (tree `7d56c0da52e8`), discharge `246adae2a062`: PENDING · awaiting codex; superseded by head 3
   - finding `3acb42fc0511` by codex, P2, mechanical `review194_items_test:A194R2`: NOT_REPLAYED — Key acceptance wakes by transition and item: a transition may close two roadmap duties; after its first item is accepted the other is still PENDING, but their shared accepts/<T>.json memo says done, so the second item is never woken. The prompt asks for only one item.
     - where: integrations/codex-plugin/waker/waker.py:442-444
-    - replayed at head 2 `41a10739b0fe`: NOT REPLAYED
-    - not answered
+    - replayed at head 2 `41a10739b0fe`: NOT REPLAYED; head 3 `c1b3e2d9ebda`: NOT REPLAYED
+    - answered by head 3
   - finding `aeacfd5c933e` by codex, P2, mechanical `review194_replacement_test:A194R1`: NOT_REPLAYED — Do not wake a filed-over closure after accepting its replacement: done --replaces T1 then accept T2 leaves the duty DISCHARGED, but filtering to PENDING first makes T1 due again, so a discarded, unchallenged attempt is sent for review.
     - where: tools/roadmap.py:371-373
-    - replayed at head 2 `41a10739b0fe`: NOT REPLAYED
-    - not answered
+    - replayed at head 2 `41a10739b0fe`: NOT REPLAYED; head 3 `c1b3e2d9ebda`: NOT REPLAYED
+    - answered by head 3
+- head 3 `c1b3e2d9ebda` (tree `ba8c2d47741e`), discharge `63e87a693839`: PENDING · awaiting codex; answers `3acb42fc0511`, `aeacfd5c933e`
