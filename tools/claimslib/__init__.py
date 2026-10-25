@@ -62,7 +62,7 @@ that layout was taken from; a changed or new sentence is filled to 80 columns
     python3 tools/claims.py migrate --key SEED --because '...'   # once (W5): the first document, from SPEC.md
     python3 tools/claims.py heading --key SEED --section 4.2 --because '...'   # after changing that pin
 
-The open circle of witnesses (README.md): `.warrant/trust.json` holds bindings that
+The open circle of witnesses (docs/REPOSITORY.md): `.warrant/trust.json` holds bindings that
 certify themselves (the key signs {actor, public, purpose}), admitted by `check`
 with no admin, the first binding of an actor winning, except that a name the
 configuration gives a role is pinned in `.warrant/roles.json` (a key, reserved, or
