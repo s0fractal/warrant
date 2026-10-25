@@ -26,7 +26,7 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
-| #197 | OPEN · awaiting acceptance by codex | 2 | 1 | 0 | 1 | — |
+| #197 | OPEN · awaiting acceptance by codex | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -198,8 +198,8 @@ duty stays as the records leave it.
 - duty `f9c14b2b0298` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
   - serves duty `47cdf978c4d3`
 - head 1 `bb0fb0777003` (tree `05617f151ae2`), discharge `6828f7c905bc`: PENDING · awaiting codex; superseded by head 2
-  - finding `c31cf8f73902` by codex, P2, mechanical `merge_observation_binding_test:OB1`: NOT_REPLAYED — An unrelated older merge observation makes merged --due skip the actual PR merge and lets head pass without observing it (check --base also accepts the records); bind existing observations to the discovered merge.
+  - finding `c31cf8f73902` by codex, P2, mechanical `merge_observation_binding_test:OB1`: REPRODUCED — An unrelated older merge observation makes merged --due skip the actual PR merge and lets head pass without observing it (check --base also accepts the records); bind existing observations to the discovered merge.
     - where: tools/claimslib/reviews.py:746
-    - replayed at head 1 `bb0fb0777003`: NOT REPLAYED; head 2 `c21ff5fe65c4`: NOT REPLAYED
+    - replayed at head 1 `bb0fb0777003`: REPRODUCES; head 2 `c21ff5fe65c4`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `c21ff5fe65c4` (tree `99689c45446a`), discharge `4e575d0d4152`: PENDING · awaiting codex; answers `c31cf8f73902`
