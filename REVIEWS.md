@@ -24,7 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
-| #194 | OPEN · awaiting acceptance by codex | 6 | 3 | 3 | 3 | — |
+| #194 | OPEN · awaiting acceptance by codex | 6 | 4 | 3 | 3 | — |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
@@ -171,6 +171,10 @@ duty stays as the records leave it.
     - replayed at head 5 `ffd24f5c2f6e`: REPRODUCES; head 6 `2916eeb4bd16`: DOES NOT REPRODUCE
     - answered by head 6
 - head 6 `2916eeb4bd16` (tree `914a178534f3`), discharge `c9f7a2fb3f2d`: PENDING · awaiting codex; answers `91ee68a60abe`
+  - finding `df86dfbcbf4c` by codex, P2, mechanical `base_witness_identity_test:F1`: NOT_REPLAYED — New witness IDs collide with master 910c969009b1: M641-M645 name unrelated guards and P26 names another check. In a scratch merge, master's M642 defect prints FAIL P26, then PASS P26 and exits 0 because world.results overwrites it. Allocate unused IDs and update their references; retain master's witnesses. F1 fails at X and passes at M.
+    - where: tests/mutants.py:1727, tests/mutants.py:1755, tests/roadmap_test.py:542, tests/world.py:84
+    - replayed at head 6 `2916eeb4bd16`: NOT REPLAYED
+    - not answered
 
 ## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
 
