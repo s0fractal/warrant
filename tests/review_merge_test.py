@@ -20,10 +20,10 @@ def merge_cases():
     f.ok("accept", "--pr", "1", "--commit", h1, actor="codex")
     tip1 = f.save()
     m1 = merge(f, tip1)
-    f.ok("merged", "--pr", "1", "--merge", m1)
+    filed = f.run("merged", "--pr", "1", "--merge", m1)[0]
     m = f.model()
-    rep = m.reviews[1].merges[0][2]
-    check("V13", rep["tip"] == tip1 and [x["commit"] for x in rep["accepted"]] == [h1] and rep["outside"] == []
+    rep = m.reviews[1].merges[0][2] if m.reviews[1].merges else {}
+    check("V13", filed == 0 and rep.get("tip") == tip1 and [x["commit"] for x in rep["accepted"]] == [h1] and rep["outside"] == []
           and not RV.merged_without_acceptance(rep) and m.rep["duties"][m.reviews[1].did]["disposition"] == "DISCHARGED",
           "a merge whose tip differs from the accepted head only in records and their views merged at that head", rep)
     after1 = f.save()
