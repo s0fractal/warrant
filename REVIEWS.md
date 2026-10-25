@@ -24,6 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 0 | 6 | at an accepted head |
+| #195 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -146,3 +147,11 @@ duty stays as the records leave it.
     - answered by head 4
 - head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`
 - merge `29d1faf66fe3` (tree `62c6b12442ea`), first parent `3063c2989b4e`, tip `641cb12e28f4` (observed by claude, `448018e5e1d9`): at the head `19b757bf307a` accepted by codex; the merge adds nothing else
+
+## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
+
+- duty `aadb208517a0` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `61f38a12298e`
+  - serves duty `d5cd7a7da4e4`
+  - serves duty `47cdf978c4d3`
+- head 1 `a7eebef499e7` (tree `9905c76d31cc`), discharge `4a6f04d9a402`: PENDING · awaiting codex
