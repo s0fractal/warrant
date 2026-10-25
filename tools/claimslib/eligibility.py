@@ -19,7 +19,8 @@ holding two verdicts computed from the same facts:
       ancestor of the pull request's head;
     - the head's tree differs from X's only by added records and blobs of .warrant/store (regular
       files, named by content address) and by the bytes of the generated views (REVIEWS.md,
-      ROADMAP.md, SPEC-CLAIMS.md, WITNESSES.md; added or changed). That those views are the
+      ROADMAP.md, SPEC-CLAIMS.md, WITNESSES.md; added or changed), and every blob it adds is cited by a
+      record it adds (a probe, evidence; else TAIL_BLOB_UNCITED). That those views are the
       byte-identical rendering of the head's records is checked by the required check `test` at the
       head, which runs the head's own `claims.py check`, `review.py check` and `roadmap.py check`: code
       byte-identical to X's, since the tail touches nothing else;
@@ -35,10 +36,12 @@ holding two verdicts computed from the same facts:
       record signed with the key the base's roles.json pins for it (the trust above);
       or, for a pull request with no review duty of its own, it carries verdicts only: its whole change
       since its merge base with the base is a records-only tail (as above) whose added records are each
-      an accept or a challenge by an actor of the base's accept_by (verdicts). The tail rule above
-      admits such records after any reviewed head with no further review: a verdict is the reviewer's
-      own act, and the reviewer cannot review itself. Codex's verdict on a roadmap obligation's closure
-      filed on master travels this way (the review waker's acceptance wakes);
+      an accept or a challenge by an actor of the base's accept_by (verdicts), each new (not in the base's
+      store) and each of a closure item the BASE's tools/roadmap.py acceptance_due names for that actor;
+      its head is a branch of this repository (not a fork) named under codex/verdicts/. The tail rule
+      above admits such records after any reviewed head with no further review: a verdict is the
+      reviewer's own act, and the reviewer cannot review itself. Codex's verdict on a roadmap
+      obligation's closure filed on master travels this way (the review waker's acceptance wakes);
     - no finding (a challenge carrying a finding blob) stands against that head;
     - the pull request changes none of the base's merge.json `owner_paths` (what decides merging:
       the workflows, the role pins, the review and gate configuration, this predicate): those
@@ -173,11 +176,12 @@ def store_at(root, commit, limits=None):
     return Snapshot(recs, blobs), problems
 
 
-def tail(root, x, head, added=None):
+def tail(root, x, head, added=None, blobs=None):
     """[(path, why)] of the changes from commit `x` to commit `head` other than a records-only tail:
     an added regular file .warrant/store/records/<hex64>.json or .warrant/store/blobs/<hex64>, or an
     added or changed regular file among the generated views (VIEWS). Renames are read as delete and add.
-    The ids of the records it adds are appended to `added` (tail_records reads what they are)."""
+    The ids of the records it adds are appended to `added` (tail_records reads what they are), those of
+    the blobs to `blobs` (uncited)."""
     raw = _git(root, "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", ids=(x, head)).decode().split("\0")
     out = []
     for i in range(0, len(raw) - 1, 2):
@@ -188,6 +192,8 @@ def tail(root, x, head, added=None):
         if status == "A" and new_mode == REGULAR and record:
             if added is not None and kind == "records":
                 added.append(name[:-5])
+            if blobs is not None and kind == "blobs":
+                blobs.append(name)
             continue
         if status in ("A", "M") and new_mode == REGULAR and old_mode in (REGULAR, "000000") and path in VIEWS:
             continue
@@ -206,6 +212,25 @@ def tail_records(b, model, rv, added):
             | {o for f in model.findings.values() for o, _ in f.observed.values()})
     return sorted(r for r in added if r not in mine
                   and (r not in model.recs or model.recs[r]["actor"] not in b.cfg["accept_by"]))
+
+
+def uncited(model, added, blobs):
+    """The blobs of `blobs` (added in a tail) that no record of `added` (added in the same tail) cites anywhere
+    in its body (evidence, a probe, raw outputs): bytes nothing in the record graph refers to."""
+    cited = set()
+
+    def walk(v):
+        if isinstance(v, str) and S.hex64(v):
+            cited.add(v)
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+    for r in added:
+        walk((model.recs.get(r) or {}).get("body"))
+    return sorted(o for o in set(blobs) - cited if o in model.snap.blobs)      # a misnamed one is STORE_ENTRY's
 
 
 def owner_paths(root, base, x, listed):
@@ -425,9 +450,11 @@ def _review(a, root, b, pr, head, model):
     sh = a.shared
     rv = model.reviews.get(pr["number"])
     if rv is None:
-        if not _verdicts_only(a, root, b, head, model):
+        why = _verdicts_only(a, root, b, pr, head, model)
+        if why is None:
             sh.append(("NO_REVIEW", f"the head's store holds no review duty of #{pr['number']} on the base's terms "
                        "and adds more than verdicts"))
+        sh += why or []
         return
     if rv.fork:
         sh.append(("HEAD_FORK", f"#{pr['number']}'s heads fork"))
@@ -452,11 +479,15 @@ def _review(a, root, b, pr, head, model):
     if owned is None or owned:
         a.reasons.append(("OWNER_PATHS", "the owner merges a change to what decides merging: " + (
             ", ".join(owned[:8]) if owned else f"{x[:12]} has no merge base with the base")))
-    added = []
-    extra = tail(root, x, head, added)
+    added, blobs = [], []
+    extra = tail(root, x, head, added, blobs)
     if extra:
         sh.append(("TAIL_CHANGES", f"{len(extra)} change(s) after head {h.n} ({x[:12]}) beyond added records and "
                    "regenerated views: " + ", ".join(f"{p} ({w})" for p, w in extra[:8])))
+    loose = uncited(model, added, blobs)
+    if loose:
+        sh.append(("TAIL_BLOB_UNCITED", f"{len(loose)} blob(s) added after head {h.n} ({x[:12]}) are cited by no record "
+                   "added there: " + ", ".join(o[:12] for o in loose[:8])))
     stray = tail_records(b, model, rv, added)
     if stray:
         sh.append(("TAIL_RECORD_UNREVIEWED", f"{len(stray)} record(s) added after head {h.n} ({x[:12]}) are neither "
@@ -477,28 +508,72 @@ def _review(a, root, b, pr, head, model):
         a.accept = (good[0], accept_id(model, h, good[0]), h.tid, x)
 
 
-def _verdicts_only(a, root, b, head, model):
-    """True when the pull request carries verdicts only (the module's rule): from the merge base of the base and
-    the head, a records-only tail whose added records are each an accept or a challenge, authentic under the
-    base's pins, by an actor of the base's accept_by. It is then eligible as it is and never due; a.accept
-    names its first verdict, at the merge base."""
+def _verdicts_only(a, root, b, pr, head, model):
+    """None when the pull request does not carry verdicts only: from the merge base of the base and the head,
+    a records-only tail whose added records are each an accept or a challenge, authentic under the base's
+    pins, by an actor of the base's accept_by. Else [(code, detail)] of what refuses it (the module's rule:
+    a fork, another branch, a verdict the base holds already or on a closure item the base's acceptance_due
+    does not name for its actor, an uncited blob), and the pull request is eligible when that is empty and
+    the rest holds, never due; a.accept names its first verdict, at the merge base."""
     try:
         mb = _git(root, "merge-base", ids=(b.commit, head)).decode().split()[0]
     except (subprocess.CalledProcessError, IndexError):
-        return False
-    added = []
-    if tail(root, mb, head, added):
-        return False
+        return None
+    added, blobs = [], []
+    if tail(root, mb, head, added, blobs):
+        return None
     verdicts = sorted(r for r in added if r in model.recs and model.recs[r]["type"] in ("accept", "challenge")
                       and model.recs[r]["actor"] in b.cfg["accept_by"])
     if not added or verdicts != sorted(added):
-        return False
+        return None
+    out = []
+    if pr.get("head_repo") != b.cfg["repository"]:
+        out.append(("VERDICTS_FORK", f"#{pr['number']}'s head is a branch of {str(pr.get('head_repo'))[:60]!r}, not "
+                    f"{b.cfg['repository']}: a pull request of verdicts only is the acceptor's own branch"))
+    if not str(pr.get("branch") or "").startswith(VERDICT_BRANCH):
+        out.append(("VERDICTS_BRANCH", f"#{pr['number']}'s branch {str(pr.get('branch'))[:60]!r} is not under "
+                    f"{VERDICT_BRANCH}"))
+    held = {e[4][len(STORE) + 8:-5] for e in entries(root, b.commit, STORE + "records")}
+    old = [v for v in verdicts if v in held]
+    if old:
+        out.append(("VERDICT_NOT_NEW", f"{len(old)} verdict(s) the base holds already: " + ", ".join(v[:12] for v in old[:8])))
+    due = _due(root, b)
+    late = [v for v in verdicts if _closure_of(model.recs[v]) not in due.get(model.recs[v]["actor"], set())]
+    if late:
+        out.append(("VERDICT_NOT_DUE", f"{len(late)} verdict(s) on a closure item the base's acceptance_due does not "
+                    "name for its actor: " + ", ".join(v[:12] for v in late[:8])))
+    loose = uncited(model, added, blobs)
+    if loose:
+        out.append(("TAIL_BLOB_UNCITED", f"{len(loose)} blob(s) cited by no verdict: " + ", ".join(o[:12] for o in loose[:8])))
     first = model.recs[verdicts[0]]
-    target = first["body"].get("transition", first["body"].get("target"))
     a.facts.update(verdicts=verdicts, x=mb)
     a.verdict = True
-    a.accept = (first["actor"], verdicts[0], target, mb)
-    return True
+    a.accept = (first["actor"], verdicts[0], _closure_of(first)[0], mb)
+    return out
+
+
+VERDICT_BRANCH = "codex/verdicts/"
+
+
+def _closure_of(rec):
+    """(transition, item) an accept or a challenge concerns."""
+    b = rec["body"]
+    return b.get("transition", b.get("target")), b.get("item")
+
+
+def _due(root, b):
+    """{actor: {(closure, item)}} the base's tools/roadmap.py acceptance_due names for each actor of the base's
+    accept_by, read from the base's store and .warrant/roadmap.json under the base's pins."""
+    import roadmap as RM                      # tools/roadmap.py, beside claimslib (review.py puts tools/ first)
+    snap, problems = store_at(root, b.commit)
+    doc = files_at(root, b.commit, [".warrant/roadmap.json"]).get(".warrant/roadmap.json")
+    if problems or doc is None:
+        return {}
+    try:
+        m = RM.Model(snap, b.trust, RM.check_config(json.loads(doc)), b.roles)
+    except (RM.Refused, ValueError):
+        return {}
+    return {actor: {(d["closure"], d["item"]) for d in RM.acceptance_due(m, actor)} for actor in b.cfg["accept_by"]}
 
 
 # ---------------------------------------------------------------- formats

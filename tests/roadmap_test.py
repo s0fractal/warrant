@@ -603,12 +603,59 @@ def due_cases():
     check("P27", r.model().rep["duties"][f]["disposition"] == "DISCHARGED" and sorted(due(r)) == sorted([u, t2])
           and s1 not in due(r),
           "accepting a replacement leaves neither it nor the closure it was filed over due", due(r))
+
+    # P30: a filed-over closure is not due while the one filed in its place is refused (here OBSERVED where the duty
+    # admits an attestation: OVERCLAIMED); the duty stays OPEN and waits for its holder.
+    k = r.ok("oblige", "--text", "A fifth thing.", "--answers", "G1")
+    k1 = r.ok("done", "--duty", k, "--established", "done", "--ref", "s0fractal/warrant#12")
+    ev = {"schema": RM.EVIDENCE, "duty": k, "refs": ["s0fractal/warrant#12", "a" * 40]}
+    r.store.put_json(ev)
+    h = C.digest(C.canon(ev))
+    k2 = r.store.put_record(R.record("transition", "claude", r.at() + 1, R.transition(
+        "OBSERVED", [h], closes=[R.item(k, "discharge", [h])], established=["again"])), r.keys["claude"])
+    ks = [(c["transition"], c["verdict"]) for c in r.model().rep["duties"][k]["candidates"]]
+    check("P30", ks == [(k1, "PENDING"), (k2, "OVERCLAIMED")] and k1 not in due(r) and k2 not in due(r),
+          "a closure filed over stays not due while the closure filed in its place is refused", (ks, due(r)))
+    r.close()
+
+    # P28: a challenge of item k hides closure k only; one of item null concerns the transition's results (SPEC §3.6).
+    r = Repo()
+    r.ok("goal", "--id", "G1", "--text", "The ledger exists.")
+    d, e, g = (r.ok("oblige", "--text", x, "--answers", "G1") for x in ("One thing.", "Another thing.", "A third thing."))
+    ev = {"schema": RM.EVIDENCE, "duty": d, "refs": ["s0fractal/warrant#7"]}
+    h = C.digest(C.canon(ev))
+    two = r.file("claude", "transition", R.transition("ATTESTED", [h], closes=[R.item(d, "discharge", [h]),
+                                                                           R.item(e, "discharge", [h])],
+                                                      established=["both"]), [ev])
+    tg = r.ok("done", "--duty", g, "--established", "done", "--ref", "s0fractal/warrant#8")
+    r.file("codex", "challenge", R.challenge(two, "item 1 is not done", [h], 1))
+    r.file("codex", "challenge", R.challenge(tg, "about the results", r.model().recs[tg]["body"]["evidence"], None))
+    items = sorted((x["closure"], x["item"]) for x in RM.acceptance_due(r.model(), "codex"))
+    check("P28", items == sorted([(two, 0), (tg, 0)]),
+          "codex's challenge of item 1 of a transition hides that item only, and a challenge of a transition's results "
+          "(item null) hides none of its closures", items)
+
+    # P29: a closure of a duty already DISCHARGED is not due, even when it is the duty's latest.
+    hd = r.ok("oblige", "--text", "A fourth thing.", "--answers", "G1")
+    th1 = r.ok("done", "--duty", hd, "--established", "done", "--ref", "s0fractal/warrant#10")
+    r.accept(th1)
+    ev2 = {"schema": RM.EVIDENCE, "duty": hd, "refs": ["s0fractal/warrant#11"]}
+    h2 = C.digest(C.canon(ev2))
+    r.store.put_json(ev2)            # one second later: same-second records are ordered by id
+    th2 = r.store.put_record(R.record("transition", "claude", r.at() + 1, R.transition(
+        "ATTESTED", [h2], closes=[R.item(hd, "discharge", [h2])], established=["again"])), r.keys["claude"])
+    m = r.model()
+    last = [c for c in m.rep["duties"][hd]["candidates"]][-1]
+    check("P29", m.rep["duties"][hd]["disposition"] == "DISCHARGED" and last["transition"] == th2
+          and last["verdict"] == "PENDING" and th2 not in due(r) and th1 not in due(r),
+          "a closure filed on a duty that is already DISCHARGED is not due, though it is the duty's latest and PENDING",
+          (last, due(r)))
     r.close()
 
 
 GROUPS = ((goal_cases, ("P1", "P2")), (source_cases, ("P16",)), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
           (shared_cases, ("P17", "P18")), (cycle_cases, ("P19", "P20")), (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
-          (check_cases, ("P12", "P13")), (due_cases, ("P21", "P26", "P22", "P23", "P24", "P25", "P27")))
+          (check_cases, ("P12", "P13")), (due_cases, ("P21", "P26", "P22", "P23", "P24", "P25", "P27", "P30", "P28", "P29")))
 
 
 def main():

@@ -111,15 +111,20 @@ class Roadmap:
             cfg = json.loads(self.config_path.read_text())
         except (OSError, ValueError) as e:
             raise Refused(f".warrant/roadmap.json: {e}") from e
-        if not isinstance(cfg, dict) or set(cfg) != set(CONFIG_FIELDS) or cfg["roadmap"] != CONFIG:
-            raise Refused(f".warrant/roadmap.json members are {list(CONFIG_FIELDS)}, roadmap {CONFIG!r}")
-        for k in CONFIG_FIELDS[1:]:
-            if not (isinstance(cfg[k], list) and all(S.is_actor(a) for a in cfg[k])):
-                raise Refused(f".warrant/roadmap.json: {k} is a list of actor ids")
-        return cfg
+        return check_config(cfg)
 
     def model(self):
         return Model(self.claims.snapshot(), self.claims.trust(), self.config(), self.claims.roles()[0])
+
+
+def check_config(cfg):
+    """.warrant/roadmap.json's document, checked (also read from a base commit by the merge gate)."""
+    if not isinstance(cfg, dict) or set(cfg) != set(CONFIG_FIELDS) or cfg["roadmap"] != CONFIG:
+        raise Refused(f".warrant/roadmap.json members are {list(CONFIG_FIELDS)}, roadmap {CONFIG!r}")
+    for k in CONFIG_FIELDS[1:]:
+        if not (isinstance(cfg[k], list) and all(S.is_actor(a) for a in cfg[k])):
+            raise Refused(f".warrant/roadmap.json: {k} is a list of actor ids")
+    return cfg
 
 
 class Form:
@@ -360,21 +365,27 @@ class Model:
 # ---------------------------------------------------------------- acceptance due
 
 def acceptance_due(m, actor):
-    """The obligation closures due for `actor`'s verdict, in filing order. For each obligation: its latest
-    closure (whatever its verdict), when the engine judges it PENDING (admitted on every rule but
+    """The obligation closures due for `actor`'s verdict, in filing order. For each OPEN obligation: its
+    latest closure (whatever its verdict), when the engine judges it PENDING (admitted on every rule but
     acceptances, so each duty it requires is DISCHARGED: SPEC §4.2), its waiting_for still names `actor`
     (the duty's accept_by names it and it has not accepted exactly that item and evidence), and `actor` has
-    not challenged it. An earlier closure of the same duty was filed over (`done --replaces`) and is never
-    due, also once the one filed in its place is admitted (Codex finding aeacfd5c933e). A transition that
-    closes several obligations gives one entry per item. This is the one statement of the rule: the review
-    waker runs `due` from the base's tree and wakes the acceptor once per closure item."""
-    challenged = {r["body"]["target"] for r in m.recs.values() if r["type"] == "challenge" and r["actor"] == actor}
+    not challenged that item (SPEC §3.6: a challenge of item k concerns closure k only; one of item null,
+    the transition's results). An earlier closure of the same duty was filed over (`done --replaces`) and is
+    never due, also once the one filed in its place is admitted (Codex finding aeacfd5c933e); nor is a
+    closure of a duty already closed. A transition that closes several obligations gives one entry per item.
+    This is the one statement of the rule: the review waker runs `due` from the base's tree and wakes the
+    acceptor once per closure item, and the merge gate admits a pull request of verdicts only on closures
+    it names (eligibility.py)."""
+    challenged = {(r["body"]["target"], r["body"]["item"]) for r in m.recs.values()
+                  if r["type"] == "challenge" and r["actor"] == actor}
     out = []
     for did in m.obligations:
+        if m.rep["duties"][did]["disposition"] != "OPEN":
+            continue
         closures = [c for c in m.rep["duties"][did]["candidates"] if c["act"] in CLOSING]
         c = closures[-1] if closures else None
         if c is None or c["verdict"] != "PENDING" or actor not in (c.get("waiting_for") or []) \
-                or c["transition"] in challenged:
+                or (c["transition"], c["item"]) in challenged:
             continue
         t, b = m.recs[c["transition"]], m.recs[did]["body"]
         ev = t["body"]["closes"][c["item"]]["evidence"]
