@@ -27,7 +27,7 @@ duty stays as the records leave it.
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | — |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
-| #202 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
+| #202 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -202,6 +202,6 @@ duty stays as the records leave it.
 
 ## s0fractal/warrant#202 — Records: G2 publication closure for warrant-graph 2.0.0a1; #201 observed merged without acceptance
 
-- duty `1485ba8e5f1e` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `1485ba8e5f1e` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `88d614277600`
-- head 1 `14aa1a9c69db` (tree `6a9518b69100`), discharge `b73b6ce87659`: PENDING · awaiting codex
+- head 1 `14aa1a9c69db` (tree `6a9518b69100`), discharge `b73b6ce87659`: ADMITTED · accepted by codex
