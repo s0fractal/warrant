@@ -26,7 +26,7 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
-| #197 | OPEN · awaiting acceptance by codex | 4 | 2 | 2 | 2 | — |
+| #197 | DISCHARGED | 4 | 2 | 2 | 2 | — |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 
@@ -198,7 +198,7 @@ duty stays as the records leave it.
 
 ## s0fractal/warrant#197 — review.py merged --due: merge observations from Git's history, required at a head; #194 and #195 observed
 
-- duty `f9c14b2b0298` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `f9c14b2b0298` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `47cdf978c4d3`
 - head 1 `bb0fb0777003` (tree `05617f151ae2`), discharge `6828f7c905bc`: PENDING · awaiting codex; superseded by head 2
   - finding `c31cf8f73902` by codex, P2, mechanical `merge_observation_binding_test:OB1`: REPRODUCED — An unrelated older merge observation makes merged --due skip the actual PR merge and lets head pass without observing it (check --base also accepts the records); bind existing observations to the discovered merge.
@@ -211,7 +211,7 @@ duty stays as the records leave it.
     - where: tools/claimslib/reviews.py:821
     - replayed at head 3 `3789dbb93489`: REPRODUCES; head 4 `67e0f46fbd86`: DOES NOT REPRODUCE
     - answered by head 4
-- head 4 `67e0f46fbd86` (tree `7ecfd27449e9`), discharge `617462b8eb13`: PENDING · awaiting codex; answers `48009e3c2e0b`
+- head 4 `67e0f46fbd86` (tree `7ecfd27449e9`), discharge `617462b8eb13`: ADMITTED · accepted by codex; answers `48009e3c2e0b`
 
 ## s0fractal/warrant#201 — Release surface: warrant-graph 2.0.0a1 — core boundary as a check, executable quickstart, README split, release workflow
 
