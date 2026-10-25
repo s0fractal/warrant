@@ -49,7 +49,7 @@
       "text": ["The receiver's limits (`warrant.limits.resolve` over these defaults; a receiver sets each one in its configuration):"],
       "table": "limits",
       "rows": [
-        {"id": "PC-17", "rule": "Within every limit a closure resolves as without limits; beyond one the result is LIMIT with `limit`, `value` and `bound`, and no object. Objects and bytes are admitted before an object is read, and the bytes again as read (a file grown after its size was taken); `pilot_depth` bounds the longest chain of references from the root whatever the order of the walk.", "tests": ["D6", "D7", "D9"], "mutants": ["M576", "M577", "M578", "M579", "M604"]}
+        {"id": "PC-17", "rule": "Within every limit a closure resolves as without limits; beyond one the result is LIMIT with `limit`, `value` and `bound`, and no object. Objects and bytes are admitted before an object is read, and the bytes again as read (a file grown after its size was taken); `pilot_depth` bounds the longest chain of references from the root whatever the order of the walk, and a chain through an object already resolved is admitted when it is met again, before the next object is read.", "tests": ["D6", "D7", "D9", "D11"], "mutants": ["M576", "M577", "M578", "M579", "M604", "M643"]}
       ]
     },
     {
@@ -79,7 +79,7 @@
       "title": "Receiver-controlled admission",
       "card": "PS-01",
       "rows": [
-        {"id": "PC-26", "rule": "Only the receiver's configuration (`Receiver`, `Receiver.from_config`: `warrant-pilot/receiver@1`) chooses the stores, the admitted kinds and the limits; a configuration with anything else (another member, limits that are not a mapping, a layout that is not a layout name) is refused as a ValueError before it is used, and no object can add a store, kind or limit.", "tests": ["A7", "A8", "A12"], "mutants": ["M573", "M582", "M607", "M608"]},
+        {"id": "PC-26", "rule": "Only the receiver's configuration (`Receiver`, `Receiver.from_config`: `warrant-pilot/receiver@1`) chooses the stores, the admitted kinds and the limits; a configuration with anything else (another member, limits that are not a mapping, a layout that is not a layout name, a store path with a NUL byte) is refused as a ValueError before it is used, and no object can add a store, kind or limit.", "tests": ["A7", "A8", "A12", "A13"], "mutants": ["M573", "M582", "M607", "M608", "M644"]},
         {"id": "PC-27", "rule": "Fetched verifier code is never executed: the pilot runs only the receiver's installed provider (`compute.Provider`).", "excluded": "running fetched code is the proposal card PS-13, not filed"}
       ]
     },

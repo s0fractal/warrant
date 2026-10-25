@@ -174,6 +174,10 @@ class _Dir:
 
     def __init__(self, root):
         self.root = Path(root)
+        # os.open refuses a NUL byte with ValueError, not OSError: refused here, before the store is used
+        # (PC-26; Gemini review of 1a660a6)
+        if "\x00" in str(self.root):
+            raise ValueError("pilot receiver: a store path holds a NUL byte")
 
     def __repr__(self):
         return f"{self.layout}:{self.root}"
@@ -296,14 +300,17 @@ def walk(fetch, root, kinds, limits):
                 if dep in on_path:
                     raise _Stop("CYCLE", dep, f"{dep} requires itself through the addresses above it")
                 if dep in objects:
+                    # resolved under another path: its chain from here counts now, before a later sibling
+                    # is read (Gemini review of 1a660a6)
+                    L.admit(lim, "pilot_depth", len(path) + height[dep])
                     continue
                 L.admit(lim, "pilot_depth", len(path))
                 path.append(enter(dep))
                 on_path.add(dep)
                 continue
-            # every dependency is resolved by now (a cycle stopped the walk), so each has its height
+            # every dependency is resolved by now (a cycle stopped the walk), so each has its height; every
+            # chain below was admitted where it was entered or met again
             height[address] = max((1 + height.get(d, 0) for d in deps), default=0)
-            L.admit(lim, "pilot_depth", len(path) - 1 + height[address])
             path.pop()
             on_path.discard(address)
     except _Stop as stop:

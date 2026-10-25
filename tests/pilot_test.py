@@ -431,6 +431,29 @@ def main():
               "a receiver configuration with limits that are not a mapping or a layout that is not a name is refused",
               (controls, got_a12))
 
+    # A13 (Gemini review of 1a660a6): a store path holding a NUL byte passed from_config and raised an
+    # uncaught ValueError ("embedded null byte") from os.open on the first resolve(); expected: refused as a
+    # ValueError by from_config, before it is used (PC-26), as by a store built directly.
+    with case('A13'):
+        base = {"receiver": PL.RECEIVER, "stores": [{"layout": "blobs", "path": str(f.a)}]}
+        got_a13 = {}
+        for label, cfg in {"path": dict(base, stores=[{"layout": "blobs", "path": str(f.a) + "\x00x"}]),
+                           "fanout path": dict(base, stores=[{"layout": "fanout", "path": "\x00"}])}.items():
+            try:
+                PL.Receiver.from_config(cfg)
+                got_a13[label] = "accepted"
+            except ValueError:
+                got_a13[label] = "refused"
+        try:
+            PL.BlobDir(str(f.a) + "\x00")
+            got_a13["direct"] = "accepted"
+        except ValueError:
+            got_a13["direct"] = "refused"
+        control = outcome(PL.Receiver.from_config(base).resolve(f"sigma-state:{f.st}"))[0]
+        check("A13", (control, got_a13) == ("RESOLVED", {"path": "refused", "fanout path": "refused", "direct": "refused"}),
+              "a store path with a NUL byte is refused when the receiver is configured, not raised on resolve",
+              (control, got_a13))
+
     # ---------------------------------------------------------------- PS-03: the closure before verification
     # D1: branching and shared dependencies: the environment (named by the root and the receipt) and the
     # input node (named by the receipt and the environment) are read once; every object of the closure is
@@ -530,6 +553,17 @@ def main():
         got_d7 = (outcome(deep[0])[:2], deep[0].get("value"), outcome(deep[1])[:2])
         check("D7", got_d7 == (("INCONCLUSIVE", "LIMIT"), 3, ("RESOLVED", None)),
               "pilot_depth bounds the longest chain from the root, also through a shared object", got_d7)
+
+    # D11 (Gemini review of 1a660a6): the depth through a shared object is admitted when it is met again,
+    # before the next sibling is fetched. Observed at 1a660a6: root -> b -> c -> x -> y is 4 references
+    # (x already resolved under a), and c's next dependency, missing, was reported MISSING; expected LIMIT.
+    with case('D11'):
+        fetch, addr = standin({"0" * 64: ["a" * 64, "b" * 64], "a" * 64: ["1" * 64], "1" * 64: ["9" * 64],
+                               "b" * 64: ["c" * 64], "c" * 64: ["1" * 64, "8" * 64]}, ["9" * 64])
+        res = PL.walk(fetch, addr("0" * 64), kinds, dict(lim, pilot_depth=3))
+        got_d11 = (outcome(res)[:2], res.get("limit"), res.get("value"))
+        check("D11", got_d11 == (("INCONCLUSIVE", "LIMIT"), "pilot_depth", 4),
+              "a chain through an object already resolved is over pilot_depth before a later sibling is read", got_d11)
 
     # D8: dependency fields are read with the kind's exact shape: a receipt with another member, an
     # environment out of order, a root naming an address twice or nothing.

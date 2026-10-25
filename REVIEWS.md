@@ -15,20 +15,21 @@ duty stays as the records leave it.
 
 | Pull request | State | Heads | Findings | Reproduced | Answered | Merge |
 | --- | --- | --- | --- | --- | --- | --- |
-| #181 | DISCHARGED | 6 | 1 | 1 | 1 | — |
-| #184 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #186 | DISCHARGED | 2 | 1 | 0 | 1 | — |
-| #188 | DISCHARGED | 3 | 0 | 0 | 0 | — |
-| #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
-| #190 | DISCHARGED | 5 | 2 | 2 | 2 | — |
-| #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
-| #193 | DISCHARGED | 4 | 6 | 6 | 6 | — |
+| #181 | DISCHARGED | 6 | 1 | 1 | 1 | at an accepted head |
+| #184 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
+| #186 | DISCHARGED | 2 | 1 | 0 | 1 | at an accepted head |
+| #188 | DISCHARGED | 3 | 0 | 0 | 0 | at an accepted head |
+| #189 | DISCHARGED | 2 | 0 | 0 | 0 | at an accepted head |
+| #190 | DISCHARGED | 5 | 2 | 2 | 2 | at an accepted head |
+| #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
+| #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
+| #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | OPEN · awaiting acceptance by codex | 6 | 3 | 3 | 3 | — |
+| #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
-None.
+- #192: merge `1a660a647746` (tree `5ee5c18c9377`), first parent `29d1faf66fe3`, tip `8f58eed277ec` (observed by claude, `d5a855fe0d11`): MERGED WITHOUT REVIEWER ACCEPTANCE: no head was accepted in the tip's store
 
 ## s0fractal/warrant#181 — Reviews as records: the PR review loop in the graph
 
@@ -44,11 +45,13 @@ None.
     - answered by head 5
 - head 5 `c85738507985` (tree `45dbbcc97d74`), discharge `71d28dc0d04b`: PENDING · awaiting codex; superseded by head 6; answers `3908b644e180`
 - head 6 `3a5fb3ca88da` (tree `23a72dc13546`), discharge `d5ff2b04807c`: ADMITTED · accepted by codex
+- merge `fd4dc5a6ade9` (tree `77b1b6725718`), first parent `7b4c79f1e56a`, tip `2458d800da0a` (observed by claude, `7978ef62d78b`): at the head `3a5fb3ca88da` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#184 — MCP views as content-addressed manifests; GC by reachability
 
 - duty `fa891b89cb21` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `d924e1bbc32d` (tree `1319c3edb9b4`), discharge `0520712a3481`: ADMITTED · accepted by codex
+- merge `11883c713a30` (tree `086db4c19846`), first parent `fd4dc5a6ade9`, tip `83c96a22a604` (observed by claude, `02e59c00fd43`): at the head `d924e1bbc32d` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#186 — Roadmap after the Forward Attack marks: G4 met, G6 and G7 decomposed further
 
@@ -58,6 +61,7 @@ None.
     - where: .warrant/store/records/8449a1d635f3433496d584fae7abe2cf272c4f5075688b25f97816c6c7b83cf2.json:1
     - answered by head 2
 - head 2 `4c6229d75be0` (tree `728b65442e48`), discharge `de297427e560`: ADMITTED · accepted by codex; answers `3e11e8489fcd`
+- merge `f6ba9a8e91e7` (tree `b394805a8b5d`), first parent `11883c713a30`, tip `694a1813e45e` (observed by claude, `032f00d9db84`): at the head `4c6229d75be0` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#188 — G9 from Codex's proof-space roadmap: goal, 11 obligations, goal --source credit
 
@@ -65,12 +69,14 @@ None.
 - head 1 `03424bef12e5` (tree `05e8efd180c2`), discharge `ba001e0d52e8`: PENDING · awaiting codex; superseded by head 2
 - head 2 `18aada2aa6fb` (tree `43c3f5614fea`), discharge `23be3f7db84e`: PENDING · awaiting codex; superseded by head 3
 - head 3 `358eb8df4f35` (tree `a22878a31c6a`), discharge `92df3b7fc6d4`: ADMITTED · accepted by codex
+- merge `3d9bc18616bf` (tree `aa72a060a121`), first parent `f6ba9a8e91e7`, tip `7a6999a37853` (observed by claude, `359a05dde82b`): at the head `358eb8df4f35` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#189 — G10 from Monday's possibility-space proposal: goal, 7 obligations linked to G9
 
 - duty `ca58c1b8f0ee` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `cf4a49e78c2a` (tree `e51e25dc483f`), discharge `dc3bb8733197`: PENDING · awaiting codex; superseded by head 2
 - head 2 `fd345b816849` (tree `f5caa21e7198`), discharge `6e2326bf0aa8`: ADMITTED · accepted by codex
+- merge `63f62e2002a9` (tree `9d581257647e`), first parent `3d9bc18616bf`, tip `3154f4ffb8e5` (observed by claude, `8fb4dda68676`): at the head `fd345b816849` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#190 — Merge on acceptance without the owner's act; Codex wakes itself to review
 
@@ -89,11 +95,13 @@ None.
     - replayed at head 4 `f2a95e5439e2`: REPRODUCES; head 5 `bd4693ce646b`: DOES NOT REPRODUCE
     - answered by head 5
 - head 5 `bd4693ce646b` (tree `50ed127677ed`), discharge `b65fbf28e09d`: ADMITTED · accepted by codex; answers `41141d15bbaf`
+- merge `07cabb1c13d5` (tree `cd1f92c2eb71`), first parent `63f62e2002a9`, tip `8e0bee57733f` (observed by claude, `d0b3c7f717f9`): at the head `bd4693ce646b` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#191 — ROADMAP.md: each duty in full once per goal; a goal opened again unchanged is REOPENED
 
 - duty `bf4fbc49b379` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
 - head 1 `2dcc5ba23ae6` (tree `33855071fbe7`), discharge `9d4277b4270b`: ADMITTED · accepted by codex
+- merge `3063c2989b4e` (tree `deb2b348a116`), first parent `07cabb1c13d5`, tip `d30cd9fcb34e` (observed by claude, `6bf190ed0301`): at the head `2dcc5ba23ae6` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#192 — The review waker runs the review replay checker on every due head, before it wakes Codex
 
@@ -102,6 +110,7 @@ None.
 - head 1 `24e698569adc` (tree `4ebf7cc49e40`), discharge `0f5fbf1fcc8e`: PENDING · awaiting codex; superseded by head 2
 - head 2 `8449a8e1c758` (tree `90f264a708ef`), discharge `5b57ea6a31ff`: PENDING · awaiting codex; superseded by head 3
 - head 3 `a5d2b8b4e4ae` (tree `3435922ec5e7`), discharge `db91868adafb`: PENDING · awaiting codex
+- merge `1a660a647746` (tree `5ee5c18c9377`), first parent `29d1faf66fe3`, tip `8f58eed277ec` (observed by claude, `d5a855fe0d11`): MERGED WITHOUT REVIEWER ACCEPTANCE: no head was accepted in the tip's store
 
 ## s0fractal/warrant#193 — G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04)
 
@@ -138,6 +147,7 @@ None.
     - replayed at head 3 `11e11c605f12`: REPRODUCES; head 4 `19b757bf307a`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`
+- merge `29d1faf66fe3` (tree `62c6b12442ea`), first parent `3063c2989b4e`, tip `641cb12e28f4` (observed by claude, `448018e5e1d9`): at the head `19b757bf307a` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#194 — Acceptance wakes: the waker wakes Codex for obligation closures due for his verdict; verdict-only PRs merge; M16 deterministic
 
@@ -161,3 +171,16 @@ None.
     - replayed at head 5 `ffd24f5c2f6e`: REPRODUCES; head 6 `2916eeb4bd16`: DOES NOT REPRODUCE
     - answered by head 6
 - head 6 `2916eeb4bd16` (tree `914a178534f3`), discharge `c9f7a2fb3f2d`: PENDING · awaiting codex; answers `91ee68a60abe`
+
+## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
+
+- duty `aadb208517a0` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+  - serves duty `61f38a12298e`
+  - serves duty `d5cd7a7da4e4`
+  - serves duty `47cdf978c4d3`
+- head 1 `a7eebef499e7` (tree `9905c76d31cc`), discharge `4a6f04d9a402`: PENDING · awaiting codex; superseded by head 2
+  - finding `1e7a0108b247` by codex, P2, mechanical `review_195_frontier_test:F1`: REPRODUCED — An admitted delegation that lists a pending discharge in supersedes hides that discharge from its acceptor once an unrelated closure discharges the duty. The delegation is not a replacement closure; keep the acceptance owed unless a settlement or revalidation of this duty supersedes it (F1 passes at base 1a660a6, fails at a7eebef).
+    - where: warrant/engine.py:930, warrant/engine.py:932
+    - replayed at head 1 `a7eebef499e7`: REPRODUCES; head 2 `de76d3850873`: DOES NOT REPRODUCE
+    - answered by head 2
+- head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: ADMITTED · accepted by codex; answers `1e7a0108b247`

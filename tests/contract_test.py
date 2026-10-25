@@ -444,6 +444,41 @@ def handoff_cases():
     got = {v: still_offered(v) for v in ("results-only", "other-duty", "item-unaccepted")}
     check("F4", all(got.values()), "results supersession alone never hides a pending closure from its acceptor", got)
 
+    # F6 (Gemini review of 1a660a6): the replacement closure retires the pending one
+    # when it is admitted on the same duty, whether or not anyone accepted its RESULTS.
+    # A profile with no results acceptors (the repository's own) still offered the
+    # superseded closure. A later admitted closure that does not name the old one in
+    # `supersedes` leaves it offered: a residual sentence is not a record.
+    def offered_after(supersedes, results_by):
+        w = World()
+        d = w.duty()
+        old = w.close(d)
+        new = w.act(HOLDER, [R.item(d, "discharge", [w.evidence("v2")])], supersedes=[old] if supersedes else [])
+        w.accept(OWNER, new, 0)
+        rep = w.assess(prof=E.profile(results_by=results_by))
+        return rep["duties"][d]["disposition"], [x["transition"] == old for x in E.frontier(rep, OWNER)
+                                                 if x.get("need") == "accept"]
+    got = {(s, tuple(r)): offered_after(s, r) for s in (True, False) for r in ((), (CODEX,))}
+    check("F6", all(v == ("DISCHARGED", []) for (s, _), v in got.items() if s)
+          and all(v == ("DISCHARGED", [True]) for (s, _), v in got.items() if not s),
+          "an admitted replacement on the same duty retires the closure it supersedes, results accepted or not", got)
+
+    # F7 (Codex finding 1e7a0108b247 on #195, observed at a7eebef): an admitted delegation whose
+    # transition supersedes the pending discharge hid it once another closure discharged the duty;
+    # expected: still offered, since a delegation closes nothing.
+    w = World()
+    d = w.duty()
+    old = w.close(d)
+    dl = w.close(d, act="delegate", to=CODEX, tkw={"supersedes": [old]})
+    w.accept(CODEX, dl)
+    w.accept(OWNER, w.close(d))
+    rep = w.assess(prof=E.profile(results_by=[]))
+    got = (rep["duties"][d]["disposition"], [c["verdict"] for c in rep["duties"][d]["candidates"]
+                                             if c["transition"] == dl],
+           any(x.get("need") == "accept" and x.get("transition") == old for x in E.frontier(rep, OWNER)))
+    check("F7", got == ("DISCHARGED", ["ADMITTED"], True),
+          "an admitted delegation that supersedes a pending closure does not retire it", got)
+
     # F5: who closes a duty is in its capsule, and an acceptor's frontier item says
     # whose acceptance it still waits for and whether this one is the last (the
     # 2026-10-19 fresh-context run guessed that its own accept "may not close" it)

@@ -258,6 +258,13 @@ def requires_cases():
           "a second closure of a duty with one waiting is filed only with --replaces naming that one (and --replaces "
           "names a waiting closure of that duty); its residual "
           "names it, both stay in the record, and accepting the new one discharges the duty", (blind, wrong, cands))
+    # P26 (Gemini review of 1a660a6): the replacement names the declined closure in `supersedes`,
+    # so once it is admitted the acceptor is not asked for the declined one (on master duties
+    # 2e4b8aea0bc9 and 879b8bd5219b were DISCHARGED and their declined closures still asked codex).
+    asked = [x for x in RM.E.frontier(r.model().rep, "codex") if x.get("need") == "accept" and x["transition"] == t1]
+    check("P26", body["supersedes"] == [t1] and not asked,
+          "a closure filed with --replaces supersedes the declined one, which then is not acceptance work",
+          (body["supersedes"], asked))
     r.close()
 
 
@@ -539,7 +546,7 @@ def due_cases():
     doc = json.loads(got[1])
     one = doc["due"][0] if len(doc["due"]) == 1 else {}
     ev = r.model().recs[t]["body"]["closes"][0]["evidence"]
-    check("P26", rc == 0 and json.loads(out)["due"] == [] and got[0] == 0 and doc["actor"] == "codex" and bad == 2
+    check("P31", rc == 0 and json.loads(out)["due"] == [] and got[0] == 0 and doc["actor"] == "codex" and bad == 2
           and (one.get("duty"), one.get("closure"), one.get("item"), one.get("goal"), one.get("evidence"), one.get("refs"),
                one.get("subject"), one.get("requires")) == (d, t, 0, "G1", ev, ["s0fractal/warrant#3"], "d" * 40, [])
           and "established" not in one,
@@ -655,7 +662,7 @@ def due_cases():
 
 GROUPS = ((goal_cases, ("P1", "P2")), (source_cases, ("P16",)), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
           (shared_cases, ("P17", "P18")), (cycle_cases, ("P19", "P20")), (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
-          (check_cases, ("P12", "P13")), (due_cases, ("P21", "P26", "P22", "P23", "P24", "P25", "P27", "P30", "P28", "P29")))
+          (check_cases, ("P12", "P13")), (due_cases, ("P21", "P31", "P22", "P23", "P24", "P25", "P27", "P30", "P28", "P29")))
 
 
 def main():

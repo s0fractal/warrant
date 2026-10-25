@@ -56,7 +56,7 @@ The receiver's limits (`warrant.limits.resolve` over these defaults; a receiver 
 | `pilot_depth` | 64 |
 | `pilot_edges` | 100 000 |
 
-- **PC-17** Within every limit a closure resolves as without limits; beyond one the result is LIMIT with `limit`, `value` and `bound`, and no object. Objects and bytes are admitted before an object is read, and the bytes again as read (a file grown after its size was taken); `pilot_depth` bounds the longest chain of references from the root whatever the order of the walk. *(enforced: D6, D7, D9 · M576, M577, M578, M579, M604)*
+- **PC-17** Within every limit a closure resolves as without limits; beyond one the result is LIMIT with `limit`, `value` and `bound`, and no object. Objects and bytes are admitted before an object is read, and the bytes again as read (a file grown after its size was taken); `pilot_depth` bounds the longest chain of references from the root whatever the order of the walk, and a chain through an object already resolved is admitted when it is met again, before the next object is read. *(enforced: D6, D7, D9, D11 · M576, M577, M578, M579, M604, M643)*
 
 ## Result meanings (PS-03, duty `61f38a12298e`)
 
@@ -84,7 +84,7 @@ A profile is canonical JSON `{schema: "warrant-pilot/profile@1", rule, runtime, 
 
 ## Receiver-controlled admission (PS-01, duty `d108cd09dd10`)
 
-- **PC-26** Only the receiver's configuration (`Receiver`, `Receiver.from_config`: `warrant-pilot/receiver@1`) chooses the stores, the admitted kinds and the limits; a configuration with anything else (another member, limits that are not a mapping, a layout that is not a layout name) is refused as a ValueError before it is used, and no object can add a store, kind or limit. *(enforced: A7, A8, A12 · M573, M582, M607, M608)*
+- **PC-26** Only the receiver's configuration (`Receiver`, `Receiver.from_config`: `warrant-pilot/receiver@1`) chooses the stores, the admitted kinds and the limits; a configuration with anything else (another member, limits that are not a mapping, a layout that is not a layout name, a store path with a NUL byte) is refused as a ValueError before it is used, and no object can add a store, kind or limit. *(enforced: A7, A8, A12, A13 · M573, M582, M607, M608, M644)*
 - **PC-27** Fetched verifier code is never executed: the pilot runs only the receiver's installed provider (`compute.Provider`). *(excluded: running fetched code is the proposal card PS-13, not filed)*
 
 ## Later cards

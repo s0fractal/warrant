@@ -630,7 +630,8 @@ class Writer:
     def done(self, duty, established, refs, commit=None, replaces=None):
         """A discharge citing an evidence blob. `replaces` names the one closure of the duty still waiting
         for acceptance that this one is filed instead of (an acceptor declined it): it stays in the record,
-        and the new closure's residual says it replaces it."""
+        the new closure supersedes it, and its residual says so. Once the new one is admitted the engine
+        no longer asks for the old one's acceptance (a residual sentence alone is not a record)."""
         did = self.m.resolve_duty(duty)
         r = self.m.rep["duties"][did]
         if r["holder"] != self.actor and self.actor not in r["delegates"]:
@@ -649,7 +650,7 @@ class Writer:
         residual = [DONE_RESIDUAL] + ([f"filed instead of closure {replaces}, which an acceptor declined; that one "
                                        "stays in the record and is not to be accepted"] if replaces else [])
         body = R.transition("ATTESTED", [h], closes=[R.item(did, "discharge", [h])], established=[established],
-                            residual=residual, subject=commit)
+                            residual=residual, subject=commit, supersedes=[replaces] if replaces else [])
         return self.file("transition", body, [ev])
 
     def accept(self, duty, transition=None):
