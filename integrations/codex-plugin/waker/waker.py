@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The review waker: replay the findings, then start Codex once per pull request head due for review.
+"""The review waker: replay the findings, then start Codex once per pull request head due for review and
+once per obligation closure due for his verdict.
 
 launchd runs it every five minutes (install.py). One run:
 
@@ -16,9 +17,20 @@ launchd runs it every five minutes (install.py). One run:
      Codex's last message HOME/results/<n>-<head>.md), records the attempt's exit status, and removes
      the worktree unless Codex left changes in it.
 
-One wake per head: a head whose attempt exited 0 is never woken again (delete its memo to wake it
-again). An attempt that exited otherwise (or never finished) is retried after BACKOFF seconds,
-doubled each time, at most MAX_TRIES attempts in all; then the memo says it gave up.
+  5. then the obligation closures due for Codex's verdict: the base tree's `tools/roadmap.py due --actor
+     codex` on the base's own records (acceptance_due there: a roadmap obligation's latest closure the
+     engine holds PENDING for codex, every duty it requires DISCHARGED, neither accepted nor challenged by
+     codex). At most one is woken per run, and none while an open pull request's branch is under
+     VERDICT_BRANCH (Codex's previous verdict, not merged yet: two such pull requests would render the
+     same generated views from different bases). Its memo is HOME/accepts/<closure>.json, its worktree
+     TREES/accept-<closure12>-<base12>, detached at the base; Codex accepts the closure or challenges it
+     through MCP and opens a pull request of those records only, which the merge gate admits as verdicts
+     (eligibility.py). A closure that becomes acceptable later (its prerequisite was accepted meanwhile)
+     is due in the run that reads that base.
+
+One wake per head, and per closure: one whose attempt exited 0 is never woken again (delete its memo
+to wake it again). An attempt that exited otherwise (or never finished) is retried after BACKOFF
+seconds, doubled each time, at most MAX_TRIES attempts in all; then the memo says it gave up.
 
 Replay. The review replay checker is an actor named by the hash of tools/claimslib/review_replay.py
 (`checker sha256:<H>`); `tools/review.py replay` signs as it only from code with that hash. The waker
@@ -42,7 +54,8 @@ HOME is $WARRANT_WAKER_HOME or ~/.warrant/codex-waker; TREES $WARRANT_WAKER_TREE
 (outside ~/.warrant, which Codex's sandbox may write); the Python that runs the base's tools is
 $WARRANT_WAKER_PYTHON or HOME/venv/bin/python (it needs cryptography), the one that runs a replay
 $WARRANT_WAKER_REPLAY_PYTHON or that one; Codex is $WARRANT_WAKER_CODEX or `codex` on PATH. The file HOME/HOLD holds it: nothing is woken while it exists. --dry-run does
-steps 1 and 2 and prints each due head's state; it writes no memo, replays nothing and starts nothing.
+steps 1 and 2 and prints each due head's and closure's state; it writes no memo, replays nothing and starts
+nothing.
 
     python3 waker.py [--dry-run]
 """
@@ -83,6 +96,8 @@ SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychai
 COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
              "-c", "commit.gpgsign=false"]
 REPLAY_TIMEOUT = 3600
+ACCEPTOR = "codex"                          # the actor the waker wakes: `codex exec`, signing with its own seed
+VERDICT_BRANCH = "codex/verdicts/"          # where Codex pushes a verdict on an obligation closure
 
 
 def iso(t):
@@ -99,6 +114,13 @@ def commit(v):
 def number(v):
     if type(v) is not int or v < 1:
         raise ValueError(f"{v!r} is not a pull request number")
+    return v
+
+
+def record_id(v):
+    """A record id (lowercase hex64), checked before it reaches a path."""
+    if not (isinstance(v, str) and HEX.match(v)):
+        raise ValueError(f"{str(v)[:70]!r} is not a record id")
     return v
 
 
@@ -171,7 +193,7 @@ class Waker:
         self.replay_python = str(replay_python or env("WARRANT_WAKER_REPLAY_PYTHON") or self.python)
         self.plugin, self.run, self.clock, self.jail = Path(plugin), run, clock, jail
         self.mirror = self.home / "warrant.git"
-        for d in ("wakes", "logs", "results", "code", "replays", "replay-work"):
+        for d in ("wakes", "accepts", "logs", "results", "code", "replays", "replay-work"):
             (self.home / d).mkdir(parents=True, exist_ok=True)
 
     # -- the base and its predicate
@@ -212,6 +234,23 @@ class Waker:
             return {"due": [], "not_due": [], "refused": lines[0] if err.startswith("REFUSED ") else lines[-1]}
         if r.returncode:
             raise RuntimeError(f"review.py due exited {r.returncode}: {err[-800:]}")
+        return json.loads(r.stdout)
+
+    def acceptances(self, base):
+        """The base tree's `roadmap.py due --actor codex --json` on that tree's own records: {"due": [...]}, the
+        obligation closures due for Codex's verdict (tools/roadmap.py acceptance_due), with "refused" when that
+        run refused itself (exit 2, e.g. a base older than the `due` command). The receiver-local trust and
+        implementation variables are not passed on: the base's records under the base's trust, by its tools."""
+        code = self.tree(base)
+        env = {k: v for k, v in os.environ.items() if k not in ("WARRANT_IMPL", "WARRANT_CLAIMS_TRUST")}
+        env.update(PYTHONPATH=str(code), PYTHONDONTWRITEBYTECODE="1")
+        r = subprocess.run([self.python, str(code / "tools" / "roadmap.py"), "--root", str(code), "due", "--actor", ACCEPTOR,
+                            "--json"], capture_output=True, env=env, check=False)
+        err = r.stderr.decode(errors="replace").strip()
+        if r.returncode == 2:
+            return {"due": [], "refused": (err.splitlines() or ["exit 2"])[-1]}
+        if r.returncode:
+            raise RuntimeError(f"roadmap.py due exited {r.returncode}: {err[-800:]}")
         return json.loads(r.stdout)
 
     # -- the replay before a wake
@@ -351,29 +390,37 @@ class Waker:
         return path
 
     def command(self, a, path):
+        return self.codex_exec(path, self.key(a), prompt(a, self.plugin, path))
+
+    def codex_exec(self, path, key, text):
         if path.resolve() == OPERATOR_CHECKOUT.resolve():
             raise ValueError(f"{path} is the operator's checkout: a wake runs in its own worktree")
         return [self.codex, "exec", "-C", str(path), "-s", "workspace-write",
                 "-c", "sandbox_workspace_write.network_access=true", "-c", 'approval_policy="never"',
                 "--add-dir", str(Path.home() / ".warrant"),
-                "-o", str(self.home / "results" / f"{self.key(a)}.md"), prompt(a, self.plugin, path)]
+                "-o", str(self.home / "results" / f"{key}.md"), text]
 
     def wake(self, a):
         """Wake Codex for Assessment JSON `a` when its memo's state allows. (key, what happened)."""
         p, doc = self.memo(a)
-        if doc is not None:
-            what, detail = self.state(doc)
-            if what != "retry":
-                return self.key(a), detail
         doc = doc or {"pr": a["pr"], "head": a["head"], "base": a["base"], "facts": a["facts"], "attempts": []}
+        return self.key(a), self.attempt(p, doc, self.key(a), lambda: self.worktree(a), lambda path: self.command(a, path))[1]
+
+    def attempt(self, p, doc, key, worktree, command):
+        """One attempt of the wake whose memo `p` holds `doc`, when its state allows: the memo is written before
+        Codex runs (a crash counts as an attempt), `command(path)` runs in `worktree()`, which is removed after
+        unless Codex left changes in it. (whether Codex was started, what happened)."""
+        what, detail = self.state(doc)
+        if what != "retry":
+            return False, detail
         t = self.clock()
         attempt = {"started": t, "started_at": iso(t)}
         doc["attempts"].append(attempt)
-        p.write_text(json.dumps(doc, indent=1))       # before Codex runs: a crash counts as an attempt
-        path = self.worktree(a)
+        p.write_text(json.dumps(doc, indent=1))
+        path = worktree()
         attempt["worktree"] = str(path)
-        with open(self.home / "logs" / f"{self.key(a)}.log", "ab") as log:
-            r = self.run(self.command(a, path), stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        with open(self.home / "logs" / f"{key}.log", "ab") as log:
+            r = self.run(command(path), stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                          check=False, timeout=4 * 3600)
         attempt.update(finished=self.clock(), exit=r.returncode)
         left = git("-C", str(path), "status", "--porcelain", "--untracked-files=all").decode().splitlines()
@@ -382,13 +429,40 @@ class Waker:
         else:
             git("-C", str(self.mirror), "worktree", "remove", str(path))
         p.write_text(json.dumps(doc, indent=1))
-        return self.key(a), f"woken, codex exited {r.returncode}" + (f"; worktree kept: {path}" if left else "")
+        return True, f"woken, codex exited {r.returncode}" + (f"; worktree kept: {path}" if left else "")
 
     def report(self, a, held):
         """The line for a due head that is not woken now (a dry run, or HOME/HOLD)."""
         _, doc = self.memo(a)
         what = self.state(doc)[1] if doc else "not woken yet"
         return what + ("; held (HOME/HOLD)" if held else "; dry run")
+
+    # -- one acceptance wake: an obligation closure due for Codex's verdict
+
+    def accept_memo(self, c):
+        p = self.home / "accepts" / f"{record_id(c['closure'])}.json"
+        return p, (json.loads(p.read_text()) if p.is_file() else None)
+
+    def accept_worktree(self, c, base):
+        """A detached worktree of the mirror at the base, its own for this closure and base."""
+        path = self.trees / f"accept-{record_id(c['closure'])[:12]}-{commit(base)[:12]}"
+        if not path.exists():
+            self.trees.mkdir(parents=True, exist_ok=True)
+            git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(path), base)
+        return path
+
+    def accept(self, c, base, why_not=None):
+        """(woken, line) for obligation closure `c` (an entry of `roadmap.py due`) at the base: Codex is woken
+        when its memo's state allows and nothing holds it (`why_not`: a dry run, HOME/HOLD, an open verdict
+        pull request, a wake already started in this run); one memo per closure, whatever the base."""
+        p, doc = self.accept_memo(c)
+        if why_not:
+            what, detail = self.state(doc) if doc else ("retry", "not woken yet")
+            return False, detail + (f"; {why_not}" if what == "retry" else "")
+        key = f"accept-{c['closure']}"
+        doc = doc or {"closure": c["closure"], "duty": c["duty"], "base": base, "attempts": []}
+        return self.attempt(p, doc, key, lambda: self.accept_worktree(c, base),
+                            lambda path: self.codex_exec(path, key, accept_prompt(c, base, self.plugin, path)))
 
 
 def prompt(a, plugin, path):
@@ -399,6 +473,24 @@ def prompt(a, plugin, path):
             f"detached at H (its remote origin is the repository). The plugin's stdio MCP client is "
             f"{plugin / 'scripts' / 'warrant-mcp-call'}. These facts come from `tools/review.py due` at M, run by the "
             "review waker; check them yourself before you rely on them.")
+
+
+def accept_prompt(c, base, plugin, path):
+    """What Codex is told about closure `c`: what to look at and where (the duty's text, the closure's evidence
+    ids, the references and subject that evidence names), never what the closure says it established."""
+    def ids(xs):
+        return "; ".join(str(x)[:200] for x in xs[:20]) or "none"
+    return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on an obligation closure\". On "
+            f"{REPO} {BRANCH} M {base}, the closure T {c['closure']} (item {c['item']}) of the roadmap obligation D "
+            f"{c['duty']} (goal {c.get('goal')}) awaits a verdict by {ACCEPTOR}. D owes: {json.dumps(c['statement'])}. "
+            f"T's evidence: {ids(c['evidence'])}; the pull requests and commits that evidence names: {ids(c['refs'])}; "
+            f"T's subject: {c.get('subject') or 'none'}; D requires: {ids(c['requires'])}. Your worktree is {path}, "
+            f"detached at M (its remote origin is the repository). The plugin's stdio MCP client is "
+            f"{plugin / 'scripts' / 'warrant-mcp-call'}. Judge whether what D owes is done; then accept T item "
+            f"{c['item']}, or challenge T, through MCP. Commit only that record and the regenerated views on the branch "
+            f"{VERDICT_BRANCH}{c['closure'][:12]}, push it and open a pull request into {BRANCH}. These facts come from "
+            f"`tools/roadmap.py due --actor {ACCEPTOR}` at M, run by the review waker; check them yourself before you "
+            "rely on them.")
 
 
 def tick(w, dry):
@@ -417,6 +509,24 @@ def tick(w, dry):
             if not pushed:
                 line += "; " + w.wake(x)[1]
         out.append(f"  DUE #{x['pr']} {x['head'][:12]}: {line}")
+    return out + acceptance_lines(w, base, found, dry, held)
+
+
+def acceptance_lines(w, base, found, dry, held):
+    """The obligation closures due for Codex's verdict at the base: at most one woken per run, none while a
+    verdict pull request is open (or the open pull requests could not be read)."""
+    got = w.acceptances(base)
+    out = [f"  {len(got['due'])} obligation closure(s) due for {ACCEPTOR}'s verdict"
+           + (f"; nothing assessed: {got['refused']}" if got.get("refused") else "")]
+    verdicts = [x for x in found["due"] + found["not_due"] if str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
+    why_not = ("dry run" if dry else "held (HOME/HOLD)" if held else
+               "held: the open pull requests were not read" if found.get("refused") else
+               f"held: verdict pull request #{verdicts[0]['pr']} is open" if verdicts else None)
+    for c in got["due"]:
+        woken, line = w.accept(c, base, why_not)
+        if woken:
+            why_not = "next run: one verdict at a time"
+        out.append(f"  ACCEPT {c['closure'][:12]} of {c.get('goal')} duty {c['duty'][:12]}: {line}")
     return out
 
 

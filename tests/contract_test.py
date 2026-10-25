@@ -203,11 +203,14 @@ def identity_cases():
     w = World()
     d = w.duty()
     w.accept(OWNER, w.close(d))
-    a = w.assess()
     moved = w.dir / "elsewhere"
     shutil.copytree(w.store.root, moved)
     from warrant.store import Snapshot
-    b = E.assess(Snapshot.read(moved), w.trust, 10_000, E.profile(), current=(SHA_NEW,))
+    # Both snapshots stay alive while both are assessed: a freed one's id() may be reused by the next, so a
+    # digest that depended on the object (M16) could match by chance (master 29d1faf, ci run 40113474578).
+    here, there = w.store.snapshot(), Snapshot.read(moved)
+    a = E.assess(here, w.trust, 10_000, E.profile(), current=(SHA_NEW,))
+    b = E.assess(there, w.trust, 10_000, E.profile(), current=(SHA_NEW,))
     c = w.assess(prof=E.profile(uses={"other": {"requires_triggers": False}}))
     dd = w.assess(as_of=10_001)
     e = w.assess(current=(SHA_OLD,))

@@ -154,6 +154,10 @@ def merge_one(b, a, gh):
     title = f"Merge pull request #{n} (accepted by {actor})"
     message = (f"merge-on-acceptance: accept {aid} by {actor} of head closure {tid} at {x}; head {head}; "
                f"base {base}; required checks green at the head.")
+    if a.facts.get("verdicts"):
+        title = f"Merge pull request #{n} (verdicts by {actor})"
+        message = (f"merge-on-acceptance: verdicts only, {', '.join(a.facts['verdicts'])}, from {x}; head {head}; "
+                   f"base {base}; required checks green at the head.")
     try:
         res = gh.merge(n, head, title, message)
     except Refused as e:

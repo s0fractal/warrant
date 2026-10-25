@@ -598,7 +598,10 @@ verdict by an acceptor or this pull request's own review record; an actor of the
 neither the author nor the closure's filer, accepted exactly that closure; no finding
 stands against it; and the required checks of `.warrant/merge.json` (each bound to its
 workflow file) are green at the head. **Due for review**: the same reading, CI green,
-and no verdict at that head yet.
+and no verdict at that head yet. A pull request with no review duty of its own that adds
+only verdicts (accepts or challenges by an acceptor) and their views since its merge
+base is eligible as it is and never due: the rule above already admits such records after
+any reviewed head unreviewed, and the reviewer cannot review itself.
 
 [merge-on-acceptance.yml](.github/workflows/merge-on-acceptance.yml) runs only the base
 branch's code (`workflow_run` after CI, every 30 minutes, or dispatched on master),
@@ -613,7 +616,12 @@ merge-on-acceptance.yml`.
 The reviewer is woken by [the Codex plugin](integrations/codex-plugin/README.md): the
 warrant MCP server, the `warrant-review` skill, and a waker that runs `tools/review.py
 due` from the base's own tree and starts `codex exec` once per pull request head that is
-due, in its own worktree, retrying a failed wake at most three times.
+due, in its own worktree, retrying a failed wake at most three times. It also runs that
+tree's `tools/roadmap.py due --actor codex`, the obligation closures due for Codex's
+verdict (the latest closure the engine holds PENDING for him, every prerequisite
+DISCHARGED, neither accepted nor challenged by him), and wakes him once per closure, one
+at a time: he accepts or challenges it through MCP and opens a pull request of that
+verdict only, which the gate merges.
 
 ## Limits
 

@@ -33,6 +33,12 @@ holding two verdicts computed from the same facts:
     - an actor of the base's accept_by, other than the duty's author (the pull request's author
       actor) and the closure's filer, accepted exactly that closure, item 0 and its evidence, by a
       record signed with the key the base's roles.json pins for it (the trust above);
+      or, for a pull request with no review duty of its own, it carries verdicts only: its whole change
+      since its merge base with the base is a records-only tail (as above) whose added records are each
+      an accept or a challenge by an actor of the base's accept_by (verdicts). The tail rule above
+      admits such records after any reviewed head with no further review: a verdict is the reviewer's
+      own act, and the reviewer cannot review itself. Codex's verdict on a roadmap obligation's closure
+      filed on master travels this way (the review waker's acceptance wakes);
     - no finding (a challenge carrying a finding blob) stands against that head;
     - the pull request changes none of the base's merge.json `owner_paths` (what decides merging:
       the workflows, the role pins, the review and gate configuration, this predicate): those
@@ -45,7 +51,8 @@ holding two verdicts computed from the same facts:
   due-for-review  the pull request is open, not a draft, into the base branch; the base and the
     head's store read as above; the latest head's closure is at the head (X canonical, an ancestor,
     and the same records-only tail, its added records verdicts, this pull request's own or replay observations); every required check is green at the head; and there is no
-    verdict at that head: no acceptance by a reviewer (the acceptance rule above) and no finding.
+    verdict at that head: no acceptance by a reviewer (the acceptance rule above) and no finding. A
+    pull request of verdicts only is never due: it is the reviewer's own.
 
 Both share every fact and every rule above; only the last clauses differ. Formats are functions of
 an Assessment (summary_markdown, as_json, line). The GitHub calls are tools/claimslib/forge.py's;
@@ -418,7 +425,9 @@ def _review(a, root, b, pr, head, model):
     sh = a.shared
     rv = model.reviews.get(pr["number"])
     if rv is None:
-        sh.append(("NO_REVIEW", f"the head's store holds no review duty of #{pr['number']} on the base's terms"))
+        if not _verdicts_only(a, root, b, head, model):
+            sh.append(("NO_REVIEW", f"the head's store holds no review duty of #{pr['number']} on the base's terms "
+                       "and adds more than verdicts"))
         return
     if rv.fork:
         sh.append(("HEAD_FORK", f"#{pr['number']}'s heads fork"))
@@ -468,10 +477,36 @@ def _review(a, root, b, pr, head, model):
         a.accept = (good[0], accept_id(model, h, good[0]), h.tid, x)
 
 
+def _verdicts_only(a, root, b, head, model):
+    """True when the pull request carries verdicts only (the module's rule): from the merge base of the base and
+    the head, a records-only tail whose added records are each an accept or a challenge, authentic under the
+    base's pins, by an actor of the base's accept_by. It is then eligible as it is and never due; a.accept
+    names its first verdict, at the merge base."""
+    try:
+        mb = _git(root, "merge-base", ids=(b.commit, head)).decode().split()[0]
+    except (subprocess.CalledProcessError, IndexError):
+        return False
+    added = []
+    if tail(root, mb, head, added):
+        return False
+    verdicts = sorted(r for r in added if r in model.recs and model.recs[r]["type"] in ("accept", "challenge")
+                      and model.recs[r]["actor"] in b.cfg["accept_by"])
+    if not added or verdicts != sorted(added):
+        return False
+    first = model.recs[verdicts[0]]
+    target = first["body"].get("transition", first["body"].get("target"))
+    a.facts.update(verdicts=verdicts, x=mb)
+    a.verdict = True
+    a.accept = (first["actor"], verdicts[0], target, mb)
+    return True
+
+
 # ---------------------------------------------------------------- formats
 
 def line(a):
     n = a.pr["number"]
+    if a.eligible and a.facts.get("verdicts"):
+        return f"#{n} {a.pr['head'][:12]}: ELIGIBLE (verdicts only, by {a.accept[0]}, from {a.accept[3][:12]})"
     if a.eligible:
         return f"#{n} {a.pr['head'][:12]}: ELIGIBLE (accepted by {a.accept[0]} at {a.accept[3][:12]})"
     return f"#{n} {a.pr['head'][:12]}: " + ("DUE FOR REVIEW; " if a.due else "") + "refused " + ", ".join(a.codes())
@@ -490,7 +525,10 @@ def summary_markdown(assessments, merged=None, base=None):
         out.append("No open pull request into the base branch.")
     for a in assessments:
         n = a.pr["number"]
-        if a.eligible:
+        if a.eligible and a.facts.get("verdicts"):
+            out.append(f"- **#{n}** head `{a.pr['head'][:12]}`: ELIGIBLE: verdicts only, {len(a.facts['verdicts'])} record(s) "
+                       f"by {a.accept[0]} from `{a.accept[3][:12]}`: " + ", ".join(f"`{v[:12]}`" for v in a.facts["verdicts"]))
+        elif a.eligible:
             actor, aid, tid, x = a.accept
             out.append(f"- **#{n}** head `{a.pr['head'][:12]}`: ELIGIBLE: accept `{(aid or '?')[:12]}` by {actor} of "
                        f"closure `{tid[:12]}` at `{x[:12]}`")

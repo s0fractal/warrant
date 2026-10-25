@@ -27,6 +27,7 @@ refuses it when it differs from the records. Nothing here writes SPEC.md.
     python3 tools/roadmap.py release --duty DUTY --because '...' --actor ACTOR   # by whom it is owed to
     python3 tools/roadmap.py accept --duty DUTY --actor ACTOR [--transition ID]  # by an acceptor the duty names
     python3 tools/roadmap.py path G1 [--json]
+    python3 tools/roadmap.py due --actor ACTOR [--json]   # obligation closures due for ACTOR's verdict
     python3 tools/roadmap.py project            # regenerate ROADMAP.md
     python3 tools/roadmap.py check
 
@@ -353,6 +354,33 @@ class Model:
                 raise Refused(f"{ref[:12]}… is {f.state}, not a current goal")
             return f
         raise Refused(f"{ref!r} is not a goal key (G<n>) or a goal's question reference")
+
+
+# ---------------------------------------------------------------- acceptance due
+
+def acceptance_due(m, actor):
+    """The obligation closures due for `actor`'s verdict, in filing order. For each obligation: its latest
+    closure the engine judges PENDING (admitted on every rule but acceptances, so each duty it requires is
+    DISCHARGED: SPEC §4.2), whose waiting_for still names `actor` (the duty's accept_by names it and it has
+    not accepted exactly that item and evidence), and which `actor` has not challenged. An earlier PENDING
+    closure of the same duty was filed over (`done --replaces`) and is not due. This is the one statement of
+    the rule: the review waker runs `due` from the base's tree and wakes the acceptor once per closure."""
+    challenged = {r["body"]["target"] for r in m.recs.values() if r["type"] == "challenge" and r["actor"] == actor}
+    out = []
+    for did in m.obligations:
+        pending = [c for c in m.rep["duties"][did]["candidates"] if c["verdict"] == "PENDING"]
+        c = pending[-1] if pending else None
+        if c is None or actor not in (c.get("waiting_for") or []) or c["transition"] in challenged:
+            continue
+        t, b = m.recs[c["transition"]], m.recs[did]["body"]
+        ev = t["body"]["closes"][c["item"]]["evidence"]
+        docs = [m.snap.json_blob(h) for h in ev]
+        refs = [x for d in docs if isinstance(d, dict) and d.get("schema") == EVIDENCE and d.get("duty") == did
+                and isinstance(d.get("refs"), list) for x in d["refs"] if isinstance(x, str)]
+        out.append({"duty": did, "goal": m.goal_of(did), "statement": b["statement"], "requires": b["requires"],
+                    "closure": c["transition"], "item": c["item"], "filer": t["actor"], "at": t["at"],
+                    "evidence": ev, "refs": refs, "subject": t["body"]["subject"]})
+    return sorted(out, key=lambda d: (d["at"], d["closure"]))
 
 
 # ---------------------------------------------------------------- path search
@@ -707,6 +735,9 @@ def main(argv=None):
     p = sub.add_parser("path", help="goal <- obligations <- prerequisites, with the engine's states")
     p.add_argument("goal")
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("due", help="the obligation closures due for an acceptor's verdict (the review waker)")
+    p.add_argument("--actor", required=True)
+    p.add_argument("--json", action="store_true")
     sub.add_parser("project", help="regenerate ROADMAP.md")
     sub.add_parser("check", help="CI: refuse malformed roadmap records or a stale ROADMAP.md")
     a = ap.parse_args(argv)
@@ -730,6 +761,16 @@ def main(argv=None):
             key = a.goal if KEY_RE.match(a.goal) else m.forms[a.goal].key if a.goal in m.forms else a.goal
             d = path_data(m, key)
             print(json.dumps(d, indent=2, ensure_ascii=False) if a.json else render_path(d), end="\n" if a.json else "")
+            return 0
+        if a.cmd == "due":
+            if not S.is_actor(a.actor):
+                raise Refused(f"--actor {a.actor!r} is not an actor id")
+            due = acceptance_due(rm.model(), a.actor)
+            if a.json:
+                print(json.dumps({"actor": a.actor, "due": due}, indent=1, ensure_ascii=False))
+                return 0
+            for d in due:
+                print(f"DUE closure {d['closure'][:12]} of {_short(d['duty'], goal=d['goal'])}: {d['statement']}")
             return 0
         w = Writer(rm, CL.load_key(rm.claims, a.key, a.actor), a.actor)
         if a.cmd == "goal":

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Merge eligibility and due-for-review (tools/claimslib/eligibility.py) and the gate's GitHub side
-(tools/claimslib/gate.py), G1-G36. Each refusal case asserts the exact set of refusal codes, so a
+(tools/claimslib/gate.py), G1-G42. Each refusal case asserts the exact set of refusal codes, so a
 mutant that removes one rule is seen by its code disappearing (a later rule catching the same case
 does not hide it). Three fixture worlds are built once; each case works on its own branch from a
 world's commit.
@@ -338,7 +338,70 @@ def replay_tail_cases():
     f.close()
 
 
+# ---------------------------------------------------------------- a pull request of verdicts only
+
+def verdict_cases():
+    """The base holds a roadmap-like obligation claude holds and codex accepts (no review duty) with its closure
+    filed. A pull request with no review duty of its own branches from the base and adds a verdict on it."""
+    f = Fixture()
+    (f.dir / ".warrant" / "merge.json").write_text(json.dumps(MERGE) + "\n")
+    d = f.put("claude", "duty", R.duty("claude", "an obligation codex accepts", ["s0fractal"], {"attest": {}},
+                                       accept_by=["codex"]))
+    ev = {"schema": "warrant-roadmap/evidence@1", "duty": d, "refs": ["s0fractal/warrant#1"]}
+    h = C.digest(C.canon(ev))
+    t = f.put("claude", "transition", R.transition("ATTESTED", [h], closes=[R.item(d, "discharge", [h])],
+                                                   established=["done"]), [ev])
+    f.base_commit = f.save()
+
+    def verdict(name, actor, rtype="accept", more=None):
+        at(f, f.base_commit, name)
+        body = R.accept(t, 0, [h]) if rtype == "accept" else R.challenge(t, "the evidence names no commit", [h], 0)
+        v = f.put(actor, rtype, body)
+        if more is not None:
+            more()
+        return v, f.save()
+
+    v, tip = verdict("g37", "codex")
+    a, got = codes(f, tip)
+    check("G37", got == set() and a.eligible and not a.due and a.accept == ("codex", v, t, f.base_commit)
+          and a.facts.get("verdicts") == [v] and "verdicts only" in EL.line(a),
+          "a pull request with no review duty that adds only codex's accept of a closure filed on the base (and the "
+          "views) is eligible as it is, and never due for review", (got, a.accept, a.facts))
+    b = EL.Base(f.dir, f.base_commit)
+    fake = FakeGh(tip, f.base_commit)
+    m = GT.merge_one(b, a, GT.GitHub("s0fractal/warrant", run=fake))
+    put = [c[2] for c in fake.calls if c[0] == "PUT"]
+    check("G42", m["merged"] and len(put) == 1 and put[0]["commit_title"] == "Merge pull request #1 (verdicts by codex)"
+          and v in put[0]["commit_message"] and "verdicts only" in put[0]["commit_message"]
+          and "head closure" not in put[0]["commit_message"],
+          "the merge commit of a pull request of verdicts names its verdict records, not a head closure", put)
+
+    c, tip = verdict("g38", "codex", "challenge")
+    a, got = codes(f, tip)
+    check("G38", got == set() and a.eligible and a.accept[:3] == ("codex", c, t),
+          "codex's challenge of that closure travels the same way", (got, a.accept))
+
+    _, tip = verdict("g39", "claude")
+    _, got = codes(f, tip)
+    check("G39", got == {"NO_REVIEW"}, "an accept by a pinned actor outside the base's accept_by is no verdict: refused", got)
+
+    _, tip = verdict("g40", "codex", more=lambda: f.put("codex", "duty", R.duty(
+        "codex", "codex's own line", ["s0fractal"], {"attest": {}}, accept_by=["s0fractal"])))
+    _, got = codes(f, tip)
+    check("G40", got == {"NO_REVIEW"}, "a pull request that adds another record of codex's beside its verdict (here a duty) "
+          "is not one of verdicts only", got)
+
+    at(f, f.base_commit, "g41")
+    f.put("codex", "accept", R.accept(t, 0, [h]))
+    f.save()
+    _, got = codes(f, f.commit("and a change", {"calc.py": FIXED}))
+    check("G41", got == {"NO_REVIEW"}, "a verdict beside any change outside the store and the views is not a pull request of "
+          "verdicts only", got)
+    f.close()
+
+
 if __name__ == "__main__":
+    verdict_cases()
     replay_tail_cases()
     w = world()
     pending_cases(w)

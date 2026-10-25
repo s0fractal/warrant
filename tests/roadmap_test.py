@@ -81,7 +81,7 @@ class Repo:
 
     def run(self, *argv, actor="claude"):
         """(exit status, stdout stripped, stderr) of one tool command, signed by `actor`."""
-        sign = ["--key", self.seeds[actor], "--actor", actor] if argv[0] not in ("path", "project", "check") else []
+        sign = ["--key", self.seeds[actor], "--actor", actor] if argv[0] not in ("path", "project", "check", "due") else []
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = RM.main(["--root", str(self.dir), argv[0], *sign, *argv[1:]])
@@ -505,9 +505,103 @@ def check_cases():
     r.close()
 
 
+def due(r, actor="codex"):
+    """The closures `roadmap.py due` names for `actor`."""
+    return [d["closure"] for d in RM.acceptance_due(r.model(), actor)]
+
+
+def due_cases():
+    # P21: a closure whose prerequisite is not DISCHARGED is not due; once it is, the next reading names it.
+    r = Repo()
+    r.ok("goal", "--id", "G1", "--text", "The ledger exists.")
+    a = r.ok("oblige", "--text", "Counter blobs are accepted from any key.", "--answers", "G1")
+    b = r.ok("oblige", "--text", "A witness ledger is derived from the records.", "--answers", "G1", "--requires", a)
+    tb = r.ok("done", "--duty", b, "--established", "the ledger is built", "--ref", "s0fractal/warrant#1")
+    alone = due(r)
+    ta = r.ok("done", "--duty", a, "--established", "counter@1 from any key", "--ref", "s0fractal/warrant#2",
+              "--commit", "c" * 40)
+    both = due(r)
+    r.accept(ta)
+    after = due(r)
+    r.accept(tb)
+    check("P21", alone == [] and both == [ta] and after == [tb] and due(r) == [],
+          "a closure whose required duty is not DISCHARGED is not due for the acceptor's verdict; once the prerequisite's "
+          "closure is accepted, the dependent closure is due, and an accepted one is not", (alone, both, after))
+    rc, out, _ = r.run("due", "--actor", "codex", "--json")
+    r.close()
+
+    r = Repo()
+    r.ok("goal", "--id", "G1", "--text", "The ledger exists.")
+    d = r.ok("oblige", "--text", "One thing.", "--answers", "G1")
+    t = r.ok("done", "--duty", d, "--established", "done", "--ref", "s0fractal/warrant#3", "--commit", "d" * 40)
+    got = r.run("due", "--actor", "codex", "--json")
+    bad = r.run("due", "--actor", "codex\n")[0]
+    doc = json.loads(got[1])
+    one = doc["due"][0] if len(doc["due"]) == 1 else {}
+    ev = r.model().recs[t]["body"]["closes"][0]["evidence"]
+    check("P26", rc == 0 and json.loads(out)["due"] == [] and got[0] == 0 and doc["actor"] == "codex" and bad == 2
+          and (one.get("duty"), one.get("closure"), one.get("item"), one.get("goal"), one.get("evidence"), one.get("refs"),
+               one.get("subject"), one.get("requires")) == (d, t, 0, "G1", ev, ["s0fractal/warrant#3"], "d" * 40, [])
+          and "established" not in one,
+          "`due --actor A --json` names each due closure with its duty, goal, evidence ids, the references its evidence "
+          "blob names and its subject, never what it says it established; a bad actor id is refused", (out, got, bad))
+    r.close()
+
+    # P22: a closure the acceptor accepted is not due: with one acceptor it is admitted; with two, it waits for the
+    # other, who is due and the first is not.
+    r = Repo()
+    q = r.ok("goal", "--id", "G1", "--text", "The ledger exists.")
+    d = r.ok("oblige", "--text", "One thing.", "--answers", "G1")
+    t = r.ok("done", "--duty", d, "--established", "done", "--ref", "s0fractal/warrant#3")
+    r.accept(t)
+    single = due(r)
+    two = r.file("claude", "duty", R.duty("claude", "Two acceptors.", ["s0fractal"], {"attest": {}},
+                                          accept_by=["codex", "s0fractal"], answers=q + ":0"))
+    t2 = r.ok("done", "--duty", two, "--established", "done", "--ref", "s0fractal/warrant#4")
+    before = due(r)
+    r.accept(t2)
+    check("P22", single == [] and before == [t2] and due(r) == [] and due(r, "s0fractal") == [t2],
+          "a closure the acceptor accepted is not due for it: admitted, or waiting only for the other acceptor",
+          (single, before, due(r), due(r, "s0fractal")))
+
+    # P23: a closure whose duty does not name the acceptor in accept_by is not due for it.
+    other = r.file("claude", "duty", R.duty("claude", "The owner accepts this.", ["s0fractal"], {"attest": {}},
+                                            accept_by=["s0fractal"], answers=q + ":0"))
+    t3 = r.ok("done", "--duty", other, "--established", "done", "--ref", "s0fractal/warrant#5")
+    check("P23", t3 not in due(r) and sorted(due(r, "s0fractal")) == sorted([t2, t3]),
+          "a closure whose duty's accept_by does not name codex is not due for codex (it is for its own acceptor)",
+          (due(r), due(r, "s0fractal")))
+    r.close()
+
+    # P24: a closure the acceptor challenged is not due for it; another actor's challenge changes nothing.
+    r = Repo()
+    r.ok("goal", "--id", "G1", "--text", "The ledger exists.")
+    d = r.ok("oblige", "--text", "One thing.", "--answers", "G1")
+    e = r.ok("oblige", "--text", "Another thing.", "--answers", "G1")
+    t = r.ok("done", "--duty", d, "--established", "done", "--ref", "s0fractal/warrant#3")
+    u = r.ok("done", "--duty", e, "--established", "done", "--ref", "s0fractal/warrant#4")
+    ev = r.model().recs[t]["body"]["evidence"]
+    r.file("codex", "challenge", R.challenge(t, "the evidence names no commit", ev, 0))
+    r.file("stranger", "challenge", R.challenge(u, "I disagree", ev, 0))
+    check("P24", due(r) == [u], "a closure codex challenged is not due for codex's verdict; a stranger's challenge hides "
+          "nothing", due(r))
+
+    # P25: a closure filed over (done --replaces) is not due; the one filed instead is.
+    t2 = r.ok("done", "--duty", d, "--established", "done", "--ref", "s0fractal/warrant#3", "--ref", "a" * 40,
+              "--replaces", t)
+    f = r.ok("oblige", "--text", "A third thing.", "--answers", "G1")
+    s1 = r.ok("done", "--duty", f, "--established", "done", "--ref", "s0fractal/warrant#6")
+    s2 = r.ok("done", "--duty", f, "--established", "done", "--ref", "s0fractal/warrant#6", "--ref", "b" * 40,
+              "--replaces", s1)
+    check("P25", sorted(due(r)) == sorted([u, t2, s2]),
+          "of a duty's closures waiting for acceptance only the latest is due: an earlier one was filed over (records "
+          "filed in one second are named in id order)", due(r))
+    r.close()
+
+
 GROUPS = ((goal_cases, ("P1", "P2")), (source_cases, ("P16",)), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
           (shared_cases, ("P17", "P18")), (cycle_cases, ("P19", "P20")), (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
-          (check_cases, ("P12", "P13")))
+          (check_cases, ("P12", "P13")), (due_cases, ("P21", "P26", "P22", "P23", "P24", "P25")))
 
 
 def main():
