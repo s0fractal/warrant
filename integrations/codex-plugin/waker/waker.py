@@ -20,8 +20,8 @@ launchd runs it every five minutes (install.py). One run:
   5. then the obligation closures due for Codex's verdict: the base tree's `tools/roadmap.py due --actor
      codex` on the base's own records (acceptance_due there: a roadmap obligation's latest closure the
      engine holds PENDING for codex, every duty it requires DISCHARGED, neither accepted nor challenged by
-     codex). At most one is woken per run, and none while an open pull request's branch is under
-     VERDICT_BRANCH (Codex's previous verdict, not merged yet: two such pull requests would render the
+     codex). At most one is woken per run, and none while an open pull request from a branch of this
+     repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: two such pull requests would render the
      same generated views from different bases). Its memo is HOME/accepts/<closure>-<item>.json, its
      worktree TREES/accept-<closure12>-<item>-<base12>, detached at the base; Codex accepts the closure or challenges it
      through MCP and opens a pull request of those records only, which the merge gate admits as verdicts
@@ -528,7 +528,9 @@ def hold(found, dry, held):
         return "held (HOME/HOLD)"
     if found.get("refused"):
         return "held: the open pull requests were not read"
-    verdicts = [x for x in found["due"] + found["not_due"] if str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
+    # this repository's branches only: a fork may name its branch anything (Codex finding 91ee68a60abe)
+    verdicts = [x for x in found["due"] + found["not_due"] if x.get("head_repo") == REPO
+                and str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
     if verdicts:
         return f"held: verdict pull request #{verdicts[0]['pr']} is open"
     return None

@@ -596,6 +596,7 @@ def line(a):
 
 def as_json(a):
     return {"pr": a.pr["number"], "head": a.pr["head"], "branch": a.pr.get("branch"), "title": a.pr.get("title"),
+            "head_repo": a.pr.get("head_repo"),
             "base": a.base, "eligible": a.eligible, "due": a.due,
             "reasons": [list(r) for r in a.reasons], "not_due": [list(r) for r in a.not_due],
             "accept": list(a.accept) if a.accept else None, "facts": a.facts}

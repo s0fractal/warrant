@@ -5,7 +5,7 @@ replay (integrations/codex-plugin/waker/waker.py, Waker.replay): the checker run
 on every due head, with no person or model choosing to run it, and the waker pushes only what the
 checker's own code filed (W1-W11). Then its acceptance wakes: the base's `tools/roadmap.py due` names the
 obligation closures due for Codex's verdict, each woken once, one at a time, none while Codex's previous verdict
-pull request is open (W12-W15).
+pull request is open (W12-W16).
 
 The waker is driven against a fixture: a bare `origin` with the pull request's branch, the waker's
 mirror cloned from it, and a base tree whose tools are the ones under test. A jail runs the commands
@@ -493,7 +493,8 @@ def acceptance_cases():
     g = pr_world()
     g.w.fetch = lambda: g.start
     g.w.acceptances = lambda base: {"due": [entry(1), entry(2)]}
-    open_pr = {"pr": 5, "head": "e" * 40, "branch": WAKER.VERDICT_BRANCH + "1" * 12, "not_due": [["REVIEWED", "x"]]}
+    open_pr = {"pr": 5, "head": "e" * 40, "branch": WAKER.VERDICT_BRANCH + "1" * 12, "head_repo": WAKER.REPO,
+               "not_due": [["REVIEWED", "x"]]}
     g.w.due = lambda base: {"due": [], "not_due": [open_pr]}
     held = WAKER.tick(g.w, False)
     g.w.due = lambda base: {"due": [], "not_due": [], "refused": "REFUSED BASE_CONFIG x"}
@@ -508,6 +509,19 @@ def acceptance_cases():
           and len(after_one) == 1 and "next run" in one[-1] and woken == [1, 2] and "done" in two[-2],
           "no acceptance wake while Codex's previous verdict pull request is open, or while the open pull requests "
           "could not be read; at most one per run, the next closure in the next run", (held, unread, one, two))
+    g.close()
+
+    # W16: a fork's pull request under codex/verdicts/ holds nothing (Codex finding 91ee68a60abe on ffd24f5: the hold
+    # read the branch name only, so any fork could stop every acceptance wake).
+    g = pr_world()
+    g.w.fetch = lambda: g.start
+    g.w.acceptances = lambda base: {"due": [entry(1)]}
+    fork = {"pr": 999, "head": "e" * 40, "branch": WAKER.VERDICT_BRANCH + "spoofed", "head_repo": "outsider/warrant",
+            "not_due": [["NO_REVIEW", "x"]]}
+    g.w.due = lambda base: {"due": [], "not_due": [fork]}
+    lines = WAKER.tick(g.w, False)
+    check("W16", len(g.codex.calls) == 1 and "woken" in lines[-1],
+          "a fork's pull request whose branch is named under codex/verdicts/ does not hold the acceptance wakes", lines)
     g.close()
 
     # W15: one transition closing two obligations is two wakes, one per item (Codex finding 3acb42fc0511 on

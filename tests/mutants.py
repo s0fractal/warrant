@@ -1770,6 +1770,8 @@ def _visit(view, did, report, done, busy):
     ('M649', '../tools/roadmap.py', "a challenge of one item of a transition (or of its results) hides all its closures",
      [('                or (c["transition"], c["item"]) in challenged:', '                or c["transition"] in {x for x, _ in challenged}:')],
      'roadmap_test', ['P28']),
+    ('M651', '../integrations/codex-plugin/waker/waker.py', "a fork's pull request named under codex/verdicts/ holds the acceptance wakes",
+     [('if x.get("head_repo") == REPO\n', 'if True\n')], 'review_replay_test', ['W16']),
     ('M650', '../tools/roadmap.py', "a closure of a duty already DISCHARGED is due when it is the duty's latest",
      [('        if m.rep["duties"][did]["disposition"] != "OPEN":\n            continue\n', '')], 'roadmap_test', ['P29']),
 ]
