@@ -157,23 +157,37 @@ def auto_cases():
 
 
 def binding_cases():
-    """V37 (Codex finding on #197 head 1, observed at bb0fb07: `merged --pr 1 --merge <an unrelated merge>` was
-    filed, and that observation let the next head pass while #1's own merge stayed unobserved; expected: refused)."""
+    """V37 (Codex findings on #197, observed at bb0fb07 and c21ff5f: `merged --pr 1 --merge` naming an unrelated
+    merge, then another pull request's merge that had imported #1's head, was filed, and that observation let the
+    next head pass while #1's own merge stayed unobserved; expected: refused)."""
     f = Fixture()
     branch(f, "unrelated")
     tip0 = f.commit("unrelated change", {"unrelated.txt": "x\n"})
     unrelated = merge(f, tip0, "Merge pull request #900 from fixture/unrelated")
+    branch(f, "pr5")                    # merged under a subject Git's history does not name: only the operator does
+    h5 = f.commit("change 5", {"five.txt": "5\n"})
+    f.ok("open", "--pr", "5", "--title", "Five")
+    f.ok("head", "--pr", "5", "--commit", h5)
+    m5 = merge(f, f.save(), "Merge branch 'pr5'")
     branch(f, "pr1")
     h1 = f.commit("change 1", {"calc.py": FIXED})
     f.ok("open", "--pr", "1", "--title", "One")
     f.ok("head", "--pr", "1", "--commit", h1)
     tip1 = f.save()
-    m1 = merge(f, tip1, "Merge pull request #1 from fixture/pr1")
+    # #3's branch imports #1's reviewed head and merges first; #1 merges after it, with a later commit, so its
+    # own merge holds that head in both parents (Codex's second finding on #197, at c21ff5f: an observation of
+    # #3's merge stood for #1's)
+    f.git("checkout", "-q", "-b", "pr3", "master")
+    f.git("merge", "-q", "--no-ff", "-m", "Merge branch 'pr1' into pr3", tip1)
+    m3 = merge(f, f.git("rev-parse", "pr3"), "Merge pull request #3 from fixture/pr3")
+    f.git("checkout", "-q", "pr1")
+    later = f.commit("after review", {"notes.txt": "n\n"})
+    m1 = merge(f, later, "Merge pull request #1 from fixture/pr1")
     branch(f, "pr2")
     h2 = f.commit("change 2", {"other.txt": "y\n"})
     m2 = merge(f, h2, "Merge pull request #2 from fixture/pr2")      # holds #1's head through its first parent
-    refused = [f.code("merged", "--pr", "1", "--merge", x) for x in (unrelated, m2)]
-    named = f.run("merged", "--pr", "1", "--merge", m1)[0]
+    refused = [f.code("merged", "--pr", n, "--merge", x) for n, x in (("1", unrelated), ("1", m2), ("1", m3), ("5", unrelated))]
+    named = f.run("merged", "--pr", "1", "--merge", m1)[0] + f.run("merged", "--pr", "5", "--merge", m5)[0]
     m = f.model()
     oid, r, rep = m.reviews[1].merges[0]
     probe = dict(m.snap.json_blob(r["body"]["probe"]), merge=unrelated)
@@ -188,9 +202,10 @@ def binding_cases():
     forged = f.model().reviews[1].merges[0][2]["merge"] == unrelated
     caught = f.problems(before)
     check("V37", (refused, named, forged, caught)
-          == ([("REVIEW_MERGE_NOT_THE_PR", True)] * 2, 0, True, ["REVIEW_MERGE_REPORT"]),
-          "a merge observation names a merge that brought one of the pull request's heads in; one of another merge "
-          "is refused when filed and by check --base", (refused, named, forged, caught))
+          == ([("REVIEW_MERGE_NOT_THE_PR", True)] * 4, 0, True, ["REVIEW_MERGE_REPORT"]),
+          "a merge observation names the pull request's own merge: one of an unrelated merge, of a later one, or of "
+          "another pull request's that imported its head is refused when filed and by check --base",
+          (refused, named, forged, caught))
     f.close()
 
 

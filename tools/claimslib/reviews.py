@@ -34,8 +34,8 @@ checkers this repository adopts (replayers, the last one current).
            with the accepted head nor, at a conflict, one side (AMEND 1 of #181). Paths of the records
            and their generated views do not count. merge_state keeps the states apart; only REVIEWED
            credits the acceptor. The duty itself stays OPEN (merging is a Git act, not a closure).
-           The merge must have brought one of the pull request's heads in: in its second parent, not its
-           first (REVIEW_MERGE_NOT_THE_PR, when filed and in check --base).
+           The merge must have merged one of the pull request's heads (in its second parent), and be the one
+           merge_of names when it names one (REVIEW_MERGE_NOT_THE_PR, when filed and in check --base).
            `merged --due` files one for each pull request that Git's history shows merged into HEAD's
            (merge_of: GitHub's merge subject and the head's ancestry decide, nobody chooses) and none yet,
            and `head` refuses a head whose own commit's store lacks one (REVIEW_MERGE_UNOBSERVED): the next
@@ -812,11 +812,18 @@ def merge_report(root, trust, cfg, rv, merge):
     if len(parents) < 3:
         raise Refused(f"{merge[:12]} has {len(parents) - 1} parent(s): not a merge commit", "REVIEW_MERGE_SHAPE")
     base, tip = parents[1], parents[2]
-    # The merge of THIS pull request brought one of its heads in: in the tip, not in the first parent (Codex
-    # finding on #197: an observation of an unrelated merge stood for the pull request's own).
-    if not any(_contains(root, h.commit, tip) and not _contains(root, h.commit, base) for h in rv.heads):
-        raise Refused(f"{merge[:12]} brought none of #{rv.pr}'s heads in (none is in its second parent and not its "
-                      "first): not its merge", "REVIEW_MERGE_NOT_THE_PR")
+    # The merge of THIS pull request: what it merged (its second parent) holds one of the pull request's heads,
+    # and when Git's history names the pull request's merge (merge_of, at HEAD) it is that one (Codex's findings
+    # on #197: an unrelated merge, then another pull request's merge that had imported the head, stood for it).
+    if not any(_contains(root, h.commit, tip) for h in rv.heads):
+        raise Refused(f"{merge[:12]} merged none of #{rv.pr}'s heads (none is in its second parent): not its merge",
+                      "REVIEW_MERGE_NOT_THE_PR")
+    try:
+        named = merge_of(root, rv, resolve(root, "HEAD"))
+    except Refused:
+        named = None                    # ambiguous: the merge named here is the operator's choice among them
+    if named is not None and named != merge:
+        raise Refused(f"Git's history gives #{rv.pr}'s merge as {named[:12]}, not {merge[:12]}", "REVIEW_MERGE_NOT_THE_PR")
     then = Model(store_at(root, tip), trust, cfg).by_duty.get(rv.did)
     accepted = [] if then is None else [{"transition": h.tid, "commit": h.commit, "by": h.accepted_by}
                                         for h in then.heads if h.verdict == "ADMITTED"]
