@@ -460,6 +460,22 @@ def handoff_cases():
           and all(v == ("DISCHARGED", [True]) for (s, _), v in got.items() if not s),
           "an admitted replacement on the same duty retires the closure it supersedes, results accepted or not", got)
 
+    # F7 (Codex finding 1e7a0108b247 on #195, observed at a7eebef): an admitted delegation whose
+    # transition supersedes the pending discharge hid it once another closure discharged the duty;
+    # expected: still offered, since a delegation closes nothing.
+    w = World()
+    d = w.duty()
+    old = w.close(d)
+    dl = w.close(d, act="delegate", to=CODEX, tkw={"supersedes": [old]})
+    w.accept(CODEX, dl)
+    w.accept(OWNER, w.close(d))
+    rep = w.assess(prof=E.profile(results_by=[]))
+    got = (rep["duties"][d]["disposition"], [c["verdict"] for c in rep["duties"][d]["candidates"]
+                                             if c["transition"] == dl],
+           any(x.get("need") == "accept" and x.get("transition") == old for x in E.frontier(rep, OWNER)))
+    check("F7", got == ("DISCHARGED", ["ADMITTED"], True),
+          "an admitted delegation that supersedes a pending closure does not retire it", got)
+
     # F5: who closes a duty is in its capsule, and an acceptor's frontier item says
     # whose acceptance it still waits for and whether this one is the last (the
     # 2026-10-19 fresh-context run guessed that its own accept "may not close" it)

@@ -911,6 +911,9 @@ def reliance(rep, target, use):
     return dict(out, state="ELIGIBLE")
 
 
+CLOSING_ACTS = ("discharge", "impossible", "release", "revalidate")
+
+
 def _duty_needs(rep, did, r, actor):
     holds = actor == r["holder"] or actor in r["delegates"]
     if holds and r["disposition"] == "OPEN":
@@ -926,8 +929,11 @@ def _duty_needs(rep, did, r, actor):
     # A pending closure is no longer acceptance work only when THIS duty is closed
     # by an admitted item of a transition that superseded it. Results supersession
     # alone admits nothing on this duty (Codex W141-01); nor does it have to be
-    # accepted: the admitted item is what retires the old one (Gemini, 1a660a6).
-    closed_by_admitted = {c["transition"] for c in r["candidates"] if c["verdict"] == "ADMITTED"} \
+    # accepted: the admitted item is what retires the old one (Gemini, 1a660a6). Only
+    # a closing item does: an admitted delegation or substitution closes nothing
+    # (Codex finding 1e7a0108b247 on #195).
+    closed_by_admitted = {c["transition"] for c in r["candidates"] if c["verdict"] == "ADMITTED"
+                          and c["act"] in CLOSING_ACTS} \
         if r["disposition"] in ("DISCHARGED", "IMPOSSIBLE", "RELEASED") else set()
     replaced_by_admitted = {old for t in closed_by_admitted for old in rep["results"][t]["supersedes"]}
     for c in r["candidates"]:
