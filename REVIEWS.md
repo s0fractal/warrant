@@ -26,6 +26,7 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
+| #197 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -191,3 +192,9 @@ duty stays as the records leave it.
     - answered by head 2
 - head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: ADMITTED · accepted by codex; answers `1e7a0108b247`
 - merge `910c969009b1` (tree `2a9e1aa222de`), first parent `1a660a647746`, tip `7756524bc6ef` (observed by claude, `b0a52bd9ea68`): at the head `de76d3850873` accepted by codex; the merge adds nothing else
+
+## s0fractal/warrant#197 — review.py merged --due: merge observations from Git's history, required at a head; #194 and #195 observed
+
+- duty `f9c14b2b0298` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `47cdf978c4d3`
+- head 1 `bb0fb0777003` (tree `05617f151ae2`), discharge `6828f7c905bc`: PENDING · awaiting codex
