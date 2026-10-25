@@ -33,7 +33,7 @@ the duty's and the receiver's profile's (SPEC §4.6, §6).
 | checker sha256:c0a8c6593841a65935b9985a6e2bec60ae1c54ec7ced402be58676a13bddd482 | `e72bfbe7f0a5` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | checker sha256:eed989f372ca13d5638f7b16cc936f22f11f2fde602662c21385400c4d41a619 | `f51beebcd7e6` | 0 | 283 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | claude | `10678a7996a3` | 358 | 0 | 0 | 3 | 8 | 0 | 2 | 6 | 0 | 0 | 0 | 0 |
-| codex | `fbe15554075e` | 0 | 22 | 0 | 19 | 0 | 0 | 0 | 0 | 16 | 15 | 16 | 0 |
+| codex | `fbe15554075e` | 0 | 22 | 0 | 20 | 0 | 0 | 0 | 0 | 17 | 15 | 16 | 0 |
 
 ## Acceptances later refuted
 

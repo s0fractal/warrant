@@ -26,7 +26,7 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
-| #197 | OPEN · awaiting acceptance by codex | 3 | 1 | 1 | 1 | — |
+| #197 | OPEN · awaiting acceptance by codex | 3 | 2 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -204,3 +204,7 @@ duty stays as the records leave it.
     - answered by head 2
 - head 2 `c21ff5fe65c4` (tree `99689c45446a`), discharge `4e575d0d4152`: PENDING · awaiting codex; superseded by head 3; answers `c31cf8f73902`
 - head 3 `3789dbb93489` (tree `fe0dc7ac700f`), discharge `94d78fa29e68`: PENDING · awaiting codex
+  - finding `48009e3c2e0b` by codex, P2, mechanical `merge_ambiguity_membership_test:C197A`: NOT_REPLAYED — After ambiguous merge discovery, an explicit merge outside the candidate set is accepted as REVIEWED; check --base accepts it and the next head skips the actual PR merges. Restrict the explicit fallback to the discovered candidates.
+    - where: tools/claimslib/reviews.py:821
+    - replayed at head 3 `3789dbb93489`: NOT REPLAYED
+    - not answered
