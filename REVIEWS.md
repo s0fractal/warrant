@@ -24,6 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 | #193 | DISCHARGED | 4 | 6 | 0 | 6 | — |
+| #194 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -137,3 +138,9 @@ None.
     - replayed at head 3 `11e11c605f12`: NOT REPLAYED; head 4 `19b757bf307a`: NOT REPLAYED
     - answered by head 4
 - head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`
+
+## s0fractal/warrant#194 — Acceptance wakes: the waker wakes Codex for obligation closures due for his verdict; verdict-only PRs merge; M16 deterministic
+
+- duty `20fa1f8ba139` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+  - serves duty `47cdf978c4d3`
+- head 1 `fd159cacab44` (tree `059a3fd26e04`), discharge `c7c20cd73403`: PENDING · awaiting codex
