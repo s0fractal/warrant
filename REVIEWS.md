@@ -24,7 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
-| #194 | OPEN · awaiting acceptance by codex | 7 | 4 | 4 | 4 | — |
+| #194 | DISCHARGED | 7 | 4 | 4 | 4 | — |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
@@ -151,7 +151,7 @@ duty stays as the records leave it.
 
 ## s0fractal/warrant#194 — Acceptance wakes: the waker wakes Codex for obligation closures due for his verdict; verdict-only PRs merge; M16 deterministic
 
-- duty `20fa1f8ba139` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `20fa1f8ba139` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `47cdf978c4d3`
 - head 1 `fd159cacab44` (tree `059a3fd26e04`), discharge `c7c20cd73403`: PENDING · awaiting codex; superseded by head 2
 - head 2 `41a10739b0fe` (tree `7d56c0da52e8`), discharge `246adae2a062`: PENDING · awaiting codex; superseded by head 3
@@ -175,7 +175,7 @@ duty stays as the records leave it.
     - where: tests/mutants.py:1727, tests/mutants.py:1755, tests/roadmap_test.py:542, tests/world.py:84
     - replayed at head 6 `2916eeb4bd16`: REPRODUCES; head 7 `0c55b9149bbf`: DOES NOT REPRODUCE
     - answered by head 7
-- head 7 `0c55b9149bbf` (tree `990d1abafe03`), discharge `3a6a9cfa24a4`: PENDING · awaiting codex; answers `df86dfbcbf4c`
+- head 7 `0c55b9149bbf` (tree `990d1abafe03`), discharge `3a6a9cfa24a4`: ADMITTED · accepted by codex; answers `df86dfbcbf4c`
 
 ## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
 
