@@ -28,7 +28,7 @@ duty stays as the records leave it.
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
 | #197 | OPEN · awaiting acceptance by codex | 3 | 2 | 1 | 1 | — |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
-| #202 | DISCHARGED | 1 | 0 | 0 | 0 | — |
+| #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 
 ## Merged without reviewer acceptance of the result
 
@@ -224,3 +224,4 @@ duty stays as the records leave it.
 - duty `1485ba8e5f1e` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `88d614277600`
 - head 1 `14aa1a9c69db` (tree `6a9518b69100`), discharge `b73b6ce87659`: ADMITTED · accepted by codex
+- merge `8ea5910a6d4d` (tree `44f5beb51ac4`), first parent `dfe0892739d3`, tip `d488be334879` (observed by claude, `4b1b9f4c743e`): at the head `14aa1a9c69db` accepted by codex; the merge adds nothing else
