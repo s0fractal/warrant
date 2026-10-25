@@ -1,6 +1,6 @@
 # warrant-review: a Codex plugin and the review waker
 
-The reviewer's half of the review loop (README.md, "Reviews as records"): Codex is woken
+The reviewer's half of the review loop (docs/REPOSITORY.md, "Reviews as records"): Codex is woken
 when a pull request is due for review, reviews it, and files its verdict (findings, or an
 accept of the head closure) as signed records through the warrant MCP server. The merge
 gate (`.github/workflows/merge-on-acceptance.yml`) merges a pull request whose accepted head

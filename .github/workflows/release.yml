@@ -1,0 +1,177 @@
+name: release
+
+# Publishes warrant-graph to PyPI when a tag `v2.*` is pushed, by PyPI Trusted Publishing (OIDC):
+# no token is stored anywhere. PyPI accepts an upload from this repository's workflow file
+# `release.yml` running in the environment `pypi` (the publisher the owner registers on PyPI;
+# before the first upload it is a "pending publisher", and that upload creates the project).
+#
+#   build     the tag is `v` + the version in pyproject.toml, on master, and ci.yml succeeded on
+#             that commit; the sdist and the wheel are built once, with the frontend and backend
+#             of .github/release-requirements.txt (exact versions and hashes, no isolation);
+#             tests/boundary_test.py reads those artifacts (B1 reads the core's modules from the
+#             wheel); tests/quickstart_test.py runs QUICKSTART.md against the wheel installed
+#             alone (no compute provider); the digests become this run's record of what is
+#             published.
+#   publish   the only job holding `id-token: write`, in the environment `pypi`; it checks out
+#             nothing and runs only the publishing action, on the build job's artifacts, after
+#             checking them against the build job's digests.
+#   readback  PyPI's JSON API for this version, polled until it lists the files: the version and
+#             the set of file names must be the built ones and each sha256 the built digest. A
+#             failed readback is an incomplete publication (AGENTS.md rule 5), not a success: the
+#             job fails, and nothing here uploads again.
+#
+# Actions are pinned by commit SHA, the version in the trailing comment (.github/dependabot.yml
+# watches them). pypa/gh-action-pypi-publish v1.14.2 is the commit its annotated tag points at.
+on:
+  push:
+    tags: ['v2.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read               # the ci.yml runs of the tagged commit
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sums: ${{ steps.sums.outputs.sums }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0              # is the tagged commit on master?
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: The tag is v + the version in pyproject.toml, on master, and ci.yml passed there
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VER=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          [ "$TAG" = "v$VER" ] || { echo "::error::tag $TAG is not v$VER (pyproject.toml)"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master \
+            || { echo "::error::$GITHUB_SHA is not on master"; exit 1; }
+          ok=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .head_branch == "master"
+                   and (.event == "push" or .event == "workflow_dispatch") and .conclusion == "success")] | length')
+          [ "$ok" -ge 1 ] || { echo "::error::no successful ci.yml run on master at $GITHUB_SHA"; exit 1; }
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Build the sdist and the wheel (pinned frontend and backend, no isolation)
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/build"
+          "$RUNNER_TEMP/build/bin/pip" install --quiet --require-hashes --only-binary=:all: -r .github/release-requirements.txt
+          "$RUNNER_TEMP/build/bin/python" -m build --no-isolation --sdist --wheel --outdir "$RUNNER_TEMP/dist" .
+          ls -l "$RUNNER_TEMP/dist"
+          [ "$(ls "$RUNNER_TEMP/dist" | wc -l)" -eq 2 ]
+
+      - name: The boundary, read from these artifacts
+        working-directory: tests
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/wheel"
+          "$RUNNER_TEMP/wheel/bin/pip" install --quiet "$RUNNER_TEMP"/dist/*.whl
+          "$RUNNER_TEMP/wheel/bin/python" boundary_test.py --wheel "$RUNNER_TEMP"/dist/*.whl --sdist "$RUNNER_TEMP"/dist/*.tar.gz
+
+      - name: QUICKSTART.md against the wheel installed alone
+        working-directory: tests
+        run: '"$RUNNER_TEMP/wheel/bin/python" quickstart_test.py'
+
+      - name: Digests of what is published
+        id: sums
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/dist"
+          sha256sum -- * | tee "$RUNNER_TEMP/SHA256SUMS"
+          echo "sums=$(base64 -w0 < "$RUNNER_TEMP/SHA256SUMS")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write             # the OIDC token PyPI exchanges for a short-lived upload token
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: The artifacts are the ones the build job checked
+        env:
+          SUMS: ${{ needs.build.outputs.sums }}
+        run: |
+          set -euo pipefail
+          echo "$SUMS" | base64 -d > "$RUNNER_TEMP/SHA256SUMS"
+          cd dist
+          sha256sum --strict -c "$RUNNER_TEMP/SHA256SUMS"
+          diff <(ls -A | sort) <(sed 's/^[0-9a-f]*  //' "$RUNNER_TEMP/SHA256SUMS" | sort)
+
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  readback:
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: PyPI names this version, these files and these digests
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          SUMS: ${{ needs.build.outputs.sums }}
+        run: |
+          python3 - <<'EOF'
+          import base64, json, os, sys, time, urllib.error, urllib.request
+          version = os.environ["VERSION"]
+          want = {}
+          for line in base64.b64decode(os.environ["SUMS"]).decode().splitlines():
+              digest, name = line.split("  ", 1)
+              want[name] = digest
+          url = f"https://pypi.org/pypi/warrant-graph/{version}/json"
+          doc, last = None, ""
+          for attempt in range(30):            # the JSON API is cached; a new release appears within minutes
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as r:
+                      doc = json.load(r)
+                  if {f["filename"] for f in doc["urls"]} >= set(want):
+                      break
+                  last = f"listed {sorted(f['filename'] for f in doc['urls'])}"
+              except urllib.error.HTTPError as e:
+                  last = f"HTTP {e.code}"
+              doc = None
+              time.sleep(20)
+          if doc is None:
+              sys.exit(f"readback incomplete: {url} never listed {sorted(want)} ({last}); the publication is not confirmed")
+          got = {f["filename"]: f["digests"]["sha256"] for f in doc["urls"]}
+          print(f"{doc['info']['name']} {doc['info']['version']}  {url}")
+          for f in doc["urls"]:
+              print(f"  {f['filename']}  sha256 {f['digests']['sha256']}  {f['upload_time_iso_8601']}")
+          bad = []
+          if doc["info"]["version"] != version:
+              bad.append(f"version {doc['info']['version']} != {version}")
+          if set(got) != set(want):
+              bad.append(f"files {sorted(got)} != built {sorted(want)}")
+          bad += [f"{n}: PyPI sha256 {got.get(n)} != built {d}" for n, d in sorted(want.items()) if got.get(n) != d]
+          if bad:
+              sys.exit("readback differs from what was built:\n" + "\n".join(bad))
+          print("readback: version and every sha256 equal to the built artifacts")
+          EOF

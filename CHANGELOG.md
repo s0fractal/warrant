@@ -25,6 +25,51 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
+## 2.0.0a1 — first publication of `warrant-graph` (unreleased until its tag)
+
+The first version of Warrant 2 meant for PyPI: everything under 2.0.0.dev0 below, which was
+never published. `2.0.0a1` is a PEP 440 alpha, so pip installs it only when asked
+(`pip install --pre warrant-graph`); the version says the record formats and interfaces may still
+change. The tooling version moved; no rule of SPEC.md and no record format changed.
+
+- **The public surface is a check.** `tests/boundary_test.py`: B1 reads the AST of every module
+  of `warrant/` (from the wheel when one is named) and refuses an import of anything but the
+  standard library, `cryptography` and the package itself, a relative import that leaves the
+  package, and any call that loads code by a computed name (`__import__`, `exec`, `eval`,
+  `compile`, `.import_module`, `.exec_module`, `.load_module`). W1-W4 and S1 build the wheel and
+  sdist from this tree with setuptools' own hooks (or read the artifacts a release names) and
+  require exactly the packages `warrant` and `warrant_agent`, no member under `tools/`, `tests/`,
+  `.warrant/` or another repository directory, each package's source modules and nothing else,
+  the sole requirement `cryptography>=41`, the extras `compute` and `mcp`, the three commands, and
+  `warrant.__version__` equal to the version. Mutants M680-M682 (the CLI importing the agent
+  package, the engine loading `tools` by `__import__`, the store importing `mcp`) are killed on B1;
+  M683 (`tools` added to the packages, a mutant of `pyproject.toml`: `tests/mutants.py` now copies
+  a file at the root as well as a directory) is killed on W1, W2 and S1.
+- **`QUICKSTART.md`, Warrant in 15 minutes, is executable.** One duty, the transition that closes
+  it, the acceptance it waits for, a challenge, the verdict changing, and the same verdict from
+  `warrant.assess` in Python. `tests/quickstart_test.py` reads the page under a closed format
+  (named `sh` blocks, `output` blocks, nothing else that Markdown would show as code or hide; the
+  case `refusals` plants each violation), runs every block in one bash process in a fresh
+  directory, and compares each block's standard output with the page byte for byte after one
+  stated substitution (the `assessment_id` value, which names the installed engine and provider).
+  `--write` puts what the commands print into the page. Mutant M684 (a counting challenge no
+  longer makes reliance CHALLENGED) is killed on its `challenge` and `python` cases.
+- **README.md is the package's entry** (and PyPI's long description, with absolute links): what
+  Warrant is, install, the quickstart, the model, a Status section (alpha; 281 of 358 SPEC
+  sentences BACKED; at 7c6d80b 13% of the statements of `warrant/` covered by a cited mutant, the
+  open goal G6), the limits, and a pointer to the repository. Its repository sections moved
+  unchanged to `docs/REPOSITORY.md`: installing from a checkout, the work loop by hand, the
+  scenarios, the checks, changing a normative sentence, the circle of witnesses, the roadmap, and
+  reviews as records with the merge gate and the waker. The pointers to them in
+  `tools/roadmap.py`, `tools/claimslib`, AGENT.md and the Codex plugin's README follow;
+  ROADMAP.md and SPEC-CLAIMS.md are regenerated.
+- **`.github/workflows/release.yml`** publishes on a pushed tag `v2.*` with PyPI Trusted
+  Publishing (OIDC; no token): the tag must equal `v` + the version in `pyproject.toml`; it builds
+  the sdist and wheel with pinned `build` and `setuptools`, runs the boundary test against those
+  artifacts and the quickstart against the installed wheel, publishes them from the `pypi`
+  environment, then reads back the version and each file's sha256 from PyPI's JSON API and refuses
+  a digest that differs from the built one.
+
 ## 2.0.0.dev0 — Warrant 2 (unreleased)
 
 **[protocol] A new generation, incompatible by design** (owner mandate,

@@ -140,7 +140,7 @@ refused when it loads.
 ## The roadmap through the interface
 
 `tools/roadmap.py` files obligations, closures and acceptances as ordinary
-records (README.md, "The roadmap"). Through MCP they are `warrant_prepare`
+records (docs/REPOSITORY.md, "The roadmap"). Through MCP they are `warrant_prepare`
 then `warrant_commit` with these arguments; `<…>` is a slot, a whole-string
 slot takes any JSON value. They file exactly the bytes `roadmap.py oblige`,
 `done` and `accept` file (`tests/agent_repo_test.py` Q01 compares the stores
@@ -184,7 +184,7 @@ MCP the agent keeps them itself, and `roadmap.py check` reads the result.
 ## Reviews through the interface
 
 `tools/review.py` files the pull request review loop as ordinary records
-(README.md, "Reviews as records"; REVIEWS.md is their view). Through MCP each
+(docs/REPOSITORY.md, "Reviews as records"; REVIEWS.md is their view). Through MCP each
 step is `warrant_prepare` then `warrant_commit` with these arguments; `<…>` is
 a slot, a whole-string slot takes any JSON value. They file exactly the bytes
 `review.py open`, `head` (or `answer`), `finding` and `accept` file
