@@ -24,10 +24,11 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
-| #194 | DISCHARGED | 7 | 4 | 4 | 4 | — |
-| #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
+| #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
+| #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
+| #197 | DISCHARGED | 4 | 2 | 2 | 2 | — |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
-| #202 | DISCHARGED | 1 | 0 | 0 | 0 | — |
+| #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 
 ## Merged without reviewer acceptance of the result
 
@@ -179,6 +180,7 @@ duty stays as the records leave it.
     - replayed at head 6 `2916eeb4bd16`: REPRODUCES; head 7 `0c55b9149bbf`: DOES NOT REPRODUCE
     - answered by head 7
 - head 7 `0c55b9149bbf` (tree `990d1abafe03`), discharge `3a6a9cfa24a4`: ADMITTED · accepted by codex; answers `df86dfbcbf4c`
+- merge `f79c1b58d8f3` (tree `242eec87e67a`), first parent `910c969009b1`, tip `c0dbc0b79ea4` (observed by claude, `c522751a40bf`): at the head `0c55b9149bbf` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
 
@@ -192,6 +194,24 @@ duty stays as the records leave it.
     - replayed at head 1 `a7eebef499e7`: REPRODUCES; head 2 `de76d3850873`: DOES NOT REPRODUCE
     - answered by head 2
 - head 2 `de76d3850873` (tree `52d8c60365ca`), discharge `6b791453662d`: ADMITTED · accepted by codex; answers `1e7a0108b247`
+- merge `910c969009b1` (tree `2a9e1aa222de`), first parent `1a660a647746`, tip `7756524bc6ef` (observed by claude, `b0a52bd9ea68`): at the head `de76d3850873` accepted by codex; the merge adds nothing else
+
+## s0fractal/warrant#197 — review.py merged --due: merge observations from Git's history, required at a head; #194 and #195 observed
+
+- duty `f9c14b2b0298` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+  - serves duty `47cdf978c4d3`
+- head 1 `bb0fb0777003` (tree `05617f151ae2`), discharge `6828f7c905bc`: PENDING · awaiting codex; superseded by head 2
+  - finding `c31cf8f73902` by codex, P2, mechanical `merge_observation_binding_test:OB1`: REPRODUCED — An unrelated older merge observation makes merged --due skip the actual PR merge and lets head pass without observing it (check --base also accepts the records); bind existing observations to the discovered merge.
+    - where: tools/claimslib/reviews.py:746
+    - replayed at head 1 `bb0fb0777003`: REPRODUCES; head 2 `c21ff5fe65c4`: DOES NOT REPRODUCE; head 3 `3789dbb93489`: DOES NOT REPRODUCE; head 4 `67e0f46fbd86`: DOES NOT REPRODUCE
+    - answered by head 2
+- head 2 `c21ff5fe65c4` (tree `99689c45446a`), discharge `4e575d0d4152`: PENDING · awaiting codex; superseded by head 3; answers `c31cf8f73902`
+- head 3 `3789dbb93489` (tree `fe0dc7ac700f`), discharge `94d78fa29e68`: PENDING · awaiting codex; superseded by head 4
+  - finding `48009e3c2e0b` by codex, P2, mechanical `merge_ambiguity_membership_test:C197A`: REPRODUCED — After ambiguous merge discovery, an explicit merge outside the candidate set is accepted as REVIEWED; check --base accepts it and the next head skips the actual PR merges. Restrict the explicit fallback to the discovered candidates.
+    - where: tools/claimslib/reviews.py:821
+    - replayed at head 3 `3789dbb93489`: REPRODUCES; head 4 `67e0f46fbd86`: DOES NOT REPRODUCE
+    - answered by head 4
+- head 4 `67e0f46fbd86` (tree `7ecfd27449e9`), discharge `617462b8eb13`: ADMITTED · accepted by codex; answers `48009e3c2e0b`
 
 ## s0fractal/warrant#201 — Release surface: warrant-graph 2.0.0a1 — core boundary as a check, executable quickstart, README split, release workflow
 
@@ -205,3 +225,4 @@ duty stays as the records leave it.
 - duty `1485ba8e5f1e` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `88d614277600`
 - head 1 `14aa1a9c69db` (tree `6a9518b69100`), discharge `b73b6ce87659`: ADMITTED · accepted by codex
+- merge `8ea5910a6d4d` (tree `44f5beb51ac4`), first parent `dfe0892739d3`, tip `d488be334879` (observed by claude, `4b1b9f4c743e`): at the head `14aa1a9c69db` accepted by codex; the merge adds nothing else
