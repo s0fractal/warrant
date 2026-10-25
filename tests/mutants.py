@@ -1632,7 +1632,7 @@ def _visit(view, did, report, done, busy):
     ('M591', 'pilot.py', 'the fanout layout is read at another path than a warrant-agent object store writes',
      [('        return (name[:2], name[2:])', '        return (name[:2], name)')], 'pilot_test', ['A1']),
     ('M592', 'pilot.py', 'a shared dependency is read again at each reference',
-     [('                if dep in objects:\n                    continue\n', '')], 'pilot_test', ['D1']),
+     [('                if dep in objects:\n', '                if False:\n')], 'pilot_test', ['D1']),
     ('M593', 'pilot.py', "a JSON kind's bytes are normalized instead of refused when they are not canonical",
      [('            doc = C.loads(data)', '            doc = C.loads(C.canon(C.json.loads(data)))')], 'pilot_test', ['F4', 'A3']),
     ('M600', 'pilot.py', 'a kind the receiver does not admit is a refusal, not inconclusive',
