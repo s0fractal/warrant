@@ -46,7 +46,8 @@ seed). The waker commits only the observation records the checker printed (by th
 with its probe blob) and the generated views, refuses anything else the run left, and pushes that
 commit on the pull request's branch only while the branch is still at the head (a fast-forward).
 One replay per head: HOME/replays/<n>-<head>.json, with its runs. A run that failed (the checker exited
-otherwise, its output was refused, or its observations did not reach the branch) is not a replay: it runs again after BACKOFF seconds, doubled each
+otherwise, its output was refused, or its observations did not reach the branch) is not a replay, nor
+is one skipped at a head that changes the checker (Codex is woken there as before, and it covers nothing): it runs again after BACKOFF seconds, doubled each
 time, at most MAX_TRIES runs, and Codex is not woken at that head meanwhile; once it gave up, Codex is
 woken and told so in the prompt. The retry outlives the head being due: a pull request of this repository
 not due (a verdict moved its tip) with an incomplete replay is replayed at its current head, and a replay
@@ -185,16 +186,23 @@ def changes(wt, filed, actor):
     return sorted(out)
 
 
+class Skipped(Exception):
+    """No replay can run at this head by design: it changes the checker, or its branch is not one to push to."""
+
+
 class NotPushed(Exception):
     """The checker's run completed, and its observations did not reach the branch (it moved meanwhile)."""
 
 
 def runs(doc):
-    """A replay memo with its runs: one of an older waker (a single run, no `attempts`) reads as one run,
-    failed when its line says so."""
+    """A replay memo with its runs: one of an older waker (a single run, no `attempts`) reads as one run, failed
+    when its line says the checker failed or its observations were not pushed (Codex finding on #204: that waker
+    wrote "replay not pushed" after a lost branch race), skipped when it says so, else done."""
     if "attempts" not in doc:
         line = str(doc.get("line", "replayed"))
-        doc["attempts"] = [{"finished": 0, "ok": not line.startswith("replay failed"), "line": line}]
+        failed = line.startswith(("replay failed", "replay not pushed"))
+        skipped = line.startswith("replay skipped")
+        doc["attempts"] = [{"finished": 0, "ok": not (failed or skipped), "line": line, **({"skipped": True} if skipped else {})}]
     return doc
 
 
@@ -313,8 +321,11 @@ class Waker:
         state, why = self.replay_state(doc)
         if state != "retry":
             return False, why
+        skipped = False
         try:
             (pushed, line), ok = self._replay(a, base, actor, seed), True
+        except Skipped as e:            # no replay can run at this head: neither done nor failed (Codex, #204)
+            pushed, line, ok, skipped = False, str(e), False, True
         except NotPushed as e:          # observations that did not reach the branch are no replay (Codex, #204)
             pushed, line, ok = False, str(e), False
         except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
@@ -322,7 +333,7 @@ class Waker:
         t = self.clock()
         doc = doc or {"pr": a["pr"], "head": a["head"], "attempts": []}
         doc.update(base=base, replayer=actor, at=iso(t), pushed=pushed, line=line)
-        doc["attempts"].append({"at": iso(t), "finished": t, "ok": ok, "line": line})
+        doc["attempts"].append({"at": iso(t), "finished": t, "ok": ok, "line": line, **({"skipped": True} if skipped else {})})
         p.write_text(json.dumps(doc, indent=1))
         if ok:
             self.cover(a)
@@ -336,8 +347,10 @@ class Waker:
 
     def replay_state(self, doc):
         """(what, detail) of a replay memo: done (a run completed, here or at a later head of the pull request,
-        `covered_by`), gave up (MAX_TRIES runs failed), waiting (for its backoff) or retry. A failed run is not
-        a replay (Codex's challenge 6f72103999cd: a transient exit 75 was kept as the head's replay)."""
+        `covered_by`), skipped (no replay can run at this head: it changes the checker, or its branch is not one
+        to push to; this covers nothing), gave up (MAX_TRIES runs failed), waiting (for its backoff) or retry. A
+        failed run is not a replay (Codex's challenge 6f72103999cd: a transient exit 75 was kept as the head's
+        replay)."""
         if doc is None:
             return "retry", "first replay"
         tries = doc["attempts"]
@@ -345,6 +358,8 @@ class Waker:
         if last.get("ok") or doc.get("covered_by"):
             return "done", (last.get("line") or "replayed") + (f" (covered by the replay at {doc['covered_by'][:12]})"
                                                                if doc.get("covered_by") and not last.get("ok") else "")
+        if last.get("skipped"):
+            return "skipped", last.get("line") or "replay skipped"
         if len(tries) >= MAX_TRIES:
             return "gave up", f"replay incomplete: {len(tries)} checker runs failed, the last: {last.get('line')}"
         due_at = last.get("finished", 0) + BACKOFF * 2 ** (len(tries) - 1)
@@ -361,9 +376,9 @@ class Waker:
         """A replay completed at `a`'s head replays every finding of its store at each of its heads: the
         incomplete replays of the same pull request at other heads are covered by it."""
         for p in (self.home / "replays").glob(f"{number(a['pr'])}-*.json"):
-            doc = json.loads(p.read_text())
-            if doc.get("head") != a["head"] and "attempts" in doc and not doc["attempts"][-1].get("ok") \
-                    and not doc.get("covered_by"):
+            doc = runs(json.loads(p.read_text()))
+            last = doc["attempts"][-1]
+            if doc.get("head") != a["head"] and not last.get("ok") and not last.get("skipped") and not doc.get("covered_by"):
                 doc["covered_by"] = a["head"]
                 p.write_text(json.dumps(doc, indent=1))
 
@@ -377,9 +392,9 @@ class Waker:
     def _replay(self, a, base, actor, seed):
         n, head, branch = number(a["pr"]), commit(a["head"]), a.get("branch")
         if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != BRANCH):
-            return False, f"replay skipped: {str(branch)[:40]!r} is not a pull request branch to push to"
+            raise Skipped(f"replay skipped: {str(branch)[:40]!r} is not a pull request branch to push to")
         if self.blob(base, CHECKER_FILE) != self.blob(head, CHECKER_FILE):
-            return False, f"replay skipped: #{n} changes {CHECKER_FILE}; it replays once the checker is adopted"
+            raise Skipped(f"replay skipped: #{n} changes {CHECKER_FILE}; it replays once the checker is adopted")
         wt = self.trees / f"{n}-{head[:12]}-replay"
         work = self.home / "replay-work" / self.key(a)
         self.discard(wt, work)
@@ -594,7 +609,7 @@ def tick(w, dry):
 
 def wake_after_replay(w, x):
     """What happens to due head `x` once its replay did not push: Codex is woken when the replay completed (or
-    none could run: no seed), not while it is incomplete with runs left, and, once it gave up, woken with that
+    none could run: no seed, or the head changes the checker), not while it is incomplete with runs left, and, once it gave up, woken with that
     said in the prompt (a reviewer told of the gap can replay the findings itself; one never woken leaves the
     pull request unreviewed)."""
     _, doc = w.replay_memo(x)
@@ -611,7 +626,9 @@ def retry_lines(w, base, found):
     out = []
     for x in found["not_due"]:
         if x.get("head_repo") == REPO and w.pending(x["pr"]):
-            out.append(f"  RETRY #{x['pr']} {x['head'][:12]}: {w.replay(x, base)[1]}")
+            _, doc = w.replay_memo(x)
+            if doc is None or w.replay_state(doc)[0] in ("waiting", "retry"):    # a head that skipped stays quiet
+                out.append(f"  RETRY #{x['pr']} {x['head'][:12]}: {w.replay(x, base)[1]}")
     return out
 
 

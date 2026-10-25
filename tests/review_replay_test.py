@@ -669,9 +669,57 @@ def race_cases():
     f.close()
 
 
+def skip_cases():
+    # W21 (Codex finding 23d10e5b513c on #204 head 2, 9e58df1, test replay_retry_skip_test SKIP1): a retry at a tip
+    # that changes review_replay.py was skipped, saved complete and covered the earlier failed replay, so nothing
+    # stayed pending with no observation made. Expected: a skip covers nothing and the failure stays pending.
+    f = pr_world()
+    flaky(f, 1)
+    f.w.due = lambda base: {"due": [due(f, tip(f))], "not_due": []}
+    WAKER.tick(f.w, False)
+    f.ok("accept", "--pr", "1", "--commit", f.h2, actor="codex")
+    f.save()
+    changed = f.commit("checker bytes awaiting adoption", {WAKER.CHECKER_FILE: "# not the base's checker\n"})
+    git("-C", str(f.dir), "push", "-q", str(f.origin), f"{changed}:refs/heads/pr1")
+    git("-C", str(f.w.mirror), "fetch", "-q", str(f.origin), "+refs/heads/pr1:refs/heads/pr1")
+    f.w.due = lambda base: {"due": [], "not_due": [dict(due(f, tip(f)), head_repo=WAKER.REPO,
+                                                        not_due=[["REVIEWED", "accepted"]])]}
+    f.now[0] += WAKER.BACKOFF + 1
+    first = WAKER.tick(f.w, False)
+    again = WAKER.tick(f.w, False)
+    earlier = json.loads((f.w.home / "replays" / f"{f.w.key(due(f))}.json").read_text())
+    check("W21", len(f.runs) == 1 and f.w.pending(1) and not earlier.get("covered_by")
+          and any("replay skipped" in x for x in first) and not any("RETRY" in x for x in again),
+          "a replay skipped at a head that changes the checker covers nothing: the earlier failed replay stays pending",
+          (first, again, earlier.get("covered_by")))
+    f.close()
+
+    # W22 (Codex finding fec604ae5dc1 on #204 head 2, test replay_retry_legacy_test LEGACY1): the memo the previous
+    # waker wrote after a lost branch race ("replay not pushed") read as a completed replay, so after a verdict
+    # nothing was retried. Expected: it reads as a failed run, and the pull request's tip is replayed.
+    g = pr_world()
+    flaky(g, 0)
+    (g.w.home / "replays" / f"{g.w.key(due(g))}.json").write_text(json.dumps(
+        {"pr": 1, "head": g.head, "base": g.start, "pushed": False,
+         "line": "replay not pushed: pr1 is at 0123456789ab, not " + g.head[:12]}))
+    g.ok("accept", "--pr", "1", "--commit", g.h2, actor="codex")
+    reviewed = g.save()
+    git("-C", str(g.dir), "push", "-q", str(g.origin), f"{reviewed}:refs/heads/pr1")
+    git("-C", str(g.w.mirror), "fetch", "-q", str(g.origin), "+refs/heads/pr1:refs/heads/pr1")
+    g.w.due = lambda base: {"due": [], "not_due": [dict(due(g, tip(g)), head_repo=WAKER.REPO,
+                                                        not_due=[["REVIEWED", "accepted"]])]}
+    before = g.w.pending(1)
+    lines = WAKER.tick(g.w, False)
+    observed = at_commit(g, tip(g)).findings[g.cid].observed
+    check("W22", before and len(g.runs) == 1 and sorted(observed) == sorted([g.h1, g.h2]) and not g.w.pending(1),
+          "a memo of the previous waker saying its observations were not pushed reads as a failed run: after a "
+          "verdict the tip is replayed", (before, lines))
+    g.close()
+
+
 def main():
     for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
-                 race_cases):
+                 race_cases, skip_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run
