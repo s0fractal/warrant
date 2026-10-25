@@ -26,7 +26,7 @@ duty stays as the records leave it.
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
 | #194 | DISCHARGED | 7 | 4 | 4 | 4 | at an accepted head |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | at an accepted head |
-| #197 | DISCHARGED | 4 | 2 | 2 | 2 | — |
+| #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 
@@ -212,6 +212,7 @@ duty stays as the records leave it.
     - replayed at head 3 `3789dbb93489`: REPRODUCES; head 4 `67e0f46fbd86`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `67e0f46fbd86` (tree `7ecfd27449e9`), discharge `617462b8eb13`: ADMITTED · accepted by codex; answers `48009e3c2e0b`
+- merge `07eff24c669f` (tree `40a76e610bb6`), first parent `c257ca0f9bc1`, tip `10a3817a05b9` (observed by claude, `ba7f4921c953`): at the head `67e0f46fbd86` accepted by codex; the merge adds nothing else
 
 ## s0fractal/warrant#201 — Release surface: warrant-graph 2.0.0a1 — core boundary as a check, executable quickstart, README split, release workflow
 
