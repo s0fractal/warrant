@@ -7,7 +7,7 @@ say. SPEC.md is generated from the same records. Edit neither by hand: add,
 supersede or retire the claim, then regenerate both (README.md, "Changing a
 normative sentence").
 
-Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 358 · backed 281 · countered 0 · unbacked 20 · informative 57 · retired 0 · records 1724 · blobs 1488
+Sections the preamble, §1, §2, §3, §3.1, §3.2, §3.3, §3.4, §3.5, §3.6, §4, §4.1, §4.2, §4.3, §4.4, §4.5, §4.6, §4.7, §5, §6, §7, §8, §9, §10, §10.1, §10.2, §10.3, §10.4, §10.5, §10.6, §10.7, §10.8 of SPEC.md · sentences 358 · backed 281 · countered 0 · unbacked 20 · informative 57 · retired 0 · records 1725 · blobs 1489
 
 A witness is a case of `tests/<file>.py`; a mutant is an entry of `tests/mutants.py`
 (ids M…) or `tests/agent_mutants.py` (ids A…) that must make one of the cited cases
