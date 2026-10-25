@@ -29,7 +29,7 @@ duty stays as the records leave it.
 | #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #204 | OPEN · awaiting acceptance by codex | 4 | 4 | 4 | 4 | — |
+| #204 | DISCHARGED | 4 | 4 | 4 | 4 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -231,7 +231,7 @@ duty stays as the records leave it.
 
 ## s0fractal/warrant#204 — Waker: a failed replay is retried and wakes nobody; the retry outlives a verdict (G3)
 
-- duty `8057c2a37f1c` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- duty `8057c2a37f1c` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
   - serves duty `47cdf978c4d3`
 - head 1 `213c1b9ef2f2` (tree `bfedf82a197f`), discharge `728aa12d5e57`: PENDING · awaiting codex; superseded by head 2
   - finding `be3c24f3b319` by codex, P2, mechanical `replay_retry_race_test:RACE1`: REPRODUCED — After a failed replay and a verdict, a successful retry whose observations lose the branch-tip race is saved ok=True and covers the failure; pending becomes false, so the new tip is never retried and retains no observations. Keep the replay pending until its observations reach the branch or already exist there.
@@ -252,4 +252,4 @@ duty stays as the records leave it.
     - where: integrations/codex-plugin/waker/waker.py:317-319, integrations/codex-plugin/waker/waker.py:614-617
     - replayed at head 3 `f207ba5252a6`: REPRODUCES; head 4 `3924e6a29d78`: DOES NOT REPRODUCE
     - answered by head 4
-- head 4 `3924e6a29d78` (tree `bc0f687dd205`), discharge `78f76cb5883f`: PENDING · awaiting codex; answers `77e675a71b60`
+- head 4 `3924e6a29d78` (tree `bc0f687dd205`), discharge `78f76cb5883f`: ADMITTED · accepted by codex; answers `77e675a71b60`

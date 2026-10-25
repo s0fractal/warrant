@@ -61,7 +61,7 @@ G3 [OPEN] The circle of witnesses widens by evidence, without an admin.
     served by [DISCHARGED] s0fractal/warrant#194 is fit to merge: Acceptance wakes: the waker wakes Codex for obligation closures due for his verdict; verdict-only PRs merge; M16 deterministic {duty 20fa1f8ba139}
     served by [DISCHARGED] s0fractal/warrant#190 is fit to merge: Merge on acceptance without the owner's act; Codex wakes itself to review {duty 60897810079d}
     served by [DISCHARGED] s0fractal/warrant#181 is fit to merge: Reviews as records: the PR review loop in the graph {duty 79b1e5e8a8df}
-    served by [OPEN] s0fractal/warrant#204 is fit to merge: Waker: a failed replay is retried and wakes nobody; the retry outlives a verdict (G3) {duty 8057c2a37f1c}
+    served by [DISCHARGED] s0fractal/warrant#204 is fit to merge: Waker: a failed replay is retried and wakes nobody; the retry outlives a verdict (G3) {duty 8057c2a37f1c}
     served by [DISCHARGED] s0fractal/warrant#195 is fit to merge: Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193 {duty aadb208517a0}
     served by [OPEN] s0fractal/warrant#192 is fit to merge: The review waker runs the review replay checker on every due head, before it wakes Codex {duty d6e8a465d4ad}
     served by [DISCHARGED] s0fractal/warrant#197 is fit to merge: review.py merged --due: merge observations from Git's history, required at a head; #194 and #195 observed {duty f9c14b2b0298}
