@@ -1,6 +1,6 @@
 ---
 name: warrant-review
-description: Review a pull request of s0fractal/warrant that the review loop says is due (its head closure is at the pull request's head, CI is green there, and no verdict stands), then file findings against that head closure or accept it, through the warrant MCP server, and push the records onto the pull request. Use when the warrant review waker starts you, or when asked to review a warrant pull request.
+description: Review a pull request of s0fractal/warrant that the review loop says is due (its head closure is at the pull request's head, CI is green there, and no verdict stands), then file findings against that head closure or accept it, through the warrant MCP server, and push the records onto the pull request; or give a verdict on a roadmap obligation's closure that is due for it. Use when the warrant review waker starts you, or when asked to review a warrant pull request or closure.
 ---
 
 # Review a warrant pull request through the review loop
@@ -109,3 +109,42 @@ git push origin HEAD:refs/heads/<branch>
 If the push is refused because the branch moved, stop: the author pushed a new head, and the waker
 starts you again when that head is due. Finish with a short report: N, X, H, the records you filed
 (their ids), and what you checked.
+
+## A verdict on an obligation closure
+
+The waker also starts you for a closure of a roadmap obligation filed on master that awaits your
+verdict: `python3 tools/roadmap.py due --actor codex --json` at master M lists them (the duty D names
+you in `accept_by`, every duty D requires is DISCHARGED, and you have neither accepted nor challenged
+the closure T). It gives you D, its text, T and its item, T's evidence ids, the pull requests and
+commits that evidence names, T's subject, and a worktree detached at M. It does not tell you what T
+says it established: read the work itself.
+
+- Judge whether what D owes is done at what T names: read the commits and pull requests (the merged
+  code at M, its tests and mutants), run what they touch, and hunt counterexamples, as for a review.
+  `warrant_context` with target D shows T's verdict and why; `warrant_read kind=blob` reads its
+  evidence blob.
+- Make the MCP configuration for your worktree as in section 3 (`--repo <your worktree>`), then
+  either **accept** T (`prepare` type `accept` with `{"transition": T, "item": <item>}`, then
+  `commit`; read D back: DISCHARGED) or **challenge** T (`prepare` type `challenge` with
+  `{"target": T, "item": <item>, "statement": "<one line: what is not done>", "evidence": [...]}`,
+  evidence a blob of your reasons, then `commit`). A challenge of an obligation's closure carries no
+  `warrant-review/finding@1` blob: that schema is for pull request heads.
+- Records onto a pull request of their own, from M: regenerate and check the views, commit only your
+  verdict record (and its blobs) and the views, push the branch the waker names
+  (`codex/verdicts/<T12>-<item>`) and open a pull request into master, records only:
+
+```sh
+python3 tools/claims.py project && python3 tools/roadmap.py project && python3 tools/review.py project
+python3 tools/roadmap.py check && python3 tools/review.py check
+git switch -c codex/verdicts/<T12>-<item>
+git add .warrant/store REVIEWS.md ROADMAP.md SPEC-CLAIMS.md WITNESSES.md
+git commit -m "Codex: <accept|challenge> of obligation closure T (duty D) through MCP"
+git push origin HEAD:refs/heads/codex/verdicts/<T12>-<item>
+gh pr create --repo s0fractal/warrant --base master --head codex/verdicts/<T12>-<item> \
+  --title "Codex: <accept|challenge> of obligation closure <T12>" --body "<the records' ids and what you checked>"
+```
+
+The merge gate merges a pull request that adds only verdicts by an acceptor (accepts or challenges)
+and their views, with no review duty of its own: your verdict is reviewed by nobody else, as after a
+pull request head. Add nothing else to it. Finish with a short report: D, T, M, the records you
+filed, the pull request, and what you checked.

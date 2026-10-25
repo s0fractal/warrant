@@ -16,6 +16,20 @@ it can verify; nobody else has to act.
 | `waker/waker.py` | the waker: fetches master into a bare mirror, writes master's tree once, runs THAT tree's `tools/review.py due`, replays the mechanical findings of each due head with the review replay checker (below), and starts `codex exec` with the skill once per pull request head that is due (a memo per head), in that wake's own detached worktree of the mirror (`~/Projects/.worktrees/codex-review/<n>-<head12>`, removed after the run unless Codex left changes); a non-zero exit is retried after 15, then 30 minutes, three attempts in all |
 | `install.py` | installs all of it on a Mac and loads the waker as a launchd agent (every five minutes) |
 
+After the pull requests, the waker runs the base tree's `tools/roadmap.py due --actor codex` on the
+base's own records: the roadmap obligations' closures due for Codex's verdict (an obligation's latest
+closure the engine holds PENDING for codex, so every duty it requires is DISCHARGED, which codex has
+neither accepted nor challenged). It starts `codex exec` once per closure item (a memo
+`accepts/<closure>-<item>.json`, the same retries), in a detached worktree of the base
+(`~/Projects/.worktrees/codex-review/accept-<closure12>-<item>-<base12>`), telling him the duty's text, the
+closure, its evidence ids and the pull requests and commits that evidence names, not what the closure
+says it established. He accepts the closure or challenges it through MCP, commits that record and the
+views on `codex/verdicts/<closure12>-<item>` and opens a pull request of it; the merge gate merges a pull
+request of verdicts only (`eligibility.py`). At most one closure is woken per run, and none while a
+pull request from a `codex/verdicts/` branch is open: two of them would render the same views from
+different bases. A closure whose prerequisite is accepted meanwhile is due in the next run that reads
+that base.
+
 Before Codex is woken for a head, the waker runs the review replay checker: the base tree's
 `tools/review.py replay --key -` (an actor named by the hash of `tools/claimslib/review_replay.py`,
 which signs only from code with that hash) in a detached worktree of the head, under `sandbox-exec`
@@ -45,7 +59,8 @@ install -m 600 SEED ~/.warrant-review-replayer/HASH.seed
 
 Its state lives in `~/.warrant/codex-waker`: `warrant.git` (the mirror), `code/<commit>` (the base
 trees it ran), `wakes/<n>-<head>.json` (one memo per head with every attempt's exit status; delete it
-to wake that head again), `replays/<n>-<head>.json` (one replay per head; delete it to replay that
+to wake that head again), `accepts/<closure>-<item>.json` (the same, one per obligation closure item),
+`replays/<n>-<head>.json` (one replay per head; delete it to replay that
 head again), `replay-work/`, `logs/`, `results/` (Codex's last message of each wake).
 `WARRANT_WAKER_HOME`, `WARRANT_WAKER_TREES`, `WARRANT_WAKER_REPLAYERS`, `WARRANT_WAKER_PYTHON`,
 `WARRANT_WAKER_REPLAY_PYTHON` and `WARRANT_WAKER_CODEX` override the defaults.

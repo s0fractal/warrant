@@ -27,6 +27,7 @@ refuses it when it differs from the records. Nothing here writes SPEC.md.
     python3 tools/roadmap.py release --duty DUTY --because '...' --actor ACTOR   # by whom it is owed to
     python3 tools/roadmap.py accept --duty DUTY --actor ACTOR [--transition ID]  # by an acceptor the duty names
     python3 tools/roadmap.py path G1 [--json]
+    python3 tools/roadmap.py due --actor ACTOR [--json]   # obligation closures due for ACTOR's verdict
     python3 tools/roadmap.py project            # regenerate ROADMAP.md
     python3 tools/roadmap.py check
 
@@ -72,6 +73,7 @@ HEXPREFIX = re.compile(r"^[0-9a-f]{8,64}\Z")
 VISION_RESIDUAL = ("a goal proves nothing: it sets the direction of path search; it is shown met only by a "
                    "superseding transition that establishes it")
 DONE_RESIDUAL = "the evidence blob names pull requests and commits; this record does not replay them"
+CLOSING = ("discharge", "impossible", "revalidate")      # the acts of an item that closes a duty
 FORWARD = ("obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal "
            "is still open, so the decomposition did not reach it (Forward Attack)")
 # Formulation states: the goal text as one transition opened it. REOPENED: a transition that superseded it
@@ -109,15 +111,20 @@ class Roadmap:
             cfg = json.loads(self.config_path.read_text())
         except (OSError, ValueError) as e:
             raise Refused(f".warrant/roadmap.json: {e}") from e
-        if not isinstance(cfg, dict) or set(cfg) != set(CONFIG_FIELDS) or cfg["roadmap"] != CONFIG:
-            raise Refused(f".warrant/roadmap.json members are {list(CONFIG_FIELDS)}, roadmap {CONFIG!r}")
-        for k in CONFIG_FIELDS[1:]:
-            if not (isinstance(cfg[k], list) and all(S.is_actor(a) for a in cfg[k])):
-                raise Refused(f".warrant/roadmap.json: {k} is a list of actor ids")
-        return cfg
+        return check_config(cfg)
 
     def model(self):
         return Model(self.claims.snapshot(), self.claims.trust(), self.config(), self.claims.roles()[0])
+
+
+def check_config(cfg):
+    """.warrant/roadmap.json's document, checked (also read from a base commit by the merge gate)."""
+    if not isinstance(cfg, dict) or set(cfg) != set(CONFIG_FIELDS) or cfg["roadmap"] != CONFIG:
+        raise Refused(f".warrant/roadmap.json members are {list(CONFIG_FIELDS)}, roadmap {CONFIG!r}")
+    for k in CONFIG_FIELDS[1:]:
+        if not (isinstance(cfg[k], list) and all(S.is_actor(a) for a in cfg[k])):
+            raise Refused(f".warrant/roadmap.json: {k} is a list of actor ids")
+    return cfg
 
 
 class Form:
@@ -353,6 +360,42 @@ class Model:
                 raise Refused(f"{ref[:12]}… is {f.state}, not a current goal")
             return f
         raise Refused(f"{ref!r} is not a goal key (G<n>) or a goal's question reference")
+
+
+# ---------------------------------------------------------------- acceptance due
+
+def acceptance_due(m, actor):
+    """The obligation closures due for `actor`'s verdict, in filing order. For each OPEN obligation: its
+    latest closure (whatever its verdict), when the engine judges it PENDING (admitted on every rule but
+    acceptances, so each duty it requires is DISCHARGED: SPEC §4.2), its waiting_for still names `actor`
+    (the duty's accept_by names it and it has not accepted exactly that item and evidence), and `actor` has
+    not challenged that item (SPEC §3.6: a challenge of item k concerns closure k only; one of item null,
+    the transition's results). An earlier closure of the same duty was filed over (`done --replaces`) and is
+    never due, also once the one filed in its place is admitted (Codex finding aeacfd5c933e); nor is a
+    closure of a duty already closed. A transition that closes several obligations gives one entry per item.
+    This is the one statement of the rule: the review waker runs `due` from the base's tree and wakes the
+    acceptor once per closure item, and the merge gate admits a pull request of verdicts only on closures
+    it names (eligibility.py)."""
+    challenged = {(r["body"]["target"], r["body"]["item"]) for r in m.recs.values()
+                  if r["type"] == "challenge" and r["actor"] == actor}
+    out = []
+    for did in m.obligations:
+        if m.rep["duties"][did]["disposition"] != "OPEN":
+            continue
+        closures = [c for c in m.rep["duties"][did]["candidates"] if c["act"] in CLOSING]
+        c = closures[-1] if closures else None
+        if c is None or c["verdict"] != "PENDING" or actor not in (c.get("waiting_for") or []) \
+                or (c["transition"], c["item"]) in challenged:
+            continue
+        t, b = m.recs[c["transition"]], m.recs[did]["body"]
+        ev = t["body"]["closes"][c["item"]]["evidence"]
+        docs = [m.snap.json_blob(h) for h in ev]
+        refs = [x for d in docs if isinstance(d, dict) and d.get("schema") == EVIDENCE and d.get("duty") == did
+                and isinstance(d.get("refs"), list) for x in d["refs"] if isinstance(x, str)]
+        out.append({"duty": did, "goal": m.goal_of(did), "statement": b["statement"], "requires": b["requires"],
+                    "closure": c["transition"], "item": c["item"], "filer": t["actor"], "at": t["at"],
+                    "evidence": ev, "refs": refs, "subject": t["body"]["subject"]})
+    return sorted(out, key=lambda d: (d["at"], d["closure"], d["item"]))
 
 
 # ---------------------------------------------------------------- path search
@@ -708,6 +751,9 @@ def main(argv=None):
     p = sub.add_parser("path", help="goal <- obligations <- prerequisites, with the engine's states")
     p.add_argument("goal")
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("due", help="the obligation closures due for an acceptor's verdict (the review waker)")
+    p.add_argument("--actor", required=True)
+    p.add_argument("--json", action="store_true")
     sub.add_parser("project", help="regenerate ROADMAP.md")
     sub.add_parser("check", help="CI: refuse malformed roadmap records or a stale ROADMAP.md")
     a = ap.parse_args(argv)
@@ -731,6 +777,16 @@ def main(argv=None):
             key = a.goal if KEY_RE.match(a.goal) else m.forms[a.goal].key if a.goal in m.forms else a.goal
             d = path_data(m, key)
             print(json.dumps(d, indent=2, ensure_ascii=False) if a.json else render_path(d), end="\n" if a.json else "")
+            return 0
+        if a.cmd == "due":
+            if not S.is_actor(a.actor):
+                raise Refused(f"--actor {a.actor!r} is not an actor id")
+            due = acceptance_due(rm.model(), a.actor)
+            if a.json:
+                print(json.dumps({"actor": a.actor, "due": due}, indent=1, ensure_ascii=False))
+                return 0
+            for d in due:
+                print(f"DUE closure {d['closure'][:12]} of {_short(d['duty'], goal=d['goal'])}: {d['statement']}")
             return 0
         w = Writer(rm, CL.load_key(rm.claims, a.key, a.actor), a.actor)
         if a.cmd == "goal":

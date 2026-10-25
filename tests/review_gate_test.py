@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Merge eligibility and due-for-review (tools/claimslib/eligibility.py) and the gate's GitHub side
-(tools/claimslib/gate.py), G1-G36. Each refusal case asserts the exact set of refusal codes, so a
+(tools/claimslib/gate.py), G1-G48. Each refusal case asserts the exact set of refusal codes, so a
 mutant that removes one rule is seen by its code disappearing (a later rule catching the same case
 does not hide it). Three fixture worlds are built once; each case works on its own branch from a
 world's commit.
@@ -16,6 +16,7 @@ from world import check, finish
 
 from claimslib import eligibility as EL      # noqa: E402  (review_world put tools/ on the path)
 from claimslib import gate as GT             # noqa: E402
+from warrant.store import Store             # noqa: E402
 
 MERGE = {"gate": EL.GATE, "base": "master", "hold_label": "hold", "owner_paths": [".github/", ".warrant/roles.json"],
          "required": [{"check": "test", "workflow": ".github/workflows/ci.yml"},
@@ -36,8 +37,9 @@ def checks(head, test="success", status="completed", extra=()):
     return {"check_runs": runs, "workflow_runs": wf}
 
 
-def pr(head, labels=(), state="open", draft=False, base="master"):
-    return {"number": 1, "state": state, "draft": draft, "base": base, "head": head, "labels": sorted(labels)}
+def pr(head, labels=(), state="open", draft=False, base="master", branch=None, head_repo=None):
+    return {"number": 1, "state": state, "draft": draft, "base": base, "head": head, "labels": sorted(labels),
+            "branch": branch, "head_repo": head_repo}
 
 
 def world(accept_by=("codex",)):
@@ -64,8 +66,9 @@ def at(f, commit, name):
     return f
 
 
-def codes(f, head, labels=(), hold=False, ch=None, base=None):
-    a = EL.assess(f.dir, base or f.base_commit, pr(head, labels), ch if ch is not None else checks(head), hold=hold)
+def codes(f, head, labels=(), hold=False, ch=None, base=None, **facts):
+    a = EL.assess(f.dir, base or f.base_commit, pr(head, labels, **facts), ch if ch is not None else checks(head),
+                  hold=hold)
     return a, set(a.codes())
 
 
@@ -338,7 +341,118 @@ def replay_tail_cases():
     f.close()
 
 
+# ---------------------------------------------------------------- a pull request of verdicts only
+
+def verdict_cases():
+    """The base holds a roadmap goal, two obligations claude holds and codex accepts with their closures filed
+    (t due for codex; t3 accepted by codex on the base, after the earlier commit base0) and a duty codex accepts
+    that is no obligation, with its closure te. A pull request with no review duty of its own, from the
+    repository's codex/verdicts/ branch, adds verdicts."""
+    f = Fixture()
+    (f.dir / ".warrant" / "merge.json").write_text(json.dumps(MERGE) + "\n")
+    goal = f.put("claude", "transition", R.transition("ATTESTED", [], opened=[{"text": "The ledger exists.",
+                                                                               "scope": "roadmap:G1"}]))
+
+    def closed(text, answers=goal + ":0"):
+        d = f.put("claude", "duty", R.duty("claude", text, ["s0fractal"], {"attest": {}}, accept_by=["codex"],
+                                           answers=answers))
+        ev = {"schema": "warrant-roadmap/evidence@1", "duty": d, "refs": ["s0fractal/warrant#1"]}
+        h = C.digest(C.canon(ev))
+        return f.put("claude", "transition", R.transition("ATTESTED", [h], closes=[R.item(d, "discharge", [h])],
+                                                          established=["done"]), [ev]), h
+
+    t, h = closed("an obligation codex accepts")
+    t3, h3 = closed("another obligation")
+    te, he = closed("a duty codex accepts that answers no goal", answers=None)
+    base0 = f.save()
+    v3 = f.put("codex", "accept", R.accept(t3, 0, [h3]))
+    v3_bytes = (f.dir / ".warrant" / "store" / "records" / f"{v3}.json").read_bytes()
+    f.base_commit = f.save()
+    ours = {"branch": "codex/verdicts/" + t[:12] + "-0", "head_repo": "s0fractal/warrant"}
+
+    def verdict(name, actor, rtype="accept", more=None, target=(None, None)):
+        at(f, f.base_commit, name)
+        tt, hh = target if target[0] else (t, h)
+        body = R.accept(tt, 0, [hh]) if rtype == "accept" else R.challenge(tt, "the evidence names no commit", [hh], 0)
+        v = f.put(actor, rtype, body)
+        if more is not None:
+            more()
+        return v, f.save()
+
+    v, tip = verdict("g37", "codex")
+    a, got = codes(f, tip, **ours)
+    check("G37", got == set() and a.eligible and not a.due and a.accept == ("codex", v, t, f.base_commit)
+          and a.facts.get("verdicts") == [v] and "verdicts only" in EL.line(a),
+          "a pull request of the repository's codex/verdicts/ branch with no review duty that adds only codex's new "
+          "accept of a closure the base's acceptance_due names (and the views) is eligible as it is, never due",
+          (got, a.accept, a.facts))
+    b = EL.Base(f.dir, f.base_commit)
+    fake = FakeGh(tip, f.base_commit)
+    # only an eligible assessment reaches merge_one (cmd_gate): a mutant that refuses it fails here, not by raising
+    m = GT.merge_one(b, a, GT.GitHub("s0fractal/warrant", run=fake)) if a.eligible else {"merged": False}
+    put = [c[2] for c in fake.calls if c[0] == "PUT"]
+    check("G42", m["merged"] and len(put) == 1 and put[0]["commit_title"] == "Merge pull request #1 (verdicts by codex)"
+          and v in put[0]["commit_message"] and "verdicts only" in put[0]["commit_message"]
+          and "head closure" not in put[0]["commit_message"],
+          "the merge commit of a pull request of verdicts names its verdict records, not a head closure", put)
+    _, got = codes(f, tip, branch=ours["branch"], head_repo="someone/warrant")
+    check("G43", got == {"VERDICTS_FORK"}, "the same verdicts from a fork's branch are refused", got)
+    _, got = codes(f, tip, branch="feature", head_repo="s0fractal/warrant")
+    check("G44", got == {"VERDICTS_BRANCH"}, "the same verdicts from a branch not under codex/verdicts/ are refused", got)
+
+    c, tip = verdict("g38", "codex", "challenge")
+    a, got = codes(f, tip, **ours)
+    check("G38", got == set() and a.eligible and (a.accept or ())[:3] == ("codex", c, t),
+          "codex's challenge of that closure travels the same way", (got, a.accept))
+
+    _, tip = verdict("g39", "claude")
+    _, got = codes(f, tip, **ours)
+    check("G39", got == {"NO_REVIEW"}, "an accept by a pinned actor outside the base's accept_by is no verdict: refused", got)
+
+    _, tip = verdict("g40", "codex", more=lambda: f.put("codex", "duty", R.duty(
+        "codex", "codex's own line", ["s0fractal"], {"attest": {}}, accept_by=["s0fractal"])))
+    _, got = codes(f, tip, **ours)
+    check("G40", got == {"NO_REVIEW"}, "a pull request that adds another record of codex's beside its verdict (here a duty) "
+          "is not one of verdicts only", got)
+
+    at(f, f.base_commit, "g41")
+    f.put("codex", "accept", R.accept(t, 0, [h]))
+    f.save()
+    _, got = codes(f, f.commit("and a change", {"calc.py": FIXED}), **ours)
+    check("G41", got == {"NO_REVIEW"}, "a verdict beside any change outside the store and the views is not a pull request of "
+          "verdicts only", got)
+
+    at(f, base0, "g45")
+    (f.dir / ".warrant" / "store" / "records" / f"{v3}.json").write_bytes(v3_bytes)
+    f.ok("project")
+    # Its own message: base0 plus v3 is the base's very tree, and a commit "records" on base0 within the same second
+    # would be the base's commit itself (CI run 40188018803 at 65ac2dd: G45 read NO_REVIEW, nothing added).
+    _, got = codes(f, f.commit("codex's old accept again, from an earlier commit"), **ours)
+    check("G45", got == {"VERDICT_NOT_NEW", "VERDICT_NOT_DUE"},
+          "codex's old accept, which the base holds, added again from an earlier commit is refused as not new (and its "
+          "closure is no longer due)", got)
+
+    _, tip = verdict("g46", "codex", target=(te, he))
+    _, got = codes(f, tip, **ours)
+    check("G46", got == {"VERDICT_NOT_DUE"}, "an accept of a closure the base's acceptance_due does not name (its duty answers "
+          "no roadmap goal) is refused", got)
+
+    _, tip = verdict("g47", "codex", more=lambda: Store(f.dir / ".warrant" / "store").put_json({"filler": "x" * 64}))
+    _, got = codes(f, tip, **ours)
+    check("G47", got == {"TAIL_BLOB_UNCITED"}, "a pull request of verdicts that also adds a blob no verdict cites is refused",
+          got)
+    f.close()
+
+
+def blob_cases(f):
+    at(f, f.tip, "g48")
+    Store(f.dir / ".warrant" / "store").put_json({"filler": "y" * 64})
+    _, got = codes(f, f.save())
+    check("G48", got == {"TAIL_BLOB_UNCITED"}, "after an accepted head, a blob no record added there cites is refused", got)
+
+
 if __name__ == "__main__":
+    verdict_cases()
     replay_tail_cases()
     w = world()
     pending_cases(w)
@@ -349,7 +463,7 @@ if __name__ == "__main__":
     w = world()
     w.ok("accept", "--pr", "1", "--commit", w.x, actor="codex")
     w.tip = w.save()
-    for cases in (accepted_cases, tail_cases, check_and_hold_cases, merge_cases):
+    for cases in (accepted_cases, tail_cases, check_and_hold_cases, merge_cases, blob_cases):
         cases(w)
     w.close()
     raise SystemExit(finish("review_gate_test"))

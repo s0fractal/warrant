@@ -93,11 +93,12 @@ def _branch(b):
 
 
 def facts(p):
-    """The facts of a pull request the predicate reads, from the API's object (branch and title are
-    for the waker's prompt; no rule reads them)."""
+    """The facts of a pull request the predicate reads, from the API's object (the title is for the waker's
+    prompt; the branch and the head's repository are read by the rule for a pull request of verdicts only)."""
     return {"number": p["number"], "state": p["state"], "draft": bool(p.get("draft")), "base": p["base"]["ref"],
             "head": p["head"]["sha"], "labels": sorted(x["name"] for x in p.get("labels", [])),
-            "branch": p["head"].get("ref"), "title": p.get("title")}
+            "branch": p["head"].get("ref"), "title": p.get("title"),
+            "head_repo": (p["head"].get("repo") or {}).get("full_name")}
 
 
 def fetch(root, n, remote="origin"):
@@ -154,6 +155,10 @@ def merge_one(b, a, gh):
     title = f"Merge pull request #{n} (accepted by {actor})"
     message = (f"merge-on-acceptance: accept {aid} by {actor} of head closure {tid} at {x}; head {head}; "
                f"base {base}; required checks green at the head.")
+    if a.facts.get("verdicts"):
+        title = f"Merge pull request #{n} (verdicts by {actor})"
+        message = (f"merge-on-acceptance: verdicts only, {', '.join(a.facts['verdicts'])}, from {x}; head {head}; "
+                   f"base {base}; required checks green at the head.")
     try:
         res = gh.merge(n, head, title, message)
     except Refused as e:

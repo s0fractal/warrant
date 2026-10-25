@@ -24,6 +24,7 @@ duty stays as the records leave it.
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | without reviewer acceptance |
 | #193 | DISCHARGED | 4 | 6 | 6 | 6 | at an accepted head |
+| #194 | DISCHARGED | 7 | 4 | 4 | 4 | — |
 | #195 | DISCHARGED | 2 | 1 | 1 | 1 | — |
 
 ## Merged without reviewer acceptance of the result
@@ -147,6 +148,34 @@ duty stays as the records leave it.
     - answered by head 4
 - head 4 `19b757bf307a` (tree `82a63d51df70`), discharge `ceef0bc78ad4`: ADMITTED · accepted by codex; answers `b3887f01538c`
 - merge `29d1faf66fe3` (tree `62c6b12442ea`), first parent `3063c2989b4e`, tip `641cb12e28f4` (observed by claude, `448018e5e1d9`): at the head `19b757bf307a` accepted by codex; the merge adds nothing else
+
+## s0fractal/warrant#194 — Acceptance wakes: the waker wakes Codex for obligation closures due for his verdict; verdict-only PRs merge; M16 deterministic
+
+- duty `20fa1f8ba139` held by claude, owed to s0fractal, accepted by codex: **DISCHARGED**
+  - serves duty `47cdf978c4d3`
+- head 1 `fd159cacab44` (tree `059a3fd26e04`), discharge `c7c20cd73403`: PENDING · awaiting codex; superseded by head 2
+- head 2 `41a10739b0fe` (tree `7d56c0da52e8`), discharge `246adae2a062`: PENDING · awaiting codex; superseded by head 3
+  - finding `3acb42fc0511` by codex, P2, mechanical `review194_items_test:A194R2`: REPRODUCED — Key acceptance wakes by transition and item: a transition may close two roadmap duties; after its first item is accepted the other is still PENDING, but their shared accepts/<T>.json memo says done, so the second item is never woken. The prompt asks for only one item.
+    - where: integrations/codex-plugin/waker/waker.py:442-444
+    - replayed at head 2 `41a10739b0fe`: REPRODUCES; head 3 `c1b3e2d9ebda`: DOES NOT REPRODUCE; head 4 `c86db37c3385`: DOES NOT REPRODUCE; head 5 `ffd24f5c2f6e`: DOES NOT REPRODUCE; head 6 `2916eeb4bd16`: DOES NOT REPRODUCE; head 7 `0c55b9149bbf`: DOES NOT REPRODUCE
+    - answered by head 3
+  - finding `aeacfd5c933e` by codex, P2, mechanical `review194_replacement_test:A194R1`: REPRODUCED — Do not wake a filed-over closure after accepting its replacement: done --replaces T1 then accept T2 leaves the duty DISCHARGED, but filtering to PENDING first makes T1 due again, so a discarded, unchallenged attempt is sent for review.
+    - where: tools/roadmap.py:371-373
+    - replayed at head 2 `41a10739b0fe`: REPRODUCES; head 3 `c1b3e2d9ebda`: DOES NOT REPRODUCE; head 4 `c86db37c3385`: DOES NOT REPRODUCE; head 5 `ffd24f5c2f6e`: DOES NOT REPRODUCE; head 6 `2916eeb4bd16`: DOES NOT REPRODUCE; head 7 `0c55b9149bbf`: DOES NOT REPRODUCE
+    - answered by head 3
+- head 3 `c1b3e2d9ebda` (tree `ba8c2d47741e`), discharge `63e87a693839`: PENDING · awaiting codex; superseded by head 4; answers `3acb42fc0511`, `aeacfd5c933e`
+- head 4 `c86db37c3385` (tree `805223ba88cc`), discharge `9cf1b1994e07`: PENDING · awaiting codex; superseded by head 5
+- head 5 `ffd24f5c2f6e` (tree `64149b7dea40`), discharge `e84e0ec48c95`: PENDING · awaiting codex; superseded by head 6
+  - finding `91ee68a60abe` by codex, P2, mechanical `verdict_fork_hold_test:F1`: REPRODUCED — A fork PR named codex/verdicts/* blocks every obligation-acceptance wake indefinitely: hold() trusts its branch even when NO_REVIEW or VERDICTS_FORK refuses the PR. Carry head-repository identity through due JSON and hold only this repository's verdict PRs; F1 reproduces at ffd24f5 and F0 restores the wake by changing only the fork's branch name.
+    - where: integrations/codex-plugin/waker/waker.py:531, tools/claimslib/eligibility.py:597
+    - replayed at head 5 `ffd24f5c2f6e`: REPRODUCES; head 6 `2916eeb4bd16`: DOES NOT REPRODUCE; head 7 `0c55b9149bbf`: DOES NOT REPRODUCE
+    - answered by head 6
+- head 6 `2916eeb4bd16` (tree `914a178534f3`), discharge `c9f7a2fb3f2d`: PENDING · awaiting codex; superseded by head 7; answers `91ee68a60abe`
+  - finding `df86dfbcbf4c` by codex, P2, mechanical `base_witness_identity_test:F1`: REPRODUCED — New witness IDs collide with master 910c969009b1: M641-M645 name unrelated guards and P26 names another check. In a scratch merge, master's M642 defect prints FAIL P26, then PASS P26 and exits 0 because world.results overwrites it. Allocate unused IDs and update their references; retain master's witnesses. F1 fails at X and passes at M.
+    - where: tests/mutants.py:1727, tests/mutants.py:1755, tests/roadmap_test.py:542, tests/world.py:84
+    - replayed at head 6 `2916eeb4bd16`: REPRODUCES; head 7 `0c55b9149bbf`: DOES NOT REPRODUCE
+    - answered by head 7
+- head 7 `0c55b9149bbf` (tree `990d1abafe03`), discharge `3a6a9cfa24a4`: ADMITTED · accepted by codex; answers `df86dfbcbf4c`
 
 ## s0fractal/warrant#195 — Engine frontier, roadmap --replaces, pilot NUL path and shared-node depth; merge observations #181-#193
 
