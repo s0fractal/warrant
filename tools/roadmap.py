@@ -73,6 +73,7 @@ HEXPREFIX = re.compile(r"^[0-9a-f]{8,64}\Z")
 VISION_RESIDUAL = ("a goal proves nothing: it sets the direction of path search; it is shown met only by a "
                    "superseding transition that establishes it")
 DONE_RESIDUAL = "the evidence blob names pull requests and commits; this record does not replay them"
+CLOSING = ("discharge", "impossible", "revalidate")      # the acts of an item that closes a duty
 FORWARD = ("obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal "
            "is still open, so the decomposition did not reach it (Forward Attack)")
 # Formulation states: the goal text as one transition opened it. REOPENED: a transition that superseded it
@@ -360,17 +361,20 @@ class Model:
 
 def acceptance_due(m, actor):
     """The obligation closures due for `actor`'s verdict, in filing order. For each obligation: its latest
-    closure the engine judges PENDING (admitted on every rule but acceptances, so each duty it requires is
-    DISCHARGED: SPEC §4.2), whose waiting_for still names `actor` (the duty's accept_by names it and it has
-    not accepted exactly that item and evidence), and which `actor` has not challenged. An earlier PENDING
-    closure of the same duty was filed over (`done --replaces`) and is not due. This is the one statement of
-    the rule: the review waker runs `due` from the base's tree and wakes the acceptor once per closure."""
+    closure (whatever its verdict), when the engine judges it PENDING (admitted on every rule but
+    acceptances, so each duty it requires is DISCHARGED: SPEC §4.2), its waiting_for still names `actor`
+    (the duty's accept_by names it and it has not accepted exactly that item and evidence), and `actor` has
+    not challenged it. An earlier closure of the same duty was filed over (`done --replaces`) and is never
+    due, also once the one filed in its place is admitted (Codex finding aeacfd5c933e). A transition that
+    closes several obligations gives one entry per item. This is the one statement of the rule: the review
+    waker runs `due` from the base's tree and wakes the acceptor once per closure item."""
     challenged = {r["body"]["target"] for r in m.recs.values() if r["type"] == "challenge" and r["actor"] == actor}
     out = []
     for did in m.obligations:
-        pending = [c for c in m.rep["duties"][did]["candidates"] if c["verdict"] == "PENDING"]
-        c = pending[-1] if pending else None
-        if c is None or actor not in (c.get("waiting_for") or []) or c["transition"] in challenged:
+        closures = [c for c in m.rep["duties"][did]["candidates"] if c["act"] in CLOSING]
+        c = closures[-1] if closures else None
+        if c is None or c["verdict"] != "PENDING" or actor not in (c.get("waiting_for") or []) \
+                or c["transition"] in challenged:
             continue
         t, b = m.recs[c["transition"]], m.recs[did]["body"]
         ev = t["body"]["closes"][c["item"]]["evidence"]
@@ -380,7 +384,7 @@ def acceptance_due(m, actor):
         out.append({"duty": did, "goal": m.goal_of(did), "statement": b["statement"], "requires": b["requires"],
                     "closure": c["transition"], "item": c["item"], "filer": t["actor"], "at": t["at"],
                     "evidence": ev, "refs": refs, "subject": t["body"]["subject"]})
-    return sorted(out, key=lambda d: (d["at"], d["closure"]))
+    return sorted(out, key=lambda d: (d["at"], d["closure"], d["item"]))
 
 
 # ---------------------------------------------------------------- path search

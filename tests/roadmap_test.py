@@ -596,12 +596,19 @@ def due_cases():
     check("P25", sorted(due(r)) == sorted([u, t2, s2]),
           "of a duty's closures waiting for acceptance only the latest is due: an earlier one was filed over (records "
           "filed in one second are named in id order)", due(r))
+
+    # P27: once the closure filed in its place is accepted, the filed-over one stays not due (Codex finding
+    # aeacfd5c933e on 41a1073: it was the duty's only PENDING closure left, and read as due).
+    r.accept(s2)                # s1, filed over by s2, was never challenged
+    check("P27", r.model().rep["duties"][f]["disposition"] == "DISCHARGED" and sorted(due(r)) == sorted([u, t2])
+          and s1 not in due(r),
+          "accepting a replacement leaves neither it nor the closure it was filed over due", due(r))
     r.close()
 
 
 GROUPS = ((goal_cases, ("P1", "P2")), (source_cases, ("P16",)), (requires_cases, ("P3", "P14", "P4", "P5", "P15")), (supersede_cases, ("P6", "P7")),
           (shared_cases, ("P17", "P18")), (cycle_cases, ("P19", "P20")), (projection_cases, ("P8",)), (forward_attack_cases, ("P9", "P11")), (spec_cases, ("P10",)),
-          (check_cases, ("P12", "P13")), (due_cases, ("P21", "P26", "P22", "P23", "P24", "P25")))
+          (check_cases, ("P12", "P13")), (due_cases, ("P21", "P26", "P22", "P23", "P24", "P25", "P27")))
 
 
 def main():

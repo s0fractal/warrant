@@ -22,8 +22,8 @@ launchd runs it every five minutes (install.py). One run:
      engine holds PENDING for codex, every duty it requires DISCHARGED, neither accepted nor challenged by
      codex). At most one is woken per run, and none while an open pull request's branch is under
      VERDICT_BRANCH (Codex's previous verdict, not merged yet: two such pull requests would render the
-     same generated views from different bases). Its memo is HOME/accepts/<closure>.json, its worktree
-     TREES/accept-<closure12>-<base12>, detached at the base; Codex accepts the closure or challenges it
+     same generated views from different bases). Its memo is HOME/accepts/<closure>-<item>.json, its
+     worktree TREES/accept-<closure12>-<item>-<base12>, detached at the base; Codex accepts the closure or challenges it
      through MCP and opens a pull request of those records only, which the merge gate admits as verdicts
      (eligibility.py). A closure that becomes acceptable later (its prerequisite was accepted meanwhile)
      is due in the run that reads that base.
@@ -439,13 +439,21 @@ class Waker:
 
     # -- one acceptance wake: an obligation closure due for Codex's verdict
 
+    def accept_key(self, c):
+        """<closure>-<item>: a transition that closes several obligations is one wake per item (Codex finding
+        3acb42fc0511)."""
+        if type(c["item"]) is not int or c["item"] < 0:
+            raise ValueError(f"{c['item']!r} is not an item index")
+        return f"{record_id(c['closure'])}-{c['item']}"
+
     def accept_memo(self, c):
-        p = self.home / "accepts" / f"{record_id(c['closure'])}.json"
+        p = self.home / "accepts" / f"{self.accept_key(c)}.json"
         return p, (json.loads(p.read_text()) if p.is_file() else None)
 
     def accept_worktree(self, c, base):
-        """A detached worktree of the mirror at the base, its own for this closure and base."""
-        path = self.trees / f"accept-{record_id(c['closure'])[:12]}-{commit(base)[:12]}"
+        """A detached worktree of the mirror at the base, its own for this closure item and base."""
+        self.accept_key(c)
+        path = self.trees / f"accept-{c['closure'][:12]}-{c['item']}-{commit(base)[:12]}"
         if not path.exists():
             self.trees.mkdir(parents=True, exist_ok=True)
             git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(path), base)
@@ -454,13 +462,13 @@ class Waker:
     def accept(self, c, base, why_not=None):
         """(woken, line) for obligation closure `c` (an entry of `roadmap.py due`) at the base: Codex is woken
         when its memo's state allows and nothing holds it (`why_not`: a dry run, HOME/HOLD, an open verdict
-        pull request, a wake already started in this run); one memo per closure, whatever the base."""
+        pull request, a wake already started in this run); one memo per closure item, whatever the base."""
         p, doc = self.accept_memo(c)
         if why_not:
             what, detail = self.state(doc) if doc else ("retry", "not woken yet")
             return False, detail + (f"; {why_not}" if what == "retry" else "")
-        key = f"accept-{c['closure']}"
-        doc = doc or {"closure": c["closure"], "duty": c["duty"], "base": base, "attempts": []}
+        key = f"accept-{self.accept_key(c)}"
+        doc = doc or {"closure": c["closure"], "item": c["item"], "duty": c["duty"], "base": base, "attempts": []}
         return self.attempt(p, doc, key, lambda: self.accept_worktree(c, base),
                             lambda path: self.codex_exec(path, key, accept_prompt(c, base, self.plugin, path)))
 
@@ -488,7 +496,7 @@ def accept_prompt(c, base, plugin, path):
             f"detached at M (its remote origin is the repository). The plugin's stdio MCP client is "
             f"{plugin / 'scripts' / 'warrant-mcp-call'}. Judge whether what D owes is done; then accept T item "
             f"{c['item']}, or challenge T, through MCP. Commit only that record and the regenerated views on the branch "
-            f"{VERDICT_BRANCH}{c['closure'][:12]}, push it and open a pull request into {BRANCH}. These facts come from "
+            f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}, push it and open a pull request into {BRANCH}. These facts come from "
             f"`tools/roadmap.py due --actor {ACCEPTOR}` at M, run by the review waker; check them yourself before you "
             "rely on them.")
 

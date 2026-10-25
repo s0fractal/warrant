@@ -5,7 +5,7 @@ replay (integrations/codex-plugin/waker/waker.py, Waker.replay): the checker run
 on every due head, with no person or model choosing to run it, and the waker pushes only what the
 checker's own code filed (W1-W11). Then its acceptance wakes: the base's `tools/roadmap.py due` names the
 obligation closures due for Codex's verdict, each woken once, one at a time, none while Codex's previous verdict
-pull request is open (W12-W14).
+pull request is open (W12-W15).
 
 The waker is driven against a fixture: a bare `origin` with the pull request's branch, the waker's
 mirror cloned from it, and a base tree whose tools are the ones under test. A jail runs the commands
@@ -472,10 +472,10 @@ def acceptance_cases():
     memos = sorted(p.name for p in (f.w.home / "accepts").iterdir())
     check("W12", [d["closure"] for d in got["due"]] == [ta] and len(f.codex.calls) == 1
           and "woken, codex exited 0" in first[-1] and "done" in second[-1] and "done" in third[-1]
-          and memos == [f"{ta}.json"] and wt is not None and wt.name == f"accept-{ta[:12]}-{f.start[:12]}"
+          and memos == [f"{ta}-0.json"] and wt is not None and wt.name == f"accept-{ta[:12]}-0-{f.start[:12]}"
           and not wt.exists() and all(x in text for x in (ta, a, ha, "s0fractal/warrant#9", "merge " + "c" * 40,
                                                           "Counter blobs are accepted from any key.", f.start,
-                                                          WAKER.VERDICT_BRANCH + ta[:12]))
+                                                          WAKER.VERDICT_BRANCH + ta[:12] + "-0"))
           and "CONCLUSION" not in text,
           "the base's roadmap.py due names the closure whose prerequisites are met (not the dependent one); Codex is "
           "woken for it once, in its own worktree of the base, told the duty, the closure, its evidence and what that "
@@ -509,6 +509,33 @@ def acceptance_cases():
           "no acceptance wake while Codex's previous verdict pull request is open, or while the open pull requests "
           "could not be read; at most one per run, the next closure in the next run", (held, unread, one, two))
     g.close()
+
+    # W15: one transition closing two obligations is two wakes, one per item (Codex finding 3acb42fc0511 on
+    # 41a1073: one memo per transition read done after the first item's wake, so the second was never woken).
+    f = pr_world()
+    goal = f.put("claude", "transition", R.transition("ATTESTED", [], opened=[{"text": "The ledger exists.",
+                                                                               "scope": "roadmap:G1"}]))
+    a, b = obligation(f, goal, "Obligation A."), obligation(f, goal, "Obligation B.")
+    doc = {"evidence": "one transition, two obligation items"}
+    h = C.digest(C.canon(doc))
+    t = f.put("claude", "transition", R.transition("ATTESTED", [h], closes=[R.item(a, "discharge", [h]),
+                                                                         R.item(b, "discharge", [h])],
+                                                   established=["CONCLUSION"]), [doc])
+    code = roadmap_base(f)
+    f.w.tree = lambda base: code
+    f.w.due = lambda base: {"due": [], "not_due": []}
+    f.w.fetch = lambda: f.start
+    items = [(d["closure"], d["item"]) for d in f.w.acceptances(f.start)["due"]]
+    WAKER.tick(f.w, False)
+    f.put("codex", "accept", R.accept(t, 0, [h]))
+    WAKER.tick(f.w, False)
+    told = [next((i for i in (0, 1) if f"(item {i})" in c[-1] and WAKER.VERDICT_BRANCH + f"{t[:12]}-{i}" in c[-1]), None)
+            for c in f.codex.calls]
+    memos = sorted(p.name for p in (f.w.home / "accepts").iterdir())
+    check("W15", items == [(t, 0), (t, 1)] and told == [0, 1] and memos == [f"{t}-0.json", f"{t}-1.json"],
+          "a transition closing two obligations is due once per item; accepting the first item leaves the second "
+          "to be woken in the next run, with its own memo and branch", (items, told, memos))
+    f.close()
 
 
 def main():

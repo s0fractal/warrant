@@ -19,12 +19,12 @@ it can verify; nobody else has to act.
 After the pull requests, the waker runs the base tree's `tools/roadmap.py due --actor codex` on the
 base's own records: the roadmap obligations' closures due for Codex's verdict (an obligation's latest
 closure the engine holds PENDING for codex, so every duty it requires is DISCHARGED, which codex has
-neither accepted nor challenged). It starts `codex exec` once per closure (a memo
-`accepts/<closure>.json`, the same retries), in a detached worktree of the base
-(`~/Projects/.worktrees/codex-review/accept-<closure12>-<base12>`), telling him the duty's text, the
+neither accepted nor challenged). It starts `codex exec` once per closure item (a memo
+`accepts/<closure>-<item>.json`, the same retries), in a detached worktree of the base
+(`~/Projects/.worktrees/codex-review/accept-<closure12>-<item>-<base12>`), telling him the duty's text, the
 closure, its evidence ids and the pull requests and commits that evidence names, not what the closure
 says it established. He accepts the closure or challenges it through MCP, commits that record and the
-views on `codex/verdicts/<closure12>` and opens a pull request of it; the merge gate merges a pull
+views on `codex/verdicts/<closure12>-<item>` and opens a pull request of it; the merge gate merges a pull
 request of verdicts only (`eligibility.py`). At most one closure is woken per run, and none while a
 pull request from a `codex/verdicts/` branch is open: two of them would render the same views from
 different bases. A closure whose prerequisite is accepted meanwhile is due in the next run that reads
@@ -59,7 +59,7 @@ install -m 600 SEED ~/.warrant-review-replayer/HASH.seed
 
 Its state lives in `~/.warrant/codex-waker`: `warrant.git` (the mirror), `code/<commit>` (the base
 trees it ran), `wakes/<n>-<head>.json` (one memo per head with every attempt's exit status; delete it
-to wake that head again), `accepts/<closure>.json` (the same, one per obligation closure),
+to wake that head again), `accepts/<closure>-<item>.json` (the same, one per obligation closure item),
 `replays/<n>-<head>.json` (one replay per head; delete it to replay that
 head again), `replay-work/`, `logs/`, `results/` (Codex's last message of each wake).
 `WARRANT_WAKER_HOME`, `WARRANT_WAKER_TREES`, `WARRANT_WAKER_REPLAYERS`, `WARRANT_WAKER_PYTHON`,

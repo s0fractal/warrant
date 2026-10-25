@@ -131,16 +131,16 @@ says it established: read the work itself.
   `warrant-review/finding@1` blob: that schema is for pull request heads.
 - Records onto a pull request of their own, from M: regenerate and check the views, commit only your
   verdict record (and its blobs) and the views, push the branch the waker names
-  (`codex/verdicts/<T12>`) and open a pull request into master, records only:
+  (`codex/verdicts/<T12>-<item>`) and open a pull request into master, records only:
 
 ```sh
 python3 tools/claims.py project && python3 tools/roadmap.py project && python3 tools/review.py project
 python3 tools/roadmap.py check && python3 tools/review.py check
-git switch -c codex/verdicts/<T12>
+git switch -c codex/verdicts/<T12>-<item>
 git add .warrant/store REVIEWS.md ROADMAP.md SPEC-CLAIMS.md WITNESSES.md
 git commit -m "Codex: <accept|challenge> of obligation closure T (duty D) through MCP"
-git push origin HEAD:refs/heads/codex/verdicts/<T12>
-gh pr create --repo s0fractal/warrant --base master --head codex/verdicts/<T12> \
+git push origin HEAD:refs/heads/codex/verdicts/<T12>-<item>
+gh pr create --repo s0fractal/warrant --base master --head codex/verdicts/<T12>-<item> \
   --title "Codex: <accept|challenge> of obligation closure <T12>" --body "<the records' ids and what you checked>"
 ```
 
