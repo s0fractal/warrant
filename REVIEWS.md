@@ -22,7 +22,7 @@ duty stays as the records leave it.
 | #189 | DISCHARGED | 2 | 0 | 0 | 0 | — |
 | #190 | DISCHARGED | 5 | 2 | 0 | 2 | — |
 | #191 | DISCHARGED | 1 | 0 | 0 | 0 | — |
-| #192 | OPEN · awaiting acceptance by codex | 2 | 0 | 0 | 0 | — |
+| #192 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 | #193 | DISCHARGED | 4 | 6 | 0 | 6 | — |
 
 ## Merged without reviewer acceptance of the result
@@ -99,7 +99,8 @@ None.
 - duty `d6e8a465d4ad` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
   - serves duty `47cdf978c4d3`
 - head 1 `24e698569adc` (tree `4ebf7cc49e40`), discharge `0f5fbf1fcc8e`: PENDING · awaiting codex; superseded by head 2
-- head 2 `8449a8e1c758` (tree `90f264a708ef`), discharge `5b57ea6a31ff`: PENDING · awaiting codex
+- head 2 `8449a8e1c758` (tree `90f264a708ef`), discharge `5b57ea6a31ff`: PENDING · awaiting codex; superseded by head 3
+- head 3 `a5d2b8b4e4ae` (tree `3435922ec5e7`), discharge `db91868adafb`: PENDING · awaiting codex
 
 ## s0fractal/warrant#193 — G9 pilot resolution layer: contract, typed addresses, closure, profiles (PS-01..PS-04)
 
