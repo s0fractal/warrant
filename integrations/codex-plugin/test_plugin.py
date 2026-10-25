@@ -154,7 +154,7 @@ def wakes():
     base, home, heads = fixture_mirror()
     now = [1_000_000.0]
     codex = Codex()
-    w = WAKER.Waker(home=home, trees=base / "trees", codex="/bin/codex", run=codex, clock=lambda: now[0])
+    w = WAKER.Waker(home=home, trees=base / "trees", replayers=base / "no-seeds", codex="/bin/codex", run=codex, clock=lambda: now[0])
     a = due_json(heads[0])
     first, second = w.wake(a)[1], w.wake(a)[1]
     memo = json.loads((home / "wakes" / f"7-{heads[0]}.json").read_text())
@@ -178,7 +178,7 @@ def wakes():
         w.command(a, WAKER.OPERATOR_CHECKOUT)
     except ValueError as e:
         refused = str(e)
-    dirty = WAKER.Waker(home=home, trees=base / "trees", codex="/bin/codex", run=Codex(dirty=True), clock=lambda: now[0])
+    dirty = WAKER.Waker(home=home, trees=base / "trees", replayers=base / "no-seeds", codex="/bin/codex", run=Codex(dirty=True), clock=lambda: now[0])
     out = dirty.wake(due_json(heads[1], pr=8))[1]
     kept = base / "trees" / f"8-{heads[1][:12]}"
     head_there = subprocess.run(["git", "-C", str(kept), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
@@ -187,7 +187,7 @@ def wakes():
           "detached at the head", (refused, out, head_there))
 
     failing = Codex(code=1)
-    f = WAKER.Waker(home=home, trees=base / "trees", codex="/bin/codex", run=failing, clock=lambda: now[0])
+    f = WAKER.Waker(home=home, trees=base / "trees", replayers=base / "no-seeds", codex="/bin/codex", run=failing, clock=lambda: now[0])
     b = due_json(heads[1], pr=9)
     states = [f.wake(b)[1], f.wake(b)[1]]
     now[0] += WAKER.BACKOFF + 1
