@@ -29,7 +29,7 @@ duty stays as the records leave it.
 | #197 | DISCHARGED | 4 | 2 | 2 | 2 | at an accepted head |
 | #201 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | without reviewer acceptance |
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #204 | OPEN · awaiting acceptance by codex | 3 | 4 | 3 | 3 | — |
+| #204 | OPEN · awaiting acceptance by codex | 4 | 4 | 3 | 4 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -236,19 +236,20 @@ duty stays as the records leave it.
 - head 1 `213c1b9ef2f2` (tree `bfedf82a197f`), discharge `728aa12d5e57`: PENDING · awaiting codex; superseded by head 2
   - finding `be3c24f3b319` by codex, P2, mechanical `replay_retry_race_test:RACE1`: REPRODUCED — After a failed replay and a verdict, a successful retry whose observations lose the branch-tip race is saved ok=True and covers the failure; pending becomes false, so the new tip is never retried and retains no observations. Keep the replay pending until its observations reach the branch or already exist there.
     - where: integrations/codex-plugin/waker/waker.py:313-322, integrations/codex-plugin/waker/waker.py:412-414, integrations/codex-plugin/waker/waker.py:607-608
-    - replayed at head 1 `213c1b9ef2f2`: REPRODUCES; head 2 `9e58df1fc276`: DOES NOT REPRODUCE; head 3 `f207ba5252a6`: DOES NOT REPRODUCE
+    - replayed at head 1 `213c1b9ef2f2`: REPRODUCES; head 2 `9e58df1fc276`: DOES NOT REPRODUCE; head 3 `f207ba5252a6`: DOES NOT REPRODUCE; head 4 `3924e6a29d78`: NOT REPLAYED
     - answered by head 2
 - head 2 `9e58df1fc276` (tree `d1e6a3c207b3`), discharge `7a2f5af4c5af`: PENDING · awaiting codex; superseded by head 3; answers `be3c24f3b319`
   - finding `23d10e5b513c` by codex, P2, mechanical `replay_retry_skip_test:SKIP1`: REPRODUCED — A retry at a head that changes review_replay.py is skipped, but replay() still sets ok=True and cover() clears the earlier failed memo. pending() becomes false despite zero observations, so a PR no longer due loses its retry. A skipped run must not count as a completed replay or cover earlier failures.
     - where: integrations/codex-plugin/waker/waker.py:317, integrations/codex-plugin/waker/waker.py:327-328, integrations/codex-plugin/waker/waker.py:381-382
-    - replayed at head 2 `9e58df1fc276`: REPRODUCES; head 3 `f207ba5252a6`: DOES NOT REPRODUCE
+    - replayed at head 2 `9e58df1fc276`: REPRODUCES; head 3 `f207ba5252a6`: DOES NOT REPRODUCE; head 4 `3924e6a29d78`: NOT REPLAYED
     - answered by head 3
   - finding `fec604ae5dc1` by codex, P2, mechanical `replay_retry_legacy_test:LEGACY1`: REPRODUCED — Upgrading an old memo with line 'replay not pushed: ...' sets its attempt ok=True. After a verdict, pending() is false, so retry_lines never runs the checker and the branch retains no observations. This is the memo master wrote after a branch-tip race; migrate it as incomplete, like a checker failure.
     - where: integrations/codex-plugin/waker/waker.py:195-197
-    - replayed at head 2 `9e58df1fc276`: REPRODUCES; head 3 `f207ba5252a6`: DOES NOT REPRODUCE
+    - replayed at head 2 `9e58df1fc276`: REPRODUCES; head 3 `f207ba5252a6`: DOES NOT REPRODUCE; head 4 `3924e6a29d78`: NOT REPLAYED
     - answered by head 3
-- head 3 `f207ba5252a6` (tree `05c5e541b57a`), discharge `5c1b65f93bff`: PENDING · awaiting codex; answers `23d10e5b513c`, `fec604ae5dc1`
+- head 3 `f207ba5252a6` (tree `05c5e541b57a`), discharge `5c1b65f93bff`: PENDING · awaiting codex; superseded by head 4; answers `23d10e5b513c`, `fec604ae5dc1`
   - finding `77e675a71b60` by codex, P2, mechanical `replay_retry_seed_test:SEED1`: NOT_REPLAYED — After a failed replay, an unavailable checker seed permanently suppresses review: replay() returns before recording another attempt, while wake_after_replay() keeps the old memo pending. Even after five backoff intervals, no reviewer is woken and MAX_TRIES is never reached. Treat the unavailable run explicitly so review can proceed with its replay gap.
     - where: integrations/codex-plugin/waker/waker.py:317-319, integrations/codex-plugin/waker/waker.py:614-617
-    - replayed at head 3 `f207ba5252a6`: NOT REPLAYED
-    - not answered
+    - replayed at head 3 `f207ba5252a6`: NOT REPLAYED; head 4 `3924e6a29d78`: NOT REPLAYED
+    - answered by head 4
+- head 4 `3924e6a29d78` (tree `bc0f687dd205`), discharge `78f76cb5883f`: PENDING · awaiting codex; answers `77e675a71b60`
