@@ -615,6 +615,27 @@ any other cursor is `CURSOR_MISMATCH`.
 frozen view, returned as `view_token`, never from the live store; a context page
 and a cursor need the view that made them.
 
+`graph` answers from the record graph of one frozen view, built from its
+captured bytes and report only: a node is a record the report does not list
+invalid, a question such a record opens, a blob it cites, or `missing` for an id
+an edge names that the view lacks; every edge is read from a record body, and
+every state and verdict shown is the report's, never recomputed. `graph` is
+permitted wherever `read` is. Its `path` lists the duties a duty, a question or
+a question scope leads to, each after the duties it requires; `frontier` is the
+engine's for the configured signer's actor unless `actor` names another;
+`impact` and `delta`, from the view of `base_view_token` to this one, name the
+duties and questions the added or removed records bear on (what they close,
+accept, challenge, supersede, revalidate or grant, then every duty requiring one
+of those) and the nodes and edges added, removed or changed; `export` gives the
+graph as JSON or as Graphviz text in which every string is quoted and escaped. A
+`graph` result is paged under `context_bytes`, and its cursor is bound to its
+view, operation and request: any other cursor is `CURSOR_MISMATCH`. Every
+`graph` result carries `root`, the snapshot and `as_of` of its view (and of the
+base view), and `lens`, the content address of everything else that decides it:
+the code of the interface and of the engine, every other operand of each
+assessment it read (the base view's too), and the query with its defaults
+resolved; one lens over one root gives one result.
+
 Each capsule is the engine's (§8) with three members taken from the same report:
 `closures` on a duty, every closure attempt with its verdict and why; `closes`
 on a transition, each item with its duty, the duty's statement and disposition,

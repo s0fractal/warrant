@@ -10,7 +10,8 @@ name: ci
 #   suites           base install, the installed-bytes suites, the public surface and the
 #                    executable QUICKSTART.md, the mutant runner's selftest,
 #                    the generated mutants' selftest (their scheduled hunt is survivors.yml,
-#                    never a check of this workflow), the roadmap check, the review loop suites;
+#                    never a check of this workflow), the roadmap check, the review loop suites,
+#                    the record graph's suite;
 #   claims-selftest  tools/claims.py --selftest;
 #   examples         cross-host, review handoff, ref transport, scenarios, agent acceptance,
 #                    the Codex plugin and review waker, the Claude Code plugin bridge;
@@ -22,7 +23,9 @@ name: ci
 #                    replay checker's observations new since the base, re-executed;
 #   test             --merge of the parts (refused unless every mutant id ran exactly once and
 #                    was killed), then tools/claims.py check and tools/review.py check against the
-#                    base, after the mutants.
+#                    base, after the mutants; then the Markdown views of the records, rendered in
+#                    three processes and compared (tools/graph.py views --check) and uploaded as the
+#                    `views` artifact: build artifacts, never committed (G11).
 # Every job but wheels installs from that wheelhouse, checked against the digest (no index).
 # The tests and mutants run against the installed bytes; the scenarios run through the
 # installed `warrant` command from outside the checkout.
@@ -112,13 +115,17 @@ jobs:
         run: |
           for t in agent_handoff agent_write agent_compute agent_mcp agent_repo agent_views; do python "${t}_test.py"; done
 
+      - name: The record graph by query (warrant_agent/graph.py, the operation graph, tools/graph.py)
+        working-directory: tests
+        run: for t in graph graph_tools; do python "${t}_test.py"; done
+
       - name: Mutant runner selftest (the controller, its red-baseline guard, shards and merge)
         run: python tests/mutants.py --selftest
 
       - name: Generated mutants selftest (generator ids, tracer, outcomes, report; the hunt itself is survivors.yml)
         run: WARRANT_IMPL= python tests/generated_mutants.py --selftest
 
-      - name: Roadmap (goals and obligations are records in .warrant/store; ROADMAP.md is a view)
+      - name: Roadmap (goals and obligations are records in .warrant/store)
         run: WARRANT_IMPL= python tools/roadmap.py check
 
   claims-selftest:
@@ -339,7 +346,7 @@ jobs:
 
       # After the mutants, so the mutant ids the claims cite have just been exercised.
       # The base is the PR's base; on a push to master, the pushed commit's first parent.
-      - name: SPEC claims (the records in .warrant/store are the source; SPEC.md and SPEC-CLAIMS.md are views)
+      - name: SPEC claims (the records in .warrant/store are the source; SPEC.md is generated from them)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -348,13 +355,25 @@ jobs:
           BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
           WARRANT_IMPL= python tools/claims.py check --base "$BASE_SHA"
 
-      - name: Reviews (the pull request review loop is records in .warrant/store; REVIEWS.md is a view)
+      - name: Reviews (the pull request review loop is records in .warrant/store)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
           WARRANT_IMPL= python tools/review.py check --base "$BASE_SHA"
+
+      # Build artifacts, never committed (G11): rendered here, again, and in two processes with other
+      # hash seeds; any difference refuses (VIEW_NONDETERMINISTIC).
+      - name: Views of the records (SPEC-CLAIMS.md, WITNESSES.md, ROADMAP.md, REVIEWS.md), deterministic
+        run: WARRANT_IMPL= python tools/graph.py views --check
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: views
+          path: build/views
+          if-no-files-found: error
+          retention-days: 30
 
       # A report, not a refusal: the matrices above hold each mutant's own test file only (no
       # extra run), so most witnesses are unknown here. The full hunt: tests/mutants.py --matrix F

@@ -16,7 +16,7 @@ from warrant import shapes as S
 from warrant.store import Store
 
 from . import AGENT_API, adapter_id, views
-from .errors import AgentError, need
+from .errors import AgentError, need, need_op
 
 RUNTIMES = {"book1": P.BOOK1, "rich": P.RICH, P.BOOK1: P.BOOK1, P.RICH: P.RICH}
 OPS = {"provider": (), "term": ("expr",), "evaluate": ("expr",), "start": ("runtime", "input", "environment"),
@@ -27,8 +27,7 @@ EVALUATE_CREDIT = 10_000
 
 
 def _closed(req):
-    need(isinstance(req, dict) and req.get("op") in OPS, "BAD_REQUEST", f"compute op is one of {sorted(OPS)}")
-    op = req["op"]
+    op = need_op(req, OPS, f"compute op is one of {sorted(OPS)}")
     allowed = {"op", "workspace", "agent_api"} | set(OPS[op]) | set(OPTIONAL.get(op, ()))
     missing = {"workspace", *OPS[op]} - set(req)
     need(not missing, "BAD_REQUEST", f"missing {sorted(missing)}")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The refusals of `tools/review.py check` (tools/claimslib/reviews.py) on review records filed by hand, as an
-agent through MCP could: REVIEWS.md as bytes, review duty terms and forks, head forks, unknown answers,
+agent through MCP could: REVIEWS.md a build artifact, review duty terms and forks, head forks, unknown answers,
 heads new since the base against history (V17-V19, V21-V23).
 
     python3 tests/review_check_test.py
@@ -14,16 +14,18 @@ from world import check, finish
 def check_cases():
     f = started()
     clean = f.problems()
-    (f.dir / "REVIEWS.md").write_text((f.dir / "REVIEWS.md").read_text() + "edited\n")
-    stale = f.problems()
     f.ok("project")
-    (f.dir / "REVIEWS.md").write_bytes((f.dir / "REVIEWS.md").read_bytes().replace(b"\n", b"\r\n"))
-    crlf = f.problems()
-    (f.dir / "REVIEWS.md").unlink()
+    built = f.dir / "build" / "views" / "REVIEWS.md"
+    view = built.read_bytes() if built.is_file() else None
+    at_root = (f.dir / "REVIEWS.md").exists()
+    built.parent.mkdir(parents=True, exist_ok=True)       # total: a mutant that writes elsewhere fails on the check
+    built.write_bytes(b"edited by hand\r\n")
+    edited = f.problems()
+    built.unlink()
     missing = f.problems()
-    f.ok("project")
-    check("V17", clean == [] and stale == ["REVIEWS_STALE"] and crlf == ["REVIEWS_STALE"] and missing == ["REVIEWS_MISSING"],
-          "REVIEWS.md is the view of the records, compared as bytes", (clean, stale, crlf, missing))
+    check("V17", clean == [] and view == RV.render_view(f.model()).encode() and not at_root and edited == missing == [],
+          "REVIEWS.md is a build artifact (G11): project writes build/views/REVIEWS.md and nothing at the root; check "
+          "reads no view, so one edited or missing refuses nothing", (clean, at_root, edited, missing))
 
     f.put("stranger", "duty", R.duty("stranger", f"{REPO}#5 is fit to merge: Self-accepted", ["s0fractal"], {"attest": {}},
                                      accept_by=["codex", "stranger"]))

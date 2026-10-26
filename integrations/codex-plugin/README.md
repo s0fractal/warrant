@@ -26,15 +26,15 @@ closure, its evidence ids and the pull requests and commits that evidence names,
 says it established. He accepts the closure or challenges it through MCP and leaves that record in his
 worktree. The waker publishes it, not Codex: it checks what is new in the worktree's store with the base's
 own package (only codex's accepts and challenges of that closure item, under the key the base's
-`roles.json` pins, and the blobs they cite; anything else and nothing is published), copies those bytes
-onto the base, regenerates what the base generates with the base's own tools, pushes
+`roles.json` pins, an accept binding exactly the item's evidence, and the blobs they cite; anything else
+and nothing is published), commits those bytes on the base (records and blobs only, G11), pushes
 `codex/verdicts/<closure12>-<item>` and opens a pull request whose description is Codex's last message.
 It signs nothing. The merge gate merges a pull request of verdicts only (`eligibility.py`). A wake is done
 only once its verdict reached GitHub: a pull request from that branch exists, in any state, or the base
 holds codex's verdict on that item. A run that exited 0 and left nothing publishable is retried like a
 failed one, in a clean worktree; a publication that failed (Git, GitHub) is retried with the same backoff. At most one closure is woken per run, and none while a
-pull request from a `codex/verdicts/` branch is open: two of them would render the same views from
-different bases. A closure whose prerequisite is accepted meanwhile is due in the next run that reads
+pull request from a `codex/verdicts/` branch is open (until G11 two of them rendered the same views
+from different bases; they carry records only now, and the hold remains a limit of one at a time). A closure whose prerequisite is accepted meanwhile is due in the next run that reads
 that base.
 
 Before Codex is woken for a head, the waker runs the review replay checker: the base tree's
@@ -43,9 +43,9 @@ which signs only from code with that hash) in a detached worktree of the head, u
 (no network, writes only in that worktree, its git directory and a scratch directory, no read of the
 seeds or the usual credential directories), with the checker's seed on standard input. It replays
 every mechanical finding of the head's store at each of its heads that no adopted replayer observed
-(another pull request's too: a finding nobody replayed is replayed on the next due head), the head's
-own `project` commands regenerate the views, and the waker pushes one commit of exactly those
-observation records, their probe blobs and the views on the pull request's branch, only while the
+(another pull request's too: a finding nobody replayed is replayed on the next due head), and the
+waker pushes one commit of exactly those observation records and their probe blobs on the pull
+request's branch (no generated view: they are build artifacts, G11), only while the
 branch is still at that head. Codex is woken on the next run, at the new head, once its checks are
 green. A pull request that changes the checker is not replayed. A failed checker run is retried after a
 backoff, at most three runs, and Codex is not woken at that head meanwhile; once the replay gave up,

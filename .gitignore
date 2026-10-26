@@ -6,3 +6,9 @@ dist/
 scratchpad/
 .env
 .env.*
+# The Markdown projections of the record graph are build artifacts (G11): `tools/graph.py views` writes them
+# to build/views/. These names at the root are what they were committed as until then.
+/SPEC-CLAIMS.md
+/ROADMAP.md
+/REVIEWS.md
+/WITNESSES.md

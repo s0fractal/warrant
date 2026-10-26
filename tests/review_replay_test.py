@@ -270,13 +270,13 @@ def waker_cases():
     m = at_commit(f, new)
     fnd = m.findings[f.cid]
     actors = {m.recs[o]["actor"] for o, _ in fnd.observed.values()}
-    stale = [c for c in f.problems() if c == "REVIEWS_STALE"]
+    problems = f.problems()
     check("W1", pushed and parent == f.head and fnd.at(f.h1) == "FAIL" and fnd.at(f.h2) == "PASS"
-          and actors == {f.replayer} and len(names) == 5 and "M\tREVIEWS.md" in names and stale == []
-          and all(n.startswith("A\t.warrant/store/") for n in names if n != "M\tREVIEWS.md"),
+          and actors == {f.replayer} and len(names) == 4 and problems == []
+          and all(n.startswith("A\t.warrant/store/") for n in names),
           "the waker runs the base's checker on a due head: Codex's finding replayed FAIL at head 1 and PASS at "
-          "head 2, by the checker, pushed as one commit of those records and the head's own view on the branch",
-          (line, names, fnd.observed, stale))
+          "head 2, by the checker, pushed as one commit of those records and their probes only (no view: G11)",
+          (line, names, fnd.observed, problems))
     f.close()
 
     g = pr_world()
@@ -289,9 +289,10 @@ def waker_cases():
     again = g.w.replay(due(g, moved), g.start)
     check("W2", woke1 == 0 and moved != g.head and "pushed" in first[1] and woke2 == 1
           and "nothing to replay" in second[1] and "woken" in second[1] and tip(g) == moved
-          and again == (False, "replay: nothing to replay") and len(g.jail.calls) == 3,
+          and again == (False, "replay: nothing to replay") and len(g.jail.calls) == 2,
           "a run that pushed observations wakes nobody; the next run, at the new head, finds nothing left to replay "
-          "and wakes Codex; one replay per head", (first, second, again))
+          "and wakes Codex; one replay per head, two checker runs and no projector run (no view is committed: G11)",
+          (first, second, again, len(g.jail.calls)))
 
     seed = g.keys[g.replayer].seed_hex()
     calls = g.jail.calls
@@ -367,6 +368,17 @@ def refusal_cases():
     pushed, line = f.w.replay(due(f), f.start)
     check("W6", not pushed and "is not an observation by" in line and tip(f) == f.head,
           "a record printed as the checker's but signed by another identity (claude) is not pushed", line)
+    f.close()
+
+    def viewed(cmd, r):
+        if "replay" in cmd:
+            (root_of(cmd) / "REVIEWS.md").write_text("# Reviews (generated view)\n")
+
+    f = pr_world(after=lambda cmd, r: viewed(cmd, r))
+    pushed, line = f.w.replay(due(f), f.start)
+    check("W24", not pushed and "nothing pushed" in line and "REVIEWS.md" in line and tip(f) == f.head,
+          "a generated view the replay left beside its observations is not pushed: the views are build artifacts "
+          "(G11), and the waker pushes records and their probes only", line)
     f.close()
 
     sentinel = None
@@ -786,7 +798,7 @@ def green(head):
 
 def verdict_world(prepare=None, forge=None):
     """Master f.base holds a roadmap goal, an obligation f.duty owed to codex and its closure f.t citing evidence
-    f.ev, the gate's merge.json and the generated REVIEWS.md; origin is a bare clone with master there, the
+    f.ev and the gate's merge.json (no generated view: G11); origin is a bare clone with master there, the
     waker's mirror a bare clone of origin. The waker's base tree is master's archive with the tools and package
     under test beside it (what HOME/code/<base> holds, plus the code the base would carry), and Codex is
     FakeCodex(prepare)."""
@@ -796,7 +808,6 @@ def verdict_world(prepare=None, forge=None):
                                                                                "scope": "roadmap:G1"}]))
     f.duty = obligation(f, goal, "A witness ledger is derived from the records.")
     f.t, f.ev = done(f, f.duty, ["s0fractal/warrant#9"])
-    roadmap(f.dir, "project")
     f.base_commit = f.save()
     f.origin = f.base / "origin.git"
     git("clone", "--bare", "-q", str(f.dir), str(f.origin))
@@ -855,7 +866,7 @@ def branch_tip(f):
 
 
 def published_check(f, tip):
-    """`roadmap.py check` (the generated ROADMAP.md is the rendering of the records) in a checkout of `tip`."""
+    """`roadmap.py check` (the roadmap's records are consistent) in a checkout of `tip`."""
     if tip is None:
         return None
     clone = f.base / f"published-{tip[:12]}"
@@ -875,19 +886,19 @@ def publish_cases():
     # them (his sandbox could not write HEAD.lock in the mirror; the GitHub tool needed an approval the `never`
     # policy cannot give). He exited 0 and the waker's memo read done, so no run would ever publish it; a courier
     # published it by hand (#210). Reproduced: that memo as the earlier waker wrote it, his worktree as he left it
-    # (his record, his blob, a view he edited). Expected: the memo is not done; the next run publishes exactly his
-    # record and blob, with the views the base's own tools generate, on codex/verdicts/<T12>-0; the base's merge
+    # (his record, his blob, a scratch file beside them). Expected: the memo is not done; the next run publishes
+    # exactly his record and blob, and nothing else (no view: G11), on codex/verdicts/<T12>-0; the base's merge
     # gate admits that pull request as verdicts only; a later run publishes nothing again.
     f = verdict_world()
     wt = f.w.accept_worktree({"closure": f.t, "item": 0}, f.base_commit)
     rec = challenge(f, wt)
-    (wt / "REVIEWS.md").write_text((wt / "REVIEWS.md").read_text() + "\nedited by hand\n")
+    (wt / "notes.txt").write_text("Codex's scratch notes, outside the store\n")
     store = wt / ".warrant" / "store"
     mine = {str(p.relative_to(wt)): p.read_bytes() for p in store.rglob("*") if p.is_file()
             and not (f.dir / p.relative_to(wt)).exists()}
     old = {"closure": f.t, "item": 0, "duty": f.duty, "base": f.base_commit,
            "attempts": [{"started": f.now[0] - 600, "started_at": "x", "worktree": str(wt), "finished": f.now[0] - 60,
-                         "exit": 0, "kept": [" M REVIEWS.md"]}]}
+                         "exit": 0, "kept": ["?? notes.txt"]}]}
     (f.w.home / "accepts" / f"{f.t}-0.json").write_text(json.dumps(old))
     before = f.w.accept_state(old)[0]
     lines = WAKER.tick(f.w, False)
@@ -895,21 +906,19 @@ def publish_cases():
     names = sorted(git("-C", str(f.origin), "diff-tree", "-r", "--no-commit-id", "--name-status", f.base_commit,
                        tip).splitlines()) if tip else []
     got = {p: git("-C", str(f.origin), "cat-file", "blob", f"{tip}:{p}").encode() for p in mine} if tip else {}
-    reviews = git("-C", str(f.origin), "show", f"{tip}:REVIEWS.md") if tip else ""
     rendered = published_check(f, tip)
     a = EL.assess(f.origin, f.base_commit, {"number": 210, "state": "open", "draft": False, "base": "master",
                                             "head": tip, "labels": [], "branch": f.branch, "head_repo": REPO},
                   green(tip)) if tip else None
     again = WAKER.tick(f.w, False)
     check("W30", before == "publish" and tip is not None and got == mine and len(mine) == 2
-          and all(n.startswith("A\t.warrant/store/") for n in names if not n.endswith("REVIEWS.md"))
-          and "edited by hand" not in reviews and rendered == 0
+          and len(names) == 2 and all(n.startswith("A\t.warrant/store/") for n in names) and rendered == 0
           and a is not None and a.eligible and a.facts.get("verdicts") == [rec]
           and [(b, t[:6]) for b, t, _ in f.forge.opened] == [(f.branch, "Codex:")] and rec in f.forge.opened[0][2]
           and any("published: pull request #201" in x for x in lines) and not f.codex.calls
           and "done" in again[-1] and len(f.forge.opened) == 1 and not wt.exists(),
           "a wake whose Codex exited 0 and left his signed challenge unpublished (#210, 836e1789a97a) is not done: the "
-          "next run publishes exactly his record and blob, with the base's own views, on codex/verdicts/<T12>-0; "
+          "next run publishes exactly his record and blob, and nothing else, on codex/verdicts/<T12>-0; "
           "the base's merge gate admits that pull request as verdicts only; nothing is published again",
           (before, lines, names, a and sorted(a.codes()), again))
     f.close()
@@ -924,16 +933,17 @@ def publish_cases():
     g.now[0] += WAKER.BACKOFF + 1
     retried = WAKER.tick(g.w, False)
     memo = accept_memo(g)
-    view = git("-C", str(g.origin), "diff", g.base_commit, branch_tip(g), "--", "ROADMAP.md") if branch_tip(g) else ""
+    view = git("-C", str(g.origin), "diff-tree", "-r", "--no-commit-id", "--name-status", g.base_commit,
+               branch_tip(g)).splitlines() if branch_tip(g) else []
     trees = [Path(c[c.index("-C") + 1]).name for c in g.codex.calls]
     check("W31", len(g.codex.calls) == 2 and "unpublished" in first[-1] and "retry after" in waiting[-1]
           and trees == [f"accept-{g.t[:12]}-0-{g.base_commit[:12]}", f"accept-{g.t[:12]}-0-{g.base_commit[:12]}-2"]
           and "published: pull request #201" in retried[-1] and memo.get("published", {}).get("pr") == 201
           and [x.get("unpublished") is not None for x in memo["attempts"]] == [True, False]
-          and "DISCHARGED" in view and published_check(g, branch_tip(g)) == 0,
+          and len(view) == 1 and view[0].startswith("A\t.warrant/store/records/") and published_check(g, branch_tip(g)) == 0,
           "a wake whose Codex exits 0 with no verdict is unpublished, not done: it is retried after the backoff in a "
-          "clean worktree, and the wake whose verdict (an accept) the waker publishes, with the views the base's own "
-          "tools regenerate, is done in that run", (first, waiting, retried, view))
+          "clean worktree, and the wake whose verdict (an accept, its evidence on master) the waker publishes as one "
+          "record and nothing else is done in that run", (first, waiting, retried, view))
     g.close()
 
     # W32: the waker publishes only codex's own verdicts on the closure item woken, under the base's pin, and the
@@ -1161,7 +1171,7 @@ def retry_base_cases():
         blob.symlink_to(text)
 
     def mode(h, clone):
-        (clone / "ROADMAP.md").chmod(0o755)
+        (clone / "calc.py").chmod(0o755)
     got = {"link": remote(link), "mode": remote(mode)}
     check("W38", all(got.values()), "a branch whose verdict blob is a symlink (its target text the blob's bytes), or "
           "that changes a tracked file's mode, is not this verdict: nothing is published and Codex's worktree is kept",

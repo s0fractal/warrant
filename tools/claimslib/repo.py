@@ -11,7 +11,7 @@ from pathlib import Path
 from warrant import jcs as C
 from warrant.store import Snapshot
 
-from .base import HARNESS_PACKAGE, HARNESSES, id_key, TEST_RE, WITNESSES
+from .base import HARNESS_PACKAGE, HARNESSES, id_key, TEST_RE, VIEWS_DIR, WITNESSES
 from .bindings import admit_bindings, local_bindings, read_roles, trust_of
 from .statements import changed_scopes, changed_statements
 
@@ -24,8 +24,9 @@ class Repo:
         self.trust_path = self.root / ".warrant" / "trust.json"
         self.pins_path = self.root / ".warrant" / "claims.json"
         self.roles_path = self.root / ".warrant" / "roles.json"
-        self.projection = self.root / "SPEC-CLAIMS.md"
-        self.witnesses = self.root / WITNESSES
+        self.views = self.root / VIEWS_DIR
+        self.projection = self.views / "SPEC-CLAIMS.md"
+        self.witnesses = self.views / WITNESSES
         self.tests = self.root / "tests"
         self._mutants = None
 

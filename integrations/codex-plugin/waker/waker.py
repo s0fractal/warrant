@@ -21,16 +21,16 @@ launchd runs it every five minutes (install.py). One run:
      codex` on the base's own records (acceptance_due there: a roadmap obligation's latest closure the
      engine holds PENDING for codex, every duty it requires DISCHARGED, neither accepted nor challenged by
      codex). At most one is woken per run, and none while an open pull request from a branch of this
-     repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: two such pull requests would render the
-     same generated views from different bases). Its memo is HOME/accepts/<closure>-<item>.json, its
+     repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: a limit of one verdict pull
+     request at a time; until G11 two of them rendered the same generated views from different bases). Its memo is HOME/accepts/<closure>-<item>.json, its
      worktree TREES/accept-<closure12>-<item>-<base12> (with -<n> from the second attempt on), detached at the
      base; Codex accepts the closure or challenges it through MCP into that worktree's store, and exits. The
      waker, not Codex, publishes it (Waker.publish; Codex's sandbox cannot write the worktree's Git metadata,
      and his GitHub tool needs an approval the `never` policy cannot give: the wake of 836e1789a97a, #210):
      what is new in the worktree's store, checked with the base's own package (verify_verdicts: only codex's
      accepts and challenges of that closure item, authentic under the key the base's roles.json pins, and the
-     blobs they cite; anything else, and nothing is published), those bytes copied onto the base, the base's
-     own projectors run, one commit by the waker pushed to VERDICT_BRANCH<closure12>-<item> and a pull request
+     blobs they cite; anything else, and nothing is published), those bytes copied onto the base (records and
+     blobs only: no generated view is committed, G11), one commit by the waker pushed to VERDICT_BRANCH<closure12>-<item> and a pull request
      opened with `gh`, which the merge gate admits as verdicts (eligibility.py). The waker signs nothing. A
      closure that becomes acceptable later (its prerequisite was accepted meanwhile) is due in the run that
      reads that base.
@@ -52,9 +52,9 @@ mode 0600) on standard input only, inside sandbox-exec: no network, no write out
 its git directory and a scratch directory HOME/replay-work/<n>-<head>, no read of REPLAYERS or of the
 usual credential directories. It replays every mechanical finding of the head's store (any pull
 request's, so a finding nobody replayed before is replayed now) at each of its heads no adopted
-replayer has observed. The head's own `project` commands then regenerate the views (same sandbox, no
-seed). The waker commits only the observation records the checker printed (by the replayer, each
-with its probe blob) and the generated views, refuses anything else the run left, and pushes that
+replayer has observed. The waker commits only the observation records the checker printed (by the
+replayer, each with its probe blob), refuses anything else the run left (the generated views are build
+artifacts, never committed: G11), and pushes that
 commit on the pull request's branch only while the branch is still at the head (a fast-forward).
 One replay per head: HOME/replays/<n>-<head>.json, with its runs. A run that failed (the checker exited
 otherwise, its output was refused, or its observations did not reach the branch) is not a replay, nor
@@ -108,11 +108,9 @@ CHECKER = re.compile(r"checker sha256:([0-9a-f]{64})\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 PROBE = "warrant-review/replay@1"
 STORE = ".warrant/store/"
-VIEWS = ("REVIEWS.md", "ROADMAP.md", "SPEC-CLAIMS.md", "WITNESSES.md")      # reviews.LEDGER_FILES
-PROJECTORS = ("tools/review.py", "tools/claims.py", "tools/roadmap.py")
 PR_BRANCH = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychains")
-REGULAR = "100644"                          # the only mode of a store entry or a generated file the waker commits
+REGULAR = "100644"                          # the only mode of a store entry the waker commits
 STATUS = ("status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")    # every path, renames as two
 COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
              "-c", "commit.gpgsign=false"]
@@ -120,7 +118,6 @@ REPLAY_TIMEOUT = 3600
 ACCEPTOR = "codex"                          # the actor the waker wakes: `codex exec`, signing with its own seed
 VERDICT_BRANCH = "codex/verdicts/"          # where the waker publishes Codex's verdict on an obligation closure
 VERDICTS = ("accept", "challenge")          # the records an acceptance wake may publish
-BASE_PROJECTORS = ("tools/claims.py", "tools/roadmap.py", "tools/review.py")      # the base's, run on a verdict's tree
 MAX_PREPARED = 16 << 20                     # bytes of a prepared verdict's records and blobs, all told
 
 
@@ -174,8 +171,8 @@ def sandboxed(cmd, prof, env, stdin=None):
 
 def changes(wt, filed, actor):
     """The paths the replay changed in the worktree `wt`, to commit: the records `filed` (the ids the checker
-    printed), each an observation by `actor`, the new blobs among their probes, and the generated views.
-    Anything else (another record or blob, a file outside the store, a deletion, a link) is a RuntimeError."""
+    printed), each an observation by `actor`, and the new blobs among their probes. Anything else (another
+    record or blob, a file outside the store, a generated view, a deletion, a link) is a RuntimeError."""
     raw = git("-C", str(wt), *STATUS).decode()
     entries = [(e[:2], e[3:]) for e in raw.split("\0") if e]
     want = {f"{STORE}records/{o}.json" for o in filed}
@@ -193,7 +190,7 @@ def changes(wt, filed, actor):
             probes.add(body["probe"])
         elif xy == "??" and path.startswith(STORE + "blobs/") and HEX.match(path[len(STORE) + 6:]):
             blobs.append(path)
-        elif not (xy == " M" and path in VIEWS):
+        else:
             raise RuntimeError(f"the replay left {xy} {path[:80]}: nothing pushed")
         out.append(path)
     if want - set(out):
@@ -574,12 +571,6 @@ class Waker:
         lines = [x for x in r.stdout.decode().splitlines() if x.split() and HEX.match(x.split()[0])]
         if not lines:
             return False, "replay: nothing to replay"
-        for proj in PROJECTORS:
-            if (wt / proj).is_file():
-                v = self.jail([self.replay_python, str(wt / proj), "project"], prof, self.env(work, wt), None)
-                if v.returncode:
-                    raise RuntimeError(f"{proj} project exited {v.returncode}: "
-                                       f"{v.stderr.decode(errors='replace').strip()[-300:]}")
         paths = changes(wt, [x.split()[0] for x in lines], actor)
         git("-C", str(wt), "add", "--", *paths)
         msg = (f"Review replay of #{n} at {head[:12]}: {len(lines)} observation(s) by {actor[:27]}\n\n" + "\n".join(lines)
@@ -827,29 +818,22 @@ class Waker:
         return json.loads(r.stdout)["refused"]
 
     def _publish(self, c, base, code, branch, records, blobs):
-        """The verdict's records and blobs, these bytes, in a new worktree of the base; the base's own projectors
-        (BASE_PROJECTORS, those its tree has) regenerate whatever generated file the base tracks; one commit of the
-        store entries and the tracked files they changed, by the waker; pushed to `branch` only while it does not
-        exist (or exists already holding these records: an earlier run's push), and the pull request opened."""
-        key = f"publish-{self.accept_key(c)}"
-        wt, work = self.trees / f"publish-{c['closure'][:12]}-{c['item']}-{commit(base)[:12]}", self.home / "replay-work" / key
-        self.discard(wt, work)
-        work.mkdir(parents=True)
+        """The verdict's records and blobs, these bytes, in a new worktree of the base; one commit by the waker of the
+        store entries the base lacks (records and blobs only: no generated view is committed, G11); pushed to
+        `branch` only while it does not exist (or exists already holding these records: an earlier run's push), and
+        the pull request opened."""
+        self.accept_key(c)
+        wt = self.trees / f"publish-{c['closure'][:12]}-{c['item']}-{commit(base)[:12]}"
+        self.discard(wt, wt)
         self.trees.mkdir(parents=True, exist_ok=True)
         git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(wt), base)
         try:
             ours = {f"{STORE}records/{r}.json": d for r, d in records.items()}
             ours.update((f"{STORE}blobs/{b}", d) for b, d in blobs.items())
-            fresh = copy_new(wt, ours)
-            for proj in BASE_PROJECTORS:
-                if (code / proj).is_file():
-                    r = subprocess.run([self.python, str(code / proj), "--root", str(wt), "project"], env=self.env(work, code),
-                                       capture_output=True, check=False, timeout=REPLAY_TIMEOUT)
-                    if r.returncode:
-                        raise RuntimeError(f"the base's {proj} project exited {r.returncode}: "
-                                           f"{r.stderr.decode(errors='replace').strip()[-300:]}")
-            paths = projected(wt, fresh)
-            git("-C", str(wt), "add", "--", *paths)
+            for path, data in ours.items():         # one the base holds already is the same bytes (Codex 41d56ad7ba93):
+                (wt / path).parent.mkdir(parents=True, exist_ok=True)       # content-addressed; added, it changes nothing
+                (wt / path).write_bytes(data)
+            git("-C", str(wt), "add", "--", *sorted(ours))
             kinds = sorted({json.loads(d)["record"]["type"] for d in records.values()})
             title = f"Codex: {' and '.join(kinds)} of obligation closure {c['closure'][:12]}"
             git("-C", str(wt), *COMMITTER, "commit", "--quiet", "--no-verify", "-m",
@@ -871,7 +855,8 @@ class Waker:
             return {"line": f"pull request #{n} from {branch} at {new[:12]}", "pr": n, "branch": branch, "commit": new,
                     "records": sorted(records), "blobs": sorted(blobs)}
         finally:
-            self.discard(wt, work)
+            self.discard(wt, wt)
+
 
 def prompt(a, plugin, path, incomplete=None):
     f = a["facts"]
@@ -908,44 +893,11 @@ def accept_prompt(c, base, plugin, path):
             "rely on them.")
 
 
-def projected(wt, ours):
-    """The paths to commit in the publication worktree `wt` after the base's projectors ran: the store entries
-    `ours` (each new there) and the tracked files those projectors changed. A new file the base does not track
-    stays out; anything else (a deletion, a store entry not ours) is a RuntimeError."""
-    raw = git("-C", str(wt), *STATUS).decode()
-    out = []
-    for e in (x for x in raw.split("\0") if x):
-        xy, path = e[:2], e[3:]
-        if (xy == "??" and path in ours) or (xy == " M" and not path.startswith(STORE)):
-            out.append(path)
-        elif not (xy == "??" and not path.startswith(STORE)):
-            raise RuntimeError(f"the publication left {xy} {path[:80]}: nothing pushed")
-    if set(ours) - set(out):
-        raise RuntimeError(f"{len(set(ours) - set(out))} prepared store entries are not new on the base: nothing pushed")
-    return sorted(out)
-
-
-def copy_new(wt, ours):
-    """Write the store entries `ours` ({path: bytes}) the base's worktree `wt` lacks; the ones written. One the base
-    holds already (master acquired the same evidence: Codex finding 41d56ad7ba93) must be a regular file with these
-    bytes, else a RuntimeError."""
-    fresh = {}
-    for path, data in ours.items():
-        if (wt / path).exists() or (wt / path).is_symlink():
-            if (wt / path).is_symlink() or (wt / path).read_bytes() != data:
-                raise RuntimeError(f"the base holds {path[len(STORE):][:20]} with other bytes: nothing pushed")
-            continue
-        (wt / path).parent.mkdir(parents=True, exist_ok=True)
-        (wt / path).write_bytes(data)
-        fresh[path] = data
-    return fresh
-
-
 def pushed_before(wt, theirs, base, ours):
     """Why the existing branch tip `theirs` is not this verdict as an earlier run pushed it, or None. It must be one
     commit on a commit of the base branch (an ancestor of `base`) that adds exactly the store entries `ours`, byte
-    for byte, and otherwise changes only tracked files outside the store (the projections): filenames prove nothing
-    (Codex finding 25890f89f776: a record replaced by {} on the branch read as delivered)."""
+    for byte, each a regular file, and changes nothing else: filenames prove nothing (Codex finding 25890f89f776: a
+    record replaced by {} on the branch read as delivered)."""
     parents = git("-C", str(wt), "rev-list", "--parents", "-n", "1", theirs).decode().split()[1:]
     if len(parents) != 1 or subprocess.run(["git", "-C", str(wt), "merge-base", "--is-ancestor", parents[0], base],
                                            capture_output=True, check=False).returncode:
@@ -954,15 +906,13 @@ def pushed_before(wt, theirs, base, ours):
               theirs).decode().split("\0")
     seen = set()
     for meta, path in zip(raw[0::2], raw[1::2]):
-        old_mode, new_mode, _, _, status = meta.lstrip(":").split()
+        _, new_mode, _, _, status = meta.lstrip(":").split()
         if path in ours:        # a regular file: a link's target text can equal the bytes (Codex finding 9db2a2b6ea12)
             if status != "A" or new_mode != REGULAR or git("-C", str(wt), "cat-file", "blob", f"{theirs}:{path}") != ours[path]:
                 return f"{path[len(STORE):][:20]} differs"
             seen.add(path)
-        elif path.startswith(STORE) or status != "M":
+        else:
             return f"{status} {path[:60]}"
-        elif status == "M" and old_mode != new_mode:
-            return f"{path[:60]} changes mode {old_mode} to {new_mode}"
     return None if seen == set(ours) else f"{len(set(ours) - seen)} store entries missing"
 
 

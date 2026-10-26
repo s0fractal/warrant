@@ -3,7 +3,7 @@
     warrant-agent --config CONFIG.json <operation> [REQUEST.json | - | '{...}']
     warrant-agent --config CONFIG.json gc [--workspace NAME] [--dry-run]
 
-Operations: workspace, context, read, handoff, prepare, commit, compute, explain. The request is the
+Operations: workspace, context, read, graph, handoff, prepare, commit, compute, explain. The request is the
 same JSON object the Python API and the MCP tools take; the output is the same
 result object. Exit status 0 on a result, 2 on a typed refusal.
 

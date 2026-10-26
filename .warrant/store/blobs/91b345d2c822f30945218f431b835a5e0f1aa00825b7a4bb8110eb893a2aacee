@@ -1,0 +1,1 @@
+`graph` answers from the record graph of one frozen view, built from its captured bytes and report only: a node is a record the report does not list invalid, a question such a record opens, a blob it cites, or `missing` for an id an edge names that the view lacks; every edge is read from a record body, and every state and verdict shown is the report's, never recomputed.
