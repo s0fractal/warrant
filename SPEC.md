@@ -632,8 +632,9 @@ graph as JSON or as Graphviz text in which every string is quoted and escaped. A
 view, operation and request: any other cursor is `CURSOR_MISMATCH`. Every
 `graph` result carries `root`, the snapshot and `as_of` of its view (and of the
 base view), and `lens`, the content address of everything else that decides it:
-the code of the interface and of the engine, the view's trust and profile, and
-the query with its parameters; one lens over one root gives one result.
+the code of the interface and of the engine, every other operand of each
+assessment it read (the base view's too), and the query with its defaults
+resolved; one lens over one root gives one result.
 
 Each capsule is the engine's (§8) with three members taken from the same report:
 `closures` on a duty, every closure attempt with its verdict and why; `closes`

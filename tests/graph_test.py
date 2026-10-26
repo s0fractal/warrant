@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The record graph by query (G11): warrant_agent/graph.py, the agent operation `graph` and its MCP tool
-`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23); Codex's findings on head 2 (Z24-Z26); root and lens (Z27, Z28).
+`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23); Codex's findings on head 2 (Z24-Z26); root and lens (Z27, Z28), Codex's findings on head 5 (Z29-Z31).
 
     python3 tests/graph_test.py
 """
@@ -13,9 +13,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from agent_world import ROOT, R, api, check, finish, views, world
+from agent_world import C, Key, ROOT, R, api, check, finish, views, world
 from warrant import engine as E
-from warrant.keys import Key
+from warrant.store import Trust
 from warrant_agent import graph as G
 
 # tools/graph.py of the tree under test: a mutant of a tool runs from its copy in $WARRANT_IMPL/tools.
@@ -245,8 +245,12 @@ def repository_cases():
     rc, out, err = tool("why", "warrant/engine.py:200", "--json")
     rcw = subprocess.run([sys.executable, str(TOOLS / "claims.py"), "--root", str(ROOT), "why", "warrant/engine.py:200",
                           "--json"], capture_output=True, text=True, check=False)
-    check("Z21", rc == 0 and out == rcw.stdout and json.loads(out)["file"] == "warrant/engine.py",
+    gw = json.loads(out) if rc == 0 else {}
+    ident = {k: gw.pop(k, None) for k in ("root", "lens")}
+    check("Z21", rc == 0 and gw == json.loads(rcw.stdout) and gw["file"] == "warrant/engine.py",
           "graph.py why is tools/claims.py why", (rc, err[-300:]))
+    check("Z31", isinstance(ident["lens"], str) and set(ident["root"] or {}) == {"worktree", "snapshot"},
+          "graph.py why carries root and lens like every other query (Codex 26b46cfde7dd)", ident)
 
     rc, out, err = tool("frontier", "--actor", "codex", "--json")
     fr = json.loads(out)["frontier"] if rc == 0 else None
@@ -379,6 +383,44 @@ def agent_lens_cases(w):
           "target changes the lens, the same request does not", (a1.get("root"), a1.get("lens")))
 
 
+def identity_finding_cases(w):
+    """Codex's findings on head 5 (24d5d32): 5af55ace3344 and 74a162414cb8. Two results that differ must not share
+    (root, lens)."""
+    src = w["src"]
+    req = {"op": "frontier", "view_token": w["tok1"]}
+    first = op(src, req).get("ok", {}).get("data", {})
+    key = src.base / "reviewer.key"
+    key.write_text(src.keys["reviewer"].seed_hex())
+    signer = src.doc["workspaces"][src.name]["signer"]
+    try:
+        src.doc["workspaces"][src.name]["signer"] = {"actor": "reviewer", "key": str(key)}
+        src.reload()
+        second = op(src, req).get("ok", {}).get("data", {})
+    finally:
+        src.doc["workspaces"][src.name]["signer"] = signer
+        src.reload()
+    check("Z29", first.get("items") != second.get("items")
+          and (first.get("root"), first.get("lens")) != (second.get("root"), second.get("lens")),
+          "frontier with no actor reads the configured signer's: two signers' frontiers of one view differ in lens (the "
+          "query is hashed with its defaults resolved)", (first.get("lens"), second.get("lens")))
+
+    path = src.base / "trust.json"
+    keep = path.read_bytes()
+    try:
+        other = Key.generate()
+        path.write_bytes(C.canon(Trust.document([(a, other.public if a == "reviewer" else k.public)
+                                                for a, k in src.keys.items()])))
+        base = views.capture(src.ws, as_of=w["rep1"]["view"]["as_of"])["token"]
+    finally:
+        path.write_bytes(keep)
+    one = op(src, {"op": "delta", "view_token": w["tok1"], "base_view_token": w["tok1"]}).get("ok", {}).get("data", {})
+    two = op(src, {"op": "delta", "view_token": w["tok1"], "base_view_token": base}).get("ok", {}).get("data", {})
+    check("Z30", one.get("items") == [] and two.get("items") and one.get("root") == two.get("root")
+          and one.get("lens") != two.get("lens"),
+          "delta and impact hash every assessment operand of the base view too (its trust): two bases of one snapshot "
+          "and time under other pins differ in lens", (one.get("lens"), two.get("lens")))
+
+
 def fixture_repo():
     """A Git repository holding this checkout's store, code, tools and tests at commit `base`; commit `head` changes
     one statement of warrant/engine.py that mutant M05 changes and deletes one record; the working tree still has
@@ -441,6 +483,7 @@ def main():
     engine_cases(w)
     agent_cases(w)
     agent_lens_cases(w)
+    identity_finding_cases(w)
     repository_cases()
     revision_cases()
     finding_cases()

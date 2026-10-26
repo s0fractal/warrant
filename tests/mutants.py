@@ -1878,11 +1878,14 @@ def _visit(view, did, report, done, busy):
      [('            if got.get(name) != here[name]:', '            if False:')],
      'graph_test', ['Z20']),
     ('M703', '../tools/graph.py', 'graph.py why is not claims.py why',
-     [('argparse.Namespace(target=a.target, uncovered=None, json=a.json)', 'argparse.Namespace(target=a.target, uncovered="", json=a.json)')],
+     [('    d = WHY.Why(repo).at(WHY._why_path(repo, m.group(1)), int(m.group(2)))', '    d = WHY.Why(repo).at(WHY._why_path(repo, m.group(1)), int(m.group(2)) + 1)')],
      'graph_test', ['Z21']),
     ('M704', '../tools/graph.py', "a deciding module (tools/claimslib/) is left out of the lens's tree hash",
      [('UNHASHED = (".warrant/store/",)', 'UNHASHED = (".warrant/store/", "tools/claimslib/")')],
      'graph_test', ['Z27']),
+    ('M705', '../tools/graph.py', "graph.py why carries no root (Codex 26b46cfde7dd)",
+     [('    emit(dict(d, root=root_of(root, WORKTREE, repo.snapshot().digest),', '    emit(dict(d, root=None,')],
+     'graph_test', ['Z31']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

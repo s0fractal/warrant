@@ -521,13 +521,12 @@ def graph_op(cfg, req):
     summary, items = _graph_items(op, ws, g, report, req, base)
     # root: what the result was computed from (the view's snapshot and time, and the base view's); lens: everything
     # else that decides it (this package and the engine's code, the view's trust and profile, the query).
-    root = {"snapshot": report["view"]["snapshot"], "as_of": report["view"]["as_of"]}
-    if base is not None:
-        root = {"base": {"snapshot": report0["view"]["snapshot"], "as_of": report0["view"]["as_of"]}, "head": root}
+    reports = [report] if base is None else [report0, report]
+    root = graph.root_part(report) if base is None else {"base": graph.root_part(report0), "head": graph.root_part(report)}
     query = {k: v for k, v in req.items() if k not in ("workspace", "view_token", "base_view_token", "cursor",
                                                         "max_bytes", "agent_api")}
-    lens = graph.lens_id({"agent": adapter_id(), "engine": code_identity()}, report["view"]["trust"],
-                         report["view"]["profile"], query)
+    query.update({k: summary[k] for k in ("actor", "format") if k in summary})       # the defaults as resolved
+    lens = graph.lens_id({"agent": adapter_id(), "engine": code_identity()}, [graph.operands(r) for r in reports], query)
     # The cursor names the view, the operation and a digest of the request's other members: a page of one
     # request is never read as a page of another. view_token is left out of the digest: the cursor names the view
     # already, and a first page read without one is continued with the token it returned (Codex 51541256eeb7).

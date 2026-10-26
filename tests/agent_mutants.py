@@ -488,6 +488,12 @@ MUTANTS = [
     ('A152', 'graph.py', 'a lens leaves out the query and its parameters',
      [('"query": query,\n', '"query": None,\n')],
      'graph_test', ['Z28']),
+    ('A153', 'api.py', "a graph lens hashes the request as given, not with its defaults resolved (Codex 5af55ace3344)",
+     [('    query.update({k: summary[k] for k in ("actor", "format") if k in summary})', '')],
+     'graph_test', ['Z29']),
+    ('A154', 'api.py', "a delta's or impact's lens leaves out the base view's assessment operands (Codex 74a162414cb8)",
+     [('[graph.operands(r) for r in reports], query)', '[graph.operands(report)], query)')],
+     'graph_test', ['Z30']),
 ]
 
 

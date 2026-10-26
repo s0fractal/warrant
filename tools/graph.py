@@ -48,7 +48,6 @@ import roadmap as RM                         # noqa: E402
 from claimslib import eligibility as EL      # noqa: E402
 from claimslib import reviews as RV          # noqa: E402
 from claimslib import why as WHY             # noqa: E402
-from warrant import engine as E              # noqa: E402
 from warrant import jcs as C                 # noqa: E402
 from warrant.store import code_identity      # noqa: E402
 from warrant_agent import adapter_id         # noqa: E402
@@ -144,21 +143,21 @@ def tree_digest(top):
     return "files:" + h.hexdigest()
 
 
-def lens(root, trust, query):
+def lens(root, assessed, query):
     """The lens (warrant_agent/graph.py lens_id) of a result of this tool: its code is the whole tree this tool runs
     from (tree_digest: its code, tests and mutant harnesses, the .warrant/ pins and configuration), the packages
     imported (the engine's code identity with the signature library's version, the agent's adapter_id) and the
-    queried repository's .warrant/ files; then the receiver's trust (local bindings too), the profile and the query."""
+    queried repository's .warrant/ files; `assessed` the operands of every assessment it read (G.operands)."""
     pins = {p.name: C.digest(p.read_bytes()) for p in sorted((Path(root) / ".warrant").glob("*.json"))}
     code = {"tool": tree_digest(ROOT), "engine": code_identity(), "agent": adapter_id(), "pins": pins}
-    return G.lens_id(code, trust.digest, C.doc_id(E.profile()), query)
+    return G.lens_id(code, assessed, query)
 
 
-def root_of(root, rev, g):
+def root_of(root, rev, snapshot_digest):
     """What a result was computed from: the commit (its full id) or this checkout's working tree (its tree_digest),
     and the store's snapshot digest."""
     out = {"commit": rev} if rev is not WORKTREE else {"worktree": tree_digest(root)}
-    return dict(out, snapshot=g["snapshot"])
+    return dict(out, snapshot=snapshot_digest)
 
 
 # ---------------------------------------------------------------- repository names
@@ -270,8 +269,8 @@ def statements(w, lines):
 def impact(root, base, head):
     repo = CL.Repo(root)
     trust = repo.trust()
-    g0, _ = graph_of(root, base, trust)
-    g1, _ = graph_of(root, head, trust)
+    g0, r0 = graph_of(root, base, trust)
+    g1, r1 = graph_of(root, head, trust)
     lines, gone = changed_lines(root, base, head)
     w = WHY.Why(CL.Repo(head_tree(root, head)))
     stmts = statements(w, lines)
@@ -282,7 +281,8 @@ def impact(root, base, head):
         x["class"], x["name"] = cls.get(x["duty"], ("duty", None))
     goals = sorted({q["scope"][len(RM.SCOPE):] for q in d["questions"] if (q["scope"] or "").startswith(RM.SCOPE)},
                    key=RM.key_n)
-    return {"base": base, "head": head or "worktree", "root": {"base": root_of(root, base, g0), "head": root_of(root, head, g1)},
+    return {"base": base, "head": head or "worktree", "root": {"base": root_of(root, base, g0["snapshot"]), "head": root_of(root, head, g1["snapshot"])},
+            "assessed": [G.operands(r0), G.operands(r1)],
             "statements": stmts, "deleted_files": gone,
             "records": d["records"],
             "claims": [x for x in d["duties"] if x["class"] == "claim"],
@@ -398,8 +398,8 @@ def cmd_views(root, a):
     for name, data in views.items():
         (out / name).write_bytes(data)
     trust = CL.Repo(root).trust()
-    ident = {"root": {"worktree": tree_digest(root), "snapshot": CL.Repo(root).snapshot().digest},
-             "lens": lens(root, trust, {"op": "views"}), "views": digests(views)}
+    ident = {"root": root_of(root, WORKTREE, CL.Repo(root).snapshot().digest),
+             "lens": lens(root, [{"trust": trust.digest}], {"op": "views"}), "views": digests(views)}
     (out / "IDENTITY.json").write_text(json.dumps(ident, indent=1, sort_keys=True) + "\n")
     for code, detail in problems:
         print(f"REFUSED {code} {detail}")
@@ -409,38 +409,52 @@ def cmd_views(root, a):
 
 
 def cmd_path(root, a, trust):
-    g, _ = graph_of(root, WORKTREE, trust)
+    g, rep = graph_of(root, WORKTREE, trust)
     d = G.path(g, resolve_target(root, a.target))
-    emit(dict(d, target=a.target, resolved=d["target"], root=root_of(root, WORKTREE, g),
-              lens=lens(root, trust, {"op": "path", "target": a.target})), a.json, text_path)
+    emit(dict(d, target=a.target, resolved=d["target"], root=root_of(root, WORKTREE, g["snapshot"]),
+              lens=lens(root, [G.operands(rep)], {"op": "path", "target": a.target})), a.json, text_path)
 
 
 def cmd_frontier(root, a, trust):
     g, rep = graph_of(root, WORKTREE, trust)
-    emit({"actor": a.actor, "frontier": G.frontier(rep, a.actor), "root": root_of(root, WORKTREE, g),
-          "lens": lens(root, trust, {"op": "frontier", "actor": a.actor})}, a.json,
+    emit({"actor": a.actor, "frontier": G.frontier(rep, a.actor), "root": root_of(root, WORKTREE, g["snapshot"]),
+          "lens": lens(root, [G.operands(rep)], {"op": "frontier", "actor": a.actor})}, a.json,
          lambda d: text_frontier(d["actor"], d["frontier"]))
 
 
 def cmd_impact(root, a, trust):
-    emit(dict(impact(root, *parse_range(root, a.range)), lens=lens(root, trust, {"op": "impact"})), a.json, text_impact)
+    d = impact(root, *parse_range(root, a.range))
+    emit(dict(d, lens=lens(root, d.pop("assessed"), {"op": "impact"})), a.json, text_impact)
 
 
 def cmd_delta(root, a, trust):
     base, head = parse_range(root, a.range)
-    g0, g1 = graph_of(root, base, trust)[0], graph_of(root, head, trust)[0]
-    emit(dict(G.delta(g0, g1), root={"base": root_of(root, base, g0), "head": root_of(root, head, g1)},
-              lens=lens(root, trust, {"op": "delta"})), a.json, text_delta)
+    (g0, r0), (g1, r1) = graph_of(root, base, trust), graph_of(root, head, trust)
+    emit(dict(G.delta(g0, g1), root={"base": root_of(root, base, g0["snapshot"]), "head": root_of(root, head, g1["snapshot"])},
+              lens=lens(root, [G.operands(r0), G.operands(r1)], {"op": "delta"})), a.json, text_delta)
 
 
 def cmd_export(root, a, trust):
     rev = commit(root, a.at) if a.at else WORKTREE
-    g, _ = graph_of(root, rev, trust)
-    ident = {"root": root_of(root, rev, g), "lens": lens(root, trust, {"op": "export", "format": "json" if a.json else "dot"})}
+    g, rep = graph_of(root, rev, trust)
+    ident = {"root": root_of(root, rev, g["snapshot"]),
+             "lens": lens(root, [G.operands(rep)], {"op": "export", "format": "json" if a.json else "dot"})}
     if a.json:
         print(json.dumps(dict(g, **ident), indent=1, sort_keys=True, ensure_ascii=False))
     else:
         print(f"// root {json.dumps(ident['root'], sort_keys=True)} lens {ident['lens']}\n" + G.dot(g), end="")
+
+
+def cmd_why(root, a, trust):
+    """tools/claims.py why FILE:LINE, with the root (this checkout's tree and store) and the lens it was read under:
+    why reads no assessment, only the claims under `trust` (Codex 26b46cfde7dd on #209: it carried neither)."""
+    repo = CL.Repo(root)
+    m = WHY.WHY_LINE.match(a.target)
+    if not m:
+        raise CL.Refused(f"{a.target!r} is not FILE:LINE", "WHY_USAGE")
+    d = WHY.Why(repo).at(WHY._why_path(repo, m.group(1)), int(m.group(2)))
+    emit(dict(d, root=root_of(root, WORKTREE, repo.snapshot().digest),
+              lens=lens(root, [{"trust": trust.digest}], {"op": "why", "target": a.target})), a.json, WHY.render_why)
 
 
 def parser():
@@ -472,7 +486,7 @@ def parser():
     return ap
 
 
-COMMANDS = {"path": cmd_path, "frontier": cmd_frontier, "impact": cmd_impact, "delta": cmd_delta, "export": cmd_export}
+COMMANDS = {"why": cmd_why, "path": cmd_path, "frontier": cmd_frontier, "impact": cmd_impact, "delta": cmd_delta, "export": cmd_export}
 
 
 def main(argv=None):
@@ -483,8 +497,6 @@ def main(argv=None):
         ap.print_help()
         return 2
     try:
-        if a.cmd == "why":
-            return WHY.cmd_why(CL.Repo(root), argparse.Namespace(target=a.target, uncovered=None, json=a.json))
         if a.cmd == "views":
             return cmd_views(root, a)
         COMMANDS[a.cmd](root, a, CL.Repo(root).trust())

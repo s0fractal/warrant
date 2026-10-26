@@ -14,7 +14,8 @@ Labels are record text: untrusted data.
   delta(g0, g1)              nodes and edges added, removed or changed from g0 to g1
   impact(g0, g1, also=())    the duties and questions the records changed from g0 to g1 bear on
   dot(g)                     Graphviz text of a graph, every label escaped
-  lens_id(code, trust, profile, query)   the content address of everything but the root that decides a result
+  lens_id(code, assessed, query)   the content address of everything but the root that decides a result
+  root_part(report), operands(report)   a report's root, and its other assessment operands
 """
 import json
 import platform
@@ -366,13 +367,27 @@ def impact(g0, g1, also=()):
 
 
 LENS = "warrant-graph/lens@1"
+ROOT = ("snapshot", "as_of")            # what a report was computed from; `completeness` is a statement, no operand
 
 
-def lens_id(code, trust, profile, query):
+def root_part(report):
+    """A report's root: the snapshot it assessed and the time it assessed it at."""
+    return {k: report["view"][k] for k in ROOT}
+
+
+def operands(report):
+    """Every other operand of a report's assessment, read off its own identity block (trust, profile, the current
+    revisions, the workspace, the engine, the provider), never listed here: an operand added to the engine's identity
+    joins every lens (Codex 74a162414cb8 on #209: a base view's trust was left out)."""
+    return {k: v for k, v in report["view"].items() if k not in ROOT + ("completeness",)}
+
+
+def lens_id(code, assessed, query):
     """The lens of a result: the content address of the code that computed it (`code`: {name: identity}, the whole
-    deciding path, never one file), the receiver's trust and profile digests, the interpreter, and the query with
-    its parameters. Its root (the store state, the commit) is named apart. One lens over one root gives one result."""
-    return C.doc_id({"lens": LENS, "code": code, "trust": trust, "profile": profile, "query": query,
+    deciding path, never one file), the operands of every assessment it read (`assessed`: operands(report) of each,
+    base first), the interpreter, and the query with its parameters resolved (a default the request left out is the
+    value used, not its absence: Codex 5af55ace3344). Its root is named apart. One lens over one root, one result."""
+    return C.doc_id({"lens": LENS, "code": code, "assessed": assessed, "query": query,
                      "python": f"{platform.python_implementation()} {platform.python_version()}"})
 
 
