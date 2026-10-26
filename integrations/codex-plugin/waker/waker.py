@@ -234,6 +234,17 @@ def closure_of(body):
     return body.get("transition", body.get("target")), body.get("item")
 
 
+def binds(rec, c):
+    """Whether the verdict `rec` (a record body's owner) counts on closure item `c` (an entry of `roadmap.py due`):
+    a challenge of that item, or an accept of it binding exactly its evidence (the engine's accepts_by; Codex
+    finding cea34f0511d6: an accept with other evidence counts for nothing, and nothing else stands for it)."""
+    b = rec["body"]
+    if closure_of(b) != (c["closure"], c["item"]):
+        return False
+    want = c.get("evidence")
+    return rec["type"] == "challenge" or (isinstance(want, list) and sorted(b.get("evidence") or []) == sorted(want))
+
+
 def cites(v, out):
     """`out` with every hex64 string anywhere in `v`: what a record's body cites (eligibility.uncited)."""
     if isinstance(v, str) and HEX.match(v):
@@ -277,6 +288,7 @@ def verify_verdicts(req):
     from warrant.bindings import read_roles
     from warrant.store import Snapshot, Trust
     code, actor, want = Path(req["code"]), req["actor"], (req["closure"], req["item"])
+    item = {"closure": req["closure"], "item": req["item"], "evidence": req["evidence"]}
     roles, problems = read_roles(json.loads((code / ".warrant/roles.json").read_text()))
     pin = roles.get(actor)
     if problems or not (isinstance(pin, str) and HEX.match(pin)):
@@ -293,6 +305,8 @@ def verify_verdicts(req):
             return f"record {rid[:12]} is a {rec['type']}, not a verdict"
         if closure_of(rec["body"]) != want:
             return f"record {rid[:12]} is not a verdict on closure {want[0][:12]} item {want[1]}"
+        if not binds(rec, item):
+            return f"record {rid[:12]} accepts other evidence than closure {want[0][:12]} item {want[1]} carries"
         cites(rec["body"], cited)
         evidence.update(rec["body"]["evidence"])
     why = blob_problem(C.digest, blobs, cited)
@@ -305,14 +319,15 @@ def verify_verdicts(req):
 
 
 def held_verdict(code, c):
-    """The id of a verdict by ACCEPTOR on closure item `c` that the base tree `code` holds already, or None."""
+    """The id of a verdict by ACCEPTOR that counts on closure item `c` (binds) and that the base tree `code` holds
+    already, or None."""
     for p in sorted((code / STORE / "records").glob("*.json")):
         try:
             rec = json.loads(p.read_bytes())["record"]
         except (OSError, ValueError, KeyError, TypeError):
             continue
         if (isinstance(rec, dict) and rec.get("actor") == ACCEPTOR and rec.get("type") in VERDICTS
-                and isinstance(rec.get("body"), dict) and closure_of(rec["body"]) == (c["closure"], c["item"])):
+                and isinstance(rec.get("body"), dict) and binds(rec, c)):
             return p.name[:-5]
     return None
 
@@ -799,7 +814,7 @@ class Waker:
     def verify(self, code, c, records, blobs):
         """verify_verdicts on these bytes, in a process of its own with the base tree `code` first on PYTHONPATH:
         the base's package checks the signatures under the base's pins."""
-        req = {"code": str(code), "actor": ACCEPTOR, "closure": c["closure"], "item": c["item"],
+        req = {"code": str(code), "actor": ACCEPTOR, "closure": c["closure"], "item": c["item"], "evidence": c.get("evidence"),
                "records": {k: base64.b64encode(v).decode() for k, v in records.items()},
                "blobs": {k: base64.b64encode(v).decode() for k, v in blobs.items()}}
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(Path.home()), "PYTHONPATH": str(code),
@@ -845,9 +860,9 @@ class Waker:
             if tip:
                 git("-C", str(wt), "fetch", "--quiet", "origin", f"refs/heads/{branch}")
                 theirs = commit(git("-C", str(wt), "rev-parse", "FETCH_HEAD").decode().strip())
-                if any(subprocess.run(["git", "-C", str(wt), "cat-file", "-e", f"{theirs}:{path}"], capture_output=True,
-                                      check=False).returncode for path in ours):
-                    raise RuntimeError(f"{branch} exists at {theirs[:12]} without this verdict: nothing pushed")
+                why = pushed_before(wt, theirs, base, ours)
+                if why:
+                    raise RuntimeError(f"{branch} exists at {theirs[:12]}, not this verdict ({why}): nothing pushed")
                 new = theirs
             else:
                 git("-C", str(wt), "push", "--quiet", f"--force-with-lease=refs/heads/{branch}:", "origin",
@@ -909,6 +924,28 @@ def projected(wt, ours):
     if set(ours) - set(out):
         raise RuntimeError(f"{len(set(ours) - set(out))} prepared store entries are not new on the base: nothing pushed")
     return sorted(out)
+
+
+def pushed_before(wt, theirs, base, ours):
+    """Why the existing branch tip `theirs` is not this verdict as an earlier run pushed it, or None. It must be one
+    commit on a commit of the base branch (an ancestor of `base`) that adds exactly the store entries `ours`, byte
+    for byte, and otherwise changes only tracked files outside the store (the projections): filenames prove nothing
+    (Codex finding 25890f89f776: a record replaced by {} on the branch read as delivered)."""
+    parents = git("-C", str(wt), "rev-list", "--parents", "-n", "1", theirs).decode().split()[1:]
+    if len(parents) != 1 or subprocess.run(["git", "-C", str(wt), "merge-base", "--is-ancestor", parents[0], base],
+                                           capture_output=True, check=False).returncode:
+        return "not one commit on the base branch"
+    raw = git("-C", str(wt), "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", "--name-status", parents[0],
+              theirs).decode().split("\0")
+    seen = set()
+    for status, path in zip(raw[0::2], raw[1::2]):
+        if path in ours:
+            if status != "A" or git("-C", str(wt), "cat-file", "blob", f"{theirs}:{path}") != ours[path]:
+                return f"{path[len(STORE):][:20]} differs"
+            seen.add(path)
+        elif path.startswith(STORE) or status != "M":
+            return f"{status} {path[:60]}"
+    return None if seen == set(ours) else f"{len(set(ours) - seen)} store entries missing"
 
 
 def verdict_message(c, base, title, records, blobs):

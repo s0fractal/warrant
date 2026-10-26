@@ -1015,9 +1015,77 @@ def publish_cases():
           "verdict's publication; this repository's, in any state, does", forked)
 
 
+def binding_cases():
+    # W35 (Codex finding cea34f0511d6 on #211 head 3, fd65c50, test codex_waker_publication_test F1): an accept of the
+    # closure item with evidence other than the item's was published as the verdict, and one on master counted as
+    # the base holding the verdict, so a new valid challenge was never delivered. An accept counts only when it
+    # binds exactly the item's evidence (engine accepts_by).
+    f = verdict_world()
+    f.codex.prepare = lambda wt: sign_into(wt, f, "codex", "accept", R.accept(f.t, 0, []))
+    fresh = WAKER.tick(f.w, False)[-1]
+    refused = branch_tip(f) is None and not f.forge.opened and "accepts other evidence" in fresh
+    f.close()
+    g = verdict_world()
+    sign_into(g.code, g, "codex", "accept", R.accept(g.t, 0, []))           # on master: binds nothing
+    mine = []
+    g.codex.prepare = lambda wt: mine.append(challenge(g, wt))
+    lines = WAKER.tick(g.w, False)
+    tip = branch_tip(g)
+    delivered = bool(tip and mine) and subprocess.run(
+        ["git", "-C", str(g.origin), "cat-file", "-e", f"{tip}:.warrant/store/records/{mine[0]}.json"],
+        capture_output=True, check=False).returncode == 0
+    check("W35", refused and delivered and "published: pull request #201" in lines[-1],
+          "an accept that does not bind the closure item's evidence is no verdict: not published, and on master it "
+          "does not count as the verdict there, so a valid challenge is delivered", (fresh, lines))
+    g.close()
+
+    # W36 (Codex finding 25890f89f776 on #211 head 3, test codex_waker_publication_test F2): after a push whose pull
+    # request failed, the retry took the branch as this verdict because the record's filename was there (its bytes
+    # replaced by {}), opened the pull request and removed Codex's worktree. The branch counts only when it is one
+    # commit on master adding exactly these bytes and nothing else to the store.
+    def tampered(edit):
+        h = verdict_world(forge=FakeForge(fail=1))
+        h.codex.prepare = lambda wt: challenge(h, wt)
+        WAKER.tick(h.w, False)
+        wt = Path(accept_memo(h)["attempts"][-1]["worktree"])
+        clone = h.base / "remote-edit"
+        git("clone", "-q", str(h.origin), str(clone))
+        git("-C", str(clone), "checkout", "-q", h.branch)
+        edit(h, clone)
+        git("-C", str(clone), "push", "-q", "-f", "origin", f"HEAD:refs/heads/{h.branch}")
+        h.now[0] += WAKER.BACKOFF + 1
+        line = WAKER.tick(h.w, False)[-1]
+        out = (not accept_memo(h).get("published") and not h.forge.opened and wt.exists() and "not this verdict" in line)
+        h.close()
+        return out
+
+    def rewrite(h, clone):
+        rec = next(p for p in (clone / ".warrant" / "store" / "records").iterdir()
+                   if not (h.dir / ".warrant" / "store" / "records" / p.name).exists())
+        rec.write_text("{}\n")
+        git("-C", str(clone), "commit", "-qa", "--amend", "--no-edit")        # still one commit on master
+
+    def extra(h, clone):
+        Store(clone / ".warrant" / "store").put_json({"filler": "not the verdict's"})
+        git("-C", str(clone), "add", "-A")
+        git("-C", str(clone), "commit", "-q", "--amend", "--no-edit")
+
+    def under(h, clone):
+        top = git("-C", str(clone), "rev-parse", "HEAD")
+        git("-C", str(clone), "reset", "-q", "--hard", "HEAD~1")
+        (clone / "calc.py").write_text("print('not master')\n")
+        git("-C", str(clone), "commit", "-qam", "a commit that is not master's")
+        git("-C", str(clone), "cherry-pick", "--allow-empty", top)
+
+    got = {name: tampered(edit) for name, edit in (("rewrite", rewrite), ("extra", extra), ("under", under))}
+    check("W36", all(got.values()), "a retry finds the verdict's branch pushed already but not as this verdict (a "
+          "record's bytes replaced, another store entry added, or the commit not on master): nothing is published "
+          "and Codex's worktree is kept", got)
+
+
 def main():
     for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
-                 race_cases, skip_cases, seed_cases, publish_cases):
+                 race_cases, skip_cases, seed_cases, publish_cases, binding_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run

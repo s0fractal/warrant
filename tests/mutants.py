@@ -1907,6 +1907,22 @@ def _visit(view, did, report, done, busy):
     ('M723', '../integrations/codex-plugin/waker/waker.py', "the tracked files the base's projectors changed are not committed with the verdict",
      [('(xy == " M" and not path.startswith(STORE))', '(xy == "XX" and not path.startswith(STORE))')],
      'review_replay_test', ['W31']),
+    # Codex's findings on #211 head 3: an accept binds the item's evidence; an existing branch is checked byte for byte.
+    ('M724', '../integrations/codex-plugin/waker/waker.py', "a prepared accept with evidence other than the closure item's is published",
+     [('        if not binds(rec, item):', '        if False:')],
+     'review_replay_test', ['W35']),
+    ('M725', '../integrations/codex-plugin/waker/waker.py', "an accept on master that binds other evidence counts as the base holding the verdict",
+     [('and binds(rec, c)):', 'and closure_of(rec["body"]) == (c["closure"], c["item"])):')],
+     'review_replay_test', ['W35']),
+    ('M726', '../integrations/codex-plugin/waker/waker.py', "an existing branch whose verdict record's bytes were replaced is taken as this verdict",
+     [(' or git("-C", str(wt), "cat-file", "blob", f"{theirs}:{path}") != ours[path]', '')],
+     'review_replay_test', ['W36']),
+    ('M727', '../integrations/codex-plugin/waker/waker.py', "an existing branch that adds another store entry beside this verdict is taken as this verdict",
+     [('        elif path.startswith(STORE) or status != "M":', '        elif False:')],
+     'review_replay_test', ['W36']),
+    ('M728', '../integrations/codex-plugin/waker/waker.py', "an existing branch whose commit is not on the base branch is taken as this verdict",
+     [('    if len(parents) != 1 or subprocess.run(', '    if len(parents) != 1 and subprocess.run(')],
+     'review_replay_test', ['W36']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
