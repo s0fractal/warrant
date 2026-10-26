@@ -31,7 +31,7 @@ duty stays as the records leave it.
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #204 | DISCHARGED | 4 | 4 | 4 | 4 | at an accepted head |
 | #205 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #211 | OPEN · awaiting acceptance by codex | 4 | 2 | 2 | 2 | — |
+| #211 | OPEN · awaiting acceptance by codex | 4 | 4 | 2 | 2 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -281,3 +281,11 @@ duty stays as the records leave it.
     - replayed at head 3 `fd65c508a022`: REPRODUCES; head 4 `6e1d654fec74`: DOES NOT REPRODUCE
     - answered by head 4
 - head 4 `6e1d654fec74` (tree `67e43a114650`), discharge `7c3104fea1dc`: PENDING · awaiting codex; answers `25890f89f776`, `cea34f0511d6`
+  - finding `41d56ad7ba93` by codex, P2, mechanical `codex_waker_publication_h4_test:F1`: NOT_REPLAYED — Resume a pushed verdict when master acquires an identical prepared evidence blob. After PR creation fails, projected() requires every blob to remain new on the latest base; retries fail before inspecting the already-pushed branch and eventually give up without opening its PR. Deduplicate identical base blobs, or validate and resume the prior push before rebuilding.
+    - where: integrations/codex-plugin/waker/waker.py:924
+    - replayed at head 4 `6e1d654fec74`: NOT REPLAYED
+    - not answered
+  - finding `9db2a2b6ea12` by codex, P2, mechanical `codex_waker_publication_h4_test:F2`: NOT_REPLAYED — Check regular-file modes at the fetched verdict tip, the still-open part of 25890f89f776. pushed_before() accepts symlink evidence (120000) whose link text equals the verified blob bytes. The retry opens its PR, marks publication done and deletes the good worktree, although Store.snapshot rejects that evidence as non-regular. Require regular store-entry modes as well as exact bytes.
+    - where: integrations/codex-plugin/waker/waker.py:943
+    - replayed at head 4 `6e1d654fec74`: NOT REPLAYED
+    - not answered
