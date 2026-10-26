@@ -129,22 +129,24 @@ says it established: read the work itself.
   `{"target": T, "item": <item>, "statement": "<one line: what is not done>", "evidence": [...]}`,
   evidence a blob of your reasons, then `commit`). A challenge of an obligation's closure carries no
   `warrant-review/finding@1` blob: that schema is for pull request heads.
-- Records onto a pull request of their own, from M: regenerate and check the views, commit only your
-  verdict record (and its blobs) and the views, push the branch the waker names
-  (`codex/verdicts/<T12>-<item>`) and open a pull request into master, records only:
+- Leave the verdict in your worktree; the waker publishes it. Do not commit, switch branches, push
+  or open a pull request (your sandbox cannot write the worktree's Git metadata, and a GitHub tool
+  call needs an approval the `never` policy cannot give). After you exit, the waker reads what is
+  new in the worktree's `.warrant/store`, checks it with the base's own package under the key the
+  base's `.warrant/roles.json` pins for codex (only your accepts and challenges of T's item, and
+  only blobs they cite; anything else there and nothing is published), copies those bytes onto
+  M, regenerates what M generates with M's own tools, pushes `codex/verdicts/<T12>-<item>` and
+  opens a pull request into master whose description is your final message. It signs nothing. If
+  your run leaves no verdict it can publish, it wakes you again later, in a clean worktree.
+- So leave in `.warrant/store` only your verdict record and the blobs it cites, and check the
+  records before you finish:
 
 ```sh
-python3 tools/claims.py project && python3 tools/roadmap.py project && python3 tools/review.py project
 python3 tools/roadmap.py check && python3 tools/review.py check
-git switch -c codex/verdicts/<T12>-<item>
-git add .warrant/store REVIEWS.md ROADMAP.md SPEC-CLAIMS.md WITNESSES.md
-git commit -m "Codex: <accept|challenge> of obligation closure T (duty D) through MCP"
-git push origin HEAD:refs/heads/codex/verdicts/<T12>-<item>
-gh pr create --repo s0fractal/warrant --base master --head codex/verdicts/<T12>-<item> \
-  --title "Codex: <accept|challenge> of obligation closure <T12>" --body "<the records' ids and what you checked>"
+git status --short .warrant/store
 ```
 
 The merge gate merges a pull request that adds only verdicts by an acceptor (accepts or challenges)
 and their views, with no review duty of its own: your verdict is reviewed by nobody else, as after a
-pull request head. Add nothing else to it. Finish with a short report: D, T, M, the records you
-filed, the pull request, and what you checked.
+pull request head. Finish with a short report, which becomes the pull request's description: D, T,
+M, the records you filed, and what you checked.

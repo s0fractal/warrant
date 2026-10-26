@@ -15,18 +15,21 @@ real sandbox where there is one).
     python3 tests/review_replay_test.py
 """
 import importlib.util
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
-from review_world import (C, CRASHING_TEST, FIXED, GIT, R, RR, RV, Fixture, _write, finding_test, head_of,
+from review_world import (C, CRASHING_TEST, FIXED, GIT, REPO, R, RR, RV, Fixture, _write, finding_test, head_of,
                           new_file_patch, started)
 from world import check, finish
 
 import warrant
+from claimslib import eligibility as EL      # noqa: E402  (review_world put tools/ on the path)
 from warrant.store import Store
 
 
@@ -133,12 +136,37 @@ class Jail:
 
 
 class FakeCodex:
-    def __init__(self):
-        self.calls = []
+    """`codex exec`: records each command; `prepare(worktree)` is what Codex leaves there; exits `code`."""
+
+    def __init__(self, prepare=None, code=0):
+        self.calls, self.prepare, self.code = [], prepare, code
 
     def __call__(self, cmd, **kw):
         self.calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0)
+        if self.prepare is not None:
+            self.prepare(Path(cmd[cmd.index("-C") + 1]))
+        return subprocess.CompletedProcess(cmd, self.code)
+
+
+class FakeForge:
+    """GitHub's pull requests by branch; `everywhere`: every branch has one already (Codex opened it himself, as
+    before the waker published); `fail`: that many pull request creations fail first."""
+
+    def __init__(self, everywhere=False, fail=0):
+        self.prs, self.opened, self.everywhere, self.fail = {}, [], everywhere, fail
+
+    def pulls(self, branch):
+        if self.everywhere:
+            return [(77, "OPEN")]
+        return [(self.prs[branch], "OPEN")] if branch in self.prs else []
+
+    def open(self, branch, title, body):
+        if self.fail:
+            self.fail -= 1
+            raise RuntimeError("gh pr create exited 1: HTTP 502")
+        self.opened.append((branch, title, body))
+        self.prs[branch] = 200 + len(self.opened)
+        return self.prs[branch]
 
 
 def git(*args):
@@ -184,9 +212,9 @@ def pr_world(after=None, head_files=None):
     f.seed = f.replayers / f"{f.replayer[len(RR.PREFIX):]}.seed"
     f.seed.write_text(f.keys[f.replayer].seed_hex() + "\n")
     f.seed.chmod(0o600)
-    f.codex, f.jail = FakeCodex(), Jail(after)
+    f.codex, f.jail, f.forge = FakeCodex(), Jail(after), FakeForge(everywhere=True)
     f.w = WAKER.Waker(home=home, trees=f.base / "trees", python=sys.executable, codex="/bin/codex", run=f.codex,
-                      replayers=f.replayers, replay_python=sys.executable, jail=f.jail)
+                      replayers=f.replayers, replay_python=sys.executable, jail=f.jail, forge=f.forge)
     f.w.tree = lambda base: f.code          # the base tree: the tools under test, not the fixture's (it has none)
     return f
 
@@ -743,10 +771,253 @@ def seed_cases():
     f.close()
     g.close()
 
+# ---------------------------------------------------------------- the waker publishes the verdict Codex prepared
+
+MERGE = {"gate": EL.GATE, "base": "master", "hold_label": "hold", "owner_paths": [".github/", ".warrant/roles.json"],
+         "required": [{"check": "test", "workflow": ".github/workflows/ci.yml"}]}
+
+
+def green(head):
+    """GitHub's check runs at `head`: the required check `test`, green, from its workflow."""
+    return {"check_runs": [{"id": 10, "name": "test", "head_sha": head, "status": "completed", "conclusion": "success",
+                            "app": {"slug": "github-actions"}, "check_suite": {"id": 1}}],
+            "workflow_runs": [{"id": 100, "check_suite_id": 1, "path": ".github/workflows/ci.yml", "head_sha": head}]}
+
+
+def verdict_world(prepare=None, forge=None):
+    """Master f.base holds a roadmap goal, an obligation f.duty owed to codex and its closure f.t citing evidence
+    f.ev, the gate's merge.json and the generated REVIEWS.md; origin is a bare clone with master there, the
+    waker's mirror a bare clone of origin. The waker's base tree is master's archive with the tools and package
+    under test beside it (what HOME/code/<base> holds, plus the code the base would carry), and Codex is
+    FakeCodex(prepare)."""
+    f = Fixture()
+    (f.dir / ".warrant" / "merge.json").write_text(json.dumps(MERGE) + "\n")
+    goal = f.put("claude", "transition", R.transition("ATTESTED", [], opened=[{"text": "The ledger exists.",
+                                                                               "scope": "roadmap:G1"}]))
+    f.duty = obligation(f, goal, "A witness ledger is derived from the records.")
+    f.t, f.ev = done(f, f.duty, ["s0fractal/warrant#9"])
+    roadmap(f.dir, "project")
+    f.base_commit = f.save()
+    f.origin = f.base / "origin.git"
+    git("clone", "--bare", "-q", str(f.dir), str(f.origin))
+    git("-C", str(f.origin), "update-ref", "refs/heads/master", f.base_commit)
+    home = f.base / "home"
+    home.mkdir()
+    git("clone", "--bare", "-q", str(f.origin), str(home / "warrant.git"))
+    f.code = f.base / "code"
+    f.code.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(subprocess.run(["git", "-C", str(f.origin), "archive", "--format=tar",
+                                                         f.base_commit], capture_output=True, check=True).stdout)) as t:
+        t.extractall(f.code, filter="data")
+    (f.code / "tools").mkdir()
+    for name in ("review.py", "roadmap.py", "claimslib"):
+        (f.code / "tools" / name).symlink_to(TOOLS / name)
+    (f.code / "warrant").symlink_to(PKG)
+    f.codex, f.forge = FakeCodex(prepare), forge or FakeForge()
+    f.now = [1_800_000_000.0]
+    f.w = WAKER.Waker(home=home, trees=f.base / "trees", python=sys.executable, codex="/bin/codex", run=f.codex,
+                      clock=lambda: f.now[0], forge=f.forge)
+    f.w.tree = lambda base: f.code
+    f.w.fetch = lambda: f.base_commit
+    f.w.due = lambda base: {"due": [], "not_due": []}
+    f.branch = WAKER.VERDICT_BRANCH + f.t[:12] + "-0"
+    return f
+
+
+def roadmap(root, *argv):
+    """tools/roadmap.py (the tools under test) on the repository `root`: its exit status."""
+    env = dict(os.environ, PYTHONPATH=str(PKG.parent), PYTHONDONTWRITEBYTECODE="1")
+    return subprocess.run([sys.executable, str(TOOLS / "roadmap.py"), "--root", str(root), *argv], env=env,
+                          capture_output=True, check=False).returncode
+
+
+def sign_into(wt, f, actor, rtype, body, blobs=(), key=None):
+    """A record filed into the store of worktree `wt` (what Codex's MCP commit does there), chained on `actor`'s
+    head under the fixture's trust; `key` signs instead of the actor's own."""
+    store = Store(wt / ".warrant" / "store")
+    for doc in blobs:
+        store.put_json(doc)
+    if key is not None:
+        return store.put_record(R.record(rtype, actor, f.at(), body), key)
+    return store.append(rtype, actor, f.at(), body, f.keys[actor], f.rv().repo.trust())
+
+
+def challenge(f, wt, what="the ledger is not derived"):
+    """Codex's challenge of f.t item 0 with an evidence blob of his reasons, filed into `wt`."""
+    reasons = {"cause": what, "duty": f.duty, "item": 0}
+    return sign_into(wt, f, "codex", "challenge", R.challenge(f.t, what, [C.digest(C.canon(reasons))], 0), [reasons])
+
+
+def branch_tip(f):
+    r = subprocess.run(["git", "-C", str(f.origin), "rev-parse", "--verify", "--quiet", f"refs/heads/{f.branch}"],
+                       capture_output=True, check=False)
+    return r.stdout.decode().strip() or None
+
+
+def published_check(f, tip):
+    """`roadmap.py check` (the generated ROADMAP.md is the rendering of the records) in a checkout of `tip`."""
+    if tip is None:
+        return None
+    clone = f.base / f"published-{tip[:12]}"
+    git("clone", "-q", "--no-checkout", str(f.origin), str(clone))
+    git("-C", str(clone), "checkout", "-q", "--detach", tip)
+    return roadmap(clone, "check")
+
+
+def accept_memo(f):
+    p = f.w.home / "accepts" / f"{f.t}-0.json"
+    return json.loads(p.read_text()) if p.is_file() else {}
+
+
+def publish_cases():
+    # W30: Codex's acceptance wake of the G3 closure 836e1789a97a at master 7b46fef (2026-10-26): he filed the
+    # challenge 75e65c2c3dfe and its evidence blob 012e70d1a07e through MCP into his worktree and could not publish
+    # them (his sandbox could not write HEAD.lock in the mirror; the GitHub tool needed an approval the `never`
+    # policy cannot give). He exited 0 and the waker's memo read done, so no run would ever publish it; a courier
+    # published it by hand (#210). Reproduced: that memo as the earlier waker wrote it, his worktree as he left it
+    # (his record, his blob, a view he edited). Expected: the memo is not done; the next run publishes exactly his
+    # record and blob, with the views the base's own tools generate, on codex/verdicts/<T12>-0; the base's merge
+    # gate admits that pull request as verdicts only; a later run publishes nothing again.
+    f = verdict_world()
+    wt = f.w.accept_worktree({"closure": f.t, "item": 0}, f.base_commit)
+    rec = challenge(f, wt)
+    (wt / "REVIEWS.md").write_text((wt / "REVIEWS.md").read_text() + "\nedited by hand\n")
+    store = wt / ".warrant" / "store"
+    mine = {str(p.relative_to(wt)): p.read_bytes() for p in store.rglob("*") if p.is_file()
+            and not (f.dir / p.relative_to(wt)).exists()}
+    old = {"closure": f.t, "item": 0, "duty": f.duty, "base": f.base_commit,
+           "attempts": [{"started": f.now[0] - 600, "started_at": "x", "worktree": str(wt), "finished": f.now[0] - 60,
+                         "exit": 0, "kept": [" M REVIEWS.md"]}]}
+    (f.w.home / "accepts" / f"{f.t}-0.json").write_text(json.dumps(old))
+    before = f.w.accept_state(old)[0]
+    lines = WAKER.tick(f.w, False)
+    tip = branch_tip(f)
+    names = sorted(git("-C", str(f.origin), "diff-tree", "-r", "--no-commit-id", "--name-status", f.base_commit,
+                       tip).splitlines()) if tip else []
+    got = {p: git("-C", str(f.origin), "cat-file", "blob", f"{tip}:{p}").encode() for p in mine} if tip else {}
+    reviews = git("-C", str(f.origin), "show", f"{tip}:REVIEWS.md") if tip else ""
+    rendered = published_check(f, tip)
+    a = EL.assess(f.origin, f.base_commit, {"number": 210, "state": "open", "draft": False, "base": "master",
+                                            "head": tip, "labels": [], "branch": f.branch, "head_repo": REPO},
+                  green(tip)) if tip else None
+    again = WAKER.tick(f.w, False)
+    check("W30", before == "publish" and tip is not None and got == mine and len(mine) == 2
+          and all(n.startswith("A\t.warrant/store/") for n in names if not n.endswith("REVIEWS.md"))
+          and "edited by hand" not in reviews and rendered == 0
+          and a is not None and a.eligible and a.facts.get("verdicts") == [rec]
+          and [(b, t[:6]) for b, t, _ in f.forge.opened] == [(f.branch, "Codex:")] and rec in f.forge.opened[0][2]
+          and any("published: pull request #201" in x for x in lines) and not f.codex.calls
+          and "done" in again[-1] and len(f.forge.opened) == 1 and not wt.exists(),
+          "a wake whose Codex exited 0 and left his signed challenge unpublished (#210, 836e1789a97a) is not done: the "
+          "next run publishes exactly his record and blob, with the base's own views, on codex/verdicts/<T12>-0; "
+          "the base's merge gate admits that pull request as verdicts only; nothing is published again",
+          (before, lines, names, a and sorted(a.codes()), again))
+    f.close()
+
+    # W31: a run of Codex that exits 0 and leaves no verdict is unpublished, not done: retried after the backoff, in
+    # a worktree of its own; the run whose verdict reaches GitHub is done, in the same run.
+    g = verdict_world()
+    g.codex.prepare = None
+    first = WAKER.tick(g.w, False)
+    waiting = WAKER.tick(g.w, False)
+    g.codex.prepare = lambda wt: sign_into(wt, g, "codex", "accept", R.accept(g.t, 0, [g.ev]))
+    g.now[0] += WAKER.BACKOFF + 1
+    retried = WAKER.tick(g.w, False)
+    memo = accept_memo(g)
+    view = git("-C", str(g.origin), "diff", g.base_commit, branch_tip(g), "--", "ROADMAP.md") if branch_tip(g) else ""
+    trees = [Path(c[c.index("-C") + 1]).name for c in g.codex.calls]
+    check("W31", len(g.codex.calls) == 2 and "unpublished" in first[-1] and "retry after" in waiting[-1]
+          and trees == [f"accept-{g.t[:12]}-0-{g.base_commit[:12]}", f"accept-{g.t[:12]}-0-{g.base_commit[:12]}-2"]
+          and "published: pull request #201" in retried[-1] and memo.get("published", {}).get("pr") == 201
+          and [x.get("unpublished") is not None for x in memo["attempts"]] == [True, False]
+          and "DISCHARGED" in view and published_check(g, branch_tip(g)) == 0,
+          "a wake whose Codex exits 0 with no verdict is unpublished, not done: it is retried after the backoff in a "
+          "clean worktree, and the wake whose verdict (an accept) the waker publishes, with the views the base's own "
+          "tools regenerate, is done in that run", (first, waiting, retried, view))
+    g.close()
+
+    # W32: the waker publishes only codex's own verdicts on the closure item woken, under the base's pin, and the
+    # blobs they cite: any other record or blob in his worktree's store, and nothing is published.
+    def stranger(h, wt):
+        challenge(h, wt)
+        sign_into(wt, h, "codex", "challenge", R.challenge(h.t, "forged", [], 0), key=h.keys["stranger"])
+
+    cases = {
+        "claude": (lambda h, wt: (challenge(h, wt), sign_into(wt, h, "claude", "accept", R.accept(h.t, 0, [h.ev])))),
+        "stranger": stranger,
+        "duty": (lambda h, wt: (challenge(h, wt), sign_into(wt, h, "codex", "duty", R.duty(
+            "codex", "codex's own line", ["s0fractal"], {"attest": {}}, accept_by=["s0fractal"])))),
+        "other": (lambda h, wt: sign_into(wt, h, "codex", "challenge", R.challenge(h.duty, "the duty", [], 0))),
+        "uncited": (lambda h, wt: (challenge(h, wt), Store(wt / ".warrant" / "store").put_json({"filler": "x"}))),
+        "missing": (lambda h, wt: sign_into(wt, h, "codex", "challenge", R.challenge(h.t, "cites nothing here", ["ab" * 32], 0))),
+    }
+    seen = {}
+    for name, prepare in cases.items():
+        h = verdict_world()
+        h.codex.prepare = lambda wt, h=h, prepare=prepare: prepare(h, wt)
+        line = WAKER.tick(h.w, False)[-1]
+        seen[name] = (branch_tip(h) is None and not h.forge.opened and "unpublished" in line,
+                      accept_memo(h)["attempts"][-1].get("unpublished"))
+        h.close()
+    why = {k: v[1] or "" for k, v in seen.items()}
+    check("W32", all(v[0] for v in seen.values()) and "not codex's under the base's pin" in why["claude"]
+          and "not codex's under the base's pin" in why["stranger"] and "is a duty, not a verdict" in why["duty"]
+          and "not a verdict on closure" in why["other"] and "cited by no verdict" in why["uncited"]
+          and "neither prepared nor in the base's store" in why["missing"],
+          "a prepared store with a record that is not codex's under the base's pin (claude's, or a stranger's key "
+          "naming codex), a record that is no verdict, a verdict on another closure, a blob no verdict cites, or "
+          "evidence nowhere: nothing is published", seen)
+
+    # W33: a verdict is not published twice: a pull request from its branch exists already (a courier's, #210), or
+    # the base holds it; a push whose pull request failed is completed by opening the pull request only.
+    k = verdict_world(forge=FakeForge())
+    k.forge.prs[k.branch] = 210
+    k.codex.prepare = lambda wt: challenge(k, wt)
+    courier = WAKER.tick(k.w, False)
+    k.close()
+    m = verdict_world()
+    wt = m.w.accept_worktree({"closure": m.t, "item": 0}, m.base_commit)
+    challenge(m, wt)
+    p = m.w.home / "accepts" / f"{m.t}-0.json"
+    memo = {"closure": m.t, "item": 0, "duty": m.duty, "base": m.base_commit,
+            "attempts": [{"exit": 0, "finished": 0, "worktree": str(wt)}]}
+    p.write_text(json.dumps(memo))
+    sign_into(m.code, m, "codex", "challenge", R.challenge(m.t, "already on master", [], 0))      # the base holds one
+    held = m.w.publish({"closure": m.t, "item": 0, "duty": m.duty}, m.base_commit, p, memo)
+    n = verdict_world(forge=FakeForge(fail=1))
+    n.codex.prepare = lambda wt: challenge(n, wt)
+    failed = WAKER.tick(n.w, False)
+    pushed = branch_tip(n)
+    moved = n.commit("master moved meanwhile")      # a new base: a commit rebuilt there is another commit
+    git("-C", str(n.dir), "push", "-q", str(n.origin), f"{moved}:refs/heads/master")
+    git("-C", str(n.w.mirror), "fetch", "-q", str(n.origin), "+refs/heads/master:refs/heads/master")
+    n.w.fetch = lambda: moved
+    n.now[0] += WAKER.BACKOFF + 1
+    retried = WAKER.tick(n.w, False)
+    check("W33", "published: pull request #210" in courier[-1] and not k.forge.opened and branch_tip(k) is None
+          and "the base holds codex's verdict" in held and branch_tip(m) is None and not m.forge.opened
+          and pushed is not None and "publication failed" in failed[-1] and branch_tip(n) == pushed
+          and len(n.forge.opened) == 1 and "published: pull request #201" in retried[-1],
+          "a verdict is not published twice: not when a pull request from its branch exists (a courier's), not when "
+          "the base holds it; after a push whose pull request failed, the retry (master moved meanwhile) opens the pull "
+          "request from the branch pushed, and pushes nothing",
+          (courier, held, failed, retried))
+    m.close()
+    n.close()
+
+    # W34: a pull request from a fork's branch of the same name is not where the verdict was published.
+    def gh(cmd, **kw):
+        out = [{"number": 9, "state": "OPEN", "headRefName": "codex/verdicts/x-0", "isCrossRepository": True},
+               {"number": 8, "state": "MERGED", "headRefName": "codex/verdicts/x-0", "isCrossRepository": False}]
+        return subprocess.CompletedProcess(cmd, 0, json.dumps(out).encode(), b"")
+    forked = WAKER.Forge(run=gh, gh="gh").pulls("codex/verdicts/x-0")
+    check("W34", forked == [(8, "MERGED")], "a fork's pull request from a branch of the same name does not count as the "
+          "verdict's publication; this repository's, in any state, does", forked)
+
 
 def main():
     for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
-                 race_cases, skip_cases, seed_cases):
+                 race_cases, skip_cases, seed_cases, publish_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run
