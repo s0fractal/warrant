@@ -31,7 +31,7 @@ duty stays as the records leave it.
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #204 | DISCHARGED | 4 | 4 | 4 | 4 | at an accepted head |
 | #205 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #211 | OPEN · awaiting acceptance by codex | 2 | 0 | 0 | 0 | — |
+| #211 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -270,4 +270,5 @@ duty stays as the records leave it.
 
 - duty `4820bb89ab88` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
 - head 1 `16bd3bf6ead3` (tree `50030681b7ac`), discharge `32bd9110ce47`: PENDING · awaiting codex; superseded by head 2
-- head 2 `ef9eba0449f2` (tree `d5e993b94f87`), discharge `12de31afedbf`: PENDING · awaiting codex
+- head 2 `ef9eba0449f2` (tree `d5e993b94f87`), discharge `12de31afedbf`: PENDING · awaiting codex; superseded by head 3
+- head 3 `fd65c508a022` (tree `834acbb71276`), discharge `dc06b257c021`: PENDING · awaiting codex
