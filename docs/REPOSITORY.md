@@ -134,7 +134,14 @@ python3 tools/graph.py export --json             # or --dot
 ```
 
 Each takes `--json`. A range reads both stores as Git objects; `BASE..` reads
-the head from the working tree. The MCP tool `warrant_graph` (SPEC §10.2)
+the head from the working tree. Every result carries `root`, what it was
+computed from (full commit ids or the working tree's digest, and each store's
+snapshot digest), and `lens`, the content address of everything else that
+decides it: the whole tree the tool runs from but the store (code, tests,
+mutant harnesses, pins), the engine's and the agent's code identities, the
+trust, the profile and the query. The same lens over the same root gives the
+same bytes, so a result may be cached by (lens, root) and re-derived by anyone;
+`build/views/IDENTITY.json` names the views' root and lens. The MCP tool `warrant_graph` (SPEC §10.2)
 answers path, frontier, impact, delta and export from a frozen view.
 
 SPEC-CLAIMS.md, WITNESSES.md, ROADMAP.md and REVIEWS.md are build artifacts:

@@ -1880,6 +1880,9 @@ def _visit(view, did, report, done, busy):
     ('M703', '../tools/graph.py', 'graph.py why is not claims.py why',
      [('argparse.Namespace(target=a.target, uncovered=None, json=a.json)', 'argparse.Namespace(target=a.target, uncovered="", json=a.json)')],
      'graph_test', ['Z21']),
+    ('M704', '../tools/graph.py', "a deciding module (tools/claimslib/) is left out of the lens's tree hash",
+     [('UNHASHED = (".warrant/store/",)', 'UNHASHED = (".warrant/store/", "tools/claimslib/")')],
+     'graph_test', ['Z27']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

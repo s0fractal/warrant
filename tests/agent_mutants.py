@@ -482,6 +482,12 @@ MUTANTS = [
     ('A150', 'errors.py', "an op that is not a string is looked up, and its TypeError escapes (Codex 3456ece28888)",
      [('    need(isinstance(op, str) and op in ops, "BAD_REQUEST", message)', '    need(op in ops, "BAD_REQUEST", message)')],
      'graph_test', ['Z26']),
+    ('A151', 'api.py', "the operation graph's lens leaves out the agent package's code",
+     [('    lens = graph.lens_id({"agent": adapter_id(), "engine": code_identity()},', '    lens = graph.lens_id({"engine": code_identity()},')],
+     'graph_test', ['Z28']),
+    ('A152', 'graph.py', 'a lens leaves out the query and its parameters',
+     [('"query": query,\n', '"query": None,\n')],
+     'graph_test', ['Z28']),
 ]
 
 

@@ -14,8 +14,10 @@ Labels are record text: untrusted data.
   delta(g0, g1)              nodes and edges added, removed or changed from g0 to g1
   impact(g0, g1, also=())    the duties and questions the records changed from g0 to g1 bear on
   dot(g)                     Graphviz text of a graph, every label escaped
+  lens_id(code, trust, profile, query)   the content address of everything but the root that decides a result
 """
 import json
+import platform
 
 from warrant import jcs as C
 
@@ -38,7 +40,7 @@ def _blob_label(data):
     except (ValueError, TypeError):            # jcs.NotCanonical is a ValueError
         try:
             doc = json.loads(data)
-        except (ValueError, UnicodeDecodeError):
+        except ValueError:                     # UnicodeDecodeError is a ValueError
             return None
     if isinstance(doc, dict) and isinstance(doc.get("schema"), str):
         tail = doc.get("id") if isinstance(doc.get("id"), str) else None
@@ -361,6 +363,17 @@ def impact(g0, g1, also=()):
             "questions": [{"question": q, "scope": (i1.nodes.get(q) or {}).get("scope"),
                            "text": (i1.nodes.get(q) or {}).get("label"),
                            "by": sorted(d["duty"] for d in duties if d["answers"] == q)} for q in qs]}
+
+
+LENS = "warrant-graph/lens@1"
+
+
+def lens_id(code, trust, profile, query):
+    """The lens of a result: the content address of the code that computed it (`code`: {name: identity}, the whole
+    deciding path, never one file), the receiver's trust and profile digests, the interpreter, and the query with
+    its parameters. Its root (the store state, the commit) is named apart. One lens over one root gives one result."""
+    return C.doc_id({"lens": LENS, "code": code, "trust": trust, "profile": profile, "query": query,
+                     "python": f"{platform.python_implementation()} {platform.python_version()}"})
 
 
 def _dot_text(s):

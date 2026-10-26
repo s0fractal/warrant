@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The record graph by query (G11): warrant_agent/graph.py, the agent operation `graph` and its MCP tool
-`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23); Codex's findings on head 2 (Z24-Z26).
+`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23); Codex's findings on head 2 (Z24-Z26); root and lens (Z27, Z28).
 
     python3 tests/graph_test.py
 """
@@ -254,7 +254,8 @@ def repository_cases():
     rc3, js, _ = tool("export", "--json")
     g = json.loads(js) if rc3 == 0 else {}
     check("Z22", rc == 0 and isinstance(fr, list) and all("need" in x for x in fr) and rc2 == 0
-          and dot.startswith("digraph warrant {") and dot.count("\n") == len(g.get("nodes", [])) + len(g.get("edges", [])) + 3
+          and dot.startswith("// root ") and dot.splitlines()[1] == "digraph warrant {"
+          and dot.count("\n") == len(g.get("nodes", [])) + len(g.get("edges", [])) + 4 and g.get("lens") and g.get("root")
           and g.get("graph") == G.GRAPH,
           "graph.py frontier and export (json, dot) read this checkout's store", (rc, rc2, rc3, err[-300:]))
 
@@ -320,6 +321,64 @@ def finding_cases():
           "exception escaping the interface", got)
 
 
+def lens_cases(d):
+    """`root` and `lens` (a teammate's request on #209): a lens changes with any deciding module, wherever it lives,
+    and with the query; never with the store, which is the root's."""
+    base = GT.tree_digest(d)
+    moved = {}
+    for rel in ("warrant/engine.py", "warrant_agent/graph.py", "tools/claimslib/why.py", "tests/mutants.py",
+                ".warrant/roles.json"):
+        f = d / rel
+        keep = f.read_bytes()
+        f.write_bytes(keep + b"\n")
+        moved[rel] = GT.tree_digest(d) != base
+        f.write_bytes(keep)
+    rec = d / ".warrant" / "store" / "records" / ("e" * 64 + ".json")
+    rec.write_text("{}")
+    store_only = GT.tree_digest(d) == base
+    rec.unlink()
+    copy = Path(tempfile.mkdtemp(prefix="warrant-graph-plain-"))
+    try:
+        shutil.copytree(d / "tools", copy / "tools")
+        plain = GT.tree_digest(copy)
+        (copy / "tools" / "claimslib" / "why.py").write_text("# changed\n")
+        plain_moved = GT.tree_digest(copy) != plain
+    finally:
+        shutil.rmtree(copy, ignore_errors=True)
+    rc, out, _ = tool("path", "G9", "--json")
+    rc2, out2, _ = tool("path", "G9", "--json")
+    rc3, out3, _ = tool("path", "G10", "--json")
+    one, two, other = (json.loads(x) if r == 0 else {} for r, x in ((rc, out), (rc2, out2), (rc3, out3)))
+    check("Z27", all(moved.values()) and store_only and plain_moved and out == out2 and one.get("lens")
+          and one["lens"] != other.get("lens") and one["root"] == other.get("root")
+          and set(one["root"]) == {"worktree", "snapshot"},
+          "a result's lens hashes the whole tree the tool runs from but the store (engine, agent, tools, mutant "
+          "harness, pins: a change in any of them changes it, in a checkout or a plain copy) and its query; the store "
+          "is the root's; the same lens over the same root gives the same bytes", (moved, store_only, plain_moved))
+
+
+def agent_lens_cases(w):
+    src = w["src"]
+    req = {"op": "path", "target": "roadmap:G1", "view_token": w["tok1"]}
+    a1 = op(src, req).get("ok", {}).get("data", {})
+    a2 = op(src, req).get("ok", {}).get("data", {})
+    q2 = op(src, dict(req, target=w["q1"])).get("ok", {}).get("data", {})
+    real = api.adapter_id
+    try:
+        api.adapter_id = lambda: "0" * 64          # another agent package
+        moved = op(src, req).get("ok", {}).get("data", {})
+    finally:
+        api.adapter_id = real
+    dl = op(src, {"op": "delta", "base_view_token": w["tok0"], "view_token": w["tok1"]}).get("ok", {}).get("data", {})
+    check("Z28", a1.get("lens") and a1["lens"] == a2.get("lens") and a1["lens"] != q2.get("lens")
+          and a1["lens"] != moved.get("lens") and a1.get("root") == {"snapshot": w["rep1"]["view"]["snapshot"],
+                                                                     "as_of": w["rep1"]["view"]["as_of"]}
+          and dl.get("root", {}).get("base", {}).get("snapshot") == w["rep0"]["view"]["snapshot"],
+          "the operation graph's results carry root (the view's snapshot and time; a base view's too) and lens (the "
+          "agent's and the engine's code, the view's trust and profile, the query): another agent package or another "
+          "target changes the lens, the same request does not", (a1.get("root"), a1.get("lens")))
+
+
 def fixture_repo():
     """A Git repository holding this checkout's store, code, tools and tests at commit `base`; commit `head` changes
     one statement of warrant/engine.py that mutant M05 changes and deletes one record; the working tree still has
@@ -352,6 +411,7 @@ def fixture_repo():
 def range_cases():
     d, base, head, rid = fixture_repo()
     try:
+        lens_cases(d)
         im = GT.impact(d, base, head)
         stm = [s for s in im["statements"] if "M05" in s["mutants"]]
         claims = {c["claim"] for s in stm for c in s["claims"]}
@@ -380,6 +440,7 @@ def main():
     w = goal_world()
     engine_cases(w)
     agent_cases(w)
+    agent_lens_cases(w)
     repository_cases()
     revision_cases()
     finding_cases()

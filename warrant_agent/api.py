@@ -7,6 +7,7 @@ import json
 from warrant import engine as E
 from warrant import jcs as C
 from warrant import shapes as S
+from warrant.store import code_identity
 
 from . import AGENT_API, adapter_id, drafts, graph, handoff, views
 from .errors import AgentError, need, need_op
@@ -518,6 +519,15 @@ def graph_op(cfg, req):
         _, report0, view0 = views.load(ws, req["base_view_token"])
         base = graph.build(view0.snapshot(), report0)
     summary, items = _graph_items(op, ws, g, report, req, base)
+    # root: what the result was computed from (the view's snapshot and time, and the base view's); lens: everything
+    # else that decides it (this package and the engine's code, the view's trust and profile, the query).
+    root = {"snapshot": report["view"]["snapshot"], "as_of": report["view"]["as_of"]}
+    if base is not None:
+        root = {"base": {"snapshot": report0["view"]["snapshot"], "as_of": report0["view"]["as_of"]}, "head": root}
+    query = {k: v for k, v in req.items() if k not in ("workspace", "view_token", "base_view_token", "cursor",
+                                                        "max_bytes", "agent_api")}
+    lens = graph.lens_id({"agent": adapter_id(), "engine": code_identity()}, report["view"]["trust"],
+                         report["view"]["profile"], query)
     # The cursor names the view, the operation and a digest of the request's other members: a page of one
     # request is never read as a page of another. view_token is left out of the digest: the cursor names the view
     # already, and a first page read without one is continued with the token it returned (Codex 51541256eeb7).
@@ -525,7 +535,7 @@ def graph_op(cfg, req):
                             if k not in ("cursor", "max_bytes", "agent_api", "view_token")}))[:16]
     start = _parse_cursor(req.get("cursor"), meta["token"], f"graph-{op}", key)
     page, nxt = _page(items, start, budget)
-    data = {"op": op, "summary": summary, "items": page, "untrusted_data": True}
+    data = {"op": op, "summary": summary, "items": page, "root": root, "lens": lens, "untrusted_data": True}
     more = nxt is not None
     pg = {"included": len(page), "total": len(items), "offset": start, "truncated": more,
           "cursor": _cursor(meta["token"], f"graph-{op}", key, nxt)}

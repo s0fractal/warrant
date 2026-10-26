@@ -19,7 +19,11 @@ record: one receiver reading both sides of a range.
     python3 tools/graph.py views [--check]                       # the Markdown projections, a build artifact
 
 A range is two revisions; `BASE..` (no head) reads the head from this checkout's working tree. Output
-is JSON (sorted, one document) with --json, else a short text form. The Markdown projections
+is JSON (sorted, one document) with --json, else a short text form. Every result carries `root`, what it
+was computed from (full commit ids, or the working tree's digest, and each store's snapshot digest), and
+`lens`, the content address of everything else that decides it (the whole tree this tool runs from but
+the store, the packages, the pins, the trust, the profile and the query: `lens`): the same lens over the
+same root gives the same bytes, so a result may be cached by (lens, root) and re-derived by anyone. The Markdown projections
 (SPEC-CLAIMS.md, WITNESSES.md, ROADMAP.md, REVIEWS.md) are never committed: `views` writes them to
 build/views/ (ignored), and `views --check` renders them here and in two more processes with other
 hash seeds and refuses any difference (VIEW_NONDETERMINISTIC). Refusals print as `REFUSED <CODE> <detail>`.
@@ -44,6 +48,10 @@ import roadmap as RM                         # noqa: E402
 from claimslib import eligibility as EL      # noqa: E402
 from claimslib import reviews as RV          # noqa: E402
 from claimslib import why as WHY             # noqa: E402
+from warrant import engine as E              # noqa: E402
+from warrant import jcs as C                 # noqa: E402
+from warrant.store import code_identity      # noqa: E402
+from warrant_agent import adapter_id         # noqa: E402
 from warrant_agent import graph as G         # noqa: E402
 
 VIEWS_DIR = Path("build") / "views"
@@ -98,6 +106,59 @@ def parse_range(root, text):
     if not (sep and base):
         raise Refused(f"{text!r} is not BASE..HEAD (or BASE.. for this checkout)", "GRAPH_USAGE")
     return commit(root, base), (commit(root, head) if head else WORKTREE)
+
+
+# ---------------------------------------------------------------- identities: root and lens
+
+UNHASHED = (".warrant/store/",)      # the root, named apart (root_of); every other file of the tree may decide
+
+
+def _rels(top):
+    """The relative paths of the files under `top`: git's tracked and untracked unignored files when `top` is the top
+    level of a checkout, else every file under it but bytecode (a copy, as the mutant runner makes)."""
+    r = subprocess.run(["git", "-C", str(top), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+    if r.returncode == 0 and Path(r.stdout.strip()).resolve() == top:
+        listed = git(top, "ls-files", "-z", "--cached") + b"\0" + git(top, "ls-files", "-z", "--others", "--exclude-standard")
+        return {x for x in listed.decode().split("\0") if x}
+    return {p.relative_to(top).as_posix() for p in top.rglob("*")
+            if (p.is_file() or p.is_symlink()) and "__pycache__" not in p.parts and ".git" not in p.parts}
+
+
+def tree_digest(top):
+    """The whole tree at `top` but the store, in the form of tests/mutants.py source_digest (the path, mode and bytes
+    of every tracked and untracked unignored file as it is on disk): no list of folders, so no deciding module can be
+    left out. The store is the root's, not the lens's."""
+    top = Path(top).resolve()
+    h = hashlib.sha256()
+    for rel in sorted(_rels(top)):
+        if any(rel.startswith(x) for x in UNHASHED):
+            continue
+        f = top / rel
+        if f.is_symlink():
+            mode, data = b"120000", os.readlink(f).encode()
+        elif f.is_file():
+            mode, data = (b"100755" if os.access(f, os.X_OK) else b"100644"), f.read_bytes()
+        else:
+            continue
+        h.update(rel.encode() + b"\0" + mode + b"\0" + hashlib.sha256(data).digest())
+    return "files:" + h.hexdigest()
+
+
+def lens(root, trust, query):
+    """The lens (warrant_agent/graph.py lens_id) of a result of this tool: its code is the whole tree this tool runs
+    from (tree_digest: its code, tests and mutant harnesses, the .warrant/ pins and configuration), the packages
+    imported (the engine's code identity with the signature library's version, the agent's adapter_id) and the
+    queried repository's .warrant/ files; then the receiver's trust (local bindings too), the profile and the query."""
+    pins = {p.name: C.digest(p.read_bytes()) for p in sorted((Path(root) / ".warrant").glob("*.json"))}
+    code = {"tool": tree_digest(ROOT), "engine": code_identity(), "agent": adapter_id(), "pins": pins}
+    return G.lens_id(code, trust.digest, C.doc_id(E.profile()), query)
+
+
+def root_of(root, rev, g):
+    """What a result was computed from: the commit (its full id) or this checkout's working tree (its tree_digest),
+    and the store's snapshot digest."""
+    out = {"commit": rev} if rev is not WORKTREE else {"worktree": tree_digest(root)}
+    return dict(out, snapshot=g["snapshot"])
 
 
 # ---------------------------------------------------------------- repository names
@@ -157,8 +218,15 @@ def head_tree(root, head):
     return out
 
 
+def _hunk(line):
+    """The head lines one `@@` header of `git diff -U0` covers (a pure deletion: the head line it is at)."""
+    m = HUNK.match(line)
+    start, n = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
+    return range(start, start + n) if n else [max(start, 1)]
+
+
 def _hunks(diff):
-    """{path: {head lines}} of a `git diff -U0`'s Python files (a pure deletion counts the head line it is at)."""
+    """{path: {head lines}} of a `git diff -U0`'s Python files."""
     out, path = {}, None
     for line in diff:
         if line.startswith("diff --git"):
@@ -166,9 +234,7 @@ def _hunks(diff):
         elif line.startswith("+++ "):
             path = line[6:] if line.endswith(".py") and not line.startswith("+++ /dev/null") else None
         elif path is not None and line.startswith("@@"):
-            m = HUNK.match(line)
-            start, n = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
-            out.setdefault(path, set()).update(range(start, start + n) if n else [max(start, 1)])
+            out.setdefault(path, set()).update(_hunk(line))
     return out
 
 
@@ -216,7 +282,8 @@ def impact(root, base, head):
         x["class"], x["name"] = cls.get(x["duty"], ("duty", None))
     goals = sorted({q["scope"][len(RM.SCOPE):] for q in d["questions"] if (q["scope"] or "").startswith(RM.SCOPE)},
                    key=RM.key_n)
-    return {"base": base, "head": head or "worktree", "statements": stmts, "deleted_files": gone,
+    return {"base": base, "head": head or "worktree", "root": {"base": root_of(root, base, g0), "head": root_of(root, head, g1)},
+            "statements": stmts, "deleted_files": gone,
             "records": d["records"],
             "claims": [x for x in d["duties"] if x["class"] == "claim"],
             "obligations": [x for x in d["duties"] if x["class"] == "obligation"],
@@ -309,17 +376,18 @@ def text_delta(d):
 
 
 def emit(doc, as_json, text):
+    """A result as JSON (its root and lens members included) or its text form, root and lens on the last line."""
     if as_json:
         print(json.dumps(doc, indent=1, sort_keys=True, ensure_ascii=False))
     else:
-        print(text(doc), end="")
+        print(text(doc) + f"root {json.dumps(doc['root'], sort_keys=True)} lens {doc['lens']}\n", end="")
 
 
 # ---------------------------------------------------------------- command line
 
 def cmd_views(root, a):
-    """Write the four views to build/views/ (with --check, after comparing their renderings); --digests prints the
-    digests only (the child process of views_check)."""
+    """Write the four views to build/views/ with IDENTITY.json, their root and lens (with --check, after comparing
+    their renderings); --digests prints the digests only (the child process of views_check)."""
     views = render_views(root)
     if a.digests:
         print(json.dumps(digests(views), sort_keys=True))
@@ -329,9 +397,13 @@ def cmd_views(root, a):
     out.mkdir(parents=True, exist_ok=True)
     for name, data in views.items():
         (out / name).write_bytes(data)
+    trust = CL.Repo(root).trust()
+    ident = {"root": {"worktree": tree_digest(root), "snapshot": CL.Repo(root).snapshot().digest},
+             "lens": lens(root, trust, {"op": "views"}), "views": digests(views)}
+    (out / "IDENTITY.json").write_text(json.dumps(ident, indent=1, sort_keys=True) + "\n")
     for code, detail in problems:
         print(f"REFUSED {code} {detail}")
-    print(f"VIEWS: {', '.join(f'{k} {v[:12]}' for k, v in digests(views).items())} in {out}"
+    print(f"VIEWS: {', '.join(f'{k} {v[:12]}' for k, v in digests(views).items())} in {out}; lens {ident['lens'][:12]}"
           + ("; deterministic" if a.check and not problems else "") + (f"; {len(problems)} refused" if problems else ""))
     return 1 if problems else 0
 
@@ -339,26 +411,36 @@ def cmd_views(root, a):
 def cmd_path(root, a, trust):
     g, _ = graph_of(root, WORKTREE, trust)
     d = G.path(g, resolve_target(root, a.target))
-    emit(dict(d, target=a.target, resolved=d["target"]), a.json, text_path)
+    emit(dict(d, target=a.target, resolved=d["target"], root=root_of(root, WORKTREE, g),
+              lens=lens(root, trust, {"op": "path", "target": a.target})), a.json, text_path)
 
 
 def cmd_frontier(root, a, trust):
-    _, rep = graph_of(root, WORKTREE, trust)
-    emit({"actor": a.actor, "frontier": G.frontier(rep, a.actor)}, a.json, lambda d: text_frontier(d["actor"], d["frontier"]))
+    g, rep = graph_of(root, WORKTREE, trust)
+    emit({"actor": a.actor, "frontier": G.frontier(rep, a.actor), "root": root_of(root, WORKTREE, g),
+          "lens": lens(root, trust, {"op": "frontier", "actor": a.actor})}, a.json,
+         lambda d: text_frontier(d["actor"], d["frontier"]))
 
 
 def cmd_impact(root, a, trust):
-    emit(impact(root, *parse_range(root, a.range)), a.json, text_impact)
+    emit(dict(impact(root, *parse_range(root, a.range)), lens=lens(root, trust, {"op": "impact"})), a.json, text_impact)
 
 
 def cmd_delta(root, a, trust):
     base, head = parse_range(root, a.range)
-    emit(G.delta(graph_of(root, base, trust)[0], graph_of(root, head, trust)[0]), a.json, text_delta)
+    g0, g1 = graph_of(root, base, trust)[0], graph_of(root, head, trust)[0]
+    emit(dict(G.delta(g0, g1), root={"base": root_of(root, base, g0), "head": root_of(root, head, g1)},
+              lens=lens(root, trust, {"op": "delta"})), a.json, text_delta)
 
 
 def cmd_export(root, a, trust):
-    g, _ = graph_of(root, commit(root, a.at) if a.at else WORKTREE, trust)
-    print(json.dumps(g, indent=1, sort_keys=True, ensure_ascii=False) if a.json else G.dot(g), end="\n" if a.json else "")
+    rev = commit(root, a.at) if a.at else WORKTREE
+    g, _ = graph_of(root, rev, trust)
+    ident = {"root": root_of(root, rev, g), "lens": lens(root, trust, {"op": "export", "format": "json" if a.json else "dot"})}
+    if a.json:
+        print(json.dumps(dict(g, **ident), indent=1, sort_keys=True, ensure_ascii=False))
+    else:
+        print(f"// root {json.dumps(ident['root'], sort_keys=True)} lens {ident['lens']}\n" + G.dot(g), end="")
 
 
 def parser():

@@ -38,6 +38,9 @@ right.
   `warrant_agent/graph.py`, the record graph of a snapshot with the engine's report attached.
   **[interface]** The agent operation `graph` and its MCP tool `warrant_graph` (SPEC §10.2) answer
   path, frontier, impact, delta and export from a frozen view, permitted wherever `read` is.
+- Every graph result (and `build/views/IDENTITY.json`) carries `root`, what it was computed from, and `lens`,
+  the content address of everything else that decides it (the whole deciding code path, never one file; the
+  trust, the profile and the query): the same lens over the same root gives the same bytes.
 - The merge gate's records-only tail admits added records and blobs only; a generated view after
   the accepted head is TAIL_CHANGES. The review waker commits observations and their probes only.
 

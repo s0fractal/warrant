@@ -254,7 +254,7 @@ each operation.
 | `workspace` | `{workspace?}` | §10.1 |
 | `context` | `{workspace, actor?, use?, targets?:[id \| {id} \| {kind: duty\|transition, id}], limits?:{context_bytes}, scope?}`; with `scope` the questions of that scope, owned or not, come before the frontier | §10.2, §10.3 |
 | `read` | `{workspace, view_token?, kind?: record\|blob\|context, target?, cursor?, max_bytes?}` or `{workspace, kind: draft\|operation, target}` | §10.2, §10.5 |
-| `graph` | `{workspace, op: path\|frontier\|impact\|delta\|export, view_token?, cursor?, max_bytes?}`; `path {target}` (a duty or prefix, a question, a scope such as `roadmap:G11`), `frontier {actor?}`, `impact`/`delta {base_view_token}`, `export {format?: json\|dot}`; permitted wherever `read` is | §10.2 |
+| `graph` | `{workspace, op: path\|frontier\|impact\|delta\|export, view_token?, cursor?, max_bytes?}`; `path {target}` (a duty or prefix, a question, a scope such as `roadmap:G11`), `frontier {actor?}`, `impact`/`delta {base_view_token}`, `export {format?: json\|dot}`; permitted wherever `read` is; `data.root` (the view's snapshot and `as_of`, and the base view's) and `data.lens` (the agent's and engine's code, the view's trust and profile, the query) | §10.2 |
 | `handoff` | `{op: export, view_token?, roots?, request_id?}` / `{op: inspect, package \| (manifest, payload, declaration?), expectation?, use?, actor?, targets?}` / `{op: import, staged_id, request_id?}` | §10.4 |
 | `prepare` | `{workspace, type, body, based_on?: view_token, request_id?, blobs?: [JSON]}`; `accept` takes `{transition, item, evidence?, support?}`; `blob:<i>` in an evidence list is the id of `blobs[i]` | §10.5 |
 | `commit` | `{workspace, draft_id}` | §10.5 |
