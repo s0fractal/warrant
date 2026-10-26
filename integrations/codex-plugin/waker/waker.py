@@ -256,10 +256,10 @@ def stored(path):
     return kind, name if kind == "blobs" else ""
 
 
-def blob_problem(C, blobs, cited):
+def blob_problem(digest, blobs, cited):
     """Why one of the prepared `blobs` may not be published (not named by its hash, or cited by no verdict), or None."""
     for b, data in sorted(blobs.items()):
-        if C.digest(data) != b:
+        if digest(data) != b:
             return f"blob {b[:12]} is not named by its hash"
         if b not in cited:
             return f"blob {b[:12]} is cited by no verdict"
@@ -295,7 +295,7 @@ def verify_verdicts(req):
             return f"record {rid[:12]} is not a verdict on closure {want[0][:12]} item {want[1]}"
         cites(rec["body"], cited)
         evidence.update(rec["body"]["evidence"])
-    why = blob_problem(C, blobs, cited)
+    why = blob_problem(C.digest, blobs, cited)
     if why:
         return why
     missing = sorted(e for e in evidence if e not in blobs and not (code / STORE / "blobs" / e).is_file())
