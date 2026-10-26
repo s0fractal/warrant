@@ -19,6 +19,15 @@ class AgentError(Exception):
         return out
 
 
+def need_op(req, ops, message):
+    """The request's `op`, refused BAD_REQUEST unless the request is an object whose `op` is a string naming one of
+    `ops`. The type is checked before the lookup: a JSON list or object is unhashable, and a lookup of one would
+    escape the interface as a TypeError (Codex finding 3456ece28888 on #209)."""
+    op = req.get("op") if isinstance(req, dict) else None
+    need(isinstance(op, str) and op in ops, "BAD_REQUEST", message)
+    return op
+
+
 def need(ok, code, message, **details):
     if not ok:
         raise AgentError(code, message, **details)

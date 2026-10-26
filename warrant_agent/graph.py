@@ -226,22 +226,26 @@ def _duty(ix, did):
 
 def _prerequisites_first(ix, roots):
     """Every duty `roots` require (transitively), each once, a duty after the duties it requires; a cycle is cut
-    where it closes (`cycle`)."""
+    where it closes (`cycle`). Iterative: an admitted chain of any depth is answered (Codex 0ad3ed6d54a1 on #209:
+    the recursive walk raised RecursionError at 1200 duties)."""
     order, state, cycles = [], {}, set()
-
-    def visit(d):
-        if state.get(d) == "done":
-            return
-        if state.get(d) == "open":
-            cycles.add(d)
-            return
-        state[d] = "open"
-        for x in sorted(ix.targets(d, "requires")):
-            visit(x)
-        state[d] = "done"
-        order.append(d)
     for r in sorted(roots):
-        visit(r)
+        if r in state:
+            continue
+        state[r] = "open"
+        stack = [(r, iter(sorted(ix.targets(r, "requires"))))]
+        while stack:
+            d, kids = stack[-1]
+            x = next(kids, None)
+            if x is None:
+                stack.pop()
+                state[d] = "done"
+                order.append(d)
+            elif state.get(x) == "open":
+                cycles.add(x)
+            elif x not in state:
+                state[x] = "open"
+                stack.append((x, iter(sorted(ix.targets(x, "requires")))))
     return order, cycles
 
 
@@ -295,18 +299,19 @@ def delta(g0, g1):
             | {f"edges_{c}": sum(x["change"] == c for x in edges) for c in ("added", "removed", "changed")}}
 
 
-def _about(ix, x, seen=None):
-    """The duties record `x` is about: itself if a duty; else along ABOUT to a duty, through transitions."""
-    seen = set() if seen is None else seen
-    if x in seen:
-        return set()
-    seen.add(x)
-    if ix.kind(x) == "duty":
-        return {x}
-    out = set()
-    for e in ix.out.get(x, []):
-        if e["rel"] in ABOUT:
-            out |= _about(ix, e["to"], seen)
+def _about(ix, x):
+    """The duties record `x` is about: itself if a duty; else along ABOUT to a duty, through transitions (iterative,
+    as _prerequisites_first)."""
+    out, seen, todo = set(), set(), [x]
+    while todo:
+        y = todo.pop()
+        if y in seen:
+            continue
+        seen.add(y)
+        if ix.kind(y) == "duty":
+            out.add(y)
+        else:
+            todo += [e["to"] for e in ix.out.get(y, []) if e["rel"] in ABOUT]
     return out
 
 

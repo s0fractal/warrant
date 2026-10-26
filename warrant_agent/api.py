@@ -9,7 +9,7 @@ from warrant import jcs as C
 from warrant import shapes as S
 
 from . import AGENT_API, adapter_id, drafts, graph, handoff, views
-from .errors import AgentError, need
+from .errors import AgentError, need, need_op
 
 TARGET_KINDS = ("duty", "transition")
 CONTEXT_FILE = "context.json"          # a view's actor, targets and use, written by the call that made it
@@ -387,8 +387,7 @@ HANDOFF_OPS = {"export": _export, "inspect": _inspect, "import": _import}
 
 
 def handoff_op(cfg, req):
-    need(isinstance(req, dict) and req.get("op") in HANDOFF_OPS, "BAD_REQUEST", "handoff op is export, inspect or import")
-    return HANDOFF_OPS[req["op"]](cfg, req)
+    return HANDOFF_OPS[need_op(req, HANDOFF_OPS, "handoff op is export, inspect or import")](cfg, req)
 
 
 def prepare(cfg, req):
@@ -500,9 +499,7 @@ def graph_op(cfg, req):
     and `delta` of a base view to this one, or the whole graph (`export`, json or dot). Permitted wherever `read`
     is; every state shown is the view's report; pages by bytes, continued by a cursor bound to the view and the
     request."""
-    need(isinstance(req, dict) and req.get("op") in GRAPH_OPS, "BAD_REQUEST",
-         f"graph op is one of {', '.join(GRAPH_OPS)}")
-    op = req["op"]
+    op = need_op(req, GRAPH_OPS, f"graph op is one of {', '.join(GRAPH_OPS)}")
     need(op != "path" or isinstance(req.get("target"), str), "BAD_REQUEST",
          "path's target is a duty id or prefix, a question reference or a question scope (a string)")
     _closed(req, ("op", "workspace") + GRAPH_OPS[op],
@@ -522,8 +519,10 @@ def graph_op(cfg, req):
         base = graph.build(view0.snapshot(), report0)
     summary, items = _graph_items(op, ws, g, report, req, base)
     # The cursor names the view, the operation and a digest of the request's other members: a page of one
-    # request is never read as a page of another.
-    key = C.digest(C.canon({k: v for k, v in req.items() if k not in ("cursor", "max_bytes", "agent_api")}))[:16]
+    # request is never read as a page of another. view_token is left out of the digest: the cursor names the view
+    # already, and a first page read without one is continued with the token it returned (Codex 51541256eeb7).
+    key = C.digest(C.canon({k: v for k, v in req.items()
+                            if k not in ("cursor", "max_bytes", "agent_api", "view_token")}))[:16]
     start = _parse_cursor(req.get("cursor"), meta["token"], f"graph-{op}", key)
     page, nxt = _page(items, start, budget)
     data = {"op": op, "summary": summary, "items": page, "untrusted_data": True}

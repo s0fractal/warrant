@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The record graph by query (G11): warrant_agent/graph.py, the agent operation `graph` and its MCP tool
-`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23).
+`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23); Codex's findings on head 2 (Z24-Z26).
 
     python3 tests/graph_test.py
 """
@@ -283,6 +283,43 @@ def revision_cases():
           "a revision that is an option, a range, or not a name is refused before Git reads it", refused)
 
 
+def finding_cases():
+    """Codex's findings on #209 head 2 (9052c7f): 51541256eeb7, 0ad3ed6d54a1, 3456ece28888."""
+    from contract_test import _chain
+    src, _ = world()
+    src.file("duty", "producer", 100, R.duty("producer", "one", ["reviewer"], {"attest": {}}, accept_by=["reviewer"]))
+    src.file("transition", "producer", 101, R.transition("ATTESTED", established=["two"]))
+    req = {"workspace": src.name, "op": "export", "max_bytes": 256}
+    first = api.call(src.cfg, "graph", req).get("ok", {})
+    nxt = api.call(src.cfg, "graph", dict(req, view_token=first.get("view_token"), cursor=first.get("page", {}).get("cursor")))
+    check("Z24", bool(first.get("page", {}).get("cursor")) and nxt.get("ok", {}).get("page", {}).get("offset")
+          == first["page"]["included"],
+          "a graph result read without view_token is continued with the view_token and cursor it returned (the "
+          "cursor names the view; the request's other members bind it)", nxt.get("error"))
+
+    snap, trust, as_of, ids = _chain(1200)
+    report = E.assess(snap, trust, as_of, E.profile())
+    g = G.build(snap, report)
+    try:
+        deep, err = [x["duty"] for x in G.path(g, ids[-1])["duties"]], None
+        about = G.impact(g, g, {ids[0]: "statement"})["duties"]
+    except RecursionError as e:
+        deep, about, err = [], [], type(e).__name__
+    check("Z25", len(report["duties"]) == 1200 and deep == ids and len(about) == 1200,
+          "path and impact answer an admitted chain of 1200 duties (no recursion), prerequisites first", err)
+
+    got = []
+    for name in ("graph", "handoff", "compute"):
+        for bad in ([], {}, ["path"]):
+            try:
+                got.append(api.call(src.cfg, name, {"workspace": src.name, "op": bad}).get("error"))
+            except TypeError as e:          # what the finding saw: the lookup of an unhashable op escaped
+                got.append(type(e).__name__)
+    check("Z26", got == ["BAD_REQUEST"] * 9,
+          "an op that is not a string (a list, an object) is BAD_REQUEST in graph, handoff and compute, never an "
+          "exception escaping the interface", got)
+
+
 def fixture_repo():
     """A Git repository holding this checkout's store, code, tools and tests at commit `base`; commit `head` changes
     one statement of warrant/engine.py that mutant M05 changes and deletes one record; the working tree still has
@@ -345,6 +382,7 @@ def main():
     agent_cases(w)
     repository_cases()
     revision_cases()
+    finding_cases()
     range_cases()
     return finish("GRAPH")
 

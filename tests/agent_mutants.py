@@ -435,7 +435,9 @@ MUTANTS = [
      [('        if e["to"] not in nodes:\n            nodes[e["to"]] = _endpoint(snap, e["to"])', '        if e["to"] not in nodes and e["to"] in snap.blobs:\n            nodes[e["to"]] = _endpoint(snap, e["to"])')],
      'graph_test', ['Z03']),
     ('A136', 'graph.py', 'path lists a duty before the duties it requires',
-     [('        state[d] = "open"\n        for x in', '        state[d] = "open"\n        order.append(d)\n        for x in'), ('        state[d] = "done"\n        order.append(d)', '        state[d] = "done"')],
+     [('        state[r] = "open"\n', '        state[r] = "open"\n        order.append(r)\n'),
+      ('                state[x] = "open"\n', '                state[x] = "open"\n                order.append(x)\n'),
+      ('                state[d] = "done"\n                order.append(d)\n', '                state[d] = "done"\n')],
      'graph_test', ['Z04']),
     ('A137', 'graph.py', "path to a question scope reads only its first question (a reformulated goal's are lost)",
      [('                                                    if n["kind"] == "question" and n.get("scope") == ref)', '                                                    if n["kind"] == "question" and n.get("scope") == ref)[:1]')],
@@ -465,7 +467,7 @@ MUTANTS = [
      [('    ws = cfg.workspace(req["workspace"])\n    ws.permit("read")\n    max_bytes = req.get("max_bytes", ws.limits["context_bytes"])', '    ws = cfg.workspace(req["workspace"])\n    max_bytes = req.get("max_bytes", ws.limits["context_bytes"])')],
      'graph_test', ['Z13']),
     ('A146', 'api.py', 'a graph cursor is not bound to its request (another target reads its page)',
-     [('    key = C.digest(C.canon({k: v for k, v in req.items() if k not in ("cursor", "max_bytes", "agent_api")}))[:16]', '    key = "0" * 16')],
+     [('    key = C.digest(C.canon({k: v for k, v in req.items()\n                            if k not in ("cursor", "max_bytes", "agent_api", "view_token")}))[:16]', '    key = "0" * 16')],
      'graph_test', ['Z14']),
     ('A147', 'api.py', "delta and impact read their base from the head's view, not base_view_token",
      [('        _, report0, view0 = views.load(ws, req["base_view_token"])', '        _, report0, view0 = views.load(ws, meta["token"])')],
@@ -473,6 +475,13 @@ MUTANTS = [
     ('A148', 'mcp_server.py', 'the MCP tool warrant_graph drops the export format',
      [('                                 format=format, view_token=view_token,', '                                 view_token=view_token,')],
      'graph_test', ['Z16']),
+    ('A149', 'api.py', "a graph page read without view_token cannot be continued with the token it returned (Codex 51541256eeb7)",
+     [('                            if k not in ("cursor", "max_bytes", "agent_api", "view_token")}))[:16]',
+       '                            if k not in ("cursor", "max_bytes", "agent_api")}))[:16]')],
+     'graph_test', ['Z24']),
+    ('A150', 'errors.py', "an op that is not a string is looked up, and its TypeError escapes (Codex 3456ece28888)",
+     [('    need(isinstance(op, str) and op in ops, "BAD_REQUEST", message)', '    need(op in ops, "BAD_REQUEST", message)')],
+     'graph_test', ['Z26']),
 ]
 
 
