@@ -497,6 +497,9 @@ MUTANTS = [
     ('A155', 'graph.py', "impact reads a removed duty's own relations in the head, where it has none (Codex ed4a4e636842)",
      [('    return i1 if i1.kind(d) not in (None, "missing") else i0', '    return i1')],
      'graph_test', ['Z34']),
+    ('A156', 'graph.py', "impact reads a question's metadata from the head's missing node, not the base (Codex eda8f4bec1a5)",
+     [('    node = lambda x: _side(i0, i1, x).nodes.get(x) or {}', '    node = lambda x: i1.nodes.get(x) or i0.nodes.get(x) or {}')],
+     'graph_test', ['Z35']),
 ]
 
 

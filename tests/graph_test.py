@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The record graph by query (G11): warrant_agent/graph.py and the agent operation `graph` with its MCP tool
 `warrant_graph` (Z01-Z16); Codex's findings on head 2 (Z24-Z26); root and lens of the operation (Z28) and Codex's
-findings on head 5 (Z29, Z30); Codex's challenge of a G11 closure (Z34). tools/graph.py is graph_tools_test.py's (Z17-Z23, Z27, Z31-Z33).
+findings on head 5 (Z29, Z30); Codex's challenge of a G11 closure (Z34) and its finding on #213 (Z35). tools/graph.py is graph_tools_test.py's (Z17-Z23, Z27, Z31-Z33).
 
     python3 tests/graph_test.py
 """
@@ -322,6 +322,22 @@ def removal_cases(w):
           "impact reads a removed duty's own relations in the base: the question it answered is named", im)
 
 
+def removed_question_cases(w):
+    """Codex's finding eda8f4bec1a5 on #213: o2 still answers q1 and requires o1, so removing o1 and q1's opener
+    leaves both as `missing` nodes of the head; impact reads q1's scope and text in the base."""
+    from warrant.store import Snapshot
+    _, rep, view = views.load(w["src"].ws, w["tok1"])
+    snap = view.snapshot()
+    gone = (w["o1"], w["q1"].split(":")[0])
+    less = Snapshot({k: v for k, v in snap.records.items() if k not in gone}, dict(snap.blobs))
+    head = G.build(less, E.assess(less, Trust.load(w["src"].base / "trust.json"), rep["view"]["as_of"], rep["profile"]))
+    qs = {q["question"]: q for q in G.impact(w["g1"], head)["questions"]}
+    check("Z35", G.Index(head).kind(w["q1"]) == "missing" and qs.get(w["q1"], {}).get("scope") == "roadmap:G1"
+          and qs[w["q1"]].get("text") == "A goal.",
+          "a removed question that a surviving duty still names is a missing node of the head; impact reads its "
+          "scope and text in the base", qs.get(w["q1"]))
+
+
 def main():
     w = goal_world()
     engine_cases(w)
@@ -330,6 +346,7 @@ def main():
     identity_finding_cases(w)
     finding_cases()
     removal_cases(w)
+    removed_question_cases(w)
     return finish("GRAPH")
 
 
