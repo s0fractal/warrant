@@ -527,7 +527,8 @@ def graph_op(cfg, req):
     start = _parse_cursor(req.get("cursor"), meta["token"], f"graph-{op}", key)
     page, nxt = _page(items, start, budget)
     data = {"op": op, "summary": summary, "items": page, "untrusted_data": True}
-    pg = {"included": len(page), "total": len(items), "offset": start, "truncated": nxt is not None,
+    more = nxt is not None
+    pg = {"included": len(page), "total": len(items), "offset": start, "truncated": more,
           "cursor": _cursor(meta["token"], f"graph-{op}", key, nxt)}
     return _envelope(ws, meta, report, data, page=pg)
 
