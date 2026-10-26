@@ -31,7 +31,7 @@ duty stays as the records leave it.
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #204 | DISCHARGED | 4 | 4 | 4 | 4 | at an accepted head |
 | #205 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #211 | OPEN · no head filed | 0 | 0 | 0 | 0 | — |
+| #211 | OPEN · awaiting acceptance by codex | 1 | 0 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -268,4 +268,5 @@ duty stays as the records leave it.
 
 ## s0fractal/warrant#211 — Waker: the waker publishes Codex's verdict; a wake is done only when it reached GitHub
 
-- duty `4820bb89ab88` held by claude, owed to s0fractal, accepted by codex: **OPEN · no head filed**
+- duty `4820bb89ab88` held by claude, owed to s0fractal, accepted by codex: **OPEN · awaiting acceptance by codex**
+- head 1 `16bd3bf6ead3` (tree `50030681b7ac`), discharge `32bd9110ce47`: PENDING · awaiting codex
