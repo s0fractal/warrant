@@ -494,6 +494,9 @@ MUTANTS = [
     ('A154', 'api.py', "a delta's or impact's lens leaves out the base view's assessment operands (Codex 74a162414cb8)",
      [('[graph.operands(r) for r in reports], query)', '[graph.operands(report)], query)')],
      'graph_test', ['Z30']),
+    ('A155', 'graph.py', "impact reads a removed duty's own relations in the head, where it has none (Codex ed4a4e636842)",
+     [('    return i1 if i1.kind(d) not in (None, "missing") else i0', '    return i1')],
+     'graph_test', ['Z34']),
 ]
 
 

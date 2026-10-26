@@ -24,6 +24,7 @@ TOOLS = Path(_impl) / "tools" if _impl and (Path(_impl) / "tools" / "graph.py").
 sys.path.insert(0, str(TOOLS))
 import graph as GT                  # noqa: E402
 
+REMOVED = "d085efe4f157d4e2a309298043b26737d3f40e1368e36bbc192f5d3c1c0f292e"
 GIT = ["git", "-c", "user.name=graph-test", "-c", "user.email=graph@invalid", "-c", "commit.gpgsign=false",
        "-c", "gc.auto=0"]
 
@@ -189,7 +190,9 @@ def fixture_repo():
     src = eng.read_text()
     assert src.count(old) == 1, "M05's statement moved"
     eng.write_text(src.replace(old, old + "      # touched"))
-    gone = sorted((d / ".warrant" / "store" / "records").iterdir())[-1]
+    # The record removed at head is a roadmap obligation's duty (G11's query surface): Codex's challenge
+    # ed4a4e636842 found impact dropping the goal such a duty answered.
+    gone = d / ".warrant" / "store" / "records" / f"{REMOVED}.json"
     keep = gone.read_bytes()
     git("rm", "-q", str(gone.relative_to(d)))
     git("commit", "-q", "-am", "head")
@@ -207,11 +210,13 @@ def range_cases():
         stm = [s for s in im["statements"] if "M05" in s["mutants"]]
         claims = {c["claim"] for s in stm for c in s["claims"]}
         got = {x["name"] for x in im["claims"] if "statement" in x["via"]}
+        removed = [x for x in im["obligations"] if x["duty"] == rid]
         check("Z18", stm and stm[0]["file"] == "warrant/engine.py" and claims and claims <= got
-              and im["records"]["removed"] == [rid] and im["head"] == head,
+              and im["records"]["removed"] == [rid] and im["head"] == head
+              and removed and removed[0]["name"] == "G11" and "G11" in im["goals"],
               "graph.py impact BASE..HEAD: a changed statement names the claims BACKED by a mutant changing it "
-              "(statement), then what names them and what they answer; a removed record what it was about",
-              (stm[:1], sorted(got)[:5], im["records"]))
+              "(statement), then what names them and what they answer; a removed obligation's duty is still the "
+              "obligation of its goal, and that goal is named", (stm[:1], sorted(got)[:5], im["records"], im["goals"]))
         rc, out, err = tool("delta", f"{base}..{head}", "--json", root=d)
         rc2, out2, _ = tool("delta", f"{base}..", "--json", root=d)
         # A record that another one names stays a node of the head's graph, as `missing`.

@@ -296,7 +296,8 @@ def impact(root, base, head):
             shutil.rmtree(tree, ignore_errors=True)
     also = {c["duty"]: "statement" for s in stmts for c in s["claims"]}
     d = G.impact(g0, g1, also)
-    cls = classes(root, snapshot(root, head), trust)
+    # A duty removed in the range is classed as the base held it: an obligation of its goal still.
+    cls = {**classes(root, snapshot(root, base), trust), **classes(root, snapshot(root, head), trust)}
     for x in d["duties"]:
         x["class"], x["name"] = cls.get(x["duty"], ("duty", None))
     goals = sorted({q["scope"][len(RM.SCOPE):] for q in d["questions"] if (q["scope"] or "").startswith(RM.SCOPE)},

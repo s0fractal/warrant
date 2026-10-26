@@ -318,13 +318,20 @@ def _about(ix, x):
     return out
 
 
-def _reach(i1, via, named):
+def _side(i0, i1, d):
+    """The graph a record's own edges are read from: the head's while it is a record there, else the base's. A duty
+    removed in the range still answered its question and served its duties in the base (Codex's challenge
+    ed4a4e636842 of a G11 closure: impact read a removed duty's answers in the head, where it has none)."""
+    return i1 if i1.kind(d) not in (None, "missing") else i0
+
+
+def _reach(i0, i1, via, named):
     """Extend `via` ({duty: {why}}) from the duties in it: the ones they serve (`serves`), the ones naming a duty of
     `named` (`named`), then every duty requiring one of all these, transitively (`requires`)."""
     def note(d, why):
         via.setdefault(d, set()).add(why)
     for d in sorted(via):
-        for x in i1.targets(d, "serves"):
+        for x in _side(i0, i1, d).targets(d, "serves"):
             note(x, "serves")
     for d in sorted(named):
         for x in i1.sources(d, "serves") + i1.sources(d, "requires"):
@@ -355,14 +362,14 @@ def impact(g0, g1, also=()):
     named = dict(also)
     for d, why in named.items():
         via.setdefault(d, set()).add(why)
-    _reach(i1, via, named)
+    _reach(i0, i1, via, named)
     duties = [{"duty": d, "statement": (i1.nodes.get(d) or i0.nodes.get(d) or {}).get("label"),
                "state": (i1.nodes.get(d) or {}).get("state"), "via": sorted(via[d]),
-               "answers": (i1.targets(d, "answers") or [None])[0]} for d in sorted(via)]
+               "answers": (_side(i0, i1, d).targets(d, "answers") or [None])[0]} for d in sorted(via)]
     qs = sorted({d["answers"] for d in duties if d["answers"]})
     return {"records": {"added": added, "removed": removed}, "duties": duties,
-            "questions": [{"question": q, "scope": (i1.nodes.get(q) or {}).get("scope"),
-                           "text": (i1.nodes.get(q) or {}).get("label"),
+            "questions": [{"question": q, "scope": (i1.nodes.get(q) or i0.nodes.get(q) or {}).get("scope"),
+                           "text": (i1.nodes.get(q) or i0.nodes.get(q) or {}).get("label"),
                            "by": sorted(d["duty"] for d in duties if d["answers"] == q)} for q in qs]}
 
 

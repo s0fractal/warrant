@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The record graph by query (G11): warrant_agent/graph.py and the agent operation `graph` with its MCP tool
 `warrant_graph` (Z01-Z16); Codex's findings on head 2 (Z24-Z26); root and lens of the operation (Z28) and Codex's
-findings on head 5 (Z29, Z30). tools/graph.py is graph_tools_test.py's (Z17-Z23, Z27, Z31-Z33).
+findings on head 5 (Z29, Z30); Codex's challenge of a G11 closure (Z34). tools/graph.py is graph_tools_test.py's (Z17-Z23, Z27, Z31-Z33).
 
     python3 tests/graph_test.py
 """
@@ -307,6 +307,21 @@ def identity_finding_cases(w):
           "and time under other pins differ in lens", (one.get("lens"), two.get("lens")))
 
 
+def removal_cases(w):
+    """Codex's challenge ed4a4e636842 (of G11 closure 1faff6c83d6a): a duty removed in the range answered a question
+    in the base; impact names that question."""
+    from warrant.store import Snapshot
+    _, rep, view = views.load(w["src"].ws, w["tok1"])
+    snap = view.snapshot()
+    less = Snapshot({k: v for k, v in snap.records.items() if k != w["o3"]}, dict(snap.blobs))
+    rep2 = E.assess(less, Trust.load(w["src"].base / "trust.json"), rep["view"]["as_of"], rep["profile"])
+    im = G.impact(w["g1"], G.build(less, rep2))
+    via = {x["duty"]: x for x in im["duties"]}
+    check("Z34", im["records"]["removed"] == [w["o3"]] and via.get(w["o3"], {}).get("answers") == w["q2"]
+          and [q["question"] for q in im["questions"]] == [w["q2"]] and im["questions"][0]["scope"] == "roadmap:G1",
+          "impact reads a removed duty's own relations in the base: the question it answered is named", im)
+
+
 def main():
     w = goal_world()
     engine_cases(w)
@@ -314,6 +329,7 @@ def main():
     agent_lens_cases(w)
     identity_finding_cases(w)
     finding_cases()
+    removal_cases(w)
     return finish("GRAPH")
 
 
