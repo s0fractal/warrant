@@ -1867,31 +1867,31 @@ def _visit(view, did, report, done, busy):
     # G11: the record graph by query (warrant_agent/graph.py, the operation graph, tools/graph.py).
     ('M699', '../tools/graph.py', 'graph.py path takes a goal key as given, not as its scope roadmap:G<n>',
      [('        return RM.SCOPE + target', '        return target')],
-     'graph_test', ['Z17']),
+     'graph_tools_test', ['Z17']),
     ('M700', '../tools/graph.py', "graph.py impact leaves out the claims a changed statement's mutants back",
      [('    also = {c["duty"]: "statement" for s in stmts for c in s["claims"]}', '    also = {}')],
-     'graph_test', ['Z18']),
+     'graph_tools_test', ['Z18']),
     ('M701', '../tools/graph.py', "graph.py reads a range's commit from the working tree, not its Git objects",
      [('    if rev is WORKTREE:\n        return CL.Repo(root).snapshot()', '    if True:\n        return CL.Repo(root).snapshot()')],
-     'graph_test', ['Z19']),
+     'graph_tools_test', ['Z19']),
     ('M702', '../tools/graph.py', 'views --check compares nothing',
      [('            if got.get(name) != here[name]:', '            if False:')],
-     'graph_test', ['Z20']),
+     'graph_tools_test', ['Z20']),
     ('M703', '../tools/graph.py', 'graph.py why is not claims.py why',
      [('    d = WHY.Why(repo).at(WHY._why_path(repo, m.group(1)), int(m.group(2)))', '    d = WHY.Why(repo).at(WHY._why_path(repo, m.group(1)), int(m.group(2)) + 1)')],
-     'graph_test', ['Z21']),
+     'graph_tools_test', ['Z21']),
     ('M704', '../tools/graph.py', "a deciding module (tools/claimslib/) is left out of the lens's tree hash",
      [('UNHASHED = (".warrant/store/",)', 'UNHASHED = (".warrant/store/", "tools/claimslib/")')],
-     'graph_test', ['Z27']),
+     'graph_tools_test', ['Z27']),
     ('M705', '../tools/graph.py', "graph.py why carries no root (Codex 26b46cfde7dd)",
      [('    emit(dict(d, root=root_of(root, WORKTREE, repo.snapshot().digest),', '    emit(dict(d, root=None,')],
-     'graph_test', ['Z31']),
+     'graph_tools_test', ['Z31']),
     ('M706', '../tools/graph.py', "impact keeps its extraction of the head's tree (a mutable cache) (Codex 83ba61ff822d)",
      [('        if head is not WORKTREE:\n            shutil.rmtree(tree, ignore_errors=True)', '        pass')],
-     'graph_test', ['Z32']),
+     'graph_tools_test', ['Z32']),
     ('M707', '../tools/graph.py', "a symlink is hashed by its link text only, not the bytes it leads to (Codex 6ff8280a91ea)",
      [('os.readlink(f).encode() + b"\\0" + _referent(f)', 'os.readlink(f).encode()')],
-     'graph_test', ['Z33']),
+     'graph_tools_test', ['Z33']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
@@ -2068,7 +2068,8 @@ COST = {"contract_test": 17.9, "compute_test": 3.8, "conditions_test": 0.2, "ass
         "why_test": 1.3, "store_index_test": 1.3, "shapes_test": 0.1, "replay_test": 4.0, "agent_repo_test": 6.6,
         "reviews_test": 6.7, "review_check_test": 3.9, "review_merge_test": 14.0, "review_replay_test": 45.0,
         "review_integration_test": 9.5, "agent_views_test": 16.0, "review_gate_test": 30.0,
-        "pilot_test": 4.0, "boundary_test": 3.0, "quickstart_test": 5.0}     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement; review_merge_test 5.5 s locally with V34-V37, the same factor; review_replay_test 18.7 s locally with W17-W23 (10.5 s before), 25.0 scaled to 45.0
+        "pilot_test": 4.0, "boundary_test": 3.0, "quickstart_test": 5.0,
+        "graph_test": 3.0, "graph_tools_test": 120.0}     # graph_test 1.5 s and graph_tools_test 83 s locally (#209), until a CI measurement     # why_test: 0.5 s locally x 2.5 (master c436bd5), until a CI measurement; store_index_test: 0.5 s locally, the same factor; agent_repo_test: 2.6 s locally, the same factor; reviews_test 2.7 s, review_check_test 1.5 s, review_merge_test 2.0 s, review_replay_test 1.0 s, review_integration_test 3.8 s locally, the same factor; agent_views_test: 13.4 s locally, of which 10.5 s sleep past a view's TTL; review_gate_test: 20.4 s locally while review_integration_test took 12.3 s (9.5 s on CI), so about 16 s; review_replay_test 23 s and review_gate_test 34 s locally with the review waker's cases (W1-W11, G34-G36), until a CI measurement; review_merge_test 5.5 s locally with V34-V37, the same factor; review_replay_test 18.7 s locally with W17-W23 (10.5 s before), 25.0 scaled to 45.0
 
 
 def _cost(m):

@@ -117,7 +117,7 @@ jobs:
 
       - name: The record graph by query (warrant_agent/graph.py, the operation graph, tools/graph.py)
         working-directory: tests
-        run: python graph_test.py
+        run: for t in graph graph_tools; do python "${t}_test.py"; done
 
       - name: Mutant runner selftest (the controller, its red-baseline guard, shards and merge)
         run: python tests/mutants.py --selftest
