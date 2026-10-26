@@ -112,6 +112,7 @@ VIEWS = ("REVIEWS.md", "ROADMAP.md", "SPEC-CLAIMS.md", "WITNESSES.md")      # re
 PROJECTORS = ("tools/review.py", "tools/claims.py", "tools/roadmap.py")
 PR_BRANCH = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychains")
+STATUS = ("status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")    # every path, renames as two
 COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
              "-c", "commit.gpgsign=false"]
 REPLAY_TIMEOUT = 3600
@@ -174,7 +175,7 @@ def changes(wt, filed, actor):
     """The paths the replay changed in the worktree `wt`, to commit: the records `filed` (the ids the checker
     printed), each an observation by `actor`, the new blobs among their probes, and the generated views.
     Anything else (another record or blob, a file outside the store, a deletion, a link) is a RuntimeError."""
-    raw = git("-C", str(wt), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames").decode()
+    raw = git("-C", str(wt), *STATUS).decode()
     entries = [(e[:2], e[3:]) for e in raw.split("\0") if e]
     want = {f"{STORE}records/{o}.json" for o in filed}
     probes, blobs, out = set(), [], []
@@ -246,6 +247,25 @@ def cites(v, out):
     return out
 
 
+def stored(path):
+    """(kind, the name it claims) of a path under STORE: ("records", <id>) for records/<id>.json, ("blobs", <id>) for
+    blobs/<id>, else (kind, "")."""
+    kind, _, name = path[len(STORE):].partition("/")
+    if kind == "records" and name.endswith(".json"):
+        return kind, name[:-5]
+    return kind, name if kind == "blobs" else ""
+
+
+def blob_problem(C, blobs, cited):
+    """Why one of the prepared `blobs` may not be published (not named by its hash, or cited by no verdict), or None."""
+    for b, data in sorted(blobs.items()):
+        if C.digest(data) != b:
+            return f"blob {b[:12]} is not named by its hash"
+        if b not in cited:
+            return f"blob {b[:12]} is cited by no verdict"
+    return None
+
+
 def verify_verdicts(req):
     """Why the prepared verdict `req` may not be published, or None. Run with the BASE tree's package first on
     PYTHONPATH (`waker.py --verify-verdicts`, the request on standard input), never in the waker's own process.
@@ -257,7 +277,7 @@ def verify_verdicts(req):
     from warrant.bindings import read_roles
     from warrant.store import Snapshot, Trust
     code, actor, want = Path(req["code"]), req["actor"], (req["closure"], req["item"])
-    roles, problems = read_roles(json.loads((code / ".warrant" / "roles.json").read_text()))
+    roles, problems = read_roles(json.loads((code / ".warrant/roles.json").read_text()))
     pin = roles.get(actor)
     if problems or not (isinstance(pin, str) and HEX.match(pin)):
         return f"the base's roles.json pins no key for {actor}"
@@ -275,11 +295,9 @@ def verify_verdicts(req):
             return f"record {rid[:12]} is not a verdict on closure {want[0][:12]} item {want[1]}"
         cites(rec["body"], cited)
         evidence.update(rec["body"]["evidence"])
-    for b, data in sorted(blobs.items()):
-        if C.digest(data) != b:
-            return f"blob {b[:12]} is not named by its hash"
-        if b not in cited:
-            return f"blob {b[:12]} is cited by no verdict"
+    why = blob_problem(C, blobs, cited)
+    if why:
+        return why
     missing = sorted(e for e in evidence if e not in blobs and not (code / STORE / "blobs" / e).is_file())
     if missing:
         return f"evidence {missing[0][:12]} is neither prepared nor in the base's store"
@@ -320,7 +338,7 @@ class Forge:
         r = self.run([self.gh, "pr", "create", "--repo", REPO, "--base", BRANCH, "--head", branch, "--title", title,
                       "--body-file", "-"], input=body.encode(), capture_output=True, check=False, timeout=120)
         url = r.stdout.decode(errors="replace").strip().splitlines()[-1:] or [""]
-        m = re.search(r"/pull/([0-9]+)\Z", url[0])
+        m = re.search(r"/pull/(\d+)\Z", url[0], re.ASCII)
         if r.returncode or m is None:
             raise RuntimeError(f"gh pr create exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
         return int(m.group(1))
@@ -758,13 +776,11 @@ class Waker:
         the base's store), at least one record, and verify() finds nothing wrong with them."""
         if not (wt.is_dir() and (wt / ".git").exists()):
             raise Unpublished(f"Codex left no worktree, so no verdict ({wt.name})")
-        raw = git("-C", str(wt), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--",
-                  STORE).decode()
+        raw = git("-C", str(wt), *STATUS, "--", STORE).decode()
         records, blobs, size = {}, {}, 0
         for e in (x for x in raw.split("\0") if x):
             xy, path = e[:2], e[3:]
-            kind, _, name = path[len(STORE):].partition("/")
-            ident = name[:-5] if kind == "records" and name.endswith(".json") else name if kind == "blobs" else ""
+            kind, ident = stored(path)
             f = wt / path
             if xy != "??" or not HEX.match(ident) or f.is_symlink() or not f.is_file():
                 raise Unpublished(f"the store holds {xy} {path[:80]}: only new records and blobs named by their content "
@@ -882,7 +898,7 @@ def projected(wt, ours):
     """The paths to commit in the publication worktree `wt` after the base's projectors ran: the store entries
     `ours` (each new there) and the tracked files those projectors changed. A new file the base does not track
     stays out; anything else (a deletion, a store entry not ours) is a RuntimeError."""
-    raw = git("-C", str(wt), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames").decode()
+    raw = git("-C", str(wt), *STATUS).decode()
     out = []
     for e in (x for x in raw.split("\0") if x):
         xy, path = e[:2], e[3:]
