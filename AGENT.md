@@ -15,7 +15,8 @@ signed claim records like the rest of SPEC.md (`tools/claims.py`): what each
 operation guarantees, the refusal codes, what a view token, a draft and an
 expectation mean, and what the interface does not do. Each normative sentence
 there is BACKED by a case of `tests/agent_*_test.py` and an agent mutant killed
-on it, or UNBACKED with the reason nothing witnesses it (SPEC-CLAIMS.md). This
+on it, or UNBACKED with the reason nothing witnesses it (`tools/graph.py path
+SPEC-<n>-<m>`, or SPEC-CLAIMS.md as `tools/graph.py views` renders it). This
 file is the operator's guide: configuration, request shapes, front ends and
 measured costs. Where the two differ, §10 holds.
 
@@ -144,7 +145,7 @@ records (docs/REPOSITORY.md, "The roadmap"). Through MCP they are `warrant_prepa
 then `warrant_commit` with these arguments; `<…>` is a slot, a whole-string
 slot takes any JSON value. They file exactly the bytes `roadmap.py oblige`,
 `done` and `accept` file (`tests/agent_repo_test.py` Q01 compares the stores
-byte for byte and ROADMAP.md as bytes, and reads this block; Q02 runs it
+byte for byte and the rendered ROADMAP.md as bytes, and reads this block; Q02 runs it
 through the stdio server):
 
 - **oblige**: the goal ref is the `question` of `warrant_context` with
@@ -184,12 +185,12 @@ MCP the agent keeps them itself, and `roadmap.py check` reads the result.
 ## Reviews through the interface
 
 `tools/review.py` files the pull request review loop as ordinary records
-(docs/REPOSITORY.md, "Reviews as records"; REVIEWS.md is their view). Through MCP each
+(docs/REPOSITORY.md, "Reviews as records"; `tools/review.py project` renders them). Through MCP each
 step is `warrant_prepare` then `warrant_commit` with these arguments; `<…>` is
 a slot, a whole-string slot takes any JSON value. They file exactly the bytes
 `review.py open`, `head` (or `answer`), `finding` and `accept` file
 (`tests/reviews_test.py` V20 reads this block and compares the stores byte for
-byte, and REVIEWS.md as bytes):
+byte, and the rendered REVIEWS.md as bytes):
 
 - **open** (the author): the line is `<repository>#<number> is fit to merge:
   <title>`, the repository and the lists those of `.warrant/reviews.json`
@@ -253,6 +254,7 @@ each operation.
 | `workspace` | `{workspace?}` | §10.1 |
 | `context` | `{workspace, actor?, use?, targets?:[id \| {id} \| {kind: duty\|transition, id}], limits?:{context_bytes}, scope?}`; with `scope` the questions of that scope, owned or not, come before the frontier | §10.2, §10.3 |
 | `read` | `{workspace, view_token?, kind?: record\|blob\|context, target?, cursor?, max_bytes?}` or `{workspace, kind: draft\|operation, target}` | §10.2, §10.5 |
+| `graph` | `{workspace, op: path\|frontier\|impact\|delta\|export, view_token?, cursor?, max_bytes?}`; `path {target}` (a duty or prefix, a question, a scope such as `roadmap:G11`), `frontier {actor?}`, `impact`/`delta {base_view_token}`, `export {format?: json\|dot}`; permitted wherever `read` is | §10.2 |
 | `handoff` | `{op: export, view_token?, roots?, request_id?}` / `{op: inspect, package \| (manifest, payload, declaration?), expectation?, use?, actor?, targets?}` / `{op: import, staged_id, request_id?}` | §10.4 |
 | `prepare` | `{workspace, type, body, based_on?: view_token, request_id?, blobs?: [JSON]}`; `accept` takes `{transition, item, evidence?, support?}`; `blob:<i>` in an evidence list is the id of `blobs[i]` | §10.5 |
 | `commit` | `{workspace, draft_id}` | §10.5 |
@@ -274,8 +276,8 @@ what holds it are §10.3.
 
 ## MCP
 
-Eight tools: `warrant_workspace`, `warrant_context`, `warrant_read`,
-`warrant_handoff`, `warrant_prepare`, `warrant_commit`, `warrant_compute`,
+Nine tools: `warrant_workspace`, `warrant_context`, `warrant_read`,
+`warrant_graph`, `warrant_handoff`, `warrant_prepare`, `warrant_commit`, `warrant_compute`,
 `warrant_explain`. `warrant_context` takes `context_bytes` for
 `limits.context_bytes`; `warrant_handoff` inspect takes the package in one
 piece only, the split form stays in the Python API and the CLI. The server

@@ -22,7 +22,7 @@ from warrant import records as R
 from warrant.store import Store, Trust
 
 from .base import (AUTHOR, BACKED_RESIDUAL, CLAIM, COUNTER, git, GIT_NO_GC, id_key, ID_RE, norm, Refused,
-                   replace_wrapped, RETIRE, ROOT, sha, statement_for, WITNESSES)
+                   replace_wrapped, RETIRE, ROOT, sha, statement_for)
 from .bindings import binding_message, binding_proof, local_bindings, LOCAL_TRUST
 from .repo import Repo
 from .model import Model
@@ -50,7 +50,7 @@ def selftest(jobs=1):
     try:
         fix = work / "base"
         (fix / "tests").mkdir(parents=True)
-        for p in [ROOT / "SPEC.md", ROOT / "SPEC-CLAIMS.md", ROOT / WITNESSES]:
+        for p in [ROOT / "SPEC.md", ROOT / ".gitignore"]:      # the views are build artifacts (G11): not copied
             shutil.copy2(p, fix / p.name)
         for p in sorted((ROOT / "tests").glob("*.py")):
             shutil.copy2(p, fix / "tests" / p.name)
@@ -168,6 +168,7 @@ def selftest(jobs=1):
             if doc.current is not None:
                 r.spec.write_bytes(render_spec(m, doc.current).encode())
             t = challenge_table(r, m)
+            r.views.mkdir(parents=True, exist_ok=True)
             r.projection.write_bytes(render(r, m, t).encode())
             r.witnesses.write_bytes(render_witnesses(r, m, t).encode())
 
@@ -371,9 +372,10 @@ def selftest(jobs=1):
                 (r.store_dir / "records" / f"{rid}.json").unlink()
             reproject(r)
 
-        def hand_edit(r):
-            s = r.projection.read_text()
-            r.projection.write_text(s.replace("| BACKED |", "| BACKED (reviewed) |", 1))
+        def views_edited(r):
+            reproject(r)
+            r.projection.write_text(r.projection.read_text().replace("| BACKED |", "| BACKED (reviewed) |", 1))
+            r.witnesses.unlink()
 
         def challenge(r):
             author(r).put("challenge", R.challenge(a.tid, "selftest: a standing counterexample", [], 0), author(r).at())
@@ -458,8 +460,6 @@ def selftest(jobs=1):
              lambda r: r.spec.write_text(r.spec.read_text().replace(".\n", ". ", 1)))
         case("SPEC.md with \\r\\n line ends", "SPEC_NOT_PROJECTION",
              lambda r: r.spec.write_bytes(r.spec.read_bytes().replace(b"\n", b"\r\n")))
-        case("SPEC-CLAIMS.md with \\r\\n line ends", "PROJECTION_STALE",
-             lambda r: r.projection.write_bytes(r.projection.read_bytes().replace(b"\n", b"\r\n")))
         case("a supersede + project round trip", None, supersede, also=supersede_rendered)
         case("a new sentence inserted at a position renders there", None, insert, also=insert_rendered)
         case("a retired sentence leaves SPEC.md, stays in the store and in SPEC-CLAIMS.md", None, retire, also=retire_rendered)
@@ -570,7 +570,8 @@ def selftest(jobs=1):
         case("a record file renamed", "RECORD_MISNAMED", rename)
         case("a record rewritten in non-canonical bytes", "NOT_CANONICAL", noncanonical)
         case("a claim deleted without a retiring record", "CLAIM_DELETED", delete_claim)
-        case("the projection edited by hand", "PROJECTION_STALE", hand_edit)
+        case("G11: SPEC-CLAIMS.md edited and WITNESSES.md deleted are no problem: build artifacts, check reads none",
+             None, views_edited)
         case("a standing challenge against a current claim", "CHALLENGED", challenge)
         case("a pinned sentence unpinned without retirement", "UNPINNED_WITHOUT_RETIREMENT", unpin)
         case("a new sentence in SPEC.md with no claim", "SPEC_NOT_PROJECTION", add_sentence)
@@ -873,11 +874,6 @@ def selftest(jobs=1):
         case("C: a newcomer retires claude's claim", "LINEAGE_NOT_AUTHOR", stranger_retires)
         case("C: a newcomer files the next document version", "LINEAGE_NOT_AUTHOR", stranger_document)
         case("C: a newcomer files a claim whose duty names its own acceptor", "CLAIM_DUTY_TERMS", stranger_claim_without_acceptor)
-        case("D: WITNESSES.md edited by hand", "WITNESSES_STALE",
-             lambda r: r.witnesses.write_text(r.witnesses.read_text().replace("| claude |", "| claude (trusted) |", 1)))
-        case("D: WITNESSES.md with \\r\\n line ends", "WITNESSES_STALE",
-             lambda r: r.witnesses.write_bytes(r.witnesses.read_bytes().replace(b"\n", b"\r\n")))
-        case("D: WITNESSES.md deleted", "WITNESSES_MISSING", lambda r: r.witnesses.unlink())
 
         def statement_reasons():
             """Reasons, not only codes: the statement rule (AMEND 1 of #169) is what refuses M29 against

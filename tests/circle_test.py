@@ -6,7 +6,7 @@ admits it mechanically, first binding of an actor wins, and nobody judges who jo
 B: an acceptance is filed by an acceptor the duty names, of exactly a pending closure.
 C: a counter blob that replays lowers a claim's backing whoever filed it; a claim's
 lineage (supersede, retire, the document's next version) stays with its author.
-D: WITNESSES.md is a ledger derived from the records; it grants nothing.
+D: WITNESSES.md is a ledger derived from the records (a build artifact); it grants nothing.
 
 Each case builds a fixture repository (a store, bindings for claude, codex,
 s0fractal and stranger, pins naming codex as acceptor) and asserts on data: refusal
@@ -651,13 +651,13 @@ def ledger_cases():
           "WITNESSES.md renders each count of the ledger, with the bound key", row)
     with replaying(lambda h, p: h == lower_blob):
         gone = codes(CL.check(f.repo))
-        f.repo.witnesses.write_bytes(view.encode())
-        fresh = codes(CL.check(f.repo))
+        f.repo.witnesses.parent.mkdir(parents=True, exist_ok=True)
         f.repo.witnesses.write_bytes(view.replace("\n", "\r\n").encode())
         crlf = codes(CL.check(f.repo))
-    check("W9", "WITNESSES_MISSING" in gone and not {"WITNESSES_MISSING", "WITNESSES_STALE"} & set(fresh)
-          and "WITNESSES_STALE" in crlf,
-          "check refuses a missing WITNESSES.md and one that differs from the rendering by a byte (\\r\\n)", (gone, crlf))
+    check("W9", f.repo.witnesses == f.repo.root / "build" / "views" / "WITNESSES.md" and gone == crlf,
+          "WITNESSES.md is a build artifact (G11): written to build/views/, never the root where it would be committed; "
+          "check reads no view, so a missing one and one edited by a byte (\\r\\n) get the same answer",
+          (f.repo.witnesses, gone, crlf))
     f.close()
 
 

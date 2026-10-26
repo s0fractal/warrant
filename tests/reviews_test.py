@@ -307,7 +307,7 @@ def equivalence_case():
         time.time = real
     for x in (a, b):
         x.ok("project")
-    views = [(x.dir / "REVIEWS.md").read_bytes() for x in (a, b)]
+    views = [(x.dir / "build" / "views" / "REVIEWS.md").read_bytes() for x in (a, b)]
     m = b.model()
     check("V20", all(s for _, s in same) and views[0] == views[1] and a.problems() == b.problems() == []
           and m.rep["duties"][d1]["disposition"] == "DISCHARGED" and m.findings[k1].answered_by.tid == u2

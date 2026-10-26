@@ -1,4 +1,4 @@
-"""`check`: the records, SPEC.md, the tests, the pins and the views agree, and against a base
+"""`check`: the records, SPEC.md, the tests and the pins agree, and against a base
 revision nothing was deleted or changed and no claim lost its backing without a proof."""
 import json
 import subprocess
@@ -14,11 +14,10 @@ from .repo import witness_problems
 from .model import Model
 from .counters import BaseTests, challenge_table, COUNTED, lost_backing, new_counters, standing
 from .document import Document, render_spec, rendered_headings
-from .views import render, render_witnesses
 
 
 def check(repo, base=None):
-    """[(code, detail)]: empty iff the records, SPEC.md, the tests, the pins and the projection agree."""
+    """[(code, detail)]: empty iff the records, SPEC.md, the tests and the pins agree."""
     out = []
     store = repo.store_dir
     for p in sorted(store.iterdir()) if store.is_dir() else []:
@@ -89,14 +88,8 @@ def check(repo, base=None):
             out.append(("SPEC_HEADINGS_MISMATCH", f"the rendered SPEC.md shows {len(shown)} heading lines, the document "
                         f"has {len(parts)} headings; first difference at {k}: "
                         f"{(shown[k] if k < len(shown) else None)!r} vs {(parts[k] if k < len(parts) else None)!r}"))
-    if not repo.projection.is_file():
-        out.append(("PROJECTION_MISSING", "SPEC-CLAIMS.md does not exist; run tools/claims.py project"))
-    elif repo.projection.read_bytes() != render(repo, model, table).encode():   # bytes: read_text() turns \r\n into \n
-        out.append(("PROJECTION_STALE", "SPEC-CLAIMS.md is not the view of the records; run tools/claims.py project"))
-    if not repo.witnesses.is_file():
-        out.append(("WITNESSES_MISSING", "WITNESSES.md does not exist; run tools/claims.py project"))
-    elif repo.witnesses.read_bytes() != render_witnesses(repo, model, table).encode():
-        out.append(("WITNESSES_STALE", "WITNESSES.md is not the ledger of the records; run tools/claims.py project"))
+    # SPEC-CLAIMS.md and WITNESSES.md are build artifacts (G11): `project` writes them to build/views/, and
+    # tools/graph.py views --check renders them in three processes and refuses a difference. Nothing reads them.
     if base is not None:
         out += check_base(repo, base, snap, model, pins)
     return out

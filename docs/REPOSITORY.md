@@ -96,9 +96,10 @@ claims. Run them all with `bash examples/run-all.sh`.
 ```bash
 for t in contract compute conditions assessment primitives records roadmap circle; do python3 tests/${t}_test.py; done
 python3 tests/mutants.py        # every critical rule has a mutant that must fail its own case
-python3 tools/claims.py check   # SPEC.md and SPEC-CLAIMS.md against the records and the tests
+python3 tools/claims.py check   # SPEC.md against the records, the records against the tests
 python3 tools/claims.py --selftest
-python3 tools/roadmap.py check  # ROADMAP.md against the goal and obligation records
+python3 tools/roadmap.py check  # the goal and obligation records
+python3 tools/graph.py views --check   # the Markdown views, into build/views/, rendered in three processes
 bash examples/run-all.sh        # needs `warrant` on PATH
 for t in agent_handoff agent_write agent_compute agent_mcp; do python3 tests/${t}_test.py; done
 python3 tests/agent_mutants.py  # needs [compute,mcp]
@@ -118,12 +119,38 @@ mutants with `--matrix` before an audit.
 
 Green checks are not an independent review (AGENTS.md rule 3).
 
+## Asking the graph
+
+The signed records in `.warrant/store/` are the only source. Questions about
+them are answered by query, never by a committed document:
+
+```bash
+python3 tools/graph.py path G11                  # a goal (or SPEC-3-22, or a duty id): what it leads to, prerequisites first
+python3 tools/graph.py why warrant/engine.py:729 # the claims, obligations and goals one statement serves
+python3 tools/graph.py frontier --actor codex    # what is open for an actor
+python3 tools/graph.py impact origin/master..HEAD   # the claims, obligations and goals a change bears on
+python3 tools/graph.py delta origin/master..HEAD    # nodes and edges added, changed, removed
+python3 tools/graph.py export --json             # or --dot
+```
+
+Each takes `--json`. A range reads both stores as Git objects; `BASE..` reads
+the head from the working tree. The MCP tool `warrant_graph` (SPEC §10.2)
+answers path, frontier, impact, delta and export from a frozen view.
+
+SPEC-CLAIMS.md, WITNESSES.md, ROADMAP.md and REVIEWS.md are build artifacts:
+`tools/graph.py views` writes them to `build/views/` (ignored), and `--check`
+renders them again here and in two processes with other hash seeds and refuses
+any difference. CI uploads them as the `views` artifact. Only the published
+contracts are committed generated text: SPEC.md, and PILOT.md (from
+`tools/pilot-contract.json`), which accepted closures cite by digest.
+
 ## Changing a normative sentence
 
 The sentences of SPEC.md are claims filed as Warrant 2 records in this
 repository's own store, `.warrant/store/`. **The records are the source;
-[SPEC.md](../SPEC.md) and [SPEC-CLAIMS.md](../SPEC-CLAIMS.md) are views generated
-from them**, and CI refuses either file when it says anything else. Each claim
+[SPEC.md](../SPEC.md) is generated from them**, and CI refuses it when it says
+anything else. SPEC-CLAIMS.md, the claims with their witnesses, mutants and
+dispositions, is a build artifact (below, "Asking the graph"). Each claim
 is a `duty` whose statement is the sentence, discharged by an ATTESTED
 `transition` whose evidence names the witness cases (`tests/<file>_test.py`)
 and the mutants (`tests/mutants.py`, ids M…, or `tests/agent_mutants.py`, ids
@@ -167,8 +194,8 @@ change to a rule is made like this:
      nothing backs yet, or `--informative REASON` for a sentence that states no
      rule. The position is filed as a new document version;
    - a sentence that leaves: `tools/claims.py retire --id ... --because ... --counter ID`.
-3. `tools/claims.py project` regenerates SPEC.md and SPEC-CLAIMS.md; then
-   `tools/claims.py check`.
+3. `tools/claims.py project` regenerates SPEC.md (and writes SPEC-CLAIMS.md and
+   WITNESSES.md into `build/views/`); then `tools/claims.py check`.
 4. Say the because in the commit message as well.
 
 A sentence renders in its recorded layout while its text is the one that
@@ -176,11 +203,11 @@ layout was taken from. A changed or new sentence is filled to 80 columns under
 its line's indentation and list marker (unwrapped inside a fenced block or a
 table row, where a fenced field line keeps its alignment); a retired one is left
 out, with its line if nothing else is on it. The claim and its history stay in
-the store and in SPEC-CLAIMS.md. `tools/claims.py migrate` filed the first
+the store and in the rendered SPEC-CLAIMS.md. `tools/claims.py migrate` filed the first
 document version once (W5), from SPEC.md as it was at 849cbfa, and only because
 its rendering reproduced that file byte for byte; it refuses to run again.
 
-`check` refuses: SPEC.md or SPEC-CLAIMS.md that differs from its rendering; a
+`check` refuses: SPEC.md that differs from its rendering; a
 document version that is malformed, has a literal gap with anything but layout
 in it, holds a heading the pins do not name (or a pinned one twice, out of
 order, or not on a line of its own), renders other headings than its own, places a current claim nowhere or twice, names a claim no record
@@ -482,20 +509,19 @@ python3 tools/claims.py replay --key CHECKER.seed [--claim ID ...] [--jobs N]
 python3 tools/claims.py replay --verify --base REV
 ```
 
-**The witness ledger.** [WITNESSES.md](../WITNESSES.md) is generated by `project`
+**The witness ledger.** WITNESSES.md (a build artifact) is generated by `project`
 from the records and the admitted bindings: per actor, claims authored,
 acceptances filed and those later refuted (a counter against the accepted claim
 replays now or a downgrade cites one, or the accepted closure was challenged
 and then revalidated), challenges, counters filed (credited to the record that
 cited one first), of those lowering a claim now or cited by a downgrade, and
-re-backs. It grants nothing and no rule reads it; `check` refuses it only when
-it is not the rendering (bytes: `WITNESSES_STALE`, `WITNESSES_MISSING`).
+re-backs. It grants nothing, no rule reads it, and `check` does not read it.
 
 ## The roadmap
 
 Where the project is going lives in the same store as ordinary records, not in
-SPEC.md: [ROADMAP.md](../ROADMAP.md) is generated from them by `tools/roadmap.py
-project`, and `check` refuses a stale or hand-edited one. No record type is
+SPEC.md; `tools/graph.py path G<n>` answers from them, and `tools/roadmap.py
+project` renders ROADMAP.md into `build/views/`. No record type is
 added. The terms are those of the ontology
 (manifesto `artifacts/ONTOLOGY-FORMALIZATION-0.1.md`):
 
@@ -537,8 +563,7 @@ is evidence, not a refutation.
 ## Reviews as records
 
 The review loop of a pull request lives in the same store as ordinary records:
-[REVIEWS.md](../REVIEWS.md) is generated from them by `tools/review.py project`,
-and `check` refuses a stale or hand-edited one. No record type is added.
+`tools/review.py project` renders them as REVIEWS.md into `build/views/`. No record type is added.
 `.warrant/reviews.json` names the repository, whom a pull request is owed to
 and accepted by, and the review replay checkers it adopts.
 

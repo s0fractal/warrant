@@ -197,15 +197,14 @@ def tail_cases(f):
     _, got = codes(f, f.commit("a record rewritten"))
     check("G13", got == {"TAIL_CHANGES"}, "an existing record file changed after the accepted head", got)
 
-    _, got = codes(f, at(f, f.tip, "g14").commit("not a view", {"README.md": "unreviewed\n"}))
-    check("G14", got == {"TAIL_CHANGES"}, "a file that is not a generated view, added after the accepted head", got)
+    _, got = codes(f, at(f, f.tip, "g14").commit("a file outside the store", {"README.md": "unreviewed\n"}))
+    check("G14", got == {"TAIL_CHANGES"}, "a file outside the store, added after the accepted head", got)
 
-    view = at(f, f.tip, "g15").dir / "REVIEWS.md"
-    view.write_text(view.read_text() + "\n")
-    _, got = codes(f, f.commit("a view changed"))
-    check("G15", got == set(), "a changed view passes the gate's path rule (its bytes are the required check's to refuse)", got)
+    _, got = codes(f, at(f, f.tip, "g15").commit("a view committed", {"REVIEWS.md": f.view()}))
+    check("G15", got == {"TAIL_CHANGES"}, "a generated view committed after the accepted head is refused like any other "
+          "file: the tail is records and blobs only, the views are build artifacts (G11)", got)
 
-    at(f, f.base_commit, "g16").git("checkout", "-q", f.tip, "--", ".warrant/store", "REVIEWS.md")
+    at(f, f.base_commit, "g16").git("checkout", "-q", f.tip, "--", ".warrant/store")
     _, got = codes(f, f.commit("the records without the reviewed commit"))
     check("G16", got == {"HEAD_NOT_ANCESTOR"}, "the head's history does not contain the accepted commit X", got)
 

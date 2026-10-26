@@ -27,6 +27,7 @@ HARNESS_PACKAGE = {"mutants.py": "warrant", "agent_mutants.py": "warrant_agent"}
 COUNTER = "warrant-claims/counter@1"
 COUNTER_FIELDS = ("counter", "claim", "against", "patch", "passes", "fails", "why")
 WITNESSES = "WITNESSES.md"
+VIEWS_DIR = "build/views"    # where `project` writes the Markdown views: a build artifact, never committed (G11)
 PREAMBLE = "0"              # the section before the first numbered heading
 WIDTH = 80                  # the fill width of a sentence whose recorded layout no longer applies
 GONE = "\x00"               # placeholder of a retired sentence while SPEC.md is rendered

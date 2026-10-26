@@ -18,12 +18,11 @@ holding two verdicts computed from the same facts:
     - the latest head's closure names a commit X that is canonical with the tree it names and an
       ancestor of the pull request's head;
     - the head's tree differs from X's only by added records and blobs of .warrant/store (regular
-      files, named by content address) and by the bytes of the generated views (REVIEWS.md,
-      ROADMAP.md, SPEC-CLAIMS.md, WITNESSES.md; added or changed), and every blob it adds is cited by a
-      record it adds (a probe, evidence; else TAIL_BLOB_UNCITED). That those views are the
-      byte-identical rendering of the head's records is checked by the required check `test` at the
-      head, which runs the head's own `claims.py check`, `review.py check` and `roadmap.py check`: code
-      byte-identical to X's, since the tail touches nothing else;
+      files, named by content address), and every blob it adds is cited by a record it adds (a probe,
+      evidence; else TAIL_BLOB_UNCITED). Nothing else may follow the accepted commit: the generated
+      views are build artifacts, never committed (G11), so no file outside the store changes after it.
+      The required check `test` at the head runs the head's own `claims.py check`, `review.py check`
+      and `roadmap.py check`: code byte-identical to X's, since the tail touches nothing else;
     - every record added after X is either a verdict record (authentic under the base's pins and signed
       by an actor of the base's accept_by), a review-loop record of this pull request's own duty (the
       duty, its head closures, findings against its heads, a merge observation) or an observation by a
@@ -78,7 +77,6 @@ from .base import Refused
 GATE = "warrant-review/gate@1"
 GATE_FIELDS = ("gate", "base", "required", "hold_label", "owner_paths")
 STORE = ".warrant/store/"
-VIEWS = RV.LEDGER_FILES                # the generated views a records-only tail may change
 REGULAR = "100644"
 BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 WORKFLOW = re.compile(r"\.github/workflows/[A-Za-z0-9._-]+\.ya?ml\Z")
@@ -188,8 +186,8 @@ def stored(path):
 
 def tail(root, x, head, added=None, blobs=None):
     """[(path, why)] of the changes from commit `x` to commit `head` other than a records-only tail:
-    an added regular file .warrant/store/records/<hex64>.json or .warrant/store/blobs/<hex64>, or an
-    added or changed regular file among the generated views (VIEWS). Renames are read as delete and add.
+    an added regular file .warrant/store/records/<hex64>.json or .warrant/store/blobs/<hex64>. Nothing
+    else is admitted, a generated view neither (G11). Renames are read as delete and add.
     The ids of the records it adds are appended to `added` (tail_records reads what they are), those of
     the blobs to `blobs` (uncited)."""
     raw = _git(root, "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", ids=(x, head)).decode().split("\0")
@@ -201,8 +199,6 @@ def tail(root, x, head, added=None, blobs=None):
         if status == "A" and new_mode == REGULAR and record:
             if sinks[record[0]] is not None:
                 sinks[record[0]].append(record[1])
-            continue
-        if status in ("A", "M") and new_mode == REGULAR and old_mode in (REGULAR, "000000") and path in VIEWS:
             continue
         out.append((path, f"{status} {old_mode}->{new_mode}"))
     return out
@@ -490,7 +486,7 @@ def _review(a, root, b, pr, head, model):
     extra = tail(root, x, head, added, blobs)
     if extra:
         sh.append(("TAIL_CHANGES", f"{len(extra)} change(s) after head {h.n} ({x[:12]}) beyond added records and "
-                   "regenerated views: " + ", ".join(f"{p} ({w})" for p, w in extra[:8])))
+                   "blobs: " + ", ".join(f"{p} ({w})" for p, w in extra[:8])))
     loose = uncited(model, added, blobs)
     if loose:
         sh.append(("TAIL_BLOB_UNCITED", f"{len(loose)} blob(s) added after head {h.n} ({x[:12]}) are cited by no record "

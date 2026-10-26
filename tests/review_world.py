@@ -73,6 +73,7 @@ class Fixture:
         (self.dir / "tests").mkdir()
         (self.dir / "calc.py").write_text(BUGGY)
         (self.dir / "tests" / "calc_test.py").write_text("# the fixture's own suite\n")
+        (self.dir / ".gitignore").write_text("/build/\n")          # the generated views (G11), as in the repository
         self.git("init", "-q")
         self.start = self.commit("base")
         self.clock = None
@@ -162,9 +163,13 @@ class Fixture:
         return store.append(rtype, actor, at or self.at(), body, k, trust)
 
     def save(self):
-        """Commit the records and their views on top of HEAD: what the author pushes."""
-        self.ok("project")
+        """Commit the records on top of HEAD: what the author pushes (the views are build artifacts, G11)."""
         return self.commit("records")
+
+    def view(self):
+        """REVIEWS.md as `project` writes it: build/views/REVIEWS.md, never committed."""
+        self.ok("project")
+        return (self.dir / "build" / "views" / "REVIEWS.md").read_text()
 
     def close(self):
         shutil.rmtree(self.base, ignore_errors=True)

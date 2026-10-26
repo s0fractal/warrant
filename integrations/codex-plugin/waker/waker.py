@@ -21,8 +21,9 @@ launchd runs it every five minutes (install.py). One run:
      codex` on the base's own records (acceptance_due there: a roadmap obligation's latest closure the
      engine holds PENDING for codex, every duty it requires DISCHARGED, neither accepted nor challenged by
      codex). At most one is woken per run, and none while an open pull request from a branch of this
-     repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: two such pull requests would render the
-     same generated views from different bases). Its memo is HOME/accepts/<closure>-<item>.json, its
+     repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet). Until G11 two such pull requests
+     rendered the same generated views from different bases; they carry records only now, and the hold remains a
+     limit of one verdict pull request at a time. Its memo is HOME/accepts/<closure>-<item>.json, its
      worktree TREES/accept-<closure12>-<item>-<base12>, detached at the base; Codex accepts the closure or challenges it
      through MCP and opens a pull request of those records only, which the merge gate admits as verdicts
      (eligibility.py). A closure that becomes acceptable later (its prerequisite was accepted meanwhile)
@@ -41,9 +42,9 @@ mode 0600) on standard input only, inside sandbox-exec: no network, no write out
 its git directory and a scratch directory HOME/replay-work/<n>-<head>, no read of REPLAYERS or of the
 usual credential directories. It replays every mechanical finding of the head's store (any pull
 request's, so a finding nobody replayed before is replayed now) at each of its heads no adopted
-replayer has observed. The head's own `project` commands then regenerate the views (same sandbox, no
-seed). The waker commits only the observation records the checker printed (by the replayer, each
-with its probe blob) and the generated views, refuses anything else the run left, and pushes that
+replayer has observed. The waker commits only the observation records the checker printed (by the
+replayer, each with its probe blob), refuses anything else the run left (the generated views are build
+artifacts, never committed: G11), and pushes that
 commit on the pull request's branch only while the branch is still at the head (a fast-forward).
 One replay per head: HOME/replays/<n>-<head>.json, with its runs. A run that failed (the checker exited
 otherwise, its output was refused, or its observations did not reach the branch) is not a replay, nor
@@ -96,8 +97,6 @@ CHECKER = re.compile(r"checker sha256:([0-9a-f]{64})\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 PROBE = "warrant-review/replay@1"
 STORE = ".warrant/store/"
-VIEWS = ("REVIEWS.md", "ROADMAP.md", "SPEC-CLAIMS.md", "WITNESSES.md")      # reviews.LEDGER_FILES
-PROJECTORS = ("tools/review.py", "tools/claims.py", "tools/roadmap.py")
 PR_BRANCH = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychains")
 COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
@@ -157,8 +156,8 @@ def sandboxed(cmd, prof, env, stdin=None):
 
 def changes(wt, filed, actor):
     """The paths the replay changed in the worktree `wt`, to commit: the records `filed` (the ids the checker
-    printed), each an observation by `actor`, the new blobs among their probes, and the generated views.
-    Anything else (another record or blob, a file outside the store, a deletion, a link) is a RuntimeError."""
+    printed), each an observation by `actor`, and the new blobs among their probes. Anything else (another
+    record or blob, a file outside the store, a generated view, a deletion, a link) is a RuntimeError."""
     raw = git("-C", str(wt), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames").decode()
     entries = [(e[:2], e[3:]) for e in raw.split("\0") if e]
     want = {f"{STORE}records/{o}.json" for o in filed}
@@ -176,7 +175,7 @@ def changes(wt, filed, actor):
             probes.add(body["probe"])
         elif xy == "??" and path.startswith(STORE + "blobs/") and HEX.match(path[len(STORE) + 6:]):
             blobs.append(path)
-        elif not (xy == " M" and path in VIEWS):
+        else:
             raise RuntimeError(f"the replay left {xy} {path[:80]}: nothing pushed")
         out.append(path)
     if want - set(out):
@@ -421,12 +420,6 @@ class Waker:
         lines = [x for x in r.stdout.decode().splitlines() if x.split() and HEX.match(x.split()[0])]
         if not lines:
             return False, "replay: nothing to replay"
-        for proj in PROJECTORS:
-            if (wt / proj).is_file():
-                v = self.jail([self.replay_python, str(wt / proj), "project"], prof, self.env(work, wt), None)
-                if v.returncode:
-                    raise RuntimeError(f"{proj} project exited {v.returncode}: "
-                                       f"{v.stderr.decode(errors='replace').strip()[-300:]}")
         paths = changes(wt, [x.split()[0] for x in lines], actor)
         git("-C", str(wt), "add", "--", *paths)
         msg = (f"Review replay of #{n} at {head[:12]}: {len(lines)} observation(s) by {actor[:27]}\n\n" + "\n".join(lines)
@@ -584,7 +577,7 @@ def accept_prompt(c, base, plugin, path):
             f"T's subject: {c.get('subject') or 'none'}; D requires: {ids(c['requires'])}. Your worktree is {path}, "
             f"detached at M (its remote origin is the repository). The plugin's stdio MCP client is "
             f"{plugin / 'scripts' / 'warrant-mcp-call'}. Judge whether what D owes is done; then accept T item "
-            f"{c['item']}, or challenge T, through MCP. Commit only that record and the regenerated views on the branch "
+            f"{c['item']}, or challenge T, through MCP. Commit only that record (and its blobs) on the branch "
             f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}, push it and open a pull request into {BRANCH}. These facts come from "
             f"`tools/roadmap.py due --actor {ACCEPTOR}` at M, run by the review waker; check them yourself before you "
             "rely on them.")

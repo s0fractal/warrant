@@ -48,8 +48,7 @@ class Repo:
         if spec:
             shutil.copytree(ROOT / ".warrant" / "store", self.dir / ".warrant" / "store")
             shutil.copy(ROOT / ".warrant" / "claims.json", self.dir / ".warrant" / "claims.json")
-            for f in ("SPEC.md", "SPEC-CLAIMS.md", "WITNESSES.md"):
-                shutil.copy(ROOT / f, self.dir / f)
+            shutil.copy(ROOT / "SPEC.md", self.dir / "SPEC.md")
             bound = list(C.loads((ROOT / ".warrant" / "trust.json").read_bytes())["keys"])
             # This store's claude is bound already (the first binding of an actor wins): the test's
             # claude key is the receiver's own binding (WARRANT_CLAIMS_TRUST), as in the claims selftest.
@@ -309,7 +308,7 @@ def supersede_cases():
     s = r.ok("reformulate", "--goal", "G1", "--text", "New wording.", "--because", "sharper")
     p = r.path("G1")
     proposed = ([f["state"] for f in p["formulations"]] == ["CURRENT", "PROPOSED"] and p["pending"][0]["act"] == "reformulate"
-                and p["pending"][0]["waiting_for"] == ["codex"] and r.problems() == ["ROADMAP_MISSING"])
+                and p["pending"][0]["waiting_for"] == ["codex"] and r.problems() == [])
     r.accept(s, item=None)
     p, p2 = r.path("G1"), r.path("G2")
     fs = p["formulations"]
@@ -317,7 +316,7 @@ def supersede_cases():
           and fs[1]["ref"].startswith(s + ":") and fs[1]["text"] == "New wording." and p["state"] == "OPEN"
           and [n["duty"] for n in p["obligations"]] == [d]
           and [(f["state"], f["text"]) for f in p2["formulations"]] == [("REOPENED", "Unchanged goal."), ("CURRENT", "Unchanged goal.")]
-          and p2["formulations"][1]["ref"].startswith(s + ":") and v != s and r.problems() == ["ROADMAP_MISSING"],
+          and p2["formulations"][1]["ref"].startswith(s + ":") and v != s and r.problems() == [],
           "a goal is reformulated by a superseding transition: pending until accepted, then the old formulation is "
           "REFORMULATED, its obligations stay under the goal, the other goals are opened again unchanged (REOPENED)", p)
 
@@ -424,18 +423,19 @@ def projection_cases():
     r = Repo()
     r.ok("goal", "--id", "G1", "--text", "A goal.")
     r.ok("project")
-    fresh = r.problems()
-    view = r.rm.view.read_bytes()
-    r.rm.view.write_bytes(view.replace(b"\n", b"\r\n"))
-    crlf = r.problems()
-    r.rm.view.unlink()
-    gone = r.problems()
-    r.ok("project")
+    built = r.dir / "build" / "views" / "ROADMAP.md"
+    view = built.read_bytes() if built.is_file() else None
+    at_root = (r.dir / "ROADMAP.md").exists()
+    built.parent.mkdir(parents=True, exist_ok=True)       # total: a mutant that writes elsewhere fails on the check
+    built.write_bytes(b"edited by hand\r\n")
     r.ok("oblige", "--text", "A new obligation.", "--answers", "G1")
-    later = r.problems()
-    check("P8", fresh == [] and crlf == ["ROADMAP_STALE"] and gone == ["ROADMAP_MISSING"] and later == ["ROADMAP_STALE"],
-          "ROADMAP.md is the view of the records: check refuses it edited (CRLF too), missing, or behind a new record",
-          (fresh, crlf, gone, later))
+    edited = r.problems()
+    built.unlink()
+    gone = r.problems()
+    check("P8", view is not None and view.startswith(b"# Roadmap (generated view)") and not at_root
+          and edited == [] and gone == [],
+          "ROADMAP.md is a build artifact (G11): project writes build/views/ROADMAP.md and nothing at the root; "
+          "check reads no view, so one edited, behind a new record or missing refuses nothing", (view, at_root, edited, gone))
     r.close()
 
 
@@ -465,14 +465,14 @@ def forward_attack_cases():
 
     rec = r.model().recs[t]["body"]
     check("P11", rec["established"] == ["Witnesses widen without an admin."] and rec["opened"] == [
-        {"text": "A rule can act.", "scope": "roadmap:G4"}] and r.problems() == ["ROADMAP_MISSING"],
+        {"text": "A rule can act.", "scope": "roadmap:G4"}] and r.problems() == [],
         "met supersedes the vision transition, establishes the goal's text and opens the other goals again", rec)
     r.close()
 
 
 def spec_cases():
     r = Repo(spec=True)          # this repository's own store: G9999 is a key it does not use
-    spec, claims_view = (r.dir / "SPEC.md").read_bytes(), (r.dir / "SPEC-CLAIMS.md").read_bytes()
+    spec = (r.dir / "SPEC.md").read_bytes()
     r.ok("goal", "--id", "G9999", "--text", "A rule can act.")
     d = r.ok("oblige", "--text", "A checker accepts by replay.", "--answers", "G9999", "--serves", "SPEC-3-22")
     r.ok("project")
@@ -481,7 +481,7 @@ def spec_cases():
     doc = CL.Document(cm)
     node = r.path("G9999")["obligations"][0]
     check("P10", (r.dir / "SPEC.md").read_bytes() == spec and CL.render_spec(cm, doc.current).encode() == spec
-          and (r.dir / "SPEC-CLAIMS.md").read_bytes() == claims_view and (r.dir / "ROADMAP.md").is_file()
+          and not (r.dir / "SPEC-CLAIMS.md").exists() and (r.dir / "build" / "views" / "ROADMAP.md").is_file()
           and b"A rule can act." not in spec and node["duty"] == d
           and node["serves"] == [{"duty": cm.current["SPEC-3-22"].doc["duty"], "claim": "SPEC-3-22", "goal": None}],
           "nothing of the roadmap renders into SPEC.md; a SPEC claim is named by its claim id and linked by its duty", node)

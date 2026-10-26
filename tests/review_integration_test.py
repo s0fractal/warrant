@@ -49,7 +49,7 @@ def integration_cases():
     (f.dir / "calc.py").write_text(BUGGY)
     m = f.commit("merge resolution reinstates the bug")
     rep = observed(f, 1, m)
-    view = (f.dir / "REVIEWS.md").read_text()
+    view = (f.dir / "build" / "views" / "REVIEWS.md").read_text()
     unverified = dict(rep, integration=None)
     check("V30", rep["outside"] == [] and rep["integration"] == ["calc.py"]
           and RV.merge_state(rep) == RV.INTEGRATION_CHANGES and RV.merged_without_acceptance(rep)

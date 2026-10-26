@@ -568,7 +568,7 @@ def equivalence_case():
         time.time = real
     for x in (a, b):
         x.tool("project")
-    views = [(x.repo / "ROADMAP.md").read_bytes() for x in (a, b)]
+    views = [(x.repo / "build" / "views" / "ROADMAP.md").read_bytes() for x in (a, b)]
     checks = [x.tool("check")[0] for x in (a, b)]
     state = next(n for n in RM.path_data(b.model(), "G1")["obligations"] if n["duty"] == m1)
     check("Q01", all(s for _, s in same) and views[0] == views[1] and checks == [0, 0]
@@ -641,7 +641,7 @@ def dogfood_case():
     node = next(n for n in RM.path_data(f.model(), "G1")["obligations"] if n["duty"] == duty)
     check("Q02", rc == 0 and node["duty"] == duty and (node["state"], node["accepted_by"]) == ("DISCHARGED", ["codex"])
           and capsule["disposition"] == "DISCHARGED" and evidence["duty"] == duty
-          and "[DISCHARGED · accepted by codex] Dogfood: an obligation filed through MCP." in (f.repo / "ROADMAP.md").read_text(),
+          and "[DISCHARGED · accepted by codex] Dogfood: an obligation filed through MCP." in (f.repo / "build" / "views" / "ROADMAP.md").read_text(),
           "an obligation filed, closed and accepted through the stdio MCP server reads DISCHARGED in ROADMAP.md",
           (line, node["state"]))
     f.close()
