@@ -242,13 +242,13 @@ def waker_cases():
     m = at_commit(f, new)
     fnd = m.findings[f.cid]
     actors = {m.recs[o]["actor"] for o, _ in fnd.observed.values()}
-    stale = [c for c in f.problems() if c == "REVIEWS_STALE"]
+    problems = f.problems()
     check("W1", pushed and parent == f.head and fnd.at(f.h1) == "FAIL" and fnd.at(f.h2) == "PASS"
-          and actors == {f.replayer} and len(names) == 5 and "M\tREVIEWS.md" in names and stale == []
-          and all(n.startswith("A\t.warrant/store/") for n in names if n != "M\tREVIEWS.md"),
+          and actors == {f.replayer} and len(names) == 4 and problems == []
+          and all(n.startswith("A\t.warrant/store/") for n in names),
           "the waker runs the base's checker on a due head: Codex's finding replayed FAIL at head 1 and PASS at "
-          "head 2, by the checker, pushed as one commit of those records and the head's own view on the branch",
-          (line, names, fnd.observed, stale))
+          "head 2, by the checker, pushed as one commit of those records and their probes only (no view: G11)",
+          (line, names, fnd.observed, problems))
     f.close()
 
     g = pr_world()
@@ -261,9 +261,10 @@ def waker_cases():
     again = g.w.replay(due(g, moved), g.start)
     check("W2", woke1 == 0 and moved != g.head and "pushed" in first[1] and woke2 == 1
           and "nothing to replay" in second[1] and "woken" in second[1] and tip(g) == moved
-          and again == (False, "replay: nothing to replay") and len(g.jail.calls) == 3,
+          and again == (False, "replay: nothing to replay") and len(g.jail.calls) == 2,
           "a run that pushed observations wakes nobody; the next run, at the new head, finds nothing left to replay "
-          "and wakes Codex; one replay per head", (first, second, again))
+          "and wakes Codex; one replay per head, two checker runs and no projector run (no view is committed: G11)",
+          (first, second, again, len(g.jail.calls)))
 
     seed = g.keys[g.replayer].seed_hex()
     calls = g.jail.calls
@@ -339,6 +340,17 @@ def refusal_cases():
     pushed, line = f.w.replay(due(f), f.start)
     check("W6", not pushed and "is not an observation by" in line and tip(f) == f.head,
           "a record printed as the checker's but signed by another identity (claude) is not pushed", line)
+    f.close()
+
+    def viewed(cmd, r):
+        if "replay" in cmd:
+            (root_of(cmd) / "REVIEWS.md").write_text("# Reviews (generated view)\n")
+
+    f = pr_world(after=lambda cmd, r: viewed(cmd, r))
+    pushed, line = f.w.replay(due(f), f.start)
+    check("W24", not pushed and "nothing pushed" in line and "REVIEWS.md" in line and tip(f) == f.head,
+          "a generated view the replay left beside its observations is not pushed: the views are build artifacts "
+          "(G11), and the waker pushes records and their probes only", line)
     f.close()
 
     sentinel = None

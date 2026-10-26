@@ -1,4 +1,4 @@
-"""The six operations of warrant-agent/1 (CONTRACT C): one backend for the
+"""The operations of warrant-agent/1 (CONTRACT C): one backend for the
 Python API, the CLI and the MCP server. Every request is a closed JSON object;
 every success has one shape; every refusal is an AgentError."""
 import base64
@@ -7,9 +7,10 @@ import json
 from warrant import engine as E
 from warrant import jcs as C
 from warrant import shapes as S
+from warrant.store import code_identity
 
-from . import AGENT_API, adapter_id, drafts, handoff, views
-from .errors import AgentError, need
+from . import AGENT_API, adapter_id, drafts, graph, handoff, views
+from .errors import AgentError, need, need_op
 
 TARGET_KINDS = ("duty", "transition")
 CONTEXT_FILE = "context.json"          # a view's actor, targets and use, written by the call that made it
@@ -387,8 +388,7 @@ HANDOFF_OPS = {"export": _export, "inspect": _inspect, "import": _import}
 
 
 def handoff_op(cfg, req):
-    need(isinstance(req, dict) and req.get("op") in HANDOFF_OPS, "BAD_REQUEST", "handoff op is export, inspect or import")
-    return HANDOFF_OPS[req["op"]](cfg, req)
+    return HANDOFF_OPS[need_op(req, HANDOFF_OPS, "handoff op is export, inspect or import")](cfg, req)
 
 
 def prepare(cfg, req):
@@ -456,6 +456,91 @@ def _workspace_view(ws):
                       "untrusted_data": True, "assessed": False}}
 
 
+# ---------------------------------------------------------------- the record graph (graph.py)
+
+GRAPH_OPS = {"path": ("target",), "frontier": (), "impact": ("base_view_token",), "delta": ("base_view_token",),
+             "export": ()}
+GRAPH_OPTIONAL = {"frontier": ("actor",), "export": ("format",)}
+
+
+def _graph_items(op, ws, g, report, req, base):
+    """[{section, ...}] of one graph operation over `g` (and the base view's graph `base`)."""
+    if op == "path":
+        try:
+            d = graph.path(g, req["target"])
+        except graph.Unknown as e:
+            raise AgentError("NOT_FOUND", str(e), target=str(req["target"])[:200]) from None
+        return ({"target": d["target"], "kind": d["kind"], "open": d["open"]},
+                [dict(q, section="question") for q in d["questions"]] + [dict(x, section="duty") for x in d["duties"]])
+    if op == "frontier":
+        actor = _actor(ws, req.get("actor"))
+        items = graph.frontier(report, actor)
+        return {"actor": actor, "open": len(items)}, [dict(x, section="need") for x in items]
+    if op == "impact":
+        d = graph.impact(base, g)
+        rows = ([{"section": "record", "change": c, "id": r} for c in ("added", "removed") for r in d["records"][c]]
+                + [dict(x, section="duty") for x in d["duties"]] + [dict(q, section="question") for q in d["questions"]])
+        return {"records_added": len(d["records"]["added"]), "records_removed": len(d["records"]["removed"]),
+                "duties": len(d["duties"]), "questions": len(d["questions"])}, rows
+    if op == "delta":
+        d = graph.delta(base, g)
+        return dict(d["counts"], **{"from": d["from"], "to": d["to"]}), (
+            [dict(x, section="node") for x in d["nodes"]] + [dict(x, section="edge") for x in d["edges"]])
+    fmt = req.get("format", "json")
+    need(fmt in ("json", "dot"), "BAD_REQUEST", "export format is json or dot")
+    if fmt == "dot":
+        return {"format": "dot", "nodes": len(g["nodes"]), "edges": len(g["edges"])}, [
+            {"section": "dot", "line": line} for line in graph.dot(g).splitlines()]
+    return {"format": "json", "graph": g["graph"], "nodes": len(g["nodes"]), "edges": len(g["edges"])}, (
+        [dict(n, section="node") for n in g["nodes"]] + [dict(e, section="edge") for e in g["edges"]])
+
+
+def graph_op(cfg, req):
+    """The record graph of a frozen view (graph.py): `path` to a target, the actor's `frontier`, the `impact`
+    and `delta` of a base view to this one, or the whole graph (`export`, json or dot). Permitted wherever `read`
+    is; every state shown is the view's report; pages by bytes, continued by a cursor bound to the view and the
+    request."""
+    op = need_op(req, GRAPH_OPS, f"graph op is one of {', '.join(GRAPH_OPS)}")
+    need(op != "path" or isinstance(req.get("target"), str), "BAD_REQUEST",
+         "path's target is a duty id or prefix, a question reference or a question scope (a string)")
+    _closed(req, ("op", "workspace") + GRAPH_OPS[op],
+            ("view_token", "cursor", "max_bytes", "agent_api") + GRAPH_OPTIONAL.get(op, ()))
+    ws = cfg.workspace(req["workspace"])
+    ws.permit("read")
+    max_bytes = req.get("max_bytes", ws.limits["context_bytes"])
+    need(_int(max_bytes, 256), "BAD_REQUEST", "max_bytes >= 256")
+    budget = min(max_bytes, ws.limits["context_bytes"])
+    need(req.get("cursor") is None or req.get("view_token") is not None, "BAD_REQUEST",
+         "a cursor belongs to the view_token it came with")
+    meta, report, view = _view(ws, req.get("view_token"))
+    g = graph.build(view.snapshot(), report)
+    base = None
+    if op in ("impact", "delta"):
+        _, report0, view0 = views.load(ws, req["base_view_token"])
+        base = graph.build(view0.snapshot(), report0)
+    summary, items = _graph_items(op, ws, g, report, req, base)
+    # root: what the result was computed from (the view's snapshot and time, and the base view's); lens: everything
+    # else that decides it (this package and the engine's code, the view's trust and profile, the query).
+    reports = [report] if base is None else [report0, report]
+    root = graph.root_part(report) if base is None else {"base": graph.root_part(report0), "head": graph.root_part(report)}
+    query = {k: v for k, v in req.items() if k not in ("workspace", "view_token", "base_view_token", "cursor",
+                                                        "max_bytes", "agent_api")}
+    query.update({k: summary[k] for k in ("actor", "format") if k in summary})       # the defaults as resolved
+    lens = graph.lens_id({"agent": adapter_id(), "engine": code_identity()}, [graph.operands(r) for r in reports], query)
+    # The cursor names the view, the operation and a digest of the request's other members: a page of one
+    # request is never read as a page of another. view_token is left out of the digest: the cursor names the view
+    # already, and a first page read without one is continued with the token it returned (Codex 51541256eeb7).
+    key = C.digest(C.canon({k: v for k, v in req.items()
+                            if k not in ("cursor", "max_bytes", "agent_api", "view_token")}))[:16]
+    start = _parse_cursor(req.get("cursor"), meta["token"], f"graph-{op}", key)
+    page, nxt = _page(items, start, budget)
+    data = {"op": op, "summary": summary, "items": page, "root": root, "lens": lens, "untrusted_data": True}
+    more = nxt is not None
+    pg = {"included": len(page), "total": len(items), "offset": start, "truncated": more,
+          "cursor": _cursor(meta["token"], f"graph-{op}", key, nxt)}
+    return _envelope(ws, meta, report, data, page=pg)
+
+
 def workspace(cfg, req):
     _closed(req, (), ("workspace", "agent_api"))
     names = [req["workspace"]] if "workspace" in req else sorted(cfg.workspaces)
@@ -471,7 +556,7 @@ def explain(cfg, req):
 
 
 OPERATIONS = {"context": context, "read": read, "handoff": handoff_op, "prepare": prepare, "commit": commit,
-              "compute": compute, "workspace": workspace, "explain": explain}
+              "compute": compute, "workspace": workspace, "explain": explain, "graph": graph_op}
 
 
 def call(cfg, op, req):

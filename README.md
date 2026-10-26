@@ -66,11 +66,13 @@ pre-release may still change the record formats, the command line, the Python
 API and the agent interface.
 
 - **What is backed.** Every normative sentence of SPEC.md is a signed claim
-  record. Of 358 sentences, 281 are BACKED: each names the test cases that
+  record. Of 361 sentences, 284 are BACKED: each names the test cases that
   witness it and the mutants those cases kill. 20 are UNBACKED, each with the
   reason it is still open, and 57 are informative.
-  [SPEC-CLAIMS.md](https://github.com/s0fractal/warrant/blob/master/SPEC-CLAIMS.md)
-  lists every claim with its witnesses and mutants. A change to a rule is filed
+  `python3 tools/graph.py path SPEC-<n>-<m>` answers for one claim, and
+  `python3 tools/graph.py views` renders SPEC-CLAIMS.md, every claim with its
+  witnesses and mutants, into `build/views/` (a build artifact, never
+  committed; CI keeps it as the `views` artifact of each run). A change to a rule is filed
   as a new record that supersedes the old one and says why; the old one stays.
 - **What is not.** Most of the code is exercised by tests but not tied to a
   claim. At 7c6d80b, 304 of the 2317 statements of `warrant/` (13%), and 431 of
@@ -78,11 +80,10 @@ API and the agent interface.
   changed by a mutant that a BACKED claim cites (`tools/claims.py why
   --uncovered`). Raising that is the open goal G6. The other open goals,
   among them an agent with no preparation using Warrant correctly (G2) and
-  admission of witnesses without an admin (G3), are in
-  [ROADMAP.md](https://github.com/s0fractal/warrant/blob/master/ROADMAP.md).
+  admission of witnesses without an admin (G3), are records
+  too: `python3 tools/graph.py path G<n>` follows a goal to its obligations.
 - **Review.** Pull requests are reviewed by a model reviewer through the
-  repository's review loop
-  ([REVIEWS.md](https://github.com/s0fractal/warrant/blob/master/REVIEWS.md));
+  repository's review loop (signed records in the same store);
   no external security audit is recorded. There is one implementation, this
   Python one.
 

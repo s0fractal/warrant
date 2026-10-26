@@ -18,7 +18,9 @@ def merge_cases():
     f.ok("head", "--pr", "1", "--commit", h1)
     f.save()
     f.ok("accept", "--pr", "1", "--commit", h1, actor="codex")
-    tip1 = f.save()
+    # The tip also commits REVIEWS.md, as every pull request did before G11: a merge report of such a merge
+    # still counts no committed view among the paths the tip changes (reviews.LEDGER_FILES).
+    tip1 = f.commit("records and their view, as before G11", {"REVIEWS.md": f.view()})
     m1 = merge(f, tip1)
     filed = f.run("merged", "--pr", "1", "--merge", m1)[0]
     m = f.model()

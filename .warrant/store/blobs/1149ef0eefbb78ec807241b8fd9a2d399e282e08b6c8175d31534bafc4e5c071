@@ -1,0 +1,1 @@
+A `graph` result is paged under `context_bytes`, and its cursor is bound to its view, operation and request: any other cursor is `CURSOR_MISMATCH`.

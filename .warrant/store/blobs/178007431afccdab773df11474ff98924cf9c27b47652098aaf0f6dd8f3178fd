@@ -1,0 +1,1 @@
+Every `graph` result carries `root`, the snapshot and `as_of` of its view (and of the base view), and `lens`, the content address of everything else that decides it: the code of the interface and of the engine, every other operand of each assessment it read (the base view's too), and the query with its defaults resolved; one lens over one root gives one result.

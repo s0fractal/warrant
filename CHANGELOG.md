@@ -25,6 +25,25 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
+## Unreleased
+
+- **The record graph by query; its projections are build artifacts (G11).** SPEC-CLAIMS.md,
+  ROADMAP.md, REVIEWS.md and WITNESSES.md are no longer committed: `project` writes them to
+  `build/views/` (ignored), `tools/graph.py views --check` renders them in three processes and
+  refuses a difference, and CI uploads them as the `views` artifact. The `check` commands read no
+  view (the codes PROJECTION_STALE, PROJECTION_MISSING, WITNESSES_STALE, WITNESSES_MISSING,
+  ROADMAP_STALE, ROADMAP_MISSING, REVIEWS_STALE and REVIEWS_MISSING are gone). SPEC.md and PILOT.md
+  stay committed: published contracts that records cite.
+- `tools/graph.py`: `path`, `why`, `frontier`, `impact`, `delta`, `export` and `views` over
+  `warrant_agent/graph.py`, the record graph of a snapshot with the engine's report attached.
+  **[interface]** The agent operation `graph` and its MCP tool `warrant_graph` (SPEC §10.2) answer
+  path, frontier, impact, delta and export from a frozen view, permitted wherever `read` is.
+- Every graph result (and `build/views/IDENTITY.json`) carries `root`, what it was computed from, and `lens`,
+  the content address of everything else that decides it (the whole deciding code path, never one file; the
+  trust, the profile and the query): the same lens over the same root gives the same bytes.
+- The merge gate's records-only tail admits added records and blobs only; a generated view after
+  the accepted head is TAIL_CHANGES. The review waker commits observations and their probes only.
+
 ## 2.0.0a1 — first publication of `warrant-graph` (2026-10-25)
 
 Published to PyPI from the tag `v2.0.0a1` (dfe0892) by `release.yml` run 40209916198, whose

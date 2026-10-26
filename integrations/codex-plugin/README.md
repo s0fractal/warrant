@@ -23,11 +23,11 @@ neither accepted nor challenged). It starts `codex exec` once per closure item (
 `accepts/<closure>-<item>.json`, the same retries), in a detached worktree of the base
 (`~/Projects/.worktrees/codex-review/accept-<closure12>-<item>-<base12>`), telling him the duty's text, the
 closure, its evidence ids and the pull requests and commits that evidence names, not what the closure
-says it established. He accepts the closure or challenges it through MCP, commits that record and the
-views on `codex/verdicts/<closure12>-<item>` and opens a pull request of it; the merge gate merges a pull
+says it established. He accepts the closure or challenges it through MCP, commits that record (and its
+blobs) on `codex/verdicts/<closure12>-<item>` and opens a pull request of it; the merge gate merges a pull
 request of verdicts only (`eligibility.py`). At most one closure is woken per run, and none while a
-pull request from a `codex/verdicts/` branch is open: two of them would render the same views from
-different bases. A closure whose prerequisite is accepted meanwhile is due in the next run that reads
+pull request from a `codex/verdicts/` branch is open (until G11 two of them rendered the same views
+from different bases; they carry records only now, and the hold remains a limit of one at a time). A closure whose prerequisite is accepted meanwhile is due in the next run that reads
 that base.
 
 Before Codex is woken for a head, the waker runs the review replay checker: the base tree's
@@ -36,9 +36,9 @@ which signs only from code with that hash) in a detached worktree of the head, u
 (no network, writes only in that worktree, its git directory and a scratch directory, no read of the
 seeds or the usual credential directories), with the checker's seed on standard input. It replays
 every mechanical finding of the head's store at each of its heads that no adopted replayer observed
-(another pull request's too: a finding nobody replayed is replayed on the next due head), the head's
-own `project` commands regenerate the views, and the waker pushes one commit of exactly those
-observation records, their probe blobs and the views on the pull request's branch, only while the
+(another pull request's too: a finding nobody replayed is replayed on the next due head), and the
+waker pushes one commit of exactly those observation records and their probe blobs on the pull
+request's branch (no generated view: they are build artifacts, G11), only while the
 branch is still at that head. Codex is woken on the next run, at the new head, once its checks are
 green. A pull request that changes the checker is not replayed. A failed checker run is retried after a
 backoff, at most three runs, and Codex is not woken at that head meanwhile; once the replay gave up,

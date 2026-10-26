@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """The proof-space pilot contract (G9, PS-01) as data: tools/pilot-contract.json is the source and
 PILOT.md its view. The kinds, limits and result tables are rendered from warrant/pilot.py itself.
+Unlike the views of the record graph (build artifacts since G11), PILOT.md stays committed and
+byte-compared, as SPEC.md does: it is the published contract, the accepted PS-02..PS-04 closures cite
+it by digest, and it changes only with the contract, never with the records.
 
     python3 tools/pilot.py project      # regenerate PILOT.md
     python3 tools/pilot.py check        # refuse a differing PILOT.md or a row that holds nothing

@@ -391,6 +391,7 @@ def cmd_project(repo):
         raise Refused("no document record lays out SPEC.md (tools/claims.py migrate files the first)")
     table = challenge_table(repo, model)
     repo.spec.write_bytes(render_spec(model, doc.current).encode())
+    repo.views.mkdir(parents=True, exist_ok=True)
     repo.projection.write_bytes(render(repo, model, table).encode())
     repo.witnesses.write_bytes(render_witnesses(repo, model, table).encode())
 
