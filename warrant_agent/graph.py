@@ -35,7 +35,7 @@ def _label(text):
 def _blob_label(data):
     try:
         doc = C.loads(data)
-    except (C.NotCanonical, ValueError, TypeError):
+    except (ValueError, TypeError):            # jcs.NotCanonical is a ValueError
         try:
             doc = json.loads(data)
         except (ValueError, UnicodeDecodeError):
@@ -49,7 +49,7 @@ def _blob_label(data):
 def _record(data):
     try:
         env = C.loads(data)
-    except (C.NotCanonical, ValueError, TypeError):
+    except (ValueError, TypeError):            # jcs.NotCanonical is a ValueError
         return None
     rec = env.get("record") if isinstance(env, dict) else None
     return rec if isinstance(rec, dict) and isinstance(rec.get("body"), dict) else None
@@ -106,6 +106,36 @@ def _verdicts(report):
     return {(c["transition"], c["item"]): c["verdict"] for d in report["duties"].values() for c in d["candidates"]}
 
 
+def _state(rid, rec, report):
+    """The report's state of a record node: a duty's disposition, a transition's CURRENT or SUPERSEDED."""
+    if rec["type"] == "duty" and rid in report["duties"]:
+        return report["duties"][rid]["disposition"]
+    if rec["type"] == "transition" and rid in report["results"]:
+        return "SUPERSEDED" if report["results"][rid]["superseded_by"] else "CURRENT"
+    return None
+
+
+def _questions(rid, rec, questions):
+    """The question nodes a transition opens, with the report's ownership of each."""
+    out = []
+    for i, q in enumerate(rec["body"]["opened"] if rec["type"] == "transition" else ()):
+        ref = f"{rid}:{i}"
+        seen = questions.get(ref)
+        owned = None
+        if seen is not None:
+            owned = "OWNED" if seen["owned"] else "UNOWNED"
+        out.append({"id": ref, "kind": "question", "actor": rec["actor"], "at": rec["at"], "label": _label(q["text"]),
+                    "scope": q["scope"], "state": owned})
+    return out
+
+
+def _endpoint(snap, x):
+    """The node of an id an edge names that is no record of the graph: a blob of the snapshot, or missing."""
+    if x in snap.blobs:
+        return {"id": x, "kind": "blob", "actor": None, "at": None, "label": _blob_label(snap.blobs[x]), "state": None}
+    return {"id": x, "kind": "missing", "actor": None, "at": None, "label": None, "state": None}
+
+
 def build(snap, report):
     """The graph of `snap` as `report` (the engine's assessment of it) judged it."""
     invalid = set(report["invalid_records"])
@@ -118,32 +148,17 @@ def build(snap, report):
     questions = {q["question"]: q for q in report["questions"]}
     nodes, edges = {}, []
     for rid, rec in recs.items():
-        state = None
-        if rec["type"] == "duty" and rid in report["duties"]:
-            state = report["duties"][rid]["disposition"]
-        elif rec["type"] == "transition" and rid in report["results"]:
-            state = "SUPERSEDED" if report["results"][rid]["superseded_by"] else "CURRENT"
         nodes[rid] = {"id": rid, "kind": rec["type"], "actor": rec["actor"], "at": rec["at"],
-                      "label": _label(_record_label(rec)), "state": state}
-        for i, q in enumerate(rec["body"]["opened"] if rec["type"] == "transition" else ()):
-            ref = f"{rid}:{i}"
-            seen = questions.get(ref)
-            nodes[ref] = {"id": ref, "kind": "question", "actor": rec["actor"], "at": rec["at"],
-                          "label": _label(q["text"]), "scope": q["scope"],
-                          "state": None if seen is None else ("OWNED" if seen["owned"] else "UNOWNED")}
+                      "label": _label(_record_label(rec)), "state": _state(rid, rec, report)}
+        nodes.update((q["id"], q) for q in _questions(rid, rec, questions))
         for to, rel, item in _edges(rid, rec):
             e = {"from": rid, "to": to, "rel": rel, "item": item}
             if rel == "closes":
                 e["verdict"] = verdicts.get((rid, item))
             edges.append(e)
     for e in edges:
-        if e["to"] in nodes:
-            continue
-        if e["to"] in snap.blobs:
-            nodes[e["to"]] = {"id": e["to"], "kind": "blob", "actor": None, "at": None,
-                              "label": _blob_label(snap.blobs[e["to"]]), "state": None}
-        else:
-            nodes[e["to"]] = {"id": e["to"], "kind": "missing", "actor": None, "at": None, "label": None, "state": None}
+        if e["to"] not in nodes:
+            nodes[e["to"]] = _endpoint(snap, e["to"])
     return {"graph": GRAPH, "assessment_id": report["assessment_id"], "snapshot": snap.digest,
             "nodes": [nodes[k] for k in sorted(nodes)],
             "edges": sorted(edges, key=lambda e: (e["from"], e["rel"], e["to"], -1 if e["item"] is None else e["item"]))}
@@ -295,29 +310,11 @@ def _about(ix, x, seen=None):
     return out
 
 
-def impact(g0, g1, also=()):
-    """What the records added or removed from g0 to g1 bear on, read in g1 (a removed one in g0): the duties they
-    are about (`record`: closes, accepts, challenges, supersedes, revalidates, grants) and the duties `also` names
-    ({duty: why}, e.g. `statement`: a claim backed by a mutant of a changed statement); the duties those serve
-    (`serves`, one link); the duties that serve or require one `also` names (`named`: the obligations naming a
-    claim, as tools/claims.py why reads them); every duty requiring one of all these, transitively (`requires`);
-    and the questions all of them answer."""
-    i0, i1 = Index(g0), Index(g1)
-    recs = lambda g: {n["id"] for n in g["nodes"] if n["kind"] not in ("question", "blob", "missing")}  # noqa: E731
-    added, removed = sorted(recs(g1) - recs(g0)), sorted(recs(g0) - recs(g1))
-    via = {}
-
+def _reach(i1, via, named):
+    """Extend `via` ({duty: {why}}) from the duties in it: the ones they serve (`serves`), the ones naming a duty of
+    `named` (`named`), then every duty requiring one of all these, transitively (`requires`)."""
     def note(d, why):
         via.setdefault(d, set()).add(why)
-    for r in added:
-        for d in _about(i1, r):
-            note(d, "record")
-    for r in removed:
-        for d in _about(i0, r):
-            note(d, "record")
-    named = dict(also)
-    for d, why in named.items():
-        note(d, why)
     for d in sorted(via):
         for x in i1.targets(d, "serves"):
             note(x, "serves")
@@ -331,6 +328,26 @@ def impact(g0, g1, also=()):
             if x not in via:
                 todo.append(x)
             note(x, "requires")
+
+
+def impact(g0, g1, also=()):
+    """What the records added or removed from g0 to g1 bear on, read in g1 (a removed one in g0): the duties they
+    are about (`record`: closes, accepts, challenges, supersedes, revalidates, grants) and the duties `also` names
+    ({duty: why}, e.g. `statement`: a claim backed by a mutant of a changed statement); the duties those serve
+    (`serves`, one link); the duties that serve or require one `also` names (`named`: the obligations naming a
+    claim, as tools/claims.py why reads them); every duty requiring one of all these, transitively (`requires`);
+    and the questions all of them answer."""
+    i0, i1 = Index(g0), Index(g1)
+    recs = lambda g: {n["id"] for n in g["nodes"] if n["kind"] not in ("question", "blob", "missing")}  # noqa: E731
+    added, removed = sorted(recs(g1) - recs(g0)), sorted(recs(g0) - recs(g1))
+    via = {}
+    for ix, rs in ((i1, added), (i0, removed)):
+        for d in (d for r in rs for d in _about(ix, r)):
+            via.setdefault(d, set()).add("record")
+    named = dict(also)
+    for d, why in named.items():
+        via.setdefault(d, set()).add(why)
+    _reach(i1, via, named)
     duties = [{"duty": d, "statement": (i1.nodes.get(d) or i0.nodes.get(d) or {}).get("label"),
                "state": (i1.nodes.get(d) or {}).get("state"), "via": sorted(via[d]),
                "answers": (i1.targets(d, "answers") or [None])[0]} for d in sorted(via)]

@@ -16,7 +16,7 @@ record: one receiver reading both sides of a range.
     python3 tools/graph.py impact BASE..HEAD [--json]            # claims, obligations and goals a change bears on
     python3 tools/graph.py delta BASE..HEAD [--json]             # nodes and edges added, changed, removed
     python3 tools/graph.py export [--at REV] (--json | --dot)    # the whole graph
-    python3 tools/graph.py views [--out DIR] [--check]           # the Markdown projections, a build artifact
+    python3 tools/graph.py views [--check]                       # the Markdown projections, a build artifact
 
 A range is two revisions; `BASE..` (no head) reads the head from this checkout's working tree. Output
 is JSON (sorted, one document) with --json, else a short text form. The Markdown projections
@@ -49,8 +49,8 @@ from warrant_agent import graph as G         # noqa: E402
 VIEWS_DIR = Path("build") / "views"
 VIEWS = ("SPEC-CLAIMS.md", "WITNESSES.md", "ROADMAP.md", "REVIEWS.md")
 SEEDS = ("0", "1")                     # the hash seeds of the two other processes `views --check` renders in
-RANGE = re.compile(r"^([^.\s][^\s]*?)\.\.([^.\s][^\s]*)?\Z")
-HUNK = re.compile(r"^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@")
+REV = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/~^-]{0,199}\Z")   # a revision name: never an option, never a range
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 WORKTREE = None                        # a range's head read from this checkout's files
 
 
@@ -70,8 +70,11 @@ def git(root, *args):
 
 
 def commit(root, rev):
-    """The full id of the commit `rev` names (a branch, a tag, an abbreviation: resolved once, here)."""
-    return git(root, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}").decode().strip()
+    """The full id of the commit `rev` names (a branch, a tag, an abbreviation: resolved once, here). A name that is
+    not a revision name (an option, a range, a path) is refused before Git sees it."""
+    if not (isinstance(rev, str) and REV.match(rev) and ".." not in rev):
+        raise Refused(f"{str(rev)[:60]!r} is not a revision name", "GRAPH_REVISION")
+    return git(root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{rev}^{{commit}}").decode().strip()
 
 
 def snapshot(root, rev):
@@ -91,10 +94,10 @@ def graph_of(root, rev, trust):
 
 
 def parse_range(root, text):
-    m = RANGE.match(text or "")
-    if not m:
+    base, sep, head = (text or "").partition("..")
+    if not (sep and base):
         raise Refused(f"{text!r} is not BASE..HEAD (or BASE.. for this checkout)", "GRAPH_USAGE")
-    return commit(root, m.group(1)), (commit(root, m.group(2)) if m.group(2) else WORKTREE)
+    return commit(root, base), (commit(root, head) if head else WORKTREE)
 
 
 # ---------------------------------------------------------------- repository names
@@ -154,21 +157,27 @@ def head_tree(root, head):
     return out
 
 
+def _hunks(diff):
+    """{path: {head lines}} of a `git diff -U0`'s Python files (a pure deletion counts the head line it is at)."""
+    out, path = {}, None
+    for line in diff:
+        if line.startswith("diff --git"):
+            path = None
+        elif line.startswith("+++ "):
+            path = line[6:] if line.endswith(".py") and not line.startswith("+++ /dev/null") else None
+        elif path is not None and line.startswith("@@"):
+            m = HUNK.match(line)
+            start, n = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
+            out.setdefault(path, set()).update(range(start, start + n) if n else [max(start, 1)])
+    return out
+
+
 def changed_lines(root, base, head):
     """{path: sorted lines of head} of the Python files under why's roots that differ from base (a deletion counts
     the head line it is at); and the paths of those deleted in head."""
     rng = ["--no-renames", "--no-color", base] + ([] if head is WORKTREE else [head])
     raw = git(root, "diff", "-U0", *rng, "--", *WHY.WHY_ROOTS).decode(errors="replace").splitlines()
-    out, path = {}, None
-    for line in raw:
-        if line.startswith("diff --git"):
-            path = None
-        elif line.startswith("+++ "):
-            path = line[6:] if line[4:] != "/dev/null" and line.endswith(".py") else None
-        elif path is not None and line.startswith("@@"):
-            m = HUNK.match(line)
-            start, n = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
-            out.setdefault(path, set()).update(range(start, start + n) if n else [max(start, 1)])
+    out = _hunks(raw)
     gone = git(root, "diff", "--name-only", "--diff-filter=D", *rng, "--", *WHY.WHY_ROOTS).decode().splitlines()
     return {p: sorted(v) for p, v in sorted(out.items())}, sorted(p for p in gone if p.endswith(".py"))
 
@@ -236,7 +245,7 @@ def digests(views):
 def other_process(root, seed):
     """The digests of the views as a child process with PYTHONHASHSEED=`seed` renders them."""
     env = dict(os.environ, PYTHONHASHSEED=seed)
-    r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", str(root), "views", "--digests"],
+    r = subprocess.run([sys.executable, str(Path(__file__).resolve()), f"--root={Path(root).resolve()}", "views", "--digests"],
                        capture_output=True, env=env, check=False)
     if r.returncode:
         raise Refused(f"the views did not render under PYTHONHASHSEED={seed}: "
@@ -308,7 +317,51 @@ def emit(doc, as_json, text):
 
 # ---------------------------------------------------------------- command line
 
-def main(argv=None):
+def cmd_views(root, a):
+    """Write the four views to build/views/ (with --check, after comparing their renderings); --digests prints the
+    digests only (the child process of views_check)."""
+    views = render_views(root)
+    if a.digests:
+        print(json.dumps(digests(views), sort_keys=True))
+        return 0
+    problems = views_check(root, views) if a.check else []
+    out = root / VIEWS_DIR
+    out.mkdir(parents=True, exist_ok=True)
+    for name, data in views.items():
+        (out / name).write_bytes(data)
+    for code, detail in problems:
+        print(f"REFUSED {code} {detail}")
+    print(f"VIEWS: {', '.join(f'{k} {v[:12]}' for k, v in digests(views).items())} in {out}"
+          + ("; deterministic" if a.check and not problems else "") + (f"; {len(problems)} refused" if problems else ""))
+    return 1 if problems else 0
+
+
+def cmd_path(root, a, trust):
+    g, _ = graph_of(root, WORKTREE, trust)
+    d = G.path(g, resolve_target(root, a.target))
+    emit(dict(d, target=a.target, resolved=d["target"]), a.json, text_path)
+
+
+def cmd_frontier(root, a, trust):
+    _, rep = graph_of(root, WORKTREE, trust)
+    emit({"actor": a.actor, "frontier": G.frontier(rep, a.actor)}, a.json, lambda d: text_frontier(d["actor"], d["frontier"]))
+
+
+def cmd_impact(root, a, trust):
+    emit(impact(root, *parse_range(root, a.range)), a.json, text_impact)
+
+
+def cmd_delta(root, a, trust):
+    base, head = parse_range(root, a.range)
+    emit(G.delta(graph_of(root, base, trust)[0], graph_of(root, head, trust)[0]), a.json, text_delta)
+
+
+def cmd_export(root, a, trust):
+    g, _ = graph_of(root, commit(root, a.at) if a.at else WORKTREE, trust)
+    print(json.dumps(g, indent=1, sort_keys=True, ensure_ascii=False) if a.json else G.dot(g), end="\n" if a.json else "")
+
+
+def parser():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--root", default=str(ROOT), help="the repository (default: this checkout)")
     sub = ap.add_subparsers(dest="cmd")
@@ -332,9 +385,16 @@ def main(argv=None):
     g.add_argument("--json", action="store_true")
     g.add_argument("--dot", action="store_true")
     p = sub.add_parser("views", help="write the Markdown projections to build/views/ (never committed)")
-    p.add_argument("--out", help="the directory (default: build/views under the repository)")
     p.add_argument("--check", action="store_true", help="also render them in two more processes and compare")
     p.add_argument("--digests", action="store_true", help=argparse.SUPPRESS)
+    return ap
+
+
+COMMANDS = {"path": cmd_path, "frontier": cmd_frontier, "impact": cmd_impact, "delta": cmd_delta, "export": cmd_export}
+
+
+def main(argv=None):
+    ap = parser()
     a = ap.parse_args(argv)
     root = Path(a.root)
     if a.cmd is None:
@@ -344,38 +404,8 @@ def main(argv=None):
         if a.cmd == "why":
             return WHY.cmd_why(CL.Repo(root), argparse.Namespace(target=a.target, uncovered=None, json=a.json))
         if a.cmd == "views":
-            views = render_views(root)
-            if a.digests:
-                print(json.dumps(digests(views), sort_keys=True))
-                return 0
-            problems = views_check(root, views) if a.check else []
-            out = Path(a.out) if a.out else root / VIEWS_DIR
-            out.mkdir(parents=True, exist_ok=True)
-            for name, data in views.items():
-                (out / name).write_bytes(data)
-            for code, detail in problems:
-                print(f"REFUSED {code} {detail}")
-            print(f"VIEWS: {', '.join(f'{k} {v[:12]}' for k, v in digests(views).items())} in {out}"
-                  + ("; deterministic" if a.check and not problems else "")
-                  + (f"; {len(problems)} refused" if problems else ""))
-            return 1 if problems else 0
-        trust = CL.Repo(root).trust()
-        if a.cmd == "path":
-            g, _ = graph_of(root, WORKTREE, trust)
-            d = G.path(g, resolve_target(root, a.target))
-            emit(dict(d, target=a.target, resolved=d["target"]), a.json, text_path)
-        elif a.cmd == "frontier":
-            _, rep = graph_of(root, WORKTREE, trust)
-            items = G.frontier(rep, a.actor)
-            emit({"actor": a.actor, "frontier": items}, a.json, lambda d: text_frontier(d["actor"], d["frontier"]))
-        elif a.cmd == "impact":
-            emit(impact(root, *parse_range(root, a.range)), a.json, text_impact)
-        elif a.cmd == "delta":
-            base, head = parse_range(root, a.range)
-            emit(G.delta(graph_of(root, base, trust)[0], graph_of(root, head, trust)[0]), a.json, text_delta)
-        elif a.cmd == "export":
-            g, _ = graph_of(root, commit(root, a.at) if a.at else WORKTREE, trust)
-            print(json.dumps(g, indent=1, sort_keys=True, ensure_ascii=False) if a.json else G.dot(g), end="\n" if a.json else "")
+            return cmd_views(root, a)
+        COMMANDS[a.cmd](root, a, CL.Repo(root).trust())
         return 0
     except G.Unknown as e:
         print(f"REFUSED GRAPH_TARGET {e}", file=sys.stderr)

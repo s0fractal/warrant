@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The record graph by query (G11): warrant_agent/graph.py, the agent operation `graph` and its MCP tool
-`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z22).
+`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23).
 
     python3 tests/graph_test.py
 """
@@ -268,6 +268,21 @@ def repository_cases():
           "refuses a view any rendering differs from", bad)
 
 
+def revision_cases():
+    refused = []
+    for rev in ("--output=x", "-p", "HEAD..master", "a b", ""):
+        try:
+            GT.commit(ROOT, rev)
+            refused.append((rev, "resolved"))
+        except GT.Refused as e:
+            refused.append((rev, e.code))
+    rc, _, err = tool("delta", "--", "--output=x..")
+    # Two layers hold this refusal: the shape of a revision name, and --end-of-options before it reaches Git; a
+    # mutant of either alone leaves the other refusing (unburned, by design).
+    check("Z23", all(code == "GRAPH_REVISION" for _, code in refused) and rc == 2 and "GRAPH_REVISION" in err,
+          "a revision that is an option, a range, or not a name is refused before Git reads it", refused)
+
+
 def fixture_repo():
     """A Git repository holding this checkout's store, code, tools and tests at commit `base`; commit `head` changes
     one statement of warrant/engine.py that mutant M05 changes and deletes one record; the working tree still has
@@ -329,6 +344,7 @@ def main():
     engine_cases(w)
     agent_cases(w)
     repository_cases()
+    revision_cases()
     range_cases()
     return finish("GRAPH")
 
