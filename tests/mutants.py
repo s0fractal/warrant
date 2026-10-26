@@ -1917,7 +1917,7 @@ def _visit(view, did, report, done, busy):
      [('    if missing:\n        return f"evidence', '    if False:\n        return f"evidence')],
      'review_replay_test', ['W32']),
     ('M717', '../integrations/codex-plugin/waker/waker.py', "a pull request from the verdict's branch (a courier's) does not count: the verdict is published again",
-     [('        if pulls:\n            return {"line"', '        if False:\n            return {"line"')],
+     [('        rid = self.delivered(c, code, branch, base) if pulls else None', '        rid = None')],
      'review_replay_test', ['W33']),
     ('M718', '../integrations/codex-plugin/waker/waker.py', "a verdict of codex the base holds already does not count: Codex's prepared verdict is published again",
      [('        if held:\n            return {"line"', '        if False:\n            return {"line"')],
@@ -1951,6 +1951,13 @@ def _visit(view, did, report, done, busy):
     ('M729', '../integrations/codex-plugin/waker/waker.py', "an existing branch whose verdict blob is a symlink to the blob's bytes is taken as this verdict",
      [(' or new_mode != REGULAR or ', ' or ')],
      'review_replay_test', ['W38']),
+    # Codex's finding on #211 head 7: a pull request from the branch counts only when the branch delivers the verdict.
+    ('M732', '../integrations/codex-plugin/waker/waker.py', "a pull request from the verdict's branch counts as delivery whatever the branch carries",
+     [('        rid = self.delivered(c, code, branch, base) if pulls else None', '        rid = "0" * 64 if pulls else None')],
+     'review_replay_test', ['W39']),
+    ('M733', '../integrations/codex-plugin/waker/waker.py', "a verdict the branch carries counts as delivered without the base's pin admitting it",
+     [('                if self.verify(code, c, {rid: data}, cited) is None:', '                if True:')],
+     'review_replay_test', ['W39']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

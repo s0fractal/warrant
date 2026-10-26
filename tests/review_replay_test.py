@@ -149,15 +149,12 @@ class FakeCodex:
 
 
 class FakeForge:
-    """GitHub's pull requests by branch; `everywhere`: every branch has one already (Codex opened it himself, as
-    before the waker published); `fail`: that many pull request creations fail first."""
+    """GitHub's pull requests by branch; `fail`: that many pull request creations fail first."""
 
-    def __init__(self, everywhere=False, fail=0):
-        self.prs, self.opened, self.everywhere, self.fail = {}, [], everywhere, fail
+    def __init__(self, fail=0):
+        self.prs, self.opened, self.fail = {}, [], fail
 
     def pulls(self, branch):
-        if self.everywhere:
-            return [(77, "OPEN")]
         return [(self.prs[branch], "OPEN")] if branch in self.prs else []
 
     def open(self, branch, title, body):
@@ -212,10 +209,13 @@ def pr_world(after=None, head_files=None):
     f.seed = f.replayers / f"{f.replayer[len(RR.PREFIX):]}.seed"
     f.seed.write_text(f.keys[f.replayer].seed_hex() + "\n")
     f.seed.chmod(0o600)
-    f.codex, f.jail, f.forge = FakeCodex(), Jail(after), FakeForge(everywhere=True)
+    f.codex, f.jail, f.forge = FakeCodex(), Jail(after), FakeForge()
     f.w = WAKER.Waker(home=home, trees=f.base / "trees", python=sys.executable, codex="/bin/codex", run=f.codex,
                       replayers=f.replayers, replay_python=sys.executable, jail=f.jail, forge=f.forge)
     f.w.tree = lambda base: f.code          # the base tree: the tools under test, not the fixture's (it has none)
+    # Codex's verdict reached GitHub (as when he published it himself): the acceptance wakes here are about scheduling;
+    # what counts as published is publish_cases' and binding_cases' (verdict_world)
+    f.w.published = lambda c, code, branch, base: {"line": f"pull request #77 (open) from {branch}", "pr": 77}
     return f
 
 
@@ -981,9 +981,18 @@ def publish_cases():
     # W33: a verdict is not published twice: a pull request from its branch exists already (a courier's, #210), or
     # the base holds it; a push whose pull request failed is completed by opening the pull request only.
     k = verdict_world(forge=FakeForge())
+    clone = k.base / "courier"
+    git("clone", "-q", str(k.origin), str(clone))
+    git("-C", str(clone), "checkout", "-qb", k.branch, k.base_commit)
+    challenge(k, clone)                                   # the courier's branch carries codex's signed verdict
+    git("-C", str(clone), "add", ".warrant/store")
+    git("-C", str(clone), "commit", "-qm", "codex's verdict, published by courier")
+    git("-C", str(clone), "push", "-q", "origin", f"HEAD:refs/heads/{k.branch}")
     k.forge.prs[k.branch] = 210
+    carried = branch_tip(k)
     k.codex.prepare = lambda wt: challenge(k, wt)
     courier = WAKER.tick(k.w, False)
+    after = branch_tip(k)
     k.close()
     m = verdict_world()
     wt = m.w.accept_worktree({"closure": m.t, "item": 0}, m.base_commit)
@@ -1004,7 +1013,7 @@ def publish_cases():
     n.w.fetch = lambda: moved
     n.now[0] += WAKER.BACKOFF + 1
     retried = WAKER.tick(n.w, False)
-    check("W33", "published: pull request #210" in courier[-1] and not k.forge.opened and branch_tip(k) is None
+    check("W33", "published: pull request #210" in courier[-1] and not k.forge.opened and after == carried
           and "the base holds codex's verdict" in held and branch_tip(m) is None and not m.forge.opened
           and pushed is not None and "publication failed" in failed[-1] and branch_tip(n) == pushed
           and len(n.forge.opened) == 1 and "published: pull request #201" in retried[-1],
@@ -1178,9 +1187,54 @@ def retry_base_cases():
           got)
 
 
+def delivery_cases():
+    # W39 (Codex finding on #211 head 7, 9ba35c2, test codex_waker_publication_h7_test F1): a closed pull request
+    # from the verdict's branch whose commit carries no verdict counted as delivery; the memo read published and
+    # Codex's worktree, the only copy of his signed verdict, was removed. A pull request counts only when its branch
+    # adds a verdict on the item that the base's pin admits. Also F2 (P3): the commit named a projector run that no
+    # longer happens.
+    f = verdict_world()
+    clone = f.base / "unrelated"
+    git("clone", "-q", str(f.origin), str(clone))
+    git("-C", str(clone), "checkout", "-qb", f.branch, f.base_commit)
+    (clone / "unrelated.txt").write_text("no verdict here\n")
+    git("-C", str(clone), "add", "unrelated.txt")
+    git("-C", str(clone), "commit", "-qm", "not a verdict")
+    git("-C", str(clone), "push", "-q", "origin", f"HEAD:refs/heads/{f.branch}")
+    f.forge.prs[f.branch] = 210                        # closed, from that branch
+    f.codex.prepare = lambda wt: challenge(f, wt)
+    line = WAKER.tick(f.w, False)[-1]
+    wt = Path(accept_memo(f)["attempts"][-1]["worktree"])
+    kept = not accept_memo(f).get("published") and wt.exists() and not f.forge.opened
+    f.close()
+    h = verdict_world()                                 # the branch's verdict names codex, signed by another key
+    clone = h.base / "forged"
+    git("clone", "-q", str(h.origin), str(clone))
+    git("-C", str(clone), "checkout", "-qb", h.branch, h.base_commit)
+    sign_into(clone, h, "codex", "challenge", R.challenge(h.t, "forged", [], 0), key=h.keys["stranger"])
+    git("-C", str(clone), "add", ".warrant/store")
+    git("-C", str(clone), "commit", "-qm", "a verdict codex did not sign")
+    git("-C", str(clone), "push", "-q", "origin", f"HEAD:refs/heads/{h.branch}")
+    h.forge.prs[h.branch] = 210
+    h.codex.prepare = lambda wt: challenge(h, wt)
+    WAKER.tick(h.w, False)
+    wt = Path(accept_memo(h)["attempts"][-1]["worktree"])
+    forged = not accept_memo(h).get("published") and wt.exists()
+    h.close()
+    g = verdict_world()
+    g.codex.prepare = lambda wt: challenge(g, wt)
+    WAKER.tick(g.w, False)
+    msg = git("-C", str(g.origin), "show", "-s", "--format=%B", branch_tip(g)) if branch_tip(g) else ""
+    check("W39", kept and forged and "regenerat" not in msg and "signed nothing" in msg,
+          "a pull request from the verdict's branch that carries no verdict, or one the base's pin for codex does not "
+          "admit, is no delivery: the memo is not published and Codex's worktree is kept; the publication commit names "
+          "only what the waker did", (line, msg[-300:]))
+    g.close()
+
+
 def main():
     for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
-                 race_cases, skip_cases, seed_cases, publish_cases, binding_cases, retry_base_cases):
+                 race_cases, skip_cases, seed_cases, publish_cases, binding_cases, retry_base_cases, delivery_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run

@@ -742,7 +742,7 @@ class Waker:
         last, code, t = doc["attempts"][-1], self.tree(base), self.clock()
         branch = f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}"
         try:
-            where = self.published(c, code, branch)
+            where = self.published(c, code, branch, base)
             if where is None:
                 try:
                     records, blobs = self.prepared(Path(last.get("worktree") or self.trees / "-"), c, code)
@@ -750,7 +750,7 @@ class Waker:
                     last["unpublished"] = str(e)[:300]
                     p.write_text(json.dumps(doc, indent=1))
                     return self.accept_state(doc)[1]
-                where = self._publish(c, base, code, branch, records, blobs)
+                where = self._publish(c, base, branch, records, blobs)
         except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
             doc.setdefault("publications", []).append({"at": iso(t), "finished": self.clock(), "ok": False,
                                                        "line": f"publication failed: {str(e)[:300]}"})
@@ -764,17 +764,47 @@ class Waker:
             self.discard(kept, kept)
         return f"published: {where['line']}"
 
-    def published(self, c, code, branch):
+    def published(self, c, code, branch, base):
         """Where the verdict on closure item `c` reached GitHub, or None: the base tree `code` holds a verdict of
-        ACCEPTOR on it, or a pull request from `branch` of REPO exists, in any state (Codex published it himself, an
-        earlier run did, or a courier: never a second one)."""
+        ACCEPTOR on it, or a pull request from `branch` of REPO exists, in any state, and that branch carries one
+        (Codex published it himself, an earlier run did, or a courier: never a second one). A pull request from the
+        branch name alone delivers nothing (Codex finding on #211 head 7: an unrelated closed one read as delivery,
+        and Codex's worktree, the only copy of his signed verdict, was removed)."""
         held = held_verdict(code, c)
         if held:
             return {"line": f"the base holds {ACCEPTOR}'s verdict {held[:12]}", "record": held}
         pulls = self.forge.pulls(branch)
-        if pulls:
-            return {"line": f"pull request #{pulls[0][0]} ({str(pulls[0][1]).lower()}) from {branch}", "pr": pulls[0][0],
-                    "branch": branch}
+        rid = self.delivered(c, code, branch, base) if pulls else None
+        if rid:
+            return {"line": f"pull request #{pulls[0][0]} ({str(pulls[0][1]).lower()}) from {branch} carries "
+                            f"{ACCEPTOR}'s verdict {rid[:12]}", "pr": pulls[0][0], "branch": branch, "record": rid}
+        return None
+
+    def delivered(self, c, code, branch, base):
+        """The id of a verdict on closure item `c` that `branch` of origin adds over the base and that verify() admits
+        with the blobs the branch adds (a regular file each, as verify_verdicts reads Codex's), or None."""
+        tip = git("-C", str(self.mirror), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
+        if not tip:
+            return None
+        git("-C", str(self.mirror), "fetch", "--quiet", "origin", f"refs/heads/{branch}")
+        theirs = commit(git("-C", str(self.mirror), "rev-parse", "FETCH_HEAD").decode().strip())
+        raw = git("-C", str(self.mirror), "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", "--diff-filter=A",
+                  commit(base), theirs, "--", STORE).decode().split("\0")
+        added = {}
+        for meta, path in zip(raw[0::2], raw[1::2]):
+            kind, ident = stored(path)
+            if meta.lstrip(":").split()[1] == REGULAR and HEX.match(ident):
+                added[(kind, ident)] = git("-C", str(self.mirror), "cat-file", "blob", f"{theirs}:{path}")
+        blobs = {i: d for (k, i), d in added.items() if k == "blobs"}
+        for (kind, rid), data in sorted(added.items()):
+            try:
+                rec = json.loads(data)["record"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            if kind == "records" and isinstance(rec, dict) and isinstance(rec.get("body"), dict) and binds(rec, c):
+                cited = {b: d for b, d in blobs.items() if b in cites(rec["body"], set())}
+                if self.verify(code, c, {rid: data}, cited) is None:
+                    return rid
         return None
 
     def prepared(self, wt, c, code):
@@ -817,7 +847,7 @@ class Waker:
             raise RuntimeError(f"the verdict check exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
         return json.loads(r.stdout)["refused"]
 
-    def _publish(self, c, base, code, branch, records, blobs):
+    def _publish(self, c, base, branch, records, blobs):
         """The verdict's records and blobs, these bytes, in a new worktree of the base; one commit by the waker of the
         store entries the base lacks (records and blobs only: no generated view is committed, G11); pushed to
         `branch` only while it does not exist (or exists already holding these records: an earlier run's push), and
@@ -921,8 +951,8 @@ def verdict_message(c, base, title, records, blobs):
             + "".join(f"record {r}\n" for r in sorted(records)) + "".join(f"blob {b}\n" for b in sorted(blobs))
             + f"\nCodex filed these through MCP in his acceptance wake of closure {c['closure']} item {c['item']} at "
             f"base {base[:12]} and left them in his worktree. The review waker checked them under the base's pin for "
-            f"{ACCEPTOR}, copied only these bytes onto the base, regenerated what the base generates with the base's "
-            "own tools, and signed nothing.\n")
+            f"{ACCEPTOR}, committed only these bytes on the base (records and blobs: no generated view), and signed "
+            "nothing.\n")
 
 
 def verdict_body(c, base, branch, records, blobs, report):
