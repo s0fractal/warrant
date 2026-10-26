@@ -34,9 +34,11 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,10 +125,25 @@ def _rels(top):
             if (p.is_file() or p.is_symlink()) and "__pycache__" not in p.parts and ".git" not in p.parts}
 
 
+def _referent(link):
+    """The bytes a symlink makes a reader read: a file's digest, or every file's under a directory it names (its
+    link text alone would leave them out: Codex 6ff8280a91ea on #209, why read a source through a link)."""
+    target = link.resolve()
+    if target.is_file():
+        return hashlib.sha256(target.read_bytes()).digest()
+    if target.is_dir():
+        h = hashlib.sha256()
+        for q in sorted(target.rglob("*")):
+            if q.is_file() and "__pycache__" not in q.parts:
+                h.update(q.relative_to(target).as_posix().encode() + b"\0" + hashlib.sha256(q.read_bytes()).digest())
+        return h.digest()
+    return b"absent"
+
+
 def tree_digest(top):
     """The whole tree at `top` but the store, in the form of tests/mutants.py source_digest (the path, mode and bytes
     of every tracked and untracked unignored file as it is on disk): no list of folders, so no deciding module can be
-    left out. The store is the root's, not the lens's."""
+    left out. A symlink counts with the bytes it leads to (_referent). The store is the root's, not the lens's."""
     top = Path(top).resolve()
     h = hashlib.sha256()
     for rel in sorted(_rels(top)):
@@ -134,7 +151,7 @@ def tree_digest(top):
             continue
         f = top / rel
         if f.is_symlink():
-            mode, data = b"120000", os.readlink(f).encode()
+            mode, data = b"120000", os.readlink(f).encode() + b"\0" + _referent(f)
         elif f.is_file():
             mode, data = (b"100755" if os.access(f, os.X_OK) else b"100644"), f.read_bytes()
         else:
@@ -202,18 +219,17 @@ def classes(root, snap, trust):
 # ---------------------------------------------------------------- impact
 
 def head_tree(root, head):
-    """A directory holding head's tree: this checkout for WORKTREE, else build/graph/trees/<tree id> written once
-    from `git archive` (statements are read from the files of the head, never from the working tree)."""
+    """A directory holding head's tree: this checkout for WORKTREE, else a new directory under build/graph/ that
+    `git archive` of head fills for this call alone; the caller removes it. Never a cache: an extraction kept between
+    calls is a mutable copy whose edits change the answer under the same root and lens (Codex 83ba61ff822d on #209)."""
     if head is WORKTREE:
         return Path(root)
-    tree = git(root, "rev-parse", f"{head}^{{tree}}").decode().strip()
-    out = Path(root) / "build" / "graph" / "trees" / tree
-    if not (out / ".complete").is_file():
-        data = git(root, "archive", "--format=tar", head)
-        out.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(fileobj=io.BytesIO(data)) as t:
-            t.extractall(out, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
-        (out / ".complete").write_text(tree + "\n")
+    base = Path(root) / "build" / "graph"
+    base.mkdir(parents=True, exist_ok=True)
+    out = Path(tempfile.mkdtemp(prefix="tree-", dir=base))
+    data = git(root, "archive", "--format=tar", head)
+    with tarfile.open(fileobj=io.BytesIO(data)) as t:
+        t.extractall(out, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
     return out
 
 
@@ -272,8 +288,12 @@ def impact(root, base, head):
     g0, r0 = graph_of(root, base, trust)
     g1, r1 = graph_of(root, head, trust)
     lines, gone = changed_lines(root, base, head)
-    w = WHY.Why(CL.Repo(head_tree(root, head)))
-    stmts = statements(w, lines)
+    tree = head_tree(root, head)
+    try:
+        stmts = statements(WHY.Why(CL.Repo(tree)), lines)
+    finally:
+        if head is not WORKTREE:
+            shutil.rmtree(tree, ignore_errors=True)
     also = {c["duty"]: "statement" for s in stmts for c in s["claims"]}
     d = G.impact(g0, g1, also)
     cls = classes(root, snapshot(root, head), trust)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The record graph by query (G11): warrant_agent/graph.py, the agent operation `graph` and its MCP tool
-`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23); Codex's findings on head 2 (Z24-Z26); root and lens (Z27, Z28), Codex's findings on head 5 (Z29-Z31).
+`warrant_graph` (Z01-Z16), and tools/graph.py over this repository and a fixture Git repository (Z17-Z23); Codex's findings on head 2 (Z24-Z26); root and lens (Z27, Z28), Codex's findings on head 5 (Z29-Z31) and head 6 (Z32, Z33).
 
     python3 tests/graph_test.py
 """
@@ -421,6 +421,42 @@ def identity_finding_cases(w):
           "and time under other pins differ in lens", (one.get("lens"), two.get("lens")))
 
 
+def provenance_cases(d, base, head):
+    """Codex's findings on head 6 (872d780): 83ba61ff822d and 6ff8280a91ea. Every byte a query reads is in its root or
+    its lens."""
+    rc, out, _ = tool("impact", f"{base}..{head}", "--json", root=d)
+    first = json.loads(out) if rc == 0 else {}
+    left = sorted(p.name for p in (d / "build" / "graph").iterdir()) if (d / "build" / "graph").is_dir() else []
+    planted = GT.head_tree(d, head)                    # an extraction a reader could edit, as a kept cache was
+    eng = planted / "warrant" / "engine.py"
+    eng.write_text(eng.read_text().replace('b["item"] == index and sorted(b["evidence"]) == want:',
+                                           'b["item"] == index and sorted(list(b["evidence"])) == want:'))
+    rc2, out2, _ = tool("impact", f"{base}..{head}", "--json", root=d)
+    second = json.loads(out2) if rc2 == 0 else {}
+    shutil.rmtree(planted, ignore_errors=True)
+    check("Z32", rc == 0 and left == [] and second.get("statements") == first.get("statements") and first["statements"],
+          "impact reads the named commit's tree from a fresh extraction it removes: none is kept, and an edited one "
+          "changes nothing", (left, rc2))
+
+    outside = Path(tempfile.mkdtemp(prefix="warrant-graph-referent-")) / "source.py"
+    link = d / "tools" / "linked_source.py"
+    try:
+        outside.write_text("answer = 1\n")
+        link.symlink_to(outside)
+        rc, out, _ = tool("why", "tools/linked_source.py:1", "--json", root=d)
+        one = json.loads(out) if rc == 0 else {}
+        outside.write_text("answer = 2\n")
+        rc2, out2, _ = tool("why", "tools/linked_source.py:1", "--json", root=d)
+        two = json.loads(out2) if rc2 == 0 else {}
+    finally:
+        link.unlink(missing_ok=True)
+        shutil.rmtree(outside.parent, ignore_errors=True)
+    check("Z33", one.get("source") == "answer = 1" and two.get("source") == "answer = 2"
+          and (one.get("root"), one.get("lens")) != (two.get("root"), two.get("lens")),
+          "a source read through a symlink is bound by the bytes it leads to: another referent, another identity",
+          (one.get("root"), two.get("root")))
+
+
 def fixture_repo():
     """A Git repository holding this checkout's store, code, tools and tests at commit `base`; commit `head` changes
     one statement of warrant/engine.py that mutant M05 changes and deletes one record; the working tree still has
@@ -454,6 +490,7 @@ def range_cases():
     d, base, head, rid = fixture_repo()
     try:
         lens_cases(d)
+        provenance_cases(d, base, head)
         im = GT.impact(d, base, head)
         stm = [s for s in im["statements"] if "M05" in s["mutants"]]
         claims = {c["claim"] for s in stm for c in s["claims"]}

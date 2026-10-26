@@ -1886,6 +1886,12 @@ def _visit(view, did, report, done, busy):
     ('M705', '../tools/graph.py', "graph.py why carries no root (Codex 26b46cfde7dd)",
      [('    emit(dict(d, root=root_of(root, WORKTREE, repo.snapshot().digest),', '    emit(dict(d, root=None,')],
      'graph_test', ['Z31']),
+    ('M706', '../tools/graph.py', "impact keeps its extraction of the head's tree (a mutable cache) (Codex 83ba61ff822d)",
+     [('        if head is not WORKTREE:\n            shutil.rmtree(tree, ignore_errors=True)', '        pass')],
+     'graph_test', ['Z32']),
+    ('M707', '../tools/graph.py', "a symlink is hashed by its link text only, not the bytes it leads to (Codex 6ff8280a91ea)",
+     [('os.readlink(f).encode() + b"\\0" + _referent(f)', 'os.readlink(f).encode()')],
+     'graph_test', ['Z33']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",
