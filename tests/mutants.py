@@ -1928,7 +1928,7 @@ def _visit(view, did, report, done, busy):
      [(' or new_mode != REGULAR or ', ' or ')],
      'review_replay_test', ['W38']),
     ('M730', '../integrations/codex-plugin/waker/waker.py', "a store entry master already holds is copied as new, and the publication fails",
-     [('                if (wt / path).exists() or (wt / path).is_symlink():', '                if False:')],
+     [('        if (wt / path).exists() or (wt / path).is_symlink():', '        if False:')],
      'review_replay_test', ['W37']),
     ('M731', '../integrations/codex-plugin/waker/waker.py', "an existing branch that changes a tracked file's mode is taken as this verdict",
      [('        elif status == "M" and old_mode != new_mode:', '        elif False:')],

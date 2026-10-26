@@ -840,16 +840,7 @@ class Waker:
         try:
             ours = {f"{STORE}records/{r}.json": d for r, d in records.items()}
             ours.update((f"{STORE}blobs/{b}", d) for b, d in blobs.items())
-            fresh = {}
-            for path, data in ours.items():
-                if (wt / path).exists() or (wt / path).is_symlink():
-                    # the base holds it already (master acquired the same evidence: Codex finding 41d56ad7ba93)
-                    if (wt / path).is_symlink() or (wt / path).read_bytes() != data:
-                        raise RuntimeError(f"the base holds {path[len(STORE):][:20]} with other bytes: nothing pushed")
-                    continue
-                (wt / path).parent.mkdir(parents=True, exist_ok=True)
-                (wt / path).write_bytes(data)
-                fresh[path] = data
+            fresh = copy_new(wt, ours)
             for proj in BASE_PROJECTORS:
                 if (code / proj).is_file():
                     r = subprocess.run([self.python, str(code / proj), "--root", str(wt), "project"], env=self.env(work, code),
@@ -932,6 +923,22 @@ def projected(wt, ours):
     if set(ours) - set(out):
         raise RuntimeError(f"{len(set(ours) - set(out))} prepared store entries are not new on the base: nothing pushed")
     return sorted(out)
+
+
+def copy_new(wt, ours):
+    """Write the store entries `ours` ({path: bytes}) the base's worktree `wt` lacks; the ones written. One the base
+    holds already (master acquired the same evidence: Codex finding 41d56ad7ba93) must be a regular file with these
+    bytes, else a RuntimeError."""
+    fresh = {}
+    for path, data in ours.items():
+        if (wt / path).exists() or (wt / path).is_symlink():
+            if (wt / path).is_symlink() or (wt / path).read_bytes() != data:
+                raise RuntimeError(f"the base holds {path[len(STORE):][:20]} with other bytes: nothing pushed")
+            continue
+        (wt / path).parent.mkdir(parents=True, exist_ok=True)
+        (wt / path).write_bytes(data)
+        fresh[path] = data
+    return fresh
 
 
 def pushed_before(wt, theirs, base, ours):
