@@ -31,7 +31,7 @@ duty stays as the records leave it.
 | #202 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
 | #204 | DISCHARGED | 4 | 4 | 4 | 4 | at an accepted head |
 | #205 | DISCHARGED | 1 | 0 | 0 | 0 | at an accepted head |
-| #211 | OPEN · awaiting acceptance by codex | 3 | 0 | 0 | 0 | — |
+| #211 | OPEN · awaiting acceptance by codex | 3 | 2 | 0 | 0 | — |
 
 ## Merged without reviewer acceptance of the result
 
@@ -272,3 +272,11 @@ duty stays as the records leave it.
 - head 1 `16bd3bf6ead3` (tree `50030681b7ac`), discharge `32bd9110ce47`: PENDING · awaiting codex; superseded by head 2
 - head 2 `ef9eba0449f2` (tree `d5e993b94f87`), discharge `12de31afedbf`: PENDING · awaiting codex; superseded by head 3
 - head 3 `fd65c508a022` (tree `834acbb71276`), discharge `dc06b257c021`: PENDING · awaiting codex
+  - finding `25890f89f776` by codex, P2, mechanical `codex_waker_publication_test:F2`: NOT_REPLAYED — Read and compare remote bytes when resuming a push whose PR creation failed. Replacing the remote record with {} under its existing filename still passes cat-file -e; the retry opens a PR claiming the verified record is signed, marks publication done, and deletes the good worktree. Require the exact record/blob bytes and regular-file modes at the fetched tip.
+    - where: integrations/codex-plugin/waker/waker.py:848
+    - replayed at head 3 `fd65c508a022`: NOT REPLAYED
+    - not answered
+  - finding `cea34f0511d6` by codex, P2, mechanical `codex_waker_publication_test:F1`: NOT_REPLAYED — Bind accepts to the closure item's exact evidence before marking publication done. An authentic accept with evidence=[] passes verification for a nonempty-evidence item and leaves it PENDING. If already on the base, the same nonbinding accept makes held_verdict suppress and discard a newly prepared valid challenge. Validate the evidence binding in both paths.
+    - where: integrations/codex-plugin/waker/waker.py:294, integrations/codex-plugin/waker/waker.py:314
+    - replayed at head 3 `fd65c508a022`: NOT REPLAYED
+    - not answered
