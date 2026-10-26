@@ -112,6 +112,7 @@ VIEWS = ("REVIEWS.md", "ROADMAP.md", "SPEC-CLAIMS.md", "WITNESSES.md")      # re
 PROJECTORS = ("tools/review.py", "tools/claims.py", "tools/roadmap.py")
 PR_BRANCH = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychains")
+REGULAR = "100644"                          # the only mode of a store entry or a generated file the waker commits
 STATUS = ("status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")    # every path, renames as two
 COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
              "-c", "commit.gpgsign=false"]
@@ -839,9 +840,16 @@ class Waker:
         try:
             ours = {f"{STORE}records/{r}.json": d for r, d in records.items()}
             ours.update((f"{STORE}blobs/{b}", d) for b, d in blobs.items())
+            fresh = {}
             for path, data in ours.items():
+                if (wt / path).exists() or (wt / path).is_symlink():
+                    # the base holds it already (master acquired the same evidence: Codex finding 41d56ad7ba93)
+                    if (wt / path).is_symlink() or (wt / path).read_bytes() != data:
+                        raise RuntimeError(f"the base holds {path[len(STORE):][:20]} with other bytes: nothing pushed")
+                    continue
                 (wt / path).parent.mkdir(parents=True, exist_ok=True)
                 (wt / path).write_bytes(data)
+                fresh[path] = data
             for proj in BASE_PROJECTORS:
                 if (code / proj).is_file():
                     r = subprocess.run([self.python, str(code / proj), "--root", str(wt), "project"], env=self.env(work, code),
@@ -849,7 +857,7 @@ class Waker:
                     if r.returncode:
                         raise RuntimeError(f"the base's {proj} project exited {r.returncode}: "
                                            f"{r.stderr.decode(errors='replace').strip()[-300:]}")
-            paths = projected(wt, ours)
+            paths = projected(wt, fresh)
             git("-C", str(wt), "add", "--", *paths)
             kinds = sorted({json.loads(d)["record"]["type"] for d in records.values()})
             title = f"Codex: {' and '.join(kinds)} of obligation closure {c['closure'][:12]}"
@@ -935,16 +943,19 @@ def pushed_before(wt, theirs, base, ours):
     if len(parents) != 1 or subprocess.run(["git", "-C", str(wt), "merge-base", "--is-ancestor", parents[0], base],
                                            capture_output=True, check=False).returncode:
         return "not one commit on the base branch"
-    raw = git("-C", str(wt), "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", "--name-status", parents[0],
+    raw = git("-C", str(wt), "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", parents[0],
               theirs).decode().split("\0")
     seen = set()
-    for status, path in zip(raw[0::2], raw[1::2]):
-        if path in ours:
-            if status != "A" or git("-C", str(wt), "cat-file", "blob", f"{theirs}:{path}") != ours[path]:
+    for meta, path in zip(raw[0::2], raw[1::2]):
+        old_mode, new_mode, _, _, status = meta.lstrip(":").split()
+        if path in ours:        # a regular file: a link's target text can equal the bytes (Codex finding 9db2a2b6ea12)
+            if status != "A" or new_mode != REGULAR or git("-C", str(wt), "cat-file", "blob", f"{theirs}:{path}") != ours[path]:
                 return f"{path[len(STORE):][:20]} differs"
             seen.add(path)
         elif path.startswith(STORE) or status != "M":
             return f"{status} {path[:60]}"
+        elif status == "M" and old_mode != new_mode:
+            return f"{path[:60]} changes mode {old_mode} to {new_mode}"
     return None if seen == set(ours) else f"{len(set(ours) - seen)} store entries missing"
 
 

@@ -1923,6 +1923,16 @@ def _visit(view, did, report, done, busy):
     ('M728', '../integrations/codex-plugin/waker/waker.py', "an existing branch whose commit is not on the base branch is taken as this verdict",
      [('    if len(parents) != 1 or subprocess.run(', '    if len(parents) != 1 and subprocess.run(')],
      'review_replay_test', ['W36']),
+    # Codex's findings on #211 head 4: master may hold the evidence already; a store entry is a regular file.
+    ('M729', '../integrations/codex-plugin/waker/waker.py', "an existing branch whose verdict blob is a symlink to the blob's bytes is taken as this verdict",
+     [(' or new_mode != REGULAR or ', ' or ')],
+     'review_replay_test', ['W38']),
+    ('M730', '../integrations/codex-plugin/waker/waker.py', "a store entry master already holds is copied as new, and the publication fails",
+     [('                if (wt / path).exists() or (wt / path).is_symlink():', '                if False:')],
+     'review_replay_test', ['W37']),
+    ('M731', '../integrations/codex-plugin/waker/waker.py', "an existing branch that changes a tracked file's mode is taken as this verdict",
+     [('        elif status == "M" and old_mode != new_mode:', '        elif False:')],
+     'review_replay_test', ['W38']),
 ]
 # M18 edits store.py instead: authenticity must check the key's actor.
 MUTANTS[17] = ("M18", "store.py", "a key bound to another actor authenticates",

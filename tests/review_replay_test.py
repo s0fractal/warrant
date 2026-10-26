@@ -1083,9 +1083,94 @@ def binding_cases():
           "and Codex's worktree is kept", got)
 
 
+def acquire(f, wt):
+    """Master moves to a commit that holds the evidence blob Codex prepared in `wt` (another change cited the same
+    bytes); the waker's base tree follows. The new base."""
+    for p in (wt / ".warrant" / "store" / "blobs").iterdir():
+        if not (f.dir / p.relative_to(wt)).exists():
+            for root in (f.dir, f.code):
+                (root / p.relative_to(wt)).write_bytes(p.read_bytes())
+    moved = f.commit("another master change holds the same evidence blob")
+    git("-C", str(f.dir), "push", "-q", str(f.origin), f"{moved}:refs/heads/master")
+    git("-C", str(f.w.mirror), "fetch", "-q", str(f.origin), "+refs/heads/master:refs/heads/master")
+    f.w.fetch = lambda: moved
+    return moved
+
+
+def retry_base_cases():
+    # W37 (Codex finding 41d56ad7ba93 on #211 head 4, 6e1d654, test codex_waker_publication_h4_test F1): after a push
+    # whose pull request failed, master acquired the verdict's evidence blob (the same bytes); the retry rebuilt the
+    # commit there, found the blob "not new" and failed every time. Expected: the branch pushed before is this
+    # verdict, and its pull request is opened. Also when nothing was pushed: the blob master holds is not copied.
+    f = verdict_world(forge=FakeForge(fail=1))
+    f.codex.prepare = lambda wt: challenge(f, wt)
+    WAKER.tick(f.w, False)
+    pushed = branch_tip(f)
+    acquire(f, Path(accept_memo(f)["attempts"][-1]["worktree"]))
+    f.now[0] += WAKER.BACKOFF + 1
+    retried = WAKER.tick(f.w, False)[-1]
+    first = (branch_tip(f) == pushed and len(f.forge.opened) == 1 and "published: pull request #201" in retried)
+    f.close()
+    g = verdict_world()
+    g.codex.prepare = lambda wt: challenge(g, wt)
+    real, calls = g.w._publish, []
+
+    def down(*a):
+        calls.append(a)
+        if len(calls) == 1:
+            raise OSError("network is down")         # before anything was pushed
+        return real(*a)
+    g.w._publish = down
+    WAKER.tick(g.w, False)
+    moved = acquire(g, Path(accept_memo(g)["attempts"][-1]["worktree"]))
+    g.now[0] += WAKER.BACKOFF + 1
+    line = WAKER.tick(g.w, False)[-1]
+    tip = branch_tip(g)
+    names = git("-C", str(g.origin), "diff-tree", "-r", "--no-commit-id", "--name-status", moved, tip).splitlines() if tip else []
+    check("W37", first and "published: pull request #201" in line and len(names) == 1 and "records/" in names[0],
+          "master acquired the verdict's evidence blob: a retry after a failed pull request opens it from the branch "
+          "pushed before, and a fresh publication there copies only the record master lacks", (retried, line, names))
+    g.close()
+
+    # W38 (Codex finding 9db2a2b6ea12 on #211 head 4, test F2): the branch's evidence was replaced by a symlink whose
+    # target text is the blob's bytes; Git's blob bytes matched, so the retry read it as this verdict. A store entry
+    # must be a regular file, and the branch may change no tracked file's mode.
+    def remote(edit):
+        h = verdict_world(forge=FakeForge(fail=1))
+        h.codex.prepare = lambda wt: challenge(h, wt)
+        WAKER.tick(h.w, False)
+        wt = Path(accept_memo(h)["attempts"][-1]["worktree"])
+        clone = h.base / "remote-edit"
+        git("clone", "-q", str(h.origin), str(clone))
+        git("-C", str(clone), "checkout", "-q", h.branch)
+        edit(h, clone)
+        git("-C", str(clone), "add", "-A")
+        git("-C", str(clone), "commit", "-q", "--amend", "--no-edit")
+        git("-C", str(clone), "push", "-q", "-f", "origin", f"HEAD:refs/heads/{h.branch}")
+        h.now[0] += WAKER.BACKOFF + 1
+        line = WAKER.tick(h.w, False)[-1]
+        out = not accept_memo(h).get("published") and not h.forge.opened and wt.exists() and "not this verdict" in line
+        h.close()
+        return out
+
+    def link(h, clone):
+        blob = next(p for p in (clone / ".warrant" / "store" / "blobs").iterdir()
+                    if not (h.dir / p.relative_to(clone)).exists())
+        text = blob.read_text()
+        blob.unlink()
+        blob.symlink_to(text)
+
+    def mode(h, clone):
+        (clone / "ROADMAP.md").chmod(0o755)
+    got = {"link": remote(link), "mode": remote(mode)}
+    check("W38", all(got.values()), "a branch whose verdict blob is a symlink (its target text the blob's bytes), or "
+          "that changes a tracked file's mode, is not this verdict: nothing is published and Codex's worktree is kept",
+          got)
+
+
 def main():
     for part in (replay_cases, waker_cases, sandbox_cases, refusal_cases, guard_cases, acceptance_cases, retry_cases,
-                 race_cases, skip_cases, seed_cases, publish_cases, binding_cases):
+                 race_cases, skip_cases, seed_cases, publish_cases, binding_cases, retry_base_cases):
         try:
             part()
         except Exception as e:      # noqa: BLE001 -- a part that raises fails its cases, the others still run
