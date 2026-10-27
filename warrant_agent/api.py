@@ -20,10 +20,11 @@ interpreter's stack limit. Nothing is cached and no view is kept between calls.
   explain    {word}                                    the static glossary
 
 The signer is the operator's configuration: no request names a key, a path or another actor, and the
-seed is read only by commit. A record whose body does not fit its schema, or whose lineage rule would
-exclude it, is refused at prepare and at commit, never filed."""
+seed is read only by commit. A record the engine would reject or list as a problem, or after which it would
+refuse the store, is refused at prepare and at commit, never filed: both assess the store with it (_refusals)."""
 import base64
 import json
+import os
 import time
 
 from warrant import engine as E
@@ -31,7 +32,7 @@ from warrant import jcs as C
 from warrant import keys as K
 from warrant import records as R
 from warrant import shapes as S
-from warrant.store import Refused, Snapshot
+from warrant.store import Inadmissible, Refused, Snapshot
 
 from . import AGENT_API, adapter_id
 from . import glossary as GL
@@ -271,22 +272,46 @@ def own_lines(snap):
 
 # ---------------------------------------------------------------- prepare / commit
 
-def _problems(view, r):
-    """What this receiver would refuse in record `r` (the engine's own body and lineage rules)."""
-    out = []
-    if r["schema"] is not None and r["schema"] != R.MIGRATION and r["kind"] != "schema":
-        s = view.schemas.get(r["schema"])
-        out.append(f"schema {r['schema']!r} is not one this receiver counts" if s is None else E._body_problem(r, s))
-    if r["lineage"] is not None:
-        p = view.recs.get(r["lineage"])
-        root = view.root_of.get(r["lineage"]) if r["kind"] == "entity" else None
-        if p is None or p["kind"] != r["kind"] or p["schema"] != r["schema"]:
-            out.append("LINEAGE_BROKEN: it succeeds no admitted version of its kind and schema")
-        elif r["kind"] == "entity" and root is None:
-            out.append("LINEAGE_BROKEN: its predecessor is in no lineage")
-        elif r["kind"] == "entity" and r["schema"] in view.schemas and not view._may_succeed(r, view.recs[root]):
-            out.append(f"LINEAGE_NOT_AUTHOR: {r['actor']!r} may not file this state in {view.recs[root]['actor']!r}'s lineage")
-    return [x for x in out if x]
+def _refusals(snap, view, trust, profile, r):
+    """Why this receiver's engine would not take `r` as its actor's next record: the store with it is assessed once
+    more, `r` signed by a key made for this call and bound to its actor in a copy of the trust (nothing is written,
+    the key is never kept), over every raw line of the store, rejected ones included. Refused: a store the engine
+    would refuse, a line it would reject, a problem it did not
+    have (a record it drops as INVALID is listed as one). Then the schema rules a pending proposal does not show yet (_schema_problems)."""
+    key = K.Key.from_seed_hex(os.urandom(32).hex())
+    _, line = R.line(r, key)
+    keys = dict(trust["keys"], **{r["actor"]: sorted(set(trust["keys"].get(r["actor"], [])) | {key.public})})
+    try:
+        after = E.View(Snapshot(snap.raw + [line], snap.blobs), dict(trust, keys=keys), profile)       # every raw line, as the limits count
+    except (Refused, R.Invalid) as e:
+        return [f"the store with it would be refused: {e}"]
+    out = [f"{w}" for h, w in sorted(after.snap.rejected.items()) if h not in snap.rejected]
+    out += [f"{c}: {d}" for c, x, d in after.problems if [c, x, d] not in view.problems]     # an INVALID record is one too
+    return out + (_schema_problems(view, r) if r["kind"] == "schema" else [])
+
+
+def _schema_problems(view, r):
+    """A schema proposal as _schemas will read it once its quorum is met (short of it, the engine lists it as
+    pending, not as a problem): filed by a schema/author, and either the root of a name no counted schema has or
+    the successor of its counted leaf, by the root's actor, under the same name."""
+    b = r["body"]
+    if E._schema_problem(b):
+        return []                                       # the engine's own SCHEMA_NOT_COUNTED says why
+    out = [] if view.holds(r["actor"], "schema/author") else [f"SCHEMA_NOT_COUNTED: {r['actor']!r} holds no schema/author role here"]
+    if r["lineage"] is None:
+        if b["name"] in view.schemas:
+            out.append(f"SCHEMA_CONFLICT: {b['name']!r} is counted already; file a successor of {view.schemas[b['name']]['id'][:12]}")
+        return out
+    p, root = view.recs.get(r["lineage"]), view.schema_root.get(r["lineage"])
+    if p is None or p["kind"] != "schema" or root is None:
+        out.append("LINEAGE_BROKEN: it succeeds no counted schema")
+    elif view.recs[root]["actor"] != r["actor"]:
+        out.append(f"LINEAGE_NOT_AUTHOR: the schema lineage is {view.recs[root]['actor']!r}'s")
+    elif view.schemas.get(p["body"]["name"], {}).get("id") != r["lineage"]:
+        out.append(f"SCHEMA_CONFLICT: {r['lineage'][:12]} is not the counted leaf of {p['body']['name']!r}; a successor of it forks")
+    elif b["name"] != p["body"]["name"]:
+        out.append(f"a successor keeps its schema's name {p['body']['name']!r}")
+    return out
 
 
 def prepare(cfg, req):
@@ -294,7 +319,7 @@ def prepare(cfg, req):
     ws = cfg.workspace(req["workspace"])
     ws.permit("prepare")
     actor = _signer(ws)
-    snap, view, trust, _ = _assess(ws)
+    snap, view, trust, profile = _assess(ws)
     kind, body = req["kind"], req["body"]
     need(kind in R.KINDS and isinstance(body, dict), "BAD_REQUEST", f"kind is one of {list(R.KINDS)}; body an object")
     refs = list(req.get("refs") or [])
@@ -311,12 +336,12 @@ def prepare(cfg, req):
     if lineage is not None:
         lineage = _resolve(snap, lineage)
     h = E.head(snap, trust, actor)
-    at = max(int(time.time()), h["at"] or 0)
+    at = max(int(time.time()), h["at"] or 0, (view.recs.get(lineage) or {}).get("at", 0))     # never backdated
     try:
         r = R.record(kind, actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard, prev=h["id"])
     except (R.Invalid, TypeError) as e:
         raise AgentError("INVALID_RECORD", str(e)) from None
-    why = _problems(view, r)
+    why = _refusals(snap, view, trust, profile, r)
     need(not why, "INVALID_RECORD", "; ".join(why), problems=why)
     return {"record": r, "id": R.rid(r), "bytes": len(R.line(r)[1]), "next": "commit with this record, unchanged"}
 
@@ -332,8 +357,8 @@ def commit(cfg, req):
     except (R.Invalid, TypeError) as e:
         raise AgentError("INVALID_RECORD", str(e)) from None
     need(r["actor"] == actor, "NOT_PERMITTED", f"the signer of this workspace is {actor!r}, not {r['actor']!r}")
-    snap, view, trust, _ = _assess(ws)
-    why = _problems(view, r)
+    snap, view, trust, profile = _assess(ws)
+    why = _refusals(snap, view, trust, profile, r)
     need(not why, "INVALID_RECORD", "; ".join(why), problems=why)
     try:
         key = K.Key.from_seed_hex(ws.signer[1].read_text())
@@ -341,8 +366,15 @@ def commit(cfg, req):
         raise AgentError("NO_SIGNER", f"the signer's seed cannot be read: {type(e).__name__}") from None
     need(key.public in trust["keys"].get(actor, []), "SIGNER_NOT_TRUSTED",
          f"the signer's key {key.id[:12]} is not one this workspace's trust binds to {actor!r}")
+    def admit(now, recs):        # under the writers' lock: no other writer moves the store between this and the write
+        try:
+            return _refusals(now, E.View(now, trust, profile), trust, profile, recs[0])
+        except (Refused, R.Invalid) as e:
+            return [f"the store cannot be assessed: {e}"]
     try:
-        i = ws.open().append(r, key, trust, expect_head=r["prev"] or "")
+        i = ws.open().append(r, key, trust, expect_head=r["prev"] or "", admit=admit)
+    except Inadmissible as e:
+        raise AgentError("INVALID_RECORD", str(e), problems=e.why) from None
     except Refused as e:
         raise AgentError("CHAIN_MOVED" if "CHAIN_MOVED" in str(e) else "REFUSED", str(e)) from None
     snap, view, _, _ = _assess(ws)

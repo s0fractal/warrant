@@ -162,6 +162,34 @@ def schema_cases():
         w.attest("bob", i)
     rep = E.assess(Snapshot(w.lines, {}), w.trust, {"warrant": "profile/3", "roles": two, "quorum": {"schema/author": 2}})
     check("S7 a second schema author's accept completes the quorum", len(rep["schemas"]) == len(B.SCHEMAS) and c in rep["versions"])
+    w = World()
+    two = {"warrant": "profile/3", "roles": dict(w.roles, **{"schema/author": ["alice", "bob"]}), "quorum": {"schema/author": 2}}
+    ids = {R.rid(C.loads(x.rstrip(b"\n"))["record"]): C.loads(x.rstrip(b"\n"))["record"]["body"]["name"] for x in w.lines}
+    for i, n in sorted(ids.items()):
+        if n != "claim@1":
+            w.attest("bob", i)
+    claim_id = next(i for i, n in ids.items() if n == "claim@1")
+    bad = w.put("bob", "attest", {"target": claim_id, "verdict": "accept"}, "goal@1", refs=[claim_id])
+    rep = E.assess(Snapshot(w.lines, {}), w.trust, two)
+    check("S9 an attest the body check drops (INVALID) never makes up a schema's quorum (6d6bb700: it counted claim@1)",
+          bad in rep["rejected"] and "claim@1" not in rep["schemas"] and claim_id in rep["schemas_pending"]
+          and "goal@1" in rep["schemas"], (sorted(rep["schemas"]), list(rep["schemas_pending"])))
+    note = w.put("alice", "schema", {"name": "note@1", "fields": {"text": "str"}, "states": None, "closed": [], "successors": {}})
+    junk = w.put("alice", "schema", {"name": "junk@1"})
+    rep = E.assess(Snapshot(w.lines, {}), w.trust, two)
+    probs = [p[:2] for p in rep["problems"]]
+    check("S10 a valid schema awaiting its quorum is pending, not a problem of the store; a malformed one is a problem "
+          "(6d6bb700: both were SCHEMA_NOT_COUNTED)",
+          note in rep["schemas_pending"] and ["SCHEMA_NOT_COUNTED", note] not in probs and ["SCHEMA_NOT_COUNTED", junk] in probs
+          and junk not in rep["schemas_pending"] and rep["schemas_pending"][note]["backed_by"] == ["alice"], (probs, rep["schemas_pending"]))
+    w = World()
+    mig = w.put("alice", "entity", {"state": "open"}, R.MIGRATION)
+    try:
+        rep = w.report()
+        ok = mig in rep["rejected"] and mig not in rep["versions"] and ["INVALID", mig] in [p[:2] for p in rep["problems"]]
+    except KeyError:
+        ok, rep = False, "KeyError"
+    check("S11 an entity of the reserved migration@1 is INVALID, never a crash (6d6bb700: KeyError in the guard)", ok, rep)
 
 
 def guard_cases():
@@ -196,6 +224,40 @@ def guard_cases():
     w.attest("bob", two)
     check("G6 a quorum of 2 needs two distinct actors: one actor's two attests are one",
           w.report()["versions"][two]["guard"] == "PENDING")
+    seen, done = {}, B.SCHEMAS[2]["states"]["done"]
+    for k in range(64):          # vary a body member until both id orders of v11 and L2 occur
+        w = World()
+        l10 = w.put("alice", "entity", {"state": "done", "statement": f"L1 {k}", "serves": []}, "obligation@1", guard=done)
+        w.attest("bob", l10)
+        L2 = w.put("alice", "entity", {"state": "done", "statement": f"L2 {k}", "serves": []}, "obligation@1",
+                   guard=dict(done, requires=[l10]))
+        w.attest("bob", L2)
+        v11 = w.put("alice", "entity", {"state": "done", "statement": f"L1 {k}", "serves": []}, "obligation@1", l10,
+                    guard=dict(done, requires=[L2]))
+        w.attest("bob", v11)
+        a = w.put("alice", "entity", {"state": "open", "statement": f"A {k}", "serves": []}, "obligation@1")
+        b = w.put("alice", "entity", {"state": "done", "statement": f"B {k}", "serves": []}, "obligation@1",
+                  guard=dict(done, requires=[a]))
+        a1 = w.put("alice", "entity", {"state": "done", "statement": f"A {k}", "serves": []}, "obligation@1", a,
+                   guard=dict(done, requires=[b]))        # A closes only if B is closed, and B only if A is
+        w.attest("bob", b)
+        w.attest("bob", a1)
+        rep = w.report()
+        V, Lg = rep["versions"], rep["lineages"]
+        verdict = (V[l10]["guard"], V[v11]["guard"], V[L2]["guard"], Lg[l10]["effective"] == v11, Lg[L2]["effective"] == L2,
+                   V[b]["guard"], V[a1]["guard"], Lg[b]["effective"] is None, Lg[a]["effective"] == a)
+        consistent = all((Lg[L]["effective"] is None and not any(V[v]["guard"] in ("NONE", "MET") for v in Lg[L]["path"]))
+                         or (Lg[L]["effective"] is not None and V[Lg[L]["effective"]]["guard"] in ("NONE", "MET")
+                             and not any(V[v]["guard"] in ("NONE", "MET") for v in Lg[L]["path"][Lg[L]["path"].index(Lg[L]["effective"]) + 1:]))
+                         for L in Lg)
+        seen.setdefault(v11 < L2, (verdict, consistent))
+        if len(seen) == 2:
+            break
+    want = ("MET", "MET", "MET", True, True, "PENDING", "PENDING", True, True)
+    check("G7 a requires cycle resolves alike in either id order: what a closed version outside the cycle grounds is met, "
+          "and the guards agree with the effective versions; a cycle nothing grounds is PENDING "
+          "(6d6bb700: v11 MET with L1 effective at l10 in one order, v11 PENDING with L2 effective None in the other)",
+          len(seen) == 2 and all(x == (want, True) for x in seen.values()), seen)
 
 
 def challenge_cases():
@@ -265,6 +327,47 @@ def store_cases():
         except ValueError as e:
             ok = "not named by their hash" in str(e)
     check("T12 a blob whose bytes do not hash to its name refuses the whole read", ok)
+    canon = sorted(set(w.lines), key=lambda x: R.rid(C.loads(x.rstrip(b"\n"))["record"]))
+    spaced = Snapshot([b"{  " + canon[0][1:]] + canon[1:], {})
+    try:
+        odd = Snapshot([b'{"record":1,"sig":null}\n', b'{"record":[{}],"sig":null}\n', b"[]\n"] + canon, {})
+        with tempfile.TemporaryDirectory() as d:
+            st = Store(d).init()
+            st.write_lines([b'{"record":"x","sig":null}\n'] + canon)
+            written = st.snapshot()
+        ok = not odd.canonical and len(odd.rejected) == 3 and not written.canonical and len(written.rejected) == 1
+    except Exception as e:                  # noqa: BLE001 - any escape is the failure
+        ok, odd = False, f"{type(e).__name__}: {e}"
+    check("T13 `canonical` is false when any line is rejected, wherever it sorts; a line whose record is no object is "
+          "rejected, never an exception (6d6bb700: a line with extra white space left `canonical` true)",
+          ok and spaced.rejected and not spaced.canonical, (spaced.canonical, odd))
+    with tempfile.TemporaryDirectory() as d:
+        st = Store(d).init()
+        k = w.keys["alice"]
+        refs = sorted(f"{n:064x}" for n in range(1100))
+        try:
+            st.append(R.record("attest", "alice", 5, {"target": refs[0], "verdict": "x"}, refs=refs), k, w.trust)
+            ok = False
+        except ValueError as e:
+            ok = "more than" in str(e)
+        check("T14 a writer refuses a record whose line its reader would reject as too long", ok and st.lines() == [])
+        (Path(d) / "s").mkdir()
+        from warrant import cli
+        import contextlib
+        import io
+        import os
+        st2 = Store(Path(d) / "s" / ".warrant").init()
+        st2.write_lines([b"{  " + canon[0][1:]] + canon[1:])
+        out, cwd = io.StringIO(), os.getcwd()
+        try:
+            os.chdir(Path(d) / "s")
+            with contextlib.redirect_stdout(out):
+                cli.main(["fmt"])
+        finally:
+            os.chdir(cwd)
+        doc = json.loads(out.getvalue() or "{}")
+        check("T15 `warrant fmt` reports the order it leaves: a rejected line stays, and the store is not canonical "
+              "(6d6bb700: it printed canonical true)", doc.get("canonical") is False and doc.get("rejected") == 1, doc)
     chain, prev = World(), None
     for n in range(200):         # each obligation's `done` requires the previous one's lineage
         prev = chain.put("alice", "entity", {"state": "done", "statement": f"o{n}", "serves": []}, "obligation@1",

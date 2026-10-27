@@ -9,9 +9,11 @@ import json
 import os
 import shutil
 import sys
+import threading
 
-from world import KEYS, Repo, check, finish
+from world import KEYS, ROLES, Repo, check, finish
 
+from warrant import bootstrap as B
 from warrant import engine as E
 from warrant import records as R
 from warrant.store import LIMITS
@@ -139,6 +141,158 @@ def operations():
           err(api.call(cfg_of(deep), "context", {"workspace": "w"})) == "RESOURCE_LIMIT")
 
 
+def refusal_cases():
+    """What the engine would reject, list as a problem or refuse the store for is refused at prepare and at commit
+    (§13), never filed; each refused record is also committed as built by hand, past prepare. The schemas are under
+    a quorum of 2, so a proposal's own rules are seen apart from the engine's (a pending schema is no problem)."""
+    repo = Repo(roles=dict(ROLES, **{"schema/author": ["alice", "bob"]}))
+    repo.profile["quorum"] = {"schema/author": 2}
+    repo.write_config()
+    for i in repo.schemas.values():
+        repo.attest("bob", i)
+    goal2 = repo.put("alice", "schema", dict(next(x for x in B.SCHEMAS if x["name"] == "goal@1")), lineage=repo.schemas["goal@1"])
+    repo.attest("bob", goal2)
+    obl = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+
+    def both(req, repo=repo, actor="alice"):
+        cfg = cfg_of(repo, actor)
+        try:
+            p = api.call(cfg, "prepare", dict(req, workspace="w"))
+            r = R.record(req["kind"], actor, repo.t + 100, req["body"], schema=req.get("schema"), lineage=req.get("lineage"),
+                         refs=req.get("refs", ()), prev=E.head(repo.store.snapshot(), repo.trust, actor)["id"])
+            c = api.call(cfg, "commit", {"workspace": "w", "record": r})
+            repo.report()
+        except Exception as e:                  # noqa: BLE001 - a crash after a commit is the failure seen
+            return "CRASH", type(e).__name__, str(e)
+        return err(p), err(c), (p.get("message") or "") + " | " + (c.get("message") or "")
+    note = {"name": "note@1", "fields": {"text": "str"}, "states": None, "closed": [], "successors": {}}
+    goal = next(x for x in B.SCHEMAS if x["name"] == "goal@1")
+    out = {
+        "body": both({"kind": "schema", "body": {"name": "half@1"}}),
+        "taken": both({"kind": "schema", "body": dict(note, name="goal@1")}),
+        "rename": both({"kind": "schema", "lineage": goal2, "body": dict(goal, name="goal@2")}),
+        "fork": both({"kind": "schema", "lineage": repo.schemas["goal@1"], "body": dict(goal, closed=[])}),
+        "stranger": both({"kind": "schema", "body": note}, actor="eve"),
+        "other author": both({"kind": "schema", "lineage": goal2, "body": dict(goal, closed=[])}, actor="bob"),
+    }
+    lines = len(repo.store.lines())
+    check("A18 a schema the engine would not count once accepted is refused at prepare and commit: a malformed body, a "
+          "name counted already, a successor renaming its schema or forking it, one by an actor without schema/author, "
+          "a successor by another author (6d6bb700: all filed)",
+          all(x[:2] == ("INVALID_RECORD", "INVALID_RECORD") for x in out.values())
+          and "schema/author" in out["stranger"][2] and "LINEAGE_NOT_AUTHOR" in out["other author"][2]
+          and "SCHEMA_CONFLICT" in out["taken"][2] and "SCHEMA_CONFLICT" in out["fork"][2] and "name" in out["rename"][2]
+          and len(repo.store.lines()) == lines, out)
+    mig = Repo()
+    lines = len(mig.store.lines())
+    m = both({"kind": "entity", "schema": R.MIGRATION, "body": {"state": "open"}}, mig)
+    check("A19 a record of the reserved migration@1 is refused at prepare and commit (6d6bb700: an entity of it was filed "
+          "and crashed every later assessment)", m[:2] == ("INVALID_RECORD", "INVALID_RECORD") and len(mig.store.lines()) == lines, m)
+    p = api.call(cfg_of(repo, "alice"), "prepare", {"workspace": "w", "kind": "schema", "body": note})
+    c = api.call(cfg_of(repo, "alice"), "commit", {"workspace": "w", "record": ok(p).get("record")})
+    rep = repo.report()
+    check("A22 a schema proposal: a valid schema short of its quorum is filed, pending, no problem",
+          "ok" in c and ok(c).get("id") in rep["schemas_pending"] and not [x for x in rep["problems"] if x[1] == ok(c).get("id")], (p, c))
+    cfg = cfg_of(repo, "alice")
+    big = api.call(cfg, "prepare", {"workspace": "w", "kind": "attest", "target": obl, "body": {"verdict": "seen"},
+                                    "refs": [f"{n:064x}" for n in range(1100)]})
+    check("A20 a record whose signed line the store would reject as too long is refused at prepare (6d6bb700: filed, "
+          "then rejected by its own store)", err(big) == "INVALID_RECORD" and "65536" in big.get("message", ""), big)
+    late = repo.put("alice", "entity", {"state": "open", "statement": "future", "serves": []}, "obligation@1", at=repo.t + 10**6)
+    cfg_d = cfg_of(repo, "dave")
+    p = api.call(cfg_d, "prepare", {"workspace": "w", "kind": "entity", "schema": "obligation@1", "lineage": late,
+                                    "body": {"state": "released", "statement": "future", "serves": []}})
+    back = dict(ok(p).get("record") or {}, at=repo.t + 5)
+    c = api.call(cfg_d, "commit", {"workspace": "w", "record": back})
+    c2 = api.call(cfg_d, "commit", {"workspace": "w", "record": ok(p).get("record")})
+    probs = [x for x in repo.report()["problems"] if x[0] == "LINEAGE_BACKDATED"]
+    check("A21 a successor is never dated before what it succeeds: prepare dates it after, commit refuses a backdated one "
+          "(LINEAGE_BACKDATED is a problem every gate refuses)",
+          "ok" in p and err(c) == "INVALID_RECORD" and "LINEAGE_BACKDATED" in c.get("message", "") and "ok" in c2 and not probs,
+          (p, c, c2, probs))
+    deep = Repo()
+    prev = None
+    for n in range(LIMITS["requires"]):
+        prev = deep.entity("alice", "obligation@1", {"state": "done", "statement": f"o{n}", "serves": []}, requires=[prev] if prev else [])
+    g = dict(next(x for x in B.SCHEMAS if x["name"] == "obligation@1")["states"]["done"], requires=[prev])
+    req = {"workspace": "w", "kind": "entity", "schema": "obligation@1", "guard": g, "body": {"state": "done", "statement": "one more", "serves": []}}
+    p = api.call(cfg_of(deep, "alice"), "prepare", req)
+    hand = R.record("entity", "alice", deep.t + 1, req["body"], "obligation@1", guard=g,
+                    prev=E.head(deep.store.snapshot(), deep.trust, "alice")["id"])
+    c = api.call(cfg_of(deep, "alice"), "commit", {"workspace": "w", "record": hand})
+    after = api.call(cfg_of(deep, "alice"), "workspace", {})
+    check("A23 a record after which the engine would refuse the store (requires nested beyond its limit) is refused at "
+          "prepare and commit, and the workspace stays readable (6d6bb700: filed; every later operation RESOURCE_LIMIT)",
+          err(p) == "INVALID_RECORD" and err(c) == "INVALID_RECORD" and "ok" in after, (p, c, after.get("error")))
+
+
+def admission_cases():
+    """Codex's findings on #221 (01cb8aa7c0de / 793c5d0077af, 4c58f74e7772 / cceccf9fb81c), his tests adapted."""
+    repo = Repo()
+    prev = None
+    for n in range(LIMITS["requires"] - 1):
+        prev = repo.put("alice", "entity", {"state": "open", "statement": str(n), "serves": []}, "obligation@1",
+                        guard=R.guard(requires=[prev] if prev else []))
+    alice, bob = cfg_of(repo, "alice"), cfg_of(repo, "bob")
+    b = ok(api.call(bob, "prepare", {"workspace": "w", "kind": "entity", "schema": "obligation@1", "guard": R.guard(requires=[prev]),
+                                     "body": {"state": "open", "statement": "last permitted dependency", "serves": []}})).get("record")
+    a = ok(api.call(alice, "prepare", {"workspace": "w", "kind": "entity", "schema": "obligation@1", "guard": R.guard(requires=[R.rid(b)]),
+                                       "body": {"state": "open", "statement": "concurrent dependent", "serves": []}})).get("record")
+    # Each is admissible alone on this store: B takes it to depth 128, A requires B (not filed yet); both, 129.
+    start, finished, results, original = threading.Event(), threading.Event(), {}, api._refusals
+
+    def interleave(snap, view, trust, profile, record):
+        why = original(snap, view, trust, profile, record)
+        if record == a and not why and not start.is_set():
+            start.set()
+            finished.wait(2)            # if alice's admission holds the writers' lock, bob waits for it
+        return why
+
+    def other_writer():
+        if start.wait(5):
+            results["bob"] = api.call(bob, "commit", {"workspace": "w", "record": b})
+        finished.set()
+    api._refusals = interleave
+    thread = threading.Thread(target=other_writer, daemon=True)
+    thread.start()
+    try:
+        results["alice"] = api.call(alice, "commit", {"workspace": "w", "record": a})
+    finally:
+        api._refusals = original
+    thread.join(5)
+    after = api.call(alice, "workspace", {})
+    lines = repo.store.snapshot().lines
+    check("A24 commit admits a record on the store as it is under the writers' lock: another actor's append between "
+          "prepare and commit cannot leave the store refused (Codex 01cb8aa7c0de on 94021033: both filed, every later "
+          "operation RESOURCE_LIMIT)", "ok" in after and not thread.is_alive() and not (R.rid(a) in lines and R.rid(b) in lines),
+          {"alice": err(results.get("alice", {})) or "ok", "bob": err(results.get("bob", {})) or "ok", "workspace": err(after) or "ok"})
+
+    def exercise(rejected):
+        repo = Repo()
+        if rejected:
+            repo.store.add_lines([b'{"junk":"' + b"x" * 1024 + b'"}\n'])
+        cfg = cfg_of(repo, "bob")
+        before = repo.store.file.read_bytes()
+        target = repo.schemas["goal@1"]
+        record = R.record("attest", "bob", repo.t + 1, {"target": target, "verdict": "seen"}, refs=[target],
+                          prev=E.head(repo.store.snapshot(), repo.trust, "bob")["id"])
+        bound = LIMITS["bytes"]
+        try:
+            LIMITS["bytes"] = len(before) + 64           # the engine's byte rule at a small bound, not 256 MiB
+            p = api.call(cfg, "prepare", {"workspace": "w", "kind": "attest", "target": target, "body": {"verdict": "seen"}})
+            c = api.call(cfg, "commit", {"workspace": "w", "record": record})
+            w = api.call(cfg, "workspace", {})
+            return {"prepare": err(p) or "ok", "commit": err(c) or "ok", "workspace": err(w) or "ok",
+                    "unchanged": repo.store.file.read_bytes() == before}
+        finally:
+            LIMITS["bytes"] = bound
+    want = {"prepare": "INVALID_RECORD", "commit": "INVALID_RECORD", "workspace": "ok", "unchanged": True}
+    clean, junk = exercise(False), exercise(True)
+    check("A25 the candidate is assessed over every raw line, rejected ones included, as the engine's byte bound counts "
+          "them (Codex 4c58f74e7772 on 94021033: a rejected line let a write cross the bound)",
+          clean == want and junk == want, {"clean": clean, "rejected_line": junk})
+
+
 def init_cases():
     repo = Repo()
     I.ROOTS = (repo.home,)
@@ -217,6 +371,8 @@ def mcp_cases():
 
 if __name__ == "__main__":
     operations()
+    refusal_cases()
+    admission_cases()
     init_cases()
     mcp_cases()
     sys.exit(finish())

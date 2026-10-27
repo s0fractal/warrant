@@ -74,6 +74,15 @@ def claims_cases():
     r = claims_repo()
     claim(r, mutants=[])
     check("C07 a backed claim with no mutant is unburned", codes(r) == ["UNBURNED"], codes(r))
+    r = claims_repo()
+    claim(r)
+    r.profile["roles"]["schema/author"] = ["alice", "bob"]
+    r.profile["quorum"] = {"schema/author": 2}
+    for i in r.schemas.values():
+        r.attest("bob", i)
+    r.write_config()
+    r.put("alice", "schema", {"name": "note@1", "fields": {"text": "str"}, "states": None, "closed": [], "successors": {}})
+    check("C10 a schema awaiting its second author is a proposal the claims check does not refuse", codes(r) == [], codes(r))
     try:                         # a checker that does not refuse goes on to run every witness: a hang is a failure here
         out = subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "claims.py"), "replay", "--key", "-"],
                              input=KEYS["eve"].seed_hex() + "\n", capture_output=True, text=True, cwd=ROOT, timeout=60)

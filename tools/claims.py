@@ -12,8 +12,8 @@ commit. The Warrant 2 claims (source SPEC.md) are history: retired, never delete
     python3 tools/claims.py identity                   # the claims checker's actor
     python3 tools/claims.py replay --key -             # the checker: run, then accept what held (clean tree only)
 
-`check` refuses (exit 1): a store that is not canonical, rejects a line, has a problem or a schema short of its
-quorum; a live claim not of docs/V3.md (V2_CLAIM_LIVE), whose sentence is not in docs/V3.md
+`check` refuses (exit 1): a store that is not canonical, rejects a line or has a problem (a schema short of its
+quorum is a proposal, not one); a live claim not of docs/V3.md (V2_CLAIM_LIVE), whose sentence is not in docs/V3.md
 (CLAIM_TEXT_MISSING), that cites a witness case no test file prints (WITNESS_MISSING), a mutant not in
 tests/mutants.py (UNKNOWN_MUTANT) or one whose cases are not among its witnesses (MUTANT_OFF_CLAIM); a
 `backed` claim with no witness or no mutant (UNBURNED); one id in two live lineages (CLAIM_ID_TWICE). It
@@ -62,8 +62,7 @@ def store_problems(rep):
         out.append(("NOT_CANONICAL", "records.jsonl is not in canonical order: `python3 -m warrant fmt`"))
     out += [("REJECTED", f"{i[:12]} {w[:120]}") for i, w in rep["rejected"].items()]
     out += [(c, f"{str(i)[:12]} {d[:120]}") for c, i, d in rep["problems"]]
-    out += [("SCHEMA_PENDING", f"{i[:12]} {x['name']}: backed by {x['backed_by']}") for i, x in rep["schemas_pending"].items()]
-    return out
+    return out          # a schema awaiting backers (schemas_pending) is a proposal, not a problem: no claim rests on it
 
 
 def check(repo):

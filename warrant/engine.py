@@ -97,8 +97,8 @@ class View:
         self._index_attests()
         ents = {i for i, r in self.recs.items() if r["kind"] == "entity"}
         self.root_of, self.lineages = self._lineages(ents, self._may_succeed)
-        self._guards, self._effective = {}, {}
         self._requires_depth()
+        self._guards, self._effective = self._resolve()
 
     def _index_attests(self):
         self.attests = {}
@@ -156,17 +156,17 @@ class View:
     # -- schemas (§4)
 
     def _schemas(self):
-        self.schemas, cand = {}, {}
-        for i, r in self.recs.items():
+        self.schemas, self.pending, cand = {}, [], {}
+        for i, r in sorted(self.recs.items()):
             if r["kind"] == "schema":
                 why = _schema_problem(r["body"])
-                backers = self.backers(i)
-                if why or len(backers) < self.quorum("schema/author"):
-                    self.problem("SCHEMA_NOT_COUNTED", i, why or f"{len(backers)} of the {self.quorum('schema/author')} "
-                                 f"schema/author actors stand behind it: {', '.join(backers) or 'none'}")
-                    continue
-                cand[i] = r
-        _, lins = self._lineages(set(cand), lambda r, root: r["actor"] == root["actor"])
+                if why:
+                    self.problem("SCHEMA_NOT_COUNTED", i, why)
+                elif len(self.backers(i)) < self.quorum("schema/author"):
+                    self.pending.append(i)          # waits for backers (schemas_pending): not a problem of the store
+                else:
+                    cand[i] = r
+        self.schema_root, lins = self._lineages(set(cand), lambda r, root: r["actor"] == root["actor"])
         by_name = {}
         for root, lin in lins.items():
             if lin["leaf"] is None:
@@ -183,14 +183,18 @@ class View:
         return self.profile.get("quorum", {}).get(role, 1)
 
     def backers(self, i):
-        """The schema/author actors behind schema record i: its filer and each that attests it with accept."""
-        out = {self.recs[a]["actor"] for a in self.attests.get(i, []) if self.recs[a]["body"].get("verdict") == "accept"}
+        """The schema/author actors behind schema record i: its filer and each that attests it with accept. Only an
+        attest without a schema counts: it is admitted whatever the schemas are, so none that the body check
+        drops later (INVALID) stands behind a schema, and no schema rests on a record read under a schema."""
+        out = {self.recs[a]["actor"] for a in self.attests.get(i, [])
+               if self.recs[a]["schema"] is None and self.recs[a]["body"].get("verdict") == "accept"}
         out.add(self.recs[i]["actor"])
         return sorted(a for a in out if self.holds(a, "schema/author"))
 
     def _bodies(self):
         for i, r in sorted(self.recs.items()):
-            if r["kind"] == "schema" or (r["schema"] is None and r["kind"] != "entity") or r["schema"] == R.MIGRATION:
+            # migration@1 is the migration's attest alone (§9); no counted schema bears the name, so any other record of it is INVALID
+            if r["kind"] == "schema" or (r["schema"] is None and r["kind"] != "entity") or (r["schema"] == R.MIGRATION and r["kind"] == "attest"):
                 continue
             s = self.schemas.get(r["schema"])
             why = f"schema {r['schema']!r} is not one this receiver counts" if s is None else _body_problem(r, s)
@@ -251,10 +255,10 @@ class View:
     # -- guards (§6)
 
     def _requires_depth(self):
-        """Refuse the store (§8) when a chain of lineages requiring lineages is longer than LIMITS["requires"]:
-        guards are resolved depth first, in process, and the bound keeps that off the interpreter's stack. The
-        depth is the structure's (every version's requires, cycles cut), so it does not depend on the order in
-        which versions are evaluated. Computed without recursion."""
+        """Refuse the store (§8) when a chain of lineages requiring lineages is longer than LIMITS["requires"]: a
+        bound on the input, as the other limits are (guards are resolved without recursion, _resolve). The depth is
+        the structure's (every version's requires, cycles cut), so it does not depend on the order in which
+        versions are evaluated. Computed without recursion."""
         deps = {L: sorted({x for v in lin["versions"] for x in (self.recs[v]["guard"] or {}).get("requires", [])
                            if x in self.lineages}) for L, lin in self.lineages.items()}
         depth = {}
@@ -279,29 +283,59 @@ class View:
     def schema_of(self, i):
         return self.schemas[self.recs[i]["schema"]]
 
+    def _resolve(self):
+        """Every version's guard (§6) and every lineage's effective version (§3), at once and without recursion.
+        Rule 2 is a least fixpoint: a version closing with requires starts unmet, and is met only once each lineage
+        it requires has a closing effective version met before it; the met set only grows, until nothing changes.
+        Nothing depends on the order of record ids, and a cycle of requires that nothing outside it closes stays
+        PENDING (a version never satisfies what requires it through itself)."""
+        part, closing = {}, {}
+        for v in sorted(self.root_of):
+            r, g = self.recs[v], self.recs[v]["guard"]
+            acc, waiting = [], []
+            if g is not None:
+                acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
+                              if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
+                              and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
+                if len(acc) < g["quorum"]:
+                    waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
+            part[v] = (acc, waiting)
+            if r["body"].get("state") in self.schema_of(v).get("closed", []):       # with or without a guard (Codex #3)
+                closing[v] = self.requires(v)
+        users, short = {}, {}
+        for v, ls in closing.items():
+            short[v] = len(ls)
+            for L in ls:
+                users.setdefault(L, []).append(v)
+        met = {v for v, (_, waiting) in part.items() if not waiting and not short.get(v)}
+        at = {v: n for lin in self.lineages.values() for n, v in enumerate(lin["path"])}
+        eff = {L: next((v for v in reversed(lin["path"]) if v in met), None) for L, lin in self.lineages.items()}
+        # Only closing versions join `met` from here on, so a lineage once closed stays closed: each closes once.
+        shut, todo = set(), sorted(eff)
+        while todo:
+            L = todo.pop()
+            if L in shut or eff[L] is None or self.recs[eff[L]]["body"].get("state") not in self.schema_of(L).get("closed", []):
+                continue
+            shut.add(L)
+            for u in users.get(L, []):
+                short[u] -= 1
+                if short[u] == 0 and not part[u][1]:
+                    met.add(u)
+                    U = self.root_of[u]
+                    if u in at and (eff[U] is None or at[u] > at[eff[U]]):
+                        eff[U] = u
+                        todo.append(U)
+        guards = {}
+        for v, (acc, waiting) in part.items():
+            g = self.recs[v]["guard"]
+            still_open = [L for L in closing.get(v, []) if L not in shut]
+            waiting = waiting + [f"requires {L} closed" for L in still_open]
+            guards[v] = {"guard": PENDING if waiting else NONE if g is None else MET, "waiting": waiting, "accepted_by": acc,
+                         "roles": g["roles"] if g else [], "short": max(0, g["quorum"] - len(acc)) if g else 0, "open": still_open}
+        return guards, eff
+
     def guard(self, v):
-        if v in self._guards:
-            return self._guards[v]
-        self._guards[v] = {"guard": PENDING, "waiting": ["a requires cycle"], "accepted_by": [], "roles": [], "short": 0,
-                           "open": [v]}         # while in progress
-        r, g = self.recs[v], self.recs[v]["guard"]
-        acc, waiting, still_open = [], [], []
-        if g is not None:
-            acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
-                          if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
-                          and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
-            if len(acc) < g["quorum"]:
-                waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
-        if r["body"].get("state") in self.schema_of(v).get("closed", []):       # with or without a guard (Codex #3)
-            for L in self.requires(v):
-                eff = self.effective(L) if L in self.lineages else None
-                if eff is None or self.recs[eff]["body"].get("state") not in self.schema_of(L).get("closed", []):
-                    waiting.append(f"requires {L} closed")
-                    still_open.append(L)
-        out = {"guard": PENDING if waiting else NONE if g is None else MET, "waiting": waiting, "accepted_by": acc,
-               "roles": g["roles"] if g else [], "short": max(0, g["quorum"] - len(acc)) if g else 0, "open": still_open}
-        self._guards[v] = out
-        return out
+        return self._guards[v]
 
     def requires(self, v):
         out, cur = set(), v
@@ -311,10 +345,6 @@ class View:
         return sorted(out)
 
     def effective(self, L):
-        if L not in self._effective:
-            self._effective[L] = None
-            path = self.lineages[L]["path"]
-            self._effective[L] = next((v for v in reversed(path) if self.guard(v)["guard"] in (NONE, MET)), None)
         return self._effective[L]
 
     # -- challenges (§5)
@@ -370,9 +400,8 @@ class View:
                 "duplicates": sorted(i for i, e in self.snap.lines.items() if len(e) > 1 and i in self.recs),
                 "chains": {"forks": self.chain_forks, "unanchored": self.unanchored},
                 "schemas": {n: s["id"] for n, s in sorted(self.schemas.items())},
-                "schemas_pending": {i: {"name": r["body"].get("name"), "backed_by": self.backers(i), "need": self.quorum("schema/author")}
-                                    for i, r in sorted(self.recs.items()) if r["kind"] == "schema"
-                                    and len(self.backers(i)) < self.quorum("schema/author")},
+                "schemas_pending": {i: {"name": self.recs[i]["body"]["name"], "backed_by": self.backers(i),
+                                        "need": self.quorum("schema/author")} for i in self.pending},
                 "lineages": lineages, "versions": versions, "challenges": challenges,
                 "problems": sorted(self.problems), "graph": self.graph()}
 
