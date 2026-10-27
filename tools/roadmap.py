@@ -16,7 +16,7 @@ challenged by it (tools/gate.py due_for, the same rule the merge gate admits a v
 import argparse
 import sys
 
-from repo import Failed, Repo, dump, env_root, load_key, main
+from repo import Failed, Repo, dump, env_root, inside, load_key, main
 
 from gate import due_for
 from warrant import records as R
@@ -123,9 +123,9 @@ def run(argv=None):
     if a.cmd == "view":
         text = view(rep)
         if a.out:
-            from pathlib import Path
-            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-            Path(a.out).write_text(text)
+            out = inside(a.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text)
         else:
             sys.stdout.write(text)
         return 0

@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo import ROOT, Failed, Repo, dump, identity, load_key, main, tree_id
+from repo import ROOT, Failed, Repo, dump, identity, inside, load_key, main, tree_id
 
 from warrant import records as R
 
@@ -231,8 +231,9 @@ def run(argv=None):
     if a.cmd == "view":
         text = view(repo.report())
         if a.out:
-            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-            Path(a.out).write_text(text)
+            out = inside(a.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text)
         else:
             sys.stdout.write(text)
         return 0
@@ -240,7 +241,7 @@ def run(argv=None):
     if a.cmd == "replay":
         dump({"filed": replay(repo, key)})
     elif a.cmd == "file":
-        dump({"filed": file_claims(repo, a.actor, key, json.loads(Path(a.src).read_text()))})
+        dump({"filed": file_claims(repo, a.actor, key, json.loads(inside(a.src).read_text()))})
     else:
         dump({"filed": retire_v2(repo, a.actor, key)})
     return 0

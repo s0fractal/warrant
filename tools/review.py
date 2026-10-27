@@ -27,11 +27,10 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
-from repo import Failed, Repo, dump, env_root, identity, load_key, main
+from repo import Failed, Repo, dump, env_root, identity, inside, load_key, main
 
 import gate as GT
 from warrant import records as R
@@ -53,7 +52,7 @@ def lineage_of(rep, repository, n):
 
 
 def git(root, *a):
-    return subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, check=True).stdout.strip()
+    return GT.git(root, *a).decode().strip()
 
 
 # ---------------------------------------------------------------- the replay checker
@@ -72,22 +71,19 @@ def finding_test(body):
 
 def run_test(root, file, case, patch):
     """The verdict of a finding's test in the checkout `root`: the patch applied, the file run once, removed."""
-    with tempfile.NamedTemporaryFile("w", suffix=".patch", delete=False, dir=os.environ.get("TMPDIR")) as f:
-        f.write(patch)
+    try:                         # the patch on standard input: no file of it anywhere
+        GT.git(root, "apply", "--check", "-", stdin=patch.encode())
+    except subprocess.CalledProcessError:
+        return "does_not_apply"
+    GT.git(root, "apply", "-", stdin=patch.encode())
     try:
-        if subprocess.run(["git", "-C", str(root), "apply", "--check", f.name], capture_output=True).returncode:
-            return "does_not_apply"
-        subprocess.run(["git", "-C", str(root), "apply", f.name], capture_output=True, check=True)
-        try:
-            r = subprocess.run([sys.executable, "-B", f"tests/{file}.py"], cwd=root, capture_output=True, text=True,
-                               timeout=RUN_SECONDS, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
-            out = r.stdout + r.stderr
-        except subprocess.TimeoutExpired:
-            out = ""
-        finally:
-            (Path(root) / "tests" / f"{file}.py").unlink(missing_ok=True)
+        r = subprocess.run([sys.executable, "-B", f"tests/{file}.py"], cwd=root, capture_output=True, text=True,
+                           timeout=RUN_SECONDS, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        out = r.stdout + r.stderr
+    except subprocess.TimeoutExpired:
+        out = ""
     finally:
-        os.unlink(f.name)
+        (Path(root) / "tests" / f"{file}.py").unlink(missing_ok=True)
     lines = [x.split() for x in out.splitlines()]
     if any(x[:2] == ["FAIL", case] for x in lines):
         return "reproduces"
@@ -169,13 +165,15 @@ def verify(repo, base):
             bad.append(f"{i[:12]}: its finding has no test")
             continue
         n += 1
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
-            wt = Path(d) / "wt"
-            git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), r["body"]["commit"])
-            try:
-                got = run_test(wt, *test)
-            finally:
-                git(repo.root, "worktree", "remove", "--force", str(wt))
+        wt = Path(repo.root) / "build" / f"verify-{os.getpid()}-{i[:12]}"      # the checkout's own scratch, ignored
+        if not S.hex_of(r["body"].get("commit"), 40):
+            bad.append(f"{i[:12]}: names no commit")
+            continue
+        git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), r["body"]["commit"])
+        try:
+            got = run_test(wt, *test)
+        finally:
+            git(repo.root, "worktree", "remove", "--force", str(wt))
         if got != r["body"]["verdict"]:
             bad.append(f"{i[:12]}: says {r['body']['verdict']}, re-executed {got}")
     if bad:
@@ -267,8 +265,9 @@ def run(argv=None):
     if a.cmd == "view":
         text = view(rep)
         if a.out:
-            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
-            Path(a.out).write_text(text)
+            out = inside(a.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text)
         else:
             sys.stdout.write(text)
         return 0

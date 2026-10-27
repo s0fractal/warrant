@@ -43,6 +43,7 @@ The gate (`gate`) merges at most one eligible pull request per run, reading the 
 branch again just before (TOCTOU), giving GitHub the assessed head (it refuses the merge when the head
 moved), and then dispatches the required workflows on the base branch (a GITHUB_TOKEN merge starts none)."""
 import json
+import os
 import re
 import subprocess
 from pathlib import PurePosixPath
@@ -76,8 +77,19 @@ class Refused(Exception):
 
 # ---------------------------------------------------------------- Git data
 
+# The only options any caller passes; every other argument is an operand and may not look like an option.
+GIT_OPTIONS = {"-r", "-z", "-l", "-q", "-C", "-n", "--quiet", "--verify", "--end-of-options", "--full-tree", "--no-renames",
+               "--no-commit-id", "--name-only", "--is-ancestor", "--batch", "--no-tags", "--detach", "--force", "--check",
+               "--parents", "-", "--"}
+
+
 def git(root, *args, stdin=None):
-    r = subprocess.run(["git", "-C", str(root), *args], input=stdin, capture_output=True, check=False)
+    """Git at `root`, refused when an argument that is no known option starts with "-" (a ref, a path or a remote
+    named by a caller must never be read as an option)."""
+    bad = [a for a in args if str(a).startswith("-") and a not in GIT_OPTIONS]
+    if bad:
+        raise Refused(f"git arguments that look like options: {bad[:3]}", "GATE_INPUT")
+    r = subprocess.run(["git", "-C", os.path.realpath(root), *map(str, args)], input=stdin, capture_output=True, check=False)
     if r.returncode:
         raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
     return r.stdout
@@ -761,8 +773,12 @@ def cmd_due(root, base, as_json_=False, remote="origin", gh=None):
 
 
 def _append(path, text):
+    """Append to the job summary: a file of the runner's own (RUNNER_TEMP) or of the current directory."""
     if path:
-        with open(path, "a", encoding="utf-8") as f:
+        real = os.path.realpath(path)
+        if not any(real.startswith(os.path.realpath(b) + os.sep) for b in filter(None, (os.environ.get("RUNNER_TEMP"), os.getcwd()))):
+            raise Refused(f"{path}: the summary is a file of the runner's temporary directory or of the current one", "GATE_INPUT")
+        with open(real, "a", encoding="utf-8") as f:
             f.write(text)
 
 

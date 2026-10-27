@@ -70,6 +70,14 @@ class Repo:
         return self.store.extend([dict(r, actor=actor, at=at, prev=None) for r in records], key, trust, expect_head=h["id"] or "")
 
 
+def inside(path, root=ROOT):
+    """The real path of a file a tool reads or writes on an operator's word, refused unless it lies in the checkout."""
+    real, base = os.path.realpath(path), os.path.realpath(root)
+    if not real.startswith(base + os.sep):
+        raise Failed("PATH", f"{path}: a tool reads and writes files of the checkout only")
+    return Path(real)
+
+
 def load_key(arg):
     """A seed from standard input ("-") or a file outside the repository."""
     if arg == "-":

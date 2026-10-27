@@ -94,7 +94,10 @@ def main(argv=None):
             out = {"public": k.public}
         elif a.cmd == "trust":           # bind the seed's public key to an actor in a trust/3 file (created if absent)
             key = K.Key.from_seed_hex(Path(home(a.key)).read_text())
-            path = Path(here(a.trust))
+            name = os.path.basename(a.trust)        # a trust file of the current directory, by its name alone
+            if name != a.trust or name in ("", ".", ".."):
+                raise Refused("--trust names a file of the current directory")
+            path = Path(os.getcwd(), name)
             doc = json.loads(path.read_text()) if path.exists() else {"warrant": "trust/3", "keys": {}}
             doc["keys"][a.actor] = sorted(set(doc["keys"].get(a.actor, [])) | {key.public})
             why = E.trust_problem(doc)

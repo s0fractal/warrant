@@ -71,7 +71,7 @@ jobs:
 
       - name: Lint (pyflakes rules)
         run: |
-          python -m pip install --quiet 'ruff==0.17.3'
+          python -m pip install --quiet --only-binary ':all:' 'ruff==0.17.3'
           python -m ruff check --select F warrant warrant_agent warrant_pilot tools tests integrations/codex-plugin
 
       - name: The core, the agent interface, the merge gate, the tools
