@@ -1892,6 +1892,9 @@ def _visit(view, did, report, done, busy):
     ('M707', '../tools/graph.py', "a symlink is hashed by its link text only, not the bytes it leads to (Codex 6ff8280a91ea)",
      [('os.readlink(f).encode() + b"\\0" + _referent(f)', 'os.readlink(f).encode()')],
      'graph_tools_test', ['Z33']),
+    ('M708', '../tools/graph.py', "impact classes a removed duty by the head's store only, where it is no obligation (Codex ed4a4e636842)",
+     [('    cls = {**classes(root, snapshot(root, base), trust), **classes(root, snapshot(root, head), trust)}', '    cls = classes(root, snapshot(root, head), trust)')],
+     'graph_tools_test', ['Z18']),
     # The waker publishes the verdict Codex prepared; a wake is done only when it reached GitHub (#210).
     ('M710', '../integrations/codex-plugin/waker/waker.py', "an attempt that exited 0 and left no verdict to publish is done: Codex is never woken again",
      [('        if last.get("exit") == 0 and not last.get("unpublished"):\n            return "done"',
