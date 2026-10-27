@@ -249,7 +249,7 @@ def store_cases():
         chain.report()
         ok = False
     except R.Invalid as e:
-        ok = "requires nest deeper" in str(e)
+        ok = "require lineages" in str(e)
     except RecursionError:
         ok = False
     check("T11 requires nested beyond the limit refuse the store, never exhaust the stack", ok)
@@ -270,6 +270,11 @@ def store_cases():
 
 def chain_cases():
     w = World()
+    one = World()
+    ids = [one.put("bob", "attest", {"target": f"{n:02x}" * 32, "verdict": "x"}, refs=[f"{n:02x}" * 32], at=500)
+           for n in range(6)]
+    check("K2 the head follows the chain through records filed in one second", E.head(Snapshot(one.lines, {}), one.trust, "bob")["id"] == ids[-1],
+          E.head(Snapshot(one.lines, {}), one.trust, "bob"))
     w.put("bob", "attest", {"target": "ab" * 32, "verdict": "x"}, refs=["ab" * 32])
     w.heads["bob"] = None
     w.put("bob", "attest", {"target": "cd" * 32, "verdict": "y"}, refs=["cd" * 32])

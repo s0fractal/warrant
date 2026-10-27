@@ -12,6 +12,13 @@ from . import records as R
 from .store import LIMITS
 
 NONE, MET, PENDING = "NONE", "MET", "PENDING"
+# Every word a report answers with, for the agent's glossary (warrant_agent/glossary.py is held to these).
+GUARDS = (NONE, MET, PENDING)
+RELIANCE = ("ELIGIBLE", "PENDING", "CHALLENGED", "FORK")
+BASES = ("SIGNED", "MIGRATED")
+PROBLEMS = ("INVALID", "LINEAGE_BACKDATED", "LINEAGE_BROKEN", "LINEAGE_NOT_AUTHOR", "MIGRATION_MAP", "SCHEMA_CONFLICT",
+            "SCHEMA_NOT_COUNTED")
+REJECTIONS = ("line", "BAD_SIGNATURE", "UNSIGNED", "INVALID")
 REPLAY = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
 _CODE = []
 
@@ -67,11 +74,9 @@ def head(snap, trust, actor):
     """The writer's head (§7): the latest of the actor's chained signed records no other names."""
     recs, basis, _, _ = _authentic(snap, trust, None, only=actor)
     mine = {i: r for i, r in recs.items() if basis[i] == "SIGNED"}
-    chained, named = set(), {r["prev"] for r in mine.values()}
-    for i in sorted(mine, key=lambda i: mine[i]["at"]):
-        p = mine[i]["prev"]
-        if p is None or (p in chained and mine[p]["at"] <= mine[i]["at"]):
-            chained.add(i)
+    named = {r["prev"] for r in mine.values()}
+    # Chained as §7 says, by the links themselves: records of one second follow their chain, never their time.
+    chained = {i for i, r in mine.items() if r["prev"] is None or (r["prev"] in mine and mine[r["prev"]]["at"] <= r["at"])}
     tips = sorted((mine[i]["at"], i) for i in chained if i not in named)
     return {"id": tips[-1][1], "at": tips[-1][0]} if tips else {"id": None, "at": None}
 
@@ -93,7 +98,8 @@ class View:
         self._index_attests()
         ents = {i for i, r in self.recs.items() if r["kind"] == "entity"}
         self.root_of, self.lineages = self._lineages(ents, self._may_succeed)
-        self._guards, self._effective, self._depth = {}, {}, 0
+        self._guards, self._effective = {}, {}
+        self._requires_depth()
 
     def _index_attests(self):
         self.attests = {}
@@ -245,15 +251,42 @@ class View:
 
     # -- guards (§6)
 
+    def _requires_depth(self):
+        """Refuse the store (§8) when a chain of lineages requiring lineages is longer than LIMITS["requires"]:
+        guards are resolved depth first, in process, and the bound keeps that off the interpreter's stack. The
+        depth is the structure's (every version's requires, cycles cut), so it does not depend on the order in
+        which versions are evaluated. Computed without recursion."""
+        deps = {L: sorted({x for v in lin["versions"] for x in (self.recs[v]["guard"] or {}).get("requires", [])
+                           if x in self.lineages}) for L, lin in self.lineages.items()}
+        depth = {}
+        for start in sorted(deps):
+            if start in depth:
+                continue
+            stack, on = [(start, iter(deps[start]))], {start}
+            while stack:
+                node, it = stack[-1]
+                nxt = next(it, None)
+                if nxt is None:
+                    stack.pop()
+                    on.discard(node)
+                    depth[node] = 1 + max((depth[c] for c in deps[node] if c in depth), default=0)
+                elif nxt not in depth and nxt not in on:
+                    on.add(nxt)
+                    stack.append((nxt, iter(deps[nxt])))
+        if max(depth.values(), default=0) > LIMITS["requires"]:
+            raise R.Invalid(f"store beyond limits: lineages require lineages {max(depth.values())} deep, "
+                            f"more than {LIMITS['requires']}")
+
     def schema_of(self, i):
         return self.schemas[self.recs[i]["schema"]]
 
     def guard(self, v):
         if v in self._guards:
             return self._guards[v]
-        self._guards[v] = {"guard": PENDING, "waiting": ["a requires cycle"], "accepted_by": []}   # while in progress
+        self._guards[v] = {"guard": PENDING, "waiting": ["a requires cycle"], "accepted_by": [], "roles": [], "short": 0,
+                           "open": [v]}         # while in progress
         r, g = self.recs[v], self.recs[v]["guard"]
-        acc, waiting = [], []
+        acc, waiting, still_open = [], [], []
         if g is not None:
             acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
                           if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
@@ -265,7 +298,9 @@ class View:
                 eff = self.effective(L) if L in self.lineages else None
                 if eff is None or self.recs[eff]["body"].get("state") not in self.schema_of(L).get("closed", []):
                     waiting.append(f"requires {L} closed")
-        out = {"guard": PENDING if waiting else NONE if g is None else MET, "waiting": waiting, "accepted_by": acc}
+                    still_open.append(L)
+        out = {"guard": PENDING if waiting else NONE if g is None else MET, "waiting": waiting, "accepted_by": acc,
+               "roles": g["roles"] if g else [], "short": max(0, g["quorum"] - len(acc)) if g else 0, "open": still_open}
         self._guards[v] = out
         return out
 
@@ -279,14 +314,8 @@ class View:
     def effective(self, L):
         if L not in self._effective:
             self._effective[L] = None
-            # Lineages that require lineages are resolved depth first, in process: a nesting beyond the limit
-            # refuses the store (§8) instead of exhausting the interpreter's stack.
-            self._depth += 1
-            if self._depth > LIMITS["requires"]:
-                raise R.Invalid(f"store beyond limits: requires nest deeper than {LIMITS['requires']}")
             path = self.lineages[L]["path"]
             self._effective[L] = next((v for v in reversed(path) if self.guard(v)["guard"] in (NONE, MET)), None)
-            self._depth -= 1
         return self._effective[L]
 
     # -- challenges (§5)

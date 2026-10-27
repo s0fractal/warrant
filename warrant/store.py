@@ -1,5 +1,6 @@
 """The store (docs/V3.md §8): `records.jsonl`, one canonical line per record, and `blobs/<sha256>`.
 Read in any order with duplicates (union merge); written in canonical order (distinct lines by id)."""
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -98,36 +99,56 @@ class Store:
         return h
 
     def snapshot(self):
-        raw = self.file.read_bytes() if self.file.exists() else b""
-        lines = [x + b"\n" for x in raw.split(b"\n") if x]
+        lines = self.lines()
         blobs = {p.name: p.read_bytes() for p in sorted(self.blobs.iterdir())} if self.blobs.is_dir() else {}
         bad = [h for h, b in blobs.items() if hashlib.sha256(b).hexdigest() != h]
         if bad:
             raise Refused(f"blobs not named by their hash: {bad[:3]}")
         return Snapshot(lines, blobs)
 
+    @contextlib.contextmanager
+    def locked(self):
+        """The writers' exclusive lock: on the store directory, not on records.jsonl, whose file every write
+        replaces (a lock on a replaced file would let a waiting writer append to an unlinked one)."""
+        fd = os.open(self.root, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+
+    def lines(self):
+        raw = self.file.read_bytes() if self.file.exists() else b""
+        return [x + b"\n" for x in raw.split(b"\n") if x]
+
     def append(self, r, key, trust, expect_head=None):
         """File `r` signed by `key` as the next record of its actor's chain (§7): prev is the actor's
-        head under an exclusive lock; with expect_head, refused unless the head is that id."""
+        head under the writers' lock; with expect_head, refused unless the head is that id ("": the actor
+        has no signed record yet). The file is rewritten in canonical order."""
         from .engine import head
-        with open(self.file, "ab") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
+        with self.locked():
             h = head(self.snapshot(), trust, r["actor"])
-            if expect_head is not None and h["id"] != expect_head:
+            if expect_head is not None and (h["id"] or "") != expect_head:
                 raise Refused(f"CHAIN_MOVED: the head of {r['actor']} is {h['id']}")
             if h["at"] is not None and r["at"] < h["at"]:
                 raise Refused(f"at {r['at']} is before the actor's head ({h['at']})")
             r = dict(r, prev=h["id"])
             R.check(r)
             i, data = R.line(r, key)
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
+            self.write_lines(self.lines() + [data])
         return i
 
+    def add_lines(self, lines):
+        """Add lines as they are (an import, a union): under the writers' lock, in canonical order."""
+        with self.locked():
+            self.write_lines(self.lines() + list(lines))
+
     def write_lines(self, lines):
-        """Replace the file with `lines` in canonical order (fmt, migration)."""
+        """Replace the file with `lines` in canonical order (fmt, append, add_lines), durably."""
         out = b"".join(sorted(set(lines), key=_line_id))
-        tmp = self.file.with_name(f".records.{os.getpid()}")
-        tmp.write_bytes(out)
+        fd, tmp = tempfile.mkstemp(prefix=".records.", dir=self.root)
+        with os.fdopen(fd, "wb") as f:
+            f.write(out)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, self.file)

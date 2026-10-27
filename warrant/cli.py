@@ -93,7 +93,7 @@ def main(argv=None):
             out = {"blob": Store(here(a.store)).put_blob(Path(here(a.file)).read_bytes())}
         elif a.cmd == "fmt":
             s = Store(here(a.store))
-            s.write_lines([x + b"\n" for x in s.file.read_bytes().split(b"\n") if x])
+            s.add_lines([])
             out = {"canonical": True}
         else:
             rep = E.assess(Store(here(a.store)).snapshot(), json.loads(Path(here(a.trust)).read_text()),
