@@ -1,1 +1,0 @@
-{"because":null,"duty":"eea2e453e4fdac1fedf797e5374693db3668e24abed5d96a8b8b32ad398e688c","id":"SPEC-4.7-1","kind":"normative","mutants":["M100"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.7","source":"SPEC.md","text":"A transition may supersede earlier transitions' results.","witnesses":["contract_test:S1"]}

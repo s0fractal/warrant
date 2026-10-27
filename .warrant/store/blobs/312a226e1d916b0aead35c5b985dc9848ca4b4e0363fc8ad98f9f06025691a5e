@@ -1,1 +1,0 @@
-{"because":null,"duty":"8e6e0985a19ddc47ce554364e73056cbd1d0e1c2dac5ba4d23966d256f2ed13e","id":"SPEC-3-5","kind":"normative","mutants":["M188"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3","source":"SPEC.md","text":"Its id is `sha256(canon(record))`.","witnesses":["records_test:K2"]}

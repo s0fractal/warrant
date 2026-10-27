@@ -1,1 +1,0 @@
-for `revalidate`: every transition in `revalidates` is an admitted closure of D whose **admission position** is strictly before this item's admission position.

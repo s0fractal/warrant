@@ -1,1 +1,0 @@
-A record without `prev` is **unchained**: it is valid, and no chain orders it; every record filed before chains is one.

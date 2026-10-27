@@ -1,1 +1,0 @@
-The signature is Ed25519 (RFC 8032, cofactorless; small-order and non-canonical public keys rejected) over the 47 bytes `"warrant-sig-v1:" || id_raw`, where `id_raw` is the 32-byte id.

@@ -1,1 +1,0 @@
-`RESOURCE_LIMIT` for an engine admission limit (§9) carries `details: {limit, value, bound}`; no view is kept and no verdict is produced.

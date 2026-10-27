@@ -1,1 +1,0 @@
-A scheduled duty is `SCHEDULED` (or `RELEASED`) and has, for every period n whose start `start + n·every ≤ as_of`: `COVERED` (a discharge for n is admitted), `OPEN` (the period has not ended) or `LAPSED` (it ended uncovered).

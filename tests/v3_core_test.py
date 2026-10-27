@@ -231,6 +231,28 @@ def store_cases():
     forged["sig"]["ed25519"] = "00" * 64
     one = E.assess(Snapshot(w.lines[:-1] + [C.canon(forged) + b"\n"], {}), w.trust, {"warrant": "profile/3", "roles": w.roles})
     check("T6 a bad signature rejects the record", c in one["rejected"])
+    deep = b'{"record":' + b"[" * 30000 + b"]" * 30000 + b',"sig":null}\n'
+    try:
+        snap = Snapshot([deep] + w.lines + [w.lines[0]], {})
+        rep = E.assess(snap, w.trust, {"warrant": "profile/3", "roles": w.roles})
+        ok = len(rep["rejected"]) == 1 and c in rep["versions"] and not rep["canonical"]
+    except RecursionError:
+        ok = False
+    check("T9 a line nested too deep to parse is listed, never aborts the read (nor the canonical order check)", ok)
+    check("T10 an identical duplicate line is counted once", rep["basis"]["SIGNED"] == base["basis"]["SIGNED"]
+          and c not in rep["duplicates"], rep["basis"])
+    chain, prev = World(), None
+    for n in range(200):         # each obligation's `done` requires the previous one's lineage
+        prev = chain.put("alice", "entity", {"state": "done", "statement": f"o{n}", "serves": []}, "obligation@1",
+                         guard=R.guard(1, ["roadmap/acceptor"], {"verdict": "accept"}, [prev] if prev else []))
+    try:
+        chain.report()
+        ok = False
+    except R.Invalid as e:
+        ok = "requires nest deeper" in str(e)
+    except RecursionError:
+        ok = False
+    check("T11 requires nested beyond the limit refuse the store, never exhaust the stack", ok)
     with tempfile.TemporaryDirectory() as d:
         st = Store(d).init()
         k = w.keys["alice"]

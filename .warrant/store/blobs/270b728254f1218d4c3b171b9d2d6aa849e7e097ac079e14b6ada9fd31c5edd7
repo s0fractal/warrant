@@ -1,1 +1,0 @@
-{"because":null,"duty":"d573fb44c5f288868d92659d85abb313791696f2811f5505eae4854bff26ca31","id":"SPEC-10.1-14","kind":"normative","mutants":[],"previous":null,"reason":"no case reads the tools' annotations","schema":"warrant-claims/claim@1","section":"10.1","source":"SPEC.md","text":"Read-only tools are annotated `readOnlyHint`.","witnesses":[]}

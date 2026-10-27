@@ -1,1 +1,0 @@
-A view token is 32 lowercase hex digits; it selects a view of its own workspace and grants nothing, and a token no view of that workspace has is `VIEW_UNKNOWN`.

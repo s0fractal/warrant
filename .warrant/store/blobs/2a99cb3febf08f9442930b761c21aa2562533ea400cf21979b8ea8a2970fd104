@@ -1,1 +1,0 @@
-A view's tree carries the store's misfiled entries as a store read reports them, so a store holding a file that is neither a record nor a blob is assessed, not refused.

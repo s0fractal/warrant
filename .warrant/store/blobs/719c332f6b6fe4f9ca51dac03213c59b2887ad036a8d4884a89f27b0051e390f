@@ -1,1 +1,0 @@
-A draft's status, `PREPARED` or `COMMITTED`, is read by a new request (`read` with `kind: draft`) from any server instance, and a cancelled request is not rolled back.

@@ -1,1 +1,0 @@
-It is `WRONG_SOURCE` when the manifest names another source than the expectation, `WRONG_SET` when it is another manifest than the expected one, and `UNVERIFIED_EXPORTER` when no declaration by the exporter the expectation names verifies under the receiver's trust.

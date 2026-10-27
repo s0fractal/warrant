@@ -1,1 +1,0 @@
-{"because":null,"duty":"af063d79458a2545475f6e48dfda18522a8ac317efb7672c16a08172ed4b3d86","id":"SPEC-4.2-5","kind":"normative","mutants":["M67"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.2","source":"SPEC.md","text":"`attest`: basis `ATTESTED`;","witnesses":["assessment_test:R5","contract_test:A2"]}

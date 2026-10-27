@@ -1,1 +1,0 @@
-{"because":null,"duty":"f0145839aec6a8d58de1e8610e933d91f60521e2a6771bc7bbf9f14eac159c26","id":"SPEC-4.6-1","kind":"normative","mutants":["M17"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.6","source":"SPEC.md","text":"The recipient's profile is its own choice, never inferred from records:","witnesses":["contract_test:I1"]}

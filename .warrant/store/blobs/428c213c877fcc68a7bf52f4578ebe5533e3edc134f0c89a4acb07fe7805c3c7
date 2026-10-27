@@ -1,1 +1,0 @@
-{"because":null,"duty":"6337844d65f7edd50fee7a5769129a3cbe80b95be237555370f23dcf6a030e86","id":"SPEC-4.1-7","kind":"normative","mutants":["M60"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.1","source":"SPEC.md","text":"Transfers are applied in order of effect position.","witnesses":["assessment_test:R1"]}

@@ -1,1 +1,0 @@
-{"because":null,"duty":"cddb84c2a6517ddc7e249463e5c9b63a6b3f92d983483c10278c8987ad72de3d","id":"SPEC-4.4-13","kind":"normative","mutants":["M56"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.4","source":"SPEC.md","text":"Who filed such a challenge does not matter: the probe ran again and disagreed.","witnesses":["conditions_test:K4"]}

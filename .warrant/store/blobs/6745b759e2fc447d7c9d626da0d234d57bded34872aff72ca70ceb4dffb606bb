@@ -1,1 +1,0 @@
-Not in this version, and refused rather than approximated: threshold (k-of-n) adoption, key rotation and revocation, P-256 signatures, `cmd@v1` and `ski@v1` checks, policy compilation (WPL), settlement tunnels, goals/commitments as distinct kinds, grants for acts other than `release`, revocation of grants.

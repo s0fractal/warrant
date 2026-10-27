@@ -1,1 +1,0 @@
-{"because":null,"duty":"26c0e51cc97b5ea2a49d66800d0beb8c95500d43f04949aaf817cad68fdb557f","id":"SPEC-7-11","kind":"normative","mutants":["M131"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"7","source":"SPEC.md","text":"A REPLAYED item cites one **receipt** blob:","witnesses":["compute_test:C22"]}

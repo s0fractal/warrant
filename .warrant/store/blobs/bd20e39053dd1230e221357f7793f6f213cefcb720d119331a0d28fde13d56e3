@@ -1,1 +1,0 @@
-A promotion re-checks the expectation's current definition, that an exporter the expectation names still verifies under the receiver's current trust, every staged record against the manifest's envelope digest, and, for a match, that the staged set is exactly the declared set.

@@ -12,7 +12,10 @@ from warrant import shapes as S
 
 from . import records as R
 
-LIMITS = {"records": 200_000, "bytes": 256 << 20, "refs": 4096, "depth": 4096}
+LIMITS = {"records": 200_000, "bytes": 256 << 20, "refs": 4096, "depth": 4096, "requires": 128}
+# A line that cannot be read as a record is listed under `rejected` and never aborts the read (§8), whatever
+# the reader raised on it (jcs refuses deep nesting itself; the tuple keeps a reader change from aborting).
+UNREADABLE = (R.Invalid, ValueError, TypeError, KeyError, RecursionError)
 
 
 class Refused(ValueError):
@@ -48,7 +51,7 @@ class Snapshot:
                 sig = env["sig"]
                 R.need(sig is None or (isinstance(sig, dict) and set(sig) == {"key", "ed25519"} and S.hex64(sig["key"])
                                        and S.hex128(sig["ed25519"])), "sig is null or {key, ed25519}")
-            except (R.Invalid, C.NotCanonical, ValueError) as e:
+            except UNREADABLE as e:
                 self.rejected[hashlib.sha256(raw).hexdigest()] = f"line: {e}"
                 continue
             self.lines.setdefault(R.rid(env["record"]), []).append(env)
@@ -70,7 +73,7 @@ class Snapshot:
 def _line_id(raw):
     try:
         return R.rid(json.loads(raw)["record"]), raw
-    except (ValueError, KeyError, TypeError):
+    except UNREADABLE:
         return "", raw
 
 

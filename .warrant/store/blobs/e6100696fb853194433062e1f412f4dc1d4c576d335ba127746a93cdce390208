@@ -1,1 +1,0 @@
-`IMPORT_INCOMPLETE`: an object is not in the store with its staged bytes after promotion; the journal stays `STARTED`, and a retry with the same request id completes it.

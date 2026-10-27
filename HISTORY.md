@@ -20,7 +20,23 @@ merge gate (`tools/review.py`, `tools/claimslib/eligibility.py`), and the record
 Its records were migrated, not re-signed: `.warrant/records.jsonl` holds every Warrant 2 record
 of `b37328b2` as Warrant 3 records with `sig: null`, vouched for by one `migration@1` attest of the
 migrator checker (docs/V3.md §9). The migrator, `tools/migrate_v2_to_v3.py`, depends on the
-Warrant 2 package and lives at the tag; its replay is run there.
+Warrant 2 package and lives at the tag; its replay is run there. Run on `b37328b2` with Python 3.15
+and cryptography 50.0.2, it gave the migrator checker `checker sha256:dd56e635…8826f` (the digest of
+its whole import closure, the interpreter and the signature library: another interpreter gives
+another actor), genesis `49ad1e41cc56…`, 1 446 migrated records and 1 459 lines with the six
+bootstrap schemas and Codex's six schema acceptances, and 473 blobs. Its replay, from a checkout of
+the tag with the same interpreter:
+
+```sh
+git worktree add ../warrant-2 history/warrant-2-2026-10-27 && cd ../warrant-2
+mkdir -p build/v3 && cp -R <switched checkout>/.warrant/records.jsonl <switched checkout>/.warrant/blobs build/v3/
+python3 tools/migrate_v2_to_v3.py verify       # IDENTICAL: 1446 replayed, v2 root 649172b24ab6…
+```
+
+`IDENTICAL` means only that the re-derived migrated ids equal the store's unsigned ids (docs/V3.md
+§9). The differential parity of the migrated store against the Warrant 2 tools, at the tag
+(`python3 tests/v3_parity_test.py`): claims 362/362, goals 12/12, obligations 49/49, reviews 19/19
+equal, none declared, none undeclared; two declared migration rules applied ("parallel closures").
 
 ## Warrant 0.x, retired 2026-10-18 by the Warrant 2 rebuild
 

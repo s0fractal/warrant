@@ -1,1 +1,0 @@
-{"because":null,"duty":"8f3414782044aa579f9e6183423f0accd81c13700a32d8b84bfd32b38e8b84d8","id":"SPEC-3.2-5","kind":"normative","mutants":["M222"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"established list of strings: what this transition establishes","witnesses":["records_test:T4"]}

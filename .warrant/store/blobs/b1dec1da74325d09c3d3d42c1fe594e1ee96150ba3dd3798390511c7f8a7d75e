@@ -1,1 +1,0 @@
-An object is added, never changed: bytes found under a name that do not hash to it are damage, and a capture replaces them only with the bytes that do.

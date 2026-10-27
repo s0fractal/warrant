@@ -1,1 +1,0 @@
-{"because":null,"duty":"5c9a92ad1f479da2c886ab81b3e15d0b7e912926d3b071d03c1115c6f3f2cddf","id":"SPEC-4.2-14","kind":"normative","mutants":["M10","M11"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.2","source":"SPEC.md","text":"`release` is admitted per §4.1.","witnesses":["contract_test:U1","contract_test:U5"]}

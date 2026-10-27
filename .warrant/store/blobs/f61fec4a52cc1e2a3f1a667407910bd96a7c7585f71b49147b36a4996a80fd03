@@ -1,1 +1,0 @@
-An empty trigger list is neutral: it is reported as `NONE_DECLARED`, never as "cannot be falsified".

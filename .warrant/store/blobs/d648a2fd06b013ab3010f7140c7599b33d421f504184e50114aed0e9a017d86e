@@ -1,1 +1,0 @@
-The worker assesses the pinned snapshot under the workspace's admission limits (§9): bytes a staged package adds past one are `RESOURCE_LIMIT`, and no view is kept.

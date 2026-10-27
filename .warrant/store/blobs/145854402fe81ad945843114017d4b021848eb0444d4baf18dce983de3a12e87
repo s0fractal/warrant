@@ -1,1 +1,0 @@
-{"because":null,"duty":"a89a8e4f5d02b7e3c92364785b109e9592ec5881605ba072cc6168cdc22ebe4a","id":"SPEC-3.1-5","kind":"normative","mutants":["M117","M205"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.1","source":"SPEC.md","text":"accept_by list of actors whose acceptance a closure needs","witnesses":["contract_test:A2","records_test:D4"]}

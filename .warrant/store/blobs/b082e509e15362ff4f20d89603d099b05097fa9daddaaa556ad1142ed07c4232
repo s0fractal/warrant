@@ -1,1 +1,0 @@
-{"because":null,"duty":"63197c3d0ef6331bbbb482a2c98c2b63a3c0fe292cfbfb6b5453bcd76a98634d","id":"SPEC-10.4-2","kind":"normative","mutants":["A46"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10.4","source":"SPEC.md","text":"An export root that is not a duty or a transition is `BAD_REQUEST`.","witnesses":["agent_mcp_test:M10"]}

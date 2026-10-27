@@ -1,1 +1,0 @@
-{"because":null,"duty":"448b61509f9ee11c774e283b9ea27ed9b260f3038cb7fcc5a95d6f8480c4e9f5","id":"SPEC-10.5-5","kind":"normative","mutants":["A52"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10.5","source":"SPEC.md","text":"An invalid body is `BAD_REQUEST` with `details.template`, the smallest body of its type.","witnesses":["agent_mcp_test:M13"]}

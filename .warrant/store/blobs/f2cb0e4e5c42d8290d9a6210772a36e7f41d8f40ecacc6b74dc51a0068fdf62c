@@ -1,1 +1,0 @@
-`init` writes no path through a symlink: every path it creates or writes, the ones derived from the state directory too, is checked by its real path before the first write and written by descriptors that do not follow links, and a configuration whose workspace state holds a symlink is refused when it loads.

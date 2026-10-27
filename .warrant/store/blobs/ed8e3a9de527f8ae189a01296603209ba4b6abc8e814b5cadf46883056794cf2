@@ -1,1 +1,0 @@
-{"because":null,"duty":"8d4d58f30a3863510cc05a986b1ddd2ebe04bdfd196773fd9b371a51a66ac47d","id":"SPEC-10.5-12","kind":"normative","mutants":["A78"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10.5","source":"SPEC.md","text":"Recording a challenge is not gated by the use policy.","witnesses":["agent_write_test:W07"]}

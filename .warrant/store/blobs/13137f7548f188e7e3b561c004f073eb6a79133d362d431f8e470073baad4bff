@@ -1,1 +1,0 @@
-{"because":null,"duty":"541c4607712d70be5f3477557c8751557dec74c8a85f887294af9c816d5ba233","id":"SPEC-2-11","kind":"normative","mutants":["M181"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"2","source":"SPEC.md","text":"**Time** is integer Unix seconds.","witnesses":["records_test:E9"]}

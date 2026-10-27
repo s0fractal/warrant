@@ -1,1 +1,0 @@
-{"because":null,"duty":"76ed12f0f1dafbf6a7316bbe0fb78c3ed2e3a75db7d752584c32c6b0add4f423","id":"SPEC-4.2-3","kind":"normative","mutants":["M65","M66"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.2","source":"SPEC.md","text":"every evidence hash resolves in the view to bytes with that hash;","witnesses":["assessment_test:R4"]}

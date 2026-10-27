@@ -1,1 +1,0 @@
-{"because":null,"duty":"dc2cb08f92556d359fc696b2b6e5059eae11667eb436feea576c08a25ae5fb4e","id":"SPEC-6-1","kind":"normative","mutants":["M18"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"6","source":"SPEC.md","text":"A key binding says who signed.","witnesses":["contract_test:N5"]}

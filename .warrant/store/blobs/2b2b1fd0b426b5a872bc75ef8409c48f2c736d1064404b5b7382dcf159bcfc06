@@ -1,1 +1,0 @@
-**Canonical bytes** are RFC 8785 (JCS) over that domain: members ordered by UTF-16 code units, no whitespace.

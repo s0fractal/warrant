@@ -1,1 +1,0 @@
-{"because":null,"duty":"208b749169eea3476801f9f1d812f2c3643afc7225ed5b20b52cc2c41328b5e7","id":"SPEC-3.5-3","kind":"normative","mutants":["M249"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.5","source":"SPEC.md","text":"grantee actor","witnesses":["records_test:G2"]}

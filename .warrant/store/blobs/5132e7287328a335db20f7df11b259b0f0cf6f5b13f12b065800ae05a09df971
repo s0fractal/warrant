@@ -1,1 +1,0 @@
-Every later read of a view answers from its stored report and captured bytes, never from the live store.

@@ -1,1 +1,0 @@
-{"because":null,"duty":"84b62649b6265de594642da8bcf02126439c8a4b38c6ccf231fce4a9fb80cbd5","id":"SPEC-10.2-3","kind":"normative","mutants":["A04"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10.2","source":"SPEC.md","text":"A view is assessed with the receiver's own trust and profile.","witnesses":["agent_handoff_test:V05"]}

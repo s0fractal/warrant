@@ -1,1 +1,0 @@
-Without `view_token` a record or blob is read from a new frozen view, returned as `view_token`, never from the live store; a context page and a cursor need the view that made them.

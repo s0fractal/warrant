@@ -1,1 +1,0 @@
-Import is add-only: an object already in the store with other bytes is `CONFLICT`, and nothing is overwritten.

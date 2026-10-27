@@ -9,6 +9,7 @@ from warrant import keys as K
 from warrant import shapes as S
 
 from . import records as R
+from .store import LIMITS
 
 NONE, MET, PENDING = "NONE", "MET", "PENDING"
 REPLAY = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
@@ -93,7 +94,7 @@ class View:
         self._index_attests()
         ents = {i for i, r in self.recs.items() if r["kind"] == "entity"}
         self.root_of, self.lineages = self._lineages(ents, self._may_succeed)
-        self._guards, self._effective = {}, {}
+        self._guards, self._effective, self._depth = {}, {}, 0
 
     def _index_attests(self):
         self.attests = {}
@@ -279,8 +280,14 @@ class View:
     def effective(self, L):
         if L not in self._effective:
             self._effective[L] = None
+            # Lineages that require lineages are resolved depth first, in process: a nesting beyond the limit
+            # refuses the store (§8) instead of exhausting the interpreter's stack.
+            self._depth += 1
+            if self._depth > LIMITS["requires"]:
+                raise R.Invalid(f"store beyond limits: requires nest deeper than {LIMITS['requires']}")
             path = self.lineages[L]["path"]
             self._effective[L] = next((v for v in reversed(path) if self.guard(v)["guard"] in (NONE, MET)), None)
+            self._depth -= 1
         return self._effective[L]
 
     # -- challenges (§5)

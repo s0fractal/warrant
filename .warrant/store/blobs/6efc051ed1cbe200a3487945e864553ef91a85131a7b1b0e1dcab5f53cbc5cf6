@@ -1,1 +1,0 @@
-{"because":null,"duty":null,"id":"SPEC-0-7","kind":"informative","mutants":[],"previous":null,"reason":"provenance: places the 0.x implementations outside this document","schema":"warrant-claims/claim@1","section":"0","source":"SPEC.md","text":"Earlier Go, Rust, WASM and JS implementations implement Warrant 0.x and are not implementations of this document.","witnesses":[]}

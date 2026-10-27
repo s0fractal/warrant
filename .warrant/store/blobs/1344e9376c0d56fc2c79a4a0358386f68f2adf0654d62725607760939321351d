@@ -1,1 +1,0 @@
-{"because":null,"duty":"55794f1feb9616671b31a4ad5bcbff116fc778762aa8405adce83e24deb52cda","id":"SPEC-3-20","kind":"normative","mutants":["M200"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3","source":"SPEC.md","text":"`prior` edges do not exist: every relation is a typed field below.","witnesses":["records_test:K11"]}

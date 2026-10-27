@@ -1,1 +1,0 @@
-For a filing, its filer's own records are ordered by the chain, not by `at`: an acceptance by `to` makes `to` the holder or a delegate for `to`'s filing only if the acceptance is before that filing in `to`'s chain.

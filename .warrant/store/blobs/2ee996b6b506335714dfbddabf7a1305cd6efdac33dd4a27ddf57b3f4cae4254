@@ -1,1 +1,0 @@
-{"because":null,"duty":"883530e1a0d48cefe31ade27783d9c8d5dc66f2182cfafc78e65997a31eef87c","id":"SPEC-2-3","kind":"normative","mutants":["M177"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"2","source":"SPEC.md","text":"No floats.","witnesses":["records_test:E2"]}

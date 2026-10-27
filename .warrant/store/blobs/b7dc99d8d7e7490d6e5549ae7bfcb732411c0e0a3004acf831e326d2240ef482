@@ -1,1 +1,0 @@
-A **blob** is any byte string, addressed by `sha256(bytes)`.

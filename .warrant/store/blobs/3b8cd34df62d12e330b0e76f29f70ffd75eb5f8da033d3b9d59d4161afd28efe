@@ -1,1 +1,0 @@
-A configured signer is an actor id (§3); a configuration whose signer is not one is refused when it loads.

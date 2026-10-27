@@ -1,1 +1,0 @@
-`warrant-agent-mcp init`, the operator's command and not a tool, configures a repository checkout only for a signer whose existing seed's key is exactly the key the repository's `.warrant/roles.json` pins for that actor and whose binding its `.warrant/trust.json` admits; it creates no key.

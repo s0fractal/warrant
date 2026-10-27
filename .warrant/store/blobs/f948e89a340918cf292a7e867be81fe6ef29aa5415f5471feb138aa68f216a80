@@ -1,1 +1,0 @@
-{"because":null,"duty":"adc146e3c1665029a505a613579c0dc43a312a46ea74681937e97c709e32eb33","id":"SPEC-3.1-2","kind":"normative","mutants":["M201","M202"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.1","source":"SPEC.md","text":"statement string ≤ 400 code points","witnesses":["records_test:D1"]}
