@@ -1,0 +1,210 @@
+Codex roadmap verdict evidence: R-ADMISSION-RAW-BYTES
+
+D: bf8bc30c8c16e10c8ae61f77f56ef8754ba4cf583f9e43387bad445c1d2be821
+T: 5312ae34472b6f888d55c24921ea7c90ccc2e0b25a8fa41f0fbf88af6cadddb6
+M: d40fc5d2d7f87ddf8ee31121accd7e76bb94502d
+Named fix: d60f662ed8ec4906187a14508e1ddc36ab051bad
+
+Verdict: accept T. D's two completion conditions hold: the hypothetical candidate
+is assessed over every distinct raw line, and the original finding test F2 passes.
+This is a verdict on this obligation, not the whole of G2.
+
+Inputs checked afresh:
+- Worktree HEAD is M, detached, initially clean; origin is s0fractal/warrant.
+- tools/roadmap.py due --actor codex --json matches D, T, statement, evidence,
+  references, empty requires and null subject supplied by the waker.
+- MCP workspace identifies signer codex with roadmap/acceptor; context shows T as
+  the unchallenged leaf of D, waiting only for one matching roadmap acceptance.
+- Read the two evidence finding records, their identical F2 patches, the named
+  commit, and GitHub PR #221. The named fix is an ancestor of M. Its affected
+  source and test files are unchanged at M (git diff d60f662e M --
+  warrant/store.py warrant_agent/api.py tests/agent_test.py tests/mutants.py is empty).
+
+Implementation examined:
+Snapshot.raw retains list(dict.fromkeys(lines)), before parsing or rejection.
+The byte rule counts the same distinct raw lines and blob bytes. _refusals builds
+Snapshot(snap.raw + [candidate_signed_line], snap.blobs), so rejected or
+noncanonical lines cannot disappear in the hypothetical store. Store.extend's
+admission callback runs on a fresh snapshot under the writers' lock, before
+write_lines preserves and unions the raw lines with the actual signed candidate.
+The ephemeral signing key used for assessment has the same fixed serialized
+key/signature lengths as the actual signer. Distinct signature variants remain
+distinct raw lines even where they share a record id.
+
+Fresh unsigned executions (Python 3.13 from the MCP virtual environment):
+- Original F2 source extracted without edits from the added-file patch in finding
+  4c58f74e777226d4e1740abf29cc2044990d9397b7ee8264b70589b130559db7;
+  the patch in cceccf9fb81cb9e96d91da292583bd31e278a7082047fb97416de4b597aedbe8
+  is identical. Executed with each source tree as cwd, from git archive snapshots
+  for historical trees, with no signing/replay attestation filed.
+- On 94021033c6d582a4805c0f37c82fb4d965eeeb71: FAIL F2. Clean control refuses
+  prepare and commit without mutation; rejected-line case prepares successfully,
+  commit returns RESOURCE_LIMIT after mutation, and workspace remains RESOURCE_LIMIT.
+- On d60f662ed8ec4906187a14508e1ddc36ab051bad and M: ok F2, all passed.
+  Both clean and rejected-line cases return INVALID_RECORD at prepare/commit,
+  keep file bytes unchanged and leave workspace readable.
+- tests/core_test.py: all passed.
+- tests/agent_test.py: all passed, including A25 and stdio MCP M01. The M01
+  NOT_FOUND tool error is the exercised refusal, followed by the passing assertion.
+- Targeted tests/mutants.py A26 A27: baseline green, A26 KILLED by A24;
+  A27 KILLED by A25 (exact mutant restoring own_lines instead of snap.raw).
+  Used the repository's mutant runner with COPY and TMP redirected to the review
+  evidence directory; source files in the verdict worktree were not modified.
+- tools/claims.py check: 67 live claims, 0 problems.
+- tools/roadmap.py check: 72 lineages, 0 problems.
+
+Additional adversarial boundary probes on M:
+15 cases: five store layouts, each with engine byte limit equal to candidate
+store size minus one, exactly equal, and plus one. All passed. Layouts: clean;
+multiple invalid JSON/UTF-8 lines; noncanonical and overlong lines; repeated raw
+lines physically present on disk; distinct signature variants plus rejected
+line and a blob. Each probe asserts Snapshot.raw equals the distinct raw store
+lines. One byte over is INVALID_RECORD at both operations with unchanged file;
+exact/in-bound writes succeed, keep all original distinct raw lines, and the
+resulting workspace reads successfully. This checks refusal and successful
+admission, including union duplicate semantics and blob byte accounting.
+The tests lower the engine byte bound rather than allocate a 256 MiB store;
+the production-size allocation and the full mutant matrix were not run.
+
+Reproduction source: original F2
+```python
+#!/usr/bin/env python3
+"""The preflight must retain the bytes of already-rejected lines."""
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+from world import Repo, check, finish
+from warrant import engine as E
+from warrant import records as R
+from warrant.store import LIMITS
+from warrant_agent import api
+from warrant_agent.config import Config
+
+
+def exercise(rejected):
+    repo = Repo()
+    if rejected:
+        repo.store.add_lines([b'{"junk":"' + b'x' * 1024 + b'"}\n'])
+    cfg = Config({'agent_api': 'warrant-agent/3', 'workspaces': {'w': {
+        'repo': str(repo.root), 'signer': {'actor': 'bob', 'key': str(repo.seed('bob'))}}}})
+    before = repo.store.file.read_bytes()
+    target = repo.schemas['goal@1']
+    record = R.record('attest', 'bob', repo.t + 1, {'target': target, 'verdict': 'seen'}, refs=[target],
+                      prev=E.head(repo.store.snapshot(), repo.trust, 'bob')['id'])
+    bound = LIMITS['bytes']
+    try:
+        # The same byte-accounting rule at a small bound avoids allocating 256 MiB.
+        LIMITS['bytes'] = len(before) + 64
+        p = api.call(cfg, 'prepare', {'workspace': 'w', 'kind': 'attest', 'target': target,
+                                      'body': {'verdict': 'seen'}})
+        c = api.call(cfg, 'commit', {'workspace': 'w', 'record': record})
+        after = api.call(cfg, 'workspace', {})
+        return {'prepare': p.get('error', 'ok'), 'commit': c.get('error', 'ok'),
+                'workspace': after.get('error', 'ok'), 'unchanged': repo.store.file.read_bytes() == before}
+    finally:
+        LIMITS['bytes'] = bound
+
+
+def main():
+    clean, rejected = exercise(False), exercise(True)
+    want = {'prepare': 'INVALID_RECORD', 'commit': 'INVALID_RECORD', 'workspace': 'ok', 'unchanged': True}
+    check('F2 preflight counts existing rejected bytes against the engine limit',
+          clean == want and rejected == want, {'clean': clean, 'rejected_line': rejected})
+    return finish()
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+```
+
+Reproduction source: additional boundary probes (run from the pinned source root)
+```python
+import json
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path.cwd() / 'tests'), str(Path.cwd())]
+from world import Repo, KEYS
+from warrant import records as R
+from warrant.store import LIMITS
+from warrant_agent import api
+from warrant_agent.config import Config
+
+rows = []
+for layout in ['clean', 'invalid-json-and-utf8', 'noncanonical-and-overlong', 'duplicates', 'signature-variants-and-blob']:
+    for delta in [-1, 0, 1]:
+        repo = Repo()
+        first = repo.store.lines()[0]
+        if layout == 'invalid-json-and-utf8':
+            repo.store.add_lines([b'{bad json\n', b'\xff\xfe\n', b'{"junk":"' + b'x'*1024 + b'"}\n'])
+        elif layout == 'noncanonical-and-overlong':
+            repo.store.add_lines([b' ' + first, b'x' * (R.LINE_MAX + 1) + b'\n'])
+        elif layout == 'duplicates':
+            repo.store.add_lines([b'{"junk":1}\n'])
+            repo.store.file.write_bytes(repo.store.file.read_bytes() + first * 3 + b'{"junk":1}\n' * 3)
+        elif layout == 'signature-variants-and-blob':
+            env = json.loads(first)
+            _, variant = R.line(env['record'], KEYS['eve'])
+            repo.store.add_lines([variant, b'{"junk":"variant"}\n'])
+            repo.store.put_blob(b'opaque evidence' * 103)
+        cfg = Config({'agent_api':'warrant-agent/3', 'workspaces':{'w':{
+            'repo':str(repo.root), 'signer':{'actor':'bob','key':str(repo.seed('bob'))}}}})
+        before = repo.store.file.read_bytes()
+        snap = repo.store.snapshot()
+        assert set(snap.raw) == set(repo.store.lines())
+        unique_bytes = sum(map(len, set(repo.store.lines()))) + sum(map(len, snap.blobs.values()))
+        request = {'workspace':'w','kind':'attest','target':repo.schemas['goal@1'],'body':{'verdict':'seen'}}
+        clock = api.time.time
+        bound = LIMITS['bytes']
+        try:
+            api.time.time = lambda: repo.t + 1
+            record = api.call(cfg, 'prepare', request)['ok']['record']
+            _, candidate = R.line(record, KEYS['bob'])
+            LIMITS['bytes'] = unique_bytes + len(candidate) + delta
+            p = api.call(cfg, 'prepare', request)
+            c = api.call(cfg, 'commit', {'workspace':'w','record':record})
+            after = api.call(cfg, 'workspace', {})
+            expected = 'INVALID_RECORD' if delta < 0 else 'ok'
+            got = (p.get('error','ok'), c.get('error','ok'), after.get('error','ok'))
+            assert got == (expected, expected, 'ok'), (layout, delta, got)
+            if delta < 0:
+                assert repo.store.file.read_bytes() == before
+            else:
+                stored = repo.store.snapshot()
+                assert R.rid(record) in stored.lines
+                assert set(snap.raw).issubset(set(stored.raw))
+                assert sum(map(len,stored.raw)) + sum(map(len,stored.blobs.values())) <= LIMITS['bytes']
+            rows.append({'layout':layout, 'slack':delta, 'prepare':got[0], 'commit':got[1], 'workspace':got[2]})
+        finally:
+            LIMITS['bytes'] = bound
+            api.time.time = clock
+print(json.dumps(rows, indent=1))
+print(f'all {len(rows)} byte-boundary probes passed')
+```
+
+Targeted mutation results
+```json
+{
+ "definition": "361893cda4e27bbddc87ebdced87f576d637f9f5f37c60bb2c8c95922f259acf",
+ "rows": [
+  {
+   "id": "A26",
+   "outcome": "KILLED",
+   "failed": [
+    "A24"
+   ],
+   "rc": 1,
+   "detail": ""
+  },
+  {
+   "id": "A27",
+   "outcome": "KILLED",
+   "failed": [
+    "A25"
+   ],
+   "rc": 1,
+   "detail": ""
+  }
+ ]
+}```
