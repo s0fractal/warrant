@@ -1,8 +1,8 @@
 name: merge-on-acceptance
 
-# Merges a pull request the review loop has accepted, with no owner act (tools/claimslib/eligibility.py
-# states the predicate; tools/claimslib/gate.py the GitHub side). Only trusted code runs here: this
-# file and tools/ are the base branch's (workflow_run and schedule always run the default branch's
+# Merges a pull request the review loop has accepted, with no owner act (tools/gate.py states the
+# predicate and the GitHub side, docs/V3.md §14). Only trusted code runs here: this
+# file and tools/gate.py are the base branch's (workflow_run and schedule always run the default branch's
 # workflow; a dispatch from another ref is refused below), the working tree is the base branch at the
 # exact commit GitHub reports for it, and every pull request head is fetched as Git objects into
 # refs/warrant-gate/pull/<n>, read with git ls-tree / cat-file / diff-tree, never checked out,
@@ -10,7 +10,7 @@ name: merge-on-acceptance
 #
 # At most one merge per run, with a merge commit, bound to the head assessed (GitHub refuses the
 # merge when the head moved). A merge made with GITHUB_TOKEN starts no push workflow, so the gate
-# then dispatches the required workflows (ci.yml, x1-cross-repo.yml) on master: master CI still runs
+# then dispatches the required workflow (ci.yml) on master: master CI still runs
 # after every merge this gate makes; the dispatched runs show as workflow_dispatch on master.
 #
 # Holds, controlled by the owner without code:
@@ -21,7 +21,7 @@ name: merge-on-acceptance
 # Every refusal reason of every open pull request is written to the job summary.
 on:
   workflow_run:
-    workflows: [ci, sigma-provider]
+    workflows: [ci]
     types: [completed]
   schedule:
     - cron: '7,37 * * * *'
@@ -81,5 +81,5 @@ jobs:
           GATE_VAR: ${{ vars.WARRANT_MERGE_GATE }}
         run: |
           set -euo pipefail
-          PYTHONPATH="$GITHUB_WORKSPACE" python tools/review.py gate --base "$BASE" --merge \
+          PYTHONPATH="$GITHUB_WORKSPACE" python tools/gate.py gate --base "$BASE" --merge \
             --gate-var "$GATE_VAR" --summary "$GITHUB_STEP_SUMMARY"

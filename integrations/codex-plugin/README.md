@@ -2,7 +2,7 @@
 
 The reviewer's half of the review loop (docs/REPOSITORY.md, "Reviews as records"): Codex is woken
 when a pull request is due for review, reviews it, and files its verdict (findings, or an
-accept of the head closure) as signed records through the warrant MCP server. The merge
+acceptance of the head version) as signed Warrant 3 records through the warrant MCP server. The merge
 gate (`.github/workflows/merge-on-acceptance.yml`) merges a pull request whose accepted head
 it can verify; nobody else has to act.
 
@@ -17,19 +17,19 @@ it can verify; nobody else has to act.
 | `install.py` | installs all of it on a Mac and loads the waker as a launchd agent (every five minutes) |
 
 After the pull requests, the waker runs the base tree's `tools/roadmap.py due --actor codex` on the
-base's own records: the roadmap obligations' closures due for Codex's verdict (an obligation's latest
-closure the engine holds PENDING for codex, so every duty it requires is DISCHARGED, which codex has
-neither accepted nor challenged). It starts `codex exec` once per closure item (a memo
-`accepts/<closure>-<item>.json`, the same retries), in a detached worktree of the base
-(`~/Projects/.worktrees/codex-review/accept-<closure12>-<item>-<base12>`), telling him the duty's text, the
-closure, its evidence ids and the pull requests and commits that evidence names, not what the closure
-says it established. He accepts the closure or challenges it through MCP and leaves that record in his
-worktree. The waker publishes it, not Codex: it checks what is new in the worktree's store with the base's
-own package (only codex's accepts and challenges of that closure item, under the key the base's
-`roles.json` pins, an accept binding exactly the item's evidence, and the blobs they cite; anything else
-and nothing is published), commits those bytes on the base (records and blobs only, G11), pushes
-`codex/verdicts/<closure12>-<item>` and opens a pull request whose description is Codex's last message.
-It signs nothing. The merge gate merges a pull request of verdicts only (`eligibility.py`). A wake is done
+base's own records: the roadmap versions due for Codex's verdict (the leaf of a goal or obligation
+lineage whose guard waits only for an attest by a role codex holds, nothing it requires open, which codex
+has neither accepted nor challenged). It starts `codex exec` once per version (a memo
+`accepts/<version>-0.json`, the same retries), in a detached worktree of the base
+(`~/Projects/.worktrees/codex-review/accept-<version12>-0-<base12>`), telling him what the lineage owes, the
+version, its evidence and the pull requests and commits it names, not what it says it established. He
+accepts the version or challenges it through MCP and leaves that record in his worktree. The waker
+publishes it, not Codex: it checks the lines new in the worktree's `.warrant/records.jsonl` and the new
+blobs with the base's own package (only codex's acceptances and challenges of that version, under the keys
+the base's `.warrant/v3.json` binds to codex, and the blobs they cite; anything else and nothing is
+published), adds those bytes on the base (records and blobs only, G11), pushes `codex/verdicts/<version12>-0`
+and opens a pull request whose description is Codex's last message. It signs nothing. The merge gate merges
+a pull request of verdicts only (`tools/gate.py`). A wake is done
 only once its verdict reached GitHub: a pull request from that branch exists, in any state, or the base
 holds codex's verdict on that item. A run that exited 0 and left nothing publishable is retried like a
 failed one, in a clean worktree; a publication that failed (Git, GitHub) is retried with the same backoff. At most one closure is woken per run, and none while a
@@ -38,23 +38,24 @@ from different bases; they carry records only now, and the hold remains a limit 
 that base.
 
 Before Codex is woken for a head, the waker runs the review replay checker: the base tree's
-`tools/review.py replay --key -` (an actor named by the hash of `tools/claimslib/review_replay.py`,
-which signs only from code with that hash) in a detached worktree of the head, under `sandbox-exec`
+`tools/review.py replay --key -` (an actor named by the digest of its whole import closure, what
+`tools/review.py identity` prints, which signs only from code with that identity) in a detached worktree of the head, under `sandbox-exec`
 (no network, writes only in that worktree, its git directory and a scratch directory, no read of the
 seeds or the usual credential directories), with the checker's seed on standard input. It replays
 every mechanical finding of the head's store at each of its heads that no adopted replayer observed
 (another pull request's too: a finding nobody replayed is replayed on the next due head), and the
-waker pushes one commit of exactly those observation records and their probe blobs on the pull
+waker pushes one commit of exactly those replay attests (new lines of `records.jsonl`) on the pull
 request's branch (no generated view: they are build artifacts, G11), only while the
 branch is still at that head. Codex is woken on the next run, at the new head, once its checks are
 green. A pull request that changes the checker is not replayed. A failed checker run is retried after a
 backoff, at most three runs, and Codex is not woken at that head meanwhile; once the replay gave up,
 Codex is woken and told so in the prompt. A pull request that is no longer due (a verdict moved its
-tip) keeps its incomplete replay retried. CI's `replay --verify` re-executes every observation new since the base.
+tip) keeps its incomplete replay retried. CI's `tools/review.py verify` re-executes every replay new since the base.
 
 The waker reads one key, the checker's seed, from `~/.warrant-review-replayer/<H>.seed` for the
-checker `checker sha256:<H>` that master's `.warrant/reviews.json` names last (a regular file of this
-user, mode 0600; outside `~/.warrant`, which Codex's sandbox may write). Without it nothing is
+checker `checker sha256:<H>` that master's `tools/review.py identity` prints, which master's
+`.warrant/v3.json` must name a `replayer` (a regular file of this user, mode 0600; outside `~/.warrant`,
+which Codex's sandbox may write). Without it nothing is
 replayed. No agent is given that seed or runs `replay` with it: the observations are the checker's,
 filed by the waker. To place it:
 

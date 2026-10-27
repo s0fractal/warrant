@@ -2,19 +2,18 @@
   "gate": "warrant-review/gate@1",
   "base": "master",
   "required": [
-    {"check": "test", "workflow": ".github/workflows/ci.yml"},
-    {"check": "cross-repo", "workflow": ".github/workflows/x1-cross-repo.yml"}
+    {
+      "check": "test",
+      "workflow": ".github/workflows/ci.yml"
+    }
   ],
   "hold_label": "hold",
   "owner_paths": [
     ".github/",
     ".warrant/merge.json",
-    ".warrant/reviews.json",
-    ".warrant/roles.json",
     ".warrant/v3.json",
     ".warrant/v3/",
     "AGENTS.md",
-    "tools/claimslib/eligibility.py",
-    "tools/claimslib/gate.py"
+    "tools/gate.py"
   ]
 }

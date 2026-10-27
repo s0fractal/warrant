@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Codex plugin and its waker, without Codex and without GitHub (C1-C13).
+"""The Codex plugin and its waker, without Codex and without GitHub (C1-C13, W1-W6).
 
     python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
@@ -16,14 +16,16 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 
-from agent_world import PROFILE, USES, Key, Party       # noqa: E402
+from world import KEYS, Repo, git as wgit                # noqa: E402
+
+from warrant import records as R                         # noqa: E402
 
 results = {}
 
 
 def check(cid, ok, what, detail=""):
     results[cid] = ok
-    print(("ok    " if ok else "FAIL  ") + f"{cid} {what}" + ("" if ok else f" | {detail}"), flush=True)
+    print(("ok   " if ok else "FAIL ") + f"{cid} {what}" + ("" if ok else f" | {str(detail)[:400]}"), flush=True)
 
 
 def load(name, path):
@@ -206,33 +208,97 @@ def wakes():
 
 def mcp_call():
     if importlib.util.find_spec("mcp") is None:
-        print("skip  C8 (no mcp)")
+        print("skip C8 (no mcp)")
         return
-    d = Path(tempfile.mkdtemp(prefix="codex-plugin-mcp-"))
-    keys = {a: Key.generate() for a in ("producer", "reviewer", "auditor", "receiver")}
-    Party(d, "src", "producer", keys, PROFILE, USES)
-    server = d / "server"
-    impl = os.environ.get("WARRANT_IMPL") or str(ROOT)
-    server.write_text(f'#!/bin/sh\nPYTHONPATH="{impl}" exec "{sys.executable}" -m warrant_agent.mcp_server "$@"\n')
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    cfg = r.home / "config.json"
+    cfg.write_text(json.dumps({"agent_api": "warrant-agent/3", "workspaces": {"src": {
+        "repo": str(r.root), "signer": {"actor": "bob", "key": str(r.seed("bob"))}}}}))
+    server = r.home / "server"
+    server.write_text(f'#!/bin/sh\nPYTHONPATH="{ROOT}" exec "{sys.executable}" -m warrant_agent.mcp_server "$@"\n')
     server.chmod(0o755)
     env = dict(os.environ, WARRANT_AGENT_MCP=str(server))
 
     def call(tool, args):
-        r = subprocess.run([sys.executable, str(HERE / "scripts" / "warrant-mcp-call"), "--config", str(d / "src" / "config.json"),
-                            tool, json.dumps(args)], env=env, capture_output=True, text=True)
-        return r.returncode, json.loads(r.stdout) if r.stdout.strip() else r.stderr
+        out = subprocess.run([sys.executable, str(HERE / "scripts" / "warrant-mcp-call"), "--config", str(cfg), tool,
+                              json.dumps(args)], env=env, capture_output=True, text=True)
+        return out.returncode, json.loads(out.stdout) if out.stdout.strip() else out.stderr
     rc1, ws = call("workspace", {})
-    body = {"holder": "producer", "statement": "the plugin's stdio client files a duty", "owed_to": ["reviewer"],
-            "accept_by": ["reviewer"], "condition": {"attest": {}}}
-    rc2, prep = call("prepare", {"workspace": "src", "type": "duty", "body": body})
-    rc3, done = call("commit", {"workspace": "src", "draft_id": prep.get("draft_id") if isinstance(prep, dict) else None})
-    rid = done.get("record_id") or done.get("id") if isinstance(done, dict) else None
-    stored = [f.stem for f in (d / "src" / "store" / "records").iterdir()]
-    check("C8", (rc1, rc2, rc3) == (0, 0, 0) and isinstance(ws, dict) and len(stored) == 1 and (rid is None or rid in stored),
+    rc2, prep = call("prepare", {"workspace": "src", "kind": "attest", "target": o, "body": {"verdict": "seen"}})
+    rc3, done = call("commit", {"workspace": "src", "record": prep.get("record") if isinstance(prep, dict) else None})
+    filed = r.report()["graph"]["nodes"]
+    check("C8", (rc1, rc2, rc3) == (0, 0, 0) and isinstance(done, dict) and done.get("id") in [n[0] for n in filed],
           "warrant-mcp-call drives the warrant MCP server for a given configuration, one tool per process: a prepare "
-          "and its commit in two calls file one record", (rc1, ws, rc2, prep, rc3, done, stored))
-    rc4, err = call("commit", {"workspace": "src", "draft_id": "0" * 32})
+          "and its commit (the record passed back) in two calls file one signed record", (rc1, ws, rc2, prep, rc3, done))
+    rc4, err = call("read", {"workspace": "src", "target": "0" * 12})
     check("C9", rc4 == 2, "a refusal of the server exits 2", (rc4, err))
+
+
+def store_rules():
+    """The waker's own reading of the store (W1-W6): replay commits, verdicts it publishes, branches it resumes."""
+    WAKER.ACCEPTOR = "bob"
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    wgit(r.root, "init", "-q", "-b", "master")
+    base = r.commit("base")
+    lines = r.store.lines()
+    check("W1", all(WAKER.rid_of(x) == R.rid(json.loads(x)["record"]) for x in lines),
+          "the waker names a stored line's record by the line's own bytes, as the engine does")
+    f = r.put("bob", "challenge", {"target": d, "statement": "P2 x", "severity": "P2", "what": "w", "where": [],
+                                   "commit": "a" * 40, "tree": "b" * 40}, "finding@1", refs=[d])
+    head = r.commit("a finding")
+    replay = r.put("carol", "attest", {"target": f, "verdict": "reproduces", "on": d}, refs=[f, d])
+    ok = WAKER.changes(r.root, [replay], "carol")
+
+    def refused(filed, actor):
+        try:
+            WAKER.changes(r.root, filed, actor)
+            return False
+        except RuntimeError:
+            return True
+    unprinted = r.put("carol", "attest", {"target": f, "verdict": "no_result", "on": d}, refs=[f, d])
+    check("W2", ok == [WAKER.RECORDS] and refused([replay], "carol"),
+          "a replay commit holds exactly the replay attests the checker printed, as new lines; one it did not print refuses it")
+    wgit(r.root, "checkout", "-q", "--", ".")
+    r.put("eve", "attest", {"target": f, "verdict": "reproduces", "on": d}, refs=[f, d])
+    eve = [WAKER.rid_of(x) for x in WAKER.added_lines(r.root)[0]]
+    check("W7", refused(eve, "carol") and unprinted not in eve,
+          "... and every one of them is a replay result by the replayer: a printed line by another actor refuses it")
+    code = r.root
+    wgit(r.root, "checkout", "-q", "--", ".")
+    accept = R.line(R.record("attest", "bob", r.t + 10, {"verdict": "accept", "target": d}, refs=[d]), KEYS["bob"])[1]
+    other = R.line(R.record("attest", "bob", r.t + 11, {"verdict": "accept", "target": o}, refs=[o]), KEYS["bob"])[1]
+    forged = R.line(R.record("attest", "bob", r.t + 12, {"verdict": "accept", "target": d}, refs=[d]), KEYS["eve"])[1]
+
+    def verify(ls, blobs=None):
+        import base64
+        return WAKER.verify_verdicts({"code": str(code), "actor": "bob", "closure": d,
+                                      "lines": [base64.b64encode(x).decode() for x in ls],
+                                      "blobs": {k: base64.b64encode(v).decode() for k, v in (blobs or {}).items()}})
+    got = [verify([accept]), verify([other]), verify([forged]), verify([accept], {"ab" * 32: b"x"})]
+    check("W3", got[0] is None and all(got[1:]),
+          "a verdict is published only when it is the acceptor's own acceptance of exactly the version due, signed with "
+          "a key the base binds to it, every blob cited and named by its hash", got)
+    wgit(r.root, "checkout", "-q", "-b", "verdict")
+    with open(r.root / WAKER.RECORDS, "ab") as fh:
+        fh.write(accept)
+    tip = r.commit("bob's verdict")
+    same = WAKER.pushed_before(r.root, tip, head, {accept}, {})
+    diff = WAKER.pushed_before(r.root, tip, head, {other}, {})
+    check("W4", same is None and diff is not None, "a resumed push is this verdict only if the branch adds exactly its lines",
+          (same, diff))
+    wgit(r.root, "checkout", "-q", "-b", "linked", base)
+    (r.root / WAKER.BLOBS).mkdir(exist_ok=True)
+    name = __import__("hashlib").sha256(b"evidence").hexdigest()
+    os.symlink("evidence", r.root / WAKER.BLOBS / name)
+    linked = r.commit("a link where a blob goes")
+    check("W5", WAKER.tail_of(r.root, base, linked) == ([], {}),
+          "a branch whose blob is a link (a mode other than a regular file) carries no verdict")
+    wgit(r.root, "checkout", "-q", "verdict")
+    check("W6", WAKER.held_verdict(r.root, {"closure": d}) in (WAKER.rid_of(accept), f) and WAKER.held_verdict(r.root, {"closure": o}) is None,
+          "the waker finds a verdict the base holds already on the version, and only on it")
 
 
 if __name__ == "__main__":
@@ -242,6 +308,7 @@ if __name__ == "__main__":
     dry_install()
     wakes()
     mcp_call()
+    store_rules()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))
     sys.exit(1 if failed else 0)
