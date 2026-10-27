@@ -530,7 +530,7 @@ class Migration:
 
 def accepts(root):
     """The signed lines of the repository's schema acceptances, as committed (byte for byte), or none."""
-    p = Path(root) / ACCEPTS
+    p = Path(confined(Path(root) / ACCEPTS, ROOT))                 # read only from this repository's tree
     return [x + b"\n" for x in p.read_bytes().split(b"\n") if x] if p.is_file() else []
 
 
