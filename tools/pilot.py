@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The proof-space pilot contract (G9, PS-01) as data: tools/pilot-contract.json is the source and
-PILOT.md its view. The kinds, limits and result tables are rendered from warrant/pilot.py itself.
+PILOT.md its view. The kinds, limits and result tables are rendered from warrant_pilot/pilot.py itself.
 Unlike the views of the record graph (build artifacts since G11), PILOT.md stays committed and
 byte-compared, as SPEC.md does: it is the published contract, the accepted PS-02..PS-04 closures cite
 it by digest, and it changes only with the contract, never with the records.
@@ -10,7 +10,7 @@ it by digest, and it changes only with the contract, never with the records.
 
 Each row of the contract is exactly one of: enforced (`tests`: cases of tests/pilot_test.py that
 passed, and `mutants`: ids of tests/mutants.py whose own test file is pilot_test and whose targets
-include one of those cases), `deferred` to a G9 obligation filed in .warrant/store (a Codex card such
+include one of those cases), `deferred` to a G9 obligation filed in .warrant/records.jsonl (a Codex card such
 as PS-05+06, rendered with its duty id), or `excluded` from the pilot with the reason. `check` here
 sees no test results; tests/pilot_test.py K1 runs `problems` with its own, and also requires every
 case of that file to be some mutant's target. Refusals print as `REFUSED <CODE> <detail>`."""
@@ -23,8 +23,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, os.environ.get("WARRANT_IMPL") or str(ROOT))
 
-from warrant import pilot as PL               # noqa: E402
-from warrant.store import Snapshot           # noqa: E402
+from warrant.store import Store              # noqa: E402
+from warrant_pilot import pilot as PL         # noqa: E402
 
 SOURCE = "tools/pilot-contract.json"
 VIEW = "PILOT.md"
@@ -118,22 +118,31 @@ def problems(contract, view, cases, mutants, cards):
 
 
 def filed_cards(root=ROOT):
-    """{card: duty id} of the duties in `root`'s .warrant/store whose statement names a Codex card `(Codex PS-..`."""
-    snap = Snapshot.read(Path(root) / ".warrant" / "store", kinds=("records",))
+    """{card: obligation lineage} of the obligation@1 lineages in `root`'s .warrant/records.jsonl whose statement names
+    a Codex card `(Codex PS-..`."""
+    snap = Store(Path(root) / ".warrant").snapshot()
+    v2 = {}                     # a migrated record's Warrant 2 id, from the migration's map: PILOT.md keeps the duty ids it was
+    for envs in snap.lines.values():                 # rendered with, and the accepted closures cite its digest
+        rec = envs[0]["record"]
+        doc = snap.json_blob(rec["body"]["target"]) if rec["schema"] == "migration@1" else None
+        for row in (doc or {}).get("map", []) if isinstance(doc, dict) else []:
+            if len(row[1]) == 1:
+                v2[row[0]] = row[1][0]
     out = {}
-    for rid, raw in sorted(snap.records.items()):
-        rec = json.loads(raw)["record"]
-        text = rec["body"].get("statement", "") if rec["type"] == "duty" else ""
+    for rid, envs in sorted(snap.lines.items()):
+        rec = envs[0]["record"]
+        text = rec["body"].get("statement", "") if rec["schema"] == "obligation@1" and rec["lineage"] is None else ""
         if "(Codex PS-" in text:
-            out[text.split("(Codex ", 1)[1].split(";")[0].split(")")[0]] = rid
+            out[text.split("(Codex ", 1)[1].split(";")[0].split(")")[0]] = v2.get(rid, rid)
     return out
 
 
 def mutant_list(root=ROOT):
+    """tests/mutants.py's rows as (id, file, find, replace, test file name, cases)."""
     spec = importlib.util.spec_from_file_location("warrant_mutants", Path(root) / "tests" / "mutants.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.MUTANTS
+    return [(m[0], m[1], m[2], m[3], Path(m[4]).stem, m[5]) for m in mod.MUTANTS]
 
 
 def main(argv=None):

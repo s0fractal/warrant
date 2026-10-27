@@ -7,9 +7,7 @@ B1 reads the AST of every module of warrant/ (no import, no grep): each import n
 standard library (sys.stdlib_module_names), `cryptography` or warrant itself, and a relative
 import stays inside the package. A call that loads code by a computed name is refused,
 since the AST cannot name what it loads: the builtins __import__, exec, eval and compile,
-and any .import_module, .exec_module, .load_module or .__import__ (re.compile is neither). compute.py locates the optional Sigma provider with
-PathFinder.find_spec and runs its captured bytes in a separate interpreter (SPEC §7); that
-is not an import of the core's process.
+and any .import_module, .exec_module, .load_module or .__import__ (re.compile is neither).
 
 W1-W4 and S1 read a wheel and an sdist: the ones named on the command line (release.yml
 passes the artifacts it publishes), or ones built here from a copy of this tree with
@@ -41,10 +39,10 @@ PUBLIC = ("warrant", "warrant_agent")
 SCRIPTS = {"warrant": "warrant.cli:main", "warrant-agent": "warrant_agent.cli:main",
            "warrant-agent-mcp": "warrant_agent.mcp_server:main"}
 REQUIRES = ["cryptography>=41"]
-EXTRAS = {"compute", "mcp"}
+EXTRAS = {"pilot", "mcp"}
 CORE_DEPS = {"cryptography"}
 # Directories of the repository that no artifact may carry, at any depth.
-INTERNAL = {"tools", "tests", ".warrant", ".warrants", ".github", "examples", "integrations", "work",
+INTERNAL = {"tools", "tests", ".warrant", ".warrants", ".github", "examples", "integrations", "work", "warrant_pilot",
             "third_party", "trust", "scratchpad"}
 SDIST_TOP = {"PKG-INFO", "README.md", "LICENSE", "pyproject.toml", "setup.cfg", "warrant", "warrant_agent",
              "warrant_graph.egg-info"}

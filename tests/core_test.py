@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Warrant 3 core (docs/V3.md): one case per rule, on snapshots built in memory.
 
-    python3 tests/v3_core_test.py
+    python3 tests/core_test.py
 """
 import json
 import sys
@@ -104,6 +104,12 @@ def lineage_cases():
                                         "witnesses": [], "mutants": []}, "claim@1", lineage="ab" * 32)
     check("L10 a successor of a record not in the view is excluded (LINEAGE_BROKEN)",
           broken not in w2.report()["versions"])
+    goal = w2.put("alice", "entity", {"state": "open", "key": "G1", "text": "g"}, "goal@1")
+    other = w2.put("alice", "entity", {"state": "unbacked", "id": "S", "source": "s", "section": "1", "text": "t",
+                                       "witnesses": [], "mutants": []}, "claim@1", lineage=goal)
+    rep = w2.report()
+    check("L14 a successor of a version of another schema is excluded (LINEAGE_BROKEN)",
+          other not in rep["versions"] and any(p[0] == "LINEAGE_BROKEN" and p[1] == other for p in rep["problems"]))
 
 
 def release_cases():
@@ -140,6 +146,8 @@ def schema_cases():
     bad = w.put("alice", "entity", {"state": "nope", "id": "S", "source": "s", "section": "1", "text": "t",
                                     "witnesses": [], "mutants": []}, "claim@1")
     check("S4 a state the schema does not list is INVALID", bad in w.report()["rejected"])
+    loose = w.put("alice", "entity", {"state": "open", "statement": "s", "serves": ["ab" * 32]}, "obligation@1")
+    check("S8 a reference-typed body member that is not in refs makes the record INVALID", loose in w.report()["rejected"])
     w = World()
     two = dict(w.roles, **{"schema/author": ["alice", "bob"]})
     c = w.claim(state="unbacked", guard=None)
@@ -181,6 +189,13 @@ def guard_cases():
     rep = w.report()
     check("G3 requires hold a closing version that has no guard (Codex #3)",
           rep["versions"][bd]["guard"] == "PENDING" and rep["lineages"][b]["state"] == "open", rep["versions"][bd])
+    w = World()
+    two = w.put("alice", "entity", {"state": "open", "statement": "two", "serves": []}, "obligation@1",
+                guard=R.guard(2, ["roadmap/acceptor"], B.ACCEPT))
+    w.attest("bob", two)
+    w.attest("bob", two)
+    check("G6 a quorum of 2 needs two distinct actors: one actor's two attests are one",
+          w.report()["versions"][two]["guard"] == "PENDING")
 
 
 def challenge_cases():
@@ -233,7 +248,7 @@ def store_cases():
     check("T6 a bad signature rejects the record", c in one["rejected"])
     deep = b'{"record":' + b"[" * 30000 + b"]" * 30000 + b',"sig":null}\n'
     try:
-        snap = Snapshot([deep] + w.lines + [w.lines[0]], {})
+        snap = Snapshot([deep] + w.lines + [w.lines[-1]], {})
         rep = E.assess(snap, w.trust, {"warrant": "profile/3", "roles": w.roles})
         ok = len(rep["rejected"]) == 1 and c in rep["versions"] and not rep["canonical"]
     except RecursionError:
@@ -241,6 +256,15 @@ def store_cases():
     check("T9 a line nested too deep to parse is listed, never aborts the read (nor the canonical order check)", ok)
     check("T10 an identical duplicate line is counted once", rep["basis"]["SIGNED"] == base["basis"]["SIGNED"]
           and c not in rep["duplicates"], rep["basis"])
+    with tempfile.TemporaryDirectory() as d:
+        st = Store(d).init()
+        (st.blobs / ("ab" * 32)).write_bytes(b"not these bytes")
+        try:
+            st.snapshot()
+            ok = False
+        except ValueError as e:
+            ok = "not named by their hash" in str(e)
+    check("T12 a blob whose bytes do not hash to its name refuses the whole read", ok)
     chain, prev = World(), None
     for n in range(200):         # each obligation's `done` requires the previous one's lineage
         prev = chain.put("alice", "entity", {"state": "done", "statement": f"o{n}", "serves": []}, "obligation@1",
@@ -273,8 +297,9 @@ def chain_cases():
     one = World()
     ids = [one.put("bob", "attest", {"target": f"{n:02x}" * 32, "verdict": "x"}, refs=[f"{n:02x}" * 32], at=500)
            for n in range(6)]
-    check("K2 the head follows the chain through records filed in one second", E.head(Snapshot(one.lines, {}), one.trust, "bob")["id"] == ids[-1],
-          E.head(Snapshot(one.lines, {}), one.trust, "bob"))
+    canon = Snapshot(sorted(one.lines, key=lambda x: R.rid(C.loads(x.rstrip(b"\n"))["record"])), {})     # file order: by id
+    check("K2 the head follows the chain through records filed in one second", E.head(canon, one.trust, "bob")["id"] == ids[-1],
+          E.head(canon, one.trust, "bob"))
     w.put("bob", "attest", {"target": "ab" * 32, "verdict": "x"}, refs=["ab" * 32])
     w.heads["bob"] = None
     w.put("bob", "attest", {"target": "cd" * 32, "verdict": "y"}, refs=["cd" * 32])

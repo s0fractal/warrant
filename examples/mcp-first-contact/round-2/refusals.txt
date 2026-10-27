@@ -1,4 +1,0 @@
-count  runs  refusal message, round 2
-    2     2  <tool_use_error>InputValidationError: mcp__warrant__warrant_handoff was called with input that could not be pa
-    2     2  payload is {records, blobs}
-    1     1  duplicate records id f5f26a63da28
