@@ -42,7 +42,7 @@ REQUIRES = ["cryptography>=41"]
 EXTRAS = {"pilot", "mcp"}
 CORE_DEPS = {"cryptography"}
 # Directories of the repository that no artifact may carry, at any depth.
-INTERNAL = {"tools", "tests", ".warrant", ".warrants", ".github", "examples", "integrations", "work", "warrant_pilot",
+INTERNAL = {"tools", "tests", ".warrant", ".github", "examples", "integrations", "work", "warrant_pilot",
             "third_party", "trust", "scratchpad"}
 SDIST_TOP = {"PKG-INFO", "README.md", "LICENSE", "pyproject.toml", "setup.cfg", "warrant", "warrant_agent",
              "warrant_graph.egg-info"}
