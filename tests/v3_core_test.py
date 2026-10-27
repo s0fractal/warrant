@@ -12,10 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from warrant import jcs as C                # noqa: E402
 from warrant import keys as K               # noqa: E402
-from warrant3 import bootstrap as B         # noqa: E402
-from warrant3 import engine as E            # noqa: E402
-from warrant3 import records as R           # noqa: E402
-from warrant3.store import Snapshot, Store  # noqa: E402
+from warrant import bootstrap as B          # noqa: E402
+from warrant import engine as E             # noqa: E402
+from warrant import records as R            # noqa: E402
+from warrant.store import Snapshot, Store   # noqa: E402
 
 FAILS = []
 

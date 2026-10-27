@@ -1,4 +1,4 @@
-"""The schema records `warrant3 bootstrap` files (docs/V3.md §4): the domain rules of claims, goals,
+"""The schema records `warrant bootstrap` files (docs/V3.md §4): the domain rules of claims, goals,
 obligations, pull request reviews and findings as data. The roles they name are bound to actors
 by each receiver's profile, never here."""
 from .records import guard

@@ -19,11 +19,13 @@ import os
 import stat
 from pathlib import Path
 
+from warrant import jcs as C
+from warrant import shapes as S
+
 from . import compute as P
-from . import jcs as C
 from . import limits as L
-from . import records as R
-from . import shapes as S
+
+MAX_TEXT = 4000                 # Warrant 2's bound of a text member (records.MAX_TEXT), kept for the contract
 
 CONTRACT = "warrant-pilot/contract@1"
 RESOLUTION = "warrant-pilot/resolution@1"
@@ -390,7 +392,7 @@ MODULE_FILES = {f"{n}.py" for n in P.MODULES}
 
 
 def _texts(v):
-    return (isinstance(v, list) and v and all(isinstance(x, str) and x and len(x) <= R.MAX_TEXT for x in v)
+    return (isinstance(v, list) and v and all(isinstance(x, str) and x and len(x) <= MAX_TEXT for x in v)
             and v == sorted(set(v)))
 
 

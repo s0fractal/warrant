@@ -21,8 +21,8 @@ import sys
 import types
 from pathlib import Path
 
-from . import jcs as C
-from . import shapes as S
+from warrant import jcs as C
+from warrant import shapes as S
 
 MODULES = ("sigma_glyph", "sigma_resume", "sigma_provider")
 PROTOCOL = 1
