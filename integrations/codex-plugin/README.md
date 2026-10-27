@@ -23,9 +23,16 @@ neither accepted nor challenged). It starts `codex exec` once per closure item (
 `accepts/<closure>-<item>.json`, the same retries), in a detached worktree of the base
 (`~/Projects/.worktrees/codex-review/accept-<closure12>-<item>-<base12>`), telling him the duty's text, the
 closure, its evidence ids and the pull requests and commits that evidence names, not what the closure
-says it established. He accepts the closure or challenges it through MCP, commits that record (and its
-blobs) on `codex/verdicts/<closure12>-<item>` and opens a pull request of it; the merge gate merges a pull
-request of verdicts only (`eligibility.py`). At most one closure is woken per run, and none while a
+says it established. He accepts the closure or challenges it through MCP and leaves that record in his
+worktree. The waker publishes it, not Codex: it checks what is new in the worktree's store with the base's
+own package (only codex's accepts and challenges of that closure item, under the key the base's
+`roles.json` pins, an accept binding exactly the item's evidence, and the blobs they cite; anything else
+and nothing is published), commits those bytes on the base (records and blobs only, G11), pushes
+`codex/verdicts/<closure12>-<item>` and opens a pull request whose description is Codex's last message.
+It signs nothing. The merge gate merges a pull request of verdicts only (`eligibility.py`). A wake is done
+only once its verdict reached GitHub: a pull request from that branch exists, in any state, or the base
+holds codex's verdict on that item. A run that exited 0 and left nothing publishable is retried like a
+failed one, in a clean worktree; a publication that failed (Git, GitHub) is retried with the same backoff. At most one closure is woken per run, and none while a
 pull request from a `codex/verdicts/` branch is open (until G11 two of them rendered the same views
 from different bases; they carry records only now, and the hold remains a limit of one at a time). A closure whose prerequisite is accepted meanwhile is due in the next run that reads
 that base.
