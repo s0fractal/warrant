@@ -81,6 +81,9 @@ MUTANTS = [
      '    _refuse(True, "INIT_NOT_INIT_OUTPUT",', AGENT, ["I05"]),
     ("A10", "warrant_agent/init.py", '        if os.path.islink(q) and _inside(Path(os.path.realpath(q.parent)), home):', "        if False:", AGENT, ["I07"]),
     ("A11", "warrant_agent/api.py", '        for x in [r] + (rep["lineages"][root]["versions"] if root else []):', "        for x in [r]:", AGENT, ["A13"]),
+    ("A13", "warrant_agent/api.py", "    todo = sorted(keep)\n    while todo:\n        for rel, a in into.get(todo.pop(), []):",
+     "    todo = []                # one pass over the records kept so far\n    for rel, a in [(r_, b) for x in sorted(keep) for r_, b in into.get(x, [])]:\n        if True:",
+     AGENT, ["A17"]),
     ("A12", "warrant_agent/config.py", '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"]}',
      '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"], "signer": None}', AGENT, ["A10"]),
     # the merge gate (tools/gate.py)

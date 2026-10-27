@@ -190,9 +190,18 @@ def _package_of(snap, view, rep, roots):
         for x in [r] + (rep["lineages"][root]["versions"] if root else []):
             keep |= {x} | {n["id"] for n in G.path(rep, x)["nodes"]}
     _, _, into = G.index(rep)
-    keep |= {a for x in list(keep) for rel, a in into.get(x, []) if rel in ("attest", "challenge")}
     keep |= {i for i, r in view.recs.items() if r["kind"] == "schema" or r["schema"] == R.MIGRATION}
-    keep |= {a for i, r in view.recs.items() if r["kind"] == "schema" for a in view.attests.get(i, [])}
+    # A fixpoint, not one pass: every kept record brings the attests and challenges on it, and each of those brings
+    # what it rests on and, in turn, the verdicts on it (a replayer's `reproduces` on a challenge; an acceptance of a
+    # schema). Bounded by the snapshot, itself within the workspace's store_bytes. (Codex AMEND 1 on #220: one pass
+    # left out the replay that made a challenge count, and the receiver read CHALLENGED as ELIGIBLE.)
+    todo = sorted(keep)
+    while todo:
+        for rel, a in into.get(todo.pop(), []):
+            if rel in ("attest", "challenge") and a not in keep:
+                new = ({a} | {n["id"] for n in G.path(rep, a)["nodes"]}) - keep
+                keep |= new
+                todo += sorted(new)
     lines = sorted({C.canon(e).decode() for i in keep if i in snap.lines for e in snap.lines[i]})
     blobs = {h: base64.b64encode(snap.blobs[h]).decode() for i in keep if i in view.recs
              for h in view.recs[i]["refs"] if h in snap.blobs}

@@ -98,6 +98,27 @@ def operations():
     check("A13 handoff: a package carries a lineage and the verdicts on it; inspected alone it reads as at home; import is add-only",
           ins.get("roots", {}).get(obl, {}).get("lineage", {}).get("state") == "done" and imp.get("added", 0) > 0
           and again.get("added") == 0, (ins, imp, again))
+    src = Repo()                  # Codex AMEND 1 on #220: a challenge counted by a replay travels with that replay
+    o = src.entity("alice", "obligation@1", {"state": "open", "statement": "task", "serves": []})
+    d = src.entity("alice", "obligation@1", {"state": "done", "statement": "task", "serves": []}, lineage=o)
+    src.attest("bob", d)
+    c = src.put("eve", "challenge", {"target": d, "statement": "reproduced counterexample"}, refs=[d])
+    rp = src.put("carol", "attest", {"target": c, "verdict": "reproduces", "on": d}, refs=[c, d])
+    pkg = ok(api.call(cfg_of(src), "handoff", {"workspace": "w", "op": "export", "targets": [o]})).get("package", {})
+    insp = Repo()
+    alone = ok(api.call(cfg_of(insp), "handoff", {"workspace": "w", "op": "inspect", "package": pkg, "alone": True}))
+    dst = Repo()
+    api.call(cfg_of(dst), "handoff", {"workspace": "w", "op": "import", "package": pkg})
+    without = Repo()
+    api.call(cfg_of(without), "handoff", {"workspace": "w", "op": "import", "package": dict(
+        pkg, lines=[x for x in pkg.get("lines", []) if json.loads(x)["record"]["actor"] != "carol"])})
+    check("A17 a package carries the verdicts on its verdicts: a challenge a replayer reproduced stays CHALLENGED inspected "
+          "alone and imported; the package without that one replay reads ELIGIBLE",
+          src.report()["lineages"][o]["reliance"] == "CHALLENGED"
+          and alone.get("roots", {}).get(o, {}).get("lineage", {}).get("reliance") == "CHALLENGED"
+          and dst.report()["lineages"][o]["reliance"] == "CHALLENGED" and rp in dst.store.snapshot().lines
+          and without.report()["lineages"][o]["reliance"] == "ELIGIBLE",
+          (alone.get("roots"), dst.report()["lineages"][o]["reliance"]))
     words = set(E.GUARDS) | set(E.RELIANCE) | set(E.BASES) | set(E.PROBLEMS) | set(E.REJECTIONS) | set(ER.CODES) | {"OK", "UNATTESTED"}
     check("A14 the glossary has an entry for every word the engine and the interface answer with", words <= set(GL.TERMS),
           sorted(words - set(GL.TERMS)))
