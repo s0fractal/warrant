@@ -1,97 +1,102 @@
-"""A small world for tests: a temporary store, one key per actor, explicit times."""
+"""Shared fixtures of the test files: deterministic keys, a check list that a mutant run reads, and a
+repository directory with a Warrant 3 store (.warrant/records.jsonl, blobs/, v3.json) built through the
+package's own Store, so every record is a real signed line."""
+import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, os.environ.get("WARRANT_IMPL") or str(ROOT))
+sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
 
-import warrant as W                      # noqa: E402
-from warrant import compute as P         # noqa: E402
-from warrant import engine as E          # noqa: E402
-from warrant import records as R         # noqa: E402
-from warrant.store import Store, Trust   # noqa: E402
+from warrant import bootstrap as B          # noqa: E402
+from warrant import engine as E             # noqa: E402
+from warrant import keys as K               # noqa: E402
+from warrant import records as R            # noqa: E402
+from warrant.store import Store             # noqa: E402
 
-HOLDER, OWNER, CODEX, OBSERVER, STRANGER = "claude", "owner", "codex", "probe", "stranger"
-SHA_OLD, SHA_NEW = "1" * 40, "2" * 40
-
-
-class World:
-    def __init__(self, actors=(HOLDER, OWNER, CODEX, OBSERVER, STRANGER)):
-        self.dir = Path(tempfile.mkdtemp(prefix="warrant-test-"))
-        self.store = Store(self.dir / "store").init()
-        self.keys = {a: W.Key.generate() for a in actors}
-        self.trust = Trust(Trust.document([(a, k.public) for a, k in self.keys.items()]))
-        self.t = 100
-        self.heads = {}         # actor -> its last filed record: each actor's chain (SPEC §3)
-
-    def tick(self, at=None):
-        if at is not None:
-            self.t = at
-        else:
-            self.t += 1
-        return self.t
-
-    def next_prev(self, actor):
-        return self.heads.get(actor)
-
-    def file(self, rtype, actor, body, at=None, prev="head"):
-        """File a record that names `actor`'s last record as its `prev` (a test may date it
-        earlier: then it is unanchored). prev=R.UNCHAINED files an unchained record; an id or
-        None names that predecessor (a fork, a genesis, another actor's record)."""
-        prev = self.next_prev(actor) if prev == "head" else prev
-        rid = self.store.put_record(R.record(rtype, actor, self.tick(at), body, prev=prev), self.keys[actor])
-        self.heads[actor] = rid
-        return rid
-
-    def blob(self, doc):
-        return self.store.put_json(doc)
-
-    def evidence(self, text="evidence"):
-        return self.store.put_blob(text.encode())
-
-    # sugar
-    def duty(self, condition=None, holder=HOLDER, owed_to=(OWNER,), accept_by=(OWNER,), at=None, **kw):
-        return self.file("duty", holder, R.duty(holder, kw.pop("statement", "do the thing"), owed_to,
-                                                condition or {"attest": {}}, accept_by=accept_by, **kw), at)
-
-    def act(self, actor, closes, basis="ATTESTED", evidence=None, at=None, prev="head", **kw):
-        ev = evidence if evidence is not None else sorted({h for m in closes for h in m["evidence"]})
-        return self.file("transition", actor, R.transition(basis, ev, closes=closes, **kw), at, prev=prev)
-
-    def close(self, did, actor=HOLDER, act="discharge", basis="ATTESTED", evidence=None, at=None, tkw=None, prev="head",
-              **mkw):
-        ev = [self.evidence()] if evidence is None else evidence
-        return self.act(actor, [R.item(did, act, ev, **mkw)], basis=basis, evidence=ev, at=at, prev=prev, **(tkw or {}))
-
-    def accept(self, actor, t_id, index=0, at=None, evidence=None, prev="head"):
-        env = W.loads(self.store.snapshot().records[t_id])["record"]["body"]
-        ev = evidence if evidence is not None else (env["evidence"] if index is None else env["closes"][index]["evidence"])
-        return self.file("accept", actor, R.accept(t_id, index, ev), at, prev=prev)
-
-    def assess(self, as_of=10_000, prof=None, current=(SHA_NEW,), workspace=None, provider=None):
-        return E.assess(self.store.snapshot(), self.trust, as_of, prof or E.profile(), current=current,
-                        workspace=workspace, provider=provider)
+FAILS = []
+ACTORS = ("alice", "bob", "carol", "eve", "dave")
+KEYS = {a: K.Key.from_seed_hex(f"{i + 1:02x}" * 32) for i, a in enumerate(ACTORS)}
+ROLES = {"schema/author": ["alice"], "claim/verifier": ["carol"], "roadmap/acceptor": ["bob"], "roadmap/owner": ["dave"],
+         "pr/acceptor": ["bob"], "pr/owner": ["dave"], "replayer": ["carol"]}
 
 
-results = {}
+def check(name, ok, detail=""):
+    """One case's verdict: `ok   ID ...` or `FAIL ID ...`; a mutant is killed only by a FAIL line of its case."""
+    print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {str(detail)[:300]}"), flush=True)
+    if not ok:
+        FAILS.append(name)
 
 
-def check(cid, ok, what, detail=""):
-    results[cid] = "PASS" if ok else "FAIL"
-    print(("ok    " if ok else "FAIL  ") + f"{cid} {what}" + ("" if ok else f" | {detail}"), flush=True)
+def finish():
+    print("all passed" if not FAILS else f"FAILED {len(FAILS)}: {' '.join(f.split()[0] for f in FAILS)}")
+    return 1 if FAILS else 0
 
 
-def finish(name):
-    import json
-    failed = sorted(k for k, v in results.items() if v == "FAIL")
-    print(f"{name}: {sum(v == 'PASS' for v in results.values())} PASS / {len(failed)} FAIL"
-          + (f" ({', '.join(failed)})" if failed else ""))
-    if os.environ.get("WARRANT_RESULTS"):
-        Path(os.environ["WARRANT_RESULTS"]).write_text(json.dumps(results))
-    return 1 if failed else 0
+def git(root, *args):
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True,
+                          env=dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                                   GIT_COMMITTER_EMAIL="t@t", GIT_AUTHOR_DATE="2026-10-27T00:00:00Z",
+                                   GIT_COMMITTER_DATE="2026-10-27T00:00:00Z")).stdout.strip()
 
 
-def verdicts(rep, did):
-    return [(c["act"], c["verdict"]) for c in rep["duties"][did]["candidates"]]
+class Repo:
+    """A repository directory: `.warrant/v3.json` (trust of ACTORS' keys, profile `roles`), the bootstrap
+    schemas filed by alice (schema/author, quorum 1), and records appended through Store.append."""
+
+    def __init__(self, roles=None, base=None, git_init=False, name="s0fractal/warrant"):
+        self.tmp = tempfile.TemporaryDirectory(dir=base)
+        self.home = Path(os.path.realpath(self.tmp.name))
+        self.root = self.home / "repo"
+        self.dot = self.root / ".warrant"
+        self.dot.mkdir(parents=True)
+        self.store = Store(self.dot).init()
+        self.roles = roles or ROLES
+        self.trust = {"warrant": "trust/3", "keys": {a: [k.public] for a, k in sorted(KEYS.items())}}
+        self.profile = {"warrant": "profile/3", "roles": {r: sorted(a) for r, a in sorted(self.roles.items())}}
+        self.write_config(name)
+        self.t = 1_800_000_000
+        self.schemas = {s["name"]: self.put("alice", "schema", s) for s in B.SCHEMAS}
+        if git_init:
+            git(self.root, "init", "-q", "-b", "master")
+            self.commit("base")
+
+    def write_config(self, name="s0fractal/warrant"):
+        doc = {"warrant": "repository/3", "repository": name, "trust": self.trust, "profile": self.profile}
+        (self.dot / "v3.json").write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+
+    def seed(self, actor):
+        p = self.home / "keys" / f"{actor}.seed"
+        p.parent.mkdir(exist_ok=True)
+        p.write_text(KEYS[actor].seed_hex())
+        return p
+
+    def put(self, actor, kind, body, schema=None, lineage=None, refs=(), guard=None, at=None):
+        self.t += 1
+        r = R.record(kind, actor, self.t if at is None else at, body, schema, lineage, refs, guard)
+        return self.store.append(r, KEYS[actor], self.trust)
+
+    def attest(self, actor, target, **body):
+        return self.put(actor, "attest", dict({"verdict": "accept"}, **body, target=target), refs=[target])
+
+    def entity(self, actor, schema, body, lineage=None, refs=(), guard="default", requires=()):
+        s = next(x for x in B.SCHEMAS if x["name"] == schema)
+        g = (s["states"] or {}).get(body.get("state")) if guard == "default" else guard
+        if g is not None and requires:
+            g = dict(g, requires=sorted(set(g["requires"]) | set(requires)))
+        refs = sorted(set(refs) | R.body_refs(s["fields"], body))
+        return self.put(actor, "entity", body, schema, lineage, refs, g)
+
+    def blob(self, data):
+        return self.store.put_blob(data if isinstance(data, bytes) else json.dumps(data, sort_keys=True).encode())
+
+    def report(self):
+        return E.assess(self.store.snapshot(), self.trust, self.profile)
+
+    def commit(self, msg):
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", msg)
+        return git(self.root, "rev-parse", "HEAD")
