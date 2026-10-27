@@ -1,1 +1,0 @@
-{"because":null,"duty":"db1abac3cefd2fb4775e18a55b27aa8df10c0526ef065482ff5245f0fb9c4abf","id":"SPEC-3.5-8","kind":"normative","mutants":["M09","M255","M92"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.5","source":"SPEC.md","text":"parent null | grant id this one attenuates","witnesses":["assessment_test:R16","contract_test:U4","records_test:G7"]}

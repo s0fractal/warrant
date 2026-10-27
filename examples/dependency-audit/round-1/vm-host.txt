@@ -1,4 +1,0 @@
-Linux 6.8.0-147-generic aarch64
-Python 3.12.3
-PRETTY_NAME="Ubuntu 24.04.5 LTS"
-89548834cc4d8920558bf9274670be329b6ee1361bd8d0ea7aae4942e1363e61  /home/s0fractal.guest/pilot/reply.json

@@ -1,1 +1,0 @@
-`read` returns the captured bytes of one record or blob of a view, chunked under `read_bytes`, with their `digest`, whether the chunk is `complete`, and `untrusted_data: true`.

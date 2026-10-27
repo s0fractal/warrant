@@ -10,7 +10,6 @@ import base64
 import hashlib
 import json
 import sys
-from pathlib import Path
 
 from world import ROOT, check, finish
 from warrant import jcs, keys

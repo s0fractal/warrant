@@ -1,1 +1,0 @@
-`prepare` takes `blobs`, JSON documents that `commit` stores as their canonical bytes before the record; in an evidence list of the body (a transition's and its items', an accept's, a challenge's, an observation's `raw`) `blob:<i>` is the id of `blobs[i]`.

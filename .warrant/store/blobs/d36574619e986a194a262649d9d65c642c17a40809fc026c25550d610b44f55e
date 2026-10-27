@@ -1,1 +1,0 @@
-An **actor id** is a non-empty string of at most 200 code points, in Unicode Normalization Form C, with no control character (general category Cc) and no white space (Unicode White_Space) at either end.

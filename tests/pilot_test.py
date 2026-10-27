@@ -18,10 +18,9 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from world import ROOT, P, World, check, finish, results
+from pilot_world import ROOT, P, Objects, World, check, finish, results
 from warrant import jcs as C
-from warrant import pilot as PL
-from warrant_agent.objects import Objects
+from warrant_pilot import pilot as PL
 
 PROV = P.Provider.capture()
 _impl = Path(os.environ["WARRANT_IMPL"]) / "tools" / "pilot.py" if os.environ.get("WARRANT_IMPL") else None

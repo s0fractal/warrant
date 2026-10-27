@@ -1,1 +1,0 @@
-Without `request_id` a draft is named by its type and body, so the same body is the same draft.

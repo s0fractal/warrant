@@ -1,1 +1,0 @@
-The boundary counts the view's records that do not authenticate and names up to 20 of them, each with `claims_to_be` (type, actor and target) only when its bytes have a record's shape; other bytes are never read as a record.

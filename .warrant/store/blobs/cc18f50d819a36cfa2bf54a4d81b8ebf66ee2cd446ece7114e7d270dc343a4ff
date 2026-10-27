@@ -1,1 +1,0 @@
-{"because":null,"duty":"139f9972392ce2fb6b66490745f1cddcfbfcab3f5ecad8d72bdc88260a1fb018","id":"SPEC-2-4","kind":"normative","mutants":["M178"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"2","source":"SPEC.md","text":"Strings MUST NOT contain lone surrogates.","witnesses":["records_test:E3"]}

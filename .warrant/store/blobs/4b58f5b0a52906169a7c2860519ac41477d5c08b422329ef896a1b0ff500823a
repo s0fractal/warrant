@@ -1,1 +1,0 @@
-{"because":null,"duty":"0359da099c5cfed3b736533d2d8f771b16ba3bbc14c8800d3575d35fce588a86","id":"SPEC-3.5-1","kind":"normative","mutants":["M93","M96"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.5","source":"SPEC.md","text":"The grantor is the record's actor.","witnesses":["assessment_test:R17","assessment_test:R18"]}

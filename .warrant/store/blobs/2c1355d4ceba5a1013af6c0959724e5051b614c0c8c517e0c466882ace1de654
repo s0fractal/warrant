@@ -1,1 +1,0 @@
-{"because":null,"duty":"5ad0591b22559423b243717b7f37c1d16a1a756c2bc535596c6da5968f0d79f1","id":"SPEC-3.2-14","kind":"normative","mutants":["M152"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"Opening a question assigns it to nobody.","witnesses":["contract_test:Q1"]}

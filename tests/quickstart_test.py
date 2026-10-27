@@ -15,9 +15,7 @@ The blocks run in order, in one `bash --noprofile --norc -eu -o pipefail` proces
 empty directory, with the interpreter running this test first on PATH (its `warrant` and
 `python3`) and WARRANT_IMPL, when set, on PYTHONPATH (so a mutant copy is what runs). One
 substitution is made before comparing, and the page states it: the 64-hex value of
-`"assessment_id"` reads `…`, since it names the installed engine's code and the optional
-compute provider. Standard error may hold only the warning a reading command prints when no
-compute provider is installed.
+`"assessment"` reads `…`, since it names the installed engine's code. Standard error must be empty.
 
     python3 tests/quickstart_test.py
     python3 tests/quickstart_test.py --write     # put the outputs the commands print now into the page
@@ -37,9 +35,7 @@ from world import ROOT, check, finish
 
 PAGE = ROOT / "QUICKSTART.md"
 OPEN_SH = re.compile(r"```sh ([a-z][a-z0-9-]*)\Z")
-ASSESSMENT = re.compile(r'("assessment_id": ")[0-9a-f]{64}(")')
-NO_PROVIDER = ("warning: provider unavailable, replays are UNVERIFIED: no Sigma provider installed "
-               "(pip install the sigma-glyph wheel that ships sigma_provider)")
+ASSESSMENT = re.compile(r'("assessment": ")[0-9a-f]{64}(")')
 
 
 class Refused(Exception):
@@ -191,7 +187,7 @@ def main():
             check(s["name"], False, f"{s['name']}: ran", "the page stopped before this block")
             continue
         out, err = g
-        bad_err = [line for line in err.splitlines() if line != NO_PROVIDER]
+        bad_err = err.splitlines()
         want = s["output"] or ""
         diff = "".join(difflib.unified_diff(want.splitlines(True), out.splitlines(True), "page", "printed", n=1))
         check(s["name"], out == want and not bad_err, f"{s['name']}: prints exactly the output shown",

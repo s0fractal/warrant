@@ -1,1 +1,0 @@
-{"because":null,"duty":"cc6563fc6f8ae6608ea96964ec925a7d8115339bc2ded99d60ff226dcf536b03","id":"SPEC-2-9","kind":"normative","mutants":["M170","M185","M186"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"2","source":"SPEC.md","text":"**Hashes** are lowercase hex SHA-256, 64 characters.","witnesses":["contract_test:N7","records_test:E7"]}

@@ -1,1 +1,0 @@
-A view's bytes live once in its workspace's object store, each under the SHA-256 of its bytes: record envelopes, blobs, provider modules and the view's tree, report body and manifest; `views/<token>/view.json` names the manifest, and views of an unchanged store share their records, blobs, provider modules and tree.

@@ -1,1 +1,0 @@
-Every MCP tool takes the request's members as flat, typed arguments; an argument left out is left out of the request, so the backend's defaults apply.

@@ -1,571 +1,371 @@
-"""The operations of warrant-agent/1 (CONTRACT C): one backend for the
-Python API, the CLI and the MCP server. Every request is a closed JSON object;
-every success has one shape; every refusal is an AgentError."""
+"""The one backend of warrant-agent/3: `call(cfg, op, request)` -> {"ok": result} or {"error": code, ...}.
+
+Every operation that reads records reads the store once and assesses it in process (warrant.assess)
+under the workspace's trust and profile: the store is admitted by size first (the workspace's
+`store_bytes`), then by the engine's LIMITS, whose nesting bound keeps the assessment off the
+interpreter's stack limit. Nothing is cached and no view is kept between calls.
+
+  workspace  {workspace?}                              the configuration by name and a summary of each store
+  context    {workspace, targets?, actor?}             per target: its node, lineage, guard, challenges and the
+                                                       attests on it; the actor's frontier (default: the signer)
+  read       {workspace, target, kind?, offset?, max_bytes?}   a record's line or a blob's bytes, chunked
+  graph      {workspace, op, target?, actor?}          around | path | why | frontier | export, with root and lens
+  handoff    {workspace, op, targets?|package}         export the records targets rest on and the verdicts on
+                                                       them; inspect a package under this receiver's terms
+                                                       (alone or with its store); import one (add-only)
+  prepare    {workspace, kind, schema?, body, target?, lineage?, refs?, guard?}   an unsigned record of the
+                                                       signer, checked as this receiver would read it
+  commit     {workspace, record}                       sign it as the configured signer and append it, a
+                                                       compare-and-swap on the signer's chain head (record.prev)
+  explain    {word}                                    the static glossary
+
+The signer is the operator's configuration: no request names a key, a path or another actor, and the
+seed is read only by commit. A record whose body does not fit its schema, or whose lineage rule would
+exclude it, is refused at prepare and at commit, never filed."""
 import base64
 import json
+import time
 
 from warrant import engine as E
 from warrant import jcs as C
+from warrant import keys as K
+from warrant import records as R
 from warrant import shapes as S
-from warrant.store import code_identity
+from warrant.store import Refused, Snapshot
 
-from . import AGENT_API, adapter_id, drafts, graph, handoff, views
-from .errors import AgentError, need, need_op
+from . import AGENT_API, adapter_id
+from . import glossary as GL
+from . import graph as G
+from .config import OPERATIONS
+from .errors import CODES, AgentError, need
 
-TARGET_KINDS = ("duty", "transition")
-CONTEXT_FILE = "context.json"          # a view's actor, targets and use, written by the call that made it
-
-
-def _record_shape(data):
-    """The record inside stored envelope bytes if it has the shape these reports read (an object whose
-    `type` is a string and whose `body` is an object), else None. The bytes are untrusted: they may be
-    exactly what the engine rejected, so nothing below dereferences a record this did not return."""
-    try:
-        env = C.loads(data)
-    except (C.NotCanonical, ValueError, TypeError):
-        return None
-    rec = env.get("record") if isinstance(env, dict) else None
-    if isinstance(rec, dict) and isinstance(rec.get("type"), str) and isinstance(rec.get("body"), dict):
-        return rec
-    return None
-TARGET_FORMS = ("targets is a list; each target is a record id (hex64) of a duty or transition, "
-                "{\"id\": id} or {\"kind\": \"duty\"|\"transition\", \"id\": id}")
-
-
-def _target_shapes(raw):
-    """The request's targets as [(kind or None, id)]; the shape is checked before anything is read."""
-    need(isinstance(raw, list), "BAD_REQUEST", TARGET_FORMS)
-    out = []
-    for t in raw:
-        if isinstance(t, str):
-            t = {"id": t}
-        need(isinstance(t, dict) and set(t) in ({"id"}, {"kind", "id"}) and S.hex64(t["id"])
-             and t.get("kind", "duty") in TARGET_KINDS, "BAD_REQUEST", TARGET_FORMS)
-        out.append((t.get("kind"), t["id"]))
-    return out
-
-
-def _kind_in_view(tid, report, view):
-    """A duty or a transition of THIS view; any other id is refused by what it is, never shown as a capsule of
-    something else."""
-    if tid in report["duties"]:
-        return "duty"
-    if tid in report["results"]:
-        return "transition"
-    data = view.record(tid)
-    if data is None:
-        raise AgentError("NOT_FOUND", f"{tid[:12]} is not a record of this view", target=tid)
-    rec = _record_shape(data)
-    rtype = rec["type"] if rec else "unreadable"
-    raise AgentError("BAD_REQUEST", f"{tid[:12]} is a record of type {rtype} in this view, not a duty or a "
-                     "transition; read it with warrant_read", target=tid, type=rtype)
-
-
-def _resolve_targets(shapes, report, view):
-    """[{kind, id}]: a target given without its kind is resolved in the view; a given kind is kept as given."""
-    return [{"kind": kind or _kind_in_view(tid, report, view), "id": tid} for kind, tid in shapes]
-
-
-def _use(ws, use):
-    """The named use, or the operator's first configured use when none is named."""
-    if use is None:
-        need(bool(ws.uses), "BAD_REQUEST", "this workspace configures no use")
-        return next(iter(ws.uses))
-    need(isinstance(use, str) and use in ws.uses, "BAD_REQUEST",
-         f"use {use!r} is not configured; configured uses: {', '.join(ws.uses) or 'none'}", configured=list(ws.uses))
-    return use
-
-
-def _actor(ws, actor):
-    """The named actor (whose frontier is read), or the configured signer's actor."""
-    if actor is None:
-        need(ws.signer is not None, "BAD_REQUEST", "actor: this workspace has no signer to default to")
-        return ws.signer[0]
-    need(S.is_actor(actor), "BAD_REQUEST", "actor: not an actor id (SPEC §3)")
-    return actor
+PACKAGE = "package/3"
+GRAPH_OPS = ("around", "path", "why", "frontier", "export")
+HANDOFF_OPS = ("export", "inspect", "import")
 
 
 def _closed(req, required, optional=()):
-    need(isinstance(req, dict), "BAD_REQUEST", "request must be an object")
-    missing, extra = set(required) - set(req), set(req) - set(required) - set(optional)
-    need(not missing, "BAD_REQUEST", f"missing {sorted(missing)}")
-    need(not extra, "BAD_REQUEST", f"unknown members {sorted(extra)}")
+    need(isinstance(req, dict), "BAD_REQUEST", "a request is a JSON object")
+    extra, missing = set(req) - set(required) - set(optional) - {"workspace"}, set(required) - set(req)
+    need(not extra and not missing, "BAD_REQUEST", f"unknown members {sorted(extra)} or missing {sorted(missing)}")
 
 
-def _int(v, low=0):
-    return type(v) is int and v >= low
+def _assess(ws, snap=None):
+    trust, profile = ws.receiver()
+    try:
+        snap = snap if snap is not None else ws.open().snapshot()
+        return snap, E.View(snap, trust, profile), trust, profile
+    except Refused as e:
+        raise AgentError("RESOURCE_LIMIT" if "limit" in str(e) else "REFUSED", str(e)) from None
+    except R.Invalid as e:
+        raise AgentError("RESOURCE_LIMIT" if "limit" in str(e) else "BAD_REQUEST", str(e)) from None
 
 
-# ---------------------------------------------------------------- use policy
-
-def decide(ws, meta, report, use, targets, observed):
-    """WITHIN_POLICY or HOLD for `use`, with the identity of every input that can
-    change the decision (CONTRACT B)."""
-    policy = ws.use_policy(use)
-    delivery = meta["delivery"]
-    reasons, states = [], {}
-    allowed = policy.get("delivery", ["LOCAL_CAPTURE", "MATCH_EXPECTED_SET"])
-    if delivery["relation"] not in allowed:
-        reasons.append(f"delivery {delivery['relation']} is not one this use accepts")
-    for t in targets:
-        st = E.reliance(report, t["id"], use)
-        states[t["id"]] = st["state"]
-        if st["state"] not in policy.get("reliance", ["ELIGIBLE"]):
-            reasons.append(f"{t['kind']} {t['id'][:12]}: reliance {st['state']}"
-                           + (f" ({'; '.join(st['causes'])})" if st["causes"] else ""))
-    if policy.get("fresh", True) and observed["newer_known"]:
-        reasons.append("newer local events are known than this view; refresh before use")
-    if not observed["trust_current"] and (policy.get("fresh", True) or delivery.get("exporter")):
-        # a delivery that rested on an exporter's declaration holds on a trust change whatever `fresh` says
-        reasons.append("the receiver's trust changed since this view; refresh before use")
-    exp = observed.get("expectation")
-    if exp is not None and exp["state"] != "CURRENT":
-        reasons.append(f"the receiver's expectation {exp['handle']!r} is {exp['state']} since this delivery was "
-                       "inspected; inspect the package again")
-    if observed["incomplete_imports"]:
-        reasons.append("an import into this workspace is incomplete; recover it before use")
-    inputs = {"assessment_id": report["assessment_id"], "adapter_id": adapter_id(), "policy": C.doc_id(policy),
-              "delivery": {k: delivery.get(k) for k in ("relation", "manifest", "expectation")},
-              "as_of": meta["as_of"], "observed": observed, "targets": states, "use": use}
-    return {"name": use, "policy": C.doc_id(policy), "decision_id": C.doc_id(inputs),
-            "state": "HOLD" if reasons else "WITHIN_POLICY", "reasons": reasons}
+def _resolve(snap, target):
+    """A record or blob id from a full id or a unique prefix of at least 8 hex characters."""
+    need(isinstance(target, str) and 8 <= len(target) <= 64 and all(c in "0123456789abcdef" for c in target),
+         "BAD_REQUEST", "a target is a record or blob id, or a prefix of at least 8 lowercase hex characters")
+    ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(target)]
+    need(len(set(ids)) == 1, "NOT_FOUND", f"{target} names {len(set(ids))} records or blobs here")
+    return ids[0]
 
 
-# ---------------------------------------------------------------- projection
-
-def _size(item):
-    return len(json.dumps(item, sort_keys=True).encode())
-
-
-def _page(items, start, budget):
-    out, used = [], 0
-    for it in items[start:]:
-        s = _size(it)
-        if out and used + s > budget:
-            break
-        out.append(it)
-        used += s
-    nxt = start + len(out)
-    return out, (nxt if nxt < len(items) else None)
-
-
-CLOSURE = ("transition", "item", "act", "filer", "basis", "verdict", "why", "waiting_for", "awaiting")
-
-
-def _reading(cap):
-    """One line over the capsule's own fields; it adds no judgement of its own."""
-    if cap["reliance"] == "ELIGIBLE":
-        head = (f"ELIGIBLE: this receiver's assessment of this view lets use {cap['use']!r} rely on it "
-                "(completeness of the source stays UNATTESTED)")
-    else:
-        head = f"{cap['reliance']}: not established for use {cap['use']!r}: " + "; ".join(cap["revisit_because"] or ["-"])
-    if cap.get("kind") == "transition" and cap.get("closes"):
-        # A transition's own reliance is about its results; what it closes is decided on each duty.
-        head += ". Its items, as this receiver assessed them: " + "; ".join(
-            f"item {c['item']} ({c['act']}) of duty {c['statement']!r}: {c['verdict']}"
-            + (f" ({c['why']})" if c.get("why") else "") + f", duty {c['duty_disposition']}" for c in cap["closes"])
-    elif cap.get("kind") == "duty" and cap["reliance"] != "ELIGIBLE" and cap.get("closures"):
-        head += ". Closure attempts: " + "; ".join(
-            f"{c['filer']} (transition {c['transition'][:12]} item {c['item']}): {c['verdict']}"
-            + (f" ({c['why']})" if c.get("why") else "") for c in cap["closures"])
-    return head
-
-
-def _capsule(report, tid, use):
-    """The engine's capsule plus, from the same report, every closure attempt with its verdict and why."""
-    cap = E.capsule(report, tid, use)
-    if tid in report["duties"]:
-        cap["closures"] = [{k: c[k] for k in CLOSURE if k in c} for c in report["duties"][tid]["candidates"]]
-    elif tid in report["results"]:
-        cap["closes"] = [dict({k: c[k] for k in CLOSURE if k in c and k != "transition"}, duty=did,
-                              statement=d["statement"], duty_disposition=d["disposition"])
-                         for did, d in sorted(report["duties"].items()) for c in d["candidates"]
-                         if c["transition"] == tid]
-    cap["reading"] = _reading(cap)
-    return cap
-
-
-def _context_items(report, actor, targets, use, scope=None):
-    """Capsules, then the actor's frontier and the unowned questions; with a `scope`, every question of that
-    scope, owned or not (the engine's `owned`, `taken_by`), before the frontier: a goal an obligation answers
-    is found by its scope however long the frontier is."""
-    items = [{"section": "capsule", "item": _capsule(report, t["id"], use)} for t in targets]
-    if scope is not None:
-        items += [{"section": "question", "item": q} for q in E.questions(report, scope=scope, owned=True)]
-    items += [{"section": "frontier", "item": f} for f in E.frontier(report, actor)]
-    if scope is None:
-        items += [{"section": "question", "item": q} for q in E.questions(report)]
-    return items
-
-
-def _envelope(ws, meta, report, data, use=None, targets=(), page=None):
-    observed = views.observation(ws, meta)
-    out = {"agent_api": AGENT_API, "view_token": meta["token"], "assessment_id": report["assessment_id"],
-           "adapter_id": adapter_id(), "data": data, "delivery": meta["delivery"], "observation": observed,
-           "page": page or {"included": 0, "total": 0, "truncated": False, "cursor": None}}
-    if use is not None:
-        out["use"] = decide(ws, meta, report, use, targets, observed)
+def _budget(out, limit):
+    data = json.dumps(out, sort_keys=True).encode()
+    need(len(data) <= limit, "RESOURCE_LIMIT", f"the result is {len(data)} bytes; this workspace answers {limit} "
+         "(name fewer targets, or read one)")
     return out
 
 
-def _cursor(token, kind, target, offset):
-    return None if offset is None else f"{token}:{kind}:{target or ''}:{offset}"
+def _header(rep):
+    return {k: rep[k] for k in ("assessment", "snapshot", "trust", "profile", "as_of", "code", "completeness",
+                                "canonical", "basis")} | {"adapter": adapter_id(), "agent_api": AGENT_API,
+                                                          "rejected": len(rep["rejected"]), "problems": len(rep["problems"])}
 
 
-def _parse_cursor(cursor, token, kind, target):
-    if cursor is None:
-        return 0
-    parts = cursor.split(":") if isinstance(cursor, str) else []
-    if len(parts) != 4 or parts[:3] != [token, kind, target or ""] or not parts[3].isdigit():
-        raise AgentError("CURSOR_MISMATCH", "this cursor belongs to another view, kind or target")
-    return int(parts[3])
-
-
-def _invalid(view, rid, why):
-    """An invalid record of the view, with what its bytes claim to be (untrusted: it does not authenticate)
-    when they have a record's shape at all."""
-    out = {"id": rid, "why": why}
-    data = view.record(rid)
-    rec = None if data is None else _record_shape(data)
-    if rec is not None:
-        b = rec["body"]
-        out["claims_to_be"] = {"type": rec["type"], "actor": rec.get("actor") if isinstance(rec.get("actor"), str) else None,
-                               **{k: b[k] for k in ("transition", "target", "item") if k in b}}
-    return out
-
-
-def _projection(view, meta, report, actor, targets, use, kind, cursor, budget, scope=None):
-    items = _context_items(report, actor, targets, use, scope)
-    start = _parse_cursor(cursor, meta["token"], kind, actor)
-    page, nxt = _page(items, start, budget)
-    data = {"capsules": [i["item"] for i in page if i["section"] == "capsule"],
-            "frontier": [i["item"] for i in page if i["section"] == "frontier"],
-            "questions": [i["item"] for i in page if i["section"] == "question"],
-            "boundary": {"completeness": report["view"]["completeness"],
-                         "invalid_records": len(report["invalid_records"]),
-                         "invalid": [_invalid(view, i, w) for i, w in sorted(report["invalid_records"].items())][:20],
-                         "missing": report["missing"],
-                         "unbound_actors": report["unbound_actors"], "evidence_is_untrusted_data": True}}
-    pg = {"included": len(page), "total": len(items), "offset": start, "truncated": nxt is not None,
-          "cursor": _cursor(meta["token"], kind, actor, nxt)}
-    return data, pg
+def _signer(ws):
+    need(ws.signer is not None, "NO_SIGNER", f"workspace {ws.name!r} has no signer")
+    return ws.signer[0]
 
 
 # ---------------------------------------------------------------- operations
 
+def workspace(cfg, req):
+    _closed(req, (), ("workspace",))
+    names = [cfg.workspace(req["workspace"]).name] if "workspace" in req else sorted(cfg.workspaces)
+    out = []
+    for n in names:
+        ws = cfg.workspace(n)
+        _, view, _, profile = _assess(ws)
+        rep = view.report()
+        counts = {}
+        for lin in rep["lineages"].values():
+            key = f"{lin['schema']} {lin['state']}"
+            counts[key] = counts.get(key, 0) + 1
+        out.append({"workspace": n, "signer": ws.signer[0] if ws.signer else None,
+                    "operations": sorted(set(ws.operations) | {"workspace", "explain"}),
+                    "roles": sorted(r for r, a in profile["roles"].items() if ws.signer and ws.signer[0] in a),
+                    "schemas": rep["schemas"], "lineages": dict(sorted(counts.items())), **_header(rep)})
+    return {"workspaces": out}
+
+
 def context(cfg, req):
-    # A context is a LOCAL_CAPTURE: there is no delivery to hold an expectation
-    # against, so `expectation` is refused here rather than accepted and ignored.
-    _closed(req, ("workspace",), ("actor", "targets", "use", "limits", "scope", "agent_api"))
+    _closed(req, ("workspace",), ("targets", "actor"))
     ws = cfg.workspace(req["workspace"])
     ws.permit("context")
-    actor, use = _actor(ws, req.get("actor")), _use(ws, req.get("use"))
-    scope = req.get("scope")
-    need(scope is None or (isinstance(scope, str) and 0 < len(scope) <= 200), "BAD_REQUEST",
-         "scope is a question scope, a string of 1 to 200 characters")
-    shapes = _target_shapes(req.get("targets", []))
-    limits = req.get("limits", {})
-    need(isinstance(limits, dict) and set(limits) <= {"context_bytes"} and all(_int(v, 256) for v in limits.values()),
-         "BAD_REQUEST", "limits: {context_bytes >= 256}")
-    budget = min(limits.get("context_bytes", ws.limits["context_bytes"]), ws.limits["context_bytes"])
-    meta = views.capture(ws)
-    meta2, report, view = views.load(ws, meta["token"])
-    targets = _resolve_targets(shapes, report, view)
-    views.write_json(view.dir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use, "scope": scope})
-    data, pg = _projection(view, meta2, report, actor, targets, use, "context", None, budget, scope)
-    return _envelope(ws, meta2, report, data, use, targets, pg)
+    snap, view, _, profile = _assess(ws)
+    rep = view.report()
+    targets = req.get("targets") or []
+    need(isinstance(targets, list) and len(targets) <= 64, "BAD_REQUEST", "targets is a list of at most 64 ids")
+    nodes, _, into = G.index(rep)
+    caps = {}
+    for t in targets:
+        i = _resolve(snap, t)
+        cap = G.describe(rep, nodes, i)
+        if i in view.recs:
+            cap["record"] = view.recs[i]
+        cap["attests"] = sorted(a for rel, a in into.get(i, []) if rel == "attest")
+        cap["challenges"] = {c: rep["challenges"][c] for rel, c in into.get(i, []) if rel == "challenge"}
+        if i in rep["rejected"]:
+            cap["rejected"] = rep["rejected"][i]
+        caps[i] = cap
+    actor = req.get("actor") or (ws.signer[0] if ws.signer else None)
+    need(actor is None or S.is_actor(actor), "BAD_REQUEST", "actor is an actor id")
+    out = {**_header(rep), "targets": caps, "frontier": G.frontier(rep, profile, actor) if actor else None}
+    return _budget(out, ws.limits["context_bytes"])
 
 
 def read(cfg, req):
-    need(isinstance(req, dict), "BAD_REQUEST", "request must be an object")
-    if "workspace" in req and req.get("kind") in ("draft", "operation"):
-        _closed(req, ("workspace", "kind", "target"), ("agent_api",))
-        ws = cfg.workspace(req["workspace"])
-        ws.permit("read")
-        return {"agent_api": AGENT_API, "adapter_id": adapter_id(), "data": drafts.status(ws, req["kind"], req["target"])}
-    _closed(req, ("workspace",), ("view_token", "kind", "target", "cursor", "max_bytes", "agent_api"))
+    _closed(req, ("workspace", "target"), ("kind", "offset", "max_bytes"))
     ws = cfg.workspace(req["workspace"])
     ws.permit("read")
-    kind, target = req.get("kind", "record"), req.get("target")
-    need(kind in ("record", "blob", "context"), "BAD_REQUEST", "kind is record, blob, context, draft or operation")
-    if req.get("view_token") is None:
-        # No view named: a record or blob is read from a new frozen view (returned as view_token), never
-        # from the live store; a context page belongs to the view that made it.
-        need(kind != "context", "BAD_REQUEST", "a context page needs the view_token of warrant_context")
-        need(req.get("cursor") is None, "BAD_REQUEST", "a cursor belongs to the view_token it came with")
-        req = dict(req, view_token=views.capture(ws)["token"])
-    meta, report, view = views.load(ws, req["view_token"])
-    max_bytes = req.get("max_bytes", ws.limits["read_bytes"])
-    need(_int(max_bytes, 1), "BAD_REQUEST", "max_bytes")
-    max_bytes = min(max_bytes, ws.limits["read_bytes"])
-    if kind == "context":
-        ctx = views.read_json(view.dir / CONTEXT_FILE)
-        data, pg = _projection(view, meta, report, ctx["actor"], ctx["targets"], ctx["use"], "context",
-                               req.get("cursor"), max_bytes, ctx.get("scope"))
-        return _envelope(ws, meta, report, data, ctx["use"], ctx["targets"], pg)
-    need(isinstance(target, str) and len(target) == 64 and all(c in "0123456789abcdef" for c in target),
-         "BAD_REQUEST", "target is a hex64 id")
-    data_bytes = view.record(target) if kind == "record" else view.blob(target)
-    need(data_bytes is not None, "NOT_FOUND", f"no such {kind} in this view; nothing is read from elsewhere")
-    start = _parse_cursor(req.get("cursor"), meta["token"], kind, target)
-    chunk = data_bytes[start:start + max_bytes]
-    nxt = start + len(chunk)
+    snap = ws.open().snapshot()
+    kind = req.get("kind", "record")
+    need(kind in ("record", "blob"), "BAD_REQUEST", "kind is record or blob")
+    i = _resolve(snap, req["target"])
+    if kind == "record":
+        need(i in snap.lines, "NOT_FOUND", f"{i[:12]} is not a record")
+        data = b"".join(sorted({C.canon(e) + b"\n" for e in snap.lines[i]}))
+    else:
+        need(i in snap.blobs, "NOT_FOUND", f"{i[:12]} is not a blob")
+        data = snap.blobs[i]
+    off, size = req.get("offset", 0), min(req.get("max_bytes", ws.limits["read_bytes"]), ws.limits["read_bytes"])
+    need(isinstance(off, int) and off >= 0 and isinstance(size, int) and size > 0, "BAD_REQUEST", "offset >= 0, max_bytes > 0")
+    chunk = data[off:off + size]
     try:
-        text, enc = chunk.decode("utf-8"), "utf-8"
+        text, enc = chunk.decode(), "utf-8"
     except UnicodeDecodeError:
         text, enc = base64.b64encode(chunk).decode(), "base64"
-    data = {"kind": kind, "id": target, "digest": C.digest(data_bytes), "offset": start, "length": len(chunk),
-            "total": len(data_bytes), "complete": nxt >= len(data_bytes), "encoding": enc, "content": text,
-            "untrusted_data": True}
-    pg = {"included": 1, "total": 1, "offset": start, "truncated": nxt < len(data_bytes),
-          "cursor": _cursor(meta["token"], kind, target, nxt if nxt < len(data_bytes) else None)}
-    return _envelope(ws, meta, report, data, page=pg)
+    return {"id": i, "kind": kind, "size": len(data), "offset": off, "encoding": enc, "content": text,
+            "next": off + len(chunk) if off + len(chunk) < len(data) else None, "untrusted": True}
 
 
-def _view(ws, token):
-    """The named view, or a new frozen view of the workspace when none is named."""
-    return views.load(ws, views.capture(ws)["token"] if token is None else token)
-
-
-def _export(cfg, req):
-    _closed(req, ("op", "workspace"), ("view_token", "roots", "request_id", "agent_api"))
+def graph(cfg, req):
+    _closed(req, ("workspace", "op"), ("target", "actor"))
     ws = cfg.workspace(req["workspace"])
+    ws.permit("graph")
+    op = req["op"]
+    need(isinstance(op, str) and op in GRAPH_OPS, "BAD_REQUEST", f"op is one of {list(GRAPH_OPS)}")
+    snap, view, _, profile = _assess(ws)
+    rep = view.report()
+    if op in ("around", "path", "why"):
+        i = _resolve(snap, req.get("target"))
+        data = getattr(G, op)(rep, i)
+        query = {"op": op, "target": i}
+    elif op == "frontier":
+        actor = req.get("actor") or _signer(ws)
+        need(S.is_actor(actor), "BAD_REQUEST", "actor is an actor id")
+        data, query = G.frontier(rep, profile, actor), {"op": op, "actor": actor}
+    else:
+        data, query = rep["graph"], {"op": op}
+    return _budget(G.answer(rep, query, data, adapter_id()), max(ws.limits["context_bytes"], ws.limits["read_bytes"]) * 16)
+
+
+# ---------------------------------------------------------------- handoff
+
+def _package_of(snap, view, rep, roots):
+    keep = set()
+    for r in roots:               # a version brings its whole lineage, and everything each version rests on
+        root = G.lineage_of(rep, r)
+        for x in [r] + (rep["lineages"][root]["versions"] if root else []):
+            keep |= {x} | {n["id"] for n in G.path(rep, x)["nodes"]}
+    _, _, into = G.index(rep)
+    keep |= {i for i, r in view.recs.items() if r["kind"] == "schema" or r["schema"] == R.MIGRATION}
+    # A fixpoint, not one pass: every kept record brings the attests and challenges on it, and each of those brings
+    # what it rests on and, in turn, the verdicts on it (a replayer's `reproduces` on a challenge; an acceptance of a
+    # schema). Bounded by the snapshot, itself within the workspace's store_bytes. (Codex AMEND 1 on #220: one pass
+    # left out the replay that made a challenge count, and the receiver read CHALLENGED as ELIGIBLE.)
+    todo = sorted(keep)
+    while todo:
+        for rel, a in into.get(todo.pop(), []):
+            if rel in ("attest", "challenge") and a not in keep:
+                new = ({a} | {n["id"] for n in G.path(rep, a)["nodes"]}) - keep
+                keep |= new
+                todo += sorted(new)
+    lines = sorted({C.canon(e).decode() for i in keep if i in snap.lines for e in snap.lines[i]})
+    blobs = {h: base64.b64encode(snap.blobs[h]).decode() for i in keep if i in view.recs
+             for h in view.recs[i]["refs"] if h in snap.blobs}
+    blobs |= {view.recs[i]["body"]["target"]: base64.b64encode(snap.blobs[view.recs[i]["body"]["target"]]).decode()
+              for i in keep if i in view.recs and view.recs[i]["schema"] == R.MIGRATION
+              and view.recs[i]["body"]["target"] in snap.blobs}
+    return {"warrant": PACKAGE, "roots": sorted(roots), "lines": lines, "blobs": dict(sorted(blobs.items()))}
+
+
+def _unpack(pkg, limit):
+    need(isinstance(pkg, dict) and pkg.get("warrant") == PACKAGE and set(pkg) == {"warrant", "roots", "lines", "blobs"}
+         and isinstance(pkg["lines"], list) and all(isinstance(x, str) for x in pkg["lines"])
+         and isinstance(pkg["blobs"], dict) and isinstance(pkg["roots"], list) and all(S.hex64(r) for r in pkg["roots"]),
+         "BAD_REQUEST", f"a package is {{warrant: {PACKAGE}, roots, lines, blobs}}")
+    try:
+        blobs = {h: base64.b64decode(b, validate=True) for h, b in pkg["blobs"].items()}
+    except (ValueError, TypeError) as e:
+        raise AgentError("BAD_REQUEST", f"a blob is not base64: {e}") from None
+    lines = [x.encode() + b"\n" for x in pkg["lines"]]
+    need(sum(map(len, lines)) + sum(map(len, blobs.values())) <= limit, "RESOURCE_LIMIT", "the package exceeds the workspace's store_bytes")
+    need(all(S.hex64(h) and C.digest(b) == h for h, b in blobs.items()), "BAD_REQUEST", "a blob is not named by its hash")
+    return lines, blobs
+
+
+def handoff(cfg, req):
+    op = req.get("op") if isinstance(req, dict) else None
+    need(isinstance(op, str) and op in HANDOFF_OPS, "BAD_REQUEST", f"op is one of {list(HANDOFF_OPS)}")
+    ws = cfg.workspace(req.get("workspace"))
     ws.permit("handoff")
-    meta, report, view = _view(ws, req.get("view_token"))
-    if "roots" in req:
-        roots = _resolve_targets(_target_shapes(req["roots"]), report, view)
-    else:                                       # the targets of the context that made the view, if any
-        ctx = view.dir / CONTEXT_FILE
-        roots = views.read_json(ctx)["targets"] if ctx.is_file() else []
-    request_id = req.get("request_id") or f"export:{meta['token']}:{C.doc_id(roots)[:32]}"
-    pkg = handoff.export(ws, meta["token"], roots, request_id)
-    return {"agent_api": AGENT_API, "adapter_id": adapter_id(),
-            "data": {"package": pkg, "manifest_digest": C.doc_id(pkg["manifest"]), "request_id": request_id}}
+    if op == "export":
+        _closed(req, ("workspace", "op", "targets"))
+        snap, view, _, _ = _assess(ws)
+        rep = view.report()
+        need(isinstance(req["targets"], list) and req["targets"], "BAD_REQUEST", "targets is a non-empty list")
+        roots = [_resolve(snap, t) for t in req["targets"]]
+        pkg = _package_of(snap, view, rep, roots)
+        return {"package": pkg, "digest": Snapshot([x.encode() + b"\n" for x in pkg["lines"]],
+                                                     {h: base64.b64decode(b) for h, b in pkg["blobs"].items()}).digest}
+    _closed(req, ("workspace", "op", "package"), ("alone",) if op == "inspect" else ())
+    lines, blobs = _unpack(req["package"], ws.limits["store_bytes"])
+    pkg_snap = Snapshot(lines, blobs)
+    need(not pkg_snap.rejected, "BAD_REQUEST", f"{len(pkg_snap.rejected)} line(s) of the package are not records")
+    if op == "import":
+        st = ws.open()
+        for data in blobs.values():
+            st.put_blob(data)
+        before = set(st.lines())
+        st.add_lines(lines)
+        return {"added": len(set(lines) - before), "blobs": len(blobs), "digest": pkg_snap.digest}
+    if req.get("alone", False):
+        snap = pkg_snap
+    else:
+        own = ws.open().snapshot()
+        snap = Snapshot(own_lines(own) + lines, {**own.blobs, **blobs})
+    _, view, _, _ = _assess(ws, snap)
+    rep = view.report()
+    nodes, _, _ = G.index(rep)
+    caps = {r: G.describe(rep, nodes, r) for r in req["package"]["roots"]}
+    return _budget({**_header(rep), "package": pkg_snap.digest, "roots": caps,
+                    "rejected": {i: w for i, w in rep["rejected"].items() if i in pkg_snap.lines}},
+                   ws.limits["context_bytes"])
 
 
-def _unpack(req):
-    """A package given in one piece (the exported object as it was received) as manifest/payload/declaration."""
-    if "package" not in req:
-        return req
-    pkg = req["package"]
-    need(isinstance(pkg, dict) and {"manifest", "payload"} <= set(pkg)
-         and set(pkg) <= {"manifest", "manifest_bytes", "payload", "declaration"}
-         and not ({"manifest", "payload", "declaration"} & set(req)), "BAD_REQUEST",
-         "package is the exported object {manifest, payload, declaration?, manifest_bytes?}, given instead of "
-         "manifest/payload/declaration")
-    return dict({k: v for k, v in req.items() if k != "package"}, manifest=pkg["manifest"],
-                payload=pkg["payload"], **({"declaration": pkg["declaration"]} if "declaration" in pkg else {}))
+def own_lines(snap):
+    return sorted({C.canon(e) + b"\n" for envs in snap.lines.values() for e in envs})
 
 
-def _inspect(cfg, req):
-    _closed(req, ("op", "workspace"), ("package", "manifest", "payload", "expectation", "declaration", "use",
-                                       "targets", "actor", "agent_api"))
-    req = _unpack(req)
-    need("manifest" in req and "payload" in req, "BAD_REQUEST", "inspect needs package, or manifest and payload")
-    ws = cfg.workspace(req["workspace"])
-    use, actor = _use(ws, req.get("use")), _actor(ws, req.get("actor"))
-    shapes = _target_shapes(req["targets"]) if "targets" in req else None
-    staged_id, meta = handoff.inspect(ws, req["manifest"], req["payload"], req.get("expectation"),
-                                      req.get("declaration"))
-    meta, report, view = views.load(ws, meta["token"])
-    if shapes is None:                          # the package's own roots, read from its checked manifest
-        shapes = [(r["kind"], r["id"]) for r in req["manifest"]["roots"]]
-    targets = _resolve_targets(shapes, report, view)
-    views.write_json(view.dir / CONTEXT_FILE, {"actor": actor, "targets": targets, "use": use})
-    data, pg = _projection(view, meta, report, actor, targets, use, "context", None, ws.limits["context_bytes"])
-    data["staged_id"] = staged_id
-    return _envelope(ws, meta, report, data, use, targets, pg)
+# ---------------------------------------------------------------- prepare / commit
 
-
-def _import(cfg, req):
-    _closed(req, ("op", "workspace", "staged_id"), ("request_id", "agent_api"))
-    ws = cfg.workspace(req["workspace"])
-    journal = handoff.import_(ws, req["staged_id"], req.get("request_id") or f"import:{req['staged_id']}")
-    return {"agent_api": AGENT_API, "adapter_id": adapter_id(), "data": journal}
-
-
-HANDOFF_OPS = {"export": _export, "inspect": _inspect, "import": _import}
-
-
-def handoff_op(cfg, req):
-    return HANDOFF_OPS[need_op(req, HANDOFF_OPS, "handoff op is export, inspect or import")](cfg, req)
+def _problems(view, r):
+    """What this receiver would refuse in record `r` (the engine's own body and lineage rules)."""
+    out = []
+    if r["schema"] is not None and r["schema"] != R.MIGRATION and r["kind"] != "schema":
+        s = view.schemas.get(r["schema"])
+        out.append(f"schema {r['schema']!r} is not one this receiver counts" if s is None else E._body_problem(r, s))
+    if r["lineage"] is not None:
+        p = view.recs.get(r["lineage"])
+        root = view.root_of.get(r["lineage"]) if r["kind"] == "entity" else None
+        if p is None or p["kind"] != r["kind"] or p["schema"] != r["schema"]:
+            out.append("LINEAGE_BROKEN: it succeeds no admitted version of its kind and schema")
+        elif r["kind"] == "entity" and root is None:
+            out.append("LINEAGE_BROKEN: its predecessor is in no lineage")
+        elif r["kind"] == "entity" and r["schema"] in view.schemas and not view._may_succeed(r, view.recs[root]):
+            out.append(f"LINEAGE_NOT_AUTHOR: {r['actor']!r} may not file this state in {view.recs[root]['actor']!r}'s lineage")
+    return [x for x in out if x]
 
 
 def prepare(cfg, req):
-    _closed(req, ("workspace", "type", "body"), ("based_on", "request_id", "blobs", "agent_api"))
+    _closed(req, ("workspace", "kind", "body"), ("schema", "target", "lineage", "refs", "guard"))
     ws = cfg.workspace(req["workspace"])
-    d = drafts.prepare(ws, req.get("based_on"), req.get("request_id"), req["type"], req["body"], req.get("blobs"))
-    return {"agent_api": AGENT_API, "adapter_id": adapter_id(),
-            "data": {k: d[k] for k in ("draft_id", "record_id", "actor", "at", "record", "basis_assessment_id",
-                                        "preview", "status")}}
+    ws.permit("prepare")
+    actor = _signer(ws)
+    snap, view, trust, _ = _assess(ws)
+    kind, body = req["kind"], req["body"]
+    need(kind in R.KINDS and isinstance(body, dict), "BAD_REQUEST", f"kind is one of {list(R.KINDS)}; body an object")
+    refs = list(req.get("refs") or [])
+    if kind in ("attest", "challenge"):
+        t = _resolve(snap, req.get("target") or body.get("target") or "")
+        body, refs = dict(body, target=t), refs + [t]
+    schema, guard = req.get("schema"), req.get("guard")
+    s = view.schemas.get(schema) if isinstance(schema, str) else None
+    if s is not None:
+        refs += sorted(R.body_refs(s["fields"], body))
+        if kind == "entity" and guard is None and isinstance(s["states"], dict):
+            guard = s["states"].get(body.get("state"))            # the schema's minimal guard for the state
+    lineage = req.get("lineage")
+    if lineage is not None:
+        lineage = _resolve(snap, lineage)
+    h = E.head(snap, trust, actor)
+    at = max(int(time.time()), h["at"] or 0)
+    try:
+        r = R.record(kind, actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard, prev=h["id"])
+    except (R.Invalid, TypeError) as e:
+        raise AgentError("INVALID_RECORD", str(e)) from None
+    why = _problems(view, r)
+    need(not why, "INVALID_RECORD", "; ".join(why), problems=why)
+    return {"record": r, "id": R.rid(r), "bytes": len(R.line(r)[1]), "next": "commit with this record, unchanged"}
 
 
 def commit(cfg, req):
-    _closed(req, ("workspace", "draft_id"), ("agent_api",))
+    _closed(req, ("workspace", "record"))
     ws = cfg.workspace(req["workspace"])
-    return {"agent_api": AGENT_API, "adapter_id": adapter_id(), "data": drafts.commit(ws, req["draft_id"])}
-
-
-def compute(cfg, req):
-    from . import computeops
-    return computeops.run(cfg, req)
-
-
-INDEX_ROWS = 50
-
-
-def _summary(rec):
-    """A short text of a duty or transition record (its statement or first established line)."""
-    b = rec["body"]
-    for k in ("statement", "established"):
-        v = b.get(k)
-        if isinstance(v, str):
-            return v[:200]
-        if isinstance(v, list) and v:
-            return str(v[0])[:200]
-    return ""
-
-
-def _workspace_view(ws):
-    """What an agent needs to start: the operator's handles and choices by name, never a path, a key or a URL,
-    and an index of the duties and transitions in the live store (untrusted text, not an assessment)."""
-    from warrant import compute as P
+    ws.permit("commit")
+    actor = _signer(ws)
+    r = req["record"]
     try:
-        prov = P.Provider.capture()
-        provider = {"installed": True, "id": prov.id, "accepted_by_profile": prov.id in ws.profile().get("providers", [])}
-    except P.ProviderError:                   # absent or broken provider: say so, nothing else
-        provider = {"installed": False, "id": None, "accepted_by_profile": False}
-    snap = views.read_snapshot(ws, ws.store)
-    # only records that authenticate under the receiver's trust are indexed; the rest are counted, never read
-    good, bad = snap.authentic(ws.trust())
-    rows, by_type = [], {}
-    for rid, rec in good.items():
-        by_type[rec["type"]] = by_type.get(rec["type"], 0) + 1
-        if rec["type"] in TARGET_KINDS:
-            rows.append({"id": rid, "type": rec["type"], "actor": rec["actor"], "at": rec["at"],
-                         "text": _summary(rec)})
-    rows.sort(key=lambda r: (-r["at"], r["id"]))
-    return {"name": ws.name, "signer": ws.signer[0] if ws.signer else None, "operations": list(ws.operations),
-            "uses": ws.uses, "default_use": next(iter(ws.uses), None),
-            "expectations": {h: {k: e[k] for k in ("manifest", "source", "exporter") if k in e}
-                             for h, e in ws.expectations.items()},
-            "provider": provider,
-            "store": {"records": len(snap.records), "blobs": len(snap.blobs), "by_type": by_type,
-                      "invalid_records": len(bad)},
-            "index": {"rows": rows[:INDEX_ROWS], "total": len(rows), "truncated": len(rows) > INDEX_ROWS,
-                      "untrusted_data": True, "assessed": False}}
-
-
-# ---------------------------------------------------------------- the record graph (graph.py)
-
-GRAPH_OPS = {"path": ("target",), "frontier": (), "impact": ("base_view_token",), "delta": ("base_view_token",),
-             "export": ()}
-GRAPH_OPTIONAL = {"frontier": ("actor",), "export": ("format",)}
-
-
-def _graph_items(op, ws, g, report, req, base):
-    """[{section, ...}] of one graph operation over `g` (and the base view's graph `base`)."""
-    if op == "path":
-        try:
-            d = graph.path(g, req["target"])
-        except graph.Unknown as e:
-            raise AgentError("NOT_FOUND", str(e), target=str(req["target"])[:200]) from None
-        return ({"target": d["target"], "kind": d["kind"], "open": d["open"]},
-                [dict(q, section="question") for q in d["questions"]] + [dict(x, section="duty") for x in d["duties"]])
-    if op == "frontier":
-        actor = _actor(ws, req.get("actor"))
-        items = graph.frontier(report, actor)
-        return {"actor": actor, "open": len(items)}, [dict(x, section="need") for x in items]
-    if op == "impact":
-        d = graph.impact(base, g)
-        rows = ([{"section": "record", "change": c, "id": r} for c in ("added", "removed") for r in d["records"][c]]
-                + [dict(x, section="duty") for x in d["duties"]] + [dict(q, section="question") for q in d["questions"]])
-        return {"records_added": len(d["records"]["added"]), "records_removed": len(d["records"]["removed"]),
-                "duties": len(d["duties"]), "questions": len(d["questions"])}, rows
-    if op == "delta":
-        d = graph.delta(base, g)
-        return dict(d["counts"], **{"from": d["from"], "to": d["to"]}), (
-            [dict(x, section="node") for x in d["nodes"]] + [dict(x, section="edge") for x in d["edges"]])
-    fmt = req.get("format", "json")
-    need(fmt in ("json", "dot"), "BAD_REQUEST", "export format is json or dot")
-    if fmt == "dot":
-        return {"format": "dot", "nodes": len(g["nodes"]), "edges": len(g["edges"])}, [
-            {"section": "dot", "line": line} for line in graph.dot(g).splitlines()]
-    return {"format": "json", "graph": g["graph"], "nodes": len(g["nodes"]), "edges": len(g["edges"])}, (
-        [dict(n, section="node") for n in g["nodes"]] + [dict(e, section="edge") for e in g["edges"]])
-
-
-def graph_op(cfg, req):
-    """The record graph of a frozen view (graph.py): `path` to a target, the actor's `frontier`, the `impact`
-    and `delta` of a base view to this one, or the whole graph (`export`, json or dot). Permitted wherever `read`
-    is; every state shown is the view's report; pages by bytes, continued by a cursor bound to the view and the
-    request."""
-    op = need_op(req, GRAPH_OPS, f"graph op is one of {', '.join(GRAPH_OPS)}")
-    need(op != "path" or isinstance(req.get("target"), str), "BAD_REQUEST",
-         "path's target is a duty id or prefix, a question reference or a question scope (a string)")
-    _closed(req, ("op", "workspace") + GRAPH_OPS[op],
-            ("view_token", "cursor", "max_bytes", "agent_api") + GRAPH_OPTIONAL.get(op, ()))
-    ws = cfg.workspace(req["workspace"])
-    ws.permit("read")
-    max_bytes = req.get("max_bytes", ws.limits["context_bytes"])
-    need(_int(max_bytes, 256), "BAD_REQUEST", "max_bytes >= 256")
-    budget = min(max_bytes, ws.limits["context_bytes"])
-    need(req.get("cursor") is None or req.get("view_token") is not None, "BAD_REQUEST",
-         "a cursor belongs to the view_token it came with")
-    meta, report, view = _view(ws, req.get("view_token"))
-    g = graph.build(view.snapshot(), report)
-    base = None
-    if op in ("impact", "delta"):
-        _, report0, view0 = views.load(ws, req["base_view_token"])
-        base = graph.build(view0.snapshot(), report0)
-    summary, items = _graph_items(op, ws, g, report, req, base)
-    # root: what the result was computed from (the view's snapshot and time, and the base view's); lens: everything
-    # else that decides it (this package and the engine's code, the view's trust and profile, the query).
-    reports = [report] if base is None else [report0, report]
-    root = graph.root_part(report) if base is None else {"base": graph.root_part(report0), "head": graph.root_part(report)}
-    query = {k: v for k, v in req.items() if k not in ("workspace", "view_token", "base_view_token", "cursor",
-                                                        "max_bytes", "agent_api")}
-    query.update({k: summary[k] for k in ("actor", "format") if k in summary})       # the defaults as resolved
-    lens = graph.lens_id({"agent": adapter_id(), "engine": code_identity()}, [graph.operands(r) for r in reports], query)
-    # The cursor names the view, the operation and a digest of the request's other members: a page of one
-    # request is never read as a page of another. view_token is left out of the digest: the cursor names the view
-    # already, and a first page read without one is continued with the token it returned (Codex 51541256eeb7).
-    key = C.digest(C.canon({k: v for k, v in req.items()
-                            if k not in ("cursor", "max_bytes", "agent_api", "view_token")}))[:16]
-    start = _parse_cursor(req.get("cursor"), meta["token"], f"graph-{op}", key)
-    page, nxt = _page(items, start, budget)
-    data = {"op": op, "summary": summary, "items": page, "root": root, "lens": lens, "untrusted_data": True}
-    more = nxt is not None
-    pg = {"included": len(page), "total": len(items), "offset": start, "truncated": more,
-          "cursor": _cursor(meta["token"], f"graph-{op}", key, nxt)}
-    return _envelope(ws, meta, report, data, page=pg)
-
-
-def workspace(cfg, req):
-    _closed(req, (), ("workspace", "agent_api"))
-    names = [req["workspace"]] if "workspace" in req else sorted(cfg.workspaces)
-    return {"agent_api": AGENT_API, "adapter_id": adapter_id(),
-            "data": {"workspaces": [_workspace_view(cfg.workspace(n)) for n in names]}}
+        R.check(r)
+    except (R.Invalid, TypeError) as e:
+        raise AgentError("INVALID_RECORD", str(e)) from None
+    need(r["actor"] == actor, "NOT_PERMITTED", f"the signer of this workspace is {actor!r}, not {r['actor']!r}")
+    snap, view, trust, _ = _assess(ws)
+    why = _problems(view, r)
+    need(not why, "INVALID_RECORD", "; ".join(why), problems=why)
+    try:
+        key = K.Key.from_seed_hex(ws.signer[1].read_text())
+    except (OSError, ValueError) as e:
+        raise AgentError("NO_SIGNER", f"the signer's seed cannot be read: {type(e).__name__}") from None
+    need(key.public in trust["keys"].get(actor, []), "SIGNER_NOT_TRUSTED",
+         f"the signer's key {key.id[:12]} is not one this workspace's trust binds to {actor!r}")
+    try:
+        i = ws.open().append(r, key, trust, expect_head=r["prev"] or "")
+    except Refused as e:
+        raise AgentError("CHAIN_MOVED" if "CHAIN_MOVED" in str(e) else "REFUSED", str(e)) from None
+    snap, view, _, _ = _assess(ws)
+    rep = view.report()
+    nodes, _, _ = G.index(rep)
+    return {"id": i, "filed": G.describe(rep, nodes, i), "rejected": rep["rejected"].get(i)}
 
 
 def explain(cfg, req):
-    from . import glossary
-    _closed(req, ("term",), ("agent_api",))
-    need(isinstance(req["term"], str), "BAD_REQUEST", "term")
-    return {"agent_api": AGENT_API, "adapter_id": adapter_id(), "data": glossary.explain(req["term"])}
+    _closed(req, ("word",))
+    need(isinstance(req["word"], str) and req["word"] in GL.TERMS, "NOT_FOUND", "no such word in the glossary")
+    return GL.explain(req["word"])
 
 
-OPERATIONS = {"context": context, "read": read, "handoff": handoff_op, "prepare": prepare, "commit": commit,
-              "compute": compute, "workspace": workspace, "explain": explain, "graph": graph_op}
+OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "handoff": handoff,
+               "prepare": prepare, "commit": commit, "explain": explain}
+assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain"}
+assert set(GL.TERMS) >= set(CODES)
 
 
 def call(cfg, op, req):
-    """One operation; returns {"ok": result} or {"error": ...}. Never raises an AgentError."""
-    if isinstance(req, dict) and "agent_api" in req and req["agent_api"] != AGENT_API:
-        return {"error": "UNSUPPORTED_VERSION", "message": f"this server speaks {AGENT_API}"}
-    if op not in OPERATIONS:
-        return {"error": "BAD_REQUEST", "message": f"unknown operation {op!r}"}
     try:
-        return {"ok": OPERATIONS[op](cfg, req)}
+        need(op in OPERATIONS_, "BAD_REQUEST", f"operation is one of {sorted(OPERATIONS_)}")
+        return {"ok": OPERATIONS_[op](cfg, req if req is not None else {})}
     except AgentError as e:
         return e.to_json()

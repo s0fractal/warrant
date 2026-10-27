@@ -1,1 +1,0 @@
-{"because":null,"duty":"bf067a98c6bbfb728dbb14973a06135abf8179696c846e9997d8925fe54cb728","id":"SPEC-4.2-8","kind":"normative","mutants":["M07"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.2","source":"SPEC.md","text":"every duty in D's `requires` is DISCHARGED in this view;","witnesses":["contract_test:G1","contract_test:G2"]}

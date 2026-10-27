@@ -1,1 +1,0 @@
-`handoff` export packages the whole configured store of a view: a manifest of every record's envelope digest and every blob with the snapshot digest and `completeness: UNATTESTED`, the payload, and a declaration signed by the configured signer when there is one.

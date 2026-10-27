@@ -1,990 +1,436 @@
-"""Assessment (SPEC §4): one pure function of one view.
-
-`assess()` returns a report: every duty's disposition and candidates, every
-transition's results, grants, challenges, unowned questions and the view's
-identity. `reliance()`, `frontier()`, `questions()` and `capsule()` read a report."""
-import heapq
+"""Assessment (docs/V3.md §§3-7, 10): one pure pass over a snapshot under the receiver's trust and
+profile. Authentication, actor chains, schemas, lineages with FORK, guards, challenges, reliance
+and the graph come out of the same View."""
+import hashlib
 from pathlib import Path
 
-from . import jcs as C
-from . import compute as P
-from . import limits as L
+from warrant import jcs as C
+from warrant import shapes as S
+
 from . import records as R
-from . import store as S
-from . import triggers as TR
+from .store import LIMITS
 
-PROFILE_FIELDS = ("uses", "accept_by", "targets", "grant_roots", "challengers", "providers")
-VERDICTS = ("ADMITTED", "PENDING", "OVERCLAIMED", "MISSING_EVIDENCE", "UNMET_CONDITION", "UNVERIFIED")
-RELIANCE = ("ELIGIBLE", "STALE", "CHALLENGED", "SUPERSEDED", "UNASSESSED", "NOT_CLOSED", "CONTESTED", "MISSING")
-END_ID = "\U0010ffff"      # after every record id: (as_of, LAST, END_ID) is the end of the view
-LAST = float("inf")        # after every rank
-NEVER = (float("inf"), 0, "")
-PACKAGE = Path(__file__).resolve().parent
-
-
-def engine_identity():
-    """Digest of every file of the evaluating code, by package-relative path: the
-    same bytes installed elsewhere have the same identity."""
-    files = sorted(p for p in PACKAGE.rglob("*") if p.is_file() and p.suffix in (".py", ".json")
-                   and "__pycache__" not in p.parts)
-    return C.doc_id({str(p.relative_to(PACKAGE)): C.digest(p.read_bytes()) for p in files})
+NONE, MET, PENDING = "NONE", "MET", "PENDING"
+# Every word a report answers with, for the agent's glossary (warrant_agent/glossary.py is held to these).
+GUARDS = (NONE, MET, PENDING)
+RELIANCE = ("ELIGIBLE", "PENDING", "CHALLENGED", "FORK")
+BASES = ("SIGNED", "MIGRATED")
+PROBLEMS = ("INVALID", "LINEAGE_BACKDATED", "LINEAGE_BROKEN", "LINEAGE_NOT_AUTHOR", "MIGRATION_MAP", "SCHEMA_CONFLICT",
+            "SCHEMA_NOT_COUNTED")
+REJECTIONS = ("line", "BAD_SIGNATURE", "UNSIGNED", "INVALID")
+REPLAY = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
+_CODE = []
 
 
-def profile_problem(prof):
-    try:
-        R._fields(prof, PROFILE_FIELDS, what="profile")
-        R._need(isinstance(prof["uses"], dict) and all(isinstance(k, str) and k for k in prof["uses"]), "uses")
-        for need in prof["uses"].values():
-            R._fields(need, ("requires_triggers",), what="use")
-            R._need(type(need["requires_triggers"]) is bool, "requires_triggers")
-        R._fields(prof["accept_by"], ("results",), what="profile accept_by")
-        R._actors(prof["accept_by"]["results"], "accept_by.results")
-        R._list(prof["targets"], "targets", R._text)
-        R._hexes(prof["grant_roots"], "grant_roots")
-        R._actors(prof["challengers"], "challengers")
-        R._hexes(prof["providers"], "providers")
-    except R.Invalid as e:
-        return str(e)
-    return None
+def code_identity():
+    """The digest of every file that decides a verdict: this package, whole (the core imports nothing
+    outside it but the standard library and the signature library), with that library's version."""
+    if not _CODE:
+        import cryptography
+        files = sorted(Path(__file__).resolve().parent.glob("*.py"))
+        h = {f"warrant/{p.name}": hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+        _CODE.append(C.doc_id({"files": h, "cryptography": cryptography.__version__}))
+    return _CODE[0]
 
 
-def profile(uses=None, results_by=(), targets=(), grant_roots=(), challengers=(), providers=()):
-    return {"uses": dict(uses or {"act": {"requires_triggers": False}}), "accept_by": {"results": list(results_by)},
-            "targets": list(targets), "grant_roots": list(grant_roots), "challengers": list(challengers),
-            "providers": list(providers)}
+def trust_problem(t):
+    ok = isinstance(t, dict) and set(t) == {"warrant", "keys"} and t["warrant"] == "trust/3" and isinstance(t["keys"], dict) \
+        and all(S.is_actor(a) and R.is_list(ks, S.hex64, True) for a, ks in t["keys"].items())
+    return None if ok else "trust is {warrant: trust/3, keys: {actor: [sorted public hex]}}"
 
 
-# ---------------------------------------------------------------- the view
+def profile_problem(p):
+    ok = isinstance(p, dict) and {"warrant", "roles"} <= set(p) <= {"warrant", "roles", "quorum"} and p["warrant"] == "profile/3" \
+        and isinstance(p["roles"], dict) and all(isinstance(k, str) and R.is_list(v, S.is_actor, True) for k, v in p["roles"].items()) \
+        and isinstance(p.get("quorum", {}), dict) and all(R.is_int(k) and k >= 1 for k in p.get("quorum", {}).values())
+    return None if ok else "profile is {warrant: profile/3, roles: {role: [sorted actors]}, quorum?: {role: k >= 1}}"
+
+
+def _authentic(snap, trust, as_of, only=None):
+    """({id: record}, {id: basis}, {id: why}, later): SIGNED by a trusted key of the actor, or
+    UNSIGNED pending a migration voucher; records after as_of are left out (counted). `only`: read
+    one actor's records alone (a writer's head verifies no other signature)."""
+    recs, basis, bad, later = {}, {}, {}, 0
+    for i, envs in snap.lines.items():
+        r = envs[0]["record"]
+        if only is not None and r["actor"] != only:
+            continue
+        if as_of is not None and r["at"] > as_of:
+            later += 1
+            continue
+        sigs = [e["sig"] for e in envs if e["sig"] is not None]
+        keys = trust["keys"].get(r["actor"], [])
+        if any(R.verifies(i, s, k) for s in sigs for k in keys):
+            recs[i], basis[i] = r, "SIGNED"
+        elif any(e["sig"] is None for e in envs):          # a bad signature beside it never revokes the unsigned line's basis
+            recs[i], basis[i] = r, "UNSIGNED"
+        else:
+            bad[i] = "BAD_SIGNATURE: no signature verifies under a key the trust binds to the actor"
+    return recs, basis, bad, later
+
+
+def head(snap, trust, actor):
+    """The writer's head (§7): the latest of the actor's chained signed records no other names."""
+    recs, basis, _, _ = _authentic(snap, trust, None, only=actor)
+    mine = {i: r for i, r in recs.items() if basis[i] == "SIGNED"}
+    named = {r["prev"] for r in mine.values()}
+    # Chained as §7 says, by the links themselves: records of one second follow their chain, never their time.
+    chained = {i for i, r in mine.items() if r["prev"] is None or (r["prev"] in mine and mine[r["prev"]]["at"] <= r["at"])}
+    tips = sorted((mine[i]["at"], i) for i in chained if i not in named)
+    return {"id": tips[-1][1], "at": tips[-1][0]} if tips else {"id": None, "at": None}
+
 
 class View:
-    def __init__(self, snapshot, trust, as_of, prof, provider, cache=None, verdicts=None):
-        self.snap, self.as_of, self.profile, self.provider = snapshot, as_of, prof, provider
-        self.cache = cache      # the recipient's ReplayCache, or None: cost, never an answer
-        good, self.invalid = snapshot.authentic(trust, verdicts)
-        self.recs = {rid: r for rid, r in good.items() if r["at"] <= as_of}
-        self.later = sorted(rid for rid, r in good.items() if r["at"] > as_of)
-        self.by_type = {t: {} for t in R.TYPES}
-        for rid, r in self.recs.items():
-            self.by_type[r["type"]][rid] = r
-        self.duties = self.by_type["duty"]
-        self.transitions = self.by_type["transition"]
-        self.missing = set()
-        self.matched = {}       # (transition, item) -> window ends of the observations that met its condition
-        self._chains(set(self.later))
-        self._ranks()
+    def __init__(self, snap, trust, profile, as_of=None):
+        for why in (trust_problem(trust), profile_problem(profile)):
+            if why:
+                raise R.Invalid(why)
+        self.snap, self.trust, self.profile = snap, trust, profile
+        self.as_of = as_of if as_of is not None else max((e[0]["record"]["at"] for e in snap.lines.values()), default=0)
+        self.recs, self.basis, self.bad, self.later = _authentic(snap, trust, self.as_of)
+        self.problems = []
+        self._vouch()
+        self._chains()
+        self._index_attests()
+        self._schemas()
+        self._bodies()
+        self._index_attests()
+        ents = {i for i, r in self.recs.items() if r["kind"] == "entity"}
+        self.root_of, self.lineages = self._lineages(ents, self._may_succeed)
+        self._guards, self._effective = {}, {}
+        self._requires_depth()
 
-    def _chains(self, later):
-        """Each actor's chain (SPEC §3): `link` holds where a record's `prev` is in the view, by
-        the same actor, and not dated after it; any other `prev` leaves the record unanchored.
-        Two records of one actor naming the same `prev` are a fork: listed, neither excluded."""
-        self.link, self.unanchored, self.unchained, groups = {}, {}, {}, {}
-        for rid, r in sorted(self.recs.items()):
-            if "prev" not in r:
-                self.unchained[r["actor"]] = self.unchained.get(r["actor"], 0) + 1
+    def _index_attests(self):
+        self.attests = {}
+        for i, r in sorted(self.recs.items(), key=lambda kv: (kv[1]["at"], kv[0])):
+            if r["kind"] == "attest":
+                self.attests.setdefault(r["body"]["target"], []).append(i)
+
+    def holds(self, actor, *roles):
+        return any(actor in self.profile["roles"].get(x, []) for x in roles)
+
+    def problem(self, code, rid, detail=""):
+        self.problems.append([code, rid, detail])
+
+    def drop(self, i, why):
+        self.bad[i] = why
+        self.recs.pop(i, None)
+        self.basis.pop(i, None)
+
+    # -- authentication of migrated records (§9)
+
+    def _vouch(self):
+        vouched = {}
+        for i, r in sorted(self.recs.items()):
+            if not (r["kind"] == "attest" and r["schema"] == R.MIGRATION and self.basis[i] == "SIGNED"
+                    and self.holds(r["actor"], "migrator")):
                 continue
-            groups.setdefault((r["actor"], r["prev"] or ""), []).append(rid)
-            if r["prev"] is None:                   # the actor's first record: a genesis
+            doc = self.snap.json_blob(r["body"]["target"])
+            rows = doc.get("map") if isinstance(doc, dict) else None
+            if not (isinstance(rows, list) and all(isinstance(x, list) and len(x) == 3 and S.hex64(x[0]) for x in rows)):
+                self.problem("MIGRATION_MAP", i, "its target is not a map blob in the view")
                 continue
-            q = self.recs.get(r["prev"])
-            if q is None:
-                self.unanchored[rid] = "its prev is dated after this view" if r["prev"] in later else "its prev is not in the view"
-                if r["prev"] not in later:
-                    self.missing.add(r["prev"])
-            elif q["actor"] != r["actor"]:
-                self.unanchored[rid] = "its prev was filed by another actor"
-            elif q["at"] > r["at"]:
-                self.unanchored[rid] = "it is dated before its prev"
+            for row in rows:
+                vouched.setdefault(row[0], i)
+        self.vouched_by = {}
+        for i in [i for i, b in self.basis.items() if b == "UNSIGNED"]:
+            by = vouched.get(i)
+            if by is not None:
+                self.basis[i], self.vouched_by[i] = "MIGRATED", by
             else:
-                self.link[rid] = r["prev"]
-        self.forks = [{"actor": a, "prev": p or None, "records": ids} for (a, p), ids in sorted(groups.items()) if len(ids) > 1]
-        self.height = {}
-        for start in self.recs:
-            path, x = [], start
-            while x not in self.height and x in self.link:
-                path.append(x)
-                x = self.link[x]
-            h = self.height.setdefault(x, 0)
-            for y in reversed(path):
-                h += 1
-                self.height[y] = h
+                self.drop(i, "UNSIGNED: no signature, and no migration the profile accepts lists it")
 
-    def _ranks(self):
-        """The order of the records that share an `at` (SPEC §4): by id, except that a record
-        chained to a predecessor with the same `at` follows it."""
-        self.rank, groups = {}, {}
-        for rid, r in self.recs.items():
-            groups.setdefault(r["at"], []).append(rid)
-        for at, ids in groups.items():
-            kids, ready = {}, []
-            for rid in ids:
-                p = self.link.get(rid)
-                if p is not None and self.recs[p]["at"] == at:
-                    kids.setdefault(p, []).append(rid)
+    # -- actor chains (§7)
+
+    def _chains(self):
+        signed = {i: r for i, r in self.recs.items() if self.basis[i] == "SIGNED"}
+        self.chain_forks, by_prev, self.unanchored = [], {}, []
+        for i, r in sorted(signed.items()):
+            by_prev.setdefault((r["actor"], r["prev"]), []).append(i)
+            p = signed.get(r["prev"]) if r["prev"] else None
+            if r["prev"] is not None and not (p and p["actor"] == r["actor"] and p["at"] <= r["at"]):
+                self.unanchored.append(i)
+        self.chain_forks = [[a, p, ids] for (a, p), ids in sorted(by_prev.items(), key=lambda kv: (kv[0][0], kv[0][1] or ""))
+                            if len(ids) > 1]
+
+    # -- schemas (§4)
+
+    def _schemas(self):
+        self.schemas, cand = {}, {}
+        for i, r in self.recs.items():
+            if r["kind"] == "schema":
+                why = _schema_problem(r["body"])
+                backers = self.backers(i)
+                if why or len(backers) < self.quorum("schema/author"):
+                    self.problem("SCHEMA_NOT_COUNTED", i, why or f"{len(backers)} of the {self.quorum('schema/author')} "
+                                 f"schema/author actors stand behind it: {', '.join(backers) or 'none'}")
+                    continue
+                cand[i] = r
+        _, lins = self._lineages(set(cand), lambda r, root: r["actor"] == root["actor"])
+        by_name = {}
+        for root, lin in lins.items():
+            if lin["leaf"] is None:
+                self.problem("SCHEMA_CONFLICT", root, "its lineage forks")
+                continue
+            by_name.setdefault(self.recs[lin["leaf"]]["body"]["name"], []).append(lin["leaf"])
+        for name, leaves in sorted(by_name.items()):
+            if len(leaves) > 1:
+                self.problem("SCHEMA_CONFLICT", name, f"{len(leaves)} schema lineages name it")
+            else:
+                self.schemas[name] = {"id": leaves[0], **self.recs[leaves[0]]["body"]}
+
+    def quorum(self, role):
+        return self.profile.get("quorum", {}).get(role, 1)
+
+    def backers(self, i):
+        """The schema/author actors behind schema record i: its filer and each that attests it with accept."""
+        out = {self.recs[a]["actor"] for a in self.attests.get(i, []) if self.recs[a]["body"].get("verdict") == "accept"}
+        out.add(self.recs[i]["actor"])
+        return sorted(a for a in out if self.holds(a, "schema/author"))
+
+    def _bodies(self):
+        for i, r in sorted(self.recs.items()):
+            if r["kind"] == "schema" or (r["schema"] is None and r["kind"] != "entity") or r["schema"] == R.MIGRATION:
+                continue
+            s = self.schemas.get(r["schema"])
+            why = f"schema {r['schema']!r} is not one this receiver counts" if s is None else _body_problem(r, s)
+            if why:
+                self.problem("INVALID", i, why)
+                self.drop(i, f"INVALID: {why}")
+
+    # -- lineages (§3)
+
+    def _may_succeed(self, r, root):
+        """A state the schema's successors name is entered only by those roles; any other by the root's actor."""
+        roles = self.schemas[r["schema"]]["successors"].get(r["body"].get("state"))
+        return r["actor"] == root["actor"] if roles is None else self.holds(r["actor"], *roles)
+
+    def _lineages(self, ids, may_succeed):
+        """({id: root}, {root: lineage}) over `ids`; successors that break the rules are excluded."""
+        root_of = {}
+        for i in sorted(ids):
+            path, cur = [], i
+            while cur not in root_of and cur in ids and self.recs[cur]["lineage"] is not None and len(path) < 4096:
+                path.append(cur)
+                cur = self.recs[cur]["lineage"]
+            if cur not in root_of:
+                root_of[cur] = cur if cur in ids and self.recs[cur]["lineage"] is None else None
+            for x in reversed(path):
+                p, r, rt = self.recs[x]["lineage"], self.recs[x], root_of[self.recs[x]["lineage"]]
+                if rt is None or self.recs[p]["kind"] != r["kind"] or self.recs[p]["schema"] != r["schema"]:
+                    root_of[x] = None
+                    self.problem("LINEAGE_BROKEN", x, f"it succeeds {p[:12]}, which is no admitted version of its kind and schema")
+                elif not may_succeed(r, self.recs[rt]):
+                    root_of[x] = None
+                    self.problem("LINEAGE_NOT_AUTHOR", x, f"filed by {r['actor']!r}; the lineage is {self.recs[rt]['actor']!r}'s")
                 else:
-                    ready.append(rid)
-            heapq.heapify(ready)
-            while ready:
-                x = heapq.heappop(ready)
-                self.rank[x] = len(self.rank)
-                for k in kids.get(x, ()):
-                    heapq.heappush(ready, k)
+                    root_of[x] = rt
+                    if r["at"] < self.recs[p]["at"]:
+                        self.problem("LINEAGE_BACKDATED", x, "dated before the version it succeeds")
+        lins = {}
+        for i in sorted(ids, key=lambda i: (self.recs[i]["at"], i)):
+            rt = root_of.get(i)
+            if rt is None:
+                continue
+            lin = lins.setdefault(rt, {"versions": [], "succ": {}})
+            lin["versions"].append(i)
+            if i != rt:
+                lin["succ"].setdefault(self.recs[i]["lineage"], []).append(i)
+        for rt, lin in lins.items():
+            forks = {p: c for p, c in lin["succ"].items() if len(c) > 1}
+            lin["forks"] = [[p, c] for p, c in sorted(forks.items())]
+            if forks:
+                lin["path"], lin["leaf"] = [], None
+                continue
+            path = [rt]
+            while path[-1] in lin["succ"]:
+                path.append(lin["succ"][path[-1]][0])
+            lin["path"], lin["leaf"] = path, path[-1]
+        return {i: rt for i, rt in root_of.items() if rt is not None and i in ids}, lins
 
-    def pos(self, rid):
-        return (self.recs[rid]["at"], self.rank[rid], rid)
+    # -- guards (§6)
 
-    def before(self, a, b):
-        """a is a chain ancestor of b: an order the records witness themselves (SPEC §3)."""
-        if a == b or a not in self.height or b not in self.height or self.height[a] >= self.height[b]:
-            return False
-        while self.height[b] > self.height[a]:
-            b = self.link[b]
-        return a == b
+    def _requires_depth(self):
+        """Refuse the store (§8) when a chain of lineages requiring lineages is longer than LIMITS["requires"]:
+        guards are resolved depth first, in process, and the bound keeps that off the interpreter's stack. The
+        depth is the structure's (every version's requires, cycles cut), so it does not depend on the order in
+        which versions are evaluated. Computed without recursion."""
+        deps = {L: sorted({x for v in lin["versions"] for x in (self.recs[v]["guard"] or {}).get("requires", [])
+                           if x in self.lineages}) for L, lin in self.lineages.items()}
+        depth = {}
+        for start in sorted(deps):
+            if start in depth:
+                continue
+            stack, on = [(start, iter(deps[start]))], {start}
+            while stack:
+                node, it = stack[-1]
+                nxt = next(it, None)
+                if nxt is None:
+                    stack.pop()
+                    on.discard(node)
+                    depth[node] = 1 + max((depth[c] for c in deps[node] if c in depth), default=0)
+                elif nxt not in depth and nxt not in on:
+                    on.add(nxt)
+                    stack.append((nxt, iter(deps[nxt])))
+        if max(depth.values(), default=0) > LIMITS["requires"]:
+            raise R.Invalid(f"store beyond limits: lineages require lineages {max(depth.values())} deep, "
+                            f"more than {LIMITS['requires']}")
 
-    def ordered(self, a, b):
-        """The chain orders a and b (same actor): one is the other or its ancestor."""
-        return a == b or self.before(a, b) or self.before(b, a)
+    def schema_of(self, i):
+        return self.schemas[self.recs[i]["schema"]]
 
-    def accepts_by(self, t_id, index, evidence, actor):
-        """The acceptances by `actor` binding exactly (t_id, index, evidence)."""
-        want = sorted(evidence)
-        return sorted(rid for rid, r in self.by_type["accept"].items() if r["actor"] == actor
-                      and r["body"]["transition"] == t_id and r["body"]["item"] == index and sorted(r["body"]["evidence"]) == want)
-
-    def resolves(self, h):
-        return h in self.snap.blobs or h in self.recs
-
-    def accepted_at(self, t_id, index, evidence):
-        """{actor: earliest position} of acceptances binding exactly (t_id, index, evidence)."""
-        out = {}
-        want = sorted(evidence)
-        for rid, r in self.by_type["accept"].items():
-            b = r["body"]
-            if b["transition"] == t_id and b["item"] == index and sorted(b["evidence"]) == want:
-                p = self.pos(rid)
-                if r["actor"] not in out or p < out[r["actor"]]:
-                    out[r["actor"]] = p
+    def guard(self, v):
+        if v in self._guards:
+            return self._guards[v]
+        self._guards[v] = {"guard": PENDING, "waiting": ["a requires cycle"], "accepted_by": [], "roles": [], "short": 0,
+                           "open": [v]}         # while in progress
+        r, g = self.recs[v], self.recs[v]["guard"]
+        acc, waiting, still_open = [], [], []
+        if g is not None:
+            acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
+                          if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
+                          and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
+            if len(acc) < g["quorum"]:
+                waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
+        if r["body"].get("state") in self.schema_of(v).get("closed", []):       # with or without a guard (Codex #3)
+            for L in self.requires(v):
+                eff = self.effective(L) if L in self.lineages else None
+                if eff is None or self.recs[eff]["body"].get("state") not in self.schema_of(L).get("closed", []):
+                    waiting.append(f"requires {L} closed")
+                    still_open.append(L)
+        out = {"guard": PENDING if waiting else NONE if g is None else MET, "waiting": waiting, "accepted_by": acc,
+               "roles": g["roles"] if g else [], "short": max(0, g["quorum"] - len(acc)) if g else 0, "open": still_open}
+        self._guards[v] = out
         return out
 
-    def support(self, t_id, index):
-        return {r["actor"]: r["body"]["support"] for r in self.by_type["accept"].values()
-                if r["body"]["transition"] == t_id and r["body"]["item"] == index and r["body"]["support"]}
+    def requires(self, v):
+        out, cur = set(), v
+        while cur is not None:
+            out.update((self.recs[cur]["guard"] or {}).get("requires", []))
+            cur = self.recs[cur]["lineage"]
+        return sorted(out)
+
+    def effective(self, L):
+        if L not in self._effective:
+            self._effective[L] = None
+            path = self.lineages[L]["path"]
+            self._effective[L] = next((v for v in reversed(path) if self.guard(v)["guard"] in (NONE, MET)), None)
+        return self._effective[L]
+
+    # -- challenges (§5)
+
+    def challenge(self, c):
+        r = self.recs[c]
+        x = r["body"]["target"]
+        t = self.recs.get(x)
+        replays = [[self.recs[a]["body"].get("on"), self.recs[a]["body"].get("verdict"), self.recs[a]["actor"]]
+                   for a in self.attests.get(c, []) if self.holds(self.recs[a]["actor"], "replayer")
+                   and self.recs[a]["body"].get("verdict") in REPLAY]
+        why = None
+        if t is not None and r["actor"] == t["actor"]:
+            why = "its target's actor"
+        elif t is not None and t["guard"] and self.holds(r["actor"], *t["guard"]["roles"]):
+            why = "holds a role of its target's guard"
+        elif self.holds(r["actor"], "challenger"):
+            why = "holds the challenger role"
+        elif any(on == x and v == "reproduces" for on, v, _ in replays):
+            why = "reproduced by a replayer"
+        stands = why is not None and t is not None
+        if stands and x in self.root_of:
+            lin = self.lineages[self.root_of[x]]
+            eff = self.effective(self.root_of[x])
+            stands = x in lin["path"] and (eff is None or lin["path"].index(eff) <= lin["path"].index(x))
+        return {"target": x, "counted": why is not None, "why": why or "thesis: its actor's challenge does not count here",
+                "replays": sorted(replays, key=lambda z: (str(z[0]), str(z[1]), z[2])), "stands": stands}
+
+    # -- the report (§10)
+
+    def report(self):
+        challenges = {c: self.challenge(c) for c, r in sorted(self.recs.items()) if r["kind"] == "challenge"}
+        standing = {}
+        for c, x in challenges.items():
+            if x["stands"]:
+                standing.setdefault(x["target"], []).append(c)
+        versions = {v: dict(self.guard(v), challenged_by=standing.get(v, [])) for v in sorted(self.root_of)}
+        lineages = {}
+        for L, lin in sorted(self.lineages.items()):
+            eff = self.effective(L)
+            reliance = "FORK" if lin["leaf"] is None else "PENDING" if eff is None else \
+                "CHALLENGED" if standing.get(eff) else "ELIGIBLE"
+            lineages[L] = {"schema": self.recs[L]["schema"], "actor": self.recs[L]["actor"], "versions": lin["versions"],
+                           "path": lin["path"], "leaf": lin["leaf"], "effective": eff,
+                           "state": self.recs[eff]["body"].get("state") if eff else None,
+                           "verdict": "FORK" if lin["forks"] else "OK", "forks": lin["forks"], "reliance": reliance}
+        operands = {"snapshot": self.snap.digest, "trust": C.doc_id(self.trust), "profile": C.doc_id(self.profile),
+                    "as_of": self.as_of, "code": code_identity()}
+        return {"warrant": "3", "assessment": C.doc_id(operands), **operands, "completeness": "UNATTESTED",
+                "canonical": self.snap.canonical, "later": self.later,
+                "basis": {b: sum(1 for x in self.basis.values() if x == b) for b in ("SIGNED", "MIGRATED")},
+                "rejected": dict(sorted({**self.snap.rejected, **self.bad}.items())),
+                "duplicates": sorted(i for i, e in self.snap.lines.items() if len(e) > 1 and i in self.recs),
+                "chains": {"forks": self.chain_forks, "unanchored": self.unanchored},
+                "schemas": {n: s["id"] for n, s in sorted(self.schemas.items())},
+                "schemas_pending": {i: {"name": r["body"].get("name"), "backed_by": self.backers(i), "need": self.quorum("schema/author")}
+                                    for i, r in sorted(self.recs.items()) if r["kind"] == "schema"
+                                    and len(self.backers(i)) < self.quorum("schema/author")},
+                "lineages": lineages, "versions": versions, "challenges": challenges,
+                "problems": sorted(self.problems), "graph": self.graph()}
+
+    def graph(self):
+        nodes, edges = [], []
+        for i, r in sorted(self.recs.items()):
+            nodes.append([i, r["kind"], r["schema"], r["actor"], r["at"], self.basis[i]])
+            t = r["body"].get("target") if r["kind"] in ("attest", "challenge") else None
+            edges += [[i, "lineage", r["lineage"]]] if r["lineage"] else []
+            edges += [[i, "prev", r["prev"]]] if r["prev"] else []
+            edges += [[i, r["kind"], t]] if t else []
+            edges += [[i, "requires", x] for x in (r["guard"] or {}).get("requires", [])]
+            edges += [[i, "ref", x] for x in r["refs"] if x != t]
+        return {"nodes": nodes, "edges": sorted(edges)}
 
 
-# ---------------------------------------------------------------- grants (SPEC §4.5)
-
-MAX_CHAIN = 16
-
-
-def grant_state(view, gid, pos, depth=0):
-    """The grant's state at position `pos` = (at, id), compared as positions (SPEC §4):
-    a grant filed at the same `at` with a larger id is after `pos` (Gemini review, C)."""
-    rec = view.by_type["grant"].get(gid)
-    if rec is None:
-        return "BROKEN_CHAIN", "grant not in view"
-    g = rec["body"]
-    if view.pos(gid) > pos:
-        return "NOT_YET", "granted after this position"
-    if g["expires"] is not None and pos[0] >= g["expires"]:
-        return "EXPIRED", f"expired at {g['expires']}"
-    if g["parent"] is None:
-        return ("VALID", "root") if gid in view.profile["grant_roots"] else ("UNGROUNDED", "a root the recipient has not accepted")
-    if depth >= MAX_CHAIN:
-        return "BROKEN_CHAIN", "chain too long"
-    pst, why = grant_state(view, g["parent"], view.pos(gid), depth + 1)      # the parent at the CHILD's position
-    if pst != "VALID":
-        return ("BROKEN_CHAIN" if pst in ("BROKEN_CHAIN", "UNGROUNDED", "NOT_YET") else pst, f"parent {g['parent'][:12]}: {why}")
-    why = _attenuation_problem(rec["actor"], g, view.by_type["grant"][g["parent"]]["body"])
-    return ("NOT_ATTENUATED", why) if why else ("VALID", "attenuated")
+def _schema_problem(b):
+    ok = isinstance(b, dict) and set(b) == {"name", "fields", "states", "closed", "successors"} \
+        and isinstance(b["name"], str) and 0 < len(b["name"]) <= 100 and b["name"] != R.MIGRATION \
+        and isinstance(b["fields"], dict) and all(isinstance(t, str) and t.rstrip("?") in R.TYPES for t in b["fields"].values()) \
+        and (b["states"] is None or (isinstance(b["states"], dict) and b["fields"].get("state") == "str"
+                                     and all(g is None or R.guard_problem(g) is None for g in b["states"].values()))) \
+        and R.is_list(b["closed"], lambda s: isinstance(b["states"], dict) and s in b["states"], True) \
+        and isinstance(b["successors"], dict) and all(isinstance(b["states"], dict) and st in b["states"]
+                                                      and R.is_list(rs, S.is_actor, True) for st, rs in b["successors"].items())
+    return None if ok else ("a schema body is {name, fields: {member: type}, states: {state: guard|null}|null, closed, "
+                            "successors: {state: [roles]}}")
 
 
-def _attenuation_problem(grantor, g, p):
-    if grantor != p["grantee"]:
-        return "the grantor is not the parent's grantee"
-    if not set(g["acts"]) <= set(p["delegable"]):
-        return "acts the parent did not make delegable"
-    if not set(g["delegable"]) <= set(p["delegable"]):
-        return "delegable beyond the parent's"
-    if not set(g["duties"]) <= set(p["duties"]):
-        return "duties beyond the parent's"
-    if p["expires"] is not None and (g["expires"] is None or g["expires"] > p["expires"]):
-        return "expires later than the parent"
-    return None
-
-
-def authorized(view, actor, act, duty_id, pos):
-    reasons = []
-    for gid, rec in sorted(view.by_type["grant"].items()):
-        g = rec["body"]
-        if g["grantee"] != actor or act not in g["acts"] or duty_id not in g["duties"]:
-            continue
-        st, why = grant_state(view, gid, pos)
-        if st == "VALID":
-            return gid, None
-        reasons.append(f"{gid[:12]}: {st} ({why})")
-    return None, "; ".join(reasons) if reasons else f"no grant gives {actor} {act} on this duty"
-
-
-# ---------------------------------------------------------------- one duty
-
-def _items(view, did):
-    out = []
-    for t_id, t in view.transitions.items():
-        for i, m in enumerate(t["body"]["closes"]):
-            if m["duty"] == did:
-                out.append((t_id, t, i, m))
-    return sorted(out, key=lambda x: (view.pos(x[0]), x[2]))
-
-
-def _admission_pos(view, d, t_id, i, m):
-    """The latest of the item's own position and the earliest acceptance by each
-    required acceptor; None while one is missing (SPEC §4.2)."""
-    pos = view.pos(t_id)
-    got = view.accepted_at(t_id, i, m["evidence"])
-    for actor in d["accept_by"]:
-        if actor not in got:
-            return None
-        pos = max(pos, got[actor])
-    return pos
-
-
-def _awaited(groups):
-    """The acceptances still missing, as actor sets: each group is one acceptance, given by
-    any one actor in it. A group that contains another is dropped: whoever gives the
-    smaller one gives it too (to = an owed_to actor; an acceptor who is also owed_to)."""
-    gs = sorted({tuple(sorted(set(g))) for g in groups})
-    return [list(g) for g in gs if not any(set(h) < set(g) for h in gs)]
-
-
-def _waiting_why(groups):
-    return "waiting for " + "; ".join(g[0] if len(g) == 1 else "one of " + ", ".join(g) for g in groups)
-
-
-def _transfer_effect(view, d, t_id, i, m):
-    """(effect position, None) once every required consent exists, else (None, missing):
-    the missing consents as actor sets (_awaited), never as text (Gemini review, B)."""
-    got = view.accepted_at(t_id, i, m["evidence"])
-    missing = []
-    pos = view.pos(t_id)
-    if m["to"] not in got:
-        missing.append([m["to"]])
-    else:
-        pos = max(pos, got[m["to"]])
-    if m["act"] == "substitute":
-        creditors = [got[a] for a in set(d["owed_to"]) | set(d["release_by"]) if a in got]
-        if not creditors:
-            missing.append(sorted(set(d["owed_to"]) | set(d["release_by"])))
-        else:
-            pos = max(pos, min(creditors))
-    missing = _awaited(missing)
-    return (None, missing) if missing else (pos, None)
-
-
-class Holders:
-    """Holder and delegates as a function of position (SPEC §4.1): the admitted transfers
-    whose effect position is not after it, applied in effect order. For a filing, the
-    filer's own records count in its chain's order, not by the `at` they claim (F43):
-    a transfer to the filer counts only once an acceptance of it by the filer is a chain
-    ancestor of the filing, and a transfer by the filer that the chain does not order
-    against the filing counts as in effect, wherever its position is."""
-
-    def __init__(self, view, holder):
-        self.view, self.holder, self.transfers = view, holder, []
-
-    def at(self, pos, filing=None):
-        h, dl = self.holder, set()
-        x = self.view.recs[filing]["actor"] if filing is not None else None
-        for eff, t_id, act, frm, to, accepts in sorted(self.transfers, key=lambda e: e[0]):
-            on = eff <= pos
-            if x == to != frm:
-                on = on and any(self.view.before(a, filing) for a in accepts)
-            elif x == frm != to and not on:
-                on = not self.view.ordered(t_id, filing)
-            if on:
-                h, dl = (h, dl | {to}) if act == "delegate" else (to, set())
-        return h, frozenset(dl)
-
-    def add(self, eff, t_id, m, accepts):
-        self.transfers.append((eff, t_id, m["act"], self.view.recs[t_id]["actor"], m["to"], accepts))
-
-
-def _observations(view, m, cond, filer, window):
-    """The observation records cited by `m` that meet the observe condition."""
-    good, why = [], "no cited observation meets the condition"
-    for h in m["evidence"]:
-        rec = view.by_type["observation"].get(h)
-        if rec is None:
-            continue
-        o = rec["body"]
-        if rec["actor"] not in cond["observers"]:
-            why = f"observed by {rec['actor']}, who is not a named observer"
-        elif rec["actor"] == filer:
-            why = "the filer cannot observe its own closure"
-        elif o["probe"] != cond["probe"]:
-            why = "observed with another probe"
-        elif o["result"] != cond["expect"]:
-            why = f"observed {o['result']!r}, not {cond['expect']!r}"
-        elif window and not (window[0] <= o["window"][0] and o["window"][1] < window[1]):
-            why = "observed outside the period"
-        else:
-            good.append((h, rec))
-    return good, why
-
-
-def V(verdict, why="", label=None, waiting=None):
-    """One candidate's verdict: always the same four fields. `waiting`, for PENDING, is the
-    missing acceptances as actor sets (_awaited)."""
-    return verdict, why, label, waiting
-
-
-def _replayed(view, cond, m):
-    want = "cycle" if m["act"] == "impossible" else "receipt"
-    docs = [x for x in (view.snap.json_blob(h) for h in m["evidence"]) if isinstance(x, dict) and x.get(want) == "sigma-resume"]
-    if len(docs) != 1:
-        return V("MISSING_EVIDENCE", f"a REPLAYED item cites exactly one {want}")
-    if view.provider is None:
-        return V("UNVERIFIED", "no provider in this view")
-    if view.provider.id not in view.profile["providers"]:
-        return V("UNVERIFIED", f"provider {view.provider.id[:16]} is not one this recipient accepts")
-    fn = P.replay_cycle if want == "cycle" else P.replay
-    try:
-        label, why = fn(view.provider, view.snap, cond, docs[0], view.profile["targets"], cache=view.cache)
-    except P.ProviderError as e:
-        return V("UNVERIFIED", str(e))
-    return V("ADMITTED", label=label) if label else V("UNVERIFIED", why)
-
-
-BASIS_OF = {"attest": "ATTESTED", "observe": "OBSERVED", "compute": "REPLAYED"}
-WRONG_BASIS = {"attest": "{} is not the basis this condition admits",
-               "observe": "this condition is met by an observation, not by the filer's word",
-               "compute": "a computation is met by the recipient's own replay"}
-
-
-def _basis(view, d, m, t, filer, window, key):
-    """V("ADMITTED", label=...) if the item's basis meets the duty's condition."""
-    basis = t["body"]["basis"]
-    kind, cond = next(iter(d["condition"].items()))
-    if m["act"] == "impossible" and kind != "compute":
-        return V("ADMITTED", label=f"ATTESTED:{filer}") if basis == "ATTESTED" else \
-            V("OVERCLAIMED", "an impossibility is attested")
-    if basis != BASIS_OF[kind]:
-        return V("OVERCLAIMED", WRONG_BASIS[kind].format(basis))
-    if kind == "attest":
-        return V("ADMITTED", label=f"ATTESTED:{filer}")
-    if kind == "observe":
-        good, why = _observations(view, m, cond, filer, window)
-        view.matched[key] = [rec["body"]["window"][1] for _, rec in good]
-        return V("ADMITTED", label="OBSERVED:" + ",".join(sorted({rec["actor"] for _, rec in good}))) if good \
-            else V("UNMET_CONDITION", why)
-    return _replayed(view, cond, m)
-
-
-def _period_window(d, m):
-    s = d["schedule"]
-    if s is None:
+def _body_problem(r, s):
+    b, f = r["body"], s["fields"]
+    if r["kind"] in ("attest", "challenge") and "target" not in f:
+        f = dict(f, target="ref")
+    extra, missing = set(b) - set(f), {k for k, t in f.items() if not t.endswith("?")} - set(b)
+    if extra or missing:
+        return f"members {sorted(extra)} are not in {s['name']}, or {sorted(missing)} are missing"
+    bad = [k for k, v in b.items() if not R.type_ok(f[k], v)]
+    if bad:
+        return f"members {bad} do not have their types in {s['name']}"
+    if not R.body_refs(f, b) <= set(r["refs"]):
+        return "a reference in the body is not in refs"
+    if r["kind"] != "entity":
         return None
-    n = m["period"]
-    return [s["start"] + n * s["every"], s["start"] + (n + 1) * s["every"]]
-
-
-def _shape_problem(d, m, t, window, admitted):
-    """A reason this item cannot close this duty whatever its evidence, or None."""
-    sched = d["schedule"]
-    if m["act"] == "discharge" and (sched is None) != ("period" not in m):
-        return "a scheduled duty is discharged per period, and only a scheduled one"
-    if m["act"] in ("impossible", "revalidate") and sched is not None:
-        return f"{m['act']} is not defined for a scheduled duty here"
-    if window and t["at"] < window[0]:
-        return "a period cannot be discharged before it starts"
-    if m["act"] == "revalidate" and not admitted:
-        return "nothing admitted to revalidate"
-    if m["act"] == "revalidate" and not set(m["revalidates"]) <= set(admitted):
-        return "revalidates something that is not an admitted closure of this duty"
+    if not isinstance(s["states"], dict) or b.get("state") not in s["states"]:
+        return f"state {b.get('state')!r} is not a state of {s['name']}"
+    need = s["states"][b["state"]]
+    if need is not None and _weaker(r["guard"], need):
+        return f"its guard is weaker than {s['name']}'s for state {b['state']!r}"
     return None
 
 
-def _judge_closure(view, d, t_id, t, i, m, holders, done, admitted):
-    filer = t["actor"]
-    holder, delegates = holders.at(view.pos(t_id), t_id)
-    if filer != holder and filer not in delegates:
-        return V("OVERCLAIMED", "filed by someone who did not hold the duty at that position")
-    window = _period_window(d, m) if "period" in m else None
-    why = _shape_problem(d, m, t, window, admitted)
-    if why:
-        return V("OVERCLAIMED", why)
-    v = _basis(view, d, m, t, filer, window, (t_id, i))
-    if v[0] != "ADMITTED":
-        return v
-    label = v[2]
-    unmet = [c for c in d["requires"] if done.get(c) != "DISCHARGED"] if m["act"] in ("discharge", "revalidate") else []
-    if unmet:
-        return V("UNMET_CONDITION", "required duties not discharged: " + ", ".join(u[:12] for u in unmet))
-    got = set(view.accepted_at(t_id, i, m["evidence"]))
-    missing = [[a] for a in sorted(set(d["accept_by"]) - got)]
-    # An attested impossibility also needs ONE owed_to actor (SPEC §4.2), not every one.
-    if m["act"] == "impossible" and label.startswith("ATTESTED") and not set(d["owed_to"]) & got:
-        missing.append(sorted(set(d["owed_to"])))
-    missing = _awaited(missing)
-    if missing:
-        return V("PENDING", _waiting_why(missing), waiting=missing)
-    return V("ADMITTED", label=label)
-
-
-def _transfers(view, d, items, holders, verdicts):
-    """Delegations and substitutions, applied in order of effect position: the filer
-    must hold the duty both when it files and when the transfer takes effect."""
-    transfers = []
-    for t_id, t, i, m in items:
-        if m["act"] in ("delegate", "substitute"):
-            eff, missing = _transfer_effect(view, d, t_id, i, m)
-            transfers.append((eff or NEVER, t_id, t, i, m, missing))
-    for eff, t_id, t, i, m, missing in sorted(transfers, key=lambda x: (x[0], view.pos(x[1]), x[3])):
-        verdicts[(t_id, i)] = _transfer(view, holders, eff, t_id, t, i, m, missing)
-
-
-def _transfer(view, holders, eff, t_id, t, i, m, missing):
-    h_file, _ = holders.at(view.pos(t_id), t_id)
-    if t["actor"] != h_file:
-        return V("OVERCLAIMED", "only the holder at that position transfers or delegates")
-    if missing:
-        return V("PENDING", _waiting_why(missing), waiting=missing)
-    h_eff, _ = holders.at(eff, t_id)
-    if h_eff != t["actor"]:
-        return V("OVERCLAIMED", "the filer no longer held the duty when the transfer would take effect")
-    holders.add(eff, t_id, m, view.accepts_by(t_id, i, m["evidence"], m["to"]))
-    return V("ADMITTED")
-
-
-def _release(view, did, d, t_id, t):
-    # One statement per rule, so a counter blob's locality can tell them apart (AMEND 1 of #169).
-    if t["actor"] in d["owed_to"]:
-        return V("ADMITTED", label=f"RELEASE:{t['actor']}")
-    if t["actor"] in d["release_by"]:
-        return V("ADMITTED", label=f"RELEASE:{t['actor']}")
-    gid, why = authorized(view, t["actor"], "release", did, view.pos(t_id))
-    if gid:
-        return V("ADMITTED", f"by grant {gid[:12]}", f"RELEASE_BY_GRANT:{gid[:12]}")
-    return V("OVERCLAIMED", f"not authorized to release: {why}")
-
-
-def _closures(view, did, d, items, holders, done, verdicts):
-    """Releases and closures; revalidations last, in their own admission order (RV-01)."""
-    admitted = {}           # transition id -> admission position, of admitted discharges/revalidations
-    first = [x for x in items if x[3]["act"] not in ("delegate", "substitute", "revalidate")]
-    reval = sorted((x for x in items if x[3]["act"] == "revalidate"),
-                   key=lambda x: _admission_pos(view, d, x[0], x[2], x[3]) or (LAST, 0, x[0]))
-    for t_id, t, i, m in first + reval:
-        if not all(view.resolves(h) for h in m["evidence"]):
-            verdicts[(t_id, i)] = V("MISSING_EVIDENCE", "cited evidence is not in the view")
-        elif m["act"] == "release":
-            verdicts[(t_id, i)] = _release(view, did, d, t_id, t)
-        else:
-            v = _judge_closure(view, d, t_id, t, i, m, holders, done, admitted)
-            if v[0] == "ADMITTED" and m["act"] == "revalidate":
-                v = _revalidation_order(view, d, t_id, i, m, admitted) or v
-            if v[0] == "ADMITTED" and m["act"] in ("discharge", "revalidate"):
-                admitted[t_id] = _admission_pos(view, d, t_id, i, m)
-            verdicts[(t_id, i)] = v
-
-
-def _revalidation_order(view, d, t_id, i, m, admitted):
-    mine = _admission_pos(view, d, t_id, i, m)
-    late = [x for x in m["revalidates"] if admitted[x] >= mine]
-    if late:
-        return V("OVERCLAIMED", "revalidates a closure not admitted before it (admission order): "
-                 + ", ".join(x[:12] for x in late))
-    return None
-
-
-def _candidates(view, out, items, verdicts):
-    """The report rows, and the admitted closures sorted by kind."""
-    closures, periods, revals = [], {}, []
-    for t_id, t, i, m in items:
-        verdict, why, label, waiting = verdicts[(t_id, i)]
-        cand = {"transition": t_id, "item": i, "act": m["act"], "filer": t["actor"], "basis": t["body"]["basis"],
-                "verdict": verdict, "why": why}
-        if waiting:
-            # waiting_for: everyone whose acceptance could still be needed; awaiting: the
-            # missing acceptances, each a list of actors any one of whom gives it.
-            cand["waiting_for"] = sorted({a for g in waiting for a in g})
-            cand["awaiting"] = waiting
-        sup = view.support(t_id, i)
-        if sup:
-            cand["acceptor_support"] = sup
-        out["candidates"].append(cand)
-        if verdict != "ADMITTED":
-            continue
-        if m["act"] == "revalidate":
-            revals.append((t_id, t, m, label, i))
-        elif m["act"] in ("discharge", "impossible", "release") and "period" in m:
-            periods.setdefault(m["period"], (t_id, label))
-        elif m["act"] in ("discharge", "impossible", "release"):
-            closures.append((m["act"], t_id, t, m, label, i))
-    return closures, periods, revals
-
-
-FLAG_OF = (("PENDING", "PENDING_ACCEPTANCE"), ("OVERCLAIMED", "OVERCLAIMED_CANDIDATE"),
-           ("UNVERIFIED", "UNVERIFIED_CANDIDATE"), ("UNMET_CONDITION", "UNMET_CANDIDATE"))
-
-
-def _assess_duty(view, did, rec, done):
-    d = rec["body"]
-    out = {"statement": d["statement"], "holder": d["holder"], "owed_to": d["owed_to"], "accept_by": d["accept_by"],
-           "release_by": d["release_by"], "condition": next(iter(d["condition"])), "subject": d["subject"],
-           "schedule": d["schedule"], "disposition": "OPEN", "closed_by": [], "assessed_basis": [],
-           "candidates": [], "flags": [], "triggers": [], "revalidations": [],
-           "requires": d["requires"], "serves": d["serves"],
-           "fresh_for": d["condition"].get("observe", {}).get("fresh_for")}
-    items = _items(view, did)
-    holders = Holders(view, d["holder"])
-    verdicts = {}
-    _transfers(view, d, items, holders, verdicts)
-    _closures(view, did, d, items, holders, done, verdicts)
-    closures, periods, revals = _candidates(view, out, items, verdicts)
-    h, dl = holders.at(NEVER)
-    out["holder"], out["delegates"] = h, sorted(dl)
-    _disposition(view, out, d, closures, revals, periods)
-    out["flags"] += [flag for verdict, flag in FLAG_OF if any(c["verdict"] == verdict for c in out["candidates"])]
-    return out
-
-
-KIND_OF = {"discharge": "DISCHARGED", "impossible": "IMPOSSIBLE", "release": "RELEASED"}
-
-
-def _disposition(view, out, d, closures, revals, periods):
-    kinds = sorted({KIND_OF[c[0]] for c in closures})
-    if d["schedule"] is not None:
-        out["periods"] = _periods(view, d, periods, out)
-        out["disposition"] = "RELEASED" if "RELEASED" in kinds else "SCHEDULED"
-        out["closed_by"] = [c[1] for c in closures] + [v[0] for v in periods.values()]
-        return
-    out["closed_by"] = [c[1] for c in closures]
-    if len(kinds) > 1:
-        out["disposition"], out["dispositions"] = "CONTESTED", kinds
-        out["flags"].append("CONTESTED")
-        return
-    if not kinds:
-        return
-    out["disposition"] = kinds[0]
-    chosen = [c for c in closures if KIND_OF[c[0]] == kinds[0]]
-    out["assessed_basis"] = sorted({c[4] for c in chosen})
-    if kinds[0] != "DISCHARGED":
-        revals = []
-    superseded = {x for r in revals for x in r[2]["revalidates"]}
-    rows = [(c[1], c[2], c[3]) for c in chosen] + [(r[0], r[1], r[2]) for r in revals]
-    out["revalidations"] = [{"transition": r[0], "revalidates": r[2]["revalidates"], "assessed_basis": r[3]}
-                            for r in revals]
-    out["current_closures"] = [tid for tid, _, _ in rows if tid not in superseded]
-    # A challenge targets one closure: a (transition, item) pair (SPEC §3.6, §4.4).
-    items = [(c[1], c[5]) for c in chosen] + [(r[0], r[4]) for r in revals]
-    out["current_items"] = [[tid, i] for tid, i in items if tid not in superseded]
-    out["declared_triggers"] = [{"closure": tid, "trigger": tr, "current": tid not in superseded}
-                                for tid, _, m in rows for tr in m.get("triggers", [])]
-    out["closure_subjects"] = sorted({t["body"]["subject"] for tid, t, _ in rows
-                                      if tid not in superseded and t["body"]["subject"]})
-    # Freshness counts only the observations that met the condition (R138-01):
-    # another observer's, the filer's own, another probe's or another result's
-    # record cited alongside does not refresh a closure.
-    obs = [end for tid, t, m in rows if tid not in superseded
-           for end in view.matched.get((tid, t["body"]["closes"].index(m)), [])]
-    out["observed_until"] = max(obs) if obs else None
-
-
-def period_count(schedule, as_of):
-    """Period entries of a schedule at as_of: every n with start + n·every ≤ as_of."""
-    return 0 if as_of < schedule["start"] else (as_of - schedule["start"]) // schedule["every"] + 1
-
-
-def _admit(view, lim):
-    """Refuse a view whose assessment would exceed an admission limit, before the
-    work: requires edges the traversal follows, period entries per duty and per
-    report (SPEC §9). At b64c007 one duty with start 0, every 1 gave 100001 period
-    entries at as_of 100000 (Codex F2)."""
-    L.admit(lim, "requires_edges", sum(len(r["body"]["requires"]) for r in view.duties.values()))
-    total = 0
-    for rec in view.duties.values():
-        if rec["body"]["schedule"] is not None:
-            n = period_count(rec["body"]["schedule"], view.as_of)
-            L.admit(lim, "duty_periods", n)
-            total += n
-    L.admit(lim, "report_periods", total)
-
-
-def _periods(view, d, periods, out):
-    s = d["schedule"]
-    report = {}
-    n = 0
-    while s["start"] + n * s["every"] <= view.as_of:
-        end = s["start"] + (n + 1) * s["every"]
-        if n in periods:
-            report[str(n)] = {"state": "COVERED", "by": periods[n][0], "basis": periods[n][1]}
-        else:
-            report[str(n)] = {"state": "LAPSED" if end <= view.as_of else "OPEN"}
-        n += 1
-    if any(p["state"] == "LAPSED" for p in report.values()):
-        out["flags"].append("LAPSED")
-    return report
-
-
-# ---------------------------------------------------------------- whole view
-
-def _assess_duties(view):
-    """Every duty after the duties it requires, depth first in sorted order. A duty
-    on the current path (a cycle) is not waited for: its dependant is assessed
-    without it, so the requirement is unmet. An explicit stack, not recursion: a
-    valid chain of 3000 requires overflowed Python's stack at b64c007 (Codex F1)."""
-    report, done = {}, {}
-    for root in sorted(view.duties):
-        if root in report:
-            continue
-        busy = {root}
-        stack = [(root, iter(view.duties[root]["body"]["requires"]))]
-        while stack:
-            did, children = stack[-1]
-            for c in children:
-                if c in view.duties and c not in report and c not in busy:
-                    busy.add(c)
-                    stack.append((c, iter(view.duties[c]["body"]["requires"])))
-                    break
-            else:
-                stack.pop()
-                busy.discard(did)
-                report[did] = _assess_duty(view, did, view.duties[did], done)
-                done[did] = report[did]["disposition"]
-    return report
-
-
-def _results(view):
-    """Each transition's results: who accepted them, and what supersedes them."""
-    need = set(view.profile["accept_by"]["results"])
-    out = {}
-    for t_id, t in sorted(view.transitions.items()):
-        got = view.accepted_at(t_id, None, t["body"]["evidence"])
-        out[t_id] = {"actor": t["actor"], "at": t["at"], "basis": t["body"]["basis"],
-                     "established": t["body"]["established"], "residual": t["body"]["residual"],
-                     "subject": t["body"]["subject"], "evidence": t["body"]["evidence"], "accepted_by": sorted(got),
-                     "accepted": bool(need) and need <= set(got), "supersedes": t["body"]["supersedes"], "superseded_by": [],
-                     "triggers": [], "challenges": []}
-    for t_id, t in view.transitions.items():
-        for old in t["body"]["supersedes"]:
-            if old not in out:
-                view.missing.add(old)
-            elif out[t_id]["accepted"]:
-                out[old]["superseded_by"].append(t_id)
-    return out
-
-
-def _counter_observation(view, b):
-    """An evidence-weighted challenge (SPEC §4.4): the challenge cites an observation of the
-    duty's own probe, by anyone but the closure's filer, that saw something other than
-    `expect`, no earlier than the latest observation that met the condition. Who filed the
-    challenge does not matter: the probe ran again and disagreed. Only `observe` conditions
-    have such counter-evidence; a compute closure is settled by the recipient's own replay,
-    and an attested one has no mechanical counter."""
-    t = view.transitions[b["target"]]
-    items = t["body"]["closes"]
-    if not (type(b["item"]) is int and 0 <= b["item"] < len(items)):
-        return None
-    d = view.duties.get(items[b["item"]]["duty"])
-    if d is None or "observe" not in d["body"]["condition"]:
-        return None
-    cond = d["body"]["condition"]["observe"]
-    latest = max(view.matched.get((b["target"], b["item"]), []), default=None)
-    for h in b["evidence"]:
-        rec = view.by_type["observation"].get(h)
-        if rec is None or rec["actor"] == t["actor"]:
-            continue
-        o = rec["body"]
-        if o["probe"] != cond["probe"] or o["result"] == cond["expect"]:
-            continue
-        if latest is not None and o["window"][1] < latest:
-            continue
-        return {"observation": h, "actor": rec["actor"], "result": o["result"], "window": o["window"]}
-    return None
-
-
-def _challenges(view, results):
-    out = {}
-    for cid, c in sorted(view.by_type["challenge"].items()):
-        b = c["body"]
-        if b["target"] not in view.transitions:
-            view.missing.add(b["target"])
-            continue
-        out[cid] = {"actor": c["actor"], "at": c["at"], "target": b["target"], "item": b["item"],
-                    "statement": b["statement"], "evidence": b["evidence"],
-                    "counter_observation": _counter_observation(view, b) if b["item"] is not None else None}
-        if b["item"] is None:
-            results[b["target"]]["challenges"].append(cid)
-    return out
-
-
-def _evaluate_triggers(view, duties, results, workspace):
-    dispositions = {did: r["disposition"] for did, r in duties.items()}
-
-    def run(tr):
-        result, detail = TR.evaluate(tr, view.snap.json_blob, workspace, dispositions)
-        if result not in TR.RESULTS:
-            raise ValueError(f"trigger result outside its vocabulary: {result}")
-        return result, detail
-
-    for r in duties.values():
-        r["triggers"] += [dict({"closure": item["closure"]}, **item["trigger"], **dict(zip(("result", "detail"), run(item["trigger"]))),
-                               current=item["current"]) for item in r.pop("declared_triggers", [])]
-        if r["disposition"] == "DISCHARGED":
-            cur = [t for t in r["triggers"] if t["current"]]
-            r["trigger_coverage"] = "NONE_DECLARED" if not cur else {k: sum(t["result"] == k for t in cur) for k in TR.RESULTS}
-    for t_id, r in results.items():
-        for tr in view.transitions[t_id]["body"]["triggers"]:
-            result, detail = run(tr)
-            r["triggers"].append({**tr, "result": result, "detail": detail, "current": True})
-
-
-def _questions(view, duties):
-    taken = {view.duties[did]["body"]["answers"] for did in duties if view.duties[did]["body"]["answers"]}
-    out = []
-    for t_id, t in sorted(view.transitions.items()):
-        for i, q in enumerate(t["body"]["opened"]):
-            ref = f"{t_id}:{i}"
-            out.append({"question": ref, "text": q["text"], "scope": q["scope"], "opened_by": t["actor"],
-                        "taken_by": sorted(did for did in duties if view.duties[did]["body"]["answers"] == ref),
-                        "owned": ref in taken})
-    return out
-
-
-def assess(snapshot, trust, as_of, prof, current=(), workspace=None, provider=None, replay_cache=None, limits=None,
-           verdicts=None):
-    """Assess one view. `current` is the set of revisions the recipient treats as
-    current; `workspace` is (repository path, commit) for subject_changed triggers;
-    `provider` is a captured compute.Provider (None: replays are UNVERIFIED);
-    `replay_cache` is a directory of this recipient's earlier verified replays
-    (SPEC §7: it changes cost, never the answer or the task; not part of the
-    assessment identity); `verdicts` is a directory of this recipient's earlier
-    authentication verdicts (store.Verdicts.at, F44: cost only in the same way);
-    `limits` overrides the admission limits (limits.DEFAULTS; operational, not an
-    operand: exceeding one raises limits.LimitExceeded and nothing is assessed)."""
-    why = profile_problem(prof)
-    if why:
-        raise ValueError(f"profile: {why}")
-    lim = L.resolve(limits)
-    snapshot.admit(lim)
-    ws = TR.Workspace(*workspace) if workspace is not None else None
-    index = S.Verdicts.at(verdicts) if verdicts is not None else None
-    view = View(snapshot, trust, as_of, prof, provider,
-                cache=P.ReplayCache(replay_cache) if replay_cache is not None else None, verdicts=index)
-    if index is not None:
-        index.flush(snapshot)
-    _admit(view, lim)
-    duties = _assess_duties(view)
-    for did, r in duties.items():
-        for x in view.duties[did]["body"]["requires"] + view.duties[did]["body"]["serves"]:
-            if x not in view.duties:
-                view.missing.add(x)
-    for t in view.transitions.values():
-        for m in t["body"]["closes"]:
-            if m["duty"] not in view.duties:
-                view.missing.add(m["duty"])
-    results = _results(view)
-    challenges = _challenges(view, results)
-    _evaluate_triggers(view, duties, results, ws)
-    for r in duties.values():
-        bad = {c["verdict"] for c in r["candidates"]} - set(VERDICTS)
-        if bad:
-            raise ValueError(f"verdict outside its vocabulary: {sorted(bad)}")
-    ident = {"snapshot": snapshot.digest, "trust": trust.digest, "profile": C.doc_id(prof), "as_of": as_of,
-             "current": sorted(current), "workspace": ws.identity() if ws else None,
-             "engine": engine_identity(), "provider": provider.identity if provider else None}
-    named = {a for rec in view.duties.values() for f in ("holder", "owed_to", "accept_by", "release_by")
-             for a in ([rec["body"][f]] if isinstance(rec["body"][f], str) else rec["body"][f])}
-    bound = {actor for actor, _ in trust.keys.values()}
-    return {"warrant": "report/2", "assessment_id": C.doc_id(ident), "view": dict(ident, completeness="UNATTESTED"),
-            # Actors the duties name who have no key in this trust: nothing they
-            # sign can count in this view (found in the 2026-10-18 handoff).
-            "unbound_actors": sorted(named - bound),
-            "profile": prof, "duties": duties, "results": results, "challenges": challenges,
-            "grants": {g: grant_state(view, g, (as_of, LAST, END_ID))[0] for g in sorted(view.by_type["grant"])},
-            "questions": _questions(view, duties), "invalid_records": view.invalid,
-            "later_records": view.later, "misfiled": snapshot.misfiled, "missing": sorted(view.missing),
-            # Each actor's chain (SPEC §3): what the records order themselves, and what they do not.
-            "chains": {"forks": view.forks, "unanchored": view.unanchored, "unchained": view.unchained}}
-
-
-# ---------------------------------------------------------------- reading a report
-
-def _counting_challenges(rep, closures, duty=None):
-    """Challenges that count against these closures, {(transition, item)}: a challenge
-    names one closure, the item it gives; one with item null concerns the transition's
-    results, not its closures (Gemini review, A). A challenge against a closure that an
-    admitted revalidation superseded no longer counts: that closure is not current any
-    more, and the revalidation needed the same acceptances."""
-    counts = set(rep["profile"]["challengers"])
-    if duty is not None:
-        counts |= set(duty["owed_to"]) | set(duty["accept_by"])
-    # One statement per rule, so a counter blob's locality can tell them apart (AMEND 1 of #169).
-    out = []
-    for cid, c in rep["challenges"].items():
-        if (c["target"], c["item"]) not in closures:     # another closure, or the results (item null)
-            continue
-        weighted = bool(c.get("counter_observation"))   # evidence-weighted: whoever filed it (SPEC §4.4)
-        counted = c["actor"] in counts                  # actor-weighted (SPEC §4.6)
-        if weighted or counted:
-            out.append(cid)
-    return sorted(out)
-
-
-def _revision_basis(subjects, triggers, current):
-    if not subjects:
+def _weaker(g, need):
+    if g is None:
         return True
-    if any(s in current for s in subjects):
-        return True
-    return any(t["kind"] == "subject_changed" and t["result"] == "NOT_FIRED" for t in triggers)
+    return (g["quorum"] < need["quorum"] or (need["quorum"] > 0 and not set(g["roles"]) <= set(need["roles"]))
+            or any(g["match"].get(k, object()) != v for k, v in need["match"].items())
+            or not set(need["requires"]) <= set(g["requires"]))
 
 
-def _trigger_state(cur, use_need):
-    if use_need and not cur:
-        return "UNASSESSED", ["the use requires declared triggers; none are current"]
-    fired = [f"{t['kind']}: {t['detail']}" for t in cur if t["result"] == "FIRED"]
-    if fired:
-        return "STALE", fired
-    unknown = [f"{t['kind']}: {t['detail']}" for t in cur if t["result"] == "UNEVALUABLE"]
-    if unknown:
-        return "UNASSESSED", unknown
-    return None
-
-
-def _challenged(rep, ids):
-    return ("CHALLENGED", [f"challenge {c[:12]}: {rep['challenges'][c]['statement']}" for c in ids]) if ids else None
-
-
-def _duty_checks(rep, r, use):
-    """The reliance checks of a duty, in order; each returns (state, causes) or None."""
-    cur = [t for t in r["triggers"] if t["current"]]
-    yield ("CONTESTED", []) if r["disposition"] == "CONTESTED" else None
-    yield ("NOT_CLOSED", [f"disposition {r['disposition']}"]) if r["disposition"] != "DISCHARGED" else None
-    yield _unknown_use(rep, use)
-    yield _challenged(rep, _counting_challenges(rep, {tuple(x) for x in r["current_items"]}, r))
-    yield _trigger_state(cur, rep["profile"]["uses"][use]["requires_triggers"])
-    yield _freshness(rep, r)
-    subjects = r["closure_subjects"] or ([r["subject"]] if r["subject"] else [])
-    yield None if _revision_basis(subjects, cur, set(rep["view"]["current"])) else \
-        ("UNASSESSED", ["no revision basis: not established on a current revision, "
-                        "and no subject_changed trigger evaluated NOT_FIRED"])
-
-
-def _result_checks(rep, r, use):
-    """The reliance checks of a transition's results, in order."""
-    need = set(rep["profile"]["accept_by"]["results"])
-    yield ("SUPERSEDED", [f"superseded by {', '.join(x[:12] for x in r['superseded_by'])}"]) if r["superseded_by"] else None
-    yield None if need else ("UNASSESSED", ["the profile names nobody whose acceptance closes results"])
-    yield None if r["accepted"] else ("NOT_CLOSED", ["results not accepted by " + ", ".join(sorted(need - set(r["accepted_by"])))])
-    yield _unknown_use(rep, use)
-    counts = set(rep["profile"]["challengers"]) | need
-    yield _challenged(rep, [c for c in r["challenges"] if rep["challenges"][c]["actor"] in counts])
-    yield _trigger_state(r["triggers"], rep["profile"]["uses"][use]["requires_triggers"])
-    yield None if _revision_basis([r["subject"]] if r["subject"] else [], r["triggers"], set(rep["view"]["current"])) \
-        else ("UNASSESSED", ["no revision basis"])
-
-
-def _unknown_use(rep, use):
-    return None if use in rep["profile"]["uses"] else ("UNASSESSED", [f"use {use!r} is not in the recipient profile"])
-
-
-def _freshness(rep, r):
-    if r.get("observed_until") is None or not r.get("fresh_for"):
-        return None
-    if rep["view"]["as_of"] - r["observed_until"] <= r["fresh_for"]:
-        return None
-    return "STALE", [f"last observation ended at {r['observed_until']}, older than {r['fresh_for']}s"]
-
-
-def reliance(rep, target, use):
-    """May a present action rely on duty or transition `target` for `use`? (SPEC §4.4)
-    The first check that fails decides; checks run lazily, in the order of SPEC §4.4."""
-    out = {"target": target, "use": use, "assessment_id": rep["assessment_id"], "causes": []}
-    if target in rep["duties"]:
-        checks = _duty_checks(rep, rep["duties"][target], use)
-    elif target in rep["results"]:
-        checks = _result_checks(rep, rep["results"][target], use)
-    else:
-        return dict(out, state="MISSING")
-    for found in checks:
-        if found:
-            return dict(out, state=found[0], causes=found[1])
-    return dict(out, state="ELIGIBLE")
-
-
-CLOSING_ACTS = ("discharge", "impossible", "release", "revalidate")
-
-
-def _duty_needs(rep, did, r, actor):
-    holds = actor == r["holder"] or actor in r["delegates"]
-    if holds and r["disposition"] == "OPEN":
-        # A filed closure waiting only for acceptances is not work to redo: say
-        # whom it waits for (found in the 2026-10-18 handoff experiment).
-        waiting = sorted({a for c in r["candidates"] if c["verdict"] == "PENDING" for a in c.get("waiting_for") or []})
-        need = f"awaiting acceptance by {', '.join(waiting)}" if waiting else "close"
-        yield {"duty": did, "need": need, "statement": r["statement"]}
-    if holds and r["disposition"] == "SCHEDULED":
-        for n, p in sorted(r["periods"].items(), key=lambda kv: int(kv[0])):
-            if p["state"] in ("OPEN", "LAPSED"):
-                yield {"duty": did, "need": f"period {n} {p['state']}", "statement": r["statement"]}
-    # A pending closure is no longer acceptance work only when THIS duty is closed
-    # by an admitted item of a transition that superseded it. Results supersession
-    # alone admits nothing on this duty (Codex W141-01); nor does it have to be
-    # accepted: the admitted item is what retires the old one (Gemini, 1a660a6). Only
-    # a closing item does: an admitted delegation or substitution closes nothing
-    # (Codex finding 1e7a0108b247 on #195).
-    closed_by_admitted = {c["transition"] for c in r["candidates"] if c["verdict"] == "ADMITTED"
-                          and c["act"] in CLOSING_ACTS} \
-        if r["disposition"] in ("DISCHARGED", "IMPOSSIBLE", "RELEASED") else set()
-    replaced_by_admitted = {old for t in closed_by_admitted for old in rep["results"][t]["supersedes"]}
-    for c in r["candidates"]:
-        replaced = c["transition"] in replaced_by_admitted
-        if c["verdict"] == "PENDING" and actor in (c.get("waiting_for") or []) and not replaced:
-            # Whose acceptance this item still waits for, and whether this one is the
-            # last: a reader must not have to guess that its own accept closes the duty
-            # (found in the 2026-10-19 fresh-context run).
-            yield {"duty": did, "need": "accept", "transition": c["transition"], "item": c["item"],
-                   "waiting_for": list(c["waiting_for"]), "awaiting": c["awaiting"],
-                   "last_acceptance": all(actor in g for g in c["awaiting"])}
-    if holds and r["disposition"] == "DISCHARGED":
-        for use in rep["profile"]["uses"]:
-            rl = reliance(rep, did, use)
-            if rl["state"] in ("STALE", "CHALLENGED", "UNASSESSED"):
-                yield {"duty": did, "need": f"revalidate ({rl['state']} for {use})", "causes": rl["causes"]}
-
-
-def frontier(rep, actor):
-    """What is open for `actor` in this view. Unowned questions are never in it."""
-    out = [n for did, r in sorted(rep["duties"].items()) for n in _duty_needs(rep, did, r, actor)]
-    if actor in rep["profile"]["accept_by"]["results"]:
-        out += [{"transition": t_id, "need": "accept results", "under": "profile accept_by.results"}
-                for t_id, r in sorted(rep["results"].items())
-                if actor not in r["accepted_by"] and not r["superseded_by"] and r["established"]]
-    return out
-
-
-def questions(rep, scope=None, owned=False):
-    return [q for q in rep["questions"] if (owned or not q["owned"]) and (scope is None or q["scope"] == scope)]
-
-
-def capsule(rep, target, use="act"):
-    """What the next session needs about one duty or transition, evidence by id."""
-    rl = reliance(rep, target, use)
-    cap = {"capsule": "warrant/2", "assessment_id": rep["assessment_id"], "target": target, "use": use,
-           "reliance": rl["state"], "revisit_because": rl["causes"], "completeness": "UNATTESTED"}
-    if target in rep["duties"]:
-        r = rep["duties"][target]
-        cap.update(kind="duty", statement=r["statement"], disposition=r["disposition"], holder=r["holder"],
-                   owed_to=r["owed_to"], accept_by=r["accept_by"],
-                   waiting_for=sorted({a for c in r["candidates"] if c["verdict"] == "PENDING"
-                                       for a in c.get("waiting_for") or []}),
-                   basis=r["assessed_basis"], closed_by=r["closed_by"], periods=r.get("periods"),
-                   revalidate_when=[{k: t[k] for k in t if k != "closure"} for t in r["triggers"] if t["current"]],
-                   challenges=_counting_challenges(rep, {tuple(x) for x in r.get("current_items", [])}, r),
-                   evidence=sorted({h for tid in r["closed_by"] if tid in rep["results"] for h in rep["results"][tid]["evidence"]}),
-                   limits=sorted({x for tid in r["closed_by"] if tid in rep["results"] for x in rep["results"][tid]["residual"]}))
-    elif target in rep["results"]:
-        r = rep["results"][target]
-        cap.update(kind="transition", established=r["established"], limits=r["residual"], subject=r["subject"],
-                   basis=r["basis"], accepted_by=r["accepted_by"], superseded_by=r["superseded_by"],
-                   revalidate_when=r["triggers"], challenges=r["challenges"], evidence=r["evidence"])
-    return cap
+def assess(snap, trust, profile, as_of=None):
+    return View(snap, trust, profile, as_of).report()

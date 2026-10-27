@@ -1,1 +1,0 @@
-{"because":null,"duty":"5f5df3a2ff20b617bb20e03bb8cfd0f1315c07d29c6df64b12af468022d46f4a","id":"SPEC-3.2-23","kind":"normative","mutants":["M236"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"triggers list of triggers (§5) (discharge, impossible, revalidate only)","witnesses":["records_test:I7"]}

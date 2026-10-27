@@ -1,1 +1,0 @@
-Every operation answers a result object carrying `agent_api` and `adapter_id`, or a typed refusal `{error, message, details?}`; a semantic verdict such as CHALLENGED or HOLD is an ordinary result, never a refusal.

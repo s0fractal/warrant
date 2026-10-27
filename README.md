@@ -1,110 +1,94 @@
 # Warrant
 
-Warrant records transitions of work: what was done, on what basis, what it
-established, which exact conditions it closed, which questions it opened, and
-what it leaves unestablished. The next agent reads a short capsule instead of a
-transcript, and cannot credit the work with more than its grounds support.
+Warrant keeps work as signed records: what a thing is (one version of a claim,
+an obligation, a pull request head), who accepted it, who objected and with
+what counterexample. Each reader judges the same bytes under its own trust
+(which keys are whose) and profile (who holds which role), and gets one answer:
+what may be relied on now, what still waits, and for whom.
 
-Review is one use. Ordinary decisions, running services, periodic obligations
-and reproducible computations are others.
-
-The core is small: six signed record types and one pure function, `assess`,
-that reads one view of a store (its bytes, the reader's own trust file and
-profile, a time) and answers what may be relied on now, what is still owed and
-by whom. The package `warrant` holds the core and the `warrant` command, and
-imports nothing but the Python standard library and `cryptography`;
-`warrant_agent` is an interface for agents on top of it.
+The core is small: one record envelope with four kinds (`schema`, `entity`,
+`attest`, `challenge`), native lineage (a version names the one it replaces),
+schemas that are records themselves, one guard (who must attest a version
+before it counts), and one pure function, `assess`. The package `warrant` holds
+the core and the `warrant` command and imports nothing but the Python standard
+library and `cryptography`; `warrant_agent` is the interface for agents on top
+of it (Python API, CLI, stdio MCP).
 
 - **[Warrant in 15 minutes](https://github.com/s0fractal/warrant/blob/master/QUICKSTART.md)**:
-  one duty, its closure, an acceptance, a challenge; every command and output on
-  the page is run by CI.
-- Contract: [SPEC.md](https://github.com/s0fractal/warrant/blob/master/SPEC.md)
-- Handing work to another agent (Python API, CLI, stdio MCP): [AGENT.md](https://github.com/s0fractal/warrant/blob/master/AGENT.md)
-- What the rebuild retired, and where the previous generation lives: [HISTORY.md](https://github.com/s0fractal/warrant/blob/master/HISTORY.md)
-- The proof-space pilot (goal G9), its contract and resolution layer, outside SPEC.md: [PILOT.md](https://github.com/s0fractal/warrant/blob/master/PILOT.md)
+  one obligation, its closure, an acceptance, a challenge; every command and
+  output on the page is run by CI.
+- Specification: [docs/V3.md](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
+- Agents (Python API, CLI, stdio MCP): [AGENT.md](https://github.com/s0fractal/warrant/blob/master/AGENT.md)
+- What earlier generations were, and where they live: [HISTORY.md](https://github.com/s0fractal/warrant/blob/master/HISTORY.md)
+- The proof-space pilot (goal G9), outside the core: [PILOT.md](https://github.com/s0fractal/warrant/blob/master/PILOT.md)
 
 ## Install
 
+Warrant 3 (`3.0.0.dev0`) is not published yet; install it from a checkout:
+
 ```bash
-pip install --pre warrant-graph               # Python ≥ 3.10; depends on `cryptography`
-pip install --pre "warrant-graph[mcp]"        # adds `warrant-agent-mcp` on the official MCP SDK
-pip install --pre "warrant-graph[compute]"    # adds the Sigma provider (sigma-glyph==0.8.0)
+pip install .                 # Python ≥ 3.10; depends on `cryptography`
+pip install ".[mcp]"          # adds `warrant-agent-mcp` on the official MCP SDK
 ```
 
-This installs the commands `warrant` and `warrant-agent` and the packages
-`warrant` and `warrant_agent`. The package published as `warrant-verify`
-(≤ 0.12.0) is the retired 0.x generation.
-
-Attest and observe need nothing else. `compute` conditions are replayed by the
-Sigma provider, the `sigma_provider` module of the `sigma-glyph` distribution
-(PyPI `0.8.0`, provider identity `0caff793…`; `warrant compute --store S
-provider` prints it). A recipient accepts a provider by putting that identity
-in its profile's `providers`; without an accepted, installed provider every
-REPLAYED basis is UNVERIFIED.
+This installs the commands `warrant`, `warrant-agent` and `warrant-agent-mcp`
+and the packages `warrant` and `warrant_agent`. `warrant-graph` 2.0.0a1 on PyPI
+is Warrant 2; `warrant-verify` (≤ 0.12.0) is the retired 0.x generation.
 
 ## The model in one table
 
-| Record | Says |
+| Kind | Says |
 | --- | --- |
-| `duty` | a condition someone owes someone: attest, observe, or compute; optionally scheduled |
-| `transition` | work done: basis, evidence, established, residual, opened questions, exact closures |
-| `accept` | acceptance of one exact closure item (or of a transition's results) |
-| `observation` | what an observer saw, when, with which probe |
-| `grant` | permission to release named duties, attenuable |
-| `challenge` | a counterexample against a closure or a result |
+| `schema` | the rules of one schema: its fields, its states, the minimal guard each state needs, who may enter which state |
+| `entity` | one version of a thing in a lineage; `body.state` is its state |
+| `attest` | an actor's statement about one record: an acceptance (`{"verdict": "accept"}`), a replay result |
+| `challenge` | a counterexample or objection against one record |
 
-Assessment is a pure function of one view: the store's bytes read once, the
-recipient's trust file and profile, a time, and the current revision. It
-answers `reliance` (ELIGIBLE, STALE, CHALLENGED, SUPERSEDED, UNASSESSED,
-NOT_CLOSED, ...), `frontier`, `questions` and `capsule`. A key authenticates; it
-does not authorize. A computation is credited only by the recipient's own replay.
+A lineage's state is that of its newest version whose guard is met; a version
+whose guard waits changes nothing yet. Two versions succeeding one version fork
+the lineage. A challenge an actor with a role in the guard files (or one a
+replayer reproduced) lowers reliance until a later version is accepted.
+Reliance is `ELIGIBLE`, `PENDING`, `CHALLENGED` or `FORK`. A key authenticates;
+it authorizes nothing: roles are the reader's profile.
 
 ## Status
 
-**2.0.0a1 is an alpha**, the first publication of `warrant-graph`. A
-pre-release may still change the record formats, the command line, the Python
-API and the agent interface.
+**3.0.0.dev0, unpublished.** Warrant 3 replaced Warrant 2 in this repository on
+2026-10-27; the next release is a Warrant 3 release (roadmap G12).
 
-- **What is backed.** Every normative sentence of SPEC.md is a signed claim
-  record. Of 361 sentences, 284 are BACKED: each names the test cases that
-  witness it and the mutants those cases kill. 20 are UNBACKED, each with the
-  reason it is still open, and 57 are informative.
-  `python3 tools/graph.py path SPEC-<n>-<m>` answers for one claim, and
-  `python3 tools/graph.py views` renders SPEC-CLAIMS.md, every claim with its
-  witnesses and mutants, into `build/views/` (a build artifact, never
-  committed; CI keeps it as the `views` artifact of each run). A change to a rule is filed
-  as a new record that supersedes the old one and says why; the old one stays.
-- **What is not.** Most of the code is exercised by tests but not tied to a
-  claim. At 7c6d80b, 304 of the 2317 statements of `warrant/` (13%), and 431 of
-  the 3980 statements of `warrant/` and `warrant_agent/` together (11%), are
-  changed by a mutant that a BACKED claim cites (`tools/claims.py why
-  --uncovered`). Raising that is the open goal G6. The other open goals,
-  among them an agent with no preparation using Warrant correctly (G2) and
-  admission of witnesses without an admin (G3), are records
-  too: `python3 tools/graph.py path G<n>` follows a goal to its obligations.
+- **What is backed.** The normative sentences of docs/V3.md are `claim@1`
+  records, each with the test cases that witness it and the mutants of
+  `tests/mutants.py` those cases kill; CI runs every mutant and refuses a
+  survivor, and `python3 tools/claims.py check` holds every claim to the
+  spec's text and the tests. Their signed acceptance waits for the claims
+  checker's key (docs/V3.md §12).
+- **What is migrated.** The repository's Warrant 2 records were migrated, not
+  re-signed: one `migration@1` attest of the migrator checker vouches for them,
+  and the migration replays at the tag `history/warrant-2-2026-10-27`
+  (HISTORY.md).
 - **Review.** Pull requests are reviewed by a model reviewer through the
-  repository's review loop (signed records in the same store);
-  no external security audit is recorded. There is one implementation, this
-  Python one.
+  repository's review loop (signed records in the same store); no external
+  security audit is recorded. There is one implementation, this Python one.
 
 ## Limits
 
-Not in this version: threshold adoption, key rotation, P-256, policy
-compilation, grants for acts other than release, goals as a distinct kind, and
-any independent implementation besides this Python one. The process boundary
-around the Sigma kernel isolates module names; it is not an OS sandbox. A view
-cannot prove its own completeness, and every report says so. An assessment
-has aggregate admission limits (records, bytes, `requires` edges, periods;
-SPEC §9): beyond one it is refused, never answered in part.
+A store cannot prove its own completeness, and every report says so
+(`UNATTESTED`). An assessment has admission limits (records, bytes, references,
+lineage depth, the depth of lineages requiring lineages): beyond one it is
+refused, never answered in part. Not in this version: grants, schedules,
+triggers, observe and compute conditions (a checker actor's attestation replaces
+them), a merge rule for a forked lineage, threshold adoption, key rotation, and
+any implementation besides this one. docs/V3.md §11 says what was dropped from
+Warrant 2 and why; §12 what is open.
 
 ## The repository
 
-The repository also builds and checks Warrant with Warrant: SPEC.md is
-generated from the claim records, the roadmap and the pull request reviews are
-records in the same store, and a gate merges a pull request on a recorded
-acceptance. That machinery (`tools/`, `.warrant/`, `.github/`) is evidence
-behind the package, not part of it: `tests/boundary_test.py` refuses a core
-module that imports it and a wheel or sdist that carries it.
+The repository builds and checks Warrant with Warrant: the spec's claims, the
+roadmap and the pull request reviews are records in `.warrant/records.jsonl`,
+and a gate merges a pull request on a recorded acceptance. That machinery
+(`tools/`, `.warrant/`, `.github/`, `integrations/`) is evidence behind the
+package, not part of it: `tests/boundary_test.py` refuses a core module that
+imports it and a wheel or sdist that carries it.
 [docs/REPOSITORY.md](https://github.com/s0fractal/warrant/blob/master/docs/REPOSITORY.md)
 describes it, with the checks to run from a checkout;
 [CHANGELOG.md](https://github.com/s0fractal/warrant/blob/master/CHANGELOG.md)

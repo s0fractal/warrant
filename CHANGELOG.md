@@ -27,6 +27,21 @@ right.
 
 ## Unreleased
 
+- **[protocol] Warrant 3 replaces Warrant 2 (3.0.0.dev0, unpublished).** One record envelope with four
+  kinds (schema, entity, attest, challenge), native lineage with FORK as a core verdict, schemas as
+  records under a 2-of-2 schema quorum, one guard, and one store file, `.warrant/records.jsonl`
+  (union-merged) with `.warrant/blobs/` (docs/V3.md, now the normative specification; SPEC.md is
+  retired). The repository's 1 947 Warrant 2 records were migrated as 1 446 records vouched for by
+  one migration attest (replayed IDENTICAL; parity 362/12/49/19 with the Warrant 2 tools). The
+  package `warrant` is Warrant 3 (jcs, keys and shapes kept); the G9 pilot moves to
+  `warrant_pilot/`. `warrant_agent` (warrant-agent/3) is a thin layer: one in-process assessment
+  per call, stateless prepare/commit with a compare-and-swap on the signer's head; Warrant 2's
+  init output still loads. The repository's tools (`tools/claims.py`, `roadmap.py`, `review.py`,
+  `gate.py`, `graph.py`) are schema-driven; the merge gate, the review waker and the Codex skill read
+  record lines and blobs. The 362 Warrant 2 claims are retired; docs/V3.md's 53 claims are filed,
+  backed by tests and mutants, waiting for the claims checker's key. Warrant 2 is at the tag
+  `history/warrant-2-2026-10-27` (HISTORY.md); `warrant-graph` 2.0.0a1 stays published.
+
 - **The record graph by query; its projections are build artifacts (G11).** SPEC-CLAIMS.md,
   ROADMAP.md, REVIEWS.md and WITNESSES.md are no longer committed: `project` writes them to
   `build/views/` (ignored), `tools/graph.py views --check` renders them in three processes and

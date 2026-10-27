@@ -1,1 +1,0 @@
-A transfer beyond `transfer_bytes` is `RESOURCE_LIMIT` on export and on inspect, and nothing is staged.

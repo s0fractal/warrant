@@ -1,1 +1,0 @@
-{"because":null,"duty":"cc1691d993ec547de59090a4d43834e892a3d9538d599a4373a1ebd6a872b211","id":"SPEC-3.5-5","kind":"normative","mutants":["M09","M251"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.5","source":"SPEC.md","text":"delegable sorted subset of acts the grantee may grant on","witnesses":["contract_test:U4","records_test:G4"]}

@@ -1,1 +1,0 @@
-{"because":null,"duty":"b13ae74cbd545cf100869942adba37dfd93c3698130b7c77ac19dec9f3e27013","id":"SPEC-10.2-5","kind":"normative","mutants":["A30"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"10.2","source":"SPEC.md","text":"The assessment worker reads only a view directory that `capture` made.","witnesses":["agent_handoff_test:V11"]}

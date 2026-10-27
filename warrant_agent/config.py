@@ -1,153 +1,112 @@
-"""Operator configuration (CONTRACT A). Chosen by the operator, never by a request:
-stores, signer, receiver trust/profile, expectations, use policies and limits.
-Requests name a workspace and an expectation only by their local handles."""
+"""Operator configuration. Chosen by the operator, never by a request: the workspaces (a repository
+checkout, or a store with its trust and profile), the signer and the limits. Requests name a workspace
+only by its handle.
+
+    {"agent_api": "warrant-agent/3",
+     "workspaces": {NAME: {"repo": DIR}                                   # DIR/.warrant and DIR/.warrant/v3.json
+                         | {"store": DIR, "trust": FILE, "profile": FILE},
+                    ... "signer": {"actor": A, "key": SEED}?, "operations": [...]?, "limits": {...}?}}}
+
+A configuration `warrant-agent-mcp init` wrote for Warrant 2 (agent_api warrant-agent/1, its store a
+repository's `.warrant/store`) is read as the same repository with the same signer: an operator's
+existing configuration, and the seed it names, keep working across the switch."""
 import json
-import os
 import re
 from pathlib import Path
 
-from warrant import bindings as B
-from warrant import jcs as C
-from warrant import limits as L
-from warrant import records as R
+from warrant import engine as E
 from warrant import shapes as S
-from warrant.store import Trust
+from warrant.store import Store
 
 from . import AGENT_API
 from .errors import AgentError, need
 
-HANDLE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}\Z")      # \Z: `$` admits a trailing newline (AMEND 2 of #164)
-OPERATIONS = ("context", "read", "handoff", "prepare", "commit", "compute")
-# What a workspace keeps under <state>/<name>: created when the configuration loads (the first six) or by the
-# views and the store (verdicts, replay-cache, objects). None of them may be a symlink (AMEND 1 of #179).
-STATE_DIRS = ("views", "staging", "imports", "drafts", "requests", "exports")
-STATE_LAZY = ("verdicts", "replay-cache", "objects")
-RELATIONS = ("MATCH_EXPECTED_SET", "UNPINNED", "MISSING_DECLARED_BYTES", "CONTENT_MISMATCH", "WRONG_SET",
-             "WRONG_SOURCE", "UNVERIFIED_EXPORTER", "LOCAL_CAPTURE")
-# The engine's admission limits (warrant.limits, SPEC §9) are workspace limits too.
-DEFAULT_LIMITS = {"context_bytes": 16 * 1024, "transfer_bytes": 16 * 1024 * 1024, "assess_seconds": 120,
-                  "provider_seconds": 600, "read_bytes": 64 * 1024, "view_ttl": 24 * 3600,
-                  "gc_interval": 3600, **L.DEFAULTS}
+V2_API = "warrant-agent/1"
+HANDLE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}\Z")
+OPERATIONS = ("context", "read", "graph", "handoff", "prepare", "commit")
+ALWAYS = ("workspace", "explain")            # read the configuration and a static table only
+REPOSITORY = "repository/3"
+DEFAULT_LIMITS = {"store_bytes": 64 << 20, "context_bytes": 64 << 10, "read_bytes": 256 << 10}
 
 
-def state_links(ws_state):
-    """The paths of a workspace's state tree that are symlinks (dangling ones included): its directory, the
-    directories under it and the profile beside them are written by the interface, and a link there would
-    take those writes elsewhere."""
-    return [str(q) for q in (ws_state, *(ws_state / d for d in STATE_DIRS + STATE_LAZY)) if os.path.islink(q)]
+def repository_config(repo):
+    """(trust, profile, name) of a repository: its `.warrant/v3.json`, checked."""
+    try:
+        doc = json.loads((Path(repo) / ".warrant" / "v3.json").read_bytes())
+    except (OSError, ValueError) as e:
+        raise AgentError("BAD_REQUEST", f"repository configuration: {type(e).__name__}: {e}") from None
+    need(isinstance(doc, dict) and doc.get("warrant") == REPOSITORY and set(doc) == {"warrant", "repository", "trust", "profile"},
+         "BAD_REQUEST", f".warrant/v3.json is a {REPOSITORY} document {{warrant, repository, trust, profile}}")
+    for why in (E.trust_problem(doc["trust"]), E.profile_problem(doc["profile"])):
+        need(why is None, "BAD_REQUEST", f".warrant/v3.json: {why}")
+    return doc["trust"], doc["profile"], doc["repository"]
 
 
 class Workspace:
-    def __init__(self, name, doc, state_root, create=True):
+    def __init__(self, name, doc, legacy=False):
+        need(isinstance(doc, dict), "BAD_REQUEST", f"workspace {name!r} is an object")
         self.name = name
-        self.store = Path(doc["store"])
-        trust = doc["trust"]
-        if isinstance(trust, dict):         # a repository's bindings under its roles, admitted on every read
-            need(set(trust) == {"bindings", "roles"}, "BAD_REQUEST",
-                 f"workspace {name!r}: trust is a trust/2 file or {{bindings, roles}} of a repository")
-            self.trust_path, self.roles_path = Path(trust["bindings"]), Path(trust["roles"])
+        if legacy:                   # Warrant 2's init output: {store: <repo>/.warrant/store, trust, profile, signer, ...}
+            store = Path(str(doc.get("store", "")))
+            need(store.name == "store" and store.parent.name == ".warrant", "UNSUPPORTED_VERSION",
+                 f"workspace {name!r}: a {V2_API} configuration is read only for a repository's .warrant/store")
+            doc = {"repo": str(store.parent.parent), "signer": doc.get("signer"),
+                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"]}
+        if "repo" in doc:
+            self.repo = Path(doc["repo"])
+            self.store, self.trust_path, self.profile_path = self.repo / ".warrant", None, None
         else:
-            self.trust_path, self.roles_path = Path(trust), None
-        self.profile_path = Path(doc["profile"])
-        self.current = list(doc.get("current", []))
-        repo = doc.get("repo")
-        self.repo = (Path(repo["path"]), repo["rev"]) if repo else None
+            need({"store", "trust", "profile"} <= set(doc), "BAD_REQUEST",
+                 f"workspace {name!r}: give repo, or store, trust and profile")
+            self.repo, self.store = None, Path(doc["store"])
+            self.trust_path, self.profile_path = Path(doc["trust"]), Path(doc["profile"])
         signer = doc.get("signer")
         if signer:
-            try:
-                R.check_actor(signer["actor"], "signer actor")       # SPEC §3: the one shape of an actor id
-            except R.Invalid as e:
-                raise AgentError("BAD_REQUEST", f"workspace {name!r}: {e}") from None
+            need(isinstance(signer, dict) and S.is_actor(signer.get("actor")) and isinstance(signer.get("key"), str),
+                 "BAD_REQUEST", f"workspace {name!r}: signer is {{actor, key}} with an actor id")
         self.signer = (signer["actor"], Path(signer["key"])) if signer else None
-        self.source_name = doc.get("source_name", name)
-        self.expectations = dict(doc.get("expectations", {}))
-        self.uses = dict(doc.get("uses", {}))
+        ops = list(dict.fromkeys(doc.get("operations", OPERATIONS)))
+        need(set(ops) <= set(OPERATIONS), "BAD_REQUEST", f"workspace {name!r}: operations are of {list(OPERATIONS)}")
+        self.operations = tuple(ops)
         self.limits = dict(DEFAULT_LIMITS, **doc.get("limits", {}))
-        try:
-            L.resolve(self.assessment_limits())
-        except ValueError as e:
-            raise AgentError("BAD_REQUEST", f"workspace {name!r}: {e}") from None
-        self.operations = tuple(doc.get("operations", OPERATIONS))
-        self.state = Path(state_root) / name
-        if self.signer:          # the server writes files under the state: never where the signing key is (AMEND 2)
-            key, root = os.path.realpath(self.signer[1]), os.path.realpath(state_root)
-            need(key != root and not key.startswith(root + os.sep), "BAD_REQUEST",
-                 f"workspace {name!r}: the signer's key lies in the state directory, where the server writes")
-        links = state_links(self.state)
-        need(not links, "BAD_REQUEST", f"workspace {name!r}: the state tree holds symlinks: {links}", links=links)
-        for sub in STATE_DIRS if create else ():
-            (self.state / sub).mkdir(parents=True, exist_ok=True)
-
-    def assessment_limits(self):
-        """The engine's admission limits of this workspace (warrant.limits)."""
-        return {k: self.limits[k] for k in L.DEFAULTS}
+        need(all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in self.limits.values())
+             and set(self.limits) == set(DEFAULT_LIMITS), "BAD_REQUEST", f"workspace {name!r}: limits {sorted(DEFAULT_LIMITS)}")
 
     def permit(self, op):
-        need(op in self.operations, "NOT_PERMITTED", f"operation {op!r} is not permitted for workspace {self.name!r}")
+        need(op in ALWAYS or op in self.operations, "NOT_PERMITTED", f"operation {op!r} is not permitted for workspace {self.name!r}")
 
-    def trust_bytes(self):
-        if self.roles_path is None:
-            return self.trust_path.read_bytes()
-        return C.canon(repository_trust(self.trust_path, self.roles_path))
+    def receiver(self):
+        """(trust, profile), read again for every call."""
+        if self.repo is not None:
+            return repository_config(self.repo)[:2]
+        try:
+            trust, profile = (json.loads(p.read_bytes()) for p in (self.trust_path, self.profile_path))
+        except (OSError, ValueError) as e:
+            raise AgentError("BAD_REQUEST", f"workspace {self.name!r}: {type(e).__name__}: {e}") from None
+        for why in (E.trust_problem(trust), E.profile_problem(profile)):
+            need(why is None, "BAD_REQUEST", f"workspace {self.name!r}: {why}")
+        return trust, profile
 
-    def trust(self):
-        return Trust(C.loads(self.trust_bytes()))
-
-    def profile(self):
-        return json.loads(self.profile_path.read_bytes())
-
-    def expectation(self, handle):
-        if handle is None:
-            return None
-        need(isinstance(handle, str) and handle in self.expectations, "UNKNOWN_EXPECTATION",
-             "expectation is not a configured handle of this workspace")
-        return dict(self.expectations[handle], handle=handle)
-
-    def expectation_digest(self, handle):
-        """The identity of the CURRENT definition behind a handle, or None if the handle is gone."""
-        e = self.expectations.get(handle)
-        # JSON, not JCS: the operator's configuration may carry floats (as the config digest does)
-        return None if e is None else C.digest(json.dumps(e, sort_keys=True, separators=(",", ":")).encode())
-
-    def use_policy(self, use):
-        need(isinstance(use, str) and use in self.uses, "BAD_REQUEST", f"use {use!r} is not configured")
-        return self.uses[use]
-
-
-def repository_trust(bindings_path, roles_path):
-    """The trust/2 document of the bindings a repository's .warrant/trust.json admits under its
-    .warrant/roles.json, by warrant.bindings: the rule tools/claims.py admits by. A binding that
-    rule does not admit is not in the trust; a roles file with any problem, or a bindings file
-    that is not a bindings document, is refused: a dropped pin would make its name first-come."""
-    try:
-        roles_doc, doc = json.loads(Path(roles_path).read_bytes()), C.loads(Path(bindings_path).read_bytes())
-    except (OSError, ValueError, TypeError) as e:      # C.NotCanonical is a ValueError
-        raise AgentError("BAD_REQUEST", f"repository trust: {type(e).__name__}: {e}") from None
-    roles, problems = B.read_roles(roles_doc)
-    admitted, refused = B.admit_bindings(doc, roles=roles)
-    problems += [p for p in refused if p[0] == "BINDINGS_SHAPE"]
-    need(not problems, "BAD_REQUEST", "repository trust: " + "; ".join(f"{c} {d}" for c, d in problems),
-         problems=[c for c, _ in problems])
-    return Trust.document(admitted)
+    def open(self):
+        """The store, admitted by size before a byte is parsed (the workspace's bound; the engine's LIMITS
+        bound the rest of the assessment)."""
+        st = Store(self.store)
+        size = (st.file.stat().st_size if st.file.is_file() else 0) + \
+            (sum(p.stat().st_size for p in st.blobs.iterdir()) if st.blobs.is_dir() else 0)
+        need(size <= self.limits["store_bytes"], "RESOURCE_LIMIT",
+             f"the store holds {size} bytes; this workspace admits {self.limits['store_bytes']}")
+        return st
 
 
 class Config:
-    def __init__(self, doc, create=True):
-        need(isinstance(doc, dict) and doc.get("agent_api") == AGENT_API, "UNSUPPORTED_VERSION",
-             f"configuration must declare agent_api {AGENT_API!r}")
-        self.state = Path(doc["state"])
+    def __init__(self, doc):
+        api = doc.get("agent_api") if isinstance(doc, dict) else None
+        need(api in (AGENT_API, V2_API), "UNSUPPORTED_VERSION", f"configuration must declare agent_api {AGENT_API!r}")
+        need(isinstance(doc.get("workspaces"), dict) and doc["workspaces"], "BAD_REQUEST", "workspaces is a non-empty object")
         self.workspaces = {}
         for name, w in doc["workspaces"].items():
             need(HANDLE.match(name) is not None, "BAD_REQUEST", "workspace names are local handles")
-            for h, e in w.get("expectations", {}).items():
-                need(HANDLE.match(h) is not None and S.hex64(e.get("manifest")),
-                     "BAD_REQUEST", "an expectation is {manifest: hex64, source?, exporter?}")
-            for u, p in w.get("uses", {}).items():
-                need(set(p) <= {"delivery", "reliance", "fresh"} and all(r in RELATIONS for r in p.get("delivery", [])),
-                     "BAD_REQUEST", f"use policy {u!r}: delivery, reliance, fresh")
-            self.workspaces[name] = Workspace(name, w, self.state, create)
-        # Configuration is not a Warrant record: it may carry floats (deadlines).
-        self.digest = C.digest(json.dumps(doc, sort_keys=True, separators=(",", ":")).encode())
+            self.workspaces[name] = Workspace(name, w, legacy=api == V2_API)
 
     @classmethod
     def load(cls, path):

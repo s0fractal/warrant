@@ -3,11 +3,11 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# Warrant 2 (SPEC.md). A new distribution name on purpose: `warrant-verify`
-# (<= 0.12.0) is the retired 0.x generation and keeps its own meaning.
+# Warrant 3 (docs/V3.md). `warrant-graph` 2.0.0a1 on PyPI is Warrant 2 (history/warrant-2-2026-10-27);
+# `warrant-verify` (<= 0.12.0) is the retired 0.x generation. Nothing of 3.x is published yet (G12).
 name = "warrant-graph"
-version = "2.0.0a1"
-description = "Record transitions of work with their residual, close loops exactly, and hand the next agent a capsule instead of a transcript."
+version = "3.0.0.dev0"
+description = "Signed records of work with native lineage and schemas as records; each receiver judges them under its own trust and profile."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -15,19 +15,17 @@ authors = [{ name = "s0fractal" }]
 dependencies = ["cryptography>=41"]
 
 [project.optional-dependencies]
-# `compute` conditions need the Sigma provider (sigma_provider in the sigma-glyph
-# distribution, released on PyPI as 0.8.0). Its provider identity is
-# 0caff793d00dd798fa0af89517674c2ca562e1d517e7c969cc40617778c776c5; CI checks the installed bytes against it, since a version
-# pin alone does not name bytes. Without it, attest and observe work and every
-# REPLAYED basis is UNVERIFIED.
-compute = ["sigma-glyph==0.8.0"]
+# The proof-space pilot (warrant_pilot/, roadmap G9, not in the wheel) resolves the objects of one Sigma
+# receipt; its tests run the Sigma provider (sigma_provider in sigma-glyph 0.8.0). Warrant 3 itself
+# replays nothing: a replay is a checker actor's attestation (docs/V3.md §6).
+pilot = ["sigma-glyph==0.8.0"]
 # The thin stdio MCP front end of warrant_agent (`warrant-agent-mcp`), on the
 # official Python SDK at one exact version.
 mcp = ["mcp==2.3.0"]
 
 [project.urls]
 Homepage = "https://github.com/s0fractal/warrant"
-Specification = "https://github.com/s0fractal/warrant/blob/master/SPEC.md"
+Specification = "https://github.com/s0fractal/warrant/blob/master/docs/V3.md"
 
 [project.scripts]
 warrant = "warrant.cli:main"

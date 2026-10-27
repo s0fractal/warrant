@@ -1,1 +1,0 @@
-Its **identity** is SHA-256 over the canonical JSON `{"provider": "sigma-resume", "files": {"<module>.py": sha256(bytes)}}` of the three modules, the formula `sigma_provider.identity_of` documents.

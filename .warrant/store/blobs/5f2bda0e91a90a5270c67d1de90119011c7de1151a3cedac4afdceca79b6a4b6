@@ -1,1 +1,0 @@
-{"warrant": "2", "type": "<type>", "actor": "<actor id>", "at": <int>, "prev": <record id or null>, "body": {...}}

@@ -1,399 +1,132 @@
-"""`warrant` — the one command-line interface of Warrant 2 (SPEC.md).
+"""warrant: init, key, trust, bootstrap, put, attest, blob, assess, fmt (docs/V3.md). Output is JSON.
 
-Writing:   init, key, trust, blob, file, accept, observe, manifest, compute
-Reading:   assess, reliance, frontier, questions, capsule
-Every reading command assesses one view: --store, --trust, --profile, --as-of,
-and optionally --current and --workspace. Output is JSON."""
+A seed is read from --key FILE (in the current directory or the operator's home, never through a path that
+leaves both) or from WARRANT_KEY; every other file named is inside the current directory."""
 import argparse
-import base64
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
 
-from . import jcs as C
-from . import compute as P
+from warrant import keys as K
+
+from . import bootstrap as B
 from . import engine as E
-from . import limits as L
 from . import records as R
-from . import triggers as TR
-from .keys import Key
-from .store import Store, Trust
+from .store import Refused, Store, confined
 
 
-def _out(doc):
-    sys.stdout.write(json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=True) + "\n")
+def here(p):
+    """A store, trust, profile or blob file: inside the current directory."""
+    return confined(p, os.getcwd())
 
 
-def _read_json(arg):
-    if arg == "-":
-        return json.loads(sys.stdin.read())
-    if arg.lstrip().startswith(("{", "[")):
-        return json.loads(arg)
-    return json.loads(Path(arg).read_text())
-
-
-def _key(path):
-    return Key.from_seed_hex(Path(path).read_text())
-
-
-def _now(v):
-    return int(time.time()) if v is None else v
-
-
-# ---------------------------------------------------------------- writing
-
-def cmd_init(a):
-    Store(a.store).init()
-    _out({"store": str(Path(a.store))})
-
-
-def cmd_key(a):
-    p = Path(a.out)
-    if p.exists():
-        raise SystemExit(f"refusing to overwrite {p}")
-    k = Key.generate()
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write(k.seed_hex() + "\n")
-    _out({"key_file": str(p), "public": k.public, "key_id": k.id})
-
-
-def cmd_trust(a):
-    p = Path(a.trust)
-    doc = json.loads(p.read_text()) if p.exists() else Trust.document([])
-    pub = _key(a.key).public if a.key else a.public
-    doc["keys"].append({"actor": a.actor, "public": pub})
-    Trust(doc)                                    # refuse a malformed or doubly bound file
-    p.write_bytes(C.canon(doc))
-    _out({"trust": str(p), "actor": a.actor, "public": pub})
-
-
-def cmd_blob(a):
-    s = Store(a.store).init()
-    if a.json is not None:
-        h = s.put_json(_read_json(a.json))
-    else:
-        h = s.put_blob(sys.stdin.buffer.read() if a.file == "-" else Path(a.file).read_bytes())
-    _out({"blob": h})
-
-
-# Structural members `warrant file` fills when a body omits them. Only empty
-# values: nothing here states a meaning. Semantic members (a duty's statement,
-# holder, owed_to, accept_by, condition; a transition's basis, established,
-# residual, closes) are never filled, so their absence is still refused.
-STRUCTURAL = {
-    "duty": {"release_by": [], "schedule": None, "requires": [], "serves": [], "answers": None, "subject": None},
-    "transition": {"relied_on": [], "opened": [], "subject": None, "supersedes": [], "triggers": []},
-}
-
-
-def fill(rtype, body):
-    """`body` with omitted structural members filled; given members are kept as they are.
-    A transition that omits `evidence` carries exactly the evidence its items cite."""
-    if rtype not in STRUCTURAL or not isinstance(body, dict):
-        return body
-    out = {k: v for k, v in STRUCTURAL[rtype].items() if k not in body}
-    if rtype == "transition" and "evidence" not in body and isinstance(body.get("closes"), list):
-        out["evidence"] = sorted({h for m in body["closes"] if isinstance(m, dict)
-                                  for h in (m.get("evidence") if isinstance(m.get("evidence"), list) else [])})
-    out.update(body)
-    return out
-
-
-def _store(a):
-    """The store a signer writes, with its own verdicts directory if it names one (F44)."""
-    return Store(a.store, verdicts=a.verdicts).init()
-
-
-def _append(s, rtype, actor, at, body, key):
-    """File a record extending `actor`'s chain in store `s` (SPEC §3: `prev` is its head)."""
+def home(p):
+    """A seed: inside the current directory or the operator's home, never named by a path that leaves both."""
+    p = os.path.expanduser(p)
     try:
-        return s.append(rtype, actor, at, body, key)
-    except R.Invalid as e:
-        raise SystemExit(f"invalid {rtype}: {e}")
-    except ValueError as e:
-        raise SystemExit(str(e))
+        return confined(p, os.getcwd())
+    except Refused:
+        return confined(p, os.path.expanduser("~"))
 
 
-def cmd_file(a):
-    s = _store(a)
-    body = fill(a.type, _read_json(a.body))
-    rid = _append(s, a.type, a.actor, _now(a.at), body, _key(a.key))
-    if a.id:
-        sys.stdout.write(rid + "\n")
-    else:
-        _out({"record": rid, "type": a.type})
+def signer(a):
+    seed = Path(home(a.key)).read_text() if a.key else os.environ.get("WARRANT_KEY")
+    if not seed:
+        raise Refused("a signing seed is needed: --key FILE or WARRANT_KEY")
+    key, trust = K.Key.from_seed_hex(seed), json.loads(Path(here(a.trust)).read_text())
+    if key.public not in trust["keys"].get(a.actor, []):
+        raise Refused(f"the trust does not bind this key to {a.actor!r}")
+    return key, trust
 
 
-def cmd_accept(a):
-    """Accept one exact item (or a transition's results) as it is filed."""
-    s = _store(a)
-    snap = s.snapshot()
-    env = C.loads(snap.records[a.transition])
-    t = env["record"]["body"]
-    ev = t["evidence"] if a.item is None else t["closes"][a.item]["evidence"]
-    rid = _append(s, "accept", a.actor, _now(a.at), R.accept(a.transition, a.item, ev, a.support or []), _key(a.key))
-    _out({"record": rid, "type": "accept"})
-
-
-def cmd_observe(a):
-    """Run a probe once and file what was observed, when, and how."""
-    s = _store(a)
-    probe = _read_json(a.probe)
-    if not (isinstance(probe, dict) and isinstance(probe.get("argv"), list) and probe["argv"]):
-        raise SystemExit("a probe is {\"argv\": [...], ...}: the command this observer runs")
-    probe_h = s.put_json(probe)
-    t0 = int(time.time())
-    try:
-        p = subprocess.run(probe["argv"], capture_output=True, timeout=probe.get("timeout", 30), check=False)
-        result = p.stdout.decode(errors="replace").strip()[:R.MAX_TEXT]
-        raw = [s.put_blob(p.stdout), s.put_json({"exit": p.returncode, "stderr": p.stderr.decode(errors="replace")[-2000:]})]
-    except (OSError, subprocess.TimeoutExpired) as e:
-        result, raw = f"PROBE_FAILED: {type(e).__name__}", []
-    t1 = max(t0, int(time.time()))
-    body = R.observation(a.target, probe_h, [t0, t1], result, raw)
-    rid = _append(s, "observation", a.actor, _now(a.at) if a.at is not None else t1, body, _key(a.key))
-    _out({"record": rid, "type": "observation", "result": result, "window": [t0, t1]})
-
-
-def cmd_manifest(a):
-    s = Store(a.store).init()
-    try:
-        doc = TR.manifest(a.repo, a.rev, sorted(a.paths))
-    except TR.Refusal as e:
-        raise SystemExit(f"manifest refused: {e}")
-    _out({"blob": s.put_json(doc), "commit": TR.resolve(a.repo, a.rev)})
-
-
-# ---------------------------------------------------------------- compute (producer side)
-
-def _env_blobs(s, env_h):
-    snap = s.snapshot()
-    doc = snap.json_blob(env_h)
-    if doc is None or P.environment_problem(doc):
-        raise SystemExit("not a sigma environment manifest in this store")
-    hashes = P.environment_hashes(doc)
-    return hashes, {h: snap.blobs[h] for h in hashes if h in snap.blobs}
-
-
-def _call(op, args, blobs=None):
-    try:
-        out = P.Provider.capture().call(op, args, blobs)
-    except P.ProviderError as e:
-        raise SystemExit(f"provider: {e}")
-    if "refused" in out:
-        raise SystemExit(f"provider refused: {out['refused']}")
-    return out
-
-
-def cmd_compute(a):
-    s = Store(a.store).init()
-    runtime = {"book1": P.BOOK1, "rich": P.RICH}[a.runtime]
-    if a.op == "provider":
-        try:
-            p = P.Provider.capture()
-        except P.ProviderError as e:
-            raise SystemExit(f"provider: {e}")
-        return _out({"provider": p.id, "where": p.where, "files": p.identity["files"]})
-    if a.op == "term":
-        out = _call("term", {"expr": a.expr})
-        nodes = [s.put_blob(base64.b64decode(b)) for b in out["nodes"].values()]
-        env_h = s.put_json(P.environment_doc(nodes))
-        return _out({"input": out["input"], "environment": env_h, "runtime": runtime, "nodes": len(nodes)})
-    hashes, blobs = _env_blobs(s, a.environment)
-    base = {"runtime": runtime, "input": a.input, "hashes": hashes}
-    if a.op == "start":
-        out = _call("start", base, blobs)
-    elif a.op == "advance":
-        snap = s.snapshot()
-        out = _call("advance", dict(base, checkpoint=base64.b64encode(snap.blobs[a.checkpoint]).decode(),
-                                    state=base64.b64encode(snap.blobs[a.state]).decode(), credit=a.credit), blobs)
-    elif a.op == "cycle":
-        out = _call("find_cycle", dict(base, max_steps=a.max_steps), blobs)
-        if out.get("witness") is None:
-            return _out({"cycle": None, "outcome": out.get("outcome")})
-        w = s.put_blob(base64.b64decode(out["witness"]))
-        doc = {"cycle": "sigma-resume", "target": a.target, "input": a.input, "environment": a.environment,
-               "witness": w, "lost": []}
-        return _out({"cycle": s.put_json(doc), "witness": w})
-    else:
-        raise SystemExit(f"unknown compute op {a.op}")
-    ck = s.put_blob(base64.b64decode(out["checkpoint"]))
-    st = s.put_blob(base64.b64decode(out["state"]))
-    res = {"outcome": out.get("outcome", "STARTED"), "checkpoint": ck, "state": st, "result": out.get("result")}
-    if out.get("outcome") == "NORMAL_FORM" and a.target:
-        res["receipt"] = s.put_json({"receipt": "sigma-resume", "target": a.target, "input": a.input,
-                                     "environment": a.environment, "checkpoint": ck, "state": st,
-                                     "claimed": out["result"], "lost": []})
-    _out(res)
-
-
-# ---------------------------------------------------------------- reading
-
-def _limits(a):
-    out = {}
-    for item in a.limit:
-        name, _, value = item.partition("=")
-        if not value.isdigit():
-            raise SystemExit(f"--limit {item!r}: NAME=N")
-        out[name] = int(value)
-    try:
-        return L.resolve(out)
-    except ValueError as e:
-        raise SystemExit(str(e)) from None
-
-
-def _report(a):
-    s = Store(a.store)
-    lim = _limits(a)
-    snap = s.snapshot(limits=lim)
-    trust = Trust.load(a.trust)
-    prof = _read_json(a.profile) if a.profile else E.profile()
-    ws = None
-    if a.workspace:
-        repo, _, rev = a.workspace.rpartition("@")
-        ws = (repo, rev or "HEAD")
-    try:
-        provider = P.Provider.capture()
-    except P.ProviderError as e:
-        print(f"warning: provider unavailable, replays are UNVERIFIED: {e}", file=sys.stderr)
-        provider = None
-    return E.assess(snap, trust, _now(a.as_of), prof, current=a.current or [], workspace=ws, provider=provider,
-                    replay_cache=a.replay_cache, limits=lim, verdicts=a.verdicts)
-
-
-def cmd_assess(a):
-    _out(_report(a))
-
-
-def cmd_reliance(a):
-    _out(E.reliance(_report(a), a.target, a.use))
-
-
-def cmd_frontier(a):
-    rep = _report(a)
-    _out({"assessment_id": rep["assessment_id"], "actor": a.actor, "frontier": E.frontier(rep, a.actor)})
-
-
-def cmd_questions(a):
-    rep = _report(a)
-    _out({"assessment_id": rep["assessment_id"], "questions": E.questions(rep, a.scope, owned=a.all)})
-
-
-def cmd_capsule(a):
-    _out(E.capsule(_report(a), a.target, a.use))
-
-
-def build_parser():
-    ap = argparse.ArgumentParser(prog="warrant", description=__doc__, allow_abbrev=False,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = ap.add_subparsers(dest="cmd", required=True)
-
-    def store(p):
-        p.add_argument("--store", required=True)
-
-    def signer(p):
-        store(p)
-        p.add_argument("--key", required=True, help="file holding the signer's Ed25519 seed (hex)")
-        p.add_argument("--actor", required=True)
-        p.add_argument("--at", type=int, help="record time (default: now)")
-        p.add_argument("--verdicts", help="directory of this signer's earlier authentication verdicts (cost only)")
-
-    def view(p):
-        store(p)
-        p.add_argument("--trust", required=True)
-        p.add_argument("--profile", help="the recipient's profile JSON (default: one use 'act', no acceptors)")
-        p.add_argument("--as-of", type=int, help="end of the view (default: now)")
-        p.add_argument("--current", action="append", help="a revision the recipient treats as current")
-        p.add_argument("--workspace", help="REPO@REV for subject_changed triggers")
-        p.add_argument("--replay-cache", help="directory of this recipient's earlier verified replays (cost only)")
-        p.add_argument("--verdicts", help="directory of this recipient's earlier authentication verdicts (cost only)")
-        p.add_argument("--limit", action="append", default=[], metavar="NAME=N",
-                       help="override an admission limit (SPEC §9), e.g. duty_periods=50000")
-
-    p = sub.add_parser("init", help="create a store")
-    store(p)
-    p.set_defaults(fn=cmd_init)
-    p = sub.add_parser("key", help="generate an Ed25519 key file (0600, never overwritten)")
-    p.add_argument("--out", required=True)
-    p.set_defaults(fn=cmd_key)
-    p = sub.add_parser("trust", help="bind a key to an actor in a trust file")
-    p.add_argument("--trust", required=True)
-    p.add_argument("--actor", required=True)
-    g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument("--key")
-    g.add_argument("--public")
-    p.set_defaults(fn=cmd_trust)
-    p = sub.add_parser("blob", help="add bytes (FILE or -) or a JSON document (--json) to the store")
-    store(p)
-    p.add_argument("file", nargs="?", default="-")
-    p.add_argument("--json")
-    p.set_defaults(fn=cmd_blob)
-    p = sub.add_parser("file", help="sign and file a record body (SPEC §3); a duty or transition body may omit "
-                                    "its structural members (empty lists, nulls; a transition's evidence is "
-                                    "then the evidence its items cite)")
-    signer(p)
-    p.add_argument("--type", required=True, choices=R.TYPES)
-    p.add_argument("--id", action="store_true", help="print only the new record id")
-    p.add_argument("body", help="JSON body, a file, or -")
-    p.set_defaults(fn=cmd_file)
-    p = sub.add_parser("accept", help="accept one exact item of a transition, or its results")
-    signer(p)
-    p.add_argument("transition")
-    p.add_argument("--item", type=int, help="item index; omit to accept the transition's results")
-    p.add_argument("--support", action="append")
-    p.set_defaults(fn=cmd_accept)
-    p = sub.add_parser("observe", help="run a probe and file the observation")
-    signer(p)
-    p.add_argument("--target", required=True)
-    p.add_argument("--probe", required=True, help='JSON {"argv": [...], "timeout": s}')
-    p.set_defaults(fn=cmd_observe)
-    p = sub.add_parser("manifest", help="store a subject_changed baseline for explicit paths at a revision")
-    store(p)
-    p.add_argument("--repo", required=True)
-    p.add_argument("--rev", required=True)
-    p.add_argument("paths", nargs="+")
-    p.set_defaults(fn=cmd_manifest)
-    p = sub.add_parser("compute", help="the installed Sigma provider: provider (its identity), term, start, advance, cycle")
-    store(p)
-    p.add_argument("op", choices=("provider", "term", "start", "advance", "cycle"))
-    p.add_argument("--runtime", choices=("book1", "rich"), default="book1")
-    p.add_argument("--expr")
-    p.add_argument("--input")
-    p.add_argument("--environment")
-    p.add_argument("--checkpoint")
-    p.add_argument("--state")
-    p.add_argument("--credit", type=int, default=0)
-    p.add_argument("--max-steps", type=int, default=10000)
-    p.add_argument("--target", help="crossing target named in the receipt or cycle")
-    p.set_defaults(fn=cmd_compute)
-    for name, fn, extra in (("assess", cmd_assess, None), ("reliance", cmd_reliance, "target"),
-                            ("frontier", cmd_frontier, "actor"), ("questions", cmd_questions, None),
-                            ("capsule", cmd_capsule, "target")):
-        p = sub.add_parser(name)
-        view(p)
-        if extra:
-            p.add_argument(extra)
-        if name in ("reliance", "capsule"):
-            p.add_argument("--use", default="act")
-        if name == "questions":
-            p.add_argument("--scope")
-            p.add_argument("--all", action="store_true", help="include questions a duty has taken")
-        p.set_defaults(fn=fn)
-    return ap
+def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
+    key, trust = signer(a)
+    at = a.at if a.at is not None else int(time.time())
+    r = R.record(kind, a.actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard)
+    return Store(here(a.store)).append(r, key, trust, expect_head=a.expect_head)
 
 
 def main(argv=None):
-    a = build_parser().parse_args(argv)
+    p = argparse.ArgumentParser(prog="warrant")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    cmds = {n: sub.add_parser(n) for n in ("init", "key", "trust", "bootstrap", "put", "attest", "blob", "assess", "fmt")}
+    for n, c in cmds.items():
+        if n not in ("key", "trust"):
+            c.add_argument("--store", default=".warrant")
+    for n in ("bootstrap", "put", "attest"):
+        c = cmds[n]
+        c.add_argument("--key")
+        c.add_argument("--actor", required=True)
+        c.add_argument("--trust", required=True)
+        c.add_argument("--at", type=int)
+        c.add_argument("--expect-head")
+    cmds["key"].add_argument("--out", required=True)
+    cmds["trust"].add_argument("--trust", required=True)
+    cmds["trust"].add_argument("--bind", action="append", required=True, metavar="ACTOR=SEED")
+    c = cmds["put"]
+    c.add_argument("--kind", required=True, choices=R.KINDS)
+    c.add_argument("--schema")
+    c.add_argument("--lineage")
+    c.add_argument("--ref", action="append", default=[])
+    c.add_argument("--guard", type=json.loads)
+    c.add_argument("body", type=json.loads)
+    c = cmds["attest"]
+    c.add_argument("target")
+    c.add_argument("--body", type=json.loads, default={"verdict": "accept"})
+    cmds["blob"].add_argument("file")
+    c = cmds["assess"]
+    c.add_argument("--trust", required=True)
+    c.add_argument("--profile", required=True)
+    c.add_argument("--as-of", type=int)
+    c.add_argument("--lineage")
+    a = p.parse_args(argv)
     try:
-        a.fn(a)
-    except L.LimitExceeded as e:
-        # An operational refusal (SPEC §9), never a report: nothing was assessed.
-        print(f"warrant: RESOURCE_LIMIT {e}", file=sys.stderr)
-        return 3
+        if a.cmd == "init":
+            Store(here(a.store)).init()
+            out = {"store": str(a.store)}
+        elif a.cmd == "key":
+            k = K.Key.generate()
+            fd = os.open(home(a.out), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.write(fd, k.seed_hex().encode())
+            os.close(fd)
+            out = {"public": k.public}
+        elif a.cmd == "trust":           # a trust/3 file binding each seed's public key to its actor, written whole
+            keys = {}
+            for b in a.bind:
+                actor, _, seed = b.partition("=")
+                keys.setdefault(actor, set()).add(K.Key.from_seed_hex(Path(home(seed)).read_text()).public)
+            doc = {"warrant": "trust/3", "keys": {x: sorted(v) for x, v in sorted(keys.items())}}
+            why = E.trust_problem(doc)
+            if why:
+                raise Refused(why)
+            name = os.path.basename(a.trust)        # a trust file of the current directory, by its name alone
+            if name != a.trust or name in ("", ".", ".."):
+                raise Refused("--trust names a file of the current directory")
+            Path(os.getcwd(), name).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+            out = doc
+        elif a.cmd == "bootstrap":
+            out = {"schemas": [put(a, "schema", s) for s in B.SCHEMAS]}
+        elif a.cmd == "put":
+            out = {"record": put(a, a.kind, a.body, a.schema, a.lineage, a.ref, a.guard)}
+        elif a.cmd == "attest":
+            out = {"record": put(a, "attest", dict(a.body, target=a.target), refs=[a.target])}
+        elif a.cmd == "blob":
+            out = {"blob": Store(here(a.store)).put_blob(Path(here(a.file)).read_bytes())}
+        elif a.cmd == "fmt":
+            s = Store(here(a.store))
+            s.add_lines([])
+            out = {"canonical": True}
+        else:
+            rep = E.assess(Store(here(a.store)).snapshot(), json.loads(Path(here(a.trust)).read_text()),
+                           json.loads(Path(here(a.profile)).read_text()), a.as_of)
+            out = rep if not a.lineage else {"lineage": rep["lineages"].get(a.lineage),
+                                             "versions": {v: rep["versions"][v] for v in rep["lineages"].get(a.lineage, {}).get("versions", [])}}
+    except (Refused, R.Invalid, OSError, ValueError) as e:
+        print(f"REFUSED {e}", file=sys.stderr)
+        return 2
+    print(json.dumps(out, indent=1, sort_keys=True))
     return 0
 
 

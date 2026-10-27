@@ -1,1 +1,0 @@
-warrant agent/handoff 48b3c32 amends bdf4c7e for Codex W142-01 and W142-02; H01-H13 21/21, W01-W09 9/9, compute 6/6, MCP 6/6, mutants A01-A20 20/20 on target; Codex reproduce.py on the fixed tree: both cases reproduced=false

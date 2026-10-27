@@ -1,1 +1,0 @@
-{"because":null,"duty":"56df25723d70eda9c6cbe65870bf38029f726c371d5a5fa56d9bbec07afc6344","id":"SPEC-4.2-12","kind":"normative","mutants":["M04"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.2","source":"SPEC.md","text":"Filing early and being accepted late admits late.","witnesses":["contract_test:O1"]}

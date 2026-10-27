@@ -1,1 +1,0 @@
-{"because":null,"duty":"3db8447c3b28a50d6f36993a4733ceb59fe08086cea334f963b508368cb837ca","id":"SPEC-4.4-9","kind":"normative","mutants":["M76","M77","M78"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"4.4","source":"SPEC.md","text":"`NOT_CLOSED`, `CONTESTED`, `MISSING`.","witnesses":["assessment_test:R9"]}

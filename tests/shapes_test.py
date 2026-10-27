@@ -21,11 +21,8 @@ from warrant import shapes as S
 
 H64, H128, H32 = "a1" * 32, "b2" * 64, "c3" * 16
 NOT_STR = {"integer": 5, "null": None, "list": ["a"], "bytes": b"a"}
-# Hex patterns that are other shapes, not copies: a git or blob subject (40 or 64), a git
-# revision a trigger names (7 to 40, 64, or HEAD), a roadmap duty prefix (8 to 64 digits).
-OTHER_SHAPES = {("warrant/records.py", r"^(?:[0-9a-f]{40}|[0-9a-f]{64})\Z"),
-                ("warrant/triggers.py", r"[0-9a-f]{7,40}|[0-9a-f]{64}|HEAD"),
-                ("tools/roadmap.py", r"^[0-9a-f]{8,64}\Z")}
+# Hex patterns that are other shapes, not copies: none since Warrant 3 (a commit id is shapes.hex_of(v, 40)).
+OTHER_SHAPES = set()
 
 
 def answer(pred, v):

@@ -1,1 +1,0 @@
-A manifest digest supplied by the sender is never an expectation: only a handle the receiver configured is, and a delivery inspected without one is `UNPINNED`.

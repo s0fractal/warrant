@@ -1,9 +1,0 @@
-{
-  "local_return_replay": "PASS",
-  "delivery": "MATCH_EXPECTED_SET",
-  "disposition": "DISCHARGED",
-  "basis": [
-    "REPLAYED:sigma-resume:0caff793d00dd798"
-  ],
-  "residual": "remote execution and negative controls remain receiver-reported"
-}

@@ -1,1 +1,0 @@
-Every read of a view hashes the bytes it reads; a pinned object that is absent or does not hash to its name is `VIEW_DAMAGED`, or `VIEW_EXPIRED` once the view has expired, and nothing is read from the live store instead.

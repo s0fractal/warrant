@@ -1,1 +1,0 @@
-A blob the body does not cite, or a `blob:<i>` that names none, is `BAD_REQUEST` and nothing is stored; the blobs are inputs of the draft, so other blobs under one request id are `CONFLICT`, and a commit refused as `SIGNER_CHANGED` stores none of them.

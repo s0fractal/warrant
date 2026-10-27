@@ -1,1 +1,0 @@
-Two records of one actor naming the same `prev` are a **fork**, listed under `chains`; no record is excluded for it, and the chain orders neither branch against the other.

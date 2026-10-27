@@ -1,1 +1,0 @@
-{"because":null,"duty":"5d9fa2e58480b962944668fc76f42a085278f74066c7ab06255e8db3595b0831","id":"SPEC-3.2-13","kind":"normative","mutants":["M217","M228"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"A **question reference** is `<transition id>:<index into opened>`.","witnesses":["records_test:D13","records_test:T12"]}

@@ -1,1 +1,0 @@
-An unfinished import holds the workspace until it completes, or until every object its manifest declares is in the live store with the declared bytes; the staging directory is not consulted for that set.

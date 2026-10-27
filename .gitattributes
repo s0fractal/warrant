@@ -1,3 +1,5 @@
-# Warrant 3 store (docs/V3.md section 8): parallel appends merge without conflict; the reader
-# accepts any order and duplicate lines, and `warrant3 fmt` restores the canonical order.
-.warrant/records.jsonl merge=union
+# The store (docs/V3.md section 8): parallel appends merge without conflict; the reader accepts any
+# order and duplicate lines, and `warrant fmt` restores the canonical order. Its bytes are hashed and
+# signed: never converted (-text).
+.warrant/records.jsonl merge=union -text
+.warrant/blobs/** -text

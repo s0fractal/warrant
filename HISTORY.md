@@ -1,4 +1,60 @@
-# History: what the Warrant 2 rebuild retired
+# History
+
+## Warrant 2, retired 2026-10-27 by the switch to Warrant 3
+
+Warrant 2 is preserved at the git tag **`history/warrant-2-2026-10-27`**, created by the owner at
+commit `b37328b2` (merge of #219), the last master commit on which Warrant 2 was the current
+format. Its package stays published as it was: `warrant-graph` 2.0.0a1 on PyPI. The next release
+is Warrant 3 (roadmap G12); nothing of Warrant 3 is published by the switch.
+
+What Warrant 2 was: six signed record types (duty, transition, accept, challenge, observation,
+grant) in one file per record under `.warrant/store/`, assessed by `warrant/engine.py` under the
+receiver's trust and profile (SPEC.md, 2.0.0a1), with `attest`, `observe` and `compute` conditions,
+Sigma replay of computations, grants, triggers and schedules; an agent interface
+(`warrant_agent`, MCP) over frozen views in an object store; and about 9.7k lines of repository
+tools that re-implemented lineage, forks and acceptance per domain: SPEC claims backed by a replay
+checker (`tools/claims.py`), the roadmap (`tools/roadmap.py`), the pull request review loop and its
+merge gate (`tools/review.py`, `tools/claimslib/eligibility.py`), and the record graph
+(`tools/graph.py`).
+
+Its records were migrated, not re-signed: `.warrant/records.jsonl` holds every Warrant 2 record
+of `b37328b2` as Warrant 3 records with `sig: null`, vouched for by one `migration@1` attest of the
+migrator checker (docs/V3.md §9). The migrator, `tools/migrate_v2_to_v3.py`, depends on the
+Warrant 2 package and lives at the tag; its replay is run there. Run on `b37328b2` with Python 3.15
+and cryptography 50.0.2, it gave the migrator checker `checker sha256:dd56e635…8826f` (the digest of
+its whole import closure, the interpreter and the signature library: another interpreter gives
+another actor), genesis `49ad1e41cc56…`, 1 446 migrated records and 1 459 lines with the six
+bootstrap schemas and Codex's six schema acceptances, and 473 blobs. Its replay, from a checkout of
+the tag with the same interpreter:
+
+```sh
+git worktree add ../warrant-2 history/warrant-2-2026-10-27 && cd ../warrant-2
+mkdir -p build/v3 && cp -R <switched checkout>/.warrant/records.jsonl <switched checkout>/.warrant/blobs build/v3/
+python3 tools/migrate_v2_to_v3.py verify       # IDENTICAL: 1446 replayed, v2 root 649172b24ab6…
+```
+
+`IDENTICAL` means only that the re-derived migrated ids equal the store's unsigned ids (docs/V3.md
+§9). The differential parity of the migrated store against the Warrant 2 tools, at the tag
+(`python3 tests/v3_parity_test.py`): claims 362/362, goals 12/12, obligations 49/49, reviews 19/19
+equal, none declared, none undeclared; two declared migration rules applied ("parallel closures").
+
+### Retired, moved and kept at the switch
+
+| Warrant 2 | Status | In Warrant 3 |
+| --- | --- | --- |
+| SPEC.md 2.0.0a1 (six record types, conditions, grants, triggers, schedules; 361 sentences as claims) | retired, at the tag | docs/V3.md, the normative specification; the 362 claim lineages are retired records in the store |
+| `warrant/engine.py`, `records.py`, `store.py`, `cli.py`, `bindings.py`, `triggers.py` | deleted (at the tag) | `warrant/` is Warrant 3: `records.py`, `store.py`, `engine.py`, `bootstrap.py`, `cli.py` |
+| `warrant/jcs.py`, `keys.py`, `shapes.py` | kept unchanged | the same files |
+| `warrant/pilot.py`, `compute.py`, `limits.py` (G9) | moved | `warrant_pilot/` (not in the wheel); PILOT.md byte for byte |
+| `.warrant/store/` (1 947 records, 1 687 blobs, one file each) | migrated, removed | `.warrant/records.jsonl` (1 446 migrated records), `.warrant/blobs/` (473) |
+| `.warrant/roles.json`, `trust.json`, `claims.json`, `reviews.json`, `roadmap.json` | removed | `.warrant/v3.json`: the trust and the profile |
+| `warrant_agent` (frozen views in an object store, subprocess assessment, drafts) | rewritten | `warrant_agent` warrant-agent/3: in-process assessment, stateless prepare/commit; Warrant 2's init output still loads |
+| `tools/claimslib/` (22 modules), `claims.py`, `roadmap.py`, `review.py`, `graph.py`, `bench_store.py` | deleted | `tools/repo.py`, `claims.py`, `roadmap.py`, `review.py`, `gate.py`, `graph.py`, schema-driven |
+| `tools/migrate_v2_to_v3.py`, `tests/v3_parity_test.py` | at the tag | they import Warrant 2; the replay and the parity run there (above) |
+| tests (36 files), `tests/mutants.py` (2 822 lines), agent and generated mutants | deleted | `tests/core_test.py`, `agent_test.py`, `gate_test.py`, `tools_test.py`, `pilot_test.py`; one harness, `tests/mutants.py` |
+| `examples/`, `work/`, `trust/`; workflows `x1-cross-repo.yml`, `github-receiver.yml`, `survivors.yml` | deleted (at the tag) | QUICKSTART.md, executable; ci.yml |
+
+## Warrant 0.x, retired 2026-10-18 by the Warrant 2 rebuild
 
 The previous generation, Warrant 0.x, is preserved at the git tag
 **`history/warrant-0.x-2026-10-18`** (commit `8feb335`, merge of #137). On that
@@ -10,7 +66,7 @@ tag. They are not evidence about Warrant 2, and Warrant 2 does not read them.
 The rebuild was mandated by the owner on 2026-10-18: an incompatible rebuild,
 one current path, and deletion of the superseded implementations.
 
-## Retired, and what replaced it
+### Retired, and what replaced it
 
 | 0.x | Status | Replaced by |
 | --- | --- | --- |
@@ -33,7 +89,7 @@ one current path, and deletion of the superseded implementations.
 | Papers, proposals (WRT-001..022, REDESIGN-1, GOV-001), reviews, prior-art, standards notes, docs, 0.x root documents (ARCHITECT, THREAT-MODEL, EVIDENCE-PACK, PUBLISHING, LISTINGS, MAP, CONTRACTS, PRIOR-ART), `llms.txt`, `action.yml` | historical, at the tag | SPEC.md, README.md, HISTORY.md, SECURITY.md. Deposited papers keep their DOIs |
 | Workflows `wrt-005`, `pages`, `publish`, `agent-gate` | retired | `ci.yml` (`test`) and `x1-cross-repo.yml` (`cross-repo`) |
 
-## Work open at the rebuild
+### Work open at the rebuild
 
 | Work | Decision |
 | --- | --- |

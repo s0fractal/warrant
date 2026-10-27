@@ -1,1 +1,0 @@
-{"because":null,"duty":"de5999bd99e09e84286bc2350f4965a72a34822aacd148784d5bc13984147e56","id":"SPEC-7-10","kind":"normative","mutants":["M130"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"7","source":"SPEC.md","text":"Without an installed provider every REPLAYED basis is `UNVERIFIED`.","witnesses":["compute_test:C12","compute_test:C5"]}

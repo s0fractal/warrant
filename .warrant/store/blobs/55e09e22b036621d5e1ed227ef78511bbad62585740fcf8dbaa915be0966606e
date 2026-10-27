@@ -1,1 +1,0 @@
-Records that do not authenticate under the receiver's trust are never promoted: they stay staged and the import is `IMPORT_BLOCKED`.

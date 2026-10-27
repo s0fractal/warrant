@@ -1,1 +1,0 @@
-{"because":null,"duty":"7f29eff5d97c3734b240bc6bf8f47131ec5ddbb70af2c4c4aba6f62c769e68ea","id":"SPEC-3.2-11","kind":"normative","mutants":["M227"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"triggers list of triggers (§5) on the transition's own results","witnesses":["contract_test:N4","records_test:T11"]}

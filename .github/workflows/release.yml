@@ -1,6 +1,6 @@
 name: release
 
-# Publishes warrant-graph to PyPI when a tag `v2.*` is pushed, by PyPI Trusted Publishing (OIDC):
+# Publishes warrant-graph to PyPI when a tag `v3.*` is pushed (none yet: the next release is G12), by PyPI Trusted Publishing (OIDC):
 # no token is stored anywhere. PyPI accepts an upload from this repository's workflow file
 # `release.yml` running in the environment `pypi` (the publisher the owner registers on PyPI;
 # before the first upload it is a "pending publisher", and that upload creates the project).
@@ -10,7 +10,7 @@ name: release
 #             of .github/release-requirements.txt (exact versions and hashes, no isolation);
 #             tests/boundary_test.py reads those artifacts (B1 reads the core's modules from the
 #             wheel); tests/quickstart_test.py runs QUICKSTART.md against the wheel installed
-#             alone (no compute provider); the digests become this run's record of what is
+#             alone; the digests become this run's record of what is
 #             published.
 #   publish   the only job holding `id-token: write`, in the environment `pypi`; it checks out
 #             nothing and runs only the publishing action, on the build job's artifacts, after
@@ -24,7 +24,7 @@ name: release
 # watches them). pypa/gh-action-pypi-publish v1.14.2 is the commit its annotated tag points at.
 on:
   push:
-    tags: ['v2.*']
+    tags: ['v3.*']
 
 permissions:
   contents: read

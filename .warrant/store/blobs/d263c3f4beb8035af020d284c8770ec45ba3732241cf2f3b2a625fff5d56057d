@@ -1,1 +1,0 @@
-{"because":null,"duty":"37878b55092751b22d51c311d317c9a961c7eb32573fbabaab3f7b97ca7c156e","id":"SPEC-3.1-4","kind":"normative","mutants":["M204"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.1","source":"SPEC.md","text":"owed_to non-empty list of actors","witnesses":["records_test:D3"]}

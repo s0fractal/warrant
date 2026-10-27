@@ -1,1 +1,0 @@
-{"because":null,"duty":"a09b2a7c30bc55b0f981747097f5c1430034fa6d0310e87da7f8c65889c3a12a","id":"SPEC-3.2-6","kind":"normative","mutants":["M223"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"3.2","source":"SPEC.md","text":"residual list of strings: what it explicitly does not establish","witnesses":["records_test:T5"]}

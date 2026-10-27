@@ -1,1 +1,0 @@
-A member left out takes its default from the operator's configuration or from the view, never an invented one: the default use is the workspace's first configured use, the default actor the configured signer's, and an unknown use is `BAD_REQUEST` with the configured uses in `details.configured`.

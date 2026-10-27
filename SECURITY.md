@@ -32,28 +32,27 @@ through GitHub's advisory flow, which this repository supports.
 
 ## What is in scope
 
-The things Warrant 2 asks you to trust (SPEC.md):
+The things Warrant 3 asks you to trust (docs/V3.md):
 
-- **Admission being wrong.** A closure admitted without its required acceptance,
-  by someone who did not hold the duty at that position, on a basis its
-  condition does not admit, or out of admission order; an acceptance of another
-  item or evidence set counting.
-- **Reliance being wrong.** ELIGIBLE where a trigger fired or was unevaluable,
-  where a counting challenge stands, where an observation is stale, or without a
-  revision basis.
-- **Authority.** A key binding, `serves`, or a delegation authorizing more than
-  SPEC §4.1/§4.5 allow; a grant beyond its parent.
-- **Computation.** A replay credited for another task, another answer or a target
-  the recipient did not accept; bytes executed that are not the pinned ones.
-- **Identity.** Two different views with one assessment id, or one view with two.
+- **Authenticity being wrong.** A record counted without a signature that verifies under a key the
+  reader's trust binds to its actor, or an unsigned record counted without a migration the reader's
+  profile accepts; a bad line revoking another line's basis.
+- **Lineage and guards being wrong.** A successor admitted from an actor the schema does not allow; a
+  version effective without its guard met by distinct role holders other than its own actor, or with a
+  required lineage open; a fork hidden; a challenge counted or ignored against §5.
+- **Schemas.** A schema counted short of its quorum, or a body admitted that does not fit its schema.
+- **Identity.** Two different snapshots with one digest, or one assessment with two ids; a checker's
+  identity that does not name its whole import closure.
+- **The repository's gate** (tools/gate.py): a pull request merged without the acceptance, tail,
+  checks or owner-path rules of docs/V3.md §14.
 
 ## What is out of scope
 
-- The process boundary around the Sigma kernel isolates module names; it is not
-  an OS sandbox. A local attacker who can write the installed package can change
-  what runs; the assessment id then names different engine bytes.
+- A local attacker who can write the installed package can change what runs; the
+  assessment id then names different engine bytes.
 - A view cannot prove its own completeness; reports say `UNATTESTED`.
-- Competence of actors is not assessed (SPEC §6).
-- The retired Warrant 0.x generation (`HISTORY.md`): report issues in the
+- Competence of actors is not assessed: what an attestation is worth is the reader's profile.
+- The retired Warrant 2 and 0.x generations (`HISTORY.md`): report issues in the published
+  `warrant-graph` 2.0.0a1 and
   published `warrant-verify` ≤ 0.12.0 here too, but fixes go to that line only if
   the owner decides to maintain it.

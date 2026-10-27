@@ -1,1 +1,0 @@
-{"because":null,"duty":"93b22273f7ff92f50bed7b2ec7184070eb651b5f1d5894b5c630a465d7e7a7e0","id":"SPEC-7-20","kind":"normative","mutants":["M140"],"previous":null,"reason":null,"schema":"warrant-claims/claim@1","section":"7","source":"SPEC.md","text":"It says nothing about other uses of the term.","witnesses":["compute_test:C26"]}

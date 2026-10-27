@@ -1,102 +1,70 @@
-"""Static meanings of the words warrant-agent/1 answers with (`explain`). Each entry
-says what the word means here and what it does not establish. Nothing in this
-table comes from a record, a request or the configuration."""
+"""Static meanings of the words warrant-agent/3 answers with (`explain`): what each means here and what
+it does not establish. Nothing in this table comes from a record, a request or the configuration; a
+test holds it to the engine's and the interface's tuples (every word they can answer with has an entry)."""
 
-NOT_CREDITED, HOLDS = "Not credited.", "Holds every use."
+NOT_TRUTH = "It does not establish that the record's text or evidence is true."
 TERMS = {
-    # reliance of a capsule (SPEC §4.4)
-    "ELIGIBLE": ("The receiver's own assessment of this frozen view lets the named use rely on this duty or "
-                 "transition: its closure was admitted under the receiver's trust and profile (accepted by the "
-                 "required actors, or replayed by the receiver for a computation) and nothing counted holds it.",
-                 "It does not establish that the source is complete (completeness stays UNATTESTED), that "
-                 "evidence text is true, or anything about records outside this view."),
-    "NOT_CLOSED": ("The duty is not closed in this view: no closure of it was admitted. `closures` lists every "
-                   "attempt with its verdict and why.",
-                   "It does not say the claim is false; only that this receiver has not established it."),
-    "CHALLENGED": ("A challenge by an actor this receiver's profile counts stands against the closure.",
-                   "It does not establish that the challenge is right; it holds reliance until it is answered."),
-    "UNASSESSED": ("The receiver's profile has no rule that would assess this (for a transition: the profile names "
-                   "nobody whose acceptance closes results). Look at the duties the transition closes "
-                   "(`closes` in its capsule) instead.",
-                   "It is neither a pass nor a failure of the transition."),
-    "STALE": ("A revalidation trigger fired, or the last observation is older than the duty allows; the closure "
-              "must be revalidated.", "It does not say the closure was wrong when it was made."),
-    "SUPERSEDED": ("A later transition supersedes this one.", "Rely on the superseding transition instead."),
-    "CONTESTED": ("The duty has admitted closures of different kinds (e.g. discharged and declared impossible).",
-                  "Neither closure is preferred by this layer."),
-    "MISSING": ("The target is not in this view.", "It does not say the record does not exist elsewhere."),
-    # candidate verdicts (closure attempts)
-    "ADMITTED": ("This closure item meets the duty's condition in this view.",
-                 "For an attested basis it rests on the named acceptors' signatures, not on a check of the work."),
-    "PENDING": ("The closure item waits for acceptances (`waiting_for`; `awaiting`: each missing one, as the actors any one of whom gives it).", "Nothing is credited while it waits."),
-    "UNVERIFIED": ("A replayed (computation) closure that this receiver could not verify: no accepted provider, "
-                   "bytes missing, or its own replay disagreed with the receipt (`why` says which).",
-                   NOT_CREDITED + " A disagreeing replay is this receiver's result, not proof of intent."),
-    "OVERCLAIMED": ("The item's basis is not one the duty's condition admits (e.g. attested where a replay or an "
-                    "observation is required).", NOT_CREDITED),
-    "MISSING_EVIDENCE": ("The item does not cite the evidence its basis needs (e.g. exactly one receipt).",
-                         NOT_CREDITED),
-    "UNMET_CONDITION": ("The cited evidence does not meet the duty's condition.", NOT_CREDITED),
-    # use decision
-    "WITHIN_POLICY": ("Every target and the delivery meet the receiver's local use policy now.",
-                      "A local policy decision over the assessment; not a new fact about the work."),
-    "HOLD": ("At least one reason in `use.reasons` keeps the use from relying on the targets now.",
-             "It does not say which claim is false; read each capsule's reliance."),
-    # delivery relations
-    "MATCH_EXPECTED_SET": ("The delivered bytes are exactly the set the receiver's configured expectation names.",
-                           "The selected set arrived, nothing more: the sender's global completeness stays "
-                           "UNATTESTED."),
-    "UNPINNED": ("No receiver expectation was named, so the delivery is checked only for internal consistency.",
-                 "A manifest digest inside the package is never an expectation. warrant_workspace lists the "
-                 "configured expectation handles."),
-    "LOCAL_CAPTURE": ("A view of the receiver's own store, with no transfer.", ""),
-    "MISSING_DECLARED_BYTES": ("Objects the manifest declares are not in the payload.", HOLDS),
-    "CONTENT_MISMATCH": ("Delivered bytes do not hash to their ids, or differ from the manifest.", HOLDS),
-    "WRONG_SET": ("The manifest is not the one the receiver's expectation names.", HOLDS),
-    "WRONG_SOURCE": ("The manifest names another source than the expectation.", HOLDS),
-    "UNVERIFIED_EXPORTER": ("No declaration by the expected exporter verifies under the receiver's trust.",
-                            HOLDS),
-    "UNATTESTED": ("Completeness of the source is never attested by this layer.", ""),
-    "invalid": ("Records in the view that do not authenticate under the receiver's trust (wrong key for the "
-                "named actor, not canonical, wrong id). They take part in nothing.",
-                "An invalid acceptance closes nothing, whatever actor it names."),
-    # refusal codes (every code of errors.CODES has an entry: agent_mcp_test M16)
-    "UNSUPPORTED_VERSION": ("The request's `agent_api` is not warrant-agent/1, the interface version this server "
-                            "speaks.", ""),
-    "CURSOR_MISMATCH": ("The cursor belongs to another view, kind or target; a cursor is read only with the view "
-                        "and the target that made it.", ""),
-    "NO_ASSESSMENT": ("The view could not be assessed: the worker passed the workspace's assess_seconds, produced "
-                      "no report, or assessed other operands than the captured ones. No view is kept.",
-                      "It is not a verdict about the work."),
-    "IMPORT_INCOMPLETE": ("An object was not in the store with its staged bytes after promotion; the import's "
-                          "journal stays STARTED and a retry with the same request_id completes it.", HOLDS),
-    "BAD_REQUEST": ("The request's shape is wrong; the message says which member and, for a record body, "
-                    "`details.template` shows the smallest valid body.", ""),
-    "UNKNOWN_WORKSPACE": ("The workspace is not configured; warrant_workspace lists the configured ones.", ""),
-    "UNKNOWN_EXPECTATION": ("The expectation is not a configured handle of this workspace; warrant_workspace "
-                            "lists them.", ""),
-    "NOT_PERMITTED": ("The operator did not permit this operation for this workspace.", ""),
-    "VIEW_UNKNOWN": ("No such view token in this workspace; a view token comes from warrant_context, an inspect, "
-                     "or a read/export/prepare without one.", ""),
-    "VIEW_EXPIRED": ("The view is older than the workspace's view_ttl; open a new one.", ""),
-    "VIEW_DAMAGED": ("A byte the view pins is absent from the workspace's object store or no longer hashes to its "
-                     "name; the view answers nothing, and nothing is read from elsewhere. Open a new context.",
-                     "It does not say the live store changed: the object store is the server's own, and a new "
-                     "context writes the bytes again."),
-    "NOT_FOUND": ("The id is not in this view or store; nothing is fetched from elsewhere.", ""),
-    "CONFLICT": ("The request id was used with other inputs, or the store holds other bytes under the id.", ""),
-    "NO_SIGNER": ("The operator configured no signer for this workspace; nothing can be committed.", ""),
-    "SIGNER_CHANGED": ("The configured signer is not the one the draft was prepared for.", ""),
-    "IMPORT_BLOCKED": ("The staged package may not be promoted (its delivery relation, a changed expectation, or "
-                       "records that do not authenticate).", "Inspecting it is still possible."),
-    "PROVIDER": ("The computation provider is missing or was stopped; nothing was stored.", ""),
-    "REFUSED": ("The provider refused the input.", ""),
-    "RESOURCE_LIMIT": ("A configured limit was exceeded; nothing was assessed or exported.", ""),
+    # reliance of a lineage (docs/V3.md §10)
+    "ELIGIBLE": ("Under this receiver's trust and profile the lineage is not forked, its effective version exists and "
+                 "no counted challenge stands against it.",
+                 "It does not establish that the source is complete (completeness stays UNATTESTED). " + NOT_TRUTH),
+    "CHALLENGED": ("A challenge this receiver counts stands against the lineage's effective version.",
+                   "It does not establish that the challenge is right; it holds reliance until a successor is effective."),
+    "FORK": ("Two admitted versions succeed the same version: the lineage has no leaf and no state (§3). As a lineage "
+             "verdict, every branch is listed and nothing is excluded.", "Neither branch is preferred."),
+    # guard verdicts (§6)
+    "PENDING": ("The version's guard waits: `waiting` names the attests by roles, or the required lineages not yet "
+                "closed. As reliance: no version of the lineage is effective yet.", "Nothing is credited while it waits."),
+    "MET": ("Enough distinct actors holding the guard's roles, none the version's own actor, attested it with the "
+            "match, and every lineage it requires is closed.", "It rests on those actors' signatures. " + NOT_TRUTH),
+    "NONE": ("The version has no guard and enters no closed state: it is effective as filed.", NOT_TRUTH),
+    "OK": ("The lineage does not fork.", "It says nothing about its state."),
+    # bases (§9)
+    "SIGNED": ("A signature over the record's id verifies under a key this receiver's trust binds to its actor.",
+               "The trust binds keys to actors; it authorizes nothing. " + NOT_TRUTH),
+    "MIGRATED": ("The record has no signature; a migration@1 attest by an actor this receiver's profile names as "
+                 "migrator lists it in its map.", "It is never a signature by the record's actor."),
+    "UNSIGNED": ("A record with no signature that no accepted migration lists: rejected.", "Not credited."),
+    "BAD_SIGNATURE": ("No signature of the record verifies under a key the trust binds to its actor: rejected.",
+                      "It does not establish intent; another receiver's trust may bind another key."),
+    "UNATTESTED": ("Completeness of the source: nothing shows that the view holds every record that exists.",
+                   "A result never says nothing else was filed."),
+    # problems (§§3-4, 9)
+    "LINEAGE_BROKEN": ("A version names a predecessor that is not an admitted version of its kind and schema: it is "
+                       "in no lineage.", "The record is still listed."),
+    "LINEAGE_NOT_AUTHOR": ("A successor filed by an actor the schema does not allow for its state (the root's actor, "
+                           "or the roles `successors` names): excluded.", "The record is still listed."),
+    "LINEAGE_BACKDATED": ("A successor dated before what it succeeds. It still counts: the id witnesses the order.",
+                          "Claimed time orders nothing."),
+    "SCHEMA_NOT_COUNTED": ("A schema record short of its quorum of schema/author actors, or malformed: no record is "
+                           "read under it.", "It may count for another receiver."),
+    "SCHEMA_CONFLICT": ("A schema lineage forks, or two counted schema lineages name one name: every record of that "
+                        "name is invalid until one is retired.", "Neither schema is preferred."),
+    "INVALID": ("A record's body does not fit the schema this receiver counts, or its guard is weaker than the "
+                "schema's minimal guard: listed, counted nowhere.", "It may be valid for another receiver."),
+    "MIGRATION_MAP": ("A migration attest whose target is not a map blob in the view: it vouches for nothing.",
+                      "Not credited."),
+    "line": ("A line that is not a canonical {record, sig}, not a record, or too long: rejected.", "Not read."),
+    # refusals of the interface (warrant_agent/errors.py)
+    "BAD_REQUEST": ("The request is not one this interface reads.", "Nothing was read or written."),
+    "UNSUPPORTED_VERSION": ("The configuration declares another agent_api.", "Nothing was read."),
+    "NOT_PERMITTED": ("The operator did not permit this operation for the workspace.", "Nothing was read or written."),
+    "UNKNOWN_WORKSPACE": ("No workspace of that handle is configured.", "Nothing was read."),
+    "NOT_FOUND": ("No record or blob of that id (or prefix) is in the store, or a prefix names several.",
+                  "It does not say it exists nowhere."),
+    "CHAIN_MOVED": ("The signer's head moved since prepare: another record of the same actor was filed. Prepare again.",
+                    "Nothing was written."),
+    "RESOURCE_LIMIT": ("The store or a result exceeds a limit of the workspace or the engine.", "Nothing was assessed."),
+    "NO_SIGNER": ("The workspace has no signer: prepare and commit need one.", "Nothing was written."),
+    "SIGNER_NOT_TRUSTED": ("The signer's key is not a key the workspace's trust binds to its actor: its records would "
+                           "be rejected.", "Nothing was written."),
+    "INVALID_RECORD": ("The record is malformed, does not fit its schema, or its lineage rule refuses it.",
+                       "Nothing was written."),
+    "REFUSED": ("The store refused the write (for example a record dated before the signer's head).",
+                "Nothing was written."),
 }
 
 
-def explain(term):
-    if term in TERMS:
-        means, not_ = TERMS[term]
-        return {"term": term, "means": means, "does_not_establish": not_}
-    return {"term": term, "unknown": True, "terms": sorted(TERMS)}
+def explain(word):
+    means, not_ = TERMS[word]
+    return {"word": word, "means": means, "does_not_establish": not_}

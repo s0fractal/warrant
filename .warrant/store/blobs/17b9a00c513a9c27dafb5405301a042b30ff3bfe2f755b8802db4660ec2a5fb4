@@ -1,1 +1,0 @@
-A challenge with an integer `item` concerns the closure of that item of its target only; one with `item` null concerns the transition's results, not its closures.

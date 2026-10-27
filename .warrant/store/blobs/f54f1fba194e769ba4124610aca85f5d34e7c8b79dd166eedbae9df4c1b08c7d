@@ -1,1 +1,0 @@
-A `compute` closure is settled by the recipient's own replay and admits no counter-evidence; an `attest` closure has no mechanical counter and stays actor-weighted.
