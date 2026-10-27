@@ -246,8 +246,10 @@ def replay(repo, key, root=ROOT):
 def verify(repo, base):
     """Re-execute every acceptance the claims checker signed since commit `base`, in a temporary worktree of the
     commit it names: its `code` must be the checker's code at that commit (CODE_DIFFERS), its witnesses and mutants
-    those of the version it accepts, and every witness must pass and every mutant be killed there again
-    (CLAIM_REPLAY_DIFFERS). Acceptances by a person (codex) are trust decisions, not re-executed."""
+    those of the version it accepts, the claims check must pass there and that version be the leaf of a live
+    `backed` claim there, as replay requires before it signs (CLAIM_PREFLIGHT), and every witness must pass and
+    every mutant be killed there again (CLAIM_REPLAY_DIFFERS). Acceptances by a person (codex) are trust
+    decisions, not re-executed."""
     import gate as GT                   # verify only: the checker's own run (replay) does not load the gate
     old, _ = GT.store_at(repo.root, base)
     rep = repo.report()
@@ -263,15 +265,24 @@ def verify(repo, base):
         if why:
             bad.append(f"{i[:12]}: {why}")
         else:
-            by_commit.setdefault(b["commit"], []).append((i, v["body"]))
+            by_commit.setdefault(b["commit"], []).append((i, b["target"], v["body"]))
     for x, rows in sorted(by_commit.items()):
         wt = Path(repo.root) / "build" / f"verify-claims-{os.getpid()}-{x[:12]}"      # the checkout's own scratch, ignored
         git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), x)
         try:
-            ran, killed = run_checks(wt, [w for _, b in rows for w in b["witnesses"]], {m for _, b in rows for m in b["mutants"]})
+            at_x, problems_x = check(Repo(wt))
+            if problems_x:
+                bad += [f"{i[:12]}: CLAIM_PREFLIGHT the claims check at {x[:12]} has {len(problems_x)} problem(s), the first "
+                        f"{' '.join(problems_x[0])[:100]}" for i, _, _ in rows]
+                continue
+            leaves = {at_x["lineages"][L]["leaf"] for L, b in live(at_x).items() if b["source"] == SOURCE and b["state"] == "backed"}
+            off = [(i, t, b) for i, t, b in rows if t not in leaves]
+            bad += [f"{i[:12]}: CLAIM_PREFLIGHT {b['id']} {t[:12]} is not the leaf of a live backed claim at {x[:12]}" for i, t, b in off]
+            rows = [row for row in rows if row not in off]
+            ran, killed = run_checks(wt, [w for _, _, b in rows for w in b["witnesses"]], {m for _, _, b in rows for m in b["mutants"]})
         finally:
             git(repo.root, "worktree", "remove", "--force", str(wt))
-        bad += [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} does not hold at {x[:12]}" for i, b in rows if not held(b, ran, killed)]
+        bad += [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} does not hold at {x[:12]}" for i, _, b in rows if not held(b, ran, killed)]
     if bad:
         raise Failed("CLAIM_REPLAY_DIFFERS", "; ".join(bad))
     return sum(len(rows) for rows in by_commit.values())

@@ -97,9 +97,16 @@ def run_test(root, file, case, patch):
 def to_replay(rep, replayers):
     """[(finding, head version, (file, case, patch))]: each finding's test at each head version of its pull request
     from the one it targets on, that no replayer has observed yet."""
-    recs, out = rep["_recs"], []
+    recs = rep["_recs"]
     seen = {(recs[a]["body"]["target"], recs[a]["body"].get("on")) for a in recs
             if recs[a]["kind"] == "attest" and recs[a]["actor"] in replayers}
+    return [x for x in replayable(rep) if x[:2] not in seen]
+
+
+def replayable(rep):
+    """[(finding, head version, (file, case, patch))]: each finding's test at each head version of its pull request
+    from the one it targets on."""
+    recs, out = rep["_recs"], []
     for c, r in sorted(recs.items()):
         if r["kind"] != "challenge" or r["schema"] != "finding@1" or finding_test(r["body"]) is None:
             continue
@@ -109,7 +116,7 @@ def to_replay(rep, replayers):
             continue
         path = rep["lineages"][L]["path"]
         for h in path[path.index(t):]:
-            if recs[h]["body"].get("state") == "head" and (c, h) not in seen:
+            if recs[h]["body"].get("state") == "head":
                 out.append((c, h, finding_test(r["body"])))
     return out
 
@@ -146,13 +153,15 @@ def replay(repo, key):
 def verify(repo, base):
     """Re-execute every signed replay attest that is new since commit `base`, at the commit it names, in a temporary
     worktree; refused (REPLAY_DIFFERS) when a result differs or its `code` is not the checker's code at that commit
-    (CODE_DIFFERS). A migrated replay rests on the migration and its replay (docs/V3.md §9), not on a re-execution
-    here."""
+    (CODE_DIFFERS), or when it is not one replay would run: its finding's test at a head version of the finding's pull
+    request from the one it targets on, at that version's commit (REPLAY_NOT_DUE). A migrated replay rests on the
+    migration and its replay (docs/V3.md §9), not on a re-execution here."""
     _, profile, _ = repo.config()
     replayers = set(profile["roles"].get("replayer", []))
     old, _ = GT.store_at(repo.root, base)
     rep = repo.report()
     recs, bad, n = rep["_recs"], [], 0
+    due = {(c, h) for c, h, _ in replayable(rep)}
     for i, r in sorted(recs.items()):
         if r["kind"] != "attest" or r["actor"] not in replayers or i in old.lines or r["body"].get("verdict") not in REPLAY_VERDICTS \
                 or rep["_basis"].get(i) != "SIGNED":
@@ -165,6 +174,9 @@ def verify(repo, base):
         n += 1
         wt = Path(repo.root) / "build" / f"verify-{os.getpid()}-{i[:12]}"      # the checkout's own scratch, ignored
         why = checker_problem(r["body"], REPLAYER_FILES, repo.root)
+        on = recs.get(r["body"].get("on")) or {"body": {}}
+        if why is None and ((r["body"]["target"], r["body"].get("on")) not in due or r["body"].get("commit") != on["body"].get("commit")):
+            why = f"REPLAY_NOT_DUE: no replay runs its finding at {str(r['body'].get('on'))[:12]} on {str(r['body'].get('commit'))[:12]}"
         if why:
             bad.append(f"{i[:12]}: {why}")
             continue

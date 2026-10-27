@@ -5,6 +5,7 @@ replay checker (tools/review.py), the roadmap (tools/roadmap.py) and what a chec
     python3 tests/tools_test.py
 """
 import json
+import shutil
 import subprocess
 import sys
 
@@ -181,6 +182,46 @@ def checker_cases():
           held == [] and why is not None and why.startswith("CLAIM_REPLAY_DIFFERS") and "does not hold" in why, (held, why))
 
 
+def preflight_fixture(sentence_present):
+    """Codex's case (finding e6bbc0409ecf on #224): a checker acceptance whose commit fails the claims check there
+    (its sentence is missing at that commit, present at the head). The fixture hashes the real checker files."""
+    sentence = "A record whose lineage is L succeeds L."
+    r = Repo()
+    r.trust["keys"][CL.CHECKER] = [CHECKER_KEY.public]
+    r.profile["roles"]["claim/verifier"] = sorted(["carol", CL.CHECKER])
+    r.write_config()
+    (r.root / ".gitignore").write_text("/build/\n")
+    (r.root / "docs").mkdir()
+    (r.root / "docs" / "V3.md").write_text("## 3. Lineage\n" + (sentence if sentence_present else "An unrelated sentence.") + "\n")
+    (r.root / "tests").mkdir()
+    (r.root / "tests" / "q_test.py").write_text(TEST)
+    (r.root / "tests" / "mutants.py").write_text(HARNESS)
+    (r.root / "tools").mkdir()
+    for name in ("claims.py", "repo.py"):
+        shutil.copyfile(ROOT / "tools" / name, r.root / "tools" / name)
+    shutil.copytree(ROOT / "warrant", r.root / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+    body = {"state": "backed", "id": "V3-3-1", "source": CL.SOURCE, "section": "3", "text": sentence,
+            "witnesses": ["q_test:Q1"], "mutants": ["Z1"]}
+    target = r.entity("alice", "claim@1", body)
+    git(r.root, "init", "-q", "-b", "master")
+    x = r.commit("the checker's input")
+    rp = RP.Repo(r.root)
+    before = [c for c, _ in CL.check(rp)[1]]
+    put_as(r, CL.CHECKER, {"target": target, "verdict": "accept", "commit": x, "tree": git(r.root, "rev-parse", f"{x}^{{tree}}"),
+                           **RP.identity(CL.CHECKER_FILES, r.root), "witnesses": body["witnesses"], "mutants": body["mutants"]}, [target])
+    (r.root / "docs" / "V3.md").write_text("## 3. Lineage\n" + sentence + "\n")
+    r.commit("the acceptance, and the sentence present at the head")
+    return before, refused_code(CL.verify, rp, x), [c for c, _ in CL.check(rp)[1]]
+
+
+def preflight_cases():
+    good = preflight_fixture(True)
+    bad = preflight_fixture(False)
+    check("C15 CI refuses a checker acceptance whose commit fails the claims check there, though the head passes it",
+          good == ([], None, []) and bad[0] == ["CLAIM_TEXT_MISSING"] and bad[2] == [] and bad[1] is not None
+          and "CLAIM_PREFLIGHT" in bad[1], (good, bad))
+
+
 def review_repo():
     r = Repo()
     (r.root / "tests").mkdir()
@@ -253,6 +294,11 @@ def review_cases():
     late = r.commit("a replay naming other code")
     why = refused_code(RV.verify, rp, late + "^")
     check("R07 CI refuses a replay whose code is not the replayer's code at the commit it names", why is not None and "CODE_DIFFERS" in why, why)
+    r.put("carol", "attest", {"target": f, "verdict": "does_not_reproduce", "on": v2,
+                              **dict(ran, commit=x1, tree=hb["tree"], code=RP.code_at(RV.REPLAYER_FILES, x1, r.root))}, refs=[f, v2])
+    off = r.commit("a replay of the second head run at the first head's commit")
+    why = refused_code(RV.verify, rp, off + "^")
+    check("R09 CI refuses a replay that names a commit other than its head version's", why is not None and "REPLAY_NOT_DUE" in why, why)
     r.trust["keys"][RV.REPLAYER] = [CHECKER_KEY.public]
     r.profile["roles"]["replayer"] = sorted(["carol", RV.REPLAYER])
     r.write_config()
@@ -292,6 +338,7 @@ def roadmap_cases():
 
 if __name__ == "__main__":
     claims_cases()
+    preflight_cases()
     review_cases()
     roadmap_cases()
     sys.exit(finish())
