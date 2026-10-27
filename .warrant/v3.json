@@ -41,11 +41,17 @@
    "checker sha256:dd56e635635051d550e0fd8a9d8074ce0fb989df48d6b7c3da9769f8cff8826f": [
     "32ad176c555160997f6b00e50057fc06c33267e300f7cd5a9ef5a8d3368e9a21"
    ],
+   "claims-checker": [
+    "4fdb9574fb0890f1937fb625e4e4311108a7ecd775652ac70d29ab33f1d0c5bd"
+   ],
    "claude": [
     "fc176e4bca9372cb329650c804f700079d5b283839a51671c3fd662df3f6ca57"
    ],
    "codex": [
     "793e615ef5693cf6be7304aa284c6cc6f1fae9e3a2996cfafd23e1c160023b12"
+   ],
+   "review-replayer": [
+    "283b75a453ac7389596fba96092c938d7b19eea89ab6e334d7f53839b6d98575"
    ]
   },
   "warrant": "trust/3"
