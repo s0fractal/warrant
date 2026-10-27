@@ -11,6 +11,8 @@
     ".warrant/merge.json",
     ".warrant/reviews.json",
     ".warrant/roles.json",
+    ".warrant/v3.json",
+    ".warrant/v3/",
     "AGENTS.md",
     "tools/claimslib/eligibility.py",
     "tools/claimslib/gate.py"
