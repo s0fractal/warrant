@@ -38,6 +38,22 @@ python3 tools/migrate_v2_to_v3.py verify       # IDENTICAL: 1446 replayed, v2 ro
 (`python3 tests/v3_parity_test.py`): claims 362/362, goals 12/12, obligations 49/49, reviews 19/19
 equal, none declared, none undeclared; two declared migration rules applied ("parallel closures").
 
+### Retired, moved and kept at the switch
+
+| Warrant 2 | Status | In Warrant 3 |
+| --- | --- | --- |
+| SPEC.md 2.0.0a1 (six record types, conditions, grants, triggers, schedules; 361 sentences as claims) | retired, at the tag | docs/V3.md, the normative specification; the 362 claim lineages are retired records in the store |
+| `warrant/engine.py`, `records.py`, `store.py`, `cli.py`, `bindings.py`, `triggers.py` | deleted (at the tag) | `warrant/` is Warrant 3: `records.py`, `store.py`, `engine.py`, `bootstrap.py`, `cli.py` |
+| `warrant/jcs.py`, `keys.py`, `shapes.py` | kept unchanged | the same files |
+| `warrant/pilot.py`, `compute.py`, `limits.py` (G9) | moved | `warrant_pilot/` (not in the wheel); PILOT.md byte for byte |
+| `.warrant/store/` (1 947 records, 1 687 blobs, one file each) | migrated, removed | `.warrant/records.jsonl` (1 446 migrated records), `.warrant/blobs/` (473) |
+| `.warrant/roles.json`, `trust.json`, `claims.json`, `reviews.json`, `roadmap.json` | removed | `.warrant/v3.json`: the trust and the profile |
+| `warrant_agent` (frozen views in an object store, subprocess assessment, drafts) | rewritten | `warrant_agent` warrant-agent/3: in-process assessment, stateless prepare/commit; Warrant 2's init output still loads |
+| `tools/claimslib/` (22 modules), `claims.py`, `roadmap.py`, `review.py`, `graph.py`, `bench_store.py` | deleted | `tools/repo.py`, `claims.py`, `roadmap.py`, `review.py`, `gate.py`, `graph.py`, schema-driven |
+| `tools/migrate_v2_to_v3.py`, `tests/v3_parity_test.py` | at the tag | they import Warrant 2; the replay and the parity run there (above) |
+| tests (36 files), `tests/mutants.py` (2 822 lines), agent and generated mutants | deleted | `tests/core_test.py`, `agent_test.py`, `gate_test.py`, `tools_test.py`, `pilot_test.py`; one harness, `tests/mutants.py` |
+| `examples/`, `work/`, `trust/`; workflows `x1-cross-repo.yml`, `github-receiver.yml`, `survivors.yml` | deleted (at the tag) | QUICKSTART.md, executable; ci.yml |
+
 ## Warrant 0.x, retired 2026-10-18 by the Warrant 2 rebuild
 
 The previous generation, Warrant 0.x, is preserved at the git tag

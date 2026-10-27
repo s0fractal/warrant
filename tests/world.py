@@ -24,14 +24,17 @@ ROLES = {"schema/author": ["alice"], "claim/verifier": ["carol"], "roadmap/accep
          "pr/acceptor": ["bob"], "pr/owner": ["dave"], "replayer": ["carol"]}
 
 
-def check(name, ok, detail=""):
-    """One case's verdict: `ok   ID ...` or `FAIL ID ...`; a mutant is killed only by a FAIL line of its case."""
+def check(name, ok, detail="", extra=None):
+    """One case's verdict: `ok   ID ...` or `FAIL ID ...`; a mutant is killed only by a FAIL line of its case.
+    check(ID, ok, what, detail) is the form with the id and its text apart."""
+    if extra is not None:
+        name, detail = f"{name} {detail}", extra
     print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {str(detail)[:300]}"), flush=True)
     if not ok:
         FAILS.append(name)
 
 
-def finish():
+def finish(_name=None):
     print("all passed" if not FAILS else f"FAILED {len(FAILS)}: {' '.join(f.split()[0] for f in FAILS)}")
     return 1 if FAILS else 0
 

@@ -5,7 +5,6 @@ import hashlib
 from pathlib import Path
 
 from warrant import jcs as C
-from warrant import keys as K
 from warrant import shapes as S
 
 from . import records as R

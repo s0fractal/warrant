@@ -125,18 +125,29 @@ class Store:
         """File `r` signed by `key` as the next record of its actor's chain (§7): prev is the actor's
         head under the writers' lock; with expect_head, refused unless the head is that id ("": the actor
         has no signed record yet). The file is rewritten in canonical order."""
+        return self.extend([r], key, trust, expect_head)[0]
+
+    def extend(self, records, key, trust, expect_head=None):
+        """append() for several records of one actor, chained in order, under one lock and one write."""
         from .engine import head
+        out, data = [], []
         with self.locked():
-            h = head(self.snapshot(), trust, r["actor"])
+            actor = records[0]["actor"]
+            h = head(self.snapshot(), trust, actor)
             if expect_head is not None and (h["id"] or "") != expect_head:
-                raise Refused(f"CHAIN_MOVED: the head of {r['actor']} is {h['id']}")
-            if h["at"] is not None and r["at"] < h["at"]:
-                raise Refused(f"at {r['at']} is before the actor's head ({h['at']})")
-            r = dict(r, prev=h["id"])
-            R.check(r)
-            i, data = R.line(r, key)
-            self.write_lines(self.lines() + [data])
-        return i
+                raise Refused(f"CHAIN_MOVED: the head of {actor} is {h['id']}")
+            prev, at = h["id"], h["at"]
+            for r in records:
+                if r["actor"] != actor or (at is not None and r["at"] < at):
+                    raise Refused(f"a record of {r['actor']} at {r['at']} does not extend {actor}'s chain at {at}")
+                r = dict(r, prev=prev)
+                R.check(r)
+                prev, line = R.line(r, key)
+                at = r["at"]
+                out.append(prev)
+                data.append(line)
+            self.write_lines(self.lines() + data)
+        return out
 
     def add_lines(self, lines):
         """Add lines as they are (an import, a union): under the writers' lock, in canonical order."""

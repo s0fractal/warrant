@@ -1,16 +1,297 @@
 #!/usr/bin/env python3
-"""The pull request review loop as Warrant 2 records: the command. The code is
-tools/claimslib/reviews.py (its docstring maps the loop onto the records and lists the
-commands) and the review replay checker tools/claimslib/review_replay.py.
+"""The pull request review loop as records (schemas pr-head@1 and finding@1).
 
-    python3 tools/review.py --help
-"""
+A pull request is a pr-head@1 lineage: its root (state `open`: repository, pr, title, serves) and one `head`
+version per commit the author asks to have reviewed (commit, tree; guard: an attest `accept` by a
+pr/acceptor). The reviewer accepts a head version (an attest) or files findings against it (finding@1
+challenges; a finding may carry a test: {file, case, patch}, a new file under tests/). The review replay
+checker runs each finding's test at each later head and attests the result on the finding
+({verdict: reproduces | does_not_reproduce | no_result | does_not_apply, on: head version, commit, tree}).
+A merge is a Git act, observed by an attest {verdict: merged, merge, tip} on the head version merged.
+
+    python3 tools/review.py [--root DIR] due --base M [--json]           # the waker's: due for review
+    python3 tools/review.py [--root DIR] gate --base M [--merge] [--gate-var V] [--summary FILE] [--pr N ...]
+    python3 tools/review.py open --pr N --title T [--serves ID ...] --actor A --key SEED
+    python3 tools/review.py head --pr N [--commit SHA] [--answers ID ...] --actor A --key SEED
+    python3 tools/review.py merged --pr N --merge SHA --actor A --key SEED
+    python3 tools/review.py identity                                      # the replay checker's actor
+    python3 tools/review.py [--root DIR] replay --key -                   # the checker: run, attest, print ids
+    python3 tools/review.py verify --base M                               # CI: re-execute replays new since M
+    python3 tools/review.py view [--out FILE]
+
+The checker's identity is the digest of its whole import closure (this file, tools/repo.py, tools/gate.py and
+the warrant package; tools/repo.py identity): whoever holds its seed can sign as it, so CI re-executes every
+replay new since the base at the commit it names (`verify`), and refuses a different result."""
+import argparse
+import os
+import re
+import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from repo import Failed, Repo, dump, env_root, identity, load_key, main
 
-from claimslib import reviews        # noqa: E402
+import gate as GT
+from warrant import records as R
+from warrant import shapes as S
+
+REPLAYER_FILES = ("tools/review.py", "tools/repo.py", "tools/gate.py", "warrant")
+TEST_FILE = re.compile(r"[a-z0-9_]{1,80}_test\Z")
+CASE = re.compile(r"[A-Za-z0-9_.-]{1,40}\Z")
+RUN_SECONDS = 600
+REPLAY_VERDICTS = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
+
+
+def lineage_of(rep, repository, n):
+    found = [L for L, lin in rep["lineages"].items() if lin["schema"] == "pr-head@1"
+             and rep["_recs"][L]["body"].get("pr") == n and rep["_recs"][L]["body"].get("repository") == repository]
+    if len(found) != 1:
+        raise Failed("REVIEW", f"{len(found)} pr-head@1 lineages of {repository}#{n} in the store")
+    return found[0]
+
+
+def git(root, *a):
+    return subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, check=True).stdout.strip()
+
+
+# ---------------------------------------------------------------- the replay checker
+
+def finding_test(body):
+    """(file, case, patch) of a finding's test, or None: a patch that adds one new file tests/<file>.py."""
+    t = body.get("test")
+    if not (isinstance(t, dict) and set(t) == {"file", "case", "patch"} and isinstance(t["file"], str)
+            and TEST_FILE.match(t["file"]) and isinstance(t["case"], str) and CASE.match(t["case"]) and isinstance(t["patch"], str)):
+        return None
+    files = re.findall(r"^\+\+\+ (?:b/)?(\S+)", t["patch"], re.M)
+    if files != [f"tests/{t['file']}.py"] or re.findall(r"^--- (?!/dev/null)", t["patch"], re.M):
+        return None
+    return t["file"], t["case"], t["patch"]
+
+
+def run_test(root, file, case, patch):
+    """The verdict of a finding's test in the checkout `root`: the patch applied, the file run once, removed."""
+    with tempfile.NamedTemporaryFile("w", suffix=".patch", delete=False, dir=os.environ.get("TMPDIR")) as f:
+        f.write(patch)
+    try:
+        if subprocess.run(["git", "-C", str(root), "apply", "--check", f.name], capture_output=True).returncode:
+            return "does_not_apply"
+        subprocess.run(["git", "-C", str(root), "apply", f.name], capture_output=True, check=True)
+        try:
+            r = subprocess.run([sys.executable, "-B", f"tests/{file}.py"], cwd=root, capture_output=True, text=True,
+                               timeout=RUN_SECONDS, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+            out = r.stdout + r.stderr
+        except subprocess.TimeoutExpired:
+            out = ""
+        finally:
+            (Path(root) / "tests" / f"{file}.py").unlink(missing_ok=True)
+    finally:
+        os.unlink(f.name)
+    lines = [x.split() for x in out.splitlines()]
+    if any(x[:2] == ["FAIL", case] for x in lines):
+        return "reproduces"
+    if any(x[:2] == ["ok", case] for x in lines):
+        return "does_not_reproduce"
+    return "no_result"
+
+
+def to_replay(rep, replayers):
+    """[(finding, head version, (file, case, patch))]: each finding's test at each head version of its pull request
+    from the one it targets on, that no replayer has observed yet."""
+    recs, out = rep["_recs"], []
+    seen = {(recs[a]["body"]["target"], recs[a]["body"].get("on")) for a in recs
+            if recs[a]["kind"] == "attest" and recs[a]["actor"] in replayers}
+    for c, r in sorted(recs.items()):
+        if r["kind"] != "challenge" or r["schema"] != "finding@1" or finding_test(r["body"]) is None:
+            continue
+        t = r["body"]["target"]
+        L = next((L for L, lin in rep["lineages"].items() if t in lin["path"]), None)
+        if L is None:
+            continue
+        path = rep["lineages"][L]["path"]
+        for h in path[path.index(t):]:
+            if recs[h]["body"].get("state") == "head" and (c, h) not in seen:
+                out.append((c, h, finding_test(r["body"])))
+    return out
+
+
+def replay(repo, key):
+    """Run every finding's test not yet replayed at the head version whose commit's code this checkout holds (its
+    tree equals that commit's tree outside .warrant/), and attest each result as the checker."""
+    me = identity(REPLAYER_FILES, repo.root)
+    trust, profile, _ = repo.config()
+    if key.public not in trust["keys"].get(me, []):
+        raise Failed("SIGNER", f"the seed's key is not one .warrant/v3.json binds to {me}")
+    rep = repo.report()
+    head = git(repo.root, "rev-parse", "HEAD")
+    code = _code_tree(repo.root, head)
+    filed = []
+    for c, h, (file, case, patch) in to_replay(rep, set(profile["roles"].get("replayer", [])) | {me}):
+        x = rep["_recs"][h]["body"].get("commit")
+        try:
+            if not S.hex_of(x, 40) or _code_tree(repo.root, x) != code:
+                continue                   # this checkout does not hold that head's code
+        except subprocess.CalledProcessError:
+            continue
+        t0 = int(time.time())
+        verdict = run_test(repo.root, file, case, patch)
+        body = {"target": c, "verdict": verdict, "on": h, "commit": x, "tree": git(repo.root, "rev-parse", f"{x}^{{tree}}"),
+                "test": f"{file}:{case}", "window": [t0, int(time.time())]}
+        [i] = repo.file(me, key, [R.record("attest", me, 0, body, refs=[c, h])])
+        filed.append(i)
+        print(f"{i} {verdict} {c[:12]} on {h[:12]}", flush=True)
+    return filed
+
+
+def _code_tree(root, commit):
+    """A digest of `commit`'s tree outside .warrant/: the code a test runs against."""
+    rows = git(root, "ls-tree", "-r", commit).splitlines()
+    return "\n".join(r for r in rows if not r.split("\t", 1)[1].startswith(".warrant/"))
+
+
+def verify(repo, base):
+    """Re-execute every replay attest that is new since commit `base`, at the commit it names, in a temporary
+    worktree; refused (REPLAY_DIFFERS) when a result differs."""
+    _, profile, _ = repo.config()
+    replayers = set(profile["roles"].get("replayer", []))
+    old, _ = GT.store_at(repo.root, base)
+    rep = repo.report()
+    recs, bad, n = rep["_recs"], [], 0
+    for i, r in sorted(recs.items()):
+        if r["kind"] != "attest" or r["actor"] not in replayers or i in old.lines or r["body"].get("verdict") not in REPLAY_VERDICTS:
+            continue
+        f = recs.get(r["body"]["target"])
+        test = finding_test(f["body"]) if f else None
+        if test is None:
+            bad.append(f"{i[:12]}: its finding has no test")
+            continue
+        n += 1
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
+            wt = Path(d) / "wt"
+            git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), r["body"]["commit"])
+            try:
+                got = run_test(wt, *test)
+            finally:
+                git(repo.root, "worktree", "remove", "--force", str(wt))
+        if got != r["body"]["verdict"]:
+            bad.append(f"{i[:12]}: says {r['body']['verdict']}, re-executed {got}")
+    if bad:
+        raise Failed("REPLAY_DIFFERS", "; ".join(bad))
+    return n
+
+
+
+# ---------------------------------------------------------------- the view
+
+def view(rep):
+    recs = rep["_recs"]
+    out = ["# Reviews", "", f"Generated from `.warrant/records.jsonl` (snapshot `{rep['snapshot'][:12]}`); a build artifact.", ""]
+    for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == "pr-head@1"),
+                         key=lambda x: -int(recs[x[0]]["body"].get("pr") or 0)):
+        b = recs[L]["body"]
+        out.append(f"## {b.get('repository')}#{b.get('pr')}: {b.get('title')}")
+        out.append(f"State {lin['state']}, reliance {lin['reliance']}" + (", FORK" if lin["verdict"] == "FORK" else ""))
+        for v in lin["versions"]:
+            vb, g = recs[v]["body"], rep["versions"][v]
+            if vb.get("state") != "head":
+                continue
+            out.append(f"- head `{v[:12]}` at `{str(vb.get('commit'))[:12]}`: {g['guard']}"
+                       + (f", accepted by {', '.join(g['accepted_by'])}" if g["accepted_by"] else ""))
+            for c, x in sorted(rep["challenges"].items()):
+                if x["target"] == v:
+                    fb = recs[c]["body"]
+                    reps = "; ".join(f"{z[1]} on {str(z[0])[:12]}" for z in x["replays"])
+                    out.append(f"  - finding `{c[:12]}` by {recs[c]['actor']} ({'counted' if x['counted'] else 'thesis'}"
+                               f"{', stands' if x['stands'] else ''}): {str(fb.get('statement'))[:200]}" + (f" [{reps}]" if reps else ""))
+            for a in sorted(recs):
+                if recs[a]["kind"] == "attest" and recs[a]["body"].get("target") == v and recs[a]["body"].get("verdict") == "merged":
+                    out.append(f"  - merged as `{str(recs[a]['body'].get('merge'))[:12]}` (observed by {recs[a]['actor']})")
+        out.append("")
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------- commands
+
+def run(argv=None):
+    root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
+    ap = argparse.ArgumentParser(prog="review.py")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    d = sub.add_parser("due")
+    g = sub.add_parser("gate")
+    for p in (d, g):
+        p.add_argument("--base", required=True)
+        p.add_argument("--json", action="store_true")
+        p.add_argument("--remote", default="origin")
+    g.add_argument("--merge", action="store_true")
+    g.add_argument("--gate-var", default="")
+    g.add_argument("--summary")
+    g.add_argument("--pr", type=int, action="append", default=[])
+    o = sub.add_parser("open")
+    o.add_argument("--title", required=True)
+    o.add_argument("--serves", action="append", default=[])
+    h = sub.add_parser("head")
+    h.add_argument("--commit")
+    h.add_argument("--answers", action="append", default=[])
+    m = sub.add_parser("merged")
+    m.add_argument("--merge", required=True)
+    for p in (o, h, m):
+        p.add_argument("--pr", type=int, required=True)
+        p.add_argument("--actor", required=True)
+        p.add_argument("--key", required=True)
+    sub.add_parser("identity")
+    r = sub.add_parser("replay")
+    r.add_argument("--key", required=True)
+    v = sub.add_parser("verify")
+    v.add_argument("--base", required=True)
+    w = sub.add_parser("view")
+    w.add_argument("--out")
+    a = ap.parse_args(argv)
+    if a.cmd == "due":
+        return GT.cmd_due(root, a.base, a.json, a.remote)
+    if a.cmd == "gate":
+        return GT.cmd_gate(root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json)
+    if a.cmd == "identity":
+        print(identity(REPLAYER_FILES))
+        return 0
+    repo = Repo(root)
+    if a.cmd == "replay":
+        replay(repo, load_key(a.key))
+        return 0
+    if a.cmd == "verify":
+        print(f"replays new since {a.base[:12]}: {verify(repo, a.base)} re-executed, all equal")
+        return 0
+    rep = repo.report()
+    if a.cmd == "view":
+        text = view(rep)
+        if a.out:
+            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(a.out).write_text(text)
+        else:
+            sys.stdout.write(text)
+        return 0
+    key = load_key(a.key)
+    _, _, name = repo.config()
+    if a.cmd == "open":
+        rec = R.record("entity", a.actor, 0, {"state": "open", "repository": name, "pr": a.pr, "title": a.title,
+                                              "serves": sorted(a.serves)}, "pr-head@1", refs=a.serves)
+    else:
+        L = lineage_of(rep, name, a.pr)
+        leaf = rep["lineages"][L]["leaf"]
+        if leaf is None:
+            raise Failed("REVIEW", f"#{a.pr}'s heads fork")
+        if a.cmd == "head":
+            x = git(repo.root, "rev-parse", "--verify", f"{a.commit or 'HEAD'}^{{commit}}")
+            body = {"state": "head", "commit": x, "tree": git(repo.root, "rev-parse", f"{x}^{{tree}}"), "answers": sorted(a.answers)}
+            schema = rep["_recs"][rep["schemas"]["pr-head@1"]]["body"]
+            rec = R.record("entity", a.actor, 0, body, "pr-head@1", lineage=leaf, refs=a.answers, guard=schema["states"]["head"])
+        else:
+            merge = git(repo.root, "rev-parse", "--verify", f"{a.merge}^{{commit}}")
+            tip = git(repo.root, "rev-parse", f"{merge}^2")
+            rec = R.record("attest", a.actor, 0, {"target": leaf, "verdict": "merged", "merge": merge, "tip": tip}, refs=[leaf])
+    dump({"filed": repo.file(a.actor, key, [rec])})
+    return 0
+
 
 if __name__ == "__main__":
-    sys.exit(reviews.main())
+    sys.exit(main(run))

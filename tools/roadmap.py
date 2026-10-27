@@ -1,827 +1,156 @@
 #!/usr/bin/env python3
-"""The roadmap as Warrant 2 records: goals, obligations, path search.
+"""The roadmap: goals (goal@1) and the obligations that answer them (obligation@1), as records in
+.warrant/records.jsonl. The rules (who closes, who accepts, who releases) are the schema records'; this
+tool shows them, lists what waits for an acceptor, and files obligations and their closures.
 
-No new record type and no new rule. A **goal** is a question opened with scope
-`roadmap:<key>` (G1, G2, ...) in a signed ATTESTED *vision* transition: it is
-assigned to nobody and proves nothing. An **obligation** is a duty whose
-`answers` names that question; its `requires` are hard prerequisites (SPEC §4.2,
-rule 4) and its `serves` are purpose links that grant nothing. A goal is never
-edited: a transition that supersedes its vision transition reformulates it,
-shows it met (it then *establishes* the goal's text) or withdraws it, with a
-revision blob saying which and why, and every other goal of the superseded
-transition is opened again unchanged. A supersession counts once the roadmap
-profile's results acceptors accept it (SPEC §4.7); until then it is pending.
-docs/REPOSITORY.md, "The roadmap", maps these terms to the ontology.
+    python3 tools/roadmap.py [--root DIR] view [--out FILE]        # Markdown, a build artifact (build/views/)
+    python3 tools/roadmap.py [--root DIR] due --actor A [--json]   # versions waiting for A's verdict (the waker's)
+    python3 tools/roadmap.py [--root DIR] check                    # every obligation answers a goal; none forks
+    python3 tools/roadmap.py oblige --goal G --statement S [--serves ID ...] --actor A --key SEED
+    python3 tools/roadmap.py close --obligation ID [--evidence ID ...] [--ref TEXT ...] [--established TEXT ...]
+                                   [--residual TEXT ...] [--requires ID ...] --actor A --key SEED
 
-Dispositions, waiting acceptances, ownership of questions and supersession
-are the engine's own (`assess`, `questions`, `frontier`, `results`); this file
-only follows the links. ROADMAP.md is a view `project` writes to build/views/: a build artifact, never
-committed (G11); tools/graph.py views --check renders it in three processes and refuses a difference, and
-tools/graph.py path answers the same questions by query. Nothing here writes SPEC.md.
-
-    python3 tools/roadmap.py goal --id G1 --text '...' [--id G2 --text '...'] [--source FILE --source-by ACTOR]
-    python3 tools/roadmap.py reformulate --goal G1 --text '...' --because '...'
-    python3 tools/roadmap.py met --goal G1 --because '...' [--ref PR]...
-    python3 tools/roadmap.py withdraw --goal G1 --because '...'
-    python3 tools/roadmap.py oblige --text '...' --answers G1 [--requires DUTY]... [--serves DUTY]...
-    python3 tools/roadmap.py done --duty DUTY --established '...' --ref PR [--ref SHA]... [--commit SHA] [--replaces T]
-    python3 tools/roadmap.py release --duty DUTY --because '...' --actor ACTOR   # by whom it is owed to
-    python3 tools/roadmap.py accept --duty DUTY --actor ACTOR [--transition ID]  # by an acceptor the duty names
-    python3 tools/roadmap.py path G1 [--json]
-    python3 tools/roadmap.py due --actor ACTOR [--json]   # obligation closures due for ACTOR's verdict
-    python3 tools/roadmap.py project            # write build/views/ROADMAP.md
-    python3 tools/roadmap.py check
-
-DUTY is a duty id, a unique prefix of at least 8 hex digits, or a SPEC claim id
-(`SPEC-3-22`: the current claim's duty). A goal is named by its key or by its
-question reference `<transition id>:<index>`. Signing: --key or
-WARRANT_CLAIMS_KEY, bound to --actor (default claude) in .warrant/trust.json.
-Refusals print as `REFUSED <detail>` (commands) or `REFUSED <CODE> <detail>` (check).
-`goal --source FILE --source-by ACTOR` cites the bytes of the proposal the goals
-come from (a file named in $TMPDIR, as `claims.py audit` reads its inputs) and who wrote it (a `warrant-roadmap/source@1` blob); it credits, and
-neither grants nor establishes anything.
-"""
+`due` is what the review waker reads at the base: a goal or obligation version whose guard waits only for
+attests by a role the actor holds (nothing it requires is open), not the actor's own, neither attested nor
+challenged by it (tools/gate.py due_for, the same rule the merge gate admits a verdict pull request by)."""
 import argparse
-import json
-import os
-import re
 import sys
-import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, os.environ.get("WARRANT_IMPL") or str(ROOT))
-sys.path.insert(1, str(Path(__file__).resolve().parent))
+from repo import Failed, Repo, dump, env_root, load_key, main
 
-import claims as CL                          # noqa: E402  (read only: Repo, Model, authentic, load_key)
-from warrant import engine as E              # noqa: E402
-from warrant import jcs as C                 # noqa: E402
-from warrant import records as R             # noqa: E402
-from warrant import shapes as S              # noqa: E402
-from warrant.store import Store              # noqa: E402
+from gate import due_for
+from warrant import records as R
 
-CONFIG = "warrant-roadmap/config@1"
-CONFIG_FIELDS = ("roadmap", "owed_to", "accept_by", "results_accept_by")
-REVISION = "warrant-roadmap/revision@1"
-REVISION_FIELDS = ("schema", "goal", "act", "because", "refs")
-EVIDENCE = "warrant-roadmap/evidence@1"
-EVIDENCE_FIELDS = ("schema", "duty", "refs")
-SOURCE = "warrant-roadmap/source@1"
-SOURCE_FIELDS = ("schema", "by", "blob")
-SCOPE = "roadmap:"
-KEY_RE = re.compile(r"^G[1-9][0-9]{0,3}\Z")          # \Z: `$` admits a trailing newline
-HEXPREFIX = re.compile(r"^[0-9a-f]{8,64}\Z")
-VISION_RESIDUAL = ("a goal proves nothing: it sets the direction of path search; it is shown met only by a "
-                   "superseding transition that establishes it")
-DONE_RESIDUAL = "the evidence blob names pull requests and commits; this record does not replay them"
-CLOSING = ("discharge", "impossible", "revalidate")      # the acts of an item that closes a duty
-FORWARD = ("obligations met, goal not shown met: every obligation that answers it is DISCHARGED and the goal "
-           "is still open, so the decomposition did not reach it (Forward Attack)")
-# Formulation states: the goal text as one transition opened it. REOPENED: a transition that superseded it
-# (revising another goal) opened the same text again, which is not a reformulation.
-CURRENT, PROPOSED, REFORMULATED, REOPENED, MET, WITHDRAWN = \
-    "CURRENT", "PROPOSED", "REFORMULATED", "REOPENED", "MET", "WITHDRAWN"
+SCHEMAS = ("goal@1", "obligation@1")
 
 
-WAITING = ("PENDING", "UNMET_CONDITION")        # closures `done` counts as waiting for their admission
+def goals(rep):
+    """{goal version id: goal key} for every version of every goal lineage."""
+    recs = rep["_recs"]
+    return {v: recs[L]["body"]["key"] for L, lin in rep["lineages"].items() if lin["schema"] == "goal@1" for v in lin["versions"]}
 
 
-class Refused(Exception):
-    """A command that cannot be carried out; nothing was written."""
-
-
-def key_n(k):
-    return int(k[1:])
-
-
-def one_line(text, what, limit):
-    if not (isinstance(text, str) and text.strip() == text and text and len(text) <= limit
-            and not any(c in text for c in "\r\n")):
-        raise Refused(f"{what} is one line of at most {limit} characters with no space at either end")
-    return text
-
-
-# ---------------------------------------------------------------- the repository
-
-class Roadmap:
-    def __init__(self, root):
-        self.root = Path(root)
-        self.claims = CL.Repo(self.root)
-        self.config_path = self.root / ".warrant" / "roadmap.json"
-        self.view = self.root / CL.VIEWS_DIR / "ROADMAP.md"
-
-    def config(self):
-        try:
-            cfg = json.loads(self.config_path.read_text())
-        except (OSError, ValueError) as e:
-            raise Refused(f".warrant/roadmap.json: {e}") from e
-        return check_config(cfg)
-
-    def model(self):
-        return Model(self.claims.snapshot(), self.claims.trust(), self.config(), self.claims.roles()[0])
-
-
-def check_config(cfg):
-    """.warrant/roadmap.json's document, checked (also read from a base commit by the merge gate)."""
-    if not isinstance(cfg, dict) or set(cfg) != set(CONFIG_FIELDS) or cfg["roadmap"] != CONFIG:
-        raise Refused(f".warrant/roadmap.json members are {list(CONFIG_FIELDS)}, roadmap {CONFIG!r}")
-    for k in CONFIG_FIELDS[1:]:
-        if not (isinstance(cfg[k], list) and all(S.is_actor(a) for a in cfg[k])):
-            raise Refused(f".warrant/roadmap.json: {k} is a list of actor ids")
-    return cfg
-
-
-class Form:
-    """One formulation of a goal: the text one vision transition opened under a key."""
-
-    def __init__(self, ref, key, text, tid, actor, at):
-        self.ref, self.key, self.text, self.tid, self.actor, self.at = ref, key, text, tid, actor, at
-        self.state, self.by, self.waiting = CURRENT, None, []
-
-
-class Model:
-    """The goals and obligations a snapshot holds under a trust, assessed once."""
-
-    def __init__(self, snap, trust, cfg, roles=None):
-        self.snap, self.cfg = snap, cfg
-        self.recs, _ = CL.authentic(snap, trust)
-        as_of = max((r["at"] for r in self.recs.values()), default=0)
-        self.rep = E.assess(snap, trust, as_of, E.profile(results_by=cfg["results_accept_by"]))
-        self.problems = []
-        cm = CL.Model(snap, trust)
-        self.claim_duty = {cid: n.doc["duty"] for cid, n in cm.current.items() if not n.retired and n.doc["duty"]}
-        # Every duty a claim's lineage ever had names that claim: a duty is never superseded, so an
-        # obligation serving a claim's earlier duty serves the claim (G4 re-homed lineages).
-        self.claim_of = {n.doc["duty"]: n.id for n in cm.nodes.values() if not n.retired and n.doc["duty"]}
-        self.forms, self.owned, self._revs, self._sources = {}, {}, {}, {}
-        for q in E.questions(self.rep, owned=True):
-            if not (q["scope"] or "").startswith(SCOPE):
-                continue
-            key = q["scope"][len(SCOPE):]
-            if not KEY_RE.match(key):
-                self.problems.append(("GOAL_KEY", f"question {q['question'][:12]}…: scope {q['scope']!r} is not roadmap:G<n>"))
-                continue
-            tid = q["question"].split(":")[0]
-            r = self.recs[tid]
-            self.forms[q["question"]] = Form(q["question"], key, q["text"], tid, r["actor"], r["at"])
-            if tid not in self._sources:
-                self._sources[tid] = self.sources(tid)
-            self.owned[q["question"]] = q["taken_by"]
-        self._states()
-        self.goals = {}
-        for f in sorted(self.forms.values(), key=lambda f: (self.generation(f.tid), f.at, f.ref)):
-            self.goals.setdefault(f.key, []).append(f)
-        for key, fs in sorted(self.goals.items(), key=lambda kv: key_n(kv[0])):
-            cur = [f for f in fs if f.state == CURRENT]
-            if len(cur) > 1:
-                self.problems.append(("GOAL_FORK", f"{key} has {len(cur)} current formulations: "
-                                      + ", ".join(f.ref[:12] for f in cur)))
-        refs = set(self.forms)
-        self.obligations = {did: r for did, r in self.rep["duties"].items()
-                            if self.recs[did]["body"]["answers"] in refs}
-        for did in sorted(self.obligations):
-            b = self.recs[did]["body"]
-            if (b["owed_to"], b["accept_by"], b["release_by"]) != (cfg["owed_to"], cfg["accept_by"], []):
-                # Open circle: anyone may bind a key; an obligation its filer's own accomplice accepts would close unreviewed.
-                self.problems.append(("OBLIGATION_TERMS", f"obligation {did[:12]} is owed to {b['owed_to']}, accepted by "
-                                      f"{b['accept_by']}, released by {b['release_by']}; .warrant/roadmap.json says owed_to "
-                                      f"{cfg['owed_to']}, accept_by {cfg['accept_by']}, no release_by"))
-            for field in ("requires", "serves"):
-                for x in b[field]:
-                    if x not in self.rep["duties"]:
-                        self.problems.append(("MISSING_LINK", f"obligation {did[:12]} {field} {x[:12]}, not a duty in the view"))
-        for did, r in sorted(self.rep["duties"].items()):
-            a = self.recs[did]["body"]["answers"]
-            if a and a not in refs and a.split(":")[0] in self.recs and \
-                    any((q["scope"] or "").startswith(SCOPE) for q in self.recs[a.split(":")[0]]["body"]["opened"]):
-                self.problems.append(("MISSING_LINK", f"duty {did[:12]} answers {a[:12]}…, not a goal of a vision transition"))
-        self._frontiers = {}
-        self._accepts = CL.accept_index(self.recs)
-        self.problems += CL.unpinned(roles or {}, cfg["owed_to"] + cfg["accept_by"] + cfg["results_accept_by"],
-                                     ".warrant/roadmap.json")
-
-    def accepted_by(self, did):
-        """Who accepted the admitted closures of duty `did` (their exact items)."""
-        r = self.rep["duties"].get(did)
-        return [] if r is None else sorted({a for c in r["candidates"] if c["verdict"] == "ADMITTED"
-                                            for a in CL.acceptors(self.recs, self._accepts, c["transition"], c["item"])})
-
-    # -- goal states, from the engine's supersession (SPEC §4.7)
-
-    def revisions(self, tid):
-        """{key: revision blob} a transition carries; malformed blobs are problems (once)."""
-        if tid in self._revs:
-            return self._revs[tid]
-        out = self._revs[tid] = {}
-        for h in self.recs[tid]["body"]["evidence"]:
-            doc = self.snap.json_blob(h)
-            if not (isinstance(doc, dict) and doc.get("schema") == REVISION):
-                continue
-            ok = (set(doc) == set(REVISION_FIELDS) and isinstance(doc["goal"], str) and KEY_RE.match(doc["goal"])
-                  and doc["act"] in ("reformulate", "met", "withdraw") and isinstance(doc["because"], str)
-                  and doc["because"] and isinstance(doc["refs"], list) and all(isinstance(x, str) for x in doc["refs"]))
-            if not ok or doc["goal"] in out:
-                self.problems.append(("REVISION_SHAPE", f"transition {tid[:12]}: revision blob {h[:12]} is malformed or repeats a goal"))
-                continue
-            out[doc["goal"]] = doc
-        return out
-
-    def sources(self, tid):
-        """[{by, blob}] the source blobs a transition cites; a malformed one, or one whose bytes the
-        transition does not cite or the store does not hold, is a problem."""
-        out, ev = [], self.recs[tid]["body"]["evidence"]
-        for h in ev:
-            doc = self.snap.json_blob(h)
-            if not (isinstance(doc, dict) and doc.get("schema") == SOURCE):
-                continue
-            if not (set(doc) == set(SOURCE_FIELDS) and S.is_actor(doc["by"]) and isinstance(doc["blob"], str)
-                    and doc["blob"] in ev and self.snap.blob(doc["blob"]) is not None):
-                self.problems.append(("SOURCE_SHAPE", f"transition {tid[:12]}: source blob {h[:12]} is malformed or "
-                                      "names bytes the transition does not cite or the store does not hold"))
-                continue
-            out.append({"by": doc["by"], "blob": doc["blob"]})
-        return out
-
-    def generation(self, tid, depth=0):
-        """How many vision transitions lie below this one through `supersedes`: a lineage is read in this
-        order, never by id (records filed in the same second tie on `at`)."""
-        below = [t for t in self.recs[tid]["body"]["supersedes"] if t in self.recs and t != tid]
-        return 0 if not below or depth > 64 else 1 + max(self.generation(t, depth + 1) for t in below)
-
-    def opened_keys(self, tid):
-        return {f.key: f for f in self.forms.values() if f.tid == tid}
-
-    def _states(self):
-        results = self.rep["results"]
-        need = set(self.cfg["results_accept_by"])
-        visions = {f.tid for f in self.forms.values()}
-        for tid in sorted(self.recs):
-            r = self.recs[tid]
-            if r["type"] != "transition" or not set(r["body"]["supersedes"]) & visions:
-                continue
-            revs, mine = self.revisions(tid), self.opened_keys(tid)
-            for old in sorted(set(r["body"]["supersedes"]) & visions):
-                for key, f in self.opened_keys(old).items():
-                    rev = revs.get(key)
-                    act = rev["act"] if rev else None
-                    if key in mine and act not in (None, "reformulate"):
-                        self.problems.append(("REVISION_SHAPE", f"transition {tid[:12]} opens {key} again and says it is {act}"))
-                    elif key not in mine and act not in ("met", "withdraw"):
-                        self.problems.append(("GOAL_DROPPED", f"transition {tid[:12]} supersedes {old[:12]} and neither opens "
-                                              f"{key} again nor says it is met or withdrawn"))
-                    elif act == "reformulate" and mine[key].text == f.text:
-                        self.problems.append(("REVISION_SHAPE", f"transition {tid[:12]} reformulates {key} with the same text"))
-                    elif act == "met" and f.text not in r["body"]["established"]:
-                        self.problems.append(("REVISION_SHAPE", f"transition {tid[:12]} says {key} is met and does not "
-                                              "establish its text"))
-        for f in self.forms.values():
-            res = results[f.tid]
-            if res["superseded_by"]:
-                s = sorted(res["superseded_by"])[0]
-                nxt = self.opened_keys(s).get(f.key)
-                act = self.revisions(s).get(f.key, {}).get("act")
-                f.state, f.by = ((REOPENED if nxt.text == f.text else REFORMULATED), nxt.ref) if nxt else \
-                    (MET if act == "met" else WITHDRAWN, s)
-            elif self.recs[f.tid]["body"]["supersedes"] and not res["accepted"]:
-                f.state, f.waiting = PROPOSED, sorted(need - set(res["accepted_by"]))
-
-    # -- reading
-
-    def goal_state(self, key):
-        fs = self.goals.get(key, [])
-        states = {f.state for f in fs}
-        for s, out in ((CURRENT, "OPEN"), (MET, "MET"), (WITHDRAWN, "WITHDRAWN")):
-            if s in states:
-                return out
-        return "PROPOSED" if states else "MISSING"
-
-    def current(self, key):
-        """The current formulation of a goal key; Refused if none or more than one."""
-        cur = [f for f in self.goals.get(key, []) if f.state == CURRENT]
-        if len(cur) != 1:
-            raise Refused(f"goal {key} has {len(cur)} current formulations")
-        return cur[0]
-
-    def pending(self, key):
-        """Revisions of this goal filed and not yet counted: (transition, act, waiting for)."""
-        out = []
-        for f in self.goals.get(key, []):
-            if f.state != CURRENT:
-                continue
-            for tid, r in sorted(self.recs.items()):
-                if r["type"] == "transition" and f.tid in r["body"]["supersedes"] and not self.rep["results"][tid]["accepted"]:
-                    act = self.revisions(tid).get(key, {}).get("act")
-                    if act:
-                        res = self.rep["results"][tid]
-                        out.append((tid, act, sorted(set(self.cfg["results_accept_by"]) - set(res["accepted_by"]))))
-        return out
-
-    def need(self, did):
-        """What the engine's frontier says the duty's holder must do next, or None. A closure the
-        engine did not admit (UNMET_CONDITION while a prerequisite is open) is filed: the need
-        names its verdict and why, not "no closure filed"."""
-        holder = self.rep["duties"][did]["holder"]
-        if holder not in self._frontiers:
-            self._frontiers[holder] = E.frontier(self.rep, holder)
-        for n in self._frontiers[holder]:
-            if n.get("duty") == did and n["need"] != "accept":
-                if n["need"] != "close":
-                    return n["need"]
-                filed = [c for c in self.rep["duties"][did]["candidates"] if c["verdict"] not in ("ADMITTED", "PENDING")]
-                return f"closure {filed[-1]['verdict']}: {filed[-1]['why']}" if filed else "no closure filed"
-        return None
-
-    def answering(self, key):
-        refs = {f.ref for f in self.goals.get(key, [])}
-        return sorted((did for did in self.obligations if self.recs[did]["body"]["answers"] in refs),
-                      key=lambda d: (self.recs[d]["at"], d))
-
-    def goal_of(self, did):
-        """The key of the goal a duty answers, or None."""
-        f = self.forms.get(self.recs[did]["body"]["answers"]) if did in self.recs else None
-        return f.key if f else None
-
-    def served_by(self, did):
-        return sorted(x for x, rec in self.recs.items() if rec["type"] == "duty" and did in rec["body"]["serves"])
-
-    def resolve_duty(self, ref):
-        if ref in self.claim_duty:
-            return self.claim_duty[ref]
-        if not HEXPREFIX.match(ref or ""):
-            raise Refused(f"{ref!r} is not a duty id, a hex prefix of at least 8 digits or a SPEC claim id")
-        hits = [d for d in self.rep["duties"] if d.startswith(ref)]
-        if len(hits) != 1:
-            raise Refused(f"{ref!r} names {len(hits)} duties in the view")
-        return hits[0]
-
-    def resolve_goal(self, ref):
-        """A key (its current formulation) or the reference of a current formulation."""
-        if KEY_RE.match(ref or ""):
-            return self.current(ref)
-        if S.qref(ref) and ref in self.forms:
-            f = self.forms[ref]
-            if f.state != CURRENT:
-                raise Refused(f"{ref[:12]}… is {f.state}, not a current goal")
-            return f
-        raise Refused(f"{ref!r} is not a goal key (G<n>) or a goal's question reference")
-
-
-# ---------------------------------------------------------------- acceptance due
-
-def acceptance_due(m, actor):
-    """The obligation closures due for `actor`'s verdict, in filing order. For each OPEN obligation: its
-    latest closure (whatever its verdict), when the engine judges it PENDING (admitted on every rule but
-    acceptances, so each duty it requires is DISCHARGED: SPEC §4.2), its waiting_for still names `actor`
-    (the duty's accept_by names it and it has not accepted exactly that item and evidence), and `actor` has
-    not challenged that item (SPEC §3.6: a challenge of item k concerns closure k only; one of item null,
-    the transition's results). An earlier closure of the same duty was filed over (`done --replaces`) and is
-    never due, also once the one filed in its place is admitted (Codex finding aeacfd5c933e); nor is a
-    closure of a duty already closed. A transition that closes several obligations gives one entry per item.
-    This is the one statement of the rule: the review waker runs `due` from the base's tree and wakes the
-    acceptor once per closure item, and the merge gate admits a pull request of verdicts only on closures
-    it names (eligibility.py)."""
-    challenged = {(r["body"]["target"], r["body"]["item"]) for r in m.recs.values()
-                  if r["type"] == "challenge" and r["actor"] == actor}
+def due(rep, profile, actor):
+    recs, keys = rep["_recs"], goals(rep)
     out = []
-    for did in m.obligations:
-        if m.rep["duties"][did]["disposition"] != "OPEN":
-            continue
-        closures = [c for c in m.rep["duties"][did]["candidates"] if c["act"] in CLOSING]
-        c = closures[-1] if closures else None
-        if c is None or c["verdict"] != "PENDING" or actor not in (c.get("waiting_for") or []) \
-                or (c["transition"], c["item"]) in challenged:
-            continue
-        t, b = m.recs[c["transition"]], m.recs[did]["body"]
-        ev = t["body"]["closes"][c["item"]]["evidence"]
-        docs = [m.snap.json_blob(h) for h in ev]
-        refs = [x for d in docs if isinstance(d, dict) and d.get("schema") == EVIDENCE and d.get("duty") == did
-                and isinstance(d.get("refs"), list) for x in d["refs"] if isinstance(x, str)]
-        out.append({"duty": did, "goal": m.goal_of(did), "statement": b["statement"], "requires": b["requires"],
-                    "closure": c["transition"], "item": c["item"], "filer": t["actor"], "at": t["at"],
-                    "evidence": ev, "refs": refs, "subject": t["body"]["subject"]})
-    return sorted(out, key=lambda d: (d["at"], d["closure"], d["item"]))
-
-
-# ---------------------------------------------------------------- path search
-
-def node(m, did, edge, seen, shown):
-    """One duty of a goal's tree. `seen` = the duties above it (a cycle), `shown` = every duty this goal's
-    tree has already expanded: a later occurrence is a reference back to it, with no statement and no children
-    (a duty many obligations require is printed once, not under each of them)."""
-    r = m.rep["duties"].get(did)
-    if did in shown:
-        out = {"edge": edge, "duty": did, "state": "MISSING" if r is None else r["disposition"], "shown": True,
-               "statement": None, "children": [], "served_by": []}
-        if did in seen:
-            out["cycle"] = True
-        return out
-    shown.add(did)
-    if r is None:
-        return {"edge": edge, "duty": did, "state": "MISSING", "statement": None, "children": [], "served_by": []}
-    out = {"edge": edge, "duty": did, "state": r["disposition"], "need": m.need(did), "accepted_by": m.accepted_by(did),
-           "statement": r["statement"],
-           "claim": m.claim_of.get(did), "goal": m.goal_of(did),
-           "serves": [{"duty": s, "claim": m.claim_of.get(s), "goal": m.goal_of(s)} for s in r["serves"]],
-           "served_by": [{"duty": s, "state": m.rep["duties"][s]["disposition"], "statement": m.rep["duties"][s]["statement"],
-                          "goal": m.goal_of(s)} for s in m.served_by(did) if s not in seen and s in m.rep["duties"]],
-           "children": []}
-    out["children"] = [node(m, c, "requires", seen | {did}, shown) for c in r["requires"]]
+    for d in due_for(rep, profile, actor, SCHEMAS):
+        b = recs[d["version"]]["body"]
+        g = recs[d["version"]]["guard"] or {}
+        out.append({"closure": d["version"], "item": 0, "duty": d["lineage"], "schema": d["schema"],
+                    "goal": keys.get(b.get("answers")) or b.get("key"), "statement": b.get("statement") or b.get("text"),
+                    "evidence": sorted(b.get("evidence") or []), "refs": list(b.get("refs") or []),
+                    "subject": b.get("subject"), "requires": g.get("requires", [])})
     return out
 
 
-def prerequisites_first(m, dids):
-    """`dids` (in filing order) reordered so that an obligation comes after those of them it requires,
-    else in filing order: each is printed in full before a later one refers back to it (records filed in
-    the same second tie on `at` and are ordered by id). A cycle takes the first of the rest."""
-    rest, out = list(dids), []
-    while rest:
-        done = set(out)
-        ready = [d for d in rest if all(x in done or x not in rest for x in m.rep["duties"][d]["requires"])]
-        out.append((ready or rest)[0])
-        rest.remove(out[-1])
+def check(rep):
+    recs, keys, out = rep["_recs"], goals(rep), []
+    for L, lin in sorted(rep["lineages"].items()):
+        if lin["schema"] not in SCHEMAS:
+            continue
+        if lin["verdict"] == "FORK":
+            out.append(f"{L[:12]} ({lin['schema']}) forks")
+        for v in lin["versions"]:
+            a = recs[v]["body"].get("answers")
+            if lin["schema"] == "obligation@1" and a is not None and a not in keys:
+                out.append(f"obligation version {v[:12]} answers {a[:12]}, which is no goal version")
     return out
 
 
-def path_data(m, key):
-    fs = m.goals.get(key)
-    if not fs:
-        raise Refused(f"no goal {key} in the view")
-    state = m.goal_state(key)
-    obligations = prerequisites_first(m, m.answering(key))
-    shown = set()
-    tree = [node(m, did, "answered by", frozenset(), shown) for did in obligations]
-    marks = []
-    if state == "OPEN" and obligations and all(m.rep["duties"][d]["disposition"] == "DISCHARGED" for d in obligations):
-        marks.append("FORWARD_ATTACK")
-    return {"goal": key, "state": state,
-            "formulations": [{"ref": f.ref, "text": f.text, "state": f.state, "by": f.by, "opened_by": f.actor,
-                              "sources": m._sources[f.tid],
-                              "waiting_for": f.waiting, "taken_by": m.owned.get(f.ref, []),
-                              "answered_as": reopened_from(m, fs, f)} for f in fs],
-            "pending": [{"transition": t, "act": a, "waiting_for": w} for t, a, w in m.pending(key)],
-            "obligations": tree, "marks": marks}
+def view(rep):
+    recs, keys = rep["_recs"], goals(rep)
+    lines = ["# Roadmap", "", f"Generated from `.warrant/records.jsonl` (snapshot `{rep['snapshot'][:12]}`, assessment "
+             f"`{rep['assessment'][:12]}`); a build artifact, never committed. Completeness: {rep['completeness']}.", ""]
+    by_goal = {}
+    for L, lin in rep["lineages"].items():
+        if lin["schema"] == "obligation@1":
+            leaf = recs[lin["leaf"]]["body"] if lin["leaf"] else recs[L]["body"]
+            by_goal.setdefault(keys.get(leaf.get("answers")), []).append((L, lin, leaf))
+    for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == "goal@1"),
+                         key=lambda x: int(recs[x[0]]["body"]["key"].lstrip("G") or 0)):
+        g = recs[lin["effective"] or L]["body"]
+        lines += [f"## {g['key']} ({lin['state']}): {g['text']}", ""]
+        for O, olin, b in sorted(by_goal.get(g["key"], []), key=lambda x: (x[1]["state"] or "", recs[x[0]]["at"])):
+            v = rep["versions"][olin["leaf"]] if olin["leaf"] else {"guard": "FORK", "waiting": []}
+            wait = f"; leaf {v['guard']}: {'; '.join(v['waiting'])}" if v["guard"] == "PENDING" else ""
+            lines.append(f"- `{O[:12]}` **{olin['state']}** ({olin['reliance']}{wait}) {b['statement']}")
+        lines.append("")
+    loose = by_goal.get(None, [])
+    if loose:
+        lines += ["## Obligations that answer no goal", ""]
+        lines += [f"- `{O[:12]}` **{olin['state']}** {b['statement']}" for O, olin, b in loose]
+    return "\n".join(lines) + "\n"
 
 
-def reopened_from(m, fs, f):
-    """The earlier formulations this one opens again unchanged (through REOPENED links) that an obligation
-    answers: their obligations answer the same text, though not this question reference."""
-    out, prev, seen = [], [f.ref], {f.ref}
-    while prev:
-        prev = [g.ref for g in fs if g.state == REOPENED and g.by in prev and g.ref not in seen]
-        seen.update(prev)
-        out += [x for x in prev if m.owned.get(x)]
-    return sorted(out)
-
-
-def _short(did, claim=None, goal=None):
-    return " ".join(x for x in (claim, goal, f"duty {did[:12]}") if x)
-
-
-def _qref(ref):
-    return f"{ref[:12]}:{ref.split(':')[1]}"
-
-
-def render_node(n, depth, out):
-    pad = "  " * depth
-    if n.get("shown"):
-        cycle = " (cycle: this duty requires itself through the duties above)" if n.get("cycle") else ""
-        out.append(f"{pad}{n['edge']} [{n['state']}] duty {n['duty'][:12]}, shown above{cycle}")
-        return
-    state = n["state"] + (f" · {n['need']}" if n.get("need") else "") + \
-        (f" · accepted by {', '.join(n['accepted_by'])}" if n.get("accepted_by") else "")
-    tail = [_short(n["duty"], n.get("claim"))]
-    if n.get("serves"):
-        tail.append("serves " + ", ".join(s["claim"] or _short(s["duty"], goal=s["goal"]) for s in n["serves"]))
-    text = n["statement"] if n["statement"] is not None else "(not in the view)"
-    out.append(f"{pad}{n['edge']} [{state}] {text} {{{'; '.join(tail)}}}")
-    for s in n.get("served_by", []):
-        out.append(f"{pad}  served by [{s['state']}] {s['statement']} {{{_short(s['duty'], goal=s['goal'])}}}")
-    for c in n["children"]:
-        render_node(c, depth + 1, out)
-
-
-def render_path(d):
-    cur = [f for f in d["formulations"] if f["state"] == CURRENT] or d["formulations"][-1:]
-    out = [f"{d['goal']} [{d['state']}] {cur[0]['text']}"]
-    for f in d["formulations"]:
-        line = f"  goal {_qref(f['ref'])} {f['state']}, opened by {f['opened_by']}"
-        line += "".join(f" from {s['by']}'s source blob {s['blob'][:12]}" for s in f["sources"])
-        if f["state"] == REFORMULATED:
-            line += f"; reformulated as {_qref(f['by'])}"
-        elif f["state"] == REOPENED:
-            line += f"; opened again unchanged as {_qref(f['by'])}"
-        elif f["state"] in (MET, WITHDRAWN):
-            line += f" by {f['by'][:12]}"
-        elif f["state"] == PROPOSED:
-            line += f": supersession awaiting acceptance by {', '.join(f['waiting_for']) or 'nobody named'}"
-        if f["state"] != CURRENT and f["text"] != cur[0]["text"]:
-            line += f" — {f['text']}"
-        if f["state"] == CURRENT and not f["taken_by"] and f["answered_as"]:
-            line += f"; its obligations answer the same text as opened in {', '.join(_qref(x) for x in f['answered_as'])}"
-        elif f["state"] == CURRENT and not f["taken_by"]:
-            line += "; unowned: no obligation answers it"
-        out.append(line)
-    for p in d["pending"]:
-        out.append(f"  pending: {p['act']} in {p['transition'][:12]}, awaiting acceptance by {', '.join(p['waiting_for'])}")
-    for n in d["obligations"]:
-        render_node(n, 1, out)
-    if "FORWARD_ATTACK" in d["marks"]:
-        out.append(f"  mark: {FORWARD}")
-    return "\n".join(out) + "\n"
-
-
-def render_view(m):
-    out = [
-        "# Roadmap (generated view)", "",
-        "Generated by `python tools/roadmap.py project` from the Warrant 2 records in",
-        "`.warrant/store/`. **The records are the source; this file is a view**, and",
-        "`python tools/roadmap.py check` refuses it when it differs. It is not part of",
-        "SPEC.md. A goal is a question nobody owns: it proves nothing and sets the",
-        "direction of path search. An obligation is a duty that answers it, `requires`",
-        "names its hard prerequisites and `serves` its purpose links; docs/REPOSITORY.md,",
-        "\"The roadmap\", maps the terms to the ontology. States are Warrant's own assessment",
-        "(trust `.warrant/trust.json`, results acceptors from `.warrant/roadmap.json`,",
-        "as of the latest record); `· …` is what the engine's frontier asks of the",
-        "holder. DISCHARGED needs the acceptance the duty names: a closure filed with",
-        "its evidence and not yet accepted reads OPEN · awaiting acceptance; once",
-        "accepted (`tools/roadmap.py accept`, signed by the acceptor's own key) it reads",
-        "DISCHARGED · accepted by the acceptor. Within a goal each duty is printed in",
-        "full once, with its prerequisites under it; a later occurrence reads `duty <id>,",
-        "shown above`.", "",
-    ]
-    for key in sorted(m.goals, key=key_n):
-        d = path_data(m, key)
-        out += [f"## {key} [{d['state']}]", "", "```text", render_path(d).rstrip("\n"), "```", ""]
-    if not m.goals:
-        out += ["No goal is recorded.", ""]
-    return "\n".join(out)
-
-
-# ---------------------------------------------------------------- writing
-
-class Writer:
-    def __init__(self, rm, key, actor):
-        self.rm, self.key, self.actor = rm, key, actor
-        self.store = Store(rm.claims.store_dir).init()
-        self.m = rm.model()
-
-    def at(self):
-        return max([int(time.time())] + [r["at"] for r in self.m.recs.values()])
-
-    def file(self, rtype, body, blobs=()):
-        """Validate the record first, then store its blobs and it: a refused command writes nothing."""
-        rec = R.record(rtype, self.actor, self.at(), body)
-        for doc in blobs:
-            self.store.put_blob(doc) if isinstance(doc, bytes) else self.store.put_json(doc)
-        # extends the actor's chain (SPEC §3), its head read under the checker's own trust
-        return self.store.append(rtype, self.actor, rec["at"], body, self.key, self.rm.claims.trust())
-
-    def goal(self, pairs, source=None):
-        """`source` = (bytes, actor): the proposal the goals come from, cited raw with a source blob naming
-        its author, so the record graph shows where the goal came from."""
-        if not pairs:
-            raise Refused("goal needs at least one --id G<n> --text T pair")
-        keys = [k for k, _ in pairs]
-        for k, t in pairs:
-            if not KEY_RE.match(k):
-                raise Refused(f"{k!r} is not a goal key G<n>")
-            one_line(t, f"{k}'s text", R.MAX_TEXT)
-            if self.m.goals.get(k) and self.m.goal_state(k) in ("OPEN", "PROPOSED"):
-                raise Refused(f"{k} is already a goal: reformulate it")
-        if len(set(keys)) != len(keys):
-            raise Refused("a key appears twice")
-        evidence, blobs = [], []
-        if source is not None:
-            data, by = source
-            if not S.is_actor(by):
-                raise Refused(f"--source-by {by!r} is not an actor id")
-            doc = {"schema": SOURCE, "by": by, "blob": C.digest(data)}
-            evidence, blobs = [C.digest(C.canon(doc)), doc["blob"]], [doc, data]
-        return self.file("transition", R.transition("ATTESTED", evidence,
-                                                    opened=[{"text": t, "scope": SCOPE + k} for k, t in pairs],
-                                                    residual=[VISION_RESIDUAL]), blobs)
-
-    def revise(self, key, act, because, text=None, refs=()):
-        f = self.m.current(key)
-        one_line(because, "--because", 400)
-        busy = [tid for tid, r in self.m.recs.items() if r["type"] == "transition" and f.tid in r["body"]["supersedes"]
-                and not self.m.rep["results"][tid]["accepted"]]
-        if busy:
-            raise Refused(f"a revision of {f.tid[:12]} waits for acceptance: {busy[0][:12]}")
-        if act == "reformulate":
-            one_line(text, "--text", R.MAX_TEXT)
-            if text == f.text:
-                raise Refused(f"{key} already says that")
-        old = self.m.recs[f.tid]["body"]["opened"]
-        opened = [q if q["scope"] != SCOPE + key else {"text": text, "scope": q["scope"]}
-                  for q in old if act == "reformulate" or q["scope"] != SCOPE + key]
-        rev = {"schema": REVISION, "goal": key, "act": act, "because": because, "refs": list(refs)}
-        established = [f.text] if act == "met" else [f"{key} {'reformulated' if act == 'reformulate' else 'withdrawn'}: {because}"]
-        body = R.transition("ATTESTED", [C.digest(C.canon(rev))], established=established,
-                            residual=[VISION_RESIDUAL] if any((q["scope"] or "").startswith(SCOPE) for q in opened) else [],
-                            opened=opened, supersedes=[f.tid])
-        return self.file("transition", body, [rev])
-
-    def oblige(self, text, answers, requires=(), serves=()):
-        one_line(text, "--text", 400)
-        f = self.m.resolve_goal(answers)
-        req = list(dict.fromkeys(self.m.resolve_duty(x) for x in requires))
-        srv = list(dict.fromkeys(self.m.resolve_duty(x) for x in serves))
-        cfg = self.m.cfg
-        return self.file("duty", R.duty(self.actor, text, cfg["owed_to"], {"attest": {}}, accept_by=cfg["accept_by"],
-                                        requires=req, serves=srv, answers=f.ref))
-
-    def done(self, duty, established, refs, commit=None, replaces=None):
-        """A discharge citing an evidence blob. `replaces` names the one closure of the duty still waiting
-        for acceptance that this one is filed instead of (an acceptor declined it, or what it cites moved on):
-        it stays in the record,
-        the new closure supersedes it, and its residual says so. Once the new one is admitted the engine
-        no longer asks for the old one's acceptance (a residual sentence alone is not a record)."""
-        did = self.m.resolve_duty(duty)
-        r = self.m.rep["duties"][did]
-        if r["holder"] != self.actor and self.actor not in r["delegates"]:
-            raise Refused(f"duty {did[:12]} is held by {r['holder']}, not {self.actor}")
-        # A closure another closure of the duty was filed instead of (supersedes) waits for nobody: the newest
-        # of a chain of refilings is the one waiting, and the one a further refiling names (#204).
-        # Waiting: PENDING (acceptances missing) or UNMET_CONDITION (a prerequisite not yet discharged; admitted once
-        # it is, so a corrected closure must supersede it too: G9 PS-03/PS-04).
-        over = {old for c in r["candidates"] for old in self.m.recs[c["transition"]]["body"]["supersedes"]}
-        pending = [c["transition"] for c in r["candidates"] if c["verdict"] in WAITING and c["transition"] not in over]
-        if r["disposition"] != "OPEN" or (pending and pending != [replaces]):
-            raise Refused(f"duty {did[:12]} is {r['disposition']} or already has a closure waiting for acceptance "
-                          "(name it with --replaces to file this one instead)")
-        if replaces is not None and replaces not in pending:
-            raise Refused(f"--replaces {str(replaces)[:12]} is not a closure of duty {did[:12]} waiting for acceptance")
-        one_line(established, "--established", R.MAX_TEXT)
-        if not refs:
-            raise Refused("a done obligation names its evidence: --ref (a pull request, a commit)")
-        ev = {"schema": EVIDENCE, "duty": did, "refs": list(refs)}
-        h = C.digest(C.canon(ev))
-        residual = [DONE_RESIDUAL] + ([f"filed instead of closure {replaces}; that one stays in the record and is "
-                                       "not to be accepted"] if replaces else [])
-        body = R.transition("ATTESTED", [h], closes=[R.item(did, "discharge", [h])], established=[established],
-                            residual=residual, subject=commit, supersedes=[replaces] if replaces else [])
-        return self.file("transition", body, [ev])
-
-    def accept(self, duty, transition=None):
-        """An accept record of exactly the obligation's pending closure, signed by the acceptor."""
-        did = self.m.resolve_duty(duty)
-        if did not in self.m.obligations:
-            raise CL.Refused(f"duty {did[:12]} answers no goal: a SPEC claim is accepted with tools/claims.py accept",
-                             "NOT_AN_OBLIGATION")
-        r = self.m.rep["duties"][did]
-        if self.actor not in r["accept_by"] and self.actor not in r["owed_to"]:
-            raise CL.not_acceptor(self.actor, f"obligation {did[:12]}", r["accept_by"])
-        cands = [c for c in CL.pending_for(self.m.rep, did, self.actor) if transition in (None, c["transition"])]
-        if len(cands) != 1:
-            raise CL.Refused(f"duty {did[:12]} has {len(cands)} closures pending {self.actor}'s acceptance"
-                             + (" (name one with --transition)" if cands else f" ({r['disposition']})"),
-                             "NOT_PENDING" if not cands else "AMBIGUOUS")
-        c = cands[0]
-        ev = self.m.recs[c["transition"]]["body"]["closes"][c["item"]]["evidence"]
-        return self.file("accept", R.accept(c["transition"], c["item"], ev))
-
-    def release(self, duty, because):
-        did = self.m.resolve_duty(duty)
-        b = self.m.recs[did]["body"]
-        if self.actor not in set(b["owed_to"]) | set(b["release_by"]):
-            raise Refused(f"only {', '.join(sorted(set(b['owed_to']) | set(b['release_by'])))} may release duty {did[:12]}")
-        one_line(because, "--because", 400)
-        return self.file("transition", R.transition("ATTESTED", closes=[R.item(did, "release")],
-                                                    established=[f"released: {because}"]))
-
-
-# ---------------------------------------------------------------- check
-
-def check(rm):
-    """[(code, detail)]: empty iff the roadmap records are well formed (ROADMAP.md is a build artifact, G11)."""
-    try:
-        m = rm.model()
-    except Refused as e:
-        return [("CONFIG", str(e))]
-    return list(m.problems)
-
-
-def summary(m):
-    states = [m.goal_state(k) for k in m.goals]
-    disp = [m.rep["duties"][d]["disposition"] for d in m.obligations]
-    marks = sum("FORWARD_ATTACK" in path_data(m, k)["marks"] for k in m.goals)
-    return (f"{len(states)} goals ({states.count('OPEN')} open, {states.count('MET')} met, "
-            f"{states.count('WITHDRAWN')} withdrawn), {len(disp)} obligations ({disp.count('DISCHARGED')} discharged, "
-            f"{disp.count('OPEN')} open, {disp.count('RELEASED')} released), {marks} forward-attack marks")
-
-
-# ---------------------------------------------------------------- command line
-
-
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--root", default=str(ROOT), help="the repository (default: this checkout)")
-    sub = ap.add_subparsers(dest="cmd")
-
-    def signing(p):
-        p.add_argument("--key", help="seed file of the signing key (or WARRANT_CLAIMS_KEY)")
-        p.add_argument("--actor", default=CL.AUTHOR)
-        return p
-
-    p = signing(sub.add_parser("goal", help="open goals in one vision transition"))
-    p.add_argument("--id", dest="keys", action="append", default=[], metavar="G<n>")
-    p.add_argument("--text", dest="texts", action="append", default=[])
-    p.add_argument("--source", help="file: the proposal the goals come from, cited as a blob")
-    p.add_argument("--source-by", help="the actor who wrote --source")
-    for name, act in (("reformulate", "reformulate"), ("met", "met"), ("withdraw", "withdraw")):
-        p = signing(sub.add_parser(name, help=f"{act} a goal by superseding its vision transition"))
-        p.add_argument("--goal", required=True)
-        p.add_argument("--because", required=True)
-        p.add_argument("--ref", action="append", default=[])
-        if act == "reformulate":
-            p.add_argument("--text", required=True)
-    p = signing(sub.add_parser("oblige", help="file a duty that answers a goal"))
-    p.add_argument("--text", required=True)
-    p.add_argument("--answers", required=True)
-    p.add_argument("--requires", action="append", default=[])
-    p.add_argument("--serves", action="append", default=[])
-    p = signing(sub.add_parser("done", help="discharge an obligation, citing its evidence"))
-    p.add_argument("--duty", required=True)
-    p.add_argument("--established", required=True)
-    p.add_argument("--ref", action="append", default=[])
-    p.add_argument("--commit", help="the revision the result was established on (hex40)")
-    p.add_argument("--replaces", help="the declined closure (transition id) this one is filed instead of")
-    p = signing(sub.add_parser("accept", help="accept an obligation's filed closure (by an acceptor the duty names)"))
-    p.add_argument("--duty", required=True)
-    p.add_argument("--transition", help="the closure's transition, when more than one is pending")
-    p = signing(sub.add_parser("release", help="release an obligation (forgiveness, by whom it is owed to)"))
-    p.add_argument("--duty", required=True)
-    p.add_argument("--because", required=True)
-    p = sub.add_parser("path", help="goal <- obligations <- prerequisites, with the engine's states")
-    p.add_argument("goal")
-    p.add_argument("--json", action="store_true")
-    p = sub.add_parser("due", help="the obligation closures due for an acceptor's verdict (the review waker)")
-    p.add_argument("--actor", required=True)
-    p.add_argument("--json", action="store_true")
-    sub.add_parser("project", help="write build/views/ROADMAP.md (a build artifact)")
-    sub.add_parser("check", help="CI: refuse malformed roadmap records")
+def run(argv=None):
+    root, argv = env_root(list(sys.argv[1:] if argv is None else argv))
+    ap = argparse.ArgumentParser(prog="roadmap.py")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    v = sub.add_parser("view")
+    v.add_argument("--out")
+    d = sub.add_parser("due")
+    d.add_argument("--actor", required=True)
+    d.add_argument("--json", action="store_true")
+    sub.add_parser("check")
+    o = sub.add_parser("oblige")
+    o.add_argument("--goal", required=True)
+    o.add_argument("--statement", required=True)
+    o.add_argument("--serves", action="append", default=[])
+    c = sub.add_parser("close")
+    c.add_argument("--obligation", required=True)
+    for f in ("evidence", "ref", "established", "residual", "requires"):
+        c.add_argument(f"--{f}", action="append", default=[])
+    for p in (o, c):
+        p.add_argument("--actor", required=True)
+        p.add_argument("--key", required=True)
     a = ap.parse_args(argv)
-    rm = Roadmap(a.root)
-    if a.cmd is None:
-        ap.print_help()
-        return 2
-    try:
-        if a.cmd == "check":
-            problems = check(rm)
-            for code, detail in problems:
-                print(f"REFUSED {code} {detail}")
-            tail = summary(rm.model()) if not any(c == "CONFIG" for c, _ in problems) else "no model"
-            print(f"ROADMAP: {tail}; {'OK' if not problems else f'{len(problems)} refused'}")
-            return 1 if problems else 0
-        if a.cmd == "project":
-            rm.view.parent.mkdir(parents=True, exist_ok=True)
-            rm.view.write_bytes(render_view(rm.model()).encode())
-            return 0
-        if a.cmd == "path":
-            m = rm.model()
-            key = a.goal if KEY_RE.match(a.goal) else m.forms[a.goal].key if a.goal in m.forms else a.goal
-            d = path_data(m, key)
-            print(json.dumps(d, indent=2, ensure_ascii=False) if a.json else render_path(d), end="\n" if a.json else "")
-            return 0
-        if a.cmd == "due":
-            if not S.is_actor(a.actor):
-                raise Refused(f"--actor {a.actor!r} is not an actor id")
-            due = acceptance_due(rm.model(), a.actor)
-            if a.json:
-                print(json.dumps({"actor": a.actor, "due": due}, indent=1, ensure_ascii=False))
-                return 0
-            for d in due:
-                print(f"DUE closure {d['closure'][:12]} of {_short(d['duty'], goal=d['goal'])}: {d['statement']}")
-            return 0
-        w = Writer(rm, CL.load_key(rm.claims, a.key, a.actor), a.actor)
-        if a.cmd == "goal":
-            if len(a.keys) != len(a.texts):
-                raise Refused("give --id and --text in pairs")
-            if (a.source is None) != (a.source_by is None):
-                raise Refused("give --source and --source-by together")
-            try:
-                source = None if a.source is None else (CL.confined(a.source).read_bytes(), a.source_by)
-            except OSError as e:
-                raise Refused(f"--source: {e}") from e
-            rid = w.goal(list(zip(a.keys, a.texts)), source)
-        elif a.cmd in ("reformulate", "met", "withdraw"):
-            rid = w.revise(a.goal, a.cmd, a.because, getattr(a, "text", None), a.ref)
-        elif a.cmd == "oblige":
-            rid = w.oblige(a.text, a.answers, a.requires, a.serves)
-        elif a.cmd == "done":
-            rid = w.done(a.duty, a.established, a.ref, a.commit, a.replaces)
-        elif a.cmd == "accept":
-            rid = w.accept(a.duty, a.transition)
-        else:
-            rid = w.release(a.duty, a.because)
-        print(rid)
+    repo = Repo(root)
+    rep = repo.report()
+    _, profile, _ = repo.config()
+    if a.cmd == "due":
+        got = due(rep, profile, a.actor)
+        if a.json:
+            dump({"due": got})
+        for x in [] if a.json else got:
+            print(f"DUE {x['closure'][:12]} {x['schema']} {x['goal']}: {x['statement'][:100]}")
         return 0
-    except (Refused, CL.Refused, R.Invalid) as e:
-        code = getattr(e, "code", None)
-        print(f"REFUSED {code + ' ' if code else ''}{e}", file=sys.stderr)
-        return 2
+    if a.cmd == "check":
+        bad = check(rep)
+        for x in bad:
+            print(f"PROBLEM {x}")
+        print(f"roadmap: {sum(1 for x in rep['lineages'].values() if x['schema'] in SCHEMAS)} lineages, {len(bad)} problem(s)")
+        return 1 if bad else 0
+    if a.cmd == "view":
+        text = view(rep)
+        if a.out:
+            from pathlib import Path
+            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(a.out).write_text(text)
+        else:
+            sys.stdout.write(text)
+        return 0
+    key = load_key(a.key)
+    if a.cmd == "oblige":
+        g = next((rep["lineages"][L]["leaf"] for L, lin in rep["lineages"].items()
+                  if lin["schema"] == "goal@1" and rep["_recs"][L]["body"]["key"] == a.goal), None)
+        if g is None:
+            raise Failed("GOAL", f"no goal {a.goal}")
+        rec = R.record("entity", a.actor, 0, {"state": "open", "statement": a.statement, "answers": g, "serves": sorted(a.serves)},
+                       "obligation@1", refs=[g, *a.serves])
+    else:
+        L = a.obligation if a.obligation in rep["lineages"] else None
+        if L is None or rep["lineages"][L]["schema"] != "obligation@1" or not rep["lineages"][L]["leaf"]:
+            raise Failed("OBLIGATION", f"{a.obligation[:12]} is not an obligation lineage without a fork")
+        prev = rep["_recs"][rep["lineages"][L]["leaf"]]["body"]
+        body = {"state": "done", "statement": prev["statement"], "answers": prev.get("answers"), "serves": prev.get("serves", []),
+                "evidence": sorted(a.evidence), "refs": a.ref, "established": a.established, "residual": a.residual}
+        g = dict(rep["_recs"][rep["schemas"]["obligation@1"]]["body"]["states"]["done"], requires=sorted(a.requires))
+        rec = R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, "obligation@1",
+                       lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])
+                       + body["serves"], guard=g)
+    dump({"filed": repo.file(a.actor, key, [rec])})
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(run))

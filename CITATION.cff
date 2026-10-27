@@ -1,14 +1,12 @@
 cff-version: 1.2.0
-title: "Warrant: transitions of work, exact closures and what remains open"
+title: "Warrant: signed records of work, judged by each reader"
 abstract: >-
-  An agent protocol for recording transitions of work with their residual. A
-  transition says what was done, on what basis, what it established, which exact
-  conditions it closes, which questions it opens and what it leaves
-  unestablished. Assessment of one immutable view answers whether a present use
-  may rely on a closure, what is open for whom, and what the next session needs.
-  Computation conditions are credited only by the recipient's own replay with a
-  pinned Sigma-GLYPH kernel. Warrant 0.x (signed decision records with re-runnable
-  reasons) is preserved at the tag history/warrant-0.x-2026-10-18.
+  An agent protocol that keeps work as signed records in one envelope: versions of
+  things in native lineages, attestations and challenges, and schemas that are
+  records themselves. One pure function assesses a store under the reader's own
+  trust and profile and answers what may be relied on now, what waits and for
+  whom. Warrant 2 is preserved at the tag history/warrant-2-2026-10-27 and Warrant
+  0.x at the tag history/warrant-0.x-2026-10-18.
 message: "If you use or evaluate this work, please cite it."
 type: software
 license: MIT

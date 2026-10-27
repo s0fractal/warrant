@@ -82,22 +82,22 @@ def why(rep, i):
 
 
 def frontier(rep, profile, actor):
-    """What waits for `actor` in this report: `attest` the versions whose guard waits only for attests by roles the
-    actor holds (no open requirement, not its own, not yet attested or challenged by it); `pending` its own
-    versions whose guard waits; `challenged` its lineages a counted challenge holds."""
+    """What waits for `actor` in this report: `attest` the lineage leaves whose guard waits only for attests by roles
+    the actor holds (no open requirement, not its own, not yet attested or challenged by it); `pending` its own
+    leaves whose guard waits; `challenged` its lineages a counted challenge holds."""
     roles = {r for r, actors in profile["roles"].items() if actor in actors}
     nodes, _, into = index(rep)
     acted = {b for b, ins in into.items() for rel, a in ins if rel in ("attest", "challenge") and nodes[a]["actor"] == actor}
     attest, pending = [], []
     for root, lin in sorted(rep["lineages"].items()):
-        for v in lin["path"][lin["path"].index(lin["effective"]) + 1 if lin["effective"] else 0:]:
-            g = rep["versions"][v]
-            if g["guard"] != "PENDING":
-                continue
-            if nodes[v]["actor"] == actor:
-                pending.append(v)
-            elif v not in acted and g["short"] and not g["open"] and roles & set(g["roles"]):
-                attest.append({"version": v, "lineage": root, "schema": lin["schema"], "waiting": g["waiting"]})
+        v = lin["leaf"]           # the latest version: an earlier pending one was replaced by it
+        g = rep["versions"].get(v) or {"guard": None}
+        if g["guard"] != "PENDING":
+            continue
+        if nodes[v]["actor"] == actor:
+            pending.append(v)
+        elif v not in acted and g["short"] and not g["open"] and roles & set(g["roles"]):
+            attest.append({"version": v, "lineage": root, "schema": lin["schema"], "waiting": g["waiting"]})
     challenged = [root for root, lin in sorted(rep["lineages"].items())
                   if lin["reliance"] == "CHALLENGED" and lin["actor"] == actor]
     return {"actor": actor, "roles": sorted(roles), "attest": attest, "pending": pending, "challenged": challenged}

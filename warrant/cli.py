@@ -1,4 +1,7 @@
-"""warrant: init, key, bootstrap, put, attest, blob, assess, fmt (docs/V3.md). Output is JSON."""
+"""warrant: init, key, trust, bootstrap, put, attest, blob, assess, fmt (docs/V3.md). Output is JSON.
+
+A seed is read from --key FILE (in the current directory or the operator's home, never through a path that
+leaves both) or from WARRANT_KEY; every other file named is inside the current directory."""
 import argparse
 import json
 import os
@@ -20,8 +23,12 @@ def here(p):
 
 
 def home(p):
-    """A seed: inside the operator's home, never named by a path that leaves it."""
-    return confined(os.path.expanduser(p), os.path.expanduser("~"))
+    """A seed: inside the current directory or the operator's home, never named by a path that leaves both."""
+    p = os.path.expanduser(p)
+    try:
+        return confined(p, os.getcwd())
+    except Refused:
+        return confined(p, os.path.expanduser("~"))
 
 
 def signer(a):
@@ -44,9 +51,9 @@ def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="warrant")
     sub = p.add_subparsers(dest="cmd", required=True)
-    cmds = {n: sub.add_parser(n) for n in ("init", "key", "bootstrap", "put", "attest", "blob", "assess", "fmt")}
+    cmds = {n: sub.add_parser(n) for n in ("init", "key", "trust", "bootstrap", "put", "attest", "blob", "assess", "fmt")}
     for n, c in cmds.items():
-        if n != "key":
+        if n not in ("key", "trust"):
             c.add_argument("--store", default=".warrant")
     for n in ("bootstrap", "put", "attest"):
         c = cmds[n]
@@ -56,6 +63,8 @@ def main(argv=None):
         c.add_argument("--at", type=int)
         c.add_argument("--expect-head")
     cmds["key"].add_argument("--out", required=True)
+    for f in ("--trust", "--actor", "--key"):
+        cmds["trust"].add_argument(f, required=True)
     c = cmds["put"]
     c.add_argument("--kind", required=True, choices=R.KINDS)
     c.add_argument("--schema")
@@ -83,6 +92,16 @@ def main(argv=None):
             os.write(fd, k.seed_hex().encode())
             os.close(fd)
             out = {"public": k.public}
+        elif a.cmd == "trust":           # bind the seed's public key to an actor in a trust/3 file (created if absent)
+            key = K.Key.from_seed_hex(Path(home(a.key)).read_text())
+            path = Path(here(a.trust))
+            doc = json.loads(path.read_text()) if path.exists() else {"warrant": "trust/3", "keys": {}}
+            doc["keys"][a.actor] = sorted(set(doc["keys"].get(a.actor, [])) | {key.public})
+            why = E.trust_problem(doc)
+            if why:
+                raise Refused(why)
+            path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+            out = {"actor": a.actor, "public": key.public}
         elif a.cmd == "bootstrap":
             out = {"schemas": [put(a, "schema", s) for s in B.SCHEMAS]}
         elif a.cmd == "put":
