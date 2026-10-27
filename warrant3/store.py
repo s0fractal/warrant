@@ -18,6 +18,15 @@ class Refused(ValueError):
     pass
 
 
+def confined(path, base):
+    """The real path of `path`, refused unless it lies in `base` (by real path too): a path an
+    operator or a caller names never reaches a file outside the tree it is meant for."""
+    b, p = os.path.realpath(base), os.path.realpath(path)
+    if p != b and not p.startswith(b + os.sep):
+        raise Refused(f"{path}: outside {b}")
+    return p
+
+
 class Snapshot:
     """The bytes of one read: {id: [distinct lines]}, {hash: bytes}, and what was wrong."""
 
@@ -76,7 +85,7 @@ class Store:
 
     def put_blob(self, data):
         h = hashlib.sha256(data).hexdigest()
-        p = self.blobs / h
+        p = Path(confined(self.blobs / h, self.blobs))
         if not p.exists():
             tmp = p.with_name(f".{h}.{os.getpid()}")
             tmp.write_bytes(data)

@@ -11,14 +11,24 @@ from warrant import keys as K
 from . import bootstrap as B
 from . import engine as E
 from . import records as R
-from .store import Refused, Store
+from .store import Refused, Store, confined
+
+
+def here(p):
+    """A store, trust, profile or blob file: inside the current directory."""
+    return confined(p, os.getcwd())
+
+
+def home(p):
+    """A seed: inside the operator's home, never named by a path that leaves it."""
+    return confined(os.path.expanduser(p), os.path.expanduser("~"))
 
 
 def signer(a):
-    seed = Path(a.key).read_text() if a.key else os.environ.get("WARRANT_KEY")
+    seed = Path(home(a.key)).read_text() if a.key else os.environ.get("WARRANT_KEY")
     if not seed:
         raise Refused("a signing seed is needed: --key FILE or WARRANT_KEY")
-    key, trust = K.Key.from_seed_hex(seed), json.loads(Path(a.trust).read_text())
+    key, trust = K.Key.from_seed_hex(seed), json.loads(Path(here(a.trust)).read_text())
     if key.public not in trust["keys"].get(a.actor, []):
         raise Refused(f"the trust does not bind this key to {a.actor!r}")
     return key, trust
@@ -28,7 +38,7 @@ def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
     key, trust = signer(a)
     at = a.at if a.at is not None else int(time.time())
     r = R.record(kind, a.actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard)
-    return Store(a.store).append(r, key, trust, expect_head=a.expect_head)
+    return Store(here(a.store)).append(r, key, trust, expect_head=a.expect_head)
 
 
 def main(argv=None):
@@ -65,11 +75,11 @@ def main(argv=None):
     a = p.parse_args(argv)
     try:
         if a.cmd == "init":
-            Store(a.store).init()
+            Store(here(a.store)).init()
             out = {"store": str(a.store)}
         elif a.cmd == "key":
             k = K.Key.generate()
-            fd = os.open(a.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            fd = os.open(home(a.out), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             os.write(fd, k.seed_hex().encode())
             os.close(fd)
             out = {"public": k.public}
@@ -80,14 +90,14 @@ def main(argv=None):
         elif a.cmd == "attest":
             out = {"record": put(a, "attest", dict(a.body, target=a.target), refs=[a.target])}
         elif a.cmd == "blob":
-            out = {"blob": Store(a.store).put_blob(Path(a.file).read_bytes())}
+            out = {"blob": Store(here(a.store)).put_blob(Path(here(a.file)).read_bytes())}
         elif a.cmd == "fmt":
-            s = Store(a.store)
+            s = Store(here(a.store))
             s.write_lines([x + b"\n" for x in s.file.read_bytes().split(b"\n") if x])
             out = {"canonical": True}
         else:
-            rep = E.assess(Store(a.store).snapshot(), json.loads(Path(a.trust).read_text()),
-                           json.loads(Path(a.profile).read_text()), a.as_of)
+            rep = E.assess(Store(here(a.store)).snapshot(), json.loads(Path(here(a.trust)).read_text()),
+                           json.loads(Path(here(a.profile)).read_text()), a.as_of)
             out = rep if not a.lineage else {"lineage": rep["lineages"].get(a.lineage),
                                              "versions": {v: rep["versions"][v] for v in rep["lineages"].get(a.lineage, {}).get("versions", [])}}
     except (Refused, R.Invalid, OSError, ValueError) as e:

@@ -30,7 +30,7 @@ from warrant.bindings import admit_bindings, read_roles, trust_of  # noqa: E402
 from warrant.store import Snapshot as V2Snapshot                 # noqa: E402
 from warrant3 import bootstrap as B                              # noqa: E402
 from warrant3 import records as R                                # noqa: E402
-from warrant3.store import Store                                 # noqa: E402
+from warrant3.store import Refused as StoreRefused, Store, confined  # noqa: E402
 
 HASHED = ("tools/migrate_v2_to_v3.py", "warrant3", "warrant")
 CLAUDE_SEED = Path.home() / "Projects/.worktrees/claims-pilot/claude-claims.seed"
@@ -557,7 +557,7 @@ def migrate(root, claude_key, migrator_key):
 
 
 def write(out, lines, blobs, trust, profile, summary):
-    out = Path(out)
+    out = Path(confined(out, ROOT / "build"))                     # a build artifact, never the v2 store
     st = Store(out).init()
     st.write_lines(lines)
     for h, data in blobs.items():
@@ -606,7 +606,7 @@ def main(argv=None):
             print(json.dumps(res[4], indent=1, sort_keys=True))
         else:
             print(json.dumps(verify(a.root, a.out), indent=1, sort_keys=True))
-    except Refused as e:
+    except (Refused, StoreRefused) as e:
         print(f"REFUSED {e}", file=sys.stderr)
         return 2
     return 0
@@ -618,7 +618,7 @@ def verify(root, out):
     m = Migration(root)
     m.run()
     want = set(m.out)
-    snap = Store(out).snapshot()
+    snap = Store(confined(out, ROOT / "build")).snapshot()
     have = {i for i, envs in snap.lines.items() if all(e["sig"] is None for e in envs)}
     gens = [e[0]["record"] for e in snap.lines.values() if e[0]["record"]["schema"] == R.MIGRATION]
     need(len(gens) == 1, f"{len(gens)} migration records")
