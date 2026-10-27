@@ -151,7 +151,12 @@ MUTANTS = [
     ("T9", "tools/repo.py", "            raise Failed(\"IDENTITY\"", "            pass  # Failed(\"IDENTITY\"", TOOLS, ["R06"]),
     ("T11", "tools/claims.py", "    return out          # a schema awaiting backers",
      '    out += [("SCHEMA_PENDING", i) for i in rep["schemas_pending"]]\n    return out          # a schema awaiting backers', TOOLS, ["C10"]),
-    ("T10", "tools/claims.py", '    if key.public not in trust["keys"].get(me, []):', "    if False:", TOOLS, ["C08"]),
+    ("T10", "tools/claims.py", '    if key.public not in trust["keys"].get(CHECKER, []):', "    if False:", TOOLS, ["C08"]),
+    ("T12", "tools/repo.py", '    if body.get("code") != code:', "    if False:", TOOLS, ["C12", "R07"]),
+    ("T13", "tools/claims.py", "for i, b in rows if not held(b, ran, killed)]", "for i, b in rows if False]", TOOLS, ["C14"]),
+    ("T14", "tools/claims.py", "            if code_tree(root, x) == here:", "            if True:", TOOLS, ["C13"]),
+    ("T15", "tools/claims.py", '"commit": commit, "tree": tree, **me,', '"commit": commit, "tree": tree,', TOOLS, ["C11"]),
+    ("T16", "tools/review.py", '"window": [t0, int(time.time())], **me}', '"window": [t0, int(time.time())]}', TOOLS, ["R08"]),
     # the review waker's reading of the store (integrations/codex-plugin/waker/waker.py)
     ("P1", "integrations/codex-plugin/waker/waker.py", "    if set(got) != set(filed):", "    if False:", WAKER, ["W2"]),
     ("P2", "integrations/codex-plugin/waker/waker.py",
@@ -164,6 +169,8 @@ MUTANTS = [
     ("P5", "integrations/codex-plugin/waker/waker.py",
      '        if not (path.startswith(BLOBS) and HEX.match(path[len(BLOBS):]) and status == "A" and new_mode == REGULAR):',
      '        if not (path.startswith(BLOBS) and HEX.match(path[len(BLOBS):]) and status == "A"):', WAKER, ["W5"]),
+    ("P7", "integrations/codex-plugin/waker/waker.py", "not (isinstance(actor, str) and CHECKER.match(actor))",
+     "not isinstance(actor, str)", WAKER, ["W8"]),
     ("P6", "integrations/codex-plugin/waker/waker.py",
      '    if bad or len(recs) != len(lines) or any(b != "SIGNED" for b in basis.values()):', "    if False:", WAKER, ["W3"]),
 ]

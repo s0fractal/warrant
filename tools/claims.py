@@ -3,14 +3,16 @@
 whose versions carry the sentence verbatim, the section, the witnesses (test cases `file_test:CASE`) and
 the mutants (ids of tests/mutants.py) that back it. A `backed` version waits for a claim/verifier's
 acceptance: the claims checker (`replay`) accepts it after it ran the witnesses and the mutants at one
-commit. The Warrant 2 claims (source SPEC.md) are history: retired, never deleted.
+commit, naming that commit, its tree, the checker's code and its environment. The Warrant 2 claims (source
+SPEC.md) are history: retired, never deleted.
 
     python3 tools/claims.py check                      # the store, and every live claim against the spec and tests
     python3 tools/claims.py view [--out FILE]          # CLAIMS.md, a build artifact
     python3 tools/claims.py file --from FILE.json --actor A --key SEED     # file new claims or new versions
     python3 tools/claims.py retire-v2 --actor A --key SEED                 # retire every live Warrant 2 claim
-    python3 tools/claims.py identity                   # the claims checker's actor
+    python3 tools/claims.py identity                   # the claims checker's actor, code and environment
     python3 tools/claims.py replay --key -             # the checker: run, then accept what held (clean tree only)
+    python3 tools/claims.py verify --base M            # CI: re-execute the checker's acceptances new since M
 
 `check` refuses (exit 1): a store that is not canonical, rejects a line or has a problem (a schema short of its
 quorum is a proposal, not one); a live claim not of docs/V3.md (V2_CLAIM_LIVE), whose sentence is not in docs/V3.md
@@ -20,17 +22,19 @@ tests/mutants.py (UNKNOWN_MUTANT) or one whose cases are not among its witnesses
 never parses the spec to find claims: the records say where they are, and the spec must hold their words."""
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-from repo import ROOT, Failed, Repo, dump, identity, inside, load_key, main, tree_id
+from repo import ROOT, Failed, Repo, checker_problem, code_tree, dump, git, identity, inside, load_key, main, tree_id
 
 from warrant import records as R
 
 SOURCE = "docs/V3.md"
 V2_SOURCE = "SPEC.md"
+CHECKER = "claims-checker"            # the claims checker's actor: one key, bound once; its code is in each attest
 CHECKER_FILES = ("tools/claims.py", "tools/repo.py", "warrant")
 CASE_LINE = re.compile(r"""check\(\s*f?["']([A-Za-z0-9-]+)[ "']""")
 
@@ -109,8 +113,29 @@ def test_path(name, root=ROOT):
     return root / "tests" / f"{name}.py" if "/" not in name else root / "integrations" / f"{name}.py"
 
 
-def view(rep):
+def checked(rep):
+    """{version: [commits]} of the claims checker's signed acceptances."""
+    out = {}
+    for i, r in sorted(rep["_recs"].items()):
+        if r["kind"] == "attest" and r["actor"] == CHECKER and rep["_basis"].get(i) == "SIGNED" and r["body"].get("verdict") == "accept":
+            out.setdefault(r["body"]["target"], []).append(r["body"].get("commit"))
+    return out
+
+
+def at_tree(root, commits, here):
+    """Whether one of `commits` has the code `here` (a tree outside .warrant/); a commit not in this clone has not."""
+    for x in commits:
+        try:
+            if code_tree(root, x) == here:
+                return True
+        except (subprocess.CalledProcessError, TypeError):
+            continue
+    return False
+
+
+def view(rep, root=None):
     recs = rep["_recs"]
+    done, here = checked(rep), code_tree(root, "HEAD") if root is not None else None
     lines = ["# Claims of docs/V3.md", "", f"Generated from `.warrant/records.jsonl` (snapshot `{rep['snapshot'][:12]}`, "
              f"assessment `{rep['assessment'][:12]}`); a build artifact, never committed.", ""]
     rows = sorted(((b["section"], b["id"], L, b) for L, b in live(rep).items() if b["source"] == SOURCE),
@@ -119,6 +144,9 @@ def view(rep):
         lin = rep["lineages"][L]
         g = rep["versions"].get(lin["leaf"] or L, {})
         state = f"{lin['state'] or 'none effective'}, leaf {b['state']} {g.get('guard')}"
+        if root is not None and done.get(lin["leaf"]):
+            xs = done[lin["leaf"]]
+            state += ", checked at this tree" if at_tree(root, xs, here) else f", checked at {', '.join(str(x)[:12] for x in xs)}, not this tree"
         lines += [f"- **{cid}** (§{section}; {state}; {lin['reliance']}) {b['text']}",
                   f"  witnesses: {', '.join(b['witnesses']) or 'none'}; mutants: {', '.join(b['mutants']) or 'none'}"
                   + (f"; why unbacked: {b['reason']}" if b.get("reason") else "")]
@@ -164,40 +192,89 @@ def retire_v2(repo, actor, key):
     return repo.file(actor, key, recs)
 
 
+def run_checks(root, witnesses, mutants):
+    """({test file: cases printed `ok`}, {mutant: matrix row}) of running `witnesses`' test files and `mutants` in
+    the checkout `root`."""
+    ran = {}
+    for f in sorted({w.split(":")[0] for w in witnesses}):
+        r = subprocess.run([sys.executable, "-B", str(test_path(f, root))], cwd=root, capture_output=True, text=True, timeout=1800)
+        ran[f] = {ln.split()[1] for ln in r.stdout.splitlines() if ln.startswith("ok   ")}
+    killed = {}
+    if mutants:
+        out = Path(root) / "build" / "claims-replay-matrix.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.unlink(missing_ok=True)
+        subprocess.run([sys.executable, str(Path(root) / "tests" / "mutants.py"), *sorted(mutants), "--matrix", str(out)], cwd=root,
+                       capture_output=True, text=True, timeout=7200)
+        killed = {r["id"]: r for r in json.loads(out.read_text())["rows"]} if out.is_file() else {}
+    return ran, killed
+
+
+def held(b, ran, killed):
+    return all(w.split(":")[1] in ran.get(w.split(":")[0], set()) for w in b["witnesses"]) and all(
+        killed.get(m, {}).get("outcome") == "KILLED" for m in b["mutants"])
+
+
 def replay(repo, key, root=ROOT):
-    """The claims checker at a clean commit: each live `backed` claim whose leaf waits is accepted when every
-    witness case passes and every mutant it cites is killed on one of its cases, in this tree."""
+    """The claims checker at a clean commit: each live `backed` claim whose leaf waits, or whose acceptances by the
+    checker are all at another tree, is accepted when every witness case passes and every mutant it cites is
+    killed on one of its cases, in this tree. Each acceptance names the commit, its tree, the checker's code and
+    its environment."""
     me = identity(CHECKER_FILES, root)
     trust, _, _ = repo.config()
-    if key.public not in trust["keys"].get(me, []):
-        raise Failed("SIGNER", f"the seed's key is not one .warrant/v3.json binds to {me}")
+    if key.public not in trust["keys"].get(CHECKER, []):
+        raise Failed("SIGNER", f"the seed's key is not one .warrant/v3.json binds to {CHECKER}")
     commit, tree = tree_id(root)
     rep, problems = check(repo)
     if problems:
         raise Failed("CHECK", f"{len(problems)} problem(s): the checker accepts nothing over a failing check")
-    todo = {L: b for L, b in live(rep).items() if b["state"] == "backed" and rep["versions"][rep["lineages"][L]["leaf"]]["guard"] == "PENDING"}
-    files = sorted({w.split(":")[0] for b in todo.values() for w in b["witnesses"]})
-    ran = {}
-    for f in files:
-        r = subprocess.run([sys.executable, "-B", str(test_path(f, root))], cwd=root, capture_output=True, text=True, timeout=1800)
-        ran[f] = {ln.split()[1] for ln in r.stdout.splitlines() if ln.startswith("ok   ")}
-    mids = sorted({m for b in todo.values() for m in b["mutants"]})
-    killed = {}
-    if mids:
-        out = Path(root) / "build" / "claims-replay-matrix.json"
-        subprocess.run([sys.executable, str(root / "tests" / "mutants.py"), *mids, "--matrix", str(out)], cwd=root,
-                       capture_output=True, text=True, timeout=7200)
-        killed = {r["id"]: r for r in json.loads(out.read_text())["rows"]} if out.is_file() else {}
+    done, here = checked(rep), code_tree(root, commit)
+    todo = {L: b for L, b in live(rep).items() if b["state"] == "backed" and (
+        rep["versions"][rep["lineages"][L]["leaf"]]["guard"] == "PENDING" or not at_tree(root, done.get(rep["lineages"][L]["leaf"], []), here))}
+    ran, killed = run_checks(root, [w for b in todo.values() for w in b["witnesses"]], {m for b in todo.values() for m in b["mutants"]})
     recs = []
     for L, b in sorted(todo.items()):
-        held = all(w.split(":")[1] in ran.get(w.split(":")[0], set()) for w in b["witnesses"]) and all(
-            killed.get(m, {}).get("outcome") == "KILLED" for m in b["mutants"])
-        if held:
+        ok = held(b, ran, killed)
+        if ok:
             leaf = rep["lineages"][L]["leaf"]
-            recs.append(R.record("attest", me, 0, {"target": leaf, "verdict": "accept", "commit": commit, "tree": tree,
-                                                   "witnesses": b["witnesses"], "mutants": b["mutants"]}, refs=[leaf]))
-        print(f"{'ACCEPT' if held else 'HELD  '} {b['id']} {L[:12]}")
-    return repo.file(me, key, recs)
+            recs.append(R.record("attest", CHECKER, 0, {"target": leaf, "verdict": "accept", "commit": commit, "tree": tree, **me,
+                                                        "witnesses": b["witnesses"], "mutants": b["mutants"]}, refs=[leaf]))
+        print(f"{'ACCEPT' if ok else 'HELD  '} {b['id']} {L[:12]}")
+    return repo.file(CHECKER, key, recs)
+
+
+def verify(repo, base):
+    """Re-execute every acceptance the claims checker signed since commit `base`, in a temporary worktree of the
+    commit it names: its `code` must be the checker's code at that commit (CODE_DIFFERS), its witnesses and mutants
+    those of the version it accepts, and every witness must pass and every mutant be killed there again
+    (CLAIM_REPLAY_DIFFERS). Acceptances by a person (codex) are trust decisions, not re-executed."""
+    import gate as GT                   # verify only: the checker's own run (replay) does not load the gate
+    old, _ = GT.store_at(repo.root, base)
+    rep = repo.report()
+    recs, bad, by_commit = rep["_recs"], [], {}
+    for i, r in sorted(recs.items()):
+        if r["kind"] != "attest" or r["actor"] != CHECKER or i in old.lines or rep["_basis"].get(i) != "SIGNED":
+            continue
+        b, v = r["body"], recs.get(r["body"].get("target"))
+        why = checker_problem(b, CHECKER_FILES, repo.root)
+        if why is None and not (v and v["kind"] == "entity" and v["schema"] == "claim@1"
+                                and (b.get("witnesses"), b.get("mutants")) == (v["body"]["witnesses"], v["body"]["mutants"])):
+            why = "lists other witnesses or mutants than the claim version it accepts"
+        if why:
+            bad.append(f"{i[:12]}: {why}")
+        else:
+            by_commit.setdefault(b["commit"], []).append((i, v["body"]))
+    for x, rows in sorted(by_commit.items()):
+        wt = Path(repo.root) / "build" / f"verify-claims-{os.getpid()}-{x[:12]}"      # the checkout's own scratch, ignored
+        git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), x)
+        try:
+            ran, killed = run_checks(wt, [w for _, b in rows for w in b["witnesses"]], {m for _, b in rows for m in b["mutants"]})
+        finally:
+            git(repo.root, "worktree", "remove", "--force", str(wt))
+        bad += [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} does not hold at {x[:12]}" for i, b in rows if not held(b, ran, killed)]
+    if bad:
+        raise Failed("CLAIM_REPLAY_DIFFERS", "; ".join(bad))
+    return sum(len(rows) for rows in by_commit.values())
 
 
 def run(argv=None):
@@ -215,10 +292,15 @@ def run(argv=None):
     sub.add_parser("identity")
     r = sub.add_parser("replay")
     r.add_argument("--key", required=True)
+    vf = sub.add_parser("verify")
+    vf.add_argument("--base", required=True)
     a = ap.parse_args(argv)
     repo = Repo()
     if a.cmd == "identity":
-        print(identity(CHECKER_FILES))
+        dump({"actor": CHECKER, **identity(CHECKER_FILES)})
+        return 0
+    if a.cmd == "verify":
+        print(f"claims checker acceptances new since {a.base[:12]}: {verify(repo, a.base)} re-executed, all held")
         return 0
     if a.cmd == "check":
         rep, out = check(repo)
@@ -228,7 +310,7 @@ def run(argv=None):
         print(f"claims: {n} live of {SOURCE}; {len(out)} problem(s)")
         return 1 if out else 0
     if a.cmd == "view":
-        text = view(repo.report())
+        text = view(repo.report(), repo.root)
         if a.out:
             out = inside(a.out)
             out.parent.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Codex plugin and its waker, without Codex and without GitHub (C1-C13, W1-W6).
+"""The Codex plugin and its waker, without Codex and without GitHub (C1-C13, W1-W8).
 
     python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
@@ -301,6 +301,30 @@ def store_rules():
           "the waker finds a verdict the base holds already on the version, and only on it")
 
 
+def seeds():
+    """The replayer's seed is REPLAYERS/<actor>.seed for the actor the base's `review.py identity` names (W8)."""
+    base = Path(tempfile.mkdtemp(prefix="codex-waker-seed-"))
+    keys = base / "keys"                 # REPLAYERS is keys/replayers; keys/evil.seed lies outside it
+    (keys / "replayers").mkdir(mode=0o700, parents=True)
+    for p in (keys / "replayers" / "review-replayer.seed", keys / "evil.seed"):
+        p.write_text("01" * 32 + "\n")
+        p.chmod(0o600)
+    w = WAKER.Waker(home=base / "home", trees=base / "trees", replayers=keys / "replayers", replay_python=sys.executable,
+                    codex="/bin/codex", run=Codex(), clock=lambda: 0.0)
+
+    def base_tree(actor):
+        code = Path(tempfile.mkdtemp(dir=base))
+        (code / "tools").mkdir()
+        (code / ".warrant").mkdir()
+        (code / "tools" / "review.py").write_text(f"import json\nprint(json.dumps({{'actor': {actor!r}, 'code': '0' * 64}}))\n")
+        (code / ".warrant" / "v3.json").write_text(json.dumps({"profile": {"roles": {"replayer": [actor]}}}))
+        return code
+    good, evil = w.seed(base_tree("review-replayer")), w.seed(base_tree("../evil"))
+    check("W8", good == ("review-replayer", ("01" * 32 + "\n").encode()) and evil[1] is None,
+          "the replay seed is REPLAYERS/<actor>.seed for the replayer the base names; an actor that is not a plain name reads none",
+          (good, evil))
+
+
 if __name__ == "__main__":
     manifests()
     launcher()
@@ -309,6 +333,7 @@ if __name__ == "__main__":
     wakes()
     mcp_call()
     store_rules()
+    seeds()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))
     sys.exit(1 if failed else 0)

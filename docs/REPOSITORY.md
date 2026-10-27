@@ -17,7 +17,7 @@ machinery ships in the package (`tests/boundary_test.py`).
 | `.warrant/v3.json` | trust and profile (owner path) |
 | `.warrant/merge.json` | the merge gate's configuration and the owner paths (owner path) |
 | `.warrant/v3/schema-accepts.jsonl` | Codex's acceptances of the bootstrap schemas, as committed at #218 |
-| `tools/repo.py` | what the tools share: the store and configuration, filing as an actor, a checker's identity |
+| `tools/repo.py` | what the tools share: the store and configuration, filing as an actor, the code and environment a checker's attest names |
 | `tools/claims.py` | the spec's claims: check, view, file, retire, the claims checker |
 | `tools/roadmap.py` | goals and obligations: view, due, check, oblige, close |
 | `tools/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
@@ -50,6 +50,7 @@ python3 integrations/codex-plugin/test_plugin.py
 python3 tests/mutants.py --shard 1/4 --matrix part-1.json    # ... 4/4, then --merge
 python3 tools/claims.py check && python3 tools/roadmap.py check && python3 tools/pilot.py check
 python3 tools/review.py verify --base <base commit>          # replays new since the base, re-executed
+python3 tools/claims.py verify --base <base commit>          # claims checker acceptances new since the base, re-executed
 python3 tools/graph.py views --check                         # build/views/*.md, deterministic
 ```
 
@@ -67,8 +68,34 @@ To change a rule: change the sentence and the code, add or retarget the cases an
 the claim's new version (`tools/claims.py file --from FILE.json --actor claude --key SEED`, where FILE
 lists `{id, section, text, witnesses, mutants}`; an unchanged claim files nothing). A claim filed
 `backed` waits for the claims checker: `python3 tools/claims.py replay --key -` on a clean checkout
-runs every waiting claim's witnesses and mutants and accepts those that held, as `checker
-sha256:<identity>` (`tools/claims.py identity`), whose key `.warrant/v3.json` must bind.
+runs every waiting claim's witnesses and mutants and accepts those that held, as `claims-checker`,
+whose key `.warrant/v3.json` binds. Each acceptance names the commit and its tree, the checker's code
+(`code`, the digest of its whole import closure) and its environment (`env`: Python, cryptography);
+`tools/claims.py identity` prints them for this checkout. CI's `claims.py verify --base M`
+re-executes every acceptance new since M at its commit and refuses one whose code is not that
+commit's. An acceptance holds for its commit: `claims.py view` says for each accepted claim whether
+the checker accepted it at the current tree (outside `.warrant/`) or only at an earlier one, and
+`replay` accepts again a claim whose acceptances are all at other trees.
+
+## Checker keys
+
+The two checkers, `claims-checker` (role `claim/verifier`) and `review-replayer` (role `replayer`),
+each have one key, bound once in `.warrant/v3.json`; a change to their code changes the `code` their
+attests name, never the actor. The owner creates both seeds outside the repository (each file 0600,
+its directory 0700, an existing seed refused) and binds the two public keys this prints:
+
+```bash
+cd ~/Projects/warrant && python3 -c 'import os, sys; sys.path.insert(0, "."); from pathlib import Path; from warrant.keys import Key
+for actor, d in (("claims-checker", ".warrant-claims-checker"), ("review-replayer", ".warrant-review-replayer")):
+    p = Path.home() / d / f"{actor}.seed"; p.parent.mkdir(mode=0o700, exist_ok=True); os.chmod(p.parent, 0o700)
+    k = Key.generate(); fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600); os.write(fd, (k.seed_hex() + "\n").encode()); os.close(fd)
+    print(actor, k.public)'
+```
+
+The review waker reads `~/.warrant-review-replayer/review-replayer.seed`; the claims checker's seed
+is passed on standard input (`claims.py replay --key - < ~/.warrant-claims-checker/claims-checker.seed`).
+The Warrant 2 checkers (`checker sha256:eed989…` and `checker sha256:c0a8c6…`) keep their roles for
+the migrated records they signed and have no key: nothing new can be signed as them.
 
 The Warrant 2 claims (source SPEC.md) are retired lineages: history, never deleted.
 

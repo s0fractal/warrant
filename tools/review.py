@@ -14,14 +14,15 @@ A merge is a Git act, observed by an attest {verdict: merged, merge, tip} on the
     python3 tools/review.py open --pr N --title T [--serves ID ...] --actor A --key SEED
     python3 tools/review.py head --pr N [--commit SHA] [--answers ID ...] --actor A --key SEED
     python3 tools/review.py merged --pr N --merge SHA --actor A --key SEED
-    python3 tools/review.py identity                                      # the replay checker's actor
+    python3 tools/review.py identity                                      # the replay checker's actor, code, env
     python3 tools/review.py [--root DIR] replay --key -                   # the checker: run, attest, print ids
     python3 tools/review.py verify --base M                               # CI: re-execute replays new since M
     python3 tools/review.py view [--out FILE]
 
-The checker's identity is the digest of its whole import closure (this file, tools/repo.py, tools/gate.py and
-the warrant package; tools/repo.py identity): whoever holds its seed can sign as it, so CI re-executes every
-replay new since the base at the commit it names (`verify`), and refuses a different result."""
+The checker is the actor `review-replayer`, one key bound once. Each replay names the code that ran (`code`, the
+digest of the checker's whole import closure: this file, tools/repo.py, tools/gate.py and the warrant package)
+and its environment (`env`). Whoever holds its seed can sign as it, so CI re-executes every replay new since the
+base at the commit it names (`verify`), and refuses a different result or a `code` that is not that commit's."""
 import argparse
 import os
 import re
@@ -30,12 +31,13 @@ import sys
 import time
 from pathlib import Path
 
-from repo import Failed, Repo, dump, env_root, identity, inside, load_key, main
+from repo import Failed, Repo, checker_problem, code_tree, dump, env_root, identity, inside, load_key, main
 
 import gate as GT
 from warrant import records as R
 from warrant import shapes as S
 
+REPLAYER = "review-replayer"          # the replay checker's actor: one key, bound once; its code is in each attest
 REPLAYER_FILES = ("tools/review.py", "tools/repo.py", "tools/gate.py", "warrant")
 TEST_FILE = re.compile(r"[a-z0-9_]{1,80}_test\Z")
 CASE = re.compile(r"[A-Za-z0-9_.-]{1,40}\Z")
@@ -114,42 +116,38 @@ def to_replay(rep, replayers):
 
 def replay(repo, key):
     """Run every finding's test not yet replayed at the head version whose commit's code this checkout holds (its
-    tree equals that commit's tree outside .warrant/), and attest each result as the checker."""
-    me = identity(REPLAYER_FILES, repo.root)
+    tree equals that commit's tree outside .warrant/), and attest each result as the checker, naming the code that
+    ran (this tool's own, wherever --root points) and its environment."""
+    me = identity(REPLAYER_FILES)
     trust, profile, _ = repo.config()
-    if key.public not in trust["keys"].get(me, []):
-        raise Failed("SIGNER", f"the seed's key is not one .warrant/v3.json binds to {me}")
+    if key.public not in trust["keys"].get(REPLAYER, []):
+        raise Failed("SIGNER", f"the seed's key is not one .warrant/v3.json binds to {REPLAYER}")
     rep = repo.report()
     head = git(repo.root, "rev-parse", "HEAD")
-    code = _code_tree(repo.root, head)
+    code = code_tree(repo.root, head)
     filed = []
-    for c, h, (file, case, patch) in to_replay(rep, set(profile["roles"].get("replayer", [])) | {me}):
+    for c, h, (file, case, patch) in to_replay(rep, set(profile["roles"].get("replayer", [])) | {REPLAYER}):
         x = rep["_recs"][h]["body"].get("commit")
         try:
-            if not S.hex_of(x, 40) or _code_tree(repo.root, x) != code:
+            if not S.hex_of(x, 40) or code_tree(repo.root, x) != code:
                 continue                   # this checkout does not hold that head's code
         except subprocess.CalledProcessError:
             continue
         t0 = int(time.time())
         verdict = run_test(repo.root, file, case, patch)
         body = {"target": c, "verdict": verdict, "on": h, "commit": x, "tree": git(repo.root, "rev-parse", f"{x}^{{tree}}"),
-                "test": f"{file}:{case}", "window": [t0, int(time.time())]}
-        [i] = repo.file(me, key, [R.record("attest", me, 0, body, refs=[c, h])])
+                "test": f"{file}:{case}", "window": [t0, int(time.time())], **me}
+        [i] = repo.file(REPLAYER, key, [R.record("attest", REPLAYER, 0, body, refs=[c, h])])
         filed.append(i)
         print(f"{i} {verdict} {c[:12]} on {h[:12]}", flush=True)
     return filed
 
 
-def _code_tree(root, commit):
-    """A digest of `commit`'s tree outside .warrant/: the code a test runs against."""
-    rows = git(root, "ls-tree", "-r", commit).splitlines()
-    return "\n".join(r for r in rows if not r.split("\t", 1)[1].startswith(".warrant/"))
-
-
 def verify(repo, base):
     """Re-execute every signed replay attest that is new since commit `base`, at the commit it names, in a temporary
-    worktree; refused (REPLAY_DIFFERS) when a result differs. A migrated replay rests on the migration and its
-    replay (docs/V3.md §9), not on a re-execution here."""
+    worktree; refused (REPLAY_DIFFERS) when a result differs or its `code` is not the checker's code at that commit
+    (CODE_DIFFERS). A migrated replay rests on the migration and its replay (docs/V3.md §9), not on a re-execution
+    here."""
     _, profile, _ = repo.config()
     replayers = set(profile["roles"].get("replayer", []))
     old, _ = GT.store_at(repo.root, base)
@@ -166,8 +164,9 @@ def verify(repo, base):
             continue
         n += 1
         wt = Path(repo.root) / "build" / f"verify-{os.getpid()}-{i[:12]}"      # the checkout's own scratch, ignored
-        if not S.hex_of(r["body"].get("commit"), 40):
-            bad.append(f"{i[:12]}: names no commit")
+        why = checker_problem(r["body"], REPLAYER_FILES, repo.root)
+        if why:
+            bad.append(f"{i[:12]}: {why}")
             continue
         git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), r["body"]["commit"])
         try:
@@ -252,7 +251,7 @@ def run(argv=None):
     if a.cmd == "gate":
         return GT.cmd_gate(root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json)
     if a.cmd == "identity":
-        print(identity(REPLAYER_FILES))
+        dump({"actor": REPLAYER, **identity(REPLAYER_FILES)})
         return 0
     repo = Repo(root)
     if a.cmd == "replay":

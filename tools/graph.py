@@ -41,7 +41,7 @@ def code_id(root):
 
 def render(repo):
     rep = repo.report()
-    return {"CLAIMS.md": CL.view(rep), "ROADMAP.md": RM.view(rep), "REVIEWS.md": RV.view(rep)}
+    return {"CLAIMS.md": CL.view(rep, repo.root), "ROADMAP.md": RM.view(rep), "REVIEWS.md": RV.view(rep)}
 
 
 def impact(repo, rng):

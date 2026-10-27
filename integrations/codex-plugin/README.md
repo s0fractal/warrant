@@ -38,8 +38,8 @@ from different bases; they carry records only now, and the hold remains a limit 
 that base.
 
 Before Codex is woken for a head, the waker runs the review replay checker: the base tree's
-`tools/review.py replay --key -` (an actor named by the digest of its whole import closure, what
-`tools/review.py identity` prints, which signs only from code with that identity) in a detached worktree of the head, under `sandbox-exec`
+`tools/review.py replay --key -` (the actor `review-replayer`; each replay names the digest of the
+checker's whole import closure that ran and its environment) in a detached worktree of the head, under `sandbox-exec`
 (no network, writes only in that worktree, its git directory and a scratch directory, no read of the
 seeds or the usual credential directories), with the checker's seed on standard input. It replays
 every mechanical finding of the head's store at each of its heads that no adopted replayer observed
@@ -52,20 +52,12 @@ backoff, at most three runs, and Codex is not woken at that head meanwhile; once
 Codex is woken and told so in the prompt. A pull request that is no longer due (a verdict moved its
 tip) keeps its incomplete replay retried. CI's `tools/review.py verify` re-executes every replay new since the base.
 
-The waker reads one key, the checker's seed, from `~/.warrant-review-replayer/<H>.seed` for the
-checker `checker sha256:<H>` that master's `tools/review.py identity` prints, which master's
-`.warrant/v3.json` must name a `replayer` (a regular file of this user, mode 0600; outside `~/.warrant`,
-which Codex's sandbox may write). Without it nothing is
-replayed. No agent is given that seed or runs `replay` with it: the observations are the checker's,
-filed by the waker. To place it:
-
-```bash
-mkdir -m 700 -p ~/.warrant-review-replayer
-```
-
-```bash
-install -m 600 SEED ~/.warrant-review-replayer/HASH.seed
-```
+The waker reads one key, the checker's seed, from `~/.warrant-review-replayer/<actor>.seed` for the
+actor master's `tools/review.py identity` names (`review-replayer`), which master's `.warrant/v3.json`
+must name a `replayer` (a regular file of this user, mode 0600; outside `~/.warrant`, which Codex's
+sandbox may write). Without it nothing is replayed. No agent is given that seed or runs `replay` with
+it: the observations are the checker's, filed by the waker. The owner creates it once
+(docs/REPOSITORY.md, Checker keys).
 
 Its state lives in `~/.warrant/codex-waker`: `warrant.git` (the mirror), `code/<commit>` (the base
 trees it ran), `wakes/<n>-<head>.json` (one memo per head with every attempt's exit status; delete it

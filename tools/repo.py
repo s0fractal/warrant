@@ -1,12 +1,14 @@
 """What the repository's tools share: the repository's store and receiver configuration (.warrant/v3.json),
-filing records as a configured actor, and the identity of a checker (an actor named by the digest of its
-whole deciding code, docs/V3.md §6).
+filing records as a configured actor, and what a checker's attest says about the code that ran (docs/V3.md §6):
+`code`, the digest of its whole import closure, and `env`, the interpreter's and signature library's versions.
 
 The domain rules are the schema records'; nothing here decides a verdict. A tool reads the store, assesses
 it with the package's engine and shows or files records."""
 import hashlib
 import json
 import os
+import platform
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -21,7 +23,6 @@ from warrant import keys as K            # noqa: E402
 from warrant import records as R         # noqa: E402
 from warrant.store import Refused, Store  # noqa: E402
 
-CHECKER = "checker sha256:"
 OUTSIDE = ("build", ".venv")      # ignored by Git: an interpreter's environment there is not the repository's code
 
 
@@ -93,36 +94,85 @@ def load_key(arg):
         raise Failed("SEED", f"not a seed: {e}") from None
 
 
-def identity(files, root=ROOT):
-    """The digest of everything that decides a checker's output: `files` (paths relative to the repository; a
-    directory names its *.py), the interpreter's version and the signature library's. Refused when a module this
-    process loaded from the repository is not among them: the identity names the whole import closure."""
-    import cryptography
-    paths = []
+def _paths(files, root):
+    out = []
     for f in files:
         p = root / f
-        paths += sorted(p.glob("*.py")) if p.is_dir() else [p]
+        out += sorted(p.glob("*.py")) if p.is_dir() else [p] if p.is_file() else []
+    return out
+
+
+def _digest(contents):
+    """The code digest of {path relative to the repository: bytes}."""
+    return C.doc_id({"files": {p: hashlib.sha256(b).hexdigest() for p, b in sorted(contents.items())}})
+
+
+def identity(files, root=ROOT):
+    """{code, env} of a checker run from `root`: `code` the digest of `files` (paths relative to the repository; a
+    directory names its *.py), refused when a module this process loaded from the repository is not among them (the
+    digest names the whole import closure); `env` the versions the digest leaves out."""
+    import cryptography
+    paths = _paths(files, root)
     hashed = {p.resolve() for p in paths}
     for m in list(sys.modules.values()):
         loc = getattr(m, "__file__", None)
         rel = Path(loc).resolve().relative_to(root.resolve()) if loc and Path(loc).resolve().is_relative_to(root.resolve()) else None
         if rel is not None and rel.parts[0] not in OUTSIDE and Path(loc).resolve() not in hashed:
             raise Failed("IDENTITY", f"{Path(loc).resolve().relative_to(root.resolve())} is imported and not in the identity")
-    digest = C.doc_id({"files": {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
-                       "python": list(sys.version_info[:2]), "cryptography": cryptography.__version__})
-    return CHECKER + digest
+    return {"code": _digest({p.relative_to(root).as_posix(): p.read_bytes() for p in paths}),
+            "env": {"python": platform.python_version(), "cryptography": cryptography.__version__}}
+
+
+def git(root, *a, raw=False):
+    out = subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout
+    return out if raw else out.decode().strip()
+
+
+def code_at(files, commit, root=ROOT):
+    """The code digest of `files` in the tree of `commit`, read from Git objects: what `identity` gives a checkout
+    of that commit."""
+    contents = {}
+    for f in files:
+        for row in git(root, "ls-tree", commit, "--", f + "/" if (root / f).is_dir() else f).splitlines():
+            meta, path = row.split("\t", 1)
+            if meta.split()[1] == "blob" and (path == f or path.endswith(".py")):
+                contents[path] = git(root, "cat-file", "blob", meta.split()[2], raw=True)
+    return _digest(contents)
+
+
+def code_tree(root, commit):
+    """`commit`'s tree outside .warrant/ (as `git ls-tree -r` rows): the code a test runs against. Records added
+    after a result do not change it."""
+    rows = git(root, "ls-tree", "-r", commit).splitlines()
+    return "\n".join(r for r in rows if not r.split("\t", 1)[1].startswith(".warrant/"))
+
+
+def checker_problem(body, files, root=ROOT):
+    """Why a checker's attest body does not name the code it ran, or None: `commit` must be a commit of this
+    repository, `tree` its tree, `code` the digest of `files` there (CODE_DIFFERS) and `env` the versions."""
+    x = body.get("commit")
+    if not (isinstance(x, str) and len(x) == 40 and all(c in "0123456789abcdef" for c in x)):
+        return "names no commit"
+    try:
+        tree, code = git(root, "rev-parse", f"{x}^{{tree}}"), code_at(files, x, root)
+    except subprocess.CalledProcessError:
+        return f"names {x[:12]}, not a commit of this repository"
+    env = body.get("env")
+    if body.get("tree") != tree:
+        return f"names the tree {str(body.get('tree'))[:12]}, not {x[:12]}'s"
+    if body.get("code") != code:
+        return f"CODE_DIFFERS: names the code {str(body.get('code'))[:12]}, {x[:12]} holds {code[:12]}"
+    if not (isinstance(env, dict) and set(env) == {"python", "cryptography"} and all(isinstance(v, str) for v in env.values())):
+        return "names no env {python, cryptography}"
+    return None
 
 
 def tree_id(root=ROOT):
     """(commit, tree) of a clean checkout, refused when anything tracked or untracked differs from HEAD: a result
     named by a commit holds for that whole tree (the hermetic identity)."""
-    import subprocess
-
-    def git(*a):
-        return subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, check=True).stdout.strip()
-    if git("status", "--porcelain", "--untracked-files=all"):
+    if git(root, "status", "--porcelain", "--untracked-files=all"):
         raise Failed("DIRTY", "the checkout differs from HEAD: a checker runs on a commit's whole tree")
-    return git("rev-parse", "HEAD"), git("rev-parse", "HEAD^{tree}")
+    return git(root, "rev-parse", "HEAD"), git(root, "rev-parse", "HEAD^{tree}")
 
 
 def main(run, argv=None):

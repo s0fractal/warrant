@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """The repository's tools on fixture repositories: claims (tools/claims.py), the review loop's commands and
-replay checker (tools/review.py), the roadmap (tools/roadmap.py) and the checker identity (tools/repo.py).
+replay checker (tools/review.py), the roadmap (tools/roadmap.py) and what a checker's attest names (tools/repo.py).
 
     python3 tests/tools_test.py
 """
+import json
 import subprocess
 import sys
 
@@ -16,14 +17,24 @@ import roadmap as RM
 from warrant import records as R
 
 SPEC = "## 3. Lineage\n\nA record whose `lineage` is L **succeeds** L.\n\nFORK is a core verdict.\n"
-TEST = '''from world import check, finish
+TEST = '''def check(name, ok):
+    print(("ok   " if ok else "FAIL ") + name)
+
+
 check("Q1 a case", True)
 check("Q2 another", True)
-finish()
 '''
+# The fixture's harness: Z1 is killed, Z2 survives.
 HARNESS = '''import json, sys
-print(json.dumps({"Z1": ["warrant/engine.py", "tests/q_test.py", ["Q1"]], "Z2": ["warrant/engine.py", "tests/q_test.py", ["Q2"]]}))
+M = {"Z1": ["warrant/engine.py", "tests/q_test.py", ["Q1"]], "Z2": ["warrant/engine.py", "tests/q_test.py", ["Q2"]]}
+if "--matrix" not in sys.argv:
+    print(json.dumps(M))
+else:
+    ids = sys.argv[1:sys.argv.index("--matrix")]
+    rows = [{"id": i, "outcome": "KILLED" if i == "Z1" else "SURVIVED"} for i in ids]
+    open(sys.argv[sys.argv.index("--matrix") + 1], "w").write(json.dumps({"rows": rows}))
 '''
+CHECKER_KEY = KEYS["dave"]               # the fixture's key bound to the claims checker and the replayer
 
 
 def claims_repo():
@@ -40,6 +51,31 @@ def claim(r, actor="alice", **kw):
     body = dict({"state": "backed", "id": "V3-3-1", "source": CL.SOURCE, "section": "3",
                  "text": "A record whose `lineage` is L **succeeds** L.", "witnesses": ["q_test:Q1"], "mutants": ["Z1"]}, **kw)
     return r.put(actor, "entity", body, "claim@1", guard=CL.schema_guard(RP.Repo(r.root).report(), body["state"]))
+
+
+def checker_repo():
+    """A committed claims repository whose `.warrant/v3.json` binds a key to the claims checker, a claim/verifier."""
+    r = claims_repo()
+    (r.root / ".gitignore").write_text("/build/\n")
+    r.trust["keys"][CL.CHECKER] = [CHECKER_KEY.public]
+    r.profile["roles"]["claim/verifier"] = sorted(["carol", CL.CHECKER])
+    r.write_config()
+    git(r.root, "init", "-q", "-b", "master")
+    return r
+
+
+def put_as(r, actor, body, refs):
+    """An attest by `actor` signed with CHECKER_KEY (the fixture's KEYS name people only)."""
+    r.t += 1
+    return r.store.append(R.record("attest", actor, r.t, body, refs=refs), CHECKER_KEY, r.trust)
+
+
+def refused_code(fn, *a):
+    try:
+        fn(*a)
+        return None
+    except RP.Failed as e:
+        return f"{e.code} {e}"
 
 
 def codes(r):
@@ -101,6 +137,48 @@ def claims_cases():
     rep = RP.Repo(r.root).report()
     check("C09 filing claims is idempotent; a changed sentence is a new version of the same lineage",
           len(first) == 1 and again == [] and len(third) == 1 and len(rep["lineages"][first[0]]["versions"]) == 2)
+    checker_cases()
+
+
+def checker_cases():
+    r = checker_repo()
+    rp = RP.Repo(r.root)
+    L = claim(r)
+    base = r.commit("a claim")
+    first = CL.replay(rp, CHECKER_KEY, r.root)
+    x1 = r.commit("its acceptance")
+    rep = rp.report()
+    a = rep["_recs"][first[0]]["body"] if first else {}
+    again = CL.replay(rp, CHECKER_KEY, r.root)
+    check("C11 the claims checker's acceptance names the commit, its tree, the checker's code there and its environment",
+          len(first) == 1 and rep["versions"][L]["guard"] == "MET" and a["commit"] == base
+          and a["tree"] == git(r.root, "rev-parse", f"{base}^{{tree}}") and a.get("code") == RP.code_at(CL.CHECKER_FILES, base, r.root)
+          and set(a.get("env", {})) == {"python", "cryptography"} and again == [], (first, a, again))
+    ok = CL.verify(rp, base)
+    put_as(r, CL.CHECKER, dict(a, code="0" * 64), [L])
+    r.commit("an acceptance naming other code")
+    why = refused_code(CL.verify, rp, x1)
+    check("C12 CI re-executes the checker's acceptances new since the base and refuses one whose code is not the checker's "
+          "at its commit", ok == 1 and why is not None and "CODE_DIFFERS" in why, (ok, why))
+    view = CL.view(rp.report(), r.root)
+    (r.root / "tests" / "q_test.py").write_text(TEST + "# changed\n")
+    r.commit("the code changes")
+    stale = CL.view(rp.report(), r.root)
+    third = CL.replay(rp, CHECKER_KEY, r.root)
+    check("C13 an acceptance holds for its commit: the view says whether it is at this tree, and the checker accepts again "
+          "at a tree none of its acceptances is at", "checked at this tree" in view and "not this tree" in stale and len(third) == 1,
+          (view[-300:], stale[-300:], third))
+    r = checker_repo()
+    rp = RP.Repo(r.root)
+    L = claim(r, witnesses=["q_test:Q1", "q_test:Q2"], mutants=["Z1", "Z2"])
+    base = r.commit("a claim whose mutant survives")
+    held = CL.replay(rp, CHECKER_KEY, r.root)
+    put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": base, "tree": git(r.root, "rev-parse", f"{base}^{{tree}}"),
+                           **RP.identity(CL.CHECKER_FILES, r.root), "witnesses": ["q_test:Q1", "q_test:Q2"], "mutants": ["Z1", "Z2"]}, [L])
+    r.commit("a forged acceptance")
+    why = refused_code(CL.verify, rp, base)
+    check("C14 the checker accepts no claim whose mutant survives, and CI refuses an acceptance that does not hold again at its commit",
+          held == [] and why is not None and why.startswith("CLAIM_REPLAY_DIFFERS") and "does not hold" in why, (held, why))
 
 
 def review_repo():
@@ -161,15 +239,34 @@ def review_cases():
           RV.finding_test({"test": test}) and RV.finding_test({"test": dict(test, patch=wide)}) is None
           and RV.finding_test({"test": dict(test, patch=PATCH + PATCH.replace("bug_test", "two_test"))}) is None)
     base = r.commit("before the replays")
-    r.put("carol", "attest", {"target": f, "verdict": "does_not_reproduce", "on": v2, "commit": x2, "tree": hb["tree"],
-                              "test": "bug_test:F1", "window": [1, 2]}, refs=[f, v2])
+    ran = {"commit": x2, "tree": git(r.root, "rev-parse", f"{x2}^{{tree}}"), "code": RP.code_at(RV.REPLAYER_FILES, x2, r.root),
+           "env": {"python": "3.11.9", "cryptography": "46.0.0"}, "test": "bug_test:F1", "window": [1, 2]}
+    r.put("carol", "attest", {"target": f, "verdict": "reproduces", "on": v2, **ran}, refs=[f, v2])
+    true = r.commit("a true replay")
+    ok = refused_code(RV.verify, rp, base)
+    r.put("carol", "attest", {"target": f, "verdict": "does_not_reproduce", "on": v2, **ran}, refs=[f, v2])
     r.commit("a false replay")
-    try:
-        RV.verify(rp, base)
-        caught = False
-    except RP.Failed as e:
-        caught = e.code == "REPLAY_DIFFERS"
-    check("R05 CI re-executes every replay new since the base at its commit and refuses a different result", caught)
+    why = refused_code(RV.verify, rp, true)
+    check("R05 CI re-executes every replay new since the base at its commit and refuses a different result",
+          ok is None and why is not None and why.startswith("REPLAY_DIFFERS") and "re-executed reproduces" in why, (ok, why))
+    r.put("carol", "attest", {"target": f, "verdict": "reproduces", "on": v2, **dict(ran, code="0" * 64)}, refs=[f, v2])
+    late = r.commit("a replay naming other code")
+    why = refused_code(RV.verify, rp, late + "^")
+    check("R07 CI refuses a replay whose code is not the replayer's code at the commit it names", why is not None and "CODE_DIFFERS" in why, why)
+    r.trust["keys"][RV.REPLAYER] = [CHECKER_KEY.public]
+    r.profile["roles"]["replayer"] = sorted(["carol", RV.REPLAYER])
+    r.write_config()
+    f2 = r.put("bob", "challenge", {"target": v2, "statement": "P1 y", "severity": "P1", "what": "w", "where": [],
+                                    "commit": x2, "tree": ran["tree"], "test": test}, "finding@1", refs=[v2])
+    r.commit("a second finding")
+    out = subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "review.py"), "--root", str(r.root), "replay", "--key", "-"],
+                         input=CHECKER_KEY.seed_hex() + "\n", capture_output=True, text=True, cwd=ROOT, timeout=120)
+    got = [x for x in rp.report()["_recs"].values() if x["actor"] == RV.REPLAYER]
+    me = json.loads(subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "review.py"), "identity"], capture_output=True,
+                                   text=True, check=True).stdout)
+    check("R08 the replayer signs each replay as `review-replayer`, naming the code that ran (its own tool's) and its environment",
+          out.returncode == 0 and len(got) == 1 and got[0]["body"]["target"] == f2 and got[0]["body"]["on"] == v2
+          and got[0]["body"].get("code") == me["code"] and got[0]["body"].get("env") == me["env"], (out.stderr[-300:], got))
     try:
         RP.identity(["warrant"])
         refused = False

@@ -11,8 +11,9 @@ name: ci
 #             the shapes and primitives, the pilot, the public surface and the executable
 #             QUICKSTART.md, the Codex plugin and its waker, the Claude Code plugin bridge;
 #   mutants   tests/mutants.py in four parts (--shard K/4), each checking its targets' baseline first;
-#   replay    tools/review.py verify: the review replays new since the base, re-executed at their
-#             commits (needs the history);
+#   replay    tools/review.py verify and tools/claims.py verify: the review replays and the claims
+#             checker's acceptances new since the base, re-executed at their commits, each refused when
+#             its `code` is not the checker's code there (needs the history);
 #   test      the parts merged (refused unless every mutant ran exactly once and was killed), then
 #             the claims, the roadmap and the pilot contract against this tree, and the views of the
 #             records rendered three times and compared (build artifacts, uploaded as `views`).
@@ -94,7 +95,7 @@ jobs:
   replay:
     needs: wheels
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,13 +108,14 @@ jobs:
           digest: ${{ needs.wheels.outputs.digest }}
 
       # A finding's test is code from the pull request's branch, run here as its own tests are.
-      - name: Review replays new since the base, re-executed at their commits
+      - name: Review replays and claims checker acceptances new since the base, re-executed at their commits
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           BASE_SHA=${BASE_SHA:-$(git rev-parse "$GITHUB_SHA^1")}
           python tools/review.py verify --base "$BASE_SHA"
+          python tools/claims.py verify --base "$BASE_SHA"
 
   mutants:
     needs: wheels
@@ -163,6 +165,8 @@ jobs:
           sys.exit(f"not every job succeeded: {bad}" if bad or len(got) != 4 else 0)'
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0              # the claims view compares each acceptance's commit with this tree
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
