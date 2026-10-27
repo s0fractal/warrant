@@ -1,4 +1,28 @@
-# History: what the Warrant 2 rebuild retired
+# History
+
+## Warrant 2, retired 2026-10-27 by the switch to Warrant 3
+
+Warrant 2 is preserved at the git tag **`history/warrant-2-2026-10-27`**, created by the owner at
+commit `b37328b2` (merge of #219), the last master commit on which Warrant 2 was the current
+format. Its package stays published as it was: `warrant-graph` 2.0.0a1 on PyPI. The next release
+is Warrant 3 (roadmap G12); nothing of Warrant 3 is published by the switch.
+
+What Warrant 2 was: six signed record types (duty, transition, accept, challenge, observation,
+grant) in one file per record under `.warrant/store/`, assessed by `warrant/engine.py` under the
+receiver's trust and profile (SPEC.md, 2.0.0a1), with `attest`, `observe` and `compute` conditions,
+Sigma replay of computations, grants, triggers and schedules; an agent interface
+(`warrant_agent`, MCP) over frozen views in an object store; and about 9.7k lines of repository
+tools that re-implemented lineage, forks and acceptance per domain: SPEC claims backed by a replay
+checker (`tools/claims.py`), the roadmap (`tools/roadmap.py`), the pull request review loop and its
+merge gate (`tools/review.py`, `tools/claimslib/eligibility.py`), and the record graph
+(`tools/graph.py`).
+
+Its records were migrated, not re-signed: `.warrant/records.jsonl` holds every Warrant 2 record
+of `b37328b2` as Warrant 3 records with `sig: null`, vouched for by one `migration@1` attest of the
+migrator checker (docs/V3.md §9). The migrator, `tools/migrate_v2_to_v3.py`, depends on the
+Warrant 2 package and lives at the tag; its replay is run there.
+
+## Warrant 0.x, retired 2026-10-18 by the Warrant 2 rebuild
 
 The previous generation, Warrant 0.x, is preserved at the git tag
 **`history/warrant-0.x-2026-10-18`** (commit `8feb335`, merge of #137). On that
@@ -10,7 +34,7 @@ tag. They are not evidence about Warrant 2, and Warrant 2 does not read them.
 The rebuild was mandated by the owner on 2026-10-18: an incompatible rebuild,
 one current path, and deletion of the superseded implementations.
 
-## Retired, and what replaced it
+### Retired, and what replaced it
 
 | 0.x | Status | Replaced by |
 | --- | --- | --- |
@@ -33,7 +57,7 @@ one current path, and deletion of the superseded implementations.
 | Papers, proposals (WRT-001..022, REDESIGN-1, GOV-001), reviews, prior-art, standards notes, docs, 0.x root documents (ARCHITECT, THREAT-MODEL, EVIDENCE-PACK, PUBLISHING, LISTINGS, MAP, CONTRACTS, PRIOR-ART), `llms.txt`, `action.yml` | historical, at the tag | SPEC.md, README.md, HISTORY.md, SECURITY.md. Deposited papers keep their DOIs |
 | Workflows `wrt-005`, `pages`, `publish`, `agent-gate` | retired | `ci.yml` (`test`) and `x1-cross-repo.yml` (`cross-repo`) |
 
-## Work open at the rebuild
+### Work open at the rebuild
 
 | Work | Decision |
 | --- | --- |
