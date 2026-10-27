@@ -36,7 +36,10 @@ HASHED = ("tools/migrate_v2_to_v3.py", "warrant3", "warrant")
 CLAUDE_SEED = Path.home() / "Projects/.worktrees/claims-pilot/claude-claims.seed"
 MIGRATOR_SEED = Path.home() / ".config/warrant/migrator-v3.seed"
 CARRIER = {"name": "v2-transition@1", "fields": {"state": "str", "body": "obj"}, "states": {"carried": None},
-           "closed": [], "successors": []}
+           "closed": [], "successors": {}}
+# The bootstrap schemas' time: fixed, so their ids do not move with the v2 store and a second schema author
+# (the owner's 2-of-2 quorum, .warrant/v3.json) can accept exactly these ids once.
+BOOTSTRAP_AT = 1793059200                                          # 2026-10-27T00:00:00Z
 CARRIED = ("established", "residual", "opened", "subject")       # transition members kept verbatim when present
 # What the migration does not carry, and why each loss is safe (checked per record, else refused).
 DROPPED = {
@@ -115,7 +118,11 @@ def read_v2(root):
     trust = trust_of(admitted)
     recs, bad = snap.authentic(trust)
     need(not bad, f"{len(bad)} v2 records are not authentic: {sorted(bad.items())[:2]}")
-    cfg = {n: json.loads((root / ".warrant" / f"{n}.json").read_text()) for n in ("claims", "roadmap", "reviews")}
+    cfg = {n: json.loads((root / ".warrant" / f"{n}.json").read_text()) for n in ("claims", "roadmap", "reviews", "v3")}
+    q = cfg["v3"].get("schema_quorum")
+    need(cfg["v3"].get("v3") == "warrant3/config@1" and isinstance(q, dict) and set(q) == {"actors", "threshold"}
+         and isinstance(q["threshold"], int) and 1 <= q["threshold"] <= len(set(q["actors"])),
+         ".warrant/v3.json is {v3: warrant3/config@1, schema_quorum: {actors, threshold 1..len(actors)}}")
     return snap, trust, admitted, recs, cfg
 
 
@@ -514,14 +521,25 @@ class Migration:
 
     def roles(self, migrator):
         c, rm, rv = self.cfg["claims"], self.cfg["roadmap"], self.cfg["reviews"]
-        roles = {"schema/author": ["claude"], "claim/verifier": c["accept_by"] + c.get("checkers", []),
+        roles = {"schema/author": self.cfg["v3"]["schema_quorum"]["actors"], "claim/verifier": c["accept_by"] + c.get("checkers", []),
                  "roadmap/acceptor": rm["accept_by"] + rm["results_accept_by"], "roadmap/owner": rm["owed_to"],
                  "pr/acceptor": rv["accept_by"], "pr/owner": rv["owed_to"], "replayer": rv["replayers"], "migrator": [migrator]}
         return {k: sorted(set(v)) for k, v in sorted(roles.items())}
 
 
-def migrate(root, claude_key, migrator_key):
-    """(lines, blobs {hash: bytes}, trust, profile, summary) of the v3 store migrated from `root`."""
+def bootstrap_lines(claude_key):
+    """[(id, line)] of the bootstrap and carrier schemas, filed by claude at BOOTSTRAP_AT as one chain."""
+    out, prev = [], None
+    for s in B.SCHEMAS + [CARRIER]:
+        r = R.record("schema", "claude", BOOTSTRAP_AT, s, prev=prev)
+        prev, line = R.line(r, claude_key)
+        out.append((prev, line))
+    return out
+
+
+def migrate(root, claude_key, migrator_key, include=()):
+    """(lines, blobs {hash: bytes}, trust, profile, summary) of the v3 store migrated from `root`; `include`:
+    further signed lines (another schema author's acceptances of the bootstrap schemas), kept as they are."""
     m = Migration(root)
     blobs, rows = m.run()
     me = actor()
@@ -529,11 +547,8 @@ def migrate(root, claude_key, migrator_key):
     mapdoc = C.canon({"migration": "warrant3/map@1", "v2": v2, "dropped": DROPPED, "declared": DECLARED,
                       "applied": sorted(m.declared), "map": rows})
     maph = hashlib.sha256(mapdoc).hexdigest()
-    lines, prev = [R.line(r)[1] for r in m.out.values()], None
-    for s in B.SCHEMAS + [CARRIER]:
-        r = R.record("schema", "claude", m.at, s, prev=prev)
-        prev, line = R.line(r, claude_key)
-        lines.append(line)
+    schemas = bootstrap_lines(claude_key)
+    lines = [R.line(r)[1] for r in m.out.values()] + [x for _, x in schemas] + list(include)
     gen = R.record("attest", me, m.at, {"target": maph, "verdict": "migrated", "v2": v2, "code": identity(),
                                         "records": len(m.out)}, R.MIGRATION, refs=[maph])
     gid, line = R.line(gen, migrator_key)
@@ -542,7 +557,7 @@ def migrate(root, claude_key, migrator_key):
     for a, p in m.admitted + [("claude", claude_key.public), (me, migrator_key.public)]:
         keys.setdefault(a, set()).add(p)
     trust = {"warrant": "trust/3", "keys": {a: sorted(v) for a, v in sorted(keys.items())}}
-    profile = {"warrant": "profile/3", "roles": m.roles(me)}
+    profile = {"warrant": "profile/3", "roles": m.roles(me), "quorum": {"schema/author": m.cfg["v3"]["schema_quorum"]["threshold"]}}
     out_blobs = {h: m.snap.blobs[h] for h in blobs}
     out_blobs[maph] = mapdoc
     kinds = {}
@@ -552,7 +567,7 @@ def migrate(root, claude_key, migrator_key):
     summary = {"v2": v2, "v3": {"records": len(lines), "migrated": len(m.out), "blobs": len(out_blobs),
                                 "inlined_v2_blobs": len(set().union(*(set(x[2]) for x in rows)))}, "genesis": gid,
                "declared": sorted(m.declared),
-               "migrator": me, "kinds": dict(sorted(kinds.items()))}
+               "migrator": me, "kinds": dict(sorted(kinds.items())), "schemas": [i for i, _ in schemas]}
     return lines, out_blobs, trust, profile, summary
 
 
@@ -585,6 +600,8 @@ def main(argv=None):
         p.add_argument("--out", default=str(ROOT / "build" / "v3"))
     sub.choices["run"].add_argument("--claude-key", default=str(CLAUDE_SEED))
     sub.choices["run"].add_argument("--migrator-key", default=str(MIGRATOR_SEED))
+    sub.choices["run"].add_argument("--include", action="append", default=[],
+                                    help="a file of signed lines to add as they are (schema acceptances)")
     a = ap.parse_args(argv)
     try:
         why = closure_problem()
@@ -601,7 +618,8 @@ def main(argv=None):
             os.close(fd)
             print(json.dumps({"seed": str(p), "public": key.public, "actor": actor()}))
         elif a.cmd == "run":
-            res = migrate(a.root, load_key(a.claude_key), load_key(a.migrator_key))
+            extra = [x + b"\n" for f in a.include for x in Path(confined(f, ROOT)).read_bytes().split(b"\n") if x]
+            res = migrate(a.root, load_key(a.claude_key), load_key(a.migrator_key), extra)
             write(a.out, *res)
             print(json.dumps(res[4], indent=1, sort_keys=True))
         else:
@@ -624,9 +642,13 @@ def verify(root, out):
     need(len(gens) == 1, f"{len(gens)} migration records")
     g = gens[0]["body"]
     need(g["v2"]["root"] == m.snap.digest, f"the genesis cites v2 root {g['v2']['root'][:12]}, this store is {m.snap.digest[:12]}")
+    need(g["v2"]["trust"] == m.trust.digest, "the genesis cites another v2 trust")
     need(g["code"] == identity(), "the genesis names another migrator identity: run the code it names")
     need(have == want, f"REPLAY_DIFFERS: {len(want - have)} missing, {len(have - want)} extra")
-    return {"replayed": len(want), "v2_root": m.snap.digest, "code": g["code"], "result": "IDENTICAL"}
+    # IDENTICAL says only this: the re-derived migrated ids equal the store's unsigned ids. It does not check the
+    # trust, profile, schemas, map or copied blobs of the destination (Codex R-REPLAY-SCOPE).
+    return {"replayed": len(want), "v2_root": m.snap.digest, "v2_trust": m.trust.digest, "code": g["code"],
+            "result": "IDENTICAL", "scope": "migrated record ids only"}
 
 
 if __name__ == "__main__":

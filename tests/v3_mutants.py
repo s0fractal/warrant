@@ -25,6 +25,14 @@ MUTANTS = [
     ("V8", "warrant3/engine.py", "elif not may_succeed(r, self.recs[rt]):", "elif False:", CORE),
     ("V9", "warrant3/engine.py", 'if need is not None and _weaker(r["guard"], need):', "if False:", CORE),
     ("V10", "warrant3/engine.py", "if by is not None:", "if True:", CORE),
+    ("V12", "warrant3/engine.py", 'elif any(e["sig"] is None for e in envs):', "elif not sigs:", CORE),
+    ("V13", "warrant3/engine.py", 'return r["actor"] == root["actor"] if roles is None else self.holds(r["actor"], *roles)',
+     'return r["actor"] == root["actor"]', CORE),
+    ("V14", "warrant3/engine.py", 'return r["actor"] == root["actor"] if roles is None else self.holds(r["actor"], *roles)',
+     'return r["actor"] == root["actor"] or (roles is not None and self.holds(r["actor"], *roles))', CORE),
+    ("V15", "warrant3/engine.py", 'if r["body"].get("state") in self.schema_of(v).get("closed", []):       # with',
+     'if g is not None and r["body"].get("state") in self.schema_of(v).get("closed", []):       # with', CORE),
+    ("V16", "warrant3/engine.py", 'if why or len(backers) < self.quorum("schema/author"):', "if why or not backers:", CORE),
     ("V11", "warrant3/engine.py", 'elif any(on == x and v == "reproduces" for on, v, _ in replays):', "elif False:", CORE),
 ]
 

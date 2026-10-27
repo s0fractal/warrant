@@ -34,9 +34,10 @@ def trust_problem(t):
 
 
 def profile_problem(p):
-    ok = isinstance(p, dict) and set(p) == {"warrant", "roles"} and p["warrant"] == "profile/3" and isinstance(p["roles"], dict) \
-        and all(isinstance(k, str) and R.is_list(v, S.is_actor, True) for k, v in p["roles"].items())
-    return None if ok else "profile is {warrant: profile/3, roles: {role: [sorted actors]}}"
+    ok = isinstance(p, dict) and {"warrant", "roles"} <= set(p) <= {"warrant", "roles", "quorum"} and p["warrant"] == "profile/3" \
+        and isinstance(p["roles"], dict) and all(isinstance(k, str) and R.is_list(v, S.is_actor, True) for k, v in p["roles"].items()) \
+        and isinstance(p.get("quorum", {}), dict) and all(R.is_int(k) and k >= 1 for k in p.get("quorum", {}).values())
+    return None if ok else "profile is {warrant: profile/3, roles: {role: [sorted actors]}, quorum?: {role: k >= 1}}"
 
 
 def _authentic(snap, trust, as_of, only=None):
@@ -55,7 +56,7 @@ def _authentic(snap, trust, as_of, only=None):
         keys = trust["keys"].get(r["actor"], [])
         if any(R.verifies(i, s, k) for s in sigs for k in keys):
             recs[i], basis[i] = r, "SIGNED"
-        elif not sigs:
+        elif any(e["sig"] is None for e in envs):          # a bad signature beside it never revokes the unsigned line's basis
             recs[i], basis[i] = r, "UNSIGNED"
         else:
             bad[i] = "BAD_SIGNATURE: no signature verifies under a key the trust binds to the actor"
@@ -86,15 +87,19 @@ class View:
         self.problems = []
         self._vouch()
         self._chains()
+        self._index_attests()
         self._schemas()
         self._bodies()
+        self._index_attests()
+        ents = {i for i, r in self.recs.items() if r["kind"] == "entity"}
+        self.root_of, self.lineages = self._lineages(ents, self._may_succeed)
+        self._guards, self._effective = {}, {}
+
+    def _index_attests(self):
         self.attests = {}
         for i, r in sorted(self.recs.items(), key=lambda kv: (kv[1]["at"], kv[0])):
             if r["kind"] == "attest":
                 self.attests.setdefault(r["body"]["target"], []).append(i)
-        ents = {i for i, r in self.recs.items() if r["kind"] == "entity"}
-        self.root_of, self.lineages = self._lineages(ents, self._may_succeed)
-        self._guards, self._effective = {}, {}
 
     def holds(self, actor, *roles):
         return any(actor in self.profile["roles"].get(x, []) for x in roles)
@@ -150,8 +155,10 @@ class View:
         for i, r in self.recs.items():
             if r["kind"] == "schema":
                 why = _schema_problem(r["body"])
-                if why or not self.holds(r["actor"], "schema/author"):
-                    self.problem("SCHEMA_NOT_COUNTED", i, why or "its actor holds no schema/author role")
+                backers = self.backers(i)
+                if why or len(backers) < self.quorum("schema/author"):
+                    self.problem("SCHEMA_NOT_COUNTED", i, why or f"{len(backers)} of the {self.quorum('schema/author')} "
+                                 f"schema/author actors stand behind it: {', '.join(backers) or 'none'}")
                     continue
                 cand[i] = r
         _, lins = self._lineages(set(cand), lambda r, root: r["actor"] == root["actor"])
@@ -167,6 +174,15 @@ class View:
             else:
                 self.schemas[name] = {"id": leaves[0], **self.recs[leaves[0]]["body"]}
 
+    def quorum(self, role):
+        return self.profile.get("quorum", {}).get(role, 1)
+
+    def backers(self, i):
+        """The schema/author actors behind schema record i: its filer and each that attests it with accept."""
+        out = {self.recs[a]["actor"] for a in self.attests.get(i, []) if self.recs[a]["body"].get("verdict") == "accept"}
+        out.add(self.recs[i]["actor"])
+        return sorted(a for a in out if self.holds(a, "schema/author"))
+
     def _bodies(self):
         for i, r in sorted(self.recs.items()):
             if r["kind"] == "schema" or (r["schema"] is None and r["kind"] != "entity") or r["schema"] == R.MIGRATION:
@@ -180,7 +196,9 @@ class View:
     # -- lineages (§3)
 
     def _may_succeed(self, r, root):
-        return r["actor"] == root["actor"] or self.holds(r["actor"], *self.schemas[r["schema"]].get("successors", []))
+        """A state the schema's successors name is entered only by those roles; any other by the root's actor."""
+        roles = self.schemas[r["schema"]]["successors"].get(r["body"].get("state"))
+        return r["actor"] == root["actor"] if roles is None else self.holds(r["actor"], *roles)
 
     def _lineages(self, ids, may_succeed):
         """({id: root}, {root: lineage}) over `ids`; successors that break the rules are excluded."""
@@ -235,20 +253,19 @@ class View:
             return self._guards[v]
         self._guards[v] = {"guard": PENDING, "waiting": ["a requires cycle"], "accepted_by": []}   # while in progress
         r, g = self.recs[v], self.recs[v]["guard"]
-        if g is None:
-            out = {"guard": NONE, "waiting": [], "accepted_by": []}
-        else:
+        acc, waiting = [], []
+        if g is not None:
             acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
                           if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
                           and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
-            waiting = [f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}"] \
-                if len(acc) < g["quorum"] else []
-            if r["body"].get("state") in self.schema_of(v).get("closed", []):
-                for L in self.requires(v):
-                    eff = self.effective(L) if L in self.lineages else None
-                    if eff is None or self.recs[eff]["body"].get("state") not in self.schema_of(L).get("closed", []):
-                        waiting.append(f"requires {L} closed")
-            out = {"guard": PENDING if waiting else MET, "waiting": waiting, "accepted_by": acc}
+            if len(acc) < g["quorum"]:
+                waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
+        if r["body"].get("state") in self.schema_of(v).get("closed", []):       # with or without a guard (Codex #3)
+            for L in self.requires(v):
+                eff = self.effective(L) if L in self.lineages else None
+                if eff is None or self.recs[eff]["body"].get("state") not in self.schema_of(L).get("closed", []):
+                    waiting.append(f"requires {L} closed")
+        out = {"guard": PENDING if waiting else NONE if g is None else MET, "waiting": waiting, "accepted_by": acc}
         self._guards[v] = out
         return out
 
@@ -319,6 +336,9 @@ class View:
                 "duplicates": sorted(i for i, e in self.snap.lines.items() if len(e) > 1 and i in self.recs),
                 "chains": {"forks": self.chain_forks, "unanchored": self.unanchored},
                 "schemas": {n: s["id"] for n, s in sorted(self.schemas.items())},
+                "schemas_pending": {i: {"name": r["body"].get("name"), "backed_by": self.backers(i), "need": self.quorum("schema/author")}
+                                    for i, r in sorted(self.recs.items()) if r["kind"] == "schema"
+                                    and len(self.backers(i)) < self.quorum("schema/author")},
                 "lineages": lineages, "versions": versions, "challenges": challenges,
                 "problems": sorted(self.problems), "graph": self.graph()}
 
@@ -342,8 +362,10 @@ def _schema_problem(b):
         and (b["states"] is None or (isinstance(b["states"], dict) and b["fields"].get("state") == "str"
                                      and all(g is None or R.guard_problem(g) is None for g in b["states"].values()))) \
         and R.is_list(b["closed"], lambda s: isinstance(b["states"], dict) and s in b["states"], True) \
-        and R.is_list(b["successors"], S.is_actor, True)
-    return None if ok else "a schema body is {name, fields: {member: type}, states: {state: guard|null}|null, closed, successors}"
+        and isinstance(b["successors"], dict) and all(isinstance(b["states"], dict) and st in b["states"]
+                                                      and R.is_list(rs, S.is_actor, True) for st, rs in b["successors"].items())
+    return None if ok else ("a schema body is {name, fields: {member: type}, states: {state: guard|null}|null, closed, "
+                            "successors: {state: [roles]}}")
 
 
 def _body_problem(r, s):

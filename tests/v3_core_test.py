@@ -3,6 +3,7 @@
 
     python3 tests/v3_core_test.py
 """
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -33,7 +34,7 @@ class World:
         self.lines, self.blobs, self.heads, self.t = [], {}, {}, 100
         self.trust = {"warrant": "trust/3", "keys": {a: [k.public] for a, k in self.keys.items()}}
         self.roles = roles or {"schema/author": ["alice"], "claim/verifier": ["bob"], "roadmap/acceptor": ["bob"],
-                               "pr/acceptor": ["bob"], "replayer": ["carol"]}
+                               "pr/acceptor": ["bob"], "replayer": ["carol"], "roadmap/owner": ["carol"]}
         for s in B.SCHEMAS:
             self.put("alice", "schema", s)
 
@@ -105,6 +106,24 @@ def lineage_cases():
           broken not in w2.report()["versions"])
 
 
+def release_cases():
+    w = World()
+    o = w.put("alice", "entity", {"state": "open", "statement": "o", "serves": []}, "obligation@1")
+    b = w.put("alice", "entity", {"state": "open", "statement": "b", "serves": []}, "obligation@1", guard=R.guard(requires=[o]))
+    rel = w.put("carol", "entity", {"state": "released", "statement": "o", "serves": []}, "obligation@1", o)
+    rep = w.report()
+    check("L11 the owner alone releases an obligation it is owed (Codex #2)",
+          rel in rep["versions"] and rep["lineages"][o]["state"] == "released", rep["problems"])
+    bd = w.put("alice", "entity", {"state": "done", "statement": "b", "serves": []}, "obligation@1", b, guard=B.SCHEMAS[2]["states"]["done"])
+    w.attest("bob", bd)
+    check("L12 a release is not delivery: what requires it stays pending", w.report()["versions"][bd]["guard"] == "PENDING")
+    w2 = World()
+    o2 = w2.put("alice", "entity", {"state": "open", "statement": "o", "serves": []}, "obligation@1")
+    self_rel = w2.put("alice", "entity", {"state": "released", "statement": "o", "serves": []}, "obligation@1", o2)
+    rep = w2.report()
+    check("L13 the holder cannot release its own obligation", self_rel not in rep["versions"] and rep["lineages"][o2]["state"] == "open")
+
+
 def schema_cases():
     w = World()
     w.put("eve", "schema", dict(B.SCHEMAS[0], name="evil@1", states={"backed": None}))
@@ -121,6 +140,20 @@ def schema_cases():
     bad = w.put("alice", "entity", {"state": "nope", "id": "S", "source": "s", "section": "1", "text": "t",
                                     "witnesses": [], "mutants": []}, "claim@1")
     check("S4 a state the schema does not list is INVALID", bad in w.report()["rejected"])
+    w = World()
+    two = dict(w.roles, **{"schema/author": ["alice", "bob"]})
+    c = w.claim(state="unbacked", guard=None)
+    rep = E.assess(Snapshot(w.lines, {}), w.trust, {"warrant": "profile/3", "roles": two, "quorum": {"schema/author": 2}})
+    check("S5 with a schema quorum of 2, one author's schemas do not count; nothing of theirs is valid",
+          not rep["schemas"] and c in rep["rejected"] and len(rep["schemas_pending"]) == len(B.SCHEMAS))
+    for i in list(rep["schemas_pending"]):
+        w.attest("eve", i)
+    rep = E.assess(Snapshot(w.lines, {}), w.trust, {"warrant": "profile/3", "roles": two, "quorum": {"schema/author": 2}})
+    check("S6 an attest by an actor outside schema/author does not make up the quorum", not rep["schemas"])
+    for i in list(rep["schemas_pending"]):
+        w.attest("bob", i)
+    rep = E.assess(Snapshot(w.lines, {}), w.trust, {"warrant": "profile/3", "roles": two, "quorum": {"schema/author": 2}})
+    check("S7 a second schema author's accept completes the quorum", len(rep["schemas"]) == len(B.SCHEMAS) and c in rep["versions"])
 
 
 def guard_cases():
@@ -139,6 +172,15 @@ def guard_cases():
     rep = w.report()
     check("G2 ... and admit it once the required lineage is closed",
           rep["versions"][d2]["guard"] == "MET" and rep["lineages"][o2]["state"] == "done", rep["versions"][d2])
+    w = World()
+    w.put("alice", "schema", {"name": "simple@1", "fields": {"state": "str"}, "states": {"open": None, "done": None},
+                              "closed": ["done"], "successors": {}})
+    a = w.put("alice", "entity", {"state": "open"}, "simple@1")
+    b = w.put("alice", "entity", {"state": "open"}, "simple@1", guard=R.guard(requires=[a]))
+    bd = w.put("alice", "entity", {"state": "done"}, "simple@1", b)
+    rep = w.report()
+    check("G3 requires hold a closing version that has no guard (Codex #3)",
+          rep["versions"][bd]["guard"] == "PENDING" and rep["lineages"][b]["state"] == "open", rep["versions"][bd])
 
 
 def challenge_cases():
@@ -231,12 +273,21 @@ def migration_cases():
           mid in rep["versions"] and rep["basis"]["MIGRATED"] == 1, rep["rejected"].get(mid))
     rep = w.report(roles={k: v for k, v in w.roles.items() if k != "migrator"})
     check("M3 ... only for a receiver whose profile accepts the migrator", mid in rep["rejected"])
+    env = json.loads(line)
+    env["sig"] = {"key": w.keys["eve"].id, "ed25519": w.keys["eve"].sign(R.SIG_DOMAIN + bytes.fromhex(mid))}
+    for lines in (w.lines + [C.canon(env) + b"\n"], [C.canon(env) + b"\n"] + w.lines):
+        rep = E.assess(Snapshot(lines, w.blobs), w.trust, {"warrant": "profile/3", "roles": w.roles})
+        check("M4 a bad-signature variant of a vouched record never revokes its basis (Codex #1), in either order",
+              mid in rep["versions"] and rep["basis"]["MIGRATED"] == 1, rep["rejected"].get(mid))
+    rep = E.assess(Snapshot([C.canon(env) + b"\n"] + w.lines[:-2] + w.lines[-1:], w.blobs), w.trust, {"warrant": "profile/3", "roles": w.roles})
+    check("M5 ... and a bad signature alone is still no basis", mid in rep["rejected"])
 
 
 def main():
     lineage_cases()
     schema_cases()
     guard_cases()
+    release_cases()
     challenge_cases()
     store_cases()
     chain_cases()

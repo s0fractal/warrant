@@ -1,0 +1,4 @@
+{
+  "v3": "warrant3/config@1",
+  "schema_quorum": {"actors": ["claude", "codex"], "threshold": 2}
+}
