@@ -54,7 +54,7 @@ class Repo:
     def report(self, snap=None):
         v = self.view(snap)
         rep = v.report()
-        rep["_recs"] = v.recs
+        rep["_recs"], rep["_basis"] = v.recs, v.basis
         return rep
 
     def file(self, actor, key, records):

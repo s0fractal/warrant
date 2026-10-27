@@ -187,9 +187,13 @@ def table():
 
 
 def run(test, cwd):
-    r = subprocess.run([sys.executable, "-B", test], cwd=cwd, capture_output=True, text=True, timeout=900,
-                       env={"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "PYTHONDONTWRITEBYTECODE": "1", "HOME": str(Path.home()),
-                            "TMPDIR": str(TMP)})
+    """(exit status, output); a run past the timeout is status None with what it printed (TIMEOUT, never a kill)."""
+    try:
+        r = subprocess.run([sys.executable, "-B", test], cwd=cwd, capture_output=True, text=True, timeout=900,
+                           env={"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "PYTHONDONTWRITEBYTECODE": "1",
+                                "HOME": str(Path.home()), "TMPDIR": str(TMP)})
+    except subprocess.TimeoutExpired as e:
+        return None, (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -242,8 +246,8 @@ def run_mutants(ids):
                 rc, out = run(test, COPY)
             finally:
                 f.write_text(src)
-            hit = failed(out, cases)
-            out_rows.append({"id": i, "outcome": "KILLED" if hit else "SURVIVED", "failed": hit, "rc": rc,
+            hit = failed(out, cases) if rc is not None else []
+            out_rows.append({"id": i, "outcome": "KILLED" if hit else "SURVIVED" if rc is not None else "TIMEOUT", "failed": hit, "rc": rc,
                              "detail": "" if hit else out[-600:]})
         r = out_rows[-1]
         print(f"{i} {r['outcome']} {path} by {test} {cases}" + (f": {r['detail'][-300:]}" if r["outcome"] != "KILLED" else ""), flush=True)

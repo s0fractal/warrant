@@ -151,15 +151,17 @@ def _code_tree(root, commit):
 
 
 def verify(repo, base):
-    """Re-execute every replay attest that is new since commit `base`, at the commit it names, in a temporary
-    worktree; refused (REPLAY_DIFFERS) when a result differs."""
+    """Re-execute every signed replay attest that is new since commit `base`, at the commit it names, in a temporary
+    worktree; refused (REPLAY_DIFFERS) when a result differs. A migrated replay rests on the migration and its
+    replay (docs/V3.md §9), not on a re-execution here."""
     _, profile, _ = repo.config()
     replayers = set(profile["roles"].get("replayer", []))
     old, _ = GT.store_at(repo.root, base)
     rep = repo.report()
     recs, bad, n = rep["_recs"], [], 0
     for i, r in sorted(recs.items()):
-        if r["kind"] != "attest" or r["actor"] not in replayers or i in old.lines or r["body"].get("verdict") not in REPLAY_VERDICTS:
+        if r["kind"] != "attest" or r["actor"] not in replayers or i in old.lines or r["body"].get("verdict") not in REPLAY_VERDICTS \
+                or rep["_basis"].get(i) != "SIGNED":
             continue
         f = recs.get(r["body"]["target"])
         test = finding_test(f["body"]) if f else None

@@ -74,10 +74,13 @@ def claims_cases():
     r = claims_repo()
     claim(r, mutants=[])
     check("C07 a backed claim with no mutant is unburned", codes(r) == ["UNBURNED"], codes(r))
-    out = subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "claims.py"), "replay", "--key", "-"], input=KEYS["eve"].seed_hex() + "\n",
-                         capture_output=True, text=True, cwd=ROOT)
-    check("C08 the claims checker signs only with a key the trust binds to its own identity",
-          out.returncode == 2 and out.stderr.startswith("REFUSED SIGNER"), out.stderr[-300:])
+    try:                         # a checker that does not refuse goes on to run every witness: a hang is a failure here
+        out = subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "claims.py"), "replay", "--key", "-"],
+                             input=KEYS["eve"].seed_hex() + "\n", capture_output=True, text=True, cwd=ROOT, timeout=60)
+        refused, why = out.returncode == 2 and out.stderr.startswith("REFUSED SIGNER"), out.stderr[-300:]
+    except subprocess.TimeoutExpired:
+        refused, why = False, "it ran on for a minute instead of refusing"
+    check("C08 the claims checker signs only with a key the trust binds to its own identity", refused, why)
     r = claims_repo()
     doc = [{"id": "V3-3-1", "section": "3", "text": "A record whose `lineage` is L **succeeds** L.", "witnesses": ["q_test:Q1"],
             "mutants": ["Z1"]}]
