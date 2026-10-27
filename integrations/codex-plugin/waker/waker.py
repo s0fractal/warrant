@@ -21,17 +21,27 @@ launchd runs it every five minutes (install.py). One run:
      codex` on the base's own records (acceptance_due there: a roadmap obligation's latest closure the
      engine holds PENDING for codex, every duty it requires DISCHARGED, neither accepted nor challenged by
      codex). At most one is woken per run, and none while an open pull request from a branch of this
-     repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet). Until G11 two such pull requests
-     rendered the same generated views from different bases; they carry records only now, and the hold remains a
-     limit of one verdict pull request at a time. Its memo is HOME/accepts/<closure>-<item>.json, its
-     worktree TREES/accept-<closure12>-<item>-<base12>, detached at the base; Codex accepts the closure or challenges it
-     through MCP and opens a pull request of those records only, which the merge gate admits as verdicts
-     (eligibility.py). A closure that becomes acceptable later (its prerequisite was accepted meanwhile)
-     is due in the run that reads that base.
+     repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: a limit of one verdict pull
+     request at a time; until G11 two of them rendered the same generated views from different bases). Its memo is HOME/accepts/<closure>-<item>.json, its
+     worktree TREES/accept-<closure12>-<item>-<base12> (with -<n> from the second attempt on), detached at the
+     base; Codex accepts the closure or challenges it through MCP into that worktree's store, and exits. The
+     waker, not Codex, publishes it (Waker.publish; Codex's sandbox cannot write the worktree's Git metadata,
+     and his GitHub tool needs an approval the `never` policy cannot give: the wake of 836e1789a97a, #210):
+     what is new in the worktree's store, checked with the base's own package (verify_verdicts: only codex's
+     accepts and challenges of that closure item, authentic under the key the base's roles.json pins, and the
+     blobs they cite; anything else, and nothing is published), those bytes copied onto the base (records and
+     blobs only: no generated view is committed, G11), one commit by the waker pushed to VERDICT_BRANCH<closure12>-<item> and a pull request
+     opened with `gh`, which the merge gate admits as verdicts (eligibility.py). The waker signs nothing. A
+     closure that becomes acceptable later (its prerequisite was accepted meanwhile) is due in the run that
+     reads that base.
 
 One wake per head, and per closure: one whose attempt exited 0 is never woken again (delete its memo
 to wake it again). An attempt that exited otherwise (or never finished) is retried after BACKOFF
-seconds, doubled each time, at most MAX_TRIES attempts in all; then the memo says it gave up.
+seconds, doubled each time, at most MAX_TRIES attempts in all; then the memo says it gave up. An
+acceptance wake is done only once its verdict reached GitHub: a pull request from its branch of this
+repository exists, in any state, or the base holds codex's verdict on that item (never published twice).
+An attempt that exited 0 and left nothing to publish is "unpublished", a failed attempt; a publication
+that failed is retried after the same backoff, without waking Codex; the run's lines say which.
 
 Replay. The review replay checker is an actor named by the hash of tools/claimslib/review_replay.py
 (`checker sha256:<H>`); `tools/review.py replay` signs as it only from code with that hash. The waker
@@ -68,6 +78,7 @@ nothing.
     python3 waker.py [--dry-run]
 """
 import argparse
+import base64
 import datetime
 import fcntl
 import io
@@ -99,11 +110,15 @@ PROBE = "warrant-review/replay@1"
 STORE = ".warrant/store/"
 PR_BRANCH = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychains")
+REGULAR = "100644"                          # the only mode of a store entry the waker commits
+STATUS = ("status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")    # every path, renames as two
 COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
              "-c", "commit.gpgsign=false"]
 REPLAY_TIMEOUT = 3600
 ACCEPTOR = "codex"                          # the actor the waker wakes: `codex exec`, signing with its own seed
-VERDICT_BRANCH = "codex/verdicts/"          # where Codex pushes a verdict on an obligation closure
+VERDICT_BRANCH = "codex/verdicts/"          # where the waker publishes Codex's verdict on an obligation closure
+VERDICTS = ("accept", "challenge")          # the records an acceptance wake may publish
+MAX_PREPARED = 16 << 20                     # bytes of a prepared verdict's records and blobs, all told
 
 
 def iso(t):
@@ -158,7 +173,7 @@ def changes(wt, filed, actor):
     """The paths the replay changed in the worktree `wt`, to commit: the records `filed` (the ids the checker
     printed), each an observation by `actor`, and the new blobs among their probes. Anything else (another
     record or blob, a file outside the store, a generated view, a deletion, a link) is a RuntimeError."""
-    raw = git("-C", str(wt), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames").decode()
+    raw = git("-C", str(wt), *STATUS).decode()
     entries = [(e[:2], e[3:]) for e in raw.split("\0") if e]
     want = {f"{STORE}records/{o}.json" for o in filed}
     probes, blobs, out = set(), [], []
@@ -207,9 +222,144 @@ def runs(doc):
     return doc
 
 
+class Unpublished(Exception):
+    """Codex's worktree holds no verdict the waker may publish (none, or one it refuses): that wake prepared
+    nothing, and Codex is woken again after the backoff."""
+
+
+def closure_of(body):
+    """(transition, item) an accept or a challenge concerns (eligibility._closure_of)."""
+    return body.get("transition", body.get("target")), body.get("item")
+
+
+def binds(rec, c):
+    """Whether the verdict `rec` (a record body's owner) counts on closure item `c` (an entry of `roadmap.py due`):
+    a challenge of that item, or an accept of it binding exactly its evidence (the engine's accepts_by; Codex
+    finding cea34f0511d6: an accept with other evidence counts for nothing, and nothing else stands for it)."""
+    b = rec["body"]
+    if closure_of(b) != (c["closure"], c["item"]):
+        return False
+    want = c.get("evidence")
+    return rec["type"] == "challenge" or (isinstance(want, list) and sorted(b.get("evidence") or []) == sorted(want))
+
+
+def cites(v, out):
+    """`out` with every hex64 string anywhere in `v`: what a record's body cites (eligibility.uncited)."""
+    if isinstance(v, str) and HEX.match(v):
+        out.add(v)
+    elif isinstance(v, dict):
+        for x in v.values():
+            cites(x, out)
+    elif isinstance(v, list):
+        for x in v:
+            cites(x, out)
+    return out
+
+
+def stored(path):
+    """(kind, the name it claims) of a path under STORE: ("records", <id>) for records/<id>.json, ("blobs", <id>) for
+    blobs/<id>, else (kind, "")."""
+    kind, _, name = path[len(STORE):].partition("/")
+    if kind == "records" and name.endswith(".json"):
+        return kind, name[:-5]
+    return kind, name if kind == "blobs" else ""
+
+
+def blob_problem(digest, blobs, cited):
+    """Why one of the prepared `blobs` may not be published (not named by its hash, or cited by no verdict), or None."""
+    for b, data in sorted(blobs.items()):
+        if digest(data) != b:
+            return f"blob {b[:12]} is not named by its hash"
+        if b not in cited:
+            return f"blob {b[:12]} is cited by no verdict"
+    return None
+
+
+def verify_verdicts(req):
+    """Why the prepared verdict `req` may not be published, or None. Run with the BASE tree's package first on
+    PYTHONPATH (`waker.py --verify-verdicts`, the request on standard input), never in the waker's own process.
+    Every record must be authentic under the one key the base's .warrant/roles.json pins for req["actor"] (so
+    signed by that actor and named by its id), an accept or a challenge, of exactly the closure item woken; every
+    blob named by its hash and cited by one of them; every evidence blob they name among them or in the base's
+    store."""
+    from warrant import jcs as C
+    from warrant.bindings import read_roles
+    from warrant.store import Snapshot, Trust
+    code, actor, want = Path(req["code"]), req["actor"], (req["closure"], req["item"])
+    item = {"closure": req["closure"], "item": req["item"], "evidence": req["evidence"]}
+    roles, problems = read_roles(json.loads((code / ".warrant/roles.json").read_text()))
+    pin = roles.get(actor)
+    if problems or not (isinstance(pin, str) and HEX.match(pin)):
+        return f"the base's roles.json pins no key for {actor}"
+    recs = {r: base64.b64decode(d) for r, d in req["records"].items()}
+    blobs = {b: base64.b64decode(d) for b, d in req["blobs"].items()}
+    good, bad = Snapshot(recs, {}).authentic(Trust(Trust.document([(actor, pin)])))
+    if bad:
+        rid = min(bad)
+        return f"record {rid[:12]} is not {actor}'s under the base's pin: {bad[rid]}"
+    cited, evidence = set(), set()
+    for rid, rec in sorted(good.items()):
+        if rec["type"] not in VERDICTS:
+            return f"record {rid[:12]} is a {rec['type']}, not a verdict"
+        if closure_of(rec["body"]) != want:
+            return f"record {rid[:12]} is not a verdict on closure {want[0][:12]} item {want[1]}"
+        if not binds(rec, item):
+            return f"record {rid[:12]} accepts other evidence than closure {want[0][:12]} item {want[1]} carries"
+        cites(rec["body"], cited)
+        evidence.update(rec["body"]["evidence"])
+    why = blob_problem(C.digest, blobs, cited)
+    if why:
+        return why
+    missing = sorted(e for e in evidence if e not in blobs and not (code / STORE / "blobs" / e).is_file())
+    if missing:
+        return f"evidence {missing[0][:12]} is neither prepared nor in the base's store"
+    return None
+
+
+def held_verdict(code, c):
+    """The id of a verdict by ACCEPTOR that counts on closure item `c` (binds) and that the base tree `code` holds
+    already, or None."""
+    for p in sorted((code / STORE / "records").glob("*.json")):
+        try:
+            rec = json.loads(p.read_bytes())["record"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if (isinstance(rec, dict) and rec.get("actor") == ACCEPTOR and rec.get("type") in VERDICTS
+                and isinstance(rec.get("body"), dict) and binds(rec, c)):
+            return p.name[:-5]
+    return None
+
+
+class Forge:
+    """GitHub through this user's `gh`: the pull requests from a branch of REPO, and a new one."""
+
+    def __init__(self, run=subprocess.run, gh=None):
+        self.run, self.gh = run, gh or shutil.which("gh") or "/opt/homebrew/bin/gh"
+
+    def pulls(self, branch):
+        """[(number, state)] of the pull requests, in any state, from the branch `branch` of REPO itself: a fork's
+        branch of the same name is not where the waker publishes."""
+        r = self.run([self.gh, "pr", "list", "--repo", REPO, "--head", branch, "--state", "all", "--json",
+                      "number,state,headRefName,isCrossRepository"], capture_output=True, check=False, timeout=120)
+        if r.returncode:
+            raise RuntimeError(f"gh pr list exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+        return [(x["number"], x["state"]) for x in json.loads(r.stdout)
+                if x.get("headRefName") == branch and x.get("isCrossRepository") is False]
+
+    def open(self, branch, title, body):
+        """The number of a new pull request from `branch` into BRANCH."""
+        r = self.run([self.gh, "pr", "create", "--repo", REPO, "--base", BRANCH, "--head", branch, "--title", title,
+                      "--body-file", "-"], input=body.encode(), capture_output=True, check=False, timeout=120)
+        url = r.stdout.decode(errors="replace").strip().splitlines()[-1:] or [""]
+        m = re.search(r"/pull/(\d+)\Z", url[0], re.ASCII)
+        if r.returncode or m is None:
+            raise RuntimeError(f"gh pr create exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+        return int(m.group(1))
+
+
 class Waker:
     def __init__(self, home=None, trees=None, python=None, codex=None, plugin=PLUGIN,
-                 run=subprocess.run, clock=time.time, replayers=None, replay_python=None, jail=sandboxed):
+                 run=subprocess.run, clock=time.time, replayers=None, replay_python=None, jail=sandboxed, forge=None):
         env = os.environ.get
         self.home = Path(home or env("WARRANT_WAKER_HOME") or Path.home() / ".warrant" / "codex-waker")
         self.trees = Path(trees or env("WARRANT_WAKER_TREES") or Path.home() / "Projects" / ".worktrees" / "codex-review")
@@ -218,6 +368,7 @@ class Waker:
         self.replayers = Path(replayers or env("WARRANT_WAKER_REPLAYERS") or Path.home() / ".warrant-review-replayer")
         self.replay_python = str(replay_python or env("WARRANT_WAKER_REPLAY_PYTHON") or self.python)
         self.plugin, self.run, self.clock, self.jail = Path(plugin), run, clock, jail
+        self.forge = forge or Forge()
         self.mirror = self.home / "warrant.git"
         for d in ("wakes", "accepts", "logs", "results", "code", "replays", "replay-work"):
             (self.home / d).mkdir(parents=True, exist_ok=True)
@@ -439,18 +590,20 @@ class Waker:
         return f"{number(a['pr'])}-{commit(a['head'])}"
 
     def state(self, doc):
-        """(what, detail) of a memo: done, gave up, waiting (for its backoff) or retry."""
+        """(what, detail) of a memo: done, gave up, waiting (for its backoff) or retry. An attempt that exited 0 and
+        left nothing to publish (`unpublished`: an acceptance wake) failed."""
         tries = doc.get("attempts", [])
         last = tries[-1] if tries else None
         if last is None:
             return "retry", "first attempt"
-        if last.get("exit") == 0:
+        if last.get("exit") == 0 and not last.get("unpublished"):
             return "done", f"done: woken {last.get('started_at')}, codex exited 0"
+        how = f"exited 0, unpublished: {last['unpublished']}" if last.get("unpublished") else f"exited {last.get('exit')}"
         if len(tries) >= MAX_TRIES:
-            return "gave up", f"gave up: {len(tries)} attempts failed (last exit {last.get('exit')}); delete the memo to retry"
+            return "gave up", f"gave up: {len(tries)} attempts failed (last {how}); delete the memo to retry"
         due_at = (last.get("finished") or last.get("started", 0)) + BACKOFF * 2 ** (len(tries) - 1)
         if self.clock() < due_at:
-            return "waiting", f"waiting: attempt {len(tries)} exited {last.get('exit')}; retry after {iso(due_at)}"
+            return "waiting", f"waiting: attempt {len(tries)} {how}; retry after {iso(due_at)}"
         return "retry", f"attempt {len(tries) + 1} of {MAX_TRIES}"
 
     def memo(self, a):
@@ -484,11 +637,11 @@ class Waker:
         return self.key(a), self.attempt(p, doc, self.key(a), lambda: self.worktree(a),
                                          lambda path: self.command(a, path, incomplete))[1]
 
-    def attempt(self, p, doc, key, worktree, command):
-        """One attempt of the wake whose memo `p` holds `doc`, when its state allows: the memo is written before
-        Codex runs (a crash counts as an attempt), `command(path)` runs in `worktree()`, which is removed after
-        unless Codex left changes in it. (whether Codex was started, what happened)."""
-        what, detail = self.state(doc)
+    def attempt(self, p, doc, key, worktree, command, state=None):
+        """One attempt of the wake whose memo `p` holds `doc`, when its state (`state`, else self.state) allows: the
+        memo is written before Codex runs (a crash counts as an attempt), `command(path)` runs in `worktree()`, which
+        is removed after unless Codex left changes in it. (whether Codex was started, what happened)."""
+        what, detail = (state or self.state)(doc)
         if what != "retry":
             return False, detail
         t = self.clock()
@@ -528,27 +681,211 @@ class Waker:
         p = self.home / "accepts" / f"{self.accept_key(c)}.json"
         return p, (json.loads(p.read_text()) if p.is_file() else None)
 
-    def accept_worktree(self, c, base):
-        """A detached worktree of the mirror at the base, its own for this closure item and base."""
+    def accept_worktree(self, c, base, n=1):
+        """A detached worktree of the mirror at the base, its own for this closure item, base and attempt `n` (a
+        retry starts clean; the earlier attempt's worktree keeps what that attempt left)."""
         self.accept_key(c)
-        path = self.trees / f"accept-{c['closure'][:12]}-{c['item']}-{commit(base)[:12]}"
+        path = self.trees / (f"accept-{c['closure'][:12]}-{c['item']}-{commit(base)[:12]}" + (f"-{n}" if n > 1 else ""))
         if not path.exists():
             self.trees.mkdir(parents=True, exist_ok=True)
             git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(path), base)
         return path
 
+    def accept_state(self, doc):
+        """(what, detail) of an acceptance memo. A wake is done only once its verdict reached GitHub (`published`).
+        After a run of Codex that exited 0 (an older waker's memo of one included: it counted that as done) the
+        verdict is to be published ("publish"), each failed publication retried after BACKOFF seconds, doubled each
+        time, at most MAX_TRIES ("waiting", "gave up"). A run whose worktree held no verdict to publish is a failed
+        attempt (`unpublished`), and Codex is woken again as after any failed attempt (state)."""
+        if doc.get("published"):
+            return "done", f"done: published, {doc['published'].get('line')}"
+        tries = doc.get("attempts", [])
+        last = tries[-1] if tries else {}
+        if last.get("exit") != 0 or last.get("unpublished"):
+            return self.state(doc)
+        pubs = doc.get("publications", [])
+        if len(pubs) >= MAX_TRIES:
+            return "gave up", (f"unpublished: gave up after {len(pubs)} failed publications (the last: "
+                               f"{pubs[-1].get('line')}); delete the memo to retry")
+        due_at = pubs[-1].get("finished", 0) + BACKOFF * 2 ** (len(pubs) - 1) if pubs else 0
+        if self.clock() < due_at:
+            return "waiting", f"unpublished: publication {len(pubs)} failed ({pubs[-1].get('line')}); retry after {iso(due_at)}"
+        return "publish", f"unpublished: publication {len(pubs) + 1} of {MAX_TRIES}"
+
     def accept(self, c, base, why_not=None):
-        """(woken, line) for obligation closure `c` (an entry of `roadmap.py due`) at the base: Codex is woken
-        when its memo's state allows and nothing holds it (`why_not`: a dry run, HOME/HOLD, an open verdict
-        pull request, a wake already started in this run); one memo per closure item, whatever the base."""
+        """(busy, line) for obligation closure `c` (an entry of `roadmap.py due`) at the base: Codex is woken, or
+        the verdict his last run prepared is published, when the memo's state allows and nothing holds it
+        (`why_not`: a dry run, HOME/HOLD, an open verdict pull request, a wake already started in this run); one
+        memo per closure item, whatever the base. Busy: Codex was woken or a publication tried in this run."""
         p, doc = self.accept_memo(c)
+        what, detail = self.accept_state(doc) if doc else ("retry", "not woken yet")
         if why_not:
-            what, detail = self.state(doc) if doc else ("retry", "not woken yet")
-            return False, detail + (f"; {why_not}" if what == "retry" else "")
+            return False, detail + (f"; {why_not}" if what in ("retry", "publish") else "")
+        if what == "publish":
+            return True, self.publish(c, base, p, doc)
         key = f"accept-{self.accept_key(c)}"
         doc = doc or {"closure": c["closure"], "item": c["item"], "duty": c["duty"], "base": base, "attempts": []}
-        return self.attempt(p, doc, key, lambda: self.accept_worktree(c, base),
-                            lambda path: self.codex_exec(path, key, accept_prompt(c, base, self.plugin, path)))
+        started, line = self.attempt(p, doc, key, lambda: self.accept_worktree(c, base, len(doc["attempts"])),
+                                     lambda path: self.codex_exec(path, key, accept_prompt(c, base, self.plugin, path)),
+                                     self.accept_state)
+        if started and doc["attempts"][-1].get("exit") == 0:
+            line += "; " + self.publish(c, base, p, doc)
+        return started, line
+
+    # -- publication: the waker, not Codex, puts the verdict on GitHub
+
+    def publish(self, c, base, p, doc):
+        """Publish the verdict Codex's last run left in its worktree: unless it reached GitHub already (published),
+        the records and blobs prepared() admits, copied onto the base by _publish. The line. A worktree with no
+        verdict to publish marks the attempt `unpublished` (Codex is woken again); a publication that failed (Git,
+        GitHub, the check's own run) is retried; one that succeeded makes the memo done and removes the worktree."""
+        last, code, t = doc["attempts"][-1], self.tree(base), self.clock()
+        branch = f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}"
+        try:
+            where = self.published(c, code, branch, base)
+            if where is None:
+                try:
+                    records, blobs = self.prepared(Path(last.get("worktree") or self.trees / "-"), c, code)
+                except Unpublished as e:
+                    last["unpublished"] = str(e)[:300]
+                    p.write_text(json.dumps(doc, indent=1))
+                    return self.accept_state(doc)[1]
+                where = self._publish(c, base, branch, records, blobs)
+        except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
+            doc.setdefault("publications", []).append({"at": iso(t), "finished": self.clock(), "ok": False,
+                                                       "line": f"publication failed: {str(e)[:300]}"})
+            p.write_text(json.dumps(doc, indent=1))
+            return self.accept_state(doc)[1]
+        doc.setdefault("publications", []).append({"at": iso(t), "finished": self.clock(), "ok": True, "line": where["line"]})
+        doc["published"] = where
+        p.write_text(json.dumps(doc, indent=1))
+        kept = Path(last.get("worktree") or self.trees / "-")
+        if kept.parent == self.trees and kept.name.startswith("accept-"):
+            self.discard(kept, kept)
+        return f"published: {where['line']}"
+
+    def published(self, c, code, branch, base):
+        """Where the verdict on closure item `c` reached GitHub, or None: the base tree `code` holds a verdict of
+        ACCEPTOR on it, or a pull request from `branch` of REPO exists, in any state, and that branch carries one
+        (Codex published it himself, an earlier run did, or a courier: never a second one). A pull request from the
+        branch name alone delivers nothing (Codex finding on #211 head 7: an unrelated closed one read as delivery,
+        and Codex's worktree, the only copy of his signed verdict, was removed)."""
+        held = held_verdict(code, c)
+        if held:
+            return {"line": f"the base holds {ACCEPTOR}'s verdict {held[:12]}", "record": held}
+        pulls = self.forge.pulls(branch)
+        rid = self.delivered(c, code, branch, base) if pulls else None
+        if rid:
+            return {"line": f"pull request #{pulls[0][0]} ({str(pulls[0][1]).lower()}) from {branch} carries "
+                            f"{ACCEPTOR}'s verdict {rid[:12]}", "pr": pulls[0][0], "branch": branch, "record": rid}
+        return None
+
+    def delivered(self, c, code, branch, base):
+        """The id of a verdict on closure item `c` that `branch` of origin adds over the base and that verify() admits
+        with the blobs the branch adds (a regular file each, as verify_verdicts reads Codex's), or None."""
+        tip = git("-C", str(self.mirror), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
+        if not tip:
+            return None
+        git("-C", str(self.mirror), "fetch", "--quiet", "origin", f"refs/heads/{branch}")
+        theirs = commit(git("-C", str(self.mirror), "rev-parse", "FETCH_HEAD").decode().strip())
+        raw = git("-C", str(self.mirror), "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", "--diff-filter=A",
+                  commit(base), theirs, "--", STORE).decode().split("\0")
+        added = {}
+        for meta, path in zip(raw[0::2], raw[1::2]):
+            kind, ident = stored(path)
+            if meta.lstrip(":").split()[1] == REGULAR and HEX.match(ident):
+                added[(kind, ident)] = git("-C", str(self.mirror), "cat-file", "blob", f"{theirs}:{path}")
+        blobs = {i: d for (k, i), d in added.items() if k == "blobs"}
+        for (kind, rid), data in sorted(added.items()):
+            try:
+                rec = json.loads(data)["record"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            if kind == "records" and isinstance(rec, dict) and isinstance(rec.get("body"), dict) and binds(rec, c):
+                cited = {b: d for b, d in blobs.items() if b in cites(rec["body"], set())}
+                if self.verify(code, c, {rid: data}, cited) is None:
+                    return rid
+        return None
+
+    def prepared(self, wt, c, code):
+        """({record id: bytes}, {blob id: bytes}) of the verdict Codex left in his worktree `wt`: everything new in
+        its store, read once. Unpublished unless it is only new regular files named by their content (no change to
+        the base's store), at least one record, and verify() finds nothing wrong with them."""
+        if not (wt.is_dir() and (wt / ".git").exists()):
+            raise Unpublished(f"Codex left no worktree, so no verdict ({wt.name})")
+        raw = git("-C", str(wt), *STATUS, "--", STORE).decode()
+        records, blobs, size = {}, {}, 0
+        for e in (x for x in raw.split("\0") if x):
+            xy, path = e[:2], e[3:]
+            kind, ident = stored(path)
+            f = wt / path
+            if xy != "??" or not HEX.match(ident) or f.is_symlink() or not f.is_file():
+                raise Unpublished(f"the store holds {xy} {path[:80]}: only new records and blobs named by their content "
+                                  "are published")
+            size += f.stat().st_size
+            if size > MAX_PREPARED:
+                raise Unpublished(f"the prepared records and blobs exceed {MAX_PREPARED} bytes")
+            (records if kind == "records" else blobs)[ident] = f.read_bytes()
+        if not records:
+            raise Unpublished("Codex left no verdict record in his worktree's store")
+        why = self.verify(code, c, records, blobs)
+        if why:
+            raise Unpublished(why)
+        return records, blobs
+
+    def verify(self, code, c, records, blobs):
+        """verify_verdicts on these bytes, in a process of its own with the base tree `code` first on PYTHONPATH:
+        the base's package checks the signatures under the base's pins."""
+        req = {"code": str(code), "actor": ACCEPTOR, "closure": c["closure"], "item": c["item"], "evidence": c.get("evidence"),
+               "records": {k: base64.b64encode(v).decode() for k, v in records.items()},
+               "blobs": {k: base64.b64encode(v).decode() for k, v in blobs.items()}}
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(Path.home()), "PYTHONPATH": str(code),
+               "PYTHONDONTWRITEBYTECODE": "1", "LANG": "en_US.UTF-8"}
+        r = subprocess.run([self.python, str(Path(__file__).resolve()), "--verify-verdicts"], input=json.dumps(req).encode(),
+                           env=env, capture_output=True, check=False, timeout=600)
+        if r.returncode:
+            raise RuntimeError(f"the verdict check exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+        return json.loads(r.stdout)["refused"]
+
+    def _publish(self, c, base, branch, records, blobs):
+        """The verdict's records and blobs, these bytes, in a new worktree of the base; one commit by the waker of the
+        store entries the base lacks (records and blobs only: no generated view is committed, G11); pushed to
+        `branch` only while it does not exist (or exists already holding these records: an earlier run's push), and
+        the pull request opened."""
+        self.accept_key(c)
+        wt = self.trees / f"publish-{c['closure'][:12]}-{c['item']}-{commit(base)[:12]}"
+        self.discard(wt, wt)
+        self.trees.mkdir(parents=True, exist_ok=True)
+        git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(wt), base)
+        try:
+            ours = {f"{STORE}records/{r}.json": d for r, d in records.items()}
+            ours.update((f"{STORE}blobs/{b}", d) for b, d in blobs.items())
+            for path, data in ours.items():         # one the base holds already is the same bytes (Codex 41d56ad7ba93):
+                (wt / path).parent.mkdir(parents=True, exist_ok=True)       # content-addressed; added, it changes nothing
+                (wt / path).write_bytes(data)
+            git("-C", str(wt), "add", "--", *sorted(ours))
+            kinds = sorted({json.loads(d)["record"]["type"] for d in records.values()})
+            title = f"Codex: {' and '.join(kinds)} of obligation closure {c['closure'][:12]}"
+            git("-C", str(wt), *COMMITTER, "commit", "--quiet", "--no-verify", "-m",
+                verdict_message(c, base, title, records, blobs))
+            new = commit(git("-C", str(wt), "rev-parse", "HEAD").decode().strip())
+            tip = git("-C", str(wt), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
+            if tip:
+                git("-C", str(wt), "fetch", "--quiet", "origin", f"refs/heads/{branch}")
+                theirs = commit(git("-C", str(wt), "rev-parse", "FETCH_HEAD").decode().strip())
+                why = pushed_before(wt, theirs, base, ours)
+                if why:
+                    raise RuntimeError(f"{branch} exists at {theirs[:12]}, not this verdict ({why}): nothing pushed")
+                new = theirs
+            else:
+                git("-C", str(wt), "push", "--quiet", f"--force-with-lease=refs/heads/{branch}:", "origin",
+                    f"{new}:refs/heads/{branch}")
+            body = verdict_body(c, base, branch, records, blobs, self.home / "results" / f"accept-{self.accept_key(c)}.md")
+            n = self.forge.open(branch, title, body)
+            return {"line": f"pull request #{n} from {branch} at {new[:12]}", "pr": n, "branch": branch, "commit": new,
+                    "records": sorted(records), "blobs": sorted(blobs)}
+        finally:
+            self.discard(wt, wt)
 
 
 def prompt(a, plugin, path, incomplete=None):
@@ -577,10 +914,60 @@ def accept_prompt(c, base, plugin, path):
             f"T's subject: {c.get('subject') or 'none'}; D requires: {ids(c['requires'])}. Your worktree is {path}, "
             f"detached at M (its remote origin is the repository). The plugin's stdio MCP client is "
             f"{plugin / 'scripts' / 'warrant-mcp-call'}. Judge whether what D owes is done; then accept T item "
-            f"{c['item']}, or challenge T, through MCP. Commit only that record (and its blobs) on the branch "
-            f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}, push it and open a pull request into {BRANCH}. These facts come from "
+            f"{c['item']}, or challenge T, through MCP, into this worktree's store. Leave there only that record and "
+            f"the blobs it cites; do not commit, push or open a pull request: after you exit, the waker checks them "
+            f"under the base's pin for {ACCEPTOR} and publishes them itself on the branch "
+            f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}, a pull request into {BRANCH} whose description is your "
+            "final message. These facts come from "
             f"`tools/roadmap.py due --actor {ACCEPTOR}` at M, run by the review waker; check them yourself before you "
             "rely on them.")
+
+
+def pushed_before(wt, theirs, base, ours):
+    """Why the existing branch tip `theirs` is not this verdict as an earlier run pushed it, or None. It must be one
+    commit on a commit of the base branch (an ancestor of `base`) that adds exactly the store entries `ours`, byte
+    for byte, each a regular file, and changes nothing else: filenames prove nothing (Codex finding 25890f89f776: a
+    record replaced by {} on the branch read as delivered)."""
+    parents = git("-C", str(wt), "rev-list", "--parents", "-n", "1", theirs).decode().split()[1:]
+    if len(parents) != 1 or subprocess.run(["git", "-C", str(wt), "merge-base", "--is-ancestor", parents[0], base],
+                                           capture_output=True, check=False).returncode:
+        return "not one commit on the base branch"
+    raw = git("-C", str(wt), "diff-tree", "-r", "-z", "--no-renames", "--no-commit-id", parents[0],
+              theirs).decode().split("\0")
+    seen = set()
+    for meta, path in zip(raw[0::2], raw[1::2]):
+        _, new_mode, _, _, status = meta.lstrip(":").split()
+        if path in ours:        # a regular file: a link's target text can equal the bytes (Codex finding 9db2a2b6ea12)
+            if status != "A" or new_mode != REGULAR or git("-C", str(wt), "cat-file", "blob", f"{theirs}:{path}") != ours[path]:
+                return f"{path[len(STORE):][:20]} differs"
+            seen.add(path)
+        else:
+            return f"{status} {path[:60]}"
+    return None if seen == set(ours) else f"{len(set(ours) - seen)} store entries missing"
+
+
+def verdict_message(c, base, title, records, blobs):
+    return (f"{title} (duty {c['duty'][:12]}), published by the review waker\n\n"
+            + "".join(f"record {r}\n" for r in sorted(records)) + "".join(f"blob {b}\n" for b in sorted(blobs))
+            + f"\nCodex filed these through MCP in his acceptance wake of closure {c['closure']} item {c['item']} at "
+            f"base {base[:12]} and left them in his worktree. The review waker checked them under the base's pin for "
+            f"{ACCEPTOR}, committed only these bytes on the base (records and blobs: no generated view), and signed "
+            "nothing.\n")
+
+
+def verdict_body(c, base, branch, records, blobs, report):
+    """The pull request's description: the facts the waker checked, then Codex's own report (his last message)."""
+    try:
+        text = report.read_text(errors="replace").strip()[:50000] if report.is_file() else ""
+    except OSError:
+        text = ""
+    return (f"Codex's verdict on a roadmap obligation's closure. Codex prepared it in his acceptance wake and signed it "
+            f"through MCP; the review waker published it on `{branch}` and signed nothing.\n\n"
+            f"- Duty D: `{c['duty']}` (goal {c.get('goal')})\n- Closure T, item {c['item']}: `{c['closure']}`\n"
+            f"- Base M: `{base}`\n"
+            + "".join(f"- Record `{r}`: signed by {ACCEPTOR} with the key the base's roles.json pins\n" for r in sorted(records))
+            + "".join(f"- Blob `{b}`: cited by the record\n" for b in sorted(blobs))
+            + "\n## Codex's report (his last message in the wake, unedited)\n\n" + (text or "(none)") + "\n")
 
 
 def tick(w, dry):
@@ -663,7 +1050,12 @@ def acceptance_lines(w, base, found, dry, held):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--dry-run", action="store_true")
-    dry = ap.parse_args(argv).dry_run
+    ap.add_argument("--verify-verdicts", action="store_true", help=argparse.SUPPRESS)
+    args = ap.parse_args(argv)
+    if args.verify_verdicts:            # Waker.verify: the base's package on PYTHONPATH, the request on stdin
+        print(json.dumps({"refused": verify_verdicts(json.load(sys.stdin))}))
+        return 0
+    dry = args.dry_run
     w = Waker()
     with open(w.home / "lock", "w") as lock:
         try:
