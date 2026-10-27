@@ -24,16 +24,17 @@ of it (Python API, CLI, stdio MCP).
 
 ## Install
 
-Warrant 3 (`3.0.0.dev0`) is not published yet; install it from a checkout:
-
 ```bash
-pip install .                 # Python ≥ 3.10; depends on `cryptography`
-pip install ".[mcp]"          # adds `warrant-agent-mcp` on the official MCP SDK
+pip install --pre warrant-graph           # Warrant 3 (3.0.0a1); Python ≥ 3.10; depends on `cryptography`
+pip install --pre "warrant-graph[mcp]"    # adds `warrant-agent-mcp` on the official MCP SDK (2.x, from 2.3)
 ```
 
 This installs the commands `warrant`, `warrant-agent` and `warrant-agent-mcp`
-and the packages `warrant` and `warrant_agent`. `warrant-graph` 2.0.0a1 on PyPI
-is Warrant 2; `warrant-verify` (≤ 0.12.0) is the retired 0.x generation.
+and the packages `warrant` and `warrant_agent` (`pip install .` does the same
+from a checkout). 3.0.0a1 is an alpha: pip installs it only with `--pre`, and the
+record formats and interfaces may still change. `warrant-graph` 2.0.0a1 is
+Warrant 2 and does not read Warrant 3 stores; `warrant-verify` (≤ 0.12.0) is the
+retired 0.x generation.
 
 ## The model in one table
 
@@ -53,15 +54,17 @@ it authorizes nothing: roles are the reader's profile.
 
 ## Status
 
-**3.0.0.dev0, unpublished.** Warrant 3 replaced Warrant 2 in this repository on
-2026-10-27; the next release is a Warrant 3 release (roadmap G12).
+**3.0.0a1, the first Warrant 3 release (alpha).** Warrant 3 replaced Warrant 2
+in this repository on 2026-10-27.
 
 - **What is backed.** The normative sentences of docs/V3.md are `claim@1`
   records, each with the test cases that witness it and the mutants of
   `tests/mutants.py` those cases kill; CI runs every mutant and refuses a
   survivor, and `python3 tools/claims.py check` holds every claim to the
-  spec's text and the tests. Their signed acceptance waits for the claims
-  checker's key (docs/V3.md §12).
+  spec's text and the tests. A claim counts once the claims checker
+  (`claims-checker`) has run its witnesses and mutants at a commit and signed
+  its acceptance; `python3 tools/claims.py view` shows which claims are
+  accepted, and whether at the current tree.
 - **What is migrated.** The repository's Warrant 2 records were migrated, not
   re-signed: one `migration@1` attest of the migrator checker vouches for them,
   and the migration replays at the tag `history/warrant-2-2026-10-27`

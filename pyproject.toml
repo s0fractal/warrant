@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 # Warrant 3 (docs/V3.md). `warrant-graph` 2.0.0a1 on PyPI is Warrant 2 (history/warrant-2-2026-10-27);
-# `warrant-verify` (<= 0.12.0) is the retired 0.x generation. Nothing of 3.x is published yet (G12).
+# `warrant-verify` (<= 0.12.0) is the retired 0.x generation.
 name = "warrant-graph"
-version = "3.0.0.dev0"
+version = "3.0.0a1"
 description = "Signed records of work with native lineage and schemas as records; each receiver judges them under its own trust and profile."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,9 +19,9 @@ dependencies = ["cryptography>=41"]
 # receipt; its tests run the Sigma provider (sigma_provider in sigma-glyph 0.8.0). Warrant 3 itself
 # replays nothing: a replay is a checker actor's attestation (docs/V3.md §6).
 pilot = ["sigma-glyph==0.8.0"]
-# The thin stdio MCP front end of warrant_agent (`warrant-agent-mcp`), on the
-# official Python SDK at one exact version.
-mcp = ["mcp==2.3.0"]
+# The thin stdio MCP front end of warrant_agent (`warrant-agent-mcp`), on the official Python SDK; CI and
+# the release test one exact version (mcp==2.3.0, .github/workflows).
+mcp = ["mcp>=2.3,<3"]
 
 [project.urls]
 Homepage = "https://github.com/s0fractal/warrant"

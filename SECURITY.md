@@ -13,7 +13,7 @@ security report and asking for a channel. Do not put the details in it.
 ## What you can expect, honestly
 
 This project is maintained by one person, with a model actor holding a bounded,
-revocable delegation for day-to-day work (`MAINTAINER-LEASE.md`). Accountability
+revocable delegation for day-to-day work (AGENTS.md). Accountability
 sits with the person; the model is a delegate, not a maintainer of record. There
 is no security team, no on-call rotation, and no paid triage.
 
@@ -42,7 +42,8 @@ The things Warrant 3 asks you to trust (docs/V3.md):
   required lineage open; a fork hidden; a challenge counted or ignored against §5.
 - **Schemas.** A schema counted short of its quorum, or a body admitted that does not fit its schema.
 - **Identity.** Two different snapshots with one digest, or one assessment with two ids; a checker's
-  identity that does not name its whole import closure.
+  attest whose `code` does not name its whole import closure, or that CI accepts though `code` is not
+  the checker's code at the commit it names.
 - **The repository's gate** (tools/gate.py): a pull request merged without the acceptance, tail,
   checks or owner-path rules of docs/V3.md §14.
 

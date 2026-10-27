@@ -9,6 +9,7 @@ abstract: >-
   0.x at the tag history/warrant-0.x-2026-10-18.
 message: "If you use or evaluate this work, please cite it."
 type: software
+version: "3.0.0a1"
 license: MIT
 repository-code: "https://github.com/s0fractal/warrant"
 url: "https://github.com/s0fractal/warrant"
@@ -38,4 +39,6 @@ references:
     title: "Sigma-GLYPH"
     repository-code: "https://github.com/s0fractal/sigma-glyph"
     notes: >-
-      Supplies the sigma-resume kernel that Warrant 2 pins (commit c864d3e).
+      Historical: it supplied the sigma-resume kernel of Warrant 2 (commit c864d3e).
+      Warrant 3 does not depend on it; only the repository's pilot (warrant_pilot/,
+      not in the package) still uses it.

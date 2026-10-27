@@ -6,6 +6,7 @@
   "roles": {
    "claim/verifier": [
     "checker sha256:eed989f372ca13d5638f7b16cc936f22f11f2fde602662c21385400c4d41a619",
+    "claims-checker",
     "codex"
    ],
    "migrator": [
@@ -18,7 +19,8 @@
     "s0fractal"
    ],
    "replayer": [
-    "checker sha256:c0a8c6593841a65935b9985a6e2bec60ae1c54ec7ced402be58676a13bddd482"
+    "checker sha256:c0a8c6593841a65935b9985a6e2bec60ae1c54ec7ced402be58676a13bddd482",
+    "review-replayer"
    ],
    "roadmap/acceptor": [
     "codex"
@@ -36,20 +38,20 @@
  "repository": "s0fractal/warrant",
  "trust": {
   "keys": {
-   "checker sha256:c0a8c6593841a65935b9985a6e2bec60ae1c54ec7ced402be58676a13bddd482": [
-    "fccdd2d5ca82d916e572624c5d1834b23df7eb2e39a97fe8fd963c8237395955"
-   ],
    "checker sha256:dd56e635635051d550e0fd8a9d8074ce0fb989df48d6b7c3da9769f8cff8826f": [
     "32ad176c555160997f6b00e50057fc06c33267e300f7cd5a9ef5a8d3368e9a21"
    ],
-   "checker sha256:eed989f372ca13d5638f7b16cc936f22f11f2fde602662c21385400c4d41a619": [
-    "cd4f8c25b7f583c1380fba736f0efd8dc63156c128b2ebed253547811d9ca52f"
+   "claims-checker": [
+    "4fdb9574fb0890f1937fb625e4e4311108a7ecd775652ac70d29ab33f1d0c5bd"
    ],
    "claude": [
     "fc176e4bca9372cb329650c804f700079d5b283839a51671c3fd662df3f6ca57"
    ],
    "codex": [
     "793e615ef5693cf6be7304aa284c6cc6f1fae9e3a2996cfafd23e1c160023b12"
+   ],
+   "review-replayer": [
+    "283b75a453ac7389596fba96092c938d7b19eea89ab6e334d7f53839b6d98575"
    ]
   },
   "warrant": "trust/3"

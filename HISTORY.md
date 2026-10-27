@@ -1,5 +1,18 @@
 # History
 
+## Removed from the tree before 3.0.0a1 (2026-10-27)
+
+Each is byte-identical at the tag `history/warrant-2-2026-10-27` (and the 0.x ones at
+`history/warrant-0.x-2026-10-18`); `git show history/warrant-2-2026-10-27:<path>` retrieves it.
+
+| Path | What it was | Why it left the tree |
+| --- | --- | --- |
+| `.warrants/` (81 files) | the Warrant 0.x governance records (threshold adoptions, WRT decisions); they verify with `warrant-verify` 0.12.0 | no Warrant 3 rule or tool reads them; the Claude Code plugin bridge writes its own store elsewhere |
+| `trust-config.json` | the 0.x roster and keys those records verify against | only `.warrants/` used it |
+| `MODEL-ACTORS.md` | the 0.x positioning of model actors as delegates | described 0.x rosters and leases that no longer exist; AGENTS.md holds the rules that remain |
+| `MAINTAINER-LEASE.md` | the owner's 0.x delegation to a model actor, as prose | superseded by AGENTS.md rule 6 and the owner-path rule of the merge gate |
+| actors `checker sha256:eed989…` and `checker sha256:c0a8c6…` (keys in `.warrant/v3.json`) | Warrant 2's claims checker and review replay checker, named by their code | their keys are unbound, so nothing new is signed as them; they keep the roles `claim/verifier` and `replayer` because 283 migrated claim acceptances and 35 migrated replays need them to count. `claims-checker` and `review-replayer` replace them (docs/V3.md §6) |
+
 ## Warrant 2, retired 2026-10-27 by the switch to Warrant 3
 
 Warrant 2 is preserved at the git tag **`history/warrant-2-2026-10-27`**, created by the owner at
@@ -99,4 +112,4 @@ one current path, and deletion of the superseded implementations.
 | Dogfood duties `ee86a1c5` (revalidation) and `e73729b1` (S3) in `dogfood/wrt-022` | still OPEN in that store. They were not discharged; the rebuild supersedes them |
 | PR #60 (WRT-008 fact derivation, deferred) | superseded |
 | Claude Code plugin (`integrations/claude-code-plugin`) | kept as a bridge for the owner's installed plugin. It records and verifies in the 0.x format through `warrant-verify` 0.12.0 |
-| Governance records `.warrants/`, `trust-config.json`, `trust/` | kept as historical data. They verify with `warrant-verify` 0.12.0 |
+| Governance records `.warrants/`, `trust-config.json`, `trust/` | kept as historical data until 2026-10-27, then removed from the tree (above). They verify with `warrant-verify` 0.12.0 |

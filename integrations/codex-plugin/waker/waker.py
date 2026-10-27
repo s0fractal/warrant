@@ -43,12 +43,12 @@ repository exists, in any state, or the base holds codex's verdict on that item 
 An attempt that exited 0 and left nothing to publish is "unpublished", a failed attempt; a publication
 that failed is retried after the same backoff, without waking Codex; the run's lines say which.
 
-Replay. The review replay checker is an actor named by the digest of its whole import closure
-(`checker sha256:<H>`, what the base's `tools/review.py identity` prints; CHECKER_PATHS); `tools/review.py
-replay` signs as it only from code with that identity. The waker runs the BASE tree's `review.py replay --key
+Replay. The review replay checker is the actor the base's `tools/review.py identity` names (`review-replayer`);
+each replay it signs names the code that ran (the digest of its whole import closure, CHECKER_PATHS) and the
+environment. The waker runs the BASE tree's `review.py replay --key
 -` (the base's .warrant/v3.json must name that actor a replayer; a pull request whose head changes any of
 CHECKER_PATHS is not replayed) in a detached worktree of the head
-(TREES/<n>-<head12>-replay), with the checker's seed REPLAYERS/<H>.seed (a regular file of this user,
+(TREES/<n>-<head12>-replay), with the checker's seed REPLAYERS/<actor>.seed (a regular file of this user,
 mode 0600) on standard input only, inside sandbox-exec: no network, no write outside that worktree,
 its git directory and a scratch directory HOME/replay-work/<n>-<head>, no read of REPLAYERS or of the
 usual credential directories. It replays every mechanical finding of the head's store (any pull
@@ -106,7 +106,7 @@ COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 OPERATOR_CHECKOUT = Path.home() / "Projects" / "warrant"
 SANDBOX = "/usr/bin/sandbox-exec"
 CHECKER_PATHS = ("tools/review.py", "tools/repo.py", "tools/gate.py", "warrant")   # the checker's whole import closure
-CHECKER = re.compile(r"checker sha256:([0-9a-f]{64})\Z")
+CHECKER = re.compile(r"[a-z][a-z0-9-]{0,63}\Z")   # a checker's actor id, also its seed's file name
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
 STORE = ".warrant/"
@@ -417,13 +417,15 @@ class Waker:
     # -- the replay before a wake
 
     def seed(self, code):
-        """(the base's replay checker, its seed) for the base tree `code`, or (why not, None): the actor is what the
-        base's own `tools/review.py identity` prints, and the base's .warrant/v3.json must name it a replayer."""
+        """(the base's replay checker, its seed) for the base tree `code`, or (why not, None): the actor is the one the
+        base's own `tools/review.py identity` names, and the base's .warrant/v3.json must name it a replayer."""
         r = subprocess.run([self.replay_python, str(code / "tools" / "review.py"), "identity"], capture_output=True,
                            env=self.env(self.home / "replay-work", code), check=False)
-        actor = r.stdout.decode().strip()
-        m = CHECKER.match(actor)
-        if r.returncode or m is None:
+        try:
+            actor = json.loads(r.stdout)["actor"]
+        except (ValueError, KeyError, TypeError):
+            actor = None
+        if r.returncode or not (isinstance(actor, str) and CHECKER.match(actor)):
             return f"replay skipped: the base's checker has no identity ({r.stderr.decode(errors='replace').strip()[-120:]})", None
         try:
             roles = json.loads((code / ".warrant" / "v3.json").read_text())["profile"]["roles"]
@@ -431,7 +433,7 @@ class Waker:
             roles = {}
         if actor not in roles.get("replayer", []):
             return f"replay skipped: the base's v3.json names {actor[:27]} no replayer", None
-        path = self.replayers / f"{m.group(1)}.seed"
+        path = self.replayers / f"{actor}.seed"
         try:
             st = path.lstat()
         except OSError:

@@ -15,8 +15,8 @@ One substitution is made first: the value of `assessment` reads `…` here. It
 names the exact assessment, which includes the identity of the installed
 engine's code, so it differs between installs.
 
-Warrant 3 is not published yet; install it from a checkout with `pip install .`
-(Python 3.10 or later; the only dependency is `cryptography`).
+Install it with `pip install --pre warrant-graph` (3.0.0a1, an alpha; Python 3.10 or
+later; the only dependency is `cryptography`), or `pip install .` from a checkout.
 
 ## The four kinds of record
 

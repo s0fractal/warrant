@@ -1,4 +1,50 @@
-# Changelog
+# Changelog of warrant-graph
+
+Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 starts at 3.0.0a1;
+2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
+(docs/V3.md).
+
+## 3.0.0a1 — the first Warrant 3 release
+
+Prepared for PyPI; published when the owner pushes the tag `v3.0.0a1` (`release.yml`). An alpha
+(PEP 440): pip installs it only with `--pre`.
+
+- **[protocol] Warrant 3 replaces Warrant 2.** One record envelope with four kinds (schema, entity,
+  attest, challenge), native lineage with FORK as a core verdict, schemas as records under a k-of-n
+  schema quorum, one guard, and one store file, `.warrant/records.jsonl` (union-merged) with
+  `.warrant/blobs/` (docs/V3.md, the normative specification). The package `warrant` is Warrant 3
+  (jcs, keys and shapes kept from Warrant 2); `warrant_agent` (warrant-agent/3) is one in-process
+  assessment per call with a stateless prepare/commit and a compare-and-swap on the signer's head;
+  Warrant 2's `warrant-agent-mcp init` output still loads. 2.0.0a1 does not read Warrant 3 stores.
+- **[protocol]** Guards and effective versions are resolved together as one least fixpoint, so a
+  verdict no longer depends on record-id order; only schema-less attests back a schema; a valid schema
+  short of its quorum is a proposal, not a store problem; `canonical` is false whenever a line is
+  rejected; a non-attest `migration@1` record is INVALID instead of crashing the assessment.
+- The agent's `prepare` and `commit` assess the store with the candidate record and refuse one the
+  engine would refuse, reject or list as a new problem; `commit` decides under the writers' lock over
+  every raw line.
+- The `mcp` extra accepts the MCP SDK 2.x from 2.3 (`mcp>=2.3,<3`); CI and the release test 2.3.0.
+
+This repository (not part of the package):
+
+- The Warrant 2 records were migrated, not re-signed: 1 446 records vouched for by one `migration@1`
+  attest, replayed IDENTICAL at the tag `history/warrant-2-2026-10-27` (HISTORY.md). The 362 Warrant 2
+  claims are retired; docs/V3.md's normative sentences are `claim@1` records.
+- The checkers have stable actor ids, `claims-checker` and `review-replayer`, each with one key bound
+  once; every attest they sign names the code that ran (`code`, the digest of the checker's whole
+  import closure) and its `env`. CI re-executes every new checker attest at its commit and refuses one
+  whose code is not that commit's (`CODE_DIFFERS`). Replaces the actors named `checker sha256:<code,
+  python, cryptography>`, which every code change and every interpreter renamed.
+- Removed from the tree (kept at the history tags): the Warrant 0.x governance records `.warrants/`
+  and `trust-config.json`, `MODEL-ACTORS.md`, `MAINTAINER-LEASE.md`.
+- Merges without the owner: the review waker wakes Codex after green CI, and the merge gate merges a
+  pull request Codex accepted (#221 was the first Warrant 3 pull request merged that way).
+
+---
+
+Below this line: the earlier generations' entries, as they were written.
+
+## Earlier generations (warrant-verify 0.x, Warrant 2)
 
 
 All notable changes to this project are recorded here. The format follows
@@ -25,22 +71,7 @@ tag dates and commit ranges are exact (they come from git), the groupings and
 emphasis are a later reading. Where this file and `git log` disagree, git is
 right.
 
-## Unreleased
-
-- **[protocol] Warrant 3 replaces Warrant 2 (3.0.0.dev0, unpublished).** One record envelope with four
-  kinds (schema, entity, attest, challenge), native lineage with FORK as a core verdict, schemas as
-  records under a 2-of-2 schema quorum, one guard, and one store file, `.warrant/records.jsonl`
-  (union-merged) with `.warrant/blobs/` (docs/V3.md, now the normative specification; SPEC.md is
-  retired). The repository's 1 947 Warrant 2 records were migrated as 1 446 records vouched for by
-  one migration attest (replayed IDENTICAL; parity 362/12/49/19 with the Warrant 2 tools). The
-  package `warrant` is Warrant 3 (jcs, keys and shapes kept); the G9 pilot moves to
-  `warrant_pilot/`. `warrant_agent` (warrant-agent/3) is a thin layer: one in-process assessment
-  per call, stateless prepare/commit with a compare-and-swap on the signer's head; Warrant 2's
-  init output still loads. The repository's tools (`tools/claims.py`, `roadmap.py`, `review.py`,
-  `gate.py`, `graph.py`) are schema-driven; the merge gate, the review waker and the Codex skill read
-  record lines and blobs. The 362 Warrant 2 claims are retired; docs/V3.md's 53 claims are filed,
-  backed by tests and mutants, waiting for the claims checker's key. Warrant 2 is at the tag
-  `history/warrant-2-2026-10-27` (HISTORY.md); `warrant-graph` 2.0.0a1 stays published.
+## Warrant 2 after 2.0.0a1 (unreleased)
 
 - **The record graph by query; its projections are build artifacts (G11).** SPEC-CLAIMS.md,
   ROADMAP.md, REVIEWS.md and WITNESSES.md are no longer committed: `project` writes them to

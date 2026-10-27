@@ -1,6 +1,6 @@
 name: release
 
-# Publishes warrant-graph to PyPI when a tag `v3.*` is pushed (none yet: the next release is G12), by PyPI Trusted Publishing (OIDC):
+# Publishes warrant-graph to PyPI when a tag `v3.*` is pushed (the owner pushes it), by PyPI Trusted Publishing (OIDC):
 # no token is stored anywhere. PyPI accepts an upload from this repository's workflow file
 # `release.yml` running in the environment `pypi` (the publisher the owner registers on PyPI;
 # before the first upload it is a "pending publisher", and that upload creates the project).
@@ -17,7 +17,7 @@ name: release
 #             checking them against the build job's digests.
 #   readback  PyPI's JSON API for this version, polled until it lists the files: the version and
 #             the set of file names must be the built ones and each sha256 the built digest. A
-#             failed readback is an incomplete publication (AGENTS.md rule 5), not a success: the
+#             failed readback is an incomplete publication, not a success: the
 #             job fails, and nothing here uploads again.
 #
 # Actions are pinned by commit SHA, the version in the trailing comment (.github/dependabot.yml
