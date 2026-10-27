@@ -63,8 +63,8 @@ def main(argv=None):
         c.add_argument("--at", type=int)
         c.add_argument("--expect-head")
     cmds["key"].add_argument("--out", required=True)
-    for f in ("--trust", "--actor", "--key"):
-        cmds["trust"].add_argument(f, required=True)
+    cmds["trust"].add_argument("--trust", required=True)
+    cmds["trust"].add_argument("--bind", action="append", required=True, metavar="ACTOR=SEED")
     c = cmds["put"]
     c.add_argument("--kind", required=True, choices=R.KINDS)
     c.add_argument("--schema")
@@ -92,19 +92,20 @@ def main(argv=None):
             os.write(fd, k.seed_hex().encode())
             os.close(fd)
             out = {"public": k.public}
-        elif a.cmd == "trust":           # bind the seed's public key to an actor in a trust/3 file (created if absent)
-            key = K.Key.from_seed_hex(Path(home(a.key)).read_text())
-            name = os.path.basename(a.trust)        # a trust file of the current directory, by its name alone
-            if name != a.trust or name in ("", ".", ".."):
-                raise Refused("--trust names a file of the current directory")
-            path = Path(os.getcwd(), name)
-            doc = json.loads(path.read_text()) if path.exists() else {"warrant": "trust/3", "keys": {}}
-            doc["keys"][a.actor] = sorted(set(doc["keys"].get(a.actor, [])) | {key.public})
+        elif a.cmd == "trust":           # a trust/3 file binding each seed's public key to its actor, written whole
+            keys = {}
+            for b in a.bind:
+                actor, _, seed = b.partition("=")
+                keys.setdefault(actor, set()).add(K.Key.from_seed_hex(Path(home(seed)).read_text()).public)
+            doc = {"warrant": "trust/3", "keys": {x: sorted(v) for x, v in sorted(keys.items())}}
             why = E.trust_problem(doc)
             if why:
                 raise Refused(why)
-            path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
-            out = {"actor": a.actor, "public": key.public}
+            name = os.path.basename(a.trust)        # a trust file of the current directory, by its name alone
+            if name != a.trust or name in ("", ".", ".."):
+                raise Refused("--trust names a file of the current directory")
+            Path(os.getcwd(), name).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+            out = doc
         elif a.cmd == "bootstrap":
             out = {"schemas": [put(a, "schema", s) for s in B.SCHEMAS]}
         elif a.cmd == "put":

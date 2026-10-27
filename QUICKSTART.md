@@ -37,8 +37,7 @@ must attest it before it counts.
 warrant init --store store
 printf '%064x\n' 1 > alice.key
 printf '%064x\n' 2 > bob.key
-warrant trust --trust trust.json --actor alice --key alice.key > /dev/null
-warrant trust --trust trust.json --actor bob --key bob.key > /dev/null
+warrant trust --trust trust.json --bind alice=alice.key --bind bob=bob.key > /dev/null
 cat > profile.json <<'EOF'
 {"warrant": "profile/3", "roles": {"schema/author": ["alice"], "roadmap/acceptor": ["bob"]}}
 EOF

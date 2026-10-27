@@ -89,7 +89,7 @@ def git(root, *args, stdin=None):
     bad = [a for a in args if str(a).startswith("-") and a not in GIT_OPTIONS]
     if bad:
         raise Refused(f"git arguments that look like options: {bad[:3]}", "GATE_INPUT")
-    r = subprocess.run(["git", "-C", os.path.realpath(root), *map(str, args)], input=stdin, capture_output=True, check=False)
+    r = subprocess.run(["git", *map(str, args)], cwd=os.path.realpath(root), input=stdin, capture_output=True, check=False)
     if r.returncode:
         raise subprocess.CalledProcessError(r.returncode, args, r.stdout, r.stderr)
     return r.stdout
