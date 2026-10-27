@@ -4,6 +4,7 @@ import fcntl
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from warrant import jcs as C
@@ -85,10 +86,11 @@ class Store:
 
     def put_blob(self, data):
         h = hashlib.sha256(data).hexdigest()
-        p = Path(confined(self.blobs / h, self.blobs))
-        if not p.exists():
-            tmp = p.with_name(f".{h}.{os.getpid()}")
-            tmp.write_bytes(data)
+        p = confined(self.blobs / h, self.blobs)
+        if not os.path.exists(p):
+            fd, tmp = tempfile.mkstemp(prefix=".blob.", dir=self.blobs)     # named apart from the content
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
             os.replace(tmp, p)
         return h
 
