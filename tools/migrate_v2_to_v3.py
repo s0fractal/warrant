@@ -40,6 +40,7 @@ CARRIER = {"name": "v2-transition@1", "fields": {"state": "str", "body": "obj"},
 # The bootstrap schemas' time: fixed, so their ids do not move with the v2 store and a second schema author
 # (the owner's 2-of-2 quorum, .warrant/v3.json) can accept exactly these ids once.
 BOOTSTRAP_AT = 1793059200                                          # 2026-10-27T00:00:00Z
+ACCEPTS = Path(".warrant/v3/schema-accepts.jsonl")                # codex's acceptances of the bootstrap schemas
 CARRIED = ("established", "residual", "opened", "subject")       # transition members kept verbatim when present
 # What the migration does not carry, and why each loss is safe (checked per record, else refused).
 DROPPED = {
@@ -527,6 +528,12 @@ class Migration:
         return {k: sorted(set(v)) for k, v in sorted(roles.items())}
 
 
+def accepts(root):
+    """The signed lines of the repository's schema acceptances, as committed (byte for byte), or none."""
+    p = Path(root) / ACCEPTS
+    return [x + b"\n" for x in p.read_bytes().split(b"\n") if x] if p.is_file() else []
+
+
 def bootstrap_lines(claude_key):
     """[(id, line)] of the bootstrap and carrier schemas, filed by claude at BOOTSTRAP_AT as one chain."""
     out, prev = [], None
@@ -601,7 +608,7 @@ def main(argv=None):
     sub.choices["run"].add_argument("--claude-key", default=str(CLAUDE_SEED))
     sub.choices["run"].add_argument("--migrator-key", default=str(MIGRATOR_SEED))
     sub.choices["run"].add_argument("--include", action="append", default=[],
-                                    help="a file of signed lines to add as they are (schema acceptances)")
+                                    help=f"a file of signed lines to add as they are (default: {ACCEPTS})")
     a = ap.parse_args(argv)
     try:
         why = closure_problem()
@@ -618,7 +625,8 @@ def main(argv=None):
             os.close(fd)
             print(json.dumps({"seed": str(p), "public": key.public, "actor": actor()}))
         elif a.cmd == "run":
-            extra = [x + b"\n" for f in a.include for x in Path(confined(f, ROOT)).read_bytes().split(b"\n") if x]
+            extra = [x + b"\n" for f in a.include for x in Path(confined(f, ROOT)).read_bytes().split(b"\n") if x] \
+                if a.include else accepts(a.root)
             res = migrate(a.root, load_key(a.claude_key), load_key(a.migrator_key), extra)
             write(a.out, *res)
             print(json.dumps(res[4], indent=1, sort_keys=True))

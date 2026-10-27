@@ -35,23 +35,19 @@ REPLAY = {v: k for k, v in MG.REPLAY.items()}          # a v3 replay verdict rea
 DECLARED = {}
 
 
-BODY, BLOB, PENDING = {}, {}, {}
+BODY, BLOB, PROFILE = {}, {}, {}
 
 
 def v3_side():
     """The v3 report of the migrated store, {v2 id: [v3 ids]} from the migration map, {version: lineage}."""
-    lines, blobs, trust, profile, summary = MG.migrate(ROOT, K.Key.generate(), K.Key.generate())
+    # The repository's own profile: its schema quorum (.warrant/v3.json, claude and codex, 2 of 2) is met by the
+    # bootstrap schemas claude files here and codex's acceptances committed in .warrant/v3/schema-accepts.jsonl.
+    lines, blobs, trust, profile, summary = MG.migrate(ROOT, K.Key.generate(), K.Key.generate(), MG.accepts(ROOT))
     snap = Snapshot(lines, blobs)
-    # The repository's profile admits a schema only with its schema quorum (.warrant/v3.json: claude and codex,
-    # 2 of 2). Until codex accepts them, the bootstrap schemas stand behind claude alone: pending, and every
-    # migrated record of theirs invalid. The comparison runs under a parity receiver whose profile is the same
-    # but for a schema quorum of 1, a receiver's choice (docs/V3.md section 10), declared here.
-    pending = E3.assess(snap, trust, profile)
-    PENDING.update(schemas=sorted(pending["schemas_pending"]), backed_by=sorted({a for x in pending["schemas_pending"].values()
-                                                                                for a in x["backed_by"]}),
-                   need=profile["quorum"]["schema/author"], counted=len(pending["schemas"]))
-    assert PENDING["schemas"] == sorted(summary["schemas"]) and PENDING["counted"] == 0, PENDING
-    rep = E3.assess(snap, trust, dict(profile, quorum={"schema/author": 1}))
+    rep = E3.assess(snap, trust, profile)
+    PROFILE.update(quorum=profile["quorum"], schemas=len(rep["schemas"]), pending=sorted(rep["schemas_pending"]),
+                   accepted_by=sorted({a for i in summary["schemas"] for a in E3.View(snap, trust, profile).backers(i)}))
+    assert PROFILE["schemas"] == len(summary["schemas"]) and not PROFILE["pending"], PROFILE
     BLOB.update(blobs)
     BODY.update({i: envs[0]["record"]["body"] for i, envs in snap.lines.items()})
     v2_to_v3 = {}
@@ -166,7 +162,7 @@ def main():
             bad.append({"domain": dom, "entity": name, "v2": v2, "v3": v3})
     result = {"table": table, "undeclared": bad, "declared_migrations": summary["declared"],
               "v3": {"snapshot": rep["snapshot"], "rejected": len(rep["rejected"]), "problems": len(rep["problems"]),
-                     "basis": rep["basis"]}, "v2_root": summary["v2"]["root"], "repository_profile": PENDING}
+                     "basis": rep["basis"]}, "v2_root": summary["v2"]["root"], "repository_profile": PROFILE}
     if "--json" in sys.argv:
         print(json.dumps(result, indent=1, sort_keys=True))
     else:
@@ -176,8 +172,8 @@ def main():
         for b in bad[:20]:
             print("DIFF", json.dumps(b, sort_keys=True)[:400])
         print("declared migrations applied:", len(summary["declared"]))
-        print(f"repository profile: {PENDING['counted']} schemas counted; {len(PENDING['schemas'])} await "
-              f"{PENDING['need']} of schema/author, backed by {', '.join(PENDING['backed_by'])} alone")
+        print(f"repository profile (schema quorum {PROFILE['quorum']['schema/author']}): {PROFILE['schemas']} schemas "
+              f"count, accepted by {', '.join(PROFILE['accepted_by'])}; {len(PROFILE['pending'])} pending")
     return 1 if bad else 0
 
 
