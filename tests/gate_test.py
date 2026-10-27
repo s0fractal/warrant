@@ -31,8 +31,10 @@ class PR:
     """A repository with a base commit on master and a pull request #7 from branch `feature` whose author (alice)
     filed its pr-head@1 root and a head version at commit X, and (accept=True) bob's acceptance after X."""
 
-    def __init__(self, accept=True, before_x=None):
+    def __init__(self, accept=True, before_x=None, before_base=None):
         self.r = Repo(git_init=False)
+        if before_base:
+            before_base(self)
         (self.r.dot / "merge.json").write_text(json.dumps(MERGE))
         (self.r.root / "code.py").write_text("x = 1\n")
         (self.r.root / "AGENTS.md").write_text("rules\n")
@@ -88,6 +90,20 @@ def store_cases():
     p.r.store.file.write_bytes(b"".join(reversed(lines)))
     a = p.assess(recommit=True)
     check("E25 a head store out of canonical order is refused", codes(a) == {"STORE_NOT_CANONICAL", "TAIL_CHANGES"} or codes(a) == {"STORE_NOT_CANONICAL"}, a.reasons)
+
+
+def schema_cases():
+    def two_authors(s):                     # the repository's quorum: two schema authors, every bootstrap schema backed by both
+        s.r.profile["roles"]["schema/author"] = ["alice", "carol"]
+        s.r.profile["quorum"] = {"schema/author": 2}
+        s.r.write_config()
+        for i in s.r.schemas.values():
+            s.r.attest("carol", i)
+    note = {"name": "note@1", "fields": {"text": "str"}, "states": None, "closed": [], "successors": {}}
+    p = PR(accept=False, before_base=two_authors, before_x=lambda s: s.r.put("alice", "schema", note))
+    a = p.assess()
+    check("E28 a head that proposes one valid schema, backed by its author alone, is due for the acceptor's review, "
+          "not refused (6d6bb700: SCHEMA_NOT_COUNTED made it STORE_PROBLEMS)", a.due and codes(a) == {"NO_ACCEPT"}, a.reasons)
 
 
 def tail_cases():
@@ -220,6 +236,7 @@ def merge_cases():
 if __name__ == "__main__":
     eligible_cases()
     store_cases()
+    schema_cases()
     tail_cases()
     lineage_cases()
     verdict_cases()

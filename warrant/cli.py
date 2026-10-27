@@ -117,7 +117,8 @@ def main(argv=None):
         elif a.cmd == "fmt":
             s = Store(here(a.store))
             s.add_lines([])
-            out = {"canonical": True}
+            snap = s.snapshot()
+            out = {"canonical": snap.canonical, "rejected": len(snap.rejected)}     # sorted is not canonical with a rejected line
         else:
             rep = E.assess(Store(here(a.store)).snapshot(), json.loads(Path(here(a.trust)).read_text()),
                            json.loads(Path(here(a.profile)).read_text()), a.as_of)

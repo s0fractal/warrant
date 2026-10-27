@@ -36,8 +36,9 @@ TERMS = {
                            "or the roles `successors` names): excluded.", "The record is still listed."),
     "LINEAGE_BACKDATED": ("A successor dated before what it succeeds. It still counts: the id witnesses the order.",
                           "Claimed time orders nothing."),
-    "SCHEMA_NOT_COUNTED": ("A schema record short of its quorum of schema/author actors, or malformed: no record is "
-                           "read under it.", "It may count for another receiver."),
+    "SCHEMA_NOT_COUNTED": ("A schema record whose body is not a schema body: no record is read under it. A valid "
+                           "schema short of its quorum is not this problem; it waits in schemas_pending.",
+                           "It may count for another receiver."),
     "SCHEMA_CONFLICT": ("A schema lineage forks, or two counted schema lineages name one name: every record of that "
                         "name is invalid until one is retired.", "Neither schema is preferred."),
     "INVALID": ("A record's body does not fit the schema this receiver counts, or its guard is weaker than the "

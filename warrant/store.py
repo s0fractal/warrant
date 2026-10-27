@@ -38,7 +38,7 @@ class Snapshot:
     def __init__(self, lines, blobs):
         self.blobs = dict(blobs)
         self.rejected, self.lines, seen = {}, {}, set()
-        self.canonical = list(lines) == sorted(set(lines), key=_line_id)
+        order = list(lines) == sorted(set(lines), key=_line_id)
         for raw in lines:
             if raw in seen:
                 continue
@@ -56,6 +56,7 @@ class Snapshot:
                 self.rejected[hashlib.sha256(raw).hexdigest()] = f"line: {e}"
                 continue
             self.lines.setdefault(R.rid(env["record"]), []).append(env)
+        self.canonical = order and not self.rejected          # a rejected line is never canonical, wherever it sorts
         listing = sorted(seen) + [f"b {h} {C.digest(b)}".encode() for h, b in sorted(self.blobs.items())]
         self.digest = C.digest(b"\n".join(listing))
         if len(self.lines) > LIMITS["records"] or sum(map(len, seen)) + sum(map(len, self.blobs.values())) > LIMITS["bytes"]:
@@ -72,8 +73,11 @@ class Snapshot:
 
 
 def _line_id(raw):
+    """The sort key of a line: its record's id, or "" for a line that holds no record object (it is rejected)."""
     try:
-        return R.rid(json.loads(raw)["record"]), raw
+        doc = json.loads(raw)
+        rec = doc.get("record") if isinstance(doc, dict) else None
+        return (R.rid(rec), raw) if isinstance(rec, dict) else ("", raw)
     except UNREADABLE:
         return "", raw
 
@@ -143,6 +147,8 @@ class Store:
                 r = dict(r, prev=prev)
                 R.check(r)
                 prev, line = R.line(r, key)
+                if len(line) > R.LINE_MAX:              # a writer never writes a line its reader rejects (§8)
+                    raise Refused(f"the record's line is {len(line)} bytes, more than {R.LINE_MAX}")
                 at = r["at"]
                 out.append(prev)
                 data.append(line)
