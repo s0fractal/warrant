@@ -68,7 +68,9 @@ def lineage_cases():
     check("L1 a guarded version is PENDING until a role holder attests",
           rep["versions"][c1]["guard"] == "PENDING" and rep["lineages"][c1]["reliance"] == "PENDING")
     w.attest("alice", c1)
-    check("L2 the version's own actor never meets its guard", w.report()["versions"][c1]["guard"] == "PENDING")
+    self_verifier = dict(w.roles, **{"claim/verifier": ["alice", "bob"]})
+    check("L2 the version's own actor never meets its guard, even holding the role",
+          w.report(roles=self_verifier)["versions"][c1]["guard"] == "PENDING")
     w.attest("bob", c1, verdict="reject")
     check("L3 an attest whose body misses the match does not count", w.report()["versions"][c1]["guard"] == "PENDING")
     w.attest("bob", c1)

@@ -39,12 +39,15 @@ def profile_problem(p):
     return None if ok else "profile is {warrant: profile/3, roles: {role: [sorted actors]}}"
 
 
-def _authentic(snap, trust, as_of):
+def _authentic(snap, trust, as_of, only=None):
     """({id: record}, {id: basis}, {id: why}, later): SIGNED by a trusted key of the actor, or
-    UNSIGNED pending a migration voucher; records after as_of are left out (counted)."""
+    UNSIGNED pending a migration voucher; records after as_of are left out (counted). `only`: read
+    one actor's records alone (a writer's head verifies no other signature)."""
     recs, basis, bad, later = {}, {}, {}, 0
     for i, envs in snap.lines.items():
         r = envs[0]["record"]
+        if only is not None and r["actor"] != only:
+            continue
         if as_of is not None and r["at"] > as_of:
             later += 1
             continue
@@ -61,8 +64,8 @@ def _authentic(snap, trust, as_of):
 
 def head(snap, trust, actor):
     """The writer's head (§7): the latest of the actor's chained signed records no other names."""
-    recs, basis, _, _ = _authentic(snap, trust, None)
-    mine = {i: r for i, r in recs.items() if r["actor"] == actor and basis[i] == "SIGNED"}
+    recs, basis, _, _ = _authentic(snap, trust, None, only=actor)
+    mine = {i: r for i, r in recs.items() if basis[i] == "SIGNED"}
     chained, named = set(), {r["prev"] for r in mine.values()}
     for i in sorted(mine, key=lambda i: mine[i]["at"]):
         p = mine[i]["prev"]
@@ -121,8 +124,9 @@ class View:
                 vouched.setdefault(row[0], i)
         self.vouched_by = {}
         for i in [i for i, b in self.basis.items() if b == "UNSIGNED"]:
-            if i in vouched:
-                self.basis[i], self.vouched_by[i] = "MIGRATED", vouched[i]
+            by = vouched.get(i)
+            if by is not None:
+                self.basis[i], self.vouched_by[i] = "MIGRATED", by
             else:
                 self.drop(i, "UNSIGNED: no signature, and no migration the profile accepts lists it")
 
