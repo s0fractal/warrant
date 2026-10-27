@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 
 from world import KEYS, ROLES, Repo, check, finish
 
@@ -225,6 +226,73 @@ def refusal_cases():
           err(p) == "INVALID_RECORD" and err(c) == "INVALID_RECORD" and "ok" in after, (p, c, after.get("error")))
 
 
+def admission_cases():
+    """Codex's findings on #221 (01cb8aa7c0de / 793c5d0077af, 4c58f74e7772 / cceccf9fb81c), his tests adapted."""
+    repo = Repo()
+    prev = None
+    for n in range(LIMITS["requires"] - 1):
+        prev = repo.put("alice", "entity", {"state": "open", "statement": str(n), "serves": []}, "obligation@1",
+                        guard=R.guard(requires=[prev] if prev else []))
+    alice, bob = cfg_of(repo, "alice"), cfg_of(repo, "bob")
+    b = ok(api.call(bob, "prepare", {"workspace": "w", "kind": "entity", "schema": "obligation@1", "guard": R.guard(requires=[prev]),
+                                     "body": {"state": "open", "statement": "last permitted dependency", "serves": []}})).get("record")
+    a = ok(api.call(alice, "prepare", {"workspace": "w", "kind": "entity", "schema": "obligation@1", "guard": R.guard(requires=[R.rid(b)]),
+                                       "body": {"state": "open", "statement": "concurrent dependent", "serves": []}})).get("record")
+    # Each is admissible alone on this store: B takes it to depth 128, A requires B (not filed yet); both, 129.
+    start, finished, results, original = threading.Event(), threading.Event(), {}, api._refusals
+
+    def interleave(snap, view, trust, profile, record):
+        why = original(snap, view, trust, profile, record)
+        if record == a and not why and not start.is_set():
+            start.set()
+            finished.wait(2)            # if alice's admission holds the writers' lock, bob waits for it
+        return why
+
+    def other_writer():
+        if start.wait(5):
+            results["bob"] = api.call(bob, "commit", {"workspace": "w", "record": b})
+        finished.set()
+    api._refusals = interleave
+    thread = threading.Thread(target=other_writer, daemon=True)
+    thread.start()
+    try:
+        results["alice"] = api.call(alice, "commit", {"workspace": "w", "record": a})
+    finally:
+        api._refusals = original
+    thread.join(5)
+    after = api.call(alice, "workspace", {})
+    lines = repo.store.snapshot().lines
+    check("A24 commit admits a record on the store as it is under the writers' lock: another actor's append between "
+          "prepare and commit cannot leave the store refused (Codex 01cb8aa7c0de on 94021033: both filed, every later "
+          "operation RESOURCE_LIMIT)", "ok" in after and not thread.is_alive() and not (R.rid(a) in lines and R.rid(b) in lines),
+          {"alice": err(results.get("alice", {})) or "ok", "bob": err(results.get("bob", {})) or "ok", "workspace": err(after) or "ok"})
+
+    def exercise(rejected):
+        repo = Repo()
+        if rejected:
+            repo.store.add_lines([b'{"junk":"' + b"x" * 1024 + b'"}\n'])
+        cfg = cfg_of(repo, "bob")
+        before = repo.store.file.read_bytes()
+        target = repo.schemas["goal@1"]
+        record = R.record("attest", "bob", repo.t + 1, {"target": target, "verdict": "seen"}, refs=[target],
+                          prev=E.head(repo.store.snapshot(), repo.trust, "bob")["id"])
+        bound = LIMITS["bytes"]
+        try:
+            LIMITS["bytes"] = len(before) + 64           # the engine's byte rule at a small bound, not 256 MiB
+            p = api.call(cfg, "prepare", {"workspace": "w", "kind": "attest", "target": target, "body": {"verdict": "seen"}})
+            c = api.call(cfg, "commit", {"workspace": "w", "record": record})
+            w = api.call(cfg, "workspace", {})
+            return {"prepare": err(p) or "ok", "commit": err(c) or "ok", "workspace": err(w) or "ok",
+                    "unchanged": repo.store.file.read_bytes() == before}
+        finally:
+            LIMITS["bytes"] = bound
+    want = {"prepare": "INVALID_RECORD", "commit": "INVALID_RECORD", "workspace": "ok", "unchanged": True}
+    clean, junk = exercise(False), exercise(True)
+    check("A25 the candidate is assessed over every raw line, rejected ones included, as the engine's byte bound counts "
+          "them (Codex 4c58f74e7772 on 94021033: a rejected line let a write cross the bound)",
+          clean == want and junk == want, {"clean": clean, "rejected_line": junk})
+
+
 def init_cases():
     repo = Repo()
     I.ROOTS = (repo.home,)
@@ -304,6 +372,7 @@ def mcp_cases():
 if __name__ == "__main__":
     operations()
     refusal_cases()
+    admission_cases()
     init_cases()
     mcp_cases()
     sys.exit(finish())

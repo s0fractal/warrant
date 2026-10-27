@@ -23,6 +23,14 @@ class Refused(ValueError):
     pass
 
 
+class Inadmissible(Refused):
+    """An append the caller's admission refused, on the store as it is under the writers' lock."""
+
+    def __init__(self, why):
+        super().__init__("; ".join(why))
+        self.why = why
+
+
 def confined(path, base):
     """The real path of `path`, refused unless it lies in `base` (by real path too): a path an
     operator or a caller names never reaches a file outside the tree it is meant for."""
@@ -38,6 +46,7 @@ class Snapshot:
     def __init__(self, lines, blobs):
         self.blobs = dict(blobs)
         self.rejected, self.lines, seen = {}, {}, set()
+        self.raw = list(dict.fromkeys(lines))       # every distinct line as read, rejected ones too (the limits count them)
         order = list(lines) == sorted(set(lines), key=_line_id)
         for raw in lines:
             if raw in seen:
@@ -125,19 +134,22 @@ class Store:
         raw = self.file.read_bytes() if self.file.exists() else b""
         return [x + b"\n" for x in raw.split(b"\n") if x]
 
-    def append(self, r, key, trust, expect_head=None):
+    def append(self, r, key, trust, expect_head=None, admit=None):
         """File `r` signed by `key` as the next record of its actor's chain (§7): prev is the actor's
         head under the writers' lock; with expect_head, refused unless the head is that id ("": the actor
         has no signed record yet). The file is rewritten in canonical order."""
-        return self.extend([r], key, trust, expect_head)[0]
+        return self.extend([r], key, trust, expect_head, admit)[0]
 
-    def extend(self, records, key, trust, expect_head=None):
-        """append() for several records of one actor, chained in order, under one lock and one write."""
+    def extend(self, records, key, trust, expect_head=None, admit=None):
+        """append() for several records of one actor, chained in order, under one lock and one write. `admit(snapshot,
+        records)`, called under the lock on the store as it is then, returns why the records may not be filed
+        (Inadmissible), so no other writer changes the store between that decision and the write."""
         from .engine import head
-        out, data = [], []
+        out, data, chained = [], [], []
         with self.locked():
+            snap = self.snapshot()
             actor = records[0]["actor"]
-            h = head(self.snapshot(), trust, actor)
+            h = head(snap, trust, actor)
             if expect_head is not None and (h["id"] or "") != expect_head:
                 raise Refused(f"CHAIN_MOVED: the head of {actor} is {h['id']}")
             prev, at = h["id"], h["at"]
@@ -146,12 +158,16 @@ class Store:
                     raise Refused(f"a record of {r['actor']} at {r['at']} does not extend {actor}'s chain at {at}")
                 r = dict(r, prev=prev)
                 R.check(r)
+                chained.append(r)
                 prev, line = R.line(r, key)
                 if len(line) > R.LINE_MAX:              # a writer never writes a line its reader rejects (§8)
                     raise Refused(f"the record's line is {len(line)} bytes, more than {R.LINE_MAX}")
                 at = r["at"]
                 out.append(prev)
                 data.append(line)
+            why = admit(snap, chained) if admit else []
+            if why:
+                raise Inadmissible(why)
             self.write_lines(self.lines() + data)
         return out
 

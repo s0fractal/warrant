@@ -32,7 +32,7 @@ from warrant import jcs as C
 from warrant import keys as K
 from warrant import records as R
 from warrant import shapes as S
-from warrant.store import Refused, Snapshot
+from warrant.store import Inadmissible, Refused, Snapshot
 
 from . import AGENT_API, adapter_id
 from . import glossary as GL
@@ -275,13 +275,14 @@ def own_lines(snap):
 def _refusals(snap, view, trust, profile, r):
     """Why this receiver's engine would not take `r` as its actor's next record: the store with it is assessed once
     more, `r` signed by a key made for this call and bound to its actor in a copy of the trust (nothing is written,
-    the key is never kept). Refused: a store the engine would refuse, a line it would reject, a problem it did not
+    the key is never kept), over every raw line of the store, rejected ones included. Refused: a store the engine
+    would refuse, a line it would reject, a problem it did not
     have (a record it drops as INVALID is listed as one). Then the schema rules a pending proposal does not show yet (_schema_problems)."""
     key = K.Key.from_seed_hex(os.urandom(32).hex())
     _, line = R.line(r, key)
     keys = dict(trust["keys"], **{r["actor"]: sorted(set(trust["keys"].get(r["actor"], [])) | {key.public})})
     try:
-        after = E.View(Snapshot(own_lines(snap) + [line], snap.blobs), dict(trust, keys=keys), profile)
+        after = E.View(Snapshot(snap.raw + [line], snap.blobs), dict(trust, keys=keys), profile)       # every raw line, as the limits count
     except (Refused, R.Invalid) as e:
         return [f"the store with it would be refused: {e}"]
     out = [f"{w}" for h, w in sorted(after.snap.rejected.items()) if h not in snap.rejected]
@@ -365,8 +366,15 @@ def commit(cfg, req):
         raise AgentError("NO_SIGNER", f"the signer's seed cannot be read: {type(e).__name__}") from None
     need(key.public in trust["keys"].get(actor, []), "SIGNER_NOT_TRUSTED",
          f"the signer's key {key.id[:12]} is not one this workspace's trust binds to {actor!r}")
+    def admit(now, recs):        # under the writers' lock: no other writer moves the store between this and the write
+        try:
+            return _refusals(now, E.View(now, trust, profile), trust, profile, recs[0])
+        except (Refused, R.Invalid) as e:
+            return [f"the store cannot be assessed: {e}"]
     try:
-        i = ws.open().append(r, key, trust, expect_head=r["prev"] or "")
+        i = ws.open().append(r, key, trust, expect_head=r["prev"] or "", admit=admit)
+    except Inadmissible as e:
+        raise AgentError("INVALID_RECORD", str(e), problems=e.why) from None
     except Refused as e:
         raise AgentError("CHAIN_MOVED" if "CHAIN_MOVED" in str(e) else "REFUSED", str(e)) from None
     snap, view, _, _ = _assess(ws)
