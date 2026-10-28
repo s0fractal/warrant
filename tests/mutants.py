@@ -170,6 +170,7 @@ MUTANTS = [
      "        self.root = Path(root) if root is not None else default_root()", TOOLS, ["C19"]),
     ("T23", "warrant/repo.py", "    return Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else Path.cwd()",
      "    return PACKAGE.parent", TOOLS, ["R11"]),
+    ("T27", "warrant/review.py", "    except GT.Refused as e:  # the gate's", "    except ValueError as e:  # the gate's", TOOLS, ["R12"]),
     # the review waker's reading of the store (integrations/codex-plugin/waker/waker.py)
     ("P1", "integrations/codex-plugin/waker/waker.py", "    if set(got) != set(filed):", "    if False:", WAKER, ["W2"]),
     ("P2", "integrations/codex-plugin/waker/waker.py",

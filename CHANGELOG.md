@@ -4,6 +4,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## Unreleased
+
+- `warrant.review due` and `warrant.review gate` refuse with exit 2 (`REFUSED <code> ...`) when the merge
+  gate refuses the base, e.g. a repository with no `.warrant/merge.json`; they exited 1 with a traceback.
+  The review waker counts exit 2 as a refusal and goes on to the repository's roadmap closures (a
+  repository whose owner merges by hand is served for its closures).
+
 ## 3.0.0a2 — the review loop in the package
 
 Prepared for PyPI; published when the owner pushes the tag `v3.0.0a2` (`release.yml`). An alpha
