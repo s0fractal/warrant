@@ -4,7 +4,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
-## Unreleased
+## 3.0.0a2 — the review loop in the package
+
+Prepared for PyPI; published when the owner pushes the tag `v3.0.0a2` (`release.yml`). An alpha
+(PEP 440): pip installs it only with `--pre`. Records and assessment rules are those of 3.0.0a1.
 
 - The review loop's commands are part of the package, so that another repository runs them on its own
   `.warrant/` with the installed `warrant-graph`: `warrant.review` (open, head, merged, due, gate, the
@@ -29,8 +32,8 @@ This repository (not part of the package):
 
 ## 3.0.0a1 — the first Warrant 3 release
 
-Prepared for PyPI; published when the owner pushes the tag `v3.0.0a1` (`release.yml`). An alpha
-(PEP 440): pip installs it only with `--pre`.
+Published to PyPI on 2026-10-27 from the tag `v3.0.0a1` (1740fd75) by `release.yml` run 40556221850,
+whose readback found the built digests. An alpha (PEP 440): pip installs it only with `--pre`.
 
 - **[protocol] Warrant 3 replaces Warrant 2.** One record envelope with four kinds (schema, entity,
   attest, challenge), native lineage with FORK as a core verdict, schemas as records under a k-of-n
