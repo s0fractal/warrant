@@ -389,6 +389,10 @@ def carrier_cases(r):
     heads = [v for v in rep["_recs"].values() if v["schema"] == "pr-head@1" and v["body"].get("commit") == here]
     check("R11 the review commands run on the checkout around the current directory: its store, its repository's name "
           "and its HEAD", out.returncode == 0 and len(heads) == 1, (out.stdout[-200:], out.stderr[-300:]))
+    out = subprocess.run([sys.executable, "-B", "-m", "warrant.review", "--root", str(r.root), "due", "--base", here, "--json"],
+                         cwd=ROOT, capture_output=True, text=True, timeout=60)
+    check("R12 `due` at a base with no .warrant/merge.json is refused, exit 2 (the waker goes on to the roadmap's closures)",
+          out.returncode == 2 and out.stderr.startswith("REFUSED BASE_CONFIG .warrant/merge.json"), (out.returncode, out.stderr[-300:]))
     shutil.copytree(ROOT / "warrant", r.root / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
     with open(r.root / "warrant" / "repo.py", "a") as f:
         f.write("# another package\n")

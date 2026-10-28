@@ -259,10 +259,13 @@ def run(argv=None):
     w = sub.add_parser("view")
     w.add_argument("--out")
     a = ap.parse_args(argv)
-    if a.cmd == "due":
-        return GT.cmd_due(root, a.base, a.json, a.remote)
-    if a.cmd == "gate":
-        return GT.cmd_gate(root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json)
+    try:
+        if a.cmd == "due":
+            return GT.cmd_due(root, a.base, a.json, a.remote)
+        if a.cmd == "gate":
+            return GT.cmd_gate(root, a.base, a.merge, a.gate_var == "hold", a.summary, a.pr, a.remote, a.json)
+    except GT.Refused as e:  # the gate's refusal is the tool's: exit 2 (a base with no .warrant/merge.json)
+        raise Failed(e.code, str(e)) from None
     if a.cmd == "identity":
         dump({"actor": REPLAYER, **identity(root)})
         return 0
