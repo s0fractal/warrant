@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Codex plugin and its waker, without Codex and without GitHub (C1-C13, W1-W8).
+"""The Codex plugin and its waker, without Codex and without GitHub (C1-C14, W1-W13).
 
     python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
@@ -134,6 +134,12 @@ def fixture_mirror():
     return base, home, heads
 
 
+def entry(home, trees, repository="s0fractal/warrant", branch="master", mirror=None):
+    """An entry of the waker's repositories.json: the repository it serves, with its own home and worktrees."""
+    return {"repository": repository, "branch": branch, "home": str(home), "mirror": str(mirror or Path(home) / "warrant.git"),
+            "trees": str(trees), "checkout": str(Path(home).parent / "operator-checkout")}
+
+
 def due_json(head, pr=7):
     return {"pr": pr, "head": head, "base": "b" * 40, "branch": "topic",
             "facts": {"duty": "d" * 64, "closure": "c" * 64, "head_n": 2, "x": "e" * 40}}
@@ -156,7 +162,7 @@ def wakes():
     base, home, heads = fixture_mirror()
     now = [1_000_000.0]
     codex = Codex()
-    w = WAKER.Waker(home=home, trees=base / "trees", replayers=base / "no-seeds", codex="/bin/codex", run=codex, clock=lambda: now[0])
+    w = WAKER.Waker(entry(home, base / "trees"), replayers=base / "no-seeds", codex="/bin/codex", run=codex, clock=lambda: now[0])
     a = due_json(heads[0])
     first, second = w.wake(a)[1], w.wake(a)[1]
     memo = json.loads((home / "wakes" / f"7-{heads[0]}.json").read_text())
@@ -171,16 +177,17 @@ def wakes():
           "codex exec runs sandboxed with the review skill and the facts of the head it was woken for", cmd)
     wt = Path(cmd[cmd.index("-C") + 1]) if cmd else None
     check("C10", wt is not None and wt.parent == base / "trees" and wt.name == f"7-{heads[0][:12]}"
-          and wt.resolve() != WAKER.OPERATOR_CHECKOUT.resolve() and not wt.exists()
+          and wt.resolve() != w.checkout.resolve() and not wt.exists()
           and memo["attempts"][0]["worktree"] == str(wt),
           "each wake runs in its own worktree of the mirror, never the operator's checkout, removed after a clean run",
           (wt, memo))
     refused = None
     try:
-        w.command(a, WAKER.OPERATOR_CHECKOUT)
+        w.command(a, w.checkout)
     except ValueError as e:
         refused = str(e)
-    dirty = WAKER.Waker(home=home, trees=base / "trees", replayers=base / "no-seeds", codex="/bin/codex", run=Codex(dirty=True), clock=lambda: now[0])
+    dirty = WAKER.Waker(entry(home, base / "trees"), replayers=base / "no-seeds", codex="/bin/codex", run=Codex(dirty=True),
+                        clock=lambda: now[0])
     out = dirty.wake(due_json(heads[1], pr=8))[1]
     kept = base / "trees" / f"8-{heads[1][:12]}"
     head_there = subprocess.run(["git", "-C", str(kept), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
@@ -189,7 +196,7 @@ def wakes():
           "detached at the head", (refused, out, head_there))
 
     failing = Codex(code=1)
-    f = WAKER.Waker(home=home, trees=base / "trees", replayers=base / "no-seeds", codex="/bin/codex", run=failing, clock=lambda: now[0])
+    f = WAKER.Waker(entry(home, base / "trees"), replayers=base / "no-seeds", codex="/bin/codex", run=failing, clock=lambda: now[0])
     b = due_json(heads[1], pr=9)
     states = [f.wake(b)[1], f.wake(b)[1]]
     now[0] += WAKER.BACKOFF + 1
@@ -309,20 +316,143 @@ def seeds():
     for p in (keys / "replayers" / "review-replayer.seed", keys / "evil.seed"):
         p.write_text("01" * 32 + "\n")
         p.chmod(0o600)
-    w = WAKER.Waker(home=base / "home", trees=base / "trees", replayers=keys / "replayers", replay_python=sys.executable,
+    w = WAKER.Waker(entry(base / "home", base / "trees"), replayers=keys / "replayers", replay_python=sys.executable,
                     codex="/bin/codex", run=Codex(), clock=lambda: 0.0)
 
     def base_tree(actor):
         code = Path(tempfile.mkdtemp(dir=base))
-        (code / "tools").mkdir()
+        (code / "warrant").mkdir()
         (code / ".warrant").mkdir()
-        (code / "tools" / "review.py").write_text(f"import json\nprint(json.dumps({{'actor': {actor!r}, 'code': '0' * 64}}))\n")
+        (code / "warrant" / "__init__.py").write_text("")
+        (code / "warrant" / "review.py").write_text(f"import json\nprint(json.dumps({{'actor': {actor!r}, 'code': '0' * 64}}))\n")
         (code / ".warrant" / "v3.json").write_text(json.dumps({"profile": {"roles": {"replayer": [actor]}}}))
         return code
     good, evil = w.seed(base_tree("review-replayer")), w.seed(base_tree("../evil"))
     check("W8", good == ("review-replayer", ("01" * 32 + "\n").encode()) and evil[1] is None,
           "the replay seed is REPLAYERS/<actor>.seed for the replayer the base names; an actor that is not a plain name reads none",
           (good, evil))
+
+
+def served_repo(base, name, branch, named=None):
+    """A repository the waker serves: a work repository on `branch` whose .warrant/v3.json names `named` (default its
+    own name), and the entry's home with a bare mirror of it (origin: the work repository, so `fetch` runs locally)."""
+    g = ["git", "-c", "user.name=t", "-c", "user.email=t@invalid", "-c", "commit.gpgsign=false"]
+    slug = name.replace("/", "__")
+    work = base / "origin" / slug
+    subprocess.run(["git", "init", "-q", "-b", branch, str(work)], check=True)
+    (work / ".warrant").mkdir()
+    (work / ".warrant" / "v3.json").write_text(json.dumps({"repository": named or name}))
+    subprocess.run([*g, "-C", str(work), "add", "-A"], check=True)
+    subprocess.run([*g, "-C", str(work), "commit", "-q", "-m", "base"], check=True)
+    head = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    home = base / "homes" / slug
+    home.mkdir(parents=True)
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(home / "mirror.git")], check=True)
+    return entry(home, base / "trees" / slug, name, branch, mirror=home / "mirror.git"), head
+
+
+def serving():
+    """Several repositories in one run (W9-W11): GitHub's side (`due`, `acceptances`) and the replay are stubbed, the
+    rest is the waker's own: each repository's mirror fetched, its base checked, its due head woken in its worktree."""
+    import contextlib
+    import io
+    base = Path(tempfile.mkdtemp(prefix="codex-waker-served-"))
+    first, h1 = served_repo(base, "s0fractal/warrant", "master")
+    second, h2 = served_repo(base, "s0fractal/sokol-core", "main")
+    stray, _ = served_repo(base, "s0fractal/stray", "main", named="s0fractal/other")
+    broken = dict(first, repository="s0fractal/broken", home=str(base / "homes" / "broken"), mirror=str(base / "nowhere.git"),
+                  trees=str(base / "trees" / "broken"))
+    waker = base / "waker"
+    waker.mkdir()
+    (waker / WAKER.CONFIG).write_text(json.dumps({"warrant": WAKER.CONFIG_DOC, "repositories": [first, broken, second, stray]}))
+    codex = Codex()
+    due = {"s0fractal/sokol-core": [dict(due_json(h2, pr=5), base=h2, branch="topic")]}
+
+    class Served(WAKER.Waker):
+        def fetch(self):
+            if self.repository == "s0fractal/broken":
+                raise RuntimeError("the mirror cannot be fetched")
+            return super().fetch()
+
+        def due(self, b):
+            return {"due": due.get(self.repository, []), "not_due": []}
+
+        def acceptances(self, b):
+            return {"due": []}
+
+        def replay(self, a, b):
+            return False, "replay stubbed"
+
+    def make(e):
+        return Served(e, replayers=base / "no-seeds", codex="/bin/codex", run=codex, clock=lambda: 1_000_000.0)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = WAKER.serve(waker, False, make)
+    lines = out.getvalue().splitlines()
+    text = codex.calls[0][-1] if codex.calls else ""
+    wt = Path(codex.calls[0][codex.calls[0].index("-C") + 1]) if codex.calls else None
+    check("W9", len(codex.calls) == 1 and "s0fractal/sokol-core#5" in text and f"base main M {h2}" in text
+          and "s0fractal/warrant" not in text and wt is not None and wt.parent == Path(second["trees"])
+          and (Path(second["home"]) / "wakes" / f"5-{h2}.json").is_file() and not (Path(first["home"]) / "wakes" / f"5-{h2}.json").exists()
+          and any(x.startswith(f"{WAKER.iso(1_000_000.0)} s0fractal/warrant master {h1[:12]}: 0 due") for x in lines),
+          "the waker serves each repository of its configuration: a head due in the second wakes Codex with that "
+          "repository's name and base branch, in its own worktree root, its memo in its own home", (lines, text))
+    check("W10", any("s0fractal/stray main" in x and "nobody woken" in x and "s0fractal/other" in x for x in lines),
+          "a base whose .warrant/v3.json names another repository than the entry's is refused: nothing assessed, nobody woken",
+          lines)
+    check("W11", code == 1 and any(x.endswith("s0fractal/broken master: failed: the mirror cannot be fetched") for x in lines)
+          and lines.index(next(x for x in lines if "broken" in x)) < lines.index(next(x for x in lines if "sokol-core" in x)),
+          "a repository whose run fails is reported and the next one still served; the run exits 1", lines)
+
+
+def configuration():
+    """repositories.json (W12) and install's default (C14)."""
+    from unittest.mock import patch
+    base = Path(tempfile.mkdtemp(prefix="codex-waker-config-"))
+    one = entry(base / "a", base / "ta", "s0fractal/warrant", "master")
+    two = entry(base / "b", base / "tb", "s0fractal/sokol-core", "main")
+
+    def refused(doc):
+        (base / WAKER.CONFIG).write_text(json.dumps(doc))
+        try:
+            WAKER.served(base)
+            return False
+        except ValueError:
+            return True
+    doc = {"warrant": WAKER.CONFIG_DOC, "repositories": [one, two]}
+    (base / WAKER.CONFIG).write_text(json.dumps(doc))
+    ok = [e["repository"] for e in WAKER.served(base)] == ["s0fractal/warrant", "s0fractal/sokol-core"]
+    bad = {"empty": {"warrant": WAKER.CONFIG_DOC, "repositories": []},
+           "same home": dict(doc, repositories=[one, dict(two, home=one["home"])]),
+           "same trees": dict(doc, repositories=[one, dict(two, trees=one["trees"])]),
+           "same repository": dict(doc, repositories=[one, dict(two, repository=one["repository"])]),
+           "relative path": dict(doc, repositories=[dict(one, mirror="warrant.git")]),
+           "not owner/name": dict(doc, repositories=[dict(one, repository="warrant")]),
+           "branch": dict(doc, repositories=[dict(one, branch="a..b")]),
+           "extra member": dict(doc, repositories=[dict(one, token="x")])}
+    (base / "alias").symlink_to(base / "a", target_is_directory=True)     # Codex finding 4df591987fb7 on #226 (a2f6fab9)
+    bad.update({"home by a link": dict(doc, repositories=[one, dict(two, home=str(base / "alias"))]),
+                "home by ..": dict(doc, repositories=[one, dict(two, home=str(base / "a" / ".." / "a"))])})
+    got = {k: refused(v) for k, v in bad.items()}
+    check("W12", ok and all(v for k, v in got.items() if "home by" not in k), "repositories.json is a list of distinct "
+          "repositories, each with its own home, mirror and worktree root, a branch name and absolute paths; anything else "
+          "serves nothing", got)
+    check("W13", got["home by a link"] and got["home by .."], "two entries whose homes are one place by real path (a link, "
+          "x/../x) are refused: one repository's done wake would hold the other's", got)
+    home = base / "install"
+    with patch.object(INSTALL, "HOME", home):
+        INSTALL.repositories(False)
+        written = WAKER.served(home)
+        kept = json.loads((home / WAKER.CONFIG).read_text())
+        kept["repositories"].append(two)
+        (home / WAKER.CONFIG).write_text(json.dumps(kept))
+        INSTALL.repositories(False)
+        after = [e["repository"] for e in WAKER.served(home)]
+    v3 = json.loads((ROOT / ".warrant" / "v3.json").read_text())["repository"]
+    check("C14", [(e["repository"], e["branch"], e["home"], e["checkout"]) for e in written] == [(v3, "master", str(home), str(ROOT))]
+          and written[0]["mirror"] == str(home / "warrant.git") and after == [v3, "s0fractal/sokol-core"],
+          "install writes the waker's repositories with this checkout's repository as the only entry, its state where the "
+          "single-repository waker kept it; an existing configuration is kept", (written, after))
 
 
 if __name__ == "__main__":
@@ -334,6 +464,8 @@ if __name__ == "__main__":
     mcp_call()
     store_rules()
     seeds()
+    serving()
+    configuration()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))
     sys.exit(1 if failed else 0)

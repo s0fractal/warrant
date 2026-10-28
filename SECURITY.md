@@ -44,7 +44,7 @@ The things Warrant 3 asks you to trust (docs/V3.md):
 - **Identity.** Two different snapshots with one digest, or one assessment with two ids; a checker's
   attest whose `code` does not name its whole import closure, or that CI accepts though `code` is not
   the checker's code at the commit it names.
-- **The repository's gate** (tools/gate.py): a pull request merged without the acceptance, tail,
+- **The repository's gate** (warrant/gate.py, run through tools/gate.py): a pull request merged without the acceptance, tail,
   checks or owner-path rules of docs/V3.md §14.
 
 ## What is out of scope

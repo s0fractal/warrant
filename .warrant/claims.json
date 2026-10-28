@@ -1,0 +1,12 @@
+{
+ "mutants": "tests/mutants.py",
+ "retired": [
+  "SPEC.md"
+ ],
+ "source": "docs/V3.md",
+ "warrant": "claims/1",
+ "witnesses": [
+  "tests/*_test.py",
+  "integrations/*/test_plugin.py"
+ ]
+}

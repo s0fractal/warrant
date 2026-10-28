@@ -13,9 +13,15 @@ Install, from the checkout's HEAD commit (never its working tree: a dirty plugin
   4. the [mcp_servers.warrant] table removed from ~/.codex/config.toml: the plugin registers the server
      `warrant` now (the same warrant-agent-mcp with the same ~/.warrant/codex-warrant.json; a server
      of that name in config.toml would shadow the plugin's);
-  5. the waker's Python (~/.warrant/codex-waker/venv, cryptography only) and the launchd agent
-     ~/Library/LaunchAgents/dev.s0fractal.warrant-codex-waker.plist, loaded: the waker runs at load
-     and every five minutes.
+  5. the waker's Python (~/.warrant/codex-waker/venv: cryptography, and warrant-graph built from `git archive
+     HEAD` of the package's paths, which runs the review loop of a repository whose base does not carry it);
+  6. the repositories the waker serves, ~/.warrant/codex-waker/repositories.json, written only when absent: this
+     checkout's repository (its .warrant/v3.json) on its base branch (.warrant/merge.json) as the only entry,
+     with its mirror ~/.warrant/codex-waker/<name>.git, its state in ~/.warrant/codex-waker itself and its wakes'
+     worktrees in ~/Projects/.worktrees/codex-review; an existing file is checked and kept (add an entry by
+     hand: waker.py `served` says what one holds);
+  7. the launchd agent ~/Library/LaunchAgents/dev.s0fractal.warrant-codex-waker.plist, loaded: the waker runs at
+     load and every five minutes.
 
 Hold without uninstalling: `touch ~/.warrant/codex-waker/HOLD` (nothing is woken while it exists).
 Stop the waker: `launchctl bootout gui/$(id -u)/dev.s0fractal.warrant-codex-waker`.
@@ -35,8 +41,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PATHS = (".agents/plugins/marketplace.json", "integrations/codex-plugin")
+PACKAGE = ("pyproject.toml", "README.md", "LICENSE", "warrant", "warrant_agent")   # what builds warrant-graph
 MARKET = Path.home() / ".warrant" / "codex-marketplace"
 HOME = Path.home() / ".warrant" / "codex-waker"
+TREES = Path.home() / "Projects" / ".worktrees" / "codex-review"
 CONFIG = Path.home() / ".codex" / "config.toml"
 LABEL = "dev.s0fractal.warrant-codex-waker"
 PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
@@ -63,15 +71,10 @@ def head():
 
 
 def marketplace(commit, dry):
-    data = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", commit, *PATHS], capture_output=True,
-                          check=True).stdout
     print(f"+ git archive {commit[:12]} {' '.join(PATHS)} -> {MARKET}")
     if dry:
         return
-    shutil.rmtree(MARKET, ignore_errors=True)
-    MARKET.mkdir(parents=True)
-    with tarfile.open(fileobj=io.BytesIO(data)) as t:
-        t.extractall(MARKET, filter="data")
+    archive(commit, PATHS, MARKET)
     trees = {p: subprocess.run(["git", "-C", str(ROOT), "rev-parse", f"{commit}:{p}"], capture_output=True, check=True,
                                text=True).stdout.strip() for p in PATHS}
     (MARKET / "INSTALLED.json").write_text(json.dumps({"source": "https://github.com/s0fractal/warrant", "commit": commit,
@@ -90,6 +93,57 @@ def config_without_server(dry):
         print(f"+ remove [mcp_servers.warrant] from {CONFIG} (the plugin registers `warrant`)")
         if not dry:
             CONFIG.write_text(new)
+
+
+def archive(commit, paths, out):
+    data = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", commit, *paths], capture_output=True,
+                          check=True).stdout
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir(parents=True)
+    with tarfile.open(fileobj=io.BytesIO(data)) as t:
+        t.extractall(out, filter="data")
+
+
+def package(commit, python, dry):
+    """warrant-graph at `commit` into the waker's Python (no dependencies: cryptography is pinned above)."""
+    src = HOME / "package"
+    print(f"+ git archive {commit[:12]} {' '.join(PACKAGE)} -> {src}")
+    if not dry:
+        archive(commit, PACKAGE, src)
+    run(python, "-m", "pip", "install", "--quiet", "--no-deps", "--force-reinstall", src, dry=dry)
+
+
+def default_entry():
+    """This checkout's repository as the waker's only entry: its name from .warrant/v3.json, its base branch from
+    .warrant/merge.json."""
+    def doc(path):
+        return json.loads((ROOT / ".warrant" / path).read_text())
+    name = doc("v3.json")["repository"]
+    return {"repository": name, "branch": doc("merge.json")["base"], "home": str(HOME),
+            "mirror": str(HOME / f"{name.split('/')[1]}.git"), "trees": str(TREES), "checkout": str(ROOT)}
+
+
+def repositories(dry):
+    """HOME/repositories.json: written with this checkout's repository when absent, else checked and kept."""
+    path = HOME / "repositories.json"
+    if path.exists():
+        waker = load("waker", ROOT / "integrations" / "codex-plugin" / "waker" / "waker.py")
+        names = [e["repository"] for e in waker.served(HOME)]
+        print(f"+ keep {path}: {', '.join(names)}")
+        return
+    doc = {"warrant": "codex-waker/1", "repositories": [default_entry()]}
+    print(f"+ write {path}: {doc['repositories'][0]['repository']} {doc['repositories'][0]['branch']}")
+    if not dry:
+        HOME.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc, indent=1) + "\n")
+
+
+def load(name, path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def plist(python):
@@ -122,6 +176,8 @@ def install(dry):
     if not (venv / "bin" / "python").is_file():
         run(sys.executable, "-m", "venv", venv, dry=dry)
     run(venv / "bin" / "python", "-m", "pip", "install", "--quiet", "--only-binary", ":all:", CRYPTOGRAPHY, dry=dry)
+    package(commit, venv / "bin" / "python", dry)
+    repositories(dry)
     print(f"+ write {PLIST}")
     if not dry:
         (HOME / "logs").mkdir(parents=True, exist_ok=True)

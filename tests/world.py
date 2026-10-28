@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "tools")]
+sys.path[:0] = [str(ROOT)]
 
 from warrant import bootstrap as B          # noqa: E402
 from warrant import engine as E             # noqa: E402
