@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Codex plugin and its waker, without Codex and without GitHub (C1-C14, W1-W12).
+"""The Codex plugin and its waker, without Codex and without GitHub (C1-C14, W1-W13).
 
     python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
@@ -430,9 +430,15 @@ def configuration():
            "not owner/name": dict(doc, repositories=[dict(one, repository="warrant")]),
            "branch": dict(doc, repositories=[dict(one, branch="a..b")]),
            "extra member": dict(doc, repositories=[dict(one, token="x")])}
+    (base / "alias").symlink_to(base / "a", target_is_directory=True)     # Codex finding 4df591987fb7 on #226 (a2f6fab9)
+    bad.update({"home by a link": dict(doc, repositories=[one, dict(two, home=str(base / "alias"))]),
+                "home by ..": dict(doc, repositories=[one, dict(two, home=str(base / "a" / ".." / "a"))])})
     got = {k: refused(v) for k, v in bad.items()}
-    check("W12", ok and all(got.values()), "repositories.json is a list of distinct repositories, each with its own home, "
-          "mirror and worktree root, a branch name and absolute paths; anything else serves nothing", got)
+    check("W12", ok and all(v for k, v in got.items() if "home by" not in k), "repositories.json is a list of distinct "
+          "repositories, each with its own home, mirror and worktree root, a branch name and absolute paths; anything else "
+          "serves nothing", got)
+    check("W13", got["home by a link"] and got["home by .."], "two entries whose homes are one place by real path (a link, "
+          "x/../x) are refused: one repository's done wake would hold the other's", got)
     home = base / "install"
     with patch.object(INSTALL, "HOME", home):
         INSTALL.repositories(False)

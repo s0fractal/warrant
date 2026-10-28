@@ -163,7 +163,9 @@ def served(home):
     """[entry] of HOME/repositories.json ({"warrant": "codex-waker/1", "repositories": [entry, ...]}), each
     {repository: owner/name, branch: its base branch, home: its state directory (memos, logs, base trees), mirror: its
     bare mirror, trees: its wakes' worktrees, checkout: the operator's checkout, never a wake's directory}, the paths
-    absolute and no two entries sharing a repository, a home, a mirror or a worktree root. A ValueError otherwise."""
+    absolute and no two entries sharing a repository, a home, a mirror or a worktree root, by real path (Codex finding
+    4df591987fb7: memos are keyed by pull request and head, so a shared home lets one repository's done wake hold the
+    other's). A ValueError otherwise."""
     doc = json.loads((Path(home) / CONFIG).read_text())
     entries = doc.get("repositories") if isinstance(doc, dict) and set(doc) == {"warrant", "repositories"} \
         and doc["warrant"] == CONFIG_DOC else None
@@ -175,8 +177,8 @@ def served(home):
                 and all(isinstance(e[k], str) and Path(e[k]).is_absolute() for k in SERVED[2:])):
             raise ValueError(f"{CONFIG}: an entry is {{{', '.join(SERVED)}}}, owner/name, a branch and absolute paths: "
                              f"{json.dumps(e)[:200]}")
-    for k in ("repository", "home", "mirror", "trees"):
-        if len({e[k] for e in entries}) != len(entries):
+    for k in ("repository", "home", "mirror", "trees"):     # a path by where it leads: a link or `x/../x` is the same place
+        if len({e[k] if k == "repository" else os.path.realpath(e[k]) for e in entries}) != len(entries):
             raise ValueError(f"{CONFIG}: two entries share a {k}")
     return entries
 

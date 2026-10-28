@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from world import KEYS, ROOT, Repo, check, finish, git
 
@@ -156,10 +157,12 @@ def config_cases():
     claim(r)
     (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, source="/etc/hosts")))
     why = refused_code(CL.check, RP.Repo(r.root))
+    (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, witnesses=[])))
+    shape = refused_code(CL.check, RP.Repo(r.root))
     (r.root / ".warrant" / "claims.json").unlink()
     gone = refused_code(CL.check, RP.Repo(r.root))
-    check("C16 the claims check refuses a repository whose .warrant/claims.json is absent or names a path outside it",
-          why is not None and why.startswith("CONFIG") and gone is not None and gone.startswith("CONFIG"), (why, gone))
+    check("C16 the claims check refuses a repository whose .warrant/claims.json is absent, not a claims/1 document or names a "
+          "path outside it", all(x is not None and x.startswith("CONFIG") for x in (why, shape, gone)), (why, shape, gone))
     r = Repo()
     (r.root / "spec").mkdir()
     (r.root / "spec" / "S.md").write_text(SPEC)
@@ -174,6 +177,26 @@ def config_cases():
     there = codes(r)
     check("C17 the specification, the witness files and the mutant harness are the ones the repository's claims.json names",
           here == [] and there == ["CLAIM_SOURCE"], (here, there))
+    escapes = {}
+    for which in ("source", "mutants", "witnesses"):       # Codex finding 583d6f508840 on #226 (a2f6fab9)
+        r = claims_repo()
+        claim(r)
+        target = {"source": r.root / SOURCE, "mutants": r.root / "tests" / "mutants.py", "witnesses": r.root / "tests" / "q_test.py"}[which]
+        outside = r.home / target.name
+        target.rename(outside)
+        target.symlink_to(outside)
+        marker = r.home / "ran"
+        with outside.open("a") as f:
+            f.write(f"\nopen({str(marker)!r}, 'w').write('x')\n" if which != "source" else "")
+        escapes[which] = (refused_code(CL.check, RP.Repo(r.root)) or "")[:6], marker.exists()
+    check("C18 a claim's specification, witness file or mutant harness that is a link leading outside the repository is refused "
+          "(CONFIG) before it is read or run", all(v == ("CONFIG", False) for v in escapes.values()), escapes)
+    r = claims_repo()
+    git(r.root, "init", "-q", "-b", "master")
+    rel = Path(os.path.relpath(r.root))
+    got = CL.run_checks(RP.Repo(rel).root, ["q_test:Q1"], ["Z1"])
+    check("C19 a relative --root is the repository it names: its witnesses run and its mutants are counted (Codex finding "
+          "89aaf813e35e on #226)", "Q1" in got[0].get("q_test", set()) and got[1].get("Z1", {}).get("outcome") == "KILLED", got)
 
 
 def checker_cases():

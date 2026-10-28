@@ -47,8 +47,20 @@ def _relative(x):
     return isinstance(x, str) and bool(x) and not PurePosixPath(x).is_absolute() and ".." not in PurePosixPath(x).parts
 
 
+def confined(root, path):
+    """`path` (under the repository `root`), refused (CONFIG) when its real path leaves the repository's: a link to a
+    file outside it would make a claim's evidence, or the harness the check runs, bytes no commit holds (Codex
+    finding 583d6f508840 on #226)."""
+    base = Path(root).resolve()
+    if not Path(path).resolve().is_relative_to(base):
+        raise Failed("CONFIG", f"{Path(path).relative_to(root) if Path(path).is_relative_to(root) else path} leads outside "
+                               "the repository")
+    return Path(path)
+
+
 def config(root):
-    """The repository's `.warrant/claims.json` ({warrant, source, retired, witnesses, mutants}), checked."""
+    """The repository's `.warrant/claims.json` ({warrant, source, retired, witnesses, mutants}), checked: relative paths
+    whose real paths stay in the repository."""
     try:
         doc = json.loads((Path(root) / ".warrant" / "claims.json").read_text())
     except (OSError, ValueError) as e:
@@ -60,6 +72,8 @@ def config(root):
     if not ok:
         raise Failed("CONFIG", f".warrant/claims.json is a {CONFIG} document {{warrant, source, retired, witnesses, mutants}} "
                                "of relative paths")
+    for k in ("source", "mutants"):
+        confined(root, Path(root) / doc[k])
     return doc
 
 
@@ -75,6 +89,7 @@ def witness_files(root):
     out = {}
     for pattern in config(root)["witnesses"]:
         for p in sorted(Path(root).glob(pattern)):
+            confined(root, p)
             out[p.stem if p.parent.name == "tests" else f"{p.parent.name}/{p.stem}"] = p
     return out
 

@@ -164,6 +164,10 @@ MUTANTS = [
     ("T20", "warrant/claims.py", '    for pattern in config(root)["witnesses"]:', '    for pattern in ["tests/*_test.py"]:', TOOLS, ["C17"]),
     ("T21", "warrant/repo.py", "    return code_at(commit, root) if carried else package_code()", "    return package_code()", TOOLS, ["R10"]),
     ("T22", "warrant/repo.py", "    return code_at(commit, root) if carried else package_code()", "    return code_at(commit, root)", TOOLS, ["C11"]),
+    ("T24", "warrant/claims.py", "    if not Path(path).resolve().is_relative_to(base):", "    if False:", TOOLS, ["C18"]),
+    ("T25", "warrant/claims.py", "            confined(root, p)\n", "", TOOLS, ["C18"]),
+    ("T26", "warrant/repo.py", "        self.root = (Path(root) if root is not None else default_root()).resolve()",
+     "        self.root = Path(root) if root is not None else default_root()", TOOLS, ["C19"]),
     ("T23", "warrant/repo.py", "    return Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else Path.cwd()",
      "    return PACKAGE.parent", TOOLS, ["R11"]),
     # the review waker's reading of the store (integrations/codex-plugin/waker/waker.py)
@@ -187,9 +191,11 @@ MUTANTS = [
     ("P9", "integrations/codex-plugin/waker/waker.py", "Pull request {w.repository}#{a['pr']} is due", "Pull request s0fractal/warrant#{a['pr']} is due",
      WAKER, ["W9"]),
     ("P10", "integrations/codex-plugin/waker/waker.py", "; base {w.branch} M {a['base']}.", "; base master M {a['base']}.", WAKER, ["W9"]),
-    ("P11", "integrations/codex-plugin/waker/waker.py", "        if len({e[k] for e in entries}) != len(entries):", "        if False:",
+    ("P11", "integrations/codex-plugin/waker/waker.py", '        if len({e[k] if k == "repository" else os.path.realpath(e[k]) for e in entries}) != len(entries):', "        if False:",
      WAKER, ["W12"]),
     ("P12", "integrations/codex-plugin/waker/waker.py", "        for e in entries:", "        for e in entries[:1]:", WAKER, ["W9"]),
+    ("P14", "integrations/codex-plugin/waker/waker.py", 'e[k] if k == "repository" else os.path.realpath(e[k])', "e[k]",
+     WAKER, ["W13"]),
     ("P13", "integrations/codex-plugin/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
 ]
 

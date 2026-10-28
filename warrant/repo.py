@@ -45,7 +45,7 @@ class Failed(Exception):
 
 class Repo:
     def __init__(self, root=None):
-        self.root = Path(root) if root is not None else default_root()
+        self.root = (Path(root) if root is not None else default_root()).resolve()  # a relative --root, once (Codex 89aaf813e35e)
         self.dot = self.root / ".warrant"
         self.store = Store(self.dot)
 
