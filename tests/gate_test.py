@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The merge gate's predicate (tools/gate.py) on fixture Git repositories: one case per refusal, each asserting
+"""The merge gate's predicate (warrant/gate.py) on fixture Git repositories: one case per refusal, each asserting
 the exact set of refusal codes (a mutant that removes one rule is seen even where another rule also refuses).
 
     python3 tests/gate_test.py
@@ -9,7 +9,7 @@ import sys
 
 from world import KEYS, Repo, check, finish, git
 
-import gate as GT
+from warrant import gate as GT
 from warrant import records as R
 
 REPO = "s0fractal/warrant"

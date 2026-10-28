@@ -2,12 +2,17 @@
 """The review waker: replay the findings, then start Codex once per pull request head due for review and
 once per obligation closure due for his verdict.
 
-launchd runs it every five minutes (install.py). One run:
+launchd runs it every five minutes (install.py). It serves the repositories WAKER/repositories.json lists
+(`served`; install.py writes s0fractal/warrant as the only entry when the file is absent), one after another,
+each with its own base branch, bare mirror, state directory (below, HOME is that entry's `home`), worktree root
+(TREES, its `trees`) and operator checkout. For each repository, one run:
 
-  1. fetches the base branch into a bare mirror (HOME/warrant.git);
+  1. fetches the base branch into the bare mirror and refuses the base unless its .warrant/v3.json names that
+     repository (foreign);
   2. writes the base commit's tree once to HOME/code/<commit> (git archive) and runs THAT tree's
-     `tools/review.py due` against the mirror: the due predicate (tools/gate.py) is
-     the base's, never a working tree's, and it reads each pull request's head as Git data only;
+     `python -m warrant.review due` against the mirror: the due predicate (warrant/gate.py) is the base's, never
+     a working tree's (a base that does not carry the package runs the warrant-graph installed beside the
+     waker's Python), and it reads each pull request's head as Git data only;
   3. for each pull request due, first the review replay checker (replay below); when that pushed
      observations, Codex is not woken in this run: the next run reads the new head once its checks
      are green, and the replay finds nothing left to do there;
@@ -17,7 +22,7 @@ launchd runs it every five minutes (install.py). One run:
      Codex's last message HOME/results/<n>-<head>.md), records the attempt's exit status, and removes
      the worktree unless Codex left changes in it.
 
-  5. then the roadmap versions due for Codex's verdict: the base tree's `tools/roadmap.py due --actor
+  5. then the roadmap versions due for Codex's verdict: the base tree's `warrant.roadmap due --actor
      codex` on the base's own records (the leaf of a goal or obligation lineage whose guard waits only for an
      attest by a role codex holds, nothing it requires open, neither accepted nor challenged by codex). At most one is woken per run, and none while an open pull request from a branch of this
      repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: a limit of one verdict pull
@@ -31,7 +36,7 @@ launchd runs it every five minutes (install.py). One run:
      the base's .warrant/v3.json binds to codex, and the blobs they cite; anything else, and nothing is
      published), those bytes added onto the base (records and blobs only: no generated view is committed, G11),
      one commit by the waker pushed to VERDICT_BRANCH<version12>-0 and a pull request opened with `gh`, which the
-     merge gate admits as verdicts (tools/gate.py). The waker signs nothing. A
+     merge gate admits as verdicts (warrant/gate.py). The waker signs nothing. A
      closure that becomes acceptable later (its prerequisite was accepted meanwhile) is due in the run that
      reads that base.
 
@@ -43,9 +48,9 @@ repository exists, in any state, or the base holds codex's verdict on that item 
 An attempt that exited 0 and left nothing to publish is "unpublished", a failed attempt; a publication
 that failed is retried after the same backoff, without waking Codex; the run's lines say which.
 
-Replay. The review replay checker is the actor the base's `tools/review.py identity` names (`review-replayer`);
+Replay. The review replay checker is the actor the base's `warrant.review identity` names (`review-replayer`);
 each replay it signs names the code that ran (the digest of its whole import closure, CHECKER_PATHS) and the
-environment. The waker runs the BASE tree's `review.py replay --key
+environment. The waker runs the BASE tree's `warrant.review replay --key
 -` (the base's .warrant/v3.json must name that actor a replayer; a pull request whose head changes any of
 CHECKER_PATHS is not replayed) in a detached worktree of the head
 (TREES/<n>-<head12>-replay), with the checker's seed REPLAYERS/<actor>.seed (a regular file of this user,
@@ -65,14 +70,15 @@ woken and told so in the prompt. The retry outlives the head being due: a pull r
 not due (a verdict moved its tip) with an incomplete replay is replayed at its current head, and a replay
 completed at a later head covers the earlier ones (Codex's challenge 6f72103999cd). No seed, no replay;
 but a replay already incomplete at a head records the missing seed as a failed run, so its runs end.
-`review.py verify` in CI re-executes every replay new since
-the base, and merge eligibility admits these records after the reviewed head (tools/gate.py).
+`warrant.review verify` in CI re-executes every replay new since
+the base, and merge eligibility admits these records after the reviewed head (warrant/gate.py).
 Codex, the agent, files its own records with its own seed; no model is given the checker's seed.
-HOME is $WARRANT_WAKER_HOME or ~/.warrant/codex-waker; TREES $WARRANT_WAKER_TREES or
-~/Projects/.worktrees/codex-review; REPLAYERS $WARRANT_WAKER_REPLAYERS or ~/.warrant-review-replayer
-(outside ~/.warrant, which Codex's sandbox may write); the Python that runs the base's tools is
-$WARRANT_WAKER_PYTHON or HOME/venv/bin/python (it needs cryptography), the one that runs a replay
-$WARRANT_WAKER_REPLAY_PYTHON or that one; Codex is $WARRANT_WAKER_CODEX or `codex` on PATH. The file HOME/HOLD holds it: nothing is woken while it exists. --dry-run does
+WAKER is $WARRANT_WAKER_HOME or ~/.warrant/codex-waker: the configuration, the lock, the Python and WAKER/HOLD
+(nothing is woken in any repository while it exists; an entry's HOME/HOLD holds that repository alone). REPLAYERS
+is $WARRANT_WAKER_REPLAYERS or ~/.warrant-review-replayer (outside ~/.warrant, which Codex's sandbox may write);
+the Python that runs the base's package is $WARRANT_WAKER_PYTHON or WAKER/venv/bin/python (cryptography and
+warrant-graph, install.py), the one that runs a replay $WARRANT_WAKER_REPLAY_PYTHON or that one; Codex is
+$WARRANT_WAKER_CODEX or `codex` on PATH. A repository whose run fails is reported and the next one served. --dry-run does
 steps 1 and 2 and prints each due head's and closure's state; it writes no memo, replays nothing and starts
 nothing.
 
@@ -96,16 +102,17 @@ import tempfile
 import time
 from pathlib import Path
 
-REPO = "s0fractal/warrant"
-BRANCH = "master"
 PLUGIN = Path(__file__).resolve().parents[1]
+CONFIG = "repositories.json"                # HOME/repositories.json: the repositories the waker serves (install.py)
+CONFIG_DOC = "codex-waker/1"
+SERVED = ("repository", "branch", "home", "mirror", "trees", "checkout")
+REPO_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}\Z")
 KEEP_TREES = 3
 MAX_TRIES = 3
 BACKOFF = 900
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
-OPERATOR_CHECKOUT = Path.home() / "Projects" / "warrant"
 SANDBOX = "/usr/bin/sandbox-exec"
-CHECKER_PATHS = ("tools/review.py", "tools/repo.py", "tools/gate.py", "warrant")   # the checker's whole import closure
+CHECKER_PATHS = ("warrant",)               # the checker's whole import closure: the package (warrant.repo.identity)
 CHECKER = re.compile(r"[a-z][a-z0-9-]{0,63}\Z")   # a checker's actor id, also its seed's file name
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
@@ -152,6 +159,28 @@ def git(*args):
     return subprocess.run(["git", *args], capture_output=True, check=True).stdout
 
 
+def served(home):
+    """[entry] of HOME/repositories.json ({"warrant": "codex-waker/1", "repositories": [entry, ...]}), each
+    {repository: owner/name, branch: its base branch, home: its state directory (memos, logs, base trees), mirror: its
+    bare mirror, trees: its wakes' worktrees, checkout: the operator's checkout, never a wake's directory}, the paths
+    absolute and no two entries sharing a repository, a home, a mirror or a worktree root. A ValueError otherwise."""
+    doc = json.loads((Path(home) / CONFIG).read_text())
+    entries = doc.get("repositories") if isinstance(doc, dict) and set(doc) == {"warrant", "repositories"} \
+        and doc["warrant"] == CONFIG_DOC else None
+    if not (isinstance(entries, list) and entries):
+        raise ValueError(f"{CONFIG} is a {CONFIG_DOC} document {{warrant, repositories: [entry, ...]}}")
+    for e in entries:
+        if not (isinstance(e, dict) and set(e) == set(SERVED) and isinstance(e["repository"], str) and REPO_NAME.match(e["repository"])
+                and isinstance(e["branch"], str) and PR_BRANCH.match(e["branch"])
+                and all(isinstance(e[k], str) and Path(e[k]).is_absolute() for k in SERVED[2:])):
+            raise ValueError(f"{CONFIG}: an entry is {{{', '.join(SERVED)}}}, owner/name, a branch and absolute paths: "
+                             f"{json.dumps(e)[:200]}")
+    for k in ("repository", "home", "mirror", "trees"):
+        if len({e[k] for e in entries}) != len(entries):
+            raise ValueError(f"{CONFIG}: two entries share a {k}")
+    return entries
+
+
 def profile(writable, unreadable):
     """The sandbox-exec profile of a replay: no network, no write outside `writable` (and /dev/null,
     /dev/tty, /dev/fd), no read under `unreadable`. Paths are resolved: the sandbox matches real paths."""
@@ -166,10 +195,10 @@ def profile(writable, unreadable):
                       *(f"(deny file-read* (subpath {q(p)}))" for p in unreadable), ""])
 
 
-def sandboxed(cmd, prof, env, stdin=None):
-    """Run `cmd` under sandbox-exec with the profile `prof` (macOS)."""
+def sandboxed(cmd, prof, env, stdin=None, cwd=None):
+    """Run `cmd` under sandbox-exec with the profile `prof` (macOS), in the directory `cwd`."""
     return subprocess.run([SANDBOX, "-p", prof, *cmd], input=stdin, env=env, capture_output=True, check=False,
-                          timeout=REPLAY_TIMEOUT)
+                          timeout=REPLAY_TIMEOUT, cwd=cwd)
 
 
 def lines_of(data):
@@ -315,15 +344,16 @@ def held_verdict(code, c):
 
 
 class Forge:
-    """GitHub through this user's `gh`: the pull requests from a branch of REPO, and a new one."""
+    """GitHub through this user's `gh`: the pull requests from a branch of one repository, and a new one."""
 
-    def __init__(self, run=subprocess.run, gh=None):
+    def __init__(self, repository, branch, run=subprocess.run, gh=None):
+        self.repository, self.branch = repository, branch
         self.run, self.gh = run, gh or shutil.which("gh") or "/opt/homebrew/bin/gh"
 
     def pulls(self, branch):
-        """[(number, state)] of the pull requests, in any state, from the branch `branch` of REPO itself: a fork's
-        branch of the same name is not where the waker publishes."""
-        r = self.run([self.gh, "pr", "list", "--repo", REPO, "--head", branch, "--state", "all", "--json",
+        """[(number, state)] of the pull requests, in any state, from the branch `branch` of the repository itself: a
+        fork's branch of the same name is not where the waker publishes."""
+        r = self.run([self.gh, "pr", "list", "--repo", self.repository, "--head", branch, "--state", "all", "--json",
                       "number,state,headRefName,isCrossRepository"], capture_output=True, check=False, timeout=120)
         if r.returncode:
             raise RuntimeError(f"gh pr list exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
@@ -331,8 +361,8 @@ class Forge:
                 if x.get("headRefName") == branch and x.get("isCrossRepository") is False]
 
     def open(self, branch, title, body):
-        """The number of a new pull request from `branch` into BRANCH."""
-        r = self.run([self.gh, "pr", "create", "--repo", REPO, "--base", BRANCH, "--head", branch, "--title", title,
+        """The number of a new pull request from `branch` into the base branch."""
+        r = self.run([self.gh, "pr", "create", "--repo", self.repository, "--base", self.branch, "--head", branch, "--title", title,
                       "--body-file", "-"], input=body.encode(), capture_output=True, check=False, timeout=120)
         url = r.stdout.decode(errors="replace").strip().splitlines()[-1:] or [""]
         m = re.search(r"/pull/(\d+)\Z", url[0], re.ASCII)
@@ -341,19 +371,25 @@ class Forge:
         return int(m.group(1))
 
 
+def waker_home():
+    return Path(os.environ.get("WARRANT_WAKER_HOME") or Path.home() / ".warrant" / "codex-waker")
+
+
 class Waker:
-    def __init__(self, home=None, trees=None, python=None, codex=None, plugin=PLUGIN,
+    """The waker for one repository it serves (an entry of `served`): its base branch, mirror, state and worktrees."""
+
+    def __init__(self, entry, python=None, codex=None, plugin=PLUGIN,
                  run=subprocess.run, clock=time.time, replayers=None, replay_python=None, jail=sandboxed, forge=None):
         env = os.environ.get
-        self.home = Path(home or env("WARRANT_WAKER_HOME") or Path.home() / ".warrant" / "codex-waker")
-        self.trees = Path(trees or env("WARRANT_WAKER_TREES") or Path.home() / "Projects" / ".worktrees" / "codex-review")
-        self.python = str(python or env("WARRANT_WAKER_PYTHON") or self.home / "venv" / "bin" / "python")
+        self.repository, self.branch = entry["repository"], entry["branch"]
+        self.home, self.trees, self.mirror = Path(entry["home"]), Path(entry["trees"]), Path(entry["mirror"])
+        self.checkout = Path(entry["checkout"])
+        self.python = str(python or env("WARRANT_WAKER_PYTHON") or waker_home() / "venv" / "bin" / "python")
         self.codex = str(codex or env("WARRANT_WAKER_CODEX") or shutil.which("codex") or "/opt/homebrew/bin/codex")
         self.replayers = Path(replayers or env("WARRANT_WAKER_REPLAYERS") or Path.home() / ".warrant-review-replayer")
         self.replay_python = str(replay_python or env("WARRANT_WAKER_REPLAY_PYTHON") or self.python)
         self.plugin, self.run, self.clock, self.jail = Path(plugin), run, clock, jail
-        self.forge = forge or Forge()
-        self.mirror = self.home / "warrant.git"
+        self.forge = forge or Forge(self.repository, self.branch)
         for d in ("wakes", "accepts", "logs", "results", "code", "replays", "replay-work"):
             (self.home / d).mkdir(parents=True, exist_ok=True)
 
@@ -361,10 +397,22 @@ class Waker:
 
     def fetch(self):
         if not (self.mirror / "HEAD").is_file():
-            git("clone", "--bare", "--quiet", f"https://github.com/{REPO}.git", str(self.mirror))
-        git("-C", str(self.mirror), "fetch", "--quiet", "--no-tags", "origin", f"+refs/heads/{BRANCH}:refs/heads/{BRANCH}")
+            git("clone", "--bare", "--quiet", f"https://github.com/{self.repository}.git", str(self.mirror))
+        b = self.branch
+        git("-C", str(self.mirror), "fetch", "--quiet", "--no-tags", "origin", f"+refs/heads/{b}:refs/heads/{b}")
         git("-C", str(self.mirror), "worktree", "prune")
-        return commit(git("-C", str(self.mirror), "rev-parse", "--verify", f"refs/heads/{BRANCH}^{{commit}}").decode().strip())
+        return commit(git("-C", str(self.mirror), "rev-parse", "--verify", f"refs/heads/{b}^{{commit}}").decode().strip())
+
+    def foreign(self, base):
+        """Why the base is not this entry's repository, or None: its .warrant/v3.json must name the repository the
+        waker serves it as (a mirror or a configuration that points elsewhere wakes nobody)."""
+        try:
+            named = json.loads((self.tree(base) / ".warrant" / "v3.json").read_text())["repository"]
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            return f"the base has no .warrant/v3.json naming its repository ({type(e).__name__})"
+        if named != self.repository:
+            return f"the base's .warrant/v3.json names {str(named)[:100]!r}, not {self.repository}"
+        return None
 
     def tree(self, base):
         """HOME/code/<base>: the base commit's tree, written once (to a fresh directory, then renamed)."""
@@ -382,45 +430,47 @@ class Waker:
         return out
 
     def due(self, base):
-        """The base tree's `review.py due --json`: {"due": [...], "not_due": [...]}, with "refused" when that
+        """The base tree's `warrant.review due --json`: {"due": [...], "not_due": [...]}, with "refused" when that
         run refused itself (exit 2: `REFUSED <CODE> ...`, e.g. the base has no .warrant/merge.json or moved
-        meanwhile, or a usage error: a base older than the `due` command)."""
+        meanwhile, or a usage error: a base older than the `due` command). The base tree is first on PYTHONPATH: a
+        base that carries the package (this one's repository) runs its own; another runs the package installed
+        beside this Python."""
         code = self.tree(base)
         env = dict(os.environ, PYTHONPATH=str(code), PYTHONDONTWRITEBYTECODE="1")
-        r = subprocess.run([self.python, str(code / "tools" / "review.py"), "--root", str(self.mirror), "due",
-                            "--base", base, "--json"], capture_output=True, env=env, check=False)
+        r = subprocess.run([self.python, "-m", "warrant.review", "--root", str(self.mirror), "due",
+                            "--base", base, "--json"], capture_output=True, env=env, check=False, cwd=code)
         err = r.stderr.decode(errors="replace").strip()
         if r.returncode == 2:
             lines = err.splitlines() or ["exit 2"]
             return {"due": [], "not_due": [], "refused": lines[0] if err.startswith("REFUSED ") else lines[-1]}
         if r.returncode:
-            raise RuntimeError(f"review.py due exited {r.returncode}: {err[-800:]}")
+            raise RuntimeError(f"warrant.review due exited {r.returncode}: {err[-800:]}")
         return json.loads(r.stdout)
 
     def acceptances(self, base):
-        """The base tree's `roadmap.py due --actor codex --json` on that tree's own records: {"due": [...]}, the
-        obligation closures due for Codex's verdict (tools/roadmap.py acceptance_due), with "refused" when that
+        """The base tree's `warrant.roadmap due --actor codex --json` on that tree's own records: {"due": [...]}, the
+        obligation closures due for Codex's verdict (warrant.roadmap due), with "refused" when that
         run refused itself (exit 2, e.g. a base older than the `due` command). The receiver-local trust and
         implementation variables are not passed on: the base's records under the base's trust, by its tools."""
         code = self.tree(base)
         env = {k: v for k, v in os.environ.items() if k not in ("WARRANT_IMPL", "WARRANT_CLAIMS_TRUST")}
         env.update(PYTHONPATH=str(code), PYTHONDONTWRITEBYTECODE="1")
-        r = subprocess.run([self.python, str(code / "tools" / "roadmap.py"), "--root", str(code), "due", "--actor", ACCEPTOR,
-                            "--json"], capture_output=True, env=env, check=False)
+        r = subprocess.run([self.python, "-m", "warrant.roadmap", "--root", str(code), "due", "--actor", ACCEPTOR,
+                            "--json"], capture_output=True, env=env, check=False, cwd=code)
         err = r.stderr.decode(errors="replace").strip()
         if r.returncode == 2:
             return {"due": [], "refused": (err.splitlines() or ["exit 2"])[-1]}
         if r.returncode:
-            raise RuntimeError(f"roadmap.py due exited {r.returncode}: {err[-800:]}")
+            raise RuntimeError(f"warrant.roadmap due exited {r.returncode}: {err[-800:]}")
         return json.loads(r.stdout)
 
     # -- the replay before a wake
 
     def seed(self, code):
         """(the base's replay checker, its seed) for the base tree `code`, or (why not, None): the actor is the one the
-        base's own `tools/review.py identity` names, and the base's .warrant/v3.json must name it a replayer."""
-        r = subprocess.run([self.replay_python, str(code / "tools" / "review.py"), "identity"], capture_output=True,
-                           env=self.env(self.home / "replay-work", code), check=False)
+        base's own `warrant.review identity` names, and the base's .warrant/v3.json must name it a replayer."""
+        r = subprocess.run([self.replay_python, "-m", "warrant.review", "--root", str(code), "identity"], capture_output=True,
+                           env=self.env(self.home / "replay-work", code), check=False, cwd=code)
         try:
             actor = json.loads(r.stdout)["actor"]
         except (ValueError, KeyError, TypeError):
@@ -537,7 +587,7 @@ class Waker:
 
     def _replay(self, a, base, actor, seed):
         n, head, branch = number(a["pr"]), commit(a["head"]), a.get("branch")
-        if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != BRANCH):
+        if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != self.branch):
             raise Skipped(f"replay skipped: {str(branch)[:40]!r} is not a pull request branch to push to")
         if any(self.blob(base, p) != self.blob(head, p) for p in CHECKER_PATHS):
             raise Skipped(f"replay skipped: #{n} changes the checker ({', '.join(CHECKER_PATHS)}); it replays once adopted")
@@ -556,8 +606,8 @@ class Waker:
         n, head, code = a["pr"], a["head"], self.tree(base)
         gitdir = Path(git("-C", str(wt), "rev-parse", "--absolute-git-dir").decode().strip())
         prof = profile([wt, work, gitdir], [self.replayers, *(Path.home() / s for s in SECRETS)])
-        r = self.jail([self.replay_python, str(code / "tools" / "review.py"), "--root", str(wt), "replay", "--key", "-"],
-                      prof, self.env(work, code), seed)
+        r = self.jail([self.replay_python, "-m", "warrant.review", "--root", str(wt), "replay", "--key", "-"],
+                      prof, self.env(work, code), seed, cwd=code)
         if r.returncode:
             raise RuntimeError(f"the checker exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
         lines = [x for x in r.stdout.decode().splitlines() if x.split() and HEX.match(x.split()[0])]
@@ -567,7 +617,7 @@ class Waker:
         git("-C", str(wt), "add", "--", *paths)
         msg = (f"Review replay of #{n} at {head[:12]}: {len(lines)} observation(s) by {actor[:27]}\n\n" + "\n".join(lines)
                + f"\n\nFiled by the review waker before waking the reviewer: the checker is the base {base[:12]}'s "
-               f"tools/review.py replay, run in a sandbox with its own seed; no person or model chose this run.\n")
+               f"warrant.review replay, run in a sandbox with its own seed; no person or model chose this run.\n")
         git("-C", str(wt), *COMMITTER, "commit", "--quiet", "--no-verify", "-m", msg)
         new = commit(git("-C", str(wt), "rev-parse", "HEAD").decode().strip())
         tip = git("-C", str(wt), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
@@ -611,10 +661,10 @@ class Waker:
         return path
 
     def command(self, a, path, incomplete=None):
-        return self.codex_exec(path, self.key(a), prompt(a, self.plugin, path, incomplete))
+        return self.codex_exec(path, self.key(a), prompt(self, a, path, incomplete))
 
     def codex_exec(self, path, key, text):
-        if path.resolve() == OPERATOR_CHECKOUT.resolve():
+        if path.resolve() == self.checkout.resolve():
             raise ValueError(f"{path} is the operator's checkout: a wake runs in its own worktree")
         return [self.codex, "exec", "-C", str(path), "-s", "workspace-write",
                 "-c", "sandbox_workspace_write.network_access=true", "-c", 'approval_policy="never"',
@@ -718,7 +768,7 @@ class Waker:
         key = f"accept-{self.accept_key(c)}"
         doc = doc or {"closure": c["closure"], "item": c["item"], "duty": c["duty"], "base": base, "attempts": []}
         started, line = self.attempt(p, doc, key, lambda: self.accept_worktree(c, base, len(doc["attempts"])),
-                                     lambda path: self.codex_exec(path, key, accept_prompt(c, base, self.plugin, path)),
+                                     lambda path: self.codex_exec(path, key, accept_prompt(self, c, base, path)),
                                      self.accept_state)
         if started and doc["attempts"][-1].get("exit") == 0:
             line += "; " + self.publish(c, base, p, doc)
@@ -758,7 +808,7 @@ class Waker:
 
     def published(self, c, code, branch, base):
         """Where the verdict on closure item `c` reached GitHub, or None: the base tree `code` holds a verdict of
-        ACCEPTOR on it, or a pull request from `branch` of REPO exists, in any state, and that branch carries one
+        ACCEPTOR on it, or a pull request from `branch` of the repository exists, in any state, and that branch carries one
         (Codex published it himself, an earlier run did, or a courier: never a second one). A pull request from the
         branch name alone delivers nothing (Codex finding on #211 head 7: an unrelated closed one read as delivery,
         and Codex's worktree, the only copy of his signed verdict, was removed)."""
@@ -900,27 +950,29 @@ def tail_of(repo, base, tip):
     return (sorted(after - before), blobs) if not before - after else ([], {})
 
 
-def prompt(a, plugin, path, incomplete=None):
-    f = a["facts"]
+def prompt(w, a, path, incomplete=None):
+    """What Codex is told about due head `a` of the repository waker `w` serves."""
+    f, plugin = a["facts"], w.plugin
     gap = ("" if incomplete is None else
            f" The review replay checker did not complete at H ({incomplete}): no checker observation covers this "
            "head's mechanical findings. Run them yourself before you rely on them, and say in your verdict that the "
            "replay was incomplete.")
-    return (f"Use the warrant-review skill ($warrant-review). Pull request {REPO}#{a['pr']} is due for review: "
+    return (f"Use the warrant-review skill ($warrant-review). Pull request {w.repository}#{a['pr']} is due for review: "
             f"branch {a.get('branch')}, head H {a['head']}; review lineage D {f.get('duty')}; head version T "
-            f"{f.get('closure')} (head {f.get('head_n')}) at commit X {f.get('x')}; base {BRANCH} M {a['base']}. Your worktree is {path}, "
+            f"{f.get('closure')} (head {f.get('head_n')}) at commit X {f.get('x')}; base {w.branch} M {a['base']}. Your worktree is {path}, "
             f"detached at H (its remote origin is the repository). The plugin's stdio MCP client is "
-            f"{plugin / 'scripts' / 'warrant-mcp-call'}. These facts come from `tools/review.py due` at M, run by the "
+            f"{plugin / 'scripts' / 'warrant-mcp-call'}. These facts come from `warrant.review due` at M, run by the "
             "review waker; check them yourself before you rely on them." + gap)
 
 
-def accept_prompt(c, base, plugin, path):
+def accept_prompt(w, c, base, path):
     """What Codex is told about closure `c`: what to look at and where (the duty's text, the closure's evidence
     ids, the references and subject that evidence names), never what the closure says it established."""
+    plugin = w.plugin
     def ids(xs):
         return "; ".join(str(x)[:200] for x in xs[:20]) or "none"
     return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\". On "
-            f"{REPO} {BRANCH} M {base}, the version T {c['closure']} of the {c.get('schema', 'obligation@1')} lineage D "
+            f"{w.repository} {w.branch} M {base}, the version T {c['closure']} of the {c.get('schema', 'obligation@1')} lineage D "
             f"{c['duty']} (goal {c.get('goal')}) awaits a verdict by {ACCEPTOR}. D owes: {json.dumps(c['statement'])}. "
             f"T's evidence: {ids(c['evidence'])}; the pull requests and commits it names: {ids(c['refs'])}; "
             f"T's subject: {c.get('subject') or 'none'}; T requires: {ids(c['requires'])}. Your worktree is {path}, "
@@ -929,9 +981,9 @@ def accept_prompt(c, base, plugin, path):
             f"{{\"verdict\": \"accept\"}} targeting T), or challenge T, through MCP, into this worktree's store. Leave "
             f"there only that record and the blobs it cites; do not commit, push or open a pull request: after you exit, "
             f"the waker checks them under the base's keys for {ACCEPTOR} and publishes them itself on the branch "
-            f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}, a pull request into {BRANCH} whose description is your "
+            f"{VERDICT_BRANCH}{c['closure'][:12]}-{c['item']}, a pull request into {w.branch} whose description is your "
             "final message. These facts come from "
-            f"`tools/roadmap.py due --actor {ACCEPTOR}` at M, run by the review waker; check them yourself before you "
+            f"`warrant.roadmap due --actor {ACCEPTOR}` at M, run by the review waker; check them yourself before you "
             "rely on them.")
 
 
@@ -976,14 +1028,19 @@ def verdict_body(c, base, branch, records, blobs, report):
             + "\n## Codex's report (his last message in the wake, unedited)\n\n" + (text or "(none)") + "\n")
 
 
-def tick(w, dry):
-    """One run: the lines it prints."""
+def tick(w, dry, held=False):
+    """One run for the repository `w` serves: the lines it prints. `held`: HOME/HOLD of the whole waker; the entry's
+    own home may hold it too."""
     base = w.fetch()
+    where = f"{iso(w.clock())} {w.repository} {w.branch} {base[:12]}"
+    why = w.foreign(base)
+    if why:
+        return [f"{where}: nothing assessed, nobody woken: {why}"]
     found = w.due(base)
-    out = [f"{iso(w.clock())} base {BRANCH} {base[:12]}: {len(found['due'])} due, {len(found['not_due'])} not due"
+    out = [f"{where}: {len(found['due'])} due, {len(found['not_due'])} not due"
            + (f"; nothing assessed: {found['refused']}" if found.get("refused") else "")]
     out += [f"  not due #{x['pr']} {x['head'][:12]}: {', '.join(c for c, _ in x['not_due'])}" for x in found["not_due"]]
-    held = (w.home / "HOLD").exists()
+    held = held or (w.home / "HOLD").exists()
     for x in found["due"]:
         if dry or held:
             line = w.report(x, held)
@@ -1015,14 +1072,14 @@ def retry_lines(w, base, found):
     its current head. Nobody is woken here."""
     out = []
     for x in found["not_due"]:
-        if x.get("head_repo") == REPO and w.pending(x["pr"]):
+        if x.get("head_repo") == w.repository and w.pending(x["pr"]):
             _, doc = w.replay_memo(x)
             if doc is None or w.replay_state(doc)[0] in ("waiting", "retry"):    # a head that skipped stays quiet
                 out.append(f"  RETRY #{x['pr']} {x['head'][:12]}: {w.replay(x, base)[1]}")
     return out
 
 
-def hold(found, dry, held):
+def hold(w, found, dry, held):
     """Why no acceptance wake starts in this run, or None."""
     if dry:
         return "dry run"
@@ -1031,7 +1088,7 @@ def hold(found, dry, held):
     if found.get("refused"):
         return "held: the open pull requests were not read"
     # this repository's branches only: a fork may name its branch anything (Codex finding 91ee68a60abe)
-    verdicts = [x for x in found["due"] + found["not_due"] if x.get("head_repo") == REPO
+    verdicts = [x for x in found["due"] + found["not_due"] if x.get("head_repo") == w.repository
                 and str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
     if verdicts:
         return f"held: verdict pull request #{verdicts[0]['pr']} is open"
@@ -1044,7 +1101,7 @@ def acceptance_lines(w, base, found, dry, held):
     got = w.acceptances(base)
     out = [f"  {len(got['due'])} obligation closure(s) due for {ACCEPTOR}'s verdict"
            + (f"; nothing assessed: {got['refused']}" if got.get("refused") else "")]
-    why_not = hold(found, dry, held)
+    why_not = hold(w, found, dry, held)
     for c in got["due"]:
         woken, line = w.accept(c, base, why_not)
         if woken:
@@ -1061,17 +1118,34 @@ def main(argv=None):
     if args.verify_verdicts:            # Waker.verify: the base's package on PYTHONPATH, the request on stdin
         print(json.dumps({"refused": verify_verdicts(json.load(sys.stdin))}))
         return 0
-    dry = args.dry_run
-    w = Waker()
-    with open(w.home / "lock", "w") as lock:
+    return serve(waker_home(), args.dry_run)
+
+
+def serve(home, dry, make=Waker, clock=time.time):
+    """One run over every repository HOME/repositories.json names, in its order, under one lock: a repository whose
+    run fails is reported and the next one served. Exit 1 when one failed, 2 when the configuration is refused."""
+    home.mkdir(parents=True, exist_ok=True)
+    with open(home / "lock", "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print(f"{iso(w.clock())} another waker run holds {w.home / 'lock'}")
+            print(f"{iso(clock())} another waker run holds {home / 'lock'}")
             return 0
-        for line in tick(w, dry):
-            print(line, flush=True)
-    return 0
+        try:
+            entries = served(home)
+        except (OSError, ValueError) as e:
+            print(f"{iso(clock())} REFUSED {home / CONFIG}: {str(e)[:300]}; nothing served", flush=True)
+            return 2
+        failed = 0
+        for e in entries:
+            try:
+                lines = tick(make(e), dry, held=(home / "HOLD").exists())
+            except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as x:
+                failed += 1
+                lines = [f"{iso(clock())} {e['repository']} {e['branch']}: failed: {str(x)[:300]}"]
+            for line in lines:
+                print(line, flush=True)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

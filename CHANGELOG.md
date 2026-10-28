@@ -4,6 +4,29 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## Unreleased
+
+- The review loop's commands are part of the package, so that another repository runs them on its own
+  `.warrant/` with the installed `warrant-graph`: `warrant.review` (open, head, merged, due, gate, the
+  replay checker, verify, view), `warrant.gate`, `warrant.claims` (check, view, file, replay, verify)
+  and `warrant.roadmap`, as `python -m warrant.<name>` or the commands `warrant-review`, `warrant-gate`,
+  `warrant-claims`, `warrant-roadmap`. They run on the repository `--root` names, else the Git checkout
+  around the current directory. Everything repository-specific comes from that repository:
+  `.warrant/v3.json` (name, trust, profile), `.warrant/merge.json` (base branch, required checks, owner
+  paths) and the new `.warrant/claims.json` (the specification, retired sources, witness files and
+  mutant harness of its claims). A checker's `code` is the digest of the package's modules: at the
+  attested commit where its tree carries the package's source, else the package installed where it is
+  re-executed.
+
+This repository (not part of the package):
+
+- `tools/{review,gate,claims,roadmap}.py` are shims of the package's modules; `tools/repo.py` is gone
+  (`warrant/repo.py`). `warrant/gate.py` is an owner path beside `tools/gate.py`.
+- The review waker serves the repositories `~/.warrant/codex-waker/repositories.json` lists, each with
+  its own base branch, mirror, state and worktrees, and refuses a base whose `.warrant/v3.json` names
+  another repository; `install.py` writes that file with this repository as the only entry and installs
+  this checkout's package into the waker's Python.
+
 ## 3.0.0a1 — the first Warrant 3 release
 
 Prepared for PyPI; published when the owner pushes the tag `v3.0.0a1` (`release.yml`). An alpha

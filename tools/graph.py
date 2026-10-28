@@ -20,13 +20,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo import Failed, Repo, dump, main
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import claims as CL
-import gate as GT
-import review as RV
-import roadmap as RM
-from warrant_agent import graph as G
+from warrant import claims as CL           # noqa: E402
+from warrant import gate as GT             # noqa: E402
+from warrant import review as RV           # noqa: E402
+from warrant import roadmap as RM          # noqa: E402
+from warrant.repo import Failed, Repo, dump, main  # noqa: E402
+from warrant_agent import graph as G       # noqa: E402
 
 VIEWS = ("CLAIMS.md", "ROADMAP.md", "REVIEWS.md")
 

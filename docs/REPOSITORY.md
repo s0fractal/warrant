@@ -3,25 +3,29 @@
 This repository builds and checks Warrant with Warrant. Its own records (the specification's claims,
 the roadmap, the pull request reviews) are Warrant 3 records in `.warrant/records.jsonl` and
 `.warrant/blobs/`, assessed under the repository's receiver configuration `.warrant/v3.json` (the
-trust: which keys are whose; the profile: who holds which role; both owner paths). None of this
-machinery ships in the package (`tests/boundary_test.py`).
+trust: which keys are whose; the profile: who holds which role; both owner paths). The review loop's
+commands ship in the package (`warrant.review`, `warrant.gate`, `warrant.claims`, `warrant.roadmap`),
+so that another repository runs them on its own `.warrant/` ([below](#the-review-loop-in-another-repository));
+this repository's records, its `tools/`, the waker and the tests do not (`tests/boundary_test.py`).
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `warrant/` | the core: records, store, engine, CLI (docs/V3.md) |
+| `warrant/` | the core: records, store, engine, CLI (docs/V3.md); and the review loop's commands below |
+| `warrant/repo.py` | what the commands share: the repository they run on (`--root`, else the Git checkout around the current directory), its store and configuration, filing as an actor, the code and environment a checker's attest names |
+| `warrant/claims.py` | a specification's claims (`.warrant/claims.json` names the spec, the witness files and the mutant harness): check, view, file, retire, the claims checker |
+| `warrant/roadmap.py` | goals and obligations: view, due, check, oblige, close |
+| `warrant/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
+| `warrant/gate.py` | the merge predicate and the gate's GitHub side (owner path) |
 | `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (AGENT.md, docs/V3.md §13) |
 | `warrant_pilot/` | the proof-space pilot, G9 (PILOT.md); not in the wheel |
 | `.warrant/records.jsonl`, `.warrant/blobs/` | the repository's records; `merge=union -text` (`.gitattributes`) |
 | `.warrant/v3.json` | trust and profile (owner path) |
 | `.warrant/merge.json` | the merge gate's configuration and the owner paths (owner path) |
+| `.warrant/claims.json` | where the claims live: the spec `docs/V3.md`, the retired source `SPEC.md`, the witness files, `tests/mutants.py` |
 | `.warrant/v3/schema-accepts.jsonl` | Codex's acceptances of the bootstrap schemas, as committed at #218 |
-| `tools/repo.py` | what the tools share: the store and configuration, filing as an actor, the code and environment a checker's attest names |
-| `tools/claims.py` | the spec's claims: check, view, file, retire, the claims checker |
-| `tools/roadmap.py` | goals and obligations: view, due, check, oblige, close |
-| `tools/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
-| `tools/gate.py` | the merge predicate and the gate's GitHub side (owner path) |
+| `tools/{claims,roadmap,review,gate}.py` | shims: `python3 -m warrant.<name>` with this checkout's package, for CI and these docs; `tools/gate.py` is what the merge workflow runs (owner path) |
 | `tools/graph.py` | queries over the record graph (around, path, why, frontier, impact) and the views |
 | `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge |
 | `integrations/codex-plugin/` | the Codex plugin: the review skill, the MCP launcher, the review waker |
@@ -33,7 +37,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[mcp]"
 ```
 
 The tools run from the checkout with any Python ≥ 3.10 that has `cryptography`
-(`python3 tools/claims.py check`).
+(`python3 tools/claims.py check`, or `python3 -m warrant.claims check` from the checkout's root).
 
 ## Checks
 
@@ -67,11 +71,12 @@ check` never parses the spec: the records say where they are and the spec must h
 To change a rule: change the sentence and the code, add or retarget the cases and mutants, then file
 the claim's new version (`tools/claims.py file --from FILE.json --actor claude --key SEED`, where FILE
 lists `{id, section, text, witnesses, mutants}`; an unchanged claim files nothing). A claim filed
-`backed` waits for the claims checker: `python3 tools/claims.py replay --key -` on a clean checkout
+`backed` waits for the claims checker: `python3 -m warrant.claims replay --key -` on a clean checkout
 runs every waiting claim's witnesses and mutants and accepts those that held, as `claims-checker`,
 whose key `.warrant/v3.json` binds. Each acceptance names the commit and its tree, the checker's code
 (`code`, the digest of its whole import closure) and its environment (`env`: Python, cryptography);
-`tools/claims.py identity` prints them for this checkout. CI's `claims.py verify --base M`
+`python3 -m warrant.claims identity` prints them for this checkout (a checker runs as `-m`: a `tools/` shim
+is a module of the repository outside its code, and the identity refuses it). CI's `claims.py verify --base M`
 re-executes every acceptance new since M at its commit and refuses one whose code is not that
 commit's. An acceptance holds for its commit: `claims.py view` says for each accepted claim whether
 the checker accepted it at the current tree (outside `.warrant/`) or only at an earlier one, and
@@ -93,7 +98,7 @@ for actor, d in (("claims-checker", ".warrant-claims-checker"), ("review-replaye
 ```
 
 The review waker reads `~/.warrant-review-replayer/review-replayer.seed`; the claims checker's seed
-is passed on standard input (`claims.py replay --key - < ~/.warrant-claims-checker/claims-checker.seed`).
+is passed on standard input (`python3 -m warrant.claims replay --key - < ~/.warrant-claims-checker/claims-checker.seed`).
 The Warrant 2 checkers (`checker sha256:eed989…` and `checker sha256:c0a8c6…`) keep their roles for
 the migrated records they signed and have no key: nothing new can be signed as them.
 
@@ -117,13 +122,42 @@ new since the base. After a merge, `review.py merged --pr N --merge SHA` files t
 
 ### Merging on acceptance, and waking the reviewer
 
-`.github/workflows/merge-on-acceptance.yml` runs master's `tools/review.py gate` (tools/gate.py): it
+`.github/workflows/merge-on-acceptance.yml` runs master's `tools/gate.py` (warrant/gate.py): it
 merges a pull request whose head version a `pr/acceptor` accepted, whose tail after the reviewed
 commit is record lines and blobs only, whose required checks are green, and which changes no owner
 path (docs/V3.md §14). Holds: the label `hold`, the repository variable `WARRANT_MERGE_GATE=hold`.
 
-The review waker (integrations/codex-plugin/waker/waker.py, launchd, every five minutes) runs the
-base tree's `review.py due` and `roadmap.py due --actor codex`, replays findings with the review
-replay checker's seed (sandboxed, seed on standard input), and wakes Codex once per due head or
-roadmap version. `python3 integrations/codex-plugin/install.py` installs the plugin and the waker
-(the owner runs it).
+The review waker (integrations/codex-plugin/waker/waker.py, launchd, every five minutes) serves the
+repositories `~/.warrant/codex-waker/repositories.json` lists, each on its own base branch with its own
+mirror, state and worktrees, and refuses a base whose `.warrant/v3.json` names another repository. For
+each it runs the base tree's `python -m warrant.review due` and `python -m warrant.roadmap due --actor
+codex` (the base's own package when the base carries it, else the warrant-graph installed beside the
+waker), replays findings with the review replay checker's seed (sandboxed, seed on standard input),
+and wakes Codex once per due head or roadmap version, naming that repository and its branch.
+`python3 integrations/codex-plugin/install.py` installs the plugin, the waker and its Python with this
+checkout's warrant-graph, and writes `repositories.json` with this repository as the only entry when
+the file is absent (the owner runs it).
+
+## The review loop in another repository
+
+Another repository runs the same loop on its own records with the installed package, pinned to an
+exact version (and hashes), from a checkout of that repository:
+
+- `.warrant/v3.json`: `{"warrant": "repository/3", "repository": "owner/name", "trust", "profile"}`;
+  the profile names its `pr/acceptor`, `replayer` and, for claims, `claim/verifier`. Its store holds
+  the schemas (`warrant bootstrap`), at the profile's quorum.
+- `.warrant/merge.json`: the gate's base branch, required checks (each bound to its workflow file),
+  hold label and owner paths. Nothing of warrant's own tree is read: no repository name, branch,
+  check or owner path is a constant of the package.
+- `.warrant/claims.json`, only for claims: `{"warrant": "claims/1", "source", "retired", "witnesses",
+  "mutants"}` (`python -m warrant.claims` says what each is). The claims checker and the review
+  replay run Python test files (W-2, a declared runner, is not done).
+
+The commands are `warrant-review open|head|merged|due|verify|view` (or `python -m warrant.review`),
+`warrant-gate gate|due`, `warrant-claims check|view|file|replay|verify` and `warrant-roadmap`. A
+checker's `code` is the digest of the package's modules: in this repository, which carries their
+source, CI holds an attest to the package at the commit it names; in a repository that does not,
+to the package installed where `verify` runs, so CI re-executes with the same pinned version. The
+gate decides from the base: its workflow checks out the base commit and installs the version the
+base pins (here: runs the base checkout's own `warrant/gate.py`). The waker serves the repository
+once an entry for it is added to `~/.warrant/codex-waker/repositories.json` (waker.py `served`).

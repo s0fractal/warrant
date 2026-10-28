@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """The public surface of warrant-graph as checks: what the core package may import, and what
-the distribution ships. The repository's machinery (tools/, the review loop, the waker, the
-gate) is evidence behind the package, never part of it.
+the distribution ships. The review loop (warrant.review, .gate, .claims, .roadmap) ships, so
+that another repository runs it on its own .warrant/; this repository's machinery around it
+(tools/, its shims, the waker, the tests, its records) is evidence behind the package, never
+part of it.
 
 B1 reads the AST of every module of warrant/ (no import, no grep): each import names the
 standard library (sys.stdlib_module_names), `cryptography` or warrant itself, and a relative
@@ -37,7 +39,8 @@ from world import ROOT, check, finish
 DIST = "warrant-graph"
 PUBLIC = ("warrant", "warrant_agent")
 SCRIPTS = {"warrant": "warrant.cli:main", "warrant-agent": "warrant_agent.cli:main",
-           "warrant-agent-mcp": "warrant_agent.mcp_server:main"}
+           "warrant-agent-mcp": "warrant_agent.mcp_server:main", "warrant-review": "warrant.review:entry",
+           "warrant-gate": "warrant.gate:main", "warrant-claims": "warrant.claims:entry", "warrant-roadmap": "warrant.roadmap:entry"}
 REQUIRES = ["cryptography>=41"]
 EXTRAS = {"pilot", "mcp"}
 CORE_DEPS = {"cryptography"}
@@ -187,8 +190,8 @@ def main():
                     and isinstance(node.value, ast.Constant)]
         got_meta = meta and (meta["Name"], meta["Version"], plain, set(meta.get_all("Provides-Extra") or []))
         check("W4", got_meta == (DIST, version, REQUIRES, EXTRAS) and scripts == SCRIPTS and versions == [version],
-              f"metadata: {DIST} {version}, sole requirement {REQUIRES}, extras {sorted(EXTRAS)}, the three "
-              "commands, and warrant.__version__ equal to the version",
+              f"metadata: {DIST} {version}, sole requirement {REQUIRES}, extras {sorted(EXTRAS)}, the "
+              f"{len(SCRIPTS)} commands, and warrant.__version__ equal to the version",
               {"metadata": got_meta, "scripts": scripts, "__version__": versions})
 
         with tarfile.open(sdist) as t:

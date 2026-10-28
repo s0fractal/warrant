@@ -31,6 +31,11 @@ Specification = "https://github.com/s0fractal/warrant/blob/master/docs/V3.md"
 warrant = "warrant.cli:main"
 warrant-agent = "warrant_agent.cli:main"
 warrant-agent-mcp = "warrant_agent.mcp_server:main"
+# The review loop, on the repository around the current directory (docs/REPOSITORY.md): python -m warrant.<name> too.
+warrant-review = "warrant.review:entry"
+warrant-gate = "warrant.gate:main"
+warrant-claims = "warrant.claims:entry"
+warrant-roadmap = "warrant.roadmap:entry"
 
 [tool.setuptools]
 packages = ["warrant", "warrant_agent"]

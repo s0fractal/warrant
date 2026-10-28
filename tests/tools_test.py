@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""The repository's tools on fixture repositories: claims (tools/claims.py), the review loop's commands and
-replay checker (tools/review.py), the roadmap (tools/roadmap.py) and what a checker's attest names (tools/repo.py).
+"""The review loop's commands on fixture repositories: claims (warrant/claims.py), the review loop's commands and
+replay checker (warrant/review.py), the roadmap (warrant/roadmap.py) and what a checker's attest names (warrant/repo.py).
 
     python3 tests/tools_test.py
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
 
 from world import KEYS, ROOT, Repo, check, finish, git
 
-import claims as CL
-import repo as RP
-import review as RV
-import roadmap as RM
+from warrant import claims as CL
 from warrant import records as R
+from warrant import repo as RP
+from warrant import review as RV
+from warrant import roadmap as RM
 
 SPEC = "## 3. Lineage\n\nA record whose `lineage` is L **succeeds** L.\n\nFORK is a core verdict.\n"
 TEST = '''def check(name, ok):
@@ -36,6 +37,13 @@ else:
     open(sys.argv[sys.argv.index("--matrix") + 1], "w").write(json.dumps({"rows": rows}))
 '''
 CHECKER_KEY = KEYS["dave"]               # the fixture's key bound to the claims checker and the replayer
+SOURCE, RETIRED = "docs/V3.md", "SPEC.md"
+CLAIMS = {"warrant": "claims/1", "source": SOURCE, "retired": [RETIRED], "witnesses": ["tests/*_test.py"],
+          "mutants": "tests/mutants.py"}
+
+
+def claims_config(r):
+    (r.root / ".warrant" / "claims.json").write_text(json.dumps(CLAIMS))
 
 
 def claims_repo():
@@ -45,11 +53,12 @@ def claims_repo():
     (r.root / "tests").mkdir()
     (r.root / "tests" / "q_test.py").write_text(TEST)
     (r.root / "tests" / "mutants.py").write_text(HARNESS)
+    claims_config(r)
     return r
 
 
 def claim(r, actor="alice", **kw):
-    body = dict({"state": "backed", "id": "V3-3-1", "source": CL.SOURCE, "section": "3",
+    body = dict({"state": "backed", "id": "V3-3-1", "source": SOURCE, "section": "3",
                  "text": "A record whose `lineage` is L **succeeds** L.", "witnesses": ["q_test:Q1"], "mutants": ["Z1"]}, **kw)
     return r.put(actor, "entity", body, "claim@1", guard=CL.schema_guard(RP.Repo(r.root).report(), body["state"]))
 
@@ -97,10 +106,10 @@ def claims_cases():
     claim(r, mutants=["Z1", "Z9"])
     check("C04 a mutant not in the harness is refused", codes(r) == ["UNKNOWN_MUTANT"], codes(r))
     r = claims_repo()
-    v2 = claim(r, source=CL.V2_SOURCE, id="SPEC-1-1")
+    v2 = claim(r, source=RETIRED, id="SPEC-1-1")
     before = codes(r)
     seed = r.seed("alice")
-    CL.retire_v2(RP.Repo(r.root), "alice", RP.load_key(str(seed)))
+    CL.retire_v2(RP.Repo(r.root), "alice", RP.load_key(str(seed), r.root))
     rep = RP.Repo(r.root).report()
     check("C05 a live Warrant 2 claim is refused until retired; retired, it stays in the store as history",
           before == ["V2_CLAIM_LIVE"] and codes(r) == [] and rep["lineages"][v2]["state"] == "retired"
@@ -121,7 +130,7 @@ def claims_cases():
     r.put("alice", "schema", {"name": "note@1", "fields": {"text": "str"}, "states": None, "closed": [], "successors": {}})
     check("C10 a schema awaiting its second author is a proposal the claims check does not refuse", codes(r) == [], codes(r))
     try:                         # a checker that does not refuse goes on to run every witness: a hang is a failure here
-        out = subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "claims.py"), "replay", "--key", "-"],
+        out = subprocess.run([sys.executable, "-B", "-m", "warrant.claims", "--root", str(ROOT), "replay", "--key", "-"],
                              input=KEYS["eve"].seed_hex() + "\n", capture_output=True, text=True, cwd=ROOT, timeout=60)
         refused, why = out.returncode == 2 and out.stderr.startswith("REFUSED SIGNER"), out.stderr[-300:]
     except subprocess.TimeoutExpired:
@@ -130,7 +139,7 @@ def claims_cases():
     r = claims_repo()
     doc = [{"id": "V3-3-1", "section": "3", "text": "A record whose `lineage` is L **succeeds** L.", "witnesses": ["q_test:Q1"],
             "mutants": ["Z1"]}]
-    k = RP.load_key(str(r.seed("alice")))
+    k = RP.load_key(str(r.seed("alice")), r.root)
     first = CL.file_claims(RP.Repo(r.root), "alice", k, doc)
     again = CL.file_claims(RP.Repo(r.root), "alice", k, doc)
     doc[0]["text"] = "FORK is a core verdict."
@@ -138,7 +147,33 @@ def claims_cases():
     rep = RP.Repo(r.root).report()
     check("C09 filing claims is idempotent; a changed sentence is a new version of the same lineage",
           len(first) == 1 and again == [] and len(third) == 1 and len(rep["lineages"][first[0]]["versions"]) == 2)
+    config_cases()
     checker_cases()
+
+
+def config_cases():
+    r = claims_repo()
+    claim(r)
+    (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, source="/etc/hosts")))
+    why = refused_code(CL.check, RP.Repo(r.root))
+    (r.root / ".warrant" / "claims.json").unlink()
+    gone = refused_code(CL.check, RP.Repo(r.root))
+    check("C16 the claims check refuses a repository whose .warrant/claims.json is absent or names a path outside it",
+          why is not None and why.startswith("CONFIG") and gone is not None and gone.startswith("CONFIG"), (why, gone))
+    r = Repo()
+    (r.root / "spec").mkdir()
+    (r.root / "spec" / "S.md").write_text(SPEC)
+    (r.root / "checks").mkdir()
+    (r.root / "checks" / "q_test.py").write_text(TEST)
+    (r.root / "checks" / "harness.py").write_text(HARNESS.replace("tests/q_test.py", "checks/q_test.py"))
+    (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, source="spec/S.md", witnesses=["checks/*_test.py"],
+                                                                    mutants="checks/harness.py")))
+    claim(r, source="spec/S.md", witnesses=["checks/q_test:Q1"])
+    here = codes(r)
+    claim(r, source=SOURCE, id="V3-3-2")
+    there = codes(r)
+    check("C17 the specification, the witness files and the mutant harness are the ones the repository's claims.json names",
+          here == [] and there == ["CLAIM_SOURCE"], (here, there))
 
 
 def checker_cases():
@@ -146,14 +181,14 @@ def checker_cases():
     rp = RP.Repo(r.root)
     L = claim(r)
     base = r.commit("a claim")
-    first = CL.replay(rp, CHECKER_KEY, r.root)
+    first = CL.replay(rp, CHECKER_KEY)
     x1 = r.commit("its acceptance")
     rep = rp.report()
     a = rep["_recs"][first[0]]["body"] if first else {}
-    again = CL.replay(rp, CHECKER_KEY, r.root)
+    again = CL.replay(rp, CHECKER_KEY)
     check("C11 the claims checker's acceptance names the commit, its tree, the checker's code there and its environment",
           len(first) == 1 and rep["versions"][L]["guard"] == "MET" and a["commit"] == base
-          and a["tree"] == git(r.root, "rev-parse", f"{base}^{{tree}}") and a.get("code") == RP.code_at(CL.CHECKER_FILES, base, r.root)
+          and a["tree"] == git(r.root, "rev-parse", f"{base}^{{tree}}") and a.get("code") == RP.checker_code(base, r.root)
           and set(a.get("env", {})) == {"python", "cryptography"} and again == [], (first, a, again))
     ok = CL.verify(rp, base)
     put_as(r, CL.CHECKER, dict(a, code="0" * 64), [L])
@@ -165,7 +200,7 @@ def checker_cases():
     (r.root / "tests" / "q_test.py").write_text(TEST + "# changed\n")
     r.commit("the code changes")
     stale = CL.view(rp.report(), r.root)
-    third = CL.replay(rp, CHECKER_KEY, r.root)
+    third = CL.replay(rp, CHECKER_KEY)
     check("C13 an acceptance holds for its commit: the view says whether it is at this tree, and the checker accepts again "
           "at a tree none of its acceptances is at", "checked at this tree" in view and "not this tree" in stale and len(third) == 1,
           (view[-300:], stale[-300:], third))
@@ -173,9 +208,9 @@ def checker_cases():
     rp = RP.Repo(r.root)
     L = claim(r, witnesses=["q_test:Q1", "q_test:Q2"], mutants=["Z1", "Z2"])
     base = r.commit("a claim whose mutant survives")
-    held = CL.replay(rp, CHECKER_KEY, r.root)
+    held = CL.replay(rp, CHECKER_KEY)
     put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": base, "tree": git(r.root, "rev-parse", f"{base}^{{tree}}"),
-                           **RP.identity(CL.CHECKER_FILES, r.root), "witnesses": ["q_test:Q1", "q_test:Q2"], "mutants": ["Z1", "Z2"]}, [L])
+                           **RP.identity(r.root), "witnesses": ["q_test:Q1", "q_test:Q2"], "mutants": ["Z1", "Z2"]}, [L])
     r.commit("a forged acceptance")
     why = refused_code(CL.verify, rp, base)
     check("C14 the checker accepts no claim whose mutant survives, and CI refuses an acceptance that does not hold again at its commit",
@@ -196,11 +231,9 @@ def preflight_fixture(sentence_present):
     (r.root / "tests").mkdir()
     (r.root / "tests" / "q_test.py").write_text(TEST)
     (r.root / "tests" / "mutants.py").write_text(HARNESS)
-    (r.root / "tools").mkdir()
-    for name in ("claims.py", "repo.py"):
-        shutil.copyfile(ROOT / "tools" / name, r.root / "tools" / name)
+    claims_config(r)
     shutil.copytree(ROOT / "warrant", r.root / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
-    body = {"state": "backed", "id": "V3-3-1", "source": CL.SOURCE, "section": "3", "text": sentence,
+    body = {"state": "backed", "id": "V3-3-1", "source": SOURCE, "section": "3", "text": sentence,
             "witnesses": ["q_test:Q1"], "mutants": ["Z1"]}
     target = r.entity("alice", "claim@1", body)
     git(r.root, "init", "-q", "-b", "master")
@@ -208,7 +241,7 @@ def preflight_fixture(sentence_present):
     rp = RP.Repo(r.root)
     before = [c for c, _ in CL.check(rp)[1]]
     put_as(r, CL.CHECKER, {"target": target, "verdict": "accept", "commit": x, "tree": git(r.root, "rev-parse", f"{x}^{{tree}}"),
-                           **RP.identity(CL.CHECKER_FILES, r.root), "witnesses": body["witnesses"], "mutants": body["mutants"]}, [target])
+                           **RP.identity(r.root), "witnesses": body["witnesses"], "mutants": body["mutants"]}, [target])
     (r.root / "docs" / "V3.md").write_text("## 3. Lineage\n" + sentence + "\n")
     r.commit("the acceptance, and the sentence present at the head")
     return before, refused_code(CL.verify, rp, x), [c for c, _ in CL.check(rp)[1]]
@@ -249,7 +282,7 @@ new file mode 100644
 def review_cases():
     r = review_repo()
     rp = RP.Repo(r.root)
-    k = RP.load_key(str(r.seed("alice")))
+    k = RP.load_key(str(r.seed("alice")), r.root)
     [root] = rp.file("alice", k, [R.record("entity", "alice", 0, {"state": "open", "repository": "s0fractal/warrant", "pr": 3,
                                                                     "title": "t", "serves": []}, "pr-head@1")])
     x1 = git(r.root, "rev-parse", "HEAD")
@@ -280,7 +313,7 @@ def review_cases():
           RV.finding_test({"test": test}) and RV.finding_test({"test": dict(test, patch=wide)}) is None
           and RV.finding_test({"test": dict(test, patch=PATCH + PATCH.replace("bug_test", "two_test"))}) is None)
     base = r.commit("before the replays")
-    ran = {"commit": x2, "tree": git(r.root, "rev-parse", f"{x2}^{{tree}}"), "code": RP.code_at(RV.REPLAYER_FILES, x2, r.root),
+    ran = {"commit": x2, "tree": git(r.root, "rev-parse", f"{x2}^{{tree}}"), "code": RP.checker_code(x2, r.root),
            "env": {"python": "3.11.9", "cryptography": "46.0.0"}, "test": "bug_test:F1", "window": [1, 2]}
     r.put("carol", "attest", {"target": f, "verdict": "reproduces", "on": v2, **ran}, refs=[f, v2])
     true = r.commit("a true replay")
@@ -295,7 +328,7 @@ def review_cases():
     why = refused_code(RV.verify, rp, late + "^")
     check("R07 CI refuses a replay whose code is not the replayer's code at the commit it names", why is not None and "CODE_DIFFERS" in why, why)
     r.put("carol", "attest", {"target": f, "verdict": "does_not_reproduce", "on": v2,
-                              **dict(ran, commit=x1, tree=hb["tree"], code=RP.code_at(RV.REPLAYER_FILES, x1, r.root))}, refs=[f, v2])
+                              **dict(ran, commit=x1, tree=hb["tree"], code=RP.checker_code(x1, r.root))}, refs=[f, v2])
     off = r.commit("a replay of the second head run at the first head's commit")
     why = refused_code(RV.verify, rp, off + "^")
     check("R09 CI refuses a replay that names a commit other than its head version's", why is not None and "REPLAY_NOT_DUE" in why, why)
@@ -305,20 +338,43 @@ def review_cases():
     f2 = r.put("bob", "challenge", {"target": v2, "statement": "P1 y", "severity": "P1", "what": "w", "where": [],
                                     "commit": x2, "tree": ran["tree"], "test": test}, "finding@1", refs=[v2])
     r.commit("a second finding")
-    out = subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "review.py"), "--root", str(r.root), "replay", "--key", "-"],
+    out = subprocess.run([sys.executable, "-B", "-m", "warrant.review", "--root", str(r.root), "replay", "--key", "-"],
                          input=CHECKER_KEY.seed_hex() + "\n", capture_output=True, text=True, cwd=ROOT, timeout=120)
     got = [x for x in rp.report()["_recs"].values() if x["actor"] == RV.REPLAYER]
-    me = json.loads(subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "review.py"), "identity"], capture_output=True,
-                                   text=True, check=True).stdout)
+    me = json.loads(subprocess.run([sys.executable, "-B", "-m", "warrant.review", "--root", str(ROOT), "identity"], capture_output=True,
+                                   text=True, check=True, cwd=ROOT).stdout)
     check("R08 the replayer signs each replay as `review-replayer`, naming the code that ran (its own tool's) and its environment",
           out.returncode == 0 and len(got) == 1 and got[0]["body"]["target"] == f2 and got[0]["body"]["on"] == v2
           and got[0]["body"].get("code") == me["code"] and got[0]["body"].get("env") == me["env"], (out.stderr[-300:], got))
+    carrier_cases(r)
     try:
-        RP.identity(["warrant"])
+        RP.identity(ROOT)
         refused = False
     except RP.Failed as e:
         refused = e.code == "IDENTITY"
     check("R06 a checker identity is refused when a module loaded from the repository is not hashed", refused)
+
+
+def carrier_cases(r):
+    """In a repository that carries the package's source, a checker's code is the package at the commit it names, not
+    the one running; the commands run on the checkout they are started in (the package from elsewhere: PYTHONPATH)."""
+    out = subprocess.run([sys.executable, "-B", "-m", "warrant.review", "head", "--pr", "3", "--actor", "alice", "--key",
+                          str(r.seed("alice"))], cwd=r.root, capture_output=True, text=True,
+                         env={**{k: v for k, v in os.environ.items() if k != "WARRANT_REPO_ROOT"}, "PYTHONPATH": str(ROOT)})
+    rep = RP.Repo(r.root).report()
+    here = git(r.root, "rev-parse", "HEAD")
+    heads = [v for v in rep["_recs"].values() if v["schema"] == "pr-head@1" and v["body"].get("commit") == here]
+    check("R11 the review commands run on the checkout around the current directory: its store, its repository's name "
+          "and its HEAD", out.returncode == 0 and len(heads) == 1, (out.stdout[-200:], out.stderr[-300:]))
+    shutil.copytree(ROOT / "warrant", r.root / "warrant", ignore=shutil.ignore_patterns("__pycache__"))
+    with open(r.root / "warrant" / "repo.py", "a") as f:
+        f.write("# another package\n")
+    x = r.commit("a package that differs from the running one")
+    body = {"commit": x, "tree": git(r.root, "rev-parse", f"{x}^{{tree}}"), "env": {"python": "3.11.9", "cryptography": "46.0.0"}}
+    running = RP.checker_problem(dict(body, code=RP.package_code()), r.root)
+    carried = RP.checker_problem(dict(body, code=RP.code_at(x, r.root)), r.root)
+    check("R10 in a repository that carries the package, a checker's code must be the package at the commit it names, "
+          "not the package that runs", running is not None and "CODE_DIFFERS" in running and carried is None, (running, carried))
 
 
 def roadmap_cases():

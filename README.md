@@ -88,10 +88,13 @@ Warrant 2 and why; §12 what is open.
 
 The repository builds and checks Warrant with Warrant: the spec's claims, the
 roadmap and the pull request reviews are records in `.warrant/records.jsonl`,
-and a gate merges a pull request on a recorded acceptance. That machinery
-(`tools/`, `.warrant/`, `.github/`, `integrations/`) is evidence behind the
-package, not part of it: `tests/boundary_test.py` refuses a core module that
-imports it and a wheel or sdist that carries it.
+and a gate merges a pull request on a recorded acceptance. The review loop's
+commands ship in the package (`warrant-review`, `warrant-gate`,
+`warrant-claims`, `warrant-roadmap`, or `python -m warrant.<name>`), so that
+another repository runs them on its own `.warrant/`; this repository's records
+and machinery around them (`tools/`, `.warrant/`, `.github/`, `integrations/`)
+are evidence behind the package, not part of it: `tests/boundary_test.py`
+refuses a core module that imports it and a wheel or sdist that carries it.
 [docs/REPOSITORY.md](https://github.com/s0fractal/warrant/blob/master/docs/REPOSITORY.md)
 describes it, with the checks to run from a checkout;
 [CHANGELOG.md](https://github.com/s0fractal/warrant/blob/master/CHANGELOG.md)
