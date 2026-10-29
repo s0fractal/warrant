@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Codex plugin and its waker, without Codex and without GitHub (C1-C14, W1-W13).
+"""The Codex plugin and its waker, without Codex and without GitHub (C1-C14, W1-W14).
 
     python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
@@ -405,6 +405,24 @@ def serving():
           "a repository whose run fails is reported and the next one still served; the run exits 1", lines)
 
 
+def ungated():
+    """A repository without a merge gate (W14): `due` refuses its base, so the open verdict pull requests that hold a
+    roadmap wake are GitHub's list, this repository's branches under VERDICT_BRANCH only (s0fractal/minds, 2026-10-29)."""
+    import types
+
+    def forge(prs):
+        def run(cmd, **kw):
+            return types.SimpleNamespace(returncode=0, stdout=json.dumps(prs).encode(), stderr=b"")
+        return WAKER.Forge("s0fractal/minds", "main", run=run, gh="gh")
+    other = [{"number": 3, "headRefName": "topic", "isCrossRepository": False},
+             {"number": 4, "headRefName": WAKER.VERDICT_BRANCH + "abc-0", "isCrossRepository": True}]
+    mine = other + [{"number": 9, "headRefName": WAKER.VERDICT_BRANCH + "def-0", "isCrossRepository": False}]
+    refused = {"due": [], "not_due": [], "refused": "REFUSED BASE_CONFIG .warrant/merge.json at the base"}
+    got = [WAKER.hold(types.SimpleNamespace(repository="s0fractal/minds", forge=forge(p)), refused, False, False) for p in (other, mine)]
+    check("W14", got == [None, "held: verdict pull request #9 is open"], "a repository whose base `due` refuses (no merge "
+          "gate) has its roadmap versions woken unless GitHub lists an open verdict pull request from its own branch", got)
+
+
 def configuration():
     """repositories.json (W12) and install's default (C14)."""
     from unittest.mock import patch
@@ -465,6 +483,7 @@ if __name__ == "__main__":
     store_rules()
     seeds()
     serving()
+    ungated()
     configuration()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))

@@ -26,7 +26,8 @@ each with its own base branch, bare mirror, state directory (below, HOME is that
      codex` on the base's own records (the leaf of a goal or obligation lineage whose guard waits only for an
      attest by a role codex holds, nothing it requires open, neither accepted nor challenged by codex). At most one is woken per run, and none while an open pull request from a branch of this
      repository under VERDICT_BRANCH is open (Codex's previous verdict, not merged yet: a limit of one verdict pull
-     request at a time; until G11 two of them rendered the same generated views from different bases). Its memo is HOME/accepts/<closure>-<item>.json, its
+     request at a time; until G11 two of them rendered the same generated views from different bases: the gate's
+     survey says which are open, or, when `due` refused the base, e.g. one without .warrant/merge.json, `gh pr list`). Its memo is HOME/accepts/<closure>-<item>.json, its
      worktree TREES/accept-<closure12>-<item>-<base12> (with -<n> from the second attempt on), detached at the
      base; Codex accepts the version (an attest) or challenges it through MCP into that worktree's store, and exits. The
      waker, not Codex, publishes it (Waker.publish; Codex's sandbox cannot write the worktree's Git metadata,
@@ -361,6 +362,15 @@ class Forge:
             raise RuntimeError(f"gh pr list exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
         return [(x["number"], x["state"]) for x in json.loads(r.stdout)
                 if x.get("headRefName") == branch and x.get("isCrossRepository") is False]
+
+    def verdicts(self):
+        """[number] of the open pull requests from a branch of the repository itself under VERDICT_BRANCH."""
+        r = self.run([self.gh, "pr", "list", "--repo", self.repository, "--state", "open", "--limit", "1000", "--json",
+                      "number,headRefName,isCrossRepository"], capture_output=True, check=False, timeout=120)
+        if r.returncode:
+            raise RuntimeError(f"gh pr list exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+        return [x["number"] for x in json.loads(r.stdout)
+                if str(x.get("headRefName") or "").startswith(VERDICT_BRANCH) and x.get("isCrossRepository") is False]
 
     def open(self, branch, title, body):
         """The number of a new pull request from `branch` into the base branch."""
@@ -1088,12 +1098,14 @@ def hold(w, found, dry, held):
     if held:
         return "held (HOME/HOLD)"
     if found.get("refused"):
-        return "held: the open pull requests were not read"
-    # this repository's branches only: a fork may name its branch anything (Codex finding 91ee68a60abe)
-    verdicts = [x for x in found["due"] + found["not_due"] if x.get("head_repo") == w.repository
-                and str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
+        # no survey of the gate's (a repository without .warrant/merge.json: its owner merges): GitHub's own list
+        verdicts = w.forge.verdicts()
+    else:
+        # this repository's branches only: a fork may name its branch anything (Codex finding 91ee68a60abe)
+        verdicts = [x["pr"] for x in found["due"] + found["not_due"] if x.get("head_repo") == w.repository
+                    and str(x.get("branch") or "").startswith(VERDICT_BRANCH)]
     if verdicts:
-        return f"held: verdict pull request #{verdicts[0]['pr']} is open"
+        return f"held: verdict pull request #{verdicts[0]} is open"
     return None
 
 
