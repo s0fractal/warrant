@@ -36,9 +36,10 @@ from pathlib import Path, PurePosixPath
 
 from . import gate as GT
 from . import records as R
-from .repo import Failed, Repo, checker_problem, code_tree, dump, env_root, git, identity, inside, load_key, main, tree_id
+from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
 
 CONFIG = "claims/1"
+CLAIM = "claim@1"
 CHECKER = "claims-checker"            # the claims checker's actor: one key, bound once; its code is in each attest
 CASE_LINE = re.compile(r"""check\(\s*f?["']([A-Za-z0-9-]+)[ "']""")
 
@@ -103,7 +104,7 @@ def live(rep):
     """{lineage: leaf body} of the claim@1 lineages not retired (a forked one under its root's body)."""
     recs = rep["_recs"]
     return {L: recs[lin["leaf"] or L]["body"] for L, lin in rep["lineages"].items()
-            if lin["schema"] == "claim@1" and (recs[lin["leaf"]]["body"]["state"] if lin["leaf"] else None) != "retired"}
+            if lin["schema"] == CLAIM and (recs[lin["leaf"]]["body"]["state"] if lin["leaf"] else None) != "retired"}
 
 
 def store_problems(rep):
@@ -134,20 +135,28 @@ def check(repo):
         ids.setdefault(b["id"], []).append(L)
         if b["text"] not in spec:
             out.append(("CLAIM_TEXT_MISSING", f"{tag}: its sentence is not in {source}"))
-        ws = b["witnesses"]
-        for w in ws:
-            f, _, c = w.partition(":")
-            if c not in printed.get(f, set()):
-                out.append(("WITNESS_MISSING", f"{tag}: {w} is printed by no test"))
-        for m in b["mutants"]:
-            if m not in known:
-                out.append(("UNKNOWN_MUTANT", f"{tag}: {m}"))
-            elif not {f"{witness_of(m, known)}:{c}" for c in known.get(m, ["", "", []])[2]} & set(ws):
-                out.append(("MUTANT_OFF_CLAIM", f"{tag}: {m} fails {known.get(m)}, none a witness of the claim"))
-        if b["state"] == "backed" and not (ws and b["mutants"]):
-            out.append(("UNBURNED", f"{tag} is backed with {len(ws)} witness(es) and {len(b['mutants'])} mutant(s)"))
+        out += backing_problems(tag, b, printed, known)
     out += [("CLAIM_ID_TWICE", f"{i} in {len(Ls)} lineages") for i, Ls in sorted(ids.items()) if len(Ls) > 1]
     return rep, out
+
+
+def backing_problems(tag, b, printed, known):
+    """What keeps claim body `b` from being backed: a witness case no test file prints, a mutant the harness does not
+    list or that fails none of its witnesses, a `backed` claim with no witness or no mutant."""
+    out = []
+    ws = b["witnesses"]
+    for w in ws:
+        f, _, c = w.partition(":")
+        if c not in printed.get(f, set()):
+            out.append(("WITNESS_MISSING", f"{tag}: {w} is printed by no test"))
+    for m in b["mutants"]:
+        if m not in known:
+            out.append(("UNKNOWN_MUTANT", f"{tag}: {m}"))
+        elif not {f"{witness_of(m, known)}:{c}" for c in known.get(m, ["", "", []])[2]} & set(ws):
+            out.append(("MUTANT_OFF_CLAIM", f"{tag}: {m} fails {known.get(m)}, none a witness of the claim"))
+    if b["state"] == "backed" and not (ws and b["mutants"]):
+        out.append(("UNBURNED", f"{tag} is backed with {len(ws)} witness(es) and {len(b['mutants'])} mutant(s)"))
+    return out
 
 
 def witness_of(m, known):
@@ -199,13 +208,13 @@ def view(rep, root):
                   f"  witnesses: {', '.join(b['witnesses']) or 'none'}; mutants: {', '.join(b['mutants']) or 'none'}"
                   + (f"; why unbacked: {b['reason']}" if b.get("reason") else "")]
     for old in cfg["retired"]:
-        n = sum(1 for L, lin in rep["lineages"].items() if lin["schema"] == "claim@1" and recs[L]["body"]["source"] == old)
+        n = sum(1 for L, lin in rep["lineages"].items() if lin["schema"] == CLAIM and recs[L]["body"]["source"] == old)
         lines += ["", f"Claims of the retired source {old} (history): {n} lineages."]
     return "\n".join(lines) + "\n"
 
 
 def schema_guard(rep, state):
-    return rep["_recs"][rep["schemas"]["claim@1"]]["body"]["states"][state]
+    return rep["_recs"][rep["schemas"][CLAIM]]["body"]["states"][state]
 
 
 def file_claims(repo, actor, key, doc):
@@ -223,7 +232,7 @@ def file_claims(repo, actor, key, doc):
         leaf = rep["lineages"][L]["leaf"] if L else None
         if leaf and rep["_recs"][leaf]["body"] == body:
             continue
-        recs.append(R.record("entity", actor, 0, body, "claim@1", lineage=leaf, guard=schema_guard(rep, state)))
+        recs.append(R.record("entity", actor, 0, body, CLAIM, lineage=leaf, guard=schema_guard(rep, state)))
     return repo.file(actor, key, recs)
 
 
@@ -239,7 +248,7 @@ def retire_v2(repo, actor, key):
                     "are the current ones")
         for k in ("established", "residual", "opened", "subject", "because", "counter", "challenge", "evidence"):
             body.pop(k, None)
-        recs.append(R.record("entity", actor, 0, body, "claim@1", lineage=lin["leaf"], refs=R.body_refs({}, body)))
+        recs.append(R.record("entity", actor, 0, body, CLAIM, lineage=lin["leaf"], refs=R.body_refs({}, body)))
     return repo.file(actor, key, recs)
 
 
@@ -310,7 +319,7 @@ def verify(repo, base):
             continue
         b, v = r["body"], recs.get(r["body"].get("target"))
         why = checker_problem(b, repo.root)
-        if why is None and not (v and v["kind"] == "entity" and v["schema"] == "claim@1"
+        if why is None and not (v and v["kind"] == "entity" and v["schema"] == CLAIM
                                 and (b.get("witnesses"), b.get("mutants")) == (v["body"]["witnesses"], v["body"]["mutants"])):
             why = "lists other witnesses or mutants than the claim version it accepts"
         if why:
@@ -318,26 +327,31 @@ def verify(repo, base):
         else:
             by_commit.setdefault(b["commit"], []).append((i, b["target"], v["body"]))
     for x, rows in sorted(by_commit.items()):
-        wt = Path(repo.root) / "build" / f"verify-claims-{os.getpid()}-{x[:12]}"      # the checkout's own scratch, ignored
-        git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), x)
-        try:
-            at_x, problems_x = check(Repo(wt))
-            if problems_x:
-                bad += [f"{i[:12]}: CLAIM_PREFLIGHT the claims check at {x[:12]} has {len(problems_x)} problem(s), the first "
-                        f"{' '.join(problems_x[0])[:100]}" for i, _, _ in rows]
-                continue
-            source = config(wt)["source"]
-            leaves = {at_x["lineages"][L]["leaf"] for L, b in live(at_x).items() if b["source"] == source and b["state"] == "backed"}
-            off = [(i, t, b) for i, t, b in rows if t not in leaves]
-            bad += [f"{i[:12]}: CLAIM_PREFLIGHT {b['id']} {t[:12]} is not the leaf of a live backed claim at {x[:12]}" for i, t, b in off]
-            rows = [row for row in rows if row not in off]
-            ran, killed = run_checks(wt, [w for _, _, b in rows for w in b["witnesses"]], {m for _, _, b in rows for m in b["mutants"]})
-        finally:
-            git(repo.root, "worktree", "remove", "--force", str(wt))
-        bad += [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} does not hold at {x[:12]}" for i, _, b in rows if not held(b, ran, killed)]
+        bad += _reexecuted(repo, x, rows)
     if bad:
         raise Failed("CLAIM_REPLAY_DIFFERS", "; ".join(bad))
     return sum(len(rows) for rows in by_commit.values())
+
+
+def _reexecuted(repo, x, rows):
+    """What keeps the acceptances `rows` ([(attest, version, claim body)]) at commit x from holding when re-executed
+    in a temporary worktree of it."""
+    wt = Path(repo.root) / "build" / f"verify-claims-{os.getpid()}-{x[:12]}"      # the checkout's own scratch, ignored
+    git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), x)
+    try:
+        at_x, problems_x = check(Repo(wt))
+        if problems_x:
+            return [f"{i[:12]}: CLAIM_PREFLIGHT the claims check at {x[:12]} has {len(problems_x)} problem(s), the first "
+                    f"{' '.join(problems_x[0])[:100]}" for i, _, _ in rows]
+        source = config(wt)["source"]
+        leaves = {at_x["lineages"][L]["leaf"] for L, b in live(at_x).items() if b["source"] == source and b["state"] == "backed"}
+        off = [(i, t, b) for i, t, b in rows if t not in leaves]
+        bad = [f"{i[:12]}: CLAIM_PREFLIGHT {b['id']} {t[:12]} is not the leaf of a live backed claim at {x[:12]}" for i, t, b in off]
+        rows = [row for row in rows if row not in off]
+        ran, killed = run_checks(wt, [w for _, _, b in rows for w in b["witnesses"]], {m for _, _, b in rows for m in b["mutants"]})
+    finally:
+        git(repo.root, "worktree", "remove", "--force", str(wt))
+    return bad + [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} does not hold at {x[:12]}" for i, _, b in rows if not held(b, ran, killed)]
 
 
 def run(argv=None):
@@ -375,13 +389,7 @@ def run(argv=None):
         print(f"claims: {n} live of {source}; {len(out)} problem(s)")
         return 1 if out else 0
     if a.cmd == "view":
-        text = view(repo.report(), repo.root)
-        if a.out:
-            out = inside(a.out, root)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(text)
-        else:
-            sys.stdout.write(text)
+        emit(view(repo.report(), repo.root), a.out, root)
         return 0
     key = load_key(a.key, root)
     if a.cmd == "replay":

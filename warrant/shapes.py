@@ -16,7 +16,7 @@ HEX32 = re.compile(r"^[0-9a-f]{32}\Z")        # a view token (warrant_agent.view
 HEX64 = re.compile(r"^[0-9a-f]{64}\Z")        # a record id, a blob address, an Ed25519 public key
 HEX128 = re.compile(r"^[0-9a-f]{128}\Z")      # an Ed25519 signature
 # A question reference: "<transition id>:<index of its opened question>", the index without leading zeros.
-QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\Z")
+QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\Z")  # NOSONAR S6353: \d would admit any Unicode digit
 MAX_ACTOR = 200
 # Unicode White_Space outside Cc (Cc is refused anywhere in an actor id): Zs, Zl, Zp.
 EDGE_SPACE = ("Zs", "Zl", "Zp")

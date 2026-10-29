@@ -228,15 +228,9 @@ def replay(provider, snapshot, condition, doc, targets, cache=None):
     """(label, None) if the recipient's own replay admits receipt `doc` for the
     `compute` condition, else (None, reason). `cache` is a ReplayCache of this
     recipient's earlier replays by this provider, or None."""
-    why = receipt_problem(doc)
+    why = receipt_problem(doc) or _condition_problem(doc, condition, targets, "receipt")
     if why:
         return None, why
-    if doc["target"] not in targets:
-        return None, f"a translation into {doc['target']!r} is not accepted by this recipient"
-    if doc["lost"]:
-        return None, "the receipt reports something lost in translation: no credit"
-    if (doc["input"], doc["environment"]) != (condition["input"], condition["environment"]):
-        return None, "the receipt is for another computation than the condition names"
     hashes, blobs, why = _env_and_blobs(snapshot, doc["environment"])
     if why:
         return None, why
@@ -256,28 +250,41 @@ def replay(provider, snapshot, condition, doc, targets, cache=None):
         r = out["results"][0]
         if complete:
             cache.put(fields, r)
-    if r["basis"] != "REPLAYED":
-        return None, f"not replayed: {r['code']}"
-    if r["code"] != "NORMAL_FORM":
-        return None, f"replayed, but {r['code']} is not an answer"
-    if r["result"] != doc["claimed"]:
-        return None, "the recipient's replay disagrees with the receipt"
-    if r["result"] != condition["expect"]:
-        return None, "the replayed result is not the one the condition requires"
+    why = _replayed_problem(r, doc, condition)
+    if why:
+        return None, why
     return f"REPLAYED:sigma-resume:{provider.id[:16]}", None
+
+
+def _condition_problem(doc, condition, targets, what):
+    """Why a receipt or a cycle (`what`) is no credit for the condition with this recipient, or None."""
+    if doc["target"] not in targets:
+        return f"a translation into {doc['target']!r} is not accepted by this recipient"
+    if doc["lost"]:
+        return f"the {what} reports something lost in translation: no credit"
+    if (doc["input"], doc["environment"]) != (condition["input"], condition["environment"]):
+        return f"the {what} is for another computation than the condition names"
+    return None
+
+
+def _replayed_problem(r, doc, condition):
+    """Why the provider's replay result `r` does not admit the receipt for the condition, or None."""
+    if r["basis"] != "REPLAYED":
+        return f"not replayed: {r['code']}"
+    if r["code"] != "NORMAL_FORM":
+        return f"replayed, but {r['code']} is not an answer"
+    if r["result"] != doc["claimed"]:
+        return "the recipient's replay disagrees with the receipt"
+    if r["result"] != condition["expect"]:
+        return "the replayed result is not the one the condition requires"
+    return None
 
 
 def replay_cycle(provider, snapshot, condition, doc, targets, cache=None):
     # Cycle witnesses are verified every time; the cache covers receipts only.
-    why = cycle_problem(doc)
+    why = cycle_problem(doc) or _condition_problem(doc, condition, targets, "cycle")
     if why:
         return None, why
-    if doc["target"] not in targets:
-        return None, f"a translation into {doc['target']!r} is not accepted by this recipient"
-    if doc["lost"]:
-        return None, "the cycle reports something lost in translation: no credit"
-    if (doc["input"], doc["environment"]) != (condition["input"], condition["environment"]):
-        return None, "the cycle is for another computation than the condition names"
     hashes, blobs, why = _env_and_blobs(snapshot, doc["environment"])
     if why:
         return None, why

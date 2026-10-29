@@ -89,27 +89,7 @@ def problems(contract, view, cases, mutants, cards):
         if sec.get("card") and sec["card"] not in cards:
             out.append(("UNKNOWN_CARD", f"section {sec['title']!r} names {sec['card']}, no filed G9 obligation"))
     for r in rows:
-        kinds = [k for k in ENFORCEMENT if k in r]
-        if len(kinds) != 1 or ("tests" in r) != ("mutants" in r):
-            out.append(("ROW_SHAPE", f"{r['id']} is not exactly one of enforced (tests and mutants), deferred, excluded"))
-            continue
-        if "deferred" in r and r["deferred"] not in cards:
-            out.append(("UNKNOWN_CARD", f"{r['id']} is deferred to {r['deferred']}, no filed G9 obligation"))
-        if "tests" not in r:
-            continue
-        if not (r["tests"] and r["mutants"]):
-            out.append(("ROW_SHAPE", f"{r['id']} is enforced by no case or no mutant"))
-        for t in r["tests"]:
-            if cases is not None and t not in cases:
-                out.append(("UNKNOWN_CASE", f"{r['id']} cites {t}, not a case of {TEST}"))
-            elif cases is not None and cases[t] != "PASS":
-                out.append(("UNPASSED_CASE", f"{r['id']} cites {t}, which did not pass"))
-        for mid in r["mutants"]:
-            m = by_id.get(mid)
-            if m is None:
-                out.append(("UNKNOWN_MUTANT", f"{r['id']} cites {mid}, not in tests/mutants.py"))
-            elif m[4] != TEST or not set(m[5]) & set(r["tests"]):
-                out.append(("MUTANT_OFF_ROW", f"{r['id']} cites {mid}, which targets {m[4]} {m[5]}, none of its cases"))
+        out += _row_problems(r, cases, by_id, cards)
     if cases is not None:
         targeted = {t for m in mutants if m[4] == TEST for t in m[5]}
         out += [("UNTARGETED_CASE", f"{c} is no mutant's target: CI runs {TEST} only in the mutant baseline")
@@ -117,17 +97,55 @@ def problems(contract, view, cases, mutants, cards):
     return out
 
 
-def filed_cards(root=ROOT):
-    """{card: obligation lineage} of the obligation@1 lineages in `root`'s .warrant/records.jsonl whose statement names
-    a Codex card `(Codex PS-..`."""
-    snap = Store(Path(root) / ".warrant").snapshot()
-    v2 = {}                     # a migrated record's Warrant 2 id, from the migration's map: PILOT.md keeps the duty ids it was
-    for envs in snap.lines.values():                 # rendered with, and the accepted closures cite its digest
+def _row_problems(r, cases, by_id, cards):
+    """What keeps one row of the contract from holding: its shape, its card, its cases and its mutants."""
+    kinds = [k for k in ENFORCEMENT if k in r]
+    if len(kinds) != 1 or ("tests" in r) != ("mutants" in r):
+        return [("ROW_SHAPE", f"{r['id']} is not exactly one of enforced (tests and mutants), deferred, excluded")]
+    out = []
+    if "deferred" in r and r["deferred"] not in cards:
+        out.append(("UNKNOWN_CARD", f"{r['id']} is deferred to {r['deferred']}, no filed G9 obligation"))
+    if "tests" not in r:
+        return out
+    if not (r["tests"] and r["mutants"]):
+        out.append(("ROW_SHAPE", f"{r['id']} is enforced by no case or no mutant"))
+    for t in r["tests"]:
+        if cases is not None and t not in cases:
+            out.append(("UNKNOWN_CASE", f"{r['id']} cites {t}, not a case of {TEST}"))
+        elif cases is not None and cases[t] != "PASS":
+            out.append(("UNPASSED_CASE", f"{r['id']} cites {t}, which did not pass"))
+    return out + _mutant_problems(r, by_id)
+
+
+def _mutant_problems(r, by_id):
+    out = []
+    for mid in r["mutants"]:
+        m = by_id.get(mid)
+        if m is None:
+            out.append(("UNKNOWN_MUTANT", f"{r['id']} cites {mid}, not in tests/mutants.py"))
+        elif m[4] != TEST or not set(m[5]) & set(r["tests"]):
+            out.append(("MUTANT_OFF_ROW", f"{r['id']} cites {mid}, which targets {m[4]} {m[5]}, none of its cases"))
+    return out
+
+
+def _v2_ids(snap):
+    """{record id: its Warrant 2 id} of the migrated records, from the migrations' maps: PILOT.md keeps the duty ids it
+    was rendered with, and the accepted closures cite its digest."""
+    v2 = {}
+    for envs in snap.lines.values():
         rec = envs[0]["record"]
         doc = snap.json_blob(rec["body"]["target"]) if rec["schema"] == "migration@1" else None
         for row in (doc or {}).get("map", []) if isinstance(doc, dict) else []:
             if len(row[1]) == 1:
                 v2[row[0]] = row[1][0]
+    return v2
+
+
+def filed_cards(root=ROOT):
+    """{card: obligation lineage} of the obligation@1 lineages in `root`'s .warrant/records.jsonl whose statement names
+    a Codex card `(Codex PS-..`."""
+    snap = Store(Path(root) / ".warrant").snapshot()
+    v2 = _v2_ids(snap)
     out = {}
     for rid, envs in sorted(snap.lines.items()):
         rec = envs[0]["record"]

@@ -67,6 +67,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HEX64 = re.compile(r"^[0-9a-f]{64}\Z")      # \Z, not $: `$` admits a trailing newline (warrant #164)
+SKI = "ski@v1"                               # the runtime of a check that is a compiled blob
 
 
 class ApprovalError(Exception):
@@ -255,7 +256,7 @@ class Boundary:
             # term is authoring work with its own tooling (impl/ski_policy.py),
             # deliberately not hidden inside a recorder. A cmd@v1 check is text
             # naming a command, so it may be stored here.
-            if runtime == "ski@v1" and not HEX64.match(str(check)):
+            if runtime == SKI and not HEX64.match(str(check)):
                 raise ApprovalError(
                     "a ski@v1 check must be a compiled blob hash; compile it "
                     "with impl/ski_policy.compile_check and pass the hash")
@@ -308,6 +309,7 @@ def selftest():
         print(f"  {'ok  ' if cond else 'FAIL'}  {label}")
         ok = ok and bool(cond)
 
+    sre = "human:sre"
     tmpd = Path(tempfile.mkdtemp(prefix="warrant-approval-selftest-"))
     try:
         POLICY = ("Production deploys require a human sanction.\n"
@@ -321,7 +323,7 @@ def selftest():
         # 1. A refusal, which is the case the project exists for.
         denied = b.record_approval(
             "deploy build 9f2c to production",
-            requester="agent:deployer", decider="human:sre",
+            requester="agent:deployer", decider=sre,
             request_reasons=["tests green on 9f2c"],
             decision_reasons=["denied: no rollback plan recorded"],
             allowed=False)
@@ -345,9 +347,9 @@ def selftest():
             W.Store(str(b.store)).put_blob)
         granted = b.record_approval(
             "rotate the staging database credential",
-            requester="agent:ops", decider="human:sre",
+            requester="agent:ops", decider=sre,
             decision_reasons=["approved: staging only, blast radius bounded"],
-            check=compiled.blob, runtime="ski@v1", verdict="pass",
+            check=compiled.blob, runtime=SKI, verdict="pass",
             allowed=True)
         check("approval with a ski@v1 check files (verdict reproduced at filing)",
               HEX64.match(granted["decision"]))
@@ -355,14 +357,14 @@ def selftest():
                             f"{granted['decision']}.json").read_text())
         gbody = gbody.get("body", gbody)
         check("the filed reason is a ski@v1 check, not prose",
-              any(r.get("runtime") == "ski@v1"
+              any(r.get("runtime") == SKI
                   for r in (gbody.get("because") or [])))
 
         # A ski@v1 check that is NOT a compiled blob must be refused rather than
         # silently stored as text that no verifier can re-execute.
         try:
-            b.record_decision(granted["request"], True, "human:sre",
-                              ["x"], check="staging_only", runtime="ski@v1")
+            b.record_decision(granted["request"], True, sre,
+                              ["x"], check="staging_only", runtime=SKI)
             check("uncompiled ski@v1 check refused", False)
         except ApprovalError:
             check("uncompiled ski@v1 check refused", True)

@@ -125,7 +125,7 @@ def identity(root=None):
     import cryptography
     root = Path(root if root is not None else default_root()).resolve()
     hashed = {p.resolve() for p in _modules()}
-    for m in list(sys.modules.values()):
+    for m in sys.modules.copy().values():       # a snapshot: an import while it runs never changes what it reads
         loc = getattr(m, "__file__", None)
         if not loc:
             continue
@@ -210,6 +210,16 @@ def main(run, argv=None):
 
 def dump(obj):
     print(json.dumps(obj, indent=1, sort_keys=True, ensure_ascii=False))
+
+
+def emit(text, out, root):
+    """A view's `text` to the file `out` (inside the repository `root`), or to standard output when none is named."""
+    if out:
+        path = inside(out, root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    else:
+        sys.stdout.write(text)
 
 
 def env_root(argv):

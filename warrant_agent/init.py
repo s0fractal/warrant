@@ -21,7 +21,7 @@ from warrant import shapes as S
 from warrant.keys import Key
 
 from . import AGENT_API
-from .config import HANDLE, OPERATIONS, V2_API, Config, repository_config
+from .config import HANDLE, OPERATIONS, STORE_DIR, V2_API, Config, repository_config
 from .errors import AgentError
 
 CODES = ("INIT_ACTOR_SHAPE", "INIT_NOT_A_REPOSITORY", "INIT_INSIDE_REPOSITORY", "INIT_OUTSIDE_HOME", "INIT_OPERATIONS",
@@ -105,7 +105,7 @@ def _own_output(config, repo, workspace):
             return False
         if doc.get("agent_api") == AGENT_API:
             return Path(ws[workspace]["repo"]) == repo
-        return doc.get("agent_api") == V2_API and Path(ws[workspace]["store"]) == repo / ".warrant" / "store"
+        return doc.get("agent_api") == V2_API and Path(ws[workspace]["store"]) == repo / STORE_DIR / "store"
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return False
 
@@ -114,7 +114,7 @@ def plan(repo, actor, seed, config, workspace=None, operations=DEFAULT_OPERATION
     """(configuration document, summary, config path): every check, nothing written."""
     _refuse(S.is_actor(actor), "INIT_ACTOR_SHAPE", f"{str(actor)[:60]!r} is not an actor id")
     repo = _confined(repo, "the repository")
-    _refuse((repo / ".warrant" / "records.jsonl").is_file() and (repo / ".warrant" / "v3.json").is_file(),
+    _refuse((repo / STORE_DIR / "records.jsonl").is_file() and (repo / STORE_DIR / "v3.json").is_file(),
             "INIT_NOT_A_REPOSITORY", f"{repo} has no .warrant/records.jsonl with .warrant/v3.json")
     seed = _confined(seed, "the seed")
     _refuse(not _inside(seed, repo), "INIT_INSIDE_REPOSITORY", f"the seed {seed} is inside the repository {repo}")

@@ -64,6 +64,41 @@ def impact(repo, rng):
     return reps[1], {"base": base, "head": head}, d
 
 
+def write_views(repo, check):
+    """Write build/views/; with `check`, render twice more under other hash seeds and refuse a difference."""
+    out = repo.root / "build" / "views"
+    views = render(repo)
+    out.mkdir(parents=True, exist_ok=True)
+    for n, text in views.items():
+        (out / n).write_text(text)
+    if check:
+        for seed in ("1", "2"):
+            r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "views-json"], capture_output=True, text=True,
+                               env=dict(os.environ, PYTHONHASHSEED=seed), check=True)
+            if json.loads(r.stdout) != views:
+                raise Failed("VIEW_NONDETERMINISTIC", f"the views differ under PYTHONHASHSEED={seed}")
+    print(f"views: {', '.join(VIEWS)} in {out}")
+
+
+def ask(repo, cmd, rest):
+    """(report, roots or None, query, data) of a query command."""
+    _, profile, _ = repo.config()
+    if cmd == "impact" and rest:
+        rep, roots, data = impact(repo, rest[0])
+        return rep, roots, {"op": "impact", "range": rest[0]}, data
+    if cmd in ("around", "path", "why") and rest:
+        rep = repo.report()
+        snap = repo.store.snapshot()
+        ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(rest[0])]
+        if len(set(ids)) != 1:
+            raise Failed("TARGET", f"{rest[0]} names {len(set(ids))} records or blobs")
+        return rep, None, {"op": cmd, "target": ids[0]}, getattr(G, cmd)(rep, ids[0])
+    if cmd == "frontier" and rest:
+        rep = repo.report()
+        return rep, None, {"op": cmd, "actor": rest[0]}, G.frontier(rep, profile, rest[0])
+    raise Failed("USAGE", __doc__.split("\n\n")[1])
+
+
 def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -71,38 +106,12 @@ def run(argv=None):
     repo = Repo()
     cmd, rest = argv[0], argv[1:]
     if cmd == "views":
-        out = repo.root / "build" / "views"
-        views = render(repo)
-        out.mkdir(parents=True, exist_ok=True)
-        for n, text in views.items():
-            (out / n).write_text(text)
-        if "--check" in rest:
-            for seed in ("1", "2"):
-                r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "views-json"], capture_output=True, text=True,
-                                   env=dict(os.environ, PYTHONHASHSEED=seed), check=True)
-                if json.loads(r.stdout) != views:
-                    raise Failed("VIEW_NONDETERMINISTIC", f"the views differ under PYTHONHASHSEED={seed}")
-        print(f"views: {', '.join(VIEWS)} in {out}")
+        write_views(repo, "--check" in rest)
         return 0
     if cmd == "views-json":
         print(json.dumps(render(repo)))
         return 0
-    _, profile, _ = repo.config()
-    if cmd == "impact" and rest:
-        rep, roots, data = impact(repo, rest[0])
-        query = {"op": "impact", "range": rest[0]}
-    elif cmd in ("around", "path", "why") and rest:
-        rep = repo.report()
-        snap = repo.store.snapshot()
-        ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(rest[0])]
-        if len(set(ids)) != 1:
-            raise Failed("TARGET", f"{rest[0]} names {len(set(ids))} records or blobs")
-        data, roots, query = getattr(G, cmd)(rep, ids[0]), None, {"op": cmd, "target": ids[0]}
-    elif cmd == "frontier" and rest:
-        rep = repo.report()
-        data, roots, query = G.frontier(rep, profile, rest[0]), None, {"op": cmd, "actor": rest[0]}
-    else:
-        raise Failed("USAGE", __doc__.split("\n\n")[1])
+    rep, roots, query, data = ask(repo, cmd, rest)
     out = G.answer(rep, query, data, json.dumps(code_id(repo.root), sort_keys=True))
     if roots:
         out["root"] = {"snapshot": out["root"], **roots}

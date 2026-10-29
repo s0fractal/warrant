@@ -37,17 +37,18 @@ from pathlib import Path
 from . import gate as GT
 from . import records as R
 from . import shapes as S
-from .repo import Failed, Repo, checker_problem, code_tree, dump, env_root, identity, inside, load_key, main
+from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root, identity, load_key, main
 
 REPLAYER = "review-replayer"          # the replay checker's actor: one key, bound once; its code is in each attest
 TEST_FILE = re.compile(r"[a-z0-9_]{1,80}_test\Z")
 CASE = re.compile(r"[A-Za-z0-9_.-]{1,40}\Z")
 RUN_SECONDS = 600
 REPLAY_VERDICTS = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
+PR_HEAD = "pr-head@1"
 
 
 def lineage_of(rep, repository, n):
-    found = [L for L, lin in rep["lineages"].items() if lin["schema"] == "pr-head@1"
+    found = [L for L, lin in rep["lineages"].items() if lin["schema"] == PR_HEAD
              and rep["_recs"][L]["body"].get("pr") == n and rep["_recs"][L]["body"].get("repository") == repository]
     if len(found) != 1:
         raise Failed("REVIEW", f"{len(found)} pr-head@1 lineages of {repository}#{n} in the store")
@@ -173,24 +174,31 @@ def verify(repo, base):
             bad.append(f"{i[:12]}: its finding has no test")
             continue
         n += 1
-        wt = Path(repo.root) / "build" / f"verify-{os.getpid()}-{i[:12]}"      # the checkout's own scratch, ignored
-        why = checker_problem(r["body"], repo.root)
-        on = recs.get(r["body"].get("on")) or {"body": {}}
-        if why is None and ((r["body"]["target"], r["body"].get("on")) not in due or r["body"].get("commit") != on["body"].get("commit")):
-            why = f"REPLAY_NOT_DUE: no replay runs its finding at {str(r['body'].get('on'))[:12]} on {str(r['body'].get('commit'))[:12]}"
+        why = _reexecuted(repo, i, r, test, recs, due)
         if why:
             bad.append(f"{i[:12]}: {why}")
-            continue
-        git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), r["body"]["commit"])
-        try:
-            got = run_test(wt, *test)
-        finally:
-            git(repo.root, "worktree", "remove", "--force", str(wt))
-        if got != r["body"]["verdict"]:
-            bad.append(f"{i[:12]}: says {r['body']['verdict']}, re-executed {got}")
     if bad:
         raise Failed("REPLAY_DIFFERS", "; ".join(bad))
     return n
+
+
+def _reexecuted(repo, i, r, test, recs, due):
+    """Why replay attest i (`r`, its finding's `test`) does not hold when re-executed at the commit it names, or None."""
+    wt = Path(repo.root) / "build" / f"verify-{os.getpid()}-{i[:12]}"      # the checkout's own scratch, ignored
+    why = checker_problem(r["body"], repo.root)
+    on = recs.get(r["body"].get("on")) or {"body": {}}
+    if why is None and ((r["body"]["target"], r["body"].get("on")) not in due or r["body"].get("commit") != on["body"].get("commit")):
+        why = f"REPLAY_NOT_DUE: no replay runs its finding at {str(r['body'].get('on'))[:12]} on {str(r['body'].get('commit'))[:12]}"
+    if why:
+        return why
+    git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), r["body"]["commit"])
+    try:
+        got = run_test(wt, *test)
+    finally:
+        git(repo.root, "worktree", "remove", "--force", str(wt))
+    if got != r["body"]["verdict"]:
+        return f"says {r['body']['verdict']}, re-executed {got}"
+    return None
 
 
 
@@ -199,28 +207,37 @@ def verify(repo, base):
 def view(rep):
     recs = rep["_recs"]
     out = ["# Reviews", "", f"Generated from `.warrant/records.jsonl` (snapshot `{rep['snapshot'][:12]}`); a build artifact.", ""]
-    for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == "pr-head@1"),
+    for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == PR_HEAD),
                          key=lambda x: -int(recs[x[0]]["body"].get("pr") or 0)):
         b = recs[L]["body"]
         out.append(f"## {b.get('repository')}#{b.get('pr')}: {b.get('title')}")
         out.append(f"State {lin['state']}, reliance {lin['reliance']}" + (", FORK" if lin["verdict"] == "FORK" else ""))
         for v in lin["versions"]:
-            vb, g = recs[v]["body"], rep["versions"][v]
-            if vb.get("state") != "head":
-                continue
-            out.append(f"- head `{v[:12]}` at `{str(vb.get('commit'))[:12]}`: {g['guard']}"
-                       + (f", accepted by {', '.join(g['accepted_by'])}" if g["accepted_by"] else ""))
-            for c, x in sorted(rep["challenges"].items()):
-                if x["target"] == v:
-                    fb = recs[c]["body"]
-                    reps = "; ".join(f"{z[1]} on {str(z[0])[:12]}" for z in x["replays"])
-                    out.append(f"  - finding `{c[:12]}` by {recs[c]['actor']} ({'counted' if x['counted'] else 'thesis'}"
-                               f"{', stands' if x['stands'] else ''}): {str(fb.get('statement'))[:200]}" + (f" [{reps}]" if reps else ""))
-            for a in sorted(recs):
-                if recs[a]["kind"] == "attest" and recs[a]["body"].get("target") == v and recs[a]["body"].get("verdict") == "merged":
-                    out.append(f"  - merged as `{str(recs[a]['body'].get('merge'))[:12]}` (observed by {recs[a]['actor']})")
+            out += _head_view(rep, v)
         out.append("")
     return "\n".join(out) + "\n"
+
+
+def _head_view(rep, v):
+    """The view's lines of version v when it is a head: its guard, the findings against it, the merge observed."""
+    recs = rep["_recs"]
+    vb, g = recs[v]["body"], rep["versions"][v]
+    if vb.get("state") != "head":
+        return []
+    out = [f"- head `{v[:12]}` at `{str(vb.get('commit'))[:12]}`: {g['guard']}"
+           + (f", accepted by {', '.join(g['accepted_by'])}" if g["accepted_by"] else "")]
+    out += [_finding_view(recs, c, x) for c, x in sorted(rep["challenges"].items()) if x["target"] == v]
+    for a in sorted(recs):
+        if recs[a]["kind"] == "attest" and recs[a]["body"].get("target") == v and recs[a]["body"].get("verdict") == "merged":
+            out.append(f"  - merged as `{str(recs[a]['body'].get('merge'))[:12]}` (observed by {recs[a]['actor']})")
+    return out
+
+
+def _finding_view(recs, c, x):
+    fb = recs[c]["body"]
+    reps = "; ".join(f"{z[1]} on {str(z[0])[:12]}" for z in x["replays"])
+    return (f"  - finding `{c[:12]}` by {recs[c]['actor']} ({'counted' if x['counted'] else 'thesis'}"
+            f"{', stands' if x['stands'] else ''}): {str(fb.get('statement'))[:200]}" + (f" [{reps}]" if reps else ""))
 
 
 # ---------------------------------------------------------------- commands
@@ -278,35 +295,31 @@ def run(argv=None):
         return 0
     rep = repo.report()
     if a.cmd == "view":
-        text = view(rep)
-        if a.out:
-            out = inside(a.out, root)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(text)
-        else:
-            sys.stdout.write(text)
+        emit(view(rep), a.out, root)
         return 0
     key = load_key(a.key, root)
     _, _, name = repo.config()
-    if a.cmd == "open":
-        rec = R.record("entity", a.actor, 0, {"state": "open", "repository": name, "pr": a.pr, "title": a.title,
-                                              "serves": sorted(a.serves)}, "pr-head@1", refs=a.serves)
-    else:
-        L = lineage_of(rep, name, a.pr)
-        leaf = rep["lineages"][L]["leaf"]
-        if leaf is None:
-            raise Failed("REVIEW", f"#{a.pr}'s heads fork")
-        if a.cmd == "head":
-            x = git(repo.root, "rev-parse", "--verify", f"{a.commit or 'HEAD'}^{{commit}}")
-            body = {"state": "head", "commit": x, "tree": git(repo.root, "rev-parse", f"{x}^{{tree}}"), "answers": sorted(a.answers)}
-            schema = rep["_recs"][rep["schemas"]["pr-head@1"]]["body"]
-            rec = R.record("entity", a.actor, 0, body, "pr-head@1", lineage=leaf, refs=a.answers, guard=schema["states"]["head"])
-        else:
-            merge = git(repo.root, "rev-parse", "--verify", f"{a.merge}^{{commit}}")
-            tip = git(repo.root, "rev-parse", f"{merge}^2")
-            rec = R.record("attest", a.actor, 0, {"target": leaf, "verdict": "merged", "merge": merge, "tip": tip}, refs=[leaf])
-    dump({"filed": repo.file(a.actor, key, [rec])})
+    dump({"filed": repo.file(a.actor, key, [_pr_record(repo, rep, a, name)])})
     return 0
+
+
+def _pr_record(repo, rep, a, name):
+    """The record `open`, `head` or `merged` files."""
+    if a.cmd == "open":
+        return R.record("entity", a.actor, 0, {"state": "open", "repository": name, "pr": a.pr, "title": a.title,
+                                               "serves": sorted(a.serves)}, PR_HEAD, refs=a.serves)
+    L = lineage_of(rep, name, a.pr)
+    leaf = rep["lineages"][L]["leaf"]
+    if leaf is None:
+        raise Failed("REVIEW", f"#{a.pr}'s heads fork")
+    if a.cmd == "head":
+        x = git(repo.root, "rev-parse", "--verify", f"{a.commit or 'HEAD'}^{{commit}}")
+        body = {"state": "head", "commit": x, "tree": git(repo.root, "rev-parse", f"{x}^{{tree}}"), "answers": sorted(a.answers)}
+        schema = rep["_recs"][rep["schemas"][PR_HEAD]]["body"]
+        return R.record("entity", a.actor, 0, body, PR_HEAD, lineage=leaf, refs=a.answers, guard=schema["states"]["head"])
+    merge = git(repo.root, "rev-parse", "--verify", f"{a.merge}^{{commit}}")
+    tip = git(repo.root, "rev-parse", f"{merge}^2")
+    return R.record("attest", a.actor, 0, {"target": leaf, "verdict": "merged", "merge": merge, "tip": tip}, refs=[leaf])
 
 
 def entry():

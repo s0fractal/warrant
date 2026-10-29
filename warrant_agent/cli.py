@@ -20,7 +20,7 @@ def _request(arg):
         return json.loads(sys.stdin.read() or "{}")
     if arg.lstrip().startswith("{"):
         return json.loads(arg)
-    return json.loads(Path(arg).read_text())
+    return json.loads(Path(arg).read_text())  # NOSONAR S8707: the operator's argument; MCP requests never come here
 
 
 def main(argv=None):

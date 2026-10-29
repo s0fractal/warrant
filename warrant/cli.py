@@ -48,7 +48,7 @@ def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
     return Store(here(a.store)).append(r, key, trust, expect_head=a.expect_head)
 
 
-def main(argv=None):
+def _parser():
     p = argparse.ArgumentParser(prog="warrant")
     sub = p.add_subparsers(dest="cmd", required=True)
     cmds = {n: sub.add_parser(n) for n in ("init", "key", "trust", "bootstrap", "put", "attest", "blob", "assess", "fmt")}
@@ -81,7 +81,37 @@ def main(argv=None):
     c.add_argument("--profile", required=True)
     c.add_argument("--as-of", type=int)
     c.add_argument("--lineage")
-    a = p.parse_args(argv)
+    return p
+
+
+def _trust(a):
+    """A trust/3 file binding each seed's public key to its actor, written whole in the current directory."""
+    keys = {}
+    for b in a.bind:
+        actor, _, seed = b.partition("=")
+        keys.setdefault(actor, set()).add(K.Key.from_seed_hex(Path(home(seed)).read_text()).public)
+    doc = {"warrant": "trust/3", "keys": {x: sorted(v) for x, v in sorted(keys.items())}}
+    why = E.trust_problem(doc)
+    if why:
+        raise Refused(why)
+    name = os.path.basename(a.trust)        # a trust file of the current directory, by its name alone
+    if name != a.trust or name in ("", ".", ".."):
+        raise Refused("--trust names a file of the current directory")
+    Path(os.getcwd(), name).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+    return doc
+
+
+def _assess(a):
+    rep = E.assess(Store(here(a.store)).snapshot(), json.loads(Path(here(a.trust)).read_text()),
+                   json.loads(Path(here(a.profile)).read_text()), a.as_of)
+    if not a.lineage:
+        return rep
+    return {"lineage": rep["lineages"].get(a.lineage),
+            "versions": {v: rep["versions"][v] for v in rep["lineages"].get(a.lineage, {}).get("versions", [])}}
+
+
+def main(argv=None):
+    a = _parser().parse_args(argv)
     try:
         if a.cmd == "init":
             Store(here(a.store)).init()
@@ -92,20 +122,8 @@ def main(argv=None):
             os.write(fd, k.seed_hex().encode())
             os.close(fd)
             out = {"public": k.public}
-        elif a.cmd == "trust":           # a trust/3 file binding each seed's public key to its actor, written whole
-            keys = {}
-            for b in a.bind:
-                actor, _, seed = b.partition("=")
-                keys.setdefault(actor, set()).add(K.Key.from_seed_hex(Path(home(seed)).read_text()).public)
-            doc = {"warrant": "trust/3", "keys": {x: sorted(v) for x, v in sorted(keys.items())}}
-            why = E.trust_problem(doc)
-            if why:
-                raise Refused(why)
-            name = os.path.basename(a.trust)        # a trust file of the current directory, by its name alone
-            if name != a.trust or name in ("", ".", ".."):
-                raise Refused("--trust names a file of the current directory")
-            Path(os.getcwd(), name).write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
-            out = doc
+        elif a.cmd == "trust":
+            out = _trust(a)
         elif a.cmd == "bootstrap":
             out = {"schemas": [put(a, "schema", s) for s in B.SCHEMAS]}
         elif a.cmd == "put":
@@ -120,11 +138,9 @@ def main(argv=None):
             snap = s.snapshot()
             out = {"canonical": snap.canonical, "rejected": len(snap.rejected)}     # sorted is not canonical with a rejected line
         else:
-            rep = E.assess(Store(here(a.store)).snapshot(), json.loads(Path(here(a.trust)).read_text()),
-                           json.loads(Path(here(a.profile)).read_text()), a.as_of)
-            out = rep if not a.lineage else {"lineage": rep["lineages"].get(a.lineage),
-                                             "versions": {v: rep["versions"][v] for v in rep["lineages"].get(a.lineage, {}).get("versions", [])}}
-    except (Refused, R.Invalid, OSError, ValueError) as e:
+            out = _assess(a)
+    except (OSError, ValueError) as e:      # a store's refusal and an invalid record are ValueErrors
+
         print(f"REFUSED {e}", file=sys.stderr)
         return 2
     print(json.dumps(out, indent=1, sort_keys=True))

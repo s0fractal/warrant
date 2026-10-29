@@ -118,6 +118,10 @@ CHECKER = re.compile(r"[a-z][a-z0-9-]{0,63}\Z")   # a checker's actor id, also i
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 RECORDS, BLOBS = ".warrant/records.jsonl", ".warrant/blobs/"
 STORE = ".warrant/"
+WARRANT = ".warrant"                          # a tree's store directory, and the operator's ~/.warrant
+REVIEW_TOOL = "warrant.review"                # the base's review loop, run as a module
+DEFAULT_PATH = "/usr/bin:/bin"
+GAVE_UP = "gave up"
 REPLAY_VERDICTS = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
 PR_BRANCH = re.compile(r"(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 SECRETS = (".ssh", ".gnupg", ".config/gh", ".codex", ".claude", "Library/Keychains")
@@ -299,6 +303,31 @@ def blob_problem(digest, blobs, cited):
     return None
 
 
+def receiver(tree):
+    """The receiver configuration of a tree: its .warrant/v3.json."""
+    return json.loads((tree / WARRANT / "v3.json").read_text())
+
+
+def new_blobs(wt):
+    """({blob id: bytes}, their size) of the blobs new in the store of Codex's worktree `wt`. Unpublished when the store
+    changed otherwise than by those and by lines of records.jsonl (a link, an irregular file, a changed blob)."""
+    raw = git("-C", str(wt), *STATUS, "--", STORE).decode()
+    blobs, size = {}, 0
+    for e in (x for x in raw.split("\0") if x):
+        xy, path = e[:2], e[3:]
+        f = wt / path
+        if f.is_symlink() or not f.is_file():
+            raise Unpublished(f"the store holds {xy} {path[:80]}, not a regular file")
+        if path == RECORDS and xy.strip() == "M":
+            continue
+        if xy != "??" or not (path.startswith(BLOBS) and HEX.match(path[len(BLOBS):])):
+            raise Unpublished(f"the store holds {xy} {path[:80]}: only new record lines and blobs named by their "
+                              "content are published")
+        size += f.stat().st_size
+        blobs[path[len(BLOBS):]] = f.read_bytes()
+    return blobs, size
+
+
 def verify_verdicts(req):
     """Why the prepared verdict `req` may not be published, or None. Run with the BASE tree's package first on
     PYTHONPATH (`waker.py --verify-verdicts`, the request on standard input), never in the waker's own process.
@@ -309,7 +338,7 @@ def verify_verdicts(req):
     from warrant import jcs as C
     from warrant.store import Snapshot
     code, actor = Path(req["code"]), req["actor"]
-    keys = json.loads((code / ".warrant" / "v3.json").read_text())["trust"]["keys"].get(actor)
+    keys = receiver(code)["trust"]["keys"].get(actor)
     if not keys:
         return f"the base's v3.json binds no key to {actor}"
     lines = [base64.b64decode(x) for x in req["lines"]]
@@ -384,7 +413,7 @@ class Forge:
 
 
 def waker_home():
-    return Path(os.environ.get("WARRANT_WAKER_HOME") or Path.home() / ".warrant" / "codex-waker")
+    return Path(os.environ.get("WARRANT_WAKER_HOME") or Path.home() / WARRANT / "codex-waker")
 
 
 class Waker:
@@ -419,7 +448,7 @@ class Waker:
         """Why the base is not this entry's repository, or None: its .warrant/v3.json must name the repository the
         waker serves it as (a mirror or a configuration that points elsewhere wakes nobody)."""
         try:
-            named = json.loads((self.tree(base) / ".warrant" / "v3.json").read_text())["repository"]
+            named = receiver(self.tree(base))["repository"]
         except (OSError, ValueError, KeyError, TypeError) as e:
             return f"the base has no .warrant/v3.json naming its repository ({type(e).__name__})"
         if named != self.repository:
@@ -449,7 +478,7 @@ class Waker:
         beside this Python."""
         code = self.tree(base)
         env = dict(os.environ, PYTHONPATH=str(code), PYTHONDONTWRITEBYTECODE="1")
-        r = subprocess.run([self.python, "-m", "warrant.review", "--root", str(self.mirror), "due",
+        r = subprocess.run([self.python, "-m", REVIEW_TOOL, "--root", str(self.mirror), "due",
                             "--base", base, "--json"], capture_output=True, env=env, check=False, cwd=code)
         err = r.stderr.decode(errors="replace").strip()
         if r.returncode == 2:
@@ -481,7 +510,7 @@ class Waker:
     def seed(self, code):
         """(the base's replay checker, its seed) for the base tree `code`, or (why not, None): the actor is the one the
         base's own `warrant.review identity` names, and the base's .warrant/v3.json must name it a replayer."""
-        r = subprocess.run([self.replay_python, "-m", "warrant.review", "--root", str(code), "identity"], capture_output=True,
+        r = subprocess.run([self.replay_python, "-m", REVIEW_TOOL, "--root", str(code), "identity"], capture_output=True,
                            env=self.env(self.home / "replay-work", code), check=False, cwd=code)
         try:
             actor = json.loads(r.stdout)["actor"]
@@ -490,7 +519,7 @@ class Waker:
         if r.returncode or not (isinstance(actor, str) and CHECKER.match(actor)):
             return f"replay skipped: the base's checker has no identity ({r.stderr.decode(errors='replace').strip()[-120:]})", None
         try:
-            roles = json.loads((code / ".warrant" / "v3.json").read_text())["profile"]["roles"]
+            roles = receiver(code)["profile"]["roles"]
         except (OSError, ValueError, KeyError, TypeError):
             roles = {}
         if actor not in roles.get("replayer", []):
@@ -514,7 +543,7 @@ class Waker:
         return r.stdout.decode().strip() if r.returncode == 0 else None
 
     def env(self, work, code):
-        return {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(Path.home()), "TMPDIR": str(work),
+        return {"PATH": os.environ.get("PATH", DEFAULT_PATH), "HOME": str(Path.home()), "TMPDIR": str(work),
                 "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1", "LANG": "en_US.UTF-8"}
 
     def replay(self, a, base):
@@ -569,7 +598,7 @@ class Waker:
         if last.get("skipped"):
             return "skipped", last.get("line") or "replay skipped"
         if len(tries) >= MAX_TRIES:
-            return "gave up", f"replay incomplete: {len(tries)} checker runs failed, the last: {last.get('line')}"
+            return GAVE_UP, f"replay incomplete: {len(tries)} checker runs failed, the last: {last.get('line')}"
         due_at = last.get("finished", 0) + BACKOFF * 2 ** (len(tries) - 1)
         if self.clock() < due_at:
             return "waiting", f"replay incomplete: run {len(tries)} failed ({last.get('line')}); retry after {iso(due_at)}"
@@ -618,7 +647,7 @@ class Waker:
         n, head, code = a["pr"], a["head"], self.tree(base)
         gitdir = Path(git("-C", str(wt), "rev-parse", "--absolute-git-dir").decode().strip())
         prof = profile([wt, work, gitdir], [self.replayers, *(Path.home() / s for s in SECRETS)])
-        r = self.jail([self.replay_python, "-m", "warrant.review", "--root", str(wt), "replay", "--key", "-"],
+        r = self.jail([self.replay_python, "-m", REVIEW_TOOL, "--root", str(wt), "replay", "--key", "-"],
                       prof, self.env(work, code), seed, cwd=code)
         if r.returncode:
             raise RuntimeError(f"the checker exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-300:]}")
@@ -654,7 +683,7 @@ class Waker:
             return "done", f"done: woken {last.get('started_at')}, codex exited 0"
         how = f"exited 0, unpublished: {last['unpublished']}" if last.get("unpublished") else f"exited {last.get('exit')}"
         if len(tries) >= MAX_TRIES:
-            return "gave up", f"gave up: {len(tries)} attempts failed (last {how}); delete the memo to retry"
+            return GAVE_UP, f"gave up: {len(tries)} attempts failed (last {how}); delete the memo to retry"
         due_at = (last.get("finished") or last.get("started", 0)) + BACKOFF * 2 ** (len(tries) - 1)
         if self.clock() < due_at:
             return "waiting", f"waiting: attempt {len(tries)} {how}; retry after {iso(due_at)}"
@@ -680,7 +709,7 @@ class Waker:
             raise ValueError(f"{path} is the operator's checkout: a wake runs in its own worktree")
         return [self.codex, "exec", "-C", str(path), "-s", "workspace-write",
                 "-c", "sandbox_workspace_write.network_access=true", "-c", 'approval_policy="never"',
-                "--add-dir", str(Path.home() / ".warrant"),
+                "--add-dir", str(Path.home() / WARRANT),
                 "-o", str(self.home / "results" / f"{key}.md"), text]
 
     def wake(self, a, incomplete=None):
@@ -759,7 +788,7 @@ class Waker:
             return self.state(doc)
         pubs = doc.get("publications", [])
         if len(pubs) >= MAX_TRIES:
-            return "gave up", (f"unpublished: gave up after {len(pubs)} failed publications (the last: "
+            return GAVE_UP, (f"unpublished: gave up after {len(pubs)} failed publications (the last: "
                                f"{pubs[-1].get('line')}); delete the memo to retry")
         due_at = pubs[-1].get("finished", 0) + BACKOFF * 2 ** (len(pubs) - 1) if pubs else 0
         if self.clock() < due_at:
@@ -857,20 +886,7 @@ class Waker:
         blobs named by their content), there is at least one line, and verify() finds nothing wrong with them."""
         if not (wt.is_dir() and (wt / ".git").exists()):
             raise Unpublished(f"Codex left no worktree, so no verdict ({wt.name})")
-        raw = git("-C", str(wt), *STATUS, "--", STORE).decode()
-        blobs, size = {}, 0
-        for e in (x for x in raw.split("\0") if x):
-            xy, path = e[:2], e[3:]
-            f = wt / path
-            if f.is_symlink() or not f.is_file():
-                raise Unpublished(f"the store holds {xy} {path[:80]}, not a regular file")
-            if path == RECORDS and xy.strip() == "M":
-                continue
-            if xy != "??" or not (path.startswith(BLOBS) and HEX.match(path[len(BLOBS):])):
-                raise Unpublished(f"the store holds {xy} {path[:80]}: only new record lines and blobs named by their "
-                                  "content are published")
-            size += f.stat().st_size
-            blobs[path[len(BLOBS):]] = f.read_bytes()
+        blobs, size = new_blobs(wt)
         lines, lost = added_lines(wt)
         if lost:
             raise Unpublished(f"Codex's worktree lost {lost} line(s) of the base's records.jsonl")
@@ -889,7 +905,7 @@ class Waker:
         req = {"code": str(code), "actor": ACCEPTOR, "closure": c["closure"],
                "lines": [base64.b64encode(x).decode() for x in lines],
                "blobs": {k: base64.b64encode(v).decode() for k, v in blobs.items()}}
-        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(Path.home()), "PYTHONPATH": str(code),
+        env = {"PATH": os.environ.get("PATH", DEFAULT_PATH), "HOME": str(Path.home()), "PYTHONPATH": str(code),
                "PYTHONDONTWRITEBYTECODE": "1", "LANG": "en_US.UTF-8"}
         r = subprocess.run([self.python, str(Path(__file__).resolve()), "--verify-verdicts"], input=json.dumps(req).encode(),
                            env=env, capture_output=True, check=False, timeout=600)
@@ -914,8 +930,8 @@ class Waker:
             for b, data in blobs.items():         # one the base holds already is the same bytes: content-addressed
                 (wt / BLOBS / b).parent.mkdir(parents=True, exist_ok=True)
                 (wt / BLOBS / b).write_bytes(data)
-            r = subprocess.run([self.python, "-m", "warrant", "fmt", "--store", ".warrant"], cwd=wt, capture_output=True,
-                               env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONPATH": str(code),
+            r = subprocess.run([self.python, "-m", "warrant", "fmt", "--store", WARRANT], cwd=wt, capture_output=True,
+                               env={"PATH": os.environ.get("PATH", DEFAULT_PATH), "PYTHONPATH": str(code),
                                     "PYTHONDONTWRITEBYTECODE": "1"}, check=False)
             if r.returncode:
                 raise RuntimeError(f"warrant fmt exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-200:]}")
@@ -1075,7 +1091,7 @@ def wake_after_replay(w, x):
     what, detail = w.replay_state(doc) if doc is not None else ("done", "")
     if what in ("waiting", "retry"):
         return "not woken: the replay is incomplete"
-    return w.wake(x, detail if what == "gave up" else None)[1]
+    return w.wake(x, detail if what == GAVE_UP else None)[1]
 
 
 def retry_lines(w, base, found):

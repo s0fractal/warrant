@@ -42,8 +42,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PATHS = (".agents/plugins/marketplace.json", "integrations/codex-plugin")
 PACKAGE = ("pyproject.toml", "README.md", "LICENSE", "warrant", "warrant_agent")   # what builds warrant-graph
-MARKET = Path.home() / ".warrant" / "codex-marketplace"
-HOME = Path.home() / ".warrant" / "codex-waker"
+WARRANT = ".warrant"                          # the operator's ~/.warrant and a repository's store
+MARKET = Path.home() / WARRANT / "codex-marketplace"
+HOME = Path.home() / WARRANT / "codex-waker"
 TREES = Path.home() / "Projects" / ".worktrees" / "codex-review"
 CONFIG = Path.home() / ".codex" / "config.toml"
 LABEL = "dev.s0fractal.warrant-codex-waker"
@@ -117,7 +118,7 @@ def default_entry():
     """This checkout's repository as the waker's only entry: its name from .warrant/v3.json, its base branch from
     .warrant/merge.json."""
     def doc(path):
-        return json.loads((ROOT / ".warrant" / path).read_text())
+        return json.loads((ROOT / WARRANT / path).read_text())
     name = doc("v3.json")["repository"]
     return {"repository": name, "branch": doc("merge.json")["base"], "home": str(HOME),
             "mirror": str(HOME / f"{name.split('/')[1]}.git"), "trees": str(TREES), "checkout": str(ROOT)}
