@@ -19,6 +19,7 @@ PROBLEMS = ("INVALID", "LINEAGE_BACKDATED", "LINEAGE_BROKEN", "LINEAGE_NOT_AUTHO
             "SCHEMA_NOT_COUNTED")
 REJECTIONS = ("line", "BAD_SIGNATURE", "UNSIGNED", "INVALID")
 REPLAY = ("reproduces", "does_not_reproduce", "no_result", "does_not_apply")
+SCHEMA_AUTHOR = "schema/author"
 _CODE = []
 
 
@@ -125,9 +126,8 @@ class View:
             if not (r["kind"] == "attest" and r["schema"] == R.MIGRATION and self.basis[i] == "SIGNED"
                     and self.holds(r["actor"], "migrator")):
                 continue
-            doc = self.snap.json_blob(r["body"]["target"])
-            rows = doc.get("map") if isinstance(doc, dict) else None
-            if not (isinstance(rows, list) and all(isinstance(x, list) and len(x) == 3 and S.hex64(x[0]) for x in rows)):
+            rows = _map_rows(self.snap.json_blob(r["body"]["target"]))
+            if rows is None:
                 self.problem("MIGRATION_MAP", i, "its target is not a map blob in the view")
                 continue
             for row in rows:
@@ -162,7 +162,7 @@ class View:
                 why = _schema_problem(r["body"])
                 if why:
                     self.problem("SCHEMA_NOT_COUNTED", i, why)
-                elif len(self.backers(i)) < self.quorum("schema/author"):
+                elif len(self.backers(i)) < self.quorum(SCHEMA_AUTHOR):
                     self.pending.append(i)          # waits for backers (schemas_pending): not a problem of the store
                 else:
                     cand[i] = r
@@ -189,7 +189,7 @@ class View:
         out = {self.recs[a]["actor"] for a in self.attests.get(i, [])
                if self.recs[a]["schema"] is None and self.recs[a]["body"].get("verdict") == "accept"}
         out.add(self.recs[i]["actor"])
-        return sorted(a for a in out if self.holds(a, "schema/author"))
+        return sorted(a for a in out if self.holds(a, SCHEMA_AUTHOR))
 
     def _bodies(self):
         for i, r in sorted(self.recs.items()):
@@ -213,24 +213,8 @@ class View:
         """({id: root}, {root: lineage}) over `ids`; successors that break the rules are excluded."""
         root_of = {}
         for i in sorted(ids):
-            path, cur = [], i
-            while cur not in root_of and cur in ids and self.recs[cur]["lineage"] is not None and len(path) < 4096:
-                path.append(cur)
-                cur = self.recs[cur]["lineage"]
-            if cur not in root_of:
-                root_of[cur] = cur if cur in ids and self.recs[cur]["lineage"] is None else None
-            for x in reversed(path):
-                p, r, rt = self.recs[x]["lineage"], self.recs[x], root_of[self.recs[x]["lineage"]]
-                if rt is None or self.recs[p]["kind"] != r["kind"] or self.recs[p]["schema"] != r["schema"]:
-                    root_of[x] = None
-                    self.problem("LINEAGE_BROKEN", x, f"it succeeds {p[:12]}, which is no admitted version of its kind and schema")
-                elif not may_succeed(r, self.recs[rt]):
-                    root_of[x] = None
-                    self.problem("LINEAGE_NOT_AUTHOR", x, f"filed by {r['actor']!r}; the lineage is {self.recs[rt]['actor']!r}'s")
-                else:
-                    root_of[x] = rt
-                    if r["at"] < self.recs[p]["at"]:
-                        self.problem("LINEAGE_BACKDATED", x, "dated before the version it succeeds")
+            for x in reversed(self._climb(i, ids, root_of)):
+                self._succeed(x, root_of, may_succeed)
         lins = {}
         for i in sorted(ids, key=lambda i: (self.recs[i]["at"], i)):
             rt = root_of.get(i)
@@ -241,16 +225,33 @@ class View:
             if i != rt:
                 lin["succ"].setdefault(self.recs[i]["lineage"], []).append(i)
         for rt, lin in lins.items():
-            forks = {p: c for p, c in lin["succ"].items() if len(c) > 1}
-            lin["forks"] = [[p, c] for p, c in sorted(forks.items())]
-            if forks:
-                lin["path"], lin["leaf"] = [], None
-                continue
-            path = [rt]
-            while path[-1] in lin["succ"]:
-                path.append(lin["succ"][path[-1]][0])
-            lin["path"], lin["leaf"] = path, path[-1]
+            _settle(rt, lin)
         return {i: rt for i, rt in root_of.items() if rt is not None and i in ids}, lins
+
+    def _climb(self, i, ids, root_of):
+        """The versions from i up its lineage links to the first one rooted already or outside `ids` (rooted here:
+        itself when it is a root in `ids`, else none), nearest first."""
+        path, cur = [], i
+        while cur not in root_of and cur in ids and self.recs[cur]["lineage"] is not None and len(path) < 4096:
+            path.append(cur)
+            cur = self.recs[cur]["lineage"]
+        if cur not in root_of:
+            root_of[cur] = cur if cur in ids and self.recs[cur]["lineage"] is None else None
+        return path
+
+    def _succeed(self, x, root_of, may_succeed):
+        """Put version x in its predecessor's lineage (root_of[x] its root), or in none when it breaks the rules."""
+        p, r, rt = self.recs[x]["lineage"], self.recs[x], root_of[self.recs[x]["lineage"]]
+        if rt is None or self.recs[p]["kind"] != r["kind"] or self.recs[p]["schema"] != r["schema"]:
+            root_of[x] = None
+            self.problem("LINEAGE_BROKEN", x, f"it succeeds {p[:12]}, which is no admitted version of its kind and schema")
+        elif not may_succeed(r, self.recs[rt]):
+            root_of[x] = None
+            self.problem("LINEAGE_NOT_AUTHOR", x, f"filed by {r['actor']!r}; the lineage is {self.recs[rt]['actor']!r}'s")
+        else:
+            root_of[x] = rt
+            if r["at"] < self.recs[p]["at"]:
+                self.problem("LINEAGE_BACKDATED", x, "dated before the version it succeeds")
 
     # -- guards (§6)
 
@@ -289,19 +290,7 @@ class View:
         it requires has a closing effective version met before it; the met set only grows, until nothing changes.
         Nothing depends on the order of record ids, and a cycle of requires that nothing outside it closes stays
         PENDING (a version never satisfies what requires it through itself)."""
-        part, closing = {}, {}
-        for v in sorted(self.root_of):
-            r, g = self.recs[v], self.recs[v]["guard"]
-            acc, waiting = [], []
-            if g is not None:
-                acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
-                              if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
-                              and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
-                if len(acc) < g["quorum"]:
-                    waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
-            part[v] = (acc, waiting)
-            if r["body"].get("state") in self.schema_of(v).get("closed", []):       # with or without a guard (Codex #3)
-                closing[v] = self.requires(v)
+        part, closing = self._attested()
         users, short = {}, {}
         for v, ls in closing.items():
             short[v] = len(ls)
@@ -317,22 +306,49 @@ class View:
             if L in shut or eff[L] is None or self.recs[eff[L]]["body"].get("state") not in self.schema_of(L).get("closed", []):
                 continue
             shut.add(L)
-            for u in users.get(L, []):
-                short[u] -= 1
-                if short[u] == 0 and not part[u][1]:
-                    met.add(u)
-                    U = self.root_of[u]
-                    if u in at and (eff[U] is None or at[u] > at[eff[U]]):
-                        eff[U] = u
-                        todo.append(U)
-        guards = {}
-        for v, (acc, waiting) in part.items():
-            g = self.recs[v]["guard"]
-            still_open = [L for L in closing.get(v, []) if L not in shut]
-            waiting = waiting + [f"requires {L} closed" for L in still_open]
-            guards[v] = {"guard": PENDING if waiting else NONE if g is None else MET, "waiting": waiting, "accepted_by": acc,
-                         "roles": g["roles"] if g else [], "short": max(0, g["quorum"] - len(acc)) if g else 0, "open": still_open}
+            todo += self._release(users.get(L, []), short, part, met, eff, at)
+        guards = {v: self._guard_of(v, acc, waiting, closing.get(v, []), shut) for v, (acc, waiting) in part.items()}
         return guards, eff
+
+    def _attested(self):
+        """({version: (accepted by, waiting)}, {closing version: lineages it requires}): each version's guard by its
+        attests alone, and the versions whose state closes."""
+        part, closing = {}, {}
+        for v in sorted(self.root_of):
+            r, g = self.recs[v], self.recs[v]["guard"]
+            acc, waiting = [], []
+            if g is not None:
+                acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
+                              if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
+                              and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
+                if len(acc) < g["quorum"]:
+                    waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
+            part[v] = (acc, waiting)
+            if r["body"].get("state") in self.schema_of(v).get("closed", []):       # with or without a guard (Codex #3)
+                closing[v] = self.requires(v)
+        return part, closing
+
+    def _release(self, users, short, part, met, eff, at):
+        """A lineage closed: each of its `users` (the versions requiring it) is short one less; a user short of
+        nothing whose attests are in is met, and its lineage's effective version when later on that lineage's path.
+        The lineages whose effective version moved, to be looked at again."""
+        moved = []
+        for u in users:
+            short[u] -= 1
+            if short[u] == 0 and not part[u][1]:
+                met.add(u)
+                U = self.root_of[u]
+                if u in at and (eff[U] is None or at[u] > at[eff[U]]):
+                    eff[U] = u
+                    moved.append(U)
+        return moved
+
+    def _guard_of(self, v, acc, waiting, requires, shut):
+        g = self.recs[v]["guard"]
+        still_open = [L for L in requires if L not in shut]
+        waiting = waiting + [f"requires {L} closed" for L in still_open]
+        return {"guard": _guard_word(waiting, g), "waiting": waiting, "accepted_by": acc,
+                "roles": g["roles"] if g else [], "short": max(0, g["quorum"] - len(acc)) if g else 0, "open": still_open}
 
     def guard(self, v):
         return self._guards[v]
@@ -344,8 +360,8 @@ class View:
             cur = self.recs[cur]["lineage"]
         return sorted(out)
 
-    def effective(self, L):
-        return self._effective[L]
+    def effective(self, lineage):
+        return self._effective[lineage]
 
     # -- challenges (§5)
 
@@ -385,8 +401,7 @@ class View:
         lineages = {}
         for L, lin in sorted(self.lineages.items()):
             eff = self.effective(L)
-            reliance = "FORK" if lin["leaf"] is None else "PENDING" if eff is None else \
-                "CHALLENGED" if standing.get(eff) else "ELIGIBLE"
+            reliance = _reliance(lin, eff, standing)
             lineages[L] = {"schema": self.recs[L]["schema"], "actor": self.recs[L]["actor"], "versions": lin["versions"],
                            "path": lin["path"], "leaf": lin["leaf"], "effective": eff,
                            "state": self.recs[eff]["body"].get("state") if eff else None,
@@ -401,7 +416,7 @@ class View:
                 "chains": {"forks": self.chain_forks, "unanchored": self.unanchored},
                 "schemas": {n: s["id"] for n, s in sorted(self.schemas.items())},
                 "schemas_pending": {i: {"name": self.recs[i]["body"]["name"], "backed_by": self.backers(i),
-                                        "need": self.quorum("schema/author")} for i in self.pending},
+                                        "need": self.quorum(SCHEMA_AUTHOR)} for i in self.pending},
                 "lineages": lineages, "versions": versions, "challenges": challenges,
                 "problems": sorted(self.problems), "graph": self.graph()}
 
@@ -416,6 +431,39 @@ class View:
             edges += [[i, "requires", x] for x in (r["guard"] or {}).get("requires", [])]
             edges += [[i, "ref", x] for x in r["refs"] if x != t]
         return {"nodes": nodes, "edges": sorted(edges)}
+
+
+def _map_rows(doc):
+    """The rows of a migration's map blob ([[id, ...], ...], three members each), or None when `doc` is not one."""
+    rows = doc.get("map") if isinstance(doc, dict) else None
+    return rows if isinstance(rows, list) and all(isinstance(x, list) and len(x) == 3 and S.hex64(x[0]) for x in rows) else None
+
+
+def _settle(rt, lin):
+    """A lineage's forks, and its path from the root `rt` and its leaf when it has none."""
+    forks = {p: c for p, c in lin["succ"].items() if len(c) > 1}
+    lin["forks"] = [[p, c] for p, c in sorted(forks.items())]
+    if forks:
+        lin["path"], lin["leaf"] = [], None
+        return
+    path = [rt]
+    while path[-1] in lin["succ"]:
+        path.append(lin["succ"][path[-1]][0])
+    lin["path"], lin["leaf"] = path, path[-1]
+
+
+def _guard_word(waiting, g):
+    if waiting:
+        return PENDING
+    return NONE if g is None else MET
+
+
+def _reliance(lin, eff, standing):
+    if lin["leaf"] is None:
+        return "FORK"
+    if eff is None:
+        return "PENDING"
+    return "CHALLENGED" if standing.get(eff) else "ELIGIBLE"
 
 
 def _schema_problem(b):

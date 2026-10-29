@@ -13,6 +13,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 - The review waker reads a repository's open verdict pull requests from GitHub (`gh pr list`) when `due`
   refuses its base: a repository without a merge gate had its roadmap versions held for good ("the open
   pull requests were not read").
+- No change of behaviour: the open SonarCloud issues are resolved (long functions of the engine, the gate,
+  the review loop's commands, the CLI and the waker split into named helpers; repeated literals named once),
+  and the README ends with the SonarCloud quality-gate badge.
 
 ## 3.0.0a2 — the review loop in the package
 

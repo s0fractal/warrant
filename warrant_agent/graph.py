@@ -119,7 +119,7 @@ def impact(rep0, rep1):
     d = delta(rep0, rep1)
     touched = set(d["changed"]) | set(d["lineages_added"]) | set(d["lineages_removed"])
     for rep, ids in ((rep1, d["added"]), (rep0, d["removed"])):
-        nodes, out, _ = index(rep)
+        _, out, _ = index(rep)
         for i in ids:
             for x in [i] + [b for rel, b in out.get(i, []) if rel in ("attest", "challenge")]:
                 root = lineage_of(rep, x)

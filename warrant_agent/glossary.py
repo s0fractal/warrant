@@ -3,6 +3,7 @@ it does not establish. Nothing in this table comes from a record, a request or t
 test holds it to the engine's and the interface's tuples (every word they can answer with has an entry)."""
 
 NOT_TRUTH = "It does not establish that the record's text or evidence is true."
+NOTHING_WRITTEN = "Nothing was written."
 TERMS = {
     # reliance of a lineage (docs/V3.md §10)
     "ELIGIBLE": ("Under this receiver's trust and profile the lineage is not forked, its effective version exists and "
@@ -54,15 +55,15 @@ TERMS = {
     "NOT_FOUND": ("No record or blob of that id (or prefix) is in the store, or a prefix names several.",
                   "It does not say it exists nowhere."),
     "CHAIN_MOVED": ("The signer's head moved since prepare: another record of the same actor was filed. Prepare again.",
-                    "Nothing was written."),
+                    NOTHING_WRITTEN),
     "RESOURCE_LIMIT": ("The store or a result exceeds a limit of the workspace or the engine.", "Nothing was assessed."),
-    "NO_SIGNER": ("The workspace has no signer: prepare and commit need one.", "Nothing was written."),
+    "NO_SIGNER": ("The workspace has no signer: prepare and commit need one.", NOTHING_WRITTEN),
     "SIGNER_NOT_TRUSTED": ("The signer's key is not a key the workspace's trust binds to its actor: its records would "
-                           "be rejected.", "Nothing was written."),
+                           "be rejected.", NOTHING_WRITTEN),
     "INVALID_RECORD": ("The record is malformed, does not fit its schema, or its lineage rule refuses it.",
-                       "Nothing was written."),
+                       NOTHING_WRITTEN),
     "REFUSED": ("The store refused the write (for example a record dated before the signer's head).",
-                "Nothing was written."),
+                NOTHING_WRITTEN),
 }
 
 

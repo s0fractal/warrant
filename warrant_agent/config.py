@@ -26,13 +26,14 @@ HANDLE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}\Z")
 OPERATIONS = ("context", "read", "graph", "handoff", "prepare", "commit")
 ALWAYS = ("workspace", "explain")            # read the configuration and a static table only
 REPOSITORY = "repository/3"
+STORE_DIR = ".warrant"                       # a repository's store, with its v3.json
 DEFAULT_LIMITS = {"store_bytes": 64 << 20, "context_bytes": 64 << 10, "read_bytes": 256 << 10}
 
 
 def repository_config(repo):
     """(trust, profile, name) of a repository: its `.warrant/v3.json`, checked."""
     try:
-        doc = json.loads((Path(repo) / ".warrant" / "v3.json").read_bytes())
+        doc = json.loads((Path(repo) / STORE_DIR / "v3.json").read_bytes())
     except (OSError, ValueError) as e:
         raise AgentError("BAD_REQUEST", f"repository configuration: {type(e).__name__}: {e}") from None
     need(isinstance(doc, dict) and doc.get("warrant") == REPOSITORY and set(doc) == {"warrant", "repository", "trust", "profile"},
@@ -48,13 +49,13 @@ class Workspace:
         self.name = name
         if legacy:                   # Warrant 2's init output: {store: <repo>/.warrant/store, trust, profile, signer, ...}
             store = Path(str(doc.get("store", "")))
-            need(store.name == "store" and store.parent.name == ".warrant", "UNSUPPORTED_VERSION",
+            need(store.name == "store" and store.parent.name == STORE_DIR, "UNSUPPORTED_VERSION",
                  f"workspace {name!r}: a {V2_API} configuration is read only for a repository's .warrant/store")
             doc = {"repo": str(store.parent.parent), "signer": doc.get("signer"),
                    "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"]}
         if "repo" in doc:
             self.repo = Path(doc["repo"])
-            self.store, self.trust_path, self.profile_path = self.repo / ".warrant", None, None
+            self.store, self.trust_path, self.profile_path = self.repo / STORE_DIR, None, None
         else:
             need({"store", "trust", "profile"} <= set(doc), "BAD_REQUEST",
                  f"workspace {name!r}: give repo, or store, trust and profile")
@@ -110,7 +111,7 @@ class Config:
 
     @classmethod
     def load(cls, path):
-        return cls(json.loads(Path(path).read_text()))
+        return cls(json.loads(Path(path).read_text()))  # NOSONAR S8707: the operator's --config, read before any request
 
     def workspace(self, name):
         if not (isinstance(name, str) and name in self.workspaces):

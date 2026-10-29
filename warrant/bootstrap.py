@@ -4,8 +4,10 @@ by each receiver's profile, never here."""
 from .records import guard
 
 ACCEPT = {"verdict": "accept"}
+STRS, REFS = "strs?", "refs?"           # optional lists of strings, of record ids
+ROADMAP_ACCEPTOR = "roadmap/acceptor"
 # What a version says about the work that made it, kept verbatim from the transition that filed it.
-NOTES = {"established": "strs?", "residual": "strs?", "opened": "obj?", "subject": "str?"}
+NOTES = {"established": STRS, "residual": STRS, "opened": "obj?", "subject": "str?"}
 
 
 def _accepted_by(role):
@@ -15,24 +17,24 @@ def _accepted_by(role):
 SCHEMAS = [
     {"name": "claim@1",
      "fields": {"state": "str", "id": "str", "source": "str", "section": "str", "text": "str", "witnesses": "strs",
-                "mutants": "strs", "reason": "str?", "because": "str?", "counter": "ref?", "challenge": "ref?", "evidence": "refs?", **NOTES},
+                "mutants": "strs", "reason": "str?", "because": "str?", "counter": "ref?", "challenge": "ref?", "evidence": REFS, **NOTES},
      "states": {"unbacked": None, "informative": None, "backed": _accepted_by("claim/verifier"), "retired": None},
      "closed": ["backed"], "successors": {}},
     {"name": "goal@1",
-     "fields": {"state": "str", "key": "str", "text": "str", "because": "str?", "refs": "strs?", "sources": "obj?", **NOTES},
-     "states": {"open": None, "reformulated": _accepted_by("roadmap/acceptor"), "met": _accepted_by("roadmap/acceptor"),
-                "withdrawn": _accepted_by("roadmap/acceptor")},
+     "fields": {"state": "str", "key": "str", "text": "str", "because": "str?", "refs": STRS, "sources": "obj?", **NOTES},
+     "states": {"open": None, "reformulated": _accepted_by(ROADMAP_ACCEPTOR), "met": _accepted_by(ROADMAP_ACCEPTOR),
+                "withdrawn": _accepted_by(ROADMAP_ACCEPTOR)},
      "closed": ["met"], "successors": {}},
     {"name": "obligation@1",
-     "fields": {"state": "str", "statement": "str", "answers": "ref?", "serves": "refs", "evidence": "refs?",
-                "refs": "strs?", **NOTES},
+     "fields": {"state": "str", "statement": "str", "answers": "ref?", "serves": "refs", "evidence": REFS,
+                "refs": STRS, **NOTES},
      # Forgiveness is the creditor's alone (v2 SPEC §4.1 release): only the owner files `released`, with no
      # acceptance; it is not `closed`, so nothing that requires the obligation counts it as delivered.
-     "states": {"open": None, "done": _accepted_by("roadmap/acceptor"), "released": None},
+     "states": {"open": None, "done": _accepted_by(ROADMAP_ACCEPTOR), "released": None},
      "closed": ["done"], "successors": {"released": ["roadmap/owner"]}},
     {"name": "pr-head@1",
-     "fields": {"state": "str", "repository": "str?", "pr": "int?", "title": "str?", "serves": "refs?",
-                "commit": "str?", "tree": "str?", "answers": "refs?", **NOTES},
+     "fields": {"state": "str", "repository": "str?", "pr": "int?", "title": "str?", "serves": REFS,
+                "commit": "str?", "tree": "str?", "answers": REFS, **NOTES},
      "states": {"open": None, "head": _accepted_by("pr/acceptor")},
      "closed": ["head"], "successors": {}},
     {"name": "finding@1",

@@ -101,3 +101,5 @@ describes it, with the checks to run from a checkout;
 records what changed.
 
 Licensed MIT. See [TRADEMARK.md](https://github.com/s0fractal/warrant/blob/master/TRADEMARK.md) for the name.
+
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=s0fractal_warrant&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=s0fractal_warrant)

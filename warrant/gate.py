@@ -457,21 +457,38 @@ def _review(a, root, b, pr, head, rep):
         return
     a.facts.update(duty=L, closure=lin["leaf"], head_n=len(lin["path"]) - 1, x=leaf["body"].get("commit"),
                    author=rep["_recs"][L]["actor"])
-    try:
-        x, tree = canonical(root, leaf["body"].get("commit"))
-    except Refused as e:
-        sh.append(("HEAD_COMMIT", f"the head version: {e}"))
-        return
-    if tree != leaf["body"].get("tree"):
-        sh.append(("HEAD_COMMIT", f"{x[:12]} has tree {tree[:12]}; the head version names {str(leaf['body'].get('tree'))[:12]}"))
-        return
-    if not is_ancestor(root, x, head):
-        sh.append(("HEAD_NOT_ANCESTOR", f"{x[:12]} is not an ancestor of #{n}'s head {head[:12]}"))
+    x = _reviewed(sh, root, leaf, head, n)
+    if x is None:
         return
     owned = owner_paths(root, b.commit, x, b.gate["owner_paths"])
     if owned is None or owned:
         a.reasons.append(("OWNER_PATHS", "the owner merges a change to what decides merging: "
                           + (", ".join(owned[:8]) if owned else f"{x[:12]} has no merge base with the base")))
+    _tail(sh, root, b, rep, lin, x, head, n)
+    _verdict(a, b, rep, lin, x)
+
+
+def _reviewed(sh, root, leaf, head, n):
+    """The head version's commit: canonical, with the tree the version names, an ancestor of the pull request's
+    head; None after the reason it is not."""
+    try:
+        x, tree = canonical(root, leaf["body"].get("commit"))
+    except Refused as e:
+        sh.append(("HEAD_COMMIT", f"the head version: {e}"))
+        return None
+    if tree != leaf["body"].get("tree"):
+        sh.append(("HEAD_COMMIT", f"{x[:12]} has tree {tree[:12]}; the head version names {str(leaf['body'].get('tree'))[:12]}"))
+        return None
+    if not is_ancestor(root, x, head):
+        sh.append(("HEAD_NOT_ANCESTOR", f"{x[:12]} is not an ancestor of #{n}'s head {head[:12]}"))
+        return None
+    return x
+
+
+def _tail(sh, root, b, rep, lin, x, head, n):
+    """Refuse (in `sh`) what the pull request adds after the reviewed commit x beyond record lines and the blobs
+    they cite, and a record that is neither a pr/acceptor's verdict, a version of its own lineage or about one,
+    nor a replay result."""
     extra, lines, blobs = tail(root, x, head)
     if extra:
         sh.append(("TAIL_CHANGES", f"{len(extra)} change(s) after {x[:12]} beyond added record lines and blobs: "
@@ -481,7 +498,13 @@ def _review(a, root, b, pr, head, rep):
     if loose:
         sh.append(("TAIL_BLOB_UNCITED", f"{len(loose)} blob(s) added after {x[:12]} are cited by no record added there: "
                    + ", ".join(o[:12] for o in loose[:8])))
-    versions = set(lin["versions"])
+    stray = _stray(b, rep, added, set(lin["versions"]))
+    if stray:
+        sh.append(("TAIL_RECORD_UNREVIEWED", f"{len(stray)} record(s) added after {x[:12]} are neither a verdict of a "
+                   f"pr/acceptor, #{n}'s own, nor a replay result: " + ", ".join(s[:12] for s in stray[:8])))
+
+
+def _stray(b, rep, added, versions):
     stray = []
     for r in added:
         rec = rep["_recs"].get(r)
@@ -493,9 +516,12 @@ def _review(a, root, b, pr, head, rep):
                 and (rep["_recs"].get(about) or {}).get("schema") == "finding@1"))
         if not ok:
             stray.append(r or "unreadable")
-    if stray:
-        sh.append(("TAIL_RECORD_UNREVIEWED", f"{len(stray)} record(s) added after {x[:12]} are neither a verdict of a "
-                   f"pr/acceptor, #{n}'s own, nor a replay result: " + ", ".join(s[:12] for s in stray[:8])))
+    return stray
+
+
+def _verdict(a, b, rep, lin, x):
+    """The verdict on the head version, whose commit is x: accepted by a pr/acceptor with its guard met, or findings
+    stand against it."""
     v = rep["versions"][lin["leaf"]]
     by = sorted(set(v["accepted_by"]) & b.holders("pr/acceptor"))
     findings = v["challenged_by"]
@@ -541,7 +567,7 @@ def _verdicts_only(a, root, b, pr, head, rep):
         out.append(("TAIL_BLOB_UNCITED", f"{len(loose)} blob(s) cited by no verdict: " + ", ".join(o[:12] for o in loose[:8])))
     a.facts.update(verdicts=sorted(added), x=mb)
     a.verdict = True
-    a.accept = (recs[0]["actor"], sorted(added)[0], mb)
+    a.accept = (recs[0]["actor"], min(added), mb)
     return out
 
 

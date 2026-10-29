@@ -17,15 +17,16 @@ import sys
 
 from . import records as R
 from .gate import due_for
-from .repo import Failed, Repo, dump, env_root, inside, load_key, main
+from .repo import Failed, Repo, dump, emit, env_root, load_key, main
 
-SCHEMAS = ("goal@1", "obligation@1")
+GOAL, OBLIGATION = "goal@1", "obligation@1"
+SCHEMAS = (GOAL, OBLIGATION)
 
 
 def goals(rep):
     """{goal version id: goal key} for every version of every goal lineage."""
     recs = rep["_recs"]
-    return {v: recs[L]["body"]["key"] for L, lin in rep["lineages"].items() if lin["schema"] == "goal@1" for v in lin["versions"]}
+    return {v: recs[L]["body"]["key"] for L, lin in rep["lineages"].items() if lin["schema"] == GOAL for v in lin["versions"]}
 
 
 def due(rep, profile, actor):
@@ -50,7 +51,7 @@ def check(rep):
             out.append(f"{L[:12]} ({lin['schema']}) forks")
         for v in lin["versions"]:
             a = recs[v]["body"].get("answers")
-            if lin["schema"] == "obligation@1" and a is not None and a not in keys:
+            if lin["schema"] == OBLIGATION and a is not None and a not in keys:
                 out.append(f"obligation version {v[:12]} answers {a[:12]}, which is no goal version")
     return out
 
@@ -61,23 +62,27 @@ def view(rep):
              f"`{rep['assessment'][:12]}`); a build artifact, never committed. Completeness: {rep['completeness']}.", ""]
     by_goal = {}
     for L, lin in rep["lineages"].items():
-        if lin["schema"] == "obligation@1":
+        if lin["schema"] == OBLIGATION:
             leaf = recs[lin["leaf"]]["body"] if lin["leaf"] else recs[L]["body"]
             by_goal.setdefault(keys.get(leaf.get("answers")), []).append((L, lin, leaf))
-    for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == "goal@1"),
+    for L, lin in sorted(((L, lin) for L, lin in rep["lineages"].items() if lin["schema"] == GOAL),
                          key=lambda x: int(recs[x[0]]["body"]["key"].lstrip("G") or 0)):
         g = recs[lin["effective"] or L]["body"]
         lines += [f"## {g['key']} ({lin['state']}): {g['text']}", ""]
-        for O, olin, b in sorted(by_goal.get(g["key"], []), key=lambda x: (x[1]["state"] or "", recs[x[0]]["at"])):
-            v = rep["versions"][olin["leaf"]] if olin["leaf"] else {"guard": "FORK", "waiting": []}
-            wait = f"; leaf {v['guard']}: {'; '.join(v['waiting'])}" if v["guard"] == "PENDING" else ""
-            lines.append(f"- `{O[:12]}` **{olin['state']}** ({olin['reliance']}{wait}) {b['statement']}")
+        lines += [_obligation_view(rep, O, olin, b)
+                  for O, olin, b in sorted(by_goal.get(g["key"], []), key=lambda x: (x[1]["state"] or "", recs[x[0]]["at"]))]
         lines.append("")
     loose = by_goal.get(None, [])
     if loose:
         lines += ["## Obligations that answer no goal", ""]
         lines += [f"- `{O[:12]}` **{olin['state']}** {b['statement']}" for O, olin, b in loose]
     return "\n".join(lines) + "\n"
+
+
+def _obligation_view(rep, o, olin, b):
+    v = rep["versions"][olin["leaf"]] if olin["leaf"] else {"guard": "FORK", "waiting": []}
+    wait = f"; leaf {v['guard']}: {'; '.join(v['waiting'])}" if v["guard"] == "PENDING" else ""
+    return f"- `{o[:12]}` **{olin['state']}** ({olin['reliance']}{wait}) {b['statement']}"
 
 
 def run(argv=None):
@@ -106,11 +111,7 @@ def run(argv=None):
     rep = repo.report()
     _, profile, _ = repo.config()
     if a.cmd == "due":
-        got = due(rep, profile, a.actor)
-        if a.json:
-            dump({"due": got})
-        for x in [] if a.json else got:
-            print(f"DUE {x['closure'][:12]} {x['schema']} {x['goal']}: {x['statement'][:100]}")
+        _print_due(due(rep, profile, a.actor), a.json)
         return 0
     if a.cmd == "check":
         bad = check(rep)
@@ -119,35 +120,43 @@ def run(argv=None):
         print(f"roadmap: {sum(1 for x in rep['lineages'].values() if x['schema'] in SCHEMAS)} lineages, {len(bad)} problem(s)")
         return 1 if bad else 0
     if a.cmd == "view":
-        text = view(rep)
-        if a.out:
-            out = inside(a.out, root)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(text)
-        else:
-            sys.stdout.write(text)
+        emit(view(rep), a.out, root)
         return 0
     key = load_key(a.key, root)
-    if a.cmd == "oblige":
-        g = next((rep["lineages"][L]["leaf"] for L, lin in rep["lineages"].items()
-                  if lin["schema"] == "goal@1" and rep["_recs"][L]["body"]["key"] == a.goal), None)
-        if g is None:
-            raise Failed("GOAL", f"no goal {a.goal}")
-        rec = R.record("entity", a.actor, 0, {"state": "open", "statement": a.statement, "answers": g, "serves": sorted(a.serves)},
-                       "obligation@1", refs=[g, *a.serves])
-    else:
-        L = a.obligation if a.obligation in rep["lineages"] else None
-        if L is None or rep["lineages"][L]["schema"] != "obligation@1" or not rep["lineages"][L]["leaf"]:
-            raise Failed("OBLIGATION", f"{a.obligation[:12]} is not an obligation lineage without a fork")
-        prev = rep["_recs"][rep["lineages"][L]["leaf"]]["body"]
-        body = {"state": "done", "statement": prev["statement"], "answers": prev.get("answers"), "serves": prev.get("serves", []),
-                "evidence": sorted(a.evidence), "refs": a.ref, "established": a.established, "residual": a.residual}
-        g = dict(rep["_recs"][rep["schemas"]["obligation@1"]]["body"]["states"]["done"], requires=sorted(a.requires))
-        rec = R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, "obligation@1",
-                       lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])
-                       + body["serves"], guard=g)
+    rec = _obligation(rep, a) if a.cmd == "oblige" else _closure(rep, a)
     dump({"filed": repo.file(a.actor, key, [rec])})
     return 0
+
+
+def _print_due(got, as_json):
+    if as_json:
+        dump({"due": got})
+    for x in [] if as_json else got:
+        print(f"DUE {x['closure'][:12]} {x['schema']} {x['goal']}: {x['statement'][:100]}")
+
+
+def _obligation(rep, a):
+    """The obligation `oblige` files: the root of a lineage answering the goal's leaf."""
+    g = next((rep["lineages"][L]["leaf"] for L, lin in rep["lineages"].items()
+              if lin["schema"] == GOAL and rep["_recs"][L]["body"]["key"] == a.goal), None)
+    if g is None:
+        raise Failed("GOAL", f"no goal {a.goal}")
+    return R.record("entity", a.actor, 0, {"state": "open", "statement": a.statement, "answers": g, "serves": sorted(a.serves)},
+                    OBLIGATION, refs=[g, *a.serves])
+
+
+def _closure(rep, a):
+    """The `done` version `close` files on an obligation's leaf, with the schema's guard and what it requires."""
+    L = a.obligation if a.obligation in rep["lineages"] else None
+    if L is None or rep["lineages"][L]["schema"] != OBLIGATION or not rep["lineages"][L]["leaf"]:
+        raise Failed("OBLIGATION", f"{a.obligation[:12]} is not an obligation lineage without a fork")
+    prev = rep["_recs"][rep["lineages"][L]["leaf"]]["body"]
+    body = {"state": "done", "statement": prev["statement"], "answers": prev.get("answers"), "serves": prev.get("serves", []),
+            "evidence": sorted(a.evidence), "refs": a.ref, "established": a.established, "residual": a.residual}
+    g = dict(rep["_recs"][rep["schemas"][OBLIGATION]]["body"]["states"]["done"], requires=sorted(a.requires))
+    return R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, OBLIGATION,
+                    lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])
+                    + body["serves"], guard=g)
 
 
 def entry():

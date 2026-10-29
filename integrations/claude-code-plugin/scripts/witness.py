@@ -208,11 +208,8 @@ def _segments(command):
         yield seg
 
 
-def _segment_kind(seg):
-    words = [w for w in seg if "=" not in w or w.startswith("-")]   # drop VAR=x
-    if not words:
-        return None
-    name = words[0].rsplit("/", 1)[-1].lower()
+def _arguments(words):
+    """The words after the command that are neither flags nor a value flag's value."""
     args, skip = [], False
     for w in words[1:]:
         if skip:
@@ -221,7 +218,11 @@ def _segment_kind(seg):
             skip = True                     # `git -C dir push`, `npm --prefix js test`
         elif not w.startswith("-"):
             args.append(w)
-    rest = " ".join(args[:2]).lower()
+    return args
+
+
+def _table_kind(name, rest):
+    """The kind of the first table naming the command `name` with its first arguments `rest`, or None."""
     sub = rest.split(" ")[0] if rest else ""
     for table, kind in ((CONSEQUENTIAL, "consequential"), (CHECKS, "check")):
         for cmd, arg in ((k[0], k[1]) for k in table if len(k) == 2):
@@ -229,6 +230,17 @@ def _segment_kind(seg):
                 return kind
         if (name,) in table:
             return kind
+    return None
+
+
+def _segment_kind(seg):
+    words = [w for w in seg if "=" not in w or w.startswith("-")]   # drop VAR=x
+    if not words:
+        return None
+    name = words[0].rsplit("/", 1)[-1].lower()
+    kind = _table_kind(name, " ".join(_arguments(words)[:2]).lower())
+    if kind is not None:
+        return kind
     if name == "rm" and any(w.startswith("-") and not w.startswith("--")
                             and set("rf") & set(w[1:].lower()) for w in words[1:]):
         return "consequential"
