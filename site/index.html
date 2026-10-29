@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="description" content="Warrant 3: work kept as signed records — versions, acceptances, objections — and judged by each reader under its own trust and roles. Python package warrant-graph, alpha.">
+<title>Warrant — signed records of work</title>
+<link rel="stylesheet" href="style.css">
+<link rel="alternate" type="text/plain" href="llms.txt" title="For AI readers">
+</head>
+<body>
+<header class="top">
+  <a class="mark" href="./">warrant</a>
+  <nav>
+    <a href="https://github.com/s0fractal/warrant/blob/master/docs/V3.md">Spec</a>
+    <a href="https://github.com/s0fractal/warrant/blob/master/QUICKSTART.md">Quickstart</a>
+    <a href="llms.txt">For AI readers</a>
+    <a href="https://github.com/s0fractal/warrant">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<section class="hero">
+  <p class="kicker">Warrant 3 · 3.0.0a2 · alpha</p>
+  <h1>Signed records of work, judged by the reader.</h1>
+  <p class="lead">Warrant keeps work as signed records: what a thing is (one version of a claim,
+  an obligation, a pull request head), who accepted it, who objected and with what counterexample.
+  Each reader judges the same bytes under its own trust — which keys are whose — and profile —
+  who holds which role — and gets one answer: what may be relied on now, what still waits, and for whom.</p>
+  <pre class="install"><code>pip install --pre warrant-graph</code></pre>
+  <p class="small">Python ≥ 3.10; depends only on <code>cryptography</code>. Adds the commands
+  <code>warrant</code>, <code>warrant-agent</code> and, with <code>[mcp]</code>, <code>warrant-agent-mcp</code>.
+  Alpha: record formats and interfaces may still change.</p>
+</section>
+
+<section>
+  <h2>The model</h2>
+  <p>One record envelope with four kinds, native lineage, schemas that are records themselves,
+  one guard, and one pure function, <code>assess</code>.</p>
+  <table>
+    <thead><tr><th>Kind</th><th>Says</th></tr></thead>
+    <tbody>
+      <tr><td><code>schema</code></td><td>the rules of one schema: its fields, its states, the minimal guard each state needs, who may enter which state</td></tr>
+      <tr><td><code>entity</code></td><td>one version of a thing in a lineage; <code>body.state</code> is its state</td></tr>
+      <tr><td><code>attest</code></td><td>an actor's statement about one record: an acceptance, a replay result</td></tr>
+      <tr><td><code>challenge</code></td><td>a counterexample or objection against one record</td></tr>
+    </tbody>
+  </table>
+  <p>A lineage's state is that of its newest version whose guard is met. Two versions succeeding
+  one version fork the lineage. A challenge from an actor with a role in the guard lowers reliance
+  until a later version is accepted. Reliance is <code>ELIGIBLE</code>, <code>PENDING</code>,
+  <code>CHALLENGED</code> or <code>FORK</code>. <strong>A key authenticates; it authorizes
+  nothing</strong>: roles are the reader's profile.</p>
+</section>
+
+<section>
+  <h2>Where it runs today</h2>
+  <ul>
+    <li><strong>On itself.</strong> The normative sentences of the spec are claim records, each
+    with the tests that witness it and the mutants those tests kill. A claim counts once the
+    claims checker has run them at a commit and signed its acceptance. Pull request reviews are
+    records too, and a gate merges a pull request on a recorded acceptance.
+    <a href="https://github.com/s0fractal/warrant/blob/master/docs/REPOSITORY.md">How the repository works</a>.</li>
+    <li><strong>On another repository.</strong>
+    <a href="https://github.com/s0fractal/interdict-mesh">interdict-mesh</a>, a Rust/eBPF network
+    node, keeps its invariant contracts as lineages in its own store, pinned by the owner's
+    signed manifest, and its pull request reviews as Warrant records, using the review loop that
+    ships in the package.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Limits</h2>
+  <ul>
+    <li>A store cannot prove its own completeness; every report says so (<code>UNATTESTED</code>).</li>
+    <li>An assessment has admission limits; beyond one it is refused, never answered in part.</li>
+    <li>Not in this version: grants, schedules, triggers, merge rules for a forked lineage,
+    threshold adoption, key rotation.</li>
+    <li>One implementation (Python). Reviews so far are by model reviewers; no external
+    security audit is recorded.</li>
+  </ul>
+  <p>The spec's §11 says what was dropped from Warrant 2 and why; §12 what is open.</p>
+</section>
+
+<section class="history">
+  <h2>Looking for the browser verifier?</h2>
+  <p>This page used to host the Warrant 0.x decision-record verifier (WebAssembly, npm
+  <code>@s0fractal/warrant</code>, crate <code>warrant-verify</code>). That generation was retired
+  on 2026-10-18 and its records do not read as Warrant 3 records. Its code lives at the tag
+  <code>history/warrant-0.x-2026-10-18</code>; Warrant 2 at <code>history/warrant-2-2026-10-27</code>.
+  <a href="https://github.com/s0fractal/warrant/blob/master/HISTORY.md">History</a>.</p>
+</section>
+</main>
+
+<footer>
+  <p>MIT licensed. <a href="https://pypi.org/project/warrant-graph/">warrant-graph on PyPI</a> ·
+  <a href="https://github.com/s0fractal/warrant/blob/master/AGENT.md">For agents (API, CLI, MCP)</a> ·
+  <a href="https://github.com/s0fractal/warrant/blob/master/CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/s0fractal/warrant/blob/master/TRADEMARK.md">Name</a></p>
+</footer>
+</body>
+</html>
