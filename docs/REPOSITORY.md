@@ -133,7 +133,9 @@ mirror, state and worktrees, and refuses a base whose `.warrant/v3.json` names a
 each it runs the base tree's `python -m warrant.review due` and `python -m warrant.roadmap due --actor
 codex` (the base's own package when the base carries it, else the warrant-graph installed beside the
 waker), replays findings with the review replay checker's seed (sandboxed, seed on standard input),
-and wakes Codex once per due head or roadmap version, naming that repository and its branch.
+and wakes Codex once per due head or roadmap version, naming that repository and its branch. A
+repository without `.warrant/merge.json` (its owner merges; `due` refuses its base) is served for its
+roadmap versions only, the open verdict pull requests read from GitHub (`gh pr list`).
 `python3 integrations/codex-plugin/install.py` installs the plugin, the waker and its Python with this
 checkout's warrant-graph, and writes `repositories.json` with this repository as the only entry when
 the file is absent (the owner runs it).

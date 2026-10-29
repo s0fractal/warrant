@@ -10,6 +10,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   gate refuses the base, e.g. a repository with no `.warrant/merge.json`; they exited 1 with a traceback.
   The review waker counts exit 2 as a refusal and goes on to the repository's roadmap closures (a
   repository whose owner merges by hand is served for its closures).
+- The review waker reads a repository's open verdict pull requests from GitHub (`gh pr list`) when `due`
+  refuses its base: a repository without a merge gate had its roadmap versions held for good ("the open
+  pull requests were not read").
 
 ## 3.0.0a2 — the review loop in the package
 

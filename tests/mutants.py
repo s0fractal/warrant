@@ -197,6 +197,11 @@ MUTANTS = [
     ("P12", "integrations/codex-plugin/waker/waker.py", "        for e in entries:", "        for e in entries[:1]:", WAKER, ["W9"]),
     ("P14", "integrations/codex-plugin/waker/waker.py", 'e[k] if k == "repository" else os.path.realpath(e[k])', "e[k]",
      WAKER, ["W13"]),
+    ("P15", "integrations/codex-plugin/waker/waker.py", "        verdicts = w.forge.verdicts()", "        return \"held\"", WAKER, ["W14"]),
+    ("P16", "integrations/codex-plugin/waker/waker.py", 'startswith(VERDICT_BRANCH) and x.get("isCrossRepository") is False]',
+     'startswith(VERDICT_BRANCH)]', WAKER, ["W14"]),
+    ("P17", "integrations/codex-plugin/waker/waker.py", '                if str(x.get("headRefName") or "").startswith(VERDICT_BRANCH) and',
+     "                if", WAKER, ["W14"]),
     ("P13", "integrations/codex-plugin/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
 ]
 
