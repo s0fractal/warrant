@@ -130,13 +130,25 @@ def claims_cases():
     r.write_config()
     r.put("alice", "schema", {"name": "note@1", "fields": {"text": "str"}, "states": None, "closed": [], "successors": {}})
     check("C10 a schema awaiting its second author is a proposal the claims check does not refuse", codes(r) == [], codes(r))
-    try:                         # a checker that does not refuse goes on to run every witness: a hang is a failure here
-        out = subprocess.run([sys.executable, "-B", "-m", "warrant.claims", "--root", str(ROOT), "replay", "--key", "-"],
-                             input=KEYS["eve"].seed_hex() + "\n", capture_output=True, text=True, cwd=ROOT, timeout=60)
-        refused, why = out.returncode == 2 and out.stderr.startswith("REFUSED SIGNER"), out.stderr[-300:]
-    except subprocess.TimeoutExpired:
-        refused, why = False, "it ran on for a minute instead of refusing"
-    check("C08 the claims checker signs only with a key the trust binds to its own identity", refused, why)
+    r = checker_repo()           # a claim that waits: a checker that does not refuse first goes on to run its witnesses
+    claim(r)
+    r.commit("a claim waiting for the checker")
+    ran = []
+    real, CL.run_checks = CL.run_checks, lambda *a: ran.append(a) or real(*a)
+    try:
+        why = refused_code(CL.replay, RP.Repo(r.root), KEYS["eve"])
+    finally:
+        CL.run_checks = real
+    check("C08 the claims checker signs only with a key the trust binds to its own identity, refused before it runs "
+          "anything", why is not None and why.startswith("SIGNER the seed's key") and ran == [], (why, len(ran)))
+    r = checker_repo()
+    (r.root / RP.NAME).mkdir()                     # the tree carries a package source, so its code is read from Git
+    (r.root / RP.NAME / "__init__.py").write_text("x = 1\n")
+    x = r.commit("a committed tree")
+    sub = r.root / "docs"                          # a directory inside the checkout, as the mutant harness's copy under build/
+    check("C20 the code a checker's result is checked against is the commit's whole tree, also from a directory inside "
+          "the checkout", RP.code_tree(sub, x) == RP.code_tree(r.root, x) != ""
+          and RP.checker_code(x, sub) == RP.checker_code(x, r.root), (RP.code_tree(sub, x)[:200],))
     r = claims_repo()
     doc = [{"id": "V3-3-1", "section": "3", "text": "A record whose `lineage` is L **succeeds** L.", "witnesses": ["q_test:Q1"],
             "mutants": ["Z1"]}]

@@ -18,9 +18,9 @@ of it (Python API, CLI, stdio MCP).
   one obligation, its closure, an acceptance, a challenge; every command and
   output on the page is run by CI.
 - Specification: [docs/V3.md](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
-- Agents (Python API, CLI, stdio MCP): [AGENT.md](https://github.com/s0fractal/warrant/blob/master/AGENT.md)
-- What earlier generations were, and where they live: [HISTORY.md](https://github.com/s0fractal/warrant/blob/master/HISTORY.md)
-- The proof-space pilot (goal G9), outside the core: [PILOT.md](https://github.com/s0fractal/warrant/blob/master/PILOT.md)
+- Agents (Python API, CLI, stdio MCP): [AGENT.md](https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md)
+- What earlier generations were, and where they live: [HISTORY.md](https://github.com/s0fractal/warrant/blob/master/docs/HISTORY.md)
+- The proof-space pilot (goal G9), outside the core: [PILOT.md](https://github.com/s0fractal/warrant/blob/master/docs/PILOT.md)
 
 ## Install
 
@@ -68,7 +68,7 @@ it authorizes nothing: roles are the reader's profile.
 - **What is migrated.** The repository's Warrant 2 records were migrated, not
   re-signed: one `migration@1` attest of the migrator checker vouches for them,
   and the migration replays at the tag `history/warrant-2-2026-10-27`
-  (HISTORY.md).
+  (docs/HISTORY.md).
 - **Review.** Pull requests are reviewed by a model reviewer through the
   repository's review loop (signed records in the same store); no external
   security audit is recorded. There is one implementation, this Python one.
@@ -100,6 +100,6 @@ describes it, with the checks to run from a checkout;
 [CHANGELOG.md](https://github.com/s0fractal/warrant/blob/master/CHANGELOG.md)
 records what changed.
 
-Licensed MIT. See [TRADEMARK.md](https://github.com/s0fractal/warrant/blob/master/TRADEMARK.md) for the name.
+Licensed MIT. See [TRADEMARK.md](https://github.com/s0fractal/warrant/blob/master/docs/TRADEMARK.md) for the name.
 
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=s0fractal_warrant&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=s0fractal_warrant)

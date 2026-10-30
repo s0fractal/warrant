@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The resolution layer of the proof-space pilot (warrant/pilot.py; contract PILOT.md): G9 PS-02
+"""The resolution layer of the proof-space pilot (warrant/pilot.py; contract docs/PILOT.md): G9 PS-02
 typed addresses through two local object stores (A), PS-03 the dependency closure before verification
 (D), PS-04 verification profiles as content-addressed manifests (F), PS-01 the contract (K).
 
@@ -214,7 +214,7 @@ def edit_of(doc):
 
 
 def contract_inputs():
-    """The contract source, PILOT.md, the mutant harness and the filed G9 cards, from this checkout."""
+    """The contract source, docs/PILOT.md, the mutant harness and the filed G9 cards, from this checkout."""
     return (json.loads((ROOT / PT.SOURCE).read_text()), (ROOT / PT.VIEW).read_text(), PT.mutant_list(ROOT),
             PT.filed_cards(ROOT))
 
@@ -722,7 +722,7 @@ def main():
               "the contract check refuses a row citing what does not hold, a deferral to no filed card, a stale view",
               got_k2)
 
-    # K1 (last): PILOT.md is the rendering of the contract source; every row is enforced by cases of this
+    # K1 (last): docs/PILOT.md is the rendering of the contract source; every row is enforced by cases of this
     # file that passed and mutants that target them, deferred to a filed G9 obligation, or excluded; every
     # case of this file is some mutant's target.
     with case('K1'):

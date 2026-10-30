@@ -151,6 +151,12 @@ MUTANTS = [
     ("T9", "warrant/repo.py", "            raise Failed(\"IDENTITY\"", "            pass  # Failed(\"IDENTITY\"", TOOLS, ["R06"]),
     ("T11", "warrant/claims.py", "    return out          # a schema awaiting backers",
      '    out += [("SCHEMA_PENDING", i) for i in rep["schemas_pending"]]\n    return out          # a schema awaiting backers', TOOLS, ["C10"]),
+    ("T28", "warrant/repo.py", '    rows = git(root, "ls-tree", "-r", "--full-tree", commit).splitlines()',
+     '    rows = git(root, "ls-tree", "-r", commit).splitlines()', TOOLS, ["C20"]),
+    ("T29", "warrant/repo.py", '    carried = git(root, "ls-tree", "--full-tree", commit, "--", f"{NAME}/__init__.py")',
+     '    carried = git(root, "ls-tree", commit, "--", f"{NAME}/__init__.py")', TOOLS, ["C20"]),
+    ("T30", "warrant/repo.py", '    for row in git(root, "ls-tree", "--full-tree", commit, "--", f"{NAME}/").splitlines():',
+     '    for row in git(root, "ls-tree", commit, "--", f"{NAME}/").splitlines():', TOOLS, ["C20"]),
     ("T10", "warrant/claims.py", '    if key.public not in trust["keys"].get(CHECKER, []):', "    if False:", TOOLS, ["C08"]),
     ("T12", "warrant/repo.py", '    if body.get("code") != code:', "    if False:", TOOLS, ["C12", "R07"]),
     ("T13", "warrant/claims.py", "for i, _, b in rows if not held(b, ran, killed)]", "for i, _, b in rows if False]", TOOLS, ["C14"]),
@@ -206,7 +212,7 @@ MUTANTS = [
 ]
 
 # The G9 pilot (warrant_pilot/pilot.py, tools/pilot.py): Warrant 2's ids and replacements, kept so that the pilot
-# contract (tools/pilot-contract.json, PILOT.md) cites the same mutants.
+# contract (tools/pilot-contract.json, docs/PILOT.md) cites the same mutants.
 PILOT_MUTANTS = [
     ('M568', 'warrant_pilot/pilot.py', '            if C.digest(data) != h:\n', '            if False:\n', PILOT, ['A2']),
     ('M569', 'warrant_pilot/pilot.py', '                raise _Stop("DIGEST_MISMATCH", address,', '                continue\n                raise _Stop("DIGEST_MISMATCH", address,', PILOT, ['A2']),

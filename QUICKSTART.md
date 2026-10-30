@@ -138,5 +138,5 @@ warrant assess --store store --trust trust.json --profile profile.json | python3
 ## Next
 
 - The rules, normatively: [docs/V3.md](docs/V3.md).
-- Agents: `warrant-agent-mcp` serves the same operations over MCP ([AGENT.md](AGENT.md)).
+- Agents: `warrant-agent-mcp` serves the same operations over MCP ([docs/AGENT.md](docs/AGENT.md)).
 - How this repository runs on its own records: [docs/REPOSITORY.md](docs/REPOSITORY.md).

@@ -3,7 +3,7 @@
 This repository keeps work as signed records; its git history and commit trailers are provenance
 too. The rules below protect that provenance.
 
-Read first: [AGENT.md](AGENT.md) (the agent interface and its configuration),
+Read first: [docs/AGENT.md](docs/AGENT.md) (the agent interface and its configuration),
 [docs/V3.md](docs/V3.md) (the specification) and [docs/REPOSITORY.md](docs/REPOSITORY.md) (this
 repository's records, tools, review loop and merge gate).
 
@@ -41,4 +41,4 @@ repository's records, tools, review loop and merge gate).
    residual rather than asking for blanket permission.
 
 Earlier generations of these rules, and the incident that started them, are at the tags
-`history/warrant-2-2026-10-27` and `history/warrant-0.x-2026-10-18` (HISTORY.md).
+`history/warrant-2-2026-10-27` and `history/warrant-0.x-2026-10-18` (docs/HISTORY.md).
