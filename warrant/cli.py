@@ -227,20 +227,18 @@ def render(st):
 
 def home_cmd(a):
     """`warrant home [list|add DIR|identity ACTOR --seed FILE|remove NAME]`: the operator's registry (warrant.home)."""
-    doc = H.load()
     if a.action == "list":
+        doc = H.load()
         return {"home": str(H.path()), "identities": sorted(doc["identities"]), "repositories": H.listing(doc)}
     if not a.target:
         raise Refused(f"warrant home {a.action} needs its target")
-    if a.action == "add":
-        doc = H.add_repository(doc, a.target, a.name, a.signer, a.operations)
-    elif a.action == "identity":
-        if not (a.seed and a.target):
-            raise Refused("warrant home identity ACTOR --seed FILE")
-        doc = H.add_identity(doc, a.target, a.seed)
-    else:
-        doc = H.remove(doc, a.target)
-    return {"home": str(H.save(doc)), "identities": sorted(doc["identities"]), "repositories": sorted(doc["repositories"])}
+    if a.action == "identity" and not a.seed:
+        raise Refused("warrant home identity ACTOR --seed FILE")
+    change = {"add": lambda d: H.add_repository(d, a.target, a.name, a.signer, a.operations),
+              "identity": lambda d: H.add_identity(d, a.target, a.seed),
+              "remove": lambda d: H.remove(d, a.target)}[a.action]
+    doc = H.update(change)                              # read, change and write under Home's lock
+    return {"home": str(H.path()), "identities": sorted(doc["identities"]), "repositories": sorted(doc["repositories"])}
 
 
 def render_home(out):

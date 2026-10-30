@@ -11,6 +11,8 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from world import KEYS, ROOT, Repo, check, finish, git
@@ -594,6 +596,22 @@ def home_cases():
         code_loop, _ = cli(escaping, "roadmap", "--root", str(escaping), "check")
         check("H09 a repository whose `.warrant` links out of it is refused at registration and by the review loop's "
               "commands", "outside" in why_link and code_loop == 2, (why_link, code_loop))
+        race = r.home / "config" / "race.json"          # Codex finding 773e7e02f857 on #238: two changes at once
+        H.save(H.empty(), race)
+
+        def slow(d):
+            time.sleep(0.4)                              # inside the first change, after its read
+            return H.add_repository(d, str(r.root), "first")
+        first = threading.Thread(target=H.update, args=(slow, race))
+        first.start()
+        time.sleep(0.1)
+        os.environ["WARRANT_HOME"] = str(race)
+        code_second, _ = cli(r.home, "home", "add", str(other.root), "--name", "second")
+        os.environ["WARRANT_HOME"] = str(r.home / "config" / "home.json")
+        first.join()
+        names = sorted(H.load(race)["repositories"])
+        check("H10 two changes of Home made at once both take effect: the second waits for the first's write",
+              code_second == 0 and names == ["first", "second"], (code_second, names))
         cli(r.home, "home")
         check("H06 Home writes nothing into a repository", sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
               == tree)

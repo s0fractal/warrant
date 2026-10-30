@@ -106,6 +106,24 @@ def save(doc, p=None):
     return p
 
 
+def update(change, p=None):
+    """Apply `change` (a function from a Home to a Home) to the Home at `p` (path()) and save the result, under an
+    exclusive lock on `<home>.lock` held from the read to the write: two changes made at once both take effect, in
+    some order, and neither saves a document read before the other's write (Codex finding 773e7e02f857). The
+    saved Home."""
+    import fcntl
+    p = Path(p) if p is not None else path()
+    p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(p.with_name(p.name + ".lock"), os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        doc = change(load(p))
+        save(doc, p)
+        return doc
+    finally:
+        os.close(fd)                                    # closing the descriptor releases the lock
+
+
 def receiver(repo_path):
     """(trust, profile, repository name) of a repository directory: its .warrant/v3.json."""
     dot = dot_of(repo_path)

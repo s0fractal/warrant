@@ -195,6 +195,8 @@ MUTANTS = [
     ("T52", "warrant/home.py", '    doc = json.loads(read_inside(dot / "v3.json", dot))', '    doc = json.loads((dot / "v3.json").read_bytes())', TOOLS, ["H08"]),
     ("T53", "warrant/home.py", "    dot = dot_of(repo_path)\n", '    dot = Path(repo_path) / ".warrant"\n', TOOLS, ["H09"]),
     ("T54", "warrant/repo.py", "        self.dot = dot_of(self.root)", '        self.dot = self.root / ".warrant"', TOOLS, ["H09"]),
+    ("T55", "warrant/home.py", "        fcntl.flock(fd, fcntl.LOCK_EX)", "        pass", TOOLS, ["H10"]),
+    ("T56", "warrant/cli.py", "    doc = H.update(change)", "    doc = change(H.load())\n    H.save(doc)", TOOLS, ["H10"]),
     ("T10", "warrant/claims.py", '    if key.public not in trust["keys"].get(CHECKER, []):', "    if False:", TOOLS, ["C08"]),
     ("T12", "warrant/repo.py", '    if body.get("code") != code:', "    if False:", TOOLS, ["C12", "R07"]),
     ("T13", "warrant/claims.py", "for i, _, b in rows if not held(b, ran, killed)]", "for i, _, b in rows if False]", TOOLS, ["C14"]),
