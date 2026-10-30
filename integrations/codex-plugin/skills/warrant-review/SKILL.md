@@ -15,7 +15,7 @@ run as `python3 -m warrant.gate`). The review loop's commands are the installed 
 of the repository: `python3 -m warrant.review`, `warrant.claims`, `warrant.roadmap` (in s0fractal/warrant
 also `python3 tools/<name>.py`, shims of them). The waker names the repository and its base branch.
 So your acceptance is what lets the pull request merge without a human; review accordingly. The record
-kinds, schemas and rules are `docs/V3.md`; the operator's guide to the interface is `AGENT.md`.
+kinds, schemas and rules are `docs/V3.md`; the operator's guide to the interface is `docs/AGENT.md`.
 
 ## Rules
 
