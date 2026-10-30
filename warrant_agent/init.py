@@ -24,7 +24,6 @@ from pathlib import Path
 from warrant import home as H
 from warrant import shapes as S
 from warrant.keys import Key
-from warrant.store import Refused as StoreRefused
 
 from . import AGENT_API
 from .config import HANDLE, OPERATIONS, STORE_DIR, V2_API, Config, repository_config
@@ -132,7 +131,7 @@ def checked(repo, actor, seed, workspace=None, operations=DEFAULT_OPERATIONS):
     _refuse(HANDLE.match(workspace) is not None, "INIT_WORKSPACE_NAME", f"{workspace!r} is not a workspace handle; give --workspace")
     _refuse(seed.is_file(), "INIT_NO_SEED", f"no seed at {seed}: init creates no key")
     try:
-        key = Key.from_seed_hex(seed.read_text())
+        key = Key.from_seed_hex(seed.read_text())  # NOSONAR S8707: the operator's --seed, confined to their home directory
     except (OSError, ValueError, TypeError) as e:
         raise Refused("INIT_SEED_SHAPE", f"{seed.name} is not a hex Ed25519 seed: {type(e).__name__}") from None
     try:
@@ -172,7 +171,7 @@ def configuration(repo, actor, seed=None, workspace=None, operations=DEFAULT_OPE
     if seed is None:
         try:
             seed = H.load()["identities"].get(actor, {}).get("seed") if S.is_actor(actor) else None
-        except (OSError, ValueError, StoreRefused) as e:
+        except (OSError, ValueError) as e:            # a refused Home (warrant.store.Refused) is a ValueError
             raise Refused("INIT_NO_SEED", f"the operator's Home: {e}") from None
         _refuse(seed is not None, "INIT_NO_SEED", f"give --seed: the operator's Home has no identity {str(actor)[:60]!r}")
         seed = os.path.expanduser(seed)
