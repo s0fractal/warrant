@@ -3,3 +3,8 @@
 # signed: never converted (-text).
 .warrant/records.jsonl merge=union -text
 .warrant/blobs/** -text
+# Entries and mutant rows that two pull requests add at the same place keep both: a local merge of the base
+# then needs no resolution, and the merge gate holds such a head to the reviewed commit's clean merge with the
+# base (docs/V3.md section 14). tests/mutants.py refuses an id named twice.
+CHANGELOG.md merge=union
+tests/mutants.py merge=union
