@@ -8,6 +8,8 @@ tool shows them, lists what waits for an acceptor, and files obligations and the
     python3 -m warrant.roadmap oblige --goal G --statement S [--serves ID ...] --actor A --key SEED
     python3 -m warrant.roadmap close --obligation ID [--evidence ID ...] [--ref TEXT ...] [--established TEXT ...]
                                       [--residual TEXT ...] [--requires ID ...] --actor A --key SEED
+    python3 -m warrant.roadmap revise --obligation ID --statement S --actor A --key SEED   # the root's actor: open again
+    python3 -m warrant.roadmap release --obligation ID --reason TEXT --actor A --key SEED   # a roadmap/owner forgives it
 
 `due` is what the review waker reads at the base: a goal or obligation version whose guard waits only for
 attests by a role the actor holds (nothing it requires is open), not the actor's own, neither attested nor
@@ -103,7 +105,13 @@ def run(argv=None):
     c.add_argument("--obligation", required=True)
     for f in ("evidence", "ref", "established", "residual", "requires"):
         c.add_argument(f"--{f}", action="append", default=[])
-    for p in (o, c):
+    rv = sub.add_parser("revise")
+    rv.add_argument("--obligation", required=True)
+    rv.add_argument("--statement", required=True)
+    rl = sub.add_parser("release")
+    rl.add_argument("--obligation", required=True)
+    rl.add_argument("--reason", required=True)
+    for p in (o, c, rv, rl):
         p.add_argument("--actor", required=True)
         p.add_argument("--key", required=True)
     a = ap.parse_args(argv)
@@ -123,7 +131,7 @@ def run(argv=None):
         emit(view(rep), a.out, root)
         return 0
     key = load_key(a.key, root)
-    rec = _obligation(rep, a) if a.cmd == "oblige" else _closure(rep, a)
+    rec = _release(rep, a, profile) if a.cmd == "release" else {"oblige": _obligation, "close": _closure, "revise": _revision}[a.cmd](rep, a)
     dump({"filed": repo.file(a.actor, key, [rec])})
     return 0
 
@@ -145,12 +153,43 @@ def _obligation(rep, a):
                     OBLIGATION, refs=[g, *a.serves])
 
 
-def _closure(rep, a):
-    """The `done` version `close` files on an obligation's leaf, with the schema's guard and what it requires."""
+def _lineage(rep, a):
+    """(lineage id, its leaf's body) of the obligation --obligation names; refused unless it is one without a fork."""
     L = a.obligation if a.obligation in rep["lineages"] else None
     if L is None or rep["lineages"][L]["schema"] != OBLIGATION or not rep["lineages"][L]["leaf"]:
         raise Failed("OBLIGATION", f"{a.obligation[:12]} is not an obligation lineage without a fork")
-    prev = rep["_recs"][rep["lineages"][L]["leaf"]]["body"]
+    return L, rep["_recs"][rep["lineages"][L]["leaf"]]["body"]
+
+
+def _successor(rep, a, L, prev, state, **notes):
+    """A successor of L's leaf in `state`, carrying the leaf's statement, answers and serves (docs/V3.md §3)."""
+    body = {"state": state, "statement": prev["statement"], "answers": prev.get("answers"), "serves": prev.get("serves", []),
+            **notes}
+    return R.record("entity", a.actor, 0, {k: v for k, v in body.items() if v is not None}, OBLIGATION, lineage=rep["lineages"][L]["leaf"],
+                    refs=([body["answers"]] if body["answers"] else []) + body["serves"])
+
+
+def _revision(rep, a):
+    """The `open` version `revise` files: a new statement, by the lineage's root actor (the only one who may file a
+    successor in a state no role is named for, docs/V3.md §3); refused for anyone else before it is signed."""
+    L, prev = _lineage(rep, a)
+    if rep["_recs"][L]["actor"] != a.actor:
+        raise Failed("AUTHOR", f"{L[:12]} was opened by {rep['_recs'][L]['actor']}: only that actor revises it")
+    return _successor(rep, a, L, dict(prev, statement=a.statement), "open")
+
+
+def _release(rep, a, profile):
+    """The `released` version `release` files: the obligation forgiven, its reason as the residual, by a roadmap/owner
+    (obligation@1's successors); refused for an actor without that role before it is signed."""
+    L, prev = _lineage(rep, a)
+    if a.actor not in profile["roles"].get("roadmap/owner", []):
+        raise Failed("ROLE", f"{a.actor} is no roadmap/owner: only the owner releases an obligation")
+    return _successor(rep, a, L, prev, "released", residual=[a.reason])
+
+
+def _closure(rep, a):
+    """The `done` version `close` files on an obligation's leaf, with the schema's guard and what it requires."""
+    L, prev = _lineage(rep, a)
     body = {"state": "done", "statement": prev["statement"], "answers": prev.get("answers"), "serves": prev.get("serves", []),
             "evidence": sorted(a.evidence), "refs": a.ref, "established": a.established, "residual": a.residual}
     g = dict(rep["_recs"][rep["schemas"][OBLIGATION]]["body"]["states"]["done"], requires=sorted(a.requires))
