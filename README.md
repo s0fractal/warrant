@@ -43,6 +43,12 @@ finds the nearest `.warrant/` upward from the current directory and reads that
 store's own trust and profile (`.warrant/v3.json`); `--store`, `--trust` and
 `--profile` name others.
 
+[Warrant Home](https://github.com/s0fractal/warrant/blob/master/docs/HOME.md)
+registers the repositories of this machine once (`warrant home add DIR
+--signer A`): `warrant status --repo NAME` works from anywhere, and
+`warrant-agent-mcp` with no `--config` serves every registered repository. Each
+repository keeps its own `.warrant/`; Home writes nothing into it.
+
 ## The model in one table
 
 | Kind | Says |

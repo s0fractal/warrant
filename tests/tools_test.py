@@ -11,6 +11,8 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from world import KEYS, ROOT, Repo, check, finish, git
@@ -18,6 +20,8 @@ from world import KEYS, ROOT, Repo, check, finish, git
 from warrant import claims as CL
 from warrant import cli as CLI
 from warrant import engine as E
+from warrant import home as H
+from warrant import keys as K
 from warrant import records as R
 from warrant import repo as RP
 from warrant import review as RV
@@ -524,10 +528,122 @@ def cli_cases():
           "commands and by the review loop's", code_a == 2 and code_r == 2, (code_a, code_r))
 
 
+def home_cases():
+    r, other = Repo(), Repo(name="s0fractal/other")
+    env = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(r.home / "config" / "home.json")
+    try:
+        seed = r.seed("alice")
+        os.chmod(seed, 0o600)
+        stray = r.home / "keys" / "stray.seed"                # a key no repository's trust binds
+        stray.write_text(K.Key.generate().seed_hex())
+        os.chmod(stray, 0o600)
+        tree = sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
+        doc = H.add_identity(H.add_identity(H.empty(), "alice", str(seed)), "zed", str(stray))
+        doc = H.add_repository(H.add_repository(doc, str(r.root), "one", "alice"), str(other.root), "two", "zed")
+        H.save(doc)
+        rows = {x["name"]: x for x in H.listing(H.load())}
+        check("H01 Home lists each repository with the repository its v3.json names, its record lines, and whether its "
+              "trust binds the signer's key", rows["one"].get("repository") == "s0fractal/warrant" and rows["one"].get("bound") is True
+              and rows["one"].get("records") == len(r.store.lines()) and rows["two"].get("bound") is False, rows)
+        inside = r.root / "in.seed"
+        inside.write_text(K.Key.generate().seed_hex())
+        os.chmod(inside, 0o600)
+        why_seed = refused_home(H.add_identity, doc, "carol", str(inside))
+        loose = other.root / "x.seed"                       # registered first, then its repository
+        loose.write_text(K.Key.generate().seed_hex())
+        os.chmod(loose, 0o600)
+        why_repo = refused_home(H.add_repository, H.add_identity(H.empty(), "carol", str(loose)), str(other.root), "two")
+        inside.unlink()
+        loose.unlink()
+        check("H02 a seed never lies inside a registered repository, whichever is registered first",
+              "inside the registered repository" in why_seed and "inside the registered repository" in why_repo, (why_seed, why_repo))
+        hp = H.path()
+        os.chmod(hp, 0o620)
+        writable = refused_home(H.load)
+        os.chmod(hp, 0o600)
+        link = r.home / "config" / "link.json"
+        link.symlink_to(hp)
+        linked = refused_home(H.load, link)
+        check("H03 a Home other users may write, or a link to one, is refused", "other users may write" in writable
+              and "not a link" in linked, (writable, linked))
+        os.chmod(stray, 0o644)
+        readable = refused_home(H.add_identity, H.empty(), "zed", str(stray))
+        os.chmod(stray, 0o600)
+        check("H04 a seed others may read is refused at registration", "others may read" in readable, readable)
+        code, out = cli(r.home, "status", "--repo", "two", "--json")
+        check("H05 `warrant status --repo NAME` reads that registered repository's store, from any directory",
+              code == 0 and json.loads(out or "{}").get("repository") == "s0fractal/other", (code, out[-200:]))
+        third = r.home / "third"                             # a registered repository whose .warrant leads out of it
+        third.mkdir()
+        (third / ".warrant").symlink_to(other.dot, target_is_directory=True)
+        H.save(dict(doc, repositories=dict(doc["repositories"], three={"path": str(third)})))
+        code3, _ = cli(r.home, "status", "--repo", "three")
+        check("H07 a registered repository's store is confined to it: a `.warrant` link out of it is refused", code3 == 2, code3)
+        H.save(doc)
+        (other.dot / "v3.json").rename(other.home / "foreign-receiver.json")
+        (other.dot / "v3.json").symlink_to(other.home / "foreign-receiver.json")
+        rows = {x["name"]: x for x in H.listing(doc)}
+        added = refused_home(H.add_repository, H.empty(), str(other.root), "again")
+        check("H08 Home reads a repository's v3.json from its store only: a link out of it is refused, when it is listed "
+              "and when it is registered", "outside" in rows["two"].get("problem", "") and "outside" in added, (rows["two"], added))
+        (other.dot / "v3.json").unlink()
+        (other.home / "foreign-receiver.json").rename(other.dot / "v3.json")
+        escaping = r.home / "escaping"
+        escaping.mkdir()
+        (escaping / ".warrant").symlink_to(other.dot, target_is_directory=True)
+        why_link = refused_home(H.add_repository, H.empty(), str(escaping), "escaping")      # other's v3.json is its own again
+        code_loop, _ = cli(escaping, "roadmap", "--root", str(escaping), "check")
+        check("H09 a repository whose `.warrant` links out of it is refused at registration and by the review loop's "
+              "commands", "outside" in why_link and code_loop == 2, (why_link, code_loop))
+        race = r.home / "config" / "race.json"          # Codex finding 773e7e02f857 on #238: two changes at once
+        H.save(H.empty(), race)
+
+        def slow(d):
+            time.sleep(0.4)                              # inside the first change, after its read
+            return H.add_repository(d, str(r.root), "first")
+        first = threading.Thread(target=H.update, args=(slow, race))
+        first.start()
+        time.sleep(0.1)
+        os.environ["WARRANT_HOME"] = str(race)
+        code_second, _ = cli(r.home, "home", "add", str(other.root), "--name", "second")
+        os.environ["WARRANT_HOME"] = str(r.home / "config" / "home.json")
+        first.join()
+        names = sorted(H.load(race)["repositories"])
+        check("H10 two changes of Home made at once both take effect: the second waits for the first's write",
+              code_second == 0 and names == ["first", "second"], (code_second, names))
+        shared = r.home / "shared"                      # Codex finding 3f75f9921074 on #238: a Home in a directory others may write
+        shared.mkdir()
+        H.save(doc, shared / "home.json")
+        os.chmod(shared, 0o777)
+        refusals = [refused_home(H.load, shared / "home.json"), refused_home(H.save, doc, shared / "home.json"),
+                    refused_home(H.update, lambda d: d, shared / "home.json")]
+        os.chmod(shared, 0o700)
+        check("H11 a Home whose directory other users may write is refused when it is read, saved or changed",
+              all("other users may write the Home's directory" in w for w in refusals), refusals)
+        cli(r.home, "home")
+        check("H06 Home writes nothing into a repository", sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
+              == tree)
+    finally:
+        if env is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = env
+
+
+def refused_home(fn, *a):
+    try:
+        fn(*a)
+        return ""
+    except (OSError, ValueError) as e:
+        return str(e)
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     review_cases()
     roadmap_cases()
     cli_cases()
+    home_cases()
     sys.exit(finish())

@@ -1,8 +1,9 @@
 """warrant: one command. The core's verbs init, key, trust, bootstrap, put, attest, blob, assess and fmt
-(docs/V3.md; output is JSON); status, a reader's summary of a store; and the review loop's commands review,
-gate, claims and roadmap (`warrant review ...` is `python -m warrant.review ...`; docs/REPOSITORY.md).
+(docs/V3.md; output is JSON); status, a reader's summary of a store; home, the operator's registry of
+repositories (docs/HOME.md); and the review loop's commands review, gate, claims and roadmap (`warrant review ...`
+is `python -m warrant.review ...`; docs/REPOSITORY.md).
 
-The store is --store, else the nearest `.warrant/` from the current directory upward (WARRANT_REPO_ROOT's when
+The store is --store, else --repo NAME's (a repository registered in Home), else the nearest `.warrant/` from the current directory upward (WARRANT_REPO_ROOT's when
 it is set; `init` creates it in the current directory). The trust and the profile are --trust and --profile,
 else that store's `v3.json` (docs/REPOSITORY.md): a repository is assessed under its own receiver configuration
 with no flag. A seed is read from --key FILE (in the current directory or the operator's home, never through a
@@ -19,6 +20,7 @@ from warrant import keys as K
 from . import bootstrap as B
 from . import engine as E
 from . import graph as G
+from . import home as H
 from . import records as R
 from .store import Refused, Store, confined, read_inside
 
@@ -47,6 +49,8 @@ def store_dir(a):
     leading out of its repository is refused, never followed into another store (Codex finding 24b91d75f065)."""
     if a.store is not None:
         return here(a.store)
+    if getattr(a, "repo", None):
+        return H.store_of(H.load(), a.repo)
     if os.environ.get("WARRANT_REPO_ROOT"):
         root = Path(os.environ["WARRANT_REPO_ROOT"])
         return confined(root / ".warrant", root)
@@ -103,8 +107,19 @@ def _parser():
     for n in LOOP:
         sub.add_parser(n, help=f"python -m warrant.{n} (its own arguments)", add_help=False)
     for n, c in cmds.items():
-        if n not in ("key", "trust"):
-            c.add_argument("--store")
+        if n not in ("key", "trust", "init"):
+            g = c.add_mutually_exclusive_group()
+            g.add_argument("--store")
+            g.add_argument("--repo", help="a repository registered in Home (warrant home)")
+    cmds["init"].add_argument("--store")
+    h = sub.add_parser("home", help="the operator's registry of repositories and identities (docs/HOME.md)")
+    h.add_argument("action", nargs="?", default="list", choices=("list", "add", "identity", "remove"))
+    h.add_argument("target", nargs="?", help="add: a repository directory; identity: an actor; remove: a name")
+    h.add_argument("--name")
+    h.add_argument("--signer")
+    h.add_argument("--seed")
+    h.add_argument("--operation", action="append", dest="operations")
+    h.add_argument("--json", action="store_true")
     for n in ("bootstrap", "put", "attest"):
         c = cmds[n]
         c.add_argument("--key")
@@ -210,6 +225,34 @@ def render(st):
     return "".join(f"{k.ljust(12)}{v}\n" for k, v in rows)
 
 
+def home_cmd(a):
+    """`warrant home [list|add DIR|identity ACTOR --seed FILE|remove NAME]`: the operator's registry (warrant.home)."""
+    if a.action == "list":
+        doc = H.load()
+        return {"home": str(H.path()), "identities": sorted(doc["identities"]), "repositories": H.listing(doc)}
+    if not a.target:
+        raise Refused(f"warrant home {a.action} needs its target")
+    if a.action == "identity" and not a.seed:
+        raise Refused("warrant home identity ACTOR --seed FILE")
+    change = {"add": lambda d: H.add_repository(d, a.target, a.name, a.signer, a.operations),
+              "identity": lambda d: H.add_identity(d, a.target, a.seed),
+              "remove": lambda d: H.remove(d, a.target)}[a.action]
+    doc = H.update(change)                              # read, change and write under Home's lock
+    return {"home": str(H.path()), "identities": sorted(doc["identities"]), "repositories": sorted(doc["repositories"])}
+
+
+def render_home(out):
+    rows = [f"home        {out['home']}", f"identities  {', '.join(out['identities']) or 'none'}"]
+    for r in out["repositories"]:
+        if not isinstance(r, dict):
+            rows.append(f"            {r}")
+            continue
+        signer = "read only" if not r["signer"] else f"signs as {r['signer']}" + ("" if r.get("bound") else " (key NOT bound there)")
+        rows.append(f"{r['name']:<12}{r.get('repository') or r.get('problem')} · {r.get('records', '?')} records · {signer}"
+                    f" · {r['path']}")
+    return "\n".join(rows) + "\n"
+
+
 def loop(argv):
     """`warrant review|gate|claims|roadmap ARGS`: that module's own command, unchanged."""
     from . import claims, gate, review, roadmap
@@ -223,13 +266,14 @@ def main(argv=None):
     if argv[:1] and argv[0] in LOOP:
         return loop(argv)
     a = _parser().parse_args(argv)
-    if a.cmd == "status":
+    if a.cmd in ("status", "home"):
         try:
-            st = status(a)
+            st = status(a) if a.cmd == "status" else home_cmd(a)
         except (OSError, ValueError) as e:
             print(f"REFUSED {e}", file=sys.stderr)
             return 2
-        sys.stdout.write(json.dumps(st, indent=1, sort_keys=True) + "\n" if a.json else render(st))
+        human = render(st) if a.cmd == "status" else render_home(st)
+        sys.stdout.write(json.dumps(st, indent=1, sort_keys=True) + "\n" if a.json else human)
         return 0
     try:
         if a.cmd == "init":

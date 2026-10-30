@@ -1,6 +1,6 @@
 """`warrant-agent` — the command-line front end of warrant-agent/3.
 
-    warrant-agent --config CONFIG.json <operation> [REQUEST.json | - | '{...}']
+    warrant-agent [--config CONFIG.json] <operation> [REQUEST.json | - | '{...}']
 
 Operations: workspace, context, read, graph, handoff, prepare, commit, explain. The request is the same
 JSON object the Python API and the MCP tools take; the output is the same result object. Exit status 0
@@ -26,7 +26,7 @@ def _request(arg):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="warrant-agent", description=__doc__, allow_abbrev=False,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--config", required=True, help="the operator's configuration (never chosen by a request)")
+    ap.add_argument("--config", help="the operator's configuration (never chosen by a request); default: the operator's Home")
     ap.add_argument("operation", choices=sorted(api.OPERATIONS_))
     ap.add_argument("request", nargs="?")
     a = ap.parse_args(argv)

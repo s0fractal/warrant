@@ -15,13 +15,14 @@ from world import KEYS, ROLES, Repo, check, finish
 
 from warrant import bootstrap as B
 from warrant import engine as E
+from warrant import home as H
 from warrant import records as R
 from warrant.store import LIMITS
 from warrant_agent import api
 from warrant_agent import errors as ER
 from warrant_agent import glossary as GL
 from warrant_agent import init as I
-from warrant_agent.config import Config
+from warrant_agent.config import Config, repository_config
 
 
 def cfg_of(repo, actor="bob", seed=None, **ws):
@@ -369,6 +370,51 @@ def mcp_cases():
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 
 
+def home_cases():
+    r, other = Repo(), Repo(name="s0fractal/other")
+    seed = r.seed("bob")
+    os.chmod(seed, 0o600)
+    home = H.add_repository(H.add_repository(H.add_identity(H.empty(), "bob", str(seed)), str(r.root), "one", "bob"),
+                            str(other.root), "two", operations=["context", "graph"])
+    cfg = Config.from_home(home)
+    one, two = cfg.workspace("one"), cfg.workspace("two")
+    rows = {w["workspace"]: w for w in ok(api.call(cfg, "workspace", {}))["workspaces"]}
+    check("A26 the operator's Home is a configuration: one workspace per registered repository, signing as its signer "
+          "with that identity's seed, with its operations", sorted(cfg.workspaces) == ["one", "two"]
+          and one.signer == ("bob", seed) and two.signer is None and two.operations == ("context", "graph")
+          and rows["one"]["roles"] == ["pr/acceptor", "roadmap/acceptor"], rows)
+    env = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(r.home / "home.json")
+    try:
+        H.save(home)
+        try:
+            loaded = sorted(Config.load(None).workspaces)
+        except ER.AgentError as e:
+            loaded = f"refused: {e}"
+    finally:
+        if env is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = env
+    check("A27 with no configuration named, the agent reads the operator's Home", loaded == ["one", "two"], loaded)
+    cfg = Config.from_home(home)                       # Codex finding 1c3f12bcf1a9 on #238: `.warrant` swapped for a link out
+    target = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    before = other.store.lines()
+    shutil.rmtree(r.dot)
+    r.dot.symlink_to(other.dot, target_is_directory=True)
+    p = api.call(cfg, "prepare", {"workspace": "one", "kind": "attest", "target": target, "body": {"verdict": "accept"}})
+    c = api.call(cfg, "commit", {"workspace": "one", "record": (p.get("ok") or {}).get("record")})
+    sites = []                                          # each site on its own: the store a call opens, the receiver it reads
+    for site in (cfg.workspace("one").open, lambda: repository_config(r.root)):
+        try:
+            site()
+            sites.append(None)
+        except ER.AgentError as e:
+            sites.append(e.code)
+    check("A29 a workspace's store is its repository's own: a `.warrant` link out of the repository is refused at prepare "
+          "and at commit, by the store it opens and by the receiver it reads, and nothing reaches the other store",
+          err(p) == "BAD_REQUEST" and err(c) is not None and sites == ["BAD_REQUEST", "BAD_REQUEST"]
+          and other.store.lines() == before, (p, c, sites))
 def receiver_cases():
     r = Repo()
     (r.dot / "v3.json").rename(r.home / "foreign-receiver.json")     # Codex finding d6127c0fd71d on #236
@@ -384,5 +430,6 @@ if __name__ == "__main__":
     admission_cases()
     init_cases()
     mcp_cases()
+    home_cases()
     receiver_cases()
     sys.exit(finish())

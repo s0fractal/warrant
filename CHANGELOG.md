@@ -6,6 +6,17 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Warrant Home (docs/HOME.md): the operator's one configuration, `~/.config/warrant/home.json` (`$WARRANT_HOME`,
+  `$XDG_CONFIG_HOME`), listing the repositories of this machine and the identities that sign in them.
+  `warrant home [list|add DIR|identity ACTOR --seed FILE|remove NAME]` keeps it; `--repo NAME` names a registered
+  repository's store to every command; `warrant-agent` and `warrant-agent-mcp` with no `--config` serve one
+  workspace per registered repository. Each repository keeps its own `.warrant/`: Home writes nothing into one.
+  A Home that is a link or that others may write is refused; a seed is never inside a registered repository and
+  is refused when others may read it.
+  Every change of Home (`warrant.home.update`) reads, changes and writes it under an exclusive lock: two changes
+  made at once both take effect (Codex finding 773e7e02f857).
+  A Home, and its directory, must belong to the user and be writable by no one else (as OpenSSH's StrictModes):
+  whoever may write the directory may replace the Home (Codex finding 3f75f9921074).
 - The merge gate holds a head that merged base commits after its reviewed commit X to X's clean merge with the
   newest base commit it holds (`git merge-tree`, the repository's merge attributes applied), and to X itself
   when that merge conflicts: catching up with the base after an acceptance no longer needs a new review.
@@ -21,6 +32,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 - A repository's `.warrant/v3.json` is read from its store only, by every reader (the `warrant` command, the
   review loop's commands through `warrant.repo`, the agent interface): a link to a file outside the store is
   refused (Codex finding d6127c0fd71d).
+- A repository's store directory is its own: `warrant.store.dot_of` confines `<repo>/.warrant` by real path to the
+  repository for the review loop's commands (`warrant.repo`), Home's registration and listing, and the agent's
+  workspaces (the store a call opens and the receiver it reads, also after the workspace was created): a
+  `.warrant` link out of the repository is refused (Codex finding 1c3f12bcf1a9).
 - The record graph's queries (`around`, `path`, `why`, `frontier`, `delta`, `impact`, `answer`) move from
   `warrant_agent.graph` to the core as `warrant.graph`; the agent interface and `tools/graph.py` import them there.
 - `warrant.roadmap revise --obligation ID --statement S` files a new `open` version of an obligation with a new
