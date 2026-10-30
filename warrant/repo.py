@@ -146,7 +146,7 @@ def code_at(commit, root):
     """The code digest of the package's modules in the tree of `commit` (`warrant/*.py`), read from Git objects: what
     `identity` gives a checkout of that commit."""
     contents = {}
-    for row in git(root, "ls-tree", commit, "--", f"{NAME}/").splitlines():
+    for row in git(root, "ls-tree", "--full-tree", commit, "--", f"{NAME}/").splitlines():
         meta, path = row.split("\t", 1)
         if meta.split()[1] == "blob" and path.endswith(".py"):
             contents[path] = git(root, "cat-file", "blob", meta.split()[2], raw=True)
@@ -157,14 +157,15 @@ def checker_code(commit, root):
     """The code a checker's attest at `commit` must name: the package's modules at that commit when its tree carries
     the package's source (`warrant/__init__.py`: this package's own repository), else this package as installed (a
     repository that runs a released checker: re-executing its result needs the same code)."""
-    carried = git(root, "ls-tree", commit, "--", f"{NAME}/__init__.py")
+    carried = git(root, "ls-tree", "--full-tree", commit, "--", f"{NAME}/__init__.py")
     return code_at(commit, root) if carried else package_code()
 
 
 def code_tree(root, commit):
     """`commit`'s tree outside .warrant/ (as `git ls-tree -r` rows): the code a test runs against. Records added
-    after a result do not change it."""
-    rows = git(root, "ls-tree", "-r", commit).splitlines()
+    after a result do not change it. The whole tree, also from a directory inside the checkout (the mutant
+    harness's copy under build/): without --full-tree Git lists paths below that directory only."""
+    rows = git(root, "ls-tree", "-r", "--full-tree", commit).splitlines()
     return "\n".join(r for r in rows if not r.split("\t", 1)[1].startswith(".warrant/"))
 
 

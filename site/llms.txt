@@ -17,6 +17,6 @@ Not the 0.x format: Warrant 0.x (decision records with subject/under/because, `w
 ## Docs
 - [Specification (docs/V3.md)](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
 - [Quickstart](https://github.com/s0fractal/warrant/blob/master/QUICKSTART.md)
-- [For agents: Python API, CLI, stdio MCP](https://github.com/s0fractal/warrant/blob/master/AGENT.md)
+- [For agents: Python API, CLI, stdio MCP](https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md)
 - [This repository's loops: claims, reviews, merge gate](https://github.com/s0fractal/warrant/blob/master/docs/REPOSITORY.md)
-- [History of earlier generations](https://github.com/s0fractal/warrant/blob/master/HISTORY.md)
+- [History of earlier generations](https://github.com/s0fractal/warrant/blob/master/docs/HISTORY.md)
