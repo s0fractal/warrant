@@ -72,6 +72,17 @@ def _inside_any(seed, repo_paths):
     return next((p for p in repo_paths if s == p or s.startswith(p + os.sep)), None)
 
 
+def _private(path, what):
+    """Refuse `path` unless this user owns it and no other user may write it: whoever may write a Home's directory
+    may replace the Home itself, whatever the file's own mode (Codex finding 3f75f9921074; as OpenSSH's StrictModes
+    holds a key file and its directory)."""
+    st = os.stat(path)
+    if st.st_uid != os.getuid():
+        raise Refused(f"{path}: {what} belongs to another user")
+    if st.st_mode & 0o022:
+        raise Refused(f"{path}: other users may write {what} (chmod go-w)")
+
+
 def load(p=None):
     """The Home at `p` (path()), checked; an empty Home when there is no file. A link, or a file other users may
     write, is refused: the configuration that says who signs where is the operator's alone."""
@@ -80,8 +91,8 @@ def load(p=None):
         return empty()
     if p.is_symlink() or not p.is_file():
         raise Refused(f"{p}: a Home is a regular file, not a link")
-    if p.stat().st_mode & 0o022:
-        raise Refused(f"{p}: other users may write it (chmod 600)")
+    _private(p.parent, "the Home's directory")
+    _private(p, "the Home")
     doc = json.loads(p.read_text())
     why = problem(doc)
     if why:
@@ -96,6 +107,7 @@ def save(doc, p=None):
         raise Refused(why)
     p = Path(p) if p is not None else path()
     p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _private(p.parent, "the Home's directory")         # an existing directory keeps its mode: it is checked, not set
     if p.is_symlink():
         raise Refused(f"{p}: a Home is a regular file, not a link")
     tmp = p.with_name(p.name + ".tmp")

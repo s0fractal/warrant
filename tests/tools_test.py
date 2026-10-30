@@ -612,6 +612,15 @@ def home_cases():
         names = sorted(H.load(race)["repositories"])
         check("H10 two changes of Home made at once both take effect: the second waits for the first's write",
               code_second == 0 and names == ["first", "second"], (code_second, names))
+        shared = r.home / "shared"                      # Codex finding 3f75f9921074 on #238: a Home in a directory others may write
+        shared.mkdir()
+        H.save(doc, shared / "home.json")
+        os.chmod(shared, 0o777)
+        refusals = [refused_home(H.load, shared / "home.json"), refused_home(H.save, doc, shared / "home.json"),
+                    refused_home(H.update, lambda d: d, shared / "home.json")]
+        os.chmod(shared, 0o700)
+        check("H11 a Home whose directory other users may write is refused when it is read, saved or changed",
+              all("other users may write the Home's directory" in w for w in refusals), refusals)
         cli(r.home, "home")
         check("H06 Home writes nothing into a repository", sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
               == tree)

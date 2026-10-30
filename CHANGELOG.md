@@ -15,6 +15,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   is refused when others may read it.
   Every change of Home (`warrant.home.update`) reads, changes and writes it under an exclusive lock: two changes
   made at once both take effect (Codex finding 773e7e02f857).
+  A Home, and its directory, must belong to the user and be writable by no one else (as OpenSSH's StrictModes):
+  whoever may write the directory may replace the Home (Codex finding 3f75f9921074).
 - One command. `warrant review|gate|claims|roadmap ARGS` run those modules' commands (`warrant-review` and the
   others stay). `warrant status [--actor A] [--json]` is a reader's summary of a store: the snapshot, the schemas,
   lineages by schema and state, reliance, chain forks, problems and, with `--actor`, what waits for A.
