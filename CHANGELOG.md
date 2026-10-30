@@ -24,6 +24,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 - A repository's `.warrant/v3.json` is read from its store only, by every reader (the `warrant` command, the
   review loop's commands through `warrant.repo`, the agent interface): a link to a file outside the store is
   refused (Codex finding d6127c0fd71d).
+- A repository's store directory is its own: `warrant.store.dot_of` confines `<repo>/.warrant` by real path to the
+  repository for the review loop's commands (`warrant.repo`), Home's registration and listing, and the agent's
+  workspaces (the store a call opens and the receiver it reads, also after the workspace was created): a
+  `.warrant` link out of the repository is refused (Codex finding 1c3f12bcf1a9).
 - The record graph's queries (`around`, `path`, `why`, `frontier`, `delta`, `impact`, `answer`) move from
   `warrant_agent.graph` to the core as `warrant.graph`; the agent interface and `tools/graph.py` import them there.
 - The repository's root holds what a reader starts from: the agent interface's guide, the proof-space

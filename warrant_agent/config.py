@@ -21,7 +21,7 @@ from pathlib import Path
 from warrant import engine as E
 from warrant import home as H
 from warrant import shapes as S
-from warrant.store import Store, read_inside
+from warrant.store import Refused, Store, dot_of, read_inside
 
 from . import AGENT_API
 from .errors import AgentError, need
@@ -38,7 +38,8 @@ DEFAULT_LIMITS = {"store_bytes": 64 << 20, "context_bytes": 64 << 10, "read_byte
 def repository_config(repo):
     """(trust, profile, name) of a repository: its `.warrant/v3.json`, checked."""
     try:
-        doc = json.loads(read_inside(Path(repo) / STORE_DIR / "v3.json", Path(repo) / STORE_DIR))
+        dot = dot_of(repo)
+        doc = json.loads(read_inside(dot / "v3.json", dot))
     except (OSError, ValueError) as e:
         raise AgentError("BAD_REQUEST", f"repository configuration: {type(e).__name__}: {e}") from None
     need(isinstance(doc, dict) and doc.get("warrant") == REPOSITORY and set(doc) == {"warrant", "repository", "trust", "profile"},
@@ -96,7 +97,10 @@ class Workspace:
     def open(self):
         """The store, admitted by size before a byte is parsed (the workspace's bound; the engine's LIMITS
         bound the rest of the assessment)."""
-        st = Store(self.store)
+        try:
+            st = Store(dot_of(self.repo) if self.repo is not None else self.store)
+        except Refused as e:
+            raise AgentError("BAD_REQUEST", f"workspace {self.name!r}: {e}") from None
         size = (st.file.stat().st_size if st.file.is_file() else 0) + \
             (sum(p.stat().st_size for p in st.blobs.iterdir()) if st.blobs.is_dir() else 0)
         need(size <= self.limits["store_bytes"], "RESOURCE_LIMIT",

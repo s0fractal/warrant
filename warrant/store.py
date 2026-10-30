@@ -40,6 +40,13 @@ def confined(path, base):
     return p
 
 
+def dot_of(root):
+    """A repository's store directory, `<root>/.warrant`, refused unless its real path lies in `root`: a `.warrant`
+    link out of the repository never leads a reader or a writer into another store (Codex findings 24b91d75f065,
+    1c3f12bcf1a9)."""
+    return Path(confined(Path(root) / ".warrant", root))
+
+
 def read_inside(path, base):
     """The bytes of `path`, refused unless its real path lies in `base`: a configuration a repository holds (its
     `.warrant/v3.json`) is read from that repository only, never through a link to a file outside it (Codex finding

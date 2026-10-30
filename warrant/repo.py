@@ -20,7 +20,7 @@ from . import engine as E
 from . import jcs as C
 from . import keys as K
 from . import records as R
-from .store import Refused, Store, read_inside
+from .store import Refused, Store, dot_of, read_inside
 
 PACKAGE = Path(__file__).resolve().parent        # the checker's code: every module of this package
 NAME = PACKAGE.name                              # its path in a repository that carries its source
@@ -46,7 +46,7 @@ class Failed(Exception):
 class Repo:
     def __init__(self, root=None):
         self.root = (Path(root) if root is not None else default_root()).resolve()  # a relative --root, once (Codex 89aaf813e35e)
-        self.dot = self.root / ".warrant"
+        self.dot = dot_of(self.root)
         self.store = Store(self.dot)
 
     def config(self):

@@ -566,6 +566,13 @@ def home_cases():
               "and when it is registered", "outside" in rows["two"].get("problem", "") and "outside" in added, (rows["two"], added))
         (other.dot / "v3.json").unlink()
         (other.home / "foreign-receiver.json").rename(other.dot / "v3.json")
+        escaping = r.home / "escaping"
+        escaping.mkdir()
+        (escaping / ".warrant").symlink_to(other.dot, target_is_directory=True)
+        why_link = refused_home(H.add_repository, H.empty(), str(escaping), "escaping")      # other's v3.json is its own again
+        code_loop, _ = cli(escaping, "roadmap", "--root", str(escaping), "check")
+        check("H09 a repository whose `.warrant` links out of it is refused at registration and by the review loop's "
+              "commands", "outside" in why_link and code_loop == 2, (why_link, code_loop))
         cli(r.home, "home")
         check("H06 Home writes nothing into a repository", sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
               == tree)

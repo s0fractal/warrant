@@ -22,7 +22,7 @@ from warrant_agent import api
 from warrant_agent import errors as ER
 from warrant_agent import glossary as GL
 from warrant_agent import init as I
-from warrant_agent.config import Config
+from warrant_agent.config import Config, repository_config
 
 
 def cfg_of(repo, actor="bob", seed=None, **ws):
@@ -397,6 +397,24 @@ def home_cases():
         else:
             os.environ["WARRANT_HOME"] = env
     check("A27 with no configuration named, the agent reads the operator's Home", loaded == ["one", "two"], loaded)
+    cfg = Config.from_home(home)                       # Codex finding 1c3f12bcf1a9 on #238: `.warrant` swapped for a link out
+    target = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    before = other.store.lines()
+    shutil.rmtree(r.dot)
+    r.dot.symlink_to(other.dot, target_is_directory=True)
+    p = api.call(cfg, "prepare", {"workspace": "one", "kind": "attest", "target": target, "body": {"verdict": "accept"}})
+    c = api.call(cfg, "commit", {"workspace": "one", "record": (p.get("ok") or {}).get("record")})
+    sites = []                                          # each site on its own: the store a call opens, the receiver it reads
+    for site in (cfg.workspace("one").open, lambda: repository_config(r.root)):
+        try:
+            site()
+            sites.append(None)
+        except ER.AgentError as e:
+            sites.append(e.code)
+    check("A29 a workspace's store is its repository's own: a `.warrant` link out of the repository is refused at prepare "
+          "and at commit, by the store it opens and by the receiver it reads, and nothing reaches the other store",
+          err(p) == "BAD_REQUEST" and err(c) is not None and sites == ["BAD_REQUEST", "BAD_REQUEST"]
+          and other.store.lines() == before, (p, c, sites))
 def receiver_cases():
     r = Repo()
     (r.dot / "v3.json").rename(r.home / "foreign-receiver.json")     # Codex finding d6127c0fd71d on #236
