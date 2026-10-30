@@ -494,6 +494,13 @@ def cli_cases():
     check("K07 a store found by default is confined to the directory it is found in: a `.warrant` link out of it is refused, "
           "by discovery and by init", found == 2 and made == 2 and sorted(p.name for p in other.store.blobs.iterdir()) == before,
           (found, made))
+    outside = Repo(name="s0fractal/outside")         # Codex finding d6127c0fd71d on #236: v3.json a link out of its store
+    (outside.dot / "v3.json").rename(outside.home / "foreign-receiver.json")
+    (outside.dot / "v3.json").symlink_to(outside.home / "foreign-receiver.json")
+    code_a, _ = cli(outside.root, "assess")
+    code_r, _ = cli(outside.root, "roadmap", "--root", str(outside.root), "check")
+    check("K08 a repository's v3.json is read from its store only: a link to a file outside it is refused, by the core's "
+          "commands and by the review loop's", code_a == 2 and code_r == 2, (code_a, code_r))
 
 
 if __name__ == "__main__":

@@ -110,6 +110,8 @@ MUTANTS = [
      AGENT, ["A25"]),
     ("A23", E, "                    self.pending.append(i)          # waits",
      '                    self.problem("SCHEMA_NOT_COUNTED", i, "short of its quorum")\n                    self.pending.append(i)          # waits', AGENT, ["A22"]),
+    ("A42", "warrant_agent/config.py", '        doc = json.loads(read_inside(Path(repo) / STORE_DIR / "v3.json", Path(repo) / STORE_DIR))',
+     '        doc = json.loads((Path(repo) / STORE_DIR / "v3.json").read_bytes())', AGENT, ["A28"]),
     ("A12", "warrant_agent/config.py", '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"]}',
      '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"], "signer": None}', AGENT, ["A10"]),
     # the merge gate (warrant/gate.py)
@@ -167,6 +169,9 @@ MUTANTS = [
      '    carried = git(root, "ls-tree", commit, "--", f"{NAME}/__init__.py")', TOOLS, ["C20"]),
     ("T30", "warrant/repo.py", '    for row in git(root, "ls-tree", "--full-tree", commit, "--", f"{NAME}/").splitlines():',
      '    for row in git(root, "ls-tree", commit, "--", f"{NAME}/").splitlines():', TOOLS, ["C20"]),
+    ("T50", "warrant/cli.py", "        doc = json.loads(read_inside(f, store))", "        doc = json.loads(Path(f).read_bytes())", TOOLS, ["K08"]),
+    ("T51", "warrant/repo.py", '        doc = json.loads(read_inside(self.dot / "v3.json", self.dot))',
+     '        doc = json.loads((self.dot / "v3.json").read_bytes())', TOOLS, ["K08"]),
     ("T10", "warrant/claims.py", '    if key.public not in trust["keys"].get(CHECKER, []):', "    if False:", TOOLS, ["C08"]),
     ("T12", "warrant/repo.py", '    if body.get("code") != code:', "    if False:", TOOLS, ["C12", "R07"]),
     ("T13", "warrant/claims.py", "for i, _, b in rows if not held(b, ran, killed)]", "for i, _, b in rows if False]", TOOLS, ["C14"]),

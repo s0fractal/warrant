@@ -40,6 +40,13 @@ def confined(path, base):
     return p
 
 
+def read_inside(path, base):
+    """The bytes of `path`, refused unless its real path lies in `base`: a configuration a repository holds (its
+    `.warrant/v3.json`) is read from that repository only, never through a link to a file outside it (Codex finding
+    d6127c0fd71d)."""
+    return Path(confined(path, base)).read_bytes()
+
+
 class Snapshot:
     """The bytes of one read: {id: [distinct lines]}, {hash: bytes}, and what was wrong."""
 
