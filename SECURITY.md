@@ -53,7 +53,7 @@ The things Warrant 3 asks you to trust (docs/V3.md):
   assessment id then names different engine bytes.
 - A view cannot prove its own completeness; reports say `UNATTESTED`.
 - Competence of actors is not assessed: what an attestation is worth is the reader's profile.
-- The retired Warrant 2 and 0.x generations (`HISTORY.md`): report issues in the published
+- The retired Warrant 2 and 0.x generations (`docs/HISTORY.md`): report issues in the published
   `warrant-graph` 2.0.0a1 and
   published `warrant-verify` ≤ 0.12.0 here too, but fixes go to that line only if
   the owner decides to maintain it.

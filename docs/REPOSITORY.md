@@ -19,8 +19,8 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `warrant/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
 | `warrant/gate.py` | the merge predicate and the gate's GitHub side (owner path) |
 | `warrant/cli.py`, `warrant/graph.py` | the one command `warrant` (the core's verbs, `status`, and `review`, `gate`, `claims`, `roadmap`), and the queries over a report's graph that `status`, the agent's `graph` and `tools/graph.py` share |
-| `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (AGENT.md, docs/V3.md §13) |
-| `warrant_pilot/` | the proof-space pilot, G9 (PILOT.md); not in the wheel |
+| `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (docs/AGENT.md, docs/V3.md §13) |
+| `warrant_pilot/` | the proof-space pilot, G9 (docs/PILOT.md); not in the wheel |
 | `.warrant/records.jsonl`, `.warrant/blobs/` | the repository's records; `merge=union -text` (`.gitattributes`) |
 | `.warrant/v3.json` | trust and profile (owner path) |
 | `.warrant/merge.json` | the merge gate's configuration and the owner paths (owner path) |

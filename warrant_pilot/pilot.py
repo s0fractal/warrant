@@ -1,4 +1,4 @@
-"""The resolution layer of the proof-space pilot (goal G9; contract PILOT.md, warrant-pilot/contract@1).
+"""The resolution layer of the proof-space pilot (goal G9; contract docs/PILOT.md, warrant-pilot/contract@1).
 
 A receiver gathers the objects one Sigma receipt needs from the local object stores it configured,
 and nothing else: no network, no store an object names, no fallback past damage. An object is
