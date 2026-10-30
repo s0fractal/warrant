@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The merge gate holds a head that merged base commits after its reviewed commit X to X's clean merge with the
+  newest base commit it holds (`git merge-tree`, the repository's merge attributes applied), and to X itself
+  when that merge conflicts: catching up with the base after an acceptance no longer needs a new review.
+  `CHANGELOG.md` and `tests/mutants.py` merge as union, and `tests/mutants.py` refuses an id named twice.
 - `warrant.roadmap revise --obligation ID --statement S` files a new `open` version of an obligation with a new
   statement, and `release --obligation ID --reason TEXT` its `released` version with the reason as the residual.
   Each refuses before signing an actor the lineage rule would exclude: `revise` anyone but the actor who opened

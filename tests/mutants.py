@@ -115,6 +115,10 @@ MUTANTS = [
     # the merge gate (warrant/gate.py)
     ("G1", "warrant/gate.py", "    if b.gate[\"hold_label\"] in pr[\"labels\"]:", "    if False:", GATE, ["E02"]),
     ("G2", "warrant/gate.py", "        if before - after:\n", "        if False:\n", GATE, ["E06"]),
+    ("G23", "warrant/gate.py", "    extra, lines, blobs = tail(root, caught_up(root, x, head, b.commit), head)",
+     "    extra, lines, blobs = tail(root, x, head)", GATE, ["E29"]),
+    ("G24", "warrant/gate.py", "    except (subprocess.CalledProcessError, IndexError):\n        return x\n\n\ndef owner_paths",
+     "    except IndexError:\n        return x\n\n\ndef owner_paths", GATE, ["E31"]),
     ("G3", "warrant/gate.py", "        else:\n            extra.append((path, f\"{status} {old_mode}->{new_mode}\"))", "", GATE, ["E05"]),
     ("G4", "warrant/gate.py", "    if loose:\n        sh.append((\"TAIL_BLOB_UNCITED\"", "    if False:\n        sh.append((\"TAIL_BLOB_UNCITED\"", GATE, ["E07"]),
     ("G5", "warrant/gate.py", "    if stray:\n", "    if False:\n", GATE, ["E08"]),
@@ -340,7 +344,18 @@ def definition():
     return hashlib.sha256(json.dumps(MUTANTS, sort_keys=True).encode()).hexdigest()
 
 
+def duplicates():
+    """Ids that name more than one row: a merge that kept both sides of a row (tests/mutants.py merges as union,
+    .gitattributes) is refused here, never run twice under one id."""
+    ids = [m[0] for m in MUTANTS]
+    return sorted({i for i in ids if ids.count(i) > 1})
+
+
 def main(argv):
+    twice = duplicates()
+    if twice:
+        print(f"DUPLICATE mutant ids {twice}: one row each", file=sys.stderr)
+        return 2
     if argv[:1] == ["--list"]:
         print(json.dumps(table(), indent=1, sort_keys=True))
         return 0

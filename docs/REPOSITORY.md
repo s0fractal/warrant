@@ -129,6 +129,12 @@ merges a pull request whose head version a `pr/acceptor` accepted, whose tail af
 commit is record lines and blobs only, whose required checks are green, and which changes no owner
 path (docs/V3.md §14). Holds: the label `hold`, the repository variable `WARRANT_MERGE_GATE=hold`.
 
+When the base moves on after an acceptance (another pull request merged first) and GitHub reports a conflict,
+merge the base locally (`git merge origin/master`: the union drivers of `.gitattributes` keep both sides of
+`records.jsonl`, `CHANGELOG.md` and `tests/mutants.py`), run `python -m warrant fmt`, and push. File no new head
+version: the gate holds such a head to the reviewed commit's clean merge with the base, so the acceptance stands.
+A merge that needed a hand resolution is new content and needs a new head version and its review.
+
 The review waker (integrations/codex-plugin/waker/waker.py, launchd, every five minutes) serves the
 repositories `~/.warrant/codex-waker/repositories.json` lists, each on its own base branch with its own
 mirror, state and worktrees, and refuses a base whose `.warrant/v3.json` names another repository. For

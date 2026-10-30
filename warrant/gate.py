@@ -18,7 +18,9 @@ verdicts computed from the same facts:
       canonical, with the tree it names (HEAD_COMMIT), an ancestor of the pull request's head
       (HEAD_NOT_ANCESTOR);
     - the head's tree differs from X's only by lines added to .warrant/records.jsonl (none removed) and
-      blobs added under .warrant/blobs/ (TAIL_CHANGES); every blob added is cited by a record added
+      blobs added under .warrant/blobs/ (TAIL_CHANGES); when the head merged base commits after X, it is compared
+      with X's clean merge with the newest base commit it holds instead (caught_up: what the base brings is the
+      base's, merged already; a merge that conflicts is compared with X, so its resolution needs a review); every blob added is cited by a record added
       (TAIL_BLOB_UNCITED); every record added is a verdict (an attest or a challenge by a pr/acceptor of the
       base's profile), a version of this pull request's lineage or a record about one of its versions (a
       finding, a merge observation), or a replay result (an attest by a replayer of the base's profile on a
@@ -80,7 +82,7 @@ class Refused(Exception):
 # The only options any caller passes; every other argument is an operand and may not look like an option.
 GIT_OPTIONS = {"-r", "-z", "-l", "-q", "-C", "-n", "--quiet", "--verify", "--end-of-options", "--full-tree", "--no-renames",
                "--no-commit-id", "--name-only", "--is-ancestor", "--batch", "--no-tags", "--detach", "--force", "--check",
-               "--parents", "-", "--"}
+               "--parents", "--write-tree", "--no-messages", "-", "--"}
 
 
 def git(root, *args, stdin=None):
@@ -199,6 +201,18 @@ def tail(root, x, head):
             extra.append((RECORDS, f"{len(before - after)} line(s) removed"))
         added = sorted(after - before)
     return extra, added, sorted(blobs)
+
+
+def caught_up(root, x, head, base):
+    """What the head is held to after the reviewed commit `x`: the tree of x's clean three-way merge with B, the
+    newest commit of `base` that `head` holds (git merge-tree, with the repository's merge attributes, as a local
+    `git merge` of the base applies them): x's own tree when the head merged no base commit after x (B is then an
+    ancestor of x); `x` when that merge conflicts (a resolution is new content: a review must see it)."""
+    try:
+        b = git(root, "merge-base", head, base).decode().split()[0]
+        return git(root, "merge-tree", "--write-tree", "--no-messages", x, b).decode().split()[0]
+    except (subprocess.CalledProcessError, IndexError):
+        return x
 
 
 def owner_paths(root, base, x, listed):
@@ -489,7 +503,7 @@ def _tail(sh, root, b, rep, lin, x, head, n):
     """Refuse (in `sh`) what the pull request adds after the reviewed commit x beyond record lines and the blobs
     they cite, and a record that is neither a pr/acceptor's verdict, a version of its own lineage or about one,
     nor a replay result."""
-    extra, lines, blobs = tail(root, x, head)
+    extra, lines, blobs = tail(root, caught_up(root, x, head, b.commit), head)
     if extra:
         sh.append(("TAIL_CHANGES", f"{len(extra)} change(s) after {x[:12]} beyond added record lines and blobs: "
                    + ", ".join(f"{p} ({w})" for p, w in extra[:8])))
