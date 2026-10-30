@@ -127,7 +127,7 @@ jobs:
           sha256sum --strict -c "$RUNNER_TEMP/SHA256SUMS"
           diff <(ls -A | sort) <(sed 's/^[0-9a-f]*  //' "$RUNNER_TEMP/SHA256SUMS" | sort)
 
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
 
   readback:
     needs: [build, publish]
