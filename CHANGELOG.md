@@ -19,6 +19,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 - The store is the nearest `.warrant/` from the current directory upward (or WARRANT_REPO_ROOT's), and the trust
   and profile default to that store's `v3.json`: `warrant assess` in a repository needs no flag. `--store`,
   `--trust` and `--profile` still name others; `init` still creates the store in the current directory.
+  A store found by default is confined by real path to the directory it is found in, as `--store` is to the
+  current one: a `.warrant` link leading out of its repository is refused (Codex finding 24b91d75f065).
 - The record graph's queries (`around`, `path`, `why`, `frontier`, `delta`, `impact`, `answer`) move from
   `warrant_agent.graph` to the core as `warrant.graph`; the agent interface and `tools/graph.py` import them there.
 - `warrant.review due` and `warrant.review gate` refuse with exit 2 (`REFUSED <code> ...`) when the merge

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import keys as K
 from . import shapes as S
-from .store import Refused
+from .store import Refused, confined
 
 FORMAT = "warrant-home/1"
 NAME = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}\Z")        # a repository's handle, as the agent interface's workspaces
@@ -156,10 +156,12 @@ def remove(doc, name):
 
 
 def store_of(doc, name):
-    """The `.warrant/` directory of the registered repository `name`."""
+    """The `.warrant/` directory of the registered repository `name`, confined by real path to that repository: a
+    `.warrant` link out of it is refused (as warrant.cli confines a store it finds; Codex finding 24b91d75f065)."""
     if name not in doc["repositories"]:
         raise Refused(f"no repository is registered as {name!r} (warrant home add DIR)")
-    return os.path.join(os.path.expanduser(doc["repositories"][name]["path"]), ".warrant")
+    root = os.path.expanduser(doc["repositories"][name]["path"])
+    return confined(os.path.join(root, ".warrant"), root)
 
 
 def listing(doc):

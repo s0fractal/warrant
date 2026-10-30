@@ -473,6 +473,17 @@ def cli_cases():
     cli(sub, "init")
     check("K06 `warrant init` creates the store in the current directory, also inside a repository",
           (sub / ".warrant" / "records.jsonl").is_file(), sorted(p.name for p in sub.iterdir()))
+    other = Repo(name="s0fractal/other")              # Codex finding 24b91d75f065 on #236: a `.warrant` link out of its repository
+    linked = r.home / "linked"
+    linked.mkdir()
+    (linked / ".warrant").symlink_to(other.dot, target_is_directory=True)
+    (linked / "payload").write_bytes(b"a payload")
+    before = sorted(p.name for p in other.store.blobs.iterdir())
+    found, _ = cli(linked, "blob", "payload")
+    made, _ = cli(linked, "init")
+    check("K07 a store found by default is confined to the directory it is found in: a `.warrant` link out of it is refused, "
+          "by discovery and by init", found == 2 and made == 2 and sorted(p.name for p in other.store.blobs.iterdir()) == before,
+          (found, made))
 
 
 def home_cases():
@@ -521,6 +532,13 @@ def home_cases():
         code, out = cli(r.home, "status", "--repo", "two", "--json")
         check("H05 `warrant status --repo NAME` reads that registered repository's store, from any directory",
               code == 0 and json.loads(out or "{}").get("repository") == "s0fractal/other", (code, out[-200:]))
+        third = r.home / "third"                             # a registered repository whose .warrant leads out of it
+        third.mkdir()
+        (third / ".warrant").symlink_to(other.dot, target_is_directory=True)
+        H.save(dict(doc, repositories=dict(doc["repositories"], three={"path": str(third)})))
+        code3, _ = cli(r.home, "status", "--repo", "three")
+        check("H07 a registered repository's store is confined to it: a `.warrant` link out of it is refused", code3 == 2, code3)
+        H.save(doc)
         cli(r.home, "home")
         check("H06 Home writes nothing into a repository", sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
               == tree)

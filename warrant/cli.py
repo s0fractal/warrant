@@ -43,20 +43,23 @@ def home(p):
 
 
 def store_dir(a):
-    """--store inside the current directory; else WARRANT_REPO_ROOT's `.warrant`; else the nearest `.warrant/`
-    directory from the current one upward; else (and for `init`) the current directory's."""
+    """--store inside the current directory; else WARRANT_REPO_ROOT's `.warrant`; else the nearest `.warrant`
+    from the current directory upward; else (and for `init`) the current directory's. A store found by default is
+    confined, by real path, to the directory it is found in, as --store is to the current one: a `.warrant` link
+    leading out of its repository is refused, never followed into another store (Codex finding 24b91d75f065)."""
     if a.store is not None:
         return here(a.store)
     if getattr(a, "repo", None):
         return H.store_of(H.load(), a.repo)
     if os.environ.get("WARRANT_REPO_ROOT"):
-        return str(Path(os.environ["WARRANT_REPO_ROOT"]) / ".warrant")
+        root = Path(os.environ["WARRANT_REPO_ROOT"])
+        return confined(root / ".warrant", root)
     cwd = Path(os.getcwd())
     if a.cmd != "init":
         for d in (cwd, *cwd.parents):
-            if (d / ".warrant").is_dir():
-                return str(d / ".warrant")
-    return str(cwd / ".warrant")
+            if (d / ".warrant").is_dir() or (d / ".warrant").is_symlink():     # a link is found, then refused
+                return confined(d / ".warrant", d)
+    return confined(cwd / ".warrant", cwd)
 
 
 def receiver(a, store):
