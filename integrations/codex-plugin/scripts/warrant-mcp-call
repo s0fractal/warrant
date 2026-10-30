@@ -2,12 +2,14 @@
 """Call one tool of the warrant MCP server over stdio, with a given configuration, and print its data.
 
     warrant-mcp-call --config CONFIG TOOL '{"workspace": "...", ...}'
+    warrant-mcp-call --repo DIR --actor ACTOR [--seed SEED] TOOL '{...}'
 
 TOOL is a warrant tool without its prefix (workspace, context, read, prepare, commit, explain, ...).
 The server is warrant-agent-mcp beside this Python (the venv the server is installed in), or
-$WARRANT_AGENT_MCP. It is the same server the plugin registers, pointed at another configuration (a
-review worktree's, made by `warrant-agent-mcp init`): what it signs is the configuration's signer's,
-and only on `commit`. A refusal prints the server's error and exits 2.
+$WARRANT_AGENT_MCP. It is the same server the plugin registers, pointed at another configuration: a
+file, or one checkout (a review worktree) that the server configures in memory from --repo, --actor and
+--seed, with the checks `warrant-agent-mcp init` makes and no file written. What it signs is that
+signer's, and only on `commit`. A refusal prints the server's error and exits 2.
 """
 import argparse
 import asyncio
@@ -25,29 +27,36 @@ def server():
     return str(beside) if beside.is_file() else "warrant-agent-mcp"
 
 
-async def call(config, tool, args):
+async def call(server_args, tool, args):
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
-    params = StdioServerParameters(command=server(), args=["--config", config])
-    async with stdio_client(params) as (r, w):
-        async with ClientSession(r, w) as s:
-            await s.initialize()
-            res = await s.call_tool("warrant_" + tool, args)
-            if res.is_error:
-                return 2, [getattr(c, "text", str(c)) for c in res.content]
-            return 0, (res.structured_content or {}).get("data", res.structured_content)
+    params = StdioServerParameters(command=server(), args=server_args)
+    try:
+        async with stdio_client(params) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                res = await s.call_tool("warrant_" + tool, args)
+                if res.is_error:
+                    return 2, [getattr(c, "text", str(c)) for c in res.content]
+                return 0, (res.structured_content or {}).get("data", res.structured_content)
+    except Exception as e:                      # the server refused its configuration (its stderr says why) or died
+        return 2, [f"the server stopped: {type(e).__name__}"]
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--config", required=True)
+    ap.add_argument("--config", help="a configuration file (with neither this nor --repo, the operator's Home)")
+    for flag in ("repo", "actor", "seed", "workspace", "operations"):
+        ap.add_argument(f"--{flag}", help="instead of --config: passed to the server, which configures one checkout in memory")
     ap.add_argument("tool")
     ap.add_argument("args", nargs="?", default="{}", help="the tool's arguments, a JSON object")
     a = ap.parse_args(argv)
     args = json.loads(a.args)
     if not isinstance(args, dict):
         ap.error("the arguments are a JSON object")
-    rc, out = asyncio.run(call(a.config, a.tool, args))
+    server_args = [x for flag in ("config", "repo", "actor", "seed", "workspace", "operations")
+                   if getattr(a, flag) is not None for x in (f"--{flag}", getattr(a, flag))]
+    rc, out = asyncio.run(call(server_args, a.tool, args))
     print(json.dumps(out, indent=1))
     return rc
 

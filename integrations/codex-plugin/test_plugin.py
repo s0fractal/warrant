@@ -241,6 +241,23 @@ def mcp_call():
     rc4, err = call("read", {"workspace": "src", "target": "0" * 12})
     check("C9", rc4 == 2, "a refusal of the server exits 2", (rc4, err))
 
+    def by_repo(tool, args, *flags):
+        out = subprocess.run([sys.executable, str(HERE / "scripts" / "warrant-mcp-call"), *flags, tool, json.dumps(args)],
+                             env=dict(env, HOME=str(r.home)), capture_output=True, text=True)   # init's confinement: $HOME
+        return out.returncode, json.loads(out.stdout) if out.stdout.strip() else out.stderr
+    flags = ("--repo", str(r.root), "--actor", "bob", "--seed", str(r.seed("bob")))
+    name = r.root.name.lower()
+    before = sorted(str(q) for q in r.home.rglob("*") if ".warrant" not in q.parts)
+    rc5, prep = by_repo("prepare", {"workspace": name, "kind": "attest", "target": o, "body": {"verdict": "accept"}}, *flags)
+    rc6, done = by_repo("commit", {"workspace": name, "record": prep.get("record") if isinstance(prep, dict) else None}, *flags)
+    rc7, _ = by_repo("workspace", {}, "--config", str(cfg), *flags)
+    after = sorted(str(q) for q in r.home.rglob("*") if ".warrant" not in q.parts)
+    check("C15", (rc5, rc6) == (0, 0) and isinstance(done, dict) and done.get("filed", {}).get("actor") == "bob"
+          and before == after and rc7 == 2,
+          "warrant-mcp-call --repo --actor --seed serves a review worktree with no configuration file: the server holds "
+          "it in memory and signs as that actor; --config with --repo is refused, and exits 2, not a traceback",
+          (rc5, prep, rc6, done, rc7, sorted(set(after) - set(before))))
+
 
 def store_rules():
     """The waker's own reading of the store (W1-W6): replay commits, verdicts it publishes, branches it resumes."""

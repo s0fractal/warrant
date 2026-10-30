@@ -10,15 +10,21 @@ lie in the operator's home directory; the seed and the configuration outside the
 configuration is written atomically through no symlink, and an existing one is replaced only with
 --force and only when it is what an init wrote for this repository and workspace (Warrant 2's init
 output included). Nothing of the repository is run, only its JSON read. A refusal prints
-`REFUSED <CODE> <detail>` on stderr and exits 2."""
+`REFUSED <CODE> <detail>` on stderr and exits 2.
+
+The same checks build a configuration held in memory: `warrant-agent-mcp --repo DIR --actor ACTOR [--seed SEED]`
+(and `warrant-agent`) serve one checkout, a review worktree say, and write no file; with no --seed, the seed is the
+operator's Home identity's."""
 import argparse
 import json
 import os
 import sys
 from pathlib import Path
 
+from warrant import home as H
 from warrant import shapes as S
 from warrant.keys import Key
+from warrant.store import Refused as StoreRefused
 
 from . import AGENT_API
 from .config import HANDLE, OPERATIONS, STORE_DIR, V2_API, Config, repository_config
@@ -110,25 +116,20 @@ def _own_output(config, repo, workspace):
         return False
 
 
-def plan(repo, actor, seed, config, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
-    """(configuration document, summary, config path): every check, nothing written."""
+def checked(repo, actor, seed, workspace=None, operations=DEFAULT_OPERATIONS):
+    """(repository, seed, handle, workspace, summary) of one repository checkout signed in by one actor: every check
+    of them an init makes, nothing written."""
     _refuse(S.is_actor(actor), "INIT_ACTOR_SHAPE", f"{str(actor)[:60]!r} is not an actor id")
     repo = _confined(repo, "the repository")
     _refuse((repo / STORE_DIR / "records.jsonl").is_file() and (repo / STORE_DIR / "v3.json").is_file(),
             "INIT_NOT_A_REPOSITORY", f"{repo} has no .warrant/records.jsonl with .warrant/v3.json")
     seed = _confined(seed, "the seed")
     _refuse(not _inside(seed, repo), "INIT_INSIDE_REPOSITORY", f"the seed {seed} is inside the repository {repo}")
-    config = _target(config, "the configuration", repo)
-    _refuse(config != seed and not (config.exists() and os.path.samefile(config, seed)), "INIT_PATH_COLLISION",
-            f"the configuration {config} would be written over the seed")
     operations = list(operations)
     _refuse(bool(operations) and len(set(operations)) == len(operations) and set(operations) <= set(OPERATIONS),
             "INIT_OPERATIONS", f"operations are distinct names of {list(OPERATIONS)}, not {operations}")
     workspace = workspace or repo.name.lower()
     _refuse(HANDLE.match(workspace) is not None, "INIT_WORKSPACE_NAME", f"{workspace!r} is not a workspace handle; give --workspace")
-    _refuse(force or not config.exists(), "INIT_CONFIG_EXISTS", f"{config} exists; --force replaces it")
-    _refuse(not config.exists() or _own_output(config, repo, workspace), "INIT_NOT_INIT_OUTPUT",
-            f"{config} is not a configuration init wrote for workspace {workspace!r} of {repo}; --force replaces only that")
     _refuse(seed.is_file(), "INIT_NO_SEED", f"no seed at {seed}: init creates no key")
     try:
         key = Key.from_seed_hex(seed.read_text())
@@ -141,16 +142,72 @@ def plan(repo, actor, seed, config, workspace=None, operations=DEFAULT_OPERATION
     _refuse(actor in trust["keys"], "INIT_ACTOR_NOT_PINNED", f".warrant/v3.json binds no key to {actor!r}")
     _refuse(key.public in trust["keys"][actor], "INIT_KEY_NOT_PINNED",
             f"the seed's key {key.id[:12]} is not a key .warrant/v3.json binds to {actor!r}; no other key signs as it")
-    doc = {"agent_api": AGENT_API, "workspaces": {workspace: {"repo": str(repo), "signer": {"actor": actor, "key": str(seed)},
-                                                              "operations": operations}}}
+    ws = {"repo": str(repo), "signer": {"actor": actor, "key": str(seed)}, "operations": operations}
     try:
-        Config(doc)
+        Config({"agent_api": AGENT_API, "workspaces": {workspace: ws}})
     except AgentError as e:
         raise Refused("INIT_CONFIG_INVALID", e.message) from None
-    summary = {"config": str(config), "workspace": workspace, "repository": str(repo), "name": name,
-               "signer": {"actor": actor, "key": key.id}, "operations": operations,
-               "serve": f"warrant-agent-mcp --config {config}"}
-    return doc, summary, config
+    summary = {"workspace": workspace, "repository": str(repo), "name": name,
+               "signer": {"actor": actor, "key": key.id}, "operations": operations}
+    return repo, seed, workspace, ws, summary
+
+
+def plan(repo, actor, seed, config, workspace=None, operations=DEFAULT_OPERATIONS, force=False):
+    """(configuration document, summary, config path): every check, nothing written."""
+    repo, seed, workspace, ws, summary = checked(repo, actor, seed, workspace, operations)
+    config = _target(config, "the configuration", repo)
+    _refuse(config != seed and not (config.exists() and os.path.samefile(config, seed)), "INIT_PATH_COLLISION",
+            f"the configuration {config} would be written over the seed")
+    _refuse(force or not config.exists(), "INIT_CONFIG_EXISTS", f"{config} exists; --force replaces it")
+    _refuse(not config.exists() or _own_output(config, repo, workspace), "INIT_NOT_INIT_OUTPUT",
+            f"{config} is not a configuration init wrote for workspace {workspace!r} of {repo}; --force replaces only that")
+    doc = {"agent_api": AGENT_API, "workspaces": {workspace: ws}}
+    return doc, dict(summary, config=str(config), serve=f"warrant-agent-mcp --config {config}"), config
+
+
+def configuration(repo, actor, seed=None, workspace=None, operations=DEFAULT_OPERATIONS):
+    """The configuration of one repository checkout and one signer, held in memory: what init would write for them,
+    written nowhere (`--repo DIR --actor A`; a review worktree needs no file of its own). With no seed, the seed of
+    the operator's Home identity `actor`."""
+    if seed is None:
+        try:
+            seed = H.load()["identities"].get(actor, {}).get("seed") if S.is_actor(actor) else None
+        except (OSError, ValueError, StoreRefused) as e:
+            raise Refused("INIT_NO_SEED", f"the operator's Home: {e}") from None
+        _refuse(seed is not None, "INIT_NO_SEED", f"give --seed: the operator's Home has no identity {str(actor)[:60]!r}")
+        seed = os.path.expanduser(seed)
+    _, _, name, ws, _ = checked(repo, actor, seed, workspace, operations)
+    return Config({"agent_api": AGENT_API, "workspaces": {name: ws}})
+
+
+ARGUMENTS = ("repo", "actor", "seed", "workspace", "operations")
+
+
+def add_arguments(ap):
+    """The operator's configuration of a server or a command: --config FILE, the operator's Home when neither is given,
+    or --repo DIR --actor A [--seed SEED] [--workspace NAME] [--operations ...], one checkout held in memory."""
+    ap.add_argument("--config", help="the operator's configuration (never chosen by a request); default: the operator's Home")
+    ap.add_argument("--repo", help="instead of --config: this one checkout (a review worktree), configured in memory, no file written")
+    ap.add_argument("--actor", help="with --repo: the signer, as the checkout's .warrant/v3.json binds it")
+    ap.add_argument("--seed", help="with --repo: the signer's existing seed (default: the Home identity's)")
+    ap.add_argument("--workspace", help="with --repo: the workspace handle (default: the checkout directory's name)")
+    ap.add_argument("--operations", help=f"with --repo: comma-separated, of {','.join(OPERATIONS)} "
+                                         f"(default: {','.join(DEFAULT_OPERATIONS)})")
+
+
+def load(ap, a):
+    """The Config the arguments name; a refusal raises Refused."""
+    given = [x for x in ARGUMENTS[1:] if getattr(a, x) is not None]
+    if a.repo is None:
+        if given:
+            ap.error(f"--{given[0]} goes with --repo")
+        return Config.load(a.config)
+    if a.config is not None:
+        ap.error("give --config or --repo, not both")
+    if a.actor is None:
+        ap.error("--repo needs --actor")
+    ops = DEFAULT_OPERATIONS if a.operations is None else [x for x in a.operations.split(",") if x]
+    return configuration(a.repo, a.actor, a.seed, a.workspace, ops)
 
 
 def init(repo, actor, seed, config, workspace=None, operations=DEFAULT_OPERATIONS, force=False):

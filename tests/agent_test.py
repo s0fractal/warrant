@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """warrant_agent (warrant-agent/3): each operation, its refusals, the Warrant 2 configuration it still
-reads, `warrant-agent-mcp init`, and the stdio MCP server when the SDK is installed.
+reads, `warrant-agent-mcp init` and its in-memory twin (--repo), and the stdio MCP server when the SDK is installed.
 
     python3 tests/agent_test.py
 """
 import asyncio
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -19,6 +21,7 @@ from warrant import home as H
 from warrant import records as R
 from warrant.store import LIMITS
 from warrant_agent import api
+from warrant_agent import cli as CLI
 from warrant_agent import errors as ER
 from warrant_agent import glossary as GL
 from warrant_agent import init as I
@@ -337,6 +340,95 @@ def init_cases():
     check("I09 an actor the repository binds no key to is refused", refused("INIT_ACTOR_NOT_PINNED", actor="zed"))
 
 
+def with_home(path, f):
+    env = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(path)
+    try:
+        return f()
+    finally:
+        if env is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = env
+
+
+def memory_cases():
+    """--repo DIR --actor A: init's checks, its configuration held in memory, no file written (a review worktree)."""
+    repo = Repo()
+    I.ROOTS = (repo.home,)
+    seed = repo.seed("bob")
+    obl = repo.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    files = lambda: sorted(str(p) for p in repo.home.rglob("*") if ".warrant" not in p.parts)
+    before = files()
+    cfg = I.configuration(repo.root, "bob", seed)
+    written = I.plan(repo.root, "bob", seed, repo.home / "cfg" / "same.json")[0]
+    name = repo.root.name.lower()
+    w = cfg.workspace(name) if name in cfg.workspaces else None
+    p = ok(api.call(cfg, "prepare", {"workspace": name, "kind": "attest", "target": obl, "body": {"verdict": "seen"}}))
+    filed = ok(api.call(cfg, "commit", {"workspace": name, "record": p.get("record")})).get("filed", {})
+    check("I10 --repo holds in memory the configuration init would write for the checkout, signs as its signer, and "
+          "writes no file", list(cfg.workspaces) == list(written["workspaces"]) == [name] and w is not None
+          and (str(w.repo), w.signer, list(w.operations)) == (written["workspaces"][name]["repo"], ("bob", seed),
+                                                            written["workspaces"][name]["operations"])
+          and filed.get("actor") == "bob" and files() == before, (sorted(cfg.workspaces), written, filed))
+
+    def refused(code, **kw):
+        args = dict(repo=repo.root, actor="bob", seed=seed)
+        args.update(kw)
+        try:
+            I.configuration(**args)
+            return None
+        except I.Refused as e:
+            return e.code == code or e.code
+    inside = repo.root / "k.seed"
+    shutil.copy(seed, inside)
+    got = {"key": refused("INIT_KEY_NOT_PINNED", seed=repo.seed("eve")), "inside": refused("INIT_INSIDE_REPOSITORY", seed=inside),
+           "actor": refused("INIT_ACTOR_NOT_PINNED", actor="zed"), "repo": refused("INIT_NOT_A_REPOSITORY", repo=repo.home),
+           "outside": refused("INIT_OUTSIDE_HOME", seed="/" + "k.seed")}
+    inside.unlink()
+    check("I11 --repo refuses what init refuses: a key the checkout does not bind to the actor, a seed inside the checkout, "
+          "an actor it binds no key to, a directory that is no checkout, a seed outside the operator's home",
+          set(got.values()) == {True}, got)
+    os.chmod(seed, 0o600)
+    home = H.add_identity(H.empty(), "bob", str(seed))
+    H.save(home, repo.home / "conf" / "home.json")
+
+    def by_home(actor):
+        try:
+            return I.configuration(repo.root, actor).workspace(name).signer
+        except I.Refused as e:
+            return e.code
+    found = with_home(repo.home / "conf" / "home.json", lambda: (by_home("bob"), by_home("carol")))
+    check("I12 with no --seed the signer's seed is the operator's Home identity's; an actor with no identity is refused",
+          found == (("bob", seed), "INIT_NO_SEED"), found)
+
+    def cli(*argv):
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                rc = CLI.main(list(argv))
+        except SystemExit as e:
+            rc = e.code
+        except Exception as e:                         # a mutant's escape is a result, not a crash of the suite
+            rc = type(e).__name__
+        try:
+            return rc, json.loads(out.getvalue())
+        except ValueError:
+            return rc, None
+    r = str(repo.root)
+    runs = {"ok": cli("--repo", r, "--actor", "bob", "--seed", str(seed), "workspace", "{}"),
+            "key": cli("--repo", r, "--actor", "bob", "--seed", str(repo.seed("eve")), "workspace", "{}"),
+            "both": cli("--config", str(repo.home / "cfg" / "same.json"), "--repo", r, "--actor", "bob", "workspace", "{}"),
+            "stray": with_home(repo.home / "conf" / "home.json", lambda: cli("--actor", "bob", "workspace", "{}")),
+            "no-actor": cli("--repo", r, "workspace", "{}")}
+    shape = {k: (rc, (out or {}).get("error") or [x["workspace"] for x in (out or {}).get("ok", {}).get("workspaces", [])])
+             for k, (rc, out) in runs.items()}
+    check("I13 warrant-agent --repo serves the checkout; a refused seed is the init refusal's code; --config with --repo, "
+          "--actor without --repo, and --repo without --actor are usage errors, never another configuration",
+          shape == {"ok": (0, [name]), "key": (2, "INIT_KEY_NOT_PINNED"), "both": (2, []), "stray": (2, []),
+                    "no-actor": (2, [])}, shape)
+
+
 def mcp_cases():
     try:
         import mcp  # noqa: F401
@@ -429,6 +521,7 @@ if __name__ == "__main__":
     refusal_cases()
     admission_cases()
     init_cases()
+    memory_cases()
     mcp_cases()
     home_cases()
     receiver_cases()
