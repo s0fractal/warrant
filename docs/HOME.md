@@ -57,12 +57,18 @@ becomes one workspace: it uses that repository's trust and profile, signs as its
 identity's seed, and offers its operations. An explicit `--config` file works as before
 (docs/AGENT.md).
 
+A review worktree needs no configuration of its own: `--repo DIR --actor A` serves that one
+checkout, held in memory, with the checks `warrant-agent-mcp init` makes. The seed is `--seed`, or
+else Home's identity `A`. Nothing is written: no file per pull request.
+
+```sh
+warrant-agent-mcp --repo ~/Projects/.worktrees/codex-review/238-0d1c71bc61d8 --actor codex
+```
+
 ## Not yet
 
 These are the next steps of the plan:
 
-- **Review worktrees.** A call will name a worktree of a registered repository, so that a review
-  of a pull request head no longer needs a configuration of its own.
 - **The waker.** It will read its repositories from Home.
 - **A resolver for hashes cited across repositories.** Each cited hash will get one of four
   states, `PRESENT`, `RESOLVED`, `LOCATED` or `MISSING`, from local stores and Git history only.

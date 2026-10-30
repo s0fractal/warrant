@@ -6,6 +6,11 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `warrant-agent-mcp --repo DIR --actor A [--seed SEED]` (and `warrant-agent`) serve one checkout with the
+  configuration `warrant-agent-mcp init` would write for it, held in memory: init's checks, init's refusal codes,
+  no file. With no `--seed`, the Home identity's seed. The Codex plugin's `warrant-mcp-call` passes `--repo`
+  through, and exits 2 when the server refuses its configuration; the review skill uses it, so a review no longer
+  writes `~/.warrant/codex-review-N.json`, and keeps its working files in `~/.warrant/codex-work/<N>-<H12>`.
 - Warrant Home (docs/HOME.md): the operator's one configuration, `~/.config/warrant/home.json` (`$WARRANT_HOME`,
   `$XDG_CONFIG_HOME`), listing the repositories of this machine and the identities that sign in them.
   `warrant home [list|add DIR|identity ACTOR --seed FILE|remove NAME]` keeps it; `--repo NAME` names a registered

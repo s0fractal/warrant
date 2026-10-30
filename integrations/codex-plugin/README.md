@@ -12,7 +12,7 @@ it can verify; nobody else has to act.
 | `.codex-plugin/plugin.json` | the plugin manifest: `mcpServers` and `skills` |
 | `.mcp.json`, `scripts/warrant-mcp` | the MCP server `warrant`: `warrant-agent-mcp --config ${WARRANT_AGENT_CONFIG:-~/.warrant/codex-warrant.json}` |
 | `skills/warrant-review/SKILL.md` | the blind review instruction: what to look at and where, and how to file findings or accept through MCP |
-| `scripts/warrant-mcp-call` | a stdio client of the same server for another configuration (a review worktree's, made by `warrant-agent-mcp init` with Codex's own seed), one tool per call |
+| `scripts/warrant-mcp-call` | a stdio client of the same server for another configuration, one tool per call: a file, or `--repo <worktree> --actor codex --seed <seed>`, which the server holds in memory (no file per review) |
 | `waker/waker.py` | the waker: for each repository it serves, fetches the base branch into a bare mirror, writes the base's tree once, refuses a base whose `.warrant/v3.json` names another repository, runs THAT tree's `python -m warrant.review due`, replays the mechanical findings of each due head with the review replay checker (below), and starts `codex exec` with the skill once per pull request head that is due (a memo per head), in that wake's own detached worktree of the mirror (`<trees>/<n>-<head12>`, removed after the run unless Codex left changes); a non-zero exit is retried after 15, then 30 minutes, three attempts in all |
 | `install.py` | installs all of it on a Mac and loads the waker as a launchd agent (every five minutes) |
 

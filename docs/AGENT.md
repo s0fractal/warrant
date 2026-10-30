@@ -42,6 +42,12 @@ It refuses a seed whose key `.warrant/v3.json` does not bind to the actor, a see
 inside the repository or outside the home directory, a symlink on the configuration's path, and an
 existing configuration unless `--force` is given and an init wrote it.
 
+`--repo DIR --actor A [--seed SEED] [--workspace NAME] [--operations ...]`, given to `warrant-agent-mcp`
+or `warrant-agent` in place of `--config`, serves that one checkout with the configuration init would
+write for it, held in memory and written nowhere: a review worktree needs no file of its own. It
+makes init's checks and refuses with init's codes. With no `--seed`, the seed is the operator's Home
+identity `A`'s (docs/HOME.md).
+
 ## Operations
 
 | op | request | result |

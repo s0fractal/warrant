@@ -1,6 +1,7 @@
 """`warrant-agent-mcp` — a thin local stdio MCP server over warrant-agent/3.
 
     warrant-agent-mcp [--config CONFIG.json]          # no --config: every repository of the operator's Home
+    warrant-agent-mcp --repo DIR --actor ACTOR [--seed SEED]   # one checkout, configured in memory (no file)
     warrant-agent-mcp init --actor ACTOR --seed SEED --config OUT.json [--repo DIR] ...   (warrant_agent.init)
 
 Eight tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
@@ -17,7 +18,6 @@ import sys
 from typing import Annotated, Any, Literal
 
 from . import AGENT_API, api
-from .config import Config
 
 SDK_REQUIREMENT = "mcp==2.3.0"
 INSTRUCTIONS = """\
@@ -145,15 +145,15 @@ def build(cfg):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
+    from . import init
     if argv[:1] == ["init"]:                     # the operator's command; the server never runs it
-        from . import init
         return init.main(argv[1:])
     ap = argparse.ArgumentParser(prog="warrant-agent-mcp", description=__doc__, allow_abbrev=False,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--config", help="the operator's configuration; default: the operator's Home (docs/HOME.md)")
+    init.add_arguments(ap)
     a = ap.parse_args(argv)
     try:
-        cfg = Config.load(a.config)
+        cfg = init.load(ap, a)
     except Exception as e:                       # diagnostics never go to stdout
         print(f"warrant-agent-mcp: configuration refused: {e}", file=sys.stderr)
         return 2

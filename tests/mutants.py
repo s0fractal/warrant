@@ -118,6 +118,17 @@ MUTANTS = [
     ("A43", "warrant_agent/config.py", "            st = Store(dot_of(self.repo) if self.repo is not None else self.store)",
      "            st = Store(self.repo / STORE_DIR if self.repo is not None else self.store)", AGENT, ["A29"]),
     ("A44", "warrant_agent/config.py", "        dot = dot_of(repo)\n", "        dot = Path(repo) / STORE_DIR\n", AGENT, ["A29"]),
+    # --repo DIR --actor A: init's configuration held in memory (warrant_agent/init.py configuration, load)
+    ("A45", "warrant_agent/init.py", "    _, _, name, ws, _ = checked(repo, actor, seed, workspace, operations)\n",
+     '    name, ws = Path(repo).name.lower(), {"repo": str(repo), "signer": {"actor": actor, "key": str(seed)}}\n', AGENT, ["I11"]),
+    ("A46", "warrant_agent/init.py", "        if given:\n", "        if False:\n", AGENT, ["I13"]),
+    ("A47", "warrant_agent/init.py", "    if a.config is not None:\n", "    if False:\n", AGENT, ["I13"]),
+    ("A48", "warrant_agent/init.py", "    if a.actor is None:\n", "    if False:\n", AGENT, ["I13"]),
+    ("A49", "warrant_agent/init.py", '            seed = H.load()["identities"].get(actor, {}).get("seed") if S.is_actor(actor) else None\n',
+     "            seed = None\n", AGENT, ["I12"]),
+    ("A50", "warrant_agent/cli.py", '        out = {"error": e.code, "message": e.message}\n', "        raise\n", AGENT, ["I13"]),
+    ("P18", "integrations/codex-plugin/scripts/warrant-mcp-call", "    except Exception as e:", "    except ZeroDivisionError as e:",
+     WAKER, ["C15"]),
     ("A12", "warrant_agent/config.py", '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"]}',
      '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"], "signer": None}', AGENT, ["A10"]),
     # the merge gate (warrant/gate.py)
