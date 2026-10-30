@@ -170,7 +170,7 @@ MUTANTS = [
     ("T41", "warrant/home.py", '                       bound=None if not r.get("signer") else doc["identities"][r["signer"]]["public"] in trust["keys"].get(r["signer"], []))',
      '                       bound=None if not r.get("signer") else True)', TOOLS, ["H01"]),
     ("T42", "warrant/home.py", '        inside = _inside_any(i["seed"], paths)', "        inside = None", TOOLS, ["H02"]),
-    ("T43", "warrant/home.py", "    if p.stat().st_mode & 0o022:", "    if False:", TOOLS, ["H03"]),
+    ('T43', 'warrant/home.py', '    _private(p, "the Home")\n    doc =', '    doc =', TOOLS, ['H03']),
     ("T44", "warrant/home.py", "    if p.is_symlink() or not p.is_file():", "    if not p.is_file():", TOOLS, ["H03"]),
     ("T45", "warrant/home.py", "    if os.stat(real).st_mode & 0o077:", "    if False:", TOOLS, ["H04"]),
     ("T46", "warrant/home.py", '    return confined(os.path.join(root, ".warrant"), root)', '    return ".warrant"', TOOLS, ["H05"]),
