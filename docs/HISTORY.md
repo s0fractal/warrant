@@ -58,7 +58,7 @@ equal, none declared, none undeclared; two declared migration rules applied ("pa
 | SPEC.md 2.0.0a1 (six record types, conditions, grants, triggers, schedules; 361 sentences as claims) | retired, at the tag | docs/V3.md, the normative specification; the 362 claim lineages are retired records in the store |
 | `warrant/engine.py`, `records.py`, `store.py`, `cli.py`, `bindings.py`, `triggers.py` | deleted (at the tag) | `warrant/` is Warrant 3: `records.py`, `store.py`, `engine.py`, `bootstrap.py`, `cli.py` |
 | `warrant/jcs.py`, `keys.py`, `shapes.py` | kept unchanged | the same files |
-| `warrant/pilot.py`, `compute.py`, `limits.py` (G9) | moved | `warrant_pilot/` (not in the wheel); PILOT.md byte for byte |
+| `warrant/pilot.py`, `compute.py`, `limits.py` (G9) | moved | `warrant_pilot/` (not in the wheel); docs/PILOT.md byte for byte |
 | `.warrant/store/` (1 947 records, 1 687 blobs, one file each) | migrated, removed | `.warrant/records.jsonl` (1 446 migrated records), `.warrant/blobs/` (473) |
 | `.warrant/roles.json`, `trust.json`, `claims.json`, `reviews.json`, `roadmap.json` | removed | `.warrant/v3.json`: the trust and the profile |
 | `warrant_agent` (frozen views in an object store, subprocess assessment, drafts) | rewritten | `warrant_agent` warrant-agent/3: in-process assessment, stateless prepare/commit; Warrant 2's init output still loads |
