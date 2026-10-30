@@ -22,7 +22,7 @@ from . import engine as E
 from . import graph as G
 from . import home as H
 from . import records as R
-from .store import Refused, Store, confined
+from .store import Refused, Store, confined, read_inside
 
 LOOP = ("review", "gate", "claims", "roadmap")       # the review loop's commands, each its own module's parser
 RECEIVER = "v3.json"                                 # a repository's trust and profile, in its store directory
@@ -68,9 +68,9 @@ def receiver(a, store):
     doc = None
     if not (getattr(a, "trust", None) and getattr(a, "profile", None)):
         f = Path(store) / RECEIVER
-        if not f.is_file():
+        if not os.path.lexists(f):
             raise Refused(f"no --trust/--profile and no {RECEIVER} in the store {store}")
-        doc = json.loads(f.read_text())
+        doc = json.loads(read_inside(f, store))
         if not (isinstance(doc, dict) and isinstance(doc.get("trust"), dict) and isinstance(doc.get("profile"), dict)):
             raise Refused(f"{f} is not a receiver configuration {{repository, trust, profile}}")
     trust = json.loads(Path(here(a.trust)).read_text()) if getattr(a, "trust", None) else doc["trust"]

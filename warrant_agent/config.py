@@ -21,7 +21,7 @@ from pathlib import Path
 from warrant import engine as E
 from warrant import home as H
 from warrant import shapes as S
-from warrant.store import Store
+from warrant.store import Store, read_inside
 
 from . import AGENT_API
 from .errors import AgentError, need
@@ -38,7 +38,7 @@ DEFAULT_LIMITS = {"store_bytes": 64 << 20, "context_bytes": 64 << 10, "read_byte
 def repository_config(repo):
     """(trust, profile, name) of a repository: its `.warrant/v3.json`, checked."""
     try:
-        doc = json.loads((Path(repo) / STORE_DIR / "v3.json").read_bytes())
+        doc = json.loads(read_inside(Path(repo) / STORE_DIR / "v3.json", Path(repo) / STORE_DIR))
     except (OSError, ValueError) as e:
         raise AgentError("BAD_REQUEST", f"repository configuration: {type(e).__name__}: {e}") from None
     need(isinstance(doc, dict) and doc.get("warrant") == REPOSITORY and set(doc) == {"warrant", "repository", "trust", "profile"},

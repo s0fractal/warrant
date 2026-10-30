@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import keys as K
 from . import shapes as S
-from .store import Refused, confined
+from .store import Refused, confined, read_inside
 
 FORMAT = "warrant-home/1"
 NAME = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}\Z")        # a repository's handle, as the agent interface's workspaces
@@ -108,7 +108,8 @@ def save(doc, p=None):
 
 def receiver(repo_path):
     """(trust, profile, repository name) of a repository directory: its .warrant/v3.json."""
-    doc = json.loads((Path(repo_path) / ".warrant" / "v3.json").read_text())
+    dot = Path(repo_path) / ".warrant"
+    doc = json.loads(read_inside(dot / "v3.json", dot))         # never through a link out of the store (d6127c0fd71d)
     if not (isinstance(doc, dict) and doc.get("warrant") == RECEIVER and isinstance(doc.get("trust"), dict)
             and isinstance(doc.get("profile"), dict)):
         raise Refused(f"{repo_path}/.warrant/v3.json is not a {RECEIVER} document")

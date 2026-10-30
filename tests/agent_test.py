@@ -397,6 +397,13 @@ def home_cases():
         else:
             os.environ["WARRANT_HOME"] = env
     check("A27 with no configuration named, the agent reads the operator's Home", loaded == ["one", "two"], loaded)
+def receiver_cases():
+    r = Repo()
+    (r.dot / "v3.json").rename(r.home / "foreign-receiver.json")     # Codex finding d6127c0fd71d on #236
+    (r.dot / "v3.json").symlink_to(r.home / "foreign-receiver.json")
+    out = api.call(cfg_of(r), "workspace", {"workspace": "w"})
+    check("A28 a workspace's v3.json is read from its repository's store only: a link out of it is refused",
+          err(out) == "BAD_REQUEST" and "outside" in out["message"], out)
 
 
 if __name__ == "__main__":
@@ -406,4 +413,5 @@ if __name__ == "__main__":
     init_cases()
     mcp_cases()
     home_cases()
+    receiver_cases()
     sys.exit(finish())

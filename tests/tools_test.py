@@ -496,6 +496,13 @@ def cli_cases():
     check("K07 a store found by default is confined to the directory it is found in: a `.warrant` link out of it is refused, "
           "by discovery and by init", found == 2 and made == 2 and sorted(p.name for p in other.store.blobs.iterdir()) == before,
           (found, made))
+    outside = Repo(name="s0fractal/outside")         # Codex finding d6127c0fd71d on #236: v3.json a link out of its store
+    (outside.dot / "v3.json").rename(outside.home / "foreign-receiver.json")
+    (outside.dot / "v3.json").symlink_to(outside.home / "foreign-receiver.json")
+    code_a, _ = cli(outside.root, "assess")
+    code_r, _ = cli(outside.root, "roadmap", "--root", str(outside.root), "check")
+    check("K08 a repository's v3.json is read from its store only: a link to a file outside it is refused, by the core's "
+          "commands and by the review loop's", code_a == 2 and code_r == 2, (code_a, code_r))
 
 
 def home_cases():
@@ -551,6 +558,14 @@ def home_cases():
         code3, _ = cli(r.home, "status", "--repo", "three")
         check("H07 a registered repository's store is confined to it: a `.warrant` link out of it is refused", code3 == 2, code3)
         H.save(doc)
+        (other.dot / "v3.json").rename(other.home / "foreign-receiver.json")
+        (other.dot / "v3.json").symlink_to(other.home / "foreign-receiver.json")
+        rows = {x["name"]: x for x in H.listing(doc)}
+        added = refused_home(H.add_repository, H.empty(), str(other.root), "again")
+        check("H08 Home reads a repository's v3.json from its store only: a link out of it is refused, when it is listed "
+              "and when it is registered", "outside" in rows["two"].get("problem", "") and "outside" in added, (rows["two"], added))
+        (other.dot / "v3.json").unlink()
+        (other.home / "foreign-receiver.json").rename(other.dot / "v3.json")
         cli(r.home, "home")
         check("H06 Home writes nothing into a repository", sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
               == tree)
