@@ -6,6 +6,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- Warrant Home (docs/HOME.md): the operator's one configuration, `~/.config/warrant/home.json` (`$WARRANT_HOME`,
+  `$XDG_CONFIG_HOME`), listing the repositories of this machine and the identities that sign in them.
+  `warrant home [list|add DIR|identity ACTOR --seed FILE|remove NAME]` keeps it; `--repo NAME` names a registered
+  repository's store to every command; `warrant-agent` and `warrant-agent-mcp` with no `--config` serve one
+  workspace per registered repository. Each repository keeps its own `.warrant/`: Home writes nothing into one.
+  A Home that is a link or that others may write is refused; a seed is never inside a registered repository and
+  is refused when others may read it.
 - One command. `warrant review|gate|claims|roadmap ARGS` run those modules' commands (`warrant-review` and the
   others stay). `warrant status [--actor A] [--json]` is a reader's summary of a store: the snapshot, the schemas,
   lineages by schema and state, reliance, chain forks, problems and, with `--actor`, what waits for A.

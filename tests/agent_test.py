@@ -15,6 +15,7 @@ from world import KEYS, ROLES, Repo, check, finish
 
 from warrant import bootstrap as B
 from warrant import engine as E
+from warrant import home as H
 from warrant import records as R
 from warrant.store import LIMITS
 from warrant_agent import api
@@ -369,10 +370,40 @@ def mcp_cases():
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 
 
+def home_cases():
+    r, other = Repo(), Repo(name="s0fractal/other")
+    seed = r.seed("bob")
+    os.chmod(seed, 0o600)
+    home = H.add_repository(H.add_repository(H.add_identity(H.empty(), "bob", str(seed)), str(r.root), "one", "bob"),
+                            str(other.root), "two", operations=["context", "graph"])
+    cfg = Config.from_home(home)
+    one, two = cfg.workspace("one"), cfg.workspace("two")
+    rows = {w["workspace"]: w for w in ok(api.call(cfg, "workspace", {}))["workspaces"]}
+    check("A26 the operator's Home is a configuration: one workspace per registered repository, signing as its signer "
+          "with that identity's seed, with its operations", sorted(cfg.workspaces) == ["one", "two"]
+          and one.signer == ("bob", seed) and two.signer is None and two.operations == ("context", "graph")
+          and rows["one"]["roles"] == ["pr/acceptor", "roadmap/acceptor"], rows)
+    env = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(r.home / "home.json")
+    try:
+        H.save(home)
+        try:
+            loaded = sorted(Config.load(None).workspaces)
+        except ER.AgentError as e:
+            loaded = f"refused: {e}"
+    finally:
+        if env is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = env
+    check("A27 with no configuration named, the agent reads the operator's Home", loaded == ["one", "two"], loaded)
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
     admission_cases()
     init_cases()
     mcp_cases()
+    home_cases()
     sys.exit(finish())

@@ -18,6 +18,8 @@ from world import KEYS, ROOT, Repo, check, finish, git
 from warrant import claims as CL
 from warrant import cli as CLI
 from warrant import engine as E
+from warrant import home as H
+from warrant import keys as K
 from warrant import records as R
 from warrant import repo as RP
 from warrant import review as RV
@@ -473,10 +475,75 @@ def cli_cases():
           (sub / ".warrant" / "records.jsonl").is_file(), sorted(p.name for p in sub.iterdir()))
 
 
+def home_cases():
+    r, other = Repo(), Repo(name="s0fractal/other")
+    env = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(r.home / "config" / "home.json")
+    try:
+        seed = r.seed("alice")
+        os.chmod(seed, 0o600)
+        stray = r.home / "keys" / "stray.seed"                # a key no repository's trust binds
+        stray.write_text(K.Key.generate().seed_hex())
+        os.chmod(stray, 0o600)
+        tree = sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
+        doc = H.add_identity(H.add_identity(H.empty(), "alice", str(seed)), "zed", str(stray))
+        doc = H.add_repository(H.add_repository(doc, str(r.root), "one", "alice"), str(other.root), "two", "zed")
+        H.save(doc)
+        rows = {x["name"]: x for x in H.listing(H.load())}
+        check("H01 Home lists each repository with the repository its v3.json names, its record lines, and whether its "
+              "trust binds the signer's key", rows["one"].get("repository") == "s0fractal/warrant" and rows["one"].get("bound") is True
+              and rows["one"].get("records") == len(r.store.lines()) and rows["two"].get("bound") is False, rows)
+        inside = r.root / "in.seed"
+        inside.write_text(K.Key.generate().seed_hex())
+        os.chmod(inside, 0o600)
+        why_seed = refused_home(H.add_identity, doc, "carol", str(inside))
+        loose = other.root / "x.seed"                       # registered first, then its repository
+        loose.write_text(K.Key.generate().seed_hex())
+        os.chmod(loose, 0o600)
+        why_repo = refused_home(H.add_repository, H.add_identity(H.empty(), "carol", str(loose)), str(other.root), "two")
+        inside.unlink()
+        loose.unlink()
+        check("H02 a seed never lies inside a registered repository, whichever is registered first",
+              "inside the registered repository" in why_seed and "inside the registered repository" in why_repo, (why_seed, why_repo))
+        hp = H.path()
+        os.chmod(hp, 0o620)
+        writable = refused_home(H.load)
+        os.chmod(hp, 0o600)
+        link = r.home / "config" / "link.json"
+        link.symlink_to(hp)
+        linked = refused_home(H.load, link)
+        check("H03 a Home other users may write, or a link to one, is refused", "other users may write" in writable
+              and "not a link" in linked, (writable, linked))
+        os.chmod(stray, 0o644)
+        readable = refused_home(H.add_identity, H.empty(), "zed", str(stray))
+        os.chmod(stray, 0o600)
+        check("H04 a seed others may read is refused at registration", "others may read" in readable, readable)
+        code, out = cli(r.home, "status", "--repo", "two", "--json")
+        check("H05 `warrant status --repo NAME` reads that registered repository's store, from any directory",
+              code == 0 and json.loads(out or "{}").get("repository") == "s0fractal/other", (code, out[-200:]))
+        cli(r.home, "home")
+        check("H06 Home writes nothing into a repository", sorted((str(q), q.read_bytes()) for q in r.root.rglob("*") if q.is_file())
+              == tree)
+    finally:
+        if env is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = env
+
+
+def refused_home(fn, *a):
+    try:
+        fn(*a)
+        return ""
+    except (OSError, ValueError) as e:
+        return str(e)
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     review_cases()
     roadmap_cases()
     cli_cases()
+    home_cases()
     sys.exit(finish())

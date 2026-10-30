@@ -1,6 +1,6 @@
 """`warrant-agent-mcp` — a thin local stdio MCP server over warrant-agent/3.
 
-    warrant-agent-mcp --config CONFIG.json
+    warrant-agent-mcp [--config CONFIG.json]          # no --config: every repository of the operator's Home
     warrant-agent-mcp init --actor ACTOR --seed SEED --config OUT.json [--repo DIR] ...   (warrant_agent.init)
 
 Eight tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
@@ -150,7 +150,7 @@ def main(argv=None):
         return init.main(argv[1:])
     ap = argparse.ArgumentParser(prog="warrant-agent-mcp", description=__doc__, allow_abbrev=False,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--config", required=True)
+    ap.add_argument("--config", help="the operator's configuration; default: the operator's Home (docs/HOME.md)")
     a = ap.parse_args(argv)
     try:
         cfg = Config.load(a.config)
