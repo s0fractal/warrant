@@ -4,6 +4,8 @@ replay checker (warrant/review.py), the roadmap (warrant/roadmap.py) and what a 
 
     python3 tests/tools_test.py
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -429,6 +431,27 @@ def roadmap_cases():
           [(x["closure"], x["duty"], x["goal"]) for x in due] == [(d, o, "G1")] and after == [], due)
     r.entity("alice", "obligation@1", {"state": "open", "statement": "stray", "answers": o, "serves": []})
     check("P02 an obligation answering no goal is a roadmap problem", len(RM.check(rp.report())) == 1)
+    r = Repo()
+    rp = RP.Repo(r.root)
+    g = r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "goal"})
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "old words", "answers": g, "serves": []})
+    tool = lambda *argv: RP.main(RM.run, ["--root", str(r.root), *argv])           # noqa: E731
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        by_other = tool("revise", "--obligation", o, "--statement", "x", "--actor", "bob", "--key", str(r.seed("bob")))
+        by_root = tool("revise", "--obligation", o, "--statement", "new words", "--actor", "alice", "--key", str(r.seed("alice")))
+    rep = rp.report()
+    lin = rep["lineages"][o]
+    check("P03 `revise` files an open version with the new statement by the lineage's root actor, and refuses anyone else",
+          by_other == 2 and by_root == 0 and lin["state"] == "open" and len(lin["versions"]) == 2
+          and rep["_recs"][lin["effective"]]["body"]["statement"] == "new words", (by_other, by_root, lin))
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        by_holder = tool("release", "--obligation", o, "--reason", "r", "--actor", "alice", "--key", str(r.seed("alice")))
+        by_owner = tool("release", "--obligation", o, "--reason", "no longer wanted", "--actor", "dave", "--key", str(r.seed("dave")))
+    rep = rp.report()
+    lin = rep["lineages"][o]
+    check("P04 `release` files the released version by a roadmap/owner, its reason as the residual, and refuses the holder",
+          by_holder == 2 and by_owner == 0 and lin["state"] == "released"
+          and rep["_recs"][lin["effective"]]["body"].get("residual") == ["no longer wanted"], (by_holder, by_owner, lin))
 
 
 if __name__ == "__main__":

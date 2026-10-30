@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `warrant.roadmap revise --obligation ID --statement S` files a new `open` version of an obligation with a new
+  statement, and `release --obligation ID --reason TEXT` its `released` version with the reason as the residual.
+  Each refuses before signing an actor the lineage rule would exclude: `revise` anyone but the actor who opened
+  the obligation (`AUTHOR`), `release` an actor without `roadmap/owner` (`ROLE`).
 - The repository's root holds what a reader starts from: the agent interface's guide, the proof-space
   pilot's contract, the history of earlier generations and the name policy moved to `docs/` (`docs/AGENT.md`,
   `docs/PILOT.md`, `docs/HISTORY.md`, `docs/TRADEMARK.md`); the empty `sonar-project.properties` is removed,
