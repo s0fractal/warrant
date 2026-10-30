@@ -16,6 +16,8 @@ from pathlib import Path
 from world import KEYS, ROOT, Repo, check, finish, git
 
 from warrant import claims as CL
+from warrant import cli as CLI
+from warrant import engine as E
 from warrant import records as R
 from warrant import repo as RP
 from warrant import review as RV
@@ -454,9 +456,78 @@ def roadmap_cases():
           and rep["_recs"][lin["effective"]]["body"].get("residual") == ["no longer wanted"], (by_holder, by_owner, lin))
 
 
+def cli(cwd, *argv):
+    """`warrant ARGV` in process from the directory `cwd`, WARRANT_REPO_ROOT unset: (exit code, standard output)."""
+    out, old, env = io.StringIO(), os.getcwd(), os.environ.pop("WARRANT_REPO_ROOT", None)
+    try:
+        os.chdir(cwd)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                code = CLI.main(list(argv))
+            except SystemExit as e:          # argparse refusing the arguments
+                code = e.code
+    finally:
+        os.chdir(old)
+        if env is not None:
+            os.environ["WARRANT_REPO_ROOT"] = env
+    return code, out.getvalue()
+
+
+def cli_cases():
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    sub = r.root / "docs" / "deep"
+    sub.mkdir(parents=True)
+    code, out = cli(sub, "assess")
+    rep = json.loads(out or "{}")
+    check("K01 `warrant assess` with no flag, below the repository, assesses the nearest store under its own v3.json",
+          code == 0 and rep.get("assessment") == r.report()["assessment"], (code, out[-200:]))
+    other = {"warrant": "trust/3", "keys": {a: v for a, v in r.trust["keys"].items() if a != "bob"}}
+    (sub / "t.json").write_text(json.dumps(other))
+    code, out = cli(sub, "assess", "--trust", "t.json")
+    want = E.assess(r.store.snapshot(), other, r.profile)["assessment"]
+    check("K02 --trust names the trust and the store's v3.json gives the rest",
+          code == 0 and json.loads(out or "{}").get("assessment") == want != r.report()["assessment"], (code, out[-200:]))
+    code, out = cli(sub, "status", "--json", "--actor", "bob")
+    st = json.loads(out or "{}")
+    check("K03 `warrant status` counts the store's records and lineages by schema and state, and what waits for an actor",
+          code == 0 and st.get("records") == len(r.store.snapshot().lines) and st.get("lineages") == {"obligation@1": {"open": 1}}
+          and st.get("reliance") == {"ELIGIBLE": 1} and [x["version"] for x in (st.get("frontier") or {}).get("attest", [])] == [d],
+          st)
+    code, out = cli(sub, "status")
+    check("K04 `warrant status` without --json says the same facts in lines",
+          code == 0 and "obligation@1  open 1" in out and "reliance    ELIGIBLE 1" in out, out)
+    code, out = cli(r.root, "roadmap", "--root", str(r.root), "check")
+    check("K05 `warrant roadmap ARGS` is `python -m warrant.roadmap ARGS`", code == 0 and out.startswith("roadmap: 1 lineages"),
+          (code, out[-200:]))
+    cli(sub, "init")
+    check("K06 `warrant init` creates the store in the current directory, also inside a repository",
+          (sub / ".warrant" / "records.jsonl").is_file(), sorted(p.name for p in sub.iterdir()))
+    other = Repo(name="s0fractal/other")              # Codex finding 24b91d75f065 on #236: a `.warrant` link out of its repository
+    linked = r.home / "linked"
+    linked.mkdir()
+    (linked / ".warrant").symlink_to(other.dot, target_is_directory=True)
+    (linked / "payload").write_bytes(b"a payload")
+    before = sorted(p.name for p in other.store.blobs.iterdir())
+    found, _ = cli(linked, "blob", "payload")
+    made, _ = cli(linked, "init")
+    check("K07 a store found by default is confined to the directory it is found in: a `.warrant` link out of it is refused, "
+          "by discovery and by init", found == 2 and made == 2 and sorted(p.name for p in other.store.blobs.iterdir()) == before,
+          (found, made))
+    outside = Repo(name="s0fractal/outside")         # Codex finding d6127c0fd71d on #236: v3.json a link out of its store
+    (outside.dot / "v3.json").rename(outside.home / "foreign-receiver.json")
+    (outside.dot / "v3.json").symlink_to(outside.home / "foreign-receiver.json")
+    code_a, _ = cli(outside.root, "assess")
+    code_r, _ = cli(outside.root, "roadmap", "--root", str(outside.root), "check")
+    check("K08 a repository's v3.json is read from its store only: a link to a file outside it is refused, by the core's "
+          "commands and by the review loop's", code_a == 2 and code_r == 2, (code_a, code_r))
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     review_cases()
     roadmap_cases()
+    cli_cases()
     sys.exit(finish())

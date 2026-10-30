@@ -18,6 +18,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `warrant/roadmap.py` | goals and obligations: view, due, check, oblige, close |
 | `warrant/review.py` | the review loop: open, head, merged, due, gate, the replay checker, verify, view |
 | `warrant/gate.py` | the merge predicate and the gate's GitHub side (owner path) |
+| `warrant/cli.py`, `warrant/graph.py` | the one command `warrant` (the core's verbs, `status`, and `review`, `gate`, `claims`, `roadmap`), and the queries over a report's graph that `status`, the agent's `graph` and `tools/graph.py` share |
 | `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (docs/AGENT.md, docs/V3.md §13) |
 | `warrant_pilot/` | the proof-space pilot, G9 (docs/PILOT.md); not in the wheel |
 | `.warrant/records.jsonl`, `.warrant/blobs/` | the repository's records; `merge=union -text` (`.gitattributes`) |
@@ -163,8 +164,8 @@ exact version (and hashes), from a checkout of that repository:
   "mutants"}` (`python -m warrant.claims` says what each is). The claims checker and the review
   replay run Python test files (W-2, a declared runner, is not done).
 
-The commands are `warrant-review open|head|merged|due|verify|view` (or `python -m warrant.review`),
-`warrant-gate gate|due`, `warrant-claims check|view|file|replay|verify` and `warrant-roadmap`. A
+The commands are `warrant review open|head|merged|due|verify|view` (also `warrant-review` or `python -m
+warrant.review`), `warrant gate gate|due`, `warrant claims check|view|file|replay|verify` and `warrant roadmap`. A
 checker's `code` is the digest of the package's modules: in this repository, which carries their
 source, CI holds an attest to the package at the commit it names; in a repository that does not,
 to the package installed where `verify` runs, so CI re-executes with the same pinned version. The

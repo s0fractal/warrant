@@ -1,7 +1,12 @@
-"""warrant: init, key, trust, bootstrap, put, attest, blob, assess, fmt (docs/V3.md). Output is JSON.
+"""warrant: one command. The core's verbs init, key, trust, bootstrap, put, attest, blob, assess and fmt
+(docs/V3.md; output is JSON); status, a reader's summary of a store; and the review loop's commands review,
+gate, claims and roadmap (`warrant review ...` is `python -m warrant.review ...`; docs/REPOSITORY.md).
 
-A seed is read from --key FILE (in the current directory or the operator's home, never through a path that
-leaves both) or from WARRANT_KEY; every other file named is inside the current directory."""
+The store is --store, else the nearest `.warrant/` from the current directory upward (WARRANT_REPO_ROOT's when
+it is set; `init` creates it in the current directory). The trust and the profile are --trust and --profile,
+else that store's `v3.json` (docs/REPOSITORY.md): a repository is assessed under its own receiver configuration
+with no flag. A seed is read from --key FILE (in the current directory or the operator's home, never through a
+path that leaves both) or from WARRANT_KEY; every other file named is inside the current directory."""
 import argparse
 import json
 import os
@@ -13,8 +18,12 @@ from warrant import keys as K
 
 from . import bootstrap as B
 from . import engine as E
+from . import graph as G
 from . import records as R
-from .store import Refused, Store, confined
+from .store import Refused, Store, confined, read_inside
+
+LOOP = ("review", "gate", "claims", "roadmap")       # the review loop's commands, each its own module's parser
+RECEIVER = "v3.json"                                 # a repository's trust and profile, in its store directory
 
 
 def here(p):
@@ -31,11 +40,49 @@ def home(p):
         return confined(p, os.path.expanduser("~"))
 
 
+def store_dir(a):
+    """--store inside the current directory; else WARRANT_REPO_ROOT's `.warrant`; else the nearest `.warrant`
+    from the current directory upward; else (and for `init`) the current directory's. A store found by default is
+    confined, by real path, to the directory it is found in, as --store is to the current one: a `.warrant` link
+    leading out of its repository is refused, never followed into another store (Codex finding 24b91d75f065)."""
+    if a.store is not None:
+        return here(a.store)
+    if os.environ.get("WARRANT_REPO_ROOT"):
+        root = Path(os.environ["WARRANT_REPO_ROOT"])
+        return confined(root / ".warrant", root)
+    cwd = Path(os.getcwd())
+    if a.cmd != "init":
+        for d in (cwd, *cwd.parents):
+            if (d / ".warrant").is_dir() or (d / ".warrant").is_symlink():     # a link is found, then refused
+                return confined(d / ".warrant", d)
+    return confined(cwd / ".warrant", cwd)
+
+
+def receiver(a, store):
+    """(trust, profile, repository name or None): each of --trust and --profile when given, else the store's
+    v3.json; refused when neither names it."""
+    doc = None
+    if not (getattr(a, "trust", None) and getattr(a, "profile", None)):
+        f = Path(store) / RECEIVER
+        if not os.path.lexists(f):
+            raise Refused(f"no --trust/--profile and no {RECEIVER} in the store {store}")
+        doc = json.loads(read_inside(f, store))
+        if not (isinstance(doc, dict) and isinstance(doc.get("trust"), dict) and isinstance(doc.get("profile"), dict)):
+            raise Refused(f"{f} is not a receiver configuration {{repository, trust, profile}}")
+    trust = json.loads(Path(here(a.trust)).read_text()) if getattr(a, "trust", None) else doc["trust"]
+    profile = json.loads(Path(here(a.profile)).read_text()) if getattr(a, "profile", None) else doc["profile"]
+    for why in (E.trust_problem(trust), E.profile_problem(profile)):
+        if why:
+            raise Refused(why)
+    return trust, profile, (doc or {}).get("repository")
+
+
 def signer(a):
     seed = Path(home(a.key)).read_text() if a.key else os.environ.get("WARRANT_KEY")
     if not seed:
         raise Refused("a signing seed is needed: --key FILE or WARRANT_KEY")
-    key, trust = K.Key.from_seed_hex(seed), json.loads(Path(here(a.trust)).read_text())
+    key = K.Key.from_seed_hex(seed)
+    trust = json.loads(Path(here(a.trust)).read_text()) if a.trust else receiver(a, store_dir(a))[0]
     if key.public not in trust["keys"].get(a.actor, []):
         raise Refused(f"the trust does not bind this key to {a.actor!r}")
     return key, trust
@@ -45,21 +92,24 @@ def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
     key, trust = signer(a)
     at = a.at if a.at is not None else int(time.time())
     r = R.record(kind, a.actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard)
-    return Store(here(a.store)).append(r, key, trust, expect_head=a.expect_head)
+    return Store(store_dir(a)).append(r, key, trust, expect_head=a.expect_head)
 
 
 def _parser():
     p = argparse.ArgumentParser(prog="warrant")
     sub = p.add_subparsers(dest="cmd", required=True)
-    cmds = {n: sub.add_parser(n) for n in ("init", "key", "trust", "bootstrap", "put", "attest", "blob", "assess", "fmt")}
+    cmds = {n: sub.add_parser(n) for n in ("init", "key", "trust", "bootstrap", "put", "attest", "blob", "assess", "fmt",
+                                           "status")}
+    for n in LOOP:
+        sub.add_parser(n, help=f"python -m warrant.{n} (its own arguments)", add_help=False)
     for n, c in cmds.items():
         if n not in ("key", "trust"):
-            c.add_argument("--store", default=".warrant")
+            c.add_argument("--store")
     for n in ("bootstrap", "put", "attest"):
         c = cmds[n]
         c.add_argument("--key")
         c.add_argument("--actor", required=True)
-        c.add_argument("--trust", required=True)
+        c.add_argument("--trust")
         c.add_argument("--at", type=int)
         c.add_argument("--expect-head")
     cmds["key"].add_argument("--out", required=True)
@@ -76,11 +126,14 @@ def _parser():
     c.add_argument("target")
     c.add_argument("--body", type=json.loads, default={"verdict": "accept"})
     cmds["blob"].add_argument("file")
-    c = cmds["assess"]
-    c.add_argument("--trust", required=True)
-    c.add_argument("--profile", required=True)
-    c.add_argument("--as-of", type=int)
-    c.add_argument("--lineage")
+    for n in ("assess", "status"):
+        c = cmds[n]
+        c.add_argument("--trust")
+        c.add_argument("--profile")
+        c.add_argument("--as-of", type=int)
+    cmds["assess"].add_argument("--lineage")
+    cmds["status"].add_argument("--actor", help="also what waits for this actor")
+    cmds["status"].add_argument("--json", action="store_true")
     return p
 
 
@@ -102,20 +155,87 @@ def _trust(a):
 
 
 def _assess(a):
-    rep = E.assess(Store(here(a.store)).snapshot(), json.loads(Path(here(a.trust)).read_text()),
-                   json.loads(Path(here(a.profile)).read_text()), a.as_of)
+    store = store_dir(a)
+    trust, profile, _ = receiver(a, store)
+    rep = E.assess(Store(store).snapshot(), trust, profile, a.as_of)
     if not a.lineage:
         return rep
     return {"lineage": rep["lineages"].get(a.lineage),
             "versions": {v: rep["versions"][v] for v in rep["lineages"].get(a.lineage, {}).get("versions", [])}}
 
 
+def status(a):
+    """A reader's summary of one store under its receiver: the snapshot, the schemas, lineages by schema and
+    state, reliance, what is wrong, and (with --actor) what waits for that actor (warrant.graph.frontier)."""
+    store = store_dir(a)
+    trust, profile, name = receiver(a, store)
+    snap = Store(store).snapshot()
+    rep = E.assess(snap, trust, profile, a.as_of)
+    lineages, reliance = {}, {}
+    for lin in rep["lineages"].values():
+        by, state = lineages.setdefault(lin["schema"], {}), lin["state"] or "none"     # none: no effective version yet
+        by[state] = by.get(state, 0) + 1
+        reliance[lin["reliance"]] = reliance.get(lin["reliance"], 0) + 1
+    return {"repository": name, "store": store, "snapshot": rep["snapshot"], "assessment": rep["assessment"],
+            "records": len(snap.lines), "blobs": len(snap.blobs), "canonical": rep["canonical"],
+            "completeness": rep["completeness"], "rejected": len(rep["rejected"]),
+            "chain_forks": sorted({f[0] for f in rep["chains"]["forks"]}), "schemas": sorted(rep["schemas"]),
+            "schemas_pending": sorted(rep["schemas_pending"]), "problems": rep["problems"],
+            "lineages": {k: dict(sorted(v.items())) for k, v in sorted(lineages.items())},
+            "reliance": dict(sorted(reliance.items())),
+            "frontier": G.frontier(rep, profile, a.actor) if a.actor else None}
+
+
+def _counts(d):
+    return " · ".join(f"{k} {n}" for k, n in d.items()) or "none"
+
+
+def render(st):
+    """`status` for a person: one line per fact, the same facts as its --json."""
+    rows = [("repository", st["repository"] or "(no repository named)"),
+            ("store", f"{st['store']} · snapshot {st['snapshot'][:12]}"),
+            ("records", f"{st['records']} · blobs {st['blobs']} · {'canonical' if st['canonical'] else 'NOT canonical'}"
+                        f" · rejected {st['rejected']} · completeness {st['completeness']}"),
+            ("schemas", ", ".join(st["schemas"]) + (f" (pending: {', '.join(st['schemas_pending'])})" if st["schemas_pending"] else ""))]
+    w = max([len(k) for k in st["lineages"]] or [0])
+    rows += [("lineages" if i == 0 else "", f"{k.ljust(w)}  {_counts(v)}") for i, (k, v) in enumerate(st["lineages"].items())]
+    rows += [("reliance", _counts(st["reliance"])),
+             ("chain forks", ", ".join(st["chain_forks"]) or "none"),
+             ("problems", f"{len(st['problems'])}" if st["problems"] else "none")]
+    f = st["frontier"]
+    if f:
+        rows.append((f["actor"], f"may attest {len(f['attest'])} · own pending {len(f['pending'])} · challenged {len(f['challenged'])}"
+                                 f" · roles {', '.join(f['roles']) or 'none'}"))
+        rows += [("", f"{x['version'][:12]}  {x['schema']}  {'; '.join(x['waiting'])}") for x in f["attest"]]
+    return "".join(f"{k.ljust(12)}{v}\n" for k, v in rows)
+
+
+def loop(argv):
+    """`warrant review|gate|claims|roadmap ARGS`: that module's own command, unchanged."""
+    from . import claims, gate, review, roadmap
+    from .repo import main as run_tool
+    mod = {"review": review, "gate": gate, "claims": claims, "roadmap": roadmap}[argv[0]]
+    return mod.main(argv[1:]) if mod is gate else run_tool(mod.run, argv[1:])
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] and argv[0] in LOOP:
+        return loop(argv)
     a = _parser().parse_args(argv)
+    if a.cmd == "status":
+        try:
+            st = status(a)
+        except (OSError, ValueError) as e:
+            print(f"REFUSED {e}", file=sys.stderr)
+            return 2
+        sys.stdout.write(json.dumps(st, indent=1, sort_keys=True) + "\n" if a.json else render(st))
+        return 0
     try:
         if a.cmd == "init":
-            Store(here(a.store)).init()
-            out = {"store": str(a.store)}
+            store = store_dir(a)
+            Store(store).init()
+            out = {"store": a.store if a.store is not None else store}     # as named, else where it went
         elif a.cmd == "key":
             k = K.Key.generate()
             fd = os.open(home(a.out), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -131,9 +251,9 @@ def main(argv=None):
         elif a.cmd == "attest":
             out = {"record": put(a, "attest", dict(a.body, target=a.target), refs=[a.target])}
         elif a.cmd == "blob":
-            out = {"blob": Store(here(a.store)).put_blob(Path(here(a.file)).read_bytes())}
+            out = {"blob": Store(store_dir(a)).put_blob(Path(here(a.file)).read_bytes())}
         elif a.cmd == "fmt":
-            s = Store(here(a.store))
+            s = Store(store_dir(a))
             s.add_lines([])
             snap = s.snapshot()
             out = {"canonical": snap.canonical, "rejected": len(snap.rejected)}     # sorted is not canonical with a rejected line

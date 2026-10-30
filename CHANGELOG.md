@@ -10,6 +10,19 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   newest base commit it holds (`git merge-tree`, the repository's merge attributes applied), and to X itself
   when that merge conflicts: catching up with the base after an acceptance no longer needs a new review.
   `CHANGELOG.md` and `tests/mutants.py` merge as union, and `tests/mutants.py` refuses an id named twice.
+- One command. `warrant review|gate|claims|roadmap ARGS` run those modules' commands (`warrant-review` and the
+  others stay). `warrant status [--actor A] [--json]` is a reader's summary of a store: the snapshot, the schemas,
+  lineages by schema and state, reliance, chain forks, problems and, with `--actor`, what waits for A.
+- The store is the nearest `.warrant/` from the current directory upward (or WARRANT_REPO_ROOT's), and the trust
+  and profile default to that store's `v3.json`: `warrant assess` in a repository needs no flag. `--store`,
+  `--trust` and `--profile` still name others; `init` still creates the store in the current directory.
+  A store found by default is confined by real path to the directory it is found in, as `--store` is to the
+  current one: a `.warrant` link leading out of its repository is refused (Codex finding 24b91d75f065).
+- A repository's `.warrant/v3.json` is read from its store only, by every reader (the `warrant` command, the
+  review loop's commands through `warrant.repo`, the agent interface): a link to a file outside the store is
+  refused (Codex finding d6127c0fd71d).
+- The record graph's queries (`around`, `path`, `why`, `frontier`, `delta`, `impact`, `answer`) move from
+  `warrant_agent.graph` to the core as `warrant.graph`; the agent interface and `tools/graph.py` import them there.
 - `warrant.roadmap revise --obligation ID --statement S` files a new `open` version of an obligation with a new
   statement, and `release --obligation ID --reason TEXT` its `released` version with the reason as the residual.
   Each refuses before signing an actor the lineage rule would exclude: `revise` anyone but the actor who opened

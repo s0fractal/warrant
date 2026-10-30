@@ -36,6 +36,13 @@ record formats and interfaces may still change. `warrant-graph` 2.0.0a1 is
 Warrant 2 and does not read Warrant 3 stores; `warrant-verify` (≤ 0.12.0) is the
 retired 0.x generation.
 
+In a repository that keeps its records in `.warrant/`, `warrant status` says
+where it stands: the snapshot, the schemas, the lineages by schema and state,
+reliance, what is wrong and, with `--actor A`, what waits for A. Every command
+finds the nearest `.warrant/` upward from the current directory and reads that
+store's own trust and profile (`.warrant/v3.json`); `--store`, `--trust` and
+`--profile` name others.
+
 ## The model in one table
 
 | Kind | Says |
@@ -89,7 +96,7 @@ Warrant 2 and why; §12 what is open.
 The repository builds and checks Warrant with Warrant: the spec's claims, the
 roadmap and the pull request reviews are records in `.warrant/records.jsonl`,
 and a gate merges a pull request on a recorded acceptance. The review loop's
-commands ship in the package (`warrant-review`, `warrant-gate`,
+commands ship in the package (`warrant review|gate|claims|roadmap`, also `warrant-review`, `warrant-gate`,
 `warrant-claims`, `warrant-roadmap`, or `python -m warrant.<name>`), so that
 another repository runs them on its own `.warrant/`; this repository's records
 and machinery around them (`tools/`, `.warrant/`, `.github/`, `integrations/`)
