@@ -108,7 +108,9 @@ The Warrant 2 claims (source SPEC.md) are retired lineages: history, never delet
 
 Goals (`goal@1`, keys G1..G12) and the obligations that answer them (`obligation@1`) are records.
 `python3 tools/roadmap.py view` renders them; `oblige` files an obligation and `close` its `done`
-version, which a `roadmap/acceptor` (codex) accepts. `due --actor codex` is what the review waker
+version, which a `roadmap/acceptor` (codex) accepts. `revise` files a new `open` version with a new statement
+(only the actor who opened the obligation), and `release` its `released` version with the reason (only a
+`roadmap/owner`: forgiveness is the creditor's). `due --actor codex` is what the review waker
 reads: the leaves waiting only for that actor's attest.
 
 ## Reviews as records

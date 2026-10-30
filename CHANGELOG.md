@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `warrant.roadmap revise --obligation ID --statement S` files a new `open` version of an obligation with a new
+  statement, and `release --obligation ID --reason TEXT` its `released` version with the reason as the residual.
+  Each refuses before signing an actor the lineage rule would exclude: `revise` anyone but the actor who opened
+  the obligation (`AUTHOR`), `release` an actor without `roadmap/owner` (`ROLE`).
 - `warrant.review due` and `warrant.review gate` refuse with exit 2 (`REFUSED <code> ...`) when the merge
   gate refuses the base, e.g. a repository with no `.warrant/merge.json`; they exited 1 with a traceback.
   The review waker counts exit 2 as a refusal and goes on to the repository's roadmap closures (a
