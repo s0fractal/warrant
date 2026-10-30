@@ -6,6 +6,14 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- One command. `warrant review|gate|claims|roadmap ARGS` run those modules' commands (`warrant-review` and the
+  others stay). `warrant status [--actor A] [--json]` is a reader's summary of a store: the snapshot, the schemas,
+  lineages by schema and state, reliance, chain forks, problems and, with `--actor`, what waits for A.
+- The store is the nearest `.warrant/` from the current directory upward (or WARRANT_REPO_ROOT's), and the trust
+  and profile default to that store's `v3.json`: `warrant assess` in a repository needs no flag. `--store`,
+  `--trust` and `--profile` still name others; `init` still creates the store in the current directory.
+- The record graph's queries (`around`, `path`, `why`, `frontier`, `delta`, `impact`, `answer`) move from
+  `warrant_agent.graph` to the core as `warrant.graph`; the agent interface and `tools/graph.py` import them there.
 - `warrant.review due` and `warrant.review gate` refuse with exit 2 (`REFUSED <code> ...`) when the merge
   gate refuses the base, e.g. a repository with no `.warrant/merge.json`; they exited 1 with a traceback.
   The review waker counts exit 2 as a refusal and goes on to the repository's roadmap closures (a

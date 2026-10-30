@@ -1,7 +1,7 @@
 """Queries over the record graph of one assessment report (docs/V3.md §10: nodes and typed edges read
 from `refs`, `lineage`, `guard.requires`, `prev` and an attest's or challenge's target, never from text).
-Pure functions of reports: the agent operation `graph` and the repository's tools/graph.py call the same
-ones. Every state shown is the report's, never recomputed.
+Pure functions of reports: the agent operation `graph`, `warrant status` and the repository's tools/graph.py
+call the same ones. Every state shown is the report's, never recomputed.
 
   around(rep, id)          a node, its lineage and its edges in and out
   path(rep, id)            what a record rests on (edges out, transitively; `prev` left out)
@@ -15,7 +15,7 @@ ones. Every state shown is the report's, never recomputed.
 
 `root` is the snapshot digest; `lens` the content address of everything else that decides a result:
 the engine's code, the adapter's, the trust, the profile and the query."""
-from warrant import jcs as C
+from . import jcs as C
 
 WALK = ("lineage", "requires", "ref", "attest", "challenge")       # `prev` orders a writer's chain; it is no dependency
 MAX_NODES = 2000

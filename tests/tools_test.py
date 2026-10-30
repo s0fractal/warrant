@@ -4,6 +4,8 @@ replay checker (warrant/review.py), the roadmap (warrant/roadmap.py) and what a 
 
     python3 tests/tools_test.py
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -14,6 +16,8 @@ from pathlib import Path
 from world import KEYS, ROOT, Repo, check, finish, git
 
 from warrant import claims as CL
+from warrant import cli as CLI
+from warrant import engine as E
 from warrant import records as R
 from warrant import repo as RP
 from warrant import review as RV
@@ -419,9 +423,60 @@ def roadmap_cases():
     check("P02 an obligation answering no goal is a roadmap problem", len(RM.check(rp.report())) == 1)
 
 
+def cli(cwd, *argv):
+    """`warrant ARGV` in process from the directory `cwd`, WARRANT_REPO_ROOT unset: (exit code, standard output)."""
+    out, old, env = io.StringIO(), os.getcwd(), os.environ.pop("WARRANT_REPO_ROOT", None)
+    try:
+        os.chdir(cwd)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                code = CLI.main(list(argv))
+            except SystemExit as e:          # argparse refusing the arguments
+                code = e.code
+    finally:
+        os.chdir(old)
+        if env is not None:
+            os.environ["WARRANT_REPO_ROOT"] = env
+    return code, out.getvalue()
+
+
+def cli_cases():
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    sub = r.root / "docs" / "deep"
+    sub.mkdir(parents=True)
+    code, out = cli(sub, "assess")
+    rep = json.loads(out or "{}")
+    check("K01 `warrant assess` with no flag, below the repository, assesses the nearest store under its own v3.json",
+          code == 0 and rep.get("assessment") == r.report()["assessment"], (code, out[-200:]))
+    other = {"warrant": "trust/3", "keys": {a: v for a, v in r.trust["keys"].items() if a != "bob"}}
+    (sub / "t.json").write_text(json.dumps(other))
+    code, out = cli(sub, "assess", "--trust", "t.json")
+    want = E.assess(r.store.snapshot(), other, r.profile)["assessment"]
+    check("K02 --trust names the trust and the store's v3.json gives the rest",
+          code == 0 and json.loads(out or "{}").get("assessment") == want != r.report()["assessment"], (code, out[-200:]))
+    code, out = cli(sub, "status", "--json", "--actor", "bob")
+    st = json.loads(out or "{}")
+    check("K03 `warrant status` counts the store's records and lineages by schema and state, and what waits for an actor",
+          code == 0 and st.get("records") == len(r.store.snapshot().lines) and st.get("lineages") == {"obligation@1": {"open": 1}}
+          and st.get("reliance") == {"ELIGIBLE": 1} and [x["version"] for x in (st.get("frontier") or {}).get("attest", [])] == [d],
+          st)
+    code, out = cli(sub, "status")
+    check("K04 `warrant status` without --json says the same facts in lines",
+          code == 0 and "obligation@1  open 1" in out and "reliance    ELIGIBLE 1" in out, out)
+    code, out = cli(r.root, "roadmap", "--root", str(r.root), "check")
+    check("K05 `warrant roadmap ARGS` is `python -m warrant.roadmap ARGS`", code == 0 and out.startswith("roadmap: 1 lineages"),
+          (code, out[-200:]))
+    cli(sub, "init")
+    check("K06 `warrant init` creates the store in the current directory, also inside a repository",
+          (sub / ".warrant" / "records.jsonl").is_file(), sorted(p.name for p in sub.iterdir()))
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     review_cases()
     roadmap_cases()
+    cli_cases()
     sys.exit(finish())
