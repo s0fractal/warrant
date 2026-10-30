@@ -5,6 +5,7 @@ the exact set of refusal codes (a mutant that removes one rule is seen even wher
     python3 tests/gate_test.py
 """
 import json
+import subprocess
 import sys
 
 from world import KEYS, Repo, check, finish, git
@@ -104,6 +105,51 @@ def schema_cases():
     a = p.assess()
     check("E28 a head that proposes one valid schema, backed by its author alone, is due for the acceptor's review, "
           "not refused (6d6bb700: SCHEMA_NOT_COUNTED made it STORE_PROBLEMS)", a.due and codes(a) == {"NO_ACCEPT"}, a.reasons)
+
+
+def catch_up_cases():
+    """The base moves on after the acceptance and the author merges it in (a sibling pull request merged first)."""
+    def union(s):                                       # as the repository's own .gitattributes
+        (s.r.root / ".gitattributes").write_text(".warrant/records.jsonl merge=union -text\n")
+
+    def merged(p, *how):
+        git(p.r.root, "merge", "-q", "--no-edit", *how, "master")
+        p.r.store.add_lines([])                         # warrant fmt: the union in canonical order again
+        return p.r.commit("records in canonical order")
+
+    def advance(p, path="other.py", text="y = 1\n"):
+        git(p.r.root, "checkout", "-q", "master")
+        (p.r.root / path).write_text(text)
+        p.r.entity("carol", "obligation@1", {"state": "open", "statement": "on the base", "serves": []})
+        p.base = p.r.commit("the base moves on")
+        git(p.r.root, "checkout", "-q", "feature")
+    p = PR(before_base=union)
+    advance(p)
+    merged(p)
+    a = p.assess()
+    check("E29 a head that merged the base after the acceptance is held to X's clean merge with the base: eligible "
+          "with no new review", codes(a) == set() and a.accept is not None, a.reasons)
+    p = PR(before_base=union)
+    advance(p)
+    merged(p)
+    (p.r.root / "code.py").write_text("x = 3\n")
+    check("E30 a change beside the base's merged in after X still refuses", codes(p.assess(recommit=True)) == {"TAIL_CHANGES"})
+    p = PR(before_base=union)
+    advance(p, "code.py", "x = 9\n")                   # the base changes the line X changed: the merge conflicts
+    try:
+        git(p.r.root, "merge", "-q", "--no-edit", "master")
+    except subprocess.CalledProcessError:
+        (p.r.root / "code.py").write_text("x = 5\n")   # a resolution neither side had
+        git(p.r.root, "add", "-A")
+        git(p.r.root, "commit", "-q", "--no-edit")
+    p.r.store.add_lines([])
+    try:
+        a = p.assess(recommit=True)
+        got = (codes(a), a.reasons)
+    except subprocess.CalledProcessError as e:          # the gate must answer a conflicting merge, not fail on it
+        got = (None, f"raised {e}")
+    check("E31 a head whose merge of the base conflicts with X is compared with X: its resolution needs a review",
+          got[0] == {"TAIL_CHANGES", "TAIL_RECORD_UNREVIEWED"}, got[1])
 
 
 def tail_cases():
@@ -238,6 +284,7 @@ if __name__ == "__main__":
     store_cases()
     schema_cases()
     tail_cases()
+    catch_up_cases()
     lineage_cases()
     verdict_cases()
     check_cases()

@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The merge gate holds a head that merged base commits after its reviewed commit X to X's clean merge with the
+  newest base commit it holds (`git merge-tree`, the repository's merge attributes applied), and to X itself
+  when that merge conflicts: catching up with the base after an acceptance no longer needs a new review.
+  `CHANGELOG.md` and `tests/mutants.py` merge as union, and `tests/mutants.py` refuses an id named twice.
 - One command. `warrant review|gate|claims|roadmap ARGS` run those modules' commands (`warrant-review` and the
   others stay). `warrant status [--actor A] [--json]` is a reader's summary of a store: the snapshot, the schemas,
   lineages by schema and state, reliance, chain forks, problems and, with `--actor`, what waits for A.
