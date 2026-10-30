@@ -20,7 +20,7 @@ from . import engine as E
 from . import jcs as C
 from . import keys as K
 from . import records as R
-from .store import Refused, Store
+from .store import Refused, Store, read_inside
 
 PACKAGE = Path(__file__).resolve().parent        # the checker's code: every module of this package
 NAME = PACKAGE.name                              # its path in a repository that carries its source
@@ -51,7 +51,7 @@ class Repo:
 
     def config(self):
         """(trust, profile, repository name) of .warrant/v3.json."""
-        doc = json.loads((self.dot / "v3.json").read_text())
+        doc = json.loads(read_inside(self.dot / "v3.json", self.dot))
         for why in (E.trust_problem(doc["trust"]), E.profile_problem(doc["profile"])):
             if why:
                 raise Failed("CONFIG", f".warrant/v3.json: {why}")

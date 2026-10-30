@@ -28,6 +28,7 @@ import os
 import time
 
 from warrant import engine as E
+from warrant import graph as G
 from warrant import jcs as C
 from warrant import keys as K
 from warrant import records as R
@@ -36,7 +37,6 @@ from warrant.store import Inadmissible, Refused, Snapshot
 
 from . import AGENT_API, adapter_id
 from . import glossary as GL
-from . import graph as G
 from .config import OPERATIONS
 from .errors import CODES, AgentError, need
 

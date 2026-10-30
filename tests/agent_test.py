@@ -369,10 +369,20 @@ def mcp_cases():
           and bad.is_error and "NOT_FOUND" in bad.content[0].text, (names, c, bad))
 
 
+def receiver_cases():
+    r = Repo()
+    (r.dot / "v3.json").rename(r.home / "foreign-receiver.json")     # Codex finding d6127c0fd71d on #236
+    (r.dot / "v3.json").symlink_to(r.home / "foreign-receiver.json")
+    out = api.call(cfg_of(r), "workspace", {"workspace": "w"})
+    check("A28 a workspace's v3.json is read from its repository's store only: a link out of it is refused",
+          err(out) == "BAD_REQUEST" and "outside" in out["message"], out)
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
     admission_cases()
     init_cases()
     mcp_cases()
+    receiver_cases()
     sys.exit(finish())

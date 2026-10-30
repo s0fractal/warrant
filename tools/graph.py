@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The record graph of this repository by query (warrant_agent/graph.py over the engine's report), and the
+"""The record graph of this repository by query (warrant/graph.py over the engine's report), and the
 Markdown views of the records as build artifacts.
 
     python3 tools/graph.py around ID | path ID | why ID     # a node; what it rests on; what rests on it
@@ -27,7 +27,7 @@ from warrant import gate as GT             # noqa: E402
 from warrant import review as RV           # noqa: E402
 from warrant import roadmap as RM          # noqa: E402
 from warrant.repo import Failed, Repo, dump, main  # noqa: E402
-from warrant_agent import graph as G       # noqa: E402
+from warrant import graph as G             # noqa: E402
 
 VIEWS = ("CLAIMS.md", "ROADMAP.md", "REVIEWS.md")
 
