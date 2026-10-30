@@ -159,6 +159,8 @@ MUTANTS = [
     ("T34", "warrant/cli.py", '    return " · ".join(f"{k} {n}" for k, n in d.items()) or "none"', '    return "none"', TOOLS, ["K04"]),
     ("T35", "warrant/cli.py", "    if argv[:1] and argv[0] in LOOP:", "    if False:", TOOLS, ["K05"]),
     ("T36", "warrant/cli.py", '    if a.cmd != "init":', "    if True:", TOOLS, ["K06"]),
+    ("T47", "warrant/cli.py", '                return confined(d / ".warrant", d)', '                return str(d / ".warrant")', TOOLS, ["K07"]),
+    ("T48", "warrant/cli.py", '    return confined(cwd / ".warrant", cwd)', '    return str(cwd / ".warrant")', TOOLS, ["K07"]),
     ("T10", "warrant/claims.py", '    if key.public not in trust["keys"].get(CHECKER, []):', "    if False:", TOOLS, ["C08"]),
     ("T12", "warrant/repo.py", '    if body.get("code") != code:', "    if False:", TOOLS, ["C12", "R07"]),
     ("T13", "warrant/claims.py", "for i, _, b in rows if not held(b, ran, killed)]", "for i, _, b in rows if False]", TOOLS, ["C14"]),

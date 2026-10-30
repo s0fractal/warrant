@@ -471,6 +471,17 @@ def cli_cases():
     cli(sub, "init")
     check("K06 `warrant init` creates the store in the current directory, also inside a repository",
           (sub / ".warrant" / "records.jsonl").is_file(), sorted(p.name for p in sub.iterdir()))
+    other = Repo(name="s0fractal/other")              # Codex finding 24b91d75f065 on #236: a `.warrant` link out of its repository
+    linked = r.home / "linked"
+    linked.mkdir()
+    (linked / ".warrant").symlink_to(other.dot, target_is_directory=True)
+    (linked / "payload").write_bytes(b"a payload")
+    before = sorted(p.name for p in other.store.blobs.iterdir())
+    found, _ = cli(linked, "blob", "payload")
+    made, _ = cli(linked, "init")
+    check("K07 a store found by default is confined to the directory it is found in: a `.warrant` link out of it is refused, "
+          "by discovery and by init", found == 2 and made == 2 and sorted(p.name for p in other.store.blobs.iterdir()) == before,
+          (found, made))
 
 
 if __name__ == "__main__":
