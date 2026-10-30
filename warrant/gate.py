@@ -288,7 +288,7 @@ class Base:
 
 
 def due_for(rep, profile, actor, schemas):
-    """The versions of `schemas` waiting for `actor`'s verdict in report `rep` (warrant_agent.graph.frontier's
+    """The versions of `schemas` waiting for `actor`'s verdict in report `rep` (warrant.graph.frontier's
     rule, stated here again so that the gate's decision rests on no file outside the owner paths but the core)."""
     roles = {r for r, a in profile["roles"].items() if actor in a}
     acted = {r["body"]["target"] for r in _recs(rep).values() if r["kind"] in ("attest", "challenge") and r["actor"] == actor}
