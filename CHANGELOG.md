@@ -4,6 +4,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## Unreleased
+
+- `.warrant/claims.json`'s `source` may be a list of specifications: each claim names its own (`claims file` takes
+  a `source` per entry, by default the first), its sentence is checked in that document, and a claim of a source the
+  list does not name is refused (`CLAIM_SOURCE`). A repository whose claims live in more than one document (sigma-glyph:
+  Book I and the resume draft) needs no second configuration.
+
 ## 3.0.0a3 — a release the published one admits
 
 Prepared for PyPI; published when the owner pushes the tag `v3.0.0a3` (`release.yml`), the first release that

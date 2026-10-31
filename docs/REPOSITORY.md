@@ -192,7 +192,8 @@ exact version (and hashes), from a checkout of that repository:
   hold label and owner paths. Nothing of warrant's own tree is read: no repository name, branch,
   check or owner path is a constant of the package.
 - `.warrant/claims.json`, only for claims: `{"warrant": "claims/1", "source", "retired", "witnesses",
-  "mutants"}` (`python -m warrant.claims` says what each is). The claims checker and the review
+  "mutants"}` (`python -m warrant.claims` says what each is). `source` is one specification or a list of them; each
+  claim names its own and its sentence is checked there. The claims checker and the review
   replay run Python test files (W-2, a declared runner, is not done).
 
 The commands are `warrant review open|head|merged|due|verify|view` (also `warrant-review` or `python -m

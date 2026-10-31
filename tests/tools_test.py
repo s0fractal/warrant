@@ -213,6 +213,42 @@ def config_cases():
         escapes[which] = (refused_code(CL.check, RP.Repo(r.root)) or "")[:6], marker.exists()
     check("C18 a claim's specification, witness file or mutant harness that is a link leading outside the repository is refused "
           "(CONFIG) before it is read or run", all(v == ("CONFIG", False) for v in escapes.values()), escapes)
+    r = claims_repo()                                      # a repository whose claims live in two documents
+    (r.root / "docs" / "RESUME.md").write_text("## 1. Resume\n\nA resumed run reaches the straight run's result.\n")
+    two = dict(CLAIMS, source=[SOURCE, "docs/RESUME.md"])
+    (r.root / ".warrant" / "claims.json").write_text(json.dumps(two))
+    claim(r)
+    claim(r, id="R-1-1", source="docs/RESUME.md", section="1", text="A resumed run reaches the straight run's result.")
+    both = codes(r)
+    wrong = claims_repo()
+    (wrong.root / "docs" / "RESUME.md").write_text("## 1. Resume\n")
+    (wrong.root / ".warrant" / "claims.json").write_text(json.dumps(two))
+    claim(wrong, id="R-1-2", source="docs/RESUME.md", section="1")    # the first source's sentence, under the second
+    claim(wrong, id="R-1-3", source="docs/OTHER.md")
+    refused = sorted(codes(wrong))
+    shapes = {}
+    (wrong.root / RETIRED).write_text(SPEC)                # present, so only the configuration can refuse it
+    for name, src in (("empty", []), ("twice", [SOURCE, SOURCE]), ("retired", [SOURCE, RETIRED])):
+        (wrong.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, source=src)))
+        shapes[name] = (refused_code(CL.check, RP.Repo(wrong.root)) or "")[:6]
+    git(r.root, "init", "-q", "-b", "master")
+    git(r.root, "add", "-A")
+    git(r.root, "commit", "-q", "-m", "two sources")
+    text = CL.view(RP.Repo(r.root).report(), r.root)
+    seed = r.seed("alice")
+    try:
+        CL.file_claims(RP.Repo(r.root), "alice", RP.load_key(str(seed), r.root),
+                       [{"id": "R-9", "section": "1", "text": "x", "witnesses": [], "mutants": [], "source": "docs/OTHER.md"}])
+        filed_elsewhere = "filed"
+    except CL.Failed as e:
+        filed_elsewhere = e.code
+    check("C21 claims.json may name several sources: each claim's sentence is checked in its own source, a claim of a source "
+          "not named is refused, a list empty, repeated or naming a retired source is no configuration, the view lists every "
+          "source's claims, and a claim is filed only under a named source",
+          both == [] and refused == ["CLAIM_SOURCE", "CLAIM_TEXT_MISSING"]
+          and shapes == {"empty": "CONFIG", "twice": "CONFIG", "retired": "CONFIG"}
+          and "docs/RESUME.md §1" in text and f"{SOURCE} §3" in text and filed_elsewhere == "CLAIM_SOURCE",
+          (both, refused, shapes, filed_elsewhere))
     r = claims_repo()
     git(r.root, "init", "-q", "-b", "master")
     rel = Path(os.path.relpath(r.root))
