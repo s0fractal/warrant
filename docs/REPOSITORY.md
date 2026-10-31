@@ -114,6 +114,25 @@ version, which a `roadmap/acceptor` (codex) accepts. `revise` files a new `open`
 `roadmap/owner`: forgiveness is the creditor's). `due --actor codex` is what the review waker
 reads: the leaves waiting only for that actor's attest.
 
+## A release against the published one
+
+Roadmap G12: release n+1 is admitted by the published release n. `python -m warrant.differential --python N_PYTHON`
+has the published n (a Python whose site-packages hold it, from PyPI) and this checkout's package assess one store
+under its `.warrant/v3.json`, and compares the reports as canonical bytes but for the engine's identity (`code`, and
+`assessment`, the digest of the operands, `code` among them, each checked to be that digest). Any other difference
+is refused unless a `differential/1` declaration (`--declared FILE`: `{warrant, differs: [member, ...], because}`)
+names exactly the members that differ. A declared difference is a migration the release says it makes; whether a
+receiver relies on what changed stays that receiver's question (a challenge, a revalidation), never a rewrite of n's
+history.
+
+```bash
+uv venv ~/Projects/.worktrees/venv-wg-n && uv pip install --python ~/Projects/.worktrees/venv-wg-n/bin/python "warrant-graph==3.0.0a2"
+```
+
+```bash
+python -m warrant.differential --python ~/Projects/.worktrees/venv-wg-n/bin/python --root .
+```
+
 ## Reviews as records
 
 A pull request is a `pr-head@1` lineage: `python3 tools/review.py open --pr N --title T` files its
