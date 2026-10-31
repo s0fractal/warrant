@@ -4,7 +4,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
-## Unreleased
+## 3.0.0a4 — claims in more than one specification
+
+Prepared for PyPI; published when the owner pushes the tag `v3.0.0a4` (`release.yml`), admitted by the published
+3.0.0a3 (roadmap G12: the reports agree but for the engine's identity, this release's duty is accepted, the store at
+`v3.0.0a3` is kept whole). An alpha (PEP 440). Records and assessment rules are those of 3.0.0a1. Its stated limits
+are those of 3.0.0a3 (docs/V3.md §12, each by name); none is closed by this release.
 
 - `.warrant/claims.json`'s `source` may be a list of specifications: each claim names its own (`claims file` takes
   a `source` per entry, by default the first), its sentence is checked in that document, and a claim of a source the

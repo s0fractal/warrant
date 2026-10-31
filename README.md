@@ -25,13 +25,13 @@ of it (Python API, CLI, stdio MCP).
 ## Install
 
 ```bash
-pip install --pre warrant-graph           # Warrant 3 (3.0.0a3); Python ≥ 3.10; depends on `cryptography`
+pip install --pre warrant-graph           # Warrant 3 (3.0.0a4); Python ≥ 3.10; depends on `cryptography`
 pip install --pre "warrant-graph[mcp]"    # adds `warrant-agent-mcp` on the official MCP SDK (2.x, from 2.3)
 ```
 
 This installs the commands `warrant`, `warrant-agent` and `warrant-agent-mcp`
 and the packages `warrant` and `warrant_agent` (`pip install .` does the same
-from a checkout). 3.0.0a3 is an alpha: pip installs it only with `--pre`, and the
+from a checkout). 3.0.0a4 is an alpha: pip installs it only with `--pre`, and the
 record formats and interfaces may still change. `warrant-graph` 2.0.0a1 is
 Warrant 2 and does not read Warrant 3 stores; `warrant-verify` (≤ 0.12.0) is the
 retired 0.x generation.
@@ -67,10 +67,11 @@ it authorizes nothing: roles are the reader's profile.
 
 ## Status
 
-**3.0.0a3 (alpha).** Warrant 3 replaced Warrant 2 in this repository on
+**3.0.0a4 (alpha).** Warrant 3 replaced Warrant 2 in this repository on
 2026-10-27 (3.0.0a1); 3.0.0a2 added the review loop to the package; 3.0.0a3
-is the first release the published one admitted (roadmap G12), and adds the
-operator's Home and a review loop that names no agent.
+was the first release the published one admitted (roadmap G12), and added the
+operator's Home and a review loop that names no agent; 3.0.0a4 lets a
+repository's claims live in more than one specification.
 
 - **What is backed.** The normative sentences of docs/V3.md are `claim@1`
   records, each with the test cases that witness it and the mutants of
