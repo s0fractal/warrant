@@ -13,7 +13,10 @@ the members that differ (an undeclared difference is refused, and so is a declar
 
 With --release VERSION, release n must also admit n+1 (roadmap G12, release.yml): n's own engine assesses the store and
 finds an obligation@1 lineage whose effective version is closed (`done`, its guard met: an acceptor accepted it), relied
-on (ELIGIBLE), and lists `warrant-graph==VERSION` among its refs (`roadmap close --ref`). None: REFUSED.
+on (ELIGIBLE), and lists `warrant-graph==VERSION` among its refs (`roadmap close --ref`). None: REFUSED. And n's
+history must still be here: every record line and every blob of the store at n's tag (`v` + the version N_PYTHON's
+warrant-graph names) is in this checkout's store. Release n+1 may challenge a record of n's history (a challenge, a new
+version: the receiver's reliance answers it), never rewrite it; a missing line or blob is REFUSED, a missing tag UNMADE.
 
 Prints the verdict as JSON; exit 0 SAME or DECLARED, 1 REFUSED, 2 when a report could not be made."""
 import argparse
@@ -58,6 +61,11 @@ found = sorted(lin["effective"] for lin in rep["lineages"].values()
 sys.stdout.write(json.dumps({"release": want, "accepted": found}))
 """
 RELEASE_REF = "warrant-graph=={}"
+# run by N_PYTHON: the version of the warrant-graph it imports, whose tag holds n's history
+VERSION_SCRIPT = """import importlib.metadata, json, sys
+sys.stdout.write(json.dumps(importlib.metadata.version("warrant-graph")))
+"""
+TAG = "v{}"
 
 
 class Unmade(Exception):
@@ -103,6 +111,25 @@ def release_duties(python, root, version, run=subprocess.run):
     return got["accepted"]
 
 
+def git_bytes(root, *args):
+    r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=False)
+    if r.returncode:
+        raise Unmade(f"git {' '.join(args)}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+    return r.stdout
+
+
+def rewritten(root, ref):
+    """{records: [line], blobs: [name]}: what the store at `ref` (n's tag) holds that this checkout's store does not.
+    Blobs by name: the store refuses one not named by its hash."""
+    dot = dot_of(root)
+    then = {x for x in git_bytes(root, "show", f"{ref}:.warrant/records.jsonl").split(b"\n") if x.strip()}
+    now = {x for x in (dot / "records.jsonl").read_bytes().split(b"\n") if x.strip()}
+    named = git_bytes(root, "ls-tree", "-z", "--name-only", ref, "--", ".warrant/blobs/").split(b"\0")
+    blobs = {Path(n.decode()).name for n in named if n}
+    here = {p.name for p in (dot / "blobs").iterdir()} if (dot / "blobs").is_dir() else set()
+    return {"records": sorted(x.decode() for x in then - now), "blobs": sorted(blobs - here)}
+
+
 def compare(n, head, declared=None):
     """{verdict: SAME|DECLARED|REFUSED, differs: [member], why?}."""
     for name, rep in (("n", n), ("head", head)):
@@ -139,10 +166,21 @@ def main(argv=None):
         declared = declaration(a.declared) if a.declared else None
         out = compare(published_report(a.python, a.root), head_report(a.root), declared)
         if a.release is not None:
-            out["release"] = {"version": a.release, "accepted": release_duties(a.python, a.root, a.release)}
-            if not out["release"]["accepted"] and out["verdict"] != "REFUSED":
-                out.update(verdict="REFUSED", why=f"no release duty of {a.release} is closed and accepted, as n assesses "
-                                                  f"the store (an obligation@1 closure with the ref {RELEASE_REF.format(a.release)})")
+            n = published(a.python, a.root, VERSION_SCRIPT)
+            if not (isinstance(n, str) and n.strip()):
+                raise Unmade(f"{a.python} named no warrant-graph version")
+            gone = rewritten(a.root, TAG.format(n))
+            out["release"] = {"version": a.release, "accepted": release_duties(a.python, a.root, a.release),
+                              "history": {"of": TAG.format(n), **{k: len(v) for k, v in gone.items()}}}
+            why = [out["why"]] if out["verdict"] == "REFUSED" else []
+            if not out["release"]["accepted"]:
+                why.append(f"no release duty of {a.release} is closed and accepted, as n assesses the store (an "
+                           f"obligation@1 closure with the ref {RELEASE_REF.format(a.release)})")
+            if gone["records"] or gone["blobs"]:
+                why.append(f"the store at {TAG.format(n)} holds {len(gone['records'])} record line(s) and "
+                           f"{len(gone['blobs'])} blob(s) this one does not: n's history is challenged, never rewritten")
+            if why:
+                out.update(verdict="REFUSED", why="; ".join(why))
     except (Unmade, OSError, ValueError) as e:
         print(json.dumps({"verdict": "UNMADE", "why": str(e)}))
         return 2

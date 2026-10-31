@@ -15,7 +15,7 @@ One substitution is made first: the value of `assessment` reads `…` here. It
 names the exact assessment, which includes the identity of the installed
 engine's code, so it differs between installs.
 
-Install it with `pip install --pre warrant-graph` (3.0.0a2, an alpha; Python 3.10 or
+Install it with `pip install --pre warrant-graph` (3.0.0a3, an alpha; Python 3.10 or
 later; the only dependency is `cryptography`), or `pip install .` from a checkout.
 
 ## The four kinds of record

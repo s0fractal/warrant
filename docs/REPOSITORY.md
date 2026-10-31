@@ -126,7 +126,7 @@ receiver relies on what changed stays that receiver's question (a challenge, a r
 history.
 
 ```bash
-uv venv ~/Projects/.worktrees/venv-wg-n && uv pip install --python ~/Projects/.worktrees/venv-wg-n/bin/python "warrant-graph==3.0.0a2"
+uv venv ~/Projects/.worktrees/venv-wg-n && uv pip install --prerelease allow --python ~/Projects/.worktrees/venv-wg-n/bin/python warrant-graph
 ```
 
 ```bash
@@ -134,7 +134,10 @@ python -m warrant.differential --python ~/Projects/.worktrees/venv-wg-n/bin/pyth
 ```
 
 `release.yml` runs it on the tagged commit, against the version PyPI publishes, with `--release VERSION`: n's own
-engine must also find a release duty of this version closed and accepted. A release is therefore made in this order:
+engine must also find a release duty of this version closed and accepted, and n's history must still be here: every
+record line and blob of the store at n's tag (`v` + n's version) is in the tagged commit's store. A missing one is
+refused (n+1 may challenge a record of n, never rewrite it); a missing tag makes no verdict. A release is therefore
+made in this order:
 
 1. `python -m warrant.roadmap oblige --goal G12 --statement "Release warrant-graph VERSION: ..."` and a pull request
    that sets `version` in pyproject.toml (and `.warrant/differential.json` when the reports will differ);
