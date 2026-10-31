@@ -19,7 +19,9 @@ from world import KEYS, ROOT, Repo, check, finish, git
 
 from warrant import claims as CL
 from warrant import cli as CLI
+from warrant import differential as DF
 from warrant import engine as E
+from warrant import jcs as JCS
 from warrant import home as H
 from warrant import keys as K
 from warrant import records as R
@@ -649,6 +651,89 @@ def refused_home(fn, *a):
         return str(e)
 
 
+def differential_cases():
+    """warrant.differential (roadmap G12): the published release n and this package on one store."""
+    r = Repo()
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+    head = DF.head_report(r.root)
+
+    def as_n(rep, **change):
+        """`rep` as another engine made it: its code (and so its assessment) another, `change` applied."""
+        n = json.loads(json.dumps(dict(rep, code="0" * 64, **change)))
+        n["assessment"] = JCS.doc_id({k: n.get(k) for k in DF.OPERANDS})
+        return n
+    moved = json.loads(json.dumps(head["lineages"]))
+    moved[o]["state"] = "released"                       # what another engine might have found
+    decl = {"warrant": DF.FORMAT, "differs": ["lineages"], "because": "a migration"}
+    got = {"same": DF.compare(as_n(head), head)["verdict"],
+           "moved": DF.compare(as_n(head, lineages=moved), head),
+           "declared": DF.compare(as_n(head, lineages=moved), head, decl)["verdict"],
+           "stale": DF.compare(as_n(head), head, decl)["verdict"],
+           "wider": DF.compare(as_n(head, lineages=moved), head, dict(decl, differs=["lineages", "versions"]))["verdict"]}
+    check("D01 the published release and the head agree when their reports differ only in the engine's identity (code, "
+          "and the assessment digest that includes it)", got["same"] == "SAME", got)
+    check("D02 any other difference is refused unless declared, and a declaration names exactly the members that differ: "
+          "one that did not occur, or one more than occurred, is refused", got["moved"]["verdict"] == "REFUSED"
+          and got["moved"]["differs"] == ["lineages"] and got["declared"] == "DECLARED" and got["stale"] == "REFUSED"
+          and got["wider"] == "REFUSED", got)
+    forged = dict(as_n(head), code="1" * 64)          # its assessment no longer its operands': no excluded member hides a change
+    check("D03 a report whose assessment is not the digest of its own operands (snapshot, trust, profile, as_of, code) is "
+          "refused, before anything is compared",
+          DF.compare(forged, head)["verdict"] == "REFUSED", DF.compare(forged, head))
+    calls = []
+
+    def fake(cmd, **kw):
+        calls.append((cmd, kw.get("cwd")))
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(as_n(head)).encode(), stderr=b"")
+
+    def failing(cmd, **kw):                            # a report on stdout, but the run failed: no report
+        return subprocess.CompletedProcess(cmd, 1, stdout=json.dumps(as_n(head)).encode(), stderr=b"interrupted")
+    n = DF.published_report("/n/python", r.root, run=fake)
+    (cmd, cwd), = calls
+    try:
+        DF.published_report("/n/python", r.root, run=failing)
+        unmade = False
+    except DF.Unmade:
+        unmade = True
+    check("D04 the published release runs isolated (-I) from a directory outside the checkout, on this store and its "
+          "v3.json receiver, and a run that fails makes no report", cmd[:3] == ["/n/python", "-I", "-c"]
+          and cmd[4] == str(r.dot) and json.loads(cmd[5]) == {"trust": r.trust, "profile": r.profile}
+          and cwd is not None and not Path(cwd).resolve().is_relative_to(r.root.resolve()) and n["code"] == "0" * 64 and unmade,
+          (cmd[:2], cmd[4:], cwd, unmade))
+    seen = []
+
+    def where(cmd, **kw):
+        seen.append(cmd[0])
+        return fake(cmd, **kw)
+    old = os.getcwd()
+    try:
+        os.chdir(r.home)                              # Codex finding 30154b8b64e1 on #246: a path from here, run from elsewhere
+        DF.published_report("runner/python", r.root, run=where)
+        DF.published_report("python3", r.root, run=where)
+    finally:
+        os.chdir(old)
+    check("D06 an interpreter named by a path is the one that path names from the caller's directory, though it runs "
+          "from another; a bare name stays a name for PATH", seen == [str(r.home / "runner" / "python"), "python3"], seen)
+
+    def admitted(doc):
+        f = r.home / "decl.json"
+        f.write_text(json.dumps(doc))
+        try:
+            return DF.declaration(f)["differs"]
+        except DF.Unmade:
+            return None
+    got = {"good": admitted(decl), "empty": admitted(dict(decl, differs=[])), "no reason": admitted(dict(decl, because=" ")),
+           "not names": admitted(dict(decl, differs=[1])), "extra": admitted(dict(decl, by="x"))}
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = DF.main(["--python", "/nonexistent/python", "--root", str(r.root)])
+    check("D05 a declaration names one member or more and says why; anything else is no declaration, and a release that "
+          "cannot be run makes no verdict (UNMADE, exit 2)", got["good"] == ["lineages"]
+          and all(v is None for k, v in got.items() if k != "good") and code == 2
+          and json.loads(out.getvalue())["verdict"] == "UNMADE", (got, code))
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
@@ -656,4 +741,5 @@ if __name__ == "__main__":
     roadmap_cases()
     cli_cases()
     home_cases()
+    differential_cases()
     sys.exit(finish())

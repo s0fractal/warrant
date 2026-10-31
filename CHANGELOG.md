@@ -6,6 +6,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `python -m warrant.differential --python N_PYTHON [--root DIR] [--declared FILE]` (roadmap G12): the published
+  release n and the head assess one store; the reports must be the same bytes but for the engine's identity, any
+  other difference declared member by member (`differential/1`), else refused. First run, 3.0.0a2 against this
+  head: warrant, minds, time-lab and interdict-mesh SAME.
+- Roadmap: G13 (records against prose where the referent changed, a pre-registered comparison), G14 (freshness by
+  content: `warrant drift`), G15 (predictions: time-lab's N1, N3, N7), and under G11 the cross-repository "what rests
+  on X", once a record cites another repository.
 - The review waker wakes a roster: an entry of `repositories.json` may list `reviewers` (`{actor, agent: codex|claude,
   seed?}`), and each due head goes to the first that is not its author, kept across retries. `claude` runs `claude -p`
   with the plugin in the wake's worktree. Without a roster, codex reviews, as before. Roadmap verdicts stay with
