@@ -1,18 +1,24 @@
-# warrant-review: a Codex plugin and the review waker
+# warrant-review: the reviewer's plugin and the review waker
 
-The reviewer's half of the review loop (docs/REPOSITORY.md, "Reviews as records"): Codex is woken
-when a pull request is due for review, reviews it, and files its verdict (findings, or an
-acceptance of the head version) as signed Warrant 3 records through the warrant MCP server. The merge
-gate (`.github/workflows/merge-on-acceptance.yml`) merges a pull request whose accepted head
-it can verify; nobody else has to act.
+The reviewer's half of the review loop (docs/REPOSITORY.md, "Reviews as records"): a reviewer, an actor the
+repository's profile makes a `pr/acceptor`, is woken when a pull request is due for review, reviews it, and files
+its verdict (findings, or an acceptance of the head version) as signed Warrant 3 records through the warrant MCP
+server. The merge gate (`.github/workflows/merge-on-acceptance.yml`) merges a pull request whose accepted head it
+can verify; nobody else has to act. Today the waker wakes Codex (`codex exec`, the actor `codex`).
+
+The plugin is an [Agent Plugins](https://github.com/agentplugins/agent-plugins-spec) 1.0.0 package: `plugin.json`,
+`skills/` and `mcp.json` are what any conforming client loads. Codex and Claude Code read their own manifests,
+which name the same plugin and version (`test_plugin.py` C16).
 
 | Part | What it is |
 | --- | --- |
 | `../../.agents/plugins/marketplace.json` | the marketplace (Codex's format: `.agents/plugins/marketplace.json` at the marketplace root, a local `./` source) |
-| `.codex-plugin/plugin.json` | the plugin manifest: `mcpServers` and `skills` |
-| `.mcp.json`, `scripts/warrant-mcp` | the MCP server `warrant`: `warrant-agent-mcp --config ${WARRANT_AGENT_CONFIG:-~/.warrant/codex-warrant.json}` |
-| `skills/warrant-review/SKILL.md` | the blind review instruction: what to look at and where, and how to file findings or accept through MCP |
-| `scripts/warrant-mcp-call` | a stdio client of the same server for another configuration, one tool per call: a file, or `--repo <worktree> --actor codex --seed <seed>`, which the server holds in memory (no file per review) |
+| `plugin.json`, `mcp.json` | the portable manifest and MCP configuration (Agent Plugins 1.0.0): the server `warrant` is `warrant-agent-mcp` with no argument, which serves the repositories of the operator's Home (docs/HOME.md) |
+| `.codex-plugin/plugin.json` | Codex's manifest: `mcpServers` (its `.mcp.json`) and `skills` |
+| `.claude-plugin/plugin.json` | Claude Code's manifest: the portable `mcp.json`; `skills/` by convention |
+| `.mcp.json`, `scripts/warrant-mcp` | Codex's MCP server `warrant`: `warrant-agent-mcp --config ${WARRANT_AGENT_CONFIG:-~/.warrant/codex-warrant.json}` |
+| `skills/warrant-review/SKILL.md` | the blind review instruction, for whichever actor the waker names: what to look at and where, and how to file findings or accept through MCP |
+| `skills/warrant-review/scripts/warrant-mcp-call` | the skill's stdio client of the same server for another configuration, one tool per call: a file, or `--repo <worktree> --actor A [--seed <seed>]`, which the server holds in memory (no file per review) |
 | `waker/waker.py` | the waker: for each repository it serves, fetches the base branch into a bare mirror, writes the base's tree once, refuses a base whose `.warrant/v3.json` names another repository, runs THAT tree's `python -m warrant.review due`, replays the mechanical findings of each due head with the review replay checker (below), and starts `codex exec` with the skill once per pull request head that is due (a memo per head), in that wake's own detached worktree of the mirror (`<trees>/<n>-<head12>`, removed after the run unless Codex left changes); a non-zero exit is retried after 15, then 30 minutes, three attempts in all |
 | `install.py` | installs all of it on a Mac and loads the waker as a launchd agent (every five minutes) |
 

@@ -1,6 +1,6 @@
 {
   "name": "warrant-review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The warrant MCP server and the review skill of the warrant pull request review loop; a waker starts Codex when a pull request is due for review.",
   "author": {
     "name": "s0fractal",

@@ -526,6 +526,16 @@ def cli_cases():
     code_r, _ = cli(outside.root, "roadmap", "--root", str(outside.root), "check")
     check("K08 a repository's v3.json is read from its store only: a link to a file outside it is refused, by the core's "
           "commands and by the review loop's", code_a == 2 and code_r == 2, (code_a, code_r))
+    bob = str(r.seed("bob"))                         # time-lab N6: an unsorted `closed` was filed and never counted
+    before = r.store.lines()
+    body = {"name": "probe@1", "fields": {"state": "str"}, "states": {"a": None, "b": None}, "successors": {}}
+    at = ("put", "--store", "repo/.warrant", "--kind", "schema", "--actor", "bob", "--key", bob)   # the seed: inside the cwd
+    bad, _ = cli(r.home, *at, json.dumps(dict(body, closed=["b", "a"])))
+    kept = r.store.lines() == before
+    good, _ = cli(r.home, *at, json.dumps(dict(body, closed=["a", "b"])))
+    check("K09 `warrant put --kind schema` refuses a body the engine would never count (here an unsorted `closed`) and "
+          "writes nothing, as the agent's prepare does; a schema body is filed", bad == 2 and kept and good == 0
+          and len(r.store.lines()) == len(before) + 1, (bad, kept, good))
 
 
 def home_cases():
