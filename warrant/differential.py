@@ -22,6 +22,7 @@ Prints the verdict as JSON; exit 0 SAME or DECLARED, 1 REFUSED, 2 when a report 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -66,6 +67,7 @@ VERSION_SCRIPT = """import importlib.metadata, json, sys
 sys.stdout.write(json.dumps(importlib.metadata.version("warrant-graph")))
 """
 TAG = "v{}"
+VERSION = re.compile(r"[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?(?:\.post[0-9]+)?(?:\.dev[0-9]+)?\Z")   # PEP 440, public
 
 
 class Unmade(Exception):
@@ -111,10 +113,20 @@ def release_duties(python, root, version, run=subprocess.run):
     return got["accepted"]
 
 
-def git_bytes(root, *args):
-    r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=False)
+def published_version(python, root, run=subprocess.run):
+    """The version of the warrant-graph N_PYTHON imports, refused unless it is a public PEP 440 version: it names
+    the tag whose store is n's history, and a git argument is never anything else."""
+    n = published(python, root, VERSION_SCRIPT, run=run)
+    if not (isinstance(n, str) and VERSION.match(n)):
+        raise Unmade(f"{python} named no warrant-graph version: {n!r}"[:200])
+    return n
+
+
+def git_bytes(root, cmd, *args, options=()):
+    r = subprocess.run(["git", "-C", str(root), cmd, *options, "--end-of-options", *args], capture_output=True,
+                       check=False)
     if r.returncode:
-        raise Unmade(f"git {' '.join(args)}: {r.stderr.decode(errors='replace').strip()[-300:]}")
+        raise Unmade(f"git {cmd} {' '.join(args)}: {r.stderr.decode(errors='replace').strip()[-300:]}")
     return r.stdout
 
 
@@ -124,7 +136,7 @@ def rewritten(root, ref):
     dot = dot_of(root)
     then = {x for x in git_bytes(root, "show", f"{ref}:.warrant/records.jsonl").split(b"\n") if x.strip()}
     now = {x for x in (dot / "records.jsonl").read_bytes().split(b"\n") if x.strip()}
-    named = git_bytes(root, "ls-tree", "-z", "--name-only", ref, "--", ".warrant/blobs/").split(b"\0")
+    named = git_bytes(root, "ls-tree", ref, "--", ".warrant/blobs/", options=("-z", "--name-only")).split(b"\0")
     blobs = {Path(n.decode()).name for n in named if n}
     here = {p.name for p in (dot / "blobs").iterdir()} if (dot / "blobs").is_dir() else set()
     return {"records": sorted(x.decode() for x in then - now), "blobs": sorted(blobs - here)}
@@ -155,6 +167,23 @@ def declaration(path):
     return doc
 
 
+def admit(python, root, version, out):
+    """`out` (compare's verdict) with release n's admission of `version`: a release duty of it accepted, as n assesses
+    the store, and n's history (the store at n's tag) kept whole; REFUSED with every reason otherwise."""
+    tag = TAG.format(published_version(python, root))
+    gone = rewritten(root, tag)
+    out = dict(out, release={"version": version, "accepted": release_duties(python, root, version),
+                             "history": {"of": tag, **{k: len(v) for k, v in gone.items()}}})
+    why = [out["why"]] if out["verdict"] == "REFUSED" else []
+    if not out["release"]["accepted"]:
+        why.append(f"no release duty of {version} is closed and accepted, as n assesses the store (an "
+                   f"obligation@1 closure with the ref {RELEASE_REF.format(version)})")
+    if gone["records"] or gone["blobs"]:
+        why.append(f"the store at {tag} holds {len(gone['records'])} record line(s) and "
+                   f"{len(gone['blobs'])} blob(s) this one does not: n's history is challenged, never rewritten")
+    return dict(out, verdict="REFUSED", why="; ".join(why)) if why else out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m warrant.differential", description=__doc__.split("\n\n")[0])
     ap.add_argument("--python", required=True, help="a Python with the published warrant-graph n installed")
@@ -166,21 +195,7 @@ def main(argv=None):
         declared = declaration(a.declared) if a.declared else None
         out = compare(published_report(a.python, a.root), head_report(a.root), declared)
         if a.release is not None:
-            n = published(a.python, a.root, VERSION_SCRIPT)
-            if not (isinstance(n, str) and n.strip()):
-                raise Unmade(f"{a.python} named no warrant-graph version")
-            gone = rewritten(a.root, TAG.format(n))
-            out["release"] = {"version": a.release, "accepted": release_duties(a.python, a.root, a.release),
-                              "history": {"of": TAG.format(n), **{k: len(v) for k, v in gone.items()}}}
-            why = [out["why"]] if out["verdict"] == "REFUSED" else []
-            if not out["release"]["accepted"]:
-                why.append(f"no release duty of {a.release} is closed and accepted, as n assesses the store (an "
-                           f"obligation@1 closure with the ref {RELEASE_REF.format(a.release)})")
-            if gone["records"] or gone["blobs"]:
-                why.append(f"the store at {TAG.format(n)} holds {len(gone['records'])} record line(s) and "
-                           f"{len(gone['blobs'])} blob(s) this one does not: n's history is challenged, never rewritten")
-            if why:
-                out.update(verdict="REFUSED", why="; ".join(why))
+            out = admit(a.python, a.root, a.release, out)
     except (Unmade, OSError, ValueError) as e:
         print(json.dumps({"verdict": "UNMADE", "why": str(e)}))
         return 2
