@@ -6,6 +6,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `release.yml` publishes n+1 only when release n admits it (roadmap G12): the version PyPI publishes and the built
+  wheel assess this store and agree but for the engine's identity (or as `.warrant/differential.json` declares), and
+  n's own engine finds a release duty of this version closed and accepted (`python -m warrant.differential --release`).
 - `python -m warrant.differential --python N_PYTHON [--root DIR] [--declared FILE]` (roadmap G12): the published
   release n and the head assess one store; the reports must be the same bytes but for the engine's identity, any
   other difference declared member by member (`differential/1`), else refused. First run, 3.0.0a2 against this

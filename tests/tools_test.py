@@ -716,6 +716,39 @@ def differential_cases():
     check("D06 an interpreter named by a path is the one that path names from the caller's directory, though it runs "
           "from another; a bare name stays a name for PATH", seen == [str(r.home / "runner" / "python"), "python3"], seen)
 
+    def here(cmd, **kw):                              # the release script, run by this checkout's engine (not -I)
+        return subprocess.run([sys.executable, *cmd[2:]], capture_output=True, cwd=kw.get("cwd"), check=False,
+                              env=dict(os.environ, PYTHONPATH=str(ROOT)))
+    rel = r.entity("alice", "obligation@1", {"state": "open", "statement": "release 9.9", "serves": []})
+    stages = {"open": DF.release_duties("py", r.root, "9.9", run=here)}
+    closed = r.entity("alice", "obligation@1", {"state": "done", "statement": "release 9.9", "serves": [],
+                                                 "refs": ["warrant-graph==9.9"]}, lineage=rel)
+    stages["closed"] = DF.release_duties("py", r.root, "9.9", run=here)
+    r.attest("bob", closed, verdict="accept")
+    stages["accepted"] = DF.release_duties("py", r.root, "9.9", run=here)
+    stages["other version"] = DF.release_duties("py", r.root, "9.10", run=here)
+    forgiven = r.entity("alice", "obligation@1", {"state": "open", "statement": "release 9.11", "serves": []})
+    r.entity("dave", "obligation@1", {"state": "released", "statement": "release 9.11", "serves": [],
+                                       "refs": ["warrant-graph==9.11"]}, lineage=forgiven)
+    stages["released"] = DF.release_duties("py", r.root, "9.11", run=here)
+    check("D07 release n admits n+1 only through a release duty n's own engine finds closed and accepted with the "
+          "version's ref: none while open, none while its closure waits for the acceptor, none for another version, "
+          "none forgiven (released) by the owner", stages == {"open": [], "closed": [], "accepted": [closed],
+                                                               "other version": [], "released": []}, stages)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        old_pr = DF.published
+        DF.published = lambda python, root, script, *args, run=None: \
+            (as_n(DF.head_report(r.root)) if script == DF.SCRIPT else {"release": args[0], "accepted": []})
+        try:
+            code = DF.main(["--python", "py", "--root", str(r.root), "--release", "1.0"])
+        finally:
+            DF.published = old_pr
+    verdict = json.loads(out.getvalue())
+    check("D08 --release refuses a release whose reports agree (here SAME but for the release) when no release duty "
+          "of it is accepted", code == 1 and verdict["verdict"] == "REFUSED" and verdict["differs"] == []
+          and verdict["release"]["accepted"] == [], verdict)
+
     def admitted(doc):
         f = r.home / "decl.json"
         f.write_text(json.dumps(doc))
