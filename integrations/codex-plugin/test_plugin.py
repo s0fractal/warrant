@@ -538,6 +538,77 @@ def configuration():
           "single-repository waker kept it; an existing configuration is kept", (written, after))
 
 
+class Agent:
+    """A fake reviewer agent: records each command and how it ran (its directory, where its stdout went)."""
+
+    def __init__(self, code=0):
+        self.calls, self.code = [], code
+
+    def __call__(self, cmd, **kw):
+        out = kw.get("stdout")
+        self.calls.append({"cmd": cmd, "cwd": kw.get("cwd"), "stdout": getattr(out, "name", out)})
+        return subprocess.CompletedProcess(cmd, self.code)
+
+
+def reviewers():
+    """The reviewer roster (W15-W18): who is woken for a head, how each agent runs, what the configuration admits."""
+    base, home, heads = fixture_mirror()
+    now = [1_000_000.0]
+    roster = [{"actor": "codex", "agent": "codex"}, {"actor": "claude", "agent": "claude", "seed": "/k/claude.seed"}]
+    run = Agent()
+    w = WAKER.Waker(dict(entry(home, base / "trees"), reviewers=roster), replayers=base / "no-seeds", codex="/bin/codex",
+                    claude="/bin/claude", run=run, clock=lambda: now[0])
+    by_codex = dict(due_json(heads[0], pr=11), facts=dict(due_json(heads[0])["facts"], author="codex"))
+    by_claude = dict(due_json(heads[1], pr=12), facts=dict(due_json(heads[1])["facts"], author="claude"))
+    w.wake(by_codex)
+    w.wake(by_claude)
+    first, second = run.calls
+    wt = base / "trees" / f"11-{heads[0][:12]}"
+    check("W15", first["cmd"][:2] == ["/bin/claude", "-p"] and "--plugin-dir" in first["cmd"]
+          and first["cmd"][first["cmd"].index("--plugin-dir") + 1] == str(w.plugin) and first["cwd"] == str(wt)
+          and first["stdout"] == str(home / "results" / f"11-{heads[0]}.md")
+          and "you are the actor claude, your seed is /k/claude.seed" in first["cmd"][-1]
+          and second["cmd"][:2] == ["/bin/codex", "exec"] and "you are the actor codex." in second["cmd"][-1],
+          "the waker wakes the first reviewer of the roster that is not the pull request's author: a head codex wrote is "
+          "Claude's (claude -p with the plugin, in the wake's worktree, its last message the result, its seed named), "
+          "a head claude wrote is Codex's", [c["cmd"][:2] + [c["cmd"][-1][:90]] for c in run.calls])
+    alone = Agent()
+    solo = WAKER.Waker(dict(entry(home, base / "trees"), reviewers=[roster[1]]), replayers=base / "no-seeds",
+                       codex="/bin/codex", claude="/bin/claude", run=alone, clock=lambda: now[0])
+    _, line = solo.wake(dict(by_claude, pr=13))
+    check("W16", alone.calls == [] and line.startswith("not woken: no reviewer"),
+          "nobody reviews their own pull request: with only its author in the roster, nobody is woken", line)
+    failing = Agent(code=1)
+    f = WAKER.Waker(dict(entry(home, base / "trees"), reviewers=roster), replayers=base / "no-seeds", codex="/bin/codex",
+                    claude="/bin/claude", run=failing, clock=lambda: now[0])
+    head = dict(by_codex, pr=14)
+    f.wake(head)
+    now[0] += WAKER.BACKOFF + 1
+    f.reviewers = [roster[1], roster[0]]
+    f.wake(dict(head, facts=dict(head["facts"], author="claude")))
+    check("W17", [c["cmd"][0] for c in failing.calls] == ["/bin/claude", "/bin/claude"],
+          "a head keeps the reviewer its memo names across retries, whatever the roster or the facts say later",
+          [c["cmd"][0] for c in failing.calls])
+    cfg = Path(tempfile.mkdtemp(prefix="codex-waker-roster-"))
+    one = entry(cfg / "a", cfg / "ta")
+
+    def admitted(rs):
+        (cfg / WAKER.CONFIG).write_text(json.dumps({"warrant": WAKER.CONFIG_DOC, "repositories": [dict(one, reviewers=rs)]}))
+        try:
+            return [r["actor"] for r in WAKER.Waker(WAKER.served(cfg)[0], run=Agent()).reviewers]
+        except ValueError:
+            return None
+    got = {"roster": admitted(roster), "empty": admitted([]), "agent": admitted([{"actor": "x", "agent": "gpt"}]),
+           "twice": admitted([roster[0], dict(roster[1], actor="codex")]), "relative seed": admitted([dict(roster[1], seed="k")]),
+           "extra": admitted([dict(roster[0], token="t")]), "actor": admitted([{"actor": "Bad Actor", "agent": "codex"}])}
+    (cfg / WAKER.CONFIG).write_text(json.dumps({"warrant": WAKER.CONFIG_DOC, "repositories": [one]}))
+    default = [r["actor"] for r in WAKER.Waker(WAKER.served(cfg)[0], run=Agent()).reviewers]
+    check("W18", got["roster"] == ["codex", "claude"] and default == ["codex"]
+          and all(v is None for k, v in got.items() if k != "roster"),
+          "an entry's reviewers are a non-empty list of distinct actors, each running a known agent, a seed only by an "
+          "absolute path; an entry without them is reviewed by codex, as before", dict(got, default=default))
+
+
 if __name__ == "__main__":
     manifests()
     launcher()
@@ -550,6 +621,7 @@ if __name__ == "__main__":
     serving()
     ungated()
     configuration()
+    reviewers()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))
     sys.exit(1 if failed else 0)

@@ -6,6 +6,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The review waker wakes a roster: an entry of `repositories.json` may list `reviewers` (`{actor, agent: codex|claude,
+  seed?}`), and each due head goes to the first that is not its author, kept across retries. `claude` runs `claude -p`
+  with the plugin in the wake's worktree. Without a roster, codex reviews, as before. Roadmap verdicts stay with
+  codex: the gate admits verdict branches under `codex/verdicts/` only.
 - The review plugin (`integrations/codex-plugin`, 0.2.0) is an Agent Plugins 1.0.0 package: a portable `plugin.json`
   and `mcp.json` (the server is `warrant-agent-mcp`, serving the operator's Home), with Codex's and Claude Code's
   manifests beside them. The review skill names no agent: it is written for the actor the waker names, and its stdio

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""The review waker: replay the findings, then start Codex once per pull request head due for review and
-once per obligation closure due for his verdict.
+"""The review waker: replay the findings, then start a reviewer once per pull request head due for review (the
+first of the entry's `reviewers` that is not its author; codex when the entry names none), and Codex once per
+obligation closure due for his verdict.
 
 launchd runs it every five minutes (install.py). It serves the repositories WAKER/repositories.json lists
 (`served`; install.py writes s0fractal/warrant as the only entry when the file is absent), one after another,
@@ -130,7 +131,12 @@ STATUS = ("status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renam
 COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-waker@s0fractal.invalid",
              "-c", "commit.gpgsign=false"]
 REPLAY_TIMEOUT = 3600
-ACCEPTOR = "codex"                          # the actor the waker wakes: `codex exec`, signing with its own seed
+ACCEPTOR = "codex"                          # whose roadmap verdicts the waker publishes: the gate admits them on a
+                                            # branch under VERDICT_BRANCH only (warrant/gate.py, an owner path)
+AGENTS = ("codex", "claude")                # what a reviewer runs: `codex exec` or `claude -p` (Waker.invocation)
+DEFAULT_REVIEWERS = ({"actor": "codex", "agent": "codex"},)
+REVIEWER = ("actor", "agent", "seed")
+ACTOR_ID = re.compile(r"[a-z0-9][a-z0-9_.:-]{0,63}\Z")
 CLIENT = Path("skills") / "warrant-review" / "scripts" / "warrant-mcp-call"   # the skill's stdio MCP client, in the plugin
 VERDICT_BRANCH = "codex/verdicts/"          # where the waker publishes Codex's verdict on an obligation closure
 VERDICTS = ("attest", "challenge")          # the kinds of record an acceptance wake may publish
@@ -178,15 +184,34 @@ def served(home):
     if not (isinstance(entries, list) and entries):
         raise ValueError(f"{CONFIG} is a {CONFIG_DOC} document {{warrant, repositories: [entry, ...]}}")
     for e in entries:
-        if not (isinstance(e, dict) and set(e) == set(SERVED) and isinstance(e["repository"], str) and REPO_NAME.match(e["repository"])
+        if not (isinstance(e, dict) and set(SERVED) <= set(e) <= {*SERVED, "reviewers"} and isinstance(e["repository"], str)
+                and REPO_NAME.match(e["repository"])
                 and isinstance(e["branch"], str) and PR_BRANCH.match(e["branch"])
                 and all(isinstance(e[k], str) and Path(e[k]).is_absolute() for k in SERVED[2:])):
-            raise ValueError(f"{CONFIG}: an entry is {{{', '.join(SERVED)}}}, owner/name, a branch and absolute paths: "
-                             f"{json.dumps(e)[:200]}")
+            raise ValueError(f"{CONFIG}: an entry is {{{', '.join(SERVED)}, reviewers?}}, owner/name, a branch and absolute "
+                             f"paths: {json.dumps(e)[:200]}")
+        why = reviewers_problem(e.get("reviewers", list(DEFAULT_REVIEWERS)))
+        if why:
+            raise ValueError(f"{CONFIG}: {e['repository']}: {why}")
     for k in ("repository", "home", "mirror", "trees"):     # a path by where it leads: a link or `x/../x` is the same place
         if len({e[k] if k == "repository" else os.path.realpath(e[k]) for e in entries}) != len(entries):
             raise ValueError(f"{CONFIG}: two entries share a {k}")
     return entries
+
+
+def reviewers_problem(rs):
+    """Why `rs` is not a reviewer roster, or None: a non-empty list, in the order the waker prefers them, of
+    {actor, agent: one of AGENTS, seed?: an absolute path the prompt names (never read by the waker)}, no actor twice."""
+    if not (isinstance(rs, list) and rs):
+        return "reviewers is a non-empty list"
+    for r in rs:
+        if not (isinstance(r, dict) and {"actor", "agent"} <= set(r) <= set(REVIEWER) and isinstance(r["actor"], str)
+                and ACTOR_ID.match(r["actor"]) and r["agent"] in AGENTS
+                and (r.get("seed") is None or (isinstance(r["seed"], str) and Path(r["seed"]).is_absolute()))):
+            return f"a reviewer is {{actor, agent: {'|'.join(AGENTS)}, seed?: an absolute path}}: {json.dumps(r)[:120]}"
+    if len({r["actor"] for r in rs}) != len(rs):
+        return "a reviewer's actor is named twice"
+    return None
 
 
 def profile(writable, unreadable):
@@ -421,13 +446,16 @@ class Waker:
     """The waker for one repository it serves (an entry of `served`): its base branch, mirror, state and worktrees."""
 
     def __init__(self, entry, python=None, codex=None, plugin=PLUGIN,
-                 run=subprocess.run, clock=time.time, replayers=None, replay_python=None, jail=sandboxed, forge=None):
+                 run=subprocess.run, clock=time.time, replayers=None, replay_python=None, jail=sandboxed, forge=None,
+                 claude=None):
         env = os.environ.get
         self.repository, self.branch = entry["repository"], entry["branch"]
         self.home, self.trees, self.mirror = Path(entry["home"]), Path(entry["trees"]), Path(entry["mirror"])
         self.checkout = Path(entry["checkout"])
         self.python = str(python or env("WARRANT_WAKER_PYTHON") or waker_home() / "venv" / "bin" / "python")
         self.codex = str(codex or env("WARRANT_WAKER_CODEX") or shutil.which("codex") or "/opt/homebrew/bin/codex")
+        self.claude = str(claude or env("WARRANT_WAKER_CLAUDE") or shutil.which("claude") or "/opt/homebrew/bin/claude")
+        self.reviewers = [dict(r) for r in entry.get("reviewers", DEFAULT_REVIEWERS)]
         self.replayers = Path(replayers or env("WARRANT_WAKER_REPLAYERS") or Path.home() / ".warrant-review-replayer")
         self.replay_python = str(replay_python or env("WARRANT_WAKER_REPLAY_PYTHON") or self.python)
         self.plugin, self.run, self.clock, self.jail = Path(plugin), run, clock, jail
@@ -681,7 +709,7 @@ class Waker:
         if last is None:
             return "retry", "first attempt"
         if last.get("exit") == 0 and not last.get("unpublished"):
-            return "done", f"done: woken {last.get('started_at')}, codex exited 0"
+            return "done", f"done: woken {last.get('started_at')}, {doc.get('reviewer', 'codex')} exited 0"
         how = f"exited 0, unpublished: {last['unpublished']}" if last.get("unpublished") else f"exited {last.get('exit')}"
         if len(tries) >= MAX_TRIES:
             return GAVE_UP, f"gave up: {len(tries)} attempts failed (last {how}); delete the memo to retry"
@@ -702,8 +730,36 @@ class Waker:
             git("-C", str(self.mirror), "worktree", "add", "--detach", "--quiet", str(path), a["head"])
         return path
 
-    def command(self, a, path, incomplete=None):
-        return self.codex_exec(path, self.key(a), prompt(self, a, path, incomplete))
+    def publisher(self):
+        """The reviewer whose roadmap verdicts the waker wakes for and publishes: the roster's ACCEPTOR, or None."""
+        return next((r for r in self.reviewers if r["actor"] == ACCEPTOR), None)
+
+    def reviewer(self, a):
+        """The reviewer of due head `a`: the first of the roster that is not the pull request's author (an attest by
+        the head version's own actor never counts toward its guard), or None. A head keeps the reviewer its memo names."""
+        _, doc = self.memo(a)
+        named = (doc or {}).get("reviewer")
+        if doc and doc.get("attempts"):
+            named = named or "codex"                 # a memo from before the roster: Codex was woken
+        if named:
+            return next((r for r in self.reviewers if r["actor"] == named), None)
+        author = (a.get("facts") or {}).get("author")
+        return next((r for r in self.reviewers if r["actor"] != author), None)
+
+    def command(self, a, path, incomplete=None, rev=None):
+        rev = rev or self.reviewer(a)
+        return self.invocation(rev, path, self.key(a), prompt(self, a, path, incomplete, rev))
+
+    def invocation(self, rev, path, key, text):
+        """(argv, the file its last message goes to, or None when the agent writes it itself) of reviewer `rev` in the
+        worktree `path`; it runs with `path` as its directory."""
+        if path.resolve() == self.checkout.resolve():
+            raise ValueError(f"{path} is the operator's checkout: a wake runs in its own worktree")
+        result = self.home / "results" / f"{key}.md"
+        if rev["agent"] == "claude":
+            return [self.claude, "-p", "--permission-mode", "auto", "--plugin-dir", str(self.plugin),
+                    "--add-dir", str(Path.home() / WARRANT), "--output-format", "text", text], result
+        return self.codex_exec(path, key, text), None
 
     def codex_exec(self, path, key, text):
         if path.resolve() == self.checkout.resolve():
@@ -717,11 +773,16 @@ class Waker:
         """Wake Codex for Assessment JSON `a` when its memo's state allows; `incomplete` says why the replay at
         its head gave up, for the prompt. (key, what happened)."""
         p, doc = self.memo(a)
+        rev = self.reviewer(a)
+        if rev is None:
+            return self.key(a), (f"not woken: no reviewer of the roster ({', '.join(r['actor'] for r in self.reviewers)}) "
+                                 f"but the author {(a.get('facts') or {}).get('author')}")
         doc = doc or {"pr": a["pr"], "head": a["head"], "base": a["base"], "facts": a["facts"], "attempts": []}
+        doc.setdefault("reviewer", rev["actor"])
         return self.key(a), self.attempt(p, doc, self.key(a), lambda: self.worktree(a),
-                                         lambda path: self.command(a, path, incomplete))[1]
+                                         lambda path: self.command(a, path, incomplete, rev), rev["actor"])[1]
 
-    def attempt(self, p, doc, key, worktree, command, state=None):
+    def attempt(self, p, doc, key, worktree, command, who="codex", state=None):
         """One attempt of the wake whose memo `p` holds `doc`, when its state (`state`, else self.state) allows: the
         memo is written before Codex runs (a crash counts as an attempt), `command(path)` runs in `worktree()`, which
         is removed after unless Codex left changes in it. (whether Codex was started, what happened)."""
@@ -734,9 +795,10 @@ class Waker:
         p.write_text(json.dumps(doc, indent=1))
         path = worktree()
         attempt["worktree"] = str(path)
-        with open(self.home / "logs" / f"{key}.log", "ab") as log:
-            r = self.run(command(path), stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                         check=False, timeout=4 * 3600)
+        argv, result = command(path)
+        with open(self.home / "logs" / f"{key}.log", "ab") as log, open(result or os.devnull, "wb") as out:
+            r = self.run(argv, stdout=out if result else log, stderr=log if result else subprocess.STDOUT,
+                         stdin=subprocess.DEVNULL, check=False, timeout=4 * 3600, cwd=str(path))
         attempt.update(finished=self.clock(), exit=r.returncode)
         left = git("-C", str(path), "status", "--porcelain", "--untracked-files=all").decode().splitlines()
         if left:
@@ -744,7 +806,7 @@ class Waker:
         else:
             git("-C", str(self.mirror), "worktree", "remove", str(path))
         p.write_text(json.dumps(doc, indent=1))
-        return True, f"woken, codex exited {r.returncode}" + (f"; worktree kept: {path}" if left else "")
+        return True, f"woken, {who} exited {r.returncode}" + (f"; worktree kept: {path}" if left else "")
 
     def report(self, a, held):
         """The line for a due head that is not woken now (a dry run, or HOME/HOLD)."""
@@ -809,9 +871,10 @@ class Waker:
             return True, self.publish(c, base, p, doc)
         key = f"accept-{self.accept_key(c)}"
         doc = doc or {"closure": c["closure"], "item": c["item"], "duty": c["duty"], "base": base, "attempts": []}
+        rev = self.publisher()
         started, line = self.attempt(p, doc, key, lambda: self.accept_worktree(c, base, len(doc["attempts"])),
-                                     lambda path: self.codex_exec(path, key, accept_prompt(self, c, base, path)),
-                                     self.accept_state)
+                                     lambda path: self.invocation(rev, path, key, accept_prompt(self, c, base, path, rev)),
+                                     rev["actor"], self.accept_state)
         if started and doc["attempts"][-1].get("exit") == 0:
             line += "; " + self.publish(c, base, p, doc)
         return started, line
@@ -979,14 +1042,20 @@ def tail_of(repo, base, tip):
     return (sorted(after - before), blobs) if not before - after else ([], {})
 
 
-def prompt(w, a, path, incomplete=None):
-    """What Codex is told about due head `a` of the repository waker `w` serves."""
+def who(rev):
+    """How a prompt names the reviewer: its actor, and the seed it signs with when the roster names one."""
+    rev = rev or DEFAULT_REVIEWERS[0]
+    return f"you are the actor {rev['actor']}" + (f", your seed is {rev['seed']}" if rev.get("seed") else "")
+
+
+def prompt(w, a, path, incomplete=None, rev=None):
+    """What the reviewer is told about due head `a` of the repository waker `w` serves."""
     f, plugin = a["facts"], w.plugin
     gap = ("" if incomplete is None else
            f" The review replay checker did not complete at H ({incomplete}): no checker observation covers this "
            "head's mechanical findings. Run them yourself before you rely on them, and say in your verdict that the "
            "replay was incomplete.")
-    return (f"Use the warrant-review skill ($warrant-review); you are the actor {ACCEPTOR}. Pull request "
+    return (f"Use the warrant-review skill ($warrant-review); {who(rev)}. Pull request "
             f"{w.repository}#{a['pr']} is due for review: "
             f"branch {a.get('branch')}, head H {a['head']}; review lineage D {f.get('duty')}; head version T "
             f"{f.get('closure')} (head {f.get('head_n')}) at commit X {f.get('x')}; base {w.branch} M {a['base']}. Your worktree is {path}, "
@@ -995,14 +1064,14 @@ def prompt(w, a, path, incomplete=None):
             "review waker; check them yourself before you rely on them." + gap)
 
 
-def accept_prompt(w, c, base, path):
+def accept_prompt(w, c, base, path, rev=None):
     """What Codex is told about closure `c`: what to look at and where (the duty's text, the closure's evidence
     ids, the references and subject that evidence names), never what the closure says it established."""
     plugin = w.plugin
     def ids(xs):
         return "; ".join(str(x)[:200] for x in xs[:20]) or "none"
-    return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\"; you are the "
-            f"actor {ACCEPTOR}. On "
+    return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\"; {who(rev)}. "
+            f"On "
             f"{w.repository} {w.branch} M {base}, the version T {c['closure']} of the {c.get('schema', 'obligation@1')} lineage D "
             f"{c['duty']} (goal {c.get('goal')}) awaits a verdict by {ACCEPTOR}. D owes: {json.dumps(c['statement'])}. "
             f"T's evidence: {ids(c['evidence'])}; the pull requests and commits it names: {ids(c['refs'])}; "
@@ -1131,6 +1200,8 @@ def hold(w, found, dry, held):
 def acceptance_lines(w, base, found, dry, held):
     """The obligation closures due for Codex's verdict at the base: at most one woken per run, none while a
     verdict pull request is open (or the open pull requests could not be read)."""
+    if w.publisher() is None:
+        return [f"  roadmap verdicts: none woken, {ACCEPTOR} is not in the reviewers"]
     got = w.acceptances(base)
     out = [f"  {len(got['due'])} obligation closure(s) due for {ACCEPTOR}'s verdict"
            + (f"; nothing assessed: {got['refused']}" if got.get("refused") else "")]

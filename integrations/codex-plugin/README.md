@@ -32,6 +32,15 @@ repository is served in turn, its wakes naming that repository and branch; one w
 reported and the next served. A base that does not carry the `warrant` package runs the warrant-graph
 installed in the waker's Python (`install.py` builds it from the checkout's HEAD).
 
+An entry may name its reviewers, in the order the waker prefers them: `"reviewers": [{"actor": "codex", "agent":
+"codex"}, {"actor": "claude", "agent": "claude", "seed": "/abs/path/claude.seed"}]` (an entry without them is
+reviewed by codex). For each due head the waker wakes the first reviewer that is not the pull request's author (an
+attest by the head version's own actor never counts toward its guard), and keeps that reviewer for the head's
+retries. `codex` runs `codex exec` as below; `claude` runs `claude -p --permission-mode auto --plugin-dir <this
+plugin>` in the wake's worktree, its last message the result. The prompt names the actor and, when the roster gives
+one, the seed's path (the waker never reads it). Only a reviewer the base's profile makes a `pr/acceptor` counts at
+the gate: the roster chooses whom to wake, the profile whose verdict counts.
+
 After the pull requests, the waker runs the base tree's `python -m warrant.roadmap due --actor codex` on the
 base's own records: the roadmap versions due for Codex's verdict (the leaf of a goal or obligation
 lineage whose guard waits only for an attest by a role codex holds, nothing it requires open, which codex
