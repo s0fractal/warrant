@@ -13,6 +13,7 @@ the members that differ (an undeclared difference is refused, and so is a declar
 the verdict as JSON; exit 0 SAME or DECLARED, 1 REFUSED, 2 when a report could not be made."""
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -52,6 +53,8 @@ def head_report(root):
 def published_report(python, root, run=subprocess.run):
     """The report of the warrant-graph N_PYTHON imports, on the same store and receiver."""
     dot, doc = receiver(root)
+    if os.sep in str(python):                                   # a path names it from here, not from where it runs
+        python = os.path.abspath(python)                        # (Codex finding 30154b8b64e1); a bare name: PATH
     with tempfile.TemporaryDirectory() as away:                 # its directory: nothing of the checkout to import
         r = run([str(python), "-I", "-c", SCRIPT, str(dot), json.dumps({"trust": doc["trust"], "profile": doc["profile"]})],
                 capture_output=True, cwd=away, check=False, timeout=3600)

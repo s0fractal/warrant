@@ -701,6 +701,21 @@ def differential_cases():
           and cmd[4] == str(r.dot) and json.loads(cmd[5]) == {"trust": r.trust, "profile": r.profile}
           and cwd is not None and not Path(cwd).resolve().is_relative_to(r.root.resolve()) and n["code"] == "0" * 64 and unmade,
           (cmd[:2], cmd[4:], cwd, unmade))
+    seen = []
+
+    def where(cmd, **kw):
+        seen.append(cmd[0])
+        return fake(cmd, **kw)
+    old = os.getcwd()
+    try:
+        os.chdir(r.home)                              # Codex finding 30154b8b64e1 on #246: a path from here, run from elsewhere
+        DF.published_report("runner/python", r.root, run=where)
+        DF.published_report("python3", r.root, run=where)
+    finally:
+        os.chdir(old)
+    check("D06 an interpreter named by a path is the one that path names from the caller's directory, though it runs "
+          "from another; a bare name stays a name for PATH", seen == [str(r.home / "runner" / "python"), "python3"], seen)
+
     def admitted(doc):
         f = r.home / "decl.json"
         f.write_text(json.dumps(doc))

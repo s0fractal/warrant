@@ -220,6 +220,7 @@ MUTANTS = [
     ('T65', 'warrant/differential.py', 'capture_output=True, cwd=away, check=False', 'capture_output=True, cwd=None, check=False', TOOLS, ['D04']),
     ('T66', 'warrant/differential.py', '    if r.returncode:\n        raise Unmade(', '    if False:\n        raise Unmade(', TOOLS, ['D04']),
     ('T67', 'warrant/differential.py', 'and isinstance(doc["differs"], list) and all(isinstance(m, str) for m in doc["differs"]) and doc["differs"]', 'and isinstance(doc["differs"], list)', TOOLS, ['D05']),
+    ("T68", "warrant/differential.py", "    if os.sep in str(python):", "    if False:", TOOLS, ["D06"]),
     ("T60", "warrant/cli.py", '    if kind == "schema" and E._schema_problem(body):', "    if False:", TOOLS, ["K09"]),
     ("T50", "warrant/cli.py", "        doc = json.loads(read_inside(f, store))", "        doc = json.loads(Path(f).read_bytes())", TOOLS, ["K08"]),
     ("T51", "warrant/repo.py", '        doc = json.loads(read_inside(self.dot / "v3.json", self.dot))',
