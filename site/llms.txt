@@ -1,6 +1,6 @@
 # Warrant 3
 
-> Work kept as signed records — versions, acceptances, objections — judged by each reader under its own trust (which keys are whose) and profile (who holds which role). Python package `warrant-graph` 3.0.0a2, alpha.
+> Work kept as signed records — versions, acceptances, objections — judged by each reader under its own trust (which keys are whose) and profile (who holds which role). Python package `warrant-graph` 3.0.0a3, alpha.
 
 Install: `pip install --pre warrant-graph` (Python >= 3.10, depends on `cryptography`). Commands: `warrant`, `warrant-agent`, `warrant-agent-mcp` (with the `[mcp]` extra).
 

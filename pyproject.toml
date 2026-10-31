@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 # Warrant 3 (docs/V3.md). `warrant-graph` 2.0.0a1 on PyPI is Warrant 2 (history/warrant-2-2026-10-27);
 # `warrant-verify` (<= 0.12.0) is the retired 0.x generation.
 name = "warrant-graph"
-version = "3.0.0a2"
+version = "3.0.0a3"
 description = "Signed records of work with native lineage and schemas as records; each receiver judges them under its own trust and profile."
 readme = "README.md"
 requires-python = ">=3.10"

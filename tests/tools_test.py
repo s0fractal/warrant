@@ -653,7 +653,7 @@ def refused_home(fn, *a):
 
 def differential_cases():
     """warrant.differential (roadmap G12): the published release n and this package on one store."""
-    r = Repo()
+    r = Repo(git_init=True)
     o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
     r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
     head = DF.head_report(r.root)
@@ -735,19 +735,55 @@ def differential_cases():
           "version's ref: none while open, none while its closure waits for the acceptor, none for another version, "
           "none forgiven (released) by the owner", stages == {"open": [], "closed": [], "accepted": [closed],
                                                                "other version": [], "released": []}, stages)
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-        old_pr = DF.published
-        DF.published = lambda python, root, script, *args, run=None: \
-            (as_n(DF.head_report(r.root)) if script == DF.SCRIPT else {"release": args[0], "accepted": []})
-        try:
-            code = DF.main(["--python", "py", "--root", str(r.root), "--release", "1.0"])
-        finally:
-            DF.published = old_pr
-    verdict = json.loads(out.getvalue())
+
+    def release(n, accepted):
+        """main --release 1.0 with N_PYTHON's answers made here: the reports of this store, `accepted`, version `n`."""
+        out = io.StringIO()
+        answers = {DF.RELEASE_SCRIPT: lambda args: {"release": args[0], "accepted": accepted},
+                   DF.VERSION_SCRIPT: lambda args: n, DF.SCRIPT: lambda args: as_n(DF.head_report(r.root))}
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            old_pr = DF.published
+            DF.published = lambda python, root, script, *args, run=None: answers[script](args)
+            try:
+                code = DF.main(["--python", "py", "--root", str(r.root), "--release", "1.0"])
+            finally:
+                DF.published = old_pr
+        return code, json.loads(out.getvalue())
+    r.commit("n 0.1")
+    git(r.root, "tag", "v0.1")
+    code, verdict = release("0.1", [])
     check("D08 --release refuses a release whose reports agree (here SAME but for the release) when no release duty "
           "of it is accepted", code == 1 and verdict["verdict"] == "REFUSED" and verdict["differs"] == []
           and verdict["release"]["accepted"] == [], verdict)
+    records = r.dot / "records.jsonl"
+    before = set(records.read_bytes().splitlines())
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "n's own", "serves": []})
+    spare = r.blob(b"n's own")
+    line, = set(records.read_bytes().splitlines()) - before
+    r.commit("n 0.2")
+    git(r.root, "tag", "v0.2")
+    kept = records.read_bytes()
+    stages = {"kept": release("0.2", [closed])}
+    records.write_bytes(b"".join(x + b"\n" for x in kept.splitlines() if x != line))
+    stages["line"] = release("0.2", [closed])
+    records.write_bytes(kept)
+    held = (r.dot / "blobs" / spare).read_bytes()
+    (r.dot / "blobs" / spare).unlink()
+    stages["blob"] = release("0.2", [closed])
+    (r.dot / "blobs" / spare).write_bytes(held)
+    stages["no tag"] = release("0.3", [closed])
+    stages["not a version"] = release("0.2^{}", [closed])         # git would read v0.2^{} as v0.2's commit
+    git(r.root, "branch", "v0.4")                                   # a branch, not a tag (Codex finding 9b3268821dd4)
+    stages["a branch"] = release("0.4", [closed])
+    got = {k: (c, v["verdict"], (v.get("release") or {}).get("history")) for k, (c, v) in stages.items()}
+    check("D09 --release refuses a release whose store lost a record line or a blob of the store at n's tag (v + n's "
+          "version): n's history is challenged, never rewritten; without that tag (a branch of its name is no tag), or when n names no public version (the tag's only "
+          "source, read as a git revision), no verdict is made (UNMADE)",
+          got == {"kept": (0, "SAME", {"of": "refs/tags/v0.2", "records": 0, "blobs": 0}),
+                  "line": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 1, "blobs": 0}),
+                  "blob": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 0, "blobs": 1}),
+                  "no tag": (2, "UNMADE", None), "not a version": (2, "UNMADE", None),
+                  "a branch": (2, "UNMADE", None)}, got)
 
     def admitted(doc):
         f = r.home / "decl.json"

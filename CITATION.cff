@@ -9,7 +9,7 @@ abstract: >-
   0.x at the tag history/warrant-0.x-2026-10-18.
 message: "If you use or evaluate this work, please cite it."
 type: software
-version: "3.0.0a2"
+version: "3.0.0a3"
 license: MIT
 repository-code: "https://github.com/s0fractal/warrant"
 url: "https://github.com/s0fractal/warrant"

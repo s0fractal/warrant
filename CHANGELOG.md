@@ -4,8 +4,21 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
-## Unreleased
+## 3.0.0a3 — a release the published one admits
 
+Prepared for PyPI; published when the owner pushes the tag `v3.0.0a3` (`release.yml`), the first release that
+3.0.0a2, the published one, must admit (roadmap G12). An alpha (PEP 440): pip installs it only with `--pre`. Records
+and assessment rules are those of 3.0.0a1: 3.0.0a2 and this release assess this repository's store, minds',
+time-lab's and interdict-mesh's to the same report but for the engine's identity.
+
+Its stated limits are those of docs/V3.md §12, each by name: R-FORK-RECOVERY, R-EVIDENCE-PRESENCE, R-IMPOSSIBLE,
+R-REPLAY-SCOPE, R-LIVE-SCOPE-DROPS, R-GATE-CLOSURE, R-UNION-ON-FORGE, R-AGENT-CLOCK, R-PILOT-V2 and no
+remembered-verdict cache. None is closed by this release.
+
+- `python -m warrant.differential --release` also refuses a release whose store lost a record line or a blob of the
+  store at n's tag (`v` + the version n names): release n+1 may challenge a record of n's history (a challenge, a
+  new version, the receiver's reliance answers it), never rewrite it. Without that tag it makes no verdict (UNMADE).
+  3.0.0a1's and 3.0.0a2's stores are in this one whole.
 - `release.yml` publishes n+1 only when release n admits it (roadmap G12): the version PyPI publishes and the built
   wheel assess this store and agree but for the engine's identity (or as `.warrant/differential.json` declares), and
   n's own engine finds a release duty of this version closed and accepted (`python -m warrant.differential --release`).
