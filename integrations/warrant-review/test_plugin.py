@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Codex plugin and its waker, without Codex and without GitHub (C1-C14, W1-W14).
 
-    python3 integrations/codex-plugin/test_plugin.py      (C8 needs the optional dependency `mcp`)
+    python3 integrations/warrant-review/test_plugin.py      (C8 needs the optional dependency `mcp`)
 """
 import importlib.util
 import json

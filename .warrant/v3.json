@@ -13,6 +13,7 @@
     "checker sha256:dd56e635635051d550e0fd8a9d8074ce0fb989df48d6b7c3da9769f8cff8826f"
    ],
    "pr/acceptor": [
+    "claude",
     "codex"
    ],
    "pr/owner": [

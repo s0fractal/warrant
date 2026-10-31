@@ -73,7 +73,7 @@ jobs:
       - name: Lint (pyflakes rules)
         run: |
           python -m pip install --quiet --only-binary ':all:' 'ruff==0.17.3'
-          python -m ruff check --select F warrant warrant_agent warrant_pilot tools tests integrations/codex-plugin
+          python -m ruff check --select F warrant warrant_agent warrant_pilot tools tests integrations/warrant-review
 
       - name: The core, the agent interface, the merge gate, the tools
         working-directory: tests
@@ -83,8 +83,8 @@ jobs:
         working-directory: tests
         run: for t in boundary quickstart; do python "${t}_test.py"; done
 
-      - name: Codex plugin and review waker (manifests, launcher, one wake per head, the waker's store rules)
-        run: python integrations/codex-plugin/test_plugin.py
+      - name: Review plugin and waker (manifests, launcher, one wake per head, the waker's store rules)
+        run: python integrations/warrant-review/test_plugin.py
 
       - name: Claude Code plugin bridge (Warrant 0.x format, published warrant-verify 0.12.0)
         run: |

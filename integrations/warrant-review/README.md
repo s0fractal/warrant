@@ -95,11 +95,11 @@ head again), `replay-work/`, `logs/`, `results/` (Codex's last message of each w
 `WARRANT_WAKER_CODEX` override the defaults.
 
 ```bash
-python3 integrations/codex-plugin/install.py
+python3 integrations/warrant-review/install.py
 ```
 
 ```bash
-python3 integrations/codex-plugin/waker/waker.py --dry-run
+python3 integrations/warrant-review/waker/waker.py --dry-run
 ```
 
 Hold it without uninstalling (nothing is woken in any repository while the file exists; a `HOLD` in an
@@ -118,7 +118,7 @@ launchctl bootout gui/$(id -u)/dev.s0fractal.warrant-codex-waker
 Remove it (`~/.codex/config.toml` keeps its backups as `config.toml.warrant-backup-*`):
 
 ```bash
-python3 integrations/codex-plugin/install.py --uninstall
+python3 integrations/warrant-review/install.py --uninstall
 ```
 
 `test_plugin.py` (CI, examples job) checks the manifests' paths, the launcher, the
