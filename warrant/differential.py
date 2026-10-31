@@ -67,7 +67,7 @@ VERSION_SCRIPT = """import importlib.metadata, json, sys
 sys.stdout.write(json.dumps(importlib.metadata.version("warrant-graph")))
 """
 TAG = "v{}"
-VERSION = re.compile(r"[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?(?:\.post[0-9]+)?(?:\.dev[0-9]+)?\Z")   # PEP 440, public
+VERSION = re.compile(r"\d+(?:\.\d+)*(?:(?:a|b|rc|\.post|\.dev)\d+)*\Z", re.ASCII)   # PEP 440's public characters
 
 
 class Unmade(Exception):
@@ -114,8 +114,8 @@ def release_duties(python, root, version, run=subprocess.run):
 
 
 def published_version(python, root, run=subprocess.run):
-    """The version of the warrant-graph N_PYTHON imports, refused unless it is a public PEP 440 version: it names
-    the tag whose store is n's history, and a git argument is never anything else."""
+    """The version of the warrant-graph N_PYTHON imports, refused unless it has a public PEP 440 version's form: it
+    names the tag whose store is n's history, and a git argument is never anything else."""
     n = published(python, root, VERSION_SCRIPT, run=run)
     if not (isinstance(n, str) and VERSION.match(n)):
         raise Unmade(f"{python} named no warrant-graph version: {n!r}"[:200])
@@ -123,8 +123,7 @@ def published_version(python, root, run=subprocess.run):
 
 
 def git_bytes(root, cmd, *args, options=()):
-    r = subprocess.run(["git", "-C", str(root), cmd, *options, "--end-of-options", *args], capture_output=True,
-                       check=False)
+    r = subprocess.run(["git", cmd, *options, "--end-of-options", *args], capture_output=True, cwd=root, check=False)
     if r.returncode:
         raise Unmade(f"git {cmd} {' '.join(args)}: {r.stderr.decode(errors='replace').strip()[-300:]}")
     return r.stdout
