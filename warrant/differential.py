@@ -66,7 +66,7 @@ RELEASE_REF = "warrant-graph=={}"
 VERSION_SCRIPT = """import importlib.metadata, json, sys
 sys.stdout.write(json.dumps(importlib.metadata.version("warrant-graph")))
 """
-TAG = "v{}"
+TAG = "refs/tags/v{}"                    # a tag only, never a branch of its name (Codex finding 9b3268821dd4)
 VERSION = re.compile(r"\d+(?:\.\d+)*(?:(?:a|b|rc|\.post|\.dev)\d+)*\Z", re.ASCII)   # PEP 440's public characters
 
 

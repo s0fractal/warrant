@@ -773,14 +773,17 @@ def differential_cases():
     (r.dot / "blobs" / spare).write_bytes(held)
     stages["no tag"] = release("0.3", [closed])
     stages["not a version"] = release("0.2^{}", [closed])         # git would read v0.2^{} as v0.2's commit
+    git(r.root, "branch", "v0.4")                                   # a branch, not a tag (Codex finding 9b3268821dd4)
+    stages["a branch"] = release("0.4", [closed])
     got = {k: (c, v["verdict"], (v.get("release") or {}).get("history")) for k, (c, v) in stages.items()}
     check("D09 --release refuses a release whose store lost a record line or a blob of the store at n's tag (v + n's "
-          "version): n's history is challenged, never rewritten; without that tag, or when n names no public version (the tag's only "
+          "version): n's history is challenged, never rewritten; without that tag (a branch of its name is no tag), or when n names no public version (the tag's only "
           "source, read as a git revision), no verdict is made (UNMADE)",
-          got == {"kept": (0, "SAME", {"of": "v0.2", "records": 0, "blobs": 0}),
-                  "line": (1, "REFUSED", {"of": "v0.2", "records": 1, "blobs": 0}),
-                  "blob": (1, "REFUSED", {"of": "v0.2", "records": 0, "blobs": 1}),
-                  "no tag": (2, "UNMADE", None), "not a version": (2, "UNMADE", None)}, got)
+          got == {"kept": (0, "SAME", {"of": "refs/tags/v0.2", "records": 0, "blobs": 0}),
+                  "line": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 1, "blobs": 0}),
+                  "blob": (1, "REFUSED", {"of": "refs/tags/v0.2", "records": 0, "blobs": 1}),
+                  "no tag": (2, "UNMADE", None), "not a version": (2, "UNMADE", None),
+                  "a branch": (2, "UNMADE", None)}, got)
 
     def admitted(doc):
         f = r.home / "decl.json"

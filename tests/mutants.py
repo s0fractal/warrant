@@ -232,6 +232,7 @@ MUTANTS = [
      '    return {"records": [], "blobs": []}', TOOLS, ["D09"]),
     ("T75", "warrant/differential.py", "    tag = TAG.format(published_version(python, root))",
      "    tag = TAG.format(version)", TOOLS, ["D09"]),
+    ("T78", "warrant/differential.py", 'TAG = "refs/tags/v{}"', 'TAG = "v{}"', TOOLS, ["D09"]),
     ("T77", "warrant/differential.py", "    if not (isinstance(n, str) and VERSION.match(n)):",
      "    if not isinstance(n, str):", TOOLS, ["D09"]),
     ("T60", "warrant/cli.py", '    if kind == "schema" and E._schema_problem(body):', "    if False:", TOOLS, ["K09"]),
