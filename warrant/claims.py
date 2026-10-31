@@ -14,7 +14,8 @@ commit, naming that commit, its tree, the checker's code and its environment. Cl
     python3 -m warrant.claims verify --base M           # CI: re-execute the checker's acceptances new since M
 
 The repository is the one `--root` names, else the Git checkout around the current directory. Its
-`.warrant/claims.json` says where the claims live: {"warrant": "claims/1", "source": the specification's path,
+`.warrant/claims.json` says where the claims live: {"warrant": "claims/1", "source": the specification's path (or a
+list of them: each claim names its own, and its sentence must be in that one),
 "retired": [paths of retired sources], "witnesses": [glob patterns of the test files that print cases],
 "mutants": the mutant harness's path}. A witness `NAME:CASE` names the file tests/NAME.py, or DIR/P/test.py as
 `P/test`; the harness lists `{id: [file, test file, cases]}` with `--list` and writes `{"rows": [{id, outcome}]}`
@@ -59,22 +60,30 @@ def confined(root, path):
     return Path(path)
 
 
+def sources(cfg):
+    """The configuration's current sources: `source` is one path or a list of distinct paths."""
+    return [cfg["source"]] if isinstance(cfg["source"], str) else list(cfg["source"])
+
+
 def config(root):
     """The repository's `.warrant/claims.json` ({warrant, source, retired, witnesses, mutants}), checked: relative paths
-    whose real paths stay in the repository."""
+    whose real paths stay in the repository; `source` one path or a non-empty list of distinct ones."""
     try:
         doc = json.loads((Path(root) / ".warrant" / "claims.json").read_text())
     except (OSError, ValueError) as e:
         raise Failed("CONFIG", f".warrant/claims.json: {type(e).__name__} {e}") from None
+    srcs = doc.get("source") if isinstance(doc, dict) else None
+    srcs = [srcs] if isinstance(srcs, str) else srcs
     ok = (isinstance(doc, dict) and set(doc) == {"warrant", "source", "retired", "witnesses", "mutants"} and doc["warrant"] == CONFIG
-          and _relative(doc["source"]) and _relative(doc["mutants"]) and isinstance(doc["retired"], list)
-          and all(_relative(x) and x != doc["source"] for x in doc["retired"])
+          and isinstance(srcs, list) and srcs and all(_relative(x) for x in srcs) and len(set(srcs)) == len(srcs)
+          and _relative(doc["mutants"]) and isinstance(doc["retired"], list)
+          and all(_relative(x) and x not in srcs for x in doc["retired"])
           and isinstance(doc["witnesses"], list) and doc["witnesses"] and all(_relative(x) for x in doc["witnesses"]))
     if not ok:
         raise Failed("CONFIG", f".warrant/claims.json is a {CONFIG} document {{warrant, source, retired, witnesses, mutants}} "
                                "of relative paths")
-    for k in ("source", "mutants"):
-        confined(root, Path(root) / doc[k])
+    for k in (*srcs, doc["mutants"]):
+        confined(root, Path(root) / k)
     return doc
 
 
@@ -118,10 +127,10 @@ def store_problems(rep):
 
 def check(repo):
     cfg = config(repo.root)
-    source = cfg["source"]
+    srcs = sources(cfg)
     rep = repo.report()
     out = store_problems(rep)
-    spec = (repo.root / source).read_text()
+    spec = {src: (repo.root / src).read_text() for src in srcs}
     known, printed = harness(repo.root), cases(repo.root)
     ids = {}
     for L, b in sorted(live(rep).items()):
@@ -129,12 +138,12 @@ def check(repo):
         tag = f"{b.get('id')} ({L[:12]})"
         if lin["verdict"] == "FORK":
             out.append(("CLAIM_FORK", tag))
-        if b["source"] != source:
+        if b["source"] not in spec:
             out.append(("V2_CLAIM_LIVE" if b["source"] in cfg["retired"] else "CLAIM_SOURCE", f"{tag} is of {b['source']}"))
             continue
         ids.setdefault(b["id"], []).append(L)
-        if b["text"] not in spec:
-            out.append(("CLAIM_TEXT_MISSING", f"{tag}: its sentence is not in {source}"))
+        if b["text"] not in spec.get(b["source"], ""):     # total: a mutant dropping the source check is seen, not a crash
+            out.append(("CLAIM_TEXT_MISSING", f"{tag}: its sentence is not in {b['source']}"))
         out += backing_problems(tag, b, printed, known)
     out += [("CLAIM_ID_TWICE", f"{i} in {len(Ls)} lineages") for i, Ls in sorted(ids.items()) if len(Ls) > 1]
     return rep, out
@@ -193,18 +202,20 @@ def at_tree(root, commits, here):
 def view(rep, root):
     recs, cfg = rep["_recs"], config(root)
     done, here = checked(rep), code_tree(root, "HEAD")
-    lines = [f"# Claims of {cfg['source']}", "", f"Generated from `.warrant/records.jsonl` (snapshot `{rep['snapshot'][:12]}`, "
+    srcs = sources(cfg)
+    lines = [f"# Claims of {', '.join(srcs)}", "", f"Generated from `.warrant/records.jsonl` (snapshot `{rep['snapshot'][:12]}`, "
              f"assessment `{rep['assessment'][:12]}`); a build artifact, never committed.", ""]
-    rows = sorted(((b["section"], b["id"], L, b) for L, b in live(rep).items() if b["source"] == cfg["source"]),
-                  key=lambda r: ([int(x) if x.isdigit() else x for x in r[0].split(".")], r[1]))
+    rows = sorted(((b["section"], b["id"], L, b) for L, b in live(rep).items() if b["source"] in srcs),
+                  key=lambda r: (srcs.index(r[3]["source"]), [int(x) if x.isdigit() else x for x in r[0].split(".")], r[1]))
     for section, cid, L, b in rows:
+        where = f"{b['source']} " if len(srcs) > 1 else ""
         lin = rep["lineages"][L]
         g = rep["versions"].get(lin["leaf"] or L, {})
         state = f"{lin['state'] or 'none effective'}, leaf {b['state']} {g.get('guard')}"
         if done.get(lin["leaf"]):
             xs = done[lin["leaf"]]
             state += ", checked at this tree" if at_tree(root, xs, here) else f", checked at {', '.join(str(x)[:12] for x in xs)}, not this tree"
-        lines += [f"- **{cid}** (§{section}; {state}; {lin['reliance']}) {b['text']}",
+        lines += [f"- **{cid}** ({where}§{section}; {state}; {lin['reliance']}) {b['text']}",
                   f"  witnesses: {', '.join(b['witnesses']) or 'none'}; mutants: {', '.join(b['mutants']) or 'none'}"
                   + (f"; why unbacked: {b['reason']}" if b.get("reason") else "")]
     for old in cfg["retired"]:
@@ -218,14 +229,17 @@ def schema_guard(rep, state):
 
 
 def file_claims(repo, actor, key, doc):
-    """File each claim of `doc` ([{id, section, text, witnesses, mutants, state?, reason?}]) as a new lineage, or a
-    new version of the live lineage with its id when anything differs; unchanged ones are skipped."""
-    source = config(repo.root)["source"]
+    """File each claim of `doc` ([{id, section, text, witnesses, mutants, source?, state?, reason?}]) as a new lineage,
+    or a new version of the live lineage with its id when anything differs; unchanged ones are skipped. `source` is one
+    of the configuration's, by default its first."""
+    srcs = sources(config(repo.root))
     rep = repo.report()
-    by_id = {b["id"]: L for L, b in live(rep).items() if b["source"] == source}
+    by_id = {b["id"]: L for L, b in live(rep).items() if b["source"] in srcs}
     recs = []
     for c in doc:
-        state = c.get("state", "backed")
+        state, source = c.get("state", "backed"), c.get("source", srcs[0])
+        if source not in srcs:
+            raise Failed("CLAIM_SOURCE", f"{c['id']} names {source}, not a source of .warrant/claims.json")
         body = {"state": state, "id": c["id"], "source": source, "section": c["section"], "text": c["text"],
                 "witnesses": c["witnesses"], "mutants": c["mutants"], **({"reason": c["reason"]} if c.get("reason") else {})}
         L = by_id.get(c["id"])
@@ -244,8 +258,8 @@ def retire_v2(repo, actor, key):
         lin = rep["lineages"][L]
         if b["source"] not in cfg["retired"] or lin["leaf"] is None or rep["_recs"][L]["actor"] != actor:
             continue
-        body = dict(b, state="retired", reason=f"a claim of {b['source']}, a retired source: {cfg['source']}'s claims "
-                    "are the current ones")
+        body = dict(b, state="retired", reason=f"a claim of {b['source']}, a retired source: "
+                    f"{', '.join(sources(cfg))}'s claims are the current ones")
         for k in ("established", "residual", "opened", "subject", "because", "counter", "challenge", "evidence"):
             body.pop(k, None)
         recs.append(R.record("entity", actor, 0, body, CLAIM, lineage=lin["leaf"], refs=R.body_refs({}, body)))
@@ -343,8 +357,8 @@ def _reexecuted(repo, x, rows):
         if problems_x:
             return [f"{i[:12]}: CLAIM_PREFLIGHT the claims check at {x[:12]} has {len(problems_x)} problem(s), the first "
                     f"{' '.join(problems_x[0])[:100]}" for i, _, _ in rows]
-        source = config(wt)["source"]
-        leaves = {at_x["lineages"][L]["leaf"] for L, b in live(at_x).items() if b["source"] == source and b["state"] == "backed"}
+        srcs = sources(config(wt))
+        leaves = {at_x["lineages"][L]["leaf"] for L, b in live(at_x).items() if b["source"] in srcs and b["state"] == "backed"}
         off = [(i, t, b) for i, t, b in rows if t not in leaves]
         bad = [f"{i[:12]}: CLAIM_PREFLIGHT {b['id']} {t[:12]} is not the leaf of a live backed claim at {x[:12]}" for i, t, b in off]
         rows = [row for row in rows if row not in off]
@@ -384,9 +398,9 @@ def run(argv=None):
         rep, out = check(repo)
         for c, d in out:
             print(f"{c} {d}")
-        source = config(root)["source"]
-        n = len([1 for b in live(rep).values() if b["source"] == source])
-        print(f"claims: {n} live of {source}; {len(out)} problem(s)")
+        srcs = sources(config(root))
+        n = len([1 for b in live(rep).values() if b["source"] in srcs])
+        print(f"claims: {n} live of {', '.join(srcs)}; {len(out)} problem(s)")
         return 1 if out else 0
     if a.cmd == "view":
         emit(view(repo.report(), repo.root), a.out, root)
