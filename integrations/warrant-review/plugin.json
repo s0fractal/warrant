@@ -7,7 +7,7 @@
     "name": "s0fractal",
     "url": "https://github.com/s0fractal"
   },
-  "homepage": "https://github.com/s0fractal/warrant/tree/master/integrations/codex-plugin",
+  "homepage": "https://github.com/s0fractal/warrant/tree/master/integrations/warrant-review",
   "repository": "https://github.com/s0fractal/warrant",
   "license": "MIT",
   "keywords": ["warrant", "review", "mcp", "provenance", "agents"]

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Install the warrant-review Codex plugin and its waker on this machine (macOS), or remove them.
 
-    python3 integrations/codex-plugin/install.py [--dry-run]     # --dry-run prints each step and changes nothing
-    python3 integrations/codex-plugin/install.py --uninstall
+    python3 integrations/warrant-review/install.py [--dry-run]     # --dry-run prints each step and changes nothing
+    python3 integrations/warrant-review/install.py --uninstall
 
 Install, from the checkout's HEAD commit (never its working tree: a dirty plugin path is refused):
 
-  1. the marketplace (.agents/plugins/marketplace.json and integrations/codex-plugin) written by
+  1. the marketplace (.agents/plugins/marketplace.json and integrations/warrant-review) written by
      `git archive HEAD` to ~/.warrant/codex-marketplace, with INSTALLED.json naming the commit;
   2. ~/.codex/config.toml copied to ~/.codex/config.toml.warrant-backup-<UTC time>;
   3. `codex plugin marketplace add` of that directory and `codex plugin add warrant-review@warrant`;
@@ -40,7 +40,7 @@ import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PATHS = (".agents/plugins/marketplace.json", "integrations/codex-plugin")
+PATHS = (".agents/plugins/marketplace.json", "integrations/warrant-review")
 PACKAGE = ("pyproject.toml", "README.md", "LICENSE", "warrant", "warrant_agent")   # what builds warrant-graph
 WARRANT = ".warrant"                          # the operator's ~/.warrant and a repository's store
 MARKET = Path.home() / WARRANT / "codex-marketplace"
@@ -128,7 +128,7 @@ def repositories(dry):
     """HOME/repositories.json: written with this checkout's repository when absent, else checked and kept."""
     path = HOME / "repositories.json"
     if path.exists():
-        waker = load("waker", ROOT / "integrations" / "codex-plugin" / "waker" / "waker.py")
+        waker = load("waker", ROOT / "integrations" / "warrant-review" / "waker" / "waker.py")
         names = [e["repository"] for e in waker.served(HOME)]
         print(f"+ keep {path}: {', '.join(names)}")
         return
@@ -149,7 +149,7 @@ def load(name, path):
 
 def plist(python):
     env = {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", "HOME": str(Path.home())}
-    args = [python, str(MARKET / "integrations" / "codex-plugin" / "waker" / "waker.py")]
+    args = [python, str(MARKET / "integrations" / "warrant-review" / "waker" / "waker.py")]
     items = "".join(f"<string>{a}</string>" for a in args)
     envs = "".join(f"<key>{k}</key><string>{v}</string>" for k, v in env.items())
     log = HOME / "logs" / "launchd.log"
