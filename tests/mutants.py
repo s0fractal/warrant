@@ -303,6 +303,10 @@ MUTANTS = [
      'startswith(VERDICT_BRANCH)]', WAKER, ["W14"]),
     ("P17", "integrations/warrant-review/waker/waker.py", '                if str(x.get("headRefName") or "").startswith(VERDICT_BRANCH) and',
      "                if", WAKER, ["W14"]),
+    ("P28", "integrations/warrant-review/waker/waker.py", 'replay_python or entry.get("replay_python") or env(', 'replay_python or env(',
+     WAKER, ["W19"]),
+    ("P29", "integrations/warrant-review/waker/waker.py", '                        for k in (*SERVED[2:], *({"replay_python"} & set(e))))):',
+     '                        for k in SERVED[2:])):', WAKER, ["W19"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
 ]
 

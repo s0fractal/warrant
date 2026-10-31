@@ -203,4 +203,6 @@ source, CI holds an attest to the package at the commit it names; in a repositor
 to the package installed where `verify` runs, so CI re-executes with the same pinned version. The
 gate decides from the base: its workflow checks out the base commit and installs the version the
 base pins (here: runs the base checkout's own `warrant/gate.py`). The waker serves the repository
-once an entry for it is added to `~/.warrant/codex-waker/repositories.json` (waker.py `served`).
+once an entry for it is added to `~/.warrant/codex-waker/repositories.json` (waker.py `served`). An entry may name
+`replay_python`, an interpreter whose warrant-graph is the version the repository pins: the review replays then
+carry the `code` its CI installs, so `warrant review verify` there can re-execute them.

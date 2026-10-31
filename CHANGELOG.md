@@ -4,6 +4,13 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## Unreleased
+
+- The review waker runs a repository's review replays under the interpreter its entry names (`replay_python`, an
+  absolute path), else the waker's own: a repository that pins warrant-graph (sigma-glyph) gets replays whose `code`
+  is the pinned package's, which its CI's `warrant review verify` re-executes. The waker's own build named another
+  code, so sigma-glyph's CI refused them (REPLAY_DIFFERS on sigma-glyph#77).
+
 ## 3.0.0a4 — claims in more than one specification
 
 Prepared for PyPI; published when the owner pushes the tag `v3.0.0a4` (`release.yml`), admitted by the published
