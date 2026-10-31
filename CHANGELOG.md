@@ -6,6 +6,9 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `release.yml` publishes n+1 only when release n admits it (roadmap G12): the version PyPI publishes and the built
+  wheel assess this store and agree but for the engine's identity (or as `.warrant/differential.json` declares), and
+  n's own engine finds a release duty of this version closed and accepted (`python -m warrant.differential --release`).
 - The review plugin's directory is `integrations/warrant-review` (was `integrations/codex-plugin`): it is no agent's.
   Reinstall with `python3 integrations/warrant-review/install.py`. In this repository's profile `claude` is a
   `pr/acceptor` beside `codex` (`.warrant/v3.json`): either reviews the other's pull requests, and neither its own (an

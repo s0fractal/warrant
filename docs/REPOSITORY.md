@@ -133,6 +133,15 @@ uv venv ~/Projects/.worktrees/venv-wg-n && uv pip install --python ~/Projects/.w
 python -m warrant.differential --python ~/Projects/.worktrees/venv-wg-n/bin/python --root .
 ```
 
+`release.yml` runs it on the tagged commit, against the version PyPI publishes, with `--release VERSION`: n's own
+engine must also find a release duty of this version closed and accepted. A release is therefore made in this order:
+
+1. `python -m warrant.roadmap oblige --goal G12 --statement "Release warrant-graph VERSION: ..."` and a pull request
+   that sets `version` in pyproject.toml (and `.warrant/differential.json` when the reports will differ);
+2. once merged, `python -m warrant.roadmap close --obligation ID --ref warrant-graph==VERSION --evidence ...`,
+   which the roadmap acceptor accepts (the waker wakes Codex for it);
+3. the owner tags `vVERSION` on master after that acceptance merged.
+
 ## Reviews as records
 
 A pull request is a `pr-head@1` lineage: `python3 tools/review.py open --pr N --title T` files its
