@@ -608,6 +608,23 @@ def reviewers():
           "an entry's reviewers are a non-empty list of distinct actors, each running a known agent, a seed only by an "
           "absolute path; an entry without them is reviewed by codex, as before", dict(got, default=default))
 
+    entries = {}
+    for name, value in (("absolute", "/opt/pin/bin/python"), ("relative", "pin/bin/python"), ("not a path", 3)):
+        (cfg / WAKER.CONFIG).write_text(json.dumps({"warrant": WAKER.CONFIG_DOC,
+                                                    "repositories": [dict(one, replay_python=value)]}))
+        try:
+            entries[name] = WAKER.Waker(WAKER.served(cfg)[0], run=Agent()).replay_python
+        except ValueError:
+            entries[name] = None
+    pinned = dict(one, replay_python="/opt/pin/bin/python")
+    (cfg / WAKER.CONFIG).write_text(json.dumps({"warrant": WAKER.CONFIG_DOC, "repositories": [pinned]}))
+    chosen = WAKER.Waker(WAKER.served(cfg)[0], run=Agent(), replay_python="/given/python").replay_python
+    check("W19", entries == {"absolute": "/opt/pin/bin/python", "relative": None, "not a path": None}
+          and chosen == "/given/python",
+          "an entry may name the interpreter its review replays run under (an absolute path: the venv of the "
+          "warrant-graph that repository pins), which the waker uses for that repository; an explicit argument "
+          "still wins", dict(entries, chosen=chosen))
+
 
 if __name__ == "__main__":
     manifests()

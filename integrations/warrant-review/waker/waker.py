@@ -174,7 +174,10 @@ def git(*args):
 def served(home):
     """[entry] of HOME/repositories.json ({"warrant": "codex-waker/1", "repositories": [entry, ...]}), each
     {repository: owner/name, branch: its base branch, home: its state directory (memos, logs, base trees), mirror: its
-    bare mirror, trees: its wakes' worktrees, checkout: the operator's checkout, never a wake's directory}, the paths
+    bare mirror, trees: its wakes' worktrees, checkout: the operator's checkout, never a wake's directory; and optionally
+    reviewers (reviewers_problem) and replay_python: the interpreter the review replay checker runs under for this
+    repository, whose warrant-graph is the version that repository pins, so its CI can re-execute the replays at the
+    code they name}, the paths
     absolute and no two entries sharing a repository, a home, a mirror or a worktree root, by real path (Codex finding
     4df591987fb7: memos are keyed by pull request and head, so a shared home lets one repository's done wake hold the
     other's). A ValueError otherwise."""
@@ -184,12 +187,14 @@ def served(home):
     if not (isinstance(entries, list) and entries):
         raise ValueError(f"{CONFIG} is a {CONFIG_DOC} document {{warrant, repositories: [entry, ...]}}")
     for e in entries:
-        if not (isinstance(e, dict) and set(SERVED) <= set(e) <= {*SERVED, "reviewers"} and isinstance(e["repository"], str)
+        if not (isinstance(e, dict) and set(SERVED) <= set(e) <= {*SERVED, "reviewers", "replay_python"}
+                and isinstance(e["repository"], str)
                 and REPO_NAME.match(e["repository"])
                 and isinstance(e["branch"], str) and PR_BRANCH.match(e["branch"])
-                and all(isinstance(e[k], str) and Path(e[k]).is_absolute() for k in SERVED[2:])):
-            raise ValueError(f"{CONFIG}: an entry is {{{', '.join(SERVED)}, reviewers?}}, owner/name, a branch and absolute "
-                             f"paths: {json.dumps(e)[:200]}")
+                and all(isinstance(e[k], str) and Path(e[k]).is_absolute()
+                        for k in (*SERVED[2:], *({"replay_python"} & set(e))))):
+            raise ValueError(f"{CONFIG}: an entry is {{{', '.join(SERVED)}, reviewers?, replay_python?}}, owner/name, a "
+                             f"branch and absolute paths: {json.dumps(e)[:200]}")
         why = reviewers_problem(e.get("reviewers", list(DEFAULT_REVIEWERS)))
         if why:
             raise ValueError(f"{CONFIG}: {e['repository']}: {why}")
@@ -457,7 +462,8 @@ class Waker:
         self.claude = str(claude or env("WARRANT_WAKER_CLAUDE") or shutil.which("claude") or "/opt/homebrew/bin/claude")
         self.reviewers = [dict(r) for r in entry.get("reviewers", DEFAULT_REVIEWERS)]
         self.replayers = Path(replayers or env("WARRANT_WAKER_REPLAYERS") or Path.home() / ".warrant-review-replayer")
-        self.replay_python = str(replay_python or env("WARRANT_WAKER_REPLAY_PYTHON") or self.python)
+        self.replay_python = str(replay_python or entry.get("replay_python") or env("WARRANT_WAKER_REPLAY_PYTHON")
+                                 or self.python)
         self.plugin, self.run, self.clock, self.jail = Path(plugin), run, clock, jail
         self.forge = forge or Forge(self.repository, self.branch)
         for d in ("wakes", "accepts", "logs", "results", "code", "replays", "replay-work"):
