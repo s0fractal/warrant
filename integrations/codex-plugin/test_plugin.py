@@ -67,6 +67,14 @@ def manifests():
           and "Sign only as A," in skill and "/tmp" in skill and "`codex`" not in skill.replace("e.g. `codex`", ""),
           "the skill names itself, points to the review recipe, and states who signs (the actor the waker names, no agent "
           "fixed) and where files go")
+    lookup = next(x for x in skill.splitlines() if x.startswith("MCP="))       # the skill's own line, run as written
+    def found(**env):
+        return subprocess.run(["/bin/sh", "-c", lookup + '; printf %s "$MCP"'], capture_output=True, text=True,
+                              env={"PATH": "/usr/bin:/bin", "HOME": "/h", **env}).stdout
+    got = {"none": found(), "named": found(WARRANT_AGENT_MCP="/x/bin/warrant-agent-mcp")}
+    check("C17", got == {"none": "/h/.warrant/codex-mcp/bin/warrant-agent-mcp", "named": "/x/bin/warrant-agent-mcp"},
+          "the skill finds the MCP server where no PATH holds it (the waker's launchd PATH): $WARRANT_AGENT_MCP, else "
+          "PATH, else install.py's venv", got)
     portable(man)
 
 

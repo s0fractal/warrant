@@ -77,7 +77,8 @@ client. `--repo` makes the server hold the worktree's configuration in memory, w
 A): no configuration file is written. With no `--seed`, the seed is your identity's in the operator's Home. The workspace's name is the worktree directory's (`<N>-<H12>`).
 
 ```sh
-PY="$(dirname "$(command -v warrant-agent-mcp)")/python"       # the Python the server is installed in
+MCP="${WARRANT_AGENT_MCP:-$(command -v warrant-agent-mcp || echo ~/.warrant/codex-mcp/bin/warrant-agent-mcp)}"
+PY="$(dirname "$MCP")/python"        # the Python the server is installed in (install.py's venv when it is on no PATH)
 CALL=("$PY" <this skill>/scripts/warrant-mcp-call --repo <your worktree> --actor A [--seed <your seed>])
 "${CALL[@]}" workspace '{}'
 "${CALL[@]}" context '{"workspace": "<name>", "targets": ["T"]}'
