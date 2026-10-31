@@ -1,7 +1,7 @@
 """Differential assessment (roadmap G12): the published release n and this package assess one store under its
 receiver (`.warrant/v3.json`), and their reports must be the same bytes but for the engine's identity.
 
-    python -m warrant.differential --python N_PYTHON [--root DIR] [--declared FILE]
+    python -m warrant.differential --python N_PYTHON [--root DIR] [--declared FILE] [--release VERSION]
 
 N_PYTHON is a Python whose site-packages hold the published warrant-graph n (installed from PyPI); it runs isolated
 (-I: no script directory, no PYTHONPATH, no user site), from outside the checkout, so it imports n and never this
@@ -9,8 +9,13 @@ tree. Each report is canonical JSON. `code` (the digest of the engine's files) a
 operands, `code` among them) name the engine and differ whenever the engine does; every other member is compared
 as bytes, after checking that each report's `assessment` is the digest of its own operands. A difference is admitted
 only when FILE declares it: {"warrant": "differential/1", "differs": [MEMBER, ...], "because": TEXT}, naming exactly
-the members that differ (an undeclared difference is refused, and so is a declared one that did not occur). Prints
-the verdict as JSON; exit 0 SAME or DECLARED, 1 REFUSED, 2 when a report could not be made."""
+the members that differ (an undeclared difference is refused, and so is a declared one that did not occur).
+
+With --release VERSION, release n must also admit n+1 (roadmap G12, release.yml): n's own engine assesses the store and
+finds an obligation@1 lineage whose effective version is closed (`done`, its guard met: an acceptor accepted it), relied
+on (ELIGIBLE), and lists `warrant-graph==VERSION` among its refs (`roadmap close --ref`). None: REFUSED.
+
+Prints the verdict as JSON; exit 0 SAME or DECLARED, 1 REFUSED, 2 when a report could not be made."""
 import argparse
 import json
 import os
@@ -35,6 +40,25 @@ rep = E.assess(Store(dot).snapshot(), receiver["trust"], receiver["profile"], No
 sys.stdout.write(json.dumps(rep, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
 """
 
+# run by N_PYTHON: the release duties n itself finds closed, accepted and relied on for one version
+RELEASE_SCRIPT = """import json, sys
+from warrant import engine as E, records as R
+from warrant.store import Store
+dot, receiver, want = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+rep = E.assess(Store(dot).snapshot(), receiver["trust"], receiver["profile"], None)
+recs = {}
+with open(dot + "/records.jsonl", "rb") as f:
+    for line in f:
+        if line.strip():
+            r = json.loads(line)["record"]
+            recs[R.rid(r)] = r
+found = sorted(lin["effective"] for lin in rep["lineages"].values()
+               if lin["schema"] == "obligation@1" and lin["effective"] and lin["state"] == "done"
+               and lin["reliance"] == "ELIGIBLE" and want in (recs.get(lin["effective"], {}).get("body", {}).get("refs") or []))
+sys.stdout.write(json.dumps({"release": want, "accepted": found}))
+"""
+RELEASE_REF = "warrant-graph=={}"
+
 
 class Unmade(Exception):
     pass
@@ -50,20 +74,33 @@ def head_report(root):
     return E.assess(Store(dot).snapshot(), doc["trust"], doc["profile"], None)
 
 
-def published_report(python, root, run=subprocess.run):
-    """The report of the warrant-graph N_PYTHON imports, on the same store and receiver."""
+def published(python, root, script, *args, run=subprocess.run):
+    """What `script` prints as JSON, run by the warrant-graph N_PYTHON imports on this store and its receiver."""
     dot, doc = receiver(root)
     if os.sep in str(python):                                   # a path names it from here, not from where it runs
         python = os.path.abspath(python)                        # (Codex finding 30154b8b64e1); a bare name: PATH
     with tempfile.TemporaryDirectory() as away:                 # its directory: nothing of the checkout to import
-        r = run([str(python), "-I", "-c", SCRIPT, str(dot), json.dumps({"trust": doc["trust"], "profile": doc["profile"]})],
-                capture_output=True, cwd=away, check=False, timeout=3600)
+        r = run([str(python), "-I", "-c", script, str(dot), json.dumps({"trust": doc["trust"], "profile": doc["profile"]}),
+                 *args], capture_output=True, cwd=away, check=False, timeout=3600)
     if r.returncode:
         raise Unmade(f"{python} exited {r.returncode}: {r.stderr.decode(errors='replace').strip()[-400:]}")
     try:
         return json.loads(r.stdout)
     except ValueError as e:
         raise Unmade(f"{python} printed no report: {e}") from None
+
+
+def published_report(python, root, run=subprocess.run):
+    """The report of the warrant-graph N_PYTHON imports, on the same store and receiver."""
+    return published(python, root, SCRIPT, run=run)
+
+
+def release_duties(python, root, version, run=subprocess.run):
+    """[closure id]: the release duties of `version` that n's own engine finds closed, accepted and relied on."""
+    got = published(python, root, RELEASE_SCRIPT, RELEASE_REF.format(version), run=run)
+    if not (isinstance(got, dict) and isinstance(got.get("accepted"), list)):
+        raise Unmade(f"{python} printed no release duties")
+    return got["accepted"]
 
 
 def compare(n, head, declared=None):
@@ -96,10 +133,16 @@ def main(argv=None):
     ap.add_argument("--python", required=True, help="a Python with the published warrant-graph n installed")
     ap.add_argument("--root", default=".", help="the repository whose .warrant/ both releases assess")
     ap.add_argument("--declared", help=f"a {FORMAT} declaration of the members that differ")
+    ap.add_argument("--release", help="also require a release duty of this version accepted, as n assesses it")
     a = ap.parse_args(argv)
     try:
         declared = declaration(a.declared) if a.declared else None
         out = compare(published_report(a.python, a.root), head_report(a.root), declared)
+        if a.release is not None:
+            out["release"] = {"version": a.release, "accepted": release_duties(a.python, a.root, a.release)}
+            if not out["release"]["accepted"] and out["verdict"] != "REFUSED":
+                out.update(verdict="REFUSED", why=f"no release duty of {a.release} is closed and accepted, as n assesses "
+                                                  f"the store (an obligation@1 closure with the ref {RELEASE_REF.format(a.release)})")
     except (Unmade, OSError, ValueError) as e:
         print(json.dumps({"verdict": "UNMADE", "why": str(e)}))
         return 2

@@ -10,8 +10,12 @@ name: release
 #             of .github/release-requirements.txt (exact versions and hashes, no isolation);
 #             tests/boundary_test.py reads those artifacts (B1 reads the core's modules from the
 #             wheel); tests/quickstart_test.py runs QUICKSTART.md against the wheel installed
-#             alone; the digests become this run's record of what is
-#             published.
+#             alone; release n admits n+1 (roadmap G12): the version PyPI publishes now (n) and this
+#             wheel assess this store and their reports agree but for the engine's identity, or
+#             differ only as .warrant/differential.json declares, and n's own engine finds a
+#             release duty of this version closed and accepted (an obligation@1 closure with the
+#             ref warrant-graph==VERSION; python -m warrant.differential --release); the digests
+#             become this run's record of what is published.
 #   publish   the only job holding `id-token: write`, in the environment `pypi`; it checks out
 #             nothing and runs only the publishing action, on the build job's artifacts, after
 #             checking them against the build job's digests.
@@ -88,6 +92,20 @@ jobs:
       - name: QUICKSTART.md against the wheel installed alone
         working-directory: tests
         run: '"$RUNNER_TEMP/wheel/bin/python" quickstart_test.py'
+
+      - name: Release n admits n+1 (roadmap G12)
+        env:
+          VER: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          N=$(curl -sfL https://pypi.org/pypi/warrant-graph/json | python -c 'import json, sys; print(json.load(sys.stdin)["info"]["version"])')
+          [ "$N" != "$VER" ] || { echo "::error::$VER is published already"; exit 1; }
+          python -m venv "$RUNNER_TEMP/n"
+          "$RUNNER_TEMP/n/bin/pip" install --quiet --only-binary=:all: "warrant-graph==$N"
+          declared=()
+          if [ -f .warrant/differential.json ]; then declared=(--declared .warrant/differential.json); fi
+          "$RUNNER_TEMP/wheel/bin/python" -P -m warrant.differential --python "$RUNNER_TEMP/n/bin/python" --root . \
+            --release "$VER" "${declared[@]}"
 
       - name: Digests of what is published
         id: sums
