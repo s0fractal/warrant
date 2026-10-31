@@ -29,7 +29,7 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `tools/{claims,roadmap,review,gate}.py` | shims: `python3 -m warrant.<name>` with this checkout's package, for CI and these docs; `tools/gate.py` is what the merge workflow runs (owner path) |
 | `tools/graph.py` | queries over the record graph (around, path, why, frontier, impact) and the views |
 | `tests/mutants.py` | every mutant, the cases it must fail, shards and their merge |
-| `integrations/codex-plugin/` | the Codex plugin: the review skill, the MCP launcher, the review waker |
+| `integrations/warrant-review/` | the Codex plugin: the review skill, the MCP launcher, the review waker |
 
 ## Installing from a checkout
 
@@ -51,7 +51,7 @@ python3 tests/gate_test.py            # the merge gate (§14)
 python3 tests/tools_test.py           # claims, review replay, roadmap (§14)
 python3 tests/pilot_test.py           # the pilot (needs sigma-glyph 0.8.0)
 python3 tests/boundary_test.py        # the public surface; python3 tests/quickstart_test.py: QUICKSTART.md
-python3 integrations/codex-plugin/test_plugin.py
+python3 integrations/warrant-review/test_plugin.py
 python3 tests/mutants.py --shard 1/4 --matrix part-1.json    # ... 4/4, then --merge
 python3 tools/claims.py check && python3 tools/roadmap.py check && python3 tools/pilot.py check
 python3 tools/review.py verify --base <base commit>          # replays new since the base, re-executed
@@ -138,7 +138,7 @@ python -m warrant.differential --python ~/Projects/.worktrees/venv-wg-n/bin/pyth
 A pull request is a `pr-head@1` lineage: `python3 tools/review.py open --pr N --title T` files its
 root, `head --pr N` a version naming the commit to review (the `HEAD` of the checkout) and its tree.
 The reviewer accepts the head version or files `finding@1` challenges against it, through MCP
-(integrations/codex-plugin/skills/warrant-review/SKILL.md). The review replay checker runs each
+(integrations/warrant-review/skills/warrant-review/SKILL.md). The review replay checker runs each
 finding's test at each later head and attests the result; `review.py verify` in CI re-executes those
 new since the base. After a merge, `review.py merged --pr N --merge SHA` files the observation.
 
@@ -155,7 +155,7 @@ merge the base locally (`git merge origin/master`: the union drivers of `.gitatt
 version: the gate holds such a head to the reviewed commit's clean merge with the base, so the acceptance stands.
 A merge that needed a hand resolution is new content and needs a new head version and its review.
 
-The review waker (integrations/codex-plugin/waker/waker.py, launchd, every five minutes) serves the
+The review waker (integrations/warrant-review/waker/waker.py, launchd, every five minutes) serves the
 repositories `~/.warrant/codex-waker/repositories.json` lists, each on its own base branch with its own
 mirror, state and worktrees, and refuses a base whose `.warrant/v3.json` names another repository. For
 each it runs the base tree's `python -m warrant.review due` and `python -m warrant.roadmap due --actor
@@ -164,7 +164,7 @@ waker), replays findings with the review replay checker's seed (sandboxed, seed 
 and wakes Codex once per due head or roadmap version, naming that repository and its branch. A
 repository without `.warrant/merge.json` (its owner merges; `due` refuses its base) is served for its
 roadmap versions only, the open verdict pull requests read from GitHub (`gh pr list`).
-`python3 integrations/codex-plugin/install.py` installs the plugin, the waker and its Python with this
+`python3 integrations/warrant-review/install.py` installs the plugin, the waker and its Python with this
 checkout's warrant-graph, and writes `repositories.json` with this repository as the only entry when
 the file is absent (the owner runs it).
 
