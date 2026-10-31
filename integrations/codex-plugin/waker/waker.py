@@ -131,6 +131,7 @@ COMMITTER = ["-c", "user.name=warrant review waker", "-c", "user.email=review-wa
              "-c", "commit.gpgsign=false"]
 REPLAY_TIMEOUT = 3600
 ACCEPTOR = "codex"                          # the actor the waker wakes: `codex exec`, signing with its own seed
+CLIENT = Path("skills") / "warrant-review" / "scripts" / "warrant-mcp-call"   # the skill's stdio MCP client, in the plugin
 VERDICT_BRANCH = "codex/verdicts/"          # where the waker publishes Codex's verdict on an obligation closure
 VERDICTS = ("attest", "challenge")          # the kinds of record an acceptance wake may publish
 MAX_PREPARED = 16 << 20                     # bytes of a prepared verdict's records and blobs, all told
@@ -985,11 +986,12 @@ def prompt(w, a, path, incomplete=None):
            f" The review replay checker did not complete at H ({incomplete}): no checker observation covers this "
            "head's mechanical findings. Run them yourself before you rely on them, and say in your verdict that the "
            "replay was incomplete.")
-    return (f"Use the warrant-review skill ($warrant-review). Pull request {w.repository}#{a['pr']} is due for review: "
+    return (f"Use the warrant-review skill ($warrant-review); you are the actor {ACCEPTOR}. Pull request "
+            f"{w.repository}#{a['pr']} is due for review: "
             f"branch {a.get('branch')}, head H {a['head']}; review lineage D {f.get('duty')}; head version T "
             f"{f.get('closure')} (head {f.get('head_n')}) at commit X {f.get('x')}; base {w.branch} M {a['base']}. Your worktree is {path}, "
             f"detached at H (its remote origin is the repository). The plugin's stdio MCP client is "
-            f"{plugin / 'scripts' / 'warrant-mcp-call'}. These facts come from `warrant.review due` at M, run by the "
+            f"{plugin / CLIENT}. These facts come from `warrant.review due` at M, run by the "
             "review waker; check them yourself before you rely on them." + gap)
 
 
@@ -999,13 +1001,14 @@ def accept_prompt(w, c, base, path):
     plugin = w.plugin
     def ids(xs):
         return "; ".join(str(x)[:200] for x in xs[:20]) or "none"
-    return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\". On "
+    return (f"Use the warrant-review skill ($warrant-review), section \"A verdict on a roadmap version\"; you are the "
+            f"actor {ACCEPTOR}. On "
             f"{w.repository} {w.branch} M {base}, the version T {c['closure']} of the {c.get('schema', 'obligation@1')} lineage D "
             f"{c['duty']} (goal {c.get('goal')}) awaits a verdict by {ACCEPTOR}. D owes: {json.dumps(c['statement'])}. "
             f"T's evidence: {ids(c['evidence'])}; the pull requests and commits it names: {ids(c['refs'])}; "
             f"T's subject: {c.get('subject') or 'none'}; T requires: {ids(c['requires'])}. Your worktree is {path}, "
             f"detached at M (its remote origin is the repository). The plugin's stdio MCP client is "
-            f"{plugin / 'scripts' / 'warrant-mcp-call'}. Judge whether what D owes is done; then accept T (an attest "
+            f"{plugin / CLIENT}. Judge whether what D owes is done; then accept T (an attest "
             f"{{\"verdict\": \"accept\"}} targeting T), or challenge T, through MCP, into this worktree's store. Leave "
             f"there only that record and the blobs it cites; do not commit, push or open a pull request: after you exit, "
             f"the waker checks them under the base's keys for {ACCEPTOR} and publishes them itself on the branch "

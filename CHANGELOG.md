@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The review plugin (`integrations/codex-plugin`, 0.2.0) is an Agent Plugins 1.0.0 package: a portable `plugin.json`
+  and `mcp.json` (the server is `warrant-agent-mcp`, serving the operator's Home), with Codex's and Claude Code's
+  manifests beside them. The review skill names no agent: it is written for the actor the waker names, and its stdio
+  client moved under it (`skills/warrant-review/scripts/warrant-mcp-call`).
+- `warrant put --kind schema` refuses a body that is not a schema body (`SCHEMA_NOT_COUNTED`), as the agent
+  interface's `prepare` does: it used to file it for good, never counted (time-lab's N6).
 - `warrant-agent-mcp --repo DIR --actor A [--seed SEED]` (and `warrant-agent`) serve one checkout with the
   configuration `warrant-agent-mcp init` would write for it, held in memory: init's checks, init's refusal codes,
   no file. With no `--seed`, the Home identity's seed. The Codex plugin's `warrant-mcp-call` passes `--repo`

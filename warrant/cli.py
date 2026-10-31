@@ -93,6 +93,8 @@ def signer(a):
 
 
 def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
+    if kind == "schema" and E._schema_problem(body):     # it would lie in the store for good and never count
+        raise Refused(f"SCHEMA_NOT_COUNTED: {E._schema_problem(body)}")
     key, trust = signer(a)
     at = a.at if a.at is not None else int(time.time())
     r = R.record(kind, a.actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard)

@@ -1,0 +1,11 @@
+{
+  "name": "warrant-review",
+  "version": "0.2.0",
+  "description": "The warrant MCP server and the review skill of the warrant review loop: an agent that holds a reviewer role files findings against a pull request's head version, or accepts it, as signed Warrant 3 records.",
+  "author": { "name": "s0fractal", "url": "https://github.com/s0fractal" },
+  "homepage": "https://github.com/s0fractal/warrant/tree/master/integrations/codex-plugin",
+  "repository": "https://github.com/s0fractal/warrant",
+  "license": "MIT",
+  "keywords": ["warrant", "review", "mcp", "provenance", "agents"],
+  "mcpServers": "./mcp.json"
+}

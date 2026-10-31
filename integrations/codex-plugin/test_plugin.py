@@ -64,8 +64,56 @@ def manifests():
     skill = (skills / "warrant-review" / "SKILL.md").read_text()
     front = re.match(r"---\nname: (\S+)\ndescription: (.+)\n---\n", skill)
     check("C3", front is not None and front.group(1) == "warrant-review" and "AGENT.md" in skill
-          and "Sign only as `codex`" in skill and "/tmp" in skill,
-          "the skill names itself, points to the review recipe, and states who signs and where files go")
+          and "Sign only as A," in skill and "/tmp" in skill and "`codex`" not in skill.replace("e.g. `codex`", ""),
+          "the skill names itself, points to the review recipe, and states who signs (the actor the waker names, no agent "
+          "fixed) and where files go")
+    lookup = next(x for x in skill.splitlines() if x.startswith("MCP="))       # the skill's own line, run as written
+    def found(**env):
+        return subprocess.run(["/bin/sh", "-c", lookup + '; printf %s "$MCP"'], capture_output=True, text=True,
+                              env={"PATH": "/usr/bin:/bin", "HOME": "/h", **env}).stdout
+    got = {"none": found(), "named": found(WARRANT_AGENT_MCP="/x/bin/warrant-agent-mcp")}
+    check("C17", got == {"none": "/h/.warrant/codex-mcp/bin/warrant-agent-mcp", "named": "/x/bin/warrant-agent-mcp"},
+          "the skill finds the MCP server where no PATH holds it (the waker's launchd PATH): $WARRANT_AGENT_MCP, else "
+          "PATH, else install.py's venv", got)
+    portable(man)
+
+
+PLUGIN_FIELDS = {"$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords",
+                 "extensions"}
+STDIO_FIELDS = {"type", "command", "args", "env", "cwd"}
+NAME = re.compile(r"(?!.*(--|\.\.))[a-z0-9]([a-z0-9.-]{0,62}[a-z0-9])?\Z")
+
+
+def portable(codex_man):
+    """Agent Plugins 1.0.0 (agent-plugins.org): the package any conforming client loads, and the client manifests
+    agreeing with it."""
+    man = json.loads((HERE / "plugin.json").read_text())
+    mcp = json.loads((HERE / "mcp.json").read_text())
+    claude = json.loads((HERE / ".claude-plugin" / "plugin.json").read_text())
+    servers = mcp.get("mcpServers", {})
+    skill_dirs = sorted(d.name for d in (HERE / "skills").iterdir() if (d / "SKILL.md").is_file())
+    fronts = {d: re.match(r"---\nname: (\S+)\ndescription: .+\n---\n", (HERE / "skills" / d / "SKILL.md").read_text())
+              for d in skill_dirs}
+    escapes = [str(q) for q in HERE.rglob("*") if q.is_symlink() or not inside(HERE, "./" + q.relative_to(HERE).as_posix())]
+    problems = {
+        "manifest": set(man) <= PLUGIN_FIELDS and man.get("$schema") == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+                    and isinstance(man.get("name"), str) and NAME.match(man["name"]) is not None
+                    and set(man.get("author", {})) <= {"name", "email", "url"},
+        "mcp": set(mcp) == {"$schema", "mcpServers"} and mcp["$schema"] == "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+               and all(set(v) <= STDIO_FIELDS and v.get("type") == "stdio" and isinstance(v.get("command"), str)
+                       and "${" not in v["command"] and "/" not in v["command"].removeprefix("./")
+                       and not set(v.get("env", {})) & {"PLUGIN_ROOT", "PLUGIN_DATA"} for v in servers.values()),
+        "server": servers.get("warrant") == {"type": "stdio", "command": "warrant-agent-mcp"},
+        "skills": skill_dirs == ["warrant-review"] and all(f is not None and f.group(1) == d for d, f in fronts.items()),
+        "contained": escapes == [],
+        "clients": man["name"] == codex_man["name"] == claude["name"] and man["version"] == codex_man["version"] == claude["version"]
+                   and claude.get("mcpServers") == "./mcp.json",
+    }
+    check("C16", all(problems.values()),
+          "the plugin is an Agent Plugins 1.0.0 package (closed manifest and mcp.json, a bare server command with no "
+          "placeholder, one skill per directory named as its SKILL.md, nothing linked or outside the root), and the Codex "
+          "and Claude Code manifests name the same plugin and version; Claude Code's reads the portable mcp.json",
+          {k: v for k, v in problems.items() if not v})
 
 
 def launcher():
@@ -228,7 +276,7 @@ def mcp_call():
     env = dict(os.environ, WARRANT_AGENT_MCP=str(server))
 
     def call(tool, args):
-        out = subprocess.run([sys.executable, str(HERE / "scripts" / "warrant-mcp-call"), "--config", str(cfg), tool,
+        out = subprocess.run([sys.executable, str(HERE / WAKER.CLIENT), "--config", str(cfg), tool,
                               json.dumps(args)], env=env, capture_output=True, text=True)
         return out.returncode, json.loads(out.stdout) if out.stdout.strip() else out.stderr
     rc1, ws = call("workspace", {})
@@ -242,7 +290,7 @@ def mcp_call():
     check("C9", rc4 == 2, "a refusal of the server exits 2", (rc4, err))
 
     def by_repo(tool, args, *flags):
-        out = subprocess.run([sys.executable, str(HERE / "scripts" / "warrant-mcp-call"), *flags, tool, json.dumps(args)],
+        out = subprocess.run([sys.executable, str(HERE / WAKER.CLIENT), *flags, tool, json.dumps(args)],
                              env=dict(env, HOME=str(r.home)), capture_output=True, text=True)   # init's confinement: $HOME
         return out.returncode, json.loads(out.stdout) if out.stdout.strip() else out.stderr
     flags = ("--repo", str(r.root), "--actor", "bob", "--seed", str(r.seed("bob")))
