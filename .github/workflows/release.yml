@@ -98,7 +98,7 @@ jobs:
           VER: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          N=$(curl -sfL https://pypi.org/pypi/warrant-graph/json | python -c 'import json, sys; print(json.load(sys.stdin)["info"]["version"])')
+          N=$(python -c 'import json, urllib.request; print(json.load(urllib.request.urlopen("https://pypi.org/pypi/warrant-graph/json", timeout=30))["info"]["version"])')
           [ "$N" != "$VER" ] || { echo "::error::$VER is published already"; exit 1; }
           python -m venv "$RUNNER_TEMP/n"
           "$RUNNER_TEMP/n/bin/pip" install --quiet --only-binary=:all: "warrant-graph==$N"
