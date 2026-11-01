@@ -4,8 +4,19 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
-## Unreleased
+## 3.0.0a5 — claims cover the specification's keywords
 
+Prepared for PyPI; published when the owner pushes the tag `v3.0.0a5` (`release.yml`), admitted by the published
+3.0.0a4 (roadmap G12: the reports agree but for the engine's identity, this release's duty is accepted, the store at
+`v3.0.0a4` is kept whole). An alpha (PEP 440). Records and assessment rules are those of 3.0.0a1. Its stated limits
+are those of 3.0.0a3 (docs/V3.md §12, each by name); none is closed by this release.
+
+- `.warrant/claims.json` may name `coverage`, a list of RFC 2119 keywords (`["MUST", "SHALL", "REQUIRED"]`). Then
+  `warrant claims check` also refuses every occurrence of one outside a heading line that lies in no live claim's
+  sentence (`UNCLAIMED_KEYWORD`, with its line): the registry is checked against the document, not only the
+  document against the registry. A sentence that states no rule is filed as an `informative` claim with its reason.
+  Codex's finding 5c401f4c on sigma-glyph#78 (the claims did not cover every MUST, and nothing said so); test C22,
+  mutants T85–T93. warrant's own docs/V3.md does not enable it yet (7 keywords outside a claim).
 - The review waker runs a repository's review replays under the interpreter its entry names (`replay_python`, an
   absolute path), else the waker's own: a repository that pins warrant-graph (sigma-glyph) gets replays whose `code`
   is the pinned package's, which its CI's `warrant review verify` re-executes. The waker's own build named another
