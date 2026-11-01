@@ -263,10 +263,14 @@ def config_cases():
             ("the next sentence", "A record whose `lineage` is L **succeeds** L.\n\nA record MUST be signed.\n",
              ["A record whose `lineage` is L **succeeds** L."]),
             ("every occurrence", "A record MUST be signed.\n\nA record MUST be signed.\n",
-             ["A record whose `lineage` is L **succeeds** L.", "A record MUST be signed."])):
+             ["A record whose `lineage` is L **succeeds** L.", "A record MUST be signed."]),
+            ("a claim ending inside it", "A reader MUST guess.\n",                # Codex finding on #259
+             ["A record whose `lineage` is L **succeeds** L.", "A reader MU"]),
+            ("MUST of MUST NOT", "A reader SHALL NOT guess.\n",
+             ["A record whose `lineage` is L **succeeds** L.", "A reader SHALL"])):
         r = claims_repo()
         (r.root / SOURCE).write_text(SPEC + extra)
-        (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, coverage=["MUST", "SHALL"])))
+        (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, coverage=["MUST", "SHALL", "SHALL NOT"])))
         for i, text in enumerate(filed):
             claim(r, id=f"V3-3-{i + 1}", text=text,
                   **({"state": "informative", "witnesses": [], "mutants": [], "reason": "names the keywords"}
@@ -282,12 +286,14 @@ def config_cases():
         (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, coverage=cover)))
         bad[name] = (refused_code(CL.check, RP.Repo(r.root)) or "")[:6]
     check("C22 with `coverage`, every listed keyword outside a heading lies in some live claim's sentence (any state, an "
-          "informative one included): one that does not is UNCLAIMED_KEYWORD with its line; a heading, a longer word or "
+          "informative one included), whole: one that does not, or that a claim covers only in part, is UNCLAIMED_KEYWORD "
+          "with its line; a heading, a longer word or "
           "lower case is no keyword; without `coverage` nothing is asked; a coverage list empty, lower-case, repeated or "
           "with a trailing newline is no configuration",
           covered == {"claimed": [], "bare MUST": [f"{SOURCE}:6: MUST"], "inside a claim": [], "informative": [],
-                      "heading, word, other case": [], "SHALL listed": [f"{SOURCE}:6: SHALL"],
-                      "the next sentence": [f"{SOURCE}:8: MUST"], "every occurrence": []}
+                      "heading, word, other case": [], "SHALL listed": [f"{SOURCE}:6: SHALL NOT"],
+                      "the next sentence": [f"{SOURCE}:8: MUST"], "every occurrence": [],
+                      "a claim ending inside it": [f"{SOURCE}:6: MUST"], "MUST of MUST NOT": [f"{SOURCE}:6: SHALL NOT"]}
           and off == [] and bad == {k: "CONFIG" for k in bad},
           (covered, off, bad))
     r = claims_repo()
