@@ -35,8 +35,12 @@ repository's records, tools, review loop and merge gate).
    rewritten.
 
 6. **Act within the owner's delegation; stop at what is missing.** Branch pushes, pull requests and
-   records under your own actor need no fresh confirmation (owner, 2026-10-17); seeds, owner-path
-   merges and release tags are the owner's. Finish everything that does not depend on a missing decision, key
+   records under your own actor need no fresh confirmation (owner, 2026-10-17); seeds and owner-path
+   merges are the owner's. Release tags and package publication are delegated (owner, 2026-11-01: decide by
+   the mathematics and the mission, not by asking): push `vX` when G12 holds for X — the release duty is
+   accepted, the published release admits X (`python -m warrant.differential --release X`) and master CI is
+   green on the commit — and let `release.yml` publish; one tag per decision, its evidence in the report.
+   Finish everything that does not depend on a missing decision, key
    or credential, then ask for exactly that. Record what remains open as an obligation or a named
    residual rather than asking for blanket permission.
 
