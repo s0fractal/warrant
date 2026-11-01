@@ -17,6 +17,13 @@ name: ci
 #   test      the parts merged (refused unless every mutant ran exactly once and was killed), then
 #             the claims, the roadmap and the pilot contract against this tree, and the views of the
 #             records rendered three times and compared (build artifacts, uploaded as `views`).
+#
+# A commit that changes only .warrant/ (a review head, Codex's verdict, a replay, acceptances) does not
+# change what suites and mutants test. `code` names the tree without .warrant/ (a git tree id); when a
+# run of this workflow already passed suites and mutants on exactly that tree (a cache entry
+# `ci-code-pass-<tree>`, saved by `test` only after such a run, readable by this pull request and from
+# master), suites and mutants are skipped and `test` says so. replay and the store checks of `test` run
+# on every commit: they are what a records-only commit changes.
 on:
   push:
     branches: [master]
@@ -27,6 +34,29 @@ permissions:
   contents: read
 
 jobs:
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tree: ${{ steps.tree.outputs.tree }}
+      heavy: ${{ steps.passed.outputs.cache-hit != 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The tree without .warrant/ (what suites and mutants test)
+        id: tree
+        run: |
+          set -euo pipefail
+          tree=$(git ls-tree HEAD | awk -F '\t' '$2 != ".warrant"' | git mktree)
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "code tree $tree (HEAD tree $(git rev-parse 'HEAD^{tree}'))"
+      - name: Suites and mutants passed on this tree already?
+        id: passed
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ci-code-pass
+          key: ci-code-pass-${{ steps.tree.outputs.tree }}
+          lookup-only: true
+
   wheels:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -58,7 +88,8 @@ jobs:
           retention-days: 3
 
   suites:
-    needs: wheels
+    needs: [code, wheels]
+    if: needs.code.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -118,7 +149,8 @@ jobs:
           python tools/claims.py verify --base "$BASE_SHA"
 
   mutants:
-    needs: wheels
+    needs: [code, wheels]
+    if: needs.code.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -146,12 +178,13 @@ jobs:
           retention-days: 3
 
   test:
-    needs: [wheels, suites, mutants, replay]
+    needs: [code, wheels, suites, mutants, replay]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       # A skipped required check would read as passed: this job always runs and refuses here.
+      # suites and mutants may be skipped only when `code` found them passed on this exact tree.
       - name: Every job succeeded
         env:
           NEEDS: ${{ toJSON(needs) }}
@@ -160,9 +193,12 @@ jobs:
           import json, sys
           needs = json.load(sys.stdin)
           got = {j: n["result"] for j, n in needs.items()}
-          print("jobs:", ", ".join(f"{j}={r}" for j, r in sorted(got.items())))
-          bad = {j: r for j, r in got.items() if r != "success"}
-          sys.exit(f"not every job succeeded: {bad}" if bad or len(got) != 4 else 0)'
+          heavy = (needs.get("code", {}).get("outputs") or {}).get("heavy") != "false"
+          print("jobs:", ", ".join(f"{j}={r}" for j, r in sorted(got.items())), "| suites and mutants",
+                "ran" if heavy else "passed on this code tree before, skipped")
+          ok = lambda j, r: r == "success" or (not heavy and j in ("suites", "mutants") and r == "skipped")
+          bad = {j: r for j, r in got.items() if not ok(j, r)}
+          sys.exit(f"not every job succeeded: {bad}" if bad or len(got) != 5 else 0)'
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -175,12 +211,14 @@ jobs:
           digest: ${{ needs.wheels.outputs.digest }}
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.code.outputs.heavy == 'true'
         with:
           pattern: matrix-*
           path: ${{ runner.temp }}/parts
           merge-multiple: true
 
       - name: The mutant parts together ran every mutant once, each killed on its own case
+        if: needs.code.outputs.heavy == 'true'
         run: python tests/mutants.py --merge "$RUNNER_TEMP/matrix.json" "$RUNNER_TEMP"/parts/mutants-*.json
 
       # After the mutants, so the mutant ids the claims cite have just been exercised.
@@ -200,3 +238,17 @@ jobs:
           path: build/views
           if-no-files-found: error
           retention-days: 30
+
+      # Only now, after every step above passed with suites and mutants run on this tree: later commits
+      # changing only .warrant/ skip them.
+      - name: Record that suites and mutants passed on this code tree
+        if: needs.code.outputs.heavy == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-code-pass"
+          echo "${{ needs.code.outputs.tree }} passed suites and mutants in run ${{ github.run_id }} at $GITHUB_SHA" \
+            > "$RUNNER_TEMP/ci-code-pass/passed"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: needs.code.outputs.heavy == 'true'
+        with:
+          path: ${{ runner.temp }}/ci-code-pass
+          key: ci-code-pass-${{ needs.code.outputs.tree }}
