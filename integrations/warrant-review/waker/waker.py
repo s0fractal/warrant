@@ -21,7 +21,11 @@ each with its own base branch, bare mirror, state directory (below, HOME is that
      detached worktree of the mirror at that head (TREES/<n>-<head12>; never the operator's
      checkout), runs `codex exec` there with the warrant-review skill (log HOME/logs/<n>-<head>.log,
      Codex's last message HOME/results/<n>-<head>.md), records the attempt's exit status, and removes
-     the worktree unless Codex left changes in it.
+     the worktree unless Codex left changes in it. When the reviewer exited 0 and left, uncommitted, its signed
+     verdict on that head version (its sandbox denied Git's lock files: sigma-glyph#80), the waker carries those
+     record lines and blobs to the pull request's branch (`carry`): checked under the base's keys as that
+     reviewer's acceptance or challenge of exactly the version woken, one commit of the waker's, pushed only
+     while the branch is at the head reviewed; it signs nothing.
 
   5. then the roadmap versions due for Codex's verdict: the base tree's `warrant.roadmap due --actor
      codex` on the base's own records (the leaf of a goal or obligation lineage whose guard waits only for an
@@ -785,8 +789,67 @@ class Waker:
                                  f"but the author {(a.get('facts') or {}).get('author')}")
         doc = doc or {"pr": a["pr"], "head": a["head"], "base": a["base"], "facts": a["facts"], "attempts": []}
         doc.setdefault("reviewer", rev["actor"])
-        return self.key(a), self.attempt(p, doc, self.key(a), lambda: self.worktree(a),
-                                         lambda path: self.command(a, path, incomplete, rev), rev["actor"])[1]
+        started, line = self.attempt(p, doc, self.key(a), lambda: self.worktree(a),
+                                     lambda path: self.command(a, path, incomplete, rev), rev["actor"])
+        last = doc["attempts"][-1] if started else {}
+        if last.get("exit") == 0 and last.get("kept"):
+            line += "; " + self.carry(a, p, doc, rev["actor"])
+        return self.key(a), line
+
+    def carry(self, a, p, doc, actor):
+        """Carry to the pull request's branch the verdict `actor` signed in this wake's kept worktree and could not
+        commit (Codex's sandbox denied Git's lock files on sigma-glyph#80, twice; for a roadmap verdict the waker
+        publishes by design). Only the lines new in the worktree's records.jsonl and its new blobs are committed, and
+        only when verify() admits them under the BASE's keys as `actor`'s acceptance or challenge of exactly the head
+        version woken (`facts.closure`); one commit of the waker's, pushed while the branch is still at the head
+        reviewed (as a replay is). The waker signs nothing. A worktree whose HEAD moved (the reviewer committed) or
+        that holds no new record is left as it is. The line; the memo's attempt records it."""
+        last = doc["attempts"][-1]
+        wt, head, branch = Path(last.get("worktree") or self.trees / "-"), a["head"], a.get("branch")
+        version = (a.get("facts") or {}).get("closure")
+        try:
+            if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != self.branch):
+                raise Unpublished(f"{str(branch)[:40]!r} is not a pull request branch to push to")
+            if not (isinstance(version, str) and HEX.match(version)):
+                raise Unpublished("the assessment names no head version")
+            if not (wt.is_dir() and (wt / ".git").exists()):
+                raise Unpublished(f"{actor} left no worktree")
+            if git("-C", str(wt), "rev-parse", "HEAD").decode().strip() != head:
+                raise Unpublished(f"{actor} committed in its worktree; the waker carries uncommitted records only")
+            blobs, size = new_blobs(wt)
+            lines, lost = added_lines(wt)
+            if lost:
+                raise Unpublished(f"the worktree lost {lost} line(s) of {RECORDS}")
+            if not lines:
+                raise Unpublished(f"no new record of {actor} in the worktree's store")
+            if size + sum(map(len, lines)) > MAX_PREPARED:
+                raise Unpublished(f"the records and blobs exceed {MAX_PREPARED} bytes")
+            why = self.verify(self.tree(a["base"]), {"closure": version}, lines, blobs, actor)
+            if why:
+                raise Unpublished(why)
+            git("-C", str(wt), "add", "--", RECORDS, *[f"{BLOBS}{b}" for b in sorted(blobs)])
+            kinds = sorted({("accept" if (record_of(x) or {}).get("kind") == "attest" else "finding") for x in lines})
+            msg = (f"{actor}: {' and '.join(kinds)} of #{number(a['pr'])} head version {version[:12]}, carried by the "
+                   f"review waker\n\n" + "\n".join(f"{rid_of(x)}" for x in lines)
+                   + f"\n\n{actor} signed these records in its review worktree and did not commit them. The waker checked "
+                   f"them under the base {commit(a['base'])[:12]}'s keys as {actor}'s verdict on that version and "
+                   "signs nothing.\n")
+            git("-C", str(wt), *COMMITTER, "commit", "--quiet", "--no-verify", "-m", msg)
+            new = commit(git("-C", str(wt), "rev-parse", "HEAD").decode().strip())
+            tip = git("-C", str(wt), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
+            if tip[:1] != [head]:
+                raise NotPushed(f"{branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}: nothing pushed")
+            git("-C", str(wt), "push", "--quiet", "origin", f"{new}:refs/heads/{branch}")
+            line = f"carried: {len(lines)} record(s) of {actor[:27]} pushed as {new[:12]} on {branch}"
+        except Unpublished as e:
+            line = f"not carried: {e}"
+        except (NotPushed, subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
+            line = f"carrying failed: {e}"
+        last["carried"] = line[:300]
+        p.write_text(json.dumps(doc, indent=1))
+        if line.startswith("carried:"):
+            self.discard(wt, wt)
+        return line[:300]
 
     def attempt(self, p, doc, key, worktree, command, who="codex", state=None):
         """One attempt of the wake whose memo `p` holds `doc`, when its state (`state`, else self.state) allows: the
@@ -969,10 +1032,10 @@ class Waker:
             raise Unpublished(why)
         return lines, blobs
 
-    def verify(self, code, c, lines, blobs):
+    def verify(self, code, c, lines, blobs, actor=None):
         """verify_verdicts on these bytes, in a process of its own with the base tree `code` first on PYTHONPATH:
-        the base's package checks the signatures under the base's keys."""
-        req = {"code": str(code), "actor": ACCEPTOR, "closure": c["closure"],
+        the base's package checks the signatures under the base's keys, as `actor`'s (default ACCEPTOR)."""
+        req = {"code": str(code), "actor": actor or ACCEPTOR, "closure": c["closure"],
                "lines": [base64.b64encode(x).decode() for x in lines],
                "blobs": {k: base64.b64encode(v).decode() for k, v in blobs.items()}}
         env = {"PATH": os.environ.get("PATH", DEFAULT_PATH), "HOME": str(Path.home()), "PYTHONPATH": str(code),

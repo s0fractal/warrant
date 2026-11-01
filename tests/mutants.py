@@ -320,6 +320,14 @@ MUTANTS = [
      WAKER, ["W19"]),
     ("P29", "integrations/warrant-review/waker/waker.py", '                        for k in (*SERVED[2:], *({"replay_python"} & set(e))))):',
      '                        for k in SERVED[2:])):', WAKER, ["W19"]),
+    ("P30", "integrations/warrant-review/waker/waker.py", "            if why:\n                raise Unpublished(why)\n            git(\"-C\", str(wt), \"add\"",
+     "            if False:\n                raise Unpublished(why)\n            git(\"-C\", str(wt), \"add\"", WAKER, ["W20"]),
+    ("P31", "integrations/warrant-review/waker/waker.py", "            if tip[:1] != [head]:\n                raise NotPushed(f\"{branch} is at",
+     "            if False:\n                raise NotPushed(f\"{branch} is at", WAKER, ["W20"]),
+    ("P32", "integrations/warrant-review/waker/waker.py", "            if git(\"-C\", str(wt), \"rev-parse\", \"HEAD\").decode().strip() != head:\n                raise Unpublished(f\"{actor} committed",
+     "            if False:\n                raise Unpublished(f\"{actor} committed", WAKER, ["W20"]),
+    ("P33", "integrations/warrant-review/waker/waker.py", "            if not (isinstance(branch, str) and PR_BRANCH.match(branch) and branch != self.branch):\n                raise Unpublished(f\"{str(branch)[:40]!r} is not a pull request branch to push to\")\n            if not (isinstance(version, str)",
+     "            if not (isinstance(branch, str) and PR_BRANCH.match(branch)):\n                raise Unpublished(f\"{str(branch)[:40]!r} is not a pull request branch to push to\")\n            if not (isinstance(version, str)", WAKER, ["W20"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
 ]
 

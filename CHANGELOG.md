@@ -4,6 +4,15 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 2.0.0a1 was Warrant 2. **[protocol]** marks a change of the record format or of the assessment rules
 (docs/V3.md).
 
+## Unreleased
+
+- The review waker carries a reviewer's verdict that the reviewer signed in its review worktree and could not
+  commit (Codex's sandbox denied Git's lock files on sigma-glyph#80, twice) to the pull request's branch: only
+  record lines and blobs new in the worktree's store, checked under the base's keys as that reviewer's acceptance
+  or challenge of exactly the head version woken, one commit of the waker's, pushed while the branch is still at
+  the head reviewed. The waker signs nothing; a worktree the reviewer committed in is left alone. Test W20,
+  mutants P30–P33.
+
 ## 3.0.0a5 — claims cover the specification's keywords
 
 Prepared for PyPI; published when the owner pushes the tag `v3.0.0a5` (`release.yml`), admitted by the published

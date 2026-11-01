@@ -626,6 +626,66 @@ def reviewers():
           "still wins", dict(entries, chosen=chosen))
 
 
+def carrying():
+    """A reviewer's verdict signed in its kept worktree and not committed (Codex's sandbox denied Git's lock files on
+    sigma-glyph#80, twice) is carried to the pull request's branch by the waker, only as that reviewer's verdict on the
+    head version woken, under the base's keys, while the branch is at the head reviewed (W20)."""
+    g = ["-c", "user.name=t", "-c", "user.email=t@invalid", "-c", "commit.gpgsign=false"]
+    got = {}
+    for case in ("good", "forged", "other version", "branch moved", "base branch", "committed"):
+        r = Repo()
+        o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+        v = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
+        wgit(r.root, "init", "-q", "-b", "master")
+        base = r.commit("base").strip()
+        wgit(r.root, "checkout", "-q", "-b", "topic")
+        head = r.commit("the head reviewed").strip()
+        wgit(r.root, "checkout", "-q", "master")
+        home = r.home / "waker-home"
+        home.mkdir()
+        subprocess.run(["git", "clone", "-q", "--bare", str(r.root), str(home / "mirror.git")], check=True)
+        e = entry(home, r.home / "trees", branch="master", mirror=home / "mirror.git")
+        wt = r.home / "trees" / f"7-{head[:12]}"
+        wt.parent.mkdir()
+        wgit(home / "mirror.git", "worktree", "add", "--detach", "--quiet", str(wt), head)
+        signer, target = ("eve" if case == "forged" else "bob"), (o if case == "other version" else v)
+        line = R.line(R.record("attest", "bob", r.t + 10, {"verdict": "accept", "target": target}, refs=[target]),
+                      KEYS[signer])[1]
+        if case == "committed":           # a commit of its own (anything), its verdict left uncommitted on top
+            (wt / "stray.txt").write_text("not a verdict")
+            subprocess.run(["git", *g, "-C", str(wt), "add", "stray.txt"], check=True)
+            subprocess.run(["git", *g, "-C", str(wt), "commit", "-qm", "the reviewer's own commit"], check=True)
+        with open(wt / WAKER.RECORDS, "ab") as fh:
+            fh.write(line)
+        if case == "branch moved":        # rewound behind the head: a push of head + verdict would fast-forward it
+            wgit(r.root, "branch", "-f", "topic", base)
+
+        class Carrier(WAKER.Waker):
+            def verify(self, code, c, lines, blobs, actor=None):
+                import base64
+                return WAKER.verify_verdicts({"code": str(code), "actor": actor, "closure": c["closure"],
+                                              "lines": [base64.b64encode(x).decode() for x in lines], "blobs": {}})
+        w = Carrier(e, replayers=r.home / "none", codex="/bin/codex", run=Codex(), clock=lambda: 0.0)
+        a = {"pr": 7, "head": head, "base": base, "branch": "master" if case == "base branch" else "topic",
+             "facts": {"closure": v}}
+        memo = home / "memo.json"
+        doc = {"attempts": [{"worktree": str(wt), "exit": 0, "kept": [" M " + WAKER.RECORDS]}]}
+        said = w.carry(a, memo, doc, "bob")
+        tip = subprocess.run(["git", "-C", str(r.root), "rev-parse", "topic"], capture_output=True, text=True).stdout.strip()
+        landed = line in subprocess.run(["git", "-C", str(r.root), "show", f"topic:{WAKER.RECORDS}"],
+                                        capture_output=True).stdout
+        got[case] = (said.split(":")[0], landed, json.loads(memo.read_text())["attempts"][-1].get("carried", "")[:12],
+                     wt.exists())
+    check("W20", got["good"] == ("carried", True, "carried: 1 r", False)
+          and all(got[k][:2] == ("not carried", False) for k in ("forged", "other version", "base branch", "committed"))
+          and got["branch moved"][:2] == ("carrying failed", False) and got["committed"][3] and got["forged"][3],
+          "a verdict the reviewer signed in its worktree and did not commit is carried onto the pull request's branch "
+          "(one commit of the waker's, pushed while the branch is at the head reviewed) only when it is the reviewer's "
+          "own, under the base's keys, on the head version woken; a forged or misdirected one, the base branch, a "
+          "worktree the reviewer committed in (its commit is not the waker's to push) and a branch that moved, even "
+          "behind the head where the push would fast-forward, carry nothing, and the memo says why", got)
+
+
 if __name__ == "__main__":
     manifests()
     launcher()
@@ -639,6 +699,7 @@ if __name__ == "__main__":
     ungated()
     configuration()
     reviewers()
+    carrying()
     failed = sorted(k for k, v in results.items() if not v)
     print(f"codex plugin: {sum(results.values())} PASS / {len(failed)} FAIL" + (f" ({', '.join(failed)})" if failed else ""))
     sys.exit(1 if failed else 0)
