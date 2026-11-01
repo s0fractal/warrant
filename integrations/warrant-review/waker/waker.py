@@ -802,8 +802,9 @@ class Waker:
         publishes by design). Only the lines new in the worktree's records.jsonl and its new blobs are committed, and
         only when verify() admits them under the BASE's keys as `actor`'s acceptance or challenge of exactly the head
         version woken (`facts.closure`); one commit of the waker's, pushed while the branch is still at the head
-        reviewed (as a replay is). The waker signs nothing. A worktree whose HEAD moved (the reviewer committed) or
-        that holds no new record is left as it is. The line; the memo's attempt records it."""
+        reviewed (as a replay is); the commit holds those paths only, whatever else the reviewer staged. The waker
+        signs nothing. A worktree whose HEAD moved (the reviewer committed) or that holds no new record is left as it
+        is, and one still holding other work after the carry is kept. The line; the memo's attempt records it."""
         last = doc["attempts"][-1]
         wt, head, branch = Path(last.get("worktree") or self.trees / "-"), a["head"], a.get("branch")
         version = (a.get("facts") or {}).get("closure")
@@ -827,15 +828,21 @@ class Waker:
             why = self.verify(self.tree(a["base"]), {"closure": version}, lines, blobs, actor)
             if why:
                 raise Unpublished(why)
-            git("-C", str(wt), "add", "--", RECORDS, *[f"{BLOBS}{b}" for b in sorted(blobs)])
+            paths = [RECORDS, *[f"{BLOBS}{b}" for b in sorted(blobs)]]
+            git("-C", str(wt), "add", "--", *paths)
             kinds = sorted({("accept" if (record_of(x) or {}).get("kind") == "attest" else "finding") for x in lines})
             msg = (f"{actor}: {' and '.join(kinds)} of #{number(a['pr'])} head version {version[:12]}, carried by the "
                    f"review waker\n\n" + "\n".join(f"{rid_of(x)}" for x in lines)
                    + f"\n\n{actor} signed these records in its review worktree and did not commit them. The waker checked "
                    f"them under the base {commit(a['base'])[:12]}'s keys as {actor}'s verdict on that version and "
                    "signs nothing.\n")
-            git("-C", str(wt), *COMMITTER, "commit", "--quiet", "--no-verify", "-m", msg)
+            # only these paths, whatever else the reviewer staged (Codex finding on #262): --only, then the
+            # commit's own diff is checked against them before anything is pushed
+            git("-C", str(wt), *COMMITTER, "commit", "--quiet", "--no-verify", "--only", "-m", msg, "--", *paths)
             new = commit(git("-C", str(wt), "rev-parse", "HEAD").decode().strip())
+            touched = git("-C", str(wt), "diff-tree", "-r", "-z", "--no-commit-id", "--name-only", head, new).decode()
+            if sorted(x for x in touched.split("\0") if x) != sorted(paths):
+                raise RuntimeError(f"the carrier commit {new[:12]} touches more than the verdict's paths: nothing pushed")
             tip = git("-C", str(wt), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
             if tip[:1] != [head]:
                 raise NotPushed(f"{branch} is at {(tip or ['nothing'])[0][:12]}, not {head[:12]}: nothing pushed")
@@ -845,10 +852,14 @@ class Waker:
             line = f"not carried: {e}"
         except (NotPushed, subprocess.SubprocessError, RuntimeError, ValueError, OSError) as e:
             line = f"carrying failed: {e}"
+        if line.startswith("carried:"):        # the rest of the worktree is the reviewer's: kept unless nothing remains
+            rest = git("-C", str(wt), *STATUS).decode().split("\0")
+            if any(rest):
+                line += f"; worktree kept: {wt}"
+            else:
+                self.discard(wt, wt)
         last["carried"] = line[:300]
         p.write_text(json.dumps(doc, indent=1))
-        if line.startswith("carried:"):
-            self.discard(wt, wt)
         return line[:300]
 
     def attempt(self, p, doc, key, worktree, command, who="codex", state=None):

@@ -632,7 +632,7 @@ def carrying():
     head version woken, under the base's keys, while the branch is at the head reviewed (W20)."""
     g = ["-c", "user.name=t", "-c", "user.email=t@invalid", "-c", "commit.gpgsign=false"]
     got = {}
-    for case in ("good", "forged", "other version", "branch moved", "base branch", "committed"):
+    for case in ("good", "forged", "other version", "branch moved", "base branch", "committed", "staged stray", "scratch"):
         r = Repo()
         o = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
         v = r.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o)
@@ -655,6 +655,11 @@ def carrying():
             (wt / "stray.txt").write_text("not a verdict")
             subprocess.run(["git", *g, "-C", str(wt), "add", "stray.txt"], check=True)
             subprocess.run(["git", *g, "-C", str(wt), "commit", "-qm", "the reviewer's own commit"], check=True)
+        if case == "staged stray":        # Codex finding on #262: staged by the reviewer, never checked as a verdict
+            (wt / "unreviewed.py").write_text("print('x')\n")
+            subprocess.run(["git", *g, "-C", str(wt), "add", "unreviewed.py"], check=True)
+        if case == "scratch":             # ... and other work left in the worktree is the reviewer's, not removed
+            (wt / "scratch.txt").write_text("notes")
         with open(wt / WAKER.RECORDS, "ab") as fh:
             fh.write(line)
         if case == "branch moved":        # rewound behind the head: a push of head + verdict would fast-forward it
@@ -673,16 +678,21 @@ def carrying():
         said = w.carry(a, memo, doc, "bob")
         landed = line in subprocess.run(["git", "-C", str(r.root), "show", f"topic:{WAKER.RECORDS}"],
                                         capture_output=True).stdout
+        stray = subprocess.run(["git", "-C", str(r.root), "cat-file", "-e", "topic:unreviewed.py"]).returncode == 0
         got[case] = (said.split(":")[0], landed, json.loads(memo.read_text())["attempts"][-1].get("carried", "")[:12],
-                     wt.exists())
-    check("W20", got["good"] == ("carried", True, "carried: 1 r", False)
+                     wt.exists(), stray, (wt / "scratch.txt").exists())
+    check("W20", got["good"] == ("carried", True, "carried: 1 r", False, False, False)
+          and got["staged stray"][:5] == ("carried", True, "carried: 1 r", True, False)
+          and got["scratch"] == ("carried", True, "carried: 1 r", True, False, True)
           and all(got[k][:2] == ("not carried", False) for k in ("forged", "other version", "base branch", "committed"))
           and got["branch moved"][:2] == ("carrying failed", False) and got["committed"][3] and got["forged"][3],
           "a verdict the reviewer signed in its worktree and did not commit is carried onto the pull request's branch "
           "(one commit of the waker's, pushed while the branch is at the head reviewed) only when it is the reviewer's "
           "own, under the base's keys, on the head version woken; a forged or misdirected one, the base branch, a "
           "worktree the reviewer committed in (its commit is not the waker's to push) and a branch that moved, even "
-          "behind the head where the push would fast-forward, carry nothing, and the memo says why", got)
+          "behind the head where the push would fast-forward, carry nothing, and the memo says why; the carried commit "
+          "holds the verdict's paths only, whatever else the reviewer staged, and a worktree with other work left in "
+          "it is kept", got)
 
 
 if __name__ == "__main__":
