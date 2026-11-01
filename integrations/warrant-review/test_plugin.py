@@ -671,7 +671,6 @@ def carrying():
         memo = home / "memo.json"
         doc = {"attempts": [{"worktree": str(wt), "exit": 0, "kept": [" M " + WAKER.RECORDS]}]}
         said = w.carry(a, memo, doc, "bob")
-        tip = subprocess.run(["git", "-C", str(r.root), "rev-parse", "topic"], capture_output=True, text=True).stdout.strip()
         landed = line in subprocess.run(["git", "-C", str(r.root), "show", f"topic:{WAKER.RECORDS}"],
                                         capture_output=True).stdout
         got[case] = (said.split(":")[0], landed, json.loads(memo.read_text())["attempts"][-1].get("carried", "")[:12],
