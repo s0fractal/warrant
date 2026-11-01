@@ -30,7 +30,8 @@ never parses the spec to find claims: the records say where they are, and the sp
 
 With "coverage", the converse is checked too, which the records alone cannot show (Codex finding 5c401f4c on
 sigma-glyph#78: the registry did not hold every MUST, and nothing said so). Every occurrence of a listed keyword
-in a source, as a whole uppercase word outside a heading line (`#`), must lie entirely inside the span of some live claim's
+in a source, as a whole uppercase word (the words of `MUST NOT` across any whitespace, a line break included) outside a
+heading line (`#`), must lie entirely inside the span of some live claim's
 sentence in that source, whatever the claim's state; one that does not is UNCLAIMED_KEYWORD. A sentence that
 states no rule (the RFC 2119 boilerplate, a scope remark) is filed as an `informative` claim with its reason: the
 exemption is a record, not a list in the configuration."""
@@ -138,7 +139,8 @@ def unclaimed(text, sentences, keywords):
         while i >= 0:
             spans.append((i, i + len(t)))
             i = text.find(t, i + 1)
-    word = "|".join(re.escape(k) for k in sorted(keywords, key=len, reverse=True))
+    # the words of a keyword may be wrapped or spaced as prose is (Codex finding cceaee70 on #259)
+    word = "|".join(r"\s+".join(map(re.escape, k.split(" "))) for k in sorted(keywords, key=len, reverse=True))
     out = []
     for m in re.finditer(rf"(?<![A-Za-z0-9_])(?:{word})(?![A-Za-z0-9_])", text):
         start = text.rfind("\n", 0, m.start()) + 1
@@ -147,7 +149,7 @@ def unclaimed(text, sentences, keywords):
         if not any(a <= m.start() and m.end() <= b for a, b in spans):     # the whole keyword (Codex finding on #259)
             end = text.find("\n", m.end())
             line = text[start:len(text) if end < 0 else end].strip()
-            out.append((text.count("\n", 0, m.start()) + 1, m.group(0), line[:100]))
+            out.append((text.count("\n", 0, m.start()) + 1, " ".join(m.group(0).split()), line[:100]))
     return out
 
 

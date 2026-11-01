@@ -251,6 +251,8 @@ MUTANTS = [
     ("T92", "warrant/claims.py", "all(isinstance(k, str) and KEYWORD.match(k) for k in cover)", "all(isinstance(k, str) for k in cover)", TOOLS, ["C22"]),
     ("T94", "warrant/claims.py", "        if not any(a <= m.start() and m.end() <= b for a, b in spans):",
      "        if not any(a <= m.start() < b for a, b in spans):", TOOLS, ["C22"]),
+    ("T95", "warrant/claims.py", '    word = "|".join(r"\\s+".join(map(re.escape, k.split(" "))) for k in sorted(keywords, key=len, reverse=True))',
+     '    word = "|".join(re.escape(k) for k in sorted(keywords, key=len, reverse=True))', TOOLS, ["C22"]),
     ("T93", "warrant/claims.py", "isinstance(cover, list) and cover and all", "isinstance(cover, list) and all", TOOLS, ["C22"]),
     ("T60", "warrant/cli.py", '    if kind == "schema" and E._schema_problem(body):', "    if False:", TOOLS, ["K09"]),
     ("T50", "warrant/cli.py", "        doc = json.loads(read_inside(f, store))", "        doc = json.loads(Path(f).read_bytes())", TOOLS, ["K08"]),

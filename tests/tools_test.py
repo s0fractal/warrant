@@ -267,7 +267,11 @@ def config_cases():
             ("a claim ending inside it", "A reader MUST guess.\n",                # Codex finding on #259
              ["A record whose `lineage` is L **succeeds** L.", "A reader MU"]),
             ("MUST of MUST NOT", "A reader SHALL NOT guess.\n",
-             ["A record whose `lineage` is L **succeeds** L.", "A reader SHALL"])):
+             ["A record whose `lineage` is L **succeeds** L.", "A reader SHALL"]),
+            ("wrapped", "A reader SHALL\n  NOT guess.\n",                          # Codex finding cceaee70 on #259
+             ["A record whose `lineage` is L **succeeds** L.", "A reader SHALL"]),
+            ("wrapped, claimed", "A reader SHALL\n  NOT guess.\n",
+             ["A record whose `lineage` is L **succeeds** L.", "A reader SHALL\n  NOT guess."])):
         r = claims_repo()
         (r.root / SOURCE).write_text(SPEC + extra)
         (r.root / ".warrant" / "claims.json").write_text(json.dumps(dict(CLAIMS, coverage=["MUST", "SHALL", "SHALL NOT"])))
@@ -287,13 +291,14 @@ def config_cases():
         bad[name] = (refused_code(CL.check, RP.Repo(r.root)) or "")[:6]
     check("C22 with `coverage`, every listed keyword outside a heading lies in some live claim's sentence (any state, an "
           "informative one included), whole: one that does not, or that a claim covers only in part, is UNCLAIMED_KEYWORD "
-          "with its line; a heading, a longer word or "
+          "with its line, the words of a keyword across a line break or spaces included; a heading, a longer word or "
           "lower case is no keyword; without `coverage` nothing is asked; a coverage list empty, lower-case, repeated or "
           "with a trailing newline is no configuration",
           covered == {"claimed": [], "bare MUST": [f"{SOURCE}:6: MUST"], "inside a claim": [], "informative": [],
                       "heading, word, other case": [], "SHALL listed": [f"{SOURCE}:6: SHALL NOT"],
                       "the next sentence": [f"{SOURCE}:8: MUST"], "every occurrence": [],
-                      "a claim ending inside it": [f"{SOURCE}:6: MUST"], "MUST of MUST NOT": [f"{SOURCE}:6: SHALL NOT"]}
+                      "a claim ending inside it": [f"{SOURCE}:6: MUST"], "MUST of MUST NOT": [f"{SOURCE}:6: SHALL NOT"],
+                      "wrapped": [f"{SOURCE}:6: SHALL NOT"], "wrapped, claimed": []}
           and off == [] and bad == {k: "CONFIG" for k in bad},
           (covered, off, bad))
     r = claims_repo()
