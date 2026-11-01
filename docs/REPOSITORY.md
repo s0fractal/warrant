@@ -65,7 +65,7 @@ schema at its quorum.
 
 ## The specification's claims
 
-Each normative sentence of docs/V3.md is a `claim@1` lineage filed by `claude`: the sentence verbatim,
+A normative sentence of docs/V3.md is filed as a `claim@1` lineage by `claude` (not yet every one, docs/V3.md §15): the sentence verbatim,
 its section, its witnesses (`file_test:CASE`, a case the test prints) and its mutants. `tools/claims.py
 check` never parses the spec: the records say where they are and the spec must hold their words.
 
@@ -192,8 +192,10 @@ exact version (and hashes), from a checkout of that repository:
   hold label and owner paths. Nothing of warrant's own tree is read: no repository name, branch,
   check or owner path is a constant of the package.
 - `.warrant/claims.json`, only for claims: `{"warrant": "claims/1", "source", "retired", "witnesses",
-  "mutants"}` (`python -m warrant.claims` says what each is). `source` is one specification or a list of them; each
-  claim names its own and its sentence is checked there. The claims checker and the review
+  "mutants", "coverage"?}` (`python -m warrant.claims` says what each is). `source` is one specification or a list of them; each
+  claim names its own and its sentence is checked there. With `coverage` (a list of RFC 2119 keywords),
+  `check` also refuses a keyword outside a heading that lies in no live claim's sentence (`UNCLAIMED_KEYWORD`);
+  a sentence that states no rule is filed as an `informative` claim with its reason. The claims checker and the review
   replay run Python test files (W-2, a declared runner, is not done).
 
 The commands are `warrant review open|head|merged|due|verify|view` (also `warrant-review` or `python -m

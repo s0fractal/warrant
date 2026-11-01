@@ -1,4 +1,4 @@
-"""A specification's claims as claim@1 records: each normative sentence of the repository's specification (its
+"""A specification's claims as claim@1 records: a normative sentence of the repository's specification (its
 `.warrant/claims.json` names it) is a lineage whose versions carry the sentence verbatim, the section, the witnesses
 (test cases `file_test:CASE`) and the mutants (ids the repository's mutant harness lists) that back it. A `backed` version waits for a claim/verifier's
 acceptance: the claims checker (`replay`) accepts it after it ran the witnesses and the mutants at one
@@ -17,7 +17,7 @@ The repository is the one `--root` names, else the Git checkout around the curre
 `.warrant/claims.json` says where the claims live: {"warrant": "claims/1", "source": the specification's path (or a
 list of them: each claim names its own, and its sentence must be in that one),
 "retired": [paths of retired sources], "witnesses": [glob patterns of the test files that print cases],
-"mutants": the mutant harness's path}. A witness `NAME:CASE` names the file tests/NAME.py, or DIR/P/test.py as
+"mutants": the mutant harness's path, and optionally "coverage": [RFC 2119 keywords, e.g. "MUST", "SHALL", "REQUIRED"]}. A witness `NAME:CASE` names the file tests/NAME.py, or DIR/P/test.py as
 `P/test`; the harness lists `{id: [file, test file, cases]}` with `--list` and writes `{"rows": [{id, outcome}]}`
 with `IDS --matrix OUT`.
 
@@ -26,7 +26,15 @@ quorum is a proposal, not one); a live claim of a retired source (V2_CLAIM_LIVE)
 specification (CLAIM_TEXT_MISSING), that cites a witness case no test file prints (WITNESS_MISSING), a mutant the
 harness does not list (UNKNOWN_MUTANT) or one whose cases are not among its witnesses (MUTANT_OFF_CLAIM); a
 `backed` claim with no witness or no mutant (UNBURNED); one id in two live lineages (CLAIM_ID_TWICE). It
-never parses the spec to find claims: the records say where they are, and the spec must hold their words."""
+never parses the spec to find claims: the records say where they are, and the spec must hold their words.
+
+With "coverage", the converse is checked too, which the records alone cannot show (Codex finding 5c401f4c on
+sigma-glyph#78: the registry did not hold every MUST, and nothing said so). Every occurrence of a listed keyword
+in a source, as a whole uppercase word (the words of `MUST NOT` across any whitespace, a line break included) outside a
+heading line (`#`), must lie entirely inside the span of some live claim's
+sentence in that source, whatever the claim's state; one that does not is UNCLAIMED_KEYWORD. A sentence that
+states no rule (the RFC 2119 boilerplate, a scope remark) is filed as an `informative` claim with its reason: the
+exemption is a record, not a list in the configuration."""
 import argparse
 import json
 import os
@@ -43,6 +51,7 @@ CONFIG = "claims/1"
 CLAIM = "claim@1"
 CHECKER = "claims-checker"            # the claims checker's actor: one key, bound once; its code is in each attest
 CASE_LINE = re.compile(r"""check\(\s*f?["']([A-Za-z0-9-]+)[ "']""")
+KEYWORD = re.compile(r"[A-Z]+(?: [A-Z]+)*\Z")
 
 
 def _relative(x):
@@ -74,14 +83,18 @@ def config(root):
         raise Failed("CONFIG", f".warrant/claims.json: {type(e).__name__} {e}") from None
     srcs = doc.get("source") if isinstance(doc, dict) else None
     srcs = [srcs] if isinstance(srcs, str) else srcs
-    ok = (isinstance(doc, dict) and set(doc) == {"warrant", "source", "retired", "witnesses", "mutants"} and doc["warrant"] == CONFIG
+    cover = doc.get("coverage", ["MUST"]) if isinstance(doc, dict) else None
+    ok = (isinstance(doc, dict) and set(doc) - {"coverage"} == {"warrant", "source", "retired", "witnesses", "mutants"}
+          and doc["warrant"] == CONFIG
+          and isinstance(cover, list) and cover and all(isinstance(k, str) and KEYWORD.match(k) for k in cover)
+          and len(set(cover)) == len(cover)
           and isinstance(srcs, list) and srcs and all(_relative(x) for x in srcs) and len(set(srcs)) == len(srcs)
           and _relative(doc["mutants"]) and isinstance(doc["retired"], list)
           and all(_relative(x) and x not in srcs for x in doc["retired"])
           and isinstance(doc["witnesses"], list) and doc["witnesses"] and all(_relative(x) for x in doc["witnesses"]))
     if not ok:
-        raise Failed("CONFIG", f".warrant/claims.json is a {CONFIG} document {{warrant, source, retired, witnesses, mutants}} "
-                               "of relative paths")
+        raise Failed("CONFIG", f".warrant/claims.json is a {CONFIG} document {{warrant, source, retired, witnesses, mutants, "
+                               "coverage?}} of relative paths, coverage a non-empty list of distinct uppercase keywords")
     for k in (*srcs, doc["mutants"]):
         confined(root, Path(root) / k)
     return doc
@@ -116,6 +129,30 @@ def live(rep):
             if lin["schema"] == CLAIM and (recs[lin["leaf"]]["body"]["state"] if lin["leaf"] else None) != "retired"}
 
 
+def unclaimed(text, sentences, keywords):
+    """[(line, keyword, context)]: each whole-word occurrence of a keyword outside a heading line that lies, whole, in
+    no occurrence of any of the claims' sentences (a claim ending inside `MUST`, or covering `MUST` of `MUST NOT`,
+    does not cover it)."""
+    spans = []
+    for t in sentences:
+        i = text.find(t) if t else -1
+        while i >= 0:
+            spans.append((i, i + len(t)))
+            i = text.find(t, i + 1)
+    # the words of a keyword may be wrapped or spaced as prose is (Codex finding cceaee70 on #259)
+    word = "|".join(r"\s+".join(map(re.escape, k.split(" "))) for k in sorted(keywords, key=len, reverse=True))
+    out = []
+    for m in re.finditer(rf"(?<![A-Za-z0-9_])(?:{word})(?![A-Za-z0-9_])", text):
+        start = text.rfind("\n", 0, m.start()) + 1
+        if text.startswith("#", start):
+            continue
+        if not any(a <= m.start() and m.end() <= b for a, b in spans):     # the whole keyword (Codex finding on #259)
+            end = text.find("\n", m.end())
+            line = text[start:len(text) if end < 0 else end].strip()
+            out.append((text.count("\n", 0, m.start()) + 1, " ".join(m.group(0).split()), line[:100]))
+    return out
+
+
 def store_problems(rep):
     out = []
     if not rep["canonical"]:
@@ -146,6 +183,12 @@ def check(repo):
             out.append(("CLAIM_TEXT_MISSING", f"{tag}: its sentence is not in {b['source']}"))
         out += backing_problems(tag, b, printed, known)
     out += [("CLAIM_ID_TWICE", f"{i} in {len(Ls)} lineages") for i, Ls in sorted(ids.items()) if len(Ls) > 1]
+    if "coverage" in cfg:
+        claimed = live(rep).values()
+        for src in srcs:
+            said = [b["text"] for b in claimed if b["source"] == src and isinstance(b.get("text"), str)]
+            out += [("UNCLAIMED_KEYWORD", f"{src}:{n}: {kw} in «{line}» is in no live claim's sentence")
+                    for n, kw, line in unclaimed(spec[src], said, cfg["coverage"])]
     return rep, out
 
 
