@@ -92,14 +92,16 @@ Each of these takes `--schema NAME`, `--offset N` and `--max-bytes N`.
   answer. A store appears only if it is registered, and one whose `operations` leave out `graph` is named
   but not read: a lens's private store stays out until its operator registers it.
 - **Nothing from a repository runs.** The read takes `.warrant/records.jsonl`, `.warrant/blobs/` and
-  `.warrant/v3.json`, as data. It writes nothing. Record text is data too (`untrusted`).
+  `.warrant/v3.json`, as data, and the Git trees and history the G14 gate compares (warrant.drift): a
+  claim whose acceptances all name other bytes reads `STALE` here as in `context` and `graph`. It writes
+  nothing. Record text is data too (`untrusted`).
 - **`no_schema`, not zero.** `open` reads `goal@1` and `obligation@1`. A store that counts neither says so.
 - **Paged, never cut.** `total`, `offset` and `next` say what a page holds. Each call reads and assesses
   every store again; nothing is cached.
 
 The answer reads a checkout's working tree: a checkout behind its remote answers as it stands. Each
-store's `root` names the bytes read and `as_of` the latest time a record there claims; no Git command
-runs, so the answer names no commit.
+store's `root` names the bytes read and `as_of` the latest time a record there claims, and the lens
+binds the tree the gate read; the answer names no commit.
 
 ### Citing a record in another store
 
