@@ -277,6 +277,7 @@ MUTANTS = [
     ("T115", "warrant/claims.py", "        ok = held(b, ran, killed) and files is not None", "        ok = held(b, ran, killed)", TOOLS, ["DR12"]),
     ("T116", "warrant/claims.py", "    return chain if (base / chain[-1]).resolve() == base / chain[-1] else None", "    return chain", TOOLS, ["DR12"]),
     ("T117", DR, '    rep["checkout"] = checkout(root)', "    pass", TOOLS, ["DR13"]),
+    ("T118", "warrant/claims.py", '("link:" if r.startswith("120000 ") else "") + r.split()[2]', 'r.split()[2]', TOOLS, ["DR14"]),
     ("T60", "warrant/cli.py", '    if kind == "schema" and E._schema_problem(body):', "    if False:", TOOLS, ["K09"]),
     ("T50", "warrant/cli.py", "        doc = json.loads(read_inside(f, store))", "        doc = json.loads(Path(f).read_bytes())", TOOLS, ["K08"]),
     ("T51", "warrant/repo.py", '        doc = json.loads(read_inside(self.dot / "v3.json", self.dot))',

@@ -242,9 +242,10 @@ def acceptances(rep):
 
 
 def blobs(root, commit):
-    """{path: git blob} of `commit`'s whole tree."""
+    """{path: git blob} of `commit`'s whole tree, a symlink's as `link:<blob>`: its blob is its target's name, and the
+    same id as a regular file holding that name would read other bytes (Codex finding ea6300ecf5d5)."""
     rows = git(root, "ls-tree", "-r", "-z", "--full-tree", commit, raw=True).decode().split("\0")
-    return {r.split("\t", 1)[1]: r.split()[2] for r in rows if r}
+    return {r.split("\t", 1)[1]: ("link:" if r.startswith("120000 ") else "") + r.split()[2] for r in rows if r}
 
 
 def files_of(b, root, known, tree):

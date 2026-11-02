@@ -540,6 +540,15 @@ def drift_cases():
           and g1["data"]["node"]["lineage"]["reliance"] == D.STALE and g0["root"] == g1["root"] and g0["lens"] != g1["lens"]
           and c1.get("checkout", {}).get("tree") == git(r.root, "rev-parse", "HEAD^{tree}"), (g0["lens"], g1["lens"], c1.get("checkout")))
     r, L = drift_repo()
+    held_bytes = (r.root / "lib" / "code.py").read_text()
+    (r.root / "lib" / "code.py").unlink()
+    (r.root / "lib" / "code.py").symlink_to(held_bytes)
+    (r.root / "lib" / held_bytes).write_text("X = 999\n")
+    r.commit("an accepted file becomes a link with the same blob id, reading other bytes")
+    same, same_rel = gated(r, L)
+    check("DR14 a regular file turned into a symlink with the same blob id is not unchanged (Codex finding ea6300ecf5d5 on #266)",
+          same.get("verdict") == "CHANGED" and same_rel == D.STALE, (same, same_rel))
+    r, L = drift_repo()
     marker = r.home / "ran-repository-code"
     (r.root / "tests" / "mutants.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('x')\nprint('{{}}')\n")
     r.commit("a harness that leaves a mark when it is run")
