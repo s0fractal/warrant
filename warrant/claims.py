@@ -231,6 +231,35 @@ def checked(rep):
     return out
 
 
+def acceptances(rep):
+    """{version: [(commit, files)]} of the claims checker's signed acceptances, `files` as each names them (None in
+    one signed before they were named)."""
+    out = {}
+    for i, r in sorted(rep["_recs"].items()):
+        if r["kind"] == "attest" and r["actor"] == CHECKER and rep["_basis"].get(i) == "SIGNED" and r["body"].get("verdict") == "accept":
+            out.setdefault(r["body"]["target"], []).append((r["body"].get("commit"), r["body"].get("files")))
+    return out
+
+
+def blobs(root, commit):
+    """{path: git blob} of `commit`'s whole tree."""
+    rows = git(root, "ls-tree", "-r", "-z", "--full-tree", commit, raw=True).decode().split("\0")
+    return {r.split("\t", 1)[1]: r.split()[2] for r in rows if r}
+
+
+def files_of(b, root, known, tree):
+    """What an acceptance of claim body `b` runs on, {path: blob} of `tree`: each witness's test file, each mutant's
+    mutated file and test file, as `known` (this checkout's harness) and this checkout's witness patterns place them."""
+    tests, paths = witness_files(root), set()
+    for w in b["witnesses"]:
+        name = w.split(":")[0]
+        if name in tests:
+            paths.add(tests[name].relative_to(root).as_posix())
+    for m in b["mutants"]:
+        paths.update(known.get(m, [])[:2])
+    return {p: tree[p] for p in sorted(paths) if p in tree}
+
+
 def at_tree(root, commits, here):
     """Whether one of `commits` has the code `here` (a tree outside .warrant/); a commit not in this clone has not."""
     for x in commits:
@@ -348,17 +377,19 @@ def replay(repo, key):
     rep, problems = check(repo)
     if problems:
         raise Failed("CHECK", f"{len(problems)} problem(s): the checker accepts nothing over a failing check")
-    done, here = checked(rep), code_tree(root, commit)
+    done = {v: [x for x, files in rows if files] for v, rows in acceptances(rep).items()}   # one naming no files is accepted again
+    here = code_tree(root, commit)
     todo = {L: b for L, b in live(rep).items() if b["state"] == "backed" and (
         rep["versions"][rep["lineages"][L]["leaf"]]["guard"] == "PENDING" or not at_tree(root, done.get(rep["lineages"][L]["leaf"], []), here))}
     ran, killed = run_checks(root, [w for b in todo.values() for w in b["witnesses"]], {m for b in todo.values() for m in b["mutants"]})
-    recs = []
+    recs, known, listed = [], harness(root), blobs(root, commit)
     for L, b in sorted(todo.items()):
         ok = held(b, ran, killed)
         if ok:
             leaf = rep["lineages"][L]["leaf"]
             recs.append(R.record("attest", CHECKER, 0, {"target": leaf, "verdict": "accept", "commit": commit, "tree": tree, **me,
-                                                        "witnesses": b["witnesses"], "mutants": b["mutants"]}, refs=[leaf]))
+                                                        "witnesses": b["witnesses"], "mutants": b["mutants"],
+                                                        "files": files_of(b, root, known, listed)}, refs=[leaf]))
         print(f"{'ACCEPT' if ok else 'HELD  '} {b['id']} {L[:12]}")
     return repo.file(CHECKER, key, recs)
 
@@ -368,7 +399,8 @@ def verify(repo, base):
     commit it names: its `code` must be the checker's code at that commit (CODE_DIFFERS), its witnesses and mutants
     those of the version it accepts, the claims check must pass there and that version be the leaf of a live
     `backed` claim there, as replay requires before it signs (CLAIM_PREFLIGHT), and every witness must pass and
-    every mutant be killed there again (CLAIM_REPLAY_DIFFERS). Acceptances by a person (codex) are trust
+    every mutant be killed there again (CLAIM_REPLAY_DIFFERS), and the `files` it names, when it names them, be what
+    that commit's checkout lists for the claim (warrant.drift reads them). Acceptances by a person (codex) are trust
     decisions, not re-executed."""
     old, _ = GT.store_at(repo.root, base)
     rep = repo.report()
@@ -385,16 +417,17 @@ def verify(repo, base):
             bad.append(f"{i[:12]}: {why}")
         else:
             by_commit.setdefault(b["commit"], []).append((i, b["target"], v["body"]))
+    pins = {i: recs[i]["body"].get("files") for rows in by_commit.values() for i, _, _ in rows}
     for x, rows in sorted(by_commit.items()):
-        bad += _reexecuted(repo, x, rows)
+        bad += _reexecuted(repo, x, rows, pins)
     if bad:
         raise Failed("CLAIM_REPLAY_DIFFERS", "; ".join(bad))
     return sum(len(rows) for rows in by_commit.values())
 
 
-def _reexecuted(repo, x, rows):
+def _reexecuted(repo, x, rows, pins):
     """What keeps the acceptances `rows` ([(attest, version, claim body)]) at commit x from holding when re-executed
-    in a temporary worktree of it."""
+    in a temporary worktree of it; `pins` is the `files` each names."""
     wt = Path(repo.root) / "build" / f"verify-claims-{os.getpid()}-{x[:12]}"      # the checkout's own scratch, ignored
     git(repo.root, "worktree", "add", "--detach", "--quiet", str(wt), x)
     try:
@@ -407,6 +440,9 @@ def _reexecuted(repo, x, rows):
         off = [(i, t, b) for i, t, b in rows if t not in leaves]
         bad = [f"{i[:12]}: CLAIM_PREFLIGHT {b['id']} {t[:12]} is not the leaf of a live backed claim at {x[:12]}" for i, t, b in off]
         rows = [row for row in rows if row not in off]
+        known, tree = harness(wt), blobs(wt, x)
+        bad += [f"{i[:12]}: CLAIM_REPLAY_DIFFERS {b['id']} names other files than {x[:12]} lists for it" for i, _, b in rows
+                if pins.get(i) is not None and pins[i] != files_of(b, wt, known, tree)]
         ran, killed = run_checks(wt, [w for _, _, b in rows for w in b["witnesses"]], {m for _, _, b in rows for m in b["mutants"]})
     finally:
         git(repo.root, "worktree", "remove", "--force", str(wt))
