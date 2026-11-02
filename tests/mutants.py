@@ -23,7 +23,7 @@ COPY = ROOT / "build" / "mutants"
 TMP = ROOT / "build" / "mutants-tmp"          # outside the copy: fixtures' homes and seeds lie outside its repository
 CORE, AGENT, GATE, TOOLS, PILOT, WAKER = ("tests/core_test.py", "tests/agent_test.py", "tests/gate_test.py",
                                           "tests/tools_test.py", "tests/pilot_test.py", "integrations/warrant-review/test_plugin.py")
-E, S, RC = "warrant/engine.py", "warrant/store.py", "warrant/records.py"
+E, S, RC, DR = "warrant/engine.py", "warrant/store.py", "warrant/records.py", "warrant/drift.py"
 # (id, file, find, replace, test file, cases)
 MUTANTS = [
     # §3 lineage
@@ -254,6 +254,16 @@ MUTANTS = [
     ("T95", "warrant/claims.py", '    word = "|".join(r"\\s+".join(map(re.escape, k.split(" "))) for k in sorted(keywords, key=len, reverse=True))',
      '    word = "|".join(re.escape(k) for k in sorted(keywords, key=len, reverse=True))', TOOLS, ["C22"]),
     ("T93", "warrant/claims.py", "isinstance(cover, list) and cover and all", "isinstance(cover, list) and all", TOOLS, ["C22"]),
+    # G14: drift and the STALE gate (warrant/drift.py)
+    ("T96", DR, '        if x["verdict"] != "UNCHANGED" and lin["reliance"] == "ELIGIBLE":', "        if False:", TOOLS, ["DR1", "DR4"]),
+    ("T97", DR, "        elif then.get(p) == now:", "        elif True:", TOOLS, ["DR1"]),
+    ("T98", DR, "        elif p not in then and now in then.values():", "        elif False:", TOOLS, ["DR3"]),
+    ("T99", DR, "    if words <= set(FRESH):", '    if words <= {"UNCHANGED"}:', TOOLS, ["DR3"]),
+    ("T100", DR, '"--format=%H", f"{commit}..HEAD", "--", path)', '"--format=%H", "HEAD", "--", path)', TOOLS, ["DR2"]),
+    ("T101", DR, "        out.append(f\"{word:9} {x['id']} ({L[:12]})", "        out.append(f\"{x['id']} {word:9} ({L[:12]})", TOOLS, ["DR2", "DR3"]),
+    ("T102", DR, '        return [("UNKNOWN", p, f"{str(commit)[:12]} is not in this clone") for p in paths]', "        return []", TOOLS, ["DR4"]),
+    ("T103", "warrant_agent/api.py", "        D.gate(rep, ws.repo)", "        pass", TOOLS, ["DR1"]),
+    ("T104", "warrant/claims.py", "    drift.gate(rep, root)", "    pass", TOOLS, ["DR1"]),
     ("T60", "warrant/cli.py", '    if kind == "schema" and E._schema_problem(body):', "    if False:", TOOLS, ["K09"]),
     ("T50", "warrant/cli.py", "        doc = json.loads(read_inside(f, store))", "        doc = json.loads(Path(f).read_bytes())", TOOLS, ["K08"]),
     ("T51", "warrant/repo.py", '        doc = json.loads(read_inside(self.dot / "v3.json", self.dot))',

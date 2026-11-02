@@ -20,6 +20,7 @@ from world import KEYS, ROOT, Repo, check, finish, git
 from warrant import claims as CL
 from warrant import cli as CLI
 from warrant import differential as DF
+from warrant import drift as D
 from warrant import engine as E
 from warrant import jcs as JCS
 from warrant import home as H
@@ -386,6 +387,80 @@ def preflight_cases():
     check("C15 CI refuses a checker acceptance whose commit fails the claims check there, though the head passes it",
           good == ([], None, []) and bad[0] == ["CLAIM_TEXT_MISSING"] and bad[2] == [] and bad[1] is not None
           and "CLAIM_PREFLIGHT" in bad[1], (good, bad))
+
+
+def drift_repo():
+    """A checker repository whose harness mutates lib/code.py; the claim is accepted by the claims checker at the head."""
+    r = checker_repo()
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    L = claim(r)
+    r.commit("a claim")
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("its acceptance")
+    return r, L
+
+
+def gated(r, L):
+    """(drift answer, reliance) of claim lineage L at r's head."""
+    rep = RP.Repo(r.root).report()
+    d = D.gate(rep, r.root)
+    return d.get(L, {}), rep["lineages"][L]["reliance"]
+
+
+def drift_cases():
+    from warrant_agent import api
+    from warrant_agent.config import Config
+    r, L = drift_repo()
+    (r.root / "README").write_text("unrelated\n")
+    r.commit("an unrelated file")
+    d0, rel0 = gated(r, L)
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    x = r.commit("the mutated file changes")
+    d1, rel1 = gated(r, L)
+    cfg = Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"repo": str(r.root), "operations": ["context", "graph"]}}})
+    ctx = api.call(cfg, "context", {"workspace": "w", "targets": [L]})
+    seen = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("lineage", {}).get("reliance")
+    text = D.lines({L: d1})
+    shown = CL.view(RP.Repo(r.root).report(), r.root)
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("accepted again")
+    d2, rel2 = gated(r, L)
+    check("DR1 a claim whose accepted mutant or witness files are other bytes at HEAD is STALE, not ELIGIBLE, in the drift answer, "
+          "in claims view and in the agent's context, until the claims checker accepts it again (G14 obligation 055751e2)",
+          d0.get("verdict") == "UNCHANGED" and rel0 == "ELIGIBLE" and d1.get("verdict") == "CHANGED" and rel1 == D.STALE
+          and seen == D.STALE and f"; {D.STALE})" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
+          (d0, rel0, d1, rel1, seen, d2, rel2))
+    check("DR2 the drift answer leads with the verdict on the bytes and names the first commit after the accepted one that "
+          "changed the file (obligation a476855f)",
+          text.startswith("CHANGED ") and {"verdict": "CHANGED", "path": "lib/code.py", "detail": f"since {x[:12]}"} in d1.get("files", [])
+          and "lib/code.py" in text.splitlines()[1] and "STALE" in text.splitlines()[0], (text, d1))
+    r, L = drift_repo()
+    git(r.root, "mv", "lib/code.py", "lib/moved.py")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/moved.py"))
+    r.commit("the mutated file moves, its bytes unchanged")
+    d, rel = gated(r, L)
+    text = D.lines({L: d})
+    check("DR3 a file moved with its bytes unchanged reads as unchanged, at its new path, and the claim stays ELIGIBLE",
+          d.get("verdict") == "UNCHANGED" and rel == "ELIGIBLE" and text.startswith("unchanged ")
+          and {"verdict": "MOVED", "path": "lib/moved.py", "detail": "was lib/code.py"} in d.get("files", [])
+          and "unchanged, moved: now at lib/moved.py (was lib/code.py)" in text, (d, rel, text))
+    r = checker_repo()
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    L = claim(r)
+    r.commit("a claim")
+    put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": "0" * 40, "tree": "0" * 40, **RP.identity(r.root),
+                           "witnesses": ["q_test:Q1"], "mutants": ["Z1"]}, [L])
+    r.commit("an acceptance naming a commit this clone lacks")
+    d, rel = gated(r, L)
+    plain = Repo()
+    rp = RP.Repo(plain.root)
+    check("DR4 an acceptance whose commit is not in this clone compares nothing: UNKNOWN, and the claim is not ELIGIBLE; a "
+          "checkout without claims has no drift answer", d.get("verdict") == "UNKNOWN" and rel == D.STALE
+          and D.drift(rp.report(), plain.root) == {}, (d, rel))
 
 
 def review_repo():
@@ -894,6 +969,7 @@ def differential_cases():
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
+    drift_cases()
     review_cases()
     roadmap_cases()
     cli_cases()

@@ -6,6 +6,15 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- G14: a claims checker acceptance speaks of the bytes at its commit. `warrant drift` (warrant/drift.py) compares
+  the files each accepted claim's witnesses and mutants name at HEAD with the same paths at the accepted commit and
+  answers with the verdict on the bytes first: unchanged, moved with its bytes unchanged (at its new path), CHANGED
+  since the first commit that changed it, or UNKNOWN when the commit is not in the clone. A claim whose every
+  acceptance names other bytes reads `STALE`, not `ELIGIBLE`, in `claims view` and in the agent's `context` and
+  `graph` until the checker accepts it again (a gate: time-lab Q10 H3, 72 of 72 under pressure). The engine's
+  reliance is unchanged. Tests DR1-DR4, mutants T96-T104 (9 of 9 killed). At this commit five V3-14 claims read
+  STALE: the waker and its test changed after their acceptance at 2ecfe65.
+
 - The review waker carries a reviewer's verdict that the reviewer signed in its review worktree and could not
   commit (Codex's sandbox denied Git's lock files on sigma-glyph#80, twice) to the pull request's branch: only
   record lines and blobs new in the worktree's store, checked under the base's keys as that reviewer's acceptance

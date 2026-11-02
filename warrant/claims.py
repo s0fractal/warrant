@@ -243,6 +243,8 @@ def at_tree(root, commits, here):
 
 
 def view(rep, root):
+    from . import drift
+    drift.gate(rep, root)          # a claim whose acceptances name other bytes than HEAD's reads STALE (G14)
     recs, cfg = rep["_recs"], config(root)
     done, here = checked(rep), code_tree(root, "HEAD")
     srcs = sources(cfg)
