@@ -8,3 +8,6 @@
 # base (docs/V3.md section 14). tests/mutants.py refuses an id named twice.
 CHANGELOG.md merge=union
 tests/mutants.py merge=union
+# Records are signed data, not a change to read in a pull request: GitHub collapses their diff, still one click away.
+.warrant/records.jsonl linguist-generated=true
+.warrant/blobs/** linguist-generated=true
