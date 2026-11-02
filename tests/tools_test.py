@@ -428,7 +428,7 @@ def drift_cases():
     (r.root / "lib" / "code.py").write_text("X = 2\n")
     x = r.commit("the mutated file changes")
     d1, rel1 = gated(r, L)
-    far = (A.home_readings(home)[0].verdict(L).get("reliance"), api._reading(agent(r).workspaces["w"]).verdict(L).get("reliance"))
+    far = tuple((x.verdict(L) or {}).get("reliance") if x.view else None for x in (A.home_readings(home)[0], api._reading(agent(r).workspaces["w"])))
     lens1 = A.answer(A.home_readings(home), {"query": "stores"})["lens"]
     ctx = api.call(agent(r), "context", {"workspace": "w", "targets": [L]})
     seen = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("lineage", {}).get("reliance")

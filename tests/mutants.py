@@ -131,7 +131,7 @@ MUTANTS = [
     ("X37", "warrant/across.py", '        if "graph" not in r.get("operations", H.OPERATIONS):\n', "        if False:\n", AGENT, ["X17"]),
     ("X38", "warrant_agent/config.py", 'need(op in ALWAYS or op in self.operations, "NOT_PERMITTED"', 'need(True, "NOT_PERMITTED"', AGENT, ["X18"]),
     ("X39", "warrant_agent/config.py", '"operations": r.get("operations", list(OPERATIONS))}', '"operations": list(OPERATIONS)}', AGENT, ["X18"]),
-    ("X40", "warrant/across.py", '{"trust": x.rep["trust"], "profile": x.rep["profile"]} for x in read}', '{"trust": x.rep["trust"]} for x in read}', AGENT, ["X19"]),
+    ("X40", "warrant/across.py", '"profile": x.rep["profile"], "checkout": x.rep.get("checkout")} for x in read}', '"checkout": x.rep.get("checkout")} for x in read}', AGENT, ["X19"]),
     ("X41", "warrant/across.py", '{x.name: x.rep["snapshot"] for x in read}', '{x.name: x.rep["trust"] for x in read}', AGENT, ["X19"]),
     ("X42", "warrant/cli.py", '    if not doc["repositories"]:\n        raise Refused("Home registers no repository', '    if False:\n        raise Refused("Home registers no repository', AGENT, ["X20"]),
     ("X44", "warrant/across.py", "    if set(q) - allowed or needed - set(q):\n", "    if needed - set(q):\n", AGENT, ["X21"]),
