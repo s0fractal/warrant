@@ -24,17 +24,16 @@ receiver's HEAD commit, not its working tree. A checkout without .warrant/claims
 
     python3 -m warrant drift [--root DIR] [--json]     # one line per accepted claim, the verdict first"""
 import argparse
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 from . import claims as C
+from . import shapes as S
 from .repo import Repo, dump, env_root, git, main
 
 STALE = "STALE"
 FRESH = ("UNCHANGED", "MOVED")
-COMMIT = re.compile(r"[0-9a-f]{40}")
 RANK = {"UNCHANGED": 0, "CHANGED": 1, "UNKNOWN": 2}     # the answer shown: fresh if any acceptance is, else what can be said
 
 
@@ -42,7 +41,7 @@ def first_change(root, commit, path):
     """The first commit after `commit`, on the way to HEAD, that changed `path` (None when none is found: the commit
     is not in this clone, or a merge brought the bytes). `commit` and `path` come from a record: only a commit id
     reaches Git, and the path is literal."""
-    if not COMMIT.fullmatch(str(commit)):
+    if not S.hex_of(commit, 40):
         return None
     try:
         out = git(root, "--literal-pathspecs", "log", "--reverse", "--format=%H", f"{commit}..HEAD", "--", path).splitlines()

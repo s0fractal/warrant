@@ -262,7 +262,7 @@ MUTANTS = [
     ("T100", DR, '"--format=%H", f"{commit}..HEAD", "--", path)', '"--format=%H", "HEAD", "--", path)', TOOLS, ["DR2"]),
     ("T101", DR, "        out.append(f\"{word:9} {x['id']} ({L[:12]})", "        out.append(f\"{x['id']} {word:9} ({L[:12]})", TOOLS, ["DR2", "DR3"]),
     ("T102", DR, "    if not files:", "    if files is None:", TOOLS, ["DR8"]),
-    ("T112", DR, "    if not COMMIT.fullmatch(str(commit)):", "    if False:", TOOLS, ["DR10"]),
+    ("T112", DR, "    if not S.hex_of(commit, 40):", "    if False:", TOOLS, ["DR10"]),
     ("T113", DR, "    if not (isinstance(files, dict) and all(isinstance(b, str) for b in files.values())):", "    if not isinstance(files, dict):", TOOLS, ["DR9"]),
     ("T103", "warrant_agent/api.py", "        D.gate(rep, ws.repo)", "        pass", TOOLS, ["DR1"]),
     ("T104", "warrant/claims.py", "    drift.gate(rep, root)", "    pass", TOOLS, ["DR1"]),
