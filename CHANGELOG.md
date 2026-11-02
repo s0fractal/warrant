@@ -13,8 +13,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   commit that changed it, or UNKNOWN for an acceptance naming no files. A claim whose every acceptance names other
   bytes reads `STALE`, not `ELIGIBLE`, in `claims view` and in the agent's `context` and `graph` until the checker
   accepts it again (a gate: time-lab Q10 H3, 72 of 72 under pressure); every acceptance signed before this reads
-  UNKNOWN until one `claims replay`. It runs no code of the repository's. The engine's reliance is unchanged. Tests
-  DR1-DR7, mutants T96-T111.
+  UNKNOWN until one `claims replay`. It runs no code of the repository's. A graph answer's lens and the agent's
+  header bind what the gate read (`checkout`). The engine's reliance is unchanged. Tests DR1-DR13, mutants T96-T117.
 
 - The review waker carries a reviewer's verdict that the reviewer signed in its review worktree and could not
   commit (Codex's sandbox denied Git's lock files on sigma-glyph#80, twice) to the pull request's branch: only

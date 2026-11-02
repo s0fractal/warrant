@@ -249,7 +249,10 @@ def blobs(root, commit):
 
 def files_of(b, root, known, tree):
     """What an acceptance of claim body `b` runs on, {path: blob} of `tree`: each witness's test file, each mutant's
-    mutated file and test file, as `known` (this checkout's harness) and this checkout's witness patterns place them."""
+    mutated file and test file, as `known` (this checkout's harness) and this checkout's witness patterns place them,
+    with every link of a symlink chain and the file it ends at (Codex finding f4729a41b788): a link's blob is only its
+    target's name. None when a path reaches its file some other way (a linked directory, a link leaving the tree):
+    what ran cannot be named, and the checker accepts nothing on it."""
     tests, paths = witness_files(root), set()
     for w in b["witnesses"]:
         name = w.split(":")[0]
@@ -257,7 +260,22 @@ def files_of(b, root, known, tree):
             paths.add(tests[name].relative_to(root).as_posix())
     for m in b["mutants"]:
         paths.update(known.get(m, [])[:2])
-    return {p: tree[p] for p in sorted(paths) if p in tree}
+    chains = [_link_chain(root, p) for p in sorted(paths)]
+    if None in chains:
+        return None
+    return {p: tree[p] for chain in chains for p in chain if p in tree}
+
+
+def _link_chain(root, path):
+    """[`path`, each link it passes through, the file it ends at], all repository paths; None when the checkout does
+    not reach the file by exactly those paths."""
+    base, chain = Path(root).resolve(), [path]
+    while (base / chain[-1]).is_symlink():
+        step = os.path.normpath(os.path.join(os.path.dirname(chain[-1]), os.readlink(base / chain[-1])))
+        if step in chain or os.path.isabs(step) or step.startswith(".."):
+            return None
+        chain.append(step)
+    return chain if (base / chain[-1]).resolve() == base / chain[-1] else None
 
 
 def at_tree(root, commits, here):
@@ -384,12 +402,13 @@ def replay(repo, key):
     ran, killed = run_checks(root, [w for b in todo.values() for w in b["witnesses"]], {m for b in todo.values() for m in b["mutants"]})
     recs, known, listed = [], harness(root), blobs(root, commit)
     for L, b in sorted(todo.items()):
-        ok = held(b, ran, killed)
+        files = files_of(b, root, known, listed)
+        ok = held(b, ran, killed) and files is not None
         if ok:
             leaf = rep["lineages"][L]["leaf"]
             recs.append(R.record("attest", CHECKER, 0, {"target": leaf, "verdict": "accept", "commit": commit, "tree": tree, **me,
                                                         "witnesses": b["witnesses"], "mutants": b["mutants"],
-                                                        "files": files_of(b, root, known, listed)}, refs=[leaf]))
+                                                        "files": files}, refs=[leaf]))
         print(f"{'ACCEPT' if ok else 'HELD  '} {b['id']} {L[:12]}")
     return repo.file(CHECKER, key, recs)
 

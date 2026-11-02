@@ -500,6 +500,45 @@ def drift_cases():
     d, rel = gated(r, L)
     check("DR10 a commit named by a record reaches Git only as a commit id: one shaped as an option writes nothing",
           not list(r.home.glob("written-by-git*")) and rel == D.STALE, (d, rel))
+    r = checker_repo()
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    (r.root / "tests" / "q_test.py").rename(r.root / "tests" / "witness_body.py")
+    (r.root / "tests" / "q_test.py").symlink_to("witness_body.py")
+    L = claim(r)
+    r.commit("a witness reached through an internal link")
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("its acceptance")
+    before, rel_before = gated(r, L)
+    (r.root / "tests" / "witness_body.py").write_text(TEST.replace("Q2 another", "Q2 changed"))
+    r.commit("the file the link ends at changes, the link does not")
+    after, rel_after = gated(r, L)
+    check("DR11 an acceptance names the file a symlink witness ends at, not only the link: changing it is STALE (Codex finding "
+          "f4729a41b788 on #266)", before.get("verdict") == "UNCHANGED" and rel_before == "ELIGIBLE" and after.get("verdict") == "CHANGED"
+          and rel_after == D.STALE and {"verdict": "CHANGED", "path": "tests/witness_body.py"}.items() <= next(
+              (f for f in after.get("files", []) if f["path"] == "tests/witness_body.py"), {}).items(), (before, after, rel_after))
+    r = checker_repo()
+    (r.root / "real").mkdir()
+    (r.root / "real" / "code.py").write_text("X = 1\n")
+    (r.root / "lib").symlink_to("real")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    claim(r)
+    r.commit("a mutated file reached through a linked directory")
+    named = CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    check("DR12 a file reached through a linked directory cannot be named, so the checker accepts nothing on it", named == [], named)
+    r, L = drift_repo()
+    cfg = agent(r)
+    req = {"workspace": "w", "op": "around", "target": L}
+    g0 = api.call(cfg, "graph", req)["ok"]
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    r.commit("only the head's source changes, the store stays the same")
+    g1 = api.call(cfg, "graph", req)["ok"]
+    c1 = api.call(cfg, "context", {"workspace": "w", "targets": [L]})["ok"]
+    check("DR13 a graph answer's identity binds the checkout that decided STALE: same root, another lens; context names the checkout "
+          "too (Codex finding ccc4e8145ed2 on #266)", g0["data"]["node"]["lineage"]["reliance"] == "ELIGIBLE"
+          and g1["data"]["node"]["lineage"]["reliance"] == D.STALE and g0["root"] == g1["root"] and g0["lens"] != g1["lens"]
+          and c1.get("checkout", {}).get("tree") == git(r.root, "rev-parse", "HEAD^{tree}"), (g0["lens"], g1["lens"], c1.get("checkout")))
     r, L = drift_repo()
     marker = r.home / "ran-repository-code"
     (r.root / "tests" / "mutants.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('x')\nprint('{{}}')\n")

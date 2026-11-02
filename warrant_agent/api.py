@@ -93,7 +93,8 @@ def _budget(out, limit):
 def _header(rep):
     return {k: rep[k] for k in ("assessment", "snapshot", "trust", "profile", "as_of", "code", "completeness",
                                 "canonical", "basis")} | {"adapter": adapter_id(), "agent_api": AGENT_API,
-                                                          "rejected": len(rep["rejected"]), "problems": len(rep["problems"])}
+                                                          "rejected": len(rep["rejected"]), "problems": len(rep["problems"]),
+                                                          **({"checkout": rep["checkout"]} if "checkout" in rep else {})}
 
 
 def _signer(ws):

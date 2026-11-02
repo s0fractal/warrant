@@ -100,9 +100,20 @@ def drift(rep, root):
     return out
 
 
+def checkout(root):
+    """What the gate read beside the store: HEAD's tree and whether this checkout has claims. The answer's identity
+    binds it (Codex finding ccc4e8145ed2): the same store can answer ELIGIBLE and STALE at two heads."""
+    try:
+        tree = git(root, "rev-parse", "HEAD^{tree}")
+    except subprocess.CalledProcessError:
+        tree = None
+    return {"tree": tree, "claims": (Path(root) / ".warrant" / "claims.json").is_file()}
+
+
 def gate(rep, root):
     """`rep` with the reliance of each claim whose acceptances are all stale set to STALE (and its drift kept under
-    `drift`): an ELIGIBLE lineage only. Returns the drift answer."""
+    `drift`): an ELIGIBLE lineage only, and with what it read under `checkout`. Returns the drift answer."""
+    rep["checkout"] = checkout(root)
     d = drift(rep, root)
     for L, x in d.items():
         lin = rep["lineages"][L]
