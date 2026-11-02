@@ -23,7 +23,6 @@ and nothing changes.
 
     python3 -m warrant drift [--root DIR] [--json]     # one line per accepted claim, the verdict first"""
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
