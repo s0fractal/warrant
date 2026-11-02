@@ -17,6 +17,8 @@ HEX64 = re.compile(r"^[0-9a-f]{64}\Z")        # a record id, a blob address, an 
 HEX128 = re.compile(r"^[0-9a-f]{128}\Z")      # an Ed25519 signature
 # A question reference: "<transition id>:<index of its opened question>", the index without leading zeros.
 QREF = re.compile(r"^[0-9a-f]{64}:(0|[1-9][0-9]{0,3})\Z")  # NOSONAR S6353: \d would admit any Unicode digit
+# A citation of a record in another store: "<store>:<record id>"; the store is a name a repository or a Home gives it.
+CITATION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}:[0-9a-f]{64}\Z")
 MAX_ACTOR = 200
 # Unicode White_Space outside Cc (Cc is refused anywhere in an actor id): Zs, Zl, Zp.
 EDGE_SPACE = ("Zs", "Zl", "Zp")
@@ -40,6 +42,11 @@ def hex_of(v, n):
 def qref(v):
     """True iff `v` is a question reference (QREF)."""
     return isinstance(v, str) and QREF.match(v) is not None
+
+
+def citation(v):
+    """True iff `v` is a citation (CITATION): the id names the record, the store part says where the citer saw it."""
+    return isinstance(v, str) and CITATION.match(v) is not None
 
 
 def actor_problem(v):

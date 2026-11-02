@@ -17,6 +17,7 @@ from pathlib import Path
 
 from world import KEYS, ROOT, Repo, check, finish, git
 
+from warrant import across as A
 from warrant import claims as CL
 from warrant import cli as CLI
 from warrant import differential as DF
@@ -422,9 +423,13 @@ def drift_cases():
     (r.root / "README").write_text("unrelated\n")
     r.commit("an unrelated file")
     d0, rel0 = gated(r, L)
+    home = {"repositories": {"r": {"path": str(r.root)}}}
+    lens0 = A.answer(A.home_readings(home), {"query": "stores"})["lens"]
     (r.root / "lib" / "code.py").write_text("X = 2\n")
     x = r.commit("the mutated file changes")
     d1, rel1 = gated(r, L)
+    far = tuple((x.verdict(L) or {}).get("reliance") if x.view else None for x in (A.home_readings(home)[0], api._reading(agent(r).workspaces["w"])))
+    lens1 = A.answer(A.home_readings(home), {"query": "stores"})["lens"]
     ctx = api.call(agent(r), "context", {"workspace": "w", "targets": [L]})
     seen = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("lineage", {}).get("reliance")
     text = D.lines({L: d1})
@@ -438,6 +443,8 @@ def drift_cases():
           and d0.get("verdict") == "UNCHANGED" and rel0 == "ELIGIBLE" and d1.get("verdict") == "CHANGED" and rel1 == D.STALE
           and seen == D.STALE and f"; {D.STALE})" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
           (pin, d0, rel0, d1, rel1, seen, d2, rel2))
+    check("DR16 `across` reads a stale claim STALE as context does, through Home and through the agent, and its lens binds the "
+          "tree it read: the same store answers differently at two heads", far == (D.STALE, D.STALE) and lens0 != lens1, (far, lens0, lens1))
     check("DR2 the drift answer leads with the verdict on the bytes and names the first commit after the accepted one that "
           "changed the file (obligation a476855f)",
           text.startswith("CHANGED ") and {"verdict": "CHANGED", "path": "lib/code.py", "detail": f"since {x[:12]}"} in d1.get("files", [])

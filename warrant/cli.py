@@ -1,6 +1,6 @@
 """warrant: one command. The core's verbs init, key, trust, bootstrap, put, attest, blob, assess and fmt
 (docs/V3.md; output is JSON); status, a reader's summary of a store; home, the operator's registry of
-repositories (docs/HOME.md); the review loop's commands review, gate, claims and roadmap (`warrant review ...`
+repositories (docs/HOME.md); across, one read over every repository registered there; the review loop's commands review, gate, claims and roadmap (`warrant review ...`
 is `python -m warrant.review ...`; docs/REPOSITORY.md); and drift, whether the bytes the claims checker accepted are
 still the bytes at HEAD (warrant.drift).
 
@@ -18,6 +18,7 @@ from pathlib import Path
 
 from warrant import keys as K
 
+from . import across as A
 from . import bootstrap as B
 from . import engine as E
 from . import graph as G
@@ -115,6 +116,12 @@ def _parser():
             g.add_argument("--store")
             g.add_argument("--repo", help="a repository registered in Home (warrant home)")
     cmds["init"].add_argument("--store")
+    x = sub.add_parser("across", help="one read over every repository registered in Home (docs/HOME.md); output is JSON")
+    x.add_argument("query", nargs="?", default="stores", choices=A.QUERIES)
+    x.add_argument("subject", nargs="?", help="actor: whose records; rests: a record or blob id, a prefix, or <store>:<id>")
+    x.add_argument("--schema")
+    x.add_argument("--offset", type=int)
+    x.add_argument("--max-bytes", type=int)
     h = sub.add_parser("home", help="the operator's registry of repositories and identities (docs/HOME.md)")
     h.add_argument("action", nargs="?", default="list", choices=("list", "add", "identity", "remove"))
     h.add_argument("target", nargs="?", help="add: a repository directory; identity: an actor; remove: a name")
@@ -244,6 +251,18 @@ def home_cmd(a):
     return {"home": str(H.path()), "identities": sorted(doc["identities"]), "repositories": sorted(doc["repositories"])}
 
 
+def across_cmd(a):
+    """`warrant across [stores|actor A|open|challenges|rests HASH]`: one read over Home's repositories (warrant.across)."""
+    doc = H.load()
+    if not doc["repositories"]:
+        raise Refused("Home registers no repository (warrant home add DIR)")
+    q = {"query": a.query, **{k: v for k, v in (("schema", a.schema), ("offset", a.offset), ("max_bytes", a.max_bytes))
+                              if v is not None}}
+    if a.subject is not None:
+        q[{"actor": "actor", "rests": "target"}.get(a.query, "subject")] = a.subject
+    return A.answer(A.home_readings(doc), q)
+
+
 def render_home(out):
     rows = [f"home        {out['home']}", f"identities  {', '.join(out['identities']) or 'none'}"]
     for r in out["repositories"]:
@@ -269,6 +288,13 @@ def main(argv=None):
     if argv[:1] and argv[0] in LOOP:
         return loop(argv)
     a = _parser().parse_args(argv)
+    if a.cmd == "across":
+        try:
+            sys.stdout.write(json.dumps(across_cmd(a), sort_keys=True) + "\n")
+        except (OSError, ValueError) as e:
+            print(f"REFUSED {e}", file=sys.stderr)
+            return 2
+        return 0
     if a.cmd in ("status", "home"):
         try:
             st = status(a) if a.cmd == "status" else home_cmd(a)

@@ -2,7 +2,7 @@
 
     warrant-agent [--config CONFIG.json | --repo DIR --actor A [--seed SEED]] <operation> [REQUEST.json | - | '{...}']
 
-Operations: workspace, context, read, graph, handoff, prepare, commit, explain. The request is the same
+Operations: workspace, context, read, graph, across, handoff, prepare, commit, explain. The request is the same
 JSON object the Python API and the MCP tools take; the output is the same result object. Exit status 0
 on a result, 2 on a typed refusal."""
 import argparse

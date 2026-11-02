@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `warrant across` and the agent's `across` (MCP `warrant_across`): one read over every repository registered in Home
+  (`stores`, `actor`, `open`, `challenges`, `rests`), each store assessed alone under its own trust and profile. A node is
+  one record with one row per store holding it, and trust is never merged. A store that cannot be read is named. Nothing
+  from a repository runs. A foreign reference reads `ELSEWHERE` or `UNAVAILABLE`, and a single store's graph no longer calls
+  such a node `missing`. The citation form `<store>:<id>` (docs/HOME.md); `refs` carries the bare id, and what the engine
+  admits is unchanged. Tests X01–X24, S8, mutants X1–X51.
 - G14: a claims checker acceptance speaks of the bytes it ran on, and now names them: `files`, {path: git blob} of
   each witness's test file and each mutant's mutated file and test file (`claims replay` signs them, `claims verify`
   holds them to the commit). `warrant drift` (warrant/drift.py) compares them with HEAD's tree and answers with the

@@ -10,6 +10,8 @@ interpreter's stack limit. Nothing is cached and no view is kept between calls.
                                                        attests on it; the actor's frontier (default: the signer)
   read       {workspace, target, kind?, offset?, max_bytes?}   a record's line or a blob's bytes, chunked
   graph      {workspace, op, target?, actor?}          around | path | why | frontier | export, with root and lens
+  across     {query, actor?, target?, schema?, offset?, max_bytes?}   stores | actor | open | challenges | rests over
+                                                       every workspace, each assessed alone (warrant.across)
   handoff    {workspace, op, targets?|package}         export the records targets rest on and the verdicts on
                                                        them; inspect a package under this receiver's terms
                                                        (alone or with its store); import one (add-only)
@@ -27,6 +29,7 @@ import json
 import os
 import time
 
+from warrant import across as A
 from warrant import drift as D
 from warrant import engine as E
 from warrant import graph as G
@@ -38,7 +41,7 @@ from warrant.store import Inadmissible, Refused, Snapshot
 
 from . import AGENT_API, adapter_id
 from . import glossary as GL
-from .config import OPERATIONS
+from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
 
 PACKAGE = "package/3"
@@ -193,6 +196,23 @@ def graph(cfg, req):
     else:
         data, query = rep["graph"], {"op": op}
     return _budget(G.answer(rep, query, data, adapter_id()), max(ws.limits["context_bytes"], ws.limits["read_bytes"]) * 16)
+
+
+def _reading(ws):
+    def read():
+        ws.permit("graph")
+        trust, profile = ws.receiver()
+        repository = repository_config(ws.repo)[2] if ws.repo is not None else None
+        return A.snapshot_of(ws.open(), ws.limits["store_bytes"]), trust, profile, repository
+    return A.Reading(ws.name, read, ws.repo)
+
+
+def across(cfg, req):
+    budget = min(ws.limits["context_bytes"] for ws in cfg.workspaces.values())
+    try:
+        return A.answer([_reading(ws) for _, ws in sorted(cfg.workspaces.items())], req, budget, adapter_id())
+    except A.Refusal as e:
+        raise AgentError(e.code, str(e)) from None
 
 
 # ---------------------------------------------------------------- handoff
@@ -402,10 +422,10 @@ def explain(cfg, req):
     return GL.explain(req["word"])
 
 
-OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "handoff": handoff,
-               "prepare": prepare, "commit": commit, "explain": explain}
-assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain"}
-assert set(GL.TERMS) >= set(CODES)
+OPERATIONS_ = {"workspace": workspace, "context": context, "read": read, "graph": graph, "across": across,
+               "handoff": handoff, "prepare": prepare, "commit": commit, "explain": explain}
+assert set(OPERATIONS_) == set(OPERATIONS) | {"workspace", "explain", "across"}     # across asks each workspace for `graph`
+assert set(GL.TERMS) >= set(CODES) | set(A.REFERENCE_STATES)
 
 
 def call(cfg, op, req):

@@ -25,7 +25,7 @@ never instructions.
 - `signer`: the actor the server signs as, and the seed it signs with. The seed is read only by
   `commit`, and its key must be one the trust binds to that actor.
 - `operations`: which of `context`, `read`, `graph`, `handoff`, `prepare`, `commit` this workspace
-  permits (`workspace` and `explain` always are). `limits`: the store is refused beyond `store_bytes`
+  permits (`workspace` and `explain` always are; `across` reads a workspace only if it permits `graph`). `limits`: the store is refused beyond `store_bytes`
   before it is parsed; results beyond their byte bound are refused, never cut.
 - A configuration Warrant 2's `warrant-agent-mcp init` wrote (`agent_api` `warrant-agent/1`, a
   workspace whose `store` is a repository's `.warrant/store`) is read as that repository with the same
@@ -56,6 +56,7 @@ identity `A`'s (docs/HOME.md).
 | `context` | `{workspace, targets?, actor?}` | per target (an id or a unique prefix of 8+ hex): its node, lineage (state, reliance, leaf, effective), guard (MET / PENDING with `waiting` / NONE), the attests on it, the challenges against it; the actor's `frontier` |
 | `read` | `{workspace, target, kind?: record\|blob, offset?, max_bytes?}` | the exact bytes, chunked (`next`) |
 | `graph` | `{workspace, op: around\|path\|why\|frontier\|export, target?, actor?}` | `{root, lens, query, data}`: the same lens over the same root gives the same result; in a repository's checkout the lens binds what the STALE gate read (`checkout`: HEAD's tree and whether it has claims) |
+| `across` | `{query: stores\|actor\|open\|challenges\|rests, actor?, target?, schema?, offset?, max_bytes?}` | one read over every workspace, each assessed alone: docs/HOME.md |
 | `handoff` | `{workspace, op: export, targets}` / `{op: inspect, package, alone?}` / `{op: import, package}` | a package of what the targets rest on and the verdicts on them; its assessment under this receiver's terms; an add-only import |
 | `prepare` | `{workspace, kind, body, schema?, target?, lineage?, refs?, guard?}` | an unsigned record of the signer, dated now and chained to its head, checked as this receiver reads it |
 | `commit` | `{workspace, record}` | its id and how this receiver reads it now |

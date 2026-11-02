@@ -4,8 +4,8 @@
     warrant-agent-mcp --repo DIR --actor ACTOR [--seed SEED]   # one checkout, configured in memory (no file)
     warrant-agent-mcp init --actor ACTOR --seed SEED --config OUT.json [--repo DIR] ...   (warrant_agent.init)
 
-Eight tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
-warrant_workspace, warrant_context, warrant_read, warrant_graph, warrant_handoff, warrant_prepare,
+Nine tools, each calling the same backend as the Python API and the CLI (warrant_agent.api.call):
+warrant_workspace, warrant_context, warrant_read, warrant_graph, warrant_across, warrant_handoff, warrant_prepare,
 warrant_commit, warrant_explain. An argument left out is left out of the request. A tool's structured
 result is the object the CLI prints; a typed refusal is a tool error whose text is that refusal's
 JSON. The configuration (workspaces, signer, limits) is the operator's and is fixed at start; no tool
@@ -31,6 +31,8 @@ Start with warrant_workspace: your signer, its roles, the schemas and the lineag
 and `reliance` (ELIGIBLE = may be relied on), its guard (what it waits for), the attests on it and the \
 challenges against it; `frontier` lists what waits for you.
 - What does it rest on, what rests on it? warrant_graph op=path / op=why; op=frontier for an actor.
+- Across every workspace at once: warrant_across, query=stores, actor, open, challenges or rests. Each row names its \
+store and that store's verdict; no store's verdict counts for another. A store that could not be read is named.
 - File a record: warrant_prepare (kind, schema, body; target for an attest or a challenge; lineage for a new \
 version), check it, then warrant_commit with the returned record unchanged. Accept a version: kind=attest, \
 body {"verdict": "accept"}, target the version id.
@@ -98,6 +100,22 @@ def build(cfg):
                       actor: Annotated[str | None, Field(description="frontier: whose; your signer's if omitted.")] = None
                       ) -> dict[str, Any]:
         return run("graph", _req(op=op, workspace=workspace, target=target, actor=actor))
+
+    @server.tool(name="warrant_across", annotations=reads, description=(
+        "One read over every workspace, each assessed alone under its own trust and profile. query=stores: lineages by "
+        "schema and state per store; actor {actor}: its records, under each store's keys for that name; open: goals and "
+        "obligations a store reads as open (no_schema where it counts neither); challenges: those standing in a store; "
+        "rests {target}: what rests on a hash, across stores. A node is one record: its envelope and `in`, each store's "
+        "verdict apart. `foreign`: references read ELSEWHERE (held_in) or UNAVAILABLE. `unavailable`: stores that could "
+        "not be read. Paged: pass `next` as offset until it is null."))
+    def warrant_across(query: Literal["stores", "actor", "open", "challenges", "rests"],
+                       actor: Annotated[str | None, Field(description="actor: whose records.")] = None,
+                       target: Annotated[str | None, Field(description="rests: an id, a prefix of 8+, or <store>:<id>.")] = None,
+                       schema: Annotated[str | None, Field(description="Only records of this schema.")] = None,
+                       offset: Annotated[int | None, Field(description="The `next` of the previous page.")] = None,
+                       max_bytes: Annotated[int | None, Field(description="A smaller page than the operator's bound.")] = None
+                       ) -> dict[str, Any]:
+        return run("across", _req(query=query, actor=actor, target=target, schema=schema, offset=offset, max_bytes=max_bytes))
 
     @server.tool(name="warrant_handoff", annotations=local, description=(
         "op=export {targets}: a package of the records the targets rest on, the attests and challenges on them, the "
