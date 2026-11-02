@@ -41,7 +41,7 @@ def lineage_of(rep, i):
 
 
 def describe(rep, nodes, i):
-    n = dict(nodes.get(i) or {"id": i, "kind": "missing"})
+    n = dict(nodes.get(i) or {"id": i, "kind": "unavailable"})       # no record of it in this report: never "does not exist"
     if i in rep["versions"]:
         n["guard"] = rep["versions"][i]
         root = lineage_of(rep, i)

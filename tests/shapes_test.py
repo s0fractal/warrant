@@ -89,6 +89,12 @@ def main():
           "digits (a git object id), the same vectors at 40", wrong)
     ok, wrong = table(S.qref, [f"{H64}:0", f"{H64}:7", f"{H64}:9999"], bad)
     check("S4", ok, "qref: <hex64>:<index 0-9999 without leading zeros>, the same hex vectors and the index's own", wrong)
+    bad = {f"id {k}": f"s0fractal/time-lab:{v}" if isinstance(v, str) else v for k, v in hex_vectors(H64).items()}
+    bad.update({"no store": f":{H64}", "no colon": H64, "\\n after store": f"a\n:{H64}", "space in store": f"a b:{H64}",
+                "two colons": f"a:b:{H64}", "leading dot": f".a:{H64}", "leading slash": f"/a:{H64}", "long store": f"{'a' * 129}:{H64}",
+                "store non-ASCII": f"é:{H64}"})
+    ok, wrong = table(S.citation, [f"s0fractal/time-lab:{H64}", f"time-lab:{H64}", f"a:{H64}", f"{'a' * 128}:{H64}"], bad)
+    check("S8", ok and S.CITATION.pattern.endswith(r"\Z"), "citation: <store>:<hex64>, the same hex vectors and the store's own", wrong)
     valid = ["claude", "codex", "checker sha256:" + H64, "Ünïcödé", "a" * 200, "\U0001f600" * 200, "a b"]
     bad = {"\\n": "codex\n", "\\r\\n": "codex\r\n", "\\n inside": "co\ndex", "tab": "co\tdex", "NUL": "co\x00dex",
            "201 code points": "a" * 201, "201 astral": "\U0001f600" * 201, "not NFC": "é",

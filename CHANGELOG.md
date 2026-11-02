@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `warrant across` and the agent's `across` (MCP `warrant_across`): one read over every repository registered in Home
+  (`stores`, `actor`, `open`, `challenges`, `rests`), each store assessed alone under its own trust and profile. A node is
+  one record with one row per store holding it, and trust is never merged. A store that cannot be read is named. Nothing
+  from a repository runs. A foreign reference reads `ELSEWHERE` or `UNAVAILABLE`, and a single store's graph no longer calls
+  such a node `missing`. The citation form `<store>:<id>` (docs/HOME.md); `refs` carries the bare id, and what the engine
+  admits is unchanged. Tests X01–X24, S8, mutants X1–X51.
 - The review waker carries a reviewer's verdict that the reviewer signed in its review worktree and could not
   commit (Codex's sandbox denied Git's lock files on sigma-glyph#80, twice) to the pull request's branch: only
   record lines and blobs new in the worktree's store, checked under the base's keys as that reviewer's acceptance

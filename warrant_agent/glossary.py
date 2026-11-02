@@ -47,6 +47,11 @@ TERMS = {
     "MIGRATION_MAP": ("A migration attest whose target is not a map blob in the view: it vouches for nothing.",
                       "Not credited."),
     "line": ("A line that is not a canonical {record, sig}, not a record, or too long: rejected.", "Not read."),
+    # a reference read across stores (warrant/across.py)
+    "ELSEWHERE": ("A store holding the citing record does not hold what it cites; the stores named do. Each reads it "
+                  "under its own trust and profile.", "No store's verdict counts for another."),
+    "UNAVAILABLE": ("No store read here holds what the record cites.", "It does not say it does not exist: an unregistered "
+                    "or unreadable store may hold it, and completeness stays UNATTESTED."),
     # refusals of the interface (warrant_agent/errors.py)
     "BAD_REQUEST": ("The request is not one this interface reads.", "Nothing was read or written."),
     "UNSUPPORTED_VERSION": ("The configuration declares another agent_api.", "Nothing was read."),

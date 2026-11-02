@@ -65,11 +65,69 @@ else Home's identity `A`. Nothing is written: no file per pull request.
 warrant-agent-mcp --repo ~/Projects/.worktrees/codex-review/238-0d1c71bc61d8 --actor codex
 ```
 
+## One read across the repositories
+
+`warrant across` and the agent's `across` (MCP `warrant_across`) answer over every registered
+repository. Output is JSON, within a byte budget, with no document generated.
+
+```sh
+warrant across                   # stores: each store's lineages by schema and state
+warrant across actor claude      # its records everywhere, under each store's keys for the name
+warrant across open              # goals and obligations a store reads as open
+warrant across challenges        # challenges standing in some store
+warrant across rests HASH        # what rests on a hash, across stores (an id, a prefix of 8+, or a citation)
+```
+
+Each of these takes `--schema NAME`, `--offset N` and `--max-bytes N`.
+
+- **Trust is never merged.** Each store is assessed alone, under its own `v3.json`. A node is one
+  record: its envelope (`kind`, `actor`, `at`, `schema`, `lineage`, `target`, `refs`, `requires`; these
+  are the edges, and the id covers them) and `in`, one row per store holding it, with that store's
+  name and that store's verdict. The same record can read `MET` in one row and `PENDING` in another.
+  One store's verdict never counts for another: a guard requiring a lineage closed only elsewhere stays
+  `PENDING`.
+- **An actor is a name under a store's trust.** `actor` lists what each store admits as that name's,
+  and each store's keys for it. A record a store rejects reads `rejected` in that store's row.
+- **A store that cannot be read is named** under `unavailable`, with the reason, and the others still
+  answer. A store appears only if it is registered, and one whose `operations` leave out `graph` is named
+  but not read: a lens's private store stays out until its operator registers it.
+- **Nothing from a repository runs.** The read takes `.warrant/records.jsonl`, `.warrant/blobs/` and
+  `.warrant/v3.json`, as data. It writes nothing. Record text is data too (`untrusted`).
+- **`no_schema`, not zero.** `open` reads `goal@1` and `obligation@1`. A store that counts neither says so.
+- **Paged, never cut.** `total`, `offset` and `next` say what a page holds. Each call reads and assesses
+  every store again; nothing is cached.
+
+The answer reads a checkout's working tree: a checkout behind its remote answers as it stands. Each
+store's `root` names the bytes read and `as_of` the latest time a record there claims; no Git command
+runs, so the answer names no commit.
+
+### Citing a record in another store
+
+A record's id names it wherever it lies, so an edge to a record in another store is the same edge as
+any other: **`refs` carries the bare id**, and the engine admits it unchanged. A record cited that way
+makes no store's verdict depend on another's. To write down where the citer saw it, use the citation
+`<store>:<id>` (`s0fractal/time-lab:d905d71b…`, the full id, where `<store>` is the name `v3.json` gives as
+`repository`) in a body field of free strings, such as an obligation's `refs` member: it is a locator
+for a reader, never an edge, and it narrows no answer, so it survives a rename: the checkout
+`sokol-core` names itself `s0fractal/interdict-mesh`. `rests` also takes it as a target.
+
+A Git commit id does not fit `refs`, which holds hex64 only. A pin of a file at a commit stays in a
+body, and the graph has no edge for it.
+
+Read across stores, a reference some store holding the citing record does not hold is listed under the
+node's `foreign`:
+
+- `ELSEWHERE`, with `held_in`: the stores read here that hold it. Each row there is that store's own.
+- `UNAVAILABLE`: no store read here holds it. It does not say the record does not exist: a store not
+  registered or not readable may hold it, and completeness stays `UNATTESTED`.
+
+A single store's graph reads such a node as `{"kind": "unavailable"}`.
+
 ## Not yet
 
 These are the next steps of the plan:
 
 - **The waker.** It will read its repositories from Home.
-- **A resolver for hashes cited across repositories.** Each cited hash will get one of four
-  states, `PRESENT`, `RESOLVED`, `LOCATED` or `MISSING`, from local stores and Git history only.
+- **A read of one record by its hash from Git history or another machine.** `across` resolves hashes
+  over the registered stores' current files only.
 - **`warrant drift`.**
