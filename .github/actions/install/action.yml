@@ -27,11 +27,10 @@ runs:
         sha256sum --quiet --strict -c SHA256SUMS
         diff <(ls -A | grep -vx SHA256SUMS | sort) <(sed 's/^[0-9a-f]*  //' SHA256SUMS | sort)
 
-    - name: Install (warrant with the MCP SDK, and the pilot's sigma-glyph; no index)
+    - name: Install (warrant with the MCP SDK; no index)
       shell: bash
       run: |
         set -euo pipefail
         python -m venv "$RUNNER_TEMP/v"
-        "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-graph[mcp,pilot]'
-        "$RUNNER_TEMP/v/bin/python" -m sigma_provider | tail -1
+        "$RUNNER_TEMP/v/bin/pip" install --quiet --no-index -f "$RUNNER_TEMP/wh" 'warrant-graph[mcp]'
         echo "$RUNNER_TEMP/v/bin" >> "$GITHUB_PATH"
