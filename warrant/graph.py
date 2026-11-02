@@ -137,5 +137,5 @@ def impact(rep0, rep1):
 
 def answer(rep, query, data, adapter):
     lens = C.doc_id({"code": rep["code"], "adapter": adapter, "trust": rep["trust"], "profile": rep["profile"],
-                     "query": query})
+                     "query": query, **({"checkout": rep["checkout"]} if "checkout" in rep else {})})
     return {"root": rep["snapshot"], "lens": lens, "query": query, "data": data}

@@ -1,7 +1,8 @@
 """warrant: one command. The core's verbs init, key, trust, bootstrap, put, attest, blob, assess and fmt
 (docs/V3.md; output is JSON); status, a reader's summary of a store; home, the operator's registry of
-repositories (docs/HOME.md); across, one read over every repository registered there; and the review loop's commands review, gate, claims and roadmap (`warrant review ...`
-is `python -m warrant.review ...`; docs/REPOSITORY.md).
+repositories (docs/HOME.md); across, one read over every repository registered there; the review loop's commands review, gate, claims and roadmap (`warrant review ...`
+is `python -m warrant.review ...`; docs/REPOSITORY.md); and drift, whether the bytes the claims checker accepted are
+still the bytes at HEAD (warrant.drift).
 
 The store is --store, else --repo NAME's (a repository registered in Home), else the nearest `.warrant/` from the current directory upward (WARRANT_REPO_ROOT's when
 it is set; `init` creates it in the current directory). The trust and the profile are --trust and --profile,
@@ -25,7 +26,7 @@ from . import home as H
 from . import records as R
 from .store import Refused, Store, confined, read_inside
 
-LOOP = ("review", "gate", "claims", "roadmap")       # the review loop's commands, each its own module's parser
+LOOP = ("review", "gate", "claims", "roadmap", "drift")       # the review loop's commands, each its own module's parser
 RECEIVER = "v3.json"                                 # a repository's trust and profile, in its store directory
 
 
@@ -275,10 +276,10 @@ def render_home(out):
 
 
 def loop(argv):
-    """`warrant review|gate|claims|roadmap ARGS`: that module's own command, unchanged."""
-    from . import claims, gate, review, roadmap
+    """`warrant review|gate|claims|roadmap|drift ARGS`: that module's own command, unchanged."""
+    from . import claims, drift, gate, review, roadmap
     from .repo import main as run_tool
-    mod = {"review": review, "gate": gate, "claims": claims, "roadmap": roadmap}[argv[0]]
+    mod = {"review": review, "gate": gate, "claims": claims, "roadmap": roadmap, "drift": drift}[argv[0]]
     return mod.main(argv[1:]) if mod is gate else run_tool(mod.run, argv[1:])
 
 

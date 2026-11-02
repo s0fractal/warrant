@@ -7,7 +7,9 @@ Each store is read and assessed alone, under its own trust and profile (Reading)
 is ever merged. A node is one record id: its envelope (kind, actor, at, schema, lineage, target, refs, requires, which
 the id covers, so it is the same wherever the record lies) and `in`, one row per store holding it, carrying that store's
 name and that store's verdict alone. A store that cannot be read is named under `unavailable`, never dropped. What is
-read from a repository is data only: `.warrant/records.jsonl`, `.warrant/blobs/` and `.warrant/v3.json`.
+read from a repository is data only: `.warrant/records.jsonl`, `.warrant/blobs/` and `.warrant/v3.json`, and, in a
+checkout, the Git trees and history the G14 gate compares (warrant.drift): a claim whose acceptances all name other
+bytes reads STALE here as in context and graph, and the lens binds the tree it read.
 
 Queries, none assuming a repository's schemas beyond the two names INTENTS gives:
 
@@ -26,6 +28,7 @@ Rows are paged within the budget, by `offset`, `next` and `total`: a result is n
 import json
 import os
 
+from . import drift as D
 from . import engine as E
 from . import graph as G
 from . import home as H
@@ -73,14 +76,19 @@ def snapshot_of(st, limit=STORE_BYTES):
 
 class Reading:
     """One store as one assessment, or why it could not be read. `read()` returns (snapshot, trust, profile,
-    repository); whatever it or the assessment raises makes this store unavailable and leaves the others as they are."""
+    repository); whatever it or the assessment raises makes this store unavailable and leaves the others as they are.
+    `root`, a checkout of the store's repository, puts the assessment through the G14 gate."""
 
-    def __init__(self, name, read):
+    def __init__(self, name, read, root=None):
         self.name, self.why, self.view, self.rep, self.repository = name, None, None, None, None
         try:
             snap, trust, profile, self.repository = read()
             self.view = E.View(snap, trust, profile)
             self.rep = self.view.report()
+            if root is not None:
+                self.rep["_recs"], self.rep["_basis"] = self.view.recs, self.view.basis
+                D.gate(self.rep, root)
+                del self.rep["_recs"], self.rep["_basis"]
             self.problems = {}
             for code, i, _ in self.rep["problems"]:
                 self.problems.setdefault(i, []).append(code)
@@ -297,7 +305,7 @@ def answer(readings, q, budget=BUDGET, adapter=None):
            "unavailable": unavailable, "total": len(ids), "offset": q.get("offset", 0), "next": len(ids), **extra, "nodes": [],
            "root": C.doc_id({"stores": {x.name: x.rep["snapshot"] for x in read}, "unavailable": unavailable}),
            "lens": C.doc_id({"code": code, "adapter": adapter, "query": query,
-                             "stores": {x.name: {"trust": x.rep["trust"], "profile": x.rep["profile"]} for x in read}})}
+                             "stores": {x.name: {"trust": x.rep["trust"], "profile": x.rep["profile"], "checkout": x.rep.get("checkout")} for x in read}})}
     used, pos = _dumped(out), out["offset"]
     if used > budget:
         raise Refusal("RESOURCE_LIMIT", f"the answer's header is {used} bytes; {budget} are allowed")
@@ -325,4 +333,4 @@ def home_readings(doc):
         snap = snapshot_of(Store(H.store_of(doc, name)))
         trust, profile, repository = H.receiver(path)
         return snap, trust, profile, repository
-    return [Reading(name, lambda name=name, r=r: read(name, r)) for name, r in sorted(doc["repositories"].items())]
+    return [Reading(name, lambda name=name, r=r: read(name, r), os.path.expanduser(r["path"])) for name, r in sorted(doc["repositories"].items())]

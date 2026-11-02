@@ -25,6 +25,7 @@ CORE, AGENT, GATE, TOOLS, PILOT, WAKER = ("tests/core_test.py", "tests/agent_tes
                                           "tests/tools_test.py", "tests/pilot_test.py", "integrations/warrant-review/test_plugin.py")
 E, S, RC = "warrant/engine.py", "warrant/store.py", "warrant/records.py"
 SHAPES_TEST = "tests/shapes_test.py"
+E, S, RC, DR = "warrant/engine.py", "warrant/store.py", "warrant/records.py", "warrant/drift.py"
 # (id, file, find, replace, test file, cases)
 MUTANTS = [
     # §3 lineage
@@ -313,6 +314,35 @@ MUTANTS = [
     ("T95", "warrant/claims.py", '    word = "|".join(r"\\s+".join(map(re.escape, k.split(" "))) for k in sorted(keywords, key=len, reverse=True))',
      '    word = "|".join(re.escape(k) for k in sorted(keywords, key=len, reverse=True))', TOOLS, ["C22"]),
     ("T93", "warrant/claims.py", "isinstance(cover, list) and cover and all", "isinstance(cover, list) and all", TOOLS, ["C22"]),
+    # G14: drift and the STALE gate (warrant/drift.py)
+    ("T96", DR, '        if x["verdict"] != "UNCHANGED" and lin["reliance"] == "ELIGIBLE":', "        if False:", TOOLS, ["DR1", "DR4"]),
+    ("T97", DR, "        if now == blob:", "        if True:", TOOLS, ["DR1"]),
+    ("T98", DR, "        elif now is None and blob in where:", "        elif False:", TOOLS, ["DR3"]),
+    ("T99", DR, "    if words <= set(FRESH):", '    if words <= {"UNCHANGED"}:', TOOLS, ["DR3"]),
+    ("T100", DR, '"--format=%H", f"{commit}..HEAD", "--", path)', '"--format=%H", "HEAD", "--", path)', TOOLS, ["DR2"]),
+    ("T101", DR, "        out.append(f\"{word:9} {x['id']} ({L[:12]})", "        out.append(f\"{x['id']} {word:9} ({L[:12]})", TOOLS, ["DR2", "DR3"]),
+    ("T102", DR, "    if not files:", "    if files is None:", TOOLS, ["DR8"]),
+    ("T112", DR, "    if not S.hex_of(commit, 40):", "    if False:", TOOLS, ["DR10"]),
+    ("T113", DR, "    if not (isinstance(files, dict) and all(isinstance(b, str) for b in files.values())):", "    if not isinstance(files, dict):", TOOLS, ["DR9"]),
+    ("T103", "warrant_agent/api.py", "        D.gate(rep, ws.repo)", "        pass", TOOLS, ["DR1"]),
+    ("T104", "warrant/claims.py", "    drift.gate(rep, root)", "    pass", TOOLS, ["DR1"]),
+    ("T105", DR, "        elif now is None and blob in where:", "        elif blob in where:", TOOLS, ["DR6"]),
+    ("T106", DR, "        x, rows = min(seen,", "        x, rows = max(seen,", TOOLS, ["DR1"]),
+    ("T107", "warrant/claims.py", '"files": files}, refs=[leaf]))', '}, refs=[leaf]))', TOOLS, ["DR1"]),
+    ("T108", "warrant/claims.py", "[x for x, files in rows if files] for v, rows", "[x for x, files in rows] for v, rows", TOOLS, ["DR4"]),
+    ("T109", "warrant/claims.py", "                if pins.get(i) is not None and pins[i] != files_of(b, wt, known, tree)]", "                if False]", TOOLS, ["DR7"]),
+    ("T110", DR, "    done = C.acceptances(rep)\n", "    done = C.acceptances(rep)\n    C.harness(root)\n", TOOLS, ["DR5"]),
+    ("T111", "warrant/claims.py", "        paths.update(known.get(m, [])[:2])", "        pass", TOOLS, ["DR1"]),
+    ("T114", "warrant/claims.py", "    while (base / chain[-1]).is_symlink():", "    while False:", TOOLS, ["DR11"]),
+    ("T115", "warrant/claims.py", "        ok = held(b, ran, killed) and files is not None", "        ok = held(b, ran, killed)", TOOLS, ["DR12"]),
+    ("T117", DR, '    rep["checkout"] = checkout(root)', "    pass", TOOLS, ["DR13"]),
+    ("T119", "warrant/claims.py", "sorted({os.path.normpath(p) for p in paths})]", "sorted(paths)]", TOOLS, ["DR15"]),
+    ("T120", "warrant/claims.py", "    if None in chains or any(p not in tree for chain in chains for p in chain):\n        return None\n    return {p: tree[p] for chain in chains for p in chain}",
+     "    if None in chains:\n        return None\n    return {p: tree[p] for chain in chains for p in chain if p in tree}", TOOLS, ["DR15"]),
+    ("T121", "warrant/across.py", 'read(name, r), os.path.expanduser(r["path"])) for name', 'read(name, r)) for name', TOOLS, ["DR16"]),
+    ("T122", "warrant_agent/api.py", "    return A.Reading(ws.name, read, ws.repo)\n", "    return A.Reading(ws.name, read)\n", TOOLS, ["DR16"]),
+    ("T123", "warrant/across.py", ', "checkout": x.rep.get("checkout")} for x in read', '} for x in read', TOOLS, ["DR16"]),
+    ("T118", "warrant/claims.py", '("link:" if r.startswith("120000 ") else "") + r.split()[2]', 'r.split()[2]', TOOLS, ["DR14"]),
     ("T60", "warrant/cli.py", '    if kind == "schema" and E._schema_problem(body):', "    if False:", TOOLS, ["K09"]),
     ("T50", "warrant/cli.py", "        doc = json.loads(read_inside(f, store))", "        doc = json.loads(Path(f).read_bytes())", TOOLS, ["K08"]),
     ("T51", "warrant/repo.py", '        doc = json.loads(read_inside(self.dot / "v3.json", self.dot))',

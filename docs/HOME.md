@@ -130,4 +130,5 @@ These are the next steps of the plan:
 - **The waker.** It will read its repositories from Home.
 - **A read of one record by its hash from Git history or another machine.** `across` resolves hashes
   over the registered stores' current files only.
-- **`warrant drift`.**
+- **A resolver for hashes cited across repositories.** Each cited hash will get one of four
+  states, `PRESENT`, `RESOLVED`, `LOCATED` or `MISSING`, from local stores and Git history only.

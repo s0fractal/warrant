@@ -30,6 +30,7 @@ import os
 import time
 
 from warrant import across as A
+from warrant import drift as D
 from warrant import engine as E
 from warrant import graph as G
 from warrant import jcs as C
@@ -65,6 +66,17 @@ def _assess(ws, snap=None):
         raise AgentError("RESOURCE_LIMIT" if "limit" in str(e) else "BAD_REQUEST", str(e)) from None
 
 
+def _report(ws, view):
+    """The view's report; in a repository's checkout, a claim whose claims checker acceptances all name other bytes
+    than its head's reads STALE, not ELIGIBLE (warrant.drift, G14)."""
+    rep = view.report()
+    if ws.repo is not None:
+        rep["_recs"], rep["_basis"] = view.recs, view.basis
+        D.gate(rep, ws.repo)
+        del rep["_recs"], rep["_basis"]
+    return rep
+
+
 def _resolve(snap, target):
     """A record or blob id from a full id or a unique prefix of at least 8 hex characters."""
     need(isinstance(target, str) and 8 <= len(target) <= 64 and all(c in "0123456789abcdef" for c in target),
@@ -84,7 +96,8 @@ def _budget(out, limit):
 def _header(rep):
     return {k: rep[k] for k in ("assessment", "snapshot", "trust", "profile", "as_of", "code", "completeness",
                                 "canonical", "basis")} | {"adapter": adapter_id(), "agent_api": AGENT_API,
-                                                          "rejected": len(rep["rejected"]), "problems": len(rep["problems"])}
+                                                          "rejected": len(rep["rejected"]), "problems": len(rep["problems"]),
+                                                          **({"checkout": rep["checkout"]} if "checkout" in rep else {})}
 
 
 def _signer(ws):
@@ -118,7 +131,7 @@ def context(cfg, req):
     ws = cfg.workspace(req["workspace"])
     ws.permit("context")
     snap, view, _, profile = _assess(ws)
-    rep = view.report()
+    rep = _report(ws, view)
     targets = req.get("targets") or []
     need(isinstance(targets, list) and len(targets) <= 64, "BAD_REQUEST", "targets is a list of at most 64 ids")
     nodes, _, into = G.index(rep)
@@ -171,7 +184,7 @@ def graph(cfg, req):
     op = req["op"]
     need(isinstance(op, str) and op in GRAPH_OPS, "BAD_REQUEST", f"op is one of {list(GRAPH_OPS)}")
     snap, view, _, profile = _assess(ws)
-    rep = view.report()
+    rep = _report(ws, view)
     if op in ("around", "path", "why"):
         i = _resolve(snap, req.get("target"))
         data = getattr(G, op)(rep, i)
@@ -191,7 +204,7 @@ def _reading(ws):
         trust, profile = ws.receiver()
         repository = repository_config(ws.repo)[2] if ws.repo is not None else None
         return A.snapshot_of(ws.open(), ws.limits["store_bytes"]), trust, profile, repository
-    return A.Reading(ws.name, read)
+    return A.Reading(ws.name, read, ws.repo)
 
 
 def across(cfg, req):

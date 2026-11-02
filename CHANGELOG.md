@@ -12,6 +12,16 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   from a repository runs. A foreign reference reads `ELSEWHERE` or `UNAVAILABLE`, and a single store's graph no longer calls
   such a node `missing`. The citation form `<store>:<id>` (docs/HOME.md); `refs` carries the bare id, and what the engine
   admits is unchanged. Tests X01–X24, S8, mutants X1–X51.
+- G14: a claims checker acceptance speaks of the bytes it ran on, and now names them: `files`, {path: git blob} of
+  each witness's test file and each mutant's mutated file and test file (`claims replay` signs them, `claims verify`
+  holds them to the commit). `warrant drift` (warrant/drift.py) compares them with HEAD's tree and answers with the
+  verdict on the bytes first: unchanged, moved with its bytes unchanged (at its new path), CHANGED since the first
+  commit that changed it, or UNKNOWN for an acceptance naming no files. A claim whose every acceptance names other
+  bytes reads `STALE`, not `ELIGIBLE`, in `claims view` and in the agent's `context` and `graph` until the checker
+  accepts it again (a gate: time-lab Q10 H3, 72 of 72 under pressure); every acceptance signed before this reads
+  UNKNOWN until one `claims replay`. It runs no code of the repository's. A graph answer's lens and the agent's
+  header bind what the gate read (`checkout`). The engine's reliance is unchanged. Tests DR1-DR15, mutants T96-T120.
+
 - The review waker carries a reviewer's verdict that the reviewer signed in its review worktree and could not
   commit (Codex's sandbox denied Git's lock files on sigma-glyph#80, twice) to the pull request's branch: only
   record lines and blobs new in the worktree's store, checked under the base's keys as that reviewer's acceptance

@@ -200,7 +200,9 @@ exact version (and hashes), from a checkout of that repository:
   replay run Python test files (W-2, a declared runner, is not done).
 
 The commands are `warrant review open|head|merged|due|verify|view` (also `warrant-review` or `python -m
-warrant.review`), `warrant gate gate|due`, `warrant claims check|view|file|replay|verify` and `warrant roadmap`. A
+warrant.review`), `warrant gate gate|due`, `warrant claims check|view|file|replay|verify`, `warrant roadmap` and
+`warrant drift` (whether the bytes each acceptance names are still HEAD's; a claim whose are not reads `STALE`,
+docs/V3.md §15). A
 checker's `code` is the digest of the package's modules: in this repository, which carries their
 source, CI holds an attest to the package at the commit it names; in a repository that does not,
 to the package installed where `verify` runs, so CI re-executes with the same pinned version. The

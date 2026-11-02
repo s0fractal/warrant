@@ -19,6 +19,7 @@ from world import KEYS, ROLES, Repo, check, finish
 from warrant import across as A
 from warrant import bootstrap as B
 from warrant import cli as WCLI
+from warrant import drift as D
 from warrant import engine as E
 from warrant import graph as G
 from warrant import home as H
@@ -129,7 +130,7 @@ def operations():
           and dst.report()["lineages"][o]["reliance"] == "CHALLENGED" and rp in dst.store.snapshot().lines
           and without.report()["lineages"][o]["reliance"] == "ELIGIBLE",
           (alone.get("roots"), dst.report()["lineages"][o]["reliance"]))
-    words = set(E.GUARDS) | set(E.RELIANCE) | set(E.BASES) | set(E.PROBLEMS) | set(E.REJECTIONS) | set(ER.CODES) | {"OK", "UNATTESTED"}
+    words = set(E.GUARDS) | set(E.RELIANCE) | {D.STALE} | set(E.BASES) | set(E.PROBLEMS) | set(E.REJECTIONS) | set(ER.CODES) | {"OK", "UNATTESTED"}
     check("A14 the glossary has an entry for every word the engine and the interface answer with", words <= set(GL.TERMS),
           sorted(words - set(GL.TERMS)))
     g1 = ok(api.call(cfg, "graph", {"workspace": "w", "op": "path", "target": done}))
