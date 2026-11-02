@@ -268,8 +268,27 @@ def challenge_cases():
     f = {"statement": "P2 x", "severity": "P2", "what": "x", "where": [], "commit": "c" * 40, "tree": "d" * 40, "target": h1}
     thesis = w.put("eve", "challenge", dict(f), "finding@1", refs=[h1])
     counted = w.put("bob", "challenge", dict(f, what="y", statement="P2 y"), "finding@1", refs=[h1])
+    outsider = K.Key.from_seed_hex("0a" * 32)
+    me, impostor = f"key:{outsider.public}", f"key:{w.keys['eve'].public}"
+    w.keys[me], w.keys[impostor] = outsider, outsider
+    own = w.put(me, "challenge", dict(f, what="z", statement="P2 z"), "finding@1", refs=[h1])
+    forged = w.put(impostor, "challenge", dict(f, what="v", statement="P2 v"), "finding@1", refs=[h1])
+    w.keys["key:zz"] = outsider
+    shapeless = w.put("key:zz", "challenge", dict(f, what="u", statement="P2 u"), "finding@1", refs=[h1])
+    entity = w.put(me, "entity", {"state": "open", "pr": 2}, "pr-head@1")
+    accept = w.attest(me, h1)
+    rep = w.report()
+    check("KN1 a challenge under its own key's name is read with no key bound, and stays a thesis until reproduced",
+          me not in w.trust["keys"] and own not in rep["rejected"] and not rep["challenges"][own]["counted"])
+    check("KN2 a record under a key's name signed by another key is BAD_SIGNATURE",
+          "BAD_SIGNATURE" in rep["rejected"].get(forged, "") and "BAD_SIGNATURE" in rep["rejected"].get(shapeless, ""))
+    check("KN3 only a challenge names its actor by its key: an entity or an attest under such a name is BAD_SIGNATURE",
+          "BAD_SIGNATURE" in rep["rejected"].get(entity, "") and "BAD_SIGNATURE" in rep["rejected"].get(accept, ""))
+    w.attest("carol", own, verdict="reproduces", on=h1)
     w.attest("carol", thesis, verdict="reproduces", on=h1)
     rep = w.report()
+    check("KN4 a challenge whose key no trust binds counts once a replayer reproduces it",
+          rep["challenges"][own]["counted"] and rep["challenges"][own]["why"] == "reproduced by a replayer")
     check("C1 a stranger's challenge is a thesis until a replayer reproduces it at its target",
           rep["challenges"][thesis]["counted"] and rep["challenges"][thesis]["why"] == "reproduced by a replayer")
     check("C2 a challenge by a role of the target's guard counts", rep["challenges"][counted]["counted"])

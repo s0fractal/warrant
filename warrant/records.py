@@ -76,6 +76,13 @@ def guard(quorum=0, roles=(), match=None, requires=()):
     return {"quorum": quorum, "roles": sorted(set(roles)), "match": dict(match or {}), "requires": sorted(set(requires))}
 
 
+def named_key(r):
+    """The key a challenge's actor names itself by (`key:<public key>`, §5), or None: any other record's actor is
+    a name a trust binds."""
+    a = r["actor"]
+    return a[4:] if r["kind"] == "challenge" and a.startswith("key:") else None
+
+
 def rid(r):
     return C.doc_id(r)
 

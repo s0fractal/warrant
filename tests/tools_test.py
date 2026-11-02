@@ -849,6 +849,20 @@ def cli_cases():
     check("K09 `warrant put --kind schema` refuses a body the engine would never count (here an unsorted `closed`) and "
           "writes nothing, as the agent's prepare does; a schema body is filed", bad == 2 and kept and good == 0
           and len(r.store.lines()) == len(before) + 1, (bad, kept, good))
+    stranger = K.Key.from_seed_hex("0b" * 32)
+    (r.home / "stranger.seed").write_text(stranger.seed_hex())
+    me = f"key:{stranger.public}"
+    file = lambda kind, body, *more: cli(r.home, "put", "--store", "repo/.warrant", "--kind", kind, "--actor", me, "--key", "stranger.seed", *more, json.dumps(body))
+    before = r.store.lines()
+    finding = {"target": d, "statement": "P2 x", "severity": "P2", "what": "w", "where": [], "commit": "a" * 40, "tree": "b" * 40}
+    filed, out = file("challenge", finding, "--schema", "finding@1", "--ref", d)
+    rep = r.report()
+    got = json.loads(out or "{}").get("record")
+    check("K10 `warrant put` files a challenge under its own key's name with no key bound; it reads as a thesis",
+          filed == 0 and got in rep["challenges"] and not rep["challenges"][got]["counted"], (filed, out[-200:]))
+    before = r.store.lines()
+    other, _ = file("entity", {"state": "open", "statement": "s", "serves": []}, "--schema", "obligation@1")
+    check("K11 ... and refuses any other kind under such a name, writing nothing", other != 0 and r.store.lines() == before, other)
 
 
 def home_cases():

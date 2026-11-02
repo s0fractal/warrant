@@ -83,13 +83,13 @@ def receiver(a, store):
     return trust, profile, (doc or {}).get("repository")
 
 
-def signer(a):
+def signer(a, kind=None):
     seed = Path(home(a.key)).read_text() if a.key else os.environ.get("WARRANT_KEY")
     if not seed:
         raise Refused("a signing seed is needed: --key FILE or WARRANT_KEY")
     key = K.Key.from_seed_hex(seed)
     trust = json.loads(Path(here(a.trust)).read_text()) if a.trust else receiver(a, store_dir(a))[0]
-    if key.public not in trust["keys"].get(a.actor, []):
+    if key.public not in trust["keys"].get(a.actor, []) and not (kind == "challenge" and a.actor == f"key:{key.public}"):
         raise Refused(f"the trust does not bind this key to {a.actor!r}")
     return key, trust
 
@@ -97,7 +97,7 @@ def signer(a):
 def put(a, kind, body, schema=None, lineage=None, refs=(), guard=None):
     if kind == "schema" and E._schema_problem(body):     # it would lie in the store for good and never count
         raise Refused(f"SCHEMA_NOT_COUNTED: {E._schema_problem(body)}")
-    key, trust = signer(a)
+    key, trust = signer(a, kind)
     at = a.at if a.at is not None else int(time.time())
     r = R.record(kind, a.actor, at, body, schema=schema, lineage=lineage, refs=refs, guard=guard)
     return Store(store_dir(a)).append(r, key, trust, expect_head=a.expect_head)
