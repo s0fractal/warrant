@@ -21,8 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COPY = ROOT / "build" / "mutants"
 TMP = ROOT / "build" / "mutants-tmp"          # outside the copy: fixtures' homes and seeds lie outside its repository
-CORE, AGENT, GATE, TOOLS, PILOT, WAKER = ("tests/core_test.py", "tests/agent_test.py", "tests/gate_test.py",
-                                          "tests/tools_test.py", "tests/pilot_test.py", "integrations/warrant-review/test_plugin.py")
+CORE, AGENT, GATE, TOOLS, WAKER = ("tests/core_test.py", "tests/agent_test.py", "tests/gate_test.py",
+                                   "tests/tools_test.py", "integrations/warrant-review/test_plugin.py")
 E, S, RC = "warrant/engine.py", "warrant/store.py", "warrant/records.py"
 SHAPES_TEST = "tests/shapes_test.py"
 E, S, RC, DR = "warrant/engine.py", "warrant/store.py", "warrant/records.py", "warrant/drift.py"
@@ -421,52 +421,6 @@ MUTANTS = [
      "            if not (isinstance(branch, str) and PR_BRANCH.match(branch)):\n                raise Unpublished(f\"{str(branch)[:40]!r} is not a pull request branch to push to\")\n            if not (isinstance(version, str)", WAKER, ["W20"]),
     ("P13", "integrations/warrant-review/install.py", "    if path.exists():", "    if False:", WAKER, ["C14"]),
 ]
-
-# The G9 pilot (warrant_pilot/pilot.py, tools/pilot.py): Warrant 2's ids and replacements, kept so that the pilot
-# contract (tools/pilot-contract.json, docs/PILOT.md) cites the same mutants.
-PILOT_MUTANTS = [
-    ('M568', 'warrant_pilot/pilot.py', '            if C.digest(data) != h:\n', '            if False:\n', PILOT, ['A2']),
-    ('M569', 'warrant_pilot/pilot.py', '                raise _Stop("DIGEST_MISMATCH", address,', '                continue\n                raise _Stop("DIGEST_MISMATCH", address,', PILOT, ['A2']),
-    ('M570', 'warrant_pilot/pilot.py', '        if value is None:\n            raise _Stop("KIND_MISMATCH"', '        if False:\n            raise _Stop("KIND_MISMATCH"', PILOT, ['A3', 'A5']),
-    ('M571', 'warrant_pilot/pilot.py', '    if not (sep and S.hex64(h)):', '    if not (sep and len(h) == 64):', PILOT, ['A4', 'D4']),
-    ('M572', 'warrant_pilot/pilot.py', 'os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent', 'os.O_RDONLY | os.O_DIRECTORY, dir_fd=parent', PILOT, ['A6', 'A10']),
-    ('M573', 'warrant_pilot/pilot.py', '        self.kinds = {k: KINDS[k] for k in names}', '        self.kinds = dict(KINDS)', PILOT, ['A7']),
-    ('M574', 'warrant_pilot/pilot.py', '        return verify(res) if res["result"] == RESOLVED else res', '        return verify(res)', PILOT, ['D3']),
-    ('M575', 'warrant_pilot/pilot.py', '                if dep in on_path:\n', '                if False:\n', PILOT, ['D5']),
-    ('M576', 'warrant_pilot/pilot.py', '                if dep in objects:\n', '                if dep in objects:\n                    used["edges"] -= 1\n', PILOT, ['D6']),
-    ('M577', 'warrant_pilot/pilot.py', '                    L.admit(lim, "pilot_depth", len(path) + height[dep])\n', '', PILOT, ['D7', 'D11']),
-    ('M578', 'warrant_pilot/pilot.py', '            admit(st.st_size)\n', '', PILOT, ['D9']),
-    ('M579', 'warrant_pilot/pilot.py', '        L.admit(lim, "pilot_objects", len(objects) + 1)\n', '', PILOT, ['D6']),
-    ('M580', 'warrant_pilot/pilot.py', ',\n            f"sigma-checkpoint:{doc[\'checkpoint\']}", f"sigma-state:{doc[\'state\']}"]', ']', PILOT, ['D1', 'D2']),
-    ('M581', 'warrant_pilot/pilot.py', '    why = P.receipt_problem(doc)\n    if why:\n        raise ValueError(why)\n', '', PILOT, ['D8', 'D3']),
-    ('M582', 'warrant_pilot/pilot.py', '    if set(doc) != {"schema", "requires"}:', '    if False:', PILOT, ['A8']),
-    ('M583', 'warrant_pilot/pilot.py', '"MISSING": INCONCLUSIVE', '"MISSING": REFUSED', PILOT, ['D2', 'A5', 'A6']),
-    ('M584', 'warrant_pilot/pilot.py', '    if v["provider"] != P.identity_of_files(mods):', '    if False:', PILOT, ['F3']),
-    ('M585', 'warrant_pilot/pilot.py', 'set(doc) == PROFILE_FIELDS and', 'PROFILE_FIELDS <= set(doc) and', PILOT, ['F3']),
-    ('M586', 'warrant_pilot/pilot.py', 'all(S.hex64(x) for x in mods.values())', 'all(isinstance(x, str) for x in mods.values())', PILOT, ['F3']),
-    ('M587', 'warrant_pilot/pilot.py', '\n            and v == sorted(set(v)))', ')', PILOT, ['F3']),
-    ('M588', 'warrant_pilot/pilot.py', '    return C.doc_id(doc)\n', '    return C.doc_id({k: v for k, v in doc.items() if k != "axioms"})\n', PILOT, ['F1', 'F2']),
-    ('M589', 'warrant_pilot/pilot.py', 'set(v) == VERIFIER_FIELDS', 'VERIFIER_FIELDS <= set(v)', PILOT, ['F3']),
-    ('M591', 'warrant_pilot/pilot.py', '        return (name[:2], name[2:])', '        return (name[:2], name)', PILOT, ['A1']),
-    ('M592', 'warrant_pilot/pilot.py', '                if dep in objects:\n', '                if False:\n', PILOT, ['D1']),
-    ('M593', 'warrant_pilot/pilot.py', '            doc = C.loads(data)', '            doc = C.loads(C.canon(C.json.loads(data)))', PILOT, ['F4', 'A3']),
-    ('M600', 'warrant_pilot/pilot.py', '"UNKNOWN_KIND": INCONCLUSIVE', '"UNKNOWN_KIND": REFUSED', PILOT, ['A7', 'D4']),
-    ('M601', 'warrant_pilot/pilot.py', '"assumptions": sorted(set(assumptions))}', '"assumptions": sorted(set(assumptions))[:1]}', PILOT, ['F1']),
-    ('M602', 'warrant_pilot/pilot.py', 'os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd', 'os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd', PILOT, ['A9']),
-    ('M604', 'warrant_pilot/pilot.py', '                    admit(len(data))\n', '', PILOT, ['D9']),
-    ('M605', 'warrant_pilot/pilot.py', '                    more = f.read(1 << 16)', '                    more = b""', PILOT, ['D10']),
-    ('M606', 'warrant_pilot/pilot.py', '        except ValueError:\n            return None', '        except C.NotCanonical:\n            return None', PILOT, ['A11']),
-    ('M607', 'warrant_pilot/pilot.py', '        if limits is not None and not isinstance(limits, dict):', '        if False:', PILOT, ['A12']),
-    ('M608', 'warrant_pilot/pilot.py', 'isinstance(s["layout"], str) and s["layout"] in LAYOUTS', 's["layout"] in LAYOUTS', PILOT, ['A12']),
-    ('M594', 'tools/pilot.py', 'out.append(("UNKNOWN_CASE", f"{r[\'id\']} cites {t}, not a case of {TEST}"))', 'pass', PILOT, ['K2']),
-    ('M595', 'tools/pilot.py', '        elif m[4] != TEST or not set(m[5]) & set(r["tests"]):', '        elif False:', PILOT, ['K2']),
-    ('M596', 'tools/pilot.py', '    if "deferred" in r and r["deferred"] not in cards:', '    if False:', PILOT, ['K2']),
-    ('M597', 'tools/pilot.py', '    if view != render(contract, cards):', '    if False:', PILOT, ['K2']),
-    ('M598', 'tools/pilot.py', 'f"deferred to {row[\'deferred\']}, duty `{str(cards.get(row[\'deferred\']))[:12]}`"', 'f"deferred to {row[\'deferred\']}"', PILOT, ['K1']),
-    ('M643', 'warrant_pilot/pilot.py', [('                    L.admit(lim, "pilot_depth", len(path) + height[dep])\n', ''), ('            height[address] = max((1 + height.get(d, 0) for d in deps), default=0)\n', '            height[address] = max((1 + height.get(d, 0) for d in deps), default=0)\n            L.admit(lim, "pilot_depth", len(path) - 1 + height[address])\n')], None, PILOT, ['D11']),
-    ('M644', 'warrant_pilot/pilot.py', '        if "\\x00" in str(self.root):', '        if False:', PILOT, ['A13']),
-]
-MUTANTS += PILOT_MUTANTS
 
 
 def table():

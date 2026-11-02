@@ -15,10 +15,6 @@ authors = [{ name = "s0fractal" }]
 dependencies = ["cryptography>=41"]
 
 [project.optional-dependencies]
-# The proof-space pilot (warrant_pilot/, roadmap G9, not in the wheel) resolves the objects of one Sigma
-# receipt; its tests run the Sigma provider (sigma_provider in sigma-glyph 0.8.0). Warrant 3 itself
-# replays nothing: a replay is a checker actor's attestation (docs/V3.md §6).
-pilot = ["sigma-glyph==0.8.0"]
 # The thin stdio MCP front end of warrant_agent (`warrant-agent-mcp`), on the official Python SDK; CI and
 # the release test one exact version (mcp==2.3.0, .github/workflows).
 mcp = ["mcp>=2.3,<3"]

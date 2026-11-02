@@ -6,6 +6,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- The proof-space pilot (`warrant_pilot/`, the `pilot` extra, docs/PILOT.md) is retired, at the tag `history/warrant-pilot-2026-11-02`: nothing used it but its own
+  tests, and it was the only reason Warrant 3 installed sigma-glyph. The `pilot` extra is gone.
 - `warrant across` and the agent's `across` (MCP `warrant_across`): one read over every repository registered in Home
   (`stores`, `actor`, `open`, `challenges`, `rests`), each store assessed alone under its own trust and profile. A node is
   one record with one row per store holding it, and trust is never merged. A store that cannot be read is named. Nothing

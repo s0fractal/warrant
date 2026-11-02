@@ -20,7 +20,6 @@ of it (Python API, CLI, stdio MCP).
 - Specification: [docs/V3.md](https://github.com/s0fractal/warrant/blob/master/docs/V3.md)
 - Agents (Python API, CLI, stdio MCP): [AGENT.md](https://github.com/s0fractal/warrant/blob/master/docs/AGENT.md)
 - What earlier generations were, and where they live: [HISTORY.md](https://github.com/s0fractal/warrant/blob/master/docs/HISTORY.md)
-- The proof-space pilot (goal G9), outside the core: [PILOT.md](https://github.com/s0fractal/warrant/blob/master/docs/PILOT.md)
 
 ## Install
 

@@ -40,5 +40,4 @@ references:
     repository-code: "https://github.com/s0fractal/sigma-glyph"
     notes: >-
       Historical: it supplied the sigma-resume kernel of Warrant 2 (commit c864d3e).
-      Warrant 3 does not depend on it; only the repository's pilot (warrant_pilot/,
-      not in the package) still uses it.
+      Warrant 3 does not depend on it.

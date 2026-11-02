@@ -5,17 +5,17 @@ name: ci
 # killed it on its own case. Keep its name.
 #
 # Jobs, all on ubuntu-latest:
-#   wheels    builds the wheelhouse once (warrant from this checkout, the pinned MCP SDK, the pilot's
-#             sigma-glyph) and publishes its digest; every other job installs from it, checked;
+#   wheels    builds the wheelhouse once (warrant from this checkout, the pinned MCP SDK)
+#             and publishes its digest; every other job installs from it, checked;
 #   suites    lint, the core, the agent interface (stdio MCP included), the merge gate, the tools,
-#             the shapes and primitives, the pilot, the public surface and the executable
+#             the shapes and primitives, the public surface and the executable
 #             QUICKSTART.md, the Codex plugin and its waker, the Claude Code plugin bridge;
 #   mutants   tests/mutants.py in four parts (--shard K/4), each checking its targets' baseline first;
 #   replay    tools/review.py verify and tools/claims.py verify: the review replays and the claims
 #             checker's acceptances new since the base, re-executed at their commits, each refused when
 #             its `code` is not the checker's code there (needs the history);
 #   test      the parts merged (refused unless every mutant ran exactly once and was killed), then
-#             the claims, the roadmap and the pilot contract against this tree, and the views of the
+#             the claims and the roadmap against this tree, and the views of the
 #             records rendered three times and compared (build artifacts, uploaded as `views`).
 #
 # A commit that changes only .warrant/ (a review head, Codex's verdict, a replay, acceptances) does not
@@ -68,12 +68,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Wheelhouse (warrant from this checkout, the MCP SDK, sigma-glyph from the pinned release)
+      - name: Wheelhouse (warrant from this checkout, the MCP SDK)
         id: wh
         run: |
           set -euo pipefail
           python -m pip wheel --quiet --no-deps -w "$RUNNER_TEMP/wh" .
-          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0' 'sigma-glyph==0.8.0'
+          python -m pip download --quiet -d "$RUNNER_TEMP/wh" 'cryptography>=41' 'mcp==2.3.0'
           cd "$RUNNER_TEMP/wh"
           sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS"
           mv "$RUNNER_TEMP/SHA256SUMS" .
@@ -104,11 +104,11 @@ jobs:
       - name: Lint (pyflakes rules)
         run: |
           python -m pip install --quiet --only-binary ':all:' 'ruff==0.17.3'
-          python -m ruff check --select F warrant warrant_agent warrant_pilot tools tests integrations/warrant-review
+          python -m ruff check --select F warrant warrant_agent tools tests integrations/warrant-review
 
       - name: The core, the agent interface, the merge gate, the tools
         working-directory: tests
-        run: for t in core agent gate tools shapes primitives pilot; do python "${t}_test.py"; done
+        run: for t in core agent gate tools shapes primitives; do python "${t}_test.py"; done
 
       - name: The public surface and the quickstart
         working-directory: tests
@@ -222,12 +222,11 @@ jobs:
         run: python tests/mutants.py --merge "$RUNNER_TEMP/matrix.json" "$RUNNER_TEMP"/parts/mutants-*.json
 
       # After the mutants, so the mutant ids the claims cite have just been exercised.
-      - name: The claims of docs/V3.md, the roadmap, the pilot contract (records in .warrant/records.jsonl)
+      - name: The claims of docs/V3.md and the roadmap (records in .warrant/records.jsonl)
         run: |
           set -euo pipefail
           python tools/claims.py check
           python tools/roadmap.py check
-          python tools/pilot.py check
 
       - name: Views of the records (CLAIMS.md, ROADMAP.md, REVIEWS.md), deterministic
         run: python tools/graph.py views --check

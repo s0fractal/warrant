@@ -21,7 +21,6 @@ this repository's records, its `tools/`, the waker and the tests do not (`tests/
 | `warrant/cli.py`, `warrant/graph.py` | the one command `warrant` (the core's verbs, `status`, and `review`, `gate`, `claims`, `roadmap`), and the queries over a report's graph that `status`, the agent's `graph` and `tools/graph.py` share |
 | `warrant/across.py` | one read over every registered store, each assessed alone (docs/HOME.md, `warrant across`, the agent's `across`) |
 | `warrant_agent/` | the agent interface: Python API, CLI, stdio MCP (docs/AGENT.md, docs/V3.md §13) |
-| `warrant_pilot/` | the proof-space pilot, G9 (docs/PILOT.md); not in the wheel |
 | `.warrant/records.jsonl`, `.warrant/blobs/` | the repository's records; `merge=union -text` (`.gitattributes`) |
 | `.warrant/v3.json` | trust and profile (owner path) |
 | `.warrant/merge.json` | the merge gate's configuration and the owner paths (owner path) |
@@ -50,11 +49,10 @@ python3 tests/core_test.py            # the engine, store and records (docs/V3.m
 python3 tests/agent_test.py           # the agent interface (§13); M01 needs the MCP SDK
 python3 tests/gate_test.py            # the merge gate (§14)
 python3 tests/tools_test.py           # claims, review replay, roadmap (§14)
-python3 tests/pilot_test.py           # the pilot (needs sigma-glyph 0.8.0)
 python3 tests/boundary_test.py        # the public surface; python3 tests/quickstart_test.py: QUICKSTART.md
 python3 integrations/warrant-review/test_plugin.py
 python3 tests/mutants.py --shard 1/4 --matrix part-1.json    # ... 4/4, then --merge
-python3 tools/claims.py check && python3 tools/roadmap.py check && python3 tools/pilot.py check
+python3 tools/claims.py check && python3 tools/roadmap.py check
 python3 tools/review.py verify --base <base commit>          # replays new since the base, re-executed
 python3 tools/claims.py verify --base <base commit>          # claims checker acceptances new since the base, re-executed
 python3 tools/graph.py views --check                         # build/views/*.md, deterministic
