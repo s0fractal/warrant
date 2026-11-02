@@ -252,8 +252,9 @@ def files_of(b, root, known, tree):
     """What an acceptance of claim body `b` runs on, {path: blob} of `tree`: each witness's test file, each mutant's
     mutated file and test file, as `known` (this checkout's harness) and this checkout's witness patterns place them,
     with every link of a symlink chain and the file it ends at (Codex finding f4729a41b788): a link's blob is only its
-    target's name. None when a path reaches its file some other way (a linked directory, a link leaving the tree):
-    what ran cannot be named, and the checker accepts nothing on it."""
+    target's name. None when any of them cannot be named: a path reaching its file some other way (a linked directory,
+    a link leaving the tree) or not in `tree`. A partial list is never signed (Codex finding f328c7477354): the checker
+    accepts nothing on what it cannot name."""
     tests, paths = witness_files(root), set()
     for w in b["witnesses"]:
         name = w.split(":")[0]
@@ -261,22 +262,22 @@ def files_of(b, root, known, tree):
             paths.add(tests[name].relative_to(root).as_posix())
     for m in b["mutants"]:
         paths.update(known.get(m, [])[:2])
-    chains = [_link_chain(root, p) for p in sorted(paths)]
-    if None in chains:
+    chains = [_link_chain(root, p) for p in sorted({os.path.normpath(p) for p in paths})]
+    if None in chains or any(p not in tree for chain in chains for p in chain):
         return None
-    return {p: tree[p] for chain in chains for p in chain if p in tree}
+    return {p: tree[p] for chain in chains for p in chain}
 
 
 def _link_chain(root, path):
-    """[`path`, each link it passes through, the file it ends at], all repository paths; None when the checkout does
-    not reach the file by exactly those paths."""
+    """[`path`, each link it passes through, the file it ends at], all repository paths; None for a cycle or a link
+    leaving the tree."""
     base, chain = Path(root).resolve(), [path]
     while (base / chain[-1]).is_symlink():
         step = os.path.normpath(os.path.join(os.path.dirname(chain[-1]), os.readlink(base / chain[-1])))
         if step in chain or os.path.isabs(step) or step.startswith(".."):
             return None
         chain.append(step)
-    return chain if (base / chain[-1]).resolve() == base / chain[-1] else None
+    return chain
 
 
 def at_tree(root, commits, here):

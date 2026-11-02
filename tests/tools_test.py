@@ -79,6 +79,8 @@ def checker_repo():
     """A committed claims repository whose `.warrant/v3.json` binds a key to the claims checker, a claim/verifier."""
     r = claims_repo()
     (r.root / ".gitignore").write_text("/build/\n")
+    (r.root / "mutated.py").write_text("X = 0\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "mutated.py"))
     r.trust["keys"][CL.CHECKER] = [CHECKER_KEY.public]
     r.profile["roles"]["claim/verifier"] = sorted(["carol", CL.CHECKER])
     r.write_config()
@@ -548,6 +550,22 @@ def drift_cases():
     same, same_rel = gated(r, L)
     check("DR14 a regular file turned into a symlink with the same blob id is not unchanged (Codex finding ea6300ecf5d5 on #266)",
           same.get("verdict") == "CHANGED" and same_rel == D.STALE, (same, same_rel))
+    def named_as(path):
+        """(acceptances, drift verdict after lib/code.py changes) of a harness naming the mutated file as `path`."""
+        r = checker_repo()
+        (r.root / "lib").mkdir()
+        (r.root / "lib" / "code.py").write_text("X = 1\n")
+        (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", path))
+        L = claim(r)
+        r.commit("a claim")
+        filed = CL.replay(RP.Repo(r.root), CHECKER_KEY)
+        r.commit("its acceptance, if any")
+        (r.root / "lib" / "code.py").write_text("X = 2\n")
+        r.commit("the mutated file changes")
+        return len(filed), gated(r, L)[1]
+    dotted, absent = named_as("./lib/code.py"), named_as("lib/no-such-file.py")
+    check("DR15 a path is pinned as the tree spells it, and a named file not in the tree makes no acceptance: a partial list is never "
+          "signed (Codex finding f328c7477354 on #266)", dotted == (1, D.STALE) and absent[0] == 0, (dotted, absent))
     r, L = drift_repo()
     marker = r.home / "ran-repository-code"
     (r.root / "tests" / "mutants.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('x')\nprint('{{}}')\n")
