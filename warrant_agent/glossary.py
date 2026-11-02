@@ -11,6 +11,10 @@ TERMS = {
                  "It does not establish that the source is complete (completeness stays UNATTESTED). " + NOT_TRUTH),
     "CHALLENGED": ("A challenge this receiver counts stands against the lineage's effective version.",
                    "It does not establish that the challenge is right; it holds reliance until a successor is effective."),
+    "STALE": ("In a repository's checkout: the lineage is a claim whose every claims checker acceptance names a commit "
+              "where its witness or mutant files are not the bytes at this checkout's HEAD (warrant.drift, G14). It is "
+              "not ELIGIBLE until the checker accepts it again at a commit holding those bytes.",
+              "It does not establish that the claim is false: only that what was checked is not what is here."),
     "FORK": ("Two admitted versions succeed the same version: the lineage has no leaf and no state (§3). As a lineage "
              "verdict, every branch is listed and nothing is excluded.", "Neither branch is preferred."),
     # guard verdicts (§6)

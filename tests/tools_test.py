@@ -20,6 +20,7 @@ from world import KEYS, ROOT, Repo, check, finish, git
 from warrant import claims as CL
 from warrant import cli as CLI
 from warrant import differential as DF
+from warrant import drift as D
 from warrant import engine as E
 from warrant import jcs as JCS
 from warrant import home as H
@@ -78,6 +79,8 @@ def checker_repo():
     """A committed claims repository whose `.warrant/v3.json` binds a key to the claims checker, a claim/verifier."""
     r = claims_repo()
     (r.root / ".gitignore").write_text("/build/\n")
+    (r.root / "mutated.py").write_text("X = 0\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "mutated.py"))
     r.trust["keys"][CL.CHECKER] = [CHECKER_KEY.public]
     r.profile["roles"]["claim/verifier"] = sorted(["carol", CL.CHECKER])
     r.write_config()
@@ -386,6 +389,219 @@ def preflight_cases():
     check("C15 CI refuses a checker acceptance whose commit fails the claims check there, though the head passes it",
           good == ([], None, []) and bad[0] == ["CLAIM_TEXT_MISSING"] and bad[2] == [] and bad[1] is not None
           and "CLAIM_PREFLIGHT" in bad[1], (good, bad))
+
+
+def drift_repo():
+    """A checker repository whose harness mutates lib/code.py; the claim is accepted by the claims checker at the head."""
+    r = checker_repo()
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    L = claim(r)
+    r.commit("a claim")
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("its acceptance")
+    return r, L
+
+
+def gated(r, L):
+    """(drift answer, reliance) of claim lineage L at r's head."""
+    rep = RP.Repo(r.root).report()
+    d = D.gate(rep, r.root)
+    return d.get(L, {}), rep["lineages"][L]["reliance"]
+
+
+def drift_cases():
+    from warrant_agent import api
+    from warrant_agent.config import Config
+    def agent(r):
+        return Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"repo": str(r.root), "operations": ["context", "graph"]}}})
+    r, L = drift_repo()
+    rep = RP.Repo(r.root).report()
+    pin = next(x["body"].get("files") for x in rep["_recs"].values() if x["kind"] == "attest" and x["actor"] == CL.CHECKER)
+    (r.root / "README").write_text("unrelated\n")
+    r.commit("an unrelated file")
+    d0, rel0 = gated(r, L)
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    x = r.commit("the mutated file changes")
+    d1, rel1 = gated(r, L)
+    ctx = api.call(agent(r), "context", {"workspace": "w", "targets": [L]})
+    seen = ctx.get("ok", {}).get("targets", {}).get(L, {}).get("lineage", {}).get("reliance")
+    text = D.lines({L: d1})
+    shown = CL.view(RP.Repo(r.root).report(), r.root)
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("accepted again")
+    d2, rel2 = gated(r, L)
+    check("DR1 a claim whose accepted mutant or witness files are other bytes at HEAD is STALE, not ELIGIBLE, in the drift answer, "
+          "in claims view and in the agent's context, until the claims checker accepts it again (G14 obligation 055751e2); the "
+          "acceptance names the files it ran on", set(pin or {}) == {"lib/code.py", "tests/q_test.py"}
+          and d0.get("verdict") == "UNCHANGED" and rel0 == "ELIGIBLE" and d1.get("verdict") == "CHANGED" and rel1 == D.STALE
+          and seen == D.STALE and f"; {D.STALE})" in shown and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE",
+          (pin, d0, rel0, d1, rel1, seen, d2, rel2))
+    check("DR2 the drift answer leads with the verdict on the bytes and names the first commit after the accepted one that "
+          "changed the file (obligation a476855f)",
+          text.startswith("CHANGED ") and {"verdict": "CHANGED", "path": "lib/code.py", "detail": f"since {x[:12]}"} in d1.get("files", [])
+          and "lib/code.py" in text.splitlines()[1] and "STALE" in text.splitlines()[0], (text, d1))
+    r, L = drift_repo()
+    git(r.root, "mv", "lib/code.py", "lib/moved.py")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/moved.py"))
+    r.commit("the mutated file moves, its bytes unchanged")
+    d, rel = gated(r, L)
+    text = D.lines({L: d})
+    check("DR3 a file moved with its bytes unchanged reads as unchanged, at its new path, and the claim stays ELIGIBLE",
+          d.get("verdict") == "UNCHANGED" and rel == "ELIGIBLE" and text.startswith("unchanged ")
+          and {"verdict": "MOVED", "path": "lib/code.py", "detail": "now at lib/moved.py"} in d.get("files", [])
+          and "unchanged, moved: now at lib/moved.py (was lib/code.py)" in text, (d, rel, text))
+    r = checker_repo()
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    L = claim(r)
+    base = r.commit("a claim")
+    plain = {"target": L, "verdict": "accept", "commit": base, "tree": git(r.root, "rev-parse", f"{base}^{{tree}}"), **RP.identity(r.root),
+             "witnesses": ["q_test:Q1"], "mutants": ["Z1"]}
+    put_as(r, CL.CHECKER, plain, [L])
+    r.commit("an acceptance naming no files")
+    d, rel = gated(r, L)
+    again = CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("accepted again")
+    d2, rel2 = gated(r, L)
+    bare = Repo()
+    check("DR4 an acceptance naming no files compares nothing: UNKNOWN, the claim is not ELIGIBLE, and the checker accepts it again "
+          "though its tree is unchanged; a checkout without claims has no drift answer",
+          d.get("verdict") == "UNKNOWN" and rel == D.STALE and len(again) == 1 and d2.get("verdict") == "UNCHANGED" and rel2 == "ELIGIBLE"
+          and D.drift(RP.Repo(bare.root).report(), bare.root) == {}, (d, rel, again, d2, rel2))
+    def accepted_with(**named):
+        """(drift answer, reliance) of a fresh claim whose one acceptance names these members."""
+        r = checker_repo()
+        (r.root / "lib").mkdir()
+        (r.root / "lib" / "code.py").write_text("X = 1\\n")
+        (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+        L = claim(r)
+        base = r.commit("a claim")
+        put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": base, "tree": git(r.root, "rev-parse", f"{base}^{{tree}}"),
+                               **RP.identity(r.root), "witnesses": ["q_test:Q1"], "mutants": ["Z1"], **named}, [L])
+        (r.root / "lib" / "code.py").write_text("X = 2\\n")
+        r.commit("an acceptance, and the file changes")
+        return (r, L, *gated(r, L))
+    _, _, empty, empty_rel = accepted_with(files={})
+    check("DR8 an acceptance naming an empty list of files is UNKNOWN, not vacuously fresh", empty.get("verdict") == "UNKNOWN"
+          and empty_rel == D.STALE, (empty, empty_rel))
+    _, _, shaped, shaped_rel = accepted_with(files="lib/code.py")
+    _, _, listed, listed_rel = accepted_with(files={"lib/code.py": ["not a blob"]})
+    check("DR9 an acceptance whose files are not {path: blob} is UNKNOWN: the read does not crash on a record",
+          shaped.get("verdict") == "UNKNOWN" and shaped_rel == D.STALE and listed.get("verdict") == "UNKNOWN" and listed_rel == D.STALE,
+          (shaped, listed))
+    r, L = drift_repo()
+    out = r.home / "written-by-git"
+    (r.root / "lib" / "code.py").write_text("X = 3\\n")
+    r.commit("the file changes")
+    put_as(r, CL.CHECKER, {"target": L, "verdict": "accept", "commit": f"--output={out}", "witnesses": ["q_test:Q1"], "mutants": ["Z1"],
+                           "files": {"lib/code.py": "0" * 40}}, [L])
+    r.commit("an acceptance whose commit is an option")
+    d, rel = gated(r, L)
+    check("DR10 a commit named by a record reaches Git only as a commit id: one shaped as an option writes nothing",
+          not list(r.home.glob("written-by-git*")) and rel == D.STALE, (d, rel))
+    r = checker_repo()
+    (r.root / "lib").mkdir()
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    (r.root / "tests" / "q_test.py").rename(r.root / "tests" / "witness_body.py")
+    (r.root / "tests" / "q_test.py").symlink_to("witness_body.py")
+    L = claim(r)
+    r.commit("a witness reached through an internal link")
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    r.commit("its acceptance")
+    before, rel_before = gated(r, L)
+    (r.root / "tests" / "witness_body.py").write_text(TEST.replace("Q2 another", "Q2 changed"))
+    r.commit("the file the link ends at changes, the link does not")
+    after, rel_after = gated(r, L)
+    check("DR11 an acceptance names the file a symlink witness ends at, not only the link: changing it is STALE (Codex finding "
+          "f4729a41b788 on #266)", before.get("verdict") == "UNCHANGED" and rel_before == "ELIGIBLE" and after.get("verdict") == "CHANGED"
+          and rel_after == D.STALE and {"verdict": "CHANGED", "path": "tests/witness_body.py"}.items() <= next(
+              (f for f in after.get("files", []) if f["path"] == "tests/witness_body.py"), {}).items(), (before, after, rel_after))
+    r = checker_repo()
+    (r.root / "real").mkdir()
+    (r.root / "real" / "code.py").write_text("X = 1\n")
+    (r.root / "lib").symlink_to("real")
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/code.py"))
+    claim(r)
+    r.commit("a mutated file reached through a linked directory")
+    named = CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    check("DR12 a file reached through a linked directory cannot be named, so the checker accepts nothing on it", named == [], named)
+    r, L = drift_repo()
+    cfg = agent(r)
+    req = {"workspace": "w", "op": "around", "target": L}
+    g0 = api.call(cfg, "graph", req)["ok"]
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    r.commit("only the head's source changes, the store stays the same")
+    g1 = api.call(cfg, "graph", req)["ok"]
+    c1 = api.call(cfg, "context", {"workspace": "w", "targets": [L]})["ok"]
+    check("DR13 a graph answer's identity binds the checkout that decided STALE: same root, another lens; context names the checkout "
+          "too (Codex finding ccc4e8145ed2 on #266)", g0["data"]["node"]["lineage"]["reliance"] == "ELIGIBLE"
+          and g1["data"]["node"]["lineage"]["reliance"] == D.STALE and g0["root"] == g1["root"] and g0["lens"] != g1["lens"]
+          and c1.get("checkout", {}).get("tree") == git(r.root, "rev-parse", "HEAD^{tree}"), (g0["lens"], g1["lens"], c1.get("checkout")))
+    r, L = drift_repo()
+    held_bytes = (r.root / "lib" / "code.py").read_text()
+    (r.root / "lib" / "code.py").unlink()
+    (r.root / "lib" / "code.py").symlink_to(held_bytes)
+    (r.root / "lib" / held_bytes).write_text("X = 999\n")
+    r.commit("an accepted file becomes a link with the same blob id, reading other bytes")
+    same, same_rel = gated(r, L)
+    check("DR14 a regular file turned into a symlink with the same blob id is not unchanged (Codex finding ea6300ecf5d5 on #266)",
+          same.get("verdict") == "CHANGED" and same_rel == D.STALE, (same, same_rel))
+    def named_as(path):
+        """(acceptances, drift verdict after lib/code.py changes) of a harness naming the mutated file as `path`."""
+        r = checker_repo()
+        (r.root / "lib").mkdir()
+        (r.root / "lib" / "code.py").write_text("X = 1\n")
+        (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", path))
+        L = claim(r)
+        r.commit("a claim")
+        filed = CL.replay(RP.Repo(r.root), CHECKER_KEY)
+        r.commit("its acceptance, if any")
+        (r.root / "lib" / "code.py").write_text("X = 2\n")
+        r.commit("the mutated file changes")
+        return len(filed), gated(r, L)[1]
+    dotted, absent = named_as("./lib/code.py"), named_as("lib/no-such-file.py")
+    check("DR15 a path is pinned as the tree spells it, and a named file not in the tree makes no acceptance: a partial list is never "
+          "signed (Codex finding f328c7477354 on #266)", dotted == (1, D.STALE) and absent[0] == 0, (dotted, absent))
+    r, L = drift_repo()
+    marker = r.home / "ran-repository-code"
+    (r.root / "tests" / "mutants.py").write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('x')\nprint('{{}}')\n")
+    r.commit("a harness that leaves a mark when it is run")
+    api.call(agent(r), "context", {"workspace": "w", "targets": [L]})
+    api.call(agent(r), "graph", {"workspace": "w", "op": "around", "target": L})
+    d, rel = gated(r, L)
+    D.lines({L: d})
+    check("DR5 reading context, graph and the drift answer runs no code of the repository's: its mutant harness is not executed "
+          "(Codex finding c589d17da0f3 on #266)", not marker.exists() and d.get("verdict") == "UNCHANGED" and rel == "ELIGIBLE", (d, rel))
+    r, L = drift_repo()
+    (r.root / "lib" / "old.py").write_text("X = 1\n")
+    r.commit("a copy of the accepted bytes")
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    r.commit("the accepted file changes")
+    _, before = gated(r, L)
+    (r.root / "tests" / "mutants.py").write_text(HARNESS.replace("warrant/engine.py", "lib/old.py"))
+    r.commit("the harness retargets the mutant to the copy, no acceptance")
+    d, after = gated(r, L)
+    check("DR6 editing the mutant harness does not refresh an acceptance: the file it ran on still changed (Codex finding "
+          "0e7a05e8832c on #266)", before == D.STALE and after == D.STALE and d.get("verdict") == "CHANGED", (before, after, d))
+    r, L = drift_repo()
+    rp = RP.Repo(r.root)
+    base = git(r.root, "rev-parse", "HEAD")
+    tree = git(r.root, "rev-parse", "HEAD^{tree}")
+    honest = {"target": L, "verdict": "accept", "commit": base, "tree": tree, **RP.identity(r.root), "witnesses": ["q_test:Q1"], "mutants": ["Z1"]}
+    true_pin = CL.files_of({"witnesses": ["q_test:Q1"], "mutants": ["Z1"]}, r.root, CL.harness(r.root), CL.blobs(r.root, base))
+    put_as(r, CL.CHECKER, dict(honest, files=true_pin), [L])
+    r.commit("an acceptance naming what its commit lists")
+    kept = refused_code(CL.verify, rp, base)
+    new = git(r.root, "rev-parse", "HEAD")
+    put_as(r, CL.CHECKER, dict(honest, files={"lib/code.py": "0" * 40}), [L])
+    r.commit("an acceptance naming other files")
+    why = refused_code(CL.verify, rp, new)
+    check("DR7 CI re-executes an acceptance's `files` too: one naming other files than its commit lists for the claim is refused",
+          kept is None and why is not None and "names other files" in why, (kept, why))
 
 
 def review_repo():
@@ -894,6 +1110,7 @@ def differential_cases():
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
+    drift_cases()
     review_cases()
     roadmap_cases()
     cli_cases()
