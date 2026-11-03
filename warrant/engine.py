@@ -95,6 +95,7 @@ class View:
         self._index_attests()
         self._schemas()
         self._bodies()
+        self._pins()
         self._index_attests()
         ents = {i for i, r in self.recs.items() if r["kind"] == "entity"}
         self.root_of, self.lineages = self._lineages(ents, self._may_succeed)
@@ -190,6 +191,28 @@ class View:
                if self.recs[a]["schema"] is None and self.recs[a]["body"].get("verdict") == "accept"}
         out.add(self.recs[i]["actor"])
         return sorted(a for a in out if self.holds(a, SCHEMA_AUTHOR))
+
+    def _pins(self):
+        """§4: a schema's `pinned` member of a lineage's root is an object, and each closing version's guard matches at
+        least that. Decided over the bodies that passed and before any is dropped, so record ids decide nothing."""
+        bad = {}
+        for i, r in sorted(self.recs.items()):
+            s = self.schemas.get(r["schema"]) if r["kind"] == "entity" else None
+            if not (s and s.get("pinned")):
+                continue
+            root, seen = r, {i}
+            while root["lineage"] in self.recs and root["lineage"] not in seen:
+                seen.add(root["lineage"])
+                root = self.recs[root["lineage"]]
+            pin = root["body"].get(s["pinned"])
+            if pin is not None and not isinstance(pin, dict):
+                bad[i] = f"the root's {s['pinned']} is not an object"
+            elif pin and r["body"].get("state") in s["closed"] \
+                    and any((r["guard"] or {"match": {}})["match"].get(k, object()) != v for k, v in pin.items()):
+                bad[i] = f"its guard matches less than its root's {s['pinned']}"
+        for i, why in bad.items():
+            self.problem("INVALID", i, why)
+            self.drop(i, f"INVALID: {why}")
 
     def _bodies(self):
         for i, r in sorted(self.recs.items()):
@@ -466,17 +489,21 @@ def _reliance(lin, eff, standing):
     return "CHALLENGED" if standing.get(eff) else "ELIGIBLE"
 
 
+SCHEMA_MEMBERS = {"name", "fields", "states", "closed", "successors"}
+
+
 def _schema_problem(b):
-    ok = isinstance(b, dict) and set(b) == {"name", "fields", "states", "closed", "successors"} \
+    ok = isinstance(b, dict) and SCHEMA_MEMBERS <= set(b) <= SCHEMA_MEMBERS | {"pinned"} \
         and isinstance(b["name"], str) and 0 < len(b["name"]) <= 100 and b["name"] != R.MIGRATION \
         and isinstance(b["fields"], dict) and all(isinstance(t, str) and t.rstrip("?") in R.TYPES for t in b["fields"].values()) \
         and (b["states"] is None or (isinstance(b["states"], dict) and b["fields"].get("state") == "str"
                                      and all(g is None or R.guard_problem(g) is None for g in b["states"].values()))) \
         and R.is_list(b["closed"], lambda s: isinstance(b["states"], dict) and s in b["states"], True) \
         and isinstance(b["successors"], dict) and all(isinstance(b["states"], dict) and st in b["states"]
-                                                      and R.is_list(rs, S.is_actor, True) for st, rs in b["successors"].items())
+                                                      and R.is_list(rs, S.is_actor, True) for st, rs in b["successors"].items()) \
+        and ("pinned" not in b or (isinstance(b["pinned"], str) and b["fields"].get(b["pinned"]) in ("obj", "obj?")))
     return None if ok else ("a schema body is {name, fields: {member: type}, states: {state: guard|null}|null, closed, "
-                            "successors: {state: [roles]}}")
+                            "successors: {state: [roles]}, pinned?: a member of type obj}")
 
 
 def _body_problem(r, s):

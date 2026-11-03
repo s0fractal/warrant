@@ -130,6 +130,37 @@ def release_cases():
     check("L13 the holder cannot release its own obligation", self_rel not in rep["versions"] and rep["lineages"][o2]["state"] == "open")
 
 
+def pin_cases():
+    """§4, `pinned` (G15, time-lab's N1): the root of a lineage fixes the match of whatever closes it."""
+    w = World()
+    guard = {"quorum": 1, "roles": ["claim/verifier"], "match": {"verdict": "reproduces"}, "requires": []}
+    sch = {"name": "prediction@9", "fields": {"state": "str", "closes_by": "obj?"}, "states": {"open": None, "decided": guard},
+           "closed": ["decided"], "successors": {}, "pinned": "closes_by"}
+    w.put("alice", "schema", sch)
+    D, O = {"verdict": "reproduces", "code": "D"}, {"verdict": "reproduces", "code": "O"}
+    pinned = w.put("alice", "entity", {"state": "open", "closes_by": {"code": "D"}}, "prediction@9")
+
+    def close(root, match, body=None):
+        return w.put("alice", "entity", {"state": "decided", **(body or {})}, "prediction@9", root, guard=dict(guard, match=match))
+    good, other, bare = close(pinned, D), close(pinned, O), close(pinned, {"verdict": "reproduces"})
+    restated = close(pinned, O, {"closes_by": {"code": "O"}})
+    free = w.put("alice", "entity", {"state": "open"}, "prediction@9")
+    any_match = close(free, O)
+    junk = w.put("alice", "entity", {"state": "open", "closes_by": "D"}, "prediction@9")
+    rep = w.report()
+    rej = rep["rejected"]
+    check("P1 a closing version whose guard matches what the lineage's root pinned counts", good not in rej and pinned not in rej and any_match not in rej)
+    check("P2 a closing version with another value, without the member, or restating its own pin is INVALID",
+          all(x in rej and "INVALID" in rej[x] for x in (other, bare, restated)))
+    check("P3 a pinned value in a root that is not an object is INVALID", junk in rej)
+    for name, bad in (("no such member", dict(sch, name="p@2", pinned="nothing")), ("not an object member", dict(sch, name="p@3", pinned="state")),
+                      ("not a name", dict(sch, name="p@4", pinned=["closes_by"])), ("an unknown member", dict(sch, name="p@5", more=1))):
+        w.put("alice", "schema", bad)
+    names = w.report()["schemas"]
+    check("P4 pinned names a member of type obj or obj?; a schema with anything else is not counted",
+          not {"p@2", "p@3", "p@4", "p@5"} & set(names) and "prediction@9" in names)
+
+
 def schema_cases():
     w = World()
     w.put("eve", "schema", dict(B.SCHEMAS[0], name="evil@1", states={"backed": None}))
@@ -441,6 +472,7 @@ def migration_cases():
 def main():
     lineage_cases()
     schema_cases()
+    pin_cases()
     guard_cases()
     release_cases()
     challenge_cases()

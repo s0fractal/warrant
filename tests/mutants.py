@@ -50,6 +50,13 @@ MUTANTS = [
      'self.problem("SCHEMA_CONFLICT", name, f"{len(leaves)} schema lineages name it")\n                self.schemas[name] = {"id": leaves[0], **self.recs[leaves[0]]["body"]}\n', CORE, ["S2"]),
     ("V19", E, "    if not R.body_refs(f, b) <= set(r[\"refs\"]):", "    if False:", CORE, ["S8"]),
     # §5 challenges, §6 guard
+    ("V90", E, "        self._pins()\n", "", CORE, ["P2"]),
+    ("V91", E, '.get(k, object()) != v for k, v in pin.items()):', '.get(k, object()) != v for k, v in pin.items() if k != "code"):', CORE, ["P2"]),
+    ("V92", E, 'root, seen = r, {i}\n            while root["lineage"] in self.recs and root["lineage"] not in seen:', 'root, seen = r, {i}\n            while False:', CORE, ["P2"]),
+    ("V93", E, "if pin is not None and not isinstance(pin, dict):", "if False:", CORE, ["P3"]),
+    ("V94", E, 'and ("pinned" not in b or (isinstance(b["pinned"], str) and b["fields"].get(b["pinned"]) in ("obj", "obj?")))', "", CORE, ["P4"]),
+    ("V95", E, 'set(b) <= SCHEMA_MEMBERS | {"pinned"}', "set(b)", CORE, ["P4"]),
+    ("V96", E, 'elif pin and r["body"].get("state") in s["closed"]', 'elif pin', CORE, ["P1"]),
     ("V3", E, 'return any(actor in self.profile["roles"].get(x, []) for x in roles)', "return True", CORE, ["C1", "S1"]),
     ("V4", E, 'out.update((self.recs[cur]["guard"] or {}).get("requires", []))', "pass", CORE, ["G1"]),
     ("V5", E, 'if self.recs[a]["actor"] != r["actor"] and self.holds', "if self.holds", CORE, ["L2"]),
