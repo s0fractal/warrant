@@ -15,6 +15,13 @@
     ".warrant/v3/",
     "AGENTS.md",
     "tools/gate.py",
-    "warrant/gate.py"
+    "warrant/__init__.py",
+    "warrant/engine.py",
+    "warrant/gate.py",
+    "warrant/jcs.py",
+    "warrant/keys.py",
+    "warrant/records.py",
+    "warrant/shapes.py",
+    "warrant/store.py"
   ]
 }

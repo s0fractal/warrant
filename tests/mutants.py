@@ -224,6 +224,8 @@ MUTANTS = [
      "    extra, lines, blobs = tail(root, x, head)", GATE, ["E29"]),
     ("G24", "warrant/gate.py", "    except (subprocess.CalledProcessError, IndexError):\n        return x\n\n\ndef owner_paths",
      "    except IndexError:\n        return x\n\n\ndef owner_paths", GATE, ["E31"]),
+    ("G25", ".warrant/merge.json", '    "warrant/keys.py",\n', "", GATE, ["E32"]),
+    ("G26", ".warrant/merge.json", '    "warrant/__init__.py",\n', "", GATE, ["E32"]),
     ("G3", "warrant/gate.py", "        else:\n            extra.append((path, f\"{status} {old_mode}->{new_mode}\"))", "", GATE, ["E05"]),
     ("G4", "warrant/gate.py", "    if loose:\n        sh.append((\"TAIL_BLOB_UNCITED\"", "    if False:\n        sh.append((\"TAIL_BLOB_UNCITED\"", GATE, ["E07"]),
     ("G5", "warrant/gate.py", "    if stray:\n", "    if False:\n", GATE, ["E08"]),
