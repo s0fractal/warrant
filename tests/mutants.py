@@ -50,6 +50,10 @@ MUTANTS = [
      'self.problem("SCHEMA_CONFLICT", name, f"{len(leaves)} schema lineages name it")\n                self.schemas[name] = {"id": leaves[0], **self.recs[leaves[0]]["body"]}\n', CORE, ["S2"]),
     ("V19", E, "    if not R.body_refs(f, b) <= set(r[\"refs\"]):", "    if False:", CORE, ["S8"]),
     # §5 challenges, §6 guard
+    ("V97", E, ' + ([R.named_key(r)] if R.named_key(r) else [])', "", CORE, ["KN1"]),
+    ("V98", "warrant/records.py", 'return a[4:] if r["kind"] == "challenge" and a.startswith("key:")', 'return a[4:] if a.startswith("key:")', CORE, ["KN3"]),
+    ("T125", "warrant/cli.py", 'and not (kind == "challenge" and a.actor == f"key:{key.public}"):', ":", TOOLS, ["K10"]),
+    ("T126", "warrant/cli.py", 'not (kind == "challenge" and a.actor == f"key:{key.public}")', 'not a.actor == f"key:{key.public}"', TOOLS, ["K11"]),
     ("V90", E, "        self._pins()\n", "", CORE, ["P2"]),
     ("V91", E, '.get(k, object()) != v for k, v in pin.items()):', '.get(k, object()) != v for k, v in pin.items() if k != "code"):', CORE, ["P2"]),
     ("V92", E, 'root, seen = r, {i}\n            while root["lineage"] in self.recs and root["lineage"] not in seen:', 'root, seen = r, {i}\n            while False:', CORE, ["P2"]),

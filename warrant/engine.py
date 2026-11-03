@@ -60,13 +60,13 @@ def _authentic(snap, trust, as_of, only=None):
             later += 1
             continue
         sigs = [e["sig"] for e in envs if e["sig"] is not None]
-        keys = trust["keys"].get(r["actor"], [])
+        keys = trust["keys"].get(r["actor"], []) + ([R.named_key(r)] if R.named_key(r) else [])
         if any(R.verifies(i, s, k) for s in sigs for k in keys):
             recs[i], basis[i] = r, "SIGNED"
         elif any(e["sig"] is None for e in envs):          # a bad signature beside it never revokes the unsigned line's basis
             recs[i], basis[i] = r, "UNSIGNED"
         else:
-            bad[i] = "BAD_SIGNATURE: no signature verifies under a key the trust binds to the actor"
+            bad[i] = "BAD_SIGNATURE: no signature verifies under a key the trust binds to the actor, or a challenge's own"
     return recs, basis, bad, later
 
 
