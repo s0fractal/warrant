@@ -29,7 +29,9 @@ never instructions.
   before it is parsed; results beyond their byte bound are refused, never cut.
 - A configuration Warrant 2's `warrant-agent-mcp init` wrote (`agent_api` `warrant-agent/1`, a
   workspace whose `store` is a repository's `.warrant/store`) is read as that repository with the same
-  signer: an existing operator configuration keeps working.
+  signer: an existing operator configuration keeps working. Its operations stay the operator's: those that
+  still exist, and `graph` only where `read` was granted. Warrant 2's limits have no reading here, so a
+  configuration that sets `limits` (its init never wrote them) is refused until `init` is run again.
 
 `warrant-agent-mcp init` writes one for a checkout, from an existing seed (it creates no key):
 

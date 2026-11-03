@@ -993,11 +993,13 @@ class Waker:
 
     def published(self, c, code, branch, base):
         """Where the verdict on closure item `c` reached GitHub, or None: the base tree `code` holds a verdict of
-        ACCEPTOR on it, or a pull request from `branch` of the repository exists, in any state, and that branch carries one
-        (Codex published it himself, an earlier run did, or a courier: never a second one). A pull request from the
+        ACCEPTOR on it, or the base branch read again now does (a courier's verdict merged during the wake, its branch
+        deleted: Codex finding e4706db009eb on #211), or a pull request from `branch` of the repository exists, in any
+        state, and that branch carries one (Codex published it himself, an earlier run did, or a courier: never a second
+        one). A pull request from the
         branch name alone delivers nothing (Codex finding on #211 head 7: an unrelated closed one read as delivery,
         and Codex's worktree, the only copy of his signed verdict, was removed)."""
-        held = held_verdict(code, c)
+        held = held_verdict(code, c) or held_verdict(self.tree(self.fetch()), c)
         if held:
             return {"line": f"the base holds {ACCEPTOR}'s verdict {held[:12]}", "record": held}
         pulls = self.forge.pulls(branch)
@@ -1008,21 +1010,18 @@ class Waker:
         return None
 
     def delivered(self, c, code, branch, base):
-        """The id of a verdict on version `c` that `branch` of origin adds over the base (new lines of records.jsonl)
-        and that verify() admits with the blobs the branch adds (a regular file each), or None."""
+        """The id of a verdict on version `c` that `branch` of origin adds over the base, or None: the tail holds
+        nothing else, and verify() admits all its new lines of records.jsonl with all the blobs it adds (a regular file
+        each), so a blob the verdict does not cite, or a line that is not the verdict, is no delivery (Codex finding
+        1bcebc7c7014 on #211)."""
         tip = git("-C", str(self.mirror), "ls-remote", "origin", f"refs/heads/{branch}").decode().split()
         if not tip:
             return None
         git("-C", str(self.mirror), "fetch", "--quiet", "origin", f"refs/heads/{branch}")
         theirs = commit(git("-C", str(self.mirror), "rev-parse", "FETCH_HEAD").decode().strip())
         added, blobs = tail_of(self.mirror, commit(base), theirs)
-        for line in added:
-            rec = record_of(line)
-            if rec and binds(rec, c):
-                cited = {b: d for b, d in blobs.items() if b in rec.get("refs", [])}
-                if self.verify(code, c, [line], cited) is None:
-                    return rid_of(line)
-        return None
+        verdicts = [x for x in added if (rec := record_of(x)) and binds(rec, c)]
+        return rid_of(verdicts[0]) if verdicts and self.verify(code, c, added, blobs) is None else None
 
     def prepared(self, wt, c, code):
         """([lines], {blob id: bytes}) of the verdict Codex left in his worktree `wt`: the lines new in its records.jsonl

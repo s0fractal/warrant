@@ -368,6 +368,30 @@ def store_rules():
     linked = r.commit("a link where a blob goes")
     check("W5", WAKER.tail_of(r.root, base, linked) == ([], {}),
           "a branch whose blob is a link (a mode other than a regular file) carries no verdict")
+    home = Path(tempfile.mkdtemp(prefix="codex-waker-delivery-"))
+    subprocess.run(["git", "clone", "-q", "--bare", str(r.root), str(home / "warrant.git")], check=True)
+    w = WAKER.Waker(entry(home, home / "trees"), replayers=home / "no-seeds", codex="/bin/codex", claude="/bin/claude")
+    w.verify = lambda _code, _c, ls, blobs, actor=None: verify(ls, blobs)
+    wgit(r.root, "checkout", "-q", "-b", "extra", "verdict")
+    (r.root / WAKER.BLOBS).mkdir(exist_ok=True)
+    (r.root / WAKER.BLOBS / __import__("hashlib").sha256(b"uncited").hexdigest()).write_bytes(b"uncited")
+    r.commit("the verdict and a blob it does not cite")
+    wgit(r.root, "checkout", "-q", "-b", "two", "verdict")
+    with open(r.root / WAKER.RECORDS, "ab") as fh:
+        fh.write(other)
+    r.commit("the verdict and a line that is not it")
+    got = {b: w.delivered({"closure": d}, code, b, head) for b in ("verdict", "extra", "two")}
+    check("W21", got == {"verdict": WAKER.rid_of(accept), "extra": None, "two": None},
+          "a branch delivers a verdict only if its tail is that verdict alone: an uncited blob or another line is no delivery "
+          "(Codex finding 1bcebc7c7014 on #211)", got)
+    w.forge = type("F", (), {"pulls": staticmethod(lambda _b: [])})
+    was = WAKER.held_verdict(w.tree(base), {"closure": d})
+    wgit(r.root, "checkout", "-q", "master")
+    wgit(r.root, "merge", "-q", "--ff-only", "verdict")
+    now = w.published({"closure": d, "item": 0}, w.tree(base), "gone", base)
+    check("W22", was is None and now is not None and now["record"] in (WAKER.rid_of(accept), f),
+          "a verdict merged during the wake, its branch deleted, is read from the branch as it is now and not published "
+          "again from the stale base (Codex finding e4706db009eb on #211)", (was, now))
     wgit(r.root, "checkout", "-q", "verdict")
     check("W6", WAKER.held_verdict(r.root, {"closure": d}) in (WAKER.rid_of(accept), f) and WAKER.held_verdict(r.root, {"closure": o}) is None,
           "the waker finds a verdict the base holds already on the version, and only on it")

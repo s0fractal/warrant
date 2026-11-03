@@ -96,6 +96,19 @@ def operations():
     p = ok(api.call(v2, "prepare", {"workspace": "w", "kind": "attest", "target": obl, "body": {"verdict": "v2 config"}}))
     check("A10 a configuration Warrant 2's init wrote is read as its repository, with its signer",
           v2.workspaces["w"].repo == repo.root and "ok" in api.call(v2, "commit", {"workspace": "w", "record": p.get("record")}))
+    def v2_of(**over):
+        return Config({"agent_api": "warrant-agent/1", "workspaces": {"w": {
+            "store": str(repo.dot / "store"), "signer": {"actor": "bob", "key": str(repo.seed("bob"))}, **over}}})
+    try:
+        v2_of(limits={"context_bytes": 1})
+        limited = None
+    except ER.AgentError as e:
+        limited = e.code
+    check("A10b a Warrant 2 configuration that sets limits is refused, not read with Warrant 3's defaults (R-LEGACY-CUSTOM-CONFIG)",
+          limited == "UNSUPPORTED_VERSION")
+    narrow, reader = v2_of(operations=["context"]), v2_of(operations=["context", "read", "compute"])
+    check("A10c a Warrant 2 configuration keeps its operations: graph only where read was granted, compute gone",
+          narrow.workspaces["w"].operations == ("context",) and reader.workspaces["w"].operations == ("context", "read", "graph"))
     ro = cfg_of(repo, operations=["context"])
     check("A11 an operation the operator did not permit is refused",
           err(api.call(ro, "prepare", {"workspace": "w", "kind": "attest", "target": obl, "body": {}})) == "NOT_PERMITTED")
