@@ -4,9 +4,12 @@ the exact set of refusal codes (a mutant that removes one rule is seen even wher
 
     python3 tests/gate_test.py
 """
+import ast
 import json
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 from world import KEYS, Repo, check, finish, git
 
@@ -279,7 +282,45 @@ def merge_cases():
           m["merged"] and ok.merged == [head] and m["as_assessed"] and m["dispatched"] == [".github/workflows/ci.yml"], m)
 
 
+def imported_modules(root, start):
+    """The package's modules that `start` reaches through import statements, wherever in a file they stand, with the
+    package's __init__.py, which any import of it runs."""
+    seen, todo = set(), ["warrant/__init__.py", start]
+    while todo:
+        f = todo.pop()
+        if f in seen:
+            continue
+        seen.add(f)
+        for n in ast.walk(ast.parse((root / f).read_text())):
+            names = []
+            if isinstance(n, ast.Import):
+                names = [a.name.removeprefix("warrant.") for a in n.names if a.name.startswith("warrant.")]
+            elif isinstance(n, ast.ImportFrom) and (n.level == 1 or (n.module or "").split(".")[0] == "warrant"):
+                mod = (n.module or "").removeprefix("warrant").lstrip(".")
+                names = [mod] if mod else [a.name for a in n.names]
+            todo += [f"warrant/{x}.py" for x in names if (root / f"warrant/{x}.py").exists()]
+    return seen
+
+
+def closure_cases():
+    root = Path(__file__).resolve().parents[1]
+    closure = imported_modules(root, "warrant/gate.py")
+    listed = json.loads((root / ".warrant" / "merge.json").read_text())["owner_paths"]
+    check("E32 every module the gate imports, directly or through another, is an owner path of this repository",
+          not [f for f in closure if not any(f == e or (e.endswith("/") and f.startswith(e)) for e in listed)], sorted(closure))
+    with tempfile.TemporaryDirectory() as d:
+        w = Path(d) / "warrant"
+        w.mkdir()
+        for name, text in {"__init__": "", "a": "from . import b\n", "b": "def f():\n    from warrant.c import x\n",
+                           "c": "from .d import y\n", "d": "import json\nimport warrant.f\n", "e": "", "f": "from warrant import g\n", "g": ""}.items():
+            (w / f"{name}.py").write_text(text)
+        found = imported_modules(Path(d), "warrant/a.py")
+    check("E33 ... the walk follows each form of import, one inside a function too, through other modules, and reaches no module nothing imports",
+          found == {f"warrant/{x}.py" for x in ("__init__", "a", "b", "c", "d", "f", "g")}, sorted(found))
+
+
 if __name__ == "__main__":
+    closure_cases()
     eligible_cases()
     store_cases()
     schema_cases()
