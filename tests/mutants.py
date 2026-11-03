@@ -213,6 +213,10 @@ MUTANTS = [
      WAKER, ["C15"]),
     ("A12", "warrant_agent/config.py", '                   "operations": ops + ["graph"] * ("read" in ops)}',
      '                   "operations": ops + ["graph"] * ("read" in ops), "signer": None}', AGENT, ["A10"]),
+    ("A91", "warrant_agent/api.py", 'refs += sorted(R.body_refs(s["fields"], body))', "pass", AGENT, ["R01"]),
+    ("A92", "warrant_agent/api.py", 'guard = s["states"].get(body.get("state"))            # the schema\'s minimal guard for the state', "pass", AGENT, ["R01"]),
+    ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
+    ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
     ("G1", "warrant/gate.py", "    if b.gate[\"hold_label\"] in pr[\"labels\"]:", "    if False:", GATE, ["E02"]),
     ("G2", "warrant/gate.py", "        if before - after:\n", "        if False:\n", GATE, ["E06"]),
