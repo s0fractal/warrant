@@ -976,6 +976,27 @@ def refused_home(fn, *a):
         return str(e)
 
 
+def impact_cases():
+    """impact over two reports: a lineage gone from the later one is read in the earlier one, and a blob of the later
+    store with its address hides nothing, a blob being no node (Codex's finding 917018f33b0a on #213, on Warrant 2's graph)."""
+    from warrant import graph as G
+    r = Repo()
+    x = r.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+    rep0 = r.report()
+    rec = next(json.loads(ln)["record"] for ln in r.store.lines() if R.rid(json.loads(ln)["record"]) == x)
+    other = Repo()
+    blob = other.store.put_blob(JCS.canon(rec))
+    other.entity("alice", "obligation@1", {"state": "open", "statement": "t", "serves": []}, refs=[blob])
+    rep1 = other.report()
+    try:
+        got = next(e for e in G.impact(rep0, rep1)["lineages"] if e["lineage"] == x)
+    except (KeyError, StopIteration) as e:
+        got = repr(e)
+    check("DR17 a lineage removed by the later report is read in the earlier one, whatever else has its address",
+          blob == x and x not in {n[0] for n in rep1["graph"]["nodes"]}
+          and isinstance(got, dict) and got["gone"] and got["schema"] == "obligation@1" and got["state"] == "open", got)
+
+
 def differential_cases():
     """warrant.differential (roadmap G12): the published release n and this package on one store."""
     r = Repo(git_init=True)
@@ -1136,5 +1157,6 @@ if __name__ == "__main__":
     roadmap_cases()
     cli_cases()
     home_cases()
+    impact_cases()
     differential_cases()
     sys.exit(finish())

@@ -9,7 +9,9 @@ only by its handle.
 
 A configuration `warrant-agent-mcp init` wrote for Warrant 2 (agent_api warrant-agent/1, its store a
 repository's `.warrant/store`) is read as the same repository with the same signer: an operator's
-existing configuration, and the seed it names, keep working across the switch.
+existing configuration, and the seed it names, keep working across the switch. Its operations stay the
+operator's: those that still exist, and graph only where read was granted, a read. Its init wrote no
+limits; a configuration that sets them is refused, since Warrant 2's limits have no Warrant 3 reading.
 
 With no configuration named, the operator's Home (warrant.home, docs/HOME.md) is the configuration: one workspace
 per registered repository, under its name, signing as its signer with that identity's seed."""
@@ -57,8 +59,11 @@ class Workspace:
             store = Path(str(doc.get("store", "")))
             need(store.name == "store" and store.parent.name == STORE_DIR, "UNSUPPORTED_VERSION",
                  f"workspace {name!r}: a {V2_API} configuration is read only for a repository's .warrant/store")
+            need("limits" not in doc, "UNSUPPORTED_VERSION",
+                 f"workspace {name!r}: a {V2_API} configuration's limits have no reading here; run init again and set them")
+            ops = [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS]
             doc = {"repo": str(store.parent.parent), "signer": doc.get("signer"),
-                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"]}
+                   "operations": ops + ["graph"] * ("read" in ops)}
         if "repo" in doc:
             self.repo = Path(doc["repo"])
             self.store, self.trust_path, self.profile_path = self.repo / STORE_DIR, None, None
