@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 
 from world import KEYS, ROLES, Repo, check, finish
 
@@ -24,6 +25,8 @@ from warrant import engine as E
 from warrant import graph as G
 from warrant import home as H
 from warrant import records as R
+from warrant import repo as RP
+from warrant import roadmap as RM
 from warrant.store import LIMITS
 from warrant_agent import api
 from warrant_agent import cli as CLI
@@ -445,6 +448,62 @@ def memory_cases():
           "--actor without --repo, and --repo without --actor are usage errors, never another configuration",
           shape == {"ok": (0, [name]), "key": (2, "INIT_KEY_NOT_PINNED"), "both": (2, []), "stray": (2, []),
                     "no-actor": (2, [])}, shape)
+
+
+def roadmap_parity_cases():
+    """warrant's own repository through this interface: `init` for a pinned signer, then docs/AGENT.md's recipes for an
+    obligation and its closure and an acceptance write the bytes warrant.roadmap and `warrant attest` write."""
+    tools, agent = Repo(), Repo()
+    goal = [r.entity("alice", "goal@1", {"state": "open", "key": "G1", "text": "goal"}) for r in (tools, agent)][0]
+    I.ROOTS = (agent.home,)
+    workspaces = {}
+    for actor in ("carol", "bob"):
+        out = agent.home / "cfg" / f"{actor}.json"
+        name = I.init(agent.root, actor, agent.seed(actor), out)["workspace"]
+        workspaces[actor] = (Config.load(out), name)
+
+    def filed(actor, **req):
+        cfg, name = workspaces[actor]
+        made = ok(api.call(cfg, "prepare", dict(req, workspace=name)))
+        return ok(api.call(cfg, "commit", {"workspace": name, "record": made.get("record")})).get("id")
+
+    def roadmap(*argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = RP.main(RM.run, ["--root", str(tools.root), *argv])
+        return json.loads(out.getvalue())["filed"][0] if code == 0 else code
+
+    def attest(actor, target):
+        old = os.getcwd()
+        out = io.StringIO()
+        try:
+            os.chdir(tools.home)
+            with contextlib.redirect_stdout(out):
+                code = WCLI.main(["attest", "--store", "repo/.warrant", "--actor", actor, "--key", str(tools.seed(actor)), target])
+        finally:
+            os.chdir(old)
+        return code
+
+    done = {"established": ["what holds"], "residual": ["what does not"]}
+    now, real = 1_900_000_000, time.time
+    time.time = lambda: now
+    try:
+        o1 = roadmap("oblige", "--goal", "G1", "--statement", "owed", "--actor", "carol", "--key", str(tools.seed("carol")))
+        c1 = roadmap("close", "--obligation", o1, "--ref", "s0fractal/warrant#1", "--established", done["established"][0],
+                     "--residual", done["residual"][0], "--actor", "carol", "--key", str(tools.seed("carol")))
+        accepted = attest("bob", c1)
+        body = {"statement": "owed", "answers": goal, "serves": []}
+        o2 = filed("carol", kind="entity", schema="obligation@1", body=dict(body, state="open"))
+        c2 = filed("carol", kind="entity", schema="obligation@1", lineage=o2,
+                   body=dict(body, state="done", evidence=[], refs=["s0fractal/warrant#1"], **done))
+        filed("bob", kind="attest", target=c2, body={"verdict": "accept"})
+    finally:
+        time.time = real
+    same = (o1, c1, accepted) == (o2, c2, 0) and agent.store.lines() == tools.store.lines()
+    rep = RP.Repo(agent.root).report()
+    check("R01 `init` for a pinned signer, then an obligation, its closure and its acceptance through the agent interface "
+          "are the bytes warrant.roadmap and `warrant attest` file, and the roadmap reads the obligation done with no problem",
+          same and rep["lineages"][o2]["state"] == "done" and RM.check(rep) == [], (o1, o2, c1, c2, accepted))
 
 
 def mcp_cases():
@@ -897,6 +956,7 @@ if __name__ == "__main__":
     admission_cases()
     init_cases()
     memory_cases()
+    roadmap_parity_cases()
     mcp_cases()
     home_cases()
     across_cases()
