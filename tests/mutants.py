@@ -200,8 +200,8 @@ MUTANTS = [
     ("P27", "integrations/warrant-review/waker/waker.py", "stdout=out if result else log,", "stdout=log,", WAKER, ["W15"]),
     ("P18", "integrations/warrant-review/skills/warrant-review/scripts/warrant-mcp-call", "    except Exception as e:", "    except ZeroDivisionError as e:",
      WAKER, ["C15"]),
-    ("A12", "warrant_agent/config.py", '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"]}',
-     '                   "operations": [o for o in doc.get("operations", OPERATIONS) if o in OPERATIONS] + ["graph"], "signer": None}', AGENT, ["A10"]),
+    ("A12", "warrant_agent/config.py", '                   "operations": ops + ["graph"] * ("read" in ops)}',
+     '                   "operations": ops + ["graph"] * ("read" in ops), "signer": None}', AGENT, ["A10"]),
     # the merge gate (warrant/gate.py)
     ("G1", "warrant/gate.py", "    if b.gate[\"hold_label\"] in pr[\"labels\"]:", "    if False:", GATE, ["E02"]),
     ("G2", "warrant/gate.py", "        if before - after:\n", "        if False:\n", GATE, ["E06"]),
