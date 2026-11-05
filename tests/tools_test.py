@@ -635,6 +635,75 @@ new file mode 100644
 '''
 
 
+def drift_impact_cases():
+    """`warrant drift --impact` (G14): what a change bears on, from the claims it makes stale."""
+    r, L = drift_repo()
+    rep = RP.Repo(r.root).report()
+    eff = rep["lineages"][L]["effective"]
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "rests on the claim", "serves": [], "evidence": [eff]})
+    o2 = r.entity("alice", "obligation@1", {"state": "open", "statement": "serves the first", "serves": [o]})
+    free = r.entity("alice", "obligation@1", {"state": "open", "statement": "rests on nothing", "serves": []})
+    base = r.commit("two obligations rest on the claim")
+    m0 = D.impact(RP.Repo(r.root).report(), r.root)
+    (r.root / "README").write_text("unrelated\n")
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    head = r.commit("the mutated file changes, and a file no acceptance names")
+    m = D.impact(RP.Repo(r.root).report(), r.root, head, base)
+    text = D.impact_lines(m)
+    check("DR18 the impact answer names each claim a change made stale and every lineage resting on it, transitively, "
+          "and leads with the count; nothing stale reads `impact: 0 affected`",
+          D.impact_lines(m0).startswith("impact: 0 affected\n") and [s["lineage"] for s in m["stale"]] == [L]
+          and m["affected"] == sorted([o, o2]) and free not in m["affected"]
+          and text.startswith("impact: 1 stale claim(s) -> 2 lineage(s) resting on them\n")
+          and {"verdict": "CHANGED", "path": "lib/code.py", "detail": f"since {head[:12]}"} in m["stale"][0]["files"], (m0, m, text))
+    check("DR19 given BASE, the changed files no acceptance names are listed, since nothing resting on them can be seen",
+          m["changed"] == ["README", "lib/code.py"] and m["in_no_acceptance"] == ["README"]
+          and "2 file(s), 1 in no acceptance: README" in text, m)
+    (r.root / "README").write_text("unrelated again\n")
+    later = r.commit("another unrelated change")
+    m2 = D.impact(RP.Repo(r.root).report(), r.root, later, head)
+    check("DR20 a claim already stale at BASE is not the change's: it is listed apart and counts nothing",
+          m2["stale"] == [] and [a["lineage"] for a in m2["already_stale"]] == [L] and D.impact_lines(m2).startswith("impact: 0 affected"), m2)
+    m3 = D.impact(RP.Repo(r.root).report(), r.root, base)
+    check("DR24 the answer is of the commit it names, not of HEAD: at a commit before the change nothing is stale",
+          m3["stale"] == [] and m3["head"] == base and D.checkout(r.root, base)["tree"] == git(r.root, "rev-parse", f"{base}^{{tree}}"), m3)
+    out = r.home / "written"
+    with contextlib.redirect_stderr(io.StringIO()) as err:
+        code = CLI.main(["drift", "--root", str(r.root), f"--impact=--output={out}"])
+    try:
+        D.resolve(r.root, f"--output={out}")
+        shaped = None
+    except RP.Failed as e:
+        shaped = e.code
+    check("DR21 a revision shaped as an option never reaches Git as one: it is refused as no revision and writes nothing",
+          shaped == "BAD_REVISION" and code == 2 and "not a revision" in err.getvalue() and not out.exists(), (shaped, code, err.getvalue()))
+    r, L = drift_repo()
+    rep = RP.Repo(r.root).report()
+    v2 = r.put("alice", "entity", dict(rep["_recs"][L]["body"], because="a second version"), "claim@1", lineage=L,
+               guard=CL.schema_guard(rep, "backed"))
+    r.commit("a second version")
+    CL.replay(RP.Repo(r.root), CHECKER_KEY)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "cites the first version", "serves": [], "evidence": [L]})
+    base = r.commit("a second version, accepted; an obligation cites the first")
+    (r.root / "lib" / "code.py").write_text("X = 3\n")
+    head = r.commit("the mutated file changes")
+    rep = RP.Repo(r.root).report()
+    m = D.impact(rep, r.root, head, base)
+    check("DR22 what rests on a claim is read from every version of it: a record citing an earlier version than the "
+          "effective one is affected, and the claim's own versions are not", rep["lineages"][L]["effective"] == v2
+          and [s["lineage"] for s in m["stale"]] == [L] and m["affected"] == [o], m)
+    other = Repo()
+    far = other.entity("bob", "obligation@1", {"state": "open", "statement": "in another store, cites the effective version",
+                                              "serves": [], "evidence": [v2]})
+    home = {"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}}
+    m = D.impact(RP.Repo(r.root).report(), r.root, head, base, A.home_readings(home))
+    text = D.impact_lines(m)
+    check("DR23 with Home's stores, a record in another store resting on any version of a stale claim is named with its "
+          "store, and this checkout's own store is not counted twice",
+          m["stores"] == ["there"] and [(e["store"], e["lineage"]) for e in m["stale"][0]["elsewhere"]] == [("there", far)]
+          and text.startswith("impact: 1 stale claim(s) -> 1 lineage(s) resting on them -> 1 other store(s)"), (m, text))
+
+
 def review_cases():
     r = review_repo()
     rp = RP.Repo(r.root)
@@ -1153,6 +1222,7 @@ if __name__ == "__main__":
     claims_cases()
     preflight_cases()
     drift_cases()
+    drift_impact_cases()
     review_cases()
     roadmap_cases()
     cli_cases()
