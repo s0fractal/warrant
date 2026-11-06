@@ -60,7 +60,7 @@ git -C ~/Projects/warrant worktree add --detach ~/Projects/.worktrees/review/<A>
 - Start from the claims that moved, where the repository keeps claims (`.warrant/claims.json`): `python3
   -m warrant.claims view` lists every claim of its specification with its witnesses and mutants, and in
   s0fractal/warrant `python3 tools/graph.py impact M..X` names the lineages the changed records bear on
-  and the claims whose mutants change a file the range touches. Then the tests and the mutant harness,
+  and the claims the range makes stale with what rests on them (`warrant drift --impact M..X`). Then the tests and the mutant harness,
   and anything that decides authority or merging: `.github/workflows/`, `.warrant/v3.json`,
   `.warrant/merge.json` and the owner paths it lists, the gate and the engine (`warrant/`).
 - Hunt counterexamples, do not run the suites and stop: green suites are necessary, not sufficient

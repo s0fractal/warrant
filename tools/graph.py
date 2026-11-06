@@ -5,8 +5,8 @@ Markdown views of the records as build artifacts.
     python3 tools/graph.py around ID | path ID | why ID     # a node; what it rests on; what rests on it
     python3 tools/graph.py frontier ACTOR                    # what waits for an actor
     python3 tools/graph.py impact BASE..HEAD                 # the lineages the records changed between two commits
-                                                             # bear on, and the claims whose mutants change a file
-                                                             # the range touches
+                                                             # bear on, and under `drift` the claims the range makes
+                                                             # stale with what rests on them (warrant drift --impact)
     python3 tools/graph.py views [--check]                   # build/views/{CLAIMS,ROADMAP,REVIEWS}.md
 
 A query's result is JSON: {root, lens, query, data}. `root` names the store read (its snapshot digest; with
@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from warrant import claims as CL           # noqa: E402
+from warrant import drift as DR            # noqa: E402
 from warrant import gate as GT             # noqa: E402
 from warrant import review as RV           # noqa: E402
 from warrant import roadmap as RM          # noqa: E402
@@ -56,11 +57,7 @@ def impact(repo, rng):
             raise Failed("STORE", f"{c[:12]}: {problems[:2]}")
         reps.append(repo.report(snap))
     d = G.impact(*reps)
-    changed = set(git("diff", "--name-only", base, head).splitlines())
-    known = CL.harness(repo.root)
-    by_file = {m for m, (f, _, _) in known.items() if f in changed}
-    claims = sorted(b["id"] for b in CL.live(reps[1]).values() if set(b["mutants"]) & by_file)
-    d.update(files=sorted(changed), claims_by_mutated_file=claims)
+    d["drift"] = DR.impact(reps[1], repo.root, head, base)    # the code side: one definition, no harness run
     return reps[1], {"base": base, "head": head}, d
 
 

@@ -353,6 +353,8 @@ MUTANTS = [
     # G14: what a change bears on (warrant drift --impact)
     ("T127", DR, '    for v in rep["lineages"][L]["versions"]:\n        roots |=', '    for v in [rep["lineages"][L]["effective"]]:\n        roots |=', TOOLS, ["DR22"]),
     ("T134", DR, '    for v in rep["lineages"][L]["versions"]:\n        ids, _, _ =', '    for v in [L]:\n        ids, _, _ =', TOOLS, ["DR23"]),
+    ("T136", "tools/graph.py", '    d["drift"] = DR.impact(reps[1], repo.root, head, base)', '    d["drift"] = DR.impact(reps[1], repo.root, head)',
+     TOOLS, ["DR25"]),
     ("T135", DR, '(x.root is None or os.path.realpath(x.root) != os.path.realpath(root))]', 'True]', TOOLS, ["DR23"]),
     ("T128", DR, "    return sorted(roots - {None, L})", "    return sorted(roots - {None})", TOOLS, ["DR22"]),
     ("T129", DR, '        if base and before.get(L, {}).get("verdict") != "UNCHANGED":', "        if False:", TOOLS, ["DR20"]),

@@ -659,6 +659,14 @@ def drift_impact_cases():
     check("DR19 given BASE, the changed files no acceptance names are listed, since nothing resting on them can be seen",
           m["changed"] == ["README", "lib/code.py"] and m["in_no_acceptance"] == ["README"]
           and "2 file(s), 1 in no acceptance: README" in text, m)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("graph_tool", ROOT / "tools" / "graph.py")
+    TG = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TG)
+    _, roots, g = TG.impact(RP.Repo(r.root), f"{base}..{head}")
+    check("DR25 `tools/graph.py impact BASE..HEAD` gives under `drift` the answer `warrant drift --impact BASE..HEAD` gives: "
+          "one definition of what a change makes stale, read from the commits, with no harness run",
+          g.get("drift") == m and "claims_by_mutated_file" not in g and roots == {"base": base, "head": head}, (g.get("drift"), m))
     (r.root / "README").write_text("unrelated again\n")
     later = r.commit("another unrelated change")
     m2 = D.impact(RP.Repo(r.root).report(), r.root, later, head)
@@ -668,8 +676,11 @@ def drift_impact_cases():
     check("DR24 the answer is of the commit it names, not of HEAD: at a commit before the change nothing is stale",
           m3["stale"] == [] and m3["head"] == base and D.checkout(r.root, base)["tree"] == git(r.root, "rev-parse", f"{base}^{{tree}}"), m3)
     out = r.home / "written"
-    with contextlib.redirect_stderr(io.StringIO()) as err:
-        code = CLI.main(["drift", "--root", str(r.root), f"--impact=--output={out}"])
+    with contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()):
+        try:                                 # an exit here must fail DR21, not end the suite before the cases after it
+            code = CLI.main(["drift", "--root", str(r.root), f"--impact=--output={out}"])
+        except SystemExit as e:
+            code = ("exit", e.code)
     try:
         D.resolve(r.root, f"--output={out}")
         shaped = None
