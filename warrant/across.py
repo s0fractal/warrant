@@ -80,7 +80,7 @@ class Reading:
     `root`, a checkout of the store's repository, puts the assessment through the G14 gate."""
 
     def __init__(self, name, read, root=None):
-        self.name, self.why, self.view, self.rep, self.repository = name, None, None, None, None
+        self.name, self.why, self.view, self.rep, self.repository, self.root = name, None, None, None, None, root
         try:
             snap, trust, profile, self.repository = read()
             self.view = E.View(snap, trust, profile)
