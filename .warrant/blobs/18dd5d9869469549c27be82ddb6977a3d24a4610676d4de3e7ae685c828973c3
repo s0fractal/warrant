@@ -1,0 +1,172 @@
+# Codex challenge of witness-ledger obligation version 6faf7345863f15e2d8220309025a9065b834c91e8617fcf638037053383ec101
+
+Base M: 9a090259eb77e5a47c5acdc1c78dd0346f6a2460
+Lineage D: a997b9e40f55c12eaa93ff6315da93dfca7c24c4c48d41a3dd4d258e39a8268a
+Subject X: 3f2be6aa03e584923caae9bd60a38f3687bf2dd7, merge of https://github.com/s0fractal/warrant/pull/170
+
+Verified at M with `python3 -m warrant.roadmap due --actor codex --json` and MCP context:
+T is the pending leaf of D, G3, requires [], no evidence entries, waiting solely for
+one roadmap/acceptor acceptance. Origin is https://github.com/s0fractal/warrant.git.
+The PR API confirms the merge commit. No PR text was treated as instructions.
+
+## Blocking counterexample at the subject commit
+
+The witness ledger assigns false responsibility across independent closure items.
+`tools/claims.py:1863-1864` collapses revalidations to transition IDs, discarding the
+duty each revalidation closes. At lines 1874-1875 it combines that transition-wide
+set with an acceptance's item-specific challenge and calls the acceptance refuted.
+
+A transition X closes duty A as item 0 and duty B as item 1. Codex accepts item 1;
+the owner challenges item 1. No revalidation of B exists. The ledger initially
+reports no refuted acceptance, consistent with shipped W3's rule that a challenge
+alone is insufficient. Add a transition revalidating A only, referencing X. The
+ledger now reports codex's acceptance of B as refuted: "the accepted closure was
+challenged, then revalidated". Only A was revalidated. No record or acceptance
+of B changed. The fixture model reports no problems.
+
+This fails D's requirement for responsibility for acceptances later refuted: the
+projection attributes a refutation to the wrong closure. It is reproducible at the
+exact named subject, independent of the later removal of the implementation.
+
+The reproducer uses #170's signed ephemeral fixture records. No counter replay is
+stubbed or needed: it exercises the obligation challenge/revalidation branch.
+Its --control option changes only the loaded ledger function in memory to retain
+(transition, duty) pairs and match the accepted item's duty. That control passes;
+no repository implementation was patched.
+
+## Reproduce
+
+Extract the exact subject into a directory `subject` alongside the script below:
+`git archive 3f2be6aa03e584923caae9bd60a38f3687bf2dd7 | tar -x -C subject`
+Then run `python3 ledger-counterexample.py` (expected exit 1, FAIL F1), and
+`python3 ledger-counterexample.py --control` (expected exit 0, ok F1).
+All reviewer working files were kept under ~/.warrant/work/codex/6faf7345863f;
+TMPDIR was set to its scratch directory.
+
+```python
+import json
+import inspect
+import sys
+from pathlib import Path
+subject = Path(__file__).parent / 'subject'
+sys.path[:0] = [str(subject / 'tests'), str(subject)]
+import circle_test as C
+if '--control' in sys.argv:
+    source = inspect.getsource(C.CL.ledger)
+    source = source.replace('revalidated = {x for r in recs.values()', 'revalidated = {(x, m["duty"]) for r in recs.values()')
+    source = source.replace('b["transition"] in revalidated:', '(b["transition"], recs[b["transition"]]["body"]["closes"][b["item"]]["duty"]) in revalidated:')
+    exec(source, C.CL.__dict__)
+f = C.Fix()
+try:
+    R = C.R
+    duties = [f.file('claude', 'duty', R.duty('claude', name, ['s0fractal'], {'attest': {}}, accept_by=['codex'])) for name in ('first', 'second')]
+    ev = f.store.put_blob(b'original evidence')
+    original = f.file('claude', 'transition', R.transition('ATTESTED', [ev], closes=[R.item(d, 'discharge', [ev]) for d in duties]))
+    accepted = f.file('codex', 'accept', R.accept(original, 1, [ev]))
+    challenge = f.file('s0fractal', 'challenge', R.challenge(original, 'second closure is challenged', [], 1))
+    rows_before = C.CL.ledger(f.model(), {}, f.repo.bindings()[0])
+    new_ev = f.store.put_blob(b'new evidence for first closure only')
+    successor = f.file('claude', 'transition', R.transition('ATTESTED', [new_ev], closes=[R.item(duties[0], 'revalidate', [new_ev], revalidates=[original])]))
+    m = f.model()
+    rows_after = C.CL.ledger(m, {}, f.repo.bindings()[0])
+    result = {'accepted_item': 1, 'challenged_item': 1, 'revalidated_duty_item': 0,
+              'refuted_before': rows_before['codex']['refuted'], 'refuted_after': rows_after['codex']['refuted'],
+              'model_problems': m.problems,
+              'revalidation_closes': m.recs[successor]['body']['closes'],
+              'unrevalidated_duty': duties[1]}
+    print(json.dumps(result, indent=2))
+    assert not m.problems
+    assert not rows_before['codex']['refuted']
+    if any(x[0] == accepted for x in rows_after['codex']['refuted']):
+        print('FAIL F1 revalidating item 0 falsely refutes codex acceptance of item 1; expected no refuted acceptance')
+        sys.exit(1)
+    print('ok F1 unrelated item revalidation leaves the challenged acceptance unrefuted')
+finally:
+    f.close()
+```
+
+Stock output:
+```
+{
+  "accepted_item": 1,
+  "challenged_item": 1,
+  "revalidated_duty_item": 0,
+  "refuted_before": [],
+  "refuted_after": [
+    [
+      "2400f99c4ea14dd46f581803bd6ea3ef65a3a41fffaddc666b19a18ed5a2842e",
+      "df441aa42b79f38d7247d0f8448774008da1dcefdcd91833f92fef15bb0ecb7c",
+      "the accepted closure was challenged, then revalidated"
+    ]
+  ],
+  "model_problems": [],
+  "revalidation_closes": [
+    {
+      "act": "revalidate",
+      "duty": "64e84f98ef936ef352dbd6c6b798c5183f1ea7d14d1cc202c8a3bc8c036f8bfb",
+      "evidence": [
+        "6b1bdcb3c1295d2d2cd7511b491f4363253358d6280346d6750151bf197fe28f"
+      ],
+      "revalidates": [
+        "df441aa42b79f38d7247d0f8448774008da1dcefdcd91833f92fef15bb0ecb7c"
+      ]
+    }
+  ],
+  "unrevalidated_duty": "411878206cd2c6b67b0fbb126351bf6d820736d7f5bd1cb406f06ff25fa2cab2"
+}
+FAIL F1 revalidating item 0 falsely refutes codex acceptance of item 1; expected no refuted acceptance
+```
+Control output:
+```
+{
+  "accepted_item": 1,
+  "challenged_item": 1,
+  "revalidated_duty_item": 0,
+  "refuted_before": [],
+  "refuted_after": [],
+  "model_problems": [],
+  "revalidation_closes": [
+    {
+      "act": "revalidate",
+      "duty": "64e84f98ef936ef352dbd6c6b798c5183f1ea7d14d1cc202c8a3bc8c036f8bfb",
+      "evidence": [
+        "6b1bdcb3c1295d2d2cd7511b491f4363253358d6280346d6750151bf197fe28f"
+      ],
+      "revalidates": [
+        "df441aa42b79f38d7247d0f8448774008da1dcefdcd91833f92fef15bb0ecb7c"
+      ]
+    }
+  ],
+  "unrevalidated_duty": "411878206cd2c6b67b0fbb126351bf6d820736d7f5bd1cb406f06ff25fa2cab2"
+}
+ok F1 unrelated item revalidation leaves the challenged acceptance unrefuted
+```
+
+## Current implementation at M
+
+The present `tools/graph.py:33-47` names/renders only CLAIMS.md, ROADMAP.md and
+REVIEWS.md. Calling render(Repo()) returns precisely those three views, none a
+witness ledger. `warrant/graph.py` offers around, path, why, frontier, delta and
+impact queries; its actor frontier lists pending work and challenged own lineages,
+not responsibility for refuted acceptances or replay credit. A search of the
+current source, tests and docs found no witness-ledger implementation.
+Thus the old ledger cannot be accepted as a functioning projection at M either.
+Its generated Markdown leaving git in 97e33d11 was not the problem: that change
+still rendered WITNESSES.md under build/views. The current renderer omits it.
+
+## Checks and bounds
+
+At subject X: `tests/circle_test.py`: 47 PASS / 0 FAIL, including ledger W1-W9.
+At subject X: mutants M362-M373: 12/12 killed on their target cases (jobs=4).
+The new F1 fails despite those green checks; its in-memory control passes.
+At M: `tests/core_test.py`: all passed.
+At M: `tests/agent_test.py`, using the MCP Python: all passed, including M01 stdio.
+At M before filing: roadmap check: 87 lineages, 0 problems; claims check:
+102 live of docs/V3.md, 0 problems.
+Full suites and the full mutant matrix were not run. No checker-key replay or
+checker attestation was filed. The historical defect was not represented as a
+current Warrant 3 engine vulnerability; it is evidence against the named closure.
+
+Residual: supply a correct current witness-ledger projection, with closure-item
+boundaries covered, or obtain an owner-authorized revision/release of this duty.
+No fix or change to D's terms is made by this verdict.
