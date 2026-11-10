@@ -1249,6 +1249,67 @@ def changes_cases():
           moves == {"layout", "order", "порядок полів", "residual.label", "residual.as"}
           and LZ.diff(SV.lineage(two.report("w"), o), a, b)[0] == [] and LZ.presentation(a, a) == [], sorted(moves))
 
+def scene_cases():
+    """Scenes (warrant_agent/scene.py): a lineage drawn as a map whose every channel is bound to a named field; the
+    same page gives the same SVG; no scene hides a kind, shrinks a standing challenge, drops the legend or folds
+    nodes away unnamed; record text is data."""
+    from warrant_agent import lens as LZ
+    from warrant_agent import scene as SC
+    from warrant_agent import serve as SV
+    r = Repo()
+    r.put("alice", "schema", LZ.SCHEMA)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "<script>alert(1)</script> map", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "<script>alert(1)</script> map", "serves": []}, lineage=o)
+    for a in ("carol", "dave", "eve"):
+        r.put(a, "attest", {"target": d, "verdict": "note"}, refs=[d])
+    c = r.put("bob", "challenge", {"target": d, "statement": "counted, stands"}, refs=[d])
+    late = r.put("eve", "attest", {"target": o, "verdict": "note"}, refs=[o])      # on the first version, filed last
+    def lens(name, scene, fields=()):
+        return r.put("carol", "entity", {"state": "active", "name": name, "applies": "*",
+                                         "card": {"layout": "nested", "fields": list(fields), "scene": scene}}, "lens@1")
+    by_time = lens("by time", {"x": "time", "y": "version", "size": "attests", "color": "actor", "shape": "none"})
+    bad = lens("bad scene", {"x": "force-directed"})
+    space = SV.Space({"w": str(r.root)})
+    app = SV.App(space, reader="dave")
+    one, two = app.page_scene("w", o)[1], app.page_scene("w", o)[1]
+    page_d = SV.lineage(space.report("w"), o)
+    nodes = SC.nodes_of(space.report("w"), page_d)
+    check("SC1 the same page gives the same map, byte for byte; every node is a portal to its record's page; the map "
+          "holds no script", one == two and "<script" not in one.lower() and len(nodes) == 7
+          and all(f'href="/l/w/{n["id"]}"' in one for n in nodes), len(nodes))
+    pos, _ = SC.layout(nodes, SC.bindings({"scene": {"size": "attests"}}))
+    check("SC2 the floor: a counted challenge that stands is never drawn smaller than what it stands against, whatever "
+          "the size channel says (attests makes the version large)", pos[c][2] >= pos[d][2] > SC.R, (pos[c], pos[d]))
+    drawn, legend = SC.svg(space.report("w"), "w", page_d, LZ.card_of(LZ.lenses(space.report("w"))[by_time]), lambda x: x)
+    check("SC3 the floor: under colour by actor and no shapes every node still carries its kind's glyph, and the legend "
+          "names every binding", all(g in drawn for g in ("◆", "✓", "✗")) and "x = час (порядок за at)" in legend
+          and "color = автор" in legend and "shape = однаково" in legend, legend)
+    try:                                     # a crash is this case's FAIL, never a missing line
+        unsupported = app.page_scene("w", o, {"lens": bad})[1]
+    except Exception as ex:
+        unsupported = f"crashed: {type(ex).__name__}"
+    check("SC4 a scene binding no channel knows makes the lens UNSUPPORTED: the built-in draws the map and says why",
+          "не підтримується" in unsupported and "scene: x is one of" in unsupported
+          and LZ.problem(LZ.lenses(space.report("w"))[bad]) is not None, unsupported[:0])
+    both = app.page_scene("w", o, {"lens": "builtin", "vs": by_time})[1]
+    moves, binds = SC.moved(space.report("w"), page_d, LZ.card_of(LZ.BUILTIN), LZ.card_of(LZ.lenses(space.report("w"))[by_time]))
+    check("SC5 two maps side by side: the page names how many nodes moved and which bindings differ; the lens "
+          "comparison names the scene's bindings too", "Дві карти" in both and f"переміщено вузлів: {len(moves)}" in both
+          and moves and ("x", "order", "time") in binds and "x: order → time" in both
+          and SC.layout(nodes, SC.bindings({"scene": {"x": "time"}}))[0][late][0] > SC.layout(nodes, SC.bindings({"scene": {"x": "time"}}))[0][c][0]
+          and SC.layout(nodes, SC.bindings({}))[0][late][0] < SC.layout(nodes, SC.bindings({}))[0][c][0]
+          and ("scene.x", "order", "time") in LZ.presentation(LZ.BUILTIN, LZ.lenses(space.report("w"))[by_time]), binds)
+    keep = SC.MAX_NODES
+    SC.MAX_NODES = 3
+    try:
+        _, small = SC.svg(space.report("w"), "w", page_d, LZ.card_of(LZ.BUILTIN), lambda x: x)
+    finally:
+        SC.MAX_NODES = keep
+    check("SC6 a map beyond its node budget names what it folded away, with the count", f"згорнуто {len(nodes) - 3} вузлів" in small, small)
+    check("SC7 record text is data on the map: a node's title is escaped", "&lt;script&gt;" in one and "<script" not in one,
+          one[:0])
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1264,4 +1325,5 @@ if __name__ == "__main__":
     serve_cases()
     lens_cases()
     changes_cases()
+    scene_cases()
     sys.exit(finish())

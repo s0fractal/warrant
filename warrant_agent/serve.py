@@ -33,6 +33,7 @@ from warrant.repo import Failed, Repo, load_key
 from warrant_agent import glossary as GL
 from warrant_agent import changes as CH
 from warrant_agent import lens as LZ
+from warrant_agent import scene as SC
 
 DIMENSIONS = (("agree", -100, 100, "згода"), ("confidence", 0, 100, "впевненість"),
               ("importance", 0, 100, "важливість"), ("evidence", 0, 100, "якість доказу"))
@@ -297,7 +298,7 @@ main{max-width:960px;margin:0 auto;padding:16px}a{color:var(--acc)}
 .rest{color:var(--mute)}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:12px 0}
 .tag{display:inline-block;border-radius:4px;padding:0 6px;font-size:12px;font-weight:600;border:1px solid currentColor}
 .ELIGIBLE,.MET,.yes{color:var(--ok)}.PENDING,.STALE,.FORK{color:var(--warn)}.CHALLENGED,.no,.INVALID{color:var(--bad)}.NONE{color:var(--mute)}
-ul{margin:4px 0 4px 18px;padding:0}footer{color:var(--mute);font-size:12px;padding:16px;text-align:center;word-break:break-all}
+ul{margin:4px 0 4px 18px;padding:0}.scenes{display:flex;gap:16px;overflow-x:auto}.scene{max-width:none;background:var(--card);border:1px solid var(--line);border-radius:8px}footer{color:var(--mute);font-size:12px;padding:16px;text-align:center;word-break:break-all}
 form.react{display:grid;grid-template-columns:120px 1fr 48px;gap:6px 10px;align-items:center}form.react textarea{grid-column:1/4;min-height:60px}
 form.react button{grid-column:1/4;justify-self:start}.bar{display:inline-block;height:8px;background:var(--acc);border-radius:4px;vertical-align:middle}
 .filters{font-size:13px;color:var(--mute);margin-bottom:8px}code{font-size:12px}
@@ -452,7 +453,8 @@ def floor_html(rep, store, d, used, note="", objections=()):
     return (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
             f'опора {tag(d["reliance"])} · заперечень, що стоять: <b>{len(held)}</b> · повнота {tag("UNATTESTED")}</p>'
             + (f'<ul class="standing">{rows}</ul>' if held else "")
-            + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a>{note}'
+            + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a> · '
+            f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}">карта</a>{note}'
             + (f' · <b class="CHALLENGED">заперечень на цю лінзу: {len(objections)}</b>' if objections else "") + "</p>"
             + ("<ul class='standing'>" + "".join(f"<li>{E(t)}</li>" for t in objections) + "</ul>" if objections else ""))
 
@@ -637,17 +639,51 @@ class App:
                 h += self.adopt_form(store, d["leaf"])
         if self.actor and self.key and d["leaf"]:
             h += self.form(store, d["leaf"])
-        elsewhere = reactions_elsewhere(self.reports(), store, d)
-        for v in d["versions"]:
-            v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))
+        self.with_elsewhere(store, d)
         h += versions_html(rep, d, LZ.card_of(body))
         query = {"op": "lineage", "target": d["lineage"], "lens": lens_id, "with": self.other_roots(store)}
         return 200, page(d["label"], h, foot(store, rep, query))
+
+    def with_elsewhere(self, store, d):
+        """`d` with, among each version's activity, the reactions on it filed in other stores."""
+        elsewhere = reactions_elsewhere(self.reports(), store, d)
+        for v in d["versions"]:
+            v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))
+        return d
 
     def other_roots(self, store):
         """{store: snapshot root} of every other store a page read (the lens chosen, the reactions filed elsewhere,
         the challenges against the lens): a page is a function of all of them, so its lens names them."""
         return {n: r["snapshot"] for n, r in sorted(self.reports().items()) if n != store and "_error" not in r}
+
+    def page_scene(self, store, i, q=None):
+        """The lineage as a map under the reader's lens (or `?lens=`), the floor above it; `?vs=` sets a second lens's
+        map beside it and names what moved and which bindings differ."""
+        rep = self.space.report(store)
+        d = None if "_error" in rep else lineage(rep, i)
+        if d is None:
+            return 404, page(MISSING, f"<p>Немає лінії з записом <code>{E(i)}</code> у {E(store)}.</p>")
+        q = q or {}
+        lens_id, body, note, lens_store = self.pick(d["schema"], q.get("lens"))
+        self.with_elsewhere(store, d)
+        describe = lambda x: " ".join(str(t) for t in (sentence(rep, x) if x in rep["_recs"] else (x[:12],)) if t)
+        h = floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id))
+        drawn, legend = SC.svg(rep, store, d, LZ.card_of(body), describe)
+        other = LZ.find(self.reports(), q["vs"]) if q.get("vs") else None
+        if other is not None and LZ.problem(other[1]) is None:
+            drawn2, legend2 = SC.svg(rep, store, d, LZ.card_of(other[1]), describe)
+            moves, binds = SC.moved(rep, d, LZ.card_of(body), LZ.card_of(other[1]))
+            h += (f'<div class="card"><b>Дві карти</b>: «{E(body["name"])}» і «{E(other[1]["name"])}» · переміщено вузлів: '
+                  f'{len(moves)} · прив\'язки: ' + (", ".join(f"{E(k)}: {E(a)} → {E(b)}" for k, a, b in binds) or "однакові")
+                  + f'</div><div class="scenes"><div>{drawn}{legend}</div><div>{drawn2}{legend2}</div></div>')
+        else:
+            h += f'<div class="scenes"><div>{drawn}{legend}</div></div>'
+        alts = [(v, n) for v, n in self.others(d["schema"]) if v != lens_id]
+        if alts:
+            h += ('<p class="rest">поруч із: ' + " · ".join(
+                f'<a href="/s/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}&amp;vs={E(v)}">{E(n)}</a>' for v, n in alts) + "</p>")
+        query = {"op": "scene", "target": d["lineage"], "lens": lens_id, "vs": q.get("vs"), "with": self.other_roots(store)}
+        return 200, page(d["label"], h, foot(store, rep, query))
 
     def adopt_form(self, store, v):
         return (f'<form method="post" action="/adopt"><input type="hidden" name="token" value="{self.token}">'
@@ -774,6 +810,8 @@ def handler(app, port):
                     self.send(200, app.page_wait(q))
                 elif parts == ["stores"]:
                     self.send(200, app.page_stores())
+                elif parts[0] == "s" and len(parts) == 3 and parts[1] in app.space.roots:
+                    self.send(*app.page_scene(parts[1], parts[2], q))
                 elif parts[0] == "l" and len(parts) == 3 and parts[1] in app.space.roots:
                     self.send(*app.page_lineage(parts[1], parts[2], q))
                 else:

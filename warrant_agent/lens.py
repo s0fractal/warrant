@@ -21,7 +21,7 @@ LAYOUTS = ("nested", "flat")              # versions as cards with their activit
 SHOWS = ("text", "list", "count")
 ORDERS = ("newest", "oldest")
 ACTIVITY = ("shown", "hidden")
-CARD_KEYS = {"layout", "fields", "order", "activity"}
+CARD_KEYS = {"layout", "fields", "order", "activity", "scene"}
 FIELD_KEYS = {"path", "label", "as"}
 PATH = re.compile(r"[a-z][a-z_]{0,39}\Z")
 MAX_FIELDS, MAX_LABEL, MAX_NAME = 20, 80, 120
@@ -43,6 +43,11 @@ def problem(body):
     for k, allowed in (("layout", LAYOUTS), ("order", ORDERS), ("activity", ACTIVITY)):
         if k in card and card[k] not in allowed:
             return f"{k} is one of {list(allowed)}"
+    if "scene" in card:
+        from warrant_agent import scene as SC
+        why = SC.problem(card["scene"])
+        if why:
+            return f"scene: {why}"
     fields = card["fields"]
     if not isinstance(fields, list) or len(fields) > MAX_FIELDS:
         return f"fields is a list of at most {MAX_FIELDS}"
@@ -62,7 +67,7 @@ def card_of(body):
     """The card with its defaults: {layout, fields, order, activity}."""
     c = body["card"]
     return {"layout": c["layout"], "fields": c["fields"], "order": c.get("order", "newest"),
-            "activity": c.get("activity", "shown")}
+            "activity": c.get("activity", "shown"), "scene": c.get("scene") or {}}
 
 
 def lenses(rep):
@@ -140,6 +145,9 @@ def presentation(a, b):
     the same members can still differ here, and a reader sees that difference."""
     ca, cb = card_of(a), card_of(b)
     out = [(k, ca[k], cb[k]) for k in ("layout", "order", "activity") if ca[k] != cb[k]]
+    from warrant_agent import scene as SC
+    sa, sb = SC.bindings(ca), SC.bindings(cb)
+    out += [(f"scene.{k}", sa[k], sb[k]) for k in SC.CHANNELS if sa[k] != sb[k]]
     fa, fb = {f["path"]: f for f in ca["fields"]}, {f["path"]: f for f in cb["fields"]}
     shared = [p for p in fa if p in fb]
     if shared != [p for p in fb if p in fa]:

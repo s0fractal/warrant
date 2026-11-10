@@ -19,6 +19,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   mutants A105–A115.
 - `--mine` (default: the store registered as `space`): reactions are filed in the reader's own store, whatever store
   their record is in, and shown on that record's page with the store named. Test SV7, mutants A121–A122.
+- Maps (`/s/STORE/ID`): a lineage as a static, script-free SVG whose every channel is bound to a named field from a
+  fixed list (a lens's `card.scene`); deterministic, the legend derived from the bindings, each node a portal; the
+  floor keeps every kind's glyph, never shrinks a standing challenge, always draws the legend and names what the
+  budget folds; two maps side by side name what moved. Tests SC1–SC7, mutants A128–A133.
 - A lineage page's lens names the roots of every other store it read; `/changes` sees reactions filed in other
   stores; a lens comparison names differences of presentation; an explicit `--mine` not read files nothing
   (Codex review of #328). Tests CH4–CH7, mutants A123–A127.

@@ -176,3 +176,18 @@ whether it is grounded) or what the reader's lens draws of it (`lens.visible`) d
 appeared, what vanished, what in the floor moved. New records that change nothing the reader sees are counted, not
 listed: two states are the same for the reader under that lens (`warrant_agent/changes.py`). agent_test CH1–CH3;
 mutants A117–A120.
+
+### Maps (`/s/STORE/ID`, `warrant_agent/scene.py`)
+
+A lineage drawn as a map under the reader's lens: its versions left to right in time, what was filed on each below
+it (reactions from other stores included), each node a portal to its record's page. A lens's card may hold a
+`scene` binding each channel to a named field from a fixed list (`x`: time | order; `y`: version | kind; `size`:
+standing | attests | none; `color`: reliance | kind | actor; `shape`: kind | none); the legend is derived from the
+bindings, and the layout is deterministic (no force, no chance), so the same page gives the same SVG and "why is this
+here" is answered by the legend. The SVG is generated from data: no script, no external resource, every text escaped.
+
+No scene decides the floor: every node carries its kind's glyph (◆ ✓ ✗: meaning is never colour alone), a counted
+challenge that stands is never smaller than what it stands against, the legend is always drawn, and nodes folded
+away by the budget (300) are named with their count. `?vs=` sets a second lens's map beside it and names how many
+nodes moved and which bindings differ; the lens comparison names scene bindings too. agent_test SC1–SC7; mutants
+A128–A133.
