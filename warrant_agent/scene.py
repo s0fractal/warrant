@@ -69,8 +69,8 @@ def _palette(word):
     return "#%06x" % (int(hashlib.sha256(word.encode()).hexdigest()[:6], 16) | 0x404040)
 
 
-COLORS = {"MET": "var(--ok)", "PENDING": "var(--warn)", "NONE": "var(--mute)", "INVALID": "var(--bad)",
-          "entity": "var(--acc)", "attest": "var(--ok)", "challenge": "var(--bad)"}
+OK, WARN, BAD, MUTE, ACC = "var(--ok)", "var(--warn)", "var(--bad)", "var(--mute)", "var(--acc)"
+COLORS = {"MET": OK, "PENDING": WARN, "NONE": MUTE, "INVALID": BAD, "entity": ACC, "attest": OK, "challenge": BAD}
 
 
 def _color(n, how):
@@ -79,10 +79,10 @@ def _color(n, how):
     if how == "actor":
         return _palette(n["actor"])
     if n["kind"] == "entity":
-        return COLORS.get(n["guard"], "var(--mute)")
+        return COLORS.get(n["guard"], MUTE)
     if n["kind"] == "challenge":
-        return "var(--bad)" if n["counted"] and n["stands"] else "var(--mute)"
-    return "var(--acc)"
+        return BAD if n["counted"] and n["stands"] else MUTE
+    return ACC
 
 
 def layout(nodes, b):
@@ -106,6 +106,39 @@ def layout(nodes, b):
     return {k: tuple(v) for k, v in pos.items()}, folded
 
 
+def _edges(shown, pos):
+    """The lines, drawn under the nodes: each version to the next, each filed record to its target (dashed for a
+    challenge)."""
+    out, prev = [], None
+    for n in shown:
+        if n["kind"] == "entity":
+            if prev is not None:
+                (x0, y0, _), (x1, y1, _) = pos[prev], pos[n["id"]]
+                out.append(f'<line x1="{x0}" y1="{y0}" x2="{x1}" y2="{y1}" stroke="var(--fg)" stroke-width="2"/>')
+            prev = n["id"]
+        elif n["target"] in pos:
+            (x0, y0, _), (x1, y1, _) = pos[n["target"]], pos[n["id"]]
+            dash = ' stroke-dasharray="4 3"' if n["kind"] == "challenge" else ""
+            out.append(f'<line x1="{x0}" y1="{y0}" x2="{x1}" y2="{y1}" stroke="var(--mute)"{dash}/>')
+    return out
+
+
+def _shape(n, x, y, r, b):
+    fill = _color(n, b["color"])
+    if b["shape"] == "kind" and n["kind"] == "entity":
+        return f'<rect x="{x - r}" y="{y - r}" width="{2 * r}" height="{2 * r}" rx="3" fill="{fill}"/>'
+    if b["shape"] == "kind" and n["kind"] == "challenge":
+        return f'<polygon points="{x},{y - r} {x + r},{y + r} {x - r},{y + r}" fill="{fill}"/>'
+    return f'<circle cx="{x}" cy="{y}" r="{r}" fill="{fill}"/>'
+
+
+def _node(n, pos, b, store, describe):
+    x, y, r = pos[n["id"]]
+    glyph = GLYPH.get(n["kind"], "·")                           # the floor: the kind is never colour alone
+    return (f'<a href="/l/{E(store)}/{E(n["id"])}"><g><title>{E(describe(n["id"]))}</title>{_shape(n, x, y, r, b)}'
+            f'<text x="{x}" y="{y + 5}" text-anchor="middle" font-size="14" fill="var(--bg)">{glyph}</text></g></a>')
+
+
 def svg(rep, store, d, card, describe):
     """The scene of a lineage page as a static SVG string, and its legend as HTML; `describe(id)` gives a node's title."""
     b = bindings(card)
@@ -116,30 +149,7 @@ def svg(rep, store, d, card, describe):
     h = max(y for _, y, _ in pos.values()) + 50 if pos else 80
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" role="img" '
              f'aria-label="карта лінії" class="scene">']
-    prev = None
-    for n in shown:                                                 # edges first: succession, then filed-on
-        if n["kind"] == "entity":
-            if prev is not None:
-                (x0, y0, _), (x1, y1, _) = pos[prev], pos[n["id"]]
-                parts.append(f'<line x1="{x0}" y1="{y0}" x2="{x1}" y2="{y1}" stroke="var(--fg)" stroke-width="2"/>')
-            prev = n["id"]
-        elif n["target"] in pos:
-            (x0, y0, _), (x1, y1, _) = pos[n["target"]], pos[n["id"]]
-            dash = ' stroke-dasharray="4 3"' if n["kind"] == "challenge" else ""
-            parts.append(f'<line x1="{x0}" y1="{y0}" x2="{x1}" y2="{y1}" stroke="var(--mute)"{dash}/>')
-    for n in shown:
-        x, y, r = pos[n["id"]]
-        fill = _color(n, b["color"])
-        if b["shape"] == "kind" and n["kind"] == "entity":
-            shape = f'<rect x="{x - r}" y="{y - r}" width="{2 * r}" height="{2 * r}" rx="3" fill="{fill}"/>'
-        elif b["shape"] == "kind" and n["kind"] == "challenge":
-            shape = f'<polygon points="{x},{y - r} {x + r},{y + r} {x - r},{y + r}" fill="{fill}"/>'
-        else:
-            shape = f'<circle cx="{x}" cy="{y}" r="{r}" fill="{fill}"/>'
-        glyph = GLYPH.get(n["kind"], "·")                           # the floor: the kind is never colour alone
-        parts.append(f'<a href="/l/{E(store)}/{E(n["id"])}"><g><title>{E(describe(n["id"]))}</title>{shape}'
-                     f'<text x="{x}" y="{y + 5}" text-anchor="middle" font-size="14" fill="var(--bg)">{glyph}</text></g></a>')
-    parts.append("</svg>")
+    parts += _edges(shown, pos) + [_node(n, pos, b, store, describe) for n in shown] + ["</svg>"]
     legend = ("<p class='rest legend'>карта: " + " · ".join(f"{k} = {E(LEGEND[v])}" for k, v in b.items())
               + " · ◆ версія ✓ атестація ✗ заперечення"
               + (f" · <b>згорнуто {folded} вузлів</b> (бюджет {MAX_NODES})" if folded else "") + "</p>")
