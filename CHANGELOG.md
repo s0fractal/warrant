@@ -17,6 +17,8 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   state, reliance, every counted challenge that stands, UNATTESTED, the lens's name, and every challenge against the
   lens. `?lens=A&vs=B` compares two lenses: what each shows of the page that the other does not. Tests LN1–LN9,
   mutants A105–A115.
+- `--mine` (default: the store registered as `space`): reactions are filed in the reader's own store, whatever store
+  their record is in, and shown on that record's page with the store named. Test SV7, mutants A121–A122.
 - `/changes`: what changed for the reader since the last mark, under the reader's lenses: only the lineages whose
   floor or drawn members differ, each with its witness; the rest of the new records are counted. Tests CH1–CH3,
   mutants A117–A120.

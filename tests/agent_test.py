@@ -1055,6 +1055,18 @@ def serve_cases():
           home[0] == 200 and "default-src 'none'" in (home[1] or "") and other[0] == 421 and rebound[0] == 421
           and no_token[0] == 403 and "Не підписано" in no_token[2] and "token" in no_token[2],
           (home[0], other[0], rebound[0], no_token[0]))
+    me = Repo()                                     # the reader's own store: the same keys, its own records
+    both = SV.Space({"w": str(r.root), "me": str(me.root)})
+    reader = SV.App(both, "bob", KEYS["bob"], mine="me")
+    before_w = len(both.report("w")["_recs"])
+    got = reader.react({"token": reader.token, "store": "w", "target": d, "agree": "55", "note": "from my own store"})
+    in_me = [x for x in both.report("me")["_recs"].values() if x["body"].get("verdict") == "react"]
+    shown = reader.page_lineage("w", d)[1]
+    check("SV7 with a store of the reader's own (--mine), a reaction on a record of another store is filed there, "
+          "leaving that store as it was, and the record's page shows it under its version, naming where it lives",
+          got[0] == 303 and len(both.report("w")["_recs"]) == before_w and len(in_me) == 1
+          and in_me[0]["body"]["target"] == d and "відреагував (у me)" in shown and "from my own store" in shown,
+          (got, len(in_me)))
     w = SV.waiting(rep, "bob")
     check("SV6 what waits for an actor is the frontier under the store's own profile: bob, roadmap/acceptor, owes the "
           "closure his attest until he filed it", isinstance(w["roles"], list) and "roadmap/acceptor" in w["roles"], w)

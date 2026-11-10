@@ -128,7 +128,12 @@ version: an attest `{target, verdict: "react", agree: -100..100, confidence, imp
 signed as A, filed only in a store whose trust binds that key to A. No guard's match holds `react`, so a reaction
 credits nothing; it is the reader's own signed word, and it leaves that version off the reader's frontier (an attest
 by the actor). The server listens on 127.0.0.1 only, answers only to its own Host, and refuses a POST without the
-token of its run. agent_test SV1–SV6; mutants A99–A104.
+token of its run. agent_test SV1–SV7; mutants A99–A104, A121–A122.
+
+**The reader's own store.** With `--mine NAME` (default: the repository Home registers as `space`, if any) a reaction
+is filed in that store whatever store its record is in, so a project's store is never changed by its readers'
+reactions; an attest on a record held elsewhere is admitted as any other. A lineage page shows, under each version,
+the reactions on it filed in other stores, naming the store.
 
 ### Lenses: the reader chooses how a page is drawn
 

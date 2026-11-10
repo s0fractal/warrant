@@ -164,6 +164,22 @@ def feed(rep, limit=200, actor=None, machines=False):
     return out[:limit]
 
 
+def reactions_elsewhere(reports, store, d):
+    """{version id: [item]} of the reactions on this lineage's versions filed in other stores (a reader's own store
+    holds the reactions on records of every other one), each item naming the store it was filed in."""
+    vs, out = {v["id"] for v in d["versions"]}, {}
+    for name, r in sorted(reports.items()):
+        if name == store or "_error" in r:
+            continue
+        for i, x in r["_recs"].items():
+            b = x["body"]
+            if x["kind"] == "attest" and b.get("verdict") == "react" and b.get("target") in vs:
+                out.setdefault(b["target"], []).append(
+                    {"id": i, "at": x["at"], "challenge": None, "note": b.get("note"), "store": name,
+                     "sentence": (x["actor"], f"відреагував (у {name})", "", _dimensions_text(b))})
+    return out
+
+
 def lineage(rep, i):
     """The lineage of record `i` (an entity version, or the target of an attest or a challenge): its state and
     reliance, each version newest first with its guard and the attests and challenges on it, and whether its
@@ -346,7 +362,7 @@ def challenge_state(c):
 
 def on_html(rep, x):
     a, verb, _, rest = x["sentence"]
-    note = rep["_recs"][x["id"]]["body"].get("note")
+    note = x["note"] if "note" in x else rep["_recs"][x["id"]]["body"].get("note")
     return (f'<div class="item"><span class="when">{when(x["at"])}</span> <span class="actor">{E(a)}</span> '
             f'{E(verb)}{E(challenge_state(x["challenge"]))}' + (f' <span class="rest">— {E(rest)}</span>' if rest else "")
             + (f'<div class="rest">{E(note)}</div>' if isinstance(note, str) else "") + END)
@@ -475,8 +491,9 @@ def change_html(rep, store, x):
 
 
 class App:
-    def __init__(self, space, actor=None, key=None, reader=None, marks=None):
+    def __init__(self, space, actor=None, key=None, reader=None, marks=None, mine=None):
         self.space, self.actor, self.key, self.token = space, actor, key, secrets.token_hex(16)
+        self.mine = mine          # the reader's own store: reactions are filed there, whatever store the record is in
         self.reader = reader or actor
         self.marks = marks if marks is not None else CH.Marks()
         self.past = {}
@@ -596,6 +613,9 @@ class App:
                 h += self.adopt_form(store, d["leaf"])
         if self.actor and self.key and d["leaf"]:
             h += self.form(store, d["leaf"])
+        elsewhere = reactions_elsewhere(self.reports(), store, d)
+        for v in d["versions"]:
+            v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))
         h += versions_html(rep, d, LZ.card_of(body))
         return 200, page(d["label"], h, foot(store, rep, {"op": "lineage", "target": d["lineage"], "lens": lens_id}))
 
@@ -649,7 +669,7 @@ class App:
                   f' · відкинуто: {len(rep["rejected"])}</span></div>')
         return page("Сховища", h)
 
-    def _file(self, form, body_of):
+    def _file(self, form, body_of, into=None):
         if not secrets.compare_digest(form.get("token", ""), self.token):
             return 403, "the token of this run is missing or wrong"
         if not (self.actor and self.key):
@@ -664,13 +684,14 @@ class App:
         if body is None:
             return 400, why
         try:
-            Repo(self.space.roots[store]).file(self.actor, self.key, [R.record("attest", self.actor, 0, body, refs=[target])])
+            Repo(self.space.roots[into or store]).file(self.actor, self.key, [R.record("attest", self.actor, 0, body, refs=[target])])
         except (Failed, ValueError) as e:
             return 400, f"{type(e).__name__}: {e}"
         return 303, f"/l/{quote(store)}/{target}"
 
     def react(self, form):
-        return self._file(form, lambda rep, target, f: reaction_body(target, f))
+        mine = self.mine if self.mine in self.space.roots else None
+        return self._file(form, lambda rep, target, f: reaction_body(target, f), into=mine)
 
     def adopt(self, form):
         def body(rep, target, f):
@@ -757,6 +778,8 @@ def main(argv=None):
     p.add_argument("--actor", help="who signs reactions")
     p.add_argument("--key", help="the actor's seed, a file outside every repository read")
     p.add_argument("--reader", help="whose adopted lenses draw the pages (default: --actor)")
+    p.add_argument("--mine", help="the store a reaction is filed in, whatever store its record is in "
+                                   "(default: the one registered as `space`, if any; else the record's own store)")
     a = p.parse_args(argv)
     space = Space({Path(r).resolve().name: str(Path(r).resolve()) for r in a.root}) if a.root else Space.from_home()
     if not space.roots:
@@ -769,10 +792,13 @@ def main(argv=None):
         for root in space.roots.values():
             if Path(a.key).expanduser().resolve().is_relative_to(Path(root).resolve()):
                 p.error(f"the seed lies inside {root}")
-    app = App(space, a.actor, key, a.reader)
+    mine = a.mine or ("space" if "space" in space.roots else None)
+    app = App(space, a.actor, key, a.reader, mine=mine)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), handler(app, a.port))
-    print(f"warrant serve: http://127.0.0.1:{a.port}/ over {', '.join(space.roots)}"  # NOSONAR S5332: the loopback address this server binds; no TLS on 127.0.0.1
-          + (f"; reactions signed as {a.actor}" if key else "; read only"), flush=True)
+    mode = "; read only"
+    if key:
+        mode = f"; reactions signed as {a.actor}" + (f", filed in {mine}" if mine else "")
+    print(f"warrant serve: http://127.0.0.1:{a.port}/ over {', '.join(space.roots)}{mode}", flush=True)  # NOSONAR S5332: the loopback address this server binds; no TLS on 127.0.0.1
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
