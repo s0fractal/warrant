@@ -46,6 +46,7 @@ class DecodeError extends Error {}                  // json.JSONDecodeError
 export class AgentError extends Error {             // warrant_agent.errors.AgentError
   constructor(code, message) { super(message); this.code = code; }
 }
+const ORDER = Symbol("members in the order read");
 class PyFloat {                                      // a float in a configuration read leniently (Python's json reads it)
   constructor(text) { this.text = text; }
 }
@@ -234,6 +235,7 @@ function parseJSON(s, strict) {
       if (strict && has(o, k)) throw new NotCanonical(`duplicate member ${pyReprStr(k)}`);
       o[k] = v;
     }
+    if (!strict) Object.defineProperty(o, ORDER, { value: [...new Set(pairs.map(([k]) => k))] });   // a dict's order, where Python's matters
     return o;
   }
   function array(depth) {
@@ -430,6 +432,12 @@ function weakKey(pubHex) {
   return (x & ((1n << 255n) - 1n)) >= P;
 }
 
+// keys.verify: a valid Ed25519 signature of `msg` by a strong key (shapes first, the weak keys refused).
+export async function verifySig(backend, pubHex, sigHex, msg) {
+  if (!(hex64(pubHex) && hex128(sigHex)) || weakKey(pubHex)) return false;
+  return Boolean(await backend.verify(pubHex, sigHex, msg));
+}
+
 // ---------------------------------------------------------------- backends: SHA-256 and Ed25519 from the platform
 
 export async function nodeBackend() {
@@ -558,8 +566,7 @@ export async function prepare(input, backend) {
       for (const e of envs) {
         if (e.sig === null) continue;
         for (const pub of keys) {
-          if (!(hex64(pub) && hex128(e.sig.ed25519)) || weakKey(pub)) continue;
-          if (await backend.verify(pub, e.sig.ed25519, msg) && e.sig.key === await keyId(pub)) verified.add(`${id} ${e.sig.ed25519} ${e.sig.key} ${pub}`);
+          if (await verifySig(backend, pub, e.sig.ed25519, msg) && e.sig.key === await keyId(pub)) verified.add(`${id} ${e.sig.ed25519} ${e.sig.key} ${pub}`);
         }
       }
     }
@@ -592,7 +599,7 @@ function schemaProblem(b) {
     && isList(b.closed, (s) => isStates && isStr(s) && has(b.states, s), true)
     && isObj(b.successors) && Object.keys(b.successors).every((st) => isStates && has(b.states, st) && isList(b.successors[st], isActor, true))
     && (!has(b, "pinned") || (isStr(b.pinned) && ["obj", "obj?"].includes(own(b.fields, b.pinned))));
-  return ok ? null : "a schema body is {name, fields: {member: type}, states: {state: guard|null}|null, closed, successors: {state: [roles]}, pinned?: a member of type obj";
+  return ok ? null : "a schema body is {name, fields: {member: type}, states: {state: guard|null}|null, closed, successors: {state: [roles]}, pinned?: a member of type obj}";
 }
 
 const NOWHERE = Symbol("missing");
@@ -1008,9 +1015,38 @@ export async function codeIdentity(source, backend) {
 
 // ---------------------------------------------------------------- handoff inspect, alone (warrant_agent/api.py)
 
+// base64.b64decode(s, validate=True) as CPython 3.15 answers it, its refusal words included (binascii's strict mode).
+const B64 = /^[A-Za-z0-9+/]$/;
+function pyTypeName(v) {
+  return v === null ? "NoneType" : typeof v === "boolean" ? "bool" : isInt(v) ? "int" : v instanceof PyFloat ? "float" : Array.isArray(v) ? "list" : "dict";
+}
 function b64decode(s) {
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s) || s.length % 4) throw new AgentError("BAD_REQUEST", "a blob is not base64");
-  const bin = atob(s);
+  const no = (why) => { throw new AgentError("BAD_REQUEST", `a blob is not base64: ${why}`); };
+  if (!isStr(s)) no(`argument should be a bytes-like object or ASCII string, not '${pyTypeName(s)}'`);
+  if (/[^\x00-\x7f]/.test(s)) no("string argument should contain only ASCII characters");
+  let qp = 0, pads = 0, started = false, full = 0, end = s.length;
+  const count = () => `Invalid base64-encoded string: number of data characters (${full * 4 + 1}) cannot be 1 more than a multiple of 4`;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "=") {
+      if (qp === 0) no(i === 0 ? "Leading padding not allowed" : "Excess padding not allowed");
+      if (qp === 1) no(count());
+      started = true;
+      if (qp + ++pads >= 4) {
+        if (i + 1 < s.length) no(s[i + 1] === "=" ? "Excess padding not allowed" : B64.test(s[i + 1]) ? "Excess data after padding" : "Only base64 data is allowed");
+        end = i + 1;
+        break;
+      }
+      continue;
+    }
+    if (!B64.test(ch)) no("Only base64 data is allowed");
+    if (started) no("Discontinuous padding not allowed");
+    qp = (qp + 1) % 4;
+    if (qp === 0) full++;
+  }
+  if (end === s.length && qp === 1) no(count());
+  if (end === s.length && qp !== 0 && !(started && qp + pads >= 4)) no("Incorrect padding");
+  const bin = atob(s.slice(0, end));
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
@@ -1058,7 +1094,7 @@ export async function inspectAlone(pkg, trust, profile, backend, code) {
     && Array.isArray(pkg.lines) && pkg.lines.every(isStr) && isObj(pkg.blobs) && Array.isArray(pkg.roots) && pkg.roots.every(hex64);
   if (!ok) throw new AgentError("BAD_REQUEST", `a package is {warrant: ${PACKAGE}, roots, lines, blobs}`);
   const blobs = new Map();
-  for (const h of Object.keys(pkg.blobs)) { if (!isStr(pkg.blobs[h])) throw new AgentError("BAD_REQUEST", "a blob is not base64"); blobs.set(h, b64decode(pkg.blobs[h])); }
+  for (const h of pkg.blobs[ORDER] || Object.keys(pkg.blobs)) blobs.set(h, b64decode(pkg.blobs[h]));     // Python's dict order: as read
   const lines = pkg.lines.map((x) => { if (!isWellFormed(x)) throw new AgentError("BAD_REQUEST", "a line is not text"); return utf8(x + "\n"); });
   let size = 0;
   for (const x of lines) size += x.length;
@@ -1114,8 +1150,15 @@ async function readStore(dir, backend) {
 
 const b64bytes = (s) => { const bin = atob(s); const o = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i); return o; };
 
-// A case of the oracle and the vectors: {lines: [base64], blobs: {name: base64}, trust, profile, as_of}.
+// A case of the oracle and the vectors: {lines: [base64], blobs: {name: base64}, trust, profile, as_of}, the
+// report or {refused}; or {package, trust, profile}, handoff inspect's result alone or {error, message}.
 export async function runCase(c, backend, code) {
+  if (has(c, "package")) {
+    try { return await inspectAlone(c.package, c.trust, c.profile, backend, code); } catch (e) {
+      if (e instanceof AgentError) return { error: e.code, message: e.message };
+      throw e;
+    }
+  }
   try {
     const rep = await assess({ lines: c.lines.map(b64bytes), blobs: new Map(Object.keys(c.blobs).map((h) => [h, b64bytes(c.blobs[h])])),
       trust: c.trust, profile: c.profile, as_of: c.as_of ?? null, code }, backend);
@@ -1156,7 +1199,12 @@ async function main(argv) {
       }
     } else if (cmd === "batch") {
       const text = fs.readFileSync(argv[1], "utf8");
-      for (const line of text.split("\n")) if (line) out(await runCase(loadsLenient(line), backend, code));
+      for (const line of text.split("\n")) {
+        if (!line) continue;
+        let res;
+        try { res = await runCase(loadsLenient(line), backend, code); } catch (e) { res = { crash: `JS ${e.name}: ${e.message}` }; }
+        out(res);
+      }
     } else if (cmd === "code") {
       out({ code, runtime: backend.name });
     } else {
