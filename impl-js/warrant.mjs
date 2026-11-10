@@ -600,8 +600,7 @@ function schemaProblem(b) {
     && isStr(b.name) && b.name.length > 0 && cpLen(b.name) <= 100 && b.name !== MIGRATION
     && isObj(b.fields) && Object.values(b.fields).every((t) => isStr(t) && TYPES.includes(rstripQ(t)))
     && (b.states === null || (isStates && own(b.fields, "state") === "str" && Object.values(b.states).every((g) => g === null || guardProblem(g) === null)))
-    // Python tests `s in states` with each closed item, which raises TypeError for a list or an object (a crash of
-    // the reference, reported); here such an item is not a state, so the body is not a schema body.
+    // A closed item that is no string is not a state, so the body is not a schema body (engine.py, since S12).
     && isList(b.closed, (s) => isStates && isStr(s) && has(b.states, s), true)
     && isObj(b.successors) && Object.keys(b.successors).every((st) => isStates && has(b.states, st) && isList(b.successors[st], isActor, true))
     && (!has(b, "pinned") || (isStr(b.pinned) && ["obj", "obj?"].includes(own(b.fields, b.pinned))));
@@ -655,6 +654,7 @@ class View {
     this.asOf = prep.asOf;
     this.authentic();
     this.problems = [];
+    this.lineageDepth();
     this.vouch();
     this.chains();
     this.indexAttests();
@@ -690,8 +690,7 @@ class View {
   jsonBlob(h) {
     const b = this.snap.blobs.get(h);
     if (b === undefined) return null;
-    // Python catches NotCanonical only: an integer of more than 4300 digits in a map blob raises ValueError out of
-    // the assessment there (a crash of the reference, reported); here it is not a map.
+    // An integer of more than 4300 digits makes a map blob no map (Python: ValueError from json.loads, caught).
     try { return loads(b); } catch (e) { if (lineError(e)) return null; throw e; }
   }
 
@@ -776,7 +775,7 @@ class View {
     const bad = new Map();
     for (const [i, r] of this.sortedRecs()) {
       const s = r.kind === "entity" ? this.schemas.get(r.schema) : undefined;
-      if (!(s && s.pinned)) continue;
+      if (s === undefined || !has(s, "pinned")) continue;     // by presence: "" is a member name too
       let root = r;
       const seen = new Set([i]);
       while (root.lineage !== null && this.recs.has(root.lineage) && !seen.has(root.lineage)) { seen.add(root.lineage); root = this.recs.get(root.lineage); }
@@ -786,6 +785,8 @@ class View {
       else if (pin !== null && Object.keys(pin).length && s.closed.includes(getOr(r.body, "state", null))
         && keysOf(pin).some((k) => getOr(match, k, NOWHERE) === NOWHERE || !pyEq(match[k], pin[k])))
         bad.set(i, `its guard matches less than its root's ${s.pinned}`);
+      else if (pin !== null && Object.keys(pin).length && s.closed.includes(getOr(r.body, "state", null)) && r.guard.quorum < 1)
+        bad.set(i, `its guard needs no attest under its root's ${s.pinned}`);
     }
     for (const [i, why] of bad) { this.problem("INVALID", i, why); this.drop(i, `INVALID: ${why}`); }
   }
@@ -847,6 +848,19 @@ class View {
     }
   }
 
+  // engine.py _lineage_depth: a lineage longer than LIMITS.depth links refuses the store before it is assessed (§8).
+  lineageDepth() {
+    const depth = new Map();
+    for (const [i] of this.sortedRecs()) {
+      const path = [];
+      let cur = i;
+      while (this.recs.has(cur) && !depth.has(cur) && this.recs.get(cur).lineage !== null) { path.push(cur); cur = this.recs.get(cur).lineage; }
+      let d = depth.has(cur) ? depth.get(cur) : 0;
+      for (let k = path.length - 1; k >= 0; k--) { d += 1; depth.set(path[k], d); }
+      if (d > LIMITS.depth) throw new Invalid(`store beyond limits: a lineage ${d} links deep, more than ${LIMITS.depth}`);
+    }
+  }
+
   requiresDepth() {
     const deps = new Map();
     for (const [L, lin] of this.lineages) {
@@ -894,7 +908,7 @@ class View {
         const s = new Set();
         for (const a of this.attests.get(v) || []) {
           const x = this.recs.get(a);
-          if (x.actor !== r.actor && this.holds(x.actor, g.roles) && keysOf(g.match).every((k) => pyEq(getOr(x.body, k, null), g.match[k]))) s.add(x.actor);
+          if (x.actor !== r.actor && this.holds(x.actor, g.roles) && keysOf(g.match).every((k) => getOr(x.body, k, NOWHERE) !== NOWHERE && pyEq(x.body[k], g.match[k]))) s.add(x.actor);
         }
         acc = sorted(s);
         if (acc.length < g.quorum) waiting.push(`${g.quorum - acc.length} attest(s) by ${g.roles.join(", ")} matching ${canonStr(g.match)}`);
@@ -953,7 +967,7 @@ class View {
     let stands = why !== null && t !== undefined;
     if (stands && this.rootOf.has(x)) {
       const lin = this.lineages.get(this.rootOf.get(x)), eff = this.effectiveOf.get(this.rootOf.get(x));
-      stands = lin.path.includes(x) && (eff === null || lin.path.indexOf(eff) <= lin.path.indexOf(x));
+      stands = eff === null || (lin.path.includes(x) && lin.path.indexOf(eff) <= lin.path.indexOf(x));   // §5: a fork has no effective version
     }
     const key = (z) => [pyStr(z[0]), pyStr(z[1]), z[2]];
     return { target: x, counted: why !== null, why: why || "thesis: its actor's challenge does not count here",
