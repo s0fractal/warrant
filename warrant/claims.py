@@ -45,6 +45,7 @@ from pathlib import Path, PurePosixPath
 
 from . import gate as GT
 from . import records as R
+from .pins import blobs
 from .repo import Failed, Repo, checker_problem, code_tree, dump, emit, env_root, git, identity, inside, load_key, main, tree_id
 
 CONFIG = "claims/1"
@@ -239,13 +240,6 @@ def acceptances(rep):
         if r["kind"] == "attest" and r["actor"] == CHECKER and rep["_basis"].get(i) == "SIGNED" and r["body"].get("verdict") == "accept":
             out.setdefault(r["body"]["target"], []).append((r["body"].get("commit"), r["body"].get("files")))
     return out
-
-
-def blobs(root, commit):
-    """{path: git blob} of `commit`'s whole tree, a symlink's as `link:<blob>`: its blob is its target's name, and the
-    same id as a regular file holding that name would read other bytes (Codex finding ea6300ecf5d5)."""
-    rows = git(root, "ls-tree", "-r", "-z", "--full-tree", commit, raw=True).decode().split("\0")
-    return {r.split("\t", 1)[1]: ("link:" if r.startswith("120000 ") else "") + r.split()[2] for r in rows if r}
 
 
 def files_of(b, root, known, tree):

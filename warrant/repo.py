@@ -20,6 +20,7 @@ from . import engine as E
 from . import jcs as C
 from . import keys as K
 from . import records as R
+from .pins import git
 from .store import Refused, Store, dot_of, read_inside
 
 PACKAGE = Path(__file__).resolve().parent        # the checker's code: every module of this package
@@ -135,11 +136,6 @@ def identity(root=None):
         if (mine or ours) and f not in hashed:
             raise Failed("IDENTITY", f"{f.relative_to(root if ours else PACKAGE.parent)} is imported and not in the identity")
     return {"code": package_code(), "env": {"python": platform.python_version(), "cryptography": cryptography.__version__}}
-
-
-def git(root, *a, raw=False):
-    out = subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout
-    return out if raw else out.decode().strip()
 
 
 def code_at(commit, root):
