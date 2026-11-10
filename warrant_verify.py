@@ -31,7 +31,7 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "edf1c844a8471a79b4ef96a7d28735d0a348c0cf972da4ea0ce701c88610b250",
-    "warrant/graph.py": "af5e0dff34019523d8eb9dd54d38179a40e7c539c973543996ae65f56cb44465",
+    "warrant/graph.py": "250a91e7a9df2c93e73abe7054d61db320a82944bb8ee08765fae1b3926c9086",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
@@ -328,17 +328,26 @@ def impact(rep0, rep1):
 def ledger(rep, recs=None):
     """The witness ledger, per actor: `accepted`, the versions whose guard the actor's acceptance counts toward;
     `refuted`, of those, [version, challenge] where a replayer attested `reproduces` on that challenge with `on` that
-    version *later* than one of the actor's acceptances of it: the acceptance cites neither the challenge nor that
-    replay, and is dated no later than the replay (Codex challenge on c1cace09dd7c: an acceptance made after the
-    refutation, citing it, was read as refuted); `challenged`, the challenges the actor filed; `replayed`, of those, the
+    version *later* than one of the actor's acceptances of it. "Later" is read from citations first: the replay citing
+    the acceptance, directly or through records it cites, is later whatever its date; the acceptance citing the replay
+    is not; only where neither cites the other is it the dates, the acceptance's no later than the replay's (Codex
+    challenge on c1cace09dd7c: an acceptance citing the refutation was read as refuted; Codex challenge caae1baae65e:
+    citing a challenge not yet reproduced exempted a later refutation, and a date outranked a citation); `challenged`, the challenges the actor filed; `replayed`, of those, the
     ones a replayer reproduced on their own target. Read from the report (versions' accepted_by, challenges' replays,
-    the graph, the records' refs and dates): it grants nothing, and no rule reads it. `at` is each filer's own word, so
-    "later" is read from it where no citation fixes the order. A challenge answered without a replay (a successor
+    the graph, the records' refs and dates): it grants nothing, and no rule reads it. `at` is each filer's own word, which is
+    why it orders only what no citation does. A challenge answered without a replay (a successor
     accepted) credits nobody here."""
     recs = rep.get("_recs", {}) if recs is None else recs     # {id: record}: a repository's report carries it
     _, _, into = index(rep)
     actor = {n[0]: n[3] for n in rep["graph"]["nodes"]}
-    rows, reproduced = {}, {}
+    rows, reproduced, memo = {}, {}, {}
+
+    def before(m, r):       # acceptance m, replay id r: a citation orders them first, `at` only where none does
+        if _cites(recs, r, m["id"], memo):
+            return True
+        if _cites(recs, m["id"], r, memo):
+            return False
+        return m["at"] <= recs[r]["at"]
     row = lambda a: rows.setdefault(a, {"accepted": [], "refuted": [], "challenged": [], "replayed": []})
     for c, x in sorted(rep["challenges"].items()):
         row(actor[c])["challenged"].append(c)
@@ -351,12 +360,30 @@ def ledger(rep, recs=None):
     for v, g in sorted(rep["versions"].items()):
         for a in g["accepted_by"]:
             row(a)["accepted"].append(v)
-            mine = [recs[i] for rel, i in into.get(v, []) if rel == "attest" and i in recs and recs[i]["actor"] == a
-                    and recs[i]["body"].get("verdict") == "accept"]
+            mine = [dict(recs[i], id=i) for rel, i in into.get(v, []) if rel == "attest" and i in recs
+                    and recs[i]["actor"] == a and recs[i]["body"].get("verdict") == "accept"]
             row(a)["refuted"] += [[v, c] for c, runs in reproduced.get(v, [])
-                                  if any(c not in m["refs"] and r not in m["refs"] and m["at"] <= recs[r]["at"]
-                                         for m in mine for r in runs)]
+                                  if any(before(m, r) for m in mine for r in runs)]
     return dict(sorted(rows.items()))
+
+
+def _cites(recs, x, y, memo):
+    """Whether record `x` cites record `y`, directly or through records it cites (ids are hashes: no cycle)."""
+    key = (x, y)
+    if key not in memo:
+        seen, todo = {x}, [x]
+        while todo:
+            for z in recs[todo.pop()].get("refs", []):
+                if z == y:
+                    seen = None
+                    break
+                if z in recs and z not in seen:
+                    seen.add(z)
+                    todo.append(z)
+            if seen is None:
+                break
+        memo[key] = seen is None
+    return memo[key]
 
 def grounded(rep, i):
     """Whether entity version `i` is GROUNDED (minds' Grounded, proofs/Vars1/Grounded.lean, read over a Warrant report):
