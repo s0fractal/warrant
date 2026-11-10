@@ -275,6 +275,12 @@ MUTANTS = [
     ("A125", "warrant_agent/serve.py", 'foreign1=lambda d, n=n: reactions_elsewhere(now, n, d), touched_from_elsewhere=pointing)', 'foreign1=lambda d, n=n: reactions_elsewhere(now, n, d))', AGENT, ["CH5"]),
     ("A126", "warrant_agent/serve.py", 'foreign1=lambda d, n=n: reactions_elsewhere(now, n, d),', 'foreign1=None,', AGENT, ["CH5"]),
     ("A127", "warrant_agent/lens.py", '            if fa[p][k] != fb[p][k]:', '            if False:', AGENT, ["CH7"]),
+    ("A128", "warrant_agent/scene.py", '            pos[n["id"]][2] = max(pos[n["id"]][2], pos[n["target"]][2])', '            pass', AGENT, ["SC2"]),
+    ("A129", "warrant_agent/scene.py", 'glyph = GLYPH.get(n["kind"], "·")', 'glyph = ""', AGENT, ["SC3"]),
+    ("A130", "warrant_agent/scene.py", """(f" · <b>згорнуто {folded} вузлів</b> (бюджет {MAX_NODES})" if folded else "")""", '""', AGENT, ["SC6"]),
+    ("A131", "warrant_agent/lens.py", '        if why:\n            return f"scene: {why}"', '        if False:\n            return f"scene: {why}"', AGENT, ["SC4"]),
+    ("A132", "warrant_agent/scene.py", '<title>{E(describe(n["id"]))}</title>', '<title>{describe(n["id"])}</title>', AGENT, ["SC7"]),
+    ("A133", "warrant_agent/scene.py", 'x = rank[n["id"]] if b["x"] == "time" else i', 'x = i', AGENT, ["SC5"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
