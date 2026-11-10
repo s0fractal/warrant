@@ -108,7 +108,7 @@ jobs:
 
       - name: The core, the agent interface, the merge gate, the tools
         working-directory: tests
-        run: for t in core agent gate tools shapes primitives; do python "${t}_test.py"; done
+        run: for t in core agent gate tools shapes primitives verify; do python "${t}_test.py"; done
 
       - name: The public surface and the quickstart
         working-directory: tests
