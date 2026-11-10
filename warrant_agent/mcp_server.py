@@ -93,10 +93,12 @@ def build(cfg):
     @server.tool(name="warrant_graph", annotations=reads, description=(
         "The record graph (edges from refs, lineage, guard.requires, prev and targets; never from text), states from "
         "the report. op=around {target}: a node and its edges; op=path {target}: what it rests on; op=why {target}: "
-        "what rests on it; op=frontier {actor?}; op=export. Every result carries root (the snapshot digest) and lens "
+        "what rests on it; op=grounded {target}: whether it and all it rests on, transitively, are effective and ELIGIBLE, "
+        "and which fail, why; op=frontier {actor?}; op=ledger: per actor, acceptances later refuted by a reproduced "
+        "challenge, and challenges reproduced; op=export. Every result carries root (the snapshot digest) and lens "
         "(the code, trust, profile and query): the same lens over the same root gives the same result."))
-    def warrant_graph(op: Literal["around", "path", "why", "frontier", "export"], workspace: Workspace,
-                      target: Annotated[str | None, Field(description="around/path/why: a record id or prefix.")] = None,
+    def warrant_graph(op: Literal["around", "path", "why", "grounded", "frontier", "ledger", "export"], workspace: Workspace,
+                      target: Annotated[str | None, Field(description="around/path/why/grounded: a record id or prefix.")] = None,
                       actor: Annotated[str | None, Field(description="frontier: whose; your signer's if omitted.")] = None
                       ) -> dict[str, Any]:
         return run("graph", _req(op=op, workspace=workspace, target=target, actor=actor))

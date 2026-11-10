@@ -9,7 +9,7 @@ interpreter's stack limit. Nothing is cached and no view is kept between calls.
   context    {workspace, targets?, actor?}             per target: its node, lineage, guard, challenges and the
                                                        attests on it; the actor's frontier (default: the signer)
   read       {workspace, target, kind?, offset?, max_bytes?}   a record's line or a blob's bytes, chunked
-  graph      {workspace, op, target?, actor?}          around | path | why | frontier | export, with root and lens
+  graph      {workspace, op, target?, actor?}          around | path | why | grounded | frontier | ledger | export, with root and lens
   across     {query, actor?, target?, schema?, offset?, max_bytes?}   stores | actor | open | challenges | rests over
                                                        every workspace, each assessed alone (warrant.across)
   handoff    {workspace, op, targets?|package}         export the records targets rest on and the verdicts on
@@ -46,7 +46,7 @@ from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
 
 PACKAGE = V.PACKAGE
-GRAPH_OPS = ("around", "path", "why", "frontier", "export")
+GRAPH_OPS = ("around", "path", "why", "grounded", "frontier", "ledger", "export")
 HANDOFF_OPS = ("export", "inspect", "import")
 
 
@@ -186,10 +186,12 @@ def graph(cfg, req):
     need(isinstance(op, str) and op in GRAPH_OPS, "BAD_REQUEST", f"op is one of {list(GRAPH_OPS)}")
     snap, view, _, profile = _assess(ws)
     rep = _report(ws, view)
-    if op in ("around", "path", "why"):
+    if op in ("around", "path", "why", "grounded"):
         i = _resolve(snap, req.get("target"))
         data = getattr(G, op)(rep, i)
         query = {"op": op, "target": i}
+    elif op == "ledger":
+        data, query = G.ledger(rep, view.recs), {"op": op}
     elif op == "frontier":
         actor = req.get("actor") or _signer(ws)
         need(S.is_actor(actor), "BAD_REQUEST", "actor is an actor id")
