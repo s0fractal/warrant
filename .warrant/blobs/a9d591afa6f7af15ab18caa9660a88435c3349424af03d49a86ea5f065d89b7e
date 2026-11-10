@@ -1,0 +1,110 @@
+# G3 closure counterexample: a nonmatching attest creates false responsibility
+
+Reviewed base M: efc6ccf4d46522565a3f6aaf59166a067dc7bc91
+Duty D: a997b9e40f55c12eaa93ff6315da93dfca7c24c4c48d41a3dd4d258e39a8268a
+Closure T: 39a921e41990d627993fc4cac568eef05468ee6deee14db830d2e2f68e643e53
+Referenced PR #312 is merged at M; referenced commit 4074a65fd01a362f98db53921cf31d388c547a5c is an ancestor of M and its warrant/graph.py is identical to M.
+
+P2: warrant/graph.py:176-179 enumerates every verdict=accept attest by an actor in accepted_by, without checking that individual attest against the version's guard.match. accepted_by identifies actors, not which of their attests qualified. warrant/engine.py:_attested correctly requires every match member.
+
+A valid done obligation requires verdict=accept and scope=full. Bob first files scope=partial, which leaves the guard PENDING and accepted_by empty. Carol later reproduces a challenge on this exact version. Bob then files his only qualifying scope=full acceptance, explicitly citing that replay. The ledger nevertheless marks Bob refuted because it compares the replay with his earlier nonmatching attest. His qualifying acceptance came after the replay under the ledger's own citation rule.
+
+Expected: Bob accepted the version but has no refuted entry in this case. Observed: one refuted entry. Removing the nonmatching attest removes the false attribution; changing it to scope=full produces the expected genuine refutation. All fixture records are signed using tests/world.py deterministic test keys, and all three assessed stores have no problems or rejected lines. The repro never signs as any real repository actor.
+
+This is a projection correctness defect, not a core guard or authority bypass. G3's responsibility projection is not complete while it attributes refutation to an attest that never counted toward the guard. Filter individual attests using the actual guard match before applying the ordering rule, and add a regression and a mutant for this boundary.
+
+Checks at M: tools_test.py 107 cases passed, including WL1-WL6; T137 and T151-T154 each KILLED by its named case; roadmap check 87 lineages / 0 problems; claims check 122 live / 0 problems. No full-suite or full-mutant run claimed.
+
+## Reproduce
+Save the following script outside the checkout; run `PYTHONDONTWRITEBYTECODE=1 TMPDIR=<review-work>/tmp python3 guard_match_probe.py <checkout>`. Exit 1 and FAIL F1 reproduce the defect; the positive and negative control assertions pass.
+
+```python
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(sys.argv[1]).resolve()
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+from world import Repo
+from warrant import graph as G
+
+
+def run(early_scope):
+    r = Repo()
+    root = r.entity('alice', 'obligation@1', {'state': 'open', 'statement': 's', 'serves': []})
+    guard = {'quorum': 1, 'roles': ['roadmap/acceptor'],
+             'match': {'verdict': 'accept', 'scope': 'full'}, 'requires': []}
+    v = r.entity('alice', 'obligation@1', {'state': 'done', 'statement': 's', 'serves': []},
+                 lineage=root, guard=guard)
+    early = None
+    if early_scope is not None:
+        early = r.put('bob', 'attest', {'target': v, 'verdict': 'accept', 'scope': early_scope}, refs=[v])
+    before = r.report()['versions'][v]
+    c = r.put('eve', 'challenge', {'target': v, 'statement': 'wrong'}, refs=[v])
+    replay = r.put('carol', 'attest', {'target': c, 'verdict': 'reproduces', 'on': v}, refs=[c, v])
+    # The only qualifying acceptance in the defect case explicitly knows the replay.
+    late = r.put('bob', 'attest', {'target': v, 'verdict': 'accept', 'scope': 'full'}, refs=[v, replay])
+    rep = r.report()
+    recs = {i: e[0]['record'] for i, e in r.store.snapshot().lines.items()}
+    row = G.ledger(rep, recs)['bob']
+    assert not rep['problems'] and not rep['rejected'], (rep['problems'], rep['rejected'])
+    assert rep['versions'][v]['guard'] == 'MET'
+    assert rep['versions'][v]['accepted_by'] == ['bob']
+    assert c in G.ledger(rep, recs)['eve']['replayed']
+    if early_scope != 'full':
+        assert before['accepted_by'] == [] and before['guard'] == 'PENDING'
+    return {'early_scope': early_scope, 'accepted_before_replay': before['accepted_by'],
+            'refuted': [v, c] in row['refuted'], 'version': v, 'challenge': c,
+            'early': early, 'replay': replay, 'late': late}
+
+
+rows = [run('partial'), run(None), run('full')]
+print(json.dumps(rows, indent=2))
+assert rows[1]['refuted'] is False, 'negative control'
+assert rows[2]['refuted'] is True, 'positive control'
+ok = rows[0]['refuted'] is False
+print(('ok   ' if ok else 'FAIL ') + 'F1 nonmatching early attest cannot refute a qualifying acceptance made after and citing the replay')
+raise SystemExit(0 if ok else 1)
+
+```
+
+## Output at M
+
+```text
+[
+  {
+    "early_scope": "partial",
+    "accepted_before_replay": [],
+    "refuted": true,
+    "version": "8f3cd95959125381e34b08ef272ee532c009c8d604847912f14fc31df7481d5b",
+    "challenge": "9fd58b7744a8ec8d13085f9d686813b9b8856acc2f0d8f0605c1c6292f2e6a40",
+    "early": "44b8012027cfb34abb012bac57f340eda3ab3074db872a0a529393c9c4afbacf",
+    "replay": "876f5ae7ff623ac1317af69cc3d8412eae21b8f077c1e38a3cae4d4b03059c2a",
+    "late": "cc5a8506147642e0878b708420d5fcdb48c7f849870db1b8c123f6896d40ffaf"
+  },
+  {
+    "early_scope": null,
+    "accepted_before_replay": [],
+    "refuted": false,
+    "version": "8f3cd95959125381e34b08ef272ee532c009c8d604847912f14fc31df7481d5b",
+    "challenge": "40c95745bfd069779776122deec33d2a6214281c881feabb1b188025b20a1688",
+    "early": null,
+    "replay": "8cbb2dd54d376426571e7f7208e8b6c0f83c82e6c5878c70b2c1e8b36cd4c9cf",
+    "late": "b89690ff06948e03e47276a3ea8bd6ccbacde4f5678f1982ed63a9396e801d91"
+  },
+  {
+    "early_scope": "full",
+    "accepted_before_replay": [
+      "bob"
+    ],
+    "refuted": true,
+    "version": "8f3cd95959125381e34b08ef272ee532c009c8d604847912f14fc31df7481d5b",
+    "challenge": "9fd58b7744a8ec8d13085f9d686813b9b8856acc2f0d8f0605c1c6292f2e6a40",
+    "early": "d691082ebe60b32b9746681fc6d9c49a364c5e77e3f46d9b236551aec69e7ce3",
+    "replay": "876f5ae7ff623ac1317af69cc3d8412eae21b8f077c1e38a3cae4d4b03059c2a",
+    "late": "afb4a3f05f8c3517f456788e5ee116668bf0c8920bb98245b6d69918792343d1"
+  }
+]
+FAIL F1 nonmatching early attest cannot refute a qualifying acceptance made after and citing the replay
+
+```
