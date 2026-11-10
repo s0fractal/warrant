@@ -37,6 +37,7 @@ from warrant import jcs as C
 from warrant import keys as K
 from warrant import records as R
 from warrant import shapes as S
+from warrant import verify as V
 from warrant.store import Inadmissible, Refused, Snapshot
 
 from . import AGENT_API, adapter_id
@@ -44,7 +45,7 @@ from . import glossary as GL
 from .config import OPERATIONS, repository_config
 from .errors import CODES, AgentError, need
 
-PACKAGE = "package/3"
+PACKAGE = V.PACKAGE
 GRAPH_OPS = ("around", "path", "why", "frontier", "export")
 HANDOFF_OPS = ("export", "inspect", "import")
 
@@ -246,18 +247,17 @@ def _package_of(snap, view, rep, roots):
 
 
 def _unpack(pkg, limit):
-    need(isinstance(pkg, dict) and pkg.get("warrant") == PACKAGE and set(pkg) == {"warrant", "roots", "lines", "blobs"}
-         and isinstance(pkg["lines"], list) and all(isinstance(x, str) for x in pkg["lines"])
-         and isinstance(pkg["blobs"], dict) and isinstance(pkg["roots"], list) and all(S.hex64(r) for r in pkg["roots"]),
-         "BAD_REQUEST", f"a package is {{warrant: {PACKAGE}, roots, lines, blobs}}")
+    """The package's lines and blobs, read by the core's one reader of the format (warrant.verify)."""
     try:
-        blobs = {h: base64.b64decode(b, validate=True) for h, b in pkg["blobs"].items()}
-    except (ValueError, TypeError) as e:
-        raise AgentError("BAD_REQUEST", f"a blob is not base64: {e}") from None
-    lines = [x.encode() + b"\n" for x in pkg["lines"]]
-    need(sum(map(len, lines)) + sum(map(len, blobs.values())) <= limit, "RESOURCE_LIMIT", "the package exceeds the workspace's store_bytes")
-    need(all(S.hex64(h) and C.digest(b) == h for h, b in blobs.items()), "BAD_REQUEST", "a blob is not named by its hash")
-    return lines, blobs
+        return V.unpack(pkg, limit)
+    except V.Refusal as e:
+        raise _refusal(e) from None
+
+
+def _refusal(e):
+    if e.code == "TOO_LARGE":
+        return AgentError("RESOURCE_LIMIT", "the package exceeds the workspace's store_bytes")
+    return AgentError("BAD_REQUEST", f"{e}: {e.detail}" if e.code == "BAD_BASE64" else str(e))
 
 
 def handoff(cfg, req):
@@ -276,8 +276,10 @@ def handoff(cfg, req):
                                                      {h: base64.b64decode(b) for h, b in pkg["blobs"].items()}).digest}
     _closed(req, ("workspace", "op", "package"), ("alone",) if op == "inspect" else ())
     lines, blobs = _unpack(req["package"], ws.limits["store_bytes"])
-    pkg_snap = Snapshot(lines, blobs)
-    need(not pkg_snap.rejected, "BAD_REQUEST", f"{len(pkg_snap.rejected)} line(s) of the package are not records")
+    try:
+        pkg_snap = V.snapshot(lines, blobs)
+    except V.Refusal as e:
+        raise _refusal(e) from None
     if op == "import":
         st = ws.open()
         for data in blobs.values():
@@ -292,9 +294,7 @@ def handoff(cfg, req):
         snap = Snapshot(own_lines(own) + lines, {**own.blobs, **blobs})
     _, view, _, _ = _assess(ws, snap)
     rep = view.report()
-    nodes, _, _ = G.index(rep)
-    caps = {r: G.describe(rep, nodes, r) for r in req["package"]["roots"]}
-    return _budget({**_header(rep), "package": pkg_snap.digest, "roots": caps,
+    return _budget({**_header(rep), "package": pkg_snap.digest, "roots": V.describe(rep, req["package"]["roots"]),
                     "rejected": {i: w for i, w in rep["rejected"].items() if i in pkg_snap.lines}},
                    ws.limits["context_bytes"])
 

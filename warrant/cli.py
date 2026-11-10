@@ -1,8 +1,9 @@
 """warrant: one command. The core's verbs init, key, trust, bootstrap, put, attest, blob, assess and fmt
 (docs/V3.md; output is JSON); status, a reader's summary of a store; home, the operator's registry of
 repositories (docs/HOME.md); across, one read over every repository registered there; the review loop's commands review, gate, claims and roadmap (`warrant review ...`
-is `python -m warrant.review ...`; docs/REPOSITORY.md); and drift, whether the bytes the claims checker accepted are
-still the bytes at HEAD (warrant.drift).
+is `python -m warrant.review ...`; docs/REPOSITORY.md); drift, whether the bytes the claims checker accepted are
+still the bytes at HEAD (warrant.drift); and verify, whether this receiver may rely on a package it was handed, with no
+store at all (warrant.verify, docs/VERIFY.md: its exit status is the answer, and the files it names lie anywhere).
 
 The store is --store, else --repo NAME's (a repository registered in Home), else the nearest `.warrant/` from the current directory upward (WARRANT_REPO_ROOT's when
 it is set; `init` creates it in the current directory). The trust and the profile are --trust and --profile,
@@ -110,6 +111,8 @@ def _parser():
                                            "status")}
     for n in LOOP:
         sub.add_parser(n, help=f"python -m warrant.{n} (its own arguments)", add_help=False)
+    sub.add_parser("verify", help="may this receiver rely on a package it was handed? (python -m warrant.verify, its own arguments)",
+                   add_help=False)
     for n, c in cmds.items():
         if n not in ("key", "trust", "init"):
             g = c.add_mutually_exclusive_group()
@@ -287,6 +290,9 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] and argv[0] in LOOP:
         return loop(argv)
+    if argv[:1] == ["verify"]:
+        from . import verify
+        return verify.main(argv[1:])
     a = _parser().parse_args(argv)
     if a.cmd == "across":
         try:

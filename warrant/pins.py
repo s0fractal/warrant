@@ -49,12 +49,20 @@ def first_change(root, commit, path, head="HEAD"):
     return out[0] if out else None
 
 
+def unreadable(files):
+    """Why an acceptance's `files` cannot be compared with any tree, or None."""
+    if not files:
+        return "the acceptance names no files"
+    if not (isinstance(files, dict) and all(isinstance(b, str) for b in files.values())):
+        return "the acceptance's files are not {path: blob}"
+    return None
+
+
 def compare(root, commit, files, head, where, at="HEAD"):
     """[(verdict, path, detail)] of an acceptance's `files` against HEAD (`head`, {path: blob}; `where`, {blob: path})."""
-    if not files:
-        return [("UNKNOWN", "", "the acceptance names no files")]
-    if not (isinstance(files, dict) and all(isinstance(b, str) for b in files.values())):
-        return [("UNKNOWN", "", "the acceptance's files are not {path: blob}")]
+    why = unreadable(files)
+    if why:
+        return [("UNKNOWN", "", why)]
     out = []
     for p, blob in sorted(files.items()):
         now = head.get(p)
