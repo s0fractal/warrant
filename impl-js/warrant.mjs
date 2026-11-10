@@ -61,7 +61,13 @@ const dict = () => Object.create(null);
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && !(v instanceof PyFloat) && !(v instanceof Uint8Array);
 const isInt = (v) => (typeof v === "number" && Number.isInteger(v)) || typeof v === "bigint";
 const isStr = (v) => typeof v === "string";
-const keysOf = (o) => Object.keys(o).sort();       // UTF-16 order: a canonical body's member order, and Python's dict order for it
+// UTF-16 code unit order (JS's `<` on strings): RFC 8785's member order, so a canonical body's member order, which is
+// Python's dict order for a body read from canonical bytes. Not code point order: "\u{1F600}" (D83D DE00) sorts before
+// "\uFFFF" here and after it in Python's sorted().
+export const utf16 = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+// Byte order of strings whose code units are bytes (bkey): Python's sorted() over bytes.
+const byteOrder = utf16;
+const keysOf = (o) => Object.keys(o).sort(utf16);
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX128 = /^[0-9a-f]{128}$/;
 export const hex64 = (v) => isStr(v) && HEX64.test(v);
@@ -329,7 +335,7 @@ export function canonStr(value) {
       continue;
     }
     if (!isObj(v)) throw new NotCanonical(`not a JSON value of this domain: ${v instanceof PyFloat ? "float" : typeof v}`);
-    const keys = Object.keys(v).sort();
+    const keys = Object.keys(v).sort(utf16);        // RFC 8785 §3.2.3: by UTF-16 code units (jcs.py: utf-16-be)
     stack.push(["s", "}", 0]);
     for (let i = keys.length - 1; i >= 0; i--) {
       checkText(keys[i]);
@@ -355,7 +361,7 @@ export function isActor(v) {
   return !(EDGE.test(first) || EDGE.test(last));
 }
 function isList(v, item, sortedToo = false) {
-  if (!Array.isArray(v) || !v.every(item)) return false;
+  if (!Array.isArray(v) || !v.every((x) => item(x))) return false;
   if (!sortedToo) return true;
   for (let k = 1; k < v.length; k++) if (cmp(v[k - 1], v[k]) >= 0) return false;
   return true;
@@ -518,7 +524,7 @@ async function snapshotOf(lines, blobs, backend) {
   }
   const names = sorted(blobs.keys());
   const listing = [];
-  for (const k of [...distinct].sort()) listing.push(seen.get(k));
+  for (const k of [...distinct].sort(byteOrder)) listing.push(seen.get(k));     // store.py: sorted(seen), raw lines as bytes
   for (const h of names) listing.push(utf8(`b ${h} ${await H(blobs.get(h))}`));
   const parts = [];
   listing.forEach((x, i) => { if (i) parts.push(utf8("\n")); parts.push(x); });

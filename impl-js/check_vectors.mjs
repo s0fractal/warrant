@@ -15,10 +15,10 @@ import { join } from "node:path";
 const IDENTITY = new Set(["assessment", "code", "adapter"]);
 const OPERANDS = ["snapshot", "trust", "profile", "as_of", "code"];
 const dir = process.argv[2] || new URL("./vectors", import.meta.url).pathname;
-const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
-const gz = readFileSync(join(dir, manifest.cases));
+const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));  // NOSONAR S8707: the operator's DIR argument (or the vectors beside this file), read as data
+const gz = readFileSync(join(dir, manifest.cases));  // NOSONAR S8707: the cases file the operator's manifest names, read as data and checked against its SHA-256
 const sha = createHash("sha256").update(gz).digest("hex");
-if (sha !== manifest.sha256) { console.log(`FAIL the cases' SHA-256 is ${sha}, the manifest names ${manifest.sha256}`); process.exit(1); }
+if (sha !== manifest.sha256) { console.log("FAIL the cases' SHA-256 is not the one manifest.json names"); process.exit(1); }
 const backend = await W.nodeBackend();
 const code = await W.codeIdentity(new Uint8Array(readFileSync(new URL("./warrant.mjs", import.meta.url))), backend);
 const counts = {};

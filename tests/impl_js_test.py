@@ -353,6 +353,16 @@ def boundary_cases():
     root = w.put("alice", "entity", {"state": "open", "by": {"k": True}}, "pin@1")
     w.put("alice", "entity", {"state": "shut"}, "pin@1", root, guard=R.guard(0, [], {"k": 1}))
     out.append(("Python's == in guard and pin matches", dict(_receiver(w), lines=list(w.lines), blobs={}, as_of=None)))
+    # Member order in reasons: the members of the wrong type in the body's own (UTF-16, canonical) order, U+1F600 before
+    # U+FFFF; the members a schema lacks in Python's sorted() (code point) order, U+FFFF before U+1F600.
+    w = _world()
+    w.put("alice", "schema", {"name": "order@1", "fields": {"￿": "int", "\U0001F600": "int", "Ａ": "int"}, "states": None,
+                              "closed": [], "successors": {}})
+    target = w.claim()
+    w.put("bob", "attest", {"target": target, "￿": "x", "\U0001F600": "y", "Ａ": "z"}, "order@1", refs=[target])
+    w.put("bob", "attest", {"target": target, "￿": 1, "\U0001F600": 1, "Ａ": 1, "\U0001F601": 1, "￾": 1}, "order@1", refs=[target])
+    w.put("bob", "attest", {"target": target}, "order@1", refs=[target])
+    out.append(("member order in reasons, above U+FFFF", dict(_receiver(w), lines=list(w.lines), blobs={}, as_of=None)))
     for depth in (ST.LIMITS["requires"], ST.LIMITS["requires"] + 1):
         chain, prev = _world(), None
         for n in range(depth):
