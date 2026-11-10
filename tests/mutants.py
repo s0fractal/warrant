@@ -13,9 +13,13 @@ The claims (warrant/claims.py) cite these ids; check refuses a claim citing an i
 whose cases are not among the claim's witnesses."""
 import hashlib
 import json
+import os
+import queue
 import shutil
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -623,12 +627,23 @@ def table():
     return {m[0]: [m[1], m[4], m[5]] for m in MUTANTS}
 
 
-def run(test, cwd):
+def jobs():
+    """How many mutants run at once: MUTANT_JOBS, or the processors up to 4 (each run is one test file, a few hundred
+    MB at most; more at once only competes for the same cores)."""
+    try:
+        n = int(os.environ.get("MUTANT_JOBS", "0"))
+    except ValueError:
+        n = 0
+    return max(1, n or min(os.cpu_count() or 1, 4))
+
+
+def run(test, cwd, tmp=TMP):
     """(exit status, output); a run past the timeout is status None with what it printed (TIMEOUT, never a kill)."""
+    tmp.mkdir(parents=True, exist_ok=True)
     try:
         r = subprocess.run([sys.executable, "-B", test], cwd=cwd, capture_output=True, text=True, timeout=900,
                            env={"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "PYTHONDONTWRITEBYTECODE": "1",
-                                "HOME": str(Path.home()), "TMPDIR": str(TMP)})
+                                "HOME": str(Path.home()), "TMPDIR": str(tmp)})
     except subprocess.TimeoutExpired as e:
         return None, (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode(errors="replace")
     return r.returncode, r.stdout + r.stderr
@@ -638,18 +653,18 @@ def failed(out, cases):
     return sorted({c for line in out.splitlines() for c in cases if line.startswith(f"FAIL {c} ") or line == f"FAIL {c}"})
 
 
-def copy_tree():
-    """The whole tree into COPY: every tracked file and every untracked one Git does not ignore (the hermetic
+def copy_tree(dest=COPY):
+    """The whole tree into `dest`: every tracked file and every untracked one Git does not ignore (the hermetic
     identity: a folder list leaves out what a test reads)."""
-    if COPY.exists():
-        shutil.rmtree(COPY)
+    if dest.exists():
+        shutil.rmtree(dest)
     files = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
                            capture_output=True, check=True).stdout.decode().split("\0")
     for f in filter(None, files):
         src = ROOT / f
         if src.is_file() or src.is_symlink():
-            (COPY / f).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, COPY / f, follow_symlinks=False)
+            (dest / f).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest / f, follow_symlinks=False)
 
 
 def shard(ids, k, n):
@@ -657,38 +672,53 @@ def shard(ids, k, n):
 
 
 def run_mutants(ids):
-    copy_tree()
-    TMP.mkdir(parents=True, exist_ok=True)
+    """Each mutant in its own copy of the tree, `jobs()` at once: a worker owns a copy and a TMPDIR while it mutates,
+    runs and restores, so no run sees another's mutation. Rows come back in the order of `ids`."""
+    workers = max(1, min(jobs(), len(ids)))
+    places = [(COPY, TMP)] + [(COPY.with_name(f"mutants-{w}"), TMP.with_name(f"mutants-tmp-{w}")) for w in range(1, workers)]
+    for d, t in places:
+        copy_tree(d)
+        t.mkdir(parents=True, exist_ok=True)
     rows = {m[0]: m for m in MUTANTS}
     for test in sorted({rows[i][4] for i in ids}):
         rc, out = run(test, COPY)
         if rc:
             print(f"BASELINE_RED {test}\n{out[-2000:]}")
             return None
-    out_rows = []
-    for i in ids:
+    free, lock = queue.Queue(), threading.Lock()
+    for p in places:
+        free.put(p)
+
+    def one(i):
         _, path, old, new, test, cases = rows[i]
         pairs = old if isinstance(old, list) else [(old, new)]
-        f = COPY / path
-        src = f.read_text()
-        stale = [o for o, _ in pairs if src.count(o) != 1]
-        if stale:
-            out_rows.append({"id": i, "outcome": "STALE", "detail": f"a find text does not occur once in {path}: {stale[0][:60]!r}"})
-        else:
-            mutated = src
-            for o, n in pairs:
-                mutated = mutated.replace(o, n)
-            f.write_text(mutated)
-            try:
-                rc, out = run(test, COPY)
-            finally:
-                f.write_text(src)
-            hit = failed(out, cases) if rc is not None else []
-            out_rows.append({"id": i, "outcome": "KILLED" if hit else "SURVIVED" if rc is not None else "TIMEOUT", "failed": hit, "rc": rc,
-                             "detail": "" if hit else out[-600:]})
-        r = out_rows[-1]
-        print(f"{i} {r['outcome']} {path} by {test} {cases}" + (f": {r['detail'][-300:]}" if r["outcome"] != "KILLED" else ""), flush=True)
-    return out_rows
+        copy, tmp = free.get()
+        try:
+            f = copy / path
+            src = f.read_text()
+            stale = [o for o, _ in pairs if src.count(o) != 1]
+            if stale:
+                r = {"id": i, "outcome": "STALE", "detail": f"a find text does not occur once in {path}: {stale[0][:60]!r}"}
+            else:
+                mutated = src
+                for o, n in pairs:
+                    mutated = mutated.replace(o, n)
+                f.write_text(mutated)
+                try:
+                    rc, out = run(test, copy, tmp)
+                finally:
+                    f.write_text(src)
+                hit = failed(out, cases) if rc is not None else []
+                r = {"id": i, "outcome": "KILLED" if hit else "SURVIVED" if rc is not None else "TIMEOUT", "failed": hit,
+                     "rc": rc, "detail": "" if hit else out[-600:]}
+        finally:
+            free.put((copy, tmp))
+        with lock:
+            print(f"{i} {r['outcome']} {path} by {test} {cases}" + (f": {r['detail'][-300:]}" if r["outcome"] != "KILLED" else ""), flush=True)
+        return r
+
+    with ThreadPoolExecutor(workers) as pool:
+        return list(pool.map(one, ids))
 
 
 def definition():
