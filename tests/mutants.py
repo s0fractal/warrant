@@ -70,6 +70,7 @@ MUTANTS = [
      'elif False:', CORE, ["P7"]),
     ("V104", E, 'stands = eff is None or (x in lin["path"] and lin["path"].index(eff) <= lin["path"].index(x))',
      'stands = x in lin["path"] and (eff is None or lin["path"].index(eff) <= lin["path"].index(x))', CORE, ["L15"]),
+    ("V105", E, "        self._lineage_depth()\n", "", CORE, ["T16"]),
     ("V101", E, 'lambda s: isinstance(s, str) and isinstance(b["states"], dict) and s in b["states"]', 'lambda s: isinstance(b["states"], dict) and s in b["states"]', CORE, ["S12"]),
     ("V100", E, '.get(k, object()) == x for k, x in g["match"].items())})', '.get(k) == x for k, x in g["match"].items())})', CORE, ["G8"]),
     ("V3", E, 'return any(actor in self.profile["roles"].get(x, []) for x in roles)', "return True", CORE, ["C1", "S1"]),

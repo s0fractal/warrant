@@ -90,6 +90,7 @@ class View:
         self.as_of = as_of if as_of is not None else max((e[0]["record"]["at"] for e in snap.lines.values()), default=0)
         self.recs, self.basis, self.bad, self.later = _authentic(snap, trust, self.as_of)
         self.problems = []
+        self._lineage_depth()
         self._vouch()
         self._chains()
         self._index_attests()
@@ -279,6 +280,23 @@ class View:
                 self.problem("LINEAGE_BACKDATED", x, "dated before the version it succeeds")
 
     # -- guards (§6)
+
+    def _lineage_depth(self):
+        """Refuse the store (§8) when a lineage is longer than LIMITS["depth"] links, before anything is assessed, so no
+        verdict depends on where a bounded walk would have stopped (the order of record ids). Without recursion; a
+        `lineage` naming no record of the view ends the walk, and ids make the links acyclic."""
+        depth = {}
+        for i in sorted(self.recs):
+            path, cur = [], i
+            while cur in self.recs and cur not in depth and self.recs[cur]["lineage"] is not None:
+                path.append(cur)
+                cur = self.recs[cur]["lineage"]
+            d = depth.get(cur, 0)
+            for x in reversed(path):
+                d += 1
+                depth[x] = d
+            if d > LIMITS["depth"]:
+                raise R.Invalid(f"store beyond limits: a lineage {d} links deep, more than {LIMITS['depth']}")
 
     def _requires_depth(self):
         """Refuse the store (§8) when a chain of lineages requiring lineages is longer than LIMITS["requires"]: a

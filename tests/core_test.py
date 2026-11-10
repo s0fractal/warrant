@@ -15,7 +15,7 @@ from warrant import keys as K               # noqa: E402
 from warrant import bootstrap as B          # noqa: E402
 from warrant import engine as E             # noqa: E402
 from warrant import records as R            # noqa: E402
-from warrant.store import Snapshot, Store   # noqa: E402
+from warrant.store import LIMITS, Snapshot, Store   # noqa: E402
 
 FAILS = []
 
@@ -487,6 +487,26 @@ def store_cases():
     except RecursionError:
         ok = False
     check("T11 requires nested beyond the limit refuse the store, never exhaust the stack", ok)
+    # Found by the JavaScript port at 7de4413d: LIMITS["depth"] was never checked; the lineage walk stopped at 4096
+    # versions, so in a deeper lineage which versions came out LINEAGE_BROKEN depended on how record ids sort.
+    deep, cur = World(), None
+    OPEN = next(x for x in B.SCHEMAS if x["name"] == "obligation@1")["states"]["open"]
+    for n in range(LIMITS["depth"] + 1):     # LIMITS["depth"] links: at the bound
+        cur = deep.put("alice", "entity", {"state": "open", "statement": f"v{n}", "serves": []}, "obligation@1", cur, guard=OPEN)
+    at_bound = deep.report()
+    deep.put("alice", "entity", {"state": "open", "statement": "one more", "serves": []}, "obligation@1", cur, guard=OPEN)
+    try:
+        deep.report()
+        past = "assessed"
+    except R.Invalid as e:
+        past = str(e)
+    except RecursionError:
+        past = "RecursionError"
+    root = next(L for L in at_bound["lineages"])
+    check("T16 a lineage of LIMITS['depth'] links is assessed whole; one link more refuses the store before it is assessed",
+          len(at_bound["lineages"]) == 1 and len(at_bound["lineages"][root]["versions"]) == LIMITS["depth"] + 1
+          and not any(p[0] == "LINEAGE_BROKEN" for p in at_bound["problems"]) and "links deep" in past,
+          (len(at_bound["lineages"]), past))
     with tempfile.TemporaryDirectory() as d:
         st = Store(d).init()
         k = w.keys["alice"]
