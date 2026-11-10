@@ -268,6 +268,8 @@ MUTANTS = [
     ("A118", "warrant_agent/changes.py", '        quiet -= touched[L]\n', '        pass\n', AGENT, ["CH2"]),
     ("A119", "warrant_agent/serve.py", '        ok = secrets.compare_digest(form.get("token", ""), self.token)\n        if not ok:', '        if False:', AGENT, ["CH1"]),
     ("A120", "warrant_agent/changes.py", 'lines = [raw for raw in snap.raw if _rid(raw) in keep]', 'lines = list(snap.raw)', AGENT, ["CH3"]),
+    ("A121", "warrant_agent/serve.py", 'Repo(self.space.roots[into or store]).file(', 'Repo(self.space.roots[store]).file(', AGENT, ["SV7"]),
+    ("A122", "warrant_agent/serve.py", 'v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))', 'pass', AGENT, ["SV7"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
