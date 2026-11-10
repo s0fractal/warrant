@@ -361,7 +361,10 @@ class Base:
 
     def __init__(self, root, commit):
         self.root, self.commit = root, commit
-        files = files_at(root, commit, self.FILES)
+        try:
+            files = files_at(root, commit, self.FILES)
+        except UnicodeDecodeError:          # Git holds paths as bytes: a base tree with one that is no UTF-8 is refused, not a crash
+            raise Refused(f"a path of the base {commit[:12]}'s tree is not UTF-8", "BASE_CONFIG") from None
         docs = {}
         for p in self.FILES:
             try:

@@ -512,6 +512,17 @@ def unreadable_cases():
     check("E51 a head holding a path that is not UTF-8 is refused (HEAD_UNREADABLE), never the end of the run "
           "(observed at 9509b865: UnicodeDecodeError out of assess, so no other pull request was read)", got == ({"HEAD_UNREADABLE"}, False), got)
 
+    bad = grown(p.r, p.base, {b"docs/caf\xe9.txt": b""})          # the same bytes in the base's own tree
+    try:
+        GT.Base(p.r.root, bad)
+        got = "read"
+    except GT.Refused as e:
+        got = getattr(e, "code", None) or e.args[-1]
+    except UnicodeDecodeError as e:                                  # the case fails on its assertion, not on the gate's crash
+        got = f"raised {type(e).__name__}"
+    check("E52 a base whose tree holds a path that is not UTF-8 is refused as BASE_CONFIG, never a crash of the gate's run",
+          got == "BASE_CONFIG", got)
+
 
 def interpreter_cases():
     """Why the rules of E36-E42 are what they are: what this interpreter loads when a pull request's file is there."""
