@@ -5,7 +5,8 @@ tree:
 
     UNCHANGED  the same bytes at the same path;
     MOVED      the path is gone from the tree and the same bytes are at another path;
-    CHANGED    other bytes at the path, with the first commit after the accepted one that changed it;
+    CHANGED    other bytes at the path, with the first commit after the accepted one from which the bytes were not
+               those (a commit changing only a mode, or one undone later, is not it);
     GONE       the path is gone from the tree and those bytes are nowhere in it;
     UNKNOWN    the acceptance names no files, or not as {path: blob}: nothing can be compared.
 
@@ -36,19 +37,6 @@ def paths_of(head):
     return {b: p for p, b in sorted(head.items(), reverse=True)}
 
 
-def first_change(root, commit, path, head="HEAD"):
-    """The first commit after `commit`, on the way to HEAD, that changed `path` (None when none is found: the commit
-    is not in this clone, or a merge brought the bytes). `commit` and `path` come from a record: only a commit id
-    reaches Git, and the path is literal."""
-    if not S.hex_of(commit, 40):
-        return None
-    try:
-        out = git(root, "--literal-pathspecs", "log", "--reverse", "--format=%H", f"{commit}..{head}", "--", path).splitlines()
-    except subprocess.CalledProcessError:
-        return None
-    return out[0] if out else None
-
-
 def unreadable(files):
     """Why an acceptance's `files` cannot be compared with any tree, or None."""
     if not files:
@@ -58,8 +46,42 @@ def unreadable(files):
     return None
 
 
-def compare(root, commit, files, head, where, at="HEAD"):
-    """[(verdict, path, detail)] of an acceptance's `files` against HEAD (`head`, {path: blob}; `where`, {blob: path})."""
+def fresh(tree, path, blob):
+    """Whether a tree ({path: blob}, as blobs spells it) holds an accepted file's bytes: at its path, or, the path
+    gone, at another (moved). Only the bytes count: a commit changing a file's mode alone changes nothing here."""
+    now = tree.get(path)
+    return now == blob or (now is None and blob in tree.values())
+
+
+def first_change(root, commit, path, blob, head="HEAD"):
+    """The commit since which `path` has not held `blob` (`fresh`), on the way from `commit` to `head`: of the commits
+    that changed the path or the number of copies of those bytes in the tree, the first after the last one at which the
+    file read fresh again (deleted then restored, moved with its bytes), and never one that changed only its mode
+    (Codex finding e895d8cad992). None when none is found: the commit is not in this clone, or a merge brought the
+    bytes. `commit`, `path` and `blob` come from a record: only a commit id and an object id reach Git, and the path
+    is literal."""
+    if not S.hex_of(commit, 40):
+        return None
+    oid = blob[len("link:"):] if blob.startswith("link:") else blob
+    try:
+        order = git(root, "rev-list", "--reverse", "--topo-order", f"{commit}..{head}").splitlines()
+        touched = set(git(root, "--literal-pathspecs", "log", "--format=%H", f"{commit}..{head}", "--", path).splitlines())
+        if S.hex_of(oid, 40):
+            touched |= set(git(root, "log", "--format=%H", f"--find-object={oid}", f"{commit}..{head}").splitlines())
+        since = None
+        for c in reversed([c for c in order if c in touched]):
+            if fresh(blobs(root, c), path, blob):
+                break
+            since = c
+    except subprocess.CalledProcessError:
+        return None
+    return since
+
+
+def compare(root, commit, files, head, where, at="HEAD", memo=None):
+    """[(verdict, path, detail)] of an acceptance's `files` against HEAD (`head`, {path: blob}; `where`, {blob: path}).
+    `memo`, one answer's: first_change once per (commit, path, blob), however many claims name them."""
+    memo = {} if memo is None else memo
     why = unreadable(files)
     if why:
         return [("UNKNOWN", "", why)]
@@ -71,7 +93,9 @@ def compare(root, commit, files, head, where, at="HEAD"):
         elif now is None and blob in where:
             out.append(("MOVED", p, f"now at {where[blob]}"))
         else:
-            x = first_change(root, commit, p, at)
+            if (commit, p, blob) not in memo:
+                memo[commit, p, blob] = first_change(root, commit, p, blob, at)
+            x = memo[commit, p, blob]
             since = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
             out.append(("CHANGED", p, since) if now else ("GONE", p, f"not at HEAD, {since}"))
     return out

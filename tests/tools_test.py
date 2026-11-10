@@ -459,6 +459,40 @@ def drift_cases():
           d.get("verdict") == "UNCHANGED" and rel == "ELIGIBLE" and text.startswith("unchanged ")
           and {"verdict": "MOVED", "path": "lib/code.py", "detail": "now at lib/moved.py"} in d.get("files", [])
           and "unchanged, moved: now at lib/moved.py (was lib/code.py)" in text, (d, rel, text))
+    r, L = drift_repo()
+    os.chmod(r.root / "lib" / "code.py", 0o755)
+    r.commit("the accepted file's mode changes, its bytes do not")
+    mid, mid_rel = gated(r, L)
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    edit = r.commit("the accepted file's bytes change")
+    (r.root / "lib" / "code.py").write_text("X = 3\n")
+    r.commit("and change again")
+    d, rel = gated(r, L)
+    check("DR26 a commit that changes only a file's mode changes no bytes: CHANGED names the first commit that changed them "
+          "(Codex finding e895d8cad992)", mid.get("verdict") == "UNCHANGED" and mid_rel == "ELIGIBLE" and rel == D.STALE
+          and {"verdict": "CHANGED", "path": "lib/code.py", "detail": f"since {edit[:12]}"} in d.get("files", []), (mid, d))
+    seen = {}
+    r, L = drift_repo()
+    (r.root / "lib" / "code.py").unlink()
+    r.commit("the accepted file is deleted")
+    seen["deleted"] = gated(r, L)[0].get("verdict")
+    (r.root / "lib" / "code.py").write_text("X = 1\n")
+    r.commit("restored with the same bytes")
+    seen["restored"] = gated(r, L)[0].get("verdict")
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    edit = r.commit("its bytes change")
+    seen["edited"] = next((f["detail"] for f in gated(r, L)[0].get("files", []) if f["path"] == "lib/code.py"), None)
+    r, L = drift_repo()
+    git(r.root, "mv", "lib/code.py", "lib/moved.py")
+    r.commit("the accepted file moves, its bytes unchanged")
+    seen["moved"] = gated(r, L)[0].get("verdict")
+    (r.root / "lib" / "moved.py").write_text("X = 2\n")
+    gone = r.commit("its bytes change at the new path")
+    seen["gone"] = next((f["detail"] for f in gated(r, L)[0].get("files", []) if f["path"] == "lib/code.py"), None)
+    check("DR27 CHANGED and GONE name the commit since which the file has read other bytes: not one before a commit at which "
+          "it read unchanged again (deleted then restored, or moved with its bytes)",
+          seen == {"deleted": "CHANGED", "restored": "UNCHANGED", "edited": f"since {edit[:12]}", "moved": "UNCHANGED",
+                   "gone": f"not at HEAD, since {gone[:12]}"}, seen)
     r = checker_repo()
     (r.root / "lib").mkdir()
     (r.root / "lib" / "code.py").write_text("X = 1\n")
@@ -494,8 +528,13 @@ def drift_cases():
     _, _, empty, empty_rel = accepted_with(files={})
     check("DR8 an acceptance naming an empty list of files is UNKNOWN, not vacuously fresh", empty.get("verdict") == "UNKNOWN"
           and empty_rel == D.STALE, (empty, empty_rel))
-    _, _, shaped, shaped_rel = accepted_with(files="lib/code.py")
-    _, _, listed, listed_rel = accepted_with(files={"lib/code.py": ["not a blob"]})
+    def crashless(files):                # the case is that the read does not crash: a crash is its FAIL, not the file's end
+        try:
+            return accepted_with(files=files)[2:]
+        except Exception as e:           # noqa: BLE001
+            return {"crashed": repr(e)}, None
+    shaped, shaped_rel = crashless("lib/code.py")
+    listed, listed_rel = crashless({"lib/code.py": ["not a blob"]})
     check("DR9 an acceptance whose files are not {path: blob} is UNKNOWN: the read does not crash on a record",
           shaped.get("verdict") == "UNKNOWN" and shaped_rel == D.STALE and listed.get("verdict") == "UNKNOWN" and listed_rel == D.STALE,
           (shaped, listed))
@@ -706,13 +745,63 @@ def drift_impact_cases():
     other = Repo()
     far = other.entity("bob", "obligation@1", {"state": "open", "statement": "in another store, cites the effective version",
                                               "serves": [], "evidence": [v2]})
+    first = other.entity("bob", "obligation@1", {"state": "open", "statement": "in another store, cites the first version",
+                                                "serves": [], "evidence": [L]})
     home = {"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}}
     m = D.impact(RP.Repo(r.root).report(), r.root, head, base, A.home_readings(home))
     text = D.impact_lines(m)
     check("DR23 with Home's stores, a record in another store resting on any version of a stale claim is named with its "
           "store, and this checkout's own store is not counted twice",
-          m["stores"] == ["there"] and [(e["store"], e["lineage"]) for e in m["stale"][0]["elsewhere"]] == [("there", far)]
+          m["stores"] == ["there"] and [(e["store"], e["lineage"]) for e in m["stale"][0]["elsewhere"]] == sorted([("there", far), ("there", first)])
           and text.startswith("impact: 1 stale claim(s) -> 1 lineage(s) resting on them -> 1 other store(s)"), (m, text))
+    r, L = drift_repo()
+    here = r.entity("alice", "obligation@1", {"state": "open", "statement": "here, cites the claim", "serves": [], "evidence": [L]})
+    other = Repo()
+    far = other.entity("bob", "obligation@1", {"state": "open", "statement": "there, cites the record here", "serves": [], "evidence": [here]})
+    back = r.entity("alice", "obligation@1", {"state": "open", "statement": "here, cites the record there", "serves": [], "evidence": [far]})
+    base = r.commit("a chain through two stores")
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    head = r.commit("the mutated file changes")
+    home = {"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}}
+    m = D.impact(RP.Repo(r.root).report(), r.root, head, base, A.home_readings(home))
+    alone = D.impact(RP.Repo(r.root).report(), r.root, head, base)
+    check("DR28 with Home's stores the walk goes on through every store, this one too: a record elsewhere resting on a record "
+          "here that rests on the claim is named, and so is a record here resting on it (Codex finding 72595e2154fd)",
+          [(e["store"], e["lineage"]) for e in (m["stale"] or [{}])[0].get("elsewhere", [])] == [("there", far)]
+          and m["affected"] == sorted([here, back]) and alone["affected"] == [here], (m, alone))
+    env = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(r.home / "config" / "drift-home.json")
+    try:
+        H.save(dict(H.empty(), repositories={"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}))
+        def answered():                  # a refusal or crash reads as no answer, so the case fails on its own line
+            with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    CLI.main(["drift", "--root", str(r.root), f"--impact={base}..{head}", "--across", "--json"])
+                    return json.loads(out.getvalue())
+                except (SystemExit, Exception) as e:         # noqa: BLE001
+                    return {"crashed": repr(e)}
+        a = answered()
+        other.entity("bob", "obligation@1", {"state": "open", "statement": "there, cites the claim", "serves": [], "evidence": [L]})
+        b = answered()
+        H.save(dict(H.empty(), repositories={"here": {"path": str(r.root)}, "there": {"path": str(other.root)},
+                                             "gone": {"path": str(r.home / "no-such-store")}}))
+        c = answered()
+    finally:
+        if env is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = env
+    readings = {x.name: x for x in A.home_readings({"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}})}
+    rep = RP.Repo(r.root).report()
+    D.gate(rep, r.root, head)
+    q = {"query": "impact", "head": head, "base": base, "across": True}
+    want = A.identity({"here": rep, "there": readings["there"].rep}, [], rep["code"], None, q) if hasattr(A, "identity") else None
+    check("DR29 an answer with Home's stores binds every store it read as `across` does: a record added in another store "
+          "changes its root, a store that cannot be read is named and changes it too",
+          "crashed" not in a and "crashed" not in b and "crashed" not in c
+          and a["data"]["stale"][0]["elsewhere"] != b["data"]["stale"][0]["elsewhere"] and a["root"] != b["root"]
+          and (b["root"], b["lens"]) == want and [u["store"] for u in c["data"].get("unavailable", [])] == ["gone"]
+          and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
 
 
 def review_cases():
