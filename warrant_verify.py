@@ -31,7 +31,7 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "edf1c844a8471a79b4ef96a7d28735d0a348c0cf972da4ea0ce701c88610b250",
-    "warrant/graph.py": "308221cf07c1873feb1ae937312035a3fe590f880b9201fbdeb9c3387219daee",
+    "warrant/graph.py": "af5e0dff34019523d8eb9dd54d38179a40e7c539c973543996ae65f56cb44465",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
@@ -198,6 +198,8 @@ call the same ones. Every state shown is the report's, never recomputed.
   delta(rep0, rep1)        nodes added and removed, lineages whose state or reliance changed
   impact(rep0, rep1)       the lineages the changed records bear on, and what rests on those
   ledger(rep, recs)        the witness ledger: per actor, acceptances later refuted, challenges that replayed
+  grounded(rep, id)        whether a version stands on ground: it, and every entity version it rests on by `refs`
+                           and `requires`, transitively, is the effective version of an ELIGIBLE lineage
   answer(rep, query, data, adapter)   {root, lens, query, data}: the same lens over the same root gives
                            the same bytes, so a result may be cached by (lens, root) and re-derived
 
@@ -355,6 +357,74 @@ def ledger(rep, recs=None):
                                   if any(c not in m["refs"] and r not in m["refs"] and m["at"] <= recs[r]["at"]
                                          for m in mine for r in runs)]
     return dict(sorted(rows.items()))
+
+def grounded(rep, i):
+    """Whether entity version `i` is GROUNDED (minds' Grounded, proofs/Vars1/Grounded.lean, read over a Warrant report):
+    it and every entity version it rests on, by `ref` and by `requires` (a required lineage through its effective
+    version), transitively, is the effective version of a lineage whose reliance is ELIGIBLE. The least fixed point:
+    a version on a cycle of grounds is not grounded. `failing` names each version of the closure that fails, with why:
+    NOT_A_VERSION, UNAVAILABLE (no record of it here), NOT_EFFECTIVE (the version asked about is not its lineage's
+    effective version, or a cited lineage has none), RELIANCE (its lineage is PENDING, CHALLENGED or FORK), CYCLE. A reference to no record of the report
+    (a blob, or a record held elsewhere) is listed under `outside` and decides nothing: whether a closure's evidence
+    must be present is R-EVIDENCE-PRESENCE (docs/V3.md §12). Pure, without recursion; ELIGIBLE alone does not
+    propagate (a lineage is ELIGIBLE on a ground that is not), which is what this answers."""
+    nodes, out, _ = index(rep)
+    lineage = {v: root for root, lin in rep["lineages"].items() for v in lin["versions"]}
+
+    def grounds(v):
+        """The grounds of v: each entity it cites by `ref`, or requires, read as its lineage (a lineage is named by any
+        of its versions, its root as a rule): the lineage's effective version, or the version itself when none is."""
+        gs, far = [], []
+        for rel, b in sorted(out.get(v, [])):
+            if rel not in ("ref", "requires"):
+                continue
+            if b not in nodes:
+                (far if rel == "ref" else gs).append(b)
+            elif nodes[b]["kind"] == "entity":
+                lin = rep["lineages"].get(lineage.get(b))
+                gs.append((lin["effective"] or b) if lin else b)
+        return sorted(set(gs)), far
+
+    def local(v):
+        if v not in nodes:
+            return "UNAVAILABLE"
+        if nodes[v]["kind"] != "entity" or v not in lineage:
+            return "NOT_A_VERSION"
+        lin = rep["lineages"][lineage[v]]
+        if lin["effective"] != v:
+            return "NOT_EFFECTIVE"
+        return None if lin["reliance"] == "ELIGIBLE" else f"RELIANCE {lin['reliance']}"
+
+    seen, order, outside, todo = {i}, [i], set(), [i]
+    while todo:                                    # the closure, breadth first
+        cur = todo.pop(0)
+        if cur not in nodes:
+            continue
+        gs, far = grounds(cur)
+        outside |= set(far)
+        for g in gs:
+            if g not in seen:
+                seen.add(g)
+                order.append(g)
+                todo.append(g)
+    on_cycle = set()                               # a node is on a cycle iff it reaches itself
+    for v in order:
+        stack, mark = [g for g in grounds(v)[0]], set()
+        while stack:
+            g = stack.pop()
+            if g == v:
+                on_cycle.add(v)
+                break
+            if g in mark or g not in nodes:
+                continue
+            mark.add(g)
+            stack += grounds(g)[0]
+    failing = []
+    for v in order:
+        why = local(v) or ("CYCLE" if v in on_cycle else None)
+        if why:
+            failing.append([v, why])
+    return {"from": i, "grounded": not failing, "closure": len(order), "failing": failing, "outside": sorted(outside)}
 
 def answer(rep, query, data, adapter):
     lens = C.doc_id({"code": rep["code"], "adapter": adapter, "trust": rep["trust"], "profile": rep["profile"],

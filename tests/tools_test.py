@@ -1358,6 +1358,34 @@ def ledger_cases():
           c3 in late.get("accepted", []) and [c3, cd] not in late.get("refuted", []), late)
 
 
+def grounded_cases():
+    """warrant.graph.grounded: minds' Grounded over a report. A lineage is ELIGIBLE on a ground that is not: only the
+    transitive answer says so."""
+    from warrant import graph as G
+    r = Repo()
+    a0 = r.entity("alice", "obligation@1", {"state": "open", "statement": "the ground", "serves": []})
+    a = r.entity("alice", "obligation@1", {"state": "done", "statement": "the ground", "serves": []}, lineage=a0)
+    r.attest("bob", a)
+    b0 = r.entity("alice", "obligation@1", {"state": "open", "statement": "rests on it", "serves": [], "evidence": [a0]}, refs=[a0])
+    rep = r.report()
+    first = G.grounded(rep, b0)
+    r.put("alice", "challenge", {"target": a, "statement": "the ground is wrong"}, refs=[a])     # its own actor: counted
+    rep = r.report()
+    after, lin = G.grounded(rep, b0), rep["lineages"][b0]["reliance"]
+    check("GR1 a version resting on a lineage whose reliance fell is not grounded, while its own lineage still reads "
+          "ELIGIBLE; the ground is named, read through the lineage's effective version",
+          first["grounded"] and lin == "ELIGIBLE" and not after["grounded"] and after["failing"] == [[a, "RELIANCE CHALLENGED"]],
+          (first, lin, after))
+    c0 = r.entity("alice", "obligation@1", {"state": "open", "statement": "one", "serves": []})
+    d0 = r.entity("alice", "obligation@1", {"state": "open", "statement": "two", "serves": []})
+    c1 = r.entity("alice", "obligation@1", {"state": "open", "statement": "one", "serves": [], "evidence": [d0]}, lineage=c0, refs=[d0])
+    r.entity("alice", "obligation@1", {"state": "open", "statement": "two", "serves": [], "evidence": [c0]}, lineage=d0, refs=[c0])
+    got = G.grounded(r.report(), c1)
+    check("GR2 grounds that rest on each other (two lineages citing each other's latest version) are not grounded: "
+          "the least fixed point", not got["grounded"] and {w for _, w in got["failing"]} == {"CYCLE"}, got)
+    check("GR3 the version asked about must be its lineage's effective version", G.grounded(r.report(), c0)["failing"][:1] == [[c0, "NOT_EFFECTIVE"]],
+          G.grounded(r.report(), c0))
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
@@ -1370,4 +1398,5 @@ if __name__ == "__main__":
     impact_cases()
     differential_cases()
     ledger_cases()
+    grounded_cases()
     sys.exit(finish())
