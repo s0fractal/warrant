@@ -1193,21 +1193,61 @@ def changes_cases():
           (refused, code, marked))
     r.t += 10
     note = r.put("eve", "attest", {"target": d, "verdict": "note"}, refs=[d])
-    rows, n = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.BUILTIN))
-    rows_h, n_h = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.lenses(space.report("w"))[bare]))
+    fresh = set(space.report("w")["_recs"]) - set(past["_recs"])
+    rows, acc = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.BUILTIN))
+    rows_h, acc_h = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.lenses(space.report("w"))[bare]))
+    n, n_h = len(fresh - acc), len(fresh - acc_h)            # the new records that change nothing the reader sees
     check("CH2 a new attest that moves nothing in the floor is a change under the built-in lens (it draws the "
           "activity), with the attest as witness, and no change under a lens that hides the activity: counted, not listed",
           [x["lineage"] for x in rows] == [o] and (note, "") in rows[0]["appeared"] and n == 0
           and rows_h == [] and n_h == 1, (rows, n, rows_h, n_h))
     r.t += 10
     c = r.put("bob", "challenge", {"target": d, "statement": "counted, and it stands"}, refs=[d])
-    rows_h, n_h = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.lenses(space.report("w"))[bare]))
+    rows_h, _ = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.lenses(space.report("w"))[bare]))
     page_ = SV.App(space, reader="dave", marks=marks).page_changes({})      # a fresh run: the past is rebuilt from the mark
     check("CH3 a counted challenge that stands moves the floor, which no lens hides: the lineage is listed under the "
           "hiding lens too, and the page names the move", [x["lineage"] for x in rows_h] == [o]
           and rows_h[0]["floor_after"]["standing"] == [(c, d)] and "заперечень, що стоять: 0 → 1" in page_
           and "counted, and it stands" in page_, rows_h)
 
+
+    # Codex review of #328 (2026-11-11): a page read other stores its footer did not name; /changes did not see a
+    # reaction filed elsewhere; a lens diff saw presence only; an explicit --mine not read fell back silently.
+    me = Repo()
+    two = SV.Space({"w": str(r.root), "me": str(me.root)})
+    bob = SV.App(two, "bob", KEYS["bob"], marks=CH.Marks(me.home / "seen.json"), mine="me")
+    foot_of = lambda h: h[h.index("<footer>"):]
+    p1 = foot_of(bob.page_lineage("w", o)[1])
+    bob.seen({"token": bob.token})
+    w_before = len(two.report("w")["_recs"])
+    filed = bob.react({"token": bob.token, "store": "w", "target": d, "agree": "-30", "note": "seen from my own store"})
+    p2 = foot_of(bob.page_lineage("w", o)[1])
+    check("CH4 a page reads every store it draws from: a reaction filed in the reader's own store leaves the record's "
+          "store as it was, yet the page's lens changes and its footer names the other stores read",
+          filed[0] == 303 and len(two.report("w")["_recs"]) == w_before and p1 != p2 and "і ще 1 сховищ" in p2, (filed, p1, p2))
+    seen_page = SV.App(two, reader="bob", marks=CH.Marks(me.home / "seen.json")).page_changes({})
+    check("CH5 /changes sees a reaction filed in another store: the record's lineage is listed with that reaction as "
+          "its witness, and the reaction is not counted among the records that changed nothing",
+          "seen from my own store" in seen_page and "відреагував на (у me)" in seen_page
+          and "не змінили нічого, що ти бачиш: 0" in seen_page, __import__("re").sub("<[^>]+>", " ", seen_page[seen_page.find("</form>"):])[:600])
+    lost = SV.App(two, "bob", KEYS["bob"], mine="nowhere")
+    w_now, me_now = len(two.report("w")["_recs"]), len(two.report("me")["_recs"])
+    try:                                   # a crash is this case's FAIL, never a missing line
+        refused = lost.react({"token": lost.token, "store": "w", "target": d, "agree": "10"})
+    except Exception as ex:
+        refused = (500, f"crashed: {type(ex).__name__}")
+    check("CH6 a reader's own store that is not read refuses the reaction and files nothing anywhere (fail closed)",
+          refused[0] == 400 and "nothing is filed" in refused[1] and len(two.report("w")["_recs"]) == w_now
+          and len(two.report("me")["_recs"]) == me_now, refused)
+    a = {"state": "active", "name": "a", "applies": "*", "card": {"layout": "nested", "fields": [
+        {"path": "statement", "label": "Що", "as": "text"}, {"path": "residual", "label": "Залишки", "as": "list"}]}}
+    b = {"state": "active", "name": "b", "applies": "*", "card": {"layout": "flat", "order": "oldest", "fields": [
+        {"path": "residual", "label": "", "as": "count"}, {"path": "statement", "label": "Що", "as": "text"}]}}
+    moves = {w for w, _, _ in LZ.presentation(a, b)}
+    check("CH7 two lenses that show the same members can still draw them differently: the comparison names the layout, "
+          "the order of versions and of members, and each changed label and form",
+          moves == {"layout", "order", "порядок полів", "residual.label", "residual.as"}
+          and LZ.diff(SV.lineage(two.report("w"), o), a, b)[0] == [] and LZ.presentation(a, a) == [], sorted(moves))
 
 if __name__ == "__main__":
     operations()

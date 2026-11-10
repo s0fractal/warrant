@@ -270,6 +270,11 @@ MUTANTS = [
     ("A120", "warrant_agent/changes.py", 'lines = [raw for raw in snap.raw if _rid(raw) in keep]', 'lines = list(snap.raw)', AGENT, ["CH3"]),
     ("A121", "warrant_agent/serve.py", 'Repo(self.space.roots[into or store]).file(', 'Repo(self.space.roots[store]).file(', AGENT, ["SV7"]),
     ("A122", "warrant_agent/serve.py", 'v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))', 'pass', AGENT, ["SV7"]),
+    ("A123", "warrant_agent/serve.py", '"lens": lens_id, "with": self.other_roots(store)}', '"lens": lens_id}', AGENT, ["CH4"]),
+    ("A124", "warrant_agent/serve.py", 'if self.mine is not None and self.mine not in self.space.roots:', 'if False:', AGENT, ["CH6"]),
+    ("A125", "warrant_agent/serve.py", 'foreign1=lambda d, n=n: reactions_elsewhere(now, n, d), touched_from_elsewhere=pointing)', 'foreign1=lambda d, n=n: reactions_elsewhere(now, n, d))', AGENT, ["CH5"]),
+    ("A126", "warrant_agent/serve.py", 'foreign1=lambda d, n=n: reactions_elsewhere(now, n, d),', 'foreign1=None,', AGENT, ["CH5"]),
+    ("A127", "warrant_agent/lens.py", '            if fa[p][k] != fb[p][k]:', '            if False:', AGENT, ["CH7"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

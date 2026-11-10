@@ -25,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
+from warrant import jcs as C
 from warrant import graph as G
 from warrant import home as H
 from warrant import records as R
@@ -335,7 +336,10 @@ def page(title_, body, footer=""):
 
 def foot(name, rep, query):
     x = lens(rep, query)
-    return (f'{E(name)} · root <code title="{E(x["root"])}">{E(x["root"][:12])}</code> · '
+    others = query.get("with") or {}
+    also = "" if not others else (f' · і ще {len(others)} сховищ <code title="{E(", ".join(f"{n} {r}" for n, r in others.items()))}">'
+                                  f'{E(C.doc_id(others)[:12])}</code>')
+    return (f'{E(name)} · root <code title="{E(x["root"])}">{E(x["root"][:12])}</code>{also} · '
             f'lens <code title="{E(x["lens"])}">{E(x["lens"][:12])}</code>')
 
 
@@ -453,7 +457,7 @@ def floor_html(rep, store, d, used, note="", objections=()):
             + ("<ul class='standing'>" + "".join(f"<li>{E(t)}</li>" for t in objections) + "</ul>" if objections else ""))
 
 
-def diff_html(rep, d, names, only_a, only_b):
+def diff_html(rep, d, names, only_a, only_b, drawn=()):
     """What one lens shows of the page that the other does not; the comparison sees only this store's records."""
     def row(x):
         i, member = x
@@ -463,7 +467,9 @@ def diff_html(rep, d, names, only_a, only_b):
     a, b = names
     return (f'<div class="card"><b>Порівняння лінз</b> <span class="rest">(лише записи цього сховища)</span>'
             f'<p>Показує лише «{E(a)}»: {len(only_a)}</p><ul>{"".join(row(x) for x in only_a[:50])}</ul>'
-            f'<p>Показує лише «{E(b)}»: {len(only_b)}</p><ul>{"".join(row(x) for x in only_b[:50])}</ul>{END}')
+            f'<p>Показує лише «{E(b)}»: {len(only_b)}</p><ul>{"".join(row(x) for x in only_b[:50])}</ul>'
+            f'<p>Показано інакше: {len(drawn)}</p><ul>'
+            + "".join(f"<li>{E(str(w))}: «{E(str(x))}» → «{E(str(y))}»</li>" for w, x, y in drawn) + f"</ul>{END}")
 
 
 def _floor_moves(f0, f1):
@@ -476,12 +482,18 @@ def _floor_moves(f0, f1):
     return out
 
 
-def change_html(rep, store, x):
+def change_html(rep, store, x, reports=None):
     def item(t):
         i, member = t
         if member:
             return f"<li>«{E(member)}» версії {E(i[:12])}</li>"
-        a, verb, what, rest = sentence(rep, i)
+        where = rep if i in rep["_recs"] else next((r for _, r in sorted((reports or {}).items()) if i in r["_recs"]), None)
+        if where is None:
+            return f"<li><code>{E(i[:12])}</code></li>"
+        a, verb, what, rest = sentence(where, i)
+        if where is not rep:
+            verb += f" (у {next(n for n, r in sorted(reports.items()) if r is where)})"
+            rest = rest + (" — " if rest else "") + str(where["_recs"][i]["body"].get("note") or "")
         return f"<li><span class='actor'>{E(a)}</span> {E(verb)}" + (f" <span class='rest'>— {E(rest)}</span>" if rest else "") + "</li>"
     moves = _floor_moves(x["floor_before"], x["floor_after"])
     return (f'<div class="item">{link_l(store, x["lineage"], E(x["label"] + ": " + x["title"]))}'
@@ -502,27 +514,38 @@ class App:
         """The store as the reader last marked it (else: its records dated before the last day), assessed."""
         mark = self.marks.get(self.reader, store)
         keep = mark if mark is not None else CH.before(snap, time.time() - CH.DAY)
-        key = (store, hashlib.sha256("".join(sorted(keep)).encode()).hexdigest())
-        if key not in self.past:
-            self.past = {key: CH.report_of(self.space.roots[store], CH.subset(snap, keep))}
-        return self.past[key], mark is not None
+        key = hashlib.sha256("".join(sorted(keep)).encode()).hexdigest()
+        if self.past.get(store, (None,))[0] != key:          # one past per store, kept while its mark is the same
+            self.past[store] = (key, CH.report_of(self.space.roots[store], CH.subset(snap, keep)))
+        return self.past[store][1], mark is not None
 
     def page_changes(self, q):
         card = lambda schema: LZ.card_of(self.pick(schema, None)[1])
-        h, foots, marked = "", [], False
+        now, past, marked = {}, {}, False
         for n, root in self.space.roots.items():
             rep1 = self.space.report(n)
-            if "_error" in rep1:
+            if "_error" not in rep1:
+                now[n] = rep1
+                past[n], marked = self.past_report(n, Repo(root).store.snapshot())
+        new = {n: set(now[n]["_recs"]) - set(past[n]["_recs"]) for n in now}
+        results, accounted = {}, set()
+        for n in now:
+            pointing = [(i, now[m]["_recs"][i]["body"].get("target")) for m in now if m != n for i in new[m]
+                        if now[m]["_recs"][i]["kind"] == "attest" and now[m]["_recs"][i]["body"].get("verdict") == "react"]
+            rows, acc = CH.delta(sys.modules[__name__], past[n], now[n], card,
+                                 foreign0=lambda d, n=n: reactions_elsewhere(past, n, d),
+                                 foreign1=lambda d, n=n: reactions_elsewhere(now, n, d), touched_from_elsewhere=pointing)
+            results[n] = rows
+            accounted |= acc
+        h, foots = "", []
+        for n in now:
+            rows, quiet = results[n], len(new[n] - accounted)
+            if not new[n] and not rows:
                 continue
-            rep0, marked = self.past_report(n, Repo(root).store.snapshot())
-            rows, quiet = CH.delta(sys.modules[__name__], rep0, rep1, card)
-            new = len(set(rep1["_recs"]) - set(rep0["_recs"]))
-            if not new and not rows:
-                continue
-            h += (f'<div class="card"><b>{E(n)}</b> <span class="rest">нових записів {new}; змінилось для тебе ліній: '
-                  f'{len(rows)}; не змінили нічого, що ти бачиш: {quiet}</span>' + "".join(change_html(rep1, n, x) for x in rows) + END)
-            foots.append(f'{E(n)} · було <code title="{E(rep0["snapshot"])}">{E(rep0["snapshot"][:12])}</code> · '
-                         f'стало <code title="{E(rep1["snapshot"])}">{E(rep1["snapshot"][:12])}</code>')
+            h += (f'<div class="card"><b>{E(n)}</b> <span class="rest">нових записів {len(new[n])}; змінилось для тебе ліній: '
+                  f'{len(rows)}; не змінили нічого, що ти бачиш: {quiet}</span>' + "".join(change_html(now[n], n, x, now) for x in rows) + END)
+            foots.append(f'{E(n)} · було <code title="{E(past[n]["snapshot"])}">{E(past[n]["snapshot"][:12])}</code> · '
+                         f'стало <code title="{E(now[n]["snapshot"])}">{E(now[n]["snapshot"][:12])}</code>')
         top = (f'<h2>Що змінилось для {E(self.reader or "читача")}</h2><p class="rest">з {E(CH.since_text(marked))}, '
                f'під твоїми лінзами; повнота {tag("UNATTESTED")}</p>'
                f'<form method="post" action="/seen"><input type="hidden" name="token" value="{self.token}">'
@@ -600,7 +623,8 @@ class App:
         if q.get("vs") and d["schema"] != LZ.LENS:
             other = LZ.find(self.reports(), q["vs"])
             if other is not None and LZ.problem(other[1]) is None:
-                h += diff_html(rep, d, (body["name"], other[1]["name"]), *LZ.diff(d, body, other[1]))
+                h += diff_html(rep, d, (body["name"], other[1]["name"]), *LZ.diff(d, body, other[1]),
+                               LZ.presentation(body, other[1]))
         if d["schema"] != LZ.LENS:
             alts = [(v, n) for v, n in self.others(d["schema"]) if v != lens_id]
             if alts:
@@ -617,7 +641,13 @@ class App:
         for v in d["versions"]:
             v["on"] = sorted(v["on"] + elsewhere.get(v["id"], []), key=lambda x: (x["at"], x["id"]))
         h += versions_html(rep, d, LZ.card_of(body))
-        return 200, page(d["label"], h, foot(store, rep, {"op": "lineage", "target": d["lineage"], "lens": lens_id}))
+        query = {"op": "lineage", "target": d["lineage"], "lens": lens_id, "with": self.other_roots(store)}
+        return 200, page(d["label"], h, foot(store, rep, query))
+
+    def other_roots(self, store):
+        """{store: snapshot root} of every other store a page read (the lens chosen, the reactions filed elsewhere,
+        the challenges against the lens): a page is a function of all of them, so its lens names them."""
+        return {n: r["snapshot"] for n, r in sorted(self.reports().items()) if n != store and "_error" not in r}
 
     def adopt_form(self, store, v):
         return (f'<form method="post" action="/adopt"><input type="hidden" name="token" value="{self.token}">'
@@ -690,8 +720,9 @@ class App:
         return 303, f"/l/{quote(store)}/{target}"
 
     def react(self, form):
-        mine = self.mine if self.mine in self.space.roots else None
-        return self._file(form, lambda rep, target, f: reaction_body(target, f), into=mine)
+        if self.mine is not None and self.mine not in self.space.roots:
+            return 400, f"the reader's own store {self.mine!r} is not read by this server: nothing is filed"
+        return self._file(form, lambda rep, target, f: reaction_body(target, f), into=self.mine)
 
     def adopt(self, form):
         def body(rep, target, f):
@@ -792,6 +823,8 @@ def main(argv=None):
         for root in space.roots.values():
             if Path(a.key).expanduser().resolve().is_relative_to(Path(root).resolve()):
                 p.error(f"the seed lies inside {root}")
+    if a.mine and a.mine not in space.roots:
+        p.error(f"--mine {a.mine}: no store of that name is read ({', '.join(space.roots)})")
     mine = a.mine or ("space" if "space" in space.roots else None)
     app = App(space, a.actor, key, a.reader, mine=mine)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), handler(app, a.port))

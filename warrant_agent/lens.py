@@ -134,6 +134,23 @@ def diff(d, a, b):
     return sorted(va - vb), sorted(vb - va)
 
 
+def presentation(a, b):
+    """[(what, under a, under b)] of how two cards draw what they both show differently: the layout, the order of
+    versions, the activity, the order of the members, and each shared member's label and form. Two lenses that show
+    the same members can still differ here, and a reader sees that difference."""
+    ca, cb = card_of(a), card_of(b)
+    out = [(k, ca[k], cb[k]) for k in ("layout", "order", "activity") if ca[k] != cb[k]]
+    fa, fb = {f["path"]: f for f in ca["fields"]}, {f["path"]: f for f in cb["fields"]}
+    shared = [p for p in fa if p in fb]
+    if shared != [p for p in fb if p in fa]:
+        out.append(("порядок полів", ", ".join(shared), ", ".join(p for p in fb if p in fa)))
+    for p in shared:
+        for k in ("label", "as"):
+            if fa[p][k] != fb[p][k]:
+                out.append((f"{p}.{k}", fa[p][k], fb[p][k]))
+    return out
+
+
 def find(reports, version):
     """(store, body) of the lens version `version` in any report, or None (`builtin` is the built-in lens)."""
     if version == "builtin":
