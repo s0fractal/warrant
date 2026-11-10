@@ -978,6 +978,87 @@ def receiver_cases():
           err(out) == "BAD_REQUEST" and "outside" in out["message"], out)
 
 
+def serve_cases():
+    """warrant serve (warrant_agent/serve.py): the records as pages a person reads, and a reaction he signs. Record
+    text is data: it is escaped; a reaction credits nothing; a request from another host or a POST without the run's
+    token is refused."""
+    import http.client
+    from http.server import ThreadingHTTPServer
+    from warrant_agent import serve as SV
+    r = Repo()
+    evil = "<script>alert(1)</script> & \"quoted\""
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": evil, "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": evil, "serves": [],
+                                           "established": ["it holds"], "residual": ["one gap"]}, lineage=o)
+    c = r.put("eve", "challenge", {"target": d, "statement": "a counterexample <b>here</b>"}, refs=[d])
+    r.attest("bob", d)
+    space = SV.Space({"w": str(r.root)})
+    app = SV.App(space, "bob", KEYS["bob"])
+    rep = space.report("w")
+    rows = SV.feed(rep)
+    pages = [app.page_feed({}), app.page_lineage("w", d)[1], app.page_wait({"actor": "bob"}), app.page_stores()]
+    check("SV1 the feed is one sentence per record, newest first: an obligation opened and closed, a challenge, an "
+          "acceptance, each pointing at its lineage", [x["sentence"][1] for x in rows][:2] == ["прийняв", "заперечив"]
+          and {x["sentence"][1] for x in rows} >= {"відкрив обов'язок", "закрив обов'язок"}
+          and all(x["lineage"] == o for x in rows if x["kind"] != "schema")
+          and {x["sentence"][1] for x in rows if x["kind"] == "schema"} == {"подав схему"}, [x["sentence"] for x in rows])
+    check("SV2 record text is data on every page: escaped, never markup", all("<script>" not in h and "<b>here" not in h
+          for h in pages) and "&lt;script&gt;" in pages[0] and "&lt;b&gt;here" in pages[1], [h[:0] for h in pages])
+    by_attest = SV.lineage(rep, c)
+    check("SV3 a lineage page: versions newest first with the attests and challenges on each, its state, reliance and "
+          "groundedness; an attest or a challenge opens its target's lineage",
+          by_attest and by_attest["lineage"] == o and [v["id"] for v in by_attest["versions"]] == [d, o]
+          and {x["id"] for x in by_attest["versions"][0]["on"]} >= {c} and by_attest["grounded"] is not None
+          and "it holds" in pages[1] and "one gap" in pages[1], by_attest and by_attest["state"])
+    guard0 = dict(rep["versions"][d])
+    form = {"token": app.token, "store": "w", "target": d, "agree": "-40", "importance": "90", "note": "not convinced"}
+    refused = [app.react(dict(form, token="x"))[0], app.react(dict(form, agree="-101"))[0], app.react(dict(form, agree="1.5"))[0],
+               app.react({k: v for k, v in form.items() if k in ("token", "store", "target")})[0],
+               app.react(dict(form, target="0" * 64))[0], SV.App(space).react(form)[0]]
+    code, where = app.react(form)
+    rep2 = space.report("w")
+    mine = [x for x in rep2["_recs"].values() if x["actor"] == "bob" and x["body"].get("verdict") == "react"]
+    check("SV4 a reaction is the reader's attest {verdict: react} with integer dimensions in range and a note, filed "
+          "only with this run's token and a signer; it credits nothing: the version's guard reads as before",
+          refused == [403, 400, 400, 400, 400, 403] and code == 303 and where == f"/l/w/{d}" and len(mine) == 1
+          and mine[0]["body"] == {"target": d, "verdict": "react", "agree": -40, "importance": 90, "note": "not convinced"}
+          and {k: rep2["versions"][d][k] for k in ("guard", "accepted_by")} == {k: guard0[k] for k in ("guard", "accepted_by")}
+          and "згода -40" in app.page_lineage("w", d)[1], (refused, code, mine))
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), None)
+    port = srv.server_address[1]
+    srv.RequestHandlerClass = SV.handler(app, port)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        def ask(method, path, host, body=None):
+            cx = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            cx.putrequest(method, path, skip_host=True)
+            cx.putheader("Host", host)
+            data = (body or "").encode()
+            if method == "POST":
+                cx.putheader("Content-Type", "application/x-www-form-urlencoded")
+                cx.putheader("Content-Length", str(len(data)))
+            cx.endheaders(data if method == "POST" else None)
+            res = cx.getresponse()
+            out = (res.status, res.getheader("Content-Security-Policy"), res.read().decode())
+            cx.close()
+            return out
+        home = ask("GET", "/", f"127.0.0.1:{port}")
+        other = ask("GET", "/", "attacker.example")
+        rebound = ask("POST", "/react", f"evil.test:{port}", f"token={app.token}&store=w&target={d}&agree=10")
+        no_token = ask("POST", "/react", f"localhost:{port}", f"store=w&target={d}&agree=10")
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    check("SV5 the server answers only on its own host (a rebound name is refused, 421) and refuses a POST without the "
+          "run's token (403); every page carries a content security policy",
+          home[0] == 200 and "default-src 'none'" in (home[1] or "") and other[0] == 421 and rebound[0] == 421
+          and no_token[0] == 403, (home[0], other[0], rebound[0], no_token[0]))
+    w = SV.waiting(rep, "bob")
+    check("SV6 what waits for an actor is the frontier under the store's own profile: bob, roadmap/acceptor, owes the "
+          "closure his attest until he filed it", isinstance(w["roles"], list) and "roadmap/acceptor" in w["roles"], w)
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -990,4 +1071,5 @@ if __name__ == "__main__":
     across_cases()
     receiver_cases()
     bench_cases()
+    serve_cases()
     sys.exit(finish())

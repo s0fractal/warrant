@@ -6,6 +6,12 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+- `python -m warrant_agent.serve` (v0): the records as pages a person reads, over every repository Home registers:
+  the feed (one sentence per record), a lineage (versions, what each established and left open, guard, who
+  accepted, challenges, groundedness) and what waits for an actor; each page names its root and lens. A reader with
+  a key signs a reaction (`verdict: "react"`, integer dimensions and a note), which credits nothing. Localhost only,
+  Host-checked, a per-run token on POST. docs/AGENT.md; tests SV1–SV6, mutants A99–A104.
+
 ## 3.0.0a6 — one package, one receiver
 
 Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by

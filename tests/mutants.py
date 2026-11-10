@@ -246,6 +246,12 @@ MUTANTS = [
     ("A96", "tests/assess_bound.py", "snap = ws.open().snapshot()", "snap = ST.Store(ws.store).snapshot()", AGENT, ["B02"]),
     ("A97", "warrant_agent/api.py", 'data, query = G.ledger(rep, view.recs), {"op": op}', 'data, query = G.ledger(rep, {}), {"op": op}', AGENT, ["A30"]),
     ("A98", "warrant_agent/api.py", 'if op in ("around", "path", "why", "grounded"):', 'if op in ("around", "path", "why"):', AGENT, ["A30"]),
+    ("A99", "warrant_agent/serve.py", 'E = html.escape\n', 'E = lambda s, quote=True: s\n', AGENT, ["SV2"]),
+    ("A100", "warrant_agent/serve.py", 'if not secrets.compare_digest(form.get("token", ""), self.token):', 'if False:', AGENT, ["SV4"]),
+    ("A101", "warrant_agent/serve.py", 'if self.headers.get("Host") not in hosts:', 'if False:', AGENT, ["SV5"]),
+    ("A102", "warrant_agent/serve.py", '        if not lo <= n <= hi:\n', '        if False:\n', AGENT, ["SV4"]),
+    ("A103", "warrant_agent/serve.py", 'body = {"target": target, "verdict": "react"}', 'body = {"target": target, "verdict": "accept"}', AGENT, ["SV4"]),
+    ("A104", "warrant_agent/serve.py", 'out.sort(key=lambda x: (-x["at"], x["id"]))', 'out.sort(key=lambda x: (x["at"], x["id"]))', AGENT, ["SV1"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
