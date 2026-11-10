@@ -528,8 +528,13 @@ def drift_cases():
     _, _, empty, empty_rel = accepted_with(files={})
     check("DR8 an acceptance naming an empty list of files is UNKNOWN, not vacuously fresh", empty.get("verdict") == "UNKNOWN"
           and empty_rel == D.STALE, (empty, empty_rel))
-    _, _, shaped, shaped_rel = accepted_with(files="lib/code.py")
-    _, _, listed, listed_rel = accepted_with(files={"lib/code.py": ["not a blob"]})
+    def crashless(files):                # the case is that the read does not crash: a crash is its FAIL, not the file's end
+        try:
+            return accepted_with(files=files)[2:]
+        except Exception as e:           # noqa: BLE001
+            return {"crashed": repr(e)}, None
+    shaped, shaped_rel = crashless("lib/code.py")
+    listed, listed_rel = crashless({"lib/code.py": ["not a blob"]})
     check("DR9 an acceptance whose files are not {path: blob} is UNKNOWN: the read does not crash on a record",
           shaped.get("verdict") == "UNKNOWN" and shaped_rel == D.STALE and listed.get("verdict") == "UNKNOWN" and listed_rel == D.STALE,
           (shaped, listed))
@@ -768,10 +773,13 @@ def drift_impact_cases():
     os.environ["WARRANT_HOME"] = str(r.home / "config" / "drift-home.json")
     try:
         H.save(dict(H.empty(), repositories={"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}))
-        def answered():
-            with contextlib.redirect_stdout(io.StringIO()) as out:
-                CLI.main(["drift", "--root", str(r.root), f"--impact={base}..{head}", "--across", "--json"])
-            return json.loads(out.getvalue())
+        def answered():                  # a refusal or crash reads as no answer, so the case fails on its own line
+            with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    CLI.main(["drift", "--root", str(r.root), f"--impact={base}..{head}", "--across", "--json"])
+                    return json.loads(out.getvalue())
+                except (SystemExit, Exception) as e:         # noqa: BLE001
+                    return {"crashed": repr(e)}
         a = answered()
         other.entity("bob", "obligation@1", {"state": "open", "statement": "there, cites the claim", "serves": [], "evidence": [L]})
         b = answered()
@@ -790,7 +798,8 @@ def drift_impact_cases():
     want = A.identity({"here": rep, "there": readings["there"].rep}, [], rep["code"], None, q) if hasattr(A, "identity") else None
     check("DR29 an answer with Home's stores binds every store it read as `across` does: a record added in another store "
           "changes its root, a store that cannot be read is named and changes it too",
-          a["data"]["stale"][0]["elsewhere"] != b["data"]["stale"][0]["elsewhere"] and a["root"] != b["root"]
+          "crashed" not in a and "crashed" not in b and "crashed" not in c
+          and a["data"]["stale"][0]["elsewhere"] != b["data"]["stale"][0]["elsewhere"] and a["root"] != b["root"]
           and (b["root"], b["lens"]) == want and [u["store"] for u in c["data"].get("unavailable", [])] == ["gone"]
           and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
 
