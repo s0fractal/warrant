@@ -1,0 +1,135 @@
+# Codex roadmap verdict evidence: witness ledger ordering
+
+Reviewed master M: 8ad534c186fd7d0375ea76e214c596638a966622
+Obligation D: a997b9e40f55c12eaa93ff6315da93dfca7c24c4c48d41a3dd4d258e39a8268a (goal G3)
+Closure version T: e18c26ee0bf9d1991aed7b2d73bb81a231a7c8673b8cce3f3d577a69e156260b
+Source: warrant/graph.py:139-169, particularly line 168.
+References inspected: https://github.com/s0fractal/warrant/pull/306 (merge 73b60bde92971a66222cb07c6934918fef6fe892) and https://github.com/s0fractal/warrant/pull/298 (merge 7de4413d510ec422e6dc6a11e405062466336d54), with their ledger changes in Git at M.
+
+## Verdict: challenge
+
+D owes responsibility for acceptances later refuted. The projection still omits such responsibility in two admitted, signed fixture stores. In both cases the acceptor is counted in the version's accepted_by, the replayer reproduces the challenge on its exact target, the challenger gets replay credit, yet the acceptor's refuted list is empty. Both stores assess without rejected records or problems.
+
+F1: Challenge C exists but has no replay. Bob accepts version V and cites C. Carol then reproduces C on V, explicitly citing Bob's acceptance A; dates also increase in the ordinary order. The ledger omits [V, C] because `c not in m["refs"]` is false. C's existence before A does not imply its reproduction preceded A. Citing an unreplayed objection must not grant exemption from a future successful refutation. Control C1 removes only the challenge citation and responsibility reappears.
+
+F2: Bob accepts V. The challenge and Carol's reproduces attest both explicitly cite that acceptance; their hashes therefore witness that the replay is newer. The replay claims an earlier `at` than the acceptance. The ledger omits [V, C] because it unconditionally requires `m["at"] <= recs[r]["at"]`. T's residual permits using filers' timestamps where NO citation orders the records; here an explicit citation orders them. Control C2 changes only the replay's time to after A and responsibility reappears. The engine admits both versions without problems.
+
+The citation test must distinguish knowledge of a challenge from knowledge of its reproduction, and witnessed dependency order must take priority over self-reported time. These are omissions of the responsibility D owes, even though replay credit and the existing WL1-WL3 cases work. This is a roadmap challenge, not a finding@1 or a proposed code patch.
+
+## Runnable reproducer
+
+At M's repository root, save the Python below outside the worktree and run it with Python >=3.10 and cryptography. Put TMPDIR in the review working directory and set PYTHONDONTWRITEBYTECODE=1. It imports the repository's deterministic test fixtures, creates temporary stores outside the checkout, and touches no real actor seed. Expected at M: FAIL F1, FAIL F2, ok C1, ok C2, exit 1. No red regression test is staged in the repository.
+
+```python
+import json
+import sys
+from pathlib import Path
+ROOT = Path.cwd()  # Run at the reviewed repository's root.
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+from world import Repo, check, finish
+from warrant import graph as G
+
+def target(r, statement):
+    opened = r.entity('alice', 'obligation@1', {'state': 'open', 'statement': statement, 'serves': []})
+    return r.entity('alice', 'obligation@1', {'state': 'done', 'statement': statement, 'serves': []}, lineage=opened)
+
+def ledger(r):
+    return G.ledger(r.report(), {i: e[0]['record'] for i, e in r.store.snapshot().lines.items()})
+
+r = Repo()
+v = target(r, 'challenge before acceptance, replay after')
+c = r.put('eve', 'challenge', {'target': v, 'statement': 'not yet reproduced'}, refs=[v])
+a = r.put('bob', 'attest', {'target': v, 'verdict': 'accept'}, refs=[v, c])
+p = r.put('carol', 'attest', {'target': c, 'verdict': 'reproduces', 'on': v}, refs=[c, v, a])
+rows = ledger(r)
+assert not r.report()['rejected'] and not r.report()['problems']
+print(json.dumps({'case': 'F1', 'version': v, 'challenge': c, 'acceptance': a, 'replay': p, 'rows': rows}, sort_keys=True))
+check('F1 an acceptance citing an unreplayed challenge is refuted when a later replay reproduces it',
+      rows['bob']['refuted'] == [[v, c]], rows['bob'])
+
+r = Repo()
+v = target(r, 'a citation witnesses replay after acceptance despite its earlier claimed time')
+a = r.put('bob', 'attest', {'target': v, 'verdict': 'accept'}, refs=[v], at=1800000100)
+c = r.put('eve', 'challenge', {'target': v, 'statement': 'refutation'}, refs=[v, a], at=1800000101)
+p = r.put('carol', 'attest', {'target': c, 'verdict': 'reproduces', 'on': v}, refs=[c, v, a], at=1800000050)
+rows = ledger(r)
+assert not r.report()['rejected'] and not r.report()['problems']
+print(json.dumps({'case': 'F2', 'version': v, 'challenge': c, 'acceptance': a, 'replay': p, 'rows': rows, 'problems': r.report()['problems']}, sort_keys=True))
+check('F2 replay citing an acceptance is later by content dependency even if its claimed time is earlier',
+      rows['bob']['refuted'] == [[v, c]], rows['bob'])
+# Controls: removing only the offending citation or timestamp change restores responsibility.
+r = Repo()
+v = target(r, 'F1 control: do not cite the unreplayed challenge')
+c = r.put('eve', 'challenge', {'target': v, 'statement': 'not yet reproduced'}, refs=[v])
+a = r.put('bob', 'attest', {'target': v, 'verdict': 'accept'}, refs=[v])
+p = r.put('carol', 'attest', {'target': c, 'verdict': 'reproduces', 'on': v}, refs=[c, v, a])
+check('C1 omitting only the challenge citation restores the refutation', ledger(r)['bob']['refuted'] == [[v, c]])
+r = Repo()
+v = target(r, 'F2 control: replay clock after acceptance')
+a = r.put('bob', 'attest', {'target': v, 'verdict': 'accept'}, refs=[v], at=1800000100)
+c = r.put('eve', 'challenge', {'target': v, 'statement': 'refutation'}, refs=[v, a], at=1800000101)
+p = r.put('carol', 'attest', {'target': c, 'verdict': 'reproduces', 'on': v}, refs=[c, v, a], at=1800000102)
+check('C2 correcting only the replay clock restores the refutation', ledger(r)['bob']['refuted'] == [[v, c]])
+sys.exit(finish())
+```
+
+## Observed output
+
+Python 3.15.2 at the exact M checkout:
+
+```text
+{"acceptance": "3325f16f052809cac3436d5dfb62b6ce4f8b835dfdcfd2232a002585bc1b7bf2", "case": "F1", "challenge": "74ee8872e5261f2eea233a13c99a76777bca887eb29714385a60145676594fc6", "replay": "8d8c2ed4d6496a3db25ef309c60c850a5bb14defa7f68a5ef629caed51f66358", "rows": {"bob": {"accepted": ["19065f6179942a5cbe2b49353b4d63c81b9bb2d795a3505d4db81bdac3724e6a"], "challenged": [], "refuted": [], "replayed": []}, "eve": {"accepted": [], "challenged": ["74ee8872e5261f2eea233a13c99a76777bca887eb29714385a60145676594fc6"], "refuted": [], "replayed": ["74ee8872e5261f2eea233a13c99a76777bca887eb29714385a60145676594fc6"]}}, "version": "19065f6179942a5cbe2b49353b4d63c81b9bb2d795a3505d4db81bdac3724e6a"}
+FAIL F1 an acceptance citing an unreplayed challenge is refuted when a later replay reproduces it: {'accepted': ['19065f6179942a5cbe2b49353b4d63c81b9bb2d795a3505d4db81bdac3724e6a'], 'refuted': [], 'challenged': [], 'replayed': []}
+{"acceptance": "4ba3839a27b27deb1131e85dd27f6da816cae5c0bc48603c80edb1b52e34e35b", "case": "F2", "challenge": "aa7ae31608142cf52a8a5171d13f8dc247f73dcc7526c7c2e6753d104a3ed9e8", "problems": [], "replay": "1eb24b11a027e31d58476b1a10b0bb701ddb53163f21ca8516456a7b8f79538e", "rows": {"bob": {"accepted": ["c7438e34a4d2dbd6d4b8357e45d9b86f4e85efa1b54cb5a6af3b36d1249dc9eb"], "challenged": [], "refuted": [], "replayed": []}, "eve": {"accepted": [], "challenged": ["aa7ae31608142cf52a8a5171d13f8dc247f73dcc7526c7c2e6753d104a3ed9e8"], "refuted": [], "replayed": ["aa7ae31608142cf52a8a5171d13f8dc247f73dcc7526c7c2e6753d104a3ed9e8"]}}, "version": "c7438e34a4d2dbd6d4b8357e45d9b86f4e85efa1b54cb5a6af3b36d1249dc9eb"}
+FAIL F2 replay citing an acceptance is later by content dependency even if its claimed time is earlier: {'accepted': ['c7438e34a4d2dbd6d4b8357e45d9b86f4e85efa1b54cb5a6af3b36d1249dc9eb'], 'refuted': [], 'challenged': [], 'replayed': []}
+ok   C1 omitting only the challenge citation restores the refutation
+ok   C2 correcting only the replay clock restores the refutation
+FAILED 2: F1 F2
+```
+
+## Other validation
+
+- python3 tests/tools_test.py: all 101 printed cases passed, including WL1-WL3.
+- The unmodified tests/mutants.py harness was run with COPY and TMP redirected to this review's external working directory: T137, T151, T152 all killed by their named WL cases. Its baseline was green.
+- tools/graph.py views-json rendered identical view objects in fresh processes with PYTHONHASHSEED 1, 2 and 3; no generated view was written into the worktree.
+- python3 -m warrant.roadmap due --actor codex --json matched D, T, G3, empty evidence/requirements/subject and the two references supplied by the waker.
+- MCP workspace verified signer codex, roadmap/acceptor role, canonical store, zero rejected/problemed records. MCP context verified T pending only that role's acceptance with no open requirement.
+- roadmap check: 87 lineages, zero problems. claims check: 118 live of docs/V3.md, zero problems.
+- Not run: the full repository suite, full mutant matrix, agent/gate/verify suites. No claim of complete repository validation is made.
+
+Selected mutant matrix:
+
+```json
+{
+  "definition": "11dadbb681fd8f3097d7bd56ec15bb99eb2d799859d3b55ba741a354c8d23af3",
+  "rows": [
+    {
+      "id": "T137",
+      "outcome": "KILLED",
+      "failed": [
+        "WL1"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T151",
+      "outcome": "KILLED",
+      "failed": [
+        "WL2"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T152",
+      "outcome": "KILLED",
+      "failed": [
+        "WL3"
+      ],
+      "rc": 1,
+      "detail": ""
+    }
+  ]
+}
+```
