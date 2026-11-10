@@ -1,0 +1,249 @@
+# G14 roadmap verdict: transitive impact is still silently incomplete
+
+Actor: codex. Challenge of T d67f45554a6c2a101f935cc47202956b45f0ae24f3772aec8020007ec7e42eab,
+lineage D d3c195c6fcc6016a55a8a772cd7af5ece514a24ddf44966831f05f0ad6351c4e.
+Reviewed at M ef6c92918c9a8c6f1705c9e41262b62b4f21dd71, including merged PR #299,
+commit 5e5a91c1aaa287159afce258d784c217a713b651. The due query and MCP context confirm
+that T awaits codex's roadmap/acceptor verdict and has no open requirements.
+
+D owes the lineages resting on an affected claim from any version, transitively, and with
+--across the records in Home's other stores resting on it. The implementation silently
+cuts that traversal at graph.MAX_NODES (2000), below the store's 200000-record limit.
+The store below is admitted with 2010 records and zero assessment problems or rejected
+lines. All 2003 dependent obligations have admitted lineages. Its claim is fresh at BASE;
+changing its accepted lib/code.py bytes makes it stale at HEAD.
+
+Observed at both M and the cited commit, with the production limit unchanged:
+- Without --across, the CLI reports 1999 affected lineages instead of 2003, omitting 4.
+- With --across and Home registering both stores, it reports 1998 instead of 2003,
+  omitting 5 local lineages and the foreign obligation citing the last local dependency.
+- The text leads with those smaller counts. Neither JSON nor text reports truncation,
+  incomplete traversal, a continuation, or resource refusal. Root, lens and checkout
+  remain present, so they do not distinguish an exhaustive answer from this partial one.
+- Exit 1 is the ordinary stale-claim result, not an incomplete-traversal refusal.
+
+At M, warrant/drift.py:137 discards graph.why(...)["complete"]; :178 keeps only
+across.reach(...)[0], discarding its completeness boolean. graph.py:67-76 and
+across.py:247-253 cap their walks, and drift.impact_lines prints the partial counts.
+At the cited commit the analogous drift.py lines are 200 and 241. The impacted logic
+is unchanged between that commit and M (the pin comparison was factored into pins.py).
+T names the dropped completeness flag as a residual. That accurately identifies the
+limitation, but does not discharge D's requirement to report transitive dependents.
+
+An exhaustive traversal of the admitted finite store, or an explicit bounded refusal /
+incomplete result that cannot read as a complete count, is needed before this can be
+accepted as done. Do not silently present a truncated set as the impact answer.
+
+Validation at M:
+- Existing drift_cases + drift_impact_cases: 28 DR checks passed.
+- Existing agent across_cases: 24 X checks passed.
+- Full tools_test.py baseline in the mutant harness copy passed.
+- T141, T142, T143, T144, T145: 5/5 killed by their designated DR28/DR29 checks.
+- warrant.roadmap check: 87 lineages, 0 problems.
+- warrant.claims check: 118 live claims, 0 problems.
+- Independent signed-store reproducer below passed its reproduction assertions at M
+  and in a git archive of the cited commit. No production limits or source were edited.
+- Python 3.15.2, cryptography 50.0.2 for reproducer/drift/tools/mutants/checks;
+  the installed codex MCP Python was used for across_cases and stdio MCP.
+Not run: the entire repository suite or full mutant matrix. No checker seed was read,
+and no signed checker replay was filed. Fixture actors use tests/world.py's public
+fixture seeds only. The reviewer signs only the roadmap challenge as codex through MCP.
+
+## Reproduction
+
+Save the following as reproduce.py outside the checkout. Run with a Python with
+cryptography installed: `python3 reproduce.py /path/to/checkout /path/to/fixture-dir`.
+It imports the target checkout's existing signed fixtures, builds the dependency chain,
+checks that its records are admitted, and invokes the ordinary CLI with and without
+--across. Its assertions expect the defect to reproduce. The fixture directory is
+owned by this test; Home configuration writes stay there.
+
+```python
+import contextlib, io, json, os, pathlib, sys, tempfile
+ROOT=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path.cwd()
+WORK=pathlib.Path(sys.argv[2]).resolve() if len(sys.argv)>2 else pathlib.Path('/Users/s0fractal/.warrant/work/codex/d67f45554a6c/fixtures')
+WORK.mkdir(parents=True,exist_ok=True)
+tempfile.tempdir=str(WORK)
+sys.path.insert(0,str(ROOT/'tests'))
+import tools_test as t
+from warrant import graph as G, records as R, engine as E
+from world import KEYS
+r,L=t.drift_repo()
+prev=E.head(r.store.snapshot(),r.trust,'alice')['id']
+lines=[]; ids=[]; dependency=L
+for n in range(G.MAX_NODES+3):
+    r.t+=1
+    rec=R.record('entity','alice',r.t,{'state':'open','statement':f'dependency {n}','serves':[], 'evidence':[dependency]},'obligation@1',refs=[dependency],prev=prev)
+    i,line=R.line(rec,KEYS['alice'])
+    lines.append(line); ids.append(i); dependency=i; prev=i
+r.store.add_lines(lines)
+base=r.commit('claim fresh; 2003 dependent obligations')
+(r.root/'lib'/'code.py').write_text('X = 2\n')
+head=r.commit('accepted bytes change')
+rep=t.RP.Repo(r.root).report()
+assert not rep['problems'] and not rep['rejected'], (rep['problems'],rep['rejected'])
+assert all(i in rep['lineages'] for i in ids)
+other=t.Repo()
+foreign=other.entity('bob','obligation@1',{'state':'open','statement':'foreign tail rests on last local dependency','serves':[],'evidence':[ids[-1]]})
+home={'repositories':{'here':{'path':str(r.root)},'there':{'path':str(other.root)}}}
+results={}
+for across in (False,True):
+    readings=t.A.home_readings(home) if across else None
+    answer=t.D.impact(t.RP.Repo(r.root).report(),r.root,head,base,readings)
+    missing=sorted(set(ids)-set(answer['affected']))
+    results[str(across)]={'expected':len(ids),'actual':len(answer['affected']),'missing':len(missing),'last_dependency_missing':ids[-1] in missing,'header':t.D.impact_lines(answer).splitlines()[0],'data_keys':sorted(answer),'foreign_present':any(e['lineage']==foreign for s in answer['stale'] for e in s.get('elsewhere',[]))}
+    if not missing: raise AssertionError('counterexample no longer reproduces')
+os.environ['WARRANT_HOME']=str(WORK/'repro-home.json')
+t.H.save(dict(t.H.empty(),**home))
+cli={}
+for across in (False,True):
+    with contextlib.redirect_stdout(io.StringIO()) as output:
+        rc=t.CLI.main(['drift','--root',str(r.root),f'--impact={base}..{head}','--json']+(['--across'] if across else []))
+    envelope=json.loads(output.getvalue())
+    assert len(envelope['data']['affected'])==results[str(across)]['actual']
+    cli[str(across)]={'exit':rc,'root':envelope['root'],'lens':envelope['lens'],'checkout':envelope['checkout']}
+print(json.dumps({'cli':cli,'max_nodes':G.MAX_NODES,'records':len(rep['_recs']),'problems':len(rep['problems']),'results':results},indent=2))
+
+```
+
+## Observed output at M
+
+```text
+ACCEPT V3-3-1 6d1f302603cf
+{
+  "cli": {
+    "False": {
+      "exit": 1,
+      "root": "119d5979bd864411e3f6f63bc1e2f927c05de8a7a4dd2f4ed5d07ad53486fcef",
+      "lens": "6ae53cca72f9a7578dbf334cceef2c040e9370bc774d168afdacd499f9b5afc0",
+      "checkout": {
+        "claims": true,
+        "tree": "a8611f05168f9b64821e3bb4577f47e1c93e8158"
+      }
+    },
+    "True": {
+      "exit": 1,
+      "root": "d5854e4804869d2361f93aebcfdfb187eb975d59c33100e4d14e1c82eb99d843",
+      "lens": "7add1c0894acd1673ea3a35b4c101b21ea32a75cfe61416aa078ae74187de564",
+      "checkout": {
+        "claims": true,
+        "tree": "a8611f05168f9b64821e3bb4577f47e1c93e8158"
+      }
+    }
+  },
+  "max_nodes": 2000,
+  "records": 2010,
+  "problems": 0,
+  "results": {
+    "False": {
+      "expected": 2003,
+      "actual": 1999,
+      "missing": 4,
+      "last_dependency_missing": true,
+      "header": "impact: 1 stale claim(s) -> 1999 lineage(s) resting on them",
+      "data_keys": [
+        "affected",
+        "already_stale",
+        "base",
+        "changed",
+        "head",
+        "in_no_acceptance",
+        "stale",
+        "stores"
+      ],
+      "foreign_present": false
+    },
+    "True": {
+      "expected": 2003,
+      "actual": 1998,
+      "missing": 5,
+      "last_dependency_missing": true,
+      "header": "impact: 1 stale claim(s) -> 1998 lineage(s) resting on them",
+      "data_keys": [
+        "affected",
+        "already_stale",
+        "base",
+        "changed",
+        "head",
+        "in_no_acceptance",
+        "stale",
+        "stores",
+        "unavailable"
+      ],
+      "foreign_present": false
+    }
+  }
+}
+
+```
+
+## Observed output at cited commit
+
+```text
+ACCEPT V3-3-1 6d1f302603cf
+{
+  "cli": {
+    "False": {
+      "exit": 1,
+      "root": "cc424a163962feac7d46cd9d06e0a8495fc40dadce6f9336c0f71f91e2e937f5",
+      "lens": "b1bc2bc9e0df716952326682d3424b047490dd7a519fd543afb809ef8bbe4e67",
+      "checkout": {
+        "claims": true,
+        "tree": "c2d046777169ac06dc7d82ed19e80beff8339e0b"
+      }
+    },
+    "True": {
+      "exit": 1,
+      "root": "531d6ee55bea51b124f93ced453411f836e20e49d511f48760b91e945180524b",
+      "lens": "d251bf3082923be0bd6b7a40efe78efd1905335574fb7e8ea32efbf8c938259a",
+      "checkout": {
+        "claims": true,
+        "tree": "c2d046777169ac06dc7d82ed19e80beff8339e0b"
+      }
+    }
+  },
+  "max_nodes": 2000,
+  "records": 2010,
+  "problems": 0,
+  "results": {
+    "False": {
+      "expected": 2003,
+      "actual": 1999,
+      "missing": 4,
+      "last_dependency_missing": true,
+      "header": "impact: 1 stale claim(s) -> 1999 lineage(s) resting on them",
+      "data_keys": [
+        "affected",
+        "already_stale",
+        "base",
+        "changed",
+        "head",
+        "in_no_acceptance",
+        "stale",
+        "stores"
+      ],
+      "foreign_present": false
+    },
+    "True": {
+      "expected": 2003,
+      "actual": 1998,
+      "missing": 5,
+      "last_dependency_missing": true,
+      "header": "impact: 1 stale claim(s) -> 1998 lineage(s) resting on them",
+      "data_keys": [
+        "affected",
+        "already_stale",
+        "base",
+        "changed",
+        "head",
+        "in_no_acceptance",
+        "stale",
+        "stores",
+        "unavailable"
+      ],
+      "foreign_present": false
+    }
+  }
+}
+
+```
