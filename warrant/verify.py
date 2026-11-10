@@ -433,7 +433,7 @@ def read_checkout(d):
 def _own(path, flag):
     """A JSON file of the receiver's own."""
     try:
-        with open(path, "rb") as f:
+        with open(path, "rb") as f:  # NOSONAR S8707: a file of the receiver's own that its command line names, read as data
             return read_json(f.read())
     except OSError as e:
         raise Usage(f"{flag} {path}: {type(e).__name__}") from None
@@ -474,7 +474,7 @@ def _run(argv, prog):
         raise Usage("--require names record ids: 64 lowercase hex digits each")
     trust, profile = _receiver(a)
     try:
-        with open(a.package, "rb") as f:
+        with open(a.package, "rb") as f:  # NOSONAR S8707: the package its command line names, read as data within --max-bytes
             raw = f.read(a.max_bytes + 1)
     except OSError as e:
         raise Usage(f"the package {a.package}: {type(e).__name__}") from None

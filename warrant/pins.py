@@ -21,7 +21,9 @@ FRESH = ("UNCHANGED", "MOVED")
 
 
 def git(root, *a, raw=False):
-    out = subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout
+    # NOSONAR S8705: every option is a caller's literal; a commit or object id read from a record is checked as a full
+    # hex id before it reaches Git (shapes.hex_of), and a path read from one follows "--" under --literal-pathspecs
+    out = subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout  # NOSONAR S8705
     return out if raw else out.decode().strip()
 
 

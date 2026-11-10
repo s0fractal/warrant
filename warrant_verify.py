@@ -34,11 +34,11 @@ DIGESTS = {
     "warrant/graph.py": "f10aa4acfe8fb5b01877c0140430d6c36ae2dec108ec3f82ba0e7dbac55c72ff",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
-    "warrant/pins.py": "34c67e4ca41487cf32c995e67bca2f29b465e833f93292452226a996401f8afc",
+    "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
     "warrant/store.py": "81a733eeca5e452f21213478c093c426df82a5560fbe0d877d0223b23e720137",
     "warrant/engine.py": "228fcb2f9264c34f3880c1a80fca2c138b9bcd59ecace848b0f3cd6f599e2e50",
-    "warrant/verify.py": "ea977113ed35c1e955ea857adff2b21c1e15363437b575f1fc1d67be31402d22",
+    "warrant/verify.py": "bd91ee2f73f930fe98d9f4ac58143d45235eaa78fc5b6b7f13a7fba3dad77f5a",
 }
 ORDER = ('jcs', 'graph', 'shapes', 'keys', 'pins', 'records', 'store', 'engine', 'verify')
 SOURCES = {}
@@ -527,7 +527,9 @@ FRESH = ("UNCHANGED", "MOVED")
 
 
 def git(root, *a, raw=False):
-    out = subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout
+    # NOSONAR S8705: every option is a caller's literal; a commit or object id read from a record is checked as a full
+    # hex id before it reaches Git (shapes.hex_of), and a path read from one follows "--" under --literal-pathspecs
+    out = subprocess.run(["git", "-C", str(root), *a], capture_output=True, check=True).stdout  # NOSONAR S8705
     return out if raw else out.decode().strip()
 
 
@@ -1919,7 +1921,7 @@ def read_checkout(d):
 def _own(path, flag):
     """A JSON file of the receiver's own."""
     try:
-        with open(path, "rb") as f:
+        with open(path, "rb") as f:  # NOSONAR S8707: a file of the receiver's own that its command line names, read as data
             return read_json(f.read())
     except OSError as e:
         raise Usage(f"{flag} {path}: {type(e).__name__}") from None
@@ -1960,7 +1962,7 @@ def _run(argv, prog):
         raise Usage("--require names record ids: 64 lowercase hex digits each")
     trust, profile = _receiver(a)
     try:
-        with open(a.package, "rb") as f:
+        with open(a.package, "rb") as f:  # NOSONAR S8707: the package its command line names, read as data within --max-bytes
             raw = f.read(a.max_bytes + 1)
     except OSError as e:
         raise Usage(f"the package {a.package}: {type(e).__name__}") from None
