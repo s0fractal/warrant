@@ -109,3 +109,23 @@ receives it needs none of this interface to judge it: `warrant verify PACKAGE --
 answers under the receiver's own trust and profile with no store, and `warrant_verify.py` is the same
 command as one standard-library file for a receiver with nothing installed. Its exit status is the
 answer ([docs/VERIFY.md](VERIFY.md)).
+
+## Reading it as a person (`warrant serve`, v0)
+
+```bash
+python3 -m warrant_agent.serve
+```
+
+serves `http://127.0.0.1:8767/` over every repository Home registers (or each `--root DIR`): the **feed** (one
+sentence per record, newest first; programs' acceptances hidden unless asked), a **lineage** (its versions newest
+first with what each established and left open, its guard and who accepted, the attests and challenges on it, its
+state and reliance, and whether its effective version is grounded) and **what waits** for an actor (the frontier
+under each store's own profile). Each page is a projection of one store's assessment: its footer names the root and
+the lens, and the same pair gives the same page. Record text is escaped everywhere; nothing of a repository runs.
+
+With `--actor A --key SEED` (a seed outside every repository read) a lineage page offers a **reaction** to its latest
+version: an attest `{target, verdict: "react", agree: -100..100, confidence, importance, evidence: 0..100, note?}`
+signed as A, filed only in a store whose trust binds that key to A. No guard's match holds `react`, so a reaction
+credits nothing; it is the reader's own signed word, and it leaves that version off the reader's frontier (an attest
+by the actor). The server listens on 127.0.0.1 only, answers only to its own Host, and refuses a POST without the
+token of its run. agent_test SV1–SV6; mutants A99–A104.
