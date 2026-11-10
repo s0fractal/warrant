@@ -3,6 +3,7 @@
 Markdown views of the records as build artifacts.
 
     python3 tools/graph.py around ID | path ID | why ID     # a node; what it rests on; what rests on it
+    python3 tools/graph.py grounded ID                       # whether a version and all it rests on stand (warrant.graph)
     python3 tools/graph.py frontier ACTOR                    # what waits for an actor
     python3 tools/graph.py impact BASE..HEAD                 # the lineages the records changed between two commits
                                                              # bear on, and under `drift` the claims the range makes
@@ -97,7 +98,7 @@ def ask(repo, cmd, rest):
     if cmd == "impact" and rest:
         rep, roots, data = impact(repo, rest[0])
         return rep, roots, {"op": "impact", "range": rest[0]}, data
-    if cmd in ("around", "path", "why") and rest:
+    if cmd in ("around", "path", "why", "grounded") and rest:
         rep = repo.report()
         snap = repo.store.snapshot()
         ids = [i for i in list(snap.lines) + list(snap.blobs) if i.startswith(rest[0])]

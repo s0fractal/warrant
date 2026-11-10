@@ -1,0 +1,168 @@
+# Codex roadmap verdict evidence: G3 witness ledger
+
+D: a997b9e40f55c12eaa93ff6315da93dfca7c24c4c48d41a3dd4d258e39a8268a
+T: 0393d34dad7d47a59dccbab0ad264e3a0b968e1ac3bd24f897067bd88d406630
+M: c3fac0cc9ac992c88d163d3ef0b31a9ce7fdd46d
+Named implementation: s0fractal/warrant#298, merge 7de4413d510ec422e6dc6a11e405062466336d54.
+Reviewed at M; warrant/graph.py and tools/graph.py are unchanged from that merge.
+
+Verdict: challenge. D requires responsibility for acceptances later refuted. The projection joins an actor's accepted versions with reproduced challenges on the same version, but does not establish any order between the acceptance and reproduction (warrant/graph.py:139-156). Thus it cannot distinguish acceptance followed by refutation from acceptance of an already refuted version. T itself names this missing condition in its residual; disclosing it does not discharge the unchanged obligation.
+
+This objection concerns the temporal qualification, not whether an actor accepting an already refuted version should bear responsibility by some other policy. The existing ledger may usefully report both, but it does not distinguish the promised later-refutation relation. The remedy needs an explicit ordering policy and corresponding witnesses, or a duly revised obligation. A timestamp comparison alone would not establish causal order.
+
+The signed-fixture probe below includes an explicit causal reference: in the negative case the acceptance references the already-existing reproduction, so the ordering does not depend on wall-clock claims. Its positive control instead has the reproduction reference the earlier acceptance. Both stores assess without problems or rejected records. Both yield refuted pairs; only the control establishes later refutation. Credit to the challenger still works in both.
+
+## Unsigned reproduction
+
+Save the following as order_probe.py outside the checkout, and run:
+
+    TMPDIR=<review-working-directory> PYTHONDONTWRITEBYTECODE=1 python3 order_probe.py <checkout-at-M>
+
+The fixture keys are tests/world.py's deterministic test keys, not any operator identity.
+
+```python
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+sys.path[:0] = [str(root / 'tests'), str(root)]
+from world import Repo
+from warrant import graph as G
+
+
+def example(accept_first):
+    r = Repo()
+    opened = r.entity('alice', 'obligation@1', {'state': 'open', 'statement': 'deliver', 'serves': []})
+    version = r.entity('alice', 'obligation@1', {'state': 'done', 'statement': 'deliver', 'serves': []}, lineage=opened)
+    if accept_first:
+        acceptance = r.attest('bob', version)
+    challenge = r.put('eve', 'challenge', {'target': version, 'statement': 'counterexample'}, refs=[version])
+    replay_refs = [challenge, version] + ([acceptance] if accept_first else [])
+    replay = r.put('carol', 'attest', {'target': challenge, 'on': version, 'verdict': 'reproduces'}, refs=replay_refs)
+    if not accept_first:
+        acceptance = r.put('bob', 'attest', {'target': version, 'verdict': 'accept'}, refs=[version, replay])
+    rep = r.report()
+    assert not rep['rejected'] and not rep['problems'], rep
+    row = G.ledger(rep)['bob']
+    assert row['accepted'] == [version]
+    assert G.ledger(rep)['eve']['replayed'] == [challenge]
+    causal_edge = [replay, 'ref', acceptance] if accept_first else [acceptance, 'ref', replay]
+    assert causal_edge in rep['graph']['edges']
+    result = {
+        'acceptance_before_reproduction': accept_first,
+        'version': version,
+        'acceptance': acceptance,
+        'challenge': challenge,
+        'reproduction': replay,
+        'causal_edge': causal_edge,
+        'ledger': row,
+        'expected_later_refuted': [[version, challenge]] if accept_first else [],
+    }
+    result['matches_later_refuted'] = row['refuted'] == result['expected_later_refuted']
+    return result
+
+results = [example(True), example(False)]
+assert results[0]['matches_later_refuted']
+assert not results[1]['matches_later_refuted']
+print(json.dumps(results, indent=2))
+print('COUNTEREXAMPLE: an acceptance referencing the existing reproduction is still labelled refuted; later refutation is not established.')
+```
+
+Observed output at M:
+
+```text
+[
+  {
+    "acceptance_before_reproduction": true,
+    "version": "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+    "acceptance": "478c5d2e95de07e03cd2a283266645f026663503713da64ddd0460fc283da49b",
+    "challenge": "c4584a4fb55bdaff7df4ceadc27134926212b01519a72a32686b1bfda76e265f",
+    "reproduction": "e92b604a833bf4b45e888b12b292afa4cc6eb2ae6638fed1b05ff73b3062f3b1",
+    "causal_edge": [
+      "e92b604a833bf4b45e888b12b292afa4cc6eb2ae6638fed1b05ff73b3062f3b1",
+      "ref",
+      "478c5d2e95de07e03cd2a283266645f026663503713da64ddd0460fc283da49b"
+    ],
+    "ledger": {
+      "accepted": [
+        "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f"
+      ],
+      "refuted": [
+        [
+          "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+          "c4584a4fb55bdaff7df4ceadc27134926212b01519a72a32686b1bfda76e265f"
+        ]
+      ],
+      "challenged": [],
+      "replayed": []
+    },
+    "expected_later_refuted": [
+      [
+        "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+        "c4584a4fb55bdaff7df4ceadc27134926212b01519a72a32686b1bfda76e265f"
+      ]
+    ],
+    "matches_later_refuted": true
+  },
+  {
+    "acceptance_before_reproduction": false,
+    "version": "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+    "acceptance": "0f0e0e0ed4753850a2ed8f5f836e7261a66026bf199ba2c898ec372f202c812f",
+    "challenge": "1fc80c829468dfcaf05282f841b9fe6c791054274bca2911f2b8a93a970ffff8",
+    "reproduction": "3998754bd737b11a771bfdd4c3082c9308c0ee846011d4d79c3c9901d436606f",
+    "causal_edge": [
+      "0f0e0e0ed4753850a2ed8f5f836e7261a66026bf199ba2c898ec372f202c812f",
+      "ref",
+      "3998754bd737b11a771bfdd4c3082c9308c0ee846011d4d79c3c9901d436606f"
+    ],
+    "ledger": {
+      "accepted": [
+        "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f"
+      ],
+      "refuted": [
+        [
+          "d045873bf0260011dff9872c66894f7b8053d36671c9523fda48c82368683e4f",
+          "1fc80c829468dfcaf05282f841b9fe6c791054274bca2911f2b8a93a970ffff8"
+        ]
+      ],
+      "challenged": [],
+      "replayed": []
+    },
+    "expected_later_refuted": [],
+    "matches_later_refuted": false
+  }
+]
+COUNTEREXAMPLE: an acceptance referencing the existing reproduction is still labelled refuted; later refutation is not established.
+```
+
+## Verification scope
+
+- Re-resolved HEAD, origin and the named merge; verified merge ancestry and read PR #298 through the GitHub connector.
+- warrant.roadmap due --actor codex --json matches D/T, the statement, references and empty evidence/requires. MCP context shows T pending only codex's roadmap/acceptor attest; no existing verdict by codex on T.
+- tests/tools_test.py: 99 printed cases pass, including WL1.
+- tests/core_test.py: 65 printed cases pass.
+- T137: baseline green; KILLED by WL1 (matrix below). The harness COPY/TMP were relocated outside the checkout, with no change to its mutation or cases.
+- tools/graph.py views-json: all four rendered views identical under PYTHONHASHSEED=1,2; WITNESSES.md rendered outside the checkout. Did not run the writing views --check command.
+- warrant.roadmap check: 87 lineages, 0 problems.
+- warrant.claims check: 118 live specification claims, 0 problems.
+- No full mutant run, agent suite, boundary suite, CI replay or security scan claimed. No checker seed read or checker attest filed.
+
+T137 matrix:
+
+```json
+{
+ "definition": "15cc1f3ae39c4fca8d15663a6aebd07b5ea0b166067bd343aeb0349eebb42ef4",
+ "rows": [
+  {
+   "id": "T137",
+   "outcome": "KILLED",
+   "failed": [
+    "WL1"
+   ],
+   "rc": 1,
+   "detail": ""
+  }
+ ]
+}
+```
