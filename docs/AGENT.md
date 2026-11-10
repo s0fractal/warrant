@@ -133,7 +133,14 @@ token of its run. agent_test SV1–SV7; mutants A99–A104, A121–A122.
 **The reader's own store.** With `--mine NAME` (default: the repository Home registers as `space`, if any) a reaction
 is filed in that store whatever store its record is in, so a project's store is never changed by its readers'
 reactions; an attest on a record held elsewhere is admitted as any other. A lineage page shows, under each version,
-the reactions on it filed in other stores, naming the store.
+the reactions on it filed in other stores, naming the store. A `--mine` store that is not read refuses the reaction:
+nothing is filed anywhere (fail closed; agent_test CH6).
+
+**A page is a function of every store it reads.** The lens chosen, the reactions filed elsewhere and the challenges
+against that lens come from other stores, so a lineage page's lens names their roots (`with`), and its footer counts
+them (CH4). `/changes` reads each state with that state's reactions from other stores, and a new reaction elsewhere
+lists the lineage it points at (CH5). A lens comparison also names how two lenses draw what both show: layout, order
+of versions and of members, labels and forms (`lens.presentation`, CH7).
 
 ### Lenses: the reader chooses how a page is drawn
 
