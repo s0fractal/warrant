@@ -153,7 +153,7 @@ class Tally:
         n[1] += why is None
         if why:
             self.disagreements.append((cls, name, why))
-        if cls != "J1":
+        if cls in VECTOR_CLASSES and " / " not in name:             # the worlds, crafted cases, quickstart, packages; no mutation
             self.vectors.append({"class": cls, "name": name, "case": wire(case), "expect": {k: v for k, v in py.items() if k not in IDENTITY}})
         return why
 
@@ -333,6 +333,31 @@ def receiver_cases():
     }
     out = [(f"receiver: {n}", dict(lines=list(w.lines), blobs={}, trust=tt, profile=pp, as_of=None)) for n, (tt, pp) in cases.items()]
     out += [(f"receiver: as_of {a}", dict(rc, lines=list(w.lines), blobs={}, as_of=a)) for a in (0, 105, 108, 10 ** 12)]
+    return out
+
+
+def boundary_cases():
+    """[(name, case)]: Python's == over JSON values (True == 1, a missing member == null) where a guard or a pin matches,
+    and requires nested exactly at LIMITS["requires"] and one beyond."""
+    out = []
+    w = _world()
+    done = B.SCHEMAS[2]["states"]["done"]
+    for n, (want, got) in enumerate([(1, True), (0, False), (True, 1), (None, "absent"), (1, 1.0 if False else "1"), ({"a": 1}, {"a": True})]):
+        o = w.put("alice", "entity", {"state": "done", "statement": f"eq {n}", "serves": []}, "obligation@1",
+                  guard=dict(done, match=dict(done["match"], n=want)))
+        w.attest("bob", o, **({} if got == "absent" else {"n": got}))
+    sch = {"name": "pin@1", "fields": {"state": "str", "by": "obj?"}, "states": {"open": None, "shut": None}, "closed": ["shut"],
+           "successors": {}, "pinned": "by"}
+    w.put("alice", "schema", sch)
+    root = w.put("alice", "entity", {"state": "open", "by": {"k": True}}, "pin@1")
+    w.put("alice", "entity", {"state": "shut"}, "pin@1", root, guard=R.guard(0, [], {"k": 1}))
+    out.append(("Python's == in guard and pin matches", dict(_receiver(w), lines=list(w.lines), blobs={}, as_of=None)))
+    for depth in (ST.LIMITS["requires"], ST.LIMITS["requires"] + 1):
+        chain, prev = _world(), None
+        for n in range(depth):
+            prev = chain.put("alice", "entity", {"state": "done", "statement": f"o{n}", "serves": []}, "obligation@1",
+                             guard=R.guard(1, ["roadmap/acceptor"], {"verdict": "accept"}, [prev] if prev else []))
+        out.append((f"requires nested {depth} deep", dict(_receiver(chain), lines=list(chain.lines), blobs={}, as_of=None)))
     return out
 
 
@@ -675,7 +700,7 @@ def py_inspect(case):
 def package_of(case, rng):
     recs = records_of(case)
     rep = py_report(case)
-    roots = sorted(rep.get("lineages", {}))[:2] + sorted(rep.get("challenges", {}))[:1] + [rng.choice(recs)[0] if recs else "00" * 32, "00" * 32]
+    roots = sorted(rep.get("lineages", {}))[:2] + sorted(rep.get("challenges", {}))[:1] + [recs[len(recs) // 2][0] if recs else "00" * 32, "00" * 32]
     lines = []
     for raw in case["lines"]:
         try:
@@ -792,12 +817,52 @@ def encoding_cases(tally, worlds):
 TIMINGS = []
 
 
+VECTOR_CLASSES = ("J2", "J3", "J5")
+VECTORS = ROOT / "impl-js" / "vectors"
+VECTOR_FORMAT = "warrant-assess-vectors/1"
+
+
+def vector_bytes(tally):
+    """(cases.jsonl.gz, manifest.json): the J2, J3 and J5 cases (no mutation) with this engine's answers. Deterministic: the
+    test keys, the times and the order of the cases are fixed, and gzip carries no time."""
+    data = "".join(json.dumps(v, separators=(",", ":")) + "\n" for v in tally.vectors).encode()     # dict order kept: a package's blobs are read in it
+    gz = gzip.compress(data, compresslevel=9, mtime=0)
+    counts = {}
+    for v in tally.vectors:
+        counts[v["class"]] = counts.get(v["class"], 0) + 1
+    manifest = {"format": VECTOR_FORMAT, "cases": "cases.jsonl.gz", "sha256": hashlib.sha256(gz).hexdigest(), "bytes": len(data),
+                "counts": counts, "generator": "python3 tests/impl_js_test.py --vectors impl-js/vectors",
+                "reader": "node impl-js/check_vectors.mjs [impl-js/vectors]",
+                "rule": ("Each gzipped line is {class, name, case, expect}. A case {lines: [base64 line bytes, newline included], "
+                         "blobs: {name: base64}, trust, profile, as_of} is assess(snapshot of the lines and blobs, trust, profile, "
+                         "as_of) (docs/V3.md §10); a case {package, trust, profile} is handoff inspect alone (§13). expect is the "
+                         "answer of the Python reference: a report, {refused: why}, a handoff result or {error, message}, with the "
+                         "engine's identity left out (assessment, code; adapter). An implementation agrees when every member of "
+                         "its answer but those is canonically equal to expect's (RFC 8785, docs/V3.md §1) and its own assessment "
+                         "is the SHA-256 of canon({snapshot, trust, profile, as_of, code}) with its own code."),
+                "excluded": ("J1 (the repository's store: run the test), J4 (seeded mutations: generated by the test, --seed), "
+                             "J6 (third_party/primitives and tests/vectors already carry them), J7 (the reference crashes there)")}
+    return gz, (json.dumps(manifest, indent=1, sort_keys=True) + "\n").encode()
+
+
 def write_vectors(tally, out):
+    gz, manifest = vector_bytes(tally)
     out.mkdir(parents=True, exist_ok=True)
-    data = "".join(json.dumps(v, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for v in tally.vectors).encode()
-    gz = gzip.compress(data, mtime=0)
     (out / "cases.jsonl.gz").write_bytes(gz)
-    return len(data), len(gz)
+    (out / "manifest.json").write_bytes(manifest)
+    return len(gz)
+
+
+def vectors_current(tally):
+    """J8: the committed vectors are what this engine answers now, byte for byte, and the reader in impl-js reads them."""
+    gz, manifest = vector_bytes(tally)
+    have = (VECTORS / "cases.jsonl.gz").read_bytes() if (VECTORS / "cases.jsonl.gz").exists() else b""
+    check("J8 impl-js/vectors is what the reference answers now (regenerate: --vectors impl-js/vectors)",
+          have == gz and (VECTORS / "manifest.json").read_bytes() == manifest, f"{len(tally.vectors)} cases, {len(gz)} bytes gzipped",
+          "impl-js/vectors differs from the cases this run made")
+    p = subprocess.run([NODE, str(ROOT / "impl-js" / "check_vectors.mjs"), str(VECTORS)], capture_output=True, text=True, check=False, timeout=600)
+    check("J8 node impl-js/check_vectors.mjs agrees with every vector, with no Python", p.returncode == 0,
+          p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "", p.stdout[-600:] + p.stderr[-600:])
 
 
 def main():
@@ -818,7 +883,7 @@ def main():
     t = time.perf_counter()
     run_cases(tally, "J2", worlds)
     TIMINGS.append((f"{len(worlds)} core worlds, both engines", time.perf_counter() - t, None))
-    run_cases(tally, "J2", line_cases() + receiver_cases() + exotic_actor_cases())
+    run_cases(tally, "J2", line_cases() + receiver_cases() + boundary_cases() + exotic_actor_cases())
     DEPARTURES[:] = departure_cases()
     for name, case, prefix, because in DEPARTURES:
         py, js = py_answer(case), js_batch([case])[0]
@@ -843,8 +908,9 @@ def main():
     for what, tp, tj in TIMINGS:
         print(f"     time {what}: python {tp:.2f} s" + (f", node {tj:.2f} s" if tj is not None else ""))
     if a.vectors:
-        raw, gz = write_vectors(tally, Path(a.vectors))
-        print(f"     vectors: {len(tally.vectors)} cases, {raw} bytes, {gz} gzipped, in {a.vectors}")
+        size = write_vectors(tally, Path(a.vectors))
+        print(f"     vectors: {len(tally.vectors)} cases, {size} bytes gzipped, written to {a.vectors}")
+    vectors_current(tally)
     return finish("impl_js_test")
 
 
