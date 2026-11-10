@@ -14,6 +14,22 @@
 // Each prints canonical JSON (RFC 8785, this repository's domain: no floats, integers within ±(2^53-1),
 // no lone surrogates). A refusal prints {"refused": why} and exits 2.
 
+function surrogatePass(str) {     // UTF-8, with each lone surrogate as its own three bytes (Python's "surrogatepass")
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+      const d = str.charCodeAt(i + 1);
+      if (d >= 0xdc00 && d <= 0xdfff) { c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00); i++; }
+    }
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return new Uint8Array(out);
+}
+
 export const VERSION = "3";
 const MAX_INT = Number.MAX_SAFE_INTEGER;          // 2^53 - 1
 const MAX_DEPTH = 256;
@@ -1115,7 +1131,9 @@ export async function inspectAlone(pkg, trust, profile, backend, code) {
   if (!ok) throw new AgentError("BAD_REQUEST", `a package is {warrant: ${PACKAGE}, roots, lines, blobs}`);
   const blobs = new Map();
   for (const h of pkg.blobs[ORDER] || Object.keys(pkg.blobs)) blobs.set(h, b64decode(pkg.blobs[h]));     // Python's dict order: as read
-  const lines = pkg.lines.map((x) => { if (!isWellFormed(x)) throw new AgentError("BAD_REQUEST", "a line is not text"); return utf8(x + "\n"); });
+  // As warrant/verify.py: a lone surrogate is encoded as Python's "surrogatepass" does, bytes no reader takes for a record,
+  // so the snapshot counts the line as rejected.
+  const lines = pkg.lines.map((x) => (isWellFormed(x) ? utf8(x + "\n") : surrogatePass(x + "\n")));
   let size = 0;
   for (const x of lines) size += x.length;
   for (const b of blobs.values()) size += b.length;

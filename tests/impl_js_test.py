@@ -974,8 +974,11 @@ def main():
     run_cases(tally, "J2", line_cases() + receiver_cases() + boundary_cases() + exotic_actor_cases() + spec_gap_cases())
     found = departure_cases()
     # Two crashes of the reference the port found are fixed in the engine (S12, M6): both engines now agree there.
+    # The three crashes of the reference the port found are fixed (S12 and M6 in the engine, the lone surrogate in
+    # warrant/verify.py's package reader): both engines agree there now, and no departure is declared.
     run_cases(tally, "J2", [(f"formerly a departure: {n}", c) for n, c, p, _ in found if p != "Python UnicodeEncodeError"])
-    DEPARTURES[:] = [d for d in found if d[2] == "Python UnicodeEncodeError"]
+    run_cases(tally, "J5", [(f"formerly a departure: {n}", c) for n, c, p, _ in found if p == "Python UnicodeEncodeError"])
+    DEPARTURES[:] = []
     for name, case, prefix, because in DEPARTURES:
         py, js = py_answer(case), js_batch([case])[0]
         ok = "crash" in py and py["crash"].startswith(prefix + ":") and "crash" not in js
