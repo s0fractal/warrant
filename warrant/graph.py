@@ -208,7 +208,7 @@ def grounded(rep, i):
                 seen.add(g)
                 order.append(g)
                 todo.append(g)
-    on_cycle, state = set(), {}                    # Tarjan-free: a node is on a cycle iff it reaches itself
+    on_cycle = set()                               # a node is on a cycle iff it reaches itself
     for v in order:
         stack, mark = [g for g in grounds(v)[0]], set()
         while stack:
