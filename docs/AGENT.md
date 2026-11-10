@@ -153,3 +153,14 @@ of each version, and each attest and challenge (`warrant_agent.lens.diff`). Ever
 comparisons with every other lens that applies. The comparison sees only the records of that store.
 
 agent_test LN1–LN9; mutants A105–A115.
+
+### What changed for me
+
+`/changes` lists, per store, the lineages whose page differs for the reader since the reader's last mark
+(«Позначити все як переглянуте»: the ids of every record each store holds, kept in `serve-seen.json` beside Home;
+without a mark, the records dated before the last day). The past is that set of records assessed by the same engine,
+so it is reproduced exactly. A lineage is listed when its floor (state, reliance, the counted challenges that stand,
+whether it is grounded) or what the reader's lens draws of it (`lens.visible`) differs, with the witness: what
+appeared, what vanished, what in the floor moved. New records that change nothing the reader sees are counted, not
+listed: two states are the same for the reader under that lens (`warrant_agent/changes.py`). agent_test CH1–CH3;
+mutants A117–A120.

@@ -264,6 +264,10 @@ MUTANTS = [
     ("A114", "warrant_agent/lens.py", '            out |= {(x["id"], "") for x in v["on"]}', '            pass', AGENT, ["LN9"]),
     ("A115", "warrant_agent/lens.py", 'return sorted(va - vb), sorted(vb - va)', 'return sorted(vb - va), sorted(va - vb)', AGENT, ["LN9"]),
     ("A116", "warrant_agent/serve.py", 'self.send(code, page("Не підписано", f\'<h2>Не підписано</h2><p>{E(out)}</p><p><a href="{E(back)}">назад</a></p>\'))', 'self.send(code, out, TEXT)', AGENT, ["SV5"]),
+    ("A117", "warrant_agent/changes.py", 'if v0 == v1 and f0 == f1:', 'if v0 == v1:', AGENT, ["CH3"]),
+    ("A118", "warrant_agent/changes.py", '        quiet -= touched[L]\n', '        pass\n', AGENT, ["CH2"]),
+    ("A119", "warrant_agent/serve.py", '        ok = secrets.compare_digest(form.get("token", ""), self.token)\n        if not ok:', '        if False:', AGENT, ["CH1"]),
+    ("A120", "warrant_agent/changes.py", 'lines = [raw for raw in snap.raw if _rid(raw) in keep]', 'lines = list(snap.raw)', AGENT, ["CH3"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
