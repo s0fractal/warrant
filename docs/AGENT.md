@@ -129,3 +129,20 @@ signed as A, filed only in a store whose trust binds that key to A. No guard's m
 credits nothing; it is the reader's own signed word, and it leaves that version off the reader's frontier (an attest
 by the actor). The server listens on 127.0.0.1 only, answers only to its own Host, and refuses a POST without the
 token of its run. agent_test SV1–SV6; mutants A99–A104.
+
+### Lenses: the reader chooses how a page is drawn
+
+A lineage page's layout is a record: an entity of `lens@1` (`warrant_agent/lens.py`: `{state: active | retired,
+name, applies: a schema name, card, why?}`). Its `card` is data, never code: `layout` (`nested`, each version a card
+holding what happened to it; or `flat`, one stream by time), `fields` (body members, each shown as `text`, `list`
+or `count`, with a label), `order` (`newest`, `oldest`) and `activity` (`shown`, `hidden`). Nothing in it is
+evaluated; a card the interpreter does not know is UNSUPPORTED, and the built-in lens draws the page and says why.
+
+A lens version is applied only when the reader filed `{verdict: "adopt"}` on it (`--reader`, default `--actor`;
+the latest adoption in the reader's own chain wins). A lens someone else adopted, or a newer one nobody adopted, is
+not applied. `?lens=ID` (or `builtin`) names a lens outright: a portal, and the page it draws is byte-identical to
+the one its adoption draws. A lens's own lineage is always drawn by the built-in lens.
+
+No lens decides the floor, drawn above any card: the lineage's state and reliance, every counted challenge that
+stands against one of its versions with its statement, that completeness is UNATTESTED, and which lens drew the
+page. agent_test LN1–LN6; mutants A105–A111.
