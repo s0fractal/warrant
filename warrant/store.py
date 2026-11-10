@@ -91,7 +91,7 @@ class Snapshot:
     def json_blob(self, h):
         try:
             return C.loads(self.blobs[h]) if h in self.blobs else None
-        except C.NotCanonical:
+        except (ValueError, RecursionError):  # NotCanonical, and what json.loads raises past CPython's int-digit limit
             return None
 
 

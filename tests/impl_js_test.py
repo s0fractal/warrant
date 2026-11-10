@@ -899,13 +899,17 @@ VECTORS = ROOT / "impl-js" / "vectors"
 VECTOR_FORMAT = "warrant-assess-vectors/1"
 
 
+VECTOR_MAX = 1 << 20      # bytes of one vector case's JSON
+
+
 def vector_bytes(tally):
     """(cases.jsonl.gz, manifest.json): the J2, J3 and J5 cases (no mutation) with this engine's answers. Deterministic: the
     test keys, the times and the order of the cases are fixed, and gzip carries no time."""
-    data = "".join(json.dumps(v, separators=(",", ":")) + "\n" for v in tally.vectors).encode()     # dict order kept: a package's blobs are read in it
+    small = [v for v in tally.vectors if len(json.dumps(v)) <= VECTOR_MAX]     # a case of thousands of records (T16) stays a live case
+    data = "".join(json.dumps(v, separators=(",", ":")) + "\n" for v in small).encode()     # dict order kept: a package's blobs are read in it
     gz = gzip.compress(data, compresslevel=9, mtime=0)
     counts = {}
-    for v in tally.vectors:
+    for v in small:
         counts[v["class"]] = counts.get(v["class"], 0) + 1
     manifest = {"format": VECTOR_FORMAT, "cases": "cases.jsonl.gz", "sha256": hashlib.sha256(gz).hexdigest(), "bytes": len(data),
                 "counts": counts, "reference": "warrant/ (this commit's engine) on CPython 3.13 or later: 3.11 and 3.12 answer base64 otherwise",
@@ -968,7 +972,13 @@ def main():
     run_cases(tally, "J2", worlds)
     TIMINGS.append((f"{len(worlds)} core worlds, both engines", time.perf_counter() - t, None))
     run_cases(tally, "J2", line_cases() + receiver_cases() + boundary_cases() + exotic_actor_cases() + spec_gap_cases())
-    DEPARTURES[:] = departure_cases()
+    found = departure_cases()
+    # Two crashes of the reference the port found are fixed in the engine (S12, M6): both engines now agree there.
+    # The three crashes of the reference the port found are fixed (S12 and M6 in the engine, the lone surrogate in
+    # warrant/verify.py's package reader): both engines agree there now, and no departure is declared.
+    run_cases(tally, "J2", [(f"formerly a departure: {n}", c) for n, c, p, _ in found if p != "Python UnicodeEncodeError"])
+    run_cases(tally, "J5", [(f"formerly a departure: {n}", c) for n, c, p, _ in found if p == "Python UnicodeEncodeError"])
+    DEPARTURES[:] = []
     for name, case, prefix, because in DEPARTURES:
         py, js = py_answer(case), js_batch([case])[0]
         ok = "crash" in py and py["crash"].startswith(prefix + ":") and "crash" not in js

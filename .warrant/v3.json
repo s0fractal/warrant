@@ -24,14 +24,16 @@
     "review-replayer"
    ],
    "roadmap/acceptor": [
-    "codex"
+    "codex",
+    "s0fractal"
    ],
    "roadmap/owner": [
     "s0fractal"
    ],
    "schema/author": [
     "claude",
-    "codex"
+    "codex",
+    "s0fractal"
    ]
   },
   "warrant": "profile/3"

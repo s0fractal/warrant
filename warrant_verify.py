@@ -36,8 +36,8 @@ DIGESTS = {
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
     "warrant/records.py": "411937f2642656a77ece5dc77e7b1b407fa55a9e823a883870ea9e3ceb45a0c3",
-    "warrant/store.py": "81a733eeca5e452f21213478c093c426df82a5560fbe0d877d0223b23e720137",
-    "warrant/engine.py": "228fcb2f9264c34f3880c1a80fca2c138b9bcd59ecace848b0f3cd6f599e2e50",
+    "warrant/store.py": "3f388f16125b6ae0b661c526e72481dfbd0bedb4abe182948524f776bcf88a2f",
+    "warrant/engine.py": "667c1b771fe4ad87da21d56c8f618f0d6b5cbb6c24766df69dae999a5dc7ac00",
     "warrant/verify.py": "bd91ee2f73f930fe98d9f4ac58143d45235eaa78fc5b6b7f13a7fba3dad77f5a",
 }
 ORDER = ('jcs', 'graph', 'shapes', 'keys', 'pins', 'records', 'store', 'engine', 'verify')
@@ -916,7 +916,7 @@ class Snapshot:
     def json_blob(self, h):
         try:
             return C.loads(self.blobs[h]) if h in self.blobs else None
-        except C.NotCanonical:
+        except (ValueError, RecursionError):  # NotCanonical, and what json.loads raises past CPython's int-digit limit
             return None
 
 
@@ -1118,6 +1118,7 @@ class View:
         self.as_of = as_of if as_of is not None else max((e[0]["record"]["at"] for e in snap.lines.values()), default=0)
         self.recs, self.basis, self.bad, self.later = _authentic(snap, trust, self.as_of)
         self.problems = []
+        self._lineage_depth()
         self._vouch()
         self._chains()
         self._index_attests()
@@ -1226,7 +1227,7 @@ class View:
         bad = {}
         for i, r in sorted(self.recs.items()):
             s = self.schemas.get(r["schema"]) if r["kind"] == "entity" else None
-            if not (s and s.get("pinned")):
+            if s is None or "pinned" not in s:      # by presence, as _schema_problem admits it: "" is a member name too
                 continue
             root, seen = r, {i}
             while root["lineage"] in self.recs and root["lineage"] not in seen:
@@ -1238,6 +1239,8 @@ class View:
             elif pin and r["body"].get("state") in s["closed"] \
                     and any((r["guard"] or {"match": {}})["match"].get(k, object()) != v for k, v in pin.items()):
                 bad[i] = f"its guard matches less than its root's {s['pinned']}"
+            elif pin and r["body"].get("state") in s["closed"] and r["guard"]["quorum"] < 1:
+                bad[i] = f"its guard needs no attest under its root's {s['pinned']}"
         for i, why in bad.items():
             self.problem("INVALID", i, why)
             self.drop(i, f"INVALID: {why}")
@@ -1306,6 +1309,23 @@ class View:
 
     # -- guards (§6)
 
+    def _lineage_depth(self):
+        """Refuse the store (§8) when a lineage is longer than LIMITS["depth"] links, before anything is assessed, so no
+        verdict depends on where a bounded walk would have stopped (the order of record ids). Without recursion; a
+        `lineage` naming no record of the view ends the walk, and ids make the links acyclic."""
+        depth = {}
+        for i in sorted(self.recs):
+            path, cur = [], i
+            while cur in self.recs and cur not in depth and self.recs[cur]["lineage"] is not None:
+                path.append(cur)
+                cur = self.recs[cur]["lineage"]
+            d = depth.get(cur, 0)
+            for x in reversed(path):
+                d += 1
+                depth[x] = d
+            if d > LIMITS["depth"]:
+                raise R.Invalid(f"store beyond limits: a lineage {d} links deep, more than {LIMITS['depth']}")
+
     def _requires_depth(self):
         """Refuse the store (§8) when a chain of lineages requiring lineages is longer than LIMITS["requires"]: a
         bound on the input, as the other limits are (guards are resolved without recursion, _resolve). The depth is
@@ -1371,7 +1391,8 @@ class View:
             if g is not None:
                 acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
                               if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
-                              and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
+                              # a member the attest does not have equals nothing, null included (as _weaker and _pins read it)
+                              and all(self.recs[a]["body"].get(k, object()) == x for k, x in g["match"].items())})
                 if len(acc) < g["quorum"]:
                     waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
             part[v] = (acc, waiting)
@@ -1436,7 +1457,8 @@ class View:
         if stands and x in self.root_of:
             lin = self.lineages[self.root_of[x]]
             eff = self.effective(self.root_of[x])
-            stands = x in lin["path"] and (eff is None or lin["path"].index(eff) <= lin["path"].index(x))
+            # §5: it stands until a version after x in its lineage is effective; a forked lineage has none, so it stands
+            stands = eff is None or (x in lin["path"] and lin["path"].index(eff) <= lin["path"].index(x))
         return {"target": x, "counted": why is not None, "why": why or "thesis: its actor's challenge does not count here",
                 "replays": sorted(replays, key=lambda z: (str(z[0]), str(z[1]), z[2])), "stands": stands}
 
@@ -1526,7 +1548,7 @@ def _schema_problem(b):
         and isinstance(b["fields"], dict) and all(isinstance(t, str) and t.rstrip("?") in R.TYPES for t in b["fields"].values()) \
         and (b["states"] is None or (isinstance(b["states"], dict) and b["fields"].get("state") == "str"
                                      and all(g is None or R.guard_problem(g) is None for g in b["states"].values()))) \
-        and R.is_list(b["closed"], lambda s: isinstance(b["states"], dict) and s in b["states"], True) \
+        and R.is_list(b["closed"], lambda s: isinstance(s, str) and isinstance(b["states"], dict) and s in b["states"], True) \
         and isinstance(b["successors"], dict) and all(isinstance(b["states"], dict) and st in b["states"]
                                                       and R.is_list(rs, S.is_actor, True) for st, rs in b["successors"].items()) \
         and ("pinned" not in b or (isinstance(b["pinned"], str) and b["fields"].get(b["pinned"]) in ("obj", "obj?")))

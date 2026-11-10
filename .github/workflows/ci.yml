@@ -108,11 +108,18 @@ jobs:
 
       - name: The core, the agent interface, the merge gate, the tools
         working-directory: tests
-        run: for t in core agent gate tools shapes primitives; do python "${t}_test.py"; done
+        run: for t in core agent gate tools shapes primitives verify; do python "${t}_test.py"; done
 
       - name: The public surface and the quickstart
         working-directory: tests
         run: for t in boundary quickstart; do python "${t}_test.py"; done
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: The second implementation (impl-js), held byte for byte to the engine
+        working-directory: tests
+        run: python impl_js_test.py
 
       - name: Review plugin and waker (manifests, launcher, one wake per head, the waker's store rules)
         run: python integrations/warrant-review/test_plugin.py

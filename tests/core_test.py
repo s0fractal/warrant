@@ -15,7 +15,7 @@ from warrant import keys as K               # noqa: E402
 from warrant import bootstrap as B          # noqa: E402
 from warrant import engine as E             # noqa: E402
 from warrant import records as R            # noqa: E402
-from warrant.store import Snapshot, Store   # noqa: E402
+from warrant.store import LIMITS, Snapshot, Store   # noqa: E402
 
 FAILS = []
 
@@ -90,6 +90,13 @@ def lineage_cases():
     check("L7 two successors of one version are a FORK; nothing is excluded",
           rep["lineages"][c1]["verdict"] == "FORK" and rep["lineages"][c1]["leaf"] is None
           and {c2, c3} <= set(rep["lineages"][c1]["versions"]) and rep["lineages"][c1]["reliance"] == "FORK")
+    # Found by the JavaScript port at 7de4413d: against a version of a forked lineage, a counted challenge read
+    # `stands: false`, though no version after it is effective (§5): a fork hid every objection to its versions.
+    held = w.put("alice", "challenge", {"target": c1, "statement": "c1 is wrong"}, refs=[c1])
+    rep = w.report()
+    check("L15 a counted challenge against a version of a forked lineage stands: no version after it is effective",
+          rep["challenges"][held]["counted"] and rep["challenges"][held]["stands"] and rep["versions"][c1]["challenged_by"] == [held],
+          (rep["challenges"][held], rep["versions"][c1]["challenged_by"]))
     w2 = World()
     a = w2.claim()
     e = w2.claim(actor="eve", lineage=a)
@@ -159,6 +166,32 @@ def pin_cases():
     names = w.report()["schemas"]
     check("P4 pinned names a member of type obj or obj?; a schema with anything else is not counted",
           not {"p@2", "p@3", "p@4", "p@5"} & set(names) and "prediction@9" in names)
+    # Codex challenge of 360a77d7 (observed at 8eed7191): the empty string is a member name a schema may pin, and the
+    # pin was read by its truth, so `pinned: ""` was admitted and then never enforced.
+    w = World()
+    w.put("alice", "schema", dict(sch, name="prediction@8", fields={"state": "str", "": "obj?"}, pinned=""))
+    root = w.put("alice", "entity", {"state": "open", "": {"code": "D"}}, "prediction@8")
+    weak = w.put("alice", "entity", {"state": "decided"}, "prediction@8", root, guard=guard)
+    w.attest("bob", weak, verdict="reproduces", code="O")
+    rep = w.report()
+    check("P5 a pinned member named by the empty string pins as any other: a closure matching less is INVALID and closes nothing",
+          "prediction@8" in rep["schemas"] and "INVALID" in rep["rejected"].get(weak, "") and rep["lineages"][root]["state"] == "open",
+          (rep["rejected"].get(weak), rep["lineages"][root]["state"], rep["versions"].get(weak, {}).get("guard")))
+    kept = w.put("alice", "entity", {"state": "decided"}, "prediction@8", root, guard=dict(guard, match=D))
+    w.attest("bob", kept, **D)
+    rep = w.report()
+    check("P6 ... and the closure that matches the pin still counts", kept not in rep["rejected"] and rep["lineages"][root]["state"] == "decided",
+          (rep["rejected"].get(kept), rep["lineages"][root]["state"]))
+    # Found reviewing 63c83869: where the schema sets no minimal guard for the closed state, a closure whose guard matches
+    # the pin with quorum 0 was met with no attest at all, so the pin fixed nothing.
+    w = World()
+    w.put("alice", "schema", dict(sch, name="prediction@7", states={"open": None, "decided": None}))
+    root = w.put("alice", "entity", {"state": "open", "closes_by": D}, "prediction@7")
+    free = w.put("alice", "entity", {"state": "decided"}, "prediction@7", root, guard=dict(guard, quorum=0, match=D))
+    rep = w.report()
+    check("P7 under a pin, a closing version's guard needs at least one attest: quorum 0 is INVALID and closes nothing",
+          "INVALID" in rep["rejected"].get(free, "") and rep["lineages"][root]["state"] == "open",
+          (rep["rejected"].get(free), rep["lineages"][root]["state"]))
 
 
 def schema_cases():
@@ -221,6 +254,20 @@ def schema_cases():
     except KeyError:
         ok, rep = False, "KeyError"
     check("S11 an entity of the reserved migration@1 is INVALID, never a crash (6d6bb700: KeyError in the guard)", ok, rep)
+    # Found beside P5 (at 9509b865): `closed` was looked up among the states before it was known to hold names, so one
+    # signed record of any actor whose `closed` holds a list or an object made every assessment of the store raise.
+    w = World()
+    odd = [w.put("eve", "schema", {"name": f"odd@{n}", "fields": {"state": "str"}, "states": {"a": None}, "closed": [x], "successors": {}})
+           for n, x in enumerate(([], {}, None, 1))]
+    c = w.claim()
+    try:
+        rep = w.report()
+        got = [i for i in odd if ["SCHEMA_NOT_COUNTED", i] in [p[:2] for p in rep["problems"]]], c in rep["versions"]
+    except Exception as e:      # the case fails on its assertion, whatever the engine raised
+        got = f"raised {type(e).__name__}: {e}"
+    check("S12 a schema whose closed holds a value that is no state name is not counted, and the store is still assessed",
+          got == (odd, True), got)
+
 
 
 def guard_cases():
@@ -234,6 +281,16 @@ def guard_cases():
     rep = w.report()
     check("G1 requires are inherited down a lineage and hold a closing version",
           rep["versions"][d2]["guard"] == "PENDING" and any(o1 in x for x in rep["versions"][d2]["waiting"]), rep["versions"][d2])
+    # The twin of P5 in rule 1 of section 6: a member an attest does not have was read as null, so a guard matching
+    # {"code": null} was met by an attest that says nothing of `code`.
+    w2 = World()
+    c = w2.claim(guard=R.guard(1, ["claim/verifier"], {"verdict": "accept", "code": None}))
+    w2.attest("bob", c)
+    silent = w2.report()["versions"][c]["guard"]
+    w2.attest("carol", c, code=None)
+    said = w2.report(roles=dict(w2.roles, **{"claim/verifier": ["bob", "carol"]}))["versions"][c]
+    check("G8 a match member whose value is null is met by an attest that has the member as null, not by one without it",
+          silent == "PENDING" and said["guard"] == "MET" and said["accepted_by"] == ["carol"], (silent, said))
     d1 = w.put("alice", "entity", {"state": "done", "statement": "first", "serves": []}, "obligation@1", o1, guard=g)
     w.attest("bob", d1)
     rep = w.report()
@@ -430,6 +487,26 @@ def store_cases():
     except RecursionError:
         ok = False
     check("T11 requires nested beyond the limit refuse the store, never exhaust the stack", ok)
+    # Found by the JavaScript port at 7de4413d: LIMITS["depth"] was never checked; the lineage walk stopped at 4096
+    # versions, so in a deeper lineage which versions came out LINEAGE_BROKEN depended on how record ids sort.
+    deep, cur = World(), None
+    OPEN = next(x for x in B.SCHEMAS if x["name"] == "obligation@1")["states"]["open"]
+    for n in range(LIMITS["depth"] + 1):     # LIMITS["depth"] links: at the bound
+        cur = deep.put("alice", "entity", {"state": "open", "statement": f"v{n}", "serves": []}, "obligation@1", cur, guard=OPEN)
+    at_bound = deep.report()
+    deep.put("alice", "entity", {"state": "open", "statement": "one more", "serves": []}, "obligation@1", cur, guard=OPEN)
+    try:
+        deep.report()
+        past = "assessed"
+    except R.Invalid as e:
+        past = str(e)
+    except RecursionError:
+        past = "RecursionError"
+    root = next(L for L in at_bound["lineages"])
+    check("T16 a lineage of LIMITS['depth'] links is assessed whole; one link more refuses the store before it is assessed",
+          len(at_bound["lineages"]) == 1 and len(at_bound["lineages"][root]["versions"]) == LIMITS["depth"] + 1
+          and not any(p[0] == "LINEAGE_BROKEN" for p in at_bound["problems"]) and "links deep" in past,
+          (len(at_bound["lineages"]), past))
     with tempfile.TemporaryDirectory() as d:
         st = Store(d).init()
         k = w.keys["alice"]
@@ -486,6 +563,19 @@ def migration_cases():
               mid in rep["versions"] and rep["basis"]["MIGRATED"] == 1, rep["rejected"].get(mid))
     rep = E.assess(Snapshot([C.canon(env) + b"\n"] + w.lines[:-2] + w.lines[-1:], w.blobs), w.trust, {"warrant": "profile/3", "roles": w.roles})
     check("M5 ... and a bad signature alone is still no basis", mid in rep["rejected"])
+    big = b'{"map":[[' + b"9" * 5000 + b"]]}"       # JSON, but past CPython's int-digit limit: json.loads raises ValueError
+    hb = __import__("hashlib").sha256(big).hexdigest()
+    w2 = World(roles=None)
+    w2.roles["migrator"] = ["carol"]
+    w2.blobs[hb] = big
+    m = w2.put("carol", "attest", {"target": hb, "verdict": "migrated"}, R.MIGRATION, refs=[hb])
+    try:
+        rep, crash = w2.report(), None
+    except Exception as e:                       # noqa: BLE001  the case is that no blob makes assess raise
+        rep, crash = {}, repr(e)
+    check("M6 a migration map blob a JSON reader cannot hold (an integer of 5,000 digits) is MIGRATION_MAP, not a crash of "
+          "every receiver's assessment (found by the JavaScript port)",
+          crash is None and ["MIGRATION_MAP", m] in [[p[0], p[1]] for p in rep.get("problems", [])], (crash, rep.get("problems")))
 
 
 def main():
