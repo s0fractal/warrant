@@ -65,6 +65,7 @@ MUTANTS = [
     ("V95", E, 'set(b) <= SCHEMA_MEMBERS | {"pinned"}', "set(b)", CORE, ["P4"]),
     ("V96", E, 'elif pin and r["body"].get("state") in s["closed"]', 'elif pin', CORE, ["P1"]),
     ("V99", E, 'if s is None or "pinned" not in s:', 'if not (s and s.get("pinned")):', CORE, ["P5"]),
+    ("V101", E, 'lambda s: isinstance(s, str) and isinstance(b["states"], dict) and s in b["states"]', 'lambda s: isinstance(b["states"], dict) and s in b["states"]', CORE, ["S12"]),
     ("V100", E, '.get(k, object()) == x for k, x in g["match"].items())})', '.get(k) == x for k, x in g["match"].items())})', CORE, ["G8"]),
     ("V3", E, 'return any(actor in self.profile["roles"].get(x, []) for x in roles)', "return True", CORE, ["C1", "S1"]),
     ("V4", E, 'out.update((self.recs[cur]["guard"] or {}).get("requires", []))', "pass", CORE, ["G1"]),

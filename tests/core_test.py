@@ -237,6 +237,19 @@ def schema_cases():
     except KeyError:
         ok, rep = False, "KeyError"
     check("S11 an entity of the reserved migration@1 is INVALID, never a crash (6d6bb700: KeyError in the guard)", ok, rep)
+    # Found beside P5 (at 9509b865): `closed` was looked up among the states before it was known to hold names, so one
+    # signed record of any actor whose `closed` holds a list or an object made every assessment of the store raise.
+    w = World()
+    odd = [w.put("eve", "schema", {"name": f"odd@{n}", "fields": {"state": "str"}, "states": {"a": None}, "closed": [x], "successors": {}})
+           for n, x in enumerate(([], {}, None, 1))]
+    c = w.claim()
+    try:
+        rep = w.report()
+        got = [i for i in odd if ["SCHEMA_NOT_COUNTED", i] in [p[:2] for p in rep["problems"]]], c in rep["versions"]
+    except Exception as e:      # the case fails on its assertion, whatever the engine raised
+        got = f"raised {type(e).__name__}: {e}"
+    check("S12 a schema whose closed holds a value that is no state name is not counted, and the store is still assessed",
+          got == (odd, True), got)
 
 
 

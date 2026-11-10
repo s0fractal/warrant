@@ -499,7 +499,7 @@ def _schema_problem(b):
         and isinstance(b["fields"], dict) and all(isinstance(t, str) and t.rstrip("?") in R.TYPES for t in b["fields"].values()) \
         and (b["states"] is None or (isinstance(b["states"], dict) and b["fields"].get("state") == "str"
                                      and all(g is None or R.guard_problem(g) is None for g in b["states"].values()))) \
-        and R.is_list(b["closed"], lambda s: isinstance(b["states"], dict) and s in b["states"], True) \
+        and R.is_list(b["closed"], lambda s: isinstance(s, str) and isinstance(b["states"], dict) and s in b["states"], True) \
         and isinstance(b["successors"], dict) and all(isinstance(b["states"], dict) and st in b["states"]
                                                       and R.is_list(rs, S.is_actor, True) for st, rs in b["successors"].items()) \
         and ("pinned" not in b or (isinstance(b["pinned"], str) and b["fields"].get(b["pinned"]) in ("obj", "obj?")))
