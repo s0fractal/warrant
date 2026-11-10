@@ -402,9 +402,19 @@ def standing(rep, d):
                   if x["target"] in vs and x.get("counted") and x.get("stands"))
 
 
-def floor_html(rep, store, d, used, note=""):
+def lens_objections(reports, lens_store, lens_id):
+    """[statement] of every challenge filed against the lens version that draws a page, counted or not: a lens has
+    no guard, so no challenge against it is counted, and each is shown wherever the lens draws."""
+    r = reports.get(lens_store) if lens_store else None
+    if not r or "_error" in r:
+        return []
+    return [title(r, c, LZ.MAX_NAME * 8) for c, x in sorted(r["challenges"].items()) if x["target"] == lens_id]
+
+
+def floor_html(rep, store, d, used, note="", objections=()):
     """What no lens decides: state and reliance, every counted challenge that stands with its statement, that
-    completeness is UNATTESTED, and which lens drew the page (a portal: the same root and lens give this page)."""
+    completeness is UNATTESTED, which lens drew the page (a portal: the same root and lens give this page), and
+    every challenge against that lens."""
     held = standing(rep, d)
     rows = "".join(f"<li>{E(title(rep, c, LZ.MAX_NAME * 8))} <span class='rest'>(на {E(v[:12])})</span></li>" for c, v in held)
     lens_id, lens_name = used
@@ -412,7 +422,22 @@ def floor_html(rep, store, d, used, note=""):
     return (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
             f'опора {tag(d["reliance"])} · заперечень, що стоять: <b>{len(held)}</b> · повнота {tag("UNATTESTED")}</p>'
             + (f'<ul class="standing">{rows}</ul>' if held else "")
-            + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a>{note}</p>')
+            + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a>{note}'
+            + (f' · <b class="CHALLENGED">заперечень на цю лінзу: {len(objections)}</b>' if objections else "") + "</p>"
+            + ("<ul class='standing'>" + "".join(f"<li>{E(t)}</li>" for t in objections) + "</ul>" if objections else ""))
+
+
+def diff_html(rep, d, names, only_a, only_b):
+    """What one lens shows of the page that the other does not; the comparison sees only this store's records."""
+    def row(x):
+        i, member = x
+        r = rep["_recs"].get(i, {})
+        what = f"«{E(member)}» версії {E(i[:12])}" if member else f"{E(r.get('actor', '?'))}: {E(' '.join(sentence(rep, i)[1:3]))}"
+        return f"<li>{what}</li>"
+    a, b = names
+    return (f'<div class="card"><b>Порівняння лінз</b> <span class="rest">(лише записи цього сховища)</span>'
+            f'<p>Показує лише «{E(a)}»: {len(only_a)}</p><ul>{"".join(row(x) for x in only_a[:50])}</ul>'
+            f'<p>Показує лише «{E(b)}»: {len(only_b)}</p><ul>{"".join(row(x) for x in only_b[:50])}</ul>{END}')
 
 
 class App:
@@ -442,23 +467,33 @@ class App:
         """(lens id, body, note): the lens named by the page (`?lens=ID` or `builtin`), else the one the reader
         adopted last for this schema, else the built-in; a lens this interpreter cannot draw is UNSUPPORTED and the
         built-in draws the page, saying so. A lens's own lineage is always drawn by the built-in."""
+        builtin = ("builtin", LZ.BUILTIN, "", None)
         if schema == LZ.LENS or asked == "builtin":
-            return "builtin", LZ.BUILTIN, ""
+            return builtin
         reports = self.reports()
         if asked:
             hit = LZ.find(reports, asked)
-            found = None if hit is None else (asked, hit[1])
+            found = None if hit is None else (asked, hit[1], hit[0])
             if found is None:
-                return "builtin", LZ.BUILTIN, f" · лінзи <code>{E(asked[:12])}</code> тут немає"
+                return builtin[:2] + (f" · лінзи <code>{E(asked[:12])}</code> тут немає", None)
         else:
             got = LZ.choose(reports, self.reader, schema)
-            found = None if got is None else (got[1], got[2])
+            found = None if got is None else (got[1], got[2], got[0])
         if found is None:
-            return "builtin", LZ.BUILTIN, ""
+            return builtin
         why = LZ.problem(found[1])
         if why:
-            return "builtin", LZ.BUILTIN, f" · лінза <code>{E(found[0][:12])}</code> не підтримується: {E(why)}"
-        return found[0], found[1], ""
+            return builtin[:2] + (f" · лінза <code>{E(found[0][:12])}</code> не підтримується: {E(why)}", None)
+        return found[0], found[1], "", found[2]
+
+    def others(self, schema):
+        """[(lens id, name)] of every lens version this interpreter draws that applies to `schema`, and the built-in."""
+        out = [("builtin", LZ.BUILTIN["name"])]
+        for _, rep in sorted(self.reports().items()):
+            if "_error" not in rep:
+                out += sorted((v, b["name"]) for v, b in LZ.lenses(rep).items()
+                              if b.get("applies") in (schema, "*") and LZ.problem(b) is None)
+        return out
 
     def page_lineage(self, store, i, q=None):
         rep = self.space.report(store)
@@ -467,8 +502,19 @@ class App:
         d = lineage(rep, i)
         if d is None:
             return 404, page(MISSING, f"<p>Немає лінії з записом <code>{E(i)}</code> у {E(store)}.</p>")
-        lens_id, body, note = self.pick(d["schema"], (q or {}).get("lens"))
-        h = floor_html(rep, store, d, (lens_id, body["name"]), note) + grounded_html(rep, store, d["grounded"])
+        q = q or {}
+        lens_id, body, note, lens_store = self.pick(d["schema"], q.get("lens"))
+        h = (floor_html(rep, store, d, (lens_id, body["name"]), note, lens_objections(self.reports(), lens_store, lens_id))
+             + grounded_html(rep, store, d["grounded"]))
+        if q.get("vs") and d["schema"] != LZ.LENS:
+            other = LZ.find(self.reports(), q["vs"])
+            if other is not None and LZ.problem(other[1]) is None:
+                h += diff_html(rep, d, (body["name"], other[1]["name"]), *LZ.diff(d, body, other[1]))
+        if d["schema"] != LZ.LENS:
+            alts = [(v, n) for v, n in self.others(d["schema"]) if v != lens_id]
+            if alts:
+                h += ('<p class="rest">порівняти з: ' + " · ".join(
+                    f'<a href="/l/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}&amp;vs={E(v)}">{E(n)}</a>' for v, n in alts) + "</p>")
         if d["schema"] == LZ.LENS and d["leaf"]:
             why = LZ.problem(rep["_recs"][d["leaf"]]["body"])
             h += f'<p>Ця лінза {"малюється" if why is None else "не підтримується: " + E(why)}.</p>'

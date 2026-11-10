@@ -145,4 +145,11 @@ the one its adoption draws. A lens's own lineage is always drawn by the built-in
 
 No lens decides the floor, drawn above any card: the lineage's state and reliance, every counted challenge that
 stands against one of its versions with its statement, that completeness is UNATTESTED, and which lens drew the
-page. agent_test LN1–LN6; mutants A105–A111.
+page — and every challenge filed against that lens version (a lens has no guard, so none is counted; each is shown
+wherever the lens draws). A lens may apply to one schema or to `*`.
+
+**Comparing lenses.** `?lens=A&vs=B` adds what one lens shows of the page that the other does not: each body member
+of each version, and each attest and challenge (`warrant_agent.lens.diff`). Every lineage page links its
+comparisons with every other lens that applies. The comparison sees only the records of that store.
+
+agent_test LN1–LN9; mutants A105–A115.

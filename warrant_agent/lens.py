@@ -108,13 +108,36 @@ def choose(reports, reader, schema):
             continue
         lv = lenses(rep)
         for at, v in adopted(rep, reader):
-            if lv[v].get("applies") == schema and (best is None or (at, v) > best[0]):
+            if lv[v].get("applies") in (schema, "*") and (best is None or (at, v) > best[0]):
                 best = ((at, v), name, v, lv[v])
     return None if best is None else best[1:]
 
 
+def visible(d, card):
+    """What a card shows of a lineage page (`serve.lineage`'s answer): {(record id, member)} for each body member
+    it draws with a value, and {(record id, "")} for each attest or challenge it shows. The floor and every version's
+    head are drawn under any lens, so they are not counted here."""
+    out = set()
+    for v in d["versions"]:
+        body = v["record"]["body"]
+        for f in card["fields"]:
+            if body.get(f["path"]) not in (None, [], ""):
+                out.add((v["id"], f["path"]))
+        if card["activity"] == "shown":
+            out |= {(x["id"], "") for x in v["on"]}
+    return out
+
+
+def diff(d, a, b):
+    """(only under card a, only under card b): what one lens shows of the page that the other does not."""
+    va, vb = visible(d, card_of(a)), visible(d, card_of(b))
+    return sorted(va - vb), sorted(vb - va)
+
+
 def find(reports, version):
-    """(store, body) of the lens version `version` in any report, or None."""
+    """(store, body) of the lens version `version` in any report, or None (`builtin` is the built-in lens)."""
+    if version == "builtin":
+        return None, BUILTIN
     for name, rep in sorted(reports.items()):
         if "_error" not in rep:
             b = lenses(rep).get(version)
