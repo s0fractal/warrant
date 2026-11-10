@@ -1229,6 +1229,27 @@ def differential_cases():
           and json.loads(out.getvalue())["verdict"] == "UNMADE", (got, code))
 
 
+def ledger_cases():
+    """warrant.graph.ledger, the witness ledger (roadmap a997b9e40f55; Codex challenge 80330b9974ca on its #170 closure:
+    a refutation was credited across closures). A replay counts for the challenge's own target only."""
+    from warrant import graph as G
+    r = Repo()
+    a, b = (r.entity("alice", "obligation@1", {"state": "done", "statement": s, "serves": []},
+                     lineage=r.entity("alice", "obligation@1", {"state": "open", "statement": s, "serves": []})) for s in "ab")
+    for v in (a, b):
+        r.attest("bob", v)
+    ca = r.put("eve", "challenge", {"target": a, "statement": "a is wrong"}, refs=[a])
+    cb = r.put("eve", "challenge", {"target": b, "statement": "b is wrong"}, refs=[b])
+    r.put("carol", "attest", {"target": ca, "verdict": "reproduces", "on": a}, refs=[ca, a])
+    r.put("carol", "attest", {"target": cb, "verdict": "reproduces", "on": a}, refs=[cb, a])    # run on another version
+    r.put("eve", "attest", {"target": cb, "verdict": "reproduces", "on": b}, refs=[cb, b])      # by a non-replayer
+    rows = G.ledger(r.report())
+    check("WL1 the witness ledger: an acceptance is refuted, and a challenge credited, only by a replayer's `reproduces` on "
+          "that challenge's own target; one run on another version, or by a non-replayer, refutes and credits nothing",
+          rows.get("bob") == {"accepted": sorted([a, b]), "refuted": [[a, ca]], "challenged": [], "replayed": []}
+          and rows.get("eve") == {"accepted": [], "refuted": [], "challenged": sorted([ca, cb]), "replayed": [ca]}, rows)
+
+
 if __name__ == "__main__":
     claims_cases()
     preflight_cases()
@@ -1240,4 +1261,5 @@ if __name__ == "__main__":
     home_cases()
     impact_cases()
     differential_cases()
+    ledger_cases()
     sys.exit(finish())
