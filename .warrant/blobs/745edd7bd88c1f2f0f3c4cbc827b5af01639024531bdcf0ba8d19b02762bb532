@@ -1,0 +1,46 @@
+# Codex roadmap verdict: G3 witness ledger
+
+D: 285634d3856543f558d5f2945d2c5e6b2f8b5739c4c75745236849458e3b0dd5
+T: c1cace09dd7c51950df5f704feae29204c98c374c0b0c33acb2acff581d475fe
+M: ed9a63daa5f21045a3c14eaa5905e4d9534a7f57
+Named implementation: PR s0fractal/warrant#298, merge 7de4413d510ec422e6dc6a11e405062466336d54.
+
+Verdict: challenge. The projection exists, and replay credit is bound to the challenge's target, but D requires responsibility for acceptances *later* refuted. warrant/graph.py:139-156 discards the acceptance records' identities and ordering, iterates accepted_by, and unconditionally joins every acceptance actor with every reproduced challenge of that version. T explicitly lists "'later' unchecked" as a residual; an unchecked required part does not discharge the unchanged obligation.
+
+Counterexample at M: file a done version, a challenge, and a reproduces attest by the profile's replayer; only afterwards file bob's acceptance, explicitly citing both the challenge and the replay in its signed refs. The reference DAG makes this a causally later acceptance, independent of clock trust. The ledger nevertheless reports bob's acceptance in refuted paired with that earlier challenge. This does not establish an acceptance later refuted. Expected: no such temporal responsibility entry without a refutation after that acceptance, or an explicitly revised obligation with different semantics. The implementation of ledger at the named merge and at M is byte-for-byte identical.
+
+This is a projection/closure completeness finding, not a claim that the ledger changes authorization: it grants nothing and no core rule reads it. The existing regression WL1 and mutant T137 address wrong-target replay, not this ordering boundary.
+
+Checked: exact detached HEAD and origin; roadmap due --actor codex --json; MCP workspace signer/roles, target guard PENDING with no open requirements; PR metadata and local merged diff; tests/tools_test.py (all passed, including WL1 and stranger-key K10/K11); T137 (1/1 killed by WL1, baseline suite passed); witness view rendered twice identically in memory; roadmap check (87 lineages, 0 problems); claims check (118 live claims, 0 problems). The inherited G1 requires lineage 2e2667c81d95 is done/ELIGIBLE in this receiver; this challenge does not allege an open engine prerequisite. Not run: full CI, full mutant matrix, or an unsigned re-execution of historical replay attestations. No checker key was read or used.
+
+Reproduce from M with Python and this checkout's tests/world.py on the import path (the script adds it), using TMPDIR in a review work directory:
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path.cwd()/'tests'))
+from world import Repo
+from warrant.graph import ledger
+r=Repo()
+o=r.entity('alice','obligation@1',{'state':'open','statement':'owed','serves':[]})
+v=r.entity('alice','obligation@1',{'state':'done','statement':'owed','serves':[]},lineage=o)
+c=r.put('eve','challenge',{'target':v,'statement':'wrong'},refs=[v])
+p=r.put('carol','attest',{'target':c,'on':v,'verdict':'reproduces'},refs=[c,v])
+a=r.put('bob','attest',{'target':v,'verdict':'accept'},refs=[v,c,p])
+rep=r.report()
+from warrant.repo import Repo as RealRepo
+records=RealRepo(r.root).report()['_recs']
+print('Record times:',{name:records[i]['at'] for name,i in [('version',v),('challenge',c),('replay',p),('acceptance',a)]})
+print('Acceptance explicitly references challenge and replay:',all(i in records[a]['refs'] for i in [c,p]))
+print('bob:',ledger(rep)['bob'])
+print('FAIL LATER acceptance filed after the challenge and its replay is reported as later refuted' if ledger(rep)['bob']['refuted'] else 'ok   LATER no later refutation')
+```
+
+Observed output:
+
+```text
+Record times: {'version': 1800000007, 'challenge': 1800000008, 'replay': 1800000009, 'acceptance': 1800000010}
+Acceptance explicitly references challenge and replay: True
+bob: {'accepted': ['774c0e1c296883feda331999bec53ddd271dc5f8196b570476acb450ff348f6f'], 'refuted': [['774c0e1c296883feda331999bec53ddd271dc5f8196b570476acb450ff348f6f', '91011e19998e17250cf894203480a55ca77f72785ee676f59fb89a8654c7d174']], 'challenged': [], 'replayed': []}
+FAIL LATER acceptance filed after the challenge and its replay is reported as later refuted
+```
