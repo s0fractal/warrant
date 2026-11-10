@@ -44,9 +44,10 @@ SCRIPTS = {"warrant": "warrant.cli:main", "warrant-agent": "warrant_agent.cli:ma
 REQUIRES = ["cryptography>=41"]
 EXTRAS = {"mcp"}
 CORE_DEPS = {"cryptography"}
-# Directories of the repository that no artifact may carry, at any depth.
+# Directories of the repository that no artifact may carry, at any depth. impl-js/ (the JavaScript assessment, held
+# to this package by tests/impl_js_test.py) is a second implementation beside the package, not part of warrant-graph.
 INTERNAL = {"tools", "tests", ".warrant", ".github", "examples", "integrations", "work",
-            "third_party", "trust", "scratchpad"}
+            "third_party", "trust", "scratchpad", "impl-js"}
 SDIST_TOP = {"PKG-INFO", "README.md", "LICENSE", "pyproject.toml", "setup.cfg", "warrant", "warrant_agent",
              "warrant_graph.egg-info"}
 # Builtins called by name, and loader methods called on anything (re.compile is neither).
