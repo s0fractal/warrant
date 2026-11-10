@@ -1,0 +1,224 @@
+G14 roadmap verdict evidence, actor codex
+D: a476855f335473e9fa4957c8ffb91007cffdcd6255065ee970b2c8464e9535f6
+T: 47ce6f1df9bb192719fae6fd3dc8a8cf63e094dd1a3c0654c7f73f5efec20466
+M: 2c77fd135df12e838bbd18128adec9a68acf4706
+Named implementation X: 5e5a91c1aaa287159afce258d784c217a713b651, merged PR https://github.com/s0fractal/warrant/pull/299
+
+Verdict: challenge. The bytes verdict and unchanged move cases work, but the promised CHANGED-since answer is not complete.
+
+Counterexample: accept X=1; commit X=2; branch side and make an unrelated commit; on master restore X=1;
+merge side with --no-ff --no-commit, set X=2, and commit. The restored commit reads UNCHANGED. At the merge,
+drift reads CHANGED since the original acceptance commit, although that commit held the accepted bytes.
+The first_change candidate logs simplify history: both the merge and restoration are omitted; first_change
+returns None and compare falls back to the acceptance commit. This is not merely a deterministic choice
+between parallel changes: the returned commit did not change the bytes at all.
+
+Reproduced end to end through drift_repo/gated and drift.lines in the named commit X (an unmodified git archive)
+and current base M. Base location: warrant/pins.py:69-80,99-102; X location: warrant/drift.py:first_change/compare.
+A scratch in-memory control that adds --full-history -m to the candidate logs makes the same case pass at M.
+This control is diagnostic, not a reviewed or delivered fix. No repository code or regression test was changed.
+
+Reproduction: save the Python below as merge_probe.py outside the checkout, then run
+TMPDIR=<scratch-directory> python3 -B merge_probe.py <checkout-at-M-or-X>
+It prints FAIL G14-MERGE-SINCE on the reviewed implementations. Fixture signer keys are deterministic test keys,
+not operator checker seeds; no production checker seed was read and no production replay was signed.
+
+Environment: Python 3.15.2; git version 2.54.0 (Apple Git-157).
+Checked at M: due --actor codex --json matches D/T; MCP context waits only on codex's roadmap/acceptor;
+PR #299 is merged at X; tools_test.py 99 cases passed; roadmap check 87 lineages, 0 problems;
+claims check 118 live claims, 0 problems. Eight targeted mutants killed (matrix below).
+Fresh additional probes: merge-only edit passed; moved regular file becoming a symlink passed;
+restore followed by stale-byte merge failed. No time-lab/model experiment or full mutant suite was run.
+
+Reproducer source:
+```python
+"""Run from a checkout: TMPDIR=<scratch> python3 -B merge_probe.py <checkout>."""
+import contextlib, io, json, os, sys
+from pathlib import Path
+root=Path(sys.argv[1]).resolve()
+sys.path[:0]=[str(root/'tests'),str(root)]
+from tools_test import drift_repo, gated
+from world import git
+from warrant import drift as D
+if os.environ.get('G14_FULL_HISTORY_CONTROL') == '1':
+ from warrant import pins as P
+ original_git=P.git
+ def full_git(root,*args,**kw):
+  if 'log' in args:
+   args=tuple(a for arg in args for a in ((arg,'--full-history','-m') if arg=='log' else (arg,)))
+  return original_git(root,*args,**kw)
+ P.git=full_git
+ D.git=full_git
+with contextlib.redirect_stdout(io.StringIO()):
+ r,L=drift_repo()
+ accepted=next(x['body']['commit'] for x in __import__('warrant.repo',fromlist=['Repo']).Repo(r.root).report()['_recs'].values() if x['kind']=='attest' and x['actor']=='claims-checker')
+ (r.root/'lib/code.py').write_text('X = 2\n');old=r.commit('old change')
+ git(r.root,'checkout','-qb','side')
+ (r.root/'side.txt').write_text('unrelated\n');r.commit('side unrelated')
+ git(r.root,'checkout','master')
+ (r.root/'lib/code.py').write_text('X = 1\n');restore=r.commit('restore accepted bytes')
+ fresh,_=gated(r,L)
+ git(r.root,'merge','--no-ff','--no-commit','side')
+ (r.root/'lib/code.py').write_text('X = 2\n');merge=r.commit('merge reintroduces changed bytes')
+ d,rel=gated(r,L)
+ row=next(f for f in d['files'] if f['path']=='lib/code.py')
+ expected=f'since {merge[:12]}'
+ result={'checkout':str(root),'accepted':accepted,'old_change':old,'restore':restore,'merge':merge,'restored_verdict':fresh['verdict'],'actual':row,'expected_detail':expected,'reliance':rel,'drift_text':D.lines({L:d}),'history':git(r.root,'log','--graph','--all','--format=%h %s'),'pass':row['detail']==expected}
+print(json.dumps(result,indent=2))
+print(('ok   ' if result['pass'] else 'FAIL ')+'G14-MERGE-SINCE restored bytes become stale again at merge; since must not name the acceptance')
+
+```
+
+Output at M:
+```
+{
+  "checkout": "/Users/s0fractal/Projects/.worktrees/codex-review/accept-47ce6f1df9bb-0-2c77fd135df1",
+  "accepted": "9817c5cf51d48ff26be3407fa7e1a9773e350284",
+  "old_change": "e456428214855694bc745b72bb35f8b49028c228",
+  "restore": "184bf0e795d7fbc249f454fd0e2f82287f1179e9",
+  "merge": "a9b5c60e14210c0e2225f8734f9b0184577cfc1d",
+  "restored_verdict": "UNCHANGED",
+  "actual": {
+    "verdict": "CHANGED",
+    "path": "lib/code.py",
+    "detail": "since 9817c5cf51d4"
+  },
+  "expected_detail": "since a9b5c60e1421",
+  "reliance": "STALE",
+  "drift_text": "CHANGED   V3-3-1 (6d1f302603cf), accepted at 9817c5cf51d4: reliance STALE until the claims checker accepts it again\n  CHANGED lib/code.py since 9817c5cf51d4\ndrift: 1 accepted claim(s), 1 stale\n",
+  "history": "*   a9b5c60 merge reintroduces changed bytes\n|\\  \n| * 1025bd3 side unrelated\n* | 184bf0e restore accepted bytes\n|/  \n* e456428 old change\n* f3b33f3 its acceptance\n* 9817c5c a claim",
+  "pass": false
+}
+FAIL G14-MERGE-SINCE restored bytes become stale again at merge; since must not name the acceptance
+
+```
+
+Output at X:
+```
+{
+  "checkout": "/Users/s0fractal/.warrant/work/codex/47ce6f1df9bb/named-commit",
+  "accepted": "9817c5cf51d48ff26be3407fa7e1a9773e350284",
+  "old_change": "bdb4e0e548aebb5206a76f967cc17890c9761db1",
+  "restore": "9db172e9662eaa3957e5965924f5c09085053a79",
+  "merge": "956740390ab8c6ce1ba0bb16a09216558cc45cd0",
+  "restored_verdict": "UNCHANGED",
+  "actual": {
+    "verdict": "CHANGED",
+    "path": "lib/code.py",
+    "detail": "since 9817c5cf51d4"
+  },
+  "expected_detail": "since 956740390ab8",
+  "reliance": "STALE",
+  "drift_text": "CHANGED   V3-3-1 (6d1f302603cf), accepted at 9817c5cf51d4: reliance STALE until the claims checker accepts it again\n  CHANGED lib/code.py since 9817c5cf51d4\ndrift: 1 accepted claim(s), 1 stale\n",
+  "history": "*   9567403 merge reintroduces changed bytes\n|\\  \n| * 0660b69 side unrelated\n* | 9db172e restore accepted bytes\n|/  \n* bdb4e0e old change\n* fa33dea its acceptance\n* 9817c5c a claim",
+  "pass": false
+}
+FAIL G14-MERGE-SINCE restored bytes become stale again at merge; since must not name the acceptance
+
+```
+
+Diagnostic control at M (G14_FULL_HISTORY_CONTROL=1):
+```
+{
+  "checkout": "/Users/s0fractal/Projects/.worktrees/codex-review/accept-47ce6f1df9bb-0-2c77fd135df1",
+  "accepted": "9817c5cf51d48ff26be3407fa7e1a9773e350284",
+  "old_change": "344fc15df584b63cdb48ffe9a5f824faa3c5322e",
+  "restore": "ab814af8ad475f696fa2c4aab35d738e68ad8042",
+  "merge": "3117a237f0e13bc0923148e227e8ddc2db3676ba",
+  "restored_verdict": "UNCHANGED",
+  "actual": {
+    "verdict": "CHANGED",
+    "path": "lib/code.py",
+    "detail": "since 3117a237f0e1"
+  },
+  "expected_detail": "since 3117a237f0e1",
+  "reliance": "STALE",
+  "drift_text": "CHANGED   V3-3-1 (6d1f302603cf), accepted at 9817c5cf51d4: reliance STALE until the claims checker accepts it again\n  CHANGED lib/code.py since 3117a237f0e1\ndrift: 1 accepted claim(s), 1 stale\n",
+  "history": "*   3117a23 merge reintroduces changed bytes\n|\\  \n| * b2e70c2 side unrelated\n* | ab814af restore accepted bytes\n|/  \n* 344fc15 old change\n* e63fbfd its acceptance\n* 9817c5c a claim",
+  "pass": true
+}
+ok   G14-MERGE-SINCE restored bytes become stale again at merge; since must not name the acceptance
+
+```
+
+Targeted mutant matrix:
+```json
+{
+  "definition": "15cc1f3ae39c4fca8d15663a6aebd07b5ea0b166067bd343aeb0349eebb42ef4",
+  "rows": [
+    {
+      "id": "T98",
+      "outcome": "KILLED",
+      "failed": [
+        "DR3"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T99",
+      "outcome": "KILLED",
+      "failed": [
+        "DR3"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T100",
+      "outcome": "KILLED",
+      "failed": [
+        "DR2"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T101",
+      "outcome": "KILLED",
+      "failed": [
+        "DR2",
+        "DR3"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T138",
+      "outcome": "KILLED",
+      "failed": [
+        "DR26"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T139",
+      "outcome": "KILLED",
+      "failed": [
+        "DR27"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T140",
+      "outcome": "KILLED",
+      "failed": [
+        "DR27"
+      ],
+      "rc": 1,
+      "detail": ""
+    },
+    {
+      "id": "T146",
+      "outcome": "KILLED",
+      "failed": [
+        "DR26"
+      ],
+      "rc": 1,
+      "detail": ""
+    }
+  ]
+}
+```
