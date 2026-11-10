@@ -487,9 +487,20 @@ def shadow_cases():
     def owned(entries):
         entries = {f: (v[0], v[1] or p.base) if isinstance(v, tuple) else v for f, v in entries.items()}
         return GT.owner_paths(p.r.root, p.base, grown(p.r, p.base, entries), policy["owner_paths"])
-    for name, rows in SHADOWS.items():
-        got = [(sorted(row), owned(row)) for row in rows]
-        check(name, all(want == found for want, found in got), [g for g in got if g[0] != g[1]])
+    def shadowed(cid):        # (ok, text, detail) of the SHADOWS row whose name begins with `cid`: one literal check per case
+        name = next(n for n in SHADOWS if n.split(" ", 1)[0] == cid)
+        got = [(sorted(row), owned(row)) for row in SHADOWS[name]]
+        return all(want == found for want, found in got), name.split(" ", 1)[1], [g for g in got if g[0] != g[1]]
+    check("E36", *shadowed("E36"))
+    check("E37", *shadowed("E37"))
+    check("E38", *shadowed("E38"))
+    check("E39", *shadowed("E39"))
+    check("E40", *shadowed("E40"))
+    check("E41", *shadowed("E41"))
+    check("E42", *shadowed("E42"))
+    check("E43", *shadowed("E43"))
+    check("E44", *shadowed("E44"))
+    assert len(SHADOWS) == 9, "a row of SHADOWS has no check line above"
     got = [(sorted(row), owned(row)) for row in BESIDE]
     check("E45 beside all of these the gate still merges: a new module of the package, a name that only begins like a listed one, "
           "a file changed where it was, a file deeper in a directory that was there, a file that is no module",
