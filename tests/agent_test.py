@@ -157,6 +157,13 @@ def operations():
     check("A15 a graph result carries root and lens: the same query gives the same lens; another profile another",
           g1.get("lens") == g2.get("lens") and g1.get("lens") != g3.get("lens") and g1.get("root") == g3.get("root")
           and obl in [n["id"] for n in g1.get("data", {}).get("nodes", [])], (g1.get("lens"), g3.get("lens")))
+    led = ok(api.call(cfg_of(src), "graph", {"workspace": "w", "op": "ledger"}))
+    gro = ok(api.call(cfg_of(src), "graph", {"workspace": "w", "op": "grounded", "target": d[:12]}))
+    check("A30 graph op=ledger is the witness ledger of the workspace's store, op=grounded minds' Grounded of a target: a "
+          "version a replayer reproduced a challenge on is refuted for its acceptor and not grounded, its lineage CHALLENGED",
+          led.get("data", {}).get("bob", {}).get("refuted") == [[d, c]] and led.get("query") == {"op": "ledger"}
+          and gro.get("data", {}).get("grounded") is False
+          and [d, "RELIANCE CHALLENGED"] in gro.get("data", {}).get("failing", []), (led.get("data"), gro.get("data")))
     deep = Repo()
     prev = None
     for n in range(LIMITS["requires"] + 20):
