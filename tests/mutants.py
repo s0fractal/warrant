@@ -215,6 +215,8 @@ MUTANTS = [
      '                   "operations": ops + ["graph"] * ("read" in ops), "signer": None}', AGENT, ["A10"]),
     ("A91", "warrant_agent/api.py", 'refs += sorted(R.body_refs(s["fields"], body))', "pass", AGENT, ["R01"]),
     ("A92", "warrant_agent/api.py", 'guard = s["states"].get(body.get("state"))            # the schema\'s minimal guard for the state', "pass", AGENT, ["R01"]),
+    ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),
+    ("A96", "tests/assess_bound.py", "snap = ws.open().snapshot()", "snap = ST.Store(ws.store).snapshot()", AGENT, ["B02"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
