@@ -2,7 +2,7 @@
 
 An acceptance names its `files`, {path: git blob}: each witness's test file, each mutant's mutated file and test
 file, as the checker found them at the commit it ran (`warrant claims replay`; CI's `claims verify` holds the list to
-that commit). Each is compared with HEAD's tree:
+that commit). Each is compared with HEAD's tree (warrant.pins):
 
     UNCHANGED  the same bytes at the same path;
     MOVED      the path is gone from HEAD and the same bytes are at another path (unchanged, at its new path);
@@ -41,11 +41,11 @@ from pathlib import Path
 
 from . import claims as C
 from . import graph as G
-from . import shapes as S
+from .pins import FRESH, blobs, compare, paths_of
+from .pins import verdict as _verdict
 from .repo import Failed, Repo, dump, env_root, git, main
 
 STALE = "STALE"
-FRESH = ("UNCHANGED", "MOVED")
 RANK = {"UNCHANGED": 0, "CHANGED": 1, "UNKNOWN": 2}     # the answer shown: fresh if any acceptance is, else what can be said
 HERE = "."                          # this checkout's store in an answer's identity when Home does not register it: no Home name
 
@@ -60,69 +60,6 @@ def resolve(root, rev):
         raise Failed("BAD_REVISION", f"no commit {rev!r} in this clone") from None
 
 
-def fresh(tree, path, blob):
-    """Whether a tree ({path: blob}, as claims.blobs spells it) holds an accepted file's bytes: at its path, or, the path
-    gone, at another (moved). Only the bytes count: a commit changing a file's mode alone changes nothing here."""
-    now = tree.get(path)
-    return now == blob or (now is None and blob in tree.values())
-
-
-def first_change(root, commit, path, blob, head="HEAD"):
-    """The commit since which `path` has not held `blob` (`fresh`), on the way from `commit` to `head`: of the commits
-    that changed the path or the number of copies of those bytes in the tree, the first after the last one at which the
-    file read fresh again (deleted then restored, moved with its bytes), and never one that changed only its mode
-    (Codex finding e895d8cad992). None when none is found: the commit is not in this clone, or a merge brought the
-    bytes. `commit`, `path` and `blob` come from a record: only a commit id and an object id reach Git, and the path
-    is literal."""
-    if not S.hex_of(commit, 40):
-        return None
-    oid = blob[len("link:"):] if blob.startswith("link:") else blob
-    try:
-        order = git(root, "rev-list", "--reverse", "--topo-order", f"{commit}..{head}").splitlines()
-        touched = set(git(root, "--literal-pathspecs", "log", "--format=%H", f"{commit}..{head}", "--", path).splitlines())
-        if S.hex_of(oid, 40):
-            touched |= set(git(root, "log", "--format=%H", f"--find-object={oid}", f"{commit}..{head}").splitlines())
-        since = None
-        for c in reversed([c for c in order if c in touched]):
-            if fresh(C.blobs(root, c), path, blob):
-                break
-            since = c
-    except subprocess.CalledProcessError:
-        return None
-    return since
-
-
-def compare(root, commit, files, head, where, at="HEAD", memo=None):
-    """[(verdict, path, detail)] of an acceptance's `files` against HEAD (`head`, {path: blob}; `where`, {blob: path}).
-    `memo`, one answer's: first_change once per (commit, path, blob), however many claims name them."""
-    memo = {} if memo is None else memo
-    if not files:
-        return [("UNKNOWN", "", "the acceptance names no files")]
-    if not (isinstance(files, dict) and all(isinstance(b, str) for b in files.values())):
-        return [("UNKNOWN", "", "the acceptance's files are not {path: blob}")]
-    out = []
-    for p, blob in sorted(files.items()):
-        now = head.get(p)
-        if now == blob:
-            out.append(("UNCHANGED", p, ""))
-        elif now is None and blob in where:
-            out.append(("MOVED", p, f"now at {where[blob]}"))
-        else:
-            if (commit, p, blob) not in memo:
-                memo[commit, p, blob] = first_change(root, commit, p, blob, at)
-            x = memo[commit, p, blob]
-            since = f"since {x[:12]}" if x else f"since {str(commit)[:12]}"
-            out.append(("CHANGED", p, since) if now else ("GONE", p, f"not at HEAD, {since}"))
-    return out
-
-
-def _verdict(rows):
-    words = {v for v, _, _ in rows}
-    if words <= set(FRESH):
-        return "UNCHANGED"
-    return "UNKNOWN" if words == {"UNKNOWN"} else "CHANGED"
-
-
 def drift(rep, root, at="HEAD"):
     """{lineage: {id, version, verdict, commit, files}} for each live claim whose effective version the claims
     checker accepted: the comparison of the acceptance that is freshest, against commit `at` (a resolved id or HEAD)."""
@@ -130,10 +67,10 @@ def drift(rep, root, at="HEAD"):
         return {}
     done = C.acceptances(rep)
     try:
-        head = C.blobs(root, at)
+        head = blobs(root, at)
     except subprocess.CalledProcessError:
         head = {}
-    where = {b: p for p, b in sorted(head.items(), reverse=True)}
+    where = paths_of(head)
     out, memo = {}, {}
     for L in sorted(C.live(rep)):
         eff = rep["lineages"][L]["effective"]
