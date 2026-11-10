@@ -218,6 +218,8 @@ MUTANTS = [
      '                   "operations": ops + ["graph"] * ("read" in ops), "signer": None}', AGENT, ["A10"]),
     ("A91", "warrant_agent/api.py", 'refs += sorted(R.body_refs(s["fields"], body))', "pass", AGENT, ["R01"]),
     ("A92", "warrant_agent/api.py", 'guard = s["states"].get(body.get("state"))            # the schema\'s minimal guard for the state', "pass", AGENT, ["R01"]),
+    ("T151", "warrant/graph.py", 'if any(c not in m["refs"] and r not in m["refs"] and m["at"] <= recs[r]["at"]', 'if any(True', TOOLS, ["WL2"]),
+    ("T152", "warrant/graph.py", 'and m["at"] <= recs[r]["at"]', 'and True', TOOLS, ["WL3"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),

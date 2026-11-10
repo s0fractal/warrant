@@ -1332,11 +1332,30 @@ def ledger_cases():
     r.put("carol", "attest", {"target": ca, "verdict": "reproduces", "on": a}, refs=[ca, a])
     r.put("carol", "attest", {"target": cb, "verdict": "reproduces", "on": a}, refs=[cb, a])    # run on another version
     r.put("eve", "attest", {"target": cb, "verdict": "reproduces", "on": b}, refs=[cb, b])      # by a non-replayer
-    rows = G.ledger(r.report())
+    recs = lambda: {i: e[0]["record"] for i, e in r.store.snapshot().lines.items()}
+    rows = G.ledger(r.report(), recs())
     check("WL1 the witness ledger: an acceptance is refuted, and a challenge credited, only by a replayer's `reproduces` on "
           "that challenge's own target; one run on another version, or by a non-replayer, refutes and credits nothing",
           rows.get("bob") == {"accepted": sorted([a, b]), "refuted": [[a, ca]], "challenged": [], "replayed": []}
           and rows.get("eve") == {"accepted": [], "refuted": [], "challenged": sorted([ca, cb]), "replayed": [ca]}, rows)
+    # Codex challenge on c1cace09dd7c: an acceptance made after the refutation, citing the challenge and its replay,
+    # was read as refuted; "later" was not checked.
+    c2 = r.entity("alice", "obligation@1", {"state": "done", "statement": "c", "serves": []},
+                  lineage=r.entity("alice", "obligation@1", {"state": "open", "statement": "c", "serves": []}))
+    cc = r.put("eve", "challenge", {"target": c2, "statement": "c is wrong"}, refs=[c2])
+    run = r.put("carol", "attest", {"target": cc, "verdict": "reproduces", "on": c2}, refs=[cc, c2])
+    r.put("bob", "attest", {"target": c2, "verdict": "accept", "note": "knowing the refutation"}, refs=[c2, cc, run])
+    late = G.ledger(r.report(), recs()).get("bob", {})
+    check("WL2 an acceptance that cites the challenge and its replay was made after the refutation: it is not refuted",
+          c2 in late.get("accepted", []) and [c2, cc] not in late.get("refuted", []) and late.get("refuted") == [[a, ca]], late)
+    c3 = r.entity("alice", "obligation@1", {"state": "done", "statement": "d", "serves": []},
+                  lineage=r.entity("alice", "obligation@1", {"state": "open", "statement": "d", "serves": []}))
+    cd = r.put("eve", "challenge", {"target": c3, "statement": "d is wrong"}, refs=[c3])
+    r.put("carol", "attest", {"target": cd, "verdict": "reproduces", "on": c3}, refs=[cd, c3])
+    r.attest("bob", c3)                                          # cites nothing, dated after the replay
+    late = G.ledger(r.report(), recs()).get("bob", {})
+    check("WL3 ... and one dated after the replay, citing nothing, is not refuted either: `at` orders what no citation does",
+          c3 in late.get("accepted", []) and [c3, cd] not in late.get("refuted", []), late)
 
 
 if __name__ == "__main__":
