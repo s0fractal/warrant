@@ -31,7 +31,7 @@ import types
 # Built by tools/build_verify.py from the files below, each byte for byte; edit those and build again.
 DIGESTS = {
     "warrant/jcs.py": "edf1c844a8471a79b4ef96a7d28735d0a348c0cf972da4ea0ce701c88610b250",
-    "warrant/graph.py": "f10aa4acfe8fb5b01877c0140430d6c36ae2dec108ec3f82ba0e7dbac55c72ff",
+    "warrant/graph.py": "308221cf07c1873feb1ae937312035a3fe590f880b9201fbdeb9c3387219daee",
     "warrant/shapes.py": "f03275222b2b4a3c3265eaa53ab6454ca47ef91189bd521d888d677773ff388d",
     "warrant/keys.py": "1a1dcb743779d2f3488df87e7ddef9328312b6e5f9549ad639f2c28c8347ee3a",
     "warrant/pins.py": "b5b355e1f51b0cb4379c190674561fcff4fe5c70d0eda034dce93e1fd671a254",
@@ -197,7 +197,7 @@ call the same ones. Every state shown is the report's, never recomputed.
                            versions and its challenged lineages
   delta(rep0, rep1)        nodes added and removed, lineages whose state or reliance changed
   impact(rep0, rep1)       the lineages the changed records bear on, and what rests on those
-  ledger(rep)              the witness ledger: per actor, acceptances later refuted, challenges that replayed
+  ledger(rep, recs)        the witness ledger: per actor, acceptances later refuted, challenges that replayed
   answer(rep, query, data, adapter)   {root, lens, query, data}: the same lens over the same root gives
                            the same bytes, so a result may be cached by (lens, root) and re-derived
 
@@ -323,12 +323,18 @@ def impact(rep0, rep1):
     return {"delta": d, "lineages": out}
 
 
-def ledger(rep):
+def ledger(rep, recs=None):
     """The witness ledger, per actor: `accepted`, the versions whose guard the actor's acceptance counts toward;
     `refuted`, of those, [version, challenge] where a replayer attested `reproduces` on that challenge with `on` that
-    version; `challenged`, the challenges the actor filed; `replayed`, of those, the ones a replayer reproduced on their
-    own target. Read from the report alone (versions' accepted_by, challenges' replays, the graph's actors): it grants
-    nothing, and no rule reads it. A challenge answered without a replay (a successor accepted) credits nobody here."""
+    version *later* than one of the actor's acceptances of it: the acceptance cites neither the challenge nor that
+    replay, and is dated no later than the replay (Codex challenge on c1cace09dd7c: an acceptance made after the
+    refutation, citing it, was read as refuted); `challenged`, the challenges the actor filed; `replayed`, of those, the
+    ones a replayer reproduced on their own target. Read from the report (versions' accepted_by, challenges' replays,
+    the graph, the records' refs and dates): it grants nothing, and no rule reads it. `at` is each filer's own word, so
+    "later" is read from it where no citation fixes the order. A challenge answered without a replay (a successor
+    accepted) credits nobody here."""
+    recs = rep.get("_recs", {}) if recs is None else recs     # {id: record}: a repository's report carries it
+    _, _, into = index(rep)
     actor = {n[0]: n[3] for n in rep["graph"]["nodes"]}
     rows, reproduced = {}, {}
     row = lambda a: rows.setdefault(a, {"accepted": [], "refuted": [], "challenged": [], "replayed": []})
@@ -336,13 +342,19 @@ def ledger(rep):
         row(actor[c])["challenged"].append(c)
         if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):
             row(actor[c])["replayed"].append(c)
-            reproduced.setdefault(x["target"], []).append(c)
+            replayers = {a for on, v, a in x["replays"] if on == x["target"] and v == "reproduces"}
+            runs = [i for rel, i in into.get(c, []) if rel == "attest" and i in recs and recs[i]["actor"] in replayers
+                    and recs[i]["body"].get("verdict") == "reproduces" and recs[i]["body"].get("on") == x["target"]]
+            reproduced.setdefault(x["target"], []).append((c, runs))
     for v, g in sorted(rep["versions"].items()):
         for a in g["accepted_by"]:
             row(a)["accepted"].append(v)
-            row(a)["refuted"] += [[v, c] for c in reproduced.get(v, [])]
+            mine = [recs[i] for rel, i in into.get(v, []) if rel == "attest" and i in recs and recs[i]["actor"] == a
+                    and recs[i]["body"].get("verdict") == "accept"]
+            row(a)["refuted"] += [[v, c] for c, runs in reproduced.get(v, [])
+                                  if any(c not in m["refs"] and r not in m["refs"] and m["at"] <= recs[r]["at"]
+                                         for m in mine for r in runs)]
     return dict(sorted(rows.items()))
-
 
 def answer(rep, query, data, adapter):
     lens = C.doc_id({"code": rep["code"], "adapter": adapter, "trust": rep["trust"], "profile": rep["profile"],
