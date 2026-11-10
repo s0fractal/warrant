@@ -198,7 +198,7 @@ class View:
         bad = {}
         for i, r in sorted(self.recs.items()):
             s = self.schemas.get(r["schema"]) if r["kind"] == "entity" else None
-            if not (s and s.get("pinned")):
+            if s is None or "pinned" not in s:      # by presence, as _schema_problem admits it: "" is a member name too
                 continue
             root, seen = r, {i}
             while root["lineage"] in self.recs and root["lineage"] not in seen:
@@ -343,7 +343,8 @@ class View:
             if g is not None:
                 acc = sorted({self.recs[a]["actor"] for a in self.attests.get(v, [])
                               if self.recs[a]["actor"] != r["actor"] and self.holds(self.recs[a]["actor"], *g["roles"])
-                              and all(self.recs[a]["body"].get(k) == x for k, x in g["match"].items())})
+                              # a member the attest does not have equals nothing, null included (as _weaker and _pins read it)
+                              and all(self.recs[a]["body"].get(k, object()) == x for k, x in g["match"].items())})
                 if len(acc) < g["quorum"]:
                     waiting.append(f"{g['quorum'] - len(acc)} attest(s) by {', '.join(g['roles'])} matching {C.canon(g['match']).decode()}")
             part[v] = (acc, waiting)

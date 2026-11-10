@@ -159,6 +159,22 @@ def pin_cases():
     names = w.report()["schemas"]
     check("P4 pinned names a member of type obj or obj?; a schema with anything else is not counted",
           not {"p@2", "p@3", "p@4", "p@5"} & set(names) and "prediction@9" in names)
+    # Codex challenge of 360a77d7 (observed at 8eed7191): the empty string is a member name a schema may pin, and the
+    # pin was read by its truth, so `pinned: ""` was admitted and then never enforced.
+    w = World()
+    w.put("alice", "schema", dict(sch, name="prediction@8", fields={"state": "str", "": "obj?"}, pinned=""))
+    root = w.put("alice", "entity", {"state": "open", "": {"code": "D"}}, "prediction@8")
+    weak = w.put("alice", "entity", {"state": "decided"}, "prediction@8", root, guard=guard)
+    w.attest("bob", weak, verdict="reproduces", code="O")
+    rep = w.report()
+    check("P5 a pinned member named by the empty string pins as any other: a closure matching less is INVALID and closes nothing",
+          "prediction@8" in rep["schemas"] and "INVALID" in rep["rejected"].get(weak, "") and rep["lineages"][root]["state"] == "open",
+          (rep["rejected"].get(weak), rep["lineages"][root]["state"], rep["versions"].get(weak, {}).get("guard")))
+    kept = w.put("alice", "entity", {"state": "decided"}, "prediction@8", root, guard=dict(guard, match=D))
+    w.attest("bob", kept, **D)
+    rep = w.report()
+    check("P6 ... and the closure that matches the pin still counts", kept not in rep["rejected"] and rep["lineages"][root]["state"] == "decided",
+          (rep["rejected"].get(kept), rep["lineages"][root]["state"]))
 
 
 def schema_cases():
@@ -223,6 +239,7 @@ def schema_cases():
     check("S11 an entity of the reserved migration@1 is INVALID, never a crash (6d6bb700: KeyError in the guard)", ok, rep)
 
 
+
 def guard_cases():
     w = World()
     o1 = w.put("alice", "entity", {"state": "open", "statement": "first", "serves": []}, "obligation@1")
@@ -234,6 +251,16 @@ def guard_cases():
     rep = w.report()
     check("G1 requires are inherited down a lineage and hold a closing version",
           rep["versions"][d2]["guard"] == "PENDING" and any(o1 in x for x in rep["versions"][d2]["waiting"]), rep["versions"][d2])
+    # The twin of P5 in rule 1 of section 6: a member an attest does not have was read as null, so a guard matching
+    # {"code": null} was met by an attest that says nothing of `code`.
+    w2 = World()
+    c = w2.claim(guard=R.guard(1, ["claim/verifier"], {"verdict": "accept", "code": None}))
+    w2.attest("bob", c)
+    silent = w2.report()["versions"][c]["guard"]
+    w2.attest("carol", c, code=None)
+    said = w2.report(roles=dict(w2.roles, **{"claim/verifier": ["bob", "carol"]}))["versions"][c]
+    check("G8 a match member whose value is null is met by an attest that has the member as null, not by one without it",
+          silent == "PENDING" and said["guard"] == "MET" and said["accepted_by"] == ["carol"], (silent, said))
     d1 = w.put("alice", "entity", {"state": "done", "statement": "first", "serves": []}, "obligation@1", o1, guard=g)
     w.attest("bob", d1)
     rep = w.report()
