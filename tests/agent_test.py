@@ -1053,7 +1053,8 @@ def serve_cases():
     check("SV5 the server answers only on its own host (a rebound name is refused, 421) and refuses a POST without the "
           "run's token (403); every page carries a content security policy",
           home[0] == 200 and "default-src 'none'" in (home[1] or "") and other[0] == 421 and rebound[0] == 421
-          and no_token[0] == 403, (home[0], other[0], rebound[0], no_token[0]))
+          and no_token[0] == 403 and "Не підписано" in no_token[2] and "token" in no_token[2],
+          (home[0], other[0], rebound[0], no_token[0]))
     w = SV.waiting(rep, "bob")
     check("SV6 what waits for an actor is the frontier under the store's own profile: bob, roadmap/acceptor, owes the "
           "closure his attest until he filed it", isinstance(w["roles"], list) and "roadmap/acceptor" in w["roles"], w)
