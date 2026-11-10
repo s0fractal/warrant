@@ -28,7 +28,8 @@ receiver's HEAD commit, not its working tree. A checkout without .warrant/claims
 
 `--impact` answers what a change bears on: the claims whose acceptances it makes stale, the lineages of this store
 that rest on them, transitively (graph `why`, from every version of the claim), and with `--across` the records of
-Home's other stores that rest on them. Given BASE, only the claims fresh at BASE and stale at HEAD are the change's;
+Home's other stores that rest on them, the walk going on through every store, this one too (across.reach), the stores
+not read named, and the answer's root and lens binding every store read (across.identity). Given BASE, only the claims fresh at BASE and stale at HEAD are the change's;
 those already stale at BASE are listed apart, and the changed files that no acceptance names are listed too: a file
 no witness reads and no mutant mutates is in no acceptance, so this answer cannot see what rests on it. It reads Git
 objects and the store only, and its envelope binds the checkout it read, as `graph` does."""
@@ -46,6 +47,7 @@ from .repo import Failed, Repo, dump, env_root, git, main
 STALE = "STALE"
 FRESH = ("UNCHANGED", "MOVED")
 RANK = {"UNCHANGED": 0, "CHANGED": 1, "UNKNOWN": 2}     # the answer shown: fresh if any acceptance is, else what can be said
+HERE = "."                          # this checkout's store in an answer's identity when Home does not register it: no Home name
 
 
 def resolve(root, rev):
@@ -213,10 +215,16 @@ def _row(rep, L):
 def impact(rep, root, head="HEAD", base=None, readings=None):
     """What a change bears on (`--impact`): the claims whose acceptances it makes stale, each with the lineages of this
     store that rest on it, and with `readings` (warrant.across, Home's stores) the records elsewhere that rest on it.
-    `head` and `base` are resolved commit ids or HEAD; `rep` is this checkout's report, gated at `head`."""
+    With `readings` the walk goes through every store read, this checkout's own included (Codex finding 72595e2154fd):
+    a record here may rest on the claim through a record there, and one there through one here. A store that cannot
+    be read is named under `unavailable`. `head` and `base` are resolved commit ids or HEAD; `rep` is this checkout's
+    report, gated at `head`."""
+    from . import across as A
     gate(rep, root, head)
     now = drift(rep, root, head)
     before = drift(rep, root, base) if base else {}
+    read = [x for x in readings or [] if x.why is None]
+    others = [x for x in read if (x.root is None or os.path.realpath(x.root) != os.path.realpath(root))]
     stale, already = [], []
     for L, x in sorted(now.items(), key=lambda kv: str(kv[1]["id"])):
         if x["verdict"] == "UNCHANGED":
@@ -225,13 +233,19 @@ def impact(rep, root, head="HEAD", base=None, readings=None):
             already.append({"lineage": L, "id": x["id"]})
             continue
         row = {"lineage": L, "id": x["id"], "verdict": x["verdict"], "commit": x["commit"],
-               "files": [f for f in x["files"] if f["verdict"] not in FRESH],
-               "rests_on_it": [_row(rep, R) for R in rests_on(rep, L)]}
-        if readings is not None:
-            row["elsewhere"] = _elsewhere(readings, rep, L, root)
+               "files": [f for f in x["files"] if f["verdict"] not in FRESH]}
+        if readings is None:
+            row["rests_on_it"] = [_row(rep, R) for R in rests_on(rep, L)]
+        else:
+            vs = rep["lineages"][L]["versions"]
+            reached = set(A.reach([rep, *(r.rep for r in read)], vs)[0]) - set(vs)
+            row["rests_on_it"] = [_row(rep, R) for R in sorted({G.lineage_of(rep, i) for i in reached} - {None, L})]
+            row["elsewhere"] = _elsewhere(others, reached, L)
         stale.append(row)
     out = {"head": head, "base": base, "stale": stale, "affected": sorted({r["lineage"] for s in stale for r in s["rests_on_it"]}),
            "stores": sorted({e["store"] for s in stale for e in s.get("elsewhere", [])})}
+    if readings is not None:
+        out["unavailable"] = _unavailable(readings, root)
     if base:
         named = set().union(*(_accepted_files(rep, L) for L in now)) if now else set()
         changed = changed_paths(root, base, head)
@@ -239,21 +253,43 @@ def impact(rep, root, head="HEAD", base=None, readings=None):
     return out
 
 
-def _elsewhere(readings, rep, L, root):
-    """[{store, lineage, schema, state, reliance}] of the records in Home's other stores that rest on any version of L
-    (warrant.across `rests`: an edge read from the citing record crosses stores, since a hash names the same record)."""
-    from . import across as A
-    read = [x for x in readings if x.why is None and (x.root is None or os.path.realpath(x.root) != os.path.realpath(root))]
+def _elsewhere(others, reached, L):
+    """[{store, lineage, schema, state, reliance}] of the records of Home's other stores among `reached` (what rests on
+    a version of claim lineage L, through every store), each read under that store's own report."""
     out = []
-    for v in rep["lineages"][L]["versions"]:
-        ids, _, _ = A._rests(read, v, None)
-        for i in ids[1:]:
-            for x in read:
-                if i in x.view.recs and i in x.view.root_of and x.view.root_of[i] in x.rep["lineages"]:
-                    lin = x.rep["lineages"][x.view.root_of[i]]
-                    out.append({"store": x.name, "lineage": x.view.root_of[i], "schema": lin["schema"], "state": lin["state"],
-                                "reliance": lin["reliance"]})
+    for i in reached:
+        for x in others:
+            if i in x.view.recs and i in x.view.root_of and x.view.root_of[i] in x.rep["lineages"] and x.view.root_of[i] != L:
+                lin = x.rep["lineages"][x.view.root_of[i]]
+                out.append({"store": x.name, "lineage": x.view.root_of[i], "schema": lin["schema"], "state": lin["state"],
+                            "reliance": lin["reliance"]})
     return sorted({tuple(sorted(d.items())): d for d in out}.values(), key=lambda d: (d["store"], d["lineage"]))
+
+
+def identity(rep, root, readings, query):
+    """(root, lens) of an impact answer: this checkout's report alone, as `graph` binds it, or, with Home's
+    `readings`, every store read (this checkout's report, gated at the answer's head, in place of its own reading)
+    and every store not read, by across.identity's form (Codex finding 72595e2154fd)."""
+    if readings is None:
+        g = G.answer(rep, query, None, None)
+        return g["root"], g["lens"]
+    from . import across as A
+    mine = _mine(readings, root)
+    reps = {x.name: x.rep for x in readings if x.why is None and x.name not in mine}
+    reps[mine[0] if mine else HERE] = rep
+    return A.identity(reps, _unavailable(readings, root), rep["code"], None, query)
+
+
+def _mine(readings, root):
+    """The names Home gives this checkout (one at most: Home refuses two names for one directory)."""
+    return [x.name for x in readings if x.root is not None and os.path.realpath(x.root) == os.path.realpath(root)]
+
+
+def _unavailable(readings, root):
+    """[{store, why}] of Home's stores that could not be read, as `across` names them; this checkout's is read here."""
+    from . import across as A
+    mine = _mine(readings, root)
+    return [{"store": x.name, "why": A._short(x.why)} for x in sorted(readings, key=lambda x: x.name) if x.why and x.name not in mine]
 
 
 def impact_lines(m):
@@ -270,6 +306,7 @@ def impact_lines(m):
         out += ["  " + " ".join(w for w in (f["verdict"], f["path"], f["detail"]) if w) for f in s["files"]]
         out += [f"  rests: {r['schema']} {r['lineage'][:12]} {r['state']} {r['reliance']}" for r in s["rests_on_it"]]
         out += [f"  rests in {e['store']}: {e['schema']} {e['lineage'][:12]} {e['state']} {e['reliance']}" for e in s.get("elsewhere", [])]
+    out += [f"not read: {u['store']} ({u['why']}), what rests there is not seen" for u in m.get("unavailable", [])]
     if m["base"]:
         if m["already_stale"]:
             out.append(f"already stale at {m['base'][:12]}: " + ", ".join(str(a["id"]) for a in m["already_stale"]))
@@ -300,8 +337,9 @@ def run(argv=None):
             from . import home as H
             readings = A.home_readings(H.load())
         m = impact(rep, root, head, base, readings)
-        res = G.answer(rep, {"query": "impact", "head": head, "base": base, "across": a.across}, m, None)
-        res["checkout"] = rep["checkout"]
+        query = {"query": "impact", "head": head, "base": base, "across": a.across}
+        r0, lens = identity(rep, root, readings, query)
+        res = {"root": r0, "lens": lens, "query": query, "data": m, "checkout": rep["checkout"]}
         if a.json:
             dump(res)
         else:

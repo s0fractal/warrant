@@ -234,23 +234,31 @@ def _target(readings, t):
     return ids.pop()
 
 
-def _rests(readings, target, schema):
-    """(ids resting on `target`, nearest first, target first; each id's distance; every edge followed). An edge is read
-    from the citing record; it crosses stores because a hash names the same record wherever it lies."""
+def reach(reps, targets):
+    """({id: distance} of what rests on any of `targets`, each at 0, over the edges (graph.WALK) of every report in
+    `reps`; whether every edge was followed). An edge is read from the citing record; it crosses stores because a hash
+    names the same record wherever it lies."""
     into = {}
-    for x in readings:
-        for a, rel, b in x.rep["graph"]["edges"]:
+    for rep in reps:
+        for a, rel, b in rep["graph"]["edges"]:
             if rel in G.WALK:
                 into.setdefault(b, set()).add(a)
-    depth, todo = {target: 0}, [target]
+    depth, todo = dict.fromkeys(targets, 0), sorted(set(targets))
     while todo and len(depth) < G.MAX_NODES:
         cur = todo.pop(0)
         for a in sorted(into.get(cur, ())):
             if a not in depth:
                 depth[a] = depth[cur] + 1
                 todo.append(a)
+    return depth, not todo
+
+
+def _rests(readings, target, schema):
+    """(ids resting on `target`, nearest first, target first; each id's distance; every edge followed), through every
+    store (`reach`)."""
+    depth, complete = reach([x.rep for x in readings], [target])
     ids = [target] + _recent(set(depth) - {target}, readings, schema)
-    return sorted(ids, key=lambda i: depth[i]), depth, not todo
+    return sorted(ids, key=lambda i: depth[i]), depth, complete
 
 
 def _closed(q):
@@ -271,6 +279,16 @@ def _closed(q):
 
 def _dumped(x):
     return len(json.dumps(x, sort_keys=True))
+
+
+def identity(reps, unavailable, code, adapter, query):
+    """(root, lens) of an answer read from `reps`, {store: report}: `root` names every store's snapshot and every store
+    not read, `lens` the code, the adapter, the query and every store's trust, profile and checkout. `drift --impact
+    --across` binds what it read by the same form."""
+    root = C.doc_id({"stores": {n: rep["snapshot"] for n, rep in reps.items()}, "unavailable": unavailable})
+    lens = C.doc_id({"code": code, "adapter": adapter, "query": query, "stores": {
+        n: {"trust": rep["trust"], "profile": rep["profile"], "checkout": rep.get("checkout")} for n, rep in reps.items()}})
+    return root, lens
 
 
 def answer(readings, q, budget=BUDGET, adapter=None):
@@ -303,9 +321,7 @@ def answer(readings, q, budget=BUDGET, adapter=None):
     code = read[0].rep["code"] if read else E.code_identity()
     out = {"warrant": FORMAT, "completeness": "UNATTESTED", "untrusted": True, "query": query, "stores": stores,
            "unavailable": unavailable, "total": len(ids), "offset": q.get("offset", 0), "next": len(ids), **extra, "nodes": [],
-           "root": C.doc_id({"stores": {x.name: x.rep["snapshot"] for x in read}, "unavailable": unavailable}),
-           "lens": C.doc_id({"code": code, "adapter": adapter, "query": query,
-                             "stores": {x.name: {"trust": x.rep["trust"], "profile": x.rep["profile"], "checkout": x.rep.get("checkout")} for x in read}})}
+           **dict(zip(("root", "lens"), identity({x.name: x.rep for x in read}, unavailable, code, adapter, query)))}
     used, pos = _dumped(out), out["offset"]
     if used > budget:
         raise Refusal("RESOURCE_LIMIT", f"the answer's header is {used} bytes; {budget} are allowed")

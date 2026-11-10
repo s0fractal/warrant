@@ -740,13 +740,59 @@ def drift_impact_cases():
     other = Repo()
     far = other.entity("bob", "obligation@1", {"state": "open", "statement": "in another store, cites the effective version",
                                               "serves": [], "evidence": [v2]})
+    first = other.entity("bob", "obligation@1", {"state": "open", "statement": "in another store, cites the first version",
+                                                "serves": [], "evidence": [L]})
     home = {"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}}
     m = D.impact(RP.Repo(r.root).report(), r.root, head, base, A.home_readings(home))
     text = D.impact_lines(m)
     check("DR23 with Home's stores, a record in another store resting on any version of a stale claim is named with its "
           "store, and this checkout's own store is not counted twice",
-          m["stores"] == ["there"] and [(e["store"], e["lineage"]) for e in m["stale"][0]["elsewhere"]] == [("there", far)]
+          m["stores"] == ["there"] and [(e["store"], e["lineage"]) for e in m["stale"][0]["elsewhere"]] == sorted([("there", far), ("there", first)])
           and text.startswith("impact: 1 stale claim(s) -> 1 lineage(s) resting on them -> 1 other store(s)"), (m, text))
+    r, L = drift_repo()
+    here = r.entity("alice", "obligation@1", {"state": "open", "statement": "here, cites the claim", "serves": [], "evidence": [L]})
+    other = Repo()
+    far = other.entity("bob", "obligation@1", {"state": "open", "statement": "there, cites the record here", "serves": [], "evidence": [here]})
+    back = r.entity("alice", "obligation@1", {"state": "open", "statement": "here, cites the record there", "serves": [], "evidence": [far]})
+    base = r.commit("a chain through two stores")
+    (r.root / "lib" / "code.py").write_text("X = 2\n")
+    head = r.commit("the mutated file changes")
+    home = {"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}}
+    m = D.impact(RP.Repo(r.root).report(), r.root, head, base, A.home_readings(home))
+    alone = D.impact(RP.Repo(r.root).report(), r.root, head, base)
+    check("DR28 with Home's stores the walk goes on through every store, this one too: a record elsewhere resting on a record "
+          "here that rests on the claim is named, and so is a record here resting on it (Codex finding 72595e2154fd)",
+          [(e["store"], e["lineage"]) for e in (m["stale"] or [{}])[0].get("elsewhere", [])] == [("there", far)]
+          and m["affected"] == sorted([here, back]) and alone["affected"] == [here], (m, alone))
+    env = os.environ.get("WARRANT_HOME")
+    os.environ["WARRANT_HOME"] = str(r.home / "config" / "drift-home.json")
+    try:
+        H.save(dict(H.empty(), repositories={"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}))
+        def answered():
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                CLI.main(["drift", "--root", str(r.root), f"--impact={base}..{head}", "--across", "--json"])
+            return json.loads(out.getvalue())
+        a = answered()
+        other.entity("bob", "obligation@1", {"state": "open", "statement": "there, cites the claim", "serves": [], "evidence": [L]})
+        b = answered()
+        H.save(dict(H.empty(), repositories={"here": {"path": str(r.root)}, "there": {"path": str(other.root)},
+                                             "gone": {"path": str(r.home / "no-such-store")}}))
+        c = answered()
+    finally:
+        if env is None:
+            os.environ.pop("WARRANT_HOME", None)
+        else:
+            os.environ["WARRANT_HOME"] = env
+    readings = {x.name: x for x in A.home_readings({"repositories": {"here": {"path": str(r.root)}, "there": {"path": str(other.root)}}})}
+    rep = RP.Repo(r.root).report()
+    D.gate(rep, r.root, head)
+    q = {"query": "impact", "head": head, "base": base, "across": True}
+    want = A.identity({"here": rep, "there": readings["there"].rep}, [], rep["code"], None, q) if hasattr(A, "identity") else None
+    check("DR29 an answer with Home's stores binds every store it read as `across` does: a record added in another store "
+          "changes its root, a store that cannot be read is named and changes it too",
+          a["data"]["stale"][0]["elsewhere"] != b["data"]["stale"][0]["elsewhere"] and a["root"] != b["root"]
+          and (b["root"], b["lens"]) == want and [u["store"] for u in c["data"].get("unavailable", [])] == ["gone"]
+          and c["root"] != b["root"], (a.get("root"), b.get("root"), want, c.get("data", {}).get("unavailable")))
 
 
 def review_cases():
