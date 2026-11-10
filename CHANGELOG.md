@@ -6,6 +6,38 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
 
 ## Unreleased
 
+## 3.0.0a6 — one package, one receiver
+
+Prepared for PyPI; published when an agent pushes the tag `v3.0.0a6` (delegated 2026-11-01, `release.yml`), admitted by
+the published 3.0.0a5 (roadmap G12: the reports agree but for the engine's identity, this release's duty is accepted,
+the store at `v3.0.0a5` is kept whole). An alpha (PEP 440).
+
+- `warrant verify PACKAGE` (warrant/verify.py, and `warrant_verify.py`, the same as one standard-library file built by
+  `tools/build_verify.py`): one `package/3`, assessed by one receiver under its own trust and profile; the exit status
+  is the answer (0 rely, 1 do not, 2 no verdict, 3 refused). docs/VERIFY.md; docs/V3.md §13 "One package, one
+  receiver". Tests U01–U47, mutants UM01–UM53.
+- A second implementation of the assessment, `impl-js/warrant.mjs`, held byte for byte to the Python one by
+  `tests/impl_js_test.py` (J1–J8); no declared departure is left. CI runs it under node 24.
+- **[protocol]** Defects of the assessment, each with the case that failed first and its mutant (#303): a root's `pinned`
+  is read by presence (`pinned: ""` was admitted and never enforced); under a pin, a closure guard of `quorum: 0` is
+  INVALID; a guard's `match` member absent from an attest equals nothing (it equalled `null`); a schema whose `closed`
+  holds other than strings is not counted, and a migration map with a 5,000-digit integer reads MIGRATION_MAP (both made
+  every receiver's assessment raise); a counted challenge against a version of a forked lineage stands; a store whose
+  lineage links deeper than `LIMITS["depth"]` is refused before it is assessed (verdicts depended on id order). The
+  reports of the warrant, time-lab, minds, sokol-core and sigma-glyph stores are unchanged by them.
+- The merge gate derives the places an owner path guards (same-name packages, other suffixes, `__pycache__`, modules
+  added where the interpreter searches, links and submodules there, `.gitattributes`, case folding); a head or base path
+  that is not UTF-8 is HEAD_UNREADABLE or BASE_CONFIG, not a crash. Every module the gate imports is an owner path.
+- A lineage's root can pin what closes it (G15); a challenge can be filed under its own key's name (G1).
+- `warrant drift --impact` (what a change bears on), with `--across` through every store of Home; CHANGED names the
+  first commit at which the bytes changed, a mode change never counts (G14).
+- `warrant.graph.grounded` (minds' Grounded over a report) and `warrant.graph.ledger`, the witness ledger
+  (`build/views/WITNESSES.md`): an acceptance is refuted only by a reproduction after it, a citation ordering the two
+  before any date. The agent's `graph` gains `op=grounded` and `op=ledger`.
+- R-AGENT-CLOCK is measured on stores the agent admits (`tests/assess_bound.py`; docs/V3.md §12). Two limits are named,
+  not closed: R-INTERPRETER and R-CHECKER-CACHE.
+- `tests/mutants.py` runs a shard's mutants in parallel, each in its own copy (`MUTANT_JOBS`).
+
 - The proof-space pilot (`warrant_pilot/`, the `pilot` extra, docs/PILOT.md) is retired, at the tag `history/warrant-pilot-2026-11-02`: nothing used it but its own
   tests, and it was the only reason Warrant 3 installed sigma-glyph. The `pilot` extra is gone.
 - `warrant across` and the agent's `across` (MCP `warrant_across`): one read over every repository registered in Home
