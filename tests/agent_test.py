@@ -1154,6 +1154,49 @@ def lens_cases():
           and all(set(x["body"]) == {"target", "verdict"} for x in adoptions), adoptions)
 
 
+def changes_cases():
+    """What changed for a reader (warrant_agent/changes.py): the past is the set of records the reader marked as
+    seen, assessed by the same engine; a lineage is listed only when its floor or what the reader's lens draws of it
+    differs, with the witness; new records that change nothing the reader sees are counted, not listed."""
+    from warrant_agent import changes as CH
+    from warrant_agent import lens as LZ
+    from warrant_agent import serve as SV
+    r = Repo()
+    r.put("alice", "schema", LZ.SCHEMA)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the task", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "the task", "serves": []}, lineage=o)
+    bare = r.put("carol", "entity", {"state": "active", "name": "hides activity", "applies": "*",
+                                     "card": {"layout": "nested", "fields": [], "activity": "hidden"}}, "lens@1")
+    marks = CH.Marks(r.home / "seen.json")
+    space = SV.Space({"w": str(r.root)})
+    app = SV.App(space, "dave", KEYS["dave"], marks=marks)
+    at_mark = r.store.snapshot().digest
+    refused = app.seen({"token": "x"})[0]
+    code = app.seen({"token": app.token})[0]
+    quiet = app.page_changes({})
+    past, marked = app.past_report("w", r.store.snapshot())
+    check("CH1 marking a look keeps the ids of every record each store holds; the past it reads back is that store "
+          "exactly (its snapshot digest), and with nothing new the page says nothing changed",
+          refused == 403 and code == 303 and marked and past["snapshot"] == at_mark and "Нічого не змінилось" in quiet,
+          (refused, code, marked))
+    r.t += 10
+    note = r.put("eve", "attest", {"target": d, "verdict": "note"}, refs=[d])
+    rows, n = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.BUILTIN))
+    rows_h, n_h = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.lenses(space.report("w"))[bare]))
+    check("CH2 a new attest that moves nothing in the floor is a change under the built-in lens (it draws the "
+          "activity), with the attest as witness, and no change under a lens that hides the activity: counted, not listed",
+          [x["lineage"] for x in rows] == [o] and (note, "") in rows[0]["appeared"] and n == 0
+          and rows_h == [] and n_h == 1, (rows, n, rows_h, n_h))
+    r.t += 10
+    c = r.put("bob", "challenge", {"target": d, "statement": "counted, and it stands"}, refs=[d])
+    rows_h, n_h = CH.delta(SV, past, space.report("w"), lambda s: LZ.card_of(LZ.lenses(space.report("w"))[bare]))
+    page_ = SV.App(space, reader="dave", marks=marks).page_changes({})      # a fresh run: the past is rebuilt from the mark
+    check("CH3 a counted challenge that stands moves the floor, which no lens hides: the lineage is listed under the "
+          "hiding lens too, and the page names the move", [x["lineage"] for x in rows_h] == [o]
+          and rows_h[0]["floor_after"]["standing"] == [(c, d)] and "заперечень, що стоять: 0 → 1" in page_
+          and "counted, and it stands" in page_, rows_h)
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1168,4 +1211,5 @@ if __name__ == "__main__":
     bench_cases()
     serve_cases()
     lens_cases()
+    changes_cases()
     sys.exit(finish())

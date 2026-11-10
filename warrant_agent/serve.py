@@ -30,6 +30,7 @@ from warrant import home as H
 from warrant import records as R
 from warrant.repo import Failed, Repo, load_key
 from warrant_agent import glossary as GL
+from warrant_agent import changes as CH
 from warrant_agent import lens as LZ
 
 DIMENSIONS = (("agree", -100, 100, "згода"), ("confidence", 0, 100, "впевненість"),
@@ -46,10 +47,18 @@ def is_machine(actor):
 # ---------------------------------------------------------------- projections: pure over a report
 
 def _root_of(rep, i):
-    for L, lin in rep["lineages"].items():
-        if i in lin["versions"]:
-            return L
-    return None
+    """The lineage whose version `i` is, or None; the map is built once per report and kept on it."""
+    m = rep.get("_rootmap")
+    if m is None:
+        m = rep["_rootmap"] = {v: L for L, lin in rep["lineages"].items() for v in lin["versions"]}
+    return m.get(i)
+
+
+def _into(rep):
+    """G.index(rep)'s edges into each node, built once per report and kept on it."""
+    if "_into" not in rep:
+        rep["_into"] = G.index(rep)[2]
+    return rep["_into"]
 
 
 def title(rep, i, n=160):
@@ -166,7 +175,7 @@ def lineage(rep, i):
     if L is None:
         return None
     lin = rep["lineages"][L]
-    _, _, into = G.index(rep)
+    into = _into(rep)
     versions = []
     for v in reversed(lin["versions"]):
         on = sorted((x for rel, x in into.get(v, []) if rel in ("attest", "challenge") and x in rep["_recs"]),
@@ -303,7 +312,8 @@ def item(store, x, show_store=True):
 def page(title_, body, footer=""):
     return (f'<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,'
             f'initial-scale=1"><title>{E(title_)}</title><style>{CSS}</style></head><body><header><a href="/">warrant</a>'
-            f'<nav><a href="/">Стрічка</a><a href="/wait">Чекає на мене</a><a href="/stores">Сховища</a></nav></header>'
+            f'<nav><a href="/">Стрічка</a><a href="/changes">Що змінилось</a><a href="/wait">Чекає на мене</a>'
+            f'<a href="/stores">Сховища</a></nav></header>'
             f'<main>{body}</main><footer>{footer}</footer></body></html>')
 
 
@@ -440,10 +450,74 @@ def diff_html(rep, d, names, only_a, only_b):
             f'<p>Показує лише «{E(b)}»: {len(only_b)}</p><ul>{"".join(row(x) for x in only_b[:50])}</ul>{END}')
 
 
+def _floor_moves(f0, f1):
+    if f0 is None:
+        return ["нова лінія"]
+    out = [f"{name}: {E(str(f0[k]))} → {E(str(f1[k]))}" for k, name in
+           (("state", "стан"), ("reliance", "опора"), ("grounded", "обґрунтоване")) if f0[k] != f1[k]]
+    if f0["standing"] != f1["standing"]:
+        out.append(f"заперечень, що стоять: {len(f0['standing'])} → {len(f1['standing'])}")
+    return out
+
+
+def change_html(rep, store, x):
+    def item(t):
+        i, member = t
+        if member:
+            return f"<li>«{E(member)}» версії {E(i[:12])}</li>"
+        a, verb, what, rest = sentence(rep, i)
+        return f"<li><span class='actor'>{E(a)}</span> {E(verb)}" + (f" <span class='rest'>— {E(rest)}</span>" if rest else "") + "</li>"
+    moves = _floor_moves(x["floor_before"], x["floor_after"])
+    return (f'<div class="item">{link_l(store, x["lineage"], E(x["label"] + ": " + x["title"]))}'
+            + (f' <span class="rest">· {"; ".join(moves)}</span>' if moves else "")
+            + (f'<ul>{"".join(item(t) for t in x["appeared"][:30])}</ul>' if x["appeared"] else "")
+            + (f'<p class="rest">зникло: {len(x["vanished"])}</p>' if x["vanished"] else "") + END)
+
+
 class App:
-    def __init__(self, space, actor=None, key=None, reader=None):
+    def __init__(self, space, actor=None, key=None, reader=None, marks=None):
         self.space, self.actor, self.key, self.token = space, actor, key, secrets.token_hex(16)
         self.reader = reader or actor
+        self.marks = marks if marks is not None else CH.Marks()
+        self.past = {}
+
+    def past_report(self, store, snap):
+        """The store as the reader last marked it (else: its records dated before the last day), assessed."""
+        mark = self.marks.get(self.reader, store)
+        keep = mark if mark is not None else CH.before(snap, time.time() - CH.DAY)
+        key = (store, hashlib.sha256("".join(sorted(keep)).encode()).hexdigest())
+        if key not in self.past:
+            self.past = {key: CH.report_of(self.space.roots[store], CH.subset(snap, keep))}
+        return self.past[key], mark is not None
+
+    def page_changes(self, q):
+        card = lambda schema: LZ.card_of(self.pick(schema, None)[1])
+        h, foots, marked = "", [], False
+        for n, root in self.space.roots.items():
+            rep1 = self.space.report(n)
+            if "_error" in rep1:
+                continue
+            rep0, marked = self.past_report(n, Repo(root).store.snapshot())
+            rows, quiet = CH.delta(sys.modules[__name__], rep0, rep1, card)
+            new = len(set(rep1["_recs"]) - set(rep0["_recs"]))
+            if not new and not rows:
+                continue
+            h += (f'<div class="card"><b>{E(n)}</b> <span class="rest">нових записів {new}; змінилось для тебе ліній: '
+                  f'{len(rows)}; не змінили нічого, що ти бачиш: {quiet}</span>' + "".join(change_html(rep1, n, x) for x in rows) + END)
+            foots.append(f'{E(n)} · було <code title="{E(rep0["snapshot"])}">{E(rep0["snapshot"][:12])}</code> · '
+                         f'стало <code title="{E(rep1["snapshot"])}">{E(rep1["snapshot"][:12])}</code>')
+        top = (f'<h2>Що змінилось для {E(self.reader or "читача")}</h2><p class="rest">з {E(CH.since_text(marked))}, '
+               f'під твоїми лінзами; повнота {tag("UNATTESTED")}</p>'
+               f'<form method="post" action="/seen"><input type="hidden" name="token" value="{self.token}">'
+               f'<button type="submit">Позначити все як переглянуте</button></form>')
+        return page("Що змінилось", top + (h or "<p>Нічого не змінилось у тому, що ти бачиш.</p>"), "<br>".join(foots))
+
+    def seen(self, form):
+        ok = secrets.compare_digest(form.get("token", ""), self.token)
+        if not ok:
+            return 403, "the token of this run is missing or wrong"
+        self.marks.set(self.reader, {n: set(Repo(r).store.snapshot().lines) for n, r in self.space.roots.items()})
+        return 303, "/changes"
 
     def reports(self):
         return {n: self.space.report(n) for n in self.space.roots}
@@ -642,6 +716,8 @@ def handler(app, port):
             try:
                 if not parts:
                     self.send(200, app.page_feed(q))
+                elif parts == ["changes"]:
+                    self.send(200, app.page_changes(q))
                 elif parts == ["wait"]:
                     self.send(200, app.page_wait(q))
                 elif parts == ["stores"]:
@@ -657,13 +733,13 @@ def handler(app, port):
             if not self.host_ok():
                 return
             path = urlparse(self.path).path
-            if path not in ("/react", "/adopt"):
+            if path not in ("/react", "/adopt", "/seen"):
                 return self.send(404, "no such endpoint", TEXT)
             n = int(self.headers.get("Content-Length") or 0)
             if n > 64 * 1024:
                 return self.send(413, "too large", TEXT)
             form = {k: v[0] for k, v in parse_qs(self.rfile.read(n).decode("utf-8", "replace")).items()}
-            code, out = (app.react if path == "/react" else app.adopt)(form)
+            code, out = {"/react": app.react, "/adopt": app.adopt, "/seen": app.seen}[path](form)
             if code == 303:
                 self.send(303, "", location=out)
                 return
