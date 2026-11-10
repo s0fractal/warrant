@@ -343,7 +343,7 @@ MUTANTS = [
     ("T98", DR, "        elif now is None and blob in where:", "        elif False:", TOOLS, ["DR3"]),
     ("T99", DR, "    if words <= set(FRESH):", '    if words <= {"UNCHANGED"}:', TOOLS, ["DR3"]),
     ("T100", DR, '"rev-list", "--reverse", "--topo-order", f"{commit}..{head}"', '"rev-list", "--reverse", "--topo-order", f"{head}..{commit}"', TOOLS, ["DR2"]),
-    ("T137", DR, "            if fresh(C.blobs(root, c), path, blob):\n                break", "            if False:\n                break", TOOLS, ["DR26"]),
+    ("T146", DR, "            if fresh(C.blobs(root, c), path, blob):\n                break", "            if False:\n                break", TOOLS, ["DR26"]),
     ("T138", DR, "            since = c\n", "            since = since or c\n", TOOLS, ["DR26"]),
     ("T139", DR, "                break\n            since = c", "                continue\n            since = c", TOOLS, ["DR27"]),
     ("T140", DR, "        if S.hex_of(oid, 40):\n            touched |=", "        if False:\n            touched |=", TOOLS, ["DR27"]),
