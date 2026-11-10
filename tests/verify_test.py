@@ -255,13 +255,14 @@ def reliance_cases():
     for recv in (src, other):
         ins = api.call(Config({"agent_api": "warrant-agent/3", "workspaces": {"w": {"store": str(Repo().dot), "trust": put("t.json", recv.trust),
                                                                                     "profile": put("p.json", recv.profile)}}}),
-                       "handoff", {"workspace": "w", "op": "inspect", "package": challenged, "alone": True}).get("ok", {})
+                       "handoff", {"workspace": "w", "op": "inspect", "package": dict(challenged, roots=sorted([d, "ab" * 32])), "alone": True}).get("ok", {})
         ans = ask(challenged, recv)[1]
         cap, r = ins.get("roots", {}).get(d, {}), root(ans, d)
-        same.append(bool(cap) and cap.get("guard") == r.get("guard") and cap.get("lineage") == {k: (r.get("lineage") or {}).get(k) for k in cap.get("lineage", {})}
+        same.append(bool(cap) and ins.get("roots", {}).get("ab" * 32) == {"id": "ab" * 32, "kind": "unavailable"} and cap.get("guard") == r.get("guard") and cap.get("lineage") == {k: (r.get("lineage") or {}).get(k) for k in cap.get("lineage", {})}
                     and all(cap.get(k) == r.get(k) for k in ("kind", "schema", "actor", "at", "basis")) and ins.get("package") == ans.get("package"))
     check("U15", same == [True, True], "the agent's `handoff inspect` of a package alone and `warrant verify` read it through one reader: "
-          "the same digest, node, guard and lineage, under the sender's profile and under another", same)
+          "the same digest, node, guard and lineage, under the sender's profile and under another; a root the package does not "
+          "carry reads unavailable there too", same)
     return src, pkg, d
 
 
