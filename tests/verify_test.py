@@ -21,8 +21,9 @@ import tempfile
 from collections import namedtuple
 from pathlib import Path
 
-from world import ROLES, ROOT, Repo, check, finish, git
+from world import KEYS, ROLES, ROOT, Repo, check, finish, git
 
+from warrant import engine as E
 from warrant import jcs as C
 from warrant import keys as K
 from warrant import pins as P
@@ -587,16 +588,24 @@ def refusal_cases(src, pkg, d):
           "the agent's handoff refuses a malformed package with the codes and words it had before the core read packages", got)
 
     deep = Repo()
-    last, before = None, None
-    for _ in range(130):
-        lo = deep.entity("alice", "obligation@1", {"state": "open", "statement": "one of a chain", "serves": []})
-        last = deep.entity("alice", "obligation@1", {"state": "done", "statement": "one of a chain", "serves": []}, lineage=lo,
-                           requires=[before] if before else [])
-        before = lo
-    chain = {"warrant": "package/3", "roots": [last], "lines": [x.decode().rstrip("\n") for x in deep.store.lines()], "blobs": {}}
+    lines, prev, before = deep.store.lines(), E.head(deep.store.snapshot(), deep.trust, "alice")["id"], None
+    for n in range(130):                   # signed lines made here, chained by hand: 260 appends would each rewrite the store
+        r = R.record("entity", "alice", deep.t + n, {"state": "open", "statement": f"link {n}", "serves": []}, "obligation@1", None, (), None, prev)
+        lo, line = R.line(r, KEYS["alice"])
+        lines.append(line)
+        g = R.guard(1, ["roadmap/acceptor"], ACCEPT, [before] if before else [])
+        r = R.record("entity", "alice", deep.t + n, {"state": "done", "statement": f"link {n}", "serves": []}, "obligation@1", lo, (), g, lo)
+        last, line = R.line(r, KEYS["alice"])
+        lines.append(line)
+        prev, before = last, lo
+    chain = {"warrant": "package/3", "roots": [last], "lines": [x.decode().rstrip("\n") for x in lines], "blobs": {}}
+    shallow = dict(chain, lines=chain["lines"][:5 + 2 * 128], roots=[R.rid(json.loads(chain["lines"][5 + 2 * 128 - 1])["record"])])
+    fits = refused(shallow)
     code, why, ans = refused(chain)
-    check("U45", (code, why) == (1, "LIMITS") and ans["refused"]["why"] == "the package is beyond the engine's limits",
-          "a package beyond the engine's limits (requirements nested 130 deep) is refused, exit 1: a refusal, not an error", (code, why))
+    check("U45", (code, why) == (1, "LIMITS") and ans["refused"]["why"] == "the package is beyond the engine's limits"
+          and fits[1] is None and fits[2].get("integrity", {}).get("records") == 5 + 2 * 128,
+          "a package beyond the engine's limits (requirements nested 130 deep) is refused, exit 1: a refusal, not an error; "
+          "one nested 128 deep is read", (code, why, fits[:2]))
 
     def broken(*_a, **_k):
         raise RuntimeError("the verifier's own defect")
