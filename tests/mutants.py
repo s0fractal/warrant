@@ -243,6 +243,8 @@ MUTANTS = [
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),
     ("A96", "tests/assess_bound.py", "snap = ws.open().snapshot()", "snap = ST.Store(ws.store).snapshot()", AGENT, ["B02"]),
+    ("A97", "warrant_agent/api.py", 'data, query = G.ledger(rep, view.recs), {"op": op}', 'data, query = G.ledger(rep, {}), {"op": op}', AGENT, ["A30"]),
+    ("A98", "warrant_agent/api.py", 'if op in ("around", "path", "why", "grounded"):', 'if op in ("around", "path", "why"):', AGENT, ["A30"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
