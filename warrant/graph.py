@@ -141,7 +141,9 @@ def impact(rep0, rep1):
 def ledger(rep, recs=None):
     """The witness ledger, per actor: `accepted`, the versions whose guard the actor's acceptance counts toward;
     `refuted`, of those, [version, challenge] where a replayer attested `reproduces` on that challenge with `on` that
-    version *later* than one of the actor's acceptances of it. "Later" is read from citations first: the replay citing
+    version *later* than one of the actor's acceptances of it (an acceptance: an attest of the actor's on that version
+    holding every member of the version's guard `match`, as the engine counts it; Codex challenge 049f0ec2b8c5: an
+    attest short of the match was compared too). "Later" is read from citations first: the replay citing
     the acceptance, directly or through records it cites, is later whatever its date; the acceptance citing the replay
     is not; only where neither cites the other is it the dates, the acceptance's no later than the replay's (Codex
     challenge on c1cace09dd7c: an acceptance citing the refutation was read as refuted; Codex challenge caae1baae65e:
@@ -173,11 +175,16 @@ def ledger(rep, recs=None):
     for v, g in sorted(rep["versions"].items()):
         for a in g["accepted_by"]:
             row(a)["accepted"].append(v)
+            match = ((recs.get(v) or {}).get("guard") or {}).get("match")
             mine = [dict(recs[i], id=i) for rel, i in into.get(v, []) if rel == "attest" and i in recs
-                    and recs[i]["actor"] == a and recs[i]["body"].get("verdict") == "accept"]
+                    and recs[i]["actor"] == a and match is not None   # an attest the guard counts: every member of its
+                    and all(recs[i]["body"].get(k, _NOWHERE) == x for k, x in match.items())]   # match (engine._attested)
             row(a)["refuted"] += [[v, c] for c, runs in reproduced.get(v, [])
                                   if any(before(m, r) for m in mine for r in runs)]
     return dict(sorted(rows.items()))
+
+
+_NOWHERE = object()      # a member an attest does not have equals nothing, null included
 
 
 def _cites(recs, x, y, memo):

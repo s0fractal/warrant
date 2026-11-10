@@ -1383,6 +1383,25 @@ def ledger_cases():
     late = G.ledger(r.report(), recs()).get("bob", {})
     check("WL6 ... and an acceptance citing the replay, through a record that cites it, comes after it whatever its own "
           "`at` says: it is not refuted", g in late.get("accepted", []) and [g, cg] not in late.get("refuted", []), late)
+    # Codex challenge 049f0ec2b8c5 on 39a921e41990: an attest that did not match the guard (scope=partial) was compared
+    # with the replay, and its acceptor read as refuted though the one acceptance that counted cites the replay.
+    guard = {"quorum": 1, "roles": ["roadmap/acceptor"], "match": {"verdict": "accept", "scope": "full"}, "requires": []}
+    for early in ("partial", "full"):
+        q = Repo()
+        o = q.entity("alice", "obligation@1", {"state": "open", "statement": "s", "serves": []})
+        v = q.entity("alice", "obligation@1", {"state": "done", "statement": "s", "serves": []}, lineage=o, guard=guard)
+        q.put("bob", "attest", {"target": v, "verdict": "accept", "scope": early}, refs=[v])
+        cq = q.put("eve", "challenge", {"target": v, "statement": "wrong"}, refs=[v])
+        rq = q.put("carol", "attest", {"target": cq, "verdict": "reproduces", "on": v}, refs=[cq, v])
+        q.put("bob", "attest", {"target": v, "verdict": "accept", "scope": "full"}, refs=[v, rq])
+        rows = G.ledger(q.report(), {i: e[0]["record"] for i, e in q.store.snapshot().lines.items()}).get("bob", {})
+        if early == "partial":
+            partial = (rows, v in rows.get("accepted", []) and rows.get("refuted") == [])
+        else:
+            full = (rows, rows.get("refuted") == [[v, cq]])
+    check("WL7 only an attest that counts toward the version's guard (every member of its match) is an acceptance: one "
+          "short of the match, before the replay, refutes nobody; one that matches does",
+          partial[1] and full[1], (partial[0], full[0]))
 
 
 def grounded_cases():

@@ -239,6 +239,7 @@ MUTANTS = [
     ("T152", "warrant/graph.py", 'return m["at"] <= recs[r]["at"]', 'return True', TOOLS, ["WL3"]),
     ("T153", "warrant/graph.py", 'if _cites(recs, r, m["id"], memo):', 'if False:', TOOLS, ["WL5"]),
     ("T154", "warrant/graph.py", '                    todo.append(z)', '                    pass', TOOLS, ["WL6"]),
+    ("T155", "warrant/graph.py", 'and all(recs[i]["body"].get(k, _NOWHERE) == x for k, x in match.items())]', 'and recs[i]["body"].get("verdict") == "accept"]', TOOLS, ["WL7"]),
     ("T137", "warrant/graph.py", 'if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):',
      'if any(v == "reproduces" for on, v, _ in x["replays"]):', TOOLS, ["WL1"]),
     ("A95", "tests/assess_bound.py", "if self.bytes + len(line) > self.limit:", "if self.bytes > self.limit:", AGENT, ["B01"]),
