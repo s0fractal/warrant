@@ -93,39 +93,46 @@ def dims(body):
     return {k: body[k] for k, lo, hi, _ in DIMENSIONS if R.is_int(body.get(k)) and lo <= body[k] <= hi}
 
 
+ENTITY_VERBS = {("obligation", "open"): "відкрив обов'язок", ("obligation", "done"): "закрив обов'язок",
+                ("obligation", "released"): "звільнив обов'язок", ("goal", "open"): "поставив ціль",
+                ("pr-head", "open"): "відкрив", ("pr-head", "head"): "подав нову голову", ("pr-head", "merged"): "злив"}
+ATTEST_VERBS = {"accept": "прийняв", "react": "відреагував на", "reproduces": "відтворив заперечення",
+                "does_not_reproduce": "не відтворив заперечення"}
+
+
+def _about(rep, t):
+    return f"{label(rep, t)}: «{title(rep, t)}»" if t else ""
+
+
+def _entity_sentence(rep, i, r):
+    b = r["body"]
+    s, state = (r.get("schema") or "").split("@")[0], b.get("state")
+    verb = ENTITY_VERBS.get((s, state))
+    if verb is None:
+        verb = (f"подав {s}" if r.get("lineage") is None else f"нова версія {s}") + (f" → {state}" if state else "")
+    rest = ""
+    if isinstance(b.get("established"), list) and state != "head":
+        rest = f"встановлено {len(b['established'])}, залишків {len(b.get('residual') or [])}"
+    return r["actor"], verb, _about(rep, i), rest
+
+
+def _dimensions_text(body):
+    d = dims(body)
+    return ", ".join(f"{n} {d[x]:+d}" if x == "agree" else f"{n} {d[x]}" for x, _, _, n in DIMENSIONS if x in d)
+
+
 def sentence(rep, i):
     """One record as one sentence: (actor, verb, what, rest); the page joins them, escaping each."""
     r = rep["_recs"][i]
     a, b, k = r["actor"], r["body"], r["kind"]
     if k == "entity":
-        s, state = (r.get("schema") or "").split("@")[0], b.get("state")
-        what = f"{label(rep, i)}: «{title(rep, i)}»"
-        first = r.get("lineage") is None
-        verbs = {("obligation", "open"): "відкрив обов'язок", ("obligation", "done"): "закрив обов'язок",
-                 ("obligation", "released"): "звільнив обов'язок", ("goal", "open"): "поставив ціль",
-                 ("pr-head", "open"): "відкрив", ("pr-head", "head"): "подав нову голову", ("pr-head", "merged"): "злив"}
-        verb = verbs.get((s, state)) or (f"подав {s}" if first else f"нова версія {s}") + (f" → {state}" if state else "")
-        rest = ""
-        if isinstance(b.get("established"), list) and state != "head":
-            rest = f"встановлено {len(b['established'])}, залишків {len(b.get('residual') or [])}"
-        return a, verb, what, rest
+        return _entity_sentence(rep, i, r)
     if k == "attest":
-        t, v = b.get("target"), b.get("verdict")
-        tw = f"{label(rep, t)}: «{title(rep, t)}»" if t else ""
-        if v == "accept":
-            return a, "прийняв", tw, ""
-        if v == "react":
-            d = dims(b)
-            return a, "відреагував на", tw, ", ".join(f"{n} {d[x]:+d}" if x == "agree" else f"{n} {d[x]}"
-                                                     for x, _, _, n in DIMENSIONS if x in d)
-        if v == "reproduces":
-            return a, "відтворив заперечення", tw, ""
-        if v == "does_not_reproduce":
-            return a, "не відтворив заперечення", tw, ""
-        return a, f"атестував ({v})", tw, ""
+        v = b.get("verdict")
+        return (a, ATTEST_VERBS.get(v, f"атестував ({v})"), _about(rep, b.get("target")),
+                _dimensions_text(b) if v == "react" else "")
     if k == "challenge":
-        t = b.get("target")
-        return a, "заперечив", f"{label(rep, t)}: «{title(rep, t)}»" if t else "", title(rep, i)
+        return a, "заперечив", _about(rep, b.get("target")), title(rep, i)
     if k == "schema":
         return a, "подав схему", title(rep, i), ""
     return a, f"подав {k}", title(rep, i), ""
@@ -247,6 +254,9 @@ class Space:
 # ---------------------------------------------------------------- pages
 
 E = html.escape
+TEXT = "text/plain; charset=utf-8"
+END = "</div>"
+MISSING = "Немає"
 CSS = """
 :root{--bg:#fbfaf7;--fg:#1d1d1b;--mute:#6b6a65;--line:#e4e1d8;--card:#fff;--ok:#2f7a4b;--warn:#a26a00;--bad:#b3261e;--acc:#3b5bdb}
 @media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#ecebe6;--mute:#9a988f;--line:#2e2d29;--card:#1e1e1b;--ok:#6cc58f;--warn:#e0a83a;--bad:#f2867d;--acc:#8fa6ff}}
@@ -285,7 +295,7 @@ def item(store, x, show_store=True):
     return (f'<div class="item"><span class="when">{when(x["at"])}</span> '
             + (f'<span class="store">{E(store)}</span>' if show_store else "")
             + f'<span class="actor">{E(a)}</span> {E(verb)} {target}'
-            + (f' <span class="rest">— {E(rest)}</span>' if rest else "") + "</div>")
+            + (f' <span class="rest">— {E(rest)}</span>' if rest else "") + END)
 
 
 def page(title_, body, footer=""):
@@ -298,6 +308,57 @@ def page(title_, body, footer=""):
 def foot(name, rep, query):
     x = lens(rep, query)
     return f'{E(name)} · root <code>{E(x["root"])}</code> · lens <code>{E(x["lens"])}</code>'
+
+
+def grounded_html(rep, store, g):
+    if g is None:
+        return ""
+    cls, word = ("yes", "так") if g["grounded"] else ("no", "ні")
+    failing = "".join(f"<br>· {link_l(store, v, E(label(rep, v) + ': ' + title(rep, v, 90)))} — {E(why)}"
+                      for v, why in g["failing"][:12])
+    return (f'<p>Обґрунтоване: <b class="{cls}">{word}</b> (усе, на чому воно тримається, транзитивно: '
+            f'{g["closure"]} версій){failing}</p>')
+
+
+def challenge_state(c):
+    if c is None:
+        return ""
+    out = " · " + ("зараховане" if c.get("counted") else "не зараховане")
+    if c.get("stands"):
+        out += ", стоїть"
+    if c.get("replays"):
+        out += f', відтворень {len(c["replays"])}'
+    return out
+
+
+def on_html(rep, x):
+    a, verb, _, rest = x["sentence"]
+    note = rep["_recs"][x["id"]]["body"].get("note")
+    return (f'<div class="item"><span class="when">{when(x["at"])}</span> <span class="actor">{E(a)}</span> '
+            f'{E(verb)}{E(challenge_state(x["challenge"]))}' + (f' <span class="rest">— {E(rest)}</span>' if rest else "")
+            + (f'<div class="rest">{E(note)}</div>' if isinstance(note, str) else "") + END)
+
+
+def version_html(rep, d, v):
+    rec, gd = v["record"], v["guard"]
+    body = rec["body"]
+    mark = " (дієва)" if v["id"] == d["effective"] else ""
+    accepted = f' · прийняли: {E(", ".join(gd["accepted_by"]))}' if gd.get("accepted_by") else ""
+    parts = [f'<div class="card"><div><span class="when">{when(rec["at"])}</span> <span class="actor">{E(rec["actor"])}</span> '
+             f'версія{E(mark)} · стан <b>{E(str(body.get("state")))}</b> · охоронець {tag(gd.get("guard", "NONE"))}'
+             f'{accepted} · <code>{E(v["id"][:12])}</code>{END}']
+    for k in ("statement", "text"):
+        repeated = k == "statement" and v["id"] == d["lineage"] and len(d["versions"]) > 1
+        if isinstance(body.get(k), str) and not repeated:
+            parts.append(f"<p>{E(body[k])}</p>")
+    for k, name in (("established", "Встановлено"), ("residual", "Залишки")):
+        if isinstance(body.get(k), list) and body[k]:
+            parts.append(f"<b>{name}</b><ul>" + "".join(f"<li>{E(str(x))}</li>" for x in body[k]) + "</ul>")
+    if gd.get("waiting"):
+        parts.append("<p class='rest'>Чекає: " + E("; ".join(gd["waiting"])) + "</p>")
+    parts += [on_html(rep, x) for x in v["on"]]
+    parts.append(END)
+    return "".join(parts)
 
 
 class App:
@@ -325,47 +386,15 @@ class App:
     def page_lineage(self, store, i):
         rep = self.space.report(store)
         if "_error" in rep:
-            return 404, page("Немає", f"<p>{E(rep['_error'])}</p>")
+            return 404, page(MISSING, f"<p>{E(rep['_error'])}</p>")
         d = lineage(rep, i)
         if d is None:
-            return 404, page("Немає", f"<p>Немає лінії з записом <code>{E(i)}</code> у {E(store)}.</p>")
-        g = d["grounded"]
-        gr = "" if g is None else (
-            f'<p>Обґрунтоване: <b class="{"yes" if g["grounded"] else "no"}">{"так" if g["grounded"] else "ні"}</b> '
-            f'(усе, на чому воно тримається, транзитивно: {g["closure"]} версій)'
-            + ("".join(f"<br>· {link_l(store, v, E(label(rep, v) + ': ' + title(rep, v, 90)))} — {E(why)}" for v, why in g["failing"][:12]))
-            + "</p>")
+            return 404, page(MISSING, f"<p>Немає лінії з записом <code>{E(i)}</code> у {E(store)}.</p>")
         h = (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
-             f'опора {tag(d["reliance"])}</p>' + gr)
+             f'опора {tag(d["reliance"])}</p>' + grounded_html(rep, store, d["grounded"]))
         if self.actor and self.key and d["leaf"]:
             h += self.form(store, d["leaf"])
-        for v in d["versions"]:
-            rec, gd = v["record"], v["guard"]
-            mark = " (дієва)" if v["id"] == d["effective"] else ""
-            body = rec["body"]
-            parts = [f'<div class="card"><div><span class="when">{when(rec["at"])}</span> <span class="actor">{E(rec["actor"])}</span> '
-                     f'версія{E(mark)} · стан <b>{E(str(body.get("state")))}</b> · охоронець {tag(gd.get("guard", "NONE"))}'
-                     + (f' · прийняли: {E(", ".join(gd["accepted_by"]))}' if gd.get("accepted_by") else "")
-                     + f' · <code>{E(v["id"][:12])}</code></div>']
-            for k in ("statement", "text"):
-                if isinstance(body.get(k), str) and (k != "statement" or v["id"] != d["lineage"] or len(d["versions"]) == 1):
-                    parts.append(f"<p>{E(body[k])}</p>")
-            for k, name in (("established", "Встановлено"), ("residual", "Залишки")):
-                if isinstance(body.get(k), list) and body[k]:
-                    parts.append(f"<b>{name}</b><ul>" + "".join(f"<li>{E(str(x))}</li>" for x in body[k]) + "</ul>")
-            if gd.get("waiting"):
-                parts.append("<p class='rest'>Чекає: " + E("; ".join(gd["waiting"])) + "</p>")
-            for x in v["on"]:
-                a, verb, _, rest = x["sentence"]
-                c = x["challenge"]
-                st = "" if c is None else (" · " + ("зараховане" if c.get("counted") else "не зараховане")
-                                           + (", стоїть" if c.get("stands") else "") + (f', відтворень {len(c["replays"])}' if c.get("replays") else ""))
-                note = self.space.report(store)["_recs"][x["id"]]["body"].get("note")
-                parts.append(f'<div class="item"><span class="when">{when(x["at"])}</span> <span class="actor">{E(a)}</span> '
-                             f'{E(verb)}{E(st)}' + (f' <span class="rest">— {E(rest)}</span>' if rest else "")
-                             + (f'<div class="rest">{E(note)}</div>' if isinstance(note, str) else "") + "</div>")
-            parts.append("</div>")
-            h += "".join(parts)
+        h += "".join(version_html(rep, d, v) for v in d["versions"])
         return 200, page(d["label"], h, foot(store, rep, {"op": "lineage", "target": d["lineage"]}))
 
     def form(self, store, v):
@@ -439,7 +468,7 @@ def handler(app, port):
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
-            pass
+            pass                # a request line names records the reader opened: it stays out of the terminal
 
         def send(self, code, text, ctype="text/html; charset=utf-8", location=None):
             data = text.encode()
@@ -455,7 +484,7 @@ def handler(app, port):
 
         def host_ok(self):
             if self.headers.get("Host") not in hosts:
-                self.send(421, "this server answers only on its own host", "text/plain; charset=utf-8")
+                self.send(421, "this server answers only on its own host", TEXT)
                 return False
             return True
 
@@ -475,7 +504,7 @@ def handler(app, port):
                 elif parts[0] == "l" and len(parts) == 3 and parts[1] in app.space.roots:
                     self.send(*app.page_lineage(parts[1], parts[2]))
                 else:
-                    self.send(404, page("Немає", "<p>Немає такої сторінки.</p>"))
+                    self.send(404, page(MISSING, "<p>Немає такої сторінки.</p>"))
             except Exception as e:      # one page's failure is that page's answer, never the server's end
                 self.send(500, page("Помилка", f"<pre>{E(type(e).__name__)}: {E(str(e))}</pre>"))
 
@@ -483,16 +512,16 @@ def handler(app, port):
             if not self.host_ok():
                 return
             if urlparse(self.path).path != "/react":
-                return self.send(404, "no such endpoint", "text/plain; charset=utf-8")
+                return self.send(404, "no such endpoint", TEXT)
             n = int(self.headers.get("Content-Length") or 0)
             if n > 64 * 1024:
-                return self.send(413, "too large", "text/plain; charset=utf-8")
+                return self.send(413, "too large", TEXT)
             form = {k: v[0] for k, v in parse_qs(self.rfile.read(n).decode("utf-8", "replace")).items()}
             code, out = app.react(form)
             if code == 303:
                 self.send(303, "", location=out)
             else:
-                self.send(code, out, "text/plain; charset=utf-8")
+                self.send(code, out, TEXT)
     return Handler
 
 
@@ -516,7 +545,7 @@ def main(argv=None):
                 p.error(f"the seed lies inside {root}")
     app = App(space, a.actor, key)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), handler(app, a.port))
-    print(f"warrant serve: http://127.0.0.1:{a.port}/ over {', '.join(space.roots)}"
+    print(f"warrant serve: http://127.0.0.1:{a.port}/ over {', '.join(space.roots)}"  # NOSONAR S5332: the loopback address this server binds; no TLS on 127.0.0.1
           + (f"; reactions signed as {a.actor}" if key else "; read only"), flush=True)
     try:
         srv.serve_forever()
