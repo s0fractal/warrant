@@ -42,6 +42,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 
 from world import ROOT, Repo, check, finish
@@ -674,6 +675,7 @@ def mutation_cases(tally, sources, rng, n):
 # ---------------------------------------------------------------- J5: handoff inspect alone
 
 INSPECTOR = []
+B64_STRICT = (3, 13)
 B64_PROBES = ["abc", "a!==", "====", "YQ==YQ==", "\u00e9", 1, None, [1], {}, True, "Y===", "YR==", " YQ==", "YQ==\n", "YQ=a", "Y=QQ",
               "YWJj=", "YWJjYQ===", "YWJjY", "=YQ", "YQ=", "YWE==", "YWE=a", "", "YQ==a!", "YQ==!a", "YQ===a", "Y=!Q", "YQ=!", "YQ=\n="]
 
@@ -718,7 +720,13 @@ def package_cases(tally, worlds, rng):
         named.append((f"package of {name}", package_of(case, rng)))
         for w, m in mutations(case, rng, 2):
             named.append((f"package of {name} / {w}", package_of(m, rng)))
-    for b in B64_PROBES:            # base64.b64decode(validate=True)'s refusals, word for word
+    # base64.b64decode(validate=True)'s refusals, word for word, as CPython 3.13 and later give them: 3.11 decodes
+    # "YWJj=" that 3.13 refuses, and words others differently (a reference that answers by its interpreter, reported).
+    probes = B64_PROBES if sys.version_info >= B64_STRICT else []
+    if not probes:
+        print(f"     J5 the {len(B64_PROBES)} base64 probes are left out: CPython {sys.version.split()[0]} answers base64 otherwise "
+              f"than 3.13+, whose answers warrant.mjs gives")
+    for b in probes:
         named.append((f"a package blob {b!r}", dict(named[0][1], package={"warrant": "package/3", "roots": [], "lines": [], "blobs": {"ab" * 32: b}})))
     named.append(("blobs refused in the order read", dict(named[0][1], package={"warrant": "package/3", "roots": [], "lines": [],
                                                                                "blobs": {"9": "YQ=", "10": "=", "a": 1}})))
@@ -755,10 +763,11 @@ const h = (await import("node:crypto")).createHash("sha256");
 const blocks = [];
 for (let b = 0; b < 0x110000; b += 0x1000) {
   const parts = [];
-  for (let c = b; c < b + 0x1000; c++) { const ch = String.fromCodePoint(c); parts.push(W.pyReprStr(ch) + (W.isActor(ch) ? "1" : "0") + (W.isActor("a" + ch + "a") ? "1" : "0")); }
+  for (let c = b; c < b + 0x1000; c++) { const ch = String.fromCodePoint(c); parts.push(W.pyReprStr(ch) + (W.isActor(ch) ? "1" : "0") + (W.isActor("a" + ch + "a") ? "1" : "0") + (/^\p{Cn}$/u.test(ch) ? "n" : "")); }
   blocks.push(parts);
 }
 out.unicode = blocks;
+out.unicode_version = process.versions.unicode;
 process.stdout.write(JSON.stringify(out));
 """
 
@@ -801,9 +810,16 @@ def encoding_cases(tally, worlds):
     check("J6 verify-sig and the five Ed25519 edge signatures (cofactorless, S < L, weak keys refused)", not bad,
           f"{len(ver)} + {len(edge)} vectors", bad)
     py = py_unicode_blocks()
-    diff = [(b * 0x1000 + k, x, y) for b, (pb, jb) in enumerate(zip(py, got["unicode"])) for k, (x, y) in enumerate(zip(pb, jb)) if x != y]
-    check("J6 every code point: Python's repr, is_actor(c) and is_actor('a'+c+'a') against the platform's Unicode tables",
-          not diff, "0x110000 code points", [f"U+{c:04X} python {x} js {y}" for c, x, y in diff[:8]] + [f"{len(diff)} in all"])
+    diff = [(b * 0x1000 + k, x, y) for b, (pb, jb) in enumerate(zip(py, got["unicode"])) for k, (x, y) in enumerate(zip(pb, jb))
+            if x != y.rstrip("n")]
+    same = tuple(map(int, unicodedata.unidata_version.split("."))) == tuple(map(int, (got["unicode_version"] + ".0.0").split(".")[:3]))
+    # With one Unicode version both sides must agree everywhere; across versions, only where a code point is assigned
+    # in one table and not the other (a new character's repr): the rest of the shapes still agree.
+    unexplained = [d for d in diff if same or (unicodedata.category(chr(d[0])) == "Cn") == d[2].endswith("n")]
+    check(f"J6 every code point: Python's repr, is_actor(c) and is_actor('a'+c+'a') against the platform's Unicode tables "
+          f"(Python {unicodedata.unidata_version}, node {got['unicode_version']})", not unexplained,
+          f"0x110000 code points, {len(diff)} differ only by a character one table has not assigned",
+          [f"U+{c:04X} python {x} js {y}" for c, x, y in unexplained[:8]] + [f"{len(unexplained)} in all"])
     # the WebCrypto backend answers as node:crypto does, on the worlds with signatures that verify and do not
     sample = [c for _, c in worlds][:30]
     a, b = js_batch(sample), js_batch(sample, ["--webcrypto"])
@@ -831,7 +847,8 @@ def vector_bytes(tally):
     for v in tally.vectors:
         counts[v["class"]] = counts.get(v["class"], 0) + 1
     manifest = {"format": VECTOR_FORMAT, "cases": "cases.jsonl.gz", "sha256": hashlib.sha256(gz).hexdigest(), "bytes": len(data),
-                "counts": counts, "generator": "python3 tests/impl_js_test.py --vectors impl-js/vectors",
+                "counts": counts, "reference": "warrant/ (this commit's engine) on CPython 3.13 or later: 3.11 and 3.12 answer base64 otherwise",
+                "generator": "python3 tests/impl_js_test.py --vectors impl-js/vectors",
                 "reader": "node impl-js/check_vectors.mjs [impl-js/vectors]",
                 "rule": ("Each gzipped line is {class, name, case, expect}. A case {lines: [base64 line bytes, newline included], "
                          "blobs: {name: base64}, trust, profile, as_of} is assess(snapshot of the lines and blobs, trust, profile, "
@@ -857,9 +874,12 @@ def vectors_current(tally):
     """J8: the committed vectors are what this engine answers now, byte for byte, and the reader in impl-js reads them."""
     gz, manifest = vector_bytes(tally)
     have = (VECTORS / "cases.jsonl.gz").read_bytes() if (VECTORS / "cases.jsonl.gz").exists() else b""
-    check("J8 impl-js/vectors is what the reference answers now (regenerate: --vectors impl-js/vectors)",
-          have == gz and (VECTORS / "manifest.json").read_bytes() == manifest, f"{len(tally.vectors)} cases, {len(gz)} bytes gzipped",
-          "impl-js/vectors differs from the cases this run made")
+    if sys.version_info < B64_STRICT:
+        print(f"     J8 currency of impl-js/vectors not checked: they are CPython 3.13+'s answers (base64), this is {sys.version.split()[0]}")
+    else:
+        check("J8 impl-js/vectors is what the reference answers now (regenerate: --vectors impl-js/vectors)",
+              have == gz and (VECTORS / "manifest.json").read_bytes() == manifest, f"{len(tally.vectors)} cases, {len(gz)} bytes gzipped",
+              "impl-js/vectors differs from the cases this run made")
     p = subprocess.run([NODE, str(ROOT / "impl-js" / "check_vectors.mjs"), str(VECTORS)], capture_output=True, text=True, check=False, timeout=600)
     check("J8 node impl-js/check_vectors.mjs agrees with every vector, with no Python", p.returncode == 0,
           p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "", p.stdout[-600:] + p.stderr[-600:])
