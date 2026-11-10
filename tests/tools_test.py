@@ -1356,6 +1356,33 @@ def ledger_cases():
     late = G.ledger(r.report(), recs()).get("bob", {})
     check("WL3 ... and one dated after the replay, citing nothing, is not refuted either: `at` orders what no citation does",
           c3 in late.get("accepted", []) and [c3, cd] not in late.get("refuted", []), late)
+    # Codex challenge caae1baae65e on e18c26ee0bf9: citing an unreplayed challenge exempted a later refutation (F1),
+    # and a replay citing the acceptance, with an earlier `at`, was read as earlier (F2).
+    def done(s):
+        return r.entity("alice", "obligation@1", {"state": "done", "statement": s, "serves": []},
+                        lineage=r.entity("alice", "obligation@1", {"state": "open", "statement": s, "serves": []}))
+    e = done("e")
+    ce = r.put("eve", "challenge", {"target": e, "statement": "e is wrong, not yet reproduced"}, refs=[e])
+    ae = r.put("bob", "attest", {"target": e, "verdict": "accept"}, refs=[e, ce])
+    r.put("carol", "attest", {"target": ce, "verdict": "reproduces", "on": e}, refs=[ce, e, ae])
+    late = G.ledger(r.report(), recs()).get("bob", {})
+    check("WL4 an acceptance citing a challenge not yet reproduced is refuted by a replay that comes after it: knowing an "
+          "objection is not knowing its reproduction", [e, ce] in late.get("refuted", []), late)
+    f = done("f")
+    af = r.put("bob", "attest", {"target": f, "verdict": "accept"}, refs=[f], at=1800000100)
+    cf = r.put("eve", "challenge", {"target": f, "statement": "f is wrong"}, refs=[f, af], at=1800000101)
+    r.put("carol", "attest", {"target": cf, "verdict": "reproduces", "on": f}, refs=[cf, f, af], at=1800000050)
+    late = G.ledger(r.report(), recs()).get("bob", {})
+    check("WL5 a replay that cites the acceptance comes after it whatever its `at` says: a citation orders before any date",
+          [f, cf] in late.get("refuted", []) and not r.report()["problems"], late)
+    g = done("g")
+    cg = r.put("eve", "challenge", {"target": g, "statement": "g is wrong"}, refs=[g], at=1800000200)
+    rg = r.put("carol", "attest", {"target": cg, "verdict": "reproduces", "on": g}, refs=[cg, g], at=1800000210)
+    note = r.entity("alice", "obligation@1", {"state": "open", "statement": "g refuted", "serves": []}, refs=[rg])
+    r.put("bob", "attest", {"target": g, "verdict": "accept"}, refs=[g, note], at=1800000150)
+    late = G.ledger(r.report(), recs()).get("bob", {})
+    check("WL6 ... and an acceptance citing the replay, through a record that cites it, comes after it whatever its own "
+          "`at` says: it is not refuted", g in late.get("accepted", []) and [g, cg] not in late.get("refuted", []), late)
 
 
 def grounded_cases():
