@@ -1098,14 +1098,14 @@ def lens_cases():
     eve = SV.App(space, "eve", KEYS["eve"])
     r.t += 10
     e1 = eve.adopt({"token": eve.token, "store": "w", "target": bare})
-    newer = lens("newer, adopted by nobody", {"layout": "nested", "fields": []})
+    lens("newer, adopted by nobody", {"layout": "nested", "fields": []})
     try:                                     # a crash here is this case's FAIL, never a missing line (a mutant survives that)
         mine, evs = view(look), view(SV.App(space, reader="eve"))
     except Exception as ex:
         mine, evs = f"crashed: {type(ex).__name__}: {ex}", ""
     check("LN2 a lens another reader adopted, or a newer one nobody adopted, is not applied: the page is the reader's",
-          e1[0] == 303 and mine.split("<footer>")[0] == with_flat.split("<footer>")[0] and "лінза «hides everything»" in evs
-          and newer not in mine, (e1, mine[:200]))
+          e1[0] == 303 and "лінза «flat stream»" in mine and "лінза «hides everything»" in evs
+          and "лінза «newer, adopted by nobody»" not in mine and "лінза «hides everything»" not in mine, (e1, mine[:200]))
     unsupported = view(look, {"lens": bad})
     check("LN3 a card the interpreter does not know is UNSUPPORTED: the built-in draws the page and says why; the lens "
           "cannot be adopted; its text is data",
@@ -1126,9 +1126,29 @@ def lens_cases():
     check("LN5 a portal: a page naming its lens is byte-identical to the page the adoption of that lens draws, and "
           "its footer's lens differs from another lens's", by_portal == by_adoption and foot_of(other) != foot_of(by_portal)
           and f"?lens={flat}" in by_portal, foot_of(by_portal)[:120])
+    # Lens objections, a lens for every schema, and the comparison of two lenses on one page
+    r.t += 10
+    obj = r.put("eve", "challenge", {"target": flat, "statement": "the flat stream hides which version an event was about"}, refs=[flat])
+    drawn = view(look)
+    check("LN7 a challenge against the lens that draws a page is shown on that page, counted or not (a lens has no guard)",
+          "заперечень на цю лінзу: 1" in drawn and "the flat stream hides which version" in drawn
+          and "заперечень на цю лінзу" not in view(look, {"lens": "builtin"}), obj)
+    r.t += 10
+    star = r.put("carol", "entity", {"state": "active", "name": "every schema", "applies": "*",
+                                     "card": {"layout": "nested", "fields": fields}}, "lens@1")
+    dave.adopt({"token": dave.token, "store": "w", "target": star})
+    check("LN8 a lens that applies to `*` draws any schema once adopted", "лінза «every schema»" in view(look), star)
+    cmp_ = view(look, {"lens": nested, "vs": bare})
+    only_nested, only_bare = LZ.diff(SV.lineage(space.report("w"), o), LZ.lenses(space.report("w"))[nested],
+                                     LZ.lenses(space.report("w"))[bare])
+    check("LN9 the comparison of two lenses names what one shows of the page and the other does not: the nested card "
+          "shows the statements, the established and the challenge that the bare lens hides; the bare shows nothing more",
+          (d, "established") in only_nested and (c, "") in only_nested and only_bare == []
+          and f"Показує лише «nested card»: {len(only_nested)}" in cmp_ and "Показує лише «hides everything»: 0" in cmp_
+          and f"vs={bare}" in view(look, {"lens": nested}), (only_nested, only_bare))
     adoptions = [x for x in space.report("w")["_recs"].values() if x["body"].get("verdict") == "adopt"]
     check("LN6 an adoption is the reader's attest {verdict: adopt} on a lens version, filed only with the run's token",
-          sorted(x["actor"] for x in adoptions) == ["dave", "dave", "eve"]
+          sorted(x["actor"] for x in adoptions) == ["dave", "dave", "dave", "eve"]
           and dave.adopt({"token": "x", "store": "w", "target": nested})[0] == 403
           and all(set(x["body"]) == {"target", "verdict"} for x in adoptions), adoptions)
 

@@ -259,6 +259,10 @@ MUTANTS = [
     ("A109", "warrant_agent/lens.py", 'key = (depth[i], r["at"])', 'key = (-depth[i], r["at"])', AGENT, ["LN1"]),
     ("A110", "warrant_agent/serve.py", '    if card["activity"] == "shown":\n        parts += [on_html(rep, x) for x in v["on"]]', '    if True:\n        parts += [on_html(rep, x) for x in v["on"]]', AGENT, ["LN4"]),
     ("A111", "warrant_agent/serve.py", 'if r["kind"] != "entity" or r.get("schema") != LZ.LENS:', 'if False:', AGENT, ["LN3"]),
+    ("A112", "warrant_agent/serve.py", 'return [title(r, c, LZ.MAX_NAME * 8) for c, x in sorted(r["challenges"].items()) if x["target"] == lens_id]', 'return []', AGENT, ["LN7"]),
+    ("A113", "warrant_agent/lens.py", 'lv[v].get("applies") in (schema, "*")', 'lv[v].get("applies") == schema', AGENT, ["LN8"]),
+    ("A114", "warrant_agent/lens.py", '            out |= {(x["id"], "") for x in v["on"]}', '            pass', AGENT, ["LN9"]),
+    ("A115", "warrant_agent/lens.py", 'return sorted(va - vb), sorted(vb - va)', 'return sorted(vb - va), sorted(va - vb)', AGENT, ["LN9"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)
