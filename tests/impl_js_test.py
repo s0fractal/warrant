@@ -154,7 +154,7 @@ class Tally:
         n[1] += why is None
         if why:
             self.disagreements.append((cls, name, why))
-        if cls in VECTOR_CLASSES and " / " not in name:             # the worlds, crafted cases, quickstart, packages; no mutation
+        if cls in VECTOR_CLASSES and " / " not in name and not name.startswith("deep:"):             # the worlds, crafted cases, quickstart, packages; no mutation
             self.vectors.append({"class": cls, "name": name, "case": wire(case), "expect": {k: v for k, v in py.items() if k not in IDENTITY}})
         return why
 
@@ -362,6 +362,32 @@ def boundary_cases():
     return out
 
 
+def spec_gap_cases():
+    """[(name, case)]: where the reference departs from docs/V3.md and the port follows the reference (both must agree):
+    a counted challenge against a version of a forked lineage, which §5 says stands (no later version is effective)
+    and the reference does not stand; and a lineage deeper than the 4096 that _climb follows, whose deepest version
+    sorts first by id, which §8 says refuses the store and the reference assesses, breaking 4096 versions."""
+    w = _world()
+    a = w.put("alice", "entity", {"state": "open", "statement": "a", "serves": []}, "obligation@1")
+    for x in ("b", "c"):
+        w.put("alice", "entity", {"state": "open", "statement": x, "serves": []}, "obligation@1", a)
+    w.put("alice", "challenge", {"target": a, "statement": "x"}, refs=[a])
+    out = [("spec gap: a counted challenge against a forked lineage's version", dict(_receiver(w), lines=list(w.lines), blobs={}, as_of=None))]
+    w = _world()
+    prev = w.put("alice", "entity", {"state": "open", "statement": "v0", "serves": []}, "obligation@1")
+    for n in range(1, 4098):
+        prev = w.put("alice", "entity", {"state": "open", "statement": f"v{n}", "serves": []}, "obligation@1", prev)
+    low = min(R.rid(C.loads(x.rstrip(b"\n"))["record"]) for x in w.lines)
+    for k in range(100000):          # a leaf whose id sorts before every other: _climb starts from it
+        r = R.record("entity", "alice", w.t + 1, {"state": "open", "statement": f"leaf {k}", "serves": []}, "obligation@1", prev,
+                     prev=w.heads["alice"])
+        if R.rid(r) < low:
+            break
+    out.append(("deep: a lineage 4099 versions deep whose leaf sorts first", dict(_receiver(w), lines=list(w.lines) + [R.line(r, w.keys["alice"])[1]],
+                                                                                 blobs={}, as_of=None)))
+    return out
+
+
 def exotic_actor_cases():
     """[(name, case)]: actors whose code point order is not their UTF-16 order (above U+D7FF), or that are names an
     object's prototype has, in every place the report sorts or keys by actor."""
@@ -468,6 +494,31 @@ def repo_cases(tally, args):
         check("J1 a blob whose bytes do not hash to its name refuses the read in both, with the same words",
               why is None and "refused" in py, why or py)
     return store_case(dot, json.loads(config.read_text()))
+
+
+def limit_cases(tally):
+    """--limits (heavy, not by default): a store of LIMITS["records"] + 1 records and one of LIMITS["bytes"] + 1 bytes, through
+    both commands: each refused before it is assessed, in the same words."""
+    config = ROOT / ".warrant" / "v3.json"
+    with tempfile.TemporaryDirectory(dir=ROOT.parent) as d:
+        st = ST.Store(Path(d)).init()
+        n = ST.LIMITS["records"] + 1
+        with open(st.file, "wb") as f:
+            for k in range(n):
+                f.write(C.canon({"record": R.record("attest", "x", k, {"target": "00" * 32, "verdict": "x"}, refs=["00" * 32]), "sig": None}) + b"\n")
+        py, js, tp, tj = cli_pair(Path(d), config)
+        why = tally.add("J1", "records beyond the limit", None, py, js)
+        check(f"J1 a store of {n} records is refused by both, in the same words", why is None and "refused" in py,
+              f"python {tp:.1f} s, node {tj:.1f} s", why or py)
+    with tempfile.TemporaryDirectory(dir=ROOT.parent) as d:
+        st = ST.Store(Path(d)).init()
+        big = b"\0" * (ST.LIMITS["bytes"] + 1)
+        st.put_blob(big)
+        del big
+        py, js, tp, tj = cli_pair(Path(d), config)
+        why = tally.add("J1", "bytes beyond the limit", None, py, js)
+        check(f"J1 a store of {ST.LIMITS['bytes'] + 1} bytes is refused by both, in the same words", why is None and "refused" in py,
+              f"python {tp:.1f} s, node {tj:.1f} s", why or py)
 
 
 # ---------------------------------------------------------------- J3: QUICKSTART.md
@@ -891,6 +942,7 @@ def main():
     ap.add_argument("--mutations", type=int, default=8, help="mutations per source case")
     ap.add_argument("--vectors", help="also write the cases and Python's answers here")
     ap.add_argument("--quick", action="store_true", help="leave out the mutations of the repository's store")
+    ap.add_argument("--limits", action="store_true", help="also the stores at LIMITS records + 1 and bytes + 1 (heavy)")
     a = ap.parse_args()
     if NODE is None:
         print("SKIP impl_js_test: no `node` on PATH; the JavaScript implementation is not checked")
@@ -898,12 +950,14 @@ def main():
     rng = random.Random(a.seed)
     tally = Tally()
     repo = repo_cases(tally, a)
+    if a.limits:
+        limit_cases(tally)
     worlds = capture_core_worlds()
     check("J2 tests/core_test.py's worlds were captured", len(worlds) > 50, f"{len(worlds)} assessments")
     t = time.perf_counter()
     run_cases(tally, "J2", worlds)
     TIMINGS.append((f"{len(worlds)} core worlds, both engines", time.perf_counter() - t, None))
-    run_cases(tally, "J2", line_cases() + receiver_cases() + boundary_cases() + exotic_actor_cases())
+    run_cases(tally, "J2", line_cases() + receiver_cases() + boundary_cases() + exotic_actor_cases() + spec_gap_cases())
     DEPARTURES[:] = departure_cases()
     for name, case, prefix, because in DEPARTURES:
         py, js = py_answer(case), js_batch([case])[0]
