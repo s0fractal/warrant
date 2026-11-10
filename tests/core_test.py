@@ -90,6 +90,13 @@ def lineage_cases():
     check("L7 two successors of one version are a FORK; nothing is excluded",
           rep["lineages"][c1]["verdict"] == "FORK" and rep["lineages"][c1]["leaf"] is None
           and {c2, c3} <= set(rep["lineages"][c1]["versions"]) and rep["lineages"][c1]["reliance"] == "FORK")
+    # Found by the JavaScript port at 7de4413d: against a version of a forked lineage, a counted challenge read
+    # `stands: false`, though no version after it is effective (§5): a fork hid every objection to its versions.
+    held = w.put("alice", "challenge", {"target": c1, "statement": "c1 is wrong"}, refs=[c1])
+    rep = w.report()
+    check("L15 a counted challenge against a version of a forked lineage stands: no version after it is effective",
+          rep["challenges"][held]["counted"] and rep["challenges"][held]["stands"] and rep["versions"][c1]["challenged_by"] == [held],
+          (rep["challenges"][held], rep["versions"][c1]["challenged_by"]))
     w2 = World()
     a = w2.claim()
     e = w2.claim(actor="eve", lineage=a)

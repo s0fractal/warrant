@@ -411,7 +411,8 @@ class View:
         if stands and x in self.root_of:
             lin = self.lineages[self.root_of[x]]
             eff = self.effective(self.root_of[x])
-            stands = x in lin["path"] and (eff is None or lin["path"].index(eff) <= lin["path"].index(x))
+            # §5: it stands until a version after x in its lineage is effective; a forked lineage has none, so it stands
+            stands = eff is None or (x in lin["path"] and lin["path"].index(eff) <= lin["path"].index(x))
         return {"target": x, "counted": why is not None, "why": why or "thesis: its actor's challenge does not count here",
                 "replays": sorted(replays, key=lambda z: (str(z[0]), str(z[1]), z[2])), "stands": stands}
 
