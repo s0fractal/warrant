@@ -10,6 +10,7 @@ call the same ones. Every state shown is the report's, never recomputed.
                            versions and its challenged lineages
   delta(rep0, rep1)        nodes added and removed, lineages whose state or reliance changed
   impact(rep0, rep1)       the lineages the changed records bear on, and what rests on those
+  ledger(rep)              the witness ledger: per actor, acceptances later refuted, challenges that replayed
   answer(rep, query, data, adapter)   {root, lens, query, data}: the same lens over the same root gives
                            the same bytes, so a result may be cached by (lens, root) and re-derived
 
@@ -133,6 +134,27 @@ def impact(rep0, rep1):
         out.append({"lineage": L, "schema": lin["schema"], "state": lin["state"], "reliance": lin["reliance"],
                     "gone": L not in rep1["lineages"], "rests_on_it": rests})
     return {"delta": d, "lineages": out}
+
+
+def ledger(rep):
+    """The witness ledger, per actor: `accepted`, the versions whose guard the actor's acceptance counts toward;
+    `refuted`, of those, [version, challenge] where a replayer attested `reproduces` on that challenge with `on` that
+    version; `challenged`, the challenges the actor filed; `replayed`, of those, the ones a replayer reproduced on their
+    own target. Read from the report alone (versions' accepted_by, challenges' replays, the graph's actors): it grants
+    nothing, and no rule reads it. A challenge answered without a replay (a successor accepted) credits nobody here."""
+    actor = {n[0]: n[3] for n in rep["graph"]["nodes"]}
+    rows, reproduced = {}, {}
+    row = lambda a: rows.setdefault(a, {"accepted": [], "refuted": [], "challenged": [], "replayed": []})
+    for c, x in sorted(rep["challenges"].items()):
+        row(actor[c])["challenged"].append(c)
+        if any(on == x["target"] and v == "reproduces" for on, v, _ in x["replays"]):
+            row(actor[c])["replayed"].append(c)
+            reproduced.setdefault(x["target"], []).append(c)
+    for v, g in sorted(rep["versions"].items()):
+        for a in g["accepted_by"]:
+            row(a)["accepted"].append(v)
+            row(a)["refuted"] += [[v, c] for c in reproduced.get(v, [])]
+    return dict(sorted(rows.items()))
 
 
 def answer(rep, query, data, adapter):

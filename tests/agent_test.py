@@ -941,6 +941,27 @@ def across_cases():
           all(words.values()) and "not say" in words["UNAVAILABLE"]["does_not_establish"], words)
 
 
+def bench_cases():
+    """tests/assess_bound.py (R-AGENT-CLOCK) at a 1 MiB bound: Codex's challenge f97f77fa5fad, every store measured had
+    crossed the bound and none went through the agent's admission."""
+    import hashlib
+
+    import assess_bound as AB
+    bound = 1 << 20
+    got = {name: AB.measure(make, bound) for name, make in AB.SHAPES}
+    check("B01 the R-AGENT-CLOCK benchmark builds each shape at or below the bound, within one line of it, and the agent admits it",
+          all("refused" not in g and bound - R.LINE_MAX < g["store_bytes"] <= bound and g["records"] > 0 for g in got.values()), got)
+
+    def over(w):                     # a blob the size of the bound: records and blobs together exceed what the agent admits
+        b = b"x" * bound
+        w.r.store.blobs.mkdir(exist_ok=True)
+        (w.r.store.blobs / hashlib.sha256(b).hexdigest()).write_bytes(b)
+        AB.flat(w)
+    refused = AB.measure(over, bound)
+    check("B02 the benchmark reports a store the agent refuses as refused, with the agent's code, and times nothing",
+          refused.get("refused") == "RESOURCE_LIMIT" and "assess_s" not in refused and refused["store_bytes"] > bound, refused)
+
+
 def receiver_cases():
     r = Repo()
     (r.dot / "v3.json").rename(r.home / "foreign-receiver.json")     # Codex finding d6127c0fd71d on #236
@@ -961,4 +982,5 @@ if __name__ == "__main__":
     home_cases()
     across_cases()
     receiver_cases()
+    bench_cases()
     sys.exit(finish())
