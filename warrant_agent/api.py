@@ -219,13 +219,38 @@ def across(cfg, req):
 # ---------------------------------------------------------------- handoff
 
 def _package_of(snap, view, rep, roots):
+    def rests(start):
+        """`start`, what it rests on, and every version of each lineage that one of those requires closed, with what
+        those rest on in turn: a requirement is met by the required lineage's closing version, which no edge of the
+        requiring record names (its `requires` names the lineage's root). Observed on 9509b865: 8 of this repository's
+        35 accepted obligations read PENDING from their own package, the requirement's root carried and its closure
+        left behind (verify_test U47)."""
+        got, todo = set(), [start]
+        while todo:
+            new = ({todo[-1]} | {n["id"] for n in G.path(rep, todo.pop())["nodes"]}) - got
+            got |= new
+            for L in sorted({L for y in new if y in view.recs for L in (view.recs[y]["guard"] or {}).get("requires", [])}):
+                todo += [v for v in rep["lineages"].get(L, {}).get("versions", []) if v not in got]
+        return got
+
     keep = set()
     for r in roots:               # a version brings its whole lineage, and everything each version rests on
         root = G.lineage_of(rep, r)
         for x in [r] + (rep["lineages"][root]["versions"] if root else []):
-            keep |= {x} | {n["id"] for n in G.path(rep, x)["nodes"]}
+            keep |= rests(x)
     _, _, into = G.index(rep)
-    keep |= {i for i, r in view.recs.items() if r["kind"] == "schema" or r["schema"] == R.MIGRATION}
+    keep |= {i for i, r in view.recs.items() if r["kind"] == "schema"}
+    # A migration (docs/V3.md section 9) travels with the records it vouches for, not with every package: its attest
+    # and its map decide one thing for a receiver, the basis of a record that has an unsigned line and that the map
+    # lists. A package holding no such record reads the same without them (verify_test U46); this repository's map is
+    # 333 KB, and 60 of 60 packages of its backed claims held nothing it vouches for (2026-11-10).
+    maps = {m: {row[0] for row in E._map_rows(snap.json_blob(r["body"]["target"])) or []}
+            for m, r in view.recs.items() if r["kind"] == "attest" and r["schema"] == R.MIGRATION}
+
+    def vouchers(ids):
+        unsigned = {i for i in ids if any(e["sig"] is None for e in snap.lines.get(i, []))}
+        return {m for m, listed in maps.items() if listed & unsigned}
+    keep |= vouchers(keep)
     # A fixpoint, not one pass: every kept record brings the attests and challenges on it, and each of those brings
     # what it rests on and, in turn, the verdicts on it (a replayer's `reproduces` on a challenge; an acceptance of a
     # schema). Bounded by the snapshot, itself within the workspace's store_bytes. (Codex AMEND 1 on #220: one pass
@@ -234,7 +259,8 @@ def _package_of(snap, view, rep, roots):
     while todo:
         for rel, a in into.get(todo.pop(), []):
             if rel in ("attest", "challenge") and a not in keep:
-                new = ({a} | {n["id"] for n in G.path(rep, a)["nodes"]}) - keep
+                new = rests(a) - keep
+                new |= vouchers(new) - keep
                 keep |= new
                 todo += sorted(new)
     lines = sorted({C.canon(e).decode() for i in keep if i in snap.lines for e in snap.lines[i]})

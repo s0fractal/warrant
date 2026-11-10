@@ -100,3 +100,12 @@ An obligation, and the version that closes it (accepted later by a `roadmap/acce
 Each is a `prepare` request; `commit` the `record` it returns. In this repository, commit the store
 (`.warrant/records.jsonl` and the blobs your records cite) with your change; CI refuses a store that is
 not in canonical order, and every write leaves it so.
+
+
+## Handing a result to another party
+
+`handoff` with `op: export` gives a package of what the targets rest on and the verdicts on them. Whoever
+receives it needs none of this interface to judge it: `warrant verify PACKAGE --trust T --profile P`
+answers under the receiver's own trust and profile with no store, and `warrant_verify.py` is the same
+command as one standard-library file for a receiver with nothing installed. Its exit status is the
+answer ([docs/VERIFY.md](VERIFY.md)).

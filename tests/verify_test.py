@@ -288,6 +288,36 @@ def more_reliance_cases():
           "a record a migration vouches for: relied on by a receiver whose profile has that migrator, and said to be the "
           "migrator's word, not a signature; for another receiver it is no admitted record", (code, ans, code2, ans2))
 
+    done = w.entity("alice", "obligation@1", {"state": "open", "statement": "signed work beside it", "serves": []})
+    exp = export(w, done)
+    light = exp.get("package", {})
+    heavy = dict(light, lines=sorted(light["lines"] + [x for x in pkg["lines"] if R.rid(json.loads(x)["record"]) == m]), blobs=pkg["blobs"])
+    (c1, a1), (c2, a2) = ask(light, w), ask(heavy, w)
+    kinds = {json.loads(x)["record"]["schema"] for x in light["lines"]}
+    check("U46", R.MIGRATION not in kinds and light["blobs"] == {} and len(heavy["lines"]) == len(light["lines"]) + 1 and hm in heavy["blobs"]
+          and c1 == c2 == 0 and a1.get("roots") == a2.get("roots") and bool(a1.get("roots")) and a1.get("execution") == a2.get("execution")
+          and a2.get("integrity", {}).get("bytes", 0) - a1.get("integrity", {}).get("bytes", 0) > len(C.canon({"map": [[mid, ["11" * 32], []]]})),
+          "a migration travels with the records it vouches for: a package of signed records alone carries neither its attest nor "
+          "its map, and reads the same, root for root, as the package with both put back", (kinds, c1, c2, a1.get("roots") == a2.get("roots")))
+
+    q = Repo()
+    first = q.entity("alice", "obligation@1", {"state": "open", "statement": "first", "serves": []})
+    q.attest("bob", q.entity("alice", "obligation@1", {"state": "done", "statement": "first", "serves": []}, lineage=first))
+    second = q.entity("alice", "obligation@1", {"state": "open", "statement": "second", "serves": []})
+    q.attest("bob", q.entity("alice", "obligation@1", {"state": "done", "statement": "second", "serves": []}, lineage=second, requires=[first]))
+    third = q.entity("alice", "obligation@1", {"state": "open", "statement": "third", "serves": []})
+    d3 = q.entity("alice", "obligation@1", {"state": "done", "statement": "third", "serves": []}, lineage=third, requires=[second])
+    q.attest("bob", d3)
+    home = q.report()
+    code, ans = ask(export(q, d3).get("package", {}), q)
+    check("U47", home["lineages"][third]["state"] == "done" and home["versions"][d3]["guard"] == "MET"
+          and code == 0 and root(ans, d3).get("guard", {}).get("guard") == "MET" and root(ans, d3).get("guard", {}).get("waiting") == []
+          and root(ans, d3).get("lineage", {}).get("state") == "done" and ans.get("integrity", {}).get("records") == 5 + 9,
+          "a closure that requires other lineages closed travels with their closing versions and the acceptances of those, "
+          "through every lineage they require in turn: handed over alone it reads as at home (observed on 9509b865: 8 of this "
+          "repository's 35 accepted obligations read PENDING from their own package, the requirement's root carried and its "
+          "closure left behind)", (code, root(ans, d3).get("guard"), ans.get("integrity")))
+
     u = Repo()
     u.entity("alice", "obligation@1", {"state": "open", "statement": "another matter", "serves": []})
     o = u.entity("alice", "obligation@1", {"state": "open", "statement": "task", "serves": []})

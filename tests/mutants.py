@@ -558,6 +558,13 @@ MUTANTS = [
      '        order.append(ready[-1])\n', VERIFY, ['U36']),
     ("UM50", ONE, '    except Exception:                    # absent, or present and unusable: neither is a reason to verify nothing\n',
      '    except ZeroDivisionError:\n', VERIFY, ['U38']),
+    # handoff export (warrant_agent/api.py _package_of): what a package carries for the receiver's verdict
+    ("UM51", "warrant_agent/api.py", '        return {m for m, listed in maps.items() if listed & unsigned}\n',
+     '        return set()\n', VERIFY, ['U16']),
+    ("UM52", "warrant_agent/api.py", '        return {m for m, listed in maps.items() if listed & unsigned}\n',
+     '        return set(maps)\n', VERIFY, ['U46']),
+    ("UM53", "warrant_agent/api.py", '                todo += [v for v in rep["lineages"].get(L, {}).get("versions", []) if v not in got]\n',
+     '                pass\n', VERIFY, ['U47']),
 ]
 
 
