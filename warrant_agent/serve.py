@@ -30,6 +30,7 @@ from warrant import home as H
 from warrant import records as R
 from warrant.repo import Failed, Repo, load_key
 from warrant_agent import glossary as GL
+from warrant_agent import lens as LZ
 
 DIMENSIONS = (("agree", -100, 100, "згода"), ("confidence", 0, 100, "впевненість"),
               ("importance", 0, 100, "важливість"), ("evidence", 0, 100, "якість доказу"))
@@ -59,8 +60,8 @@ def title(rep, i, n=160):
     if r is None:
         return i[:12]
     b = r["body"]
-    for k in ("statement", "text", "title"):
-        if isinstance(b.get(k), str) and b[k].strip():
+    for k in ("statement", "text", "title", "name"):
+        if isinstance(b.get(k), str) and b[k].strip() and (k != "name" or r["kind"] == "entity"):
             t = b[k].strip()
             return t if len(t) <= n else t[:n - 1] + "…"
     if r["kind"] == "entity":
@@ -95,9 +96,10 @@ def dims(body):
 
 ENTITY_VERBS = {("obligation", "open"): "відкрив обов'язок", ("obligation", "done"): "закрив обов'язок",
                 ("obligation", "released"): "звільнив обов'язок", ("goal", "open"): "поставив ціль",
-                ("pr-head", "open"): "відкрив", ("pr-head", "head"): "подав нову голову", ("pr-head", "merged"): "злив"}
+                ("pr-head", "open"): "відкрив", ("pr-head", "head"): "подав нову голову", ("pr-head", "merged"): "злив",
+                ("lens", "active"): "подав лінзу", ("lens", "retired"): "відкликав лінзу"}
 ATTEST_VERBS = {"accept": "прийняв", "react": "відреагував на", "reproduces": "відтворив заперечення",
-                "does_not_reproduce": "не відтворив заперечення"}
+                "does_not_reproduce": "не відтворив заперечення", "adopt": "прийняв для себе лінзу"}
 
 
 def _about(rep, t):
@@ -307,7 +309,8 @@ def page(title_, body, footer=""):
 
 def foot(name, rep, query):
     x = lens(rep, query)
-    return f'{E(name)} · root <code>{E(x["root"])}</code> · lens <code>{E(x["lens"])}</code>'
+    return (f'{E(name)} · root <code title="{E(x["root"])}">{E(x["root"][:12])}</code> · '
+            f'lens <code title="{E(x["lens"])}">{E(x["lens"][:12])}</code>')
 
 
 def grounded_html(rep, store, g):
@@ -339,31 +342,83 @@ def on_html(rep, x):
             + (f'<div class="rest">{E(note)}</div>' if isinstance(note, str) else "") + END)
 
 
-def version_html(rep, d, v):
+def fields_html(body, card, skip_statement=False):
+    parts = []
+    for f in card["fields"]:
+        k, v = f["path"], body.get(f["path"])
+        if v is None or (skip_statement and k == "statement"):
+            continue
+        head = f"<b>{E(f['label'])}</b>" if f["label"] else ""
+        if f["as"] == "count":
+            parts.append(f"<p>{head} {len(v) if isinstance(v, (list, dict)) else 1}</p>")
+        elif f["as"] == "list" and isinstance(v, list):
+            if v:
+                parts.append(head + "<ul>" + "".join(f"<li>{E(str(x))}</li>" for x in v) + "</ul>")
+        elif not isinstance(v, (list, dict)):
+            parts.append(f"{head}<p>{E(str(v))}</p>")
+    return "".join(parts)
+
+
+def version_head(d, v):
     rec, gd = v["record"], v["guard"]
-    body = rec["body"]
     mark = " (дієва)" if v["id"] == d["effective"] else ""
     accepted = f' · прийняли: {E(", ".join(gd["accepted_by"]))}' if gd.get("accepted_by") else ""
-    parts = [f'<div class="card"><div><span class="when">{when(rec["at"])}</span> <span class="actor">{E(rec["actor"])}</span> '
-             f'версія{E(mark)} · стан <b>{E(str(body.get("state")))}</b> · охоронець {tag(gd.get("guard", "NONE"))}'
-             f'{accepted} · <code>{E(v["id"][:12])}</code>{END}']
-    for k in ("statement", "text"):
-        repeated = k == "statement" and v["id"] == d["lineage"] and len(d["versions"]) > 1
-        if isinstance(body.get(k), str) and not repeated:
-            parts.append(f"<p>{E(body[k])}</p>")
-    for k, name in (("established", "Встановлено"), ("residual", "Залишки")):
-        if isinstance(body.get(k), list) and body[k]:
-            parts.append(f"<b>{name}</b><ul>" + "".join(f"<li>{E(str(x))}</li>" for x in body[k]) + "</ul>")
+    return (f'<span class="when">{when(rec["at"])}</span> <span class="actor">{E(rec["actor"])}</span> '
+            f'версія{E(mark)} · стан <b>{E(str(rec["body"].get("state")))}</b> · охоронець {tag(gd.get("guard", "NONE"))}'
+            f'{accepted} · <code>{E(v["id"][:12])}</code>')
+
+
+def version_html(rep, d, v, card=LZ.card_of(LZ.BUILTIN)):
+    gd = v["guard"]
+    repeated = v["id"] == d["lineage"] and len(d["versions"]) > 1
+    parts = [f'<div class="card"><div>{version_head(d, v)}{END}', fields_html(v["record"]["body"], card, repeated)]
     if gd.get("waiting"):
         parts.append("<p class='rest'>Чекає: " + E("; ".join(gd["waiting"])) + "</p>")
-    parts += [on_html(rep, x) for x in v["on"]]
+    if card["activity"] == "shown":
+        parts += [on_html(rep, x) for x in v["on"]]
     parts.append(END)
     return "".join(parts)
 
 
+def versions_html(rep, d, card):
+    """The versions as the card lays them out: nested (each a card holding its activity) or flat (one stream)."""
+    vs = d["versions"] if card["order"] == "newest" else list(reversed(d["versions"]))
+    if card["layout"] == "nested":
+        return "".join(version_html(rep, d, v, card) for v in vs)
+    events = []
+    for v in vs:
+        events.append((v["record"]["at"], 0, v["id"], f'<div class="item"><div>{version_head(d, v)}{END}'
+                       f'{fields_html(v["record"]["body"], card)}{END}'))
+        if card["activity"] == "shown":
+            events += [(x["at"], 1, x["id"], on_html(rep, x)) for x in v["on"]]
+    events.sort(key=lambda e: e[:3], reverse=card["order"] == "newest")
+    return "".join(e[3] for e in events)
+
+
+def standing(rep, d):
+    """The counted challenges that stand against a version of the lineage: [(challenge id, version)]."""
+    vs = {v["id"] for v in d["versions"]}
+    return sorted((c, x["target"]) for c, x in rep["challenges"].items()
+                  if x["target"] in vs and x.get("counted") and x.get("stands"))
+
+
+def floor_html(rep, store, d, used, note=""):
+    """What no lens decides: state and reliance, every counted challenge that stands with its statement, that
+    completeness is UNATTESTED, and which lens drew the page (a portal: the same root and lens give this page)."""
+    held = standing(rep, d)
+    rows = "".join(f"<li>{E(title(rep, c, LZ.MAX_NAME * 8))} <span class='rest'>(на {E(v[:12])})</span></li>" for c, v in held)
+    lens_id, lens_name = used
+    portal = f'/l/{quote(store)}/{E(d["lineage"])}?lens={E(lens_id)}'
+    return (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
+            f'опора {tag(d["reliance"])} · заперечень, що стоять: <b>{len(held)}</b> · повнота {tag("UNATTESTED")}</p>'
+            + (f'<ul class="standing">{rows}</ul>' if held else "")
+            + f'<p class="rest">вигляд: лінза «{E(lens_name)}» · <a href="{portal}">відтворити цей вигляд</a>{note}</p>')
+
+
 class App:
-    def __init__(self, space, actor=None, key=None):
+    def __init__(self, space, actor=None, key=None, reader=None):
         self.space, self.actor, self.key, self.token = space, actor, key, secrets.token_hex(16)
+        self.reader = reader or actor
 
     def reports(self):
         return {n: self.space.report(n) for n in self.space.roots}
@@ -383,19 +438,51 @@ class App:
                + "</div>")
         return page("Стрічка", "<h2>Стрічка</h2>" + flt + "".join(item(n, x) for n, x in rows[:300]), "<br>".join(foots))
 
-    def page_lineage(self, store, i):
+    def pick(self, schema, asked):
+        """(lens id, body, note): the lens named by the page (`?lens=ID` or `builtin`), else the one the reader
+        adopted last for this schema, else the built-in; a lens this interpreter cannot draw is UNSUPPORTED and the
+        built-in draws the page, saying so. A lens's own lineage is always drawn by the built-in."""
+        if schema == LZ.LENS or asked == "builtin":
+            return "builtin", LZ.BUILTIN, ""
+        reports = self.reports()
+        if asked:
+            hit = LZ.find(reports, asked)
+            found = None if hit is None else (asked, hit[1])
+            if found is None:
+                return "builtin", LZ.BUILTIN, f" · лінзи <code>{E(asked[:12])}</code> тут немає"
+        else:
+            got = LZ.choose(reports, self.reader, schema)
+            found = None if got is None else (got[1], got[2])
+        if found is None:
+            return "builtin", LZ.BUILTIN, ""
+        why = LZ.problem(found[1])
+        if why:
+            return "builtin", LZ.BUILTIN, f" · лінза <code>{E(found[0][:12])}</code> не підтримується: {E(why)}"
+        return found[0], found[1], ""
+
+    def page_lineage(self, store, i, q=None):
         rep = self.space.report(store)
         if "_error" in rep:
             return 404, page(MISSING, f"<p>{E(rep['_error'])}</p>")
         d = lineage(rep, i)
         if d is None:
             return 404, page(MISSING, f"<p>Немає лінії з записом <code>{E(i)}</code> у {E(store)}.</p>")
-        h = (f'<h2>{E(d["label"])}: {E(d["title"])}</h2><p>{E(d["schema"])} · стан <b>{E(str(d["state"]))}</b> · '
-             f'опора {tag(d["reliance"])}</p>' + grounded_html(rep, store, d["grounded"]))
+        lens_id, body, note = self.pick(d["schema"], (q or {}).get("lens"))
+        h = floor_html(rep, store, d, (lens_id, body["name"]), note) + grounded_html(rep, store, d["grounded"])
+        if d["schema"] == LZ.LENS and d["leaf"]:
+            why = LZ.problem(rep["_recs"][d["leaf"]]["body"])
+            h += f'<p>Ця лінза {"малюється" if why is None else "не підтримується: " + E(why)}.</p>'
+            if self.actor and self.key and why is None:
+                h += self.adopt_form(store, d["leaf"])
         if self.actor and self.key and d["leaf"]:
             h += self.form(store, d["leaf"])
-        h += "".join(version_html(rep, d, v) for v in d["versions"])
-        return 200, page(d["label"], h, foot(store, rep, {"op": "lineage", "target": d["lineage"]}))
+        h += versions_html(rep, d, LZ.card_of(body))
+        return 200, page(d["label"], h, foot(store, rep, {"op": "lineage", "target": d["lineage"], "lens": lens_id}))
+
+    def adopt_form(self, store, v):
+        return (f'<form method="post" action="/adopt"><input type="hidden" name="token" value="{self.token}">'
+                f'<input type="hidden" name="store" value="{E(store)}"><input type="hidden" name="target" value="{E(v)}">'
+                f'<button type="submit">Прийняти цю лінзу для себе</button></form>')
 
     def form(self, store, v):
         rows = "".join(f'<label for="{k}">{E(n)}</label><input type="range" id="{k}" name="{k}" min="{lo}" max="{hi}" '
@@ -442,7 +529,7 @@ class App:
                   f' · відкинуто: {len(rep["rejected"])}</span></div>')
         return page("Сховища", h)
 
-    def react(self, form):
+    def _file(self, form, body_of):
         if not secrets.compare_digest(form.get("token", ""), self.token):
             return 403, "the token of this run is missing or wrong"
         if not (self.actor and self.key):
@@ -453,7 +540,7 @@ class App:
         rep = self.space.report(store)
         if "_error" in rep or target not in rep["_recs"]:
             return 400, "no such record in that store"
-        body, why = reaction_body(target, form)
+        body, why = body_of(rep, target, form)
         if body is None:
             return 400, why
         try:
@@ -461,6 +548,18 @@ class App:
         except (Failed, ValueError) as e:
             return 400, f"{type(e).__name__}: {e}"
         return 303, f"/l/{quote(store)}/{target}"
+
+    def react(self, form):
+        return self._file(form, lambda rep, target, f: reaction_body(target, f))
+
+    def adopt(self, form):
+        def body(rep, target, f):
+            r = rep["_recs"][target]
+            if r["kind"] != "entity" or r.get("schema") != LZ.LENS:
+                return None, "only a lens version is adopted"
+            why = LZ.problem(r["body"])
+            return ({"target": target, "verdict": "adopt"}, None) if why is None else (None, f"this lens is not drawn: {why}")
+        return self._file(form, body)
 
 
 def handler(app, port):
@@ -502,7 +601,7 @@ def handler(app, port):
                 elif parts == ["stores"]:
                     self.send(200, app.page_stores())
                 elif parts[0] == "l" and len(parts) == 3 and parts[1] in app.space.roots:
-                    self.send(*app.page_lineage(parts[1], parts[2]))
+                    self.send(*app.page_lineage(parts[1], parts[2], q))
                 else:
                     self.send(404, page(MISSING, "<p>Немає такої сторінки.</p>"))
             except Exception as e:      # one page's failure is that page's answer, never the server's end
@@ -511,13 +610,14 @@ def handler(app, port):
         def do_POST(self):
             if not self.host_ok():
                 return
-            if urlparse(self.path).path != "/react":
+            path = urlparse(self.path).path
+            if path not in ("/react", "/adopt"):
                 return self.send(404, "no such endpoint", TEXT)
             n = int(self.headers.get("Content-Length") or 0)
             if n > 64 * 1024:
                 return self.send(413, "too large", TEXT)
             form = {k: v[0] for k, v in parse_qs(self.rfile.read(n).decode("utf-8", "replace")).items()}
-            code, out = app.react(form)
+            code, out = (app.react if path == "/react" else app.adopt)(form)
             if code == 303:
                 self.send(303, "", location=out)
             else:
@@ -531,6 +631,7 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8767)
     p.add_argument("--actor", help="who signs reactions")
     p.add_argument("--key", help="the actor's seed, a file outside every repository read")
+    p.add_argument("--reader", help="whose adopted lenses draw the pages (default: --actor)")
     a = p.parse_args(argv)
     space = Space({Path(r).resolve().name: str(Path(r).resolve()) for r in a.root}) if a.root else Space.from_home()
     if not space.roots:
@@ -543,7 +644,7 @@ def main(argv=None):
         for root in space.roots.values():
             if Path(a.key).expanduser().resolve().is_relative_to(Path(root).resolve()):
                 p.error(f"the seed lies inside {root}")
-    app = App(space, a.actor, key)
+    app = App(space, a.actor, key, a.reader)
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), handler(app, a.port))
     print(f"warrant serve: http://127.0.0.1:{a.port}/ over {', '.join(space.roots)}"  # NOSONAR S5332: the loopback address this server binds; no TLS on 127.0.0.1
           + (f"; reactions signed as {a.actor}" if key else "; read only"), flush=True)

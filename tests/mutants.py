@@ -252,6 +252,13 @@ MUTANTS = [
     ("A102", "warrant_agent/serve.py", '        if not lo <= n <= hi:\n', '        if False:\n', AGENT, ["SV4"]),
     ("A103", "warrant_agent/serve.py", 'body = {"target": target, "verdict": "react"}', 'body = {"target": target, "verdict": "accept"}', AGENT, ["SV4"]),
     ("A104", "warrant_agent/serve.py", 'out.sort(key=lambda x: (-x["at"], x["id"]))', 'out.sort(key=lambda x: (x["at"], x["id"]))', AGENT, ["SV1"]),
+    ("A105", "warrant_agent/lens.py", 'r["kind"] == "attest" and r["actor"] == reader and b.get("verdict") == "adopt"', 'r["kind"] == "attest" and b.get("verdict") == "adopt"', AGENT, ["LN2"]),
+    ("A106", "warrant_agent/serve.py", """+ (f'<ul class="standing">{rows}</ul>' if held else "")""", '+ ""', AGENT, ["LN4"]),
+    ("A107", "warrant_agent/serve.py", 'why = LZ.problem(found[1])', 'why = None', AGENT, ["LN3"]),
+    ("A108", "warrant_agent/lens.py", ' or set(card) - CARD_KEYS or ', ' or ', AGENT, ["LN3"]),
+    ("A109", "warrant_agent/lens.py", 'key = (depth[i], r["at"])', 'key = (-depth[i], r["at"])', AGENT, ["LN1"]),
+    ("A110", "warrant_agent/serve.py", '    if card["activity"] == "shown":\n        parts += [on_html(rep, x) for x in v["on"]]', '    if True:\n        parts += [on_html(rep, x) for x in v["on"]]', AGENT, ["LN4"]),
+    ("A111", "warrant_agent/serve.py", 'if r["kind"] != "entity" or r.get("schema") != LZ.LENS:', 'if False:', AGENT, ["LN3"]),
     ("A93", "warrant/roadmap.py", '"evidence": sorted(a.evidence), "refs": a.ref,', '"evidence": sorted(a.evidence), "refs": [],', AGENT, ["R01"]),
     ("A94", "warrant/roadmap.py", 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires] + ([body["answers"]] if body["answers"] else [])', 'lineage=rep["lineages"][L]["leaf"], refs=[*a.evidence, *a.requires]', AGENT, ["R01"]),
     # the merge gate (warrant/gate.py)

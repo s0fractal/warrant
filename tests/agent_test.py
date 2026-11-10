@@ -1059,6 +1059,80 @@ def serve_cases():
           "closure his attest until he filed it", isinstance(w["roles"], list) and "roadmap/acceptor" in w["roles"], w)
 
 
+def lens_cases():
+    """Lenses (warrant_agent/lens.py): a lineage page's layout is a `lens@1` record, applied only when the reader
+    adopted it; a card is data the interpreter knows or UNSUPPORTED; no lens decides the floor (state, reliance, every
+    counted challenge that stands, UNATTESTED, which lens drew the page)."""
+    from warrant_agent import lens as LZ
+    from warrant_agent import serve as SV
+    r = Repo()
+    r.put("alice", "schema", LZ.SCHEMA)
+    o = r.entity("alice", "obligation@1", {"state": "open", "statement": "the task", "serves": []})
+    d = r.entity("alice", "obligation@1", {"state": "done", "statement": "the task", "serves": [],
+                                           "established": ["it holds"], "residual": ["one gap"]}, lineage=o)
+    c = r.put("bob", "challenge", {"target": d, "statement": "a counted counterexample"}, refs=[d])
+    def lens(name, card, actor="carol"):
+        return r.put(actor, "entity", {"state": "active", "name": name, "applies": "obligation@1", "card": card}, "lens@1")
+    fields = [{"path": "statement", "label": "", "as": "text"}, {"path": "established", "label": "Встановлено", "as": "list"}]
+    nested = lens("nested card", {"layout": "nested", "fields": fields})
+    flat = lens("flat stream", {"layout": "flat", "fields": fields[:1], "order": "oldest"})
+    bare = lens("hides everything", {"layout": "nested", "fields": [], "activity": "hidden"})
+    bad = lens("<i>bad</i> lens", {"layout": "nested", "fields": [], "script": "alert(1)"})
+    shaped = r.put("eve", "attest", {"target": o, "verdict": "note", "state": "active", "name": "looks like a lens",
+                                     "applies": "obligation@1", "card": {"layout": "nested", "fields": []}}, refs=[o])
+    space = SV.Space({"w": str(r.root)})
+    dave = SV.App(space, "dave", KEYS["dave"])
+    look = SV.App(space, reader="dave")                      # dave reads; the app that signs for him draws forms too
+    view = lambda app, q=None: app.page_lineage("w", o, q or {})[1]
+    first = view(look)
+    a1 = dave.adopt({"token": dave.token, "store": "w", "target": nested})
+    with_nested = view(look)
+    r.t += 10
+    a2 = dave.adopt({"token": dave.token, "store": "w", "target": flat})
+    with_flat = view(look)
+    check("LN1 the reader's adopted lens draws the page, the latest adoption winning: built-in, then the nested card, "
+          "then the flat stream, with no change of code",
+          "лінза «вбудована»" in first and "лінза «nested card»" in with_nested and "лінза «flat stream»" in with_flat
+          and with_nested.count('class="card"') == 2 and with_flat.count('class="card"') == 0 and a1[0] == a2[0] == 303,
+          (a1, a2))
+    eve = SV.App(space, "eve", KEYS["eve"])
+    r.t += 10
+    e1 = eve.adopt({"token": eve.token, "store": "w", "target": bare})
+    newer = lens("newer, adopted by nobody", {"layout": "nested", "fields": []})
+    try:                                     # a crash here is this case's FAIL, never a missing line (a mutant survives that)
+        mine, evs = view(look), view(SV.App(space, reader="eve"))
+    except Exception as ex:
+        mine, evs = f"crashed: {type(ex).__name__}: {ex}", ""
+    check("LN2 a lens another reader adopted, or a newer one nobody adopted, is not applied: the page is the reader's",
+          e1[0] == 303 and mine.split("<footer>")[0] == with_flat.split("<footer>")[0] and "лінза «hides everything»" in evs
+          and newer not in mine, (e1, mine[:200]))
+    unsupported = view(look, {"lens": bad})
+    check("LN3 a card the interpreter does not know is UNSUPPORTED: the built-in draws the page and says why; the lens "
+          "cannot be adopted; its text is data",
+          "не підтримується" in unsupported and "лінза «вбудована»" in unsupported and "<i>bad" not in view(SV.App(space), {"lens": bad})
+          and dave.adopt({"token": dave.token, "store": "w", "target": bad})[0] == 400
+          and dave.adopt({"token": dave.token, "store": "w", "target": d})[0] == 400
+          and dave.adopt({"token": dave.token, "store": "w", "target": shaped})[0] == 400, unsupported[:0])
+    hidden = view(look, {"lens": bare})
+    check("LN4 the floor: a lens that shows no member and hides the activity still shows the state, the reliance, the "
+          "counted challenge that stands with its statement, UNATTESTED and its own name",
+          "a counted counterexample" in hidden and "заперечень, що стоять: <b>1</b>" in hidden and "UNATTESTED" in hidden
+          and "лінза «hides everything»" in hidden and "заперечив" not in hidden and "it holds" not in hidden
+          and SV.standing(space.report("w"), SV.lineage(space.report("w"), o)) == [(c, d)], hidden[:0])
+    reader = SV.App(space, reader="dave")
+    by_portal, by_adoption = view(reader, {"lens": flat}), view(reader)
+    other = view(reader, {"lens": nested})
+    foot_of = lambda h: h[h.index("<footer>"):]
+    check("LN5 a portal: a page naming its lens is byte-identical to the page the adoption of that lens draws, and "
+          "its footer's lens differs from another lens's", by_portal == by_adoption and foot_of(other) != foot_of(by_portal)
+          and f"?lens={flat}" in by_portal, foot_of(by_portal)[:120])
+    adoptions = [x for x in space.report("w")["_recs"].values() if x["body"].get("verdict") == "adopt"]
+    check("LN6 an adoption is the reader's attest {verdict: adopt} on a lens version, filed only with the run's token",
+          sorted(x["actor"] for x in adoptions) == ["dave", "dave", "eve"]
+          and dave.adopt({"token": "x", "store": "w", "target": nested})[0] == 403
+          and all(set(x["body"]) == {"target", "verdict"} for x in adoptions), adoptions)
+
+
 if __name__ == "__main__":
     operations()
     refusal_cases()
@@ -1072,4 +1146,5 @@ if __name__ == "__main__":
     receiver_cases()
     bench_cases()
     serve_cases()
+    lens_cases()
     sys.exit(finish())

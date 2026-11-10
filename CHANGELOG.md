@@ -11,6 +11,10 @@ Each entry below is a version of the `warrant-graph` package on PyPI. Warrant 3 
   accepted, challenges, groundedness) and what waits for an actor; each page names its root and lens. A reader with
   a key signs a reaction (`verdict: "react"`, integer dimensions and a note), which credits nothing. Localhost only,
   Host-checked, a per-run token on POST. docs/AGENT.md; tests SV1–SV6, mutants A99–A104.
+- Lenses (`warrant_agent/lens.py`): a lineage page's layout is a `lens@1` record (a declarative card: nested or flat,
+  which members, order, activity shown or hidden), applied only when the reader adopted it (`verdict: "adopt"`);
+  an unknown card is UNSUPPORTED and the built-in draws; `?lens=ID` reproduces a view. No lens hides the floor:
+  state, reliance, every counted challenge that stands, UNATTESTED, the lens's name. Tests LN1–LN6, mutants A105–A111.
 
 ## 3.0.0a6 — one package, one receiver
 
