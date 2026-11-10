@@ -175,6 +175,16 @@ def pin_cases():
     rep = w.report()
     check("P6 ... and the closure that matches the pin still counts", kept not in rep["rejected"] and rep["lineages"][root]["state"] == "decided",
           (rep["rejected"].get(kept), rep["lineages"][root]["state"]))
+    # Found reviewing 63c83869: where the schema sets no minimal guard for the closed state, a closure whose guard matches
+    # the pin with quorum 0 was met with no attest at all, so the pin fixed nothing.
+    w = World()
+    w.put("alice", "schema", dict(sch, name="prediction@7", states={"open": None, "decided": None}))
+    root = w.put("alice", "entity", {"state": "open", "closes_by": D}, "prediction@7")
+    free = w.put("alice", "entity", {"state": "decided"}, "prediction@7", root, guard=dict(guard, quorum=0, match=D))
+    rep = w.report()
+    check("P7 under a pin, a closing version's guard needs at least one attest: quorum 0 is INVALID and closes nothing",
+          "INVALID" in rep["rejected"].get(free, "") and rep["lineages"][root]["state"] == "open",
+          (rep["rejected"].get(free), rep["lineages"][root]["state"]))
 
 
 def schema_cases():

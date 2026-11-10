@@ -210,6 +210,8 @@ class View:
             elif pin and r["body"].get("state") in s["closed"] \
                     and any((r["guard"] or {"match": {}})["match"].get(k, object()) != v for k, v in pin.items()):
                 bad[i] = f"its guard matches less than its root's {s['pinned']}"
+            elif pin and r["body"].get("state") in s["closed"] and r["guard"]["quorum"] < 1:
+                bad[i] = f"its guard needs no attest under its root's {s['pinned']}"
         for i, why in bad.items():
             self.problem("INVALID", i, why)
             self.drop(i, f"INVALID: {why}")
