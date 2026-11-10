@@ -243,6 +243,7 @@ MUTANTS = [
     ("G30", "warrant/gate.py", 'or (status == "A" and first.endswith(MODULE_SUFFIXES))):', 'or False):', GATE, ["E39"]),
     ("G31", "warrant/gate.py", 'if deeper and (written.split("/")[d.count("/") + 1 if d else 0] not in were\n                       or (status', 'if deeper and ((status', GATE, ["E40"]),
     ("G42", "warrant/gate.py", 'written.split("/")[d.count("/") + 1 if d else 0] not in were', 'first not in {folded(w) for w in were}', GATE, ["E40"]),
+    ("G43", "warrant/gate.py", "    except UnicodeDecodeError:              # Git holds", "    except ZeroDivisionError:              # Git holds", GATE, ["E51"]),
     ("G32", "warrant/gate.py", 'or (status == "A" and "/" not in deeper and _module_file(deeper, "__init__"))):', 'or False):', GATE, ["E41"]),
     ("G33", "warrant/gate.py", 'if not deeper and (mode not in FILE_MODES or (status == "A"', 'if not deeper and ((status == "A"', GATE, ["E42"]),
     ("G34", "warrant/gate.py", '    if path.rpartition("/")[2] == ATTRIBUTES:\n', '    if False:\n', GATE, ["E43"]),

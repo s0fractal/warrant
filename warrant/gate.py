@@ -498,7 +498,10 @@ def assess(root, base, pr, checks, hold=False):
     reasons = pr_reasons(b, pr, hold)
     a.reasons += [r for r in reasons if r[0] in HOLDS]
     a.shared += [r for r in reasons if r[0] not in HOLDS]
-    _shared(a, root, b, pr, checks)
+    try:
+        _shared(a, root, b, pr, checks)
+    except UnicodeDecodeError:              # Git holds paths as bytes: one that is no UTF-8 refuses its pull request, not the run
+        a.shared.append(("HEAD_UNREADABLE", f"#{pr['number']}: a path of the head's trees is not UTF-8"))
     a.reasons += a.shared
     return a
 

@@ -415,7 +415,7 @@ def grown(r, base, entries):
             continue
         mode, content = v if isinstance(v, tuple) else ("100644", v)
         oid = content if mode == SUBMODULE else plumb(r.root, "hash-object", "-w", "--stdin", data=content)
-        plumb(r.root, "update-index", "--add", "--cacheinfo", f"{mode},{oid},{path}", index=index)
+        plumb(r.root, "update-index", "--add", "--cacheinfo", f"{mode},{oid},".encode() + os.fsencode(path), index=index)
     return plumb(r.root, "commit-tree", "-m", "candidate", "-p", base, plumb(r.root, "write-tree", index=index))
 
 
@@ -501,6 +501,18 @@ def shadow_cases():
           got == (["docs/notes.py"], []), got)
 
 
+def unreadable_cases():
+    p = PR()
+    odd = grown(p.r, p.head, {b"docs/caf\xe9.txt": b""})           # Latin-1 bytes: a path Git holds and UTF-8 does not
+    try:
+        a = p.assess(head=odd)
+        got = codes(a), a.due
+    except UnicodeDecodeError as e:                                  # the case fails on its assertion, not on the gate's crash
+        got = f"raised {type(e).__name__}"
+    check("E51 a head holding a path that is not UTF-8 is refused (HEAD_UNREADABLE), never the end of the run "
+          "(observed at 9509b865: UnicodeDecodeError out of assess, so no other pull request was read)", got == ({"HEAD_UNREADABLE"}, False), got)
+
+
 def interpreter_cases():
     """Why the rules of E36-E42 are what they are: what this interpreter loads when a pull request's file is there."""
     def resolved(name, tree, at, make):
@@ -545,6 +557,7 @@ def interpreter_cases():
 if __name__ == "__main__":
     closure_cases()
     shadow_cases()
+    unreadable_cases()
     interpreter_cases()
     eligible_cases()
     store_cases()
