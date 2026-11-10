@@ -526,6 +526,19 @@ def migration_cases():
               mid in rep["versions"] and rep["basis"]["MIGRATED"] == 1, rep["rejected"].get(mid))
     rep = E.assess(Snapshot([C.canon(env) + b"\n"] + w.lines[:-2] + w.lines[-1:], w.blobs), w.trust, {"warrant": "profile/3", "roles": w.roles})
     check("M5 ... and a bad signature alone is still no basis", mid in rep["rejected"])
+    big = b'{"map":[[' + b"9" * 5000 + b"]]}"       # JSON, but past CPython's int-digit limit: json.loads raises ValueError
+    hb = __import__("hashlib").sha256(big).hexdigest()
+    w2 = World(roles=None)
+    w2.roles["migrator"] = ["carol"]
+    w2.blobs[hb] = big
+    m = w2.put("carol", "attest", {"target": hb, "verdict": "migrated"}, R.MIGRATION, refs=[hb])
+    try:
+        rep, crash = w2.report(), None
+    except Exception as e:                       # noqa: BLE001  the case is that no blob makes assess raise
+        rep, crash = {}, repr(e)
+    check("M6 a migration map blob a JSON reader cannot hold (an integer of 5,000 digits) is MIGRATION_MAP, not a crash of "
+          "every receiver's assessment (found by the JavaScript port)",
+          crash is None and ["MIGRATION_MAP", m] in [[p[0], p[1]] for p in rep.get("problems", [])], (crash, rep.get("problems")))
 
 
 def main():
